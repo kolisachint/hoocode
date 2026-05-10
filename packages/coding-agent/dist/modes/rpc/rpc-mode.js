@@ -106,6 +106,9 @@ export async function runRpcMode(runtimeHost) {
                 statusText: text,
             });
         },
+        setModeProfile(_mode, _profile) {
+            // Mode/profile display not supported in RPC mode - requires TUI footer access
+        },
         setWorkingMessage(_message) {
             // Working message not supported in RPC mode - requires TUI loader access
         },

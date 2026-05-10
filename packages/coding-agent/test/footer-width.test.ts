@@ -68,6 +68,8 @@ function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
 			void callback;
 			return () => {};
 		},
+		getActiveMode: () => "build",
+		getActiveProfile: () => "default",
 	};
 
 	return provider;

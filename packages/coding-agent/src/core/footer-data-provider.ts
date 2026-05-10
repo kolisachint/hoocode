@@ -345,10 +345,37 @@ export class FooterDataProvider {
 			}
 		}
 	}
+	private activeMode = "build";
+	private activeProfile = "default";
+
+	/** Current active mode (e.g., ask, plan, build, agent, debug) */
+	getActiveMode(): string {
+		return this.activeMode;
+	}
+
+	/** Current active profile (e.g., default, data, devops) */
+	getActiveProfile(): string {
+		return this.activeProfile;
+	}
+
+	/** Update active mode */
+	setActiveMode(mode: string): void {
+		this.activeMode = mode;
+	}
+
+	/** Update active profile */
+	setActiveProfile(profile: string): void {
+		this.activeProfile = profile;
+	}
 }
 
 /** Read-only view for extensions - excludes setExtensionStatus, setAvailableProviderCount and dispose */
 export type ReadonlyFooterDataProvider = Pick<
 	FooterDataProvider,
-	"getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange"
+	| "getGitBranch"
+	| "getExtensionStatuses"
+	| "getAvailableProviderCount"
+	| "onBranchChange"
+	| "getActiveMode"
+	| "getActiveProfile"
 >;

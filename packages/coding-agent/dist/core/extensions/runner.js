@@ -63,6 +63,7 @@ const noOpUIContext = {
     notify: () => { },
     onTerminalInput: () => () => { },
     setStatus: () => { },
+    setModeProfile: () => { },
     setWorkingMessage: () => { },
     setWorkingVisible: () => { },
     setWorkingIndicator: () => { },

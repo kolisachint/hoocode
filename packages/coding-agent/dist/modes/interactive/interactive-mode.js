@@ -1502,6 +1502,12 @@ export class InteractiveMode {
             notify: (message, type) => this.showExtensionNotify(message, type),
             onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
             setStatus: (key, text) => this.setExtensionStatus(key, text),
+            setModeProfile: (mode, profile) => {
+                this.footerDataProvider.setActiveMode(mode);
+                this.footerDataProvider.setActiveProfile(profile);
+                this.footer.invalidate();
+                this.ui.requestRender();
+            },
             setWorkingMessage: (message) => {
                 this.workingMessage = message;
                 if (this.loadingAnimation) {

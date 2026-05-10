@@ -140,6 +140,13 @@ export interface ExtensionUIContext {
 	/** Set status text in the footer/status bar. Pass undefined to clear. */
 	setStatus(key: string, text: string | undefined): void;
 
+	/**
+	 * Set the active mode and profile displayed in the footer.
+	 * Format: mode (e.g., 'ask', 'plan', 'build', 'agent', 'debug')
+	 *         profile (e.g., 'default', 'data', 'devops')
+	 */
+	setModeProfile(mode: string, profile: string): void;
+
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
 

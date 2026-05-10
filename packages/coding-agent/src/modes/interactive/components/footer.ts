@@ -108,6 +108,23 @@ export class FooterComponent implements Component {
 			pwd = `${pwd} • ${sessionName}`;
 		}
 
+		// Format mode/profile for display: profile/mode (e.g., default/build)
+		const modeProfile = `${this.footerData.getActiveProfile()}/${this.footerData.getActiveMode()}`;
+
+		// Calculate widths for right-aligning mode/profile
+		const pwdWidth = visibleWidth(pwd);
+		const modeProfileWidth = visibleWidth(modeProfile);
+		const modeProfilePadding = Math.max(2, width - pwdWidth - modeProfileWidth);
+
+		// Build pwd line with mode/profile right-aligned in accent color (if it fits)
+		let pwdLine: string;
+		if (pwdWidth + modeProfileWidth + 2 <= width) {
+			pwdLine = pwd + " ".repeat(modeProfilePadding) + theme.fg("accent", modeProfile);
+		} else {
+			// Not enough space, just show pwd
+			pwdLine = pwd;
+		}
+
 		// Build stats line
 		const statsParts = [];
 		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
@@ -201,8 +218,30 @@ export class FooterComponent implements Component {
 		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
 		const dimRemainder = theme.fg("dim", remainder);
 
-		const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-		const lines = [pwdLine, dimStatsLeft + dimRemainder];
+		// Build the final pwd line: dim the path, accent the mode/profile (if present)
+		let finalPwdLine: string;
+		if (pwdLine === pwd) {
+			// Just pwd, no mode/profile (or it didn't fit) - dim the whole thing
+			finalPwdLine = truncateToWidth(theme.fg("dim", pwdLine), width, theme.fg("dim", "..."));
+		} else {
+			// pwdLine has mode/profile appended with accent color
+			// Extract the plain text version for width calculation
+			const pwdLinePlain = pwd + " ".repeat(modeProfilePadding) + modeProfile;
+			// Truncate the plain text if needed
+			const truncatedPlain = truncateToWidth(pwdLinePlain, width, "...");
+			// Check if mode/profile was truncated out
+			if (!truncatedPlain.includes(modeProfile)) {
+				// Mode/profile didn't fit after truncation, just show dimmed truncated pwd
+				finalPwdLine = theme.fg("dim", truncatedPlain);
+			} else {
+				// Split at the mode/profile part and apply colors
+				const pwdPart = truncatedPlain.slice(0, truncatedPlain.indexOf(modeProfile));
+				const modeProfilePart = modeProfile;
+				finalPwdLine = theme.fg("dim", pwdPart) + theme.fg("accent", modeProfilePart);
+			}
+		}
+
+		const lines = [finalPwdLine, dimStatsLeft + dimRemainder];
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();

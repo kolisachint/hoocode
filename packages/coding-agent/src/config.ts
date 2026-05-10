@@ -423,7 +423,7 @@ const appConfig: AppConfigBlock = pkg.hoocodeConfig ?? pkg.piConfig ?? {};
 const appConfigName: string | undefined = appConfig.name;
 export const PACKAGE_NAME: string = pkg.name || "@kolisachint/hoocode-agent";
 export const APP_NAME: string = appConfigName || "hoocode";
-export const APP_TITLE: string = appConfigName ? APP_NAME : "hoocode";
+export const APP_TITLE: string = appConfigName ? APP_NAME : "HooCode";
 export const CONFIG_DIR_NAME: string = appConfig.configDir || ".hoocode";
 export const VERSION: string = pkg.version || "0.0.0";
 
@@ -437,7 +437,7 @@ export function expandTildePath(path: string): string {
 	return path;
 }
 
-const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
+const DEFAULT_SHARE_VIEWER_URL = "https://hoocode.dev/session/";
 
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId: string): string {

@@ -622,6 +622,11 @@ export function setupModeAndProfile(pi: ExtensionAPI): void {
 		cachedProfile = resolveProfile(config, ctx.cwd);
 		cachedSystemPrompt = buildSystemPrompt(cachedMode, cachedProfile, ctx.cwd);
 
+		// Update footer with active mode/profile
+		if (ctx.hasUI) {
+			ctx.ui.setModeProfile(cachedMode, cachedProfile);
+		}
+
 		// Apply tool filter defined by the active profile
 		const profileCfg = config.profiles?.[cachedProfile];
 		if (profileCfg?.enabled_tools && profileCfg.enabled_tools.length > 0) {

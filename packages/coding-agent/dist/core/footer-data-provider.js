@@ -306,5 +306,23 @@ export class FooterDataProvider {
             }
         }
     }
+    activeMode = "build";
+    activeProfile = "default";
+    /** Current active mode (e.g., ask, plan, build, agent, debug) */
+    getActiveMode() {
+        return this.activeMode;
+    }
+    /** Current active profile (e.g., default, data, devops) */
+    getActiveProfile() {
+        return this.activeProfile;
+    }
+    /** Update active mode */
+    setActiveMode(mode) {
+        this.activeMode = mode;
+    }
+    /** Update active profile */
+    setActiveProfile(profile) {
+        this.activeProfile = profile;
+    }
 }
 //# sourceMappingURL=footer-data-provider.js.map

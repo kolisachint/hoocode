@@ -331,7 +331,7 @@ const appConfig = pkg.hoocodeConfig ?? pkg.piConfig ?? {};
 const appConfigName = appConfig.name;
 export const PACKAGE_NAME = pkg.name || "@kolisachint/hoocode-agent";
 export const APP_NAME = appConfigName || "hoocode";
-export const APP_TITLE = appConfigName ? APP_NAME : "hoocode";
+export const APP_TITLE = appConfigName ? APP_NAME : "HooCode";
 export const CONFIG_DIR_NAME = appConfig.configDir || ".hoocode";
 export const VERSION = pkg.version || "0.0.0";
 // e.g., HOOCODE_CODING_AGENT_DIR
@@ -344,7 +344,7 @@ export function expandTildePath(path) {
         return homedir() + path.slice(1);
     return path;
 }
-const DEFAULT_SHARE_VIEWER_URL = "https://pi.dev/session/";
+const DEFAULT_SHARE_VIEWER_URL = "https://hoocode.dev/session/";
 /** Get the share viewer URL for a gist ID */
 export function getShareViewerUrl(gistId) {
     const baseUrl = (process.env.HOOCODE_SHARE_VIEWER_URL ?? process.env.PI_SHARE_VIEWER_URL) || DEFAULT_SHARE_VIEWER_URL;
