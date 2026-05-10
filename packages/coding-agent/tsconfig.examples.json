@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@kolisachint/hoocode-agent": ["./src/index.ts"],
+			"@kolisachint/hoocode-agent/hooks": ["./src/core/hooks/index.ts"],
+			"@kolisachint/hoocode-tui": ["../tui/src/index.ts"],
+			"@kolisachint/hoocode-ai": ["../ai/src/index.ts"],
+			"typebox": ["../../node_modules/typebox"]
+		},
+		"skipLibCheck": true
+	},
+	"include": ["examples/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}

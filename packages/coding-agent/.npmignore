@@ -1,0 +1,27 @@
+# Source — not needed at runtime
+src/
+tsconfig*.json
+biome.json
+.husky/
+
+# Test artifacts
+test/
+**/*.test.ts
+**/*.test.js
+*.tsbuildinfo
+
+# Dev-only tools
+scripts/
+
+# Local config
+.env
+.env.*
+.DS_Store
+*.log
+*.cpuprofile
+
+# Editor
+.vscode/
+.zed/
+.idea/
+*.swp

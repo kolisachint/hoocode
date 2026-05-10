@@ -1,0 +1,19 @@
+{
+	"name": "@kolisachint/hoocode-extension-sandbox",
+	"private": true,
+	"version": "1.4.0",
+	"type": "module",
+	"scripts": {
+		"clean": "echo 'nothing to clean'",
+		"build": "echo 'nothing to build'",
+		"check": "echo 'nothing to check'"
+	},
+	"hoocode": {
+		"extensions": [
+			"./index.ts"
+		]
+	},
+	"dependencies": {
+		"@anthropic-ai/sandbox-runtime": "^0.0.26"
+	}
+}

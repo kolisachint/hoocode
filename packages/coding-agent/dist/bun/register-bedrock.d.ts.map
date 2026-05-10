@@ -1,0 +1,1 @@
+{"version":3,"file":"register-bedrock.d.ts","sourceRoot":"","sources":["../../src/bun/register-bedrock.ts"],"names":[],"mappings":"","sourcesContent":["import { setBedrockProviderModule } from \"@kolisachint/hoocode-ai\";\nimport { bedrockProviderModule } from \"@kolisachint/hoocode-ai/bedrock-provider\";\n\nsetBedrockProviderModule(bedrockProviderModule);\n"]}
