@@ -599,7 +599,7 @@ Wave FINAL (4 parallel reviews, then user okay):
     Evidence: .sisyphus/evidence/task-8-examples-path.txt
   ```
 
-- [ ] 9. Create .github/workflows/build-binaries.yml
+- [x] 9. Create .github/workflows/build-binaries.yml
 
   **What to do**:
   - Create a new file `.github/workflows/build-binaries.yml` that:
@@ -677,7 +677,7 @@ Wave FINAL (4 parallel reviews, then user okay):
     Evidence: .sisyphus/evidence/task-9-release-step.txt
   ```
 
-- [ ] 10. Add raw .exe winget artifact to build-binaries.sh
+- [x] 10. Add raw .exe winget artifact to build-binaries.sh
 
   **What to do**:
   - Modify `scripts/build-binaries.sh` to additionally produce a standalone `.exe` for winget:
@@ -737,7 +737,7 @@ Wave FINAL (4 parallel reviews, then user okay):
     Evidence: .sisyphus/evidence/task-10-sha256.txt
   ```
 
-- [ ] 11. Create winget manifest generator script
+- [x] 11. Create winget manifest generator script
 
   **What to do**:
   - Create a script `scripts/generate-winget-manifest.mjs` that:
@@ -801,7 +801,7 @@ Wave FINAL (4 parallel reviews, then user okay):
     Evidence: .sisyphus/evidence/task-11-manifest-output.txt
   ```
 
-- [ ] 12. Update release.yml to create GitHub Releases with binary assets
+- [x] 12. Update release.yml to create GitHub Releases with binary assets
 
   **What to do**:
   - Modify `.github/workflows/release.yml` to:

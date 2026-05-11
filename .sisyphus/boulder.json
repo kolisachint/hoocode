@@ -18,6 +18,15 @@
       "agent": "Sisyphus-Junior",
       "category": "quick",
       "updated_at": "2026-05-11T17:37:38.146Z"
+    },
+    "todo:9": {
+      "task_key": "todo:9",
+      "task_label": "9",
+      "task_title": "Create .github/workflows/build-binaries.yml",
+      "session_id": "ses_1e7dcd7d2ffeQSAEd2wrT6gYJL",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-11T17:44:09.322Z"
     }
   }
 }

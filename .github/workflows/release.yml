@@ -42,3 +42,37 @@ jobs:
 
       - name: Push changes
         run: git push --follow-tags
+
+  binaries:
+    needs: [release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build all binaries
+        run: bash scripts/build-binaries.sh
+
+      - name: Generate SHA256 for winget
+        run: sha256sum binaries/hoocode-windows-x64.exe | cut -d' ' -f1 > binaries/hoocode-windows-x64.exe.sha256
+
+      - name: Create Release
+        run: gh release create v$(node -p "require('./packages/coding-agent/package.json').version") --title "v$(node -p "require('./packages/coding-agent/package.json').version")" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload Release Assets
+        run: gh release upload v$(node -p "require('./packages/coding-agent/package.json').version") binaries/* --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -17,6 +17,8 @@
 #     hoocode-linux-x64.tar.gz
 #     hoocode-linux-arm64.tar.gz
 #     hoocode-windows-x64.zip
+#     hoocode-windows-x64.exe (standalone for winget)
+#     hoocode-windows-x64.exe.sha256
 
 set -euo pipefail
 
@@ -152,6 +154,22 @@ for platform in "${PLATFORMS[@]}"; do
         mv $platform hoocode && tar -czf hoocode-$platform.tar.gz hoocode && mv hoocode $platform
     fi
 done
+
+# Standalone .exe for winget (raw binary, no bundled assets)
+if [[ " ${PLATFORMS[*]} " =~ " windows-x64 " ]]; then
+    if [ -f "windows-x64/hoocode.exe" ]; then
+        cp "windows-x64/hoocode.exe" "hoocode-windows-x64.exe"
+        echo "  -> hoocode-windows-x64.exe (standalone for winget)"
+
+        # Generate SHA256 checksum (works on both macOS and Linux)
+        if command -v sha256sum &>/dev/null; then
+            sha256sum "hoocode-windows-x64.exe" > "hoocode-windows-x64.exe.sha256"
+        elif command -v shasum &>/dev/null; then
+            shasum -a 256 "hoocode-windows-x64.exe" > "hoocode-windows-x64.exe.sha256"
+        fi
+        echo "  -> hoocode-windows-x64.exe.sha256"
+    fi
+fi
 
 # Extract archives for easy local testing
 echo "==> Extracting archives for testing..."
