@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-11
+
 ### Added
 
 - Added NVIDIA provider support with `NVIDIA_API_KEY` authentication and default model `meta/llama-3.3-70b-instruct`.

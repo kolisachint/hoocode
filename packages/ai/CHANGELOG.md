@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-11
+
 ### Added
 
 - Added NVIDIA as a built-in OpenAI-compatible provider with 67 generated models and `NVIDIA_API_KEY` authentication.
