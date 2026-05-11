@@ -42,6 +42,7 @@ export {
 	type LsToolInput,
 	type LsToolOptions,
 } from "./ls.js";
+export { expandPath, resolveReadPath, resolveToCwd } from "./path-utils.js";
 export {
 	createReadTool,
 	createReadToolDefinition,

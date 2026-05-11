@@ -1,6 +1,33 @@
 import { accessSync, constants } from "node:fs";
 import * as os from "node:os";
 import { isAbsolute, resolve as resolvePath } from "node:path";
+import { fileURLToPath } from "node:url";
+
+/**
+ * Check if a string is a file URL (starts with "file:///").
+ */
+export function isFileUrl(filePath: string): boolean {
+	return filePath.startsWith("file:///");
+}
+
+/**
+ * Convert a file URL to a file path.
+ * Handles both Unix-style (file:///path) and Windows-style (file:///C:/path) file URLs.
+ * Returns the original path if it's not a file URL.
+ */
+export function normalizeFileUrl(filePath: string): string {
+	if (!isFileUrl(filePath)) {
+		return filePath;
+	}
+
+	try {
+		// fileURLToPath handles both Unix and Windows file URLs
+		return fileURLToPath(filePath);
+	} catch {
+		// If fileURLToPath fails, manually strip the file:/// prefix
+		return filePath.replace(/^file:\/\//, "");
+	}
+}
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
 const NARROW_NO_BREAK_SPACE = "\u202F";
@@ -37,7 +64,9 @@ function normalizeAtPrefix(filePath: string): string {
 }
 
 export function expandPath(filePath: string): string {
-	const normalized = normalizeUnicodeSpaces(normalizeAtPrefix(filePath));
+	// Normalize file URLs to paths first
+	const normalizedFileUrl = normalizeFileUrl(filePath);
+	const normalized = normalizeUnicodeSpaces(normalizeAtPrefix(normalizedFileUrl));
 	if (normalized === "~") {
 		return os.homedir();
 	}

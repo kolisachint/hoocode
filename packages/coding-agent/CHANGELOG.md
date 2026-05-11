@@ -2,7 +2,9 @@
 
 ## [Unreleased]
 
-## [Unreleased]
+### Fixed
+
+- Fixed `ERR_SUPPORTED_ESM_URL_SCHEME` error on Windows with Bun by normalizing file URLs to file paths in path resolution functions.
 
 ## [0.1.4] - 2026-05-11
 
