@@ -1,0 +1,23 @@
+{
+  "active_plan": "/Users/sachinkoli/github/hoocode/.sisyphus/plans/windows-winget-binary.md",
+  "started_at": "2026-05-11T16:37:47.439Z",
+  "session_ids": [
+    "ses_1e8262d5effen1HtdE8JQce9hI"
+  ],
+  "session_origins": {
+    "ses_1e8262d5effen1HtdE8JQce9hI": "direct"
+  },
+  "plan_name": "windows-winget-binary",
+  "agent": "atlas",
+  "task_sessions": {
+    "todo:3": {
+      "task_key": "todo:3",
+      "task_label": "3",
+      "task_title": "Update system prompt \"pi\" references",
+      "session_id": "ses_1e7e601a4ffe8xM08FilOddWK2",
+      "agent": "Sisyphus-Junior",
+      "category": "quick",
+      "updated_at": "2026-05-11T17:37:38.146Z"
+    }
+  }
+}

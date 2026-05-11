@@ -64,7 +64,7 @@ function printPackageCommandHelp(command: PackageCommand): void {
 Install a package and add it to settings.
 
 Options:
-  -l, --local    Install project-locally (.pi/settings.json)
+  -l, --local    Install project-locally (.hoocode/settings.json)
 
 Examples:
   ${APP_NAME} install npm:@foo/bar
@@ -84,7 +84,7 @@ Remove a package and its source from settings.
 Alias: ${APP_NAME} uninstall <source> [-l]
 
 Options:
-  -l, --local    Remove from project settings (.pi/settings.json)
+  -l, --local    Remove from project settings (.hoocode/settings.json)
 
 Examples:
   ${APP_NAME} remove npm:@foo/bar
@@ -96,18 +96,18 @@ Examples:
 			console.log(`${chalk.bold("Usage:")}
   ${getPackageCommandUsage("update")}
 
-Update pi and installed packages.
+Update hoocode and installed packages.
 
 Options:
-  --self                  Update pi only
+  --self                  Update hoocode only
   --extensions            Update installed packages only
   --extension <source>    Update one package only
-  --force                 Reinstall pi even if the current version is latest
+  --force                 Reinstall hoocode even if the current version is latest
 
 Short forms:
-  ${APP_NAME} update                Update pi and all extensions
+  ${APP_NAME} update                Update hoocode and all extensions
   ${APP_NAME} update <source>       Update one package
-  ${APP_NAME} update pi             Update pi only (self works as alias to pi)
+  ${APP_NAME} update pi             Update hoocode only (self works as alias to pi)
 `);
 			return;
 
@@ -230,7 +230,11 @@ function parsePackageCommand(args: string[]): PackageCommandOptions | undefined 
 			}
 			updateTarget = { type: "extensions", source: extensionFlagSource };
 		} else if (source) {
-			const sourceIsSelf = source === "self" || source === "pi" || source === "hoocode" || source === "hoo";
+			const sourceIsSelf =
+				source === "self" ||
+				source === "pi" /* backward compat alias */ ||
+				source === "hoocode" ||
+				source === "hoo";
 			if (sourceIsSelf) {
 				updateTarget = extensionsFlag ? { type: "all" } : { type: "self" };
 			} else {
@@ -280,7 +284,7 @@ function printSelfUpdateUnavailable(npmCommand?: string[], updatePackageName = P
 	const entrypoint = process.argv[1];
 	if (entrypoint) {
 		console.error("");
-		console.error(`Location of pi executable: ${entrypoint}`);
+		console.error(`Location of hoocode executable: ${entrypoint}`);
 	}
 }
 

@@ -11,9 +11,9 @@
  *
  * Config files (merged, project takes precedence):
  * - ~/.hoocode/agent/extensions/sandbox.json (global)
- * - <cwd>/.pi/sandbox.json (project-local)
+ * - <cwd>/.hoocode/sandbox.json (project-local)
  *
- * Example .pi/sandbox.json:
+ * Example .hoocode/sandbox.json:
  * ```json
  * {
  *   "enabled": true,
@@ -77,7 +77,7 @@ const DEFAULT_CONFIG: SandboxConfig = {
 };
 
 function loadConfig(cwd: string): SandboxConfig {
-	const projectConfigPath = join(cwd, ".pi", "sandbox.json");
+	const projectConfigPath = join(cwd, ".hoocode", "sandbox.json");
 	const globalConfigPath = join(getAgentDir(), "extensions", "sandbox.json");
 
 	let globalConfig: Partial<SandboxConfig> = {};

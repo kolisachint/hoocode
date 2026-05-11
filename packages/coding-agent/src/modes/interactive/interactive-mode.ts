@@ -861,7 +861,7 @@ export class InteractiveMode {
 	}
 
 	private reportInstallTelemetry(_version: string): void {
-		// Disabled in HooCode fork: upstream pi.dev install-telemetry endpoint is not run by this fork.
+		// Disabled in HooCode fork: this is forked from pi (upstream pi.dev install-telemetry endpoint is not run by this fork).
 	}
 
 	private getMarkdownThemeWithSettings(): MarkdownTheme {

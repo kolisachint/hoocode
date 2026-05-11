@@ -9,7 +9,7 @@ import type { ExtensionAPI, Theme } from "@kolisachint/hoocode-agent";
 import { VERSION } from "@kolisachint/hoocode-agent";
 
 // --- PI MASCOT ---
-// Based on pi_mascot.ts - the pi agent character
+// Based on hoocode_mascot.ts - the hoocode agent character
 function getPiMascot(theme: Theme): string[] {
 	// --- COLORS ---
 	// 3b1b Blue: R=80, G=180, B=230

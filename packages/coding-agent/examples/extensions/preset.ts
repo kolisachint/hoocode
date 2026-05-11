@@ -7,7 +7,7 @@
  *
  * Config files (merged, project takes precedence):
  * - ~/.hoocode/agent/presets.json (global)
- * - <cwd>/.pi/presets.json (project-local)
+ * - <cwd>/.hoocode/presets.json (project-local)
  *
  * Example presets.json:
  * ```json
@@ -69,7 +69,7 @@ interface PresetsConfig {
  */
 function loadPresets(cwd: string): PresetsConfig {
 	const globalPath = join(getAgentDir(), "presets.json");
-	const projectPath = join(cwd, ".pi", "presets.json");
+	const projectPath = join(cwd, ".hoocode", "presets.json");
 
 	let globalPresets: PresetsConfig = {};
 	let projectPresets: PresetsConfig = {};
@@ -201,7 +201,7 @@ export default function presetExtension(pi: ExtensionAPI) {
 
 		if (presetNames.length === 0) {
 			ctx.ui.notify(
-				"No presets defined. Add presets to ~/.hoocode/agent/presets.json or .pi/presets.json",
+				"No presets defined. Add presets to ~/.hoocode/agent/presets.json or .hoocode/presets.json",
 				"warning",
 			);
 			return;
@@ -312,7 +312,7 @@ export default function presetExtension(pi: ExtensionAPI) {
 		const presetNames = getPresetOrder();
 		if (presetNames.length === 0) {
 			ctx.ui.notify(
-				"No presets defined. Add presets to ~/.hoocode/agent/presets.json or .pi/presets.json",
+				"No presets defined. Add presets to ~/.hoocode/agent/presets.json or .hoocode/presets.json",
 				"warning",
 			);
 			return;

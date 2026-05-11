@@ -373,7 +373,7 @@ describe("skills", () => {
 		});
 
 		it("should expand ~ in skillPaths", () => {
-			const homeSkillsDir = join(homedir(), ".pi/agent/skills");
+			const homeSkillsDir = join(homedir(), ".hoocode/agent/skills");
 			const { skills: withTilde } = loadSkills({
 				agentDir: emptyAgentDir,
 				cwd: emptyCwd,

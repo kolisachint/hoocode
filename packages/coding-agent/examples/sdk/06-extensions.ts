@@ -6,7 +6,7 @@
  *
  * By default, extension files are discovered from:
  * - ~/.hoocode/agent/extensions/
- * - <cwd>/.pi/extensions/
+ * - <cwd>/.hoocode/extensions/
  * - Paths specified in settings.json "extensions" array
  *
  * An extension is a TypeScript file that exports a default function:

@@ -5,7 +5,7 @@
  * that lists all available slash commands in the current session.
  *
  * Usage:
- * 1. Copy this file to ~/.hoocode/agent/extensions/ or your project's .pi/extensions/
+ * 1. Copy this file to ~/.hoocode/agent/extensions/ or your project's .hoocode/extensions/
  * 2. Use /commands to see available commands
  * 3. Use /commands extensions to filter by source
  */

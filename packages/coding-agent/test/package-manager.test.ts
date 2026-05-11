@@ -275,7 +275,7 @@ Content`,
 	});
 
 	describe("auto-discovered skill metadata", () => {
-		it("should use the agent dir as baseDir for user .pi/agent skills", async () => {
+		it("should use the agent dir as baseDir for user .hoocode/agent skills", async () => {
 			const skillPath = join(agentDir, "skills", "user-pi", "SKILL.md");
 			mkdirSync(join(agentDir, "skills", "user-pi"), { recursive: true });
 			writeFileSync(skillPath, "---\nname: user-pi\ndescription: user pi\n---\n");
