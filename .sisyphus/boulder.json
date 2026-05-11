@@ -27,6 +27,15 @@
       "agent": "Sisyphus-Junior",
       "category": "unspecified-high",
       "updated_at": "2026-05-11T17:44:09.322Z"
+    },
+    "todo:13": {
+      "task_key": "todo:13",
+      "task_label": "13",
+      "task_title": "Tag v0.2.0 and create GitHub Release with all binary assets",
+      "session_id": "ses_1e7dacc28ffepDjZbvudYFIHFt",
+      "agent": "Sisyphus-Junior",
+      "category": "unspecified-high",
+      "updated_at": "2026-05-11T17:46:27.283Z"
     }
   }
 }

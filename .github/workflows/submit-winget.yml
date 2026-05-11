@@ -1,0 +1,38 @@
+name: Submit to Winget
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download manifest from release
+        run: gh release download ${{ github.event.release.tag_name }} -p "kolisachint.hoocode.yaml" -O /tmp/manifest.yaml
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Install wingetcreate
+        run: dotnet tool install --global wingetcreate
+
+      - name: Submit to winget-pkgs
+        run: wingetcreate submit --token ${{ secrets.WINGET_PAT }} /tmp/manifest.yaml
+
+      - name: Report failure
+        if: failure()
+        run: |
+          echo "winget submission failed. Common issues:"
+          echo "1. Duplicate submission - manifest already exists in winget-pkgs"
+          echo "2. Invalid manifest - check YAML syntax and required fields"
+          echo "3. PAT issues - ensure WINGET_PAT has public_repo and workflow scopes"
+          echo ""
+          echo "Manual submission fallback:"
+          echo "1. Fork https://github.com/microsoft/winget-pkgs"
+          echo "2. Clone your fork locally"
+          echo "3. Copy manifest to: manifests/k/kolisachint/hoocode/<version>/kolisachint.hoocode.yaml"
+          echo "4. Commit and push to your fork"
+          echo "5. Open PR at https://github.com/microsoft/winget-pkgs/compare"

@@ -858,7 +858,7 @@ Wave FINAL (4 parallel reviews, then user okay):
     Evidence: .sisyphus/evidence/task-12-release-upload.txt
   ```
 
-- [ ] 13. Tag v0.2.0 and create GitHub Release with all binary assets
+- [x] 13. Tag v0.2.0 and create GitHub Release with all binary assets
 
   **What to do**:
   - Create git tag `v0.2.0` at current HEAD:
@@ -920,7 +920,7 @@ Wave FINAL (4 parallel reviews, then user okay):
     Evidence: .sisyphus/evidence/task-13-release-assets.txt
   ```
 
-- [ ] 14. Generate winget manifest for v0.2.0 release
+- [x] 14. Generate winget manifest for v0.2.0 release
 
   **What to do**:
   - Run the manifest generator script (from Task 11) with the v0.2.0 release data:
@@ -968,7 +968,7 @@ Wave FINAL (4 parallel reviews, then user okay):
     Evidence: .sisyphus/evidence/task-14-sha256-match.txt
   ```
 
-- [ ] 15. Create winget PR submission workflow or submission guide
+- [x] 15. Create winget PR submission workflow or submission guide
 
   **What to do**:
   - **Option A (Fully Automated)**: Create `.github/workflows/submit-winget.yml` that:
