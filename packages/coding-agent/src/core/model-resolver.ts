@@ -44,6 +44,7 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	"xiaomi-token-plan-cn": "mimo-v2.5-pro",
 	"xiaomi-token-plan-ams": "mimo-v2.5-pro",
 	"xiaomi-token-plan-sgp": "mimo-v2.5-pro",
+	nvidia: "meta/llama-3.3-70b-instruct",
 };
 
 export interface ScopedModel {

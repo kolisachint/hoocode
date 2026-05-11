@@ -306,6 +306,29 @@ describe("totalTokens field", () => {
 	});
 
 	// =========================================================================
+	// NVIDIA
+	// =========================================================================
+
+	describe.skipIf(!process.env.NVIDIA_API_KEY)("NVIDIA", () => {
+		it(
+			"llama-3.3-70b - should return totalTokens equal to sum of components",
+			{ retry: 3, timeout: 60000 },
+			async () => {
+				const llm = getModel("nvidia", "meta/llama-3.3-70b-instruct");
+
+				console.log(`\nNVIDIA / ${llm.id}:`);
+				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.NVIDIA_API_KEY });
+
+				logUsage("First request", first);
+				logUsage("Second request", second);
+
+				assertTotalTokensEqualsComponents(first);
+				assertTotalTokensEqualsComponents(second);
+			},
+		);
+	});
+
+	// =========================================================================
 	// Cloudflare Workers AI
 	// =========================================================================
 

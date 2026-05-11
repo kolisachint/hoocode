@@ -307,6 +307,26 @@ describe("AI Providers Empty Message Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.NVIDIA_API_KEY)("NVIDIA Provider Empty Messages", () => {
+		const llm = getModel("nvidia", "meta/llama-3.3-70b-instruct");
+
+		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyMessage(llm);
+		});
+
+		it("should handle empty string content", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyStringMessage(llm);
+		});
+
+		it("should handle whitespace-only content", { retry: 3, timeout: 30000 }, async () => {
+			await testWhitespaceOnlyMessage(llm);
+		});
+
+		it("should handle empty assistant message in conversation", { retry: 3, timeout: 30000 }, async () => {
+			await testEmptyAssistantMessage(llm);
+		});
+	});
+
 	describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI Provider Empty Messages", () => {
 		const llm = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
 

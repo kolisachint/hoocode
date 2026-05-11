@@ -615,6 +615,22 @@ describe("Generate E2E Tests", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.NVIDIA_API_KEY)("NVIDIA Provider (Llama 3.3 70b via OpenAI Completions)", () => {
+		const llm = getModel("nvidia", "meta/llama-3.3-70b-instruct");
+
+		it("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm);
+		});
+
+		it("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm);
+		});
+
+		it("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm);
+		});
+	});
+
 	describe.skipIf(!hasCloudflareWorkersAICredentials())(
 		"Cloudflare Workers AI Provider (Kimi K2.6 via OpenAI Completions)",
 		() => {

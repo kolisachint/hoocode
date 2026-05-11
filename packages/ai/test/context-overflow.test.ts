@@ -310,6 +310,21 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
+	// NVIDIA
+	// =============================================================================
+
+	describe.skipIf(!process.env.NVIDIA_API_KEY)("NVIDIA", () => {
+		it("llama-3.3-70b - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("nvidia", "meta/llama-3.3-70b-instruct");
+			const result = await testContextOverflow(model, process.env.NVIDIA_API_KEY!);
+			logResult(result);
+
+			expect(result.stopReason).toBe("error");
+			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
+		}, 120000);
+	});
+
+	// =============================================================================
 	// Hugging Face
 	// Uses OpenAI-compatible Inference Router
 	// =============================================================================

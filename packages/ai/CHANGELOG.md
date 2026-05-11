@@ -4,15 +4,12 @@
 
 ### Added
 
+- Added NVIDIA as a built-in OpenAI-compatible provider with 67 generated models and `NVIDIA_API_KEY` authentication.
 - Added Together AI as a built-in OpenAI-compatible provider with generated model metadata and `TOGETHER_API_KEY` authentication ([#3624](https://github.com/earendil-works/pi-mono/pull/3624) by [@Nutlope](https://github.com/Nutlope)).
 
 ### Fixed
 
 - Fixed OpenAI Responses requests for models that support disabling reasoning to send `reasoning.effort: "none"` when thinking is off.
-
-## [0.74.0] - 2026-05-07
-
-## [0.73.1] - 2026-05-07
 
 ### Added
 

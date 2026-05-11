@@ -156,6 +156,14 @@ describe("Token Statistics on Abort", () => {
 		});
 	});
 
+	describe.skipIf(!process.env.NVIDIA_API_KEY)("NVIDIA Provider", () => {
+		const llm = getModel("nvidia", "meta/llama-3.3-70b-instruct");
+
+		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
+			await testTokensOnAbort(llm);
+		});
+	});
+
 	describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI Provider", () => {
 		const llm = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
 
