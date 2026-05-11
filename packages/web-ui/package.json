@@ -1,6 +1,6 @@
 {
 	"name": "@kolisachint/hoocode-web-ui",
-	"version": "0.1.4",
+	"version": "0.2.0",
 	"description": "Reusable web UI components for AI chat interfaces powered by @kolisachint/hoocode-ai",
 	"type": "module",
 	"main": "dist/index.js",
