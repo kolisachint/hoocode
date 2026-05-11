@@ -1,0 +1,21 @@
+[install]
+# Use the default registry
+registry = "https://registry.npmjs.org"
+
+# Enable hoisting for compatibility
+hoist = true
+
+# Include peer dependencies
+peer = true
+
+[run]
+# Enable TypeScript execution without precompilation
+bun = true
+
+[test]
+# Default test runner configuration
+coverage = false
+
+[build]
+# Default build target
+target = "node"
