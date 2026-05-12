@@ -56,7 +56,7 @@ function generateYaml(version, sha256, url) {
     `    InstallerUrl: ${url}`,
     `    InstallerSha256: ${sha256}`,
     "ManifestType: singleton",
-    "ManifestVersion: 1.0.0",
+    "ManifestVersion: 1.6.0",
     "",
   ].join("\n");
 }
