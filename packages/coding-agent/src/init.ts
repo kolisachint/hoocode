@@ -1,12 +1,12 @@
 import { copyFile, mkdir, readdir, stat } from "fs/promises";
-import { homedir } from "os";
+import { getHooCodeDir } from "./config.js";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-const HOOCODE_DIR = join(homedir(), ".hoocode");
+const HOOCODE_DIR = getHooCodeDir();
 const TEMPLATES_DIR = join(__dirname, "..", "templates");
 
 async function exists(p: string): Promise<boolean> {
@@ -39,7 +39,7 @@ async function _copyDir(srcDir: string, destDir: string): Promise<void> {
 }
 
 export async function initConfig(): Promise<void> {
-	const configPath = join(HOOCODE_DIR, "config.json");
+	const configPath = join(HOOCODE_DIR, "agent", "hoo-config.json");
 
 	if (await exists(configPath)) {
 		return;
@@ -49,6 +49,7 @@ export async function initConfig(): Promise<void> {
 	await mkdir(join(HOOCODE_DIR, "profiles"), { recursive: true });
 	await mkdir(join(HOOCODE_DIR, "mcp-servers"), { recursive: true });
 	await mkdir(join(HOOCODE_DIR, "extensions"), { recursive: true });
+	await mkdir(join(HOOCODE_DIR, "agent"), { recursive: true });
 
 	await copyFile(join(TEMPLATES_DIR, "default-config.json"), configPath);
 

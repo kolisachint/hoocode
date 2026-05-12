@@ -20,7 +20,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { homedir } from "node:os";
+import { getHooCodeDir } from "../../config.js";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type Static, Type } from "typebox";
@@ -39,10 +39,64 @@ import type {
 import { isToolCallEventType } from "../../core/extensions/types.js";
 
 // ============================================================================
+// Fallback defaults for mode and profile prompts
+// ============================================================================
+
+const MODE_DEFAULTS: Record<string, string> = {
+	ask: `You are in ASK mode — read-only Q&A.
+Answer questions about the codebase. Trace logic, compare approaches, explain patterns.
+You may read any file but NEVER write, edit, or execute commands.
+If asked to make changes, refuse and suggest switching to /mode build.
+Cite specific file paths and line numbers in your answers.`,
+
+	plan: `You are in PLAN mode — exploration and planning.
+Explore the codebase thoroughly. Understand the current structure.
+Draft a complete plan with sections: Goal, Files to modify, New files, Tests, Verification.
+Write the plan to .hoocode/plan.md.
+When the plan is complete, tell the user to run /approve to execute it.`,
+
+	build: `You are in BUILD mode — careful implementation.
+Read files before editing them. Show diffs before non-trivial changes.
+Ask for confirmation before destructive operations (delete, reformat).
+Run tests after every logical unit of work.
+Prefer the smallest change that achieves the goal.
+Follow existing code patterns and conventions.`,
+
+	agent: `You are in AGENT mode — autonomous multi-step work.
+You have full access to read, bash, edit, and write tools.
+Work through problems step by step. Report progress every few steps.
+Stop and ask if you hit genuine ambiguity or need a decision.
+Output a summary of what was done when you finish.`,
+
+	debug: `You are in DEBUG mode — root cause analysis.
+Gather evidence: read files, check logs, reproduce the issue.
+Trace the call path from entry to failure point.
+State the root cause in one sentence.
+Describe the fix precisely but do NOT apply it.
+To fix, switch to /mode build.`,
+};
+
+const PROFILE_DEFAULTS: Record<string, string> = {
+	data: `**Profile: Data Engineering**
+- Dry-run before mutating SQL statements.
+- No SELECT * on large tables — always specify columns.
+- Inspect table schemas before writing queries.
+- Validate join keys and cardinality.
+- Prefer incremental processing over full refreshes.`,
+
+	devops: `**Profile: DevOps / Infrastructure**
+- Never run terraform apply or kubectl delete without showing the plan first.
+- Prefer declarative configuration over imperative commands.
+- Never hardcode secrets — use environment variables or secret managers.
+- Every change needs a rollback strategy.
+- Check existing resources before creating new ones.`,
+};
+
+// ============================================================================
 // Shared paths
 // ============================================================================
 
-const HOOCODE_DIR = join(homedir(), ".hoocode");
+const HOOCODE_DIR = getHooCodeDir();
 const GLOBAL_CONFIG_PATH = join(HOOCODE_DIR, "agent", "hoo-config.json");
 
 // ============================================================================
@@ -537,13 +591,13 @@ export function buildSystemPrompt(mode: string, profile: string, cwd: string): s
 	}
 
 	// Layer 1: mode system prompt (~/.hoocode/modes/{mode}/system.md)
-	const modePrompt = tryRead(join(HOOCODE_DIR, "modes", mode, "system.md"));
+	const modePrompt = tryRead(join(HOOCODE_DIR, "modes", mode, "system.md")) ?? MODE_DEFAULTS[mode];
 	if (modePrompt) layers.push(modePrompt);
 
 	// Layer 2: profile context — omit for "default" (no extra domain constraints)
 	// (~/.hoocode/profiles/{profile}/context.md)
 	if (profile !== DEFAULT_PROFILE) {
-		const profileContext = tryRead(join(HOOCODE_DIR, "profiles", profile, "context.md"));
+		const profileContext = tryRead(join(HOOCODE_DIR, "profiles", profile, "context.md")) ?? PROFILE_DEFAULTS[profile];
 		if (profileContext) layers.push(profileContext);
 	}
 
