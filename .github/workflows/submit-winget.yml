@@ -17,6 +17,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
 
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.x
+
       - name: Install wingetcreate
         run: dotnet tool install --global wingetcreate
 
