@@ -7,38 +7,33 @@ on:
 
 jobs:
   submit:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Download manifest from release
-        run: gh release download ${{ github.event.release.tag_name }} -p "kolisachint.hoocode.yaml" -O /tmp/manifest.yaml
+        run: gh release download ${{ github.event.release.tag_name }} -p "kolisachint.hoocode.yaml" -O "$env:TEMP\manifest.yaml"
         env:
           GH_TOKEN: ${{ github.token }}
 
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: 8.x
-
-      - name: Install wingetcreate
-        run: dotnet tool install --global wingetcreate
+      - name: Download wingetcreate
+        run: Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
 
       - name: Submit to winget-pkgs
-        run: wingetcreate submit --token ${{ secrets.WINGET_PAT }} /tmp/manifest.yaml
+        run: .\wingetcreate.exe submit --token ${{ secrets.WINGET_PAT }} "$env:TEMP\manifest.yaml"
 
       - name: Report failure
         if: failure()
         run: |
-          echo "winget submission failed. Common issues:"
-          echo "1. Duplicate submission - manifest already exists in winget-pkgs"
-          echo "2. Invalid manifest - check YAML syntax and required fields"
-          echo "3. PAT issues - ensure WINGET_PAT has public_repo and workflow scopes"
-          echo ""
-          echo "Manual submission fallback:"
-          echo "1. Fork https://github.com/microsoft/winget-pkgs"
-          echo "2. Clone your fork locally"
-          echo "3. Copy manifest to: manifests/k/kolisachint/hoocode/<version>/kolisachint.hoocode.yaml"
-          echo "4. Commit and push to your fork"
-          echo "5. Open PR at https://github.com/microsoft/winget-pkgs/compare"
+          Write-Host "winget submission failed. Common issues:"
+          Write-Host "1. Duplicate submission - manifest already exists in winget-pkgs"
+          Write-Host "2. Invalid manifest - check YAML syntax and required fields"
+          Write-Host "3. PAT issues - ensure WINGET_PAT has public_repo scope"
+          Write-Host ""
+          Write-Host "Manual submission fallback:"
+          Write-Host "1. Fork https://github.com/microsoft/winget-pkgs"
+          Write-Host "2. Clone your fork locally"
+          Write-Host "3. Copy manifest to: manifests/k/kolisachint/hoocode/<version>/kolisachint.hoocode.yaml"
+          Write-Host "4. Commit and push to your fork"
+          Write-Host "5. Open PR at https://github.com/microsoft/winget-pkgs/compare"
