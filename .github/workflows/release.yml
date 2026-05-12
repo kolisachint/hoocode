@@ -65,7 +65,20 @@ jobs:
         run: bash scripts/build-binaries.sh
 
       - name: Generate SHA256 for winget
-        run: sha256sum binaries/hoocode-windows-x64.exe | cut -d' ' -f1 > binaries/hoocode-windows-x64.exe.sha256
+        run: |
+          BIN_DIR="packages/coding-agent/binaries"
+          sha256sum "$BIN_DIR/hoocode-windows-x64.exe" | cut -d' ' -f1 > "$BIN_DIR/hoocode-windows-x64.exe.sha256"
+
+      - name: Generate winget manifest
+        run: |
+          BIN_DIR="packages/coding-agent/binaries"
+          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          SHA256=$(cat "$BIN_DIR/hoocode-windows-x64.exe.sha256" | awk '{print $1}')
+          node scripts/generate-winget-manifest.mjs \
+            "$VERSION" \
+            "$SHA256" \
+            "https://github.com/kolisachint/hoocode/releases/download/v${VERSION}/hoocode-windows-x64.exe" \
+            --output "$BIN_DIR/kolisachint.hoocode.yaml"
 
       - name: Create Release
         run: gh release create v$(node -p "require('./packages/coding-agent/package.json').version") --title "v$(node -p "require('./packages/coding-agent/package.json').version")" --generate-notes
@@ -73,6 +86,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
 
       - name: Upload Release Assets
-        run: gh release upload v$(node -p "require('./packages/coding-agent/package.json').version") binaries/* --clobber
+        run: gh release upload v$(node -p "require('./packages/coding-agent/package.json').version") packages/coding-agent/binaries/* --clobber
         env:
           GH_TOKEN: ${{ github.token }}

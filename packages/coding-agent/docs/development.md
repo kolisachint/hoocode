@@ -6,7 +6,7 @@ See [AGENTS.md](../../../AGENTS.md) for additional guidelines.
 
 ```bash
 git clone https://github.com/kolisachint/hoocode
-cd pi-mono
+cd hoocode
 npm install
 npm run build
 ```
@@ -14,7 +14,7 @@ npm run build
 Run from source:
 
 ```bash
-/path/to/pi-mono/hoocode-test.sh
+/path/to/hoocode/hoocode-test.sh
 ```
 
 The script can be run from any directory. HooCode keeps the caller's current working directory.

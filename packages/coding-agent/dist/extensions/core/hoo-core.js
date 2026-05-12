@@ -52,10 +52,12 @@ function writeConfig(config) {
  * Merge rules:
  * - Scalars (active_mode, active_profile): project wins if set
  * - modes[x].auto_allow: union of global + project arrays
+ * - modes[x].allowed_write_paths: union of global + project arrays
+ * - modes[x].enabled_tools: project wins if set, else falls back to global
  * - profiles[x].enabled_tools: project wins if set, else falls back to global
  * - profile_detectors: project list is prepended so project markers are checked first
  */
-function mergeConfigs(global, project) {
+export function mergeConfigs(global, project) {
     const merged = { ...global };
     if (project.active_mode !== undefined)
         merged.active_mode = project.active_mode;
@@ -70,6 +72,10 @@ function mergeConfigs(global, project) {
                 ...projectCfg,
                 // Union both auto_allow lists so project can extend, not just replace
                 auto_allow: Array.from(new Set([...(globalCfg.auto_allow ?? []), ...(projectCfg.auto_allow ?? [])])),
+                // Union allowed_write_paths so project can extend
+                allowed_write_paths: Array.from(new Set([...(globalCfg.allowed_write_paths ?? []), ...(projectCfg.allowed_write_paths ?? [])])),
+                // enabled_tools: project wins if set, else falls back to global
+                enabled_tools: projectCfg.enabled_tools ?? globalCfg.enabled_tools,
             };
         }
     }
@@ -93,7 +99,7 @@ function mergeConfigs(global, project) {
  * `./.hoocode/config.json`. Project values win on all scalar fields; arrays are
  * unioned (see mergeConfigs for full rules).
  */
-function readMergedConfig(cwd) {
+export function readMergedConfig(cwd) {
     const global = readConfig();
     const projectPath = join(cwd, ".hoocode", "config.json");
     if (!existsSync(projectPath))
@@ -110,6 +116,26 @@ function readMergedConfig(cwd) {
 // A. Permission Gate
 // ============================================================================
 const GATED_TOOLS = new Set(["bash", "write", "edit"]);
+/**
+ * Checks if a file path matches any of the allowed patterns.
+ * Supports glob patterns with * and exact paths.
+ */
+function matchesAllowedPath(filePath, allowedPatterns) {
+    if (allowedPatterns.length === 0)
+        return true;
+    for (const pattern of allowedPatterns) {
+        // Exact match
+        if (pattern === filePath)
+            return true;
+        // Glob pattern matching for *
+        if (pattern.includes("*")) {
+            const regex = new RegExp(`^${pattern.replace(/\*/g, ".*")}$`);
+            if (regex.test(filePath))
+                return true;
+        }
+    }
+    return false;
+}
 function describeTool(event) {
     if (isToolCallEventType("bash", event)) {
         return `$ ${event.input.command.replace(/\s+/g, " ").slice(0, 100)}`;
@@ -131,7 +157,20 @@ export function setupPermissionGate(pi) {
         // Use the merged config so project-local auto_allow entries are respected
         const config = readMergedConfig(ctx.cwd);
         const mode = config.active_mode ?? "build";
-        const autoAllow = config.modes?.[mode]?.auto_allow ?? [];
+        const modeCfg = config.modes?.[mode];
+        const autoAllow = modeCfg?.auto_allow ?? [];
+        // Check allowed_write_paths for write/edit operations
+        if ((event.toolName === "write" || event.toolName === "edit") && modeCfg?.allowed_write_paths) {
+            const filePath = event.input.file_path ?? "";
+            if (!matchesAllowedPath(filePath, modeCfg.allowed_write_paths)) {
+                return {
+                    block: true,
+                    reason: `Mode "${mode}" only allows writes to: ${modeCfg.allowed_write_paths.join(", ")}. ` +
+                        `Attempted to ${event.toolName}: ${filePath}. ` +
+                        `Switch to "/mode build" or "/mode agent" to modify source files.`,
+                };
+            }
+        }
         if (autoAllow.includes(event.toolName))
             return;
         const choice = await ctx.ui.select(`Allow: ${describeTool(event)}`, [
@@ -482,9 +521,13 @@ export function setupModeAndProfile(pi) {
         if (ctx.hasUI) {
             ctx.ui.setModeProfile(cachedMode, cachedProfile);
         }
-        // Apply tool filter defined by the active profile
+        // Apply tool filter: mode enabled_tools takes priority, then profile
+        const modeCfg = config.modes?.[cachedMode];
         const profileCfg = config.profiles?.[cachedProfile];
-        if (profileCfg?.enabled_tools && profileCfg.enabled_tools.length > 0) {
+        if (modeCfg?.enabled_tools && modeCfg.enabled_tools.length > 0) {
+            pi.setActiveTools(modeCfg.enabled_tools);
+        }
+        else if (profileCfg?.enabled_tools && profileCfg.enabled_tools.length > 0) {
             pi.setActiveTools(profileCfg.enabled_tools);
         }
     });

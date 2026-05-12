@@ -29,5 +29,6 @@ export const BUILT_IN_PROVIDER_DISPLAY_NAMES = {
     "xiaomi-token-plan-cn": "Xiaomi MiMo Token Plan (China)",
     "xiaomi-token-plan-ams": "Xiaomi MiMo Token Plan (Amsterdam)",
     "xiaomi-token-plan-sgp": "Xiaomi MiMo Token Plan (Singapore)",
+    nvidia: "NVIDIA",
 };
 //# sourceMappingURL=provider-display-names.js.map

@@ -4,6 +4,7 @@ export { withFileMutationQueue } from "./file-mutation-queue.js";
 export { createFindTool, createFindToolDefinition, } from "./find.js";
 export { createGrepTool, createGrepToolDefinition, } from "./grep.js";
 export { createLsTool, createLsToolDefinition, } from "./ls.js";
+export { expandPath, resolveReadPath, resolveToCwd } from "./path-utils.js";
 export { createReadTool, createReadToolDefinition, } from "./read.js";
 export { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, truncateHead, truncateLine, truncateTail, } from "./truncate.js";
 export { createWriteTool, createWriteToolDefinition, } from "./write.js";

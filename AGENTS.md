@@ -68,15 +68,15 @@ When closing issues via commit:
 - If the user approves: create a feature branch, pull PR, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
 - You never open PRs yourself. We work in feature branches until everything is according to the user's requirements, then merge into main, and push.
 
-## Testing pi Interactive Mode with tmux
+## Testing hoocode Interactive Mode with tmux
 
-To test pi's TUI in a controlled terminal environment:
+To test hoocode's TUI in a controlled terminal environment:
 
 ```bash
 # Create tmux session with specific dimensions
 tmux new-session -d -s hoocode-test -x 80 -y 24
 
-# Start pi from source
+# Start hoocode from source
 tmux send-keys -t hoocode-test "cd /Users/badlogic/workspaces/pi-mono && ./hoocode-test.sh" Enter
 
 # Wait for startup, then capture output

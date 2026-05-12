@@ -77,18 +77,15 @@ jobs:
             fi
           done
 
-      - name: Create winget manifest
+      - name: Generate winget manifest
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          cat > binaries/hoocode-windows-x64.yaml << EOF
-          PackageIdentifier: kolisachint.hoocode
-          PackageVersion: $VERSION
-          InstallerType: zip
-          Installers:
-            - Architecture: x64
-              InstallerUrl: https://github.com/kolisachint/hoocode/releases/download/${{ github.ref_name }}/hoocode-windows-x64.zip
-              InstallerSha256: $(cat binaries/hoocode-windows-x64.zip.sha256 | awk '{print $1}')
-          EOF
+          SHA256=$(cat binaries/hoocode-windows-x64.exe.sha256 | awk '{print $1}')
+          node scripts/generate-winget-manifest.mjs \
+            "$VERSION" \
+            "$SHA256" \
+            "https://github.com/kolisachint/hoocode/releases/download/${{ github.ref_name }}/hoocode-windows-x64.exe" \
+            --output binaries/kolisachint.hoocode.yaml
 
       - name: Create Release
         run: gh release create ${{ github.ref_name }} --title "${{ github.ref_name }}" --generate-notes

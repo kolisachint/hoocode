@@ -24,6 +24,10 @@ interface ProfileDetector {
 interface ModeConfig {
     /** Tool names that bypass the permission gate in this mode */
     auto_allow?: string[];
+    /** Tool names available in this mode (if set, only these tools are active) */
+    enabled_tools?: string[];
+    /** Allowed write paths in this mode (glob patterns, only applies if write/edit is enabled) */
+    allowed_write_paths?: string[];
 }
 interface ProfileConfig {
     /** Tool names to activate for this profile */
@@ -41,6 +45,24 @@ export interface HooConfig {
     /** Ordered list of file-marker → profile mappings for auto-detection */
     profile_detectors?: ProfileDetector[];
 }
+/**
+ * Deep-merges a project-local config on top of the global config.
+ *
+ * Merge rules:
+ * - Scalars (active_mode, active_profile): project wins if set
+ * - modes[x].auto_allow: union of global + project arrays
+ * - modes[x].allowed_write_paths: union of global + project arrays
+ * - modes[x].enabled_tools: project wins if set, else falls back to global
+ * - profiles[x].enabled_tools: project wins if set, else falls back to global
+ * - profile_detectors: project list is prepended so project markers are checked first
+ */
+export declare function mergeConfigs(global: HooConfig, project: HooConfig): HooConfig;
+/**
+ * Reads the global config and optionally overlays the project-local config at
+ * `./.hoocode/config.json`. Project values win on all scalar fields; arrays are
+ * unioned (see mergeConfigs for full rules).
+ */
+export declare function readMergedConfig(cwd: string): HooConfig;
 export declare function setupPermissionGate(pi: ExtensionAPI): void;
 export interface McpServerConfig {
     /** Unique server identifier used as prefix for registered tool names */
@@ -67,7 +89,7 @@ export declare function resolveProfile(config: HooConfig, cwd: string): string;
  * Each present layer is joined with a `---` separator.
  */
 export declare function buildSystemPrompt(mode: string, profile: string, cwd: string): string | undefined;
-interface PlanSections {
+export interface PlanSections {
     goal?: string;
     filesToModify?: string;
     newFiles?: string;

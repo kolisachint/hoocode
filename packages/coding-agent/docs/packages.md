@@ -8,7 +8,7 @@ HooCode packages bundle extensions, skills, prompt templates, and themes so you 
 
 - [Install and Manage](#install-and-manage)
 - [Package Sources](#package-sources)
-- [Creating a Pi Package](#creating-a-pi-package)
+- [Creating a HooCode Package](#creating-a-hoocode-package)
 - [Package Structure](#package-structure)
 - [Dependencies](#dependencies)
 - [Package Filtering](#package-filtering)
@@ -90,7 +90,7 @@ ssh://git@github.com/user/repo@v1
 **SSH examples:**
 ```bash
 # git@host:path shorthand (requires git: prefix)
-pi install git:git@github.com:user/repo
+hoocode install git:git@github.com:user/repo
 
 # ssh:// protocol format
 hoocode install ssh://git@github.com/user/repo

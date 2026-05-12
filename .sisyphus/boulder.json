@@ -2,10 +2,18 @@
   "active_plan": "/Users/sachinkoli/github/hoocode/.sisyphus/plans/windows-winget-binary.md",
   "started_at": "2026-05-11T16:37:47.439Z",
   "session_ids": [
-    "ses_1e8262d5effen1HtdE8JQce9hI"
+    "ses_1e8262d5effen1HtdE8JQce9hI",
+    "ses_1e7d9b6ecffegc2jV5V3G8fMff",
+    "ses_1e7d99c93ffe7nMEBf2xJdWuld",
+    "ses_1e7d97b77ffeqgjnPlCveW3M6y",
+    "ses_1e7d959caffeWD5pvUXvV60eUh"
   ],
   "session_origins": {
-    "ses_1e8262d5effen1HtdE8JQce9hI": "direct"
+    "ses_1e8262d5effen1HtdE8JQce9hI": "direct",
+    "ses_1e7d9b6ecffegc2jV5V3G8fMff": "appended",
+    "ses_1e7d99c93ffe7nMEBf2xJdWuld": "appended",
+    "ses_1e7d97b77ffeqgjnPlCveW3M6y": "appended",
+    "ses_1e7d959caffeWD5pvUXvV60eUh": "appended"
   },
   "plan_name": "windows-winget-binary",
   "agent": "atlas",
@@ -36,6 +44,15 @@
       "agent": "Sisyphus-Junior",
       "category": "unspecified-high",
       "updated_at": "2026-05-11T17:46:27.283Z"
+    },
+    "final-wave:f1": {
+      "task_key": "final-wave:f1",
+      "task_label": "F1",
+      "task_title": "**Plan Compliance Audit** — `oracle`",
+      "session_id": "ses_1e7c70ed2ffeINygGe8eZIgpeE",
+      "agent": "Sisyphus-Junior",
+      "category": "deep",
+      "updated_at": "2026-05-11T18:09:02.393Z"
     }
   }
 }

@@ -43,7 +43,7 @@ Use `/login` in interactive mode and select a provider to store an API key in `a
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-pi
+hoocode
 ```
 
 ### Auth File

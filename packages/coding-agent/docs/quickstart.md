@@ -23,7 +23,7 @@ HooCode can use subscription providers through `/login`, or API-key providers th
 
 ### Option 1: subscription login
 
-Start pi and run:
+Start hoocode and run:
 
 ```text
 /login
@@ -73,7 +73,7 @@ HooCode loads context files at startup. Add an `AGENTS.md` file to tell it how t
 - Keep responses concise.
 ```
 
-Pi loads:
+HooCode loads:
 
 - `~/.hoocode/agent/AGENTS.md` for global instructions
 - `AGENTS.md` or `CLAUDE.md` from parent directories and the current directory
