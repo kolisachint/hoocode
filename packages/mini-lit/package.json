@@ -1,6 +1,6 @@
 {
 	"name": "@kolisachint/hoocode-mini-lit",
-	"version": "0.2.1",
+	"version": "0.2.2",
 	"description": "Lightweight Lit components with shadcn-inspired theming and Tailwind CSS integration. Vendored for HooCode from upstream mini-lit by Mario Zechner (MIT). Modifications under the same MIT terms.",
 	"author": "Mario Zechner (original author); Sachin Koli (HooCode fork)",
 	"license": "MIT",
