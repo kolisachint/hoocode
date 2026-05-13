@@ -39,6 +39,8 @@ export interface Args {
 	noPromptTemplates?: boolean;
 	themes?: string[];
 	noThemes?: boolean;
+	modePaths?: string[];
+	profilePaths?: string[];
 	noContextFiles?: boolean;
 	listModels?: string | true;
 	offline?: boolean;
@@ -143,6 +145,12 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--theme" && i + 1 < args.length) {
 			result.themes = result.themes ?? [];
 			result.themes.push(args[++i]);
+		} else if (arg === "--mode-path" && i + 1 < args.length) {
+			result.modePaths = result.modePaths ?? [];
+			result.modePaths.push(args[++i]);
+		} else if (arg === "--profile-path" && i + 1 < args.length) {
+			result.profilePaths = result.profilePaths ?? [];
+			result.profilePaths.push(args[++i]);
 		} else if (arg === "--no-skills" || arg === "-ns") {
 			result.noSkills = true;
 		} else if (arg === "--no-prompt-templates" || arg === "-np") {
@@ -242,6 +250,8 @@ ${chalk.bold("Options:")}
   --no-prompt-templates, -np     Disable prompt template discovery and loading
   --theme <path>                 Load a theme file or directory (can be used multiple times)
   --no-themes                    Disable theme discovery and loading
+  --mode-path <dir>              Add a directory to search for {name}/system.md mode files (can be used multiple times)
+  --profile-path <dir>           Add a directory to search for {name}/context.md profile files (can be used multiple times)
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)

@@ -34,6 +34,8 @@ export interface Args {
     noPromptTemplates?: boolean;
     themes?: string[];
     noThemes?: boolean;
+    modePaths?: string[];
+    profilePaths?: string[];
     noContextFiles?: boolean;
     listModels?: string | true;
     offline?: boolean;

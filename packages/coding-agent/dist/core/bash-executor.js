@@ -31,7 +31,7 @@ export async function executeBashWithOperations(command, cwd, operations, option
             return;
         }
         const id = randomBytes(8).toString("hex");
-        tempFilePath = join(tmpdir(), `pi-bash-${id}.log`);
+        tempFilePath = join(tmpdir(), `hoocode-bash-${id}.log`);
         tempFileStream = createWriteStream(tempFilePath);
         for (const chunk of outputChunks) {
             tempFileStream.write(chunk);

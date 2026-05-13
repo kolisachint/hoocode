@@ -633,7 +633,7 @@ export class InteractiveMode {
         return undefined;
     }
     reportInstallTelemetry(_version) {
-        // Disabled in HooCode fork: upstream pi.dev install-telemetry endpoint is not run by this fork.
+        // Disabled in HooCode fork: this is forked from pi (upstream pi.dev install-telemetry endpoint is not run by this fork).
     }
     getMarkdownThemeWithSettings() {
         return {

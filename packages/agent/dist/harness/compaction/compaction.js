@@ -13,7 +13,7 @@ import { computeFileLists, createFileOps, extractFileOpsFromMessage, formatFileO
  */
 function extractFileOperations(messages, entries, prevCompactionIndex) {
     const fileOps = createFileOps();
-    // Collect from previous compaction's details (if pi-generated)
+    // Collect from previous compaction's details (if hoocode-generated)
     if (prevCompactionIndex >= 0) {
         const prevCompaction = entries[prevCompactionIndex];
         if (!prevCompaction.fromHook && prevCompaction.details) {

@@ -20,10 +20,10 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { getHooCodeDir } from "../../config.js";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type Static, Type } from "typebox";
+import { getHooCodeDir } from "../../config.js";
 import type {
 	AgentToolResult,
 	AgentToolUpdateCallback,
@@ -133,6 +133,10 @@ export interface HooConfig {
 	profiles?: Record<string, ProfileConfig>;
 	/** Ordered list of file-marker → profile mappings for auto-detection */
 	profile_detectors?: ProfileDetector[];
+	/** Extra directories to search for `{name}/system.md` mode files (after project + user). */
+	mode_paths?: string[];
+	/** Extra directories to search for `{name}/context.md` profile files (after project + user). */
+	profile_paths?: string[];
 }
 
 // ============================================================================
@@ -204,7 +208,37 @@ export function mergeConfigs(global: HooConfig, project: HooConfig): HooConfig {
 		merged.profile_detectors = [...project.profile_detectors, ...(global.profile_detectors ?? [])];
 	}
 
+	if (project.mode_paths || global.mode_paths) {
+		// Project paths first so they're searched before global paths
+		merged.mode_paths = dedupePaths([...(project.mode_paths ?? []), ...(global.mode_paths ?? [])]);
+	}
+
+	if (project.profile_paths || global.profile_paths) {
+		merged.profile_paths = dedupePaths([...(project.profile_paths ?? []), ...(global.profile_paths ?? [])]);
+	}
+
 	return merged;
+}
+
+function dedupePaths(paths: string[]): string[] {
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const p of paths) {
+		if (!seen.has(p)) {
+			seen.add(p);
+			out.push(p);
+		}
+	}
+	return out;
+}
+
+function mergeSearchPaths(...sources: (string[] | undefined)[]): string[] {
+	const merged: string[] = [];
+	for (const source of sources) {
+		if (!source) continue;
+		merged.push(...source);
+	}
+	return dedupePaths(merged);
 }
 
 /**
@@ -569,41 +603,75 @@ export function resolveProfile(config: HooConfig, cwd: string): string {
 	return DEFAULT_PROFILE;
 }
 
+function tryReadFile(path: string): string | undefined {
+	if (!existsSync(path)) return undefined;
+	try {
+		const text = readFileSync(path, "utf8").trim();
+		return text || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/**
+ * Walks search dirs in precedence order and returns the first existing
+ * `{name}/{filename}` content. Order: project → user → externalDirs.
+ */
+function resolveResourceFile(
+	name: string,
+	filename: string,
+	subdir: "modes" | "profiles",
+	cwd: string,
+	externalDirs: string[],
+): string | undefined {
+	const candidates: string[] = [
+		join(cwd, ".hoocode", subdir, name, filename),
+		join(HOOCODE_DIR, subdir, name, filename),
+		...externalDirs.map((dir) => join(dir, name, filename)),
+	];
+	for (const candidate of candidates) {
+		const content = tryReadFile(candidate);
+		if (content !== undefined) return content;
+	}
+	return undefined;
+}
+
 /**
  * Merges the system prompt from up to three layers (lowest → highest priority):
- *   1. ~/.hoocode/templates/modes/{mode}/system.md        (mode behaviour)
- *   2. ~/.hoocode/templates/profiles/{profile}/context.md (domain context; skipped for "default")
- *   3. ./.hoocode/agents.md                               (project-local override; appended last)
+ *   1. {project|user|external}/modes/{mode}/system.md        (mode behaviour)
+ *   2. {project|user|external}/profiles/{profile}/context.md (domain context; skipped for "default")
+ *   3. ./.hoocode/agents.md                                  (project-local override; appended last)
+ *
+ * For each of layers 1 and 2 the search order is:
+ *   - `./.hoocode/{modes,profiles}/{name}/...`
+ *   - `~/.hoocode/{modes,profiles}/{name}/...`
+ *   - each of `externalDirs` in declared order (config + CLI + extension contributions)
  *
  * Each present layer is joined with a `---` separator.
  */
-export function buildSystemPrompt(mode: string, profile: string, cwd: string): string | undefined {
+export function buildSystemPrompt(
+	mode: string,
+	profile: string,
+	cwd: string,
+	options?: { modePaths?: string[]; profilePaths?: string[] },
+): string | undefined {
 	const layers: string[] = [];
 
-	function tryRead(path: string): string | undefined {
-		if (!existsSync(path)) return undefined;
-		try {
-			const text = readFileSync(path, "utf8").trim();
-			return text || undefined;
-		} catch {
-			return undefined;
-		}
-	}
+	const modePaths = options?.modePaths ?? [];
+	const profilePaths = options?.profilePaths ?? [];
 
-	// Layer 1: mode system prompt (~/.hoocode/modes/{mode}/system.md)
-	const modePrompt = tryRead(join(HOOCODE_DIR, "modes", mode, "system.md")) ?? MODE_DEFAULTS[mode];
+	const modePrompt = resolveResourceFile(mode, "system.md", "modes", cwd, modePaths) ?? MODE_DEFAULTS[mode];
 	if (modePrompt) layers.push(modePrompt);
 
-	// Layer 2: profile context — omit for "default" (no extra domain constraints)
-	// (~/.hoocode/profiles/{profile}/context.md)
 	if (profile !== DEFAULT_PROFILE) {
-		const profileContext = tryRead(join(HOOCODE_DIR, "profiles", profile, "context.md")) ?? PROFILE_DEFAULTS[profile];
+		const profileContext =
+			resolveResourceFile(profile, "context.md", "profiles", cwd, profilePaths) ?? PROFILE_DEFAULTS[profile];
 		if (profileContext) layers.push(profileContext);
 	}
 
 	// Layer 3: project-local agents.md — appended after mode + profile so it can
 	// extend or override them for this specific repo
-	const projectOverride = tryRead(join(cwd, ".hoocode", "agents.md"));
+	const projectOverride = tryReadFile(join(cwd, ".hoocode", "agents.md"));
 	if (projectOverride) layers.push(projectOverride);
 
 	return layers.length > 0 ? layers.join("\n\n---\n\n") : undefined;
@@ -720,7 +788,12 @@ export function setupModeAndProfile(pi: ExtensionAPI): void {
 		// Step 4: resolve mode and profile from the merged config
 		cachedMode = config.active_mode ?? DEFAULT_MODE;
 		cachedProfile = resolveProfile(config, ctx.cwd);
-		cachedSystemPrompt = buildSystemPrompt(cachedMode, cachedProfile, ctx.cwd);
+		// External search dirs come from two channels:
+		//  - HooConfig.{mode,profile}_paths (config-declared)
+		//  - pi.add{Mode,Profile}SearchPath (CLI flags + extension contributions)
+		const modePaths = mergeSearchPaths(config.mode_paths, pi.getModeSearchPaths());
+		const profilePaths = mergeSearchPaths(config.profile_paths, pi.getProfileSearchPaths());
+		cachedSystemPrompt = buildSystemPrompt(cachedMode, cachedProfile, ctx.cwd, { modePaths, profilePaths });
 
 		// Update footer with active mode/profile
 		if (ctx.hasUI) {

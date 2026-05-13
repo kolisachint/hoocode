@@ -791,7 +791,8 @@ export class TUI extends Container {
         const logRedraw = (reason) => {
             if (!debugRedraw)
                 return;
-            const logPath = path.join(os.homedir(), ".pi", "agent", "pi-debug.log");
+            const agentDir = process.env.HOOCODE_CODING_AGENT_DIR ?? path.join(os.homedir(), ".hoocode", "agent");
+            const logPath = path.join(agentDir, "hoocode-debug.log");
             const msg = `[${new Date().toISOString()}] fullRender: ${reason} (prev=${this.previousLines.length}, new=${newLines.length}, height=${height})\n`;
             fs.appendFileSync(logPath, msg);
         };
@@ -949,7 +950,8 @@ export class TUI extends Container {
             const isImage = isImageLine(line);
             if (!isImage && visibleWidth(line) > width) {
                 // Log all lines to crash file for debugging
-                const crashLogPath = path.join(os.homedir(), ".pi", "agent", "pi-crash.log");
+                const agentDir = process.env.HOOCODE_CODING_AGENT_DIR ?? path.join(os.homedir(), ".hoocode", "agent");
+                const crashLogPath = path.join(agentDir, "hoocode-crash.log");
                 const crashData = [
                     `Crash at ${new Date().toISOString()}`,
                     `Terminal width: ${width}`,

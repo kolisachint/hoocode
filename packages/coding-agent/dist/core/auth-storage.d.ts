@@ -2,7 +2,7 @@
  * Credential storage for API keys and OAuth tokens.
  * Handles loading, saving, and refreshing credentials from auth.json.
  *
- * Uses file locking to prevent race conditions when multiple pi instances
+ * Uses file locking to prevent race conditions when multiple hoocode instances
  * try to refresh tokens simultaneously.
  */
 import { type OAuthCredentials, type OAuthLoginCallbacks, type OAuthProviderId } from "@kolisachint/hoocode-ai";

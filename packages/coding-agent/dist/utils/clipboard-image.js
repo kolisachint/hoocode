@@ -127,7 +127,7 @@ function isWSL(env = process.env) {
  * directly, so we use it as a fallback.
  */
 function readClipboardImageViaPowerShell() {
-    const tmpFile = join(tmpdir(), `pi-wsl-clip-${randomUUID()}.png`);
+    const tmpFile = join(tmpdir(), `hoocode-wsl-clip-${randomUUID()}.png`);
     try {
         const winPathResult = runCommand("wslpath", ["-w", tmpFile], { timeoutMs: DEFAULT_LIST_TIMEOUT_MS });
         if (!winPathResult.ok) {

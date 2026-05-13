@@ -70,6 +70,12 @@ export declare function expandTildePath(path: string): string;
 export declare function getShareViewerUrl(gistId: string): string;
 /** Get the agent config directory (e.g., ~/.hoocode/agent/) */
 export declare function getAgentDir(): string;
+/** Get the hoocode config root directory (parent of agent dir).
+ *  Returns parent of getAgentDir(), e.g.:
+ *    HOOCODE_CODING_AGENT_DIR=/custom/agent -> /custom
+ *    (no env var) -> ~/.hoocode
+ */
+export declare function getHooCodeDir(): string;
 /** Get path to user's custom themes directory */
 export declare function getCustomThemesDir(): string;
 /** Get path to models.json */

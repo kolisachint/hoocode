@@ -1495,7 +1495,7 @@ export class DefaultPackageManager {
         this.ensureGitIgnore(installRoot);
         const packageJsonPath = join(installRoot, "package.json");
         if (!existsSync(packageJsonPath)) {
-            const pkgJson = { name: "pi-extensions", private: true };
+            const pkgJson = { name: "hoocode-extensions", private: true };
             writeFileSync(packageJsonPath, JSON.stringify(pkgJson, null, 2), "utf-8");
         }
     }
@@ -1566,7 +1566,7 @@ export class DefaultPackageManager {
             .update(`${prefix}-${suffix ?? ""}`)
             .digest("hex")
             .slice(0, 8);
-        return join(tmpdir(), "pi-extensions", prefix, hash, suffix ?? "");
+        return join(tmpdir(), "hoocode-extensions", prefix, hash, suffix ?? "");
     }
     getBaseDirForScope(scope) {
         if (scope === "project") {
@@ -1787,9 +1787,9 @@ export class DefaultPackageManager {
                 this.addResource(target, path, metadata, enabled);
             }
         };
-        // Project extensions from .pi/
+        // Project extensions from .hoocode/
         addResources("extensions", collectAutoExtensionEntries(projectDirs.extensions), projectMetadata, projectOverrides.extensions, projectBaseDir);
-        // Project skills from .pi/
+        // Project skills from .hoocode/
         addResources("skills", collectAutoSkillEntries(projectDirs.skills, "pi"), projectMetadata, projectOverrides.skills, projectBaseDir);
         // Project skills from .agents/ (each with its own baseDir)
         for (const agentsSkillsDir of projectAgentsSkillDirs) {

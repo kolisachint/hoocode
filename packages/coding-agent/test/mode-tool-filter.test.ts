@@ -1,6 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Isolate HOOCODE_DIR before hoo-core imports so the precedence tests are
+// not affected by whatever the developer has installed at ~/.hoocode/.
+// vi.hoisted runs before all imports in this file.
+vi.hoisted(() => {
+	process.env.HOOCODE_CODING_AGENT_DIR = `${require("node:os").tmpdir()}/hoocode-test-isolated-${process.pid}/agent`;
+});
+
 import {
 	buildApproveMessage,
+	buildSystemPrompt,
 	type HooConfig,
 	mergeConfigs,
 	parsePlanSections,
@@ -110,6 +122,27 @@ describe("mergeConfigs", () => {
 			expect(merged.modes?.build?.auto_allow).toEqual(["bash", "write"]);
 		});
 	});
+
+	describe("mode_paths / profile_paths", () => {
+		it("project paths come before global paths and dedupe is applied", () => {
+			const global: HooConfig = { mode_paths: ["/global/a", "/shared"], profile_paths: ["/global/p"] };
+			const project: HooConfig = { mode_paths: ["/project/a", "/shared"], profile_paths: ["/project/p"] };
+			const merged = mergeConfigs(global, project);
+			expect(merged.mode_paths).toEqual(["/project/a", "/shared", "/global/a"]);
+			expect(merged.profile_paths).toEqual(["/project/p", "/global/p"]);
+		});
+
+		it("undefined when neither side declares them", () => {
+			const merged = mergeConfigs({}, {});
+			expect(merged.mode_paths).toBeUndefined();
+			expect(merged.profile_paths).toBeUndefined();
+		});
+
+		it("uses global when project does not declare", () => {
+			const merged = mergeConfigs({ mode_paths: ["/g"] }, {});
+			expect(merged.mode_paths).toEqual(["/g"]);
+		});
+	});
 });
 
 describe("parsePlanSections", () => {
@@ -183,5 +216,86 @@ describe("buildApproveMessage", () => {
 		};
 		const message = buildApproveMessage(sections);
 		expect(message).toBe("Execute the following plan:\n\nJust do something");
+	});
+});
+
+describe("buildSystemPrompt search-path precedence", () => {
+	let cwd: string;
+	let externalA: string;
+	let externalB: string;
+
+	beforeEach(() => {
+		cwd = mkdtempSync(join(tmpdir(), "hoo-cwd-"));
+		externalA = mkdtempSync(join(tmpdir(), "hoo-extA-"));
+		externalB = mkdtempSync(join(tmpdir(), "hoo-extB-"));
+	});
+
+	afterEach(() => {
+		for (const dir of [cwd, externalA, externalB]) {
+			rmSync(dir, { recursive: true, force: true });
+		}
+	});
+
+	function writeMode(root: string, name: string, body: string) {
+		const dir = join(root, name);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "system.md"), body, "utf8");
+	}
+
+	function writeProfile(root: string, name: string, body: string) {
+		const dir = join(root, name);
+		mkdirSync(dir, { recursive: true });
+		writeFileSync(join(dir, "context.md"), body, "utf8");
+	}
+
+	it("project mode wins over external dirs", () => {
+		writeMode(join(cwd, ".hoocode", "modes"), "ask", "PROJECT MODE");
+		writeMode(externalA, "ask", "EXTERNAL A");
+		const prompt = buildSystemPrompt("ask", "default", cwd, { modePaths: [externalA] });
+		expect(prompt).toContain("PROJECT MODE");
+		expect(prompt).not.toContain("EXTERNAL A");
+	});
+
+	it("external dirs are searched in declared order when project + user have no override", () => {
+		writeMode(externalA, "custom", "FIRST EXTERNAL");
+		writeMode(externalB, "custom", "SECOND EXTERNAL");
+		const prompt = buildSystemPrompt("custom", "default", cwd, { modePaths: [externalA, externalB] });
+		expect(prompt).toBe("FIRST EXTERNAL");
+	});
+
+	it("falls through to second external when first does not have the mode", () => {
+		writeMode(externalB, "only-in-b", "FROM B");
+		const prompt = buildSystemPrompt("only-in-b", "default", cwd, { modePaths: [externalA, externalB] });
+		expect(prompt).toBe("FROM B");
+	});
+
+	it("project profile wins over external profile dir", () => {
+		writeMode(externalA, "build", "EXTERNAL BUILD MODE");
+		writeProfile(join(cwd, ".hoocode", "profiles"), "data", "PROJECT DATA PROFILE");
+		writeProfile(externalA, "data", "EXTERNAL DATA PROFILE");
+		const prompt = buildSystemPrompt("build", "data", cwd, {
+			modePaths: [externalA],
+			profilePaths: [externalA],
+		});
+		expect(prompt).toContain("EXTERNAL BUILD MODE");
+		expect(prompt).toContain("PROJECT DATA PROFILE");
+		expect(prompt).not.toContain("EXTERNAL DATA PROFILE");
+	});
+
+	it("default profile is omitted even when an external dir contains a default/context.md", () => {
+		writeMode(externalA, "build", "EXTERNAL BUILD MODE");
+		writeProfile(externalA, "default", "DEFAULT EXTERNAL PROFILE — should not appear");
+		const prompt = buildSystemPrompt("build", "default", cwd, {
+			modePaths: [externalA],
+			profilePaths: [externalA],
+		});
+		expect(prompt).toContain("EXTERNAL BUILD MODE");
+		expect(prompt).not.toContain("DEFAULT EXTERNAL PROFILE");
+	});
+
+	it("falls back to MODE_DEFAULTS when nothing matches", () => {
+		const prompt = buildSystemPrompt("ask", "default", cwd, {});
+		// Built-in default for "ask" mentions ASK mode
+		expect(prompt).toContain("ASK mode");
 	});
 });

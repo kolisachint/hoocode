@@ -41,7 +41,7 @@ function getGroupLabel(metadata) {
                 ? `User (${formatBaseDir(metadata.baseDir)})`
                 : `Project (${formatBaseDir(metadata.baseDir)})`;
         }
-        return metadata.scope === "user" ? "User (~/.hoocode/agent/)" : "Project (.pi/)";
+        return metadata.scope === "user" ? "User (~/.hoocode/agent/)" : "Project (.hoocode/)";
     }
     return metadata.scope === "user" ? "User settings" : "Project settings";
 }

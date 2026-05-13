@@ -833,6 +833,22 @@ export interface ExtensionAPI {
     }): void;
     /** Get the value of a registered CLI flag. */
     getFlag(name: string): boolean | string | undefined;
+    /**
+     * Add a directory to the mode-file search path.
+     *
+     * Hoo-core looks up `{dir}/{modeName}/system.md` when assembling the mode
+     * system prompt, after the project (`./.hoocode/modes/`) and user
+     * (`~/.hoocode/modes/`) directories. Multiple calls accumulate in
+     * registration order; CLI flags and config-declared `mode_paths` flow
+     * through the same list.
+     */
+    addModeSearchPath(dirPath: string): void;
+    /** Add a directory to the profile-file search path (looks up `{dir}/{profileName}/context.md`). */
+    addProfileSearchPath(dirPath: string): void;
+    /** Get all registered mode search paths in declared order. */
+    getModeSearchPaths(): string[];
+    /** Get all registered profile search paths in declared order. */
+    getProfileSearchPaths(): string[];
     /** Register a custom renderer for CustomMessageEntry. */
     registerMessageRenderer<T = unknown>(customType: string, renderer: MessageRenderer<T>): void;
     /** Send a custom message to the session. */
@@ -1060,6 +1076,10 @@ export interface ExtensionRuntimeState {
         config: ProviderConfig;
         extensionPath: string;
     }>;
+    /** Mode search dirs registered via pi.addModeSearchPath, in declared order. */
+    modeSearchPaths: string[];
+    /** Profile search dirs registered via pi.addProfileSearchPath, in declared order. */
+    profileSearchPaths: string[];
     /** Throws when this extension instance is stale after runtime replacement. */
     assertActive: () => void;
     /** Marks this extension instance as stale after runtime replacement or reload. */

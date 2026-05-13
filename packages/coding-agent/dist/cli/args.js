@@ -119,6 +119,14 @@ export function parseArgs(args) {
             result.themes = result.themes ?? [];
             result.themes.push(args[++i]);
         }
+        else if (arg === "--mode-path" && i + 1 < args.length) {
+            result.modePaths = result.modePaths ?? [];
+            result.modePaths.push(args[++i]);
+        }
+        else if (arg === "--profile-path" && i + 1 < args.length) {
+            result.profilePaths = result.profilePaths ?? [];
+            result.profilePaths.push(args[++i]);
+        }
         else if (arg === "--no-skills" || arg === "-ns") {
             result.noSkills = true;
         }
@@ -194,7 +202,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} install <source> [-l]     Install extension source and add to settings
   ${APP_NAME} remove <source> [-l]      Remove extension source from settings
   ${APP_NAME} uninstall <source> [-l]   Alias for remove
-  ${APP_NAME} update [source|self|pi]   Update pi and installed extensions
+  ${APP_NAME} update [source|self|pi]   Update hoocode and installed extensions
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
@@ -228,6 +236,8 @@ ${chalk.bold("Options:")}
   --no-prompt-templates, -np     Disable prompt template discovery and loading
   --theme <path>                 Load a theme file or directory (can be used multiple times)
   --no-themes                    Disable theme discovery and loading
+  --mode-path <dir>              Add a directory to search for {name}/system.md mode files (can be used multiple times)
+  --profile-path <dir>           Add a directory to search for {name}/context.md profile files (can be used multiple times)
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)

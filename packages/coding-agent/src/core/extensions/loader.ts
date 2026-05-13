@@ -165,6 +165,8 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setThinkingLevel: notInitialized,
 		flagValues: new Map(),
 		pendingProviderRegistrations: [],
+		modeSearchPaths: [],
+		profileSearchPaths: [],
 		assertActive,
 		invalidate: (message) => {
 			state.staleMessage ??=
@@ -254,6 +256,32 @@ function createExtensionAPI(
 			runtime.assertActive();
 			if (!extension.flags.has(name)) return undefined;
 			return runtime.flagValues.get(name);
+		},
+
+		addModeSearchPath(dirPath: string): void {
+			runtime.assertActive();
+			const resolved = resolvePath(dirPath, cwd);
+			if (!runtime.modeSearchPaths.includes(resolved)) {
+				runtime.modeSearchPaths.push(resolved);
+			}
+		},
+
+		addProfileSearchPath(dirPath: string): void {
+			runtime.assertActive();
+			const resolved = resolvePath(dirPath, cwd);
+			if (!runtime.profileSearchPaths.includes(resolved)) {
+				runtime.profileSearchPaths.push(resolved);
+			}
+		},
+
+		getModeSearchPaths(): string[] {
+			runtime.assertActive();
+			return [...runtime.modeSearchPaths];
+		},
+
+		getProfileSearchPaths(): string[] {
+			runtime.assertActive();
+			return [...runtime.profileSearchPaths];
 		},
 
 		// Action methods - delegate to shared runtime

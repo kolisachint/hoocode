@@ -44,6 +44,10 @@ export interface HooConfig {
     profiles?: Record<string, ProfileConfig>;
     /** Ordered list of file-marker → profile mappings for auto-detection */
     profile_detectors?: ProfileDetector[];
+    /** Extra directories to search for `{name}/system.md` mode files (after project + user). */
+    mode_paths?: string[];
+    /** Extra directories to search for `{name}/context.md` profile files (after project + user). */
+    profile_paths?: string[];
 }
 /**
  * Deep-merges a project-local config on top of the global config.
@@ -82,13 +86,21 @@ export declare function setupMcpLoader(pi: ExtensionAPI): void;
 export declare function resolveProfile(config: HooConfig, cwd: string): string;
 /**
  * Merges the system prompt from up to three layers (lowest → highest priority):
- *   1. ~/.hoocode/templates/modes/{mode}/system.md        (mode behaviour)
- *   2. ~/.hoocode/templates/profiles/{profile}/context.md (domain context; skipped for "default")
- *   3. ./.hoocode/agents.md                               (project-local override; appended last)
+ *   1. {project|user|external}/modes/{mode}/system.md        (mode behaviour)
+ *   2. {project|user|external}/profiles/{profile}/context.md (domain context; skipped for "default")
+ *   3. ./.hoocode/agents.md                                  (project-local override; appended last)
+ *
+ * For each of layers 1 and 2 the search order is:
+ *   - `./.hoocode/{modes,profiles}/{name}/...`
+ *   - `~/.hoocode/{modes,profiles}/{name}/...`
+ *   - each of `externalDirs` in declared order (config + CLI + extension contributions)
  *
  * Each present layer is joined with a `---` separator.
  */
-export declare function buildSystemPrompt(mode: string, profile: string, cwd: string): string | undefined;
+export declare function buildSystemPrompt(mode: string, profile: string, cwd: string, options?: {
+    modePaths?: string[];
+    profilePaths?: string[];
+}): string | undefined;
 export interface PlanSections {
     goal?: string;
     filesToModify?: string;

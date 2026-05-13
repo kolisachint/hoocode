@@ -405,6 +405,26 @@ export async function main(args, options) {
     const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
     const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
     const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
+    // Synthetic factory: feed CLI --mode-path / --profile-path values into the
+    // extension runtime so hoo-core (and any other extension that reads
+    // pi.getModeSearchPaths / getProfileSearchPaths) sees them alongside
+    // extension-registered dirs.
+    const cliModePaths = parsed.modePaths ?? [];
+    const cliProfilePaths = parsed.profilePaths ?? [];
+    const cliResourcePathFactories = cliModePaths.length === 0 && cliProfilePaths.length === 0
+        ? []
+        : [
+            (pi) => {
+                for (const p of cliModePaths)
+                    pi.addModeSearchPath(p);
+                for (const p of cliProfilePaths)
+                    pi.addProfileSearchPath(p);
+            },
+        ];
+    const allExtensionFactories = [
+        ...cliResourcePathFactories,
+        ...(options?.extensionFactories ?? []),
+    ];
     const authStorage = AuthStorage.create();
     const createRuntime = async ({ cwd, agentDir, sessionManager, sessionStartEvent, }) => {
         const services = await createAgentSessionServices({
@@ -424,7 +444,7 @@ export async function main(args, options) {
                 noContextFiles: parsed.noContextFiles,
                 systemPrompt: parsed.systemPrompt,
                 appendSystemPrompt: parsed.appendSystemPrompt,
-                extensionFactories: options?.extensionFactories,
+                extensionFactories: allExtensionFactories,
             },
         });
         const { settingsManager, modelRegistry, resourceLoader } = services;

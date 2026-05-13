@@ -81,7 +81,7 @@ export class ExtensionEditorComponent extends Container {
             return;
         }
         const currentText = this.editor.getText();
-        const tmpFile = path.join(os.tmpdir(), `pi-extension-editor-${Date.now()}.md`);
+        const tmpFile = path.join(os.tmpdir(), `hoocode-extension-editor-${Date.now()}.md`);
         try {
             fs.writeFileSync(tmpFile, currentText, "utf-8");
             this.tui.stop();

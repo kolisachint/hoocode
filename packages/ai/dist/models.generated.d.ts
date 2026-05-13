@@ -9706,7 +9706,7 @@ export declare const MODELS: {
         readonly "minimax-m2.5": {
             id: string;
             name: string;
-            api: "openai-completions";
+            api: "anthropic-messages";
             provider: string;
             baseUrl: string;
             reasoning: true;
@@ -10041,6 +10041,26 @@ export declare const MODELS: {
             maxTokens: number;
         };
         readonly "anthropic/claude-opus-4.7": {
+            id: string;
+            name: string;
+            api: "openai-completions";
+            provider: string;
+            baseUrl: string;
+            reasoning: true;
+            thinkingLevelMap: {
+                xhigh: string;
+            };
+            input: ("image" | "text")[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+            contextWindow: number;
+            maxTokens: number;
+        };
+        readonly "anthropic/claude-opus-4.7-fast": {
             id: string;
             name: string;
             api: "openai-completions";
@@ -12940,23 +12960,6 @@ export declare const MODELS: {
             contextWindow: number;
             maxTokens: number;
         };
-        readonly "qwen/qwen-max": {
-            id: string;
-            name: string;
-            api: "openai-completions";
-            provider: string;
-            baseUrl: string;
-            reasoning: false;
-            input: "text"[];
-            cost: {
-                input: number;
-                output: number;
-                cacheRead: number;
-                cacheWrite: number;
-            };
-            contextWindow: number;
-            maxTokens: number;
-        };
         readonly "qwen/qwen-plus": {
             id: string;
             name: string;
@@ -12999,40 +13002,6 @@ export declare const MODELS: {
             baseUrl: string;
             reasoning: true;
             input: "text"[];
-            cost: {
-                input: number;
-                output: number;
-                cacheRead: number;
-                cacheWrite: number;
-            };
-            contextWindow: number;
-            maxTokens: number;
-        };
-        readonly "qwen/qwen-turbo": {
-            id: string;
-            name: string;
-            api: "openai-completions";
-            provider: string;
-            baseUrl: string;
-            reasoning: false;
-            input: "text"[];
-            cost: {
-                input: number;
-                output: number;
-                cacheRead: number;
-                cacheWrite: number;
-            };
-            contextWindow: number;
-            maxTokens: number;
-        };
-        readonly "qwen/qwen-vl-max": {
-            id: string;
-            name: string;
-            api: "openai-completions";
-            provider: string;
-            baseUrl: string;
-            reasoning: false;
-            input: ("image" | "text")[];
             cost: {
                 input: number;
                 output: number;
@@ -15331,23 +15300,6 @@ export declare const MODELS: {
             provider: string;
             baseUrl: string;
             reasoning: false;
-            input: ("image" | "text")[];
-            cost: {
-                input: number;
-                output: number;
-                cacheRead: number;
-                cacheWrite: number;
-            };
-            contextWindow: number;
-            maxTokens: number;
-        };
-        readonly "anthropic/claude-3.7-sonnet": {
-            id: string;
-            name: string;
-            api: "anthropic-messages";
-            provider: string;
-            baseUrl: string;
-            reasoning: true;
             input: ("image" | "text")[];
             cost: {
                 input: number;

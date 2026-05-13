@@ -350,6 +350,24 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--mode-path / --profile-path flags", () => {
+		test("collects --mode-path values into array", () => {
+			const result = parseArgs(["--mode-path", "/team/modes", "--mode-path", "~/extra/modes"]);
+			expect(result.modePaths).toEqual(["/team/modes", "~/extra/modes"]);
+		});
+
+		test("collects --profile-path values into array", () => {
+			const result = parseArgs(["--profile-path", "/team/profiles"]);
+			expect(result.profilePaths).toEqual(["/team/profiles"]);
+		});
+
+		test("modePaths/profilePaths are undefined when no flags passed", () => {
+			const result = parseArgs([]);
+			expect(result.modePaths).toBeUndefined();
+			expect(result.profilePaths).toBeUndefined();
+		});
+	});
+
 	describe("complex combinations", () => {
 		test("parses multiple flags together", () => {
 			const result = parseArgs([

@@ -1,7 +1,7 @@
 import { copyFile, mkdir, readdir, stat } from "fs/promises";
-import { getHooCodeDir } from "./config.js";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { getHooCodeDir } from "./config.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
