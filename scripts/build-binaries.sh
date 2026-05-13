@@ -57,16 +57,19 @@ if [[ -n "$PLATFORM" ]]; then
     esac
 fi
 
-echo "==> Installing dependencies..."
-npm ci
+echo "==> Installing dependencies (bun)..."
+# Use bun instead of npm to avoid an arborist regression in npm 11.x that
+# crashes with "Invalid Version" when resolving this monorepo's workspace
+# cycle. Bun's default isolated layout is then hoisted to a flat node_modules
+# tree (see scripts/hoist-bun-deps.mjs) so tsc / tsgo still resolve packages
+# the way npm install would.
+bun install --frozen-lockfile
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
-    # bun --linker=hoisted only installs optional deps for the current platform.
-    # We need all platform bindings for bun cross-compilation.
-    # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    # Install all in one command to avoid npm removing packages from previous installs
-    npm install --no-save --force \
+    # Bun pulls all optional-deps regardless of os/cpu, so no --force needed.
+    # Install all in one command to avoid sibling installs evicting each other.
+    bun add --no-save \
         @mariozechner/clipboard-darwin-arm64@0.3.0 \
         @mariozechner/clipboard-darwin-x64@0.3.0 \
         @mariozechner/clipboard-linux-x64-gnu@0.3.0 \
@@ -84,6 +87,9 @@ if [[ "$SKIP_DEPS" == "false" ]]; then
 else
     echo "==> Skipping cross-platform native bindings (--skip-deps)"
 fi
+
+echo "==> Hoisting bun deps to flat node_modules layout..."
+node scripts/hoist-bun-deps.mjs
 
 echo "==> Building all packages..."
 npm run build
