@@ -42,9 +42,9 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@kolisachint/hoocode-agent-core": "^0.1.4",
-		"@kolisachint/hoocode-ai": "^0.1.4",
-		"@kolisachint/hoocode-tui": "^0.1.4",
+		"@kolisachint/hoocode-agent-core": "^0.2.2",
+		"@kolisachint/hoocode-ai": "^0.2.2",
+		"@kolisachint/hoocode-tui": "^0.2.2",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",

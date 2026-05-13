@@ -28,6 +28,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Setup Node 20 with npm 10
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Pin npm to 10.x (avoid an arborist regression in npm 11.x that throws
+              "Invalid Version" when resolving this monorepo's workspace cycle)
+        run: npm install -g npm@10
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:

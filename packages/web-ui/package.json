@@ -18,8 +18,8 @@
 	},
 	"dependencies": {
 		"@lmstudio/sdk": "^1.5.0",
-		"@kolisachint/hoocode-ai": "^0.1.4",
-		"@kolisachint/hoocode-tui": "^0.1.4",
+		"@kolisachint/hoocode-ai": "^0.2.2",
+		"@kolisachint/hoocode-tui": "^0.2.2",
 		"typebox": "^1.1.24",
 		"docx-preview": "^0.3.7",
 		"jszip": "^3.10.1",
@@ -33,7 +33,7 @@
 		"lit": "^3.3.1"
 	},
 	"devDependencies": {
-		"@kolisachint/hoocode-mini-lit": "^0.1.4",
+		"@kolisachint/hoocode-mini-lit": "^0.2.2",
 		"@tailwindcss/cli": "^4.0.0-beta.14",
 		"concurrently": "^9.2.1",
 		"typescript": "^5.7.3"
