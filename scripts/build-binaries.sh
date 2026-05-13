@@ -58,11 +58,11 @@ if [[ -n "$PLATFORM" ]]; then
 fi
 
 echo "==> Installing dependencies..."
-# Use bun with hoisted linker (flat node_modules) to avoid an npm 11.x arborist
-# bug ("Invalid Version" / "Cannot read properties of null") when resolving
-# workspace cycles where inter-package deps point at unpublished versions.
-# A subsequent `npm install --no-save --force` still works against this layout.
-bun install --linker=hoisted --frozen-lockfile
+# Pin to npm 10.x to avoid an npm 11.x arborist bug ("Invalid Version" /
+# "Cannot read properties of null") when resolving the workspace cycle in
+# this monorepo where inter-package deps may not match the in-tree versions.
+npm install -g npm@10
+npm ci
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
