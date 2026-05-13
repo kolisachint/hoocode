@@ -61,7 +61,7 @@ echo "==> Installing dependencies..."
 # Pin to npm 10.x to avoid an npm 11.x arborist bug ("Invalid Version" /
 # "Cannot read properties of null") when resolving the workspace cycle in
 # this monorepo where inter-package deps may not match the in-tree versions.
-npm install -g npm@10
+sudo npm install -g npm@10
 npm ci
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
