@@ -58,12 +58,16 @@ if [[ -n "$PLATFORM" ]]; then
 fi
 
 echo "==> Installing dependencies..."
-npm ci
+# Use bun with hoisted linker (flat node_modules) to avoid an npm 11.x arborist
+# bug ("Invalid Version" / "Cannot read properties of null") when resolving
+# workspace cycles where inter-package deps point at unpublished versions.
+# A subsequent `npm install --no-save --force` still works against this layout.
+bun install --linker=hoisted --frozen-lockfile
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
     echo "==> Installing cross-platform native bindings..."
-    # npm ci only installs optional deps for the current platform
-    # We need all platform bindings for bun cross-compilation
+    # bun --linker=hoisted only installs optional deps for the current platform.
+    # We need all platform bindings for bun cross-compilation.
     # Use --force to bypass platform checks (os/cpu restrictions in package.json)
     # Install all in one command to avoid npm removing packages from previous installs
     npm install --no-save --force \
