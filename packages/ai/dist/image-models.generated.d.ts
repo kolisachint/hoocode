@@ -225,6 +225,126 @@ export declare const IMAGE_MODELS: {
                 cacheWrite: number;
             };
         };
+        readonly "recraft/recraft-v4-pro-vector": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
+        readonly "recraft/recraft-v4-vector": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
+        readonly "recraft/recraft-v4.1": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
+        readonly "recraft/recraft-v4.1-pro": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
+        readonly "recraft/recraft-v4.1-pro-vector": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
+        readonly "recraft/recraft-v4.1-utility": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
+        readonly "recraft/recraft-v4.1-utility-pro": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
+        readonly "recraft/recraft-v4.1-vector": {
+            id: string;
+            name: string;
+            api: "openrouter-images";
+            provider: string;
+            baseUrl: string;
+            input: ("image" | "text")[];
+            output: "image"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+        };
         readonly "sourceful/riverflow-v2-fast": {
             id: string;
             name: string;

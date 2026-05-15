@@ -9526,14 +9526,14 @@ export declare const MODELS: {
             contextWindow: number;
             maxTokens: number;
         };
-        readonly "ring-2.6-1t-free": {
+        readonly "qwen3.6-plus-free": {
             id: string;
             name: string;
-            api: "openai-completions";
+            api: "anthropic-messages";
             provider: string;
             baseUrl: string;
             reasoning: true;
-            input: "text"[];
+            input: ("image" | "text")[];
             cost: {
                 input: number;
                 output: number;
@@ -10523,6 +10523,34 @@ export declare const MODELS: {
             maxTokens: number;
         };
         readonly "deepseek/deepseek-v4-flash": {
+            id: string;
+            name: string;
+            api: "openai-completions";
+            provider: string;
+            baseUrl: string;
+            compat: {
+                requiresReasoningContentOnAssistantMessages: true;
+                thinkingFormat: "deepseek";
+            };
+            reasoning: true;
+            thinkingLevelMap: {
+                minimal: null;
+                low: null;
+                medium: null;
+                high: string;
+                xhigh: string;
+            };
+            input: "text"[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+            contextWindow: number;
+            maxTokens: number;
+        };
+        readonly "deepseek/deepseek-v4-flash:free": {
             id: string;
             name: string;
             api: "openai-completions";
