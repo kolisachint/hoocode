@@ -5,5 +5,7 @@ process.emitWarning = (() => { });
 import { restoreSandboxEnv } from "./restore-sandbox-env.js";
 restoreSandboxEnv();
 await import("./register-bedrock.js");
+const { initConfig } = await import("../init.js");
+await initConfig();
 await import("../cli.js");
 //# sourceMappingURL=cli.js.map

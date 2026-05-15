@@ -1,11 +1,8 @@
-import { copyFile, mkdir, readdir, stat } from "fs/promises";
+import { mkdir, stat, writeFile } from "fs/promises";
 import { dirname, join } from "path";
-import { fileURLToPath } from "url";
 import { getHooCodeDir } from "./config.js";
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { EMBEDDED_DEFAULT_CONFIG, EMBEDDED_MODES, EMBEDDED_PROFILES } from "./init-templates.generated.js";
 const HOOCODE_DIR = getHooCodeDir();
-const TEMPLATES_DIR = join(__dirname, "..", "templates");
 async function exists(p) {
     try {
         await stat(p);
@@ -15,26 +12,9 @@ async function exists(p) {
         return false;
     }
 }
-async function _copyDir(srcDir, destDir) {
-    await mkdir(destDir, { recursive: true });
-    let entries;
-    try {
-        entries = await readdir(srcDir);
-    }
-    catch {
-        return;
-    }
-    for (const entry of entries) {
-        const srcPath = join(srcDir, entry);
-        const destPath = join(destDir, entry);
-        const entryStat = await stat(srcPath);
-        if (entryStat.isDirectory()) {
-            await _copyDir(srcPath, destPath);
-        }
-        else {
-            await copyFile(srcPath, destPath);
-        }
-    }
+async function writeSeedFile(dest, contents) {
+    await mkdir(dirname(dest), { recursive: true });
+    await writeFile(dest, contents);
 }
 export async function initConfig() {
     const configPath = join(HOOCODE_DIR, "agent", "hoo-config.json");
@@ -44,36 +24,13 @@ export async function initConfig() {
     await mkdir(join(HOOCODE_DIR, "modes"), { recursive: true });
     await mkdir(join(HOOCODE_DIR, "profiles"), { recursive: true });
     await mkdir(join(HOOCODE_DIR, "mcp-servers"), { recursive: true });
-    await mkdir(join(HOOCODE_DIR, "extensions"), { recursive: true });
-    await mkdir(join(HOOCODE_DIR, "agent"), { recursive: true });
-    await copyFile(join(TEMPLATES_DIR, "default-config.json"), configPath);
-    const modesDir = join(TEMPLATES_DIR, "modes");
-    let modeNames = [];
-    try {
-        modeNames = await readdir(modesDir);
+    await mkdir(join(HOOCODE_DIR, "agent", "extensions"), { recursive: true });
+    await writeSeedFile(configPath, EMBEDDED_DEFAULT_CONFIG);
+    for (const [modeName, content] of Object.entries(EMBEDDED_MODES)) {
+        await writeSeedFile(join(HOOCODE_DIR, "modes", modeName, "system.md"), content);
     }
-    catch { }
-    for (const modeName of modeNames) {
-        const src = join(modesDir, modeName, "system.md");
-        const dest = join(HOOCODE_DIR, "modes", modeName, "system.md");
-        if (await exists(src)) {
-            await mkdir(dirname(dest), { recursive: true });
-            await copyFile(src, dest);
-        }
-    }
-    const profilesDir = join(TEMPLATES_DIR, "profiles");
-    let profileNames = [];
-    try {
-        profileNames = await readdir(profilesDir);
-    }
-    catch { }
-    for (const profileName of profileNames) {
-        const src = join(profilesDir, profileName, "context.md");
-        const dest = join(HOOCODE_DIR, "profiles", profileName, "context.md");
-        if (await exists(src)) {
-            await mkdir(dirname(dest), { recursive: true });
-            await copyFile(src, dest);
-        }
+    for (const [profileName, content] of Object.entries(EMBEDDED_PROFILES)) {
+        await writeSeedFile(join(HOOCODE_DIR, "profiles", profileName, "context.md"), content);
     }
 }
 //# sourceMappingURL=init.js.map

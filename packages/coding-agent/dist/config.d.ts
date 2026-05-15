@@ -58,6 +58,12 @@ export declare function getChangelogPath(): string;
 export declare function getInteractiveAssetsDir(): string;
 /** Get path to a bundled interactive asset */
 export declare function getBundledInteractiveAssetPath(name: string): string;
+/**
+ * Get path to bundled init templates (default modes/profiles seeded into HOOCODE_DIR on first run).
+ * - For Bun binary: templates/ next to executable
+ * - For Node.js (dist/) and tsx (src/): templates/ at the package root
+ */
+export declare function getTemplatesDir(): string;
 export declare const PACKAGE_NAME: string;
 export declare const APP_NAME: string;
 export declare const APP_TITLE: string;
