@@ -1,13 +1,9 @@
 import { copyFile, mkdir, readdir, stat } from "fs/promises";
 import { dirname, join } from "path";
-import { fileURLToPath } from "url";
-import { getHooCodeDir } from "./config.js";
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+import { getHooCodeDir, getTemplatesDir } from "./config.js";
 
 const HOOCODE_DIR = getHooCodeDir();
-const TEMPLATES_DIR = join(__dirname, "..", "templates");
+const TEMPLATES_DIR = getTemplatesDir();
 
 async function exists(p: string): Promise<boolean> {
 	try {
@@ -38,6 +34,16 @@ async function _copyDir(srcDir: string, destDir: string): Promise<void> {
 	}
 }
 
+async function readDirOrWarn(dir: string, label: string): Promise<string[]> {
+	try {
+		return await readdir(dir);
+	} catch (err) {
+		const reason = err instanceof Error ? err.message : String(err);
+		console.warn(`hoocode init: could not read bundled ${label} at ${dir} (${reason}). Skipping.`);
+		return [];
+	}
+}
+
 export async function initConfig(): Promise<void> {
 	const configPath = join(HOOCODE_DIR, "agent", "hoo-config.json");
 
@@ -54,10 +60,7 @@ export async function initConfig(): Promise<void> {
 	await copyFile(join(TEMPLATES_DIR, "default-config.json"), configPath);
 
 	const modesDir = join(TEMPLATES_DIR, "modes");
-	let modeNames: string[] = [];
-	try {
-		modeNames = await readdir(modesDir);
-	} catch {}
+	const modeNames = await readDirOrWarn(modesDir, "modes");
 
 	for (const modeName of modeNames) {
 		const src = join(modesDir, modeName, "system.md");
@@ -69,10 +72,7 @@ export async function initConfig(): Promise<void> {
 	}
 
 	const profilesDir = join(TEMPLATES_DIR, "profiles");
-	let profileNames: string[] = [];
-	try {
-		profileNames = await readdir(profilesDir);
-	} catch {}
+	const profileNames = await readDirOrWarn(profilesDir, "profiles");
 
 	for (const profileName of profileNames) {
 		const src = join(profilesDir, profileName, "context.md");

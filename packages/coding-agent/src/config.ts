@@ -401,6 +401,15 @@ export function getBundledInteractiveAssetPath(name: string): string {
 	return join(getInteractiveAssetsDir(), name);
 }
 
+/**
+ * Get path to bundled init templates (default modes/profiles seeded into HOOCODE_DIR on first run).
+ * - For Bun binary: templates/ next to executable
+ * - For Node.js (dist/) and tsx (src/): templates/ at the package root
+ */
+export function getTemplatesDir(): string {
+	return join(getPackageDir(), "templates");
+}
+
 // =============================================================================
 // App Config (from package.json hoocodeConfig — accepts legacy piConfig)
 // =============================================================================

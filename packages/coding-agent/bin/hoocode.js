@@ -1,15 +1,19 @@
 #!/usr/bin/env node
-import { fileURLToPath } from "url";
+import { fileURLToPath, pathToFileURL } from "url";
 import { dirname, join } from "path";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const distDir = join(__dirname, "..", "dist");
 
-const { initConfig } = await import(join(distDir, "init.js"));
+// Wrap path -> file:// URL so dynamic import() works on Windows.
+// Node's ESM loader rejects raw "C:\\..." paths with ERR_UNSUPPORTED_ESM_URL_SCHEME.
+const toUrl = (p) => pathToFileURL(p).href;
+
+const { initConfig } = await import(toUrl(join(distDir, "init.js")));
 await initConfig();
 
-const { default: hooCore } = await import(join(distDir, "extensions", "core", "hoo-core.js"));
-const { main } = await import(join(distDir, "main.js"));
+const { default: hooCore } = await import(toUrl(join(distDir, "extensions", "core", "hoo-core.js")));
+const { main } = await import(toUrl(join(distDir, "main.js")));
 
 await main(process.argv.slice(2), { extensionFactories: [hooCore] });

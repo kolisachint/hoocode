@@ -138,6 +138,7 @@ for platform in "${PLATFORMS[@]}"; do
     cp -r dist/core/export-html binaries/$platform/
     cp -r docs binaries/$platform/
     cp -r examples binaries/$platform/
+    cp -r templates binaries/$platform/
 
     # Copy koffi native module for Windows (needed for VT input support)
     if [[ "$platform" == "windows-x64" ]]; then
