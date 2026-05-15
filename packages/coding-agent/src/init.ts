@@ -1,9 +1,9 @@
-import { copyFile, mkdir, readdir, stat } from "fs/promises";
+import { mkdir, stat, writeFile } from "fs/promises";
 import { dirname, join } from "path";
-import { getHooCodeDir, getTemplatesDir } from "./config.js";
+import { getHooCodeDir } from "./config.js";
+import { EMBEDDED_DEFAULT_CONFIG, EMBEDDED_MODES, EMBEDDED_PROFILES } from "./init-templates.generated.js";
 
 const HOOCODE_DIR = getHooCodeDir();
-const TEMPLATES_DIR = getTemplatesDir();
 
 async function exists(p: string): Promise<boolean> {
 	try {
@@ -14,34 +14,9 @@ async function exists(p: string): Promise<boolean> {
 	}
 }
 
-async function _copyDir(srcDir: string, destDir: string): Promise<void> {
-	await mkdir(destDir, { recursive: true });
-	let entries: string[];
-	try {
-		entries = await readdir(srcDir);
-	} catch {
-		return;
-	}
-	for (const entry of entries) {
-		const srcPath = join(srcDir, entry);
-		const destPath = join(destDir, entry);
-		const entryStat = await stat(srcPath);
-		if (entryStat.isDirectory()) {
-			await _copyDir(srcPath, destPath);
-		} else {
-			await copyFile(srcPath, destPath);
-		}
-	}
-}
-
-async function readDirOrWarn(dir: string, label: string): Promise<string[]> {
-	try {
-		return await readdir(dir);
-	} catch (err) {
-		const reason = err instanceof Error ? err.message : String(err);
-		console.warn(`hoocode init: could not read bundled ${label} at ${dir} (${reason}). Skipping.`);
-		return [];
-	}
+async function writeSeedFile(dest: string, contents: string): Promise<void> {
+	await mkdir(dirname(dest), { recursive: true });
+	await writeFile(dest, contents);
 }
 
 export async function initConfig(): Promise<void> {
@@ -57,29 +32,13 @@ export async function initConfig(): Promise<void> {
 	await mkdir(join(HOOCODE_DIR, "extensions"), { recursive: true });
 	await mkdir(join(HOOCODE_DIR, "agent"), { recursive: true });
 
-	await copyFile(join(TEMPLATES_DIR, "default-config.json"), configPath);
+	await writeSeedFile(configPath, EMBEDDED_DEFAULT_CONFIG);
 
-	const modesDir = join(TEMPLATES_DIR, "modes");
-	const modeNames = await readDirOrWarn(modesDir, "modes");
-
-	for (const modeName of modeNames) {
-		const src = join(modesDir, modeName, "system.md");
-		const dest = join(HOOCODE_DIR, "modes", modeName, "system.md");
-		if (await exists(src)) {
-			await mkdir(dirname(dest), { recursive: true });
-			await copyFile(src, dest);
-		}
+	for (const [modeName, content] of Object.entries(EMBEDDED_MODES)) {
+		await writeSeedFile(join(HOOCODE_DIR, "modes", modeName, "system.md"), content);
 	}
 
-	const profilesDir = join(TEMPLATES_DIR, "profiles");
-	const profileNames = await readDirOrWarn(profilesDir, "profiles");
-
-	for (const profileName of profileNames) {
-		const src = join(profilesDir, profileName, "context.md");
-		const dest = join(HOOCODE_DIR, "profiles", profileName, "context.md");
-		if (await exists(src)) {
-			await mkdir(dirname(dest), { recursive: true });
-			await copyFile(src, dest);
-		}
+	for (const [profileName, content] of Object.entries(EMBEDDED_PROFILES)) {
+		await writeSeedFile(join(HOOCODE_DIR, "profiles", profileName, "context.md"), content);
 	}
 }

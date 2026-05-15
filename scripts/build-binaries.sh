@@ -138,7 +138,8 @@ for platform in "${PLATFORMS[@]}"; do
     cp -r dist/core/export-html binaries/$platform/
     cp -r docs binaries/$platform/
     cp -r examples binaries/$platform/
-    cp -r templates binaries/$platform/
+    # templates/ intentionally not copied — seed content is embedded into the
+    # compiled binary by scripts/embed-templates.mjs (see src/init-templates.generated.ts).
 
     # Copy koffi native module for Windows (needed for VT input support)
     if [[ "$platform" == "windows-x64" ]]; then
