@@ -51,10 +51,14 @@ let totalUpdates = 0;
 for (const [dir, pkg] of Object.entries(packages)) {
 	let updated = false;
 	
+	// Preserve protocol-prefixed specs (file:, link:, workspace:, portal:)
+	// which intentionally point at local workspace members rather than the registry.
+	const isLocalRef = (spec) => /^(file:|link:|workspace:|portal:)/.test(spec);
+
 	// Check dependencies
 	if (pkg.data.dependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.dependencies)) {
-			if (versionMap[depName]) {
+			if (versionMap[depName] && !isLocalRef(currentVersion)) {
 				const newVersion = `^${versionMap[depName]}`;
 				if (currentVersion !== newVersion) {
 					console.log(`\n${pkg.data.name}:`);
@@ -66,11 +70,11 @@ for (const [dir, pkg] of Object.entries(packages)) {
 			}
 		}
 	}
-	
+
 	// Check devDependencies
 	if (pkg.data.devDependencies) {
 		for (const [depName, currentVersion] of Object.entries(pkg.data.devDependencies)) {
-			if (versionMap[depName]) {
+			if (versionMap[depName] && !isLocalRef(currentVersion)) {
 				const newVersion = `^${versionMap[depName]}`;
 				if (currentVersion !== newVersion) {
 					console.log(`\n${pkg.data.name}:`);
