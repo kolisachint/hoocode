@@ -29,6 +29,9 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Pin npm to 10.x (avoid arborist workspace-cycle crash in npm 11)
+        run: sudo npm install -g npm@10
+
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
