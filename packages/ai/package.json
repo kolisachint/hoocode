@@ -60,8 +60,8 @@
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"generate-models": "npx tsx scripts/generate-models.ts",
-		"generate-image-models": "npx tsx scripts/generate-image-models.ts",
+		"generate-models": "bun run scripts/generate-models.ts",
+		"generate-image-models": "bun run scripts/generate-image-models.ts",
 		"build": "npm run generate-models && npm run generate-image-models && tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"dev:tsc": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
