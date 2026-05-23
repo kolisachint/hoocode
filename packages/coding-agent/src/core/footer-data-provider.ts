@@ -348,7 +348,7 @@ export class FooterDataProvider {
 	private activeMode = "build";
 	private activeProfile = "default";
 
-	/** Current active mode (e.g., ask, plan, build, agent, debug) */
+	/** Current active mode (e.g., ask, plan, build, debug) */
 	getActiveMode(): string {
 		return this.activeMode;
 	}

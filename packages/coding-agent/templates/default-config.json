@@ -13,7 +13,6 @@
     "ask": { "auto_allow": ["read"] },
     "plan": { "auto_allow": ["read", "write"] },
     "build": { "auto_allow": ["read"] },
-    "agent": { "auto_allow": ["read", "bash", "edit", "write"] },
     "debug": { "auto_allow": ["read", "bash"] }
   },
   "profiles": {

@@ -2,8 +2,36 @@
  * System prompt construction and project context loading
  */
 
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
+
+/**
+ * Detect whether cwd lives inside the hoocode source repo.
+ * Walks up from cwd looking for a package.json with name "hoocode-monorepo".
+ * Used to gate the in-prompt HooCode docs block — those references are dead
+ * weight when the user is working on an unrelated project.
+ */
+function isInHoocodeRepo(cwd: string): boolean {
+	let dir = resolve(cwd);
+	const root = resolve("/");
+	while (true) {
+		const pkgPath = join(dir, "package.json");
+		if (existsSync(pkgPath)) {
+			try {
+				const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as { name?: string };
+				if (pkg.name === "hoocode-monorepo") return true;
+			} catch {
+				// ignore malformed package.json and keep walking
+			}
+		}
+		if (dir === root) return false;
+		const parent = dirname(dir);
+		if (parent === dir) return false;
+		dir = parent;
+	}
+}
 
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
@@ -79,10 +107,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		return prompt;
 	}
 
-	// Get absolute paths to documentation and examples
-	const readmePath = getReadmePath();
-	const docsPath = getDocsPath();
-	const examplesPath = getExamplesPath();
+	// Only inject the HooCode docs block when working inside the hoocode source
+	// repo — otherwise it burns ~150 tokens per turn on every unrelated project.
+	const includeHoocodeDocs = isInHoocodeRepo(resolvedCwd);
 
 	// Build tools list based on selected tools.
 	// A tool appears in Available tools only when the caller provides a one-line snippet.
@@ -128,6 +155,18 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
+	const hoocodeDocsSection = includeHoocodeDocs
+		? `
+
+HooCode documentation (read only when the user asks about hoocode itself, its SDK, extensions, themes, skills, or TUI):
+- Main documentation: ${getReadmePath()}
+- Additional docs: ${getDocsPath()}
+- Examples: ${getExamplesPath()} (extensions, custom tools, SDK)
+- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), hoocode packages (docs/packages.md)
+- When working on hoocode topics, read the docs and examples, and follow .md cross-references before implementing
+- Always read hoocode .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`
+		: "";
+
 	let prompt = `You are an expert coding assistant operating inside hoocode, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
 
 Available tools:
@@ -136,15 +175,7 @@ ${toolsList}
 In addition to the tools above, you may have access to other custom tools depending on the project.
 
 Guidelines:
-${guidelines}
-
-HooCode documentation (read only when the user asks about hoocode itself, its SDK, extensions, themes, skills, or TUI):
-- Main documentation: ${readmePath}
-- Additional docs: ${docsPath}
-- Examples: ${examplesPath} (extensions, custom tools, SDK)
-- When asked about: extensions (docs/extensions.md, examples/extensions/), themes (docs/themes.md), skills (docs/skills.md), prompt templates (docs/prompt-templates.md), TUI components (docs/tui.md), keybindings (docs/keybindings.md), SDK integrations (docs/sdk.md), custom providers (docs/custom-provider.md), adding models (docs/models.md), hoocode packages (docs/packages.md)
-- When working on hoocode topics, read the docs and examples, and follow .md cross-references before implementing
-- Always read hoocode .md files completely and follow links to related docs (e.g., tui.md for TUI API details)`;
+${guidelines}${hoocodeDocsSection}`;
 
 	if (appendSection) {
 		prompt += appendSection;

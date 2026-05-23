@@ -45,7 +45,6 @@ Modes control what the agent is allowed to do. Switch with `/mode <name>` or run
 | `ask` | Read-only Q&A | No | Read-only |
 | `plan` | Explore and write a plan | `.hoocode/plan.md` only | Read-only |
 | `build` | Implement carefully, one step at a time | Yes | Guarded |
-| `agent` | Multi-step autonomy within guardrails | Yes | Auto-allowed |
 | `debug` | Root-cause analysis, no modifications | No | Read-only |
 
 ### Mode details
@@ -59,9 +58,6 @@ tells you to run `/approve`.
 
 **build** — Reads before editing, shows diffs before non-trivial changes, asks for confirmation
 before destructive operations, runs tests after every logical unit.
-
-**agent** — Uses auto-allowed tools without per-call prompts. Reports progress every few steps.
-Stops and asks if it hits genuine ambiguity. Outputs a summary on completion.
 
 **debug** — Gathers evidence, reproduces the bug, traces the call path, states the root cause
 in one sentence, and describes the fix — but does not apply it. Switch to `/mode build` to apply.
@@ -145,7 +141,6 @@ Add `.hoocode/` to your `.gitignore` to keep plans and local overrides out of ve
 │   ├── ask/system.md
 │   ├── plan/system.md
 │   ├── build/system.md
-│   ├── agent/system.md
 │   └── debug/system.md
 ├── profiles/            # Profile context files (one dir per profile)
 │   ├── default/context.md

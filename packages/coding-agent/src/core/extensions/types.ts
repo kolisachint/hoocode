@@ -142,7 +142,7 @@ export interface ExtensionUIContext {
 
 	/**
 	 * Set the active mode and profile displayed in the footer.
-	 * Format: mode (e.g., 'ask', 'plan', 'build', 'agent', 'debug')
+	 * Format: mode (e.g., 'ask', 'plan', 'build', 'debug')
 	 *         profile (e.g., 'default', 'data', 'devops')
 	 */
 	setModeProfile(mode: string, profile: string): void;

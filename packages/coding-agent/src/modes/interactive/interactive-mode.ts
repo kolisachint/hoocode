@@ -844,16 +844,22 @@ export class InteractiveMode {
 		const entries = parseChangelog(changelogPath);
 
 		if (!lastVersion) {
-			// Fresh install - record the version, send telemetry, don't show changelog
-			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
+			// Fresh install - record the latest entry's version (not VERSION, which may
+			// overshoot the latest entry and silently swallow it once it appears).
+			// Fall back to VERSION only if no entries exist yet.
+			const seedVersion =
+				entries.length > 0 ? `${entries[0].major}.${entries[0].minor}.${entries[0].patch}` : VERSION;
+			this.settingsManager.setLastChangelogVersion(seedVersion);
+			this.reportInstallTelemetry(seedVersion);
 			return undefined;
 		}
 
 		const newEntries = getNewEntries(entries, lastVersion);
 		if (newEntries.length > 0) {
-			this.settingsManager.setLastChangelogVersion(VERSION);
-			this.reportInstallTelemetry(VERSION);
+			const latest = newEntries[0];
+			const latestVersion = `${latest.major}.${latest.minor}.${latest.patch}`;
+			this.settingsManager.setLastChangelogVersion(latestVersion);
+			this.reportInstallTelemetry(latestVersion);
 			return newEntries.map((e) => e.content).join("\n\n");
 		}
 
