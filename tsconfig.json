@@ -15,11 +15,9 @@
 			"@kolisachint/hoocode-agent/*": ["./packages/coding-agent/src/*"],
 			"typebox": ["./node_modules/typebox"],
 			"@kolisachint/hoocode-tui": ["./packages/tui/src/index.ts"],
-			"@kolisachint/hoocode-tui/*": ["./packages/tui/src/*"],
-			"@kolisachint/hoocode-web-ui": ["./packages/web-ui/src/index.ts"],
-			"@kolisachint/hoocode-web-ui/*": ["./packages/web-ui/src/*"]
+			"@kolisachint/hoocode-tui/*": ["./packages/tui/src/*"]
 		}
 	},
 	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
-	"exclude": ["packages/web-ui/**/*", "**/dist/**"]
+	"exclude": ["**/dist/**"]
 }
