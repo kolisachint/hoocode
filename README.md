@@ -14,7 +14,6 @@ HooCode is a fork of the upstream [`pi-mono`](https://github.com/earendil-works/
 | **[@kolisachint/hoocode-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
 | **[@kolisachint/hoocode-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, …) |
 | **[@kolisachint/hoocode-tui](packages/tui)** | Terminal UI library with differential rendering |
-| **[@kolisachint/hoocode-web-ui](packages/web-ui)** | Web components for AI chat interfaces |
 
 ## Install
 
@@ -31,8 +30,6 @@ npm run build        # Build all packages
 npm run check        # Lint, format, and type check
 ./test.sh            # Run tests (skips LLM-dependent tests without API keys)
 ```
-
-> `npm run check` requires `npm run build` to be run first. The web-ui package uses `tsc` which needs compiled `.d.ts` files from dependencies.
 
 ## Contributing
 
