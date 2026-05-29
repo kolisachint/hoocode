@@ -40,6 +40,7 @@ export interface ResourceLoader {
             path: string;
             content: string;
         }>;
+        warnings: string[];
     };
     getSystemPrompt(): string | undefined;
     getAppendSystemPrompt(): string[];
@@ -49,10 +50,13 @@ export interface ResourceLoader {
 export declare function loadProjectContextFiles(options: {
     cwd: string;
     agentDir: string;
-}): Array<{
-    path: string;
-    content: string;
-}>;
+}): {
+    agentsFiles: Array<{
+        path: string;
+        content: string;
+    }>;
+    warnings: string[];
+};
 export interface DefaultResourceLoaderOptions {
     cwd: string;
     agentDir: string;
@@ -97,11 +101,13 @@ export interface DefaultResourceLoaderOptions {
             path: string;
             content: string;
         }>;
+        warnings: string[];
     }) => {
         agentsFiles: Array<{
             path: string;
             content: string;
         }>;
+        warnings?: string[];
     };
     systemPromptOverride?: (base: string | undefined) => string | undefined;
     appendSystemPromptOverride?: (base: string[]) => string[];
@@ -139,6 +145,7 @@ export declare class DefaultResourceLoader implements ResourceLoader {
     private themes;
     private themeDiagnostics;
     private agentsFiles;
+    private agentsFileWarnings;
     private systemPrompt?;
     private appendSystemPrompt;
     private lastSkillPaths;
@@ -166,6 +173,7 @@ export declare class DefaultResourceLoader implements ResourceLoader {
             path: string;
             content: string;
         }>;
+        warnings: string[];
     };
     getSystemPrompt(): string | undefined;
     getAppendSystemPrompt(): string[];

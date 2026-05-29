@@ -33,8 +33,8 @@ function resolvePromptInput(input, description) {
 // so a pasted spec can't silently bloat every request forever.
 const CONTEXT_FILE_WARN_BYTES = 8 * 1024;
 const CONTEXT_FILE_MAX_BYTES = 40 * 1024;
-const warnedContextPaths = new Set();
 function loadContextFileFromDir(dir) {
+    const warnings = [];
     const candidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
     for (const filename of candidates) {
         const filePath = join(dir, filename);
@@ -46,43 +46,42 @@ function loadContextFileFromDir(dir) {
                     content =
                         content.slice(0, CONTEXT_FILE_MAX_BYTES) +
                             `\n\n[truncated: file exceeded ${CONTEXT_FILE_MAX_BYTES} bytes (~10k tokens); keep context files brief — large specs belong in linked files, not in the system prompt]`;
-                    if (!warnedContextPaths.has(filePath)) {
-                        console.error(chalk.yellow(`Warning: ${filePath} is ${bytes} bytes (>${CONTEXT_FILE_MAX_BYTES}). Truncated; this file is injected into the prompt on every turn.`));
-                        warnedContextPaths.add(filePath);
-                    }
+                    warnings.push(`${filePath} is ${bytes} bytes (>${CONTEXT_FILE_MAX_BYTES}). Truncated; this file is injected into the prompt on every turn.`);
                 }
-                else if (bytes > CONTEXT_FILE_WARN_BYTES && !warnedContextPaths.has(filePath)) {
-                    console.error(chalk.yellow(`Warning: ${filePath} is ${bytes} bytes (~${Math.round(bytes / 4)} tokens). It is injected into the system prompt on every turn — consider trimming.`));
-                    warnedContextPaths.add(filePath);
+                else if (bytes > CONTEXT_FILE_WARN_BYTES) {
+                    warnings.push(`${filePath} is ${bytes} bytes (~${Math.round(bytes / 4)} tokens). It is injected into the system prompt on every turn — consider trimming.`);
                 }
-                return { path: filePath, content };
+                return { file: { path: filePath, content }, warnings };
             }
             catch (error) {
-                console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));
+                warnings.push(`Could not read ${filePath}: ${error}`);
             }
         }
     }
-    return null;
+    return { file: null, warnings };
 }
 export function loadProjectContextFiles(options) {
     const resolvedCwd = options.cwd;
     const resolvedAgentDir = options.agentDir;
     const contextFiles = [];
+    const warnings = [];
     const seenPaths = new Set();
-    const globalContext = loadContextFileFromDir(resolvedAgentDir);
-    if (globalContext) {
-        contextFiles.push(globalContext);
-        seenPaths.add(globalContext.path);
+    const globalResult = loadContextFileFromDir(resolvedAgentDir);
+    if (globalResult.file) {
+        contextFiles.push(globalResult.file);
+        seenPaths.add(globalResult.file.path);
     }
+    warnings.push(...globalResult.warnings);
     const ancestorContextFiles = [];
     let currentDir = resolvedCwd;
     const root = resolve("/");
     while (true) {
-        const contextFile = loadContextFileFromDir(currentDir);
-        if (contextFile && !seenPaths.has(contextFile.path)) {
-            ancestorContextFiles.unshift(contextFile);
-            seenPaths.add(contextFile.path);
+        const result = loadContextFileFromDir(currentDir);
+        if (result.file && !seenPaths.has(result.file.path)) {
+            ancestorContextFiles.unshift(result.file);
+            seenPaths.add(result.file.path);
         }
+        warnings.push(...result.warnings);
         if (currentDir === root)
             break;
         const parentDir = resolve(currentDir, "..");
@@ -91,7 +90,7 @@ export function loadProjectContextFiles(options) {
         currentDir = parentDir;
     }
     contextFiles.push(...ancestorContextFiles);
-    return contextFiles;
+    return { agentsFiles: contextFiles, warnings };
 }
 export class DefaultResourceLoader {
     cwd;
@@ -126,6 +125,7 @@ export class DefaultResourceLoader {
     themes;
     themeDiagnostics;
     agentsFiles;
+    agentsFileWarnings;
     systemPrompt;
     appendSystemPrompt;
     lastSkillPaths;
@@ -171,6 +171,7 @@ export class DefaultResourceLoader {
         this.themes = [];
         this.themeDiagnostics = [];
         this.agentsFiles = [];
+        this.agentsFileWarnings = [];
         this.appendSystemPrompt = [];
         this.lastSkillPaths = [];
         this.extensionSkillSourceInfos = new Map();
@@ -192,7 +193,7 @@ export class DefaultResourceLoader {
         return { themes: this.themes, diagnostics: this.themeDiagnostics };
     }
     getAgentsFiles() {
-        return { agentsFiles: this.agentsFiles };
+        return { agentsFiles: this.agentsFiles, warnings: this.agentsFileWarnings };
     }
     getSystemPrompt() {
         return this.systemPrompt;
@@ -338,11 +339,12 @@ export class DefaultResourceLoader {
                 this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: p });
             }
         }
-        const agentsFiles = {
-            agentsFiles: this.noContextFiles ? [] : loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }),
-        };
-        const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
+        const contextResult = this.noContextFiles
+            ? { agentsFiles: [], warnings: [] }
+            : loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir });
+        const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(contextResult) : contextResult;
         this.agentsFiles = resolvedAgentsFiles.agentsFiles;
+        this.agentsFileWarnings = resolvedAgentsFiles.warnings ?? [];
         const baseSystemPrompt = resolvePromptInput(this.systemPromptSource, "system prompt");
         this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
         const baseAppend = (this.appendSystemPromptSource ?? [])
@@ -616,12 +618,12 @@ export class DefaultResourceLoader {
         for (const [index, factory] of this.extensionFactories.entries()) {
             const extensionPath = `<inline:${index + 1}>`;
             try {
-                const extension = await loadExtensionFromFactory(factory, this.cwd, this.eventBus, runtime, extensionPath);
+                const extension = await loadExtensionFromFactory(factory, this.cwd, this.eventBus, runtime, extensionPath, factory.displayName);
                 extensions.push(extension);
             }
             catch (error) {
                 const message = error instanceof Error ? error.message : "failed to load extension";
-                errors.push({ path: extensionPath, error: message });
+                errors.push({ path: factory.displayName ?? extensionPath, error: message });
             }
         }
         return { extensions, errors };

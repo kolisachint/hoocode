@@ -7649,6 +7649,23 @@ export declare const MODELS: {
             contextWindow: number;
             maxTokens: number;
         };
+        readonly "stepfun-ai/step-3.7-flash": {
+            id: string;
+            name: string;
+            api: "openai-completions";
+            provider: string;
+            baseUrl: string;
+            reasoning: true;
+            input: ("image" | "text")[];
+            cost: {
+                input: number;
+                output: number;
+                cacheRead: number;
+                cacheWrite: number;
+            };
+            contextWindow: number;
+            maxTokens: number;
+        };
         readonly "upstage/solar-10_7b-instruct": {
             id: string;
             name: string;
@@ -9591,6 +9608,9 @@ export declare const MODELS: {
             api: "openai-completions";
             provider: string;
             baseUrl: string;
+            compat: {
+                requiresReasoningContentOnAssistantMessages: true;
+            };
             reasoning: true;
             input: ("image" | "text")[];
             cost: {
@@ -9608,6 +9628,9 @@ export declare const MODELS: {
             api: "openai-completions";
             provider: string;
             baseUrl: string;
+            compat: {
+                requiresReasoningContentOnAssistantMessages: true;
+            };
             reasoning: true;
             input: ("image" | "text")[];
             cost: {

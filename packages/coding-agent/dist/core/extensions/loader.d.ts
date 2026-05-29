@@ -12,7 +12,7 @@ export declare function createExtensionRuntime(): ExtensionRuntime;
 /**
  * Create an Extension from an inline factory function.
  */
-export declare function loadExtensionFromFactory(factory: ExtensionFactory, cwd: string, eventBus: EventBus, runtime: ExtensionRuntime, extensionPath?: string): Promise<Extension>;
+export declare function loadExtensionFromFactory(factory: ExtensionFactory, cwd: string, eventBus: EventBus, runtime: ExtensionRuntime, extensionPath?: string, displayName?: string): Promise<Extension>;
 /**
  * Load extensions from paths.
  */

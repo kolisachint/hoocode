@@ -1017,7 +1017,9 @@ export interface ProviderModelConfig {
     compat?: Model<Api>["compat"];
 }
 /** Extension factory function type. Supports both sync and async initialization. */
-export type ExtensionFactory = (pi: ExtensionAPI) => void | Promise<void>;
+export type ExtensionFactory = ((pi: ExtensionAPI) => void | Promise<void>) & {
+    displayName?: string;
+};
 export interface RegisteredTool {
     definition: ToolDefinition;
     sourceInfo: SourceInfo;
@@ -1165,6 +1167,7 @@ export interface ExtensionRuntime extends ExtensionRuntimeState, ExtensionAction
 export interface Extension {
     path: string;
     resolvedPath: string;
+    displayName?: string;
     sourceInfo: SourceInfo;
     handlers: Map<string, HandlerFn[]>;
     tools: Map<string, RegisteredTool>;

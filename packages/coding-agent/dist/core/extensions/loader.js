@@ -336,8 +336,9 @@ async function loadExtension(extensionPath, cwd, eventBus, runtime) {
 /**
  * Create an Extension from an inline factory function.
  */
-export async function loadExtensionFromFactory(factory, cwd, eventBus, runtime, extensionPath = "<inline>") {
+export async function loadExtensionFromFactory(factory, cwd, eventBus, runtime, extensionPath = "<inline>", displayName) {
     const extension = createExtension(extensionPath, extensionPath);
+    extension.displayName = displayName;
     const api = createExtensionAPI(extension, runtime, cwd, eventBus);
     await factory(api);
     return extension;
