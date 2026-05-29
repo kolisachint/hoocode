@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed OpenCode Go Kimi K2.5/K2.6 requests to not send `prompt_cache_retention`, which the provider rejects.
+- Fixed OpenCode Go Kimi K2.5/K2.6 replayed assistant messages with tool calls to include `reasoning_content` when thinking is enabled.
+
 ## [0.2.6] - 2026-05-29
 
 ## [0.2.5] - 2026-05-15
