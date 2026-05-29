@@ -1,7 +1,45 @@
 import { type Component, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
-import { theme } from "../theme/theme.js";
+import { type Task, type TaskStatus, taskStore } from "../../../core/task-store.js";
+import { type ThemeColor, theme } from "../theme/theme.js";
+
+/** Max tasks shown in the footer task list. */
+const MAX_FOOTER_TASKS = 5;
+
+const TASK_STATUS_ICON: Record<TaskStatus, string> = {
+	pending: "●",
+	in_progress: "◐",
+	done: "✓",
+	failed: "✗",
+};
+
+function taskStatusColor(status: TaskStatus): ThemeColor {
+	switch (status) {
+		case "in_progress":
+			return "warning";
+		case "done":
+			return "success";
+		case "failed":
+			return "error";
+		default:
+			return "dim";
+	}
+}
+
+function formatTaskLine(task: Task, width: number): string {
+	const icon = theme.fg(taskStatusColor(task.status), `[${TASK_STATUS_ICON[task.status]}]`);
+	const tag = task.subagentMode ? ` ${theme.fg("accent", `[subagent:${task.subagentMode}]`)}` : "";
+	const plainLeft = `[${TASK_STATUS_ICON[task.status]}] #${task.id} ${task.title}`;
+	const plainTag = task.subagentMode ? ` [subagent:${task.subagentMode}]` : "";
+	const available = Math.max(0, width - visibleWidth(plainTag));
+	const left = truncateToWidth(`${icon} ${theme.fg("dim", `#${task.id}`)} ${task.title}`, available, "...");
+	// If the plain (uncolored) line already overflows, drop the tag to avoid wrapping.
+	if (visibleWidth(plainLeft) + visibleWidth(plainTag) > width) {
+		return truncateToWidth(`${icon} ${theme.fg("dim", `#${task.id}`)} ${task.title}`, width, "...");
+	}
+	return left + tag;
+}
 
 /**
  * Sanitize text for display in a single-line status.
@@ -266,6 +304,14 @@ export class FooterComponent implements Component {
 			const statusLine = sortedStatuses.join(" ");
 			// Truncate to terminal width with dim ellipsis for consistency with footer style
 			lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+		}
+
+		// Add the task list (most recent last), one task per line.
+		const tasks = taskStore.list();
+		if (tasks.length > 0) {
+			for (const task of tasks.slice(-MAX_FOOTER_TASKS)) {
+				lines.push(formatTaskLine(task, width));
+			}
 		}
 
 		return lines;

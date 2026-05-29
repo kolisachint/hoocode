@@ -98,6 +98,7 @@ export interface Settings {
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
+	enableSubagent?: boolean; // default: false - enable the subagent tool (delegate tasks to isolated agent loops)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
@@ -896,6 +897,16 @@ export class SettingsManager {
 	setEnableSkillCommands(enabled: boolean): void {
 		this.globalSettings.enableSkillCommands = enabled;
 		this.markModified("enableSkillCommands");
+		this.save();
+	}
+
+	getEnableSubagent(): boolean {
+		return this.settings.enableSubagent ?? false;
+	}
+
+	setEnableSubagent(enabled: boolean): void {
+		this.globalSettings.enableSubagent = enabled;
+		this.markModified("enableSubagent");
 		this.save();
 	}
 

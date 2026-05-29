@@ -23,6 +23,22 @@ function escape(content) {
 	return JSON.stringify(content);
 }
 
+function readFlatMarkdown(dir) {
+	const entries = {};
+	let names;
+	try {
+		names = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return entries;
+	}
+	for (const dirent of names) {
+		if (!dirent.isFile() || !dirent.name.endsWith(".md")) continue;
+		const key = dirent.name.slice(0, -3);
+		entries[key] = readFileSync(join(dir, dirent.name), "utf8");
+	}
+	return entries;
+}
+
 function readSubdirEntries(parent, filename) {
 	const entries = {};
 	let names;
@@ -46,6 +62,7 @@ function readSubdirEntries(parent, filename) {
 const defaultConfig = readFileSync(join(templatesDir, "default-config.json"), "utf8");
 const modes = readSubdirEntries(join(templatesDir, "modes"), "system.md");
 const profiles = readSubdirEntries(join(templatesDir, "profiles"), "context.md");
+const subagentPrompts = readFlatMarkdown(join(templatesDir, "subagent"));
 
 const modeEntries = Object.entries(modes)
 	.sort(([a], [b]) => a.localeCompare(b))
@@ -53,6 +70,11 @@ const modeEntries = Object.entries(modes)
 	.join("\n");
 
 const profileEntries = Object.entries(profiles)
+	.sort(([a], [b]) => a.localeCompare(b))
+	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
+	.join("\n");
+
+const subagentEntries = Object.entries(subagentPrompts)
 	.sort(([a], [b]) => a.localeCompare(b))
 	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
 	.join("\n");
@@ -72,11 +94,16 @@ ${modeEntries}
 export const EMBEDDED_PROFILES: Record<string, string> = {
 ${profileEntries}
 };
+
+export const EMBEDDED_SUBAGENT_PROMPTS: Record<string, string> = {
+${subagentEntries}
+};
 `;
 
 writeFileSync(outFile, body);
 const modeCount = Object.keys(modes).length;
 const profileCount = Object.keys(profiles).length;
+const subagentCount = Object.keys(subagentPrompts).length;
 console.log(
-	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"})`,
+	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"}, ${subagentCount} subagent prompt${subagentCount === 1 ? "" : "s"})`,
 );

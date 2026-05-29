@@ -40,6 +40,7 @@ import {
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
+import { createSubagentToolDefinition } from "./core/tools/subagent.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -373,6 +374,12 @@ function buildSessionOptions(
 	}
 	if (parsed.tools) {
 		options.tools = [...parsed.tools];
+	}
+
+	// Optional subagent tool: opt-in via --subagent flag or the enableSubagent setting.
+	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
+	if (parsed.subagent ?? settingsManager.getEnableSubagent()) {
+		options.customTools = [...(options.customTools ?? []), createSubagentToolDefinition()];
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };
