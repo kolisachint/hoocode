@@ -31,7 +31,7 @@ export interface ResourceLoader {
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
-	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> };
+	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
 	extendResources(paths: ResourceExtensionPaths): void;
@@ -61,9 +61,8 @@ function resolvePromptInput(input: string | undefined, description: string): str
 // so a pasted spec can't silently bloat every request forever.
 const CONTEXT_FILE_WARN_BYTES = 8 * 1024;
 const CONTEXT_FILE_MAX_BYTES = 40 * 1024;
-const warnedContextPaths = new Set<string>();
-
-function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
+function loadContextFileFromDir(dir: string): { file: { path: string; content: string } | null; warnings: string[] } {
+	const warnings: string[] = [];
 	const candidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
 	for (const filename of candidates) {
 		const filePath = join(dir, filename);
@@ -75,46 +74,40 @@ function loadContextFileFromDir(dir: string): { path: string; content: string } 
 					content =
 						content.slice(0, CONTEXT_FILE_MAX_BYTES) +
 						`\n\n[truncated: file exceeded ${CONTEXT_FILE_MAX_BYTES} bytes (~10k tokens); keep context files brief — large specs belong in linked files, not in the system prompt]`;
-					if (!warnedContextPaths.has(filePath)) {
-						console.error(
-							chalk.yellow(
-								`Warning: ${filePath} is ${bytes} bytes (>${CONTEXT_FILE_MAX_BYTES}). Truncated; this file is injected into the prompt on every turn.`,
-							),
-						);
-						warnedContextPaths.add(filePath);
-					}
-				} else if (bytes > CONTEXT_FILE_WARN_BYTES && !warnedContextPaths.has(filePath)) {
-					console.error(
-						chalk.yellow(
-							`Warning: ${filePath} is ${bytes} bytes (~${Math.round(bytes / 4)} tokens). It is injected into the system prompt on every turn — consider trimming.`,
-						),
+					warnings.push(
+						`${filePath} is ${bytes} bytes (>${CONTEXT_FILE_MAX_BYTES}). Truncated; this file is injected into the prompt on every turn.`,
 					);
-					warnedContextPaths.add(filePath);
+				} else if (bytes > CONTEXT_FILE_WARN_BYTES) {
+					warnings.push(
+						`${filePath} is ${bytes} bytes (~${Math.round(bytes / 4)} tokens). It is injected into the system prompt on every turn — consider trimming.`,
+					);
 				}
-				return { path: filePath, content };
+				return { file: { path: filePath, content }, warnings };
 			} catch (error) {
-				console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));
+				warnings.push(`Could not read ${filePath}: ${error}`);
 			}
 		}
 	}
-	return null;
+	return { file: null, warnings };
 }
 
-export function loadProjectContextFiles(options: {
-	cwd: string;
-	agentDir: string;
-}): Array<{ path: string; content: string }> {
+export function loadProjectContextFiles(options: { cwd: string; agentDir: string }): {
+	agentsFiles: Array<{ path: string; content: string }>;
+	warnings: string[];
+} {
 	const resolvedCwd = options.cwd;
 	const resolvedAgentDir = options.agentDir;
 
 	const contextFiles: Array<{ path: string; content: string }> = [];
+	const warnings: string[] = [];
 	const seenPaths = new Set<string>();
 
-	const globalContext = loadContextFileFromDir(resolvedAgentDir);
-	if (globalContext) {
-		contextFiles.push(globalContext);
-		seenPaths.add(globalContext.path);
+	const globalResult = loadContextFileFromDir(resolvedAgentDir);
+	if (globalResult.file) {
+		contextFiles.push(globalResult.file);
+		seenPaths.add(globalResult.file.path);
 	}
+	warnings.push(...globalResult.warnings);
 
 	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
 
@@ -122,11 +115,12 @@ export function loadProjectContextFiles(options: {
 	const root = resolve("/");
 
 	while (true) {
-		const contextFile = loadContextFileFromDir(currentDir);
-		if (contextFile && !seenPaths.has(contextFile.path)) {
-			ancestorContextFiles.unshift(contextFile);
-			seenPaths.add(contextFile.path);
+		const result = loadContextFileFromDir(currentDir);
+		if (result.file && !seenPaths.has(result.file.path)) {
+			ancestorContextFiles.unshift(result.file);
+			seenPaths.add(result.file.path);
 		}
+		warnings.push(...result.warnings);
 
 		if (currentDir === root) break;
 
@@ -137,7 +131,7 @@ export function loadProjectContextFiles(options: {
 
 	contextFiles.push(...ancestorContextFiles);
 
-	return contextFiles;
+	return { agentsFiles: contextFiles, warnings };
 }
 
 export interface DefaultResourceLoaderOptions {
@@ -170,8 +164,9 @@ export interface DefaultResourceLoaderOptions {
 		themes: Theme[];
 		diagnostics: ResourceDiagnostic[];
 	};
-	agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }> }) => {
+	agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] }) => {
 		agentsFiles: Array<{ path: string; content: string }>;
+		warnings?: string[];
 	};
 	systemPromptOverride?: (base: string | undefined) => string | undefined;
 	appendSystemPromptOverride?: (base: string[]) => string[];
@@ -208,8 +203,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 		themes: Theme[];
 		diagnostics: ResourceDiagnostic[];
 	};
-	private agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }> }) => {
+	private agentsFilesOverride?: (base: {
 		agentsFiles: Array<{ path: string; content: string }>;
+		warnings: string[];
+	}) => {
+		agentsFiles: Array<{ path: string; content: string }>;
+		warnings?: string[];
 	};
 	private systemPromptOverride?: (base: string | undefined) => string | undefined;
 	private appendSystemPromptOverride?: (base: string[]) => string[];
@@ -222,6 +221,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private themes: Theme[];
 	private themeDiagnostics: ResourceDiagnostic[];
 	private agentsFiles: Array<{ path: string; content: string }>;
+	private agentsFileWarnings: string[];
 	private systemPrompt?: string;
 	private appendSystemPrompt: string[];
 	private lastSkillPaths: string[];
@@ -269,6 +269,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.themes = [];
 		this.themeDiagnostics = [];
 		this.agentsFiles = [];
+		this.agentsFileWarnings = [];
 		this.appendSystemPrompt = [];
 		this.lastSkillPaths = [];
 		this.extensionSkillSourceInfos = new Map();
@@ -294,8 +295,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return { themes: this.themes, diagnostics: this.themeDiagnostics };
 	}
 
-	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> } {
-		return { agentsFiles: this.agentsFiles };
+	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] } {
+		return { agentsFiles: this.agentsFiles, warnings: this.agentsFileWarnings };
 	}
 
 	getSystemPrompt(): string | undefined {
@@ -479,11 +480,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 			}
 		}
 
-		const agentsFiles = {
-			agentsFiles: this.noContextFiles ? [] : loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir }),
-		};
-		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
+		const contextResult = this.noContextFiles
+			? { agentsFiles: [] as Array<{ path: string; content: string }>, warnings: [] }
+			: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir });
+		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(contextResult) : contextResult;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
+		this.agentsFileWarnings = resolvedAgentsFiles.warnings ?? [];
 
 		const baseSystemPrompt = resolvePromptInput(this.systemPromptSource, "system prompt");
 		this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;

@@ -316,6 +316,33 @@ Content`,
 			const { agentsFiles } = loader.getAgentsFiles();
 			expect(agentsFiles).toEqual([]);
 		});
+
+		it("should warn when AGENTS.md exceeds warn size", async () => {
+			const largeContent = "x".repeat(9 * 1024);
+			writeFileSync(join(cwd, "AGENTS.md"), largeContent);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { warnings } = loader.getAgentsFiles();
+			expect(warnings.length).toBe(1);
+			expect(warnings[0]).toContain("bytes");
+			expect(warnings[0]).toContain("consider trimming");
+		});
+
+		it("should warn and truncate when AGENTS.md exceeds max size", async () => {
+			const largeContent = "x".repeat(41 * 1024);
+			writeFileSync(join(cwd, "AGENTS.md"), largeContent);
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { agentsFiles, warnings } = loader.getAgentsFiles();
+			expect(agentsFiles.length).toBe(1);
+			expect(agentsFiles[0]!.content).toContain("[truncated:");
+			expect(warnings.length).toBe(1);
+			expect(warnings[0]).toContain("Truncated");
+		});
 	});
 
 	describe("extendResources", () => {

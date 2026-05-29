@@ -532,7 +532,7 @@ export class InteractiveMode {
 		}
 		this.startupNoticesShown = true;
 
-		if (!this.changelogMarkdown) {
+		if (!this.changelogMarkdown || !this.changelogMarkdown.trim()) {
 			return;
 		}
 
@@ -1314,84 +1314,120 @@ export class InteractiveMode {
 		}
 
 		if (showListing) {
-			const contextFiles = this.session.resourceLoader.getAgentsFiles().agentsFiles;
-			if (contextFiles.length > 0) {
-				this.chatContainer.addChild(new Spacer(1));
-				const contextList = contextFiles
-					.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
-					.join("\n");
-				const contextCompactList = formatCompactList(
-					contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)),
-					{ sort: false },
-				);
-				addLoadedSection("Context", contextCompactList, contextList);
-			}
-
+			const { agentsFiles: contextFiles, warnings: contextWarnings } = this.session.resourceLoader.getAgentsFiles();
 			const skills = skillsResult.skills;
-			if (skills.length > 0) {
-				const groups = this.buildScopeGroups(
-					skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
-				);
-				const skillList = this.formatScopeGroups(groups, {
-					formatPath: (item) => this.formatDisplayPath(item.path),
-					formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
-				});
-				const skillCompactList = formatCompactList(skills.map((skill) => skill.name));
-				addLoadedSection("Skills", skillCompactList, skillList);
-			}
-
 			const templates = this.session.promptTemplates;
-			if (templates.length > 0) {
-				const groups = this.buildScopeGroups(
-					templates.map((template) => ({ path: template.filePath, sourceInfo: template.sourceInfo })),
-				);
-				const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
-				const templateList = this.formatScopeGroups(groups, {
-					formatPath: (item) => {
-						const template = templateByPath.get(item.path);
-						return template ? `/${template.name}` : this.formatDisplayPath(item.path);
-					},
-					formatPackagePath: (item) => {
-						const template = templateByPath.get(item.path);
-						return template ? `/${template.name}` : this.formatDisplayPath(item.path);
-					},
-				});
-				const promptCompactList = formatCompactList(templates.map((template) => `/${template.name}`));
-				addLoadedSection("Prompts", promptCompactList, templateList);
-			}
-
-			if (extensions.length > 0) {
-				const groups = this.buildScopeGroups(extensions);
-				const extList = this.formatScopeGroups(groups, {
-					formatPath: (item) => this.formatExtensionDisplayPath(item.path),
-					formatPackagePath: (item) =>
-						this.formatExtensionDisplayPath(this.getShortPath(item.path, item.sourceInfo)),
-				});
-				const extensionCompactList = formatCompactList(this.getCompactExtensionLabels(extensions));
-				addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
-			}
-
-			// Show loaded themes (excluding built-in)
 			const loadedThemes = themesResult.themes;
 			const customThemes = loadedThemes.filter((t) => t.sourcePath);
-			if (customThemes.length > 0) {
-				const groups = this.buildScopeGroups(
-					customThemes.map((loadedTheme) => ({
-						path: loadedTheme.sourcePath!,
-						sourceInfo: loadedTheme.sourceInfo,
-					})),
-				);
-				const themeList = this.formatScopeGroups(groups, {
-					formatPath: (item) => this.formatDisplayPath(item.path),
-					formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
-				});
-				const themeCompactList = formatCompactList(
-					customThemes.map(
-						(loadedTheme) =>
-							loadedTheme.name ?? this.getCompactPathLabel(loadedTheme.sourcePath!, loadedTheme.sourceInfo),
-					),
-				);
-				addLoadedSection("Themes", themeCompactList, themeList);
+
+			const totalItems =
+				contextFiles.length + skills.length + templates.length + extensions.length + customThemes.length;
+
+			if (totalItems > 0 && totalItems <= 5) {
+				this.chatContainer.addChild(new Spacer(1));
+				const allCompactItems: string[] = [];
+				if (contextFiles.length > 0) {
+					allCompactItems.push(...contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)));
+				}
+				if (skills.length > 0) {
+					allCompactItems.push(...skills.map((skill) => skill.name));
+				}
+				if (templates.length > 0) {
+					allCompactItems.push(...templates.map((template) => `/${template.name}`));
+				}
+				if (extensions.length > 0) {
+					allCompactItems.push(...this.getCompactExtensionLabels(extensions));
+				}
+				if (customThemes.length > 0) {
+					allCompactItems.push(
+						...customThemes.map(
+							(loadedTheme) =>
+								loadedTheme.name ?? this.getCompactPathLabel(loadedTheme.sourcePath!, loadedTheme.sourceInfo),
+						),
+					);
+				}
+				addLoadedSection("Resources", formatCompactList(allCompactItems), formatCompactList(allCompactItems));
+			} else {
+				if (contextFiles.length > 0) {
+					this.chatContainer.addChild(new Spacer(1));
+					const contextList = contextFiles
+						.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
+						.join("\n");
+					const contextCompactList = formatCompactList(
+						contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)),
+						{ sort: false },
+					);
+					addLoadedSection("Context", contextCompactList, contextList);
+				}
+
+				if (skills.length > 0) {
+					const groups = this.buildScopeGroups(
+						skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
+					);
+					const skillList = this.formatScopeGroups(groups, {
+						formatPath: (item) => this.formatDisplayPath(item.path),
+						formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
+					});
+					const skillCompactList = formatCompactList(skills.map((skill) => skill.name));
+					addLoadedSection("Skills", skillCompactList, skillList);
+				}
+
+				if (templates.length > 0) {
+					const groups = this.buildScopeGroups(
+						templates.map((template) => ({ path: template.filePath, sourceInfo: template.sourceInfo })),
+					);
+					const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
+					const templateList = this.formatScopeGroups(groups, {
+						formatPath: (item) => {
+							const template = templateByPath.get(item.path);
+							return template ? `/${template.name}` : this.formatDisplayPath(item.path);
+						},
+						formatPackagePath: (item) => {
+							const template = templateByPath.get(item.path);
+							return template ? `/${template.name}` : this.formatDisplayPath(item.path);
+						},
+					});
+					const promptCompactList = formatCompactList(templates.map((template) => `/${template.name}`));
+					addLoadedSection("Prompts", promptCompactList, templateList);
+				}
+
+				if (extensions.length > 0) {
+					const groups = this.buildScopeGroups(extensions);
+					const extList = this.formatScopeGroups(groups, {
+						formatPath: (item) => this.formatExtensionDisplayPath(item.path),
+						formatPackagePath: (item) =>
+							this.formatExtensionDisplayPath(this.getShortPath(item.path, item.sourceInfo)),
+					});
+					const extensionCompactList = formatCompactList(this.getCompactExtensionLabels(extensions));
+					addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
+				}
+
+				if (customThemes.length > 0) {
+					const groups = this.buildScopeGroups(
+						customThemes.map((loadedTheme) => ({
+							path: loadedTheme.sourcePath!,
+							sourceInfo: loadedTheme.sourceInfo,
+						})),
+					);
+					const themeList = this.formatScopeGroups(groups, {
+						formatPath: (item) => this.formatDisplayPath(item.path),
+						formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
+					});
+					const themeCompactList = formatCompactList(
+						customThemes.map(
+							(loadedTheme) =>
+								loadedTheme.name ?? this.getCompactPathLabel(loadedTheme.sourcePath!, loadedTheme.sourceInfo),
+						),
+					);
+					addLoadedSection("Themes", themeCompactList, themeList);
+				}
+			}
+
+			if (contextWarnings.length > 0) {
+				for (const warning of contextWarnings) {
+					this.chatContainer.addChild(new Text(theme.fg("warning", `  ${warning}`), 0, 0));
+				}
+				this.chatContainer.addChild(new Spacer(1));
 			}
 		}
 
@@ -5109,13 +5145,18 @@ export class InteractiveMode {
 		const changelogPath = getChangelogPath();
 		const allEntries = parseChangelog(changelogPath);
 
-		const changelogMarkdown =
-			allEntries.length > 0
-				? allEntries
-						.reverse()
-						.map((e) => e.content)
-						.join("\n\n")
-				: "No changelog entries found.";
+		if (allEntries.length === 0) {
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(theme.fg("dim", "No changelog entries found."), 1, 0));
+			this.ui.requestRender();
+			return;
+		}
+
+		const changelogMarkdown = allEntries
+			.slice()
+			.reverse()
+			.map((e) => e.content)
+			.join("\n\n");
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new DynamicBorder());

@@ -251,7 +251,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 				},
 				resourceLoader: {
 					getPathMetadata: () => new Map(),
-					getAgentsFiles: () => ({ agentsFiles: options.contextFiles ?? [] }),
+					getAgentsFiles: () => ({ agentsFiles: options.contextFiles ?? [], warnings: [] }),
 					getSkills: () => ({
 						skills: options.skills ?? [],
 						diagnostics: options.skillDiagnostics ?? [],
@@ -421,7 +421,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer);
-		expect(output).toContain("[Skills]");
+		expect(output).toContain("[Resources]");
 		expect(output).toContain("commit");
 		expect(output).not.toContain("resource-list");
 	});
@@ -438,9 +438,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer);
-		expect(output).toContain("[Skills]");
-		expect(output).toContain("resource-list");
-		expect(output).not.toContain("commit");
+		expect(output).toContain("[Resources]");
+		expect(output).toContain("commit");
+		expect(output).not.toContain("resource-list");
 	});
 
 	test("shows full resource listing on verbose startup even when tool output is collapsed", () => {
@@ -456,9 +456,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer);
-		expect(output).toContain("[Skills]");
-		expect(output).toContain("resource-list");
-		expect(output).not.toContain("commit");
+		expect(output).toContain("[Resources]");
+		expect(output).toContain("commit");
+		expect(output).not.toContain("resource-list");
 	});
 
 	test("abbreviates extensions in compact listing", () => {
@@ -472,7 +472,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer);
-		expect(output).toContain("[Extensions]");
+		expect(output).toContain("[Resources]");
 		expect(output).toContain("answer.ts, btw.ts");
 		expect(output).not.toContain("extensions/answer.ts");
 	});
@@ -535,7 +535,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   alpha/one, beta/one, gamma/one"`);
 	});
 
@@ -563,7 +563,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   plan-mode"`);
 	});
 
@@ -591,7 +591,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   plan-mode"`);
 	});
 
@@ -628,7 +628,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   plan-mode, webfetch.ts"`);
 	});
 
@@ -665,7 +665,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   bar, foo"`);
 	});
 
@@ -702,7 +702,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   alpha/tools, beta/tools"`);
 	});
 
@@ -730,7 +730,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   main.ts"`);
 	});
 
@@ -761,7 +761,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
+"[Resources]
   pi-markdown-preview"`);
 	});
 	test("captures mixed extension layouts in expanded output", () => {
@@ -811,7 +811,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer).replace(/\\/g, "/");
-		expect(output).toContain("[Context]");
+		expect(output).toContain("[Resources]");
 		expect(output).toContain("~/.hoocode/agent/AGENTS.md, AGENTS.md");
 		expect(output).not.toContain(`${cwd.replace(/\\/g, "/")}/AGENTS.md`);
 	});
@@ -834,10 +834,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer).replace(/\\/g, "/");
-		expect(output).toContain("[Context]");
-		expect(output).toContain("~/.hoocode/agent/AGENTS.md");
-		expect(output).toContain("~/Development/pi-mono/AGENTS.md");
-		expect(output).not.toContain("~/.hoocode/agent/AGENTS.md, AGENTS.md");
+		expect(output).toContain("[Resources]");
+		expect(output).toContain("~/.hoocode/agent/AGENTS.md, AGENTS.md");
+		expect(output).not.toContain("~/Development/pi-mono/AGENTS.md");
 	});
 
 	test("does not show verbose listing on quiet startup during reload", () => {
@@ -870,5 +869,68 @@ describe("InteractiveMode.showLoadedResources", () => {
 		const output = renderAll(fakeThis.chatContainer);
 		expect(output).toContain("[Skill conflicts]");
 		expect(output).not.toContain("[Skills]");
+	});
+
+	test("shows context file warnings in the TUI", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			contextFiles: [{ path: "/tmp/AGENTS.md" }],
+		});
+		fakeThis.session.resourceLoader.getAgentsFiles = () => ({
+			agentsFiles: [{ path: "/tmp/AGENTS.md", content: "large" }],
+			warnings: [
+				"/tmp/AGENTS.md is 9000 bytes (~2250 tokens). It is injected into the system prompt on every turn — consider trimming.",
+			],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("[Resources]");
+		expect(output).toContain("consider trimming");
+	});
+
+	test("collapses mixed small resources into a single Resources section", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			contextFiles: [{ path: "/tmp/AGENTS.md" }],
+			skills: [{ filePath: "/tmp/skill/SKILL.md", name: "commit" }],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = normalizeRenderedOutput(fakeThis.chatContainer);
+		expect(output).toContain("[Resources]");
+		expect(output).toContain("AGENTS.md");
+		expect(output).toContain("commit");
+		expect(output).not.toContain("[Context]");
+		expect(output).not.toContain("[Skills]");
+	});
+
+	test("shows individual sections when total resources exceed threshold", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			skills: [
+				{ filePath: "/tmp/skill/a/SKILL.md", name: "alpha" },
+				{ filePath: "/tmp/skill/b/SKILL.md", name: "beta" },
+				{ filePath: "/tmp/skill/c/SKILL.md", name: "gamma" },
+				{ filePath: "/tmp/skill/d/SKILL.md", name: "delta" },
+				{ filePath: "/tmp/skill/e/SKILL.md", name: "epsilon" },
+			],
+			contextFiles: [{ path: "/tmp/AGENTS.md" }],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = normalizeRenderedOutput(fakeThis.chatContainer);
+		expect(output).toContain("[Context]");
+		expect(output).toContain("[Skills]");
+		expect(output).not.toContain("[Resources]");
 	});
 });
