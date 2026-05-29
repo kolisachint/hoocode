@@ -485,16 +485,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;
 
-		const baseSystemPrompt = resolvePromptInput(
-			this.systemPromptSource ?? this.discoverSystemPromptFile(),
-			"system prompt",
-		);
+		const baseSystemPrompt = resolvePromptInput(this.systemPromptSource, "system prompt");
 		this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
 
-		const appendSources =
-			this.appendSystemPromptSource ??
-			(this.discoverAppendSystemPromptFile() ? [this.discoverAppendSystemPromptFile()!] : []);
-		const baseAppend = appendSources
+		const baseAppend = (this.appendSystemPromptSource ?? [])
 			.map((s) => resolvePromptInput(s, "append system prompt"))
 			.filter((s): s is string => s !== undefined);
 		this.appendSystemPrompt = this.appendSystemPromptOverride
@@ -866,34 +860,6 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		return { themes: Array.from(seen.values()), diagnostics };
-	}
-
-	private discoverSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "SYSTEM.md");
-		if (existsSync(projectPath)) {
-			return projectPath;
-		}
-
-		const globalPath = join(this.agentDir, "SYSTEM.md");
-		if (existsSync(globalPath)) {
-			return globalPath;
-		}
-
-		return undefined;
-	}
-
-	private discoverAppendSystemPromptFile(): string | undefined {
-		const projectPath = join(this.cwd, CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
-		if (existsSync(projectPath)) {
-			return projectPath;
-		}
-
-		const globalPath = join(this.agentDir, "APPEND_SYSTEM.md");
-		if (existsSync(globalPath)) {
-			return globalPath;
-		}
-
-		return undefined;
 	}
 
 	private isUnderPath(target: string, root: string): boolean {

@@ -47,16 +47,11 @@ export declare class FooterDataProvider {
     private handleGitWatcherError;
     private setupGitWatcher;
     private activeMode;
-    private activeProfile;
     /** Current active mode (e.g., ask, plan, build, debug) */
     getActiveMode(): string;
-    /** Current active profile (e.g., default, data, devops) */
-    getActiveProfile(): string;
     /** Update active mode */
     setActiveMode(mode: string): void;
-    /** Update active profile */
-    setActiveProfile(profile: string): void;
 }
 /** Read-only view for extensions - excludes setExtensionStatus, setAvailableProviderCount and dispose */
-export type ReadonlyFooterDataProvider = Pick<FooterDataProvider, "getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange" | "getActiveMode" | "getActiveProfile">;
+export type ReadonlyFooterDataProvider = Pick<FooterDataProvider, "getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange" | "getActiveMode">;
 //# sourceMappingURL=footer-data-provider.d.ts.map

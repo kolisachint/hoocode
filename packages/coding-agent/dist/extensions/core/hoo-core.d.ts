@@ -6,21 +6,15 @@
  *                         choices back to the global config
  * B. MCP Server Loader  — discovers ~/.hoocode/mcp-servers and ./.hoocode/mcp-servers JSON
  *                         configs, connects via JSON-RPC 2.0, registers server tools
- * C. Mode + Profile     — resolves active mode (ask/plan/build/debug) and profile
- *                         (default/data/devops/…), merges system prompt from three template
- *                         layers, filters active tools, and exposes /mode, /profile,
- *                         /plan, and /approve commands
+ * C. Mode                — resolves active mode (ask/plan/build/debug), loads the mode's
+ *                         system prompt, filters active tools, and exposes /mode, /plan,
+ *                         and /approve commands
  *
  * Config merge order (lowest → highest priority):
  *   1. ~/.hoocode/agent/hoo-config.json   (global defaults)
  *   2. ./.hoocode/config.json             (project overrides — scalars win; arrays union)
- *   3. profile_detectors from project prepend global list (project markers checked first)
  */
 import type { ExtensionAPI } from "../../core/extensions/types.js";
-interface ProfileDetector {
-    marker: string;
-    profile: string;
-}
 interface ModeConfig {
     /** Tool names that bypass the permission gate in this mode */
     auto_allow?: string[];
@@ -29,36 +23,23 @@ interface ModeConfig {
     /** Allowed write paths in this mode (glob patterns, only applies if write/edit is enabled) */
     allowed_write_paths?: string[];
 }
-interface ProfileConfig {
-    /** Tool names to activate for this profile */
-    enabled_tools?: string[];
-}
 export interface HooConfig {
     /** Manually-pinned active mode (overrides default "build") */
     active_mode?: string;
-    /** Manually-pinned active profile (overrides auto-detection) */
-    active_profile?: string;
     /** Per-mode configuration keyed by mode name */
     modes?: Record<string, ModeConfig>;
-    /** Per-profile configuration keyed by profile name */
-    profiles?: Record<string, ProfileConfig>;
-    /** Ordered list of file-marker → profile mappings for auto-detection */
-    profile_detectors?: ProfileDetector[];
     /** Extra directories to search for `{name}/system.md` mode files (after project + user). */
     mode_paths?: string[];
-    /** Extra directories to search for `{name}/context.md` profile files (after project + user). */
-    profile_paths?: string[];
 }
 /**
  * Deep-merges a project-local config on top of the global config.
  *
  * Merge rules:
- * - Scalars (active_mode, active_profile): project wins if set
+ * - active_mode: project wins if set
  * - modes[x].auto_allow: union of global + project arrays
  * - modes[x].allowed_write_paths: union of global + project arrays
  * - modes[x].enabled_tools: project wins if set, else falls back to global
- * - profiles[x].enabled_tools: project wins if set, else falls back to global
- * - profile_detectors: project list is prepended so project markers are checked first
+ * - mode_paths: project list is prepended so project paths are searched first
  */
 export declare function mergeConfigs(global: HooConfig, project: HooConfig): HooConfig;
 /**
@@ -80,26 +61,16 @@ export interface McpServerConfig {
 }
 export declare function setupMcpLoader(pi: ExtensionAPI): void;
 /**
- * Resolves which profile should be active.
- * Priority: config override → file-marker detection → "default"
- */
-export declare function resolveProfile(config: HooConfig, cwd: string): string;
-/**
- * Merges the system prompt from up to three layers (lowest → highest priority):
- *   1. {project|user|external}/modes/{mode}/system.md        (mode behaviour)
- *   2. {project|user|external}/profiles/{profile}/context.md (domain context; skipped for "default")
- *   3. ./.hoocode/agents.md                                  (project-local override; appended last)
+ * Returns the system prompt for the active mode.
  *
- * For each of layers 1 and 2 the search order is:
- *   - `./.hoocode/{modes,profiles}/{name}/...`
- *   - `~/.hoocode/{modes,profiles}/{name}/...`
+ * Search order (first hit wins):
+ *   - `./.hoocode/modes/{mode}/system.md`
+ *   - `~/.hoocode/modes/{mode}/system.md`
  *   - each of `externalDirs` in declared order (config + CLI + extension contributions)
- *
- * Each present layer is joined with a `---` separator.
+ *   - built-in MODE_DEFAULTS for the four known modes
  */
-export declare function buildSystemPrompt(mode: string, profile: string, cwd: string, options?: {
+export declare function buildSystemPrompt(mode: string, cwd: string, options?: {
     modePaths?: string[];
-    profilePaths?: string[];
 }): string | undefined;
 export interface PlanSections {
     goal?: string;
@@ -131,7 +102,7 @@ export declare function parsePlanSections(planContent: string): PlanSections;
  *   4. Run verification commands
  */
 export declare function buildApproveMessage(sections: PlanSections): string;
-export declare function setupModeAndProfile(pi: ExtensionAPI): void;
+export declare function setupMode(pi: ExtensionAPI): void;
 export default function hooCore(pi: ExtensionAPI): void;
 export {};
 //# sourceMappingURL=hoo-core.d.ts.map

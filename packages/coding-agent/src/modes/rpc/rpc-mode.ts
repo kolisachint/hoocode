@@ -169,8 +169,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			} as RpcExtensionUIRequest);
 		},
 
-		setModeProfile(_mode: string, _profile: string): void {
-			// Mode/profile display not supported in RPC mode - requires TUI footer access
+		setMode(_mode: string): void {
+			// Mode display not supported in RPC mode - requires TUI footer access
 		},
 
 		setWorkingMessage(_message?: string): void {

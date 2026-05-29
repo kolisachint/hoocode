@@ -5,6 +5,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { resolveCacheRetention } from "./cache-retention.js";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { buildBaseOptions } from "./simple-options.js";
@@ -38,16 +39,6 @@ function isToolCallBlock(block) {
 }
 function isImageContentBlock(block) {
     return block.type === "image";
-}
-function resolveCacheRetention(cacheRetention) {
-    if (cacheRetention) {
-        return cacheRetention;
-    }
-    if (typeof process !== "undefined" &&
-        (process.env.HOOCODE_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long") {
-        return "long";
-    }
-    return "short";
 }
 export const streamOpenAICompletions = (model, context, options) => {
     const stream = new AssistantMessageEventStream();

@@ -32,13 +32,18 @@ export class CompactionSummaryMessageComponent extends Box {
 	private updateDisplay(): void {
 		this.clear();
 
-		const tokenStr = this.message.tokensBefore.toLocaleString();
+		const beforeStr = this.message.tokensBefore.toLocaleString();
+		const after = this.message.tokensAfter;
+		const summaryText =
+			after !== undefined && this.message.tokensBefore > 0
+				? `Compacted ${beforeStr} → ${after.toLocaleString()} tokens (saved ${formatSavings(this.message.tokensBefore, after)})`
+				: `Compacted from ${beforeStr} tokens`;
 		const label = theme.fg("customMessageLabel", `\x1b[1m[compaction]\x1b[22m`);
 		this.addChild(new Text(label, 0, 0));
 		this.addChild(new Spacer(1));
 
 		if (this.expanded) {
-			const header = `**Compacted from ${tokenStr} tokens**\n\n`;
+			const header = `**${summaryText}**\n\n`;
 			this.addChild(
 				new Markdown(header + this.message.summary, 0, 0, this.markdownTheme, {
 					color: (text: string) => theme.fg("customMessageText", text),
@@ -47,7 +52,7 @@ export class CompactionSummaryMessageComponent extends Box {
 		} else {
 			this.addChild(
 				new Text(
-					theme.fg("customMessageText", `Compacted from ${tokenStr} tokens (`) +
+					theme.fg("customMessageText", `${summaryText} (`) +
 						theme.fg("dim", keyText("app.tools.expand")) +
 						theme.fg("customMessageText", " to expand)"),
 					0,
@@ -56,4 +61,10 @@ export class CompactionSummaryMessageComponent extends Box {
 			);
 		}
 	}
+}
+
+function formatSavings(before: number, after: number): string {
+	const saved = Math.max(0, before - after);
+	const pct = Math.round((saved / before) * 100);
+	return `${pct}%`;
 }

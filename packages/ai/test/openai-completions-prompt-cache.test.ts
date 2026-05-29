@@ -111,10 +111,18 @@ describe("openai-completions prompt caching", () => {
 		};
 	}
 
-	it("sets prompt_cache_key for direct OpenAI requests when caching is enabled", async () => {
+	it("sets prompt_cache_key and 24h retention for direct OpenAI requests by default", async () => {
 		const { payload } = await captureRequest({ sessionId: "session-123" });
 
 		expect(payload?.prompt_cache_key).toBe("session-123");
+		expect(payload?.prompt_cache_retention).toBe("24h");
+	});
+
+	it("omits prompt_cache_retention when HOOCODE_CACHE_RETENTION=short", async () => {
+		process.env.HOOCODE_CACHE_RETENTION = "short";
+		const { payload } = await captureRequest({ sessionId: "session-short" });
+
+		expect(payload?.prompt_cache_key).toBe("session-short");
 		expect(payload?.prompt_cache_retention).toBeUndefined();
 	});
 
@@ -143,7 +151,7 @@ describe("openai-completions prompt caching", () => {
 		expect(payload?.prompt_cache_retention).toBeUndefined();
 	});
 
-	it("uses PI_CACHE_RETENTION for direct OpenAI requests", async () => {
+	it("uses HOOCODE_CACHE_RETENTION=long for direct OpenAI requests", async () => {
 		process.env.HOOCODE_CACHE_RETENTION = "long";
 		const { payload } = await captureRequest({ sessionId: "session-env" });
 

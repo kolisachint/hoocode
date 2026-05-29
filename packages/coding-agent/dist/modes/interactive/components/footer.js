@@ -93,16 +93,16 @@ export class FooterComponent {
         if (sessionName) {
             pwd = `${pwd} • ${sessionName}`;
         }
-        // Format mode/profile for display: profile/mode (e.g., default/build)
-        const modeProfile = `${this.footerData.getActiveProfile()}/${this.footerData.getActiveMode()}`;
-        // Calculate widths for right-aligning mode/profile
+        // Format mode for display (e.g., build)
+        const modeLabel = this.footerData.getActiveMode();
+        // Calculate widths for right-aligning mode
         const pwdWidth = visibleWidth(pwd);
-        const modeProfileWidth = visibleWidth(modeProfile);
-        const modeProfilePadding = Math.max(2, width - pwdWidth - modeProfileWidth);
-        // Build pwd line with mode/profile right-aligned in accent color (if it fits)
+        const modeWidth = visibleWidth(modeLabel);
+        const modePadding = Math.max(2, width - pwdWidth - modeWidth);
+        // Build pwd line with mode right-aligned in accent color (if it fits)
         let pwdLine;
-        if (pwdWidth + modeProfileWidth + 2 <= width) {
-            pwdLine = pwd + " ".repeat(modeProfilePadding) + theme.fg("accent", modeProfile);
+        if (pwdWidth + modeWidth + 2 <= width) {
+            pwdLine = pwd + " ".repeat(modePadding) + theme.fg("accent", modeLabel);
         }
         else {
             // Not enough space, just show pwd
@@ -124,16 +124,28 @@ export class FooterComponent {
             const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
             statsParts.push(costStr);
         }
-        // Colorize context percentage based on usage
-        let contextPercentStr;
-        const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
+        // Auto-compact threshold: compaction fires when context > (window - reserveTokens).
+        // Show it so users see the actual trip point, not just the raw window percentage.
+        let thresholdPercent;
+        if (this.autoCompactEnabled && contextWindow > 0) {
+            const reserveTokens = this.session.settingsManager.getCompactionSettings().reserveTokens;
+            const effective = contextWindow - reserveTokens;
+            if (effective > 0)
+                thresholdPercent = (effective / contextWindow) * 100;
+        }
+        const autoIndicator = thresholdPercent !== undefined ? ` (auto @ ${thresholdPercent.toFixed(0)}%)` : this.autoCompactEnabled ? " (auto)" : "";
         const contextPercentDisplay = contextPercent === "?"
             ? `?/${formatTokens(contextWindow)}${autoIndicator}`
             : `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
-        if (contextPercentValue > 90) {
+        // Color based on proximity to the auto-compact trip point.
+        // With threshold known: error within 3pp, warning within 10pp. Without it: old fixed bands.
+        let contextPercentStr;
+        const errorLevel = thresholdPercent !== undefined ? thresholdPercent - 3 : 90;
+        const warnLevel = thresholdPercent !== undefined ? thresholdPercent - 10 : 70;
+        if (contextPercentValue >= errorLevel) {
             contextPercentStr = theme.fg("error", contextPercentDisplay);
         }
-        else if (contextPercentValue > 70) {
+        else if (contextPercentValue >= warnLevel) {
             contextPercentStr = theme.fg("warning", contextPercentDisplay);
         }
         else {
@@ -195,28 +207,27 @@ export class FooterComponent {
         const dimStatsLeft = theme.fg("dim", statsLeft);
         const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
         const dimRemainder = theme.fg("dim", remainder);
-        // Build the final pwd line: dim the path, accent the mode/profile (if present)
+        // Build the final pwd line: dim the path, accent the mode label (if present)
         let finalPwdLine;
         if (pwdLine === pwd) {
-            // Just pwd, no mode/profile (or it didn't fit) - dim the whole thing
+            // Just pwd, no mode (or it didn't fit) - dim the whole thing
             finalPwdLine = truncateToWidth(theme.fg("dim", pwdLine), width, theme.fg("dim", "..."));
         }
         else {
-            // pwdLine has mode/profile appended with accent color
+            // pwdLine has mode appended with accent color
             // Extract the plain text version for width calculation
-            const pwdLinePlain = pwd + " ".repeat(modeProfilePadding) + modeProfile;
+            const pwdLinePlain = pwd + " ".repeat(modePadding) + modeLabel;
             // Truncate the plain text if needed
             const truncatedPlain = truncateToWidth(pwdLinePlain, width, "...");
-            // Check if mode/profile was truncated out
-            if (!truncatedPlain.includes(modeProfile)) {
-                // Mode/profile didn't fit after truncation, just show dimmed truncated pwd
+            // Check if mode was truncated out
+            if (!truncatedPlain.includes(modeLabel)) {
+                // Mode didn't fit after truncation, just show dimmed truncated pwd
                 finalPwdLine = theme.fg("dim", truncatedPlain);
             }
             else {
-                // Split at the mode/profile part and apply colors
-                const pwdPart = truncatedPlain.slice(0, truncatedPlain.indexOf(modeProfile));
-                const modeProfilePart = modeProfile;
-                finalPwdLine = theme.fg("dim", pwdPart) + theme.fg("accent", modeProfilePart);
+                // Split at the mode part and apply colors
+                const pwdPart = truncatedPlain.slice(0, truncatedPlain.indexOf(modeLabel));
+                finalPwdLine = theme.fg("dim", pwdPart) + theme.fg("accent", modeLabel);
             }
         }
         const lines = [finalPwdLine, dimStatsLeft + dimRemainder];

@@ -6,21 +6,19 @@
  *                         choices back to the global config
  * B. MCP Server Loader  — discovers ~/.hoocode/mcp-servers and ./.hoocode/mcp-servers JSON
  *                         configs, connects via JSON-RPC 2.0, registers server tools
- * C. Mode + Profile     — resolves active mode (ask/plan/build/debug) and profile
- *                         (default/data/devops/…), merges system prompt from three template
- *                         layers, filters active tools, and exposes /mode, /profile,
- *                         /plan, and /approve commands
+ * C. Mode                — resolves active mode (ask/plan/build/debug), loads the mode's
+ *                         system prompt, filters active tools, and exposes /mode, /plan,
+ *                         and /approve commands
  *
  * Config merge order (lowest → highest priority):
  *   1. ~/.hoocode/agent/hoo-config.json   (global defaults)
  *   2. ./.hoocode/config.json             (project overrides — scalars win; arrays union)
- *   3. profile_detectors from project prepend global list (project markers checked first)
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
@@ -39,7 +37,7 @@ import type {
 import { isToolCallEventType } from "../../core/extensions/types.js";
 
 // ============================================================================
-// Fallback defaults for mode and profile prompts
+// Fallback defaults for mode prompts
 // ============================================================================
 
 const MODE_DEFAULTS: Record<string, string> = {
@@ -52,7 +50,7 @@ Cite specific file paths and line numbers in your answers.`,
 	plan: `You are in PLAN mode — exploration and planning.
 Explore the codebase thoroughly. Understand the current structure.
 Draft a complete plan with sections: Goal, Files to modify, New files, Tests, Verification.
-Write the plan to .hoocode/plan.md.
+Write the plan to {{PLAN_PATH}}.
 When the plan is complete, tell the user to run /approve to execute it.`,
 
 	build: `You are in BUILD mode — careful implementation.
@@ -77,14 +75,22 @@ To fix, switch to /mode build.`,
 const HOOCODE_DIR = getHooCodeDir();
 const GLOBAL_CONFIG_PATH = join(HOOCODE_DIR, "agent", "hoo-config.json");
 
+/**
+ * Per-session plan file path. Keying on sessionId lets concurrent or resumed
+ * plan sessions keep distinct plans instead of clobbering each other.
+ */
+function getPlanPath(cwd: string, sessionId: string): string {
+	return join(cwd, ".hoocode", "plans", `${sessionId}.md`);
+}
+
+/** Legacy single-file plan location, retained as a read-only fallback for /approve. */
+function getLegacyPlanPath(cwd: string): string {
+	return join(cwd, ".hoocode", "plan.md");
+}
+
 // ============================================================================
 // Config types
 // ============================================================================
-
-interface ProfileDetector {
-	marker: string;
-	profile: string;
-}
 
 interface ModeConfig {
 	/** Tool names that bypass the permission gate in this mode */
@@ -95,26 +101,13 @@ interface ModeConfig {
 	allowed_write_paths?: string[];
 }
 
-interface ProfileConfig {
-	/** Tool names to activate for this profile */
-	enabled_tools?: string[];
-}
-
 export interface HooConfig {
 	/** Manually-pinned active mode (overrides default "build") */
 	active_mode?: string;
-	/** Manually-pinned active profile (overrides auto-detection) */
-	active_profile?: string;
 	/** Per-mode configuration keyed by mode name */
 	modes?: Record<string, ModeConfig>;
-	/** Per-profile configuration keyed by profile name */
-	profiles?: Record<string, ProfileConfig>;
-	/** Ordered list of file-marker → profile mappings for auto-detection */
-	profile_detectors?: ProfileDetector[];
 	/** Extra directories to search for `{name}/system.md` mode files (after project + user). */
 	mode_paths?: string[];
-	/** Extra directories to search for `{name}/context.md` profile files (after project + user). */
-	profile_paths?: string[];
 }
 
 // ============================================================================
@@ -139,18 +132,16 @@ function writeConfig(config: HooConfig): void {
  * Deep-merges a project-local config on top of the global config.
  *
  * Merge rules:
- * - Scalars (active_mode, active_profile): project wins if set
+ * - active_mode: project wins if set
  * - modes[x].auto_allow: union of global + project arrays
  * - modes[x].allowed_write_paths: union of global + project arrays
  * - modes[x].enabled_tools: project wins if set, else falls back to global
- * - profiles[x].enabled_tools: project wins if set, else falls back to global
- * - profile_detectors: project list is prepended so project markers are checked first
+ * - mode_paths: project list is prepended so project paths are searched first
  */
 export function mergeConfigs(global: HooConfig, project: HooConfig): HooConfig {
 	const merged: HooConfig = { ...global };
 
 	if (project.active_mode !== undefined) merged.active_mode = project.active_mode;
-	if (project.active_profile !== undefined) merged.active_profile = project.active_profile;
 
 	if (project.modes) {
 		merged.modes = { ...(global.modes ?? {}) };
@@ -171,28 +162,9 @@ export function mergeConfigs(global: HooConfig, project: HooConfig): HooConfig {
 		}
 	}
 
-	if (project.profiles) {
-		merged.profiles = { ...(global.profiles ?? {}) };
-		for (const [profile, projectCfg] of Object.entries(project.profiles)) {
-			merged.profiles[profile] = {
-				...(global.profiles?.[profile] ?? {}),
-				...projectCfg,
-			};
-		}
-	}
-
-	if (project.profile_detectors) {
-		// Project detectors are prepended: project-specific markers are checked first
-		merged.profile_detectors = [...project.profile_detectors, ...(global.profile_detectors ?? [])];
-	}
-
 	if (project.mode_paths || global.mode_paths) {
 		// Project paths first so they're searched before global paths
 		merged.mode_paths = dedupePaths([...(project.mode_paths ?? []), ...(global.mode_paths ?? [])]);
-	}
-
-	if (project.profile_paths || global.profile_paths) {
-		merged.profile_paths = dedupePaths([...(project.profile_paths ?? []), ...(global.profile_paths ?? [])]);
 	}
 
 	return merged;
@@ -547,39 +519,10 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 }
 
 // ============================================================================
-// C. Mode + Profile System
+// C. Mode System
 // ============================================================================
 
 const DEFAULT_MODE = "build";
-const DEFAULT_PROFILE = "default";
-
-/**
- * Returns true if `marker` matches something in `cwd`.
- * Plain markers use existsSync. Glob markers (containing `*`) scan the
- * immediate directory entries — only one level, no recursion needed for
- * common cases like `*.sql` or `k8s/`.
- */
-function markerExists(cwd: string, marker: string): boolean {
-	if (!marker.includes("*")) return existsSync(join(cwd, marker));
-	const suffix = marker.replace(/^\*/, "");
-	try {
-		return readdirSync(cwd).some((entry) => entry.endsWith(suffix));
-	} catch {
-		return false;
-	}
-}
-
-/**
- * Resolves which profile should be active.
- * Priority: config override → file-marker detection → "default"
- */
-export function resolveProfile(config: HooConfig, cwd: string): string {
-	if (config.active_profile) return config.active_profile;
-	for (const detector of config.profile_detectors ?? []) {
-		if (markerExists(cwd, detector.marker)) return detector.profile;
-	}
-	return DEFAULT_PROFILE;
-}
 
 function tryReadFile(path: string): string | undefined {
 	if (!existsSync(path)) return undefined;
@@ -593,19 +536,13 @@ function tryReadFile(path: string): string | undefined {
 
 /**
  * Walks search dirs in precedence order and returns the first existing
- * `{name}/{filename}` content. Order: project → user → externalDirs.
+ * `modes/{name}/system.md` content. Order: project → user → externalDirs.
  */
-function resolveResourceFile(
-	name: string,
-	filename: string,
-	subdir: "modes" | "profiles",
-	cwd: string,
-	externalDirs: string[],
-): string | undefined {
+function resolveModeFile(name: string, cwd: string, externalDirs: string[]): string | undefined {
 	const candidates: string[] = [
-		join(cwd, ".hoocode", subdir, name, filename),
-		join(HOOCODE_DIR, subdir, name, filename),
-		...externalDirs.map((dir) => join(dir, name, filename)),
+		join(cwd, ".hoocode", "modes", name, "system.md"),
+		join(HOOCODE_DIR, "modes", name, "system.md"),
+		...externalDirs.map((dir) => join(dir, name, "system.md")),
 	];
 	for (const candidate of candidates) {
 		const content = tryReadFile(candidate);
@@ -615,43 +552,17 @@ function resolveResourceFile(
 }
 
 /**
- * Merges the system prompt from up to three layers (lowest → highest priority):
- *   1. {project|user|external}/modes/{mode}/system.md        (mode behaviour)
- *   2. {project|user|external}/profiles/{profile}/context.md (domain context; skipped for "default")
- *   3. ./.hoocode/agents.md                                  (project-local override; appended last)
+ * Returns the system prompt for the active mode.
  *
- * For each of layers 1 and 2 the search order is:
- *   - `./.hoocode/{modes,profiles}/{name}/...`
- *   - `~/.hoocode/{modes,profiles}/{name}/...`
+ * Search order (first hit wins):
+ *   - `./.hoocode/modes/{mode}/system.md`
+ *   - `~/.hoocode/modes/{mode}/system.md`
  *   - each of `externalDirs` in declared order (config + CLI + extension contributions)
- *
- * Each present layer is joined with a `---` separator.
+ *   - built-in MODE_DEFAULTS for the four known modes
  */
-export function buildSystemPrompt(
-	mode: string,
-	profile: string,
-	cwd: string,
-	options?: { modePaths?: string[]; profilePaths?: string[] },
-): string | undefined {
-	const layers: string[] = [];
-
+export function buildSystemPrompt(mode: string, cwd: string, options?: { modePaths?: string[] }): string | undefined {
 	const modePaths = options?.modePaths ?? [];
-	const profilePaths = options?.profilePaths ?? [];
-
-	const modePrompt = resolveResourceFile(mode, "system.md", "modes", cwd, modePaths) ?? MODE_DEFAULTS[mode];
-	if (modePrompt) layers.push(modePrompt);
-
-	if (profile !== DEFAULT_PROFILE) {
-		const profileContext = resolveResourceFile(profile, "context.md", "profiles", cwd, profilePaths);
-		if (profileContext) layers.push(profileContext);
-	}
-
-	// Layer 3: project-local agents.md — appended after mode + profile so it can
-	// extend or override them for this specific repo
-	const projectOverride = tryReadFile(join(cwd, ".hoocode", "agents.md"));
-	if (projectOverride) layers.push(projectOverride);
-
-	return layers.length > 0 ? layers.join("\n\n---\n\n") : undefined;
+	return resolveModeFile(mode, cwd, modePaths) ?? MODE_DEFAULTS[mode];
 }
 
 // ============================================================================
@@ -743,47 +654,48 @@ export function buildApproveMessage(sections: PlanSections): string {
 }
 
 // ============================================================================
-// C. setupModeAndProfile
+// C. setupMode
 // ============================================================================
 
-export function setupModeAndProfile(pi: ExtensionAPI): void {
+export function setupMode(pi: ExtensionAPI): void {
 	let cachedMode = DEFAULT_MODE;
-	let cachedProfile = DEFAULT_PROFILE;
 	let cachedSystemPrompt: string | undefined;
+	let cachedPlanPath: string | undefined;
 
 	// ── session_start ─────────────────────────────────────────────────────────
 	// Config resolution order:
 	//   1. Read global config  (~/.hoocode/agent/hoo-config.json)
 	//   2. Read project config (./.hoocode/config.json) if present
-	//   3. Merge — project scalars win; arrays are unioned; project detectors prepend
-	//   4. Re-resolve active_mode and active_profile from the merged result
+	//   3. Merge — project scalars win; arrays are unioned
+	//   4. Re-resolve active_mode from the merged result
 
 	pi.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		// Steps 1–3: merge global + project configs
 		const config = readMergedConfig(ctx.cwd);
 
-		// Step 4: resolve mode and profile from the merged config
+		// Step 4: resolve mode from the merged config
 		cachedMode = config.active_mode ?? DEFAULT_MODE;
-		cachedProfile = resolveProfile(config, ctx.cwd);
 		// External search dirs come from two channels:
-		//  - HooConfig.{mode,profile}_paths (config-declared)
-		//  - pi.add{Mode,Profile}SearchPath (CLI flags + extension contributions)
+		//  - HooConfig.mode_paths (config-declared)
+		//  - pi.addModeSearchPath (CLI flags + extension contributions)
 		const modePaths = mergeSearchPaths(config.mode_paths, pi.getModeSearchPaths());
-		const profilePaths = mergeSearchPaths(config.profile_paths, pi.getProfileSearchPaths());
-		cachedSystemPrompt = buildSystemPrompt(cachedMode, cachedProfile, ctx.cwd, { modePaths, profilePaths });
+		const rawSystemPrompt = buildSystemPrompt(cachedMode, ctx.cwd, { modePaths });
 
-		// Update footer with active mode/profile
+		// Per-session plan path so concurrent sessions don't overwrite each other.
+		// The `{{PLAN_PATH}}` token in plan-mode templates is substituted here.
+		cachedPlanPath = getPlanPath(ctx.cwd, ctx.sessionManager.getSessionId());
+		const relPlanPath = relative(ctx.cwd, cachedPlanPath) || cachedPlanPath;
+		cachedSystemPrompt = rawSystemPrompt?.replace(/\{\{PLAN_PATH\}\}/g, relPlanPath);
+
+		// Update footer with active mode
 		if (ctx.hasUI) {
-			ctx.ui.setModeProfile(cachedMode, cachedProfile);
+			ctx.ui.setMode(cachedMode);
 		}
 
-		// Apply tool filter: mode enabled_tools takes priority, then profile
+		// Apply tool filter from mode enabled_tools
 		const modeCfg = config.modes?.[cachedMode];
-		const profileCfg = config.profiles?.[cachedProfile];
 		if (modeCfg?.enabled_tools && modeCfg.enabled_tools.length > 0) {
 			pi.setActiveTools(modeCfg.enabled_tools);
-		} else if (profileCfg?.enabled_tools && profileCfg.enabled_tools.length > 0) {
-			pi.setActiveTools(profileCfg.enabled_tools);
 		}
 	});
 
@@ -792,10 +704,7 @@ export function setupModeAndProfile(pi: ExtensionAPI): void {
 	pi.on("before_agent_start", (event: BeforeAgentStartEvent): BeforeAgentStartEventResult | undefined => {
 		if (!cachedSystemPrompt) return;
 		return {
-			systemPrompt:
-				`${event.systemPrompt}\n\n` +
-				`<!-- hoo-core: mode=${cachedMode} profile=${cachedProfile} -->\n` +
-				cachedSystemPrompt,
+			systemPrompt: `${event.systemPrompt}\n\n<!-- hoo-core: mode=${cachedMode} -->\n${cachedSystemPrompt}`,
 		};
 	});
 
@@ -817,31 +726,6 @@ export function setupModeAndProfile(pi: ExtensionAPI): void {
 			config.active_mode = name === DEFAULT_MODE ? undefined : name;
 			writeConfig(config);
 			ctx.ui.notify(`Mode set to "${name}" — reloading…`, "info");
-			await ctx.reload();
-		},
-	});
-
-	// ── /profile command ──────────────────────────────────────────────────────
-
-	pi.registerCommand("profile", {
-		description: "Switch active profile. Usage: /profile <name>",
-		getArgumentCompletions: (prefix: string) => {
-			// Show profiles from the merged config so project-local profiles appear
-			const config = readMergedConfig(".");
-			const names = Object.keys(config.profiles ?? {});
-			const suggestions = [DEFAULT_PROFILE, ...names.filter((n) => n !== DEFAULT_PROFILE)];
-			return suggestions.filter((n) => n.startsWith(prefix)).map((n) => ({ value: n, label: n }));
-		},
-		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
-			const name = args.trim();
-			if (!name) {
-				ctx.ui.notify(`Active profile: ${cachedProfile}`, "info");
-				return;
-			}
-			const config = readConfig();
-			config.active_profile = name === DEFAULT_PROFILE ? undefined : name;
-			writeConfig(config);
-			ctx.ui.notify(`Profile set to "${name}" — reloading…`, "info");
 			await ctx.reload();
 		},
 	});
@@ -874,19 +758,22 @@ export function setupModeAndProfile(pi: ExtensionAPI): void {
 				return;
 			}
 
-			// Read ./.hoocode/plan.md written by the agent during plan mode
-			const planPath = join(ctx.cwd, ".hoocode", "plan.md");
+			// Prefer the per-session plan file, fall back to the legacy single file.
+			const sessionPlanPath = cachedPlanPath ?? getPlanPath(ctx.cwd, ctx.sessionManager.getSessionId());
+			const candidatePaths = [sessionPlanPath, getLegacyPlanPath(ctx.cwd)];
 			let approveMessage: string | undefined;
 
-			if (existsSync(planPath)) {
+			for (const planPath of candidatePaths) {
+				if (!existsSync(planPath)) continue;
 				try {
 					const raw = readFileSync(planPath, "utf8").trim();
 					if (raw) {
 						const sections = parsePlanSections(raw);
 						approveMessage = buildApproveMessage(sections);
+						break;
 					}
 				} catch {
-					ctx.ui.notify(`Could not read .hoocode/plan.md`, "error");
+					ctx.ui.notify(`Could not read ${relative(ctx.cwd, planPath) || planPath}`, "error");
 					return;
 				}
 			}
@@ -905,9 +792,75 @@ export function setupModeAndProfile(pi: ExtensionAPI): void {
 					},
 				});
 			} else {
-				ctx.ui.notify(`Switched to build mode. No .hoocode/plan.md found — describe what to build.`, "info");
+				const relPlan = relative(ctx.cwd, sessionPlanPath) || sessionPlanPath;
+				ctx.ui.notify(`Switched to build mode. No ${relPlan} found — describe what to build.`, "info");
 				await ctx.reload();
 			}
+		},
+	});
+
+	// ── /cost command ─────────────────────────────────────────────────────────
+	// Walks every assistant message in the current session and sums tokens + cost,
+	// then prints a session total followed by a per-model breakdown.
+	// Per-tool attribution is intentionally not shown — tokens aren't tracked
+	// per-tool, and any heuristic would be misleading.
+
+	pi.registerCommand("cost", {
+		description: "Show session token and cost totals, broken down by model.",
+		getArgumentCompletions: () => [],
+		handler: async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			type Totals = { input: number; output: number; cacheRead: number; cacheWrite: number; cost: number };
+			const empty = (): Totals => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 });
+			const total = empty();
+			const perModel = new Map<string, Totals>();
+			let assistantTurns = 0;
+
+			for (const entry of ctx.sessionManager.getEntries()) {
+				if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+				const u = entry.message.usage;
+				if (!u) continue;
+				assistantTurns++;
+				total.input += u.input;
+				total.output += u.output;
+				total.cacheRead += u.cacheRead;
+				total.cacheWrite += u.cacheWrite;
+				total.cost += u.cost.total;
+
+				const key = `${entry.message.provider}/${entry.message.model}`;
+				const t = perModel.get(key) ?? empty();
+				t.input += u.input;
+				t.output += u.output;
+				t.cacheRead += u.cacheRead;
+				t.cacheWrite += u.cacheWrite;
+				t.cost += u.cost.total;
+				perModel.set(key, t);
+			}
+
+			if (assistantTurns === 0) {
+				ctx.ui.notify("No assistant turns yet — nothing to cost.", "info");
+				return;
+			}
+
+			const fmt = (n: number) => n.toLocaleString();
+			const fmtCost = (n: number) => `$${n.toFixed(4)}`;
+			const lines: string[] = [];
+			lines.push(`Session totals (${assistantTurns} assistant turn${assistantTurns === 1 ? "" : "s"})`);
+			lines.push(`  Input         ${fmt(total.input)}`);
+			lines.push(`  Output        ${fmt(total.output)}`);
+			lines.push(`  Cache read    ${fmt(total.cacheRead)}`);
+			lines.push(`  Cache write   ${fmt(total.cacheWrite)}`);
+			lines.push(`  Cost          ${fmtCost(total.cost)}`);
+
+			if (perModel.size > 1) {
+				lines.push("");
+				lines.push("By model:");
+				const sorted = [...perModel.entries()].sort((a, b) => b[1].cost - a[1].cost);
+				for (const [key, t] of sorted) {
+					lines.push(`  ${key}: ${fmt(t.input)} in / ${fmt(t.output)} out  ${fmtCost(t.cost)}`);
+				}
+			}
+
+			ctx.ui.notify(lines.join("\n"), "info");
 		},
 	});
 }
@@ -919,5 +872,5 @@ export function setupModeAndProfile(pi: ExtensionAPI): void {
 export default function hooCore(pi: ExtensionAPI): void {
 	setupPermissionGate(pi);
 	setupMcpLoader(pi);
-	setupModeAndProfile(pi);
+	setupMode(pi);
 }

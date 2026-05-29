@@ -177,7 +177,7 @@ export function buildSessionContext(entries, leafId, byId) {
     };
     if (compaction) {
         // Emit summary first
-        messages.push(createCompactionSummaryMessage(compaction.summary, compaction.tokensBefore, compaction.timestamp));
+        messages.push(createCompactionSummaryMessage(compaction.summary, compaction.tokensBefore, compaction.timestamp, compaction.tokensAfter));
         // Find compaction index in path
         const compactionIdx = path.findIndex((e) => e.type === "compaction" && e.id === compaction.id);
         // Emit kept messages (before compaction, starting from firstKeptEntryId)
@@ -614,7 +614,7 @@ export class SessionManager {
         return entry.id;
     }
     /** Append a compaction summary as child of current leaf, then advance leaf. Returns entry id. */
-    appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook) {
+    appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromHook, tokensAfter) {
         const entry = {
             type: "compaction",
             id: generateId(this.byId),
@@ -623,6 +623,7 @@ export class SessionManager {
             summary,
             firstKeptEntryId,
             tokensBefore,
+            tokensAfter,
             details,
             fromHook,
         };

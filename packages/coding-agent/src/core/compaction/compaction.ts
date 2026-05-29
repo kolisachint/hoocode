@@ -87,7 +87,7 @@ function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 		return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
 	}
 	if (entry.type === "compaction") {
-		return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
+		return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp, entry.tokensAfter);
 	}
 	return undefined;
 }
@@ -104,6 +104,8 @@ export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
+	/** Estimated context tokens after compaction (summary + kept messages). */
+	tokensAfter: number;
 	/** Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
 	details?: T;
 }
@@ -788,10 +790,19 @@ export async function compact(
 		throw new Error("First kept entry has no UUID - session may need migration");
 	}
 
+	// Estimate post-compaction context size: subtract discarded message tokens,
+	// add the new compaction-summary tokens (matches estimateTokens' chars/4 heuristic).
+	let discardedTokens = 0;
+	for (const msg of messagesToSummarize) discardedTokens += estimateTokens(msg);
+	for (const msg of turnPrefixMessages) discardedTokens += estimateTokens(msg);
+	const summaryTokens = Math.ceil(summary.length / 4);
+	const tokensAfter = Math.max(0, tokensBefore - discardedTokens + summaryTokens);
+
 	return {
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
+		tokensAfter,
 		details: { readFiles, modifiedFiles } as CompactionDetails,
 	};
 }

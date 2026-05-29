@@ -178,6 +178,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 						summary: customSummary,
 						firstKeptEntryId: event.preparation.firstKeptEntryId,
 						tokensBefore: event.preparation.tokensBefore,
+						tokensAfter: 1,
 					},
 				};
 			}
@@ -397,6 +398,7 @@ describe.skipIf(!API_KEY)("Compaction extensions", () => {
 						summary: customSummary,
 						firstKeptEntryId: event.preparation.firstKeptEntryId,
 						tokensBefore: 999,
+						tokensAfter: 1,
 					},
 				};
 			}

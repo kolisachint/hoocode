@@ -3,6 +3,7 @@ import { calculateCost } from "../models.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { resolveCacheRetention } from "./cache-retention.js";
 import { adjustMaxTokensForThinking, buildBaseOptions, clampReasoning } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 export const streamBedrock = (model, context, options = {}) => {
@@ -379,20 +380,6 @@ function mapThinkingLevelToEffort(model, level) {
         default:
             return "high";
     }
-}
-/**
- * Resolve cache retention preference.
- * Defaults to "short". Reads HOOCODE_CACHE_RETENTION (legacy: PI_CACHE_RETENTION).
- */
-function resolveCacheRetention(cacheRetention) {
-    if (cacheRetention) {
-        return cacheRetention;
-    }
-    if (typeof process !== "undefined" &&
-        (process.env.HOOCODE_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long") {
-        return "long";
-    }
-    return "short";
 }
 /**
  * Check if the model is an Anthropic Claude model on Bedrock.

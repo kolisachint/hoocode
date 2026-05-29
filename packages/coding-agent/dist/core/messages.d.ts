@@ -47,6 +47,8 @@ export interface CompactionSummaryMessage {
     role: "compactionSummary";
     summary: string;
     tokensBefore: number;
+    /** Estimated context tokens after compaction; absent on entries written before this field existed. */
+    tokensAfter?: number;
     timestamp: number;
 }
 declare module "@kolisachint/hoocode-agent-core" {
@@ -62,7 +64,7 @@ declare module "@kolisachint/hoocode-agent-core" {
  */
 export declare function bashExecutionToText(msg: BashExecutionMessage): string;
 export declare function createBranchSummaryMessage(summary: string, fromId: string, timestamp: string): BranchSummaryMessage;
-export declare function createCompactionSummaryMessage(summary: string, tokensBefore: number, timestamp: string): CompactionSummaryMessage;
+export declare function createCompactionSummaryMessage(summary: string, tokensBefore: number, timestamp: string, tokensAfter?: number): CompactionSummaryMessage;
 /** Convert CustomMessageEntry to AgentMessage format */
 export declare function createCustomMessage(customType: string, content: string | (TextContent | ImageContent)[], display: boolean, details: unknown | undefined, timestamp: string): CustomMessage;
 /**

@@ -316,28 +316,6 @@ Content`,
 			const { agentsFiles } = loader.getAgentsFiles();
 			expect(agentsFiles).toEqual([]);
 		});
-
-		it("should discover SYSTEM.md from cwd/.pi", async () => {
-			const piDir = join(cwd, ".hoocode");
-			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, "SYSTEM.md"), "You are a helpful assistant.");
-
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
-			await loader.reload();
-
-			expect(loader.getSystemPrompt()).toBe("You are a helpful assistant.");
-		});
-
-		it("should discover APPEND_SYSTEM.md", async () => {
-			const piDir = join(cwd, ".hoocode");
-			mkdirSync(piDir, { recursive: true });
-			writeFileSync(join(piDir, "APPEND_SYSTEM.md"), "Additional instructions.");
-
-			const loader = new DefaultResourceLoader({ cwd, agentDir });
-			await loader.reload();
-
-			expect(loader.getAppendSystemPrompt()).toContain("Additional instructions.");
-		});
 	});
 
 	describe("extendResources", () => {

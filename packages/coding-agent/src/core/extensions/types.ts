@@ -141,11 +141,10 @@ export interface ExtensionUIContext {
 	setStatus(key: string, text: string | undefined): void;
 
 	/**
-	 * Set the active mode and profile displayed in the footer.
+	 * Set the active mode displayed in the footer.
 	 * Format: mode (e.g., 'ask', 'plan', 'build', 'debug')
-	 *         profile (e.g., 'default', 'data', 'devops')
 	 */
-	setModeProfile(mode: string, profile: string): void;
+	setMode(mode: string): void;
 
 	/** Set the working/loading message shown during streaming. Call with no argument to restore default. */
 	setWorkingMessage(message?: string): void;
@@ -1181,14 +1180,8 @@ export interface ExtensionAPI {
 	 */
 	addModeSearchPath(dirPath: string): void;
 
-	/** Add a directory to the profile-file search path (looks up `{dir}/{profileName}/context.md`). */
-	addProfileSearchPath(dirPath: string): void;
-
 	/** Get all registered mode search paths in declared order. */
 	getModeSearchPaths(): string[];
-
-	/** Get all registered profile search paths in declared order. */
-	getProfileSearchPaths(): string[];
 
 	// =========================================================================
 	// Message Rendering
@@ -1480,8 +1473,6 @@ export interface ExtensionRuntimeState {
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; extensionPath: string }>;
 	/** Mode search dirs registered via pi.addModeSearchPath, in declared order. */
 	modeSearchPaths: string[];
-	/** Profile search dirs registered via pi.addProfileSearchPath, in declared order. */
-	profileSearchPaths: string[];
 	/** Throws when this extension instance is stale after runtime replacement. */
 	assertActive: () => void;
 	/** Marks this extension instance as stale after runtime replacement or reload. */

@@ -3,7 +3,7 @@ import { getModel } from "../src/models.js";
 import { stream } from "../src/stream.js";
 import type { Context, Model } from "../src/types.js";
 
-describe("Cache Retention (PI_CACHE_RETENTION)", () => {
+describe("Cache Retention (HOOCODE_CACHE_RETENTION)", () => {
 	const originalEnv = process.env.HOOCODE_CACHE_RETENTION;
 
 	beforeEach(() => {
@@ -25,8 +25,51 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 
 	describe("Anthropic Provider", () => {
 		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
-			"should use default cache TTL (no ttl field) when PI_CACHE_RETENTION is not set",
+			"defaults to 1h cache TTL when HOOCODE_CACHE_RETENTION is not set",
 			async () => {
+				const model = getModel("anthropic", "claude-haiku-4-5");
+				let capturedPayload: any = null;
+
+				const s = stream(model, context, {
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
+				for await (const _ of s) {
+					// Just consume
+				}
+
+				expect(capturedPayload).not.toBeNull();
+				expect(capturedPayload.system).toBeDefined();
+				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
+			},
+		);
+
+		it.skipIf(!process.env.ANTHROPIC_API_KEY)("uses 5-min cache TTL when HOOCODE_CACHE_RETENTION=short", async () => {
+			process.env.HOOCODE_CACHE_RETENTION = "short";
+			const model = getModel("anthropic", "claude-haiku-4-5");
+			let capturedPayload: any = null;
+
+			const s = stream(model, context, {
+				onPayload: (payload) => {
+					capturedPayload = payload;
+				},
+			});
+
+			for await (const _ of s) {
+				// Just consume
+			}
+
+			expect(capturedPayload).not.toBeNull();
+			expect(capturedPayload.system).toBeDefined();
+			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
+		});
+
+		it.skipIf(!process.env.ANTHROPIC_API_KEY)(
+			"should use 1h cache TTL when HOOCODE_CACHE_RETENTION=long",
+			async () => {
+				process.env.HOOCODE_CACHE_RETENTION = "long";
 				const model = getModel("anthropic", "claude-haiku-4-5");
 				let capturedPayload: any = null;
 
@@ -42,33 +85,11 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 				}
 
 				expect(capturedPayload).not.toBeNull();
-				// System prompt should have cache_control without ttl
+				// System prompt should have cache_control with ttl: "1h"
 				expect(capturedPayload.system).toBeDefined();
-				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral" });
+				expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 			},
 		);
-
-		it.skipIf(!process.env.ANTHROPIC_API_KEY)("should use 1h cache TTL when PI_CACHE_RETENTION=long", async () => {
-			process.env.HOOCODE_CACHE_RETENTION = "long";
-			const model = getModel("anthropic", "claude-haiku-4-5");
-			let capturedPayload: any = null;
-
-			const s = stream(model, context, {
-				onPayload: (payload) => {
-					capturedPayload = payload;
-				},
-			});
-
-			// Consume the stream to trigger the request
-			for await (const _ of s) {
-				// Just consume
-			}
-
-			expect(capturedPayload).not.toBeNull();
-			// System prompt should have cache_control with ttl: "1h"
-			expect(capturedPayload.system).toBeDefined();
-			expect(capturedPayload.system[0].cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
-		});
 
 		it("should add ttl for non-api.anthropic.com baseUrl by default", async () => {
 			process.env.HOOCODE_CACHE_RETENTION = "long";
@@ -192,7 +213,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			const lastMessage = capturedPayload.messages[capturedPayload.messages.length - 1];
 			expect(Array.isArray(lastMessage.content)).toBe(true);
 			const lastBlock = lastMessage.content[lastMessage.content.length - 1];
-			expect(lastBlock.cache_control).toEqual({ type: "ephemeral" });
+			expect(lastBlock.cache_control).toEqual({ type: "ephemeral", ttl: "1h" });
 		});
 
 		it("should set 1h cache TTL when cacheRetention is long", async () => {
@@ -224,7 +245,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 
 	describe("OpenAI Responses Provider", () => {
 		it.skipIf(!process.env.OPENAI_API_KEY)(
-			"should not set prompt_cache_retention when PI_CACHE_RETENTION is not set",
+			"defaults prompt_cache_retention to 24h when HOOCODE_CACHE_RETENTION is not set",
 			async () => {
 				const model = getModel("openai", "gpt-4o-mini");
 				let capturedPayload: any = null;
@@ -235,7 +256,28 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 					},
 				});
 
-				// Consume the stream to trigger the request
+				for await (const _ of s) {
+					// Just consume
+				}
+
+				expect(capturedPayload).not.toBeNull();
+				expect(capturedPayload.prompt_cache_retention).toBe("24h");
+			},
+		);
+
+		it.skipIf(!process.env.OPENAI_API_KEY)(
+			"omits prompt_cache_retention when HOOCODE_CACHE_RETENTION=short",
+			async () => {
+				process.env.HOOCODE_CACHE_RETENTION = "short";
+				const model = getModel("openai", "gpt-4o-mini");
+				let capturedPayload: any = null;
+
+				const s = stream(model, context, {
+					onPayload: (payload) => {
+						capturedPayload = payload;
+					},
+				});
+
 				for await (const _ of s) {
 					// Just consume
 				}
@@ -246,7 +288,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 		);
 
 		it.skipIf(!process.env.OPENAI_API_KEY)(
-			"should set prompt_cache_retention to 24h when PI_CACHE_RETENTION=long",
+			"should set prompt_cache_retention to 24h when HOOCODE_CACHE_RETENTION=long",
 			async () => {
 				process.env.HOOCODE_CACHE_RETENTION = "long";
 				const model = getModel("openai", "gpt-4o-mini");

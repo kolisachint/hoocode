@@ -186,8 +186,6 @@ export declare class DefaultResourceLoader implements ResourceLoader {
     private loadExtensionFactories;
     private dedupePrompts;
     private dedupeThemes;
-    private discoverSystemPromptFile;
-    private discoverAppendSystemPromptFile;
     private isUnderPath;
     private detectExtensionConflicts;
 }

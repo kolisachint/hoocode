@@ -22,7 +22,6 @@ export async function initConfig() {
         return;
     }
     await mkdir(join(HOOCODE_DIR, "modes"), { recursive: true });
-    await mkdir(join(HOOCODE_DIR, "profiles"), { recursive: true });
     await mkdir(join(HOOCODE_DIR, "mcp-servers"), { recursive: true });
     await mkdir(join(HOOCODE_DIR, "agent", "extensions"), { recursive: true });
     await writeSeedFile(configPath, EMBEDDED_DEFAULT_CONFIG);

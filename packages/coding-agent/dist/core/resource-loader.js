@@ -343,11 +343,9 @@ export class DefaultResourceLoader {
         };
         const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(agentsFiles) : agentsFiles;
         this.agentsFiles = resolvedAgentsFiles.agentsFiles;
-        const baseSystemPrompt = resolvePromptInput(this.systemPromptSource ?? this.discoverSystemPromptFile(), "system prompt");
+        const baseSystemPrompt = resolvePromptInput(this.systemPromptSource, "system prompt");
         this.systemPrompt = this.systemPromptOverride ? this.systemPromptOverride(baseSystemPrompt) : baseSystemPrompt;
-        const appendSources = this.appendSystemPromptSource ??
-            (this.discoverAppendSystemPromptFile() ? [this.discoverAppendSystemPromptFile()] : []);
-        const baseAppend = appendSources
+        const baseAppend = (this.appendSystemPromptSource ?? [])
             .map((s) => resolvePromptInput(s, "append system prompt"))
             .filter((s) => s !== undefined);
         this.appendSystemPrompt = this.appendSystemPromptOverride
@@ -676,28 +674,6 @@ export class DefaultResourceLoader {
             }
         }
         return { themes: Array.from(seen.values()), diagnostics };
-    }
-    discoverSystemPromptFile() {
-        const projectPath = join(this.cwd, CONFIG_DIR_NAME, "SYSTEM.md");
-        if (existsSync(projectPath)) {
-            return projectPath;
-        }
-        const globalPath = join(this.agentDir, "SYSTEM.md");
-        if (existsSync(globalPath)) {
-            return globalPath;
-        }
-        return undefined;
-    }
-    discoverAppendSystemPromptFile() {
-        const projectPath = join(this.cwd, CONFIG_DIR_NAME, "APPEND_SYSTEM.md");
-        if (existsSync(projectPath)) {
-            return projectPath;
-        }
-        const globalPath = join(this.agentDir, "APPEND_SYSTEM.md");
-        if (existsSync(globalPath)) {
-            return globalPath;
-        }
-        return undefined;
     }
     isUnderPath(target, root) {
         const normalizedRoot = resolve(root);

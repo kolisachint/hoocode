@@ -1507,9 +1507,8 @@ export class InteractiveMode {
             notify: (message, type) => this.showExtensionNotify(message, type),
             onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
             setStatus: (key, text) => this.setExtensionStatus(key, text),
-            setModeProfile: (mode, profile) => {
+            setMode: (mode) => {
                 this.footerDataProvider.setActiveMode(mode);
-                this.footerDataProvider.setActiveProfile(profile);
                 this.footer.invalidate();
                 this.ui.requestRender();
             },
@@ -2329,7 +2328,7 @@ export class InteractiveMode {
                 else if (event.result) {
                     this.chatContainer.clear();
                     this.rebuildChatFromMessages();
-                    this.addMessageToChat(createCompactionSummaryMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString()));
+                    this.addMessageToChat(createCompactionSummaryMessage(event.result.summary, event.result.tokensBefore, new Date().toISOString(), event.result.tokensAfter));
                     this.footer.invalidate();
                 }
                 else if (event.errorMessage) {

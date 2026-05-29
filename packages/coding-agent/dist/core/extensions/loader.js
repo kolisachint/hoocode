@@ -135,7 +135,6 @@ export function createExtensionRuntime() {
         flagValues: new Map(),
         pendingProviderRegistrations: [],
         modeSearchPaths: [],
-        profileSearchPaths: [],
         assertActive,
         invalidate: (message) => {
             state.staleMessage ??=
@@ -212,20 +211,9 @@ function createExtensionAPI(extension, runtime, cwd, eventBus) {
                 runtime.modeSearchPaths.push(resolved);
             }
         },
-        addProfileSearchPath(dirPath) {
-            runtime.assertActive();
-            const resolved = resolvePath(dirPath, cwd);
-            if (!runtime.profileSearchPaths.includes(resolved)) {
-                runtime.profileSearchPaths.push(resolved);
-            }
-        },
         getModeSearchPaths() {
             runtime.assertActive();
             return [...runtime.modeSearchPaths];
-        },
-        getProfileSearchPaths() {
-            runtime.assertActive();
-            return [...runtime.profileSearchPaths];
         },
         // Action methods - delegate to shared runtime
         sendMessage(message, options) {

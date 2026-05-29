@@ -61,6 +61,7 @@ describe("AgentSession compaction characterization", () => {
 							summary: "summary from extension",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
 							tokensBefore: event.preparation.tokensBefore,
+							tokensAfter: 1,
 							details: { source: "extension" },
 						},
 					}));
@@ -130,6 +131,7 @@ describe("AgentSession compaction characterization", () => {
 							summary: "auto compacted",
 							firstKeptEntryId: event.preparation.firstKeptEntryId,
 							tokensBefore: event.preparation.tokensBefore,
+							tokensAfter: 1,
 							details: {},
 						},
 					}));

@@ -9,7 +9,6 @@ export interface Args {
     model?: string;
     apiKey?: string;
     systemPrompt?: string;
-    appendSystemPrompt?: string[];
     thinking?: ThinkingLevel;
     continue?: boolean;
     resume?: boolean;
@@ -35,7 +34,6 @@ export interface Args {
     themes?: string[];
     noThemes?: boolean;
     modePaths?: string[];
-    profilePaths?: string[];
     noContextFiles?: boolean;
     listModels?: string | true;
     offline?: boolean;

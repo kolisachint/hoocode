@@ -38,6 +38,7 @@ describe("Documentation example", () => {
 						summary: `User requests:\n${summary}`,
 						firstKeptEntryId,
 						tokensBefore,
+						tokensAfter: 0,
 					},
 				};
 			});

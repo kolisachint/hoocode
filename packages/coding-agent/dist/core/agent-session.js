@@ -1284,12 +1284,14 @@ export class AgentSession {
             let summary;
             let firstKeptEntryId;
             let tokensBefore;
+            let tokensAfter;
             let details;
             if (extensionCompaction) {
                 // Extension provided compaction content
                 summary = extensionCompaction.summary;
                 firstKeptEntryId = extensionCompaction.firstKeptEntryId;
                 tokensBefore = extensionCompaction.tokensBefore;
+                tokensAfter = extensionCompaction.tokensAfter;
                 details = extensionCompaction.details;
             }
             else {
@@ -1298,12 +1300,13 @@ export class AgentSession {
                 summary = result.summary;
                 firstKeptEntryId = result.firstKeptEntryId;
                 tokensBefore = result.tokensBefore;
+                tokensAfter = result.tokensAfter;
                 details = result.details;
             }
             if (this._compactionAbortController.signal.aborted) {
                 throw new Error("Compaction cancelled");
             }
-            this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+            this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, tokensAfter);
             const newEntries = this.sessionManager.getEntries();
             const sessionContext = this.sessionManager.buildSessionContext();
             this.agent.state.messages = sessionContext.messages;
@@ -1320,6 +1323,7 @@ export class AgentSession {
                 summary,
                 firstKeptEntryId,
                 tokensBefore,
+                tokensAfter: tokensAfter ?? tokensBefore,
                 details,
             };
             this._emit({
@@ -1514,12 +1518,14 @@ export class AgentSession {
             let summary;
             let firstKeptEntryId;
             let tokensBefore;
+            let tokensAfter;
             let details;
             if (extensionCompaction) {
                 // Extension provided compaction content
                 summary = extensionCompaction.summary;
                 firstKeptEntryId = extensionCompaction.firstKeptEntryId;
                 tokensBefore = extensionCompaction.tokensBefore;
+                tokensAfter = extensionCompaction.tokensAfter;
                 details = extensionCompaction.details;
             }
             else {
@@ -1528,6 +1534,7 @@ export class AgentSession {
                 summary = compactResult.summary;
                 firstKeptEntryId = compactResult.firstKeptEntryId;
                 tokensBefore = compactResult.tokensBefore;
+                tokensAfter = compactResult.tokensAfter;
                 details = compactResult.details;
             }
             if (this._autoCompactionAbortController.signal.aborted) {
@@ -1540,7 +1547,7 @@ export class AgentSession {
                 });
                 return;
             }
-            this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+            this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension, tokensAfter);
             const newEntries = this.sessionManager.getEntries();
             const sessionContext = this.sessionManager.buildSessionContext();
             this.agent.state.messages = sessionContext.messages;
@@ -1557,6 +1564,7 @@ export class AgentSession {
                 summary,
                 firstKeptEntryId,
                 tokensBefore,
+                tokensAfter: tokensAfter ?? tokensBefore,
                 details,
             };
             this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });

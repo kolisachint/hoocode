@@ -16,29 +16,13 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
+import { resolveCacheRetention } from "./cache-retention.js";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
-
-/**
- * Resolve cache retention preference.
- * Defaults to "short". Reads HOOCODE_CACHE_RETENTION (legacy: PI_CACHE_RETENTION).
- */
-function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
-	if (cacheRetention) {
-		return cacheRetention;
-	}
-	if (
-		typeof process !== "undefined" &&
-		(process.env.HOOCODE_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION) === "long"
-	) {
-		return "long";
-	}
-	return "short";
-}
 
 function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCompat> {
 	return {

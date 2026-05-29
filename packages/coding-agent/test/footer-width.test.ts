@@ -50,6 +50,9 @@ function createSession(options: {
 			getSessionName: () => options.sessionName,
 			getCwd: () => "/tmp/project",
 		},
+		settingsManager: {
+			getCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 }),
+		},
 		getContextUsage: () => ({ contextWindow: 200_000, percent: 12.3 }),
 		modelRegistry: {
 			isUsingOAuth: () => false,
@@ -69,7 +72,6 @@ function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
 			return () => {};
 		},
 		getActiveMode: () => "build",
-		getActiveProfile: () => "default",
 	};
 
 	return provider;

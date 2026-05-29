@@ -72,7 +72,7 @@ function getMessageFromEntry(entry) {
         case "branch_summary":
             return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
         case "compaction":
-            return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
+            return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp, entry.tokensAfter);
         // These don't contribute to conversation content
         case "thinking_level_change":
         case "model_change":

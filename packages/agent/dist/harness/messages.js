@@ -36,11 +36,12 @@ export function createBranchSummaryMessage(summary, fromId, timestamp) {
         timestamp: new Date(timestamp).getTime(),
     };
 }
-export function createCompactionSummaryMessage(summary, tokensBefore, timestamp) {
+export function createCompactionSummaryMessage(summary, tokensBefore, timestamp, tokensAfter) {
     return {
         role: "compactionSummary",
         summary,
         tokensBefore,
+        tokensAfter,
         timestamp: new Date(timestamp).getTime(),
     };
 }

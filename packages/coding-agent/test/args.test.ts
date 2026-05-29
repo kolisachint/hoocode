@@ -105,16 +105,6 @@ describe("parseArgs", () => {
 			expect(result.systemPrompt).toBe("You are a helpful assistant");
 		});
 
-		test("parses --append-system-prompt", () => {
-			const result = parseArgs(["--append-system-prompt", "Additional context"]);
-			expect(result.appendSystemPrompt).toEqual(["Additional context"]);
-		});
-
-		test("parses multiple --append-system-prompt flags", () => {
-			const result = parseArgs(["--append-system-prompt", "Context A", "--append-system-prompt", "Context B"]);
-			expect(result.appendSystemPrompt).toEqual(["Context A", "Context B"]);
-		});
-
 		test("parses --mode", () => {
 			const result = parseArgs(["--mode", "json"]);
 			expect(result.mode).toBe("json");
@@ -350,21 +340,15 @@ describe("parseArgs", () => {
 		});
 	});
 
-	describe("--mode-path / --profile-path flags", () => {
+	describe("--mode-path flag", () => {
 		test("collects --mode-path values into array", () => {
 			const result = parseArgs(["--mode-path", "/team/modes", "--mode-path", "~/extra/modes"]);
 			expect(result.modePaths).toEqual(["/team/modes", "~/extra/modes"]);
 		});
 
-		test("collects --profile-path values into array", () => {
-			const result = parseArgs(["--profile-path", "/team/profiles"]);
-			expect(result.profilePaths).toEqual(["/team/profiles"]);
-		});
-
-		test("modePaths/profilePaths are undefined when no flags passed", () => {
+		test("modePaths is undefined when no flags passed", () => {
 			const result = parseArgs([]);
 			expect(result.modePaths).toBeUndefined();
-			expect(result.profilePaths).toBeUndefined();
 		});
 	});
 

@@ -107,18 +107,20 @@ function getInstructionMessage(params: CapturedParams) {
 }
 
 function expectAnthropicCacheMarkers(params: CapturedParams): void {
+	// Default cache retention is "long" → ttl: "1h" on supported models.
+	const expectedCacheControl = { type: "ephemeral", ttl: "1h" };
 	const instructionMessage = getInstructionMessage(params);
 	expect(instructionMessage).toBeDefined();
 	expect(Array.isArray(instructionMessage?.content)).toBe(true);
-	expect((instructionMessage?.content as TextPart[])[0]?.cache_control).toEqual({ type: "ephemeral" });
+	expect((instructionMessage?.content as TextPart[])[0]?.cache_control).toEqual(expectedCacheControl);
 
 	expect(params.tools).toHaveLength(1);
-	expect(params.tools?.[0]?.cache_control).toEqual({ type: "ephemeral" });
+	expect(params.tools?.[0]?.cache_control).toEqual(expectedCacheControl);
 
 	const lastMessage = params.messages[params.messages.length - 1];
 	expect(lastMessage.role).toBe("user");
 	expect(Array.isArray(lastMessage.content)).toBe(true);
-	expect((lastMessage.content as TextPart[])[0]?.cache_control).toEqual({ type: "ephemeral" });
+	expect((lastMessage.content as TextPart[])[0]?.cache_control).toEqual(expectedCacheControl);
 }
 
 describe("openai-completions cacheControlFormat", () => {

@@ -46,10 +46,6 @@ export function parseArgs(args) {
         else if (arg === "--system-prompt" && i + 1 < args.length) {
             result.systemPrompt = args[++i];
         }
-        else if (arg === "--append-system-prompt" && i + 1 < args.length) {
-            result.appendSystemPrompt = result.appendSystemPrompt ?? [];
-            result.appendSystemPrompt.push(args[++i]);
-        }
         else if (arg === "--no-session") {
             result.noSession = true;
         }
@@ -122,10 +118,6 @@ export function parseArgs(args) {
         else if (arg === "--mode-path" && i + 1 < args.length) {
             result.modePaths = result.modePaths ?? [];
             result.modePaths.push(args[++i]);
-        }
-        else if (arg === "--profile-path" && i + 1 < args.length) {
-            result.profilePaths = result.profilePaths ?? [];
-            result.profilePaths.push(args[++i]);
         }
         else if (arg === "--no-skills" || arg === "-ns") {
             result.noSkills = true;
@@ -212,7 +204,6 @@ ${chalk.bold("Options:")}
   --model <pattern>              Model pattern or ID (supports "provider/id" and optional ":<thinking>")
   --api-key <key>                API key (defaults to env vars)
   --system-prompt <text>         System prompt (default: coding assistant prompt)
-  --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
   --print, -p                    Non-interactive mode: process prompt and exit
   --continue, -c                 Continue previous session
@@ -237,7 +228,6 @@ ${chalk.bold("Options:")}
   --theme <path>                 Load a theme file or directory (can be used multiple times)
   --no-themes                    Disable theme discovery and loading
   --mode-path <dir>              Add a directory to search for {name}/system.md mode files (can be used multiple times)
-  --profile-path <dir>           Add a directory to search for {name}/context.md profile files (can be used multiple times)
   --no-context-files, -nc        Disable AGENTS.md and CLAUDE.md discovery and loading
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)

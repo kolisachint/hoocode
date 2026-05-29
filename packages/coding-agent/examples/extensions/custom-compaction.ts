@@ -115,6 +115,7 @@ ${conversationText}
 					summary,
 					firstKeptEntryId,
 					tokensBefore,
+					tokensAfter: Math.ceil(summary.length / 4),
 				},
 			};
 		} catch (error) {
