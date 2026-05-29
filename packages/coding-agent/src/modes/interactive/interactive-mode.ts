@@ -1025,7 +1025,9 @@ export class InteractiveMode {
 		return segments.join("/");
 	}
 
-	private getCompactExtensionLabels(extensions: Array<{ path: string; sourceInfo?: SourceInfo }>): string[] {
+	private getCompactExtensionLabels(
+		extensions: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>,
+	): string[] {
 		const nonPackageExtensions = extensions
 			.map((extension) => {
 				const segments = this.getCompactDisplayPathSegments(extension.path);
@@ -1042,6 +1044,10 @@ export class InteractiveMode {
 			.filter((extension) => !this.isPackageSource(extension.sourceInfo));
 
 		return extensions.map((extension) => {
+			if (extension.displayName) {
+				return extension.displayName;
+			}
+
 			if (this.isPackageSource(extension.sourceInfo)) {
 				return this.getCompactExtensionLabel(extension.path, extension.sourceInfo);
 			}
@@ -1098,10 +1104,10 @@ export class InteractiveMode {
 		return source.startsWith("npm:") || source.startsWith("git:");
 	}
 
-	private buildScopeGroups(items: Array<{ path: string; sourceInfo?: SourceInfo }>): Array<{
+	private buildScopeGroups(items: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>): Array<{
 		scope: "user" | "project" | "path";
-		paths: Array<{ path: string; sourceInfo?: SourceInfo }>;
-		packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo }>>;
+		paths: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>;
+		packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>>;
 	}> {
 		const groups: Record<
 			"user" | "project" | "path",
@@ -1138,12 +1144,15 @@ export class InteractiveMode {
 	private formatScopeGroups(
 		groups: Array<{
 			scope: "user" | "project" | "path";
-			paths: Array<{ path: string; sourceInfo?: SourceInfo }>;
-			packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo }>>;
+			paths: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>;
+			packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>>;
 		}>,
 		options: {
-			formatPath: (item: { path: string; sourceInfo?: SourceInfo }) => string;
-			formatPackagePath: (item: { path: string; sourceInfo?: SourceInfo }, source: string) => string;
+			formatPath: (item: { path: string; sourceInfo?: SourceInfo; displayName?: string }) => string;
+			formatPackagePath: (
+				item: { path: string; sourceInfo?: SourceInfo; displayName?: string },
+				source: string,
+			) => string;
 		},
 	): string {
 		const lines: string[] = [];
@@ -1290,6 +1299,7 @@ export class InteractiveMode {
 			this.session.resourceLoader.getExtensions().extensions.map((extension) => ({
 				path: extension.path,
 				sourceInfo: extension.sourceInfo,
+				displayName: extension.displayName,
 			}));
 		const sourceInfos = new Map<string, SourceInfo>();
 		for (const extension of extensions) {
@@ -1394,9 +1404,9 @@ export class InteractiveMode {
 				if (extensions.length > 0) {
 					const groups = this.buildScopeGroups(extensions);
 					const extList = this.formatScopeGroups(groups, {
-						formatPath: (item) => this.formatExtensionDisplayPath(item.path),
+						formatPath: (item) => item.displayName ?? this.formatExtensionDisplayPath(item.path),
 						formatPackagePath: (item) =>
-							this.formatExtensionDisplayPath(this.getShortPath(item.path, item.sourceInfo)),
+							item.displayName ?? this.formatExtensionDisplayPath(this.getShortPath(item.path, item.sourceInfo)),
 					});
 					const extensionCompactList = formatCompactList(this.getCompactExtensionLabels(extensions));
 					addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");

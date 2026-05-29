@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ExtensionFactory` functions can now declare an optional `displayName` (e.g. `mode/build`). When present, the TUI and CLI show that name instead of the synthetic `<inline:N>` path in loaded resources and error messages.
 
 ## [0.3.0] - 2026-05-29
 

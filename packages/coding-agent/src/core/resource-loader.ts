@@ -800,11 +800,18 @@ export class DefaultResourceLoader implements ResourceLoader {
 		for (const [index, factory] of this.extensionFactories.entries()) {
 			const extensionPath = `<inline:${index + 1}>`;
 			try {
-				const extension = await loadExtensionFromFactory(factory, this.cwd, this.eventBus, runtime, extensionPath);
+				const extension = await loadExtensionFromFactory(
+					factory,
+					this.cwd,
+					this.eventBus,
+					runtime,
+					extensionPath,
+					factory.displayName,
+				);
 				extensions.push(extension);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : "failed to load extension";
-				errors.push({ path: extensionPath, error: message });
+				errors.push({ path: factory.displayName ?? extensionPath, error: message });
 			}
 		}
 

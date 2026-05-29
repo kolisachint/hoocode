@@ -428,8 +428,10 @@ export async function loadExtensionFromFactory(
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
 	extensionPath = "<inline>",
+	displayName?: string,
 ): Promise<Extension> {
 	const extension = createExtension(extensionPath, extensionPath);
+	extension.displayName = displayName;
 	const api = createExtensionAPI(extension, runtime, cwd, eventBus);
 	await factory(api);
 	return extension;
