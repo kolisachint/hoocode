@@ -627,6 +627,9 @@ export default function(pi: ExtensionAPI) {
 			expect(errors).toEqual([]);
 			expect(extensions).toHaveLength(1);
 			expect(extensions[0].displayName).toBe("My Inline Extension");
+			expect(extensions[0].path).toBe("My Inline Extension");
+			expect(extensions[0].sourceInfo.path).toBe("My Inline Extension");
+			expect(extensions[0].sourceInfo.source).toBe("inline");
 		});
 
 		it("should use factory displayName in error paths", async () => {
@@ -656,6 +659,25 @@ export default function(pi: ExtensionAPI) {
 			const { errors } = loader.getExtensions();
 			expect(errors).toHaveLength(1);
 			expect(errors[0].path).toBe("<inline:1>");
+		});
+
+		it("should use synthetic inline path for loaded extensions without displayName", async () => {
+			const factory: ExtensionFactory = (pi) => {
+				pi.registerCommand("inline-cmd", {
+					description: "inline command",
+					handler: async () => {},
+				});
+			};
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
+			await loader.reload();
+
+			const { extensions, errors } = loader.getExtensions();
+			expect(errors).toEqual([]);
+			expect(extensions).toHaveLength(1);
+			expect(extensions[0].path).toBe("<inline:1>");
+			expect(extensions[0].sourceInfo.path).toBe("<inline:1>");
+			expect(extensions[0].sourceInfo.source).toBe("inline");
 		});
 	});
 });

@@ -578,6 +578,16 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private applyExtensionSourceInfo(extensions: Extension[], metadataByPath: Map<string, PathMetadata>): void {
 		for (const extension of extensions) {
+			if (extension.displayName) {
+				// Preserve inline source info for display-named extensions
+				for (const command of extension.commands.values()) {
+					command.sourceInfo = extension.sourceInfo;
+				}
+				for (const tool of extension.tools.values()) {
+					tool.sourceInfo = extension.sourceInfo;
+				}
+				continue;
+			}
 			extension.sourceInfo =
 				this.findSourceInfoForPath(extension.path, undefined, metadataByPath) ??
 				this.getDefaultSourceInfoForPath(extension.path);
@@ -798,7 +808,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const errors: Array<{ path: string; error: string }> = [];
 
 		for (const [index, factory] of this.extensionFactories.entries()) {
-			const extensionPath = `<inline:${index + 1}>`;
+			const extensionPath = factory.displayName ?? `<inline:${index + 1}>`;
 			try {
 				const extension = await loadExtensionFromFactory(
 					factory,
@@ -811,7 +821,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				extensions.push(extension);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : "failed to load extension";
-				errors.push({ path: factory.displayName ?? extensionPath, error: message });
+				errors.push({ path: extensionPath, error: message });
 			}
 		}
 

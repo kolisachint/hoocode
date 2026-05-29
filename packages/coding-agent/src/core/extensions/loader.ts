@@ -430,7 +430,15 @@ export async function loadExtensionFromFactory(
 	extensionPath = "<inline>",
 	displayName?: string,
 ): Promise<Extension> {
-	const extension = createExtension(extensionPath, extensionPath);
+	const effectivePath = displayName ?? extensionPath;
+	const extension = createExtension(effectivePath, extensionPath);
+	if (displayName) {
+		extension.sourceInfo = createSyntheticSourceInfo(displayName, {
+			source: "inline",
+			scope: "temporary",
+			origin: "top-level",
+		});
+	}
 	extension.displayName = displayName;
 	const api = createExtensionAPI(extension, runtime, cwd, eventBus);
 	await factory(api);
