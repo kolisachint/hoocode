@@ -2,3 +2,9 @@ node_modules
 .sisyphus/
 *.sha256
 .DS_Store
+
+# Build artifacts — never commit compiled output
+**/dist/
+
+# IDE / tool artifacts
+.hoocode/

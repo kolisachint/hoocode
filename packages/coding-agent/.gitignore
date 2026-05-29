@@ -1,3 +1,2 @@
 *.bun-build
-src/init-templates.generated.ts
 binaries/
