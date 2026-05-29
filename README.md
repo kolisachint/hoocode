@@ -1,6 +1,6 @@
 # HooCode
 
-Deterministic terminal coding agent with profile-aware customization.
+Deterministic terminal coding agent.
 
 ## Credits
 

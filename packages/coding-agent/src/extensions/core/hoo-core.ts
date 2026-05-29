@@ -70,22 +70,6 @@ Describe the fix precisely but do NOT apply it.
 To fix, switch to /mode build.`,
 };
 
-const PROFILE_DEFAULTS: Record<string, string> = {
-	data: `**Profile: Data Engineering**
-- Dry-run before mutating SQL statements.
-- No SELECT * on large tables — always specify columns.
-- Inspect table schemas before writing queries.
-- Validate join keys and cardinality.
-- Prefer incremental processing over full refreshes.`,
-
-	devops: `**Profile: DevOps / Infrastructure**
-- Never run terraform apply or kubectl delete without showing the plan first.
-- Prefer declarative configuration over imperative commands.
-- Never hardcode secrets — use environment variables or secret managers.
-- Every change needs a rollback strategy.
-- Check existing resources before creating new ones.`,
-};
-
 // ============================================================================
 // Shared paths
 // ============================================================================
@@ -658,8 +642,7 @@ export function buildSystemPrompt(
 	if (modePrompt) layers.push(modePrompt);
 
 	if (profile !== DEFAULT_PROFILE) {
-		const profileContext =
-			resolveResourceFile(profile, "context.md", "profiles", cwd, profilePaths) ?? PROFILE_DEFAULTS[profile];
+		const profileContext = resolveResourceFile(profile, "context.md", "profiles", cwd, profilePaths);
 		if (profileContext) layers.push(profileContext);
 	}
 

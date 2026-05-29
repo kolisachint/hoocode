@@ -1,7 +1,6 @@
 {
   "version": "1.0",
   "active_mode": "build",
-  "active_profile": "default",
   "llm": {
     "default_provider": "anthropic",
     "providers": {
@@ -14,19 +13,5 @@
     "plan": { "auto_allow": ["read", "write"] },
     "build": { "auto_allow": ["read"] },
     "debug": { "auto_allow": ["read", "bash"] }
-  },
-  "profiles": {
-    "default": { "enabled_tools": ["read", "bash", "edit", "write"] },
-    "data": { "enabled_tools": ["read", "bash", "edit", "write"] },
-    "devops": { "enabled_tools": ["read", "bash", "edit", "write"] }
-  },
-  "profile_detectors": [
-    { "marker": "dbt_project.yml", "profile": "data" },
-    { "marker": "*.sql", "profile": "data" },
-    { "marker": "terraform.tf", "profile": "devops" },
-    { "marker": ".github/workflows", "profile": "devops" },
-    { "marker": "Dockerfile", "profile": "devops" },
-    { "marker": "docker-compose.yml", "profile": "devops" },
-    { "marker": "k8s/", "profile": "devops" }
-  ]
+  }
 }

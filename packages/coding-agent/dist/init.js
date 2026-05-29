@@ -1,7 +1,7 @@
 import { mkdir, stat, writeFile } from "fs/promises";
 import { dirname, join } from "path";
 import { getHooCodeDir } from "./config.js";
-import { EMBEDDED_DEFAULT_CONFIG, EMBEDDED_MODES, EMBEDDED_PROFILES } from "./init-templates.generated.js";
+import { EMBEDDED_DEFAULT_CONFIG, EMBEDDED_MODES } from "./init-templates.generated.js";
 const HOOCODE_DIR = getHooCodeDir();
 async function exists(p) {
     try {
@@ -28,9 +28,6 @@ export async function initConfig() {
     await writeSeedFile(configPath, EMBEDDED_DEFAULT_CONFIG);
     for (const [modeName, content] of Object.entries(EMBEDDED_MODES)) {
         await writeSeedFile(join(HOOCODE_DIR, "modes", modeName, "system.md"), content);
-    }
-    for (const [profileName, content] of Object.entries(EMBEDDED_PROFILES)) {
-        await writeSeedFile(join(HOOCODE_DIR, "profiles", profileName, "context.md"), content);
     }
 }
 //# sourceMappingURL=init.js.map
