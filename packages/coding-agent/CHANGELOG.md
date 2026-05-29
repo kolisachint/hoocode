@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Active subagent tasks are now rendered in a dedicated task panel just above the editor prompt instead of the footer. The panel shows only running tasks (pending / in_progress), uses LIFO ordering (newest closest to the prompt), and collapses to zero lines when idle.
+
+### Added
+
+- Clearer guidance on when the model should invoke the `subagent` tool (self-contained work, parallel investigation, discrete tasks, long-running commands).
+
 ## [0.4.2] - 2026-05-29
 
 ### Added

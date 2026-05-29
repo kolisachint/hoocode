@@ -68,6 +68,13 @@ class TaskStore {
 		};
 	}
 
+	/** Clear all tasks. Intended for test isolation only. */
+	clear(): void {
+		this.tasks = [];
+		this.nextId = 1;
+		this.emit();
+	}
+
 	private emit(): void {
 		for (const listener of this.listeners) {
 			listener();
