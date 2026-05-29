@@ -283,7 +283,7 @@ export class InteractiveMode {
 
 	// Agent subscription unsubscribe function
 	private unsubscribe?: () => void;
-	// Task store subscription unsubscribe function (footer task list)
+	// Task store subscription unsubscribe function (task panel)
 	private taskStoreUnsubscribe?: () => void;
 	private signalCleanupHandlers: Array<() => void> = [];
 
@@ -677,7 +677,7 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		});
 
-		// Re-render the footer when the task list changes (e.g. subagent tasks).
+		// Re-render the UI when the task list changes (task panel shows active tasks).
 		this.taskStoreUnsubscribe = taskStore.subscribe(() => {
 			this.ui.requestRender();
 		});

@@ -1,7 +1,7 @@
 /**
  * Subagent tool: delegate a focused task to a fresh, isolated agent loop.
  *
- * The tool registers a task in the shared task store (visible in the footer),
+ * The tool registers a task in the shared task store (visible in the task panel),
  * runs the subagent to completion, and returns ONLY the subagent's final
  * answer. It is an optional, opt-in tool (enabled via --subagent or the
  * `enableSubagent` setting); see buildSessionOptions in main.ts.
@@ -76,10 +76,6 @@ export function createSubagentToolDefinition(): ToolDefinition {
 
 			const task = taskStore.create(summary, { subagentMode: mode });
 			taskStore.update(task.id, { status: "in_progress" });
-			if (ctx.hasUI) {
-				ctx.ui.setStatus("subagent", `subagent:${mode} ${summary}`);
-			}
-
 			try {
 				const result = await runSubagent({
 					task: params.task,
@@ -106,10 +102,6 @@ export function createSubagentToolDefinition(): ToolDefinition {
 			} catch (error) {
 				taskStore.update(task.id, { status: "failed" });
 				throw error;
-			} finally {
-				if (ctx.hasUI) {
-					ctx.ui.setStatus("subagent", undefined);
-				}
 			}
 		},
 

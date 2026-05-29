@@ -1,7 +1,7 @@
 /**
  * Minimal in-process task store.
  *
- * Tracks short-lived tasks (e.g. subagent delegations) so the TUI footer can
+ * Tracks short-lived tasks (e.g. subagent delegations) so the TUI task panel can
  * display active work. It is a process-level singleton because the tool that
  * creates tasks and the footer that renders them live in the same process and
  * there is no cross-process boundary to cross.

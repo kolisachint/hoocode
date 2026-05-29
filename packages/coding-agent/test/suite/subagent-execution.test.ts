@@ -127,7 +127,7 @@ describe("runSubagent execution", () => {
 });
 
 describe("subagent tool (opt-in) execution and task integration", () => {
-	function makeCtx(setup: FauxSetup, cwd: string, statusCalls: Array<[string, string | undefined]>): ExtensionContext {
+	function makeCtx(setup: FauxSetup, cwd: string): ExtensionContext {
 		return {
 			cwd,
 			model: setup.model,
@@ -135,9 +135,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 			hasUI: true,
 			signal: undefined,
 			ui: {
-				setStatus: (key: string, text: string | undefined) => {
-					statusCalls.push([key, text]);
-				},
+				setStatus: (_key: string, _text: string | undefined) => {},
 			},
 		} as unknown as ExtensionContext;
 	}
@@ -145,8 +143,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 	it("runs the subagent, returns its answer, and tracks a task to completion", async () => {
 		const setup = setupFaux();
 		setup.faux.setResponses([fauxAssistantMessage("done exploring")]);
-		const statusCalls: Array<[string, string | undefined]> = [];
-		const ctx = makeCtx(setup, makeTempDir(), statusCalls);
+		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
 		const tool = createSubagentToolDefinition();
@@ -164,18 +161,12 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		expect(created).toHaveLength(1);
 		expect(created[0].status).toBe("done");
 		expect(created[0].subagentMode).toBe("explore");
-
-		// Footer indicator was set while running, then cleared.
-		expect(statusCalls[0][0]).toBe("subagent");
-		expect(statusCalls[0][1]).toContain("subagent:explore");
-		expect(statusCalls[statusCalls.length - 1]).toEqual(["subagent", undefined]);
 	});
 
 	it("marks the task failed and throws when the subagent errors", async () => {
 		const setup = setupFaux();
 		setup.faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "nope" })]);
-		const statusCalls: Array<[string, string | undefined]> = [];
-		const ctx = makeCtx(setup, makeTempDir(), statusCalls);
+		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
 		const tool = createSubagentToolDefinition();
@@ -193,8 +184,6 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 
 		const created = taskStore.list().slice(before);
 		expect(created[0].status).toBe("failed");
-		// Footer status is cleared even on failure.
-		expect(statusCalls[statusCalls.length - 1]).toEqual(["subagent", undefined]);
 	});
 });
 
