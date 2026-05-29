@@ -555,7 +555,7 @@ export function setupMode(pi) {
         if (!cachedSystemPrompt)
             return;
         return {
-            systemPrompt: `${event.systemPrompt}\n\n` + `<!-- hoo-core: mode=${cachedMode} -->\n` + cachedSystemPrompt,
+            systemPrompt: `${event.systemPrompt}\n\n<!-- hoo-core: mode=${cachedMode} -->\n${cachedSystemPrompt}`,
         };
     });
     // ── /mode command ─────────────────────────────────────────────────────────

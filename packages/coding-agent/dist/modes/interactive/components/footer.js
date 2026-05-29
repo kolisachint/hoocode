@@ -133,7 +133,11 @@ export class FooterComponent {
             if (effective > 0)
                 thresholdPercent = (effective / contextWindow) * 100;
         }
-        const autoIndicator = thresholdPercent !== undefined ? ` (auto @ ${thresholdPercent.toFixed(0)}%)` : this.autoCompactEnabled ? " (auto)" : "";
+        const autoIndicator = thresholdPercent !== undefined
+            ? ` (auto @ ${thresholdPercent.toFixed(0)}%)`
+            : this.autoCompactEnabled
+                ? " (auto)"
+                : "";
         const contextPercentDisplay = contextPercent === "?"
             ? `?/${formatTokens(contextWindow)}${autoIndicator}`
             : `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
