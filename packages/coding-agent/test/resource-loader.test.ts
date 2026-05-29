@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { ExtensionRunner } from "../src/core/extensions/runner.js";
+import type { ExtensionFactory } from "../src/core/extensions/types.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { DefaultResourceLoader } from "../src/core/resource-loader.js";
 import { SessionManager } from "../src/core/session-manager.js";
@@ -606,6 +607,55 @@ export default function(pi: ExtensionAPI) {
 			expect(runner.getCommand("deploy:1")?.description).toBe("explicit command");
 			expect(runner.getCommand("deploy:2")?.description).toBe("global command");
 			expect(runner.getToolDefinition("duplicate-tool")?.description).toBe("explicit tool");
+		});
+	});
+
+	describe("extension factory displayName", () => {
+		it("should surface factory displayName on loaded extensions", async () => {
+			const factory: ExtensionFactory = (pi) => {
+				pi.registerCommand("inline-cmd", {
+					description: "inline command",
+					handler: async () => {},
+				});
+			};
+			factory.displayName = "My Inline Extension";
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
+			await loader.reload();
+
+			const { extensions, errors } = loader.getExtensions();
+			expect(errors).toEqual([]);
+			expect(extensions).toHaveLength(1);
+			expect(extensions[0].displayName).toBe("My Inline Extension");
+		});
+
+		it("should use factory displayName in error paths", async () => {
+			const factory: ExtensionFactory = () => {
+				throw new Error("boom");
+			};
+			factory.displayName = "Broken Extension";
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
+			await loader.reload();
+
+			const { extensions, errors } = loader.getExtensions();
+			expect(extensions).toHaveLength(0);
+			expect(errors).toHaveLength(1);
+			expect(errors[0].path).toBe("Broken Extension");
+			expect(errors[0].error).toContain("boom");
+		});
+
+		it("should fall back to synthetic inline path without displayName", async () => {
+			const factory: ExtensionFactory = () => {
+				throw new Error("boom");
+			};
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, extensionFactories: [factory] });
+			await loader.reload();
+
+			const { errors } = loader.getExtensions();
+			expect(errors).toHaveLength(1);
+			expect(errors[0].path).toBe("<inline:1>");
 		});
 	});
 });
