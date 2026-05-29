@@ -1477,6 +1477,21 @@ async function generateModels() {
 		}
 	}
 
+	// OpenCode Go Kimi models require reasoning_content on assistant messages
+	// when thinking is enabled, similar to DeepSeek.
+	for (const candidate of allModels) {
+		if (
+			candidate.provider === "opencode-go" &&
+			candidate.api === "openai-completions" &&
+			(candidate.id === "kimi-k2.5" || candidate.id === "kimi-k2.6")
+		) {
+			candidate.compat = {
+				...candidate.compat,
+				requiresReasoningContentOnAssistantMessages: true,
+			};
+		}
+	}
+
 	const minimaxDirectSupportedIds = new Set(["MiniMax-M2.7", "MiniMax-M2.7-highspeed"]);
 
 	for (const candidate of allModels) {

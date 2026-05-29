@@ -8895,6 +8895,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "opencode-go",
 			baseUrl: "https://opencode.ai/zen/go/v1",
+			compat: {"requiresReasoningContentOnAssistantMessages":true},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
@@ -8912,6 +8913,7 @@ export const MODELS = {
 			api: "openai-completions",
 			provider: "opencode-go",
 			baseUrl: "https://opencode.ai/zen/go/v1",
+			compat: {"requiresReasoningContentOnAssistantMessages":true},
 			reasoning: true,
 			input: ["text", "image"],
 			cost: {
