@@ -6,7 +6,7 @@
  *                         choices back to the global config
  * B. MCP Server Loader  — discovers ~/.hoocode/mcp-servers and ./.hoocode/mcp-servers JSON
  *                         configs, connects via JSON-RPC 2.0, registers server tools
- * C. Mode + Profile     — resolves active mode (ask/plan/build/agent/debug) and profile
+ * C. Mode + Profile     — resolves active mode (ask/plan/build/debug) and profile
  *                         (default/data/devops/…), merges system prompt from three template
  *                         layers, filters active tools, and exposes /mode, /profile,
  *                         /plan, and /approve commands
@@ -44,11 +44,6 @@ Ask for confirmation before destructive operations (delete, reformat).
 Run tests after every logical unit of work.
 Prefer the smallest change that achieves the goal.
 Follow existing code patterns and conventions.`,
-    agent: `You are in AGENT mode — autonomous multi-step work.
-You have full access to read, bash, edit, and write tools.
-Work through problems step by step. Report progress every few steps.
-Stop and ask if you hit genuine ambiguity or need a decision.
-Output a summary of what was done when you finish.`,
     debug: `You are in DEBUG mode — root cause analysis.
 Gather evidence: read files, check logs, reproduce the issue.
 Trace the call path from entry to failure point.
@@ -240,7 +235,7 @@ export function setupPermissionGate(pi) {
                     block: true,
                     reason: `Mode "${mode}" only allows writes to: ${modeCfg.allowed_write_paths.join(", ")}. ` +
                         `Attempted to ${event.toolName}: ${filePath}. ` +
-                        `Switch to "/mode build" or "/mode agent" to modify source files.`,
+                        `Switch to "/mode build" to modify source files.`,
                 };
             }
         }
@@ -641,9 +636,9 @@ export function setupModeAndProfile(pi) {
         };
     });
     // ── /mode command ─────────────────────────────────────────────────────────
-    const KNOWN_MODES = ["ask", "plan", "build", "agent", "debug"];
+    const KNOWN_MODES = ["ask", "plan", "build", "debug"];
     pi.registerCommand("mode", {
-        description: "Switch active mode. Usage: /mode <ask|plan|build|agent|debug>",
+        description: "Switch active mode. Usage: /mode <ask|plan|build|debug>",
         getArgumentCompletions: (prefix) => KNOWN_MODES.filter((m) => m.startsWith(prefix)).map((m) => ({ value: m, label: m })),
         handler: async (args, ctx) => {
             const name = args.trim();

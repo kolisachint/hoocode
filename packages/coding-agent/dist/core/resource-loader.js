@@ -27,16 +27,35 @@ function resolvePromptInput(input, description) {
     }
     return input;
 }
+// Context files (AGENTS.md / CLAUDE.md) are injected into the system prompt on
+// every turn, so their size has a recurring cost on every provider. Warn the
+// user past a soft limit (~2k tokens) and truncate at a hard limit (~10k tokens)
+// so a pasted spec can't silently bloat every request forever.
+const CONTEXT_FILE_WARN_BYTES = 8 * 1024;
+const CONTEXT_FILE_MAX_BYTES = 40 * 1024;
+const warnedContextPaths = new Set();
 function loadContextFileFromDir(dir) {
     const candidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
     for (const filename of candidates) {
         const filePath = join(dir, filename);
         if (existsSync(filePath)) {
             try {
-                return {
-                    path: filePath,
-                    content: readFileSync(filePath, "utf-8"),
-                };
+                let content = readFileSync(filePath, "utf-8");
+                const bytes = Buffer.byteLength(content, "utf-8");
+                if (bytes > CONTEXT_FILE_MAX_BYTES) {
+                    content =
+                        content.slice(0, CONTEXT_FILE_MAX_BYTES) +
+                            `\n\n[truncated: file exceeded ${CONTEXT_FILE_MAX_BYTES} bytes (~10k tokens); keep context files brief — large specs belong in linked files, not in the system prompt]`;
+                    if (!warnedContextPaths.has(filePath)) {
+                        console.error(chalk.yellow(`Warning: ${filePath} is ${bytes} bytes (>${CONTEXT_FILE_MAX_BYTES}). Truncated; this file is injected into the prompt on every turn.`));
+                        warnedContextPaths.add(filePath);
+                    }
+                }
+                else if (bytes > CONTEXT_FILE_WARN_BYTES && !warnedContextPaths.has(filePath)) {
+                    console.error(chalk.yellow(`Warning: ${filePath} is ${bytes} bytes (~${Math.round(bytes / 4)} tokens). It is injected into the system prompt on every turn — consider trimming.`));
+                    warnedContextPaths.add(filePath);
+                }
+                return { path: filePath, content };
             }
             catch (error) {
                 console.error(chalk.yellow(`Warning: Could not read ${filePath}: ${error}`));

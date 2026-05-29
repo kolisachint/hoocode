@@ -15,9 +15,6 @@ function sanitizeStatusText(text: string): string {
 		.trim();
 }
 
-/**
- * Format token counts (similar to web-ui)
- */
 function formatTokens(count: number): string {
 	if (count < 1000) return count.toString();
 	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;

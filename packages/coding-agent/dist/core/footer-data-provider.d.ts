@@ -48,7 +48,7 @@ export declare class FooterDataProvider {
     private setupGitWatcher;
     private activeMode;
     private activeProfile;
-    /** Current active mode (e.g., ask, plan, build, agent, debug) */
+    /** Current active mode (e.g., ask, plan, build, debug) */
     getActiveMode(): string;
     /** Current active profile (e.g., default, data, devops) */
     getActiveProfile(): string;

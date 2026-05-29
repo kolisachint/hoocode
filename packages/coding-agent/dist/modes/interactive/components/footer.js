@@ -11,9 +11,6 @@ function sanitizeStatusText(text) {
         .replace(/ +/g, " ")
         .trim();
 }
-/**
- * Format token counts (similar to web-ui)
- */
 function formatTokens(count) {
     if (count < 1000)
         return count.toString();
