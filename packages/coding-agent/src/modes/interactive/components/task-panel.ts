@@ -4,9 +4,6 @@ import type { Task, TaskStatus } from "../../../core/task-store.js";
 import { taskStore } from "../../../core/task-store.js";
 import { theme } from "../theme/theme.js";
 
-/** Max lines the task panel reserves above the editor. */
-const MAX_TASK_PANEL_LINES = 4;
-
 const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	pending: "●",
 	in_progress: "◐",
@@ -31,10 +28,11 @@ function formatTaskLine(task: Task, width: number): string {
 	const icon = theme.fg(taskStatusColor(task.status), TASK_STATUS_ICON[task.status]);
 	const modeTag = task.subagentMode ? theme.fg("accent", ` [${task.subagentMode}]`) : "";
 	const plainModeTag = task.subagentMode ? ` [${task.subagentMode}]` : "";
+	const idLabel = `#${task.id}`;
 	const title = task.title;
-	const plainText = `${TASK_STATUS_ICON[task.status]} ${title}${plainModeTag}`;
+	const plainText = `${TASK_STATUS_ICON[task.status]} ${idLabel} ${title}${plainModeTag}`;
 	const available = Math.max(0, width - visibleWidth(plainText) + visibleWidth(title));
-	const left = truncateToWidth(`${icon} ${title}`, available, "...");
+	const left = truncateToWidth(`${icon} ${idLabel} ${title}`, available, "...");
 	return left + modeTag;
 }
 
@@ -58,10 +56,8 @@ export class TaskPanelComponent implements Component {
 			return [];
 		}
 
-		// LIFO: newest at bottom. Take the last N tasks.
-		const visible = active.slice(-MAX_TASK_PANEL_LINES);
 		const lines: string[] = [];
-		for (const task of visible) {
+		for (const task of active) {
 			lines.push(formatTaskLine(task, width));
 		}
 		return lines;

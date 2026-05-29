@@ -31,7 +31,7 @@ describe("task panel rendering", () => {
 		expect(lines).toEqual([]);
 	});
 
-	test("shows active subagent tasks with status icons and mode tags", () => {
+	test("shows active subagent tasks with status icons, mode tags, and task IDs", () => {
 		const explore = taskStore.create("SSE watch endpoint", { subagentMode: "explore" });
 		const edit = taskStore.create("Auth refactor", { subagentMode: "edit" });
 		const plain = taskStore.create("Init project");
@@ -51,6 +51,10 @@ describe("task panel rendering", () => {
 		expect(text).toContain("[edit]");
 		expect(text).toContain("◐");
 		expect(text).toContain("●");
+		// Task IDs should be visible
+		expect(text).toContain(`#${explore.id}`);
+		expect(text).toContain(`#${edit.id}`);
+		expect(text).toContain(`#${plain.id}`);
 	});
 
 	test("completed tasks drop out of the panel", () => {
@@ -75,20 +79,17 @@ describe("task panel rendering", () => {
 		expect(text).toContain("Still running");
 	});
 
-	test("limits to 4 lines (max) and shows newest at bottom (LIFO)", () => {
+	test("shows all active tasks without a line limit", () => {
 		for (let i = 0; i < 6; i++) {
 			const t = taskStore.create(`Task ${i}`);
 			taskStore.update(t.id, { status: "in_progress" });
 		}
 
 		const lines = renderPanel();
-		expect(lines.length).toBe(4);
+		expect(lines.length).toBe(6);
 
-		// LIFO: newest (highest id) should be at the bottom
-		const lastLine = lines[lines.length - 1];
-		expect(lastLine).toContain("Task 5");
-		// Oldest should have been pushed out
 		const text = lines.join("\n");
-		expect(text).not.toContain("Task 0");
+		expect(text).toContain("Task 0");
+		expect(text).toContain("Task 5");
 	});
 });

@@ -57,6 +57,13 @@ class TaskStore {
 		this.emit();
 	}
 
+	remove(id: number): void {
+		const idx = this.tasks.findIndex((t) => t.id === id);
+		if (idx === -1) return;
+		this.tasks.splice(idx, 1);
+		this.emit();
+	}
+
 	list(): readonly Task[] {
 		return this.tasks;
 	}

@@ -156,11 +156,11 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		);
 
 		expect(result.content[0]).toEqual({ type: "text", text: "done exploring" });
+		expect(result.details).toMatchObject({ mode: "explore", ok: true, taskId: expect.any(Number) });
 
+		// Completed tasks are retired (removed) from the store.
 		const created = taskStore.list().slice(before);
-		expect(created).toHaveLength(1);
-		expect(created[0].status).toBe("done");
-		expect(created[0].subagentMode).toBe("explore");
+		expect(created).toHaveLength(0);
 	});
 
 	it("marks the task failed and throws when the subagent errors", async () => {
@@ -183,6 +183,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		).rejects.toThrow("nope");
 
 		const created = taskStore.list().slice(before);
+		expect(created).toHaveLength(1);
 		expect(created[0].status).toBe("failed");
 	});
 });

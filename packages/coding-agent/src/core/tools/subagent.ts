@@ -44,6 +44,7 @@ export interface SubagentToolDetails {
 	mode: SubagentMode;
 	ok: boolean;
 	error?: string;
+	taskId: number;
 }
 
 /** First line of the task, trimmed to a short summary for the task list/footer. */
@@ -95,9 +96,10 @@ export function createSubagentToolDefinition(): ToolDefinition {
 				}
 
 				taskStore.update(task.id, { status: "done" });
+				taskStore.remove(task.id);
 				return {
 					content: [{ type: "text", text: result.answer || "(subagent returned no output)" }],
-					details: { mode, ok: true },
+					details: { mode, ok: true, taskId: task.id },
 				};
 			} catch (error) {
 				taskStore.update(task.id, { status: "failed" });
