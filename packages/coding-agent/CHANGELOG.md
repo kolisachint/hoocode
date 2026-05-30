@@ -1,6 +1,22 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.8] - 2026-05-30
+
+### Added
+
+- TokenBudget class tracking per-agent-type token budgets with 80% warning and 100% hard-stop, persisting usage to disk.
+- OutputVerifier validating subagent result.json after exit.
+- SubagentLifeguard with heartbeat monitoring, hard timeouts, parent-exit cleanup, and startup sweep.
+- Named `SUBAGENT_MAIN_PROMPT` system prompt appendix loaded when subagent tooling is enabled.
+
+### Changed
+
+- Footer displays active mode plus `+ subagent` when the subagent system prompt is active.
+- Loading page `[Resources]` section always shows `mode/{activeMode}` and `subagent_system_prompt` when applicable.
+
+### Fixed
+
+- Editor wordmark first-line indentation preserved (array join instead of `String.raw` + `.trim()`).
 
 ## [0.4.7] - 2026-05-30
 

@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.8] - 2026-05-30
+
+### Added
+
+- Editor prompt prefix (`> / !`) with configurable color, rendered on the first visible line.
 
 ## [0.4.7] - 2026-05-30
 
