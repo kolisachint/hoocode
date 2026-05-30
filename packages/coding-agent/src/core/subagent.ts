@@ -18,9 +18,9 @@ import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.j
 import { createAgentSession } from "./sdk.js";
 import { SessionManager } from "./session-manager.js";
 
-export type SubagentMode = "explore" | "edit" | "test" | "fix" | "review";
+export type SubagentMode = "explore" | "edit" | "test" | "fix" | "review" | "doc";
 
-export const SUBAGENT_MODES: readonly SubagentMode[] = ["explore", "edit", "test", "fix", "review"];
+export const SUBAGENT_MODES: readonly SubagentMode[] = ["explore", "edit", "test", "fix", "review", "doc"];
 
 /** Tool allowlist per mode. Read-only modes deliberately omit edit/write. */
 const MODE_TOOLS: Record<SubagentMode, string[]> = {
@@ -29,6 +29,7 @@ const MODE_TOOLS: Record<SubagentMode, string[]> = {
 	test: ["read", "bash", "grep", "find", "ls"],
 	fix: ["read", "edit", "write", "bash", "grep", "find", "ls"],
 	review: ["read", "grep", "find", "ls", "bash"],
+	doc: ["read", "write", "edit", "grep", "find", "ls", "bash"],
 };
 
 export interface RunSubagentOptions {
@@ -55,6 +56,14 @@ export interface SubagentResult {
 	ok: boolean;
 	/** Populated when ok is false. */
 	error?: string;
+	/** Token and cost usage from the subagent session, if available. */
+	usage?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		cost: number;
+	};
 }
 
 /** Return the clean, minimal system prompt for a subagent mode. */
@@ -178,13 +187,33 @@ export async function runSubagent(options: RunSubagentOptions): Promise<Subagent
 		}
 
 		const answer = session.getLastAssistantText() ?? "";
-		return { mode, answer, ok: true };
+		const stats = session.getSessionStats();
+		return {
+			mode,
+			answer,
+			ok: true,
+			usage: {
+				input: stats.tokens.input,
+				output: stats.tokens.output,
+				cacheRead: stats.tokens.cacheRead,
+				cacheWrite: stats.tokens.cacheWrite,
+				cost: stats.cost,
+			},
+		};
 	} catch (error) {
+		const stats = session.getSessionStats();
 		return {
 			mode,
 			answer: "",
 			ok: false,
 			error: error instanceof Error ? error.message : String(error),
+			usage: {
+				input: stats.tokens.input,
+				output: stats.tokens.output,
+				cacheRead: stats.tokens.cacheRead,
+				cacheWrite: stats.tokens.cacheWrite,
+				cost: stats.cost,
+			},
 		};
 	} finally {
 		signal?.removeEventListener("abort", onAbort);

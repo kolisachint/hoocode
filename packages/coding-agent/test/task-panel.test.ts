@@ -41,7 +41,7 @@ describe("task panel rendering", () => {
 		taskStore.update(plain.id, { status: "in_progress" });
 
 		const lines = renderPanel();
-		expect(lines.length).toBe(3);
+		expect(lines.length).toBe(4); // 3 tasks + 1 header
 
 		const text = lines.join("\n");
 		expect(text).toContain("SSE watch endpoint");
@@ -65,7 +65,7 @@ describe("task panel rendering", () => {
 		taskStore.update(failedTask.id, { status: "failed" });
 
 		const lines = renderPanel();
-		expect(lines.length).toBe(3);
+		expect(lines.length).toBe(4); // 3 tasks + 1 header
 
 		const text = lines.join("\n");
 		expect(text).toContain("Still running");
@@ -87,7 +87,7 @@ describe("task panel rendering", () => {
 
 		const lines = renderPanel();
 		const text = lines.join("\n");
-		expect(lines.length).toBe(1);
+		expect(lines.length).toBe(2); // 1 task + 1 header
 		expect(text).toContain("Still running");
 		expect(text).not.toContain("Finished work");
 		expect(text).not.toContain("Broken build");
@@ -100,7 +100,7 @@ describe("task panel rendering", () => {
 		}
 
 		const lines = renderPanel();
-		expect(lines.length).toBe(6);
+		expect(lines.length).toBe(7); // 6 tasks + 1 header
 
 		const text = lines.join("\n");
 		expect(text).toContain("Task 0");

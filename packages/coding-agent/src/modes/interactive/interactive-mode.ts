@@ -81,6 +81,7 @@ import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../cor
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
+import { runSubagent, type SubagentMode } from "../../core/subagent.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { WORDMARK } from "../../core/wordmark.js";
@@ -2637,6 +2638,11 @@ export class InteractiveMode {
 				await this.shutdown();
 				return;
 			}
+			if (text === "/subagent" || text.startsWith("/subagent ")) {
+				this.editor.setText("");
+				await this.handleSubagentCommand(text);
+				return;
+			}
 
 			// Handle bash command (! for normal, !! for excluded from context)
 			if (text.startsWith("!")) {
@@ -4249,6 +4255,62 @@ export class InteractiveMode {
 			this.renderCurrentSessionState();
 			this.editor.setText("");
 			this.showStatus("Cloned to new session");
+		} catch (error: unknown) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	private async handleSubagentCommand(text: string): Promise<void> {
+		const prefix = "/subagent ";
+		const args = text.startsWith(prefix) ? text.slice(prefix.length).trim() : "";
+		if (!args) {
+			this.showStatus("Usage: /subagent <mode> <task>");
+			return;
+		}
+
+		const firstSpace = args.indexOf(" ");
+		if (firstSpace === -1) {
+			this.showStatus("Usage: /subagent <mode> <task>");
+			return;
+		}
+
+		const mode = args.slice(0, firstSpace).trim() as SubagentMode;
+		const task = args.slice(firstSpace + 1).trim();
+		if (!task) {
+			this.showStatus("Usage: /subagent <mode> <task>");
+			return;
+		}
+
+		const validModes: readonly string[] = ["explore", "edit", "test", "fix", "review", "doc"];
+		if (!validModes.includes(mode)) {
+			this.showStatus(`Unknown subagent mode: ${mode}. Valid: ${validModes.join(", ")}`);
+			return;
+		}
+
+		this.showStatus(`Spawning ${mode} subagent...`);
+		try {
+			const result = await runSubagent({
+				task,
+				context: "",
+				mode,
+				cwd: this.session.sessionManager.getCwd(),
+				model: this.session.model ?? undefined,
+				modelRegistry: this.runtimeHost.services.modelRegistry,
+				signal: undefined,
+			});
+			if (result.ok) {
+				this.showStatus(`${mode} subagent completed`);
+				// Inject the subagent answer as a custom message so the user can see it in the chat
+				this.sessionManager.appendMessage({
+					role: "custom",
+					customType: "subagent",
+					content: result.answer || "(no output)",
+					display: true,
+					timestamp: Date.now(),
+				});
+			} else {
+				this.showError(`Subagent (${mode}) failed: ${result.error ?? "unknown error"}`);
+			}
 		} catch (error: unknown) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}

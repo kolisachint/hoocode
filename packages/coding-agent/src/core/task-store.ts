@@ -17,13 +17,21 @@ export interface Task {
 	subagentMode?: string;
 	readonly createdAt: number;
 	updatedAt: number;
+	/** Token and cost usage attributed to this task (e.g. from a subagent session). */
+	usage?: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		cost: number;
+	};
 }
 
 export interface CreateTaskOptions {
 	subagentMode?: string;
 }
 
-export type TaskPatch = Partial<Pick<Task, "title" | "status" | "subagentMode">>;
+export type TaskPatch = Partial<Pick<Task, "title" | "status" | "subagentMode" | "usage">>;
 
 type Listener = () => void;
 
@@ -53,6 +61,7 @@ class TaskStore {
 		if (patch.title !== undefined) task.title = patch.title;
 		if (patch.status !== undefined) task.status = patch.status;
 		if (patch.subagentMode !== undefined) task.subagentMode = patch.subagentMode;
+		if (patch.usage !== undefined) task.usage = patch.usage;
 		task.updatedAt = Date.now();
 		this.emit();
 	}

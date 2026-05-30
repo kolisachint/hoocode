@@ -12,7 +12,6 @@ import {
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint } from "./keybinding-hints.js";
 
 interface ModelItem {
@@ -82,8 +81,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 
-		// Add top border
-		this.addChild(new DynamicBorder());
+		// Minimal chrome — no filled border, just a clean overlay.
 		this.addChild(new Spacer(1));
 
 		// Add hint about model filtering
@@ -118,9 +116,6 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		this.addChild(this.listContainer);
 
 		this.addChild(new Spacer(1));
-
-		// Add bottom border
-		this.addChild(new DynamicBorder());
 
 		// Load models and do initial render
 		this.loadModels().then(() => {

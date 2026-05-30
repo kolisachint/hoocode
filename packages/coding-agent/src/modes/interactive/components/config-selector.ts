@@ -19,7 +19,6 @@ import { CONFIG_DIR_NAME } from "../../../config.js";
 import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../core/package-manager.js";
 import type { PackageSource, SettingsManager } from "../../../core/settings-manager.js";
 import { theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
 import { rawKeyHint } from "./keybinding-hints.js";
 
 type ResourceType = "extensions" | "skills" | "prompts" | "themes";
@@ -593,9 +592,7 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 
 		const groups = buildGroups(resolvedPaths);
 
-		// Add header
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
+		// Minimal chrome — no filled borders.
 		this.addChild(new Spacer(1));
 		this.addChild(new ConfigSelectorHeader());
 		this.addChild(new Spacer(1));
@@ -607,9 +604,7 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		this.resourceList.onToggle = () => requestRender();
 		this.addChild(this.resourceList);
 
-		// Bottom border
 		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
 	}
 
 	getResourceList(): ResourceList {

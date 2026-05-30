@@ -17,6 +17,7 @@ Available subagent modes:
 - test: run tests and report (read, bash, grep, find, ls).
 - fix: diagnose and fix a failure (read, edit, write, bash, grep, find, ls).
 - review: read-only code review (read, grep, find, ls, bash).
+- doc: write documentation, README, or comments (read, write, edit, grep, find, ls, bash).
 
 When to delegate:
 1. The work is self-contained and you only need the final result, not intermediate steps.
@@ -29,10 +30,16 @@ Guidelines:
 - Pass all necessary context (files, constraints, prior findings) via the \`context\` parameter.
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning.
 - Do NOT delegate edits to files you are actively reasoning about.
-- The subagent returns ONLY its final answer. Intermediate reasoning, tool calls, and output are hidden from you.`;
+- The subagent returns ONLY its final answer. Intermediate reasoning, tool calls, and output are hidden from you.
+
+Dispatch evaluator:
+- The dispatch evaluator determines if a subagent is needed. Do not spawn subagents directly unless the user explicitly requests it.
+- For simple single-file changes (<50 lines, read-only or trivial edit), handle them inline.
+- Use force=true to bypass evaluation when you are certain a subagent is required.`;
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
+import { type AgentType, DispatchEvaluator } from "../dispatch-evaluator.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
 import { runSubagent, type SubagentMode } from "../subagent.js";
@@ -54,12 +61,18 @@ const subagentParams = Type.Object({
 			Type.Literal("test"),
 			Type.Literal("fix"),
 			Type.Literal("review"),
+			Type.Literal("doc"),
 		],
 		{
 			description:
-				"explore: read-only investigation. edit: make a focused code change. test: run tests and report. fix: diagnose and fix a failure. review: read-only code review.",
+				"explore: read-only investigation. edit: make a focused code change. test: run tests and report. fix: diagnose and fix a failure. review: read-only code review. doc: write documentation.",
 		},
 	),
+	force: Type.Boolean({
+		description:
+			"Bypass dispatch evaluation and spawn the subagent directly. Use when you are certain a subagent is required.",
+		default: false,
+	}),
 });
 
 type SubagentParams = Static<typeof subagentParams>;
@@ -69,12 +82,25 @@ export interface SubagentToolDetails {
 	ok: boolean;
 	error?: string;
 	taskId: number;
+	/** True when the evaluator handled the task inline instead of delegating. */
+	inline?: boolean;
 }
 
 /** First line of the task, trimmed to a short summary for the task list/footer. */
 function summarize(task: string): string {
 	const firstLine = task.trim().split("\n")[0] ?? "";
 	return firstLine.length > 60 ? `${firstLine.slice(0, 57)}...` : firstLine || "(task)";
+}
+
+/** Quick check: should this task go to a subagent? */
+export function isSubagentRecommended(task: string): boolean {
+	const evaluator = new DispatchEvaluator();
+	return evaluator.evaluate(task).should_delegate;
+}
+
+/** Map evaluator AgentType to SubagentMode (they are compatible strings). */
+function toSubagentMode(agentType: AgentType | null): SubagentMode {
+	return (agentType as SubagentMode) ?? "explore";
 }
 
 /** Create the subagent tool definition. Registered as a customTool when enabled. */
@@ -85,18 +111,40 @@ export function createSubagentToolDefinition(): ToolDefinition {
 		description: [
 			"Delegate a focused task to a subagent that runs in a fresh, isolated context (it cannot see this conversation).",
 			"Pass everything it needs via `context`. The subagent returns only its final answer.",
-			"Modes: explore, edit, test, fix, review.",
+			"Modes: explore, edit, test, fix, review, doc.",
 			"WHEN TO USE: (1) The work is self-contained and you do not need to see intermediate steps — only the final result.",
 			"(2) You want to investigate or edit something in parallel without losing your current context or reasoning chain.",
-			"(3) The task is a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug).",
+			"(3) The task is a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs).",
 			"(4) You need to run a long command or test suite and wait for its output without blocking your own reasoning.",
 			"Do NOT use for tasks that require tight back-and-forth with your current reasoning or that change files you are actively reasoning about.",
+			"Use force=true to bypass dispatch evaluation when you are certain a subagent is required.",
 		].join(" "),
-		promptSnippet: "delegate a self-contained task to an isolated subagent (modes: explore/edit/test/fix/review)",
+		promptSnippet: "delegate a self-contained task to an isolated subagent (modes: explore/edit/test/fix/review/doc)",
 		parameters: subagentParams,
 
 		async execute(_toolCallId, params: SubagentParams, signal, _onUpdate, ctx) {
-			const mode = params.mode as SubagentMode;
+			const forcedMode = params.mode as SubagentMode;
+
+			// Dispatch evaluation
+			if (!params.force) {
+				const evaluator = new DispatchEvaluator();
+				const analysis = evaluator.evaluate(params.task);
+				if (!analysis.should_delegate) {
+					return {
+						content: [
+							{
+								type: "text",
+								text: `Task is simple enough for inline handling. Reason: ${analysis.reason}. Use force=true for subagent override.`,
+							},
+						],
+						details: { mode: forcedMode, ok: true, taskId: 0, inline: true },
+					};
+				}
+			}
+
+			const mode = params.force
+				? forcedMode
+				: toSubagentMode(new DispatchEvaluator().evaluate(params.task).agent_type);
 			const summary = summarize(params.task);
 
 			const task = taskStore.create(summary, { subagentMode: mode });
@@ -115,14 +163,14 @@ export function createSubagentToolDefinition(): ToolDefinition {
 				if (!result.ok) {
 					// Signal failure by throwing: the agent loop derives a tool's error
 					// state from a thrown error, not from a returned flag.
-					taskStore.update(task.id, { status: "failed" });
+					taskStore.update(task.id, { status: "failed", usage: result.usage });
 					throw new Error(`Subagent (${mode}) failed: ${result.error ?? "unknown error"}`);
 				}
 
 				// Leave the task in the store with its final status. It stays visible in
 				// the task panel until the main agent moves on (retireFinished is called
 				// when the main agent starts its next turn).
-				taskStore.update(task.id, { status: "done" });
+				taskStore.update(task.id, { status: "done", usage: result.usage });
 				return {
 					content: [{ type: "text", text: result.answer || "(subagent returned no output)" }],
 					details: { mode, ok: true, taskId: task.id },

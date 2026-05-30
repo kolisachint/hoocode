@@ -1,9 +1,10 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { CONFIG_DIR_NAME } from "../config.js";
 import { waitForChildProcess } from "../utils/child-process.js";
+import { type AgentType, DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
 import { getSubagentSystemPrompt, type SubagentMode } from "./subagent.js";
@@ -42,6 +43,19 @@ export interface SubagentResult {
 	status?: "complete" | "partial" | "failed" | "stalled" | "timeout";
 	/** Parsed result.json content when available (e.g. on partial completion). */
 	result_data?: Record<string, unknown>;
+}
+
+export interface TaskResult {
+	/** True when the evaluator decided the task is simple enough for inline handling. */
+	handled_inline: boolean;
+	/** Present when the task was delegated. */
+	task_id?: string;
+	agent_type?: string;
+	reason?: string;
+	/** Subagent result when delegated. */
+	result?: SubagentResult;
+	/** Duration in milliseconds when delegated. */
+	duration?: number;
 }
 
 export interface SubagentPoolOptions {
@@ -111,6 +125,7 @@ export class SubagentPool extends EventEmitter {
 	private priorityOf(agent_type: string): number {
 		switch (agent_type) {
 			case "explore":
+			case "review":
 				return 2;
 			case "doc":
 				return 0;
@@ -183,6 +198,122 @@ export class SubagentPool extends EventEmitter {
 	/** Number of tasks waiting in the queue. */
 	queued_count(): number {
 		return this.queue.length;
+	}
+
+	/**
+	 * Dispatch a task through the evaluator.
+	 *
+	 * - If `forceAgent` is provided, skip evaluation and spawn directly.
+	 * - Otherwise evaluate the task. If it should be handled inline, return
+	 *   `{ handled_inline: true }` immediately.
+	 * - If delegating, spawn the subagent, wait for completion, write
+	 *   `output.json`, and return the result.
+	 */
+	async dispatch(task: string, forceAgent?: AgentType): Promise<TaskResult> {
+		if (this.disposed) {
+			return Promise.reject(new Error("SubagentPool has been disposed"));
+		}
+
+		const evaluator = new DispatchEvaluator();
+		const analysis = evaluator.evaluate(task);
+
+		if (!forceAgent && !analysis.should_delegate) {
+			return { handled_inline: true, reason: analysis.reason };
+		}
+
+		const agent_type: AgentType = forceAgent ?? (analysis.agent_type as AgentType) ?? "explore";
+		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const reason = forceAgent ? "user_override" : analysis.reason;
+		const complexity = analysis.estimated_complexity;
+
+		// Pre-dispatch logging
+		const logLine = `[DISPATCH] agent=${agent_type} reason=${reason} complexity=${complexity} task_id=${task_id}`;
+		console.log(logLine);
+		this.writeDispatchLog(task_id, agent_type, reason, complexity, task);
+
+		const poolTask: SubagentPoolTask = {
+			task_id,
+			agent_type,
+			task,
+			cwd: this.cwd,
+		};
+
+		const startTime = Date.now();
+		this.spawn(poolTask);
+		const result = await this.wait_for(task_id);
+		const duration = Date.now() - startTime;
+
+		return {
+			handled_inline: false,
+			task_id,
+			agent_type,
+			reason,
+			result,
+			duration,
+		};
+	}
+
+	/**
+	 * Dispatch a batch of subtasks concurrently.
+	 *
+	 * Spawns up to `maxConcurrency` at once; overflow is queued with FIFO.
+	 * Returns aggregated results in the same order as the input.
+	 */
+	async dispatchBatch(tasks: Array<{ agent_type: AgentType; prompt: string }>): Promise<TaskResult[]> {
+		if (this.disposed) {
+			return Promise.reject(new Error("SubagentPool has been disposed"));
+		}
+
+		const promises = tasks.map(async ({ agent_type, prompt }) => {
+			return this.dispatch(prompt, agent_type);
+		});
+
+		return Promise.all(promises);
+	}
+
+	private writeDispatchLog(
+		task_id: string,
+		agent_type: string,
+		reason: string,
+		complexity: string,
+		task: string,
+	): void {
+		const log = {
+			timestamp: new Date().toISOString(),
+			task_id,
+			agent_type,
+			reason,
+			complexity,
+			task,
+		};
+		const path = join(this.cwd, CONFIG_DIR_NAME, "agents", task_id, "dispatch-log.json");
+		try {
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, JSON.stringify(log, null, 2));
+		} catch {
+			// Best-effort persistence
+		}
+	}
+
+	private writeOutputJson(task_id: string, result: SubagentResult): void {
+		const output = {
+			task_id: result.task_id,
+			ok: result.ok,
+			exit_code: result.exit_code,
+			status: result.status,
+			stdout: result.stdout,
+			stderr: result.stderr,
+			error: result.error,
+			budget_exceeded: result.budget_exceeded,
+			result_data: result.result_data,
+		};
+		const path = join(this.cwd, CONFIG_DIR_NAME, "agents", task_id, "output.json");
+		try {
+			mkdirSync(dirname(path), { recursive: true });
+			writeFileSync(path, JSON.stringify(output, null, 2));
+		} catch {
+			// Best-effort persistence
+		}
 	}
 
 	/** Kill all running processes, clear the queue, and reject pending waiters. */
@@ -349,6 +480,9 @@ export class SubagentPool extends EventEmitter {
 				const killReason = this.killReasons.get(task.task_id);
 				this.killReasons.delete(task.task_id);
 
+				const duration = Date.now() - slot.spawned_at;
+				const tokens_used = budget.getUsed();
+
 				// If killed by lifeguard, override exit handling
 				if (killReason === "stalled" || killReason === "timeout") {
 					const result: SubagentResult = {
@@ -359,7 +493,13 @@ export class SubagentPool extends EventEmitter {
 						exit_code: code,
 						status: killReason,
 					};
-					this.emit(`task_${killReason}`, { task_id: task.task_id });
+					this.writeOutputJson(task.task_id, result);
+					this.emit(`task_${killReason}`, {
+						task_id: task.task_id,
+						agent_type: task.agent_type,
+						duration,
+						tokens_used,
+					});
 					this.resolveWaiter(task.task_id, result);
 					return;
 				}
@@ -382,7 +522,14 @@ export class SubagentPool extends EventEmitter {
 					if (resultData) {
 						result.ok = true; // partial is considered success with data
 					}
-					this.emit("task_done", { task_id: task.task_id, status: "partial" });
+					this.writeOutputJson(task.task_id, result);
+					this.emit("task_done", {
+						task_id: task.task_id,
+						agent_type: task.agent_type,
+						duration,
+						tokens_used,
+						status: "partial",
+					});
 					this.resolveWaiter(task.task_id, result);
 					return;
 				}
@@ -393,8 +540,12 @@ export class SubagentPool extends EventEmitter {
 						result.ok = false;
 						result.error = verification.reason;
 						result.status = "failed";
+						this.writeOutputJson(task.task_id, result);
 						this.emit("task_failed", {
 							task_id: task.task_id,
+							agent_type: task.agent_type,
+							duration,
+							tokens_used,
 							error: verification.reason,
 						});
 						this.resolveWaiter(task.task_id, result);
@@ -402,11 +553,22 @@ export class SubagentPool extends EventEmitter {
 					}
 				}
 
+				this.writeOutputJson(task.task_id, result);
+
 				if (result.ok) {
-					this.emit("task_done", { task_id: task.task_id, status: "complete" });
+					this.emit("task_done", {
+						task_id: task.task_id,
+						agent_type: task.agent_type,
+						duration,
+						tokens_used,
+						status: "complete",
+					});
 				} else {
 					this.emit("task_failed", {
 						task_id: task.task_id,
+						agent_type: task.agent_type,
+						duration,
+						tokens_used,
 						error: result.error ?? `Exited with code ${code}`,
 					});
 				}
@@ -416,13 +578,14 @@ export class SubagentPool extends EventEmitter {
 			.catch((err) => {
 				this.slots.delete(task.task_id);
 				budget.flush();
+				const duration = Date.now() - slot.spawned_at;
+				const tokens_used = budget.getUsed();
 				if (!isRetry) {
 					this.startTask(task, true);
 					return;
 				}
 				const error = err instanceof Error ? err.message : String(err);
-				this.emit("task_failed", { task_id: task.task_id, error });
-				this.resolveWaiter(task.task_id, {
+				const result: SubagentResult = {
 					task_id: task.task_id,
 					ok: false,
 					stdout,
@@ -430,7 +593,16 @@ export class SubagentPool extends EventEmitter {
 					exit_code: null,
 					error,
 					status: "failed",
+				};
+				this.writeOutputJson(task.task_id, result);
+				this.emit("task_failed", {
+					task_id: task.task_id,
+					agent_type: task.agent_type,
+					duration,
+					tokens_used,
+					error,
 				});
+				this.resolveWaiter(task.task_id, result);
 			})
 			.finally(() => {
 				this.budgets.delete(task.task_id);

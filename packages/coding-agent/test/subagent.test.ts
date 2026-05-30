@@ -3,8 +3,8 @@ import { getSubagentSystemPrompt, SUBAGENT_MODES, type SubagentMode } from "../s
 import { taskStore } from "../src/core/task-store.js";
 
 describe("subagent system prompts", () => {
-	test("exposes the five tool modes", () => {
-		expect([...SUBAGENT_MODES]).toEqual(["explore", "edit", "test", "fix", "review"]);
+	test("exposes the six tool modes", () => {
+		expect([...SUBAGENT_MODES]).toEqual(["explore", "edit", "test", "fix", "review", "doc"]);
 	});
 
 	test("every mode has a non-empty prompt", () => {

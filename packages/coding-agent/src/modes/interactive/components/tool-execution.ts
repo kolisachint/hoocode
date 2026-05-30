@@ -74,8 +74,9 @@ export class ToolExecutionComponent extends Container {
 		// Always create all shell variants. contentBox is used for default renderer-based composition.
 		// selfRenderContainer is used when the tool renders its own framing.
 		// contentText is reserved for generic fallback rendering when no tool definition exists.
-		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
-		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		// Boxless: no filled background — hierarchy comes from status dots + indent.
+		this.contentBox = new Box(1, 1);
+		this.contentText = new Text("", 1, 1);
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
@@ -235,20 +236,19 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		const bgFn = this.isPartial
-			? (text: string) => theme.bg("toolPendingBg", text)
-			: this.result?.isError
-				? (text: string) => theme.bg("toolErrorBg", text)
-				: (text: string) => theme.bg("toolSuccessBg", text);
-
 		let hasContent = false;
 		this.hideComponent = false;
 		if (this.hasRendererDefinition()) {
 			const renderContainer = this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox;
+			// Boxless: no background fill on the container.
 			if (renderContainer instanceof Box) {
-				renderContainer.setBgFn(bgFn);
+				renderContainer.setBgFn(undefined);
 			}
 			renderContainer.clear();
+
+			// Status dot prefix: green for complete success, yellow for pending/partial, red for error
+			const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
+			renderContainer.addChild(new Text(theme.fg(dotColor, "● "), 0, 0));
 
 			const callRenderer = this.getCallRenderer();
 			if (!callRenderer) {
@@ -297,7 +297,8 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 		} else {
-			this.contentText.setCustomBgFn(bgFn);
+			// Boxless: no background fill.
+			this.contentText.setCustomBgFn(undefined);
 			this.contentText.setText(this.formatToolExecution());
 			hasContent = true;
 		}
@@ -347,7 +348,8 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private formatToolExecution(): string {
-		let text = theme.fg("toolTitle", theme.bold(this.toolName));
+		const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
+		let text = theme.fg(dotColor, "● ") + theme.fg("toolTitle", theme.bold(this.toolName));
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;
