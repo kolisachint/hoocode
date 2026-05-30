@@ -618,17 +618,12 @@ function mapToolChoice(
 
 function mapChatStopReason(reason: string | null): StopReason {
 	if (reason === null) return "stop";
-	switch (reason) {
-		case "stop":
-			return "stop";
-		case "length":
-		case "model_length":
-			return "length";
-		case "tool_calls":
-			return "toolUse";
-		case "error":
-			return "error";
-		default:
-			return "stop";
-	}
+	const mistralStopReasonMap: Record<string, StopReason> = {
+		stop: "stop",
+		length: "length",
+		model_length: "length",
+		tool_calls: "toolUse",
+		error: "error",
+	};
+	return mistralStopReasonMap[reason] ?? "stop";
 }

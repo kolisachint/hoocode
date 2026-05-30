@@ -514,25 +514,21 @@ function getGemini3ThinkingLevel(
 	model: Model<"google-generative-ai">,
 ): GoogleThinkingLevel {
 	if (isGemini3ProModel(model)) {
-		switch (effort) {
-			case "minimal":
-			case "low":
-				return "LOW";
-			case "medium":
-			case "high":
-				return "HIGH";
-		}
+		const vertexGemini3ProThinkingLevelMap: Record<ClampedThinkingLevel, GoogleThinkingLevel> = {
+			minimal: "LOW",
+			low: "LOW",
+			medium: "HIGH",
+			high: "HIGH",
+		};
+		return vertexGemini3ProThinkingLevelMap[effort];
 	}
-	switch (effort) {
-		case "minimal":
-			return "MINIMAL";
-		case "low":
-			return "LOW";
-		case "medium":
-			return "MEDIUM";
-		case "high":
-			return "HIGH";
-	}
+	const vertexThinkingLevelMap: Record<ClampedThinkingLevel, GoogleThinkingLevel> = {
+		minimal: "MINIMAL",
+		low: "LOW",
+		medium: "MEDIUM",
+		high: "HIGH",
+	};
+	return vertexThinkingLevelMap[effort];
 }
 
 function getGoogleBudget(

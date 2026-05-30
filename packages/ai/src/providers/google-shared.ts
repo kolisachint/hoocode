@@ -291,16 +291,12 @@ export function convertTools(
  * Map tool choice string to Gemini FunctionCallingConfigMode.
  */
 export function mapToolChoice(choice: string): FunctionCallingConfigMode {
-	switch (choice) {
-		case "auto":
-			return FunctionCallingConfigMode.AUTO;
-		case "none":
-			return FunctionCallingConfigMode.NONE;
-		case "any":
-			return FunctionCallingConfigMode.ANY;
-		default:
-			return FunctionCallingConfigMode.AUTO;
-	}
+	const googleToolChoiceMap: Record<string, FunctionCallingConfigMode> = {
+		auto: FunctionCallingConfigMode.AUTO,
+		none: FunctionCallingConfigMode.NONE,
+		any: FunctionCallingConfigMode.ANY,
+	};
+	return googleToolChoiceMap[choice] ?? FunctionCallingConfigMode.AUTO;
 }
 
 /**

@@ -688,17 +688,13 @@ function mapThinkingLevelToEffort(
 	const mapped = level ? model.thinkingLevelMap?.[level] : undefined;
 	if (typeof mapped === "string") return mapped as AnthropicEffort;
 
-	switch (level) {
-		case "minimal":
-		case "low":
-			return "low";
-		case "medium":
-			return "medium";
-		case "high":
-			return "high";
-		default:
-			return "high";
-	}
+	const anthropicThinkingLevelToEffortMap: Record<string, AnthropicEffort> = {
+		minimal: "low",
+		low: "low",
+		medium: "medium",
+		high: "high",
+	};
+	return level ? (anthropicThinkingLevelToEffortMap[level] ?? "high") : "high";
 }
 
 export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleStreamOptions> = (

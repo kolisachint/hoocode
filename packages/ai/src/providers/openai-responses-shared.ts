@@ -531,21 +531,15 @@ export async function processResponsesStream<TApi extends Api>(
 
 function mapStopReason(status: OpenAI.Responses.ResponseStatus | undefined): StopReason {
 	if (!status) return "stop";
-	switch (status) {
-		case "completed":
-			return "stop";
-		case "incomplete":
-			return "length";
-		case "failed":
-		case "cancelled":
-			return "error";
-		// These two are wonky ...
-		case "in_progress":
-		case "queued":
-			return "stop";
-		default: {
-			const _exhaustive: never = status;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
-	}
+	// Keyed by ResponseStatus so adding a new status fails to compile until mapped
+	// (preserves the exhaustiveness the original switch enforced).
+	const openaiResponseStatusToStopReasonMap: Record<OpenAI.Responses.ResponseStatus, StopReason> = {
+		completed: "stop",
+		incomplete: "length",
+		failed: "error",
+		cancelled: "error",
+		in_progress: "stop",
+		queued: "stop",
+	};
+	return openaiResponseStatusToStopReasonMap[status];
 }

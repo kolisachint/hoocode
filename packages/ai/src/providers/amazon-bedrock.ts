@@ -509,17 +509,13 @@ function mapThinkingLevelToEffort(
 	const mapped = level ? model.thinkingLevelMap?.[level] : undefined;
 	if (typeof mapped === "string") return mapped as "low" | "medium" | "high" | "xhigh" | "max";
 
-	switch (level) {
-		case "minimal":
-		case "low":
-			return "low";
-		case "medium":
-			return "medium";
-		case "high":
-			return "high";
-		default:
-			return "high";
-	}
+	const bedrockThinkingLevelToEffortMap: Record<string, "low" | "medium" | "high"> = {
+		minimal: "low",
+		low: "low",
+		medium: "medium",
+		high: "high",
+	};
+	return level ? (bedrockThinkingLevelToEffortMap[level] ?? "high") : "high";
 }
 
 /**
@@ -797,18 +793,14 @@ function convertToolConfig(
 }
 
 function mapStopReason(reason: string | undefined): StopReason {
-	switch (reason) {
-		case BedrockStopReason.END_TURN:
-		case BedrockStopReason.STOP_SEQUENCE:
-			return "stop";
-		case BedrockStopReason.MAX_TOKENS:
-		case BedrockStopReason.MODEL_CONTEXT_WINDOW_EXCEEDED:
-			return "length";
-		case BedrockStopReason.TOOL_USE:
-			return "toolUse";
-		default:
-			return "error";
-	}
+	const bedrockStopReasonMap: Record<string, StopReason> = {
+		[BedrockStopReason.END_TURN]: "stop",
+		[BedrockStopReason.STOP_SEQUENCE]: "stop",
+		[BedrockStopReason.MAX_TOKENS]: "length",
+		[BedrockStopReason.MODEL_CONTEXT_WINDOW_EXCEEDED]: "length",
+		[BedrockStopReason.TOOL_USE]: "toolUse",
+	};
+	return reason ? (bedrockStopReasonMap[reason] ?? "error") : "error";
 }
 
 function getConfiguredBedrockRegion(options: BedrockOptions): string | undefined {
@@ -914,23 +906,16 @@ function buildAdditionalModelRequestFields(
 }
 
 function createImageBlock(mimeType: string, data: string) {
-	let format: ImageFormat;
-	switch (mimeType) {
-		case "image/jpeg":
-		case "image/jpg":
-			format = ImageFormat.JPEG;
-			break;
-		case "image/png":
-			format = ImageFormat.PNG;
-			break;
-		case "image/gif":
-			format = ImageFormat.GIF;
-			break;
-		case "image/webp":
-			format = ImageFormat.WEBP;
-			break;
-		default:
-			throw new Error(`Unknown image type: ${mimeType}`);
+	const bedrockImageFormatMap: Record<string, ImageFormat> = {
+		"image/jpeg": ImageFormat.JPEG,
+		"image/jpg": ImageFormat.JPEG,
+		"image/png": ImageFormat.PNG,
+		"image/gif": ImageFormat.GIF,
+		"image/webp": ImageFormat.WEBP,
+	};
+	const format = bedrockImageFormatMap[mimeType];
+	if (!format) {
+		throw new Error(`Unknown image type: ${mimeType}`);
 	}
 
 	const binaryString = atob(data);
