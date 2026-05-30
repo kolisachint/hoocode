@@ -551,14 +551,18 @@ export class SubagentPool extends EventEmitter {
 					result.result_data = resultData;
 					if (resultData) {
 						result.ok = true; // partial is considered success with data
+					} else {
+						// Hard-stopped before any result.json was written. Surface a clear,
+						// actionable reason instead of letting callers report "unknown error".
+						result.error = `Token budget exceeded (used ${tokens_used} of ${budget.getLimit()}) before the subagent produced a result. Narrow the task scope or raise the budget for ${task.agent_type} subagents.`;
 					}
 					this.writeOutputJson(task.task_id, result);
-					this.emit("task_done", {
+					this.emit(resultData ? "task_done" : "task_failed", {
 						task_id: task.task_id,
 						agent_type: task.agent_type,
 						duration,
 						tokens_used,
-						status: "partial",
+						...(resultData ? { status: "partial" } : { error: result.error }),
 					});
 					this.resolveWaiter(task.task_id, result);
 					return;

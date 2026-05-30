@@ -26,6 +26,22 @@ else run();
 	return path;
 }
 
+/**
+ * Mock that emits a single assistant message_end with enough tokens to blow the
+ * budget, then stays alive so the pool's budget killer must SIGTERM it. Used to
+ * reproduce a budget hard-stop before any result.json is written.
+ */
+function createBudgetBusterExecutable(dir: string, tokens: number): string {
+	const path = join(dir, "mock-budget-buster.js");
+	const content = `#!/usr/bin/env node
+console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", usage: { totalTokens: ${tokens} } } }));
+setInterval(() => {}, 1000);
+`;
+	writeFileSync(path, content);
+	chmodSync(path, 0o755);
+	return path;
+}
+
 function createValidResultJson(cwd: string, taskId: string): void {
 	const dir = join(cwd, ".hoocode", "agents", taskId);
 	mkdirSync(dir, { recursive: true });
@@ -264,5 +280,26 @@ describe("SubagentPool", () => {
 		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
 		await pool.wait_for("t1");
 		expect(pool!.get_status("t1")).toBe("failed");
+	});
+
+	test("surfaces a clear error when budget is exceeded before result.json exists", async () => {
+		const exe = createBudgetBusterExecutable(tmpDir, 1000);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		const failedEvents: Array<{ task_id: string; error: string }> = [];
+		pool.on("task_failed", (data) => {
+			failedEvents.push(data as { task_id: string; error: string });
+		});
+		// Intentionally do NOT create result.json: budget hard-stop before output.
+		pool.spawn({ task_id: "budget-task", agent_type: "explore", task: "big task", token_budget: 500 });
+		const result = await pool.wait_for("budget-task");
+		expect(result.ok).toBe(false);
+		expect(result.budget_exceeded).toBe(true);
+		expect(result.status).toBe("failed");
+		expect(result.error).toBeTruthy();
+		expect(result.error).not.toContain("unknown error");
+		expect(result.error).toContain("Token budget exceeded");
+		expect(failedEvents.length).toBe(1);
+		expect(failedEvents[0].task_id).toBe("budget-task");
+		expect(failedEvents[0].error).toContain("Token budget exceeded");
 	});
 });

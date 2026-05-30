@@ -168,7 +168,14 @@ export function createSubagentToolDefinition(): ToolDefinition {
 					// Signal failure by throwing: the agent loop derives a tool's error
 					// state from a thrown error, not from a returned flag.
 					taskStore.update(task.id, { status: "failed", usage });
-					throw new Error(`Subagent (${mode}) failed: ${result?.error ?? "unknown error"}`);
+					const reason =
+						result?.error ??
+						(result?.budget_exceeded
+							? "token budget exceeded before producing a result"
+							: result?.status
+								? `subagent ${result.status}`
+								: "unknown error");
+					throw new Error(`Subagent (${mode}) failed: ${reason}`);
 				}
 
 				// Leave the task in the store with its final status. It stays visible in
