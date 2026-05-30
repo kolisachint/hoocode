@@ -748,6 +748,7 @@ export async function main(args: string[], options?: MainOptions) {
 			messages: parsed.messages,
 			initialMessage,
 			initialImages,
+			taskId: parsed.taskId,
 		});
 		stopThemeWatcher();
 		restoreStdout();

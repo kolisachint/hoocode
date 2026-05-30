@@ -9,7 +9,11 @@
 import type { AssistantMessage, ImageContent } from "@kolisachint/hoocode-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.js";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
+import { buildSubagentResult, writeSubagentResult } from "../core/subagent-result.js";
 import { killTrackedDetachedChildren } from "../utils/shell.js";
+
+/** Heartbeat cadence for spawned subagents (parent lifeguard stalls after 60s of silence). */
+const SUBAGENT_HEARTBEAT_MS = 30000;
 
 /**
  * Options for print mode.
@@ -23,6 +27,8 @@ export interface PrintModeOptions {
 	initialMessage?: string;
 	/** Images to attach to the initial message */
 	initialImages?: ImageContent[];
+	/** Internal: set when this process is a spawned subagent. Enables heartbeats and result.json. */
+	taskId?: string;
 }
 
 /**
@@ -30,11 +36,22 @@ export interface PrintModeOptions {
  * Sends prompts to the agent and outputs the result.
  */
 export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: PrintModeOptions): Promise<number> {
-	const { mode, messages = [], initialMessage, initialImages } = options;
+	const { mode, messages = [], initialMessage, initialImages, taskId } = options;
 	let exitCode = 0;
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let disposed = false;
+
+	// Spawned subagents (json mode + task id) emit a periodic heartbeat so the
+	// parent lifeguard does not treat a long-thinking turn as a stall.
+	const isSubagent = mode === "json" && typeof taskId === "string" && taskId.length > 0;
+	let heartbeat: NodeJS.Timeout | undefined;
+	if (isSubagent) {
+		heartbeat = setInterval(() => {
+			writeRawStdout(`${JSON.stringify({ ping: true })}\n`);
+		}, SUBAGENT_HEARTBEAT_MS);
+		heartbeat.unref();
+	}
 	const signalCleanupHandlers: Array<() => void> = [];
 
 	const disposeRuntime = async (): Promise<void> => {
@@ -125,6 +142,20 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 			await session.prompt(message);
 		}
 
+		// Spawned subagents write the audit file the parent pool verifies.
+		if (isSubagent && taskId) {
+			const stats = session.getSessionStats();
+			const result = buildSubagentResult(session.state.messages, {
+				input: stats.tokens.input,
+				output: stats.tokens.output,
+				cacheRead: stats.tokens.cacheRead,
+				cacheWrite: stats.tokens.cacheWrite,
+				cost: stats.cost,
+			});
+			writeSubagentResult(session.sessionManager.getCwd(), taskId, result);
+			if (result.status === "failed") exitCode = 1;
+		}
+
 		if (mode === "text") {
 			const state = session.state;
 			const lastMessage = state.messages[state.messages.length - 1];
@@ -149,6 +180,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		console.error(error instanceof Error ? error.message : String(error));
 		return 1;
 	} finally {
+		if (heartbeat) clearInterval(heartbeat);
 		for (const cleanup of signalCleanupHandlers) {
 			cleanup();
 		}

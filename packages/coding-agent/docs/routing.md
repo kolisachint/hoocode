@@ -46,12 +46,23 @@ Examples:
 
 This bypasses the evaluator and spawns the subagent directly.
 
+## Execution Model
+
+Subagents run as isolated `hoocode` **child processes**, managed by `SubagentPool`. Each delegation:
+
+1. Spawns `hoocode --mode json --no-session --task-id <id> --system-prompt <mode prompt> --tools <mode allowlist>` (re-running the current runtime/entry, so it works from `dist/`, from source via tsx, or as a packaged binary).
+2. Runs with a per-mode tool allowlist so read-only modes (`explore`, `review`) cannot edit or write files.
+3. Emits a periodic `{"ping":true}` heartbeat on stdout; the lifeguard SIGKILLs a child that goes silent for 60s, and enforces a per-mode hard timeout.
+4. On exit, writes `.hoocode/agents/<task_id>/result.json` (summary, files_changed, confidence, status, usage), which the parent verifies before accepting the result.
+
+The tool returns only the subagent's `summary` to the calling agent.
+
 ## Parallel Batches
 
 For multi-domain tasks (e.g. "Implement X, write tests, and review"), the evaluator sets `parallelizable: true` and produces a list of subtasks. The `SubagentPool.dispatchBatch()` method spawns up to 5 concurrent subagents and returns aggregated results.
 
 ## Guardrails
 
-- Subagents **cannot spawn subagents**. If `HOOCODE_SUBAGENT_DEPTH >= 1`, the evaluator returns `should_delegate: false`.
+- Subagents **cannot spawn subagents**. The pool sets `HOOCODE_SUBAGENT_DEPTH=1` in each child's environment, so a nested delegation's evaluator returns `should_delegate: false`.
 - The pool prioritizes `explore` and `review` tasks over `doc` tasks because they often block downstream work.
-- On completion, each subagent writes its result to `.hoocode/agents/<task_id>/output.json`.
+- On completion, each subagent writes `.hoocode/agents/<task_id>/result.json` (verified by the parent) and the pool writes `.hoocode/agents/<task_id>/output.json` (raw process outcome).

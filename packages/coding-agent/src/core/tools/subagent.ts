@@ -39,10 +39,12 @@ Dispatch evaluator:
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
-import { type AgentType, DispatchEvaluator } from "../dispatch-evaluator.js";
+import { DispatchEvaluator } from "../dispatch-evaluator.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
-import { runSubagent, type SubagentMode } from "../subagent.js";
+import type { SubagentMode } from "../subagent.js";
+import { getSubagentPool } from "../subagent-pool-instance.js";
+import type { SubagentResultFile } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
 
 const subagentParams = Type.Object({
@@ -106,11 +108,6 @@ export function isSubagentRecommended(task: string): boolean {
 	return evaluator.evaluate(task).should_delegate;
 }
 
-/** Map evaluator AgentType to SubagentMode (they are compatible strings). */
-function toSubagentMode(agentType: AgentType | null): SubagentMode {
-	return (agentType as SubagentMode) ?? "explore";
-}
-
 /** Create the subagent tool definition. Registered as a customTool when enabled. */
 export function createSubagentToolDefinition(): ToolDefinition {
 	return defineTool<typeof subagentParams, SubagentToolDetails>({
@@ -130,57 +127,57 @@ export function createSubagentToolDefinition(): ToolDefinition {
 		promptSnippet: "delegate a self-contained task to an isolated subagent (modes: explore/edit/test/fix/review/doc)",
 		parameters: subagentParams,
 
-		async execute(_toolCallId, params: SubagentParams, signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params: SubagentParams, _signal, _onUpdate, ctx) {
 			const forcedMode = params.mode as SubagentMode;
 
-			// Dispatch evaluation
-			if (!params.force) {
-				const evaluator = new DispatchEvaluator();
-				const analysis = evaluator.evaluate(params.task);
-				if (!analysis.should_delegate) {
-					return {
-						content: [
-							{
-								type: "text",
-								text: `Task is simple enough for inline handling. Reason: ${analysis.reason}. Use force=true for subagent override.`,
-							},
-						],
-						details: { mode: forcedMode, ok: true, taskId: 0, inline: true },
-					};
-				}
+			// Dispatch evaluation: a single evaluator/analysis decides inline vs delegate
+			// and (when not forced) which mode to use.
+			const evaluator = new DispatchEvaluator();
+			const analysis = evaluator.evaluate(params.task);
+			if (!params.force && !analysis.should_delegate) {
+				return {
+					content: [
+						{
+							type: "text",
+							text: `Task is simple enough for inline handling. Reason: ${analysis.reason}. Use force=true for subagent override.`,
+						},
+					],
+					details: { mode: forcedMode, ok: true, taskId: 0, inline: true },
+				};
 			}
 
-			const mode = params.force
-				? forcedMode
-				: toSubagentMode(new DispatchEvaluator().evaluate(params.task).agent_type);
+			const mode: SubagentMode = params.force ? forcedMode : ((analysis.agent_type as SubagentMode) ?? "explore");
 			const summary = summarize(params.task);
 
 			const task = taskStore.create(summary, { subagentMode: mode });
 			taskStore.update(task.id, { status: "in_progress" });
 			try {
-				const result = await runSubagent({
-					task: params.task,
+				const pool = getSubagentPool(ctx.cwd);
+				const dispatchResult = await pool.dispatch(params.task, {
+					forceAgent: mode,
 					context: params.context,
-					mode,
-					cwd: ctx.cwd,
-					model: ctx.model,
-					modelRegistry: ctx.modelRegistry,
-					signal: signal ?? ctx.signal,
+					model: ctx.model?.id,
+					provider: ctx.model?.provider,
 				});
 
-				if (!result.ok) {
+				const result = dispatchResult.result;
+				const resultData = result?.result_data as SubagentResultFile | undefined;
+				const usage = resultData?.usage;
+
+				if (!result || !result.ok) {
 					// Signal failure by throwing: the agent loop derives a tool's error
 					// state from a thrown error, not from a returned flag.
-					taskStore.update(task.id, { status: "failed", usage: result.usage });
-					throw new Error(`Subagent (${mode}) failed: ${result.error ?? "unknown error"}`);
+					taskStore.update(task.id, { status: "failed", usage });
+					throw new Error(`Subagent (${mode}) failed: ${result?.error ?? "unknown error"}`);
 				}
 
 				// Leave the task in the store with its final status. It stays visible in
 				// the task panel until the next user message arrives (retireFinished is
 				// called when the user starts the next turn).
-				taskStore.update(task.id, { status: "done", usage: result.usage });
+				taskStore.update(task.id, { status: "done", usage });
+				const answer = resultData?.summary || "(subagent returned no output)";
 				return {
-					content: [{ type: "text", text: result.answer || "(subagent returned no output)" }],
+					content: [{ type: "text", text: answer }],
 					details: { mode, ok: true, taskId: task.id },
 				};
 			} catch (error) {

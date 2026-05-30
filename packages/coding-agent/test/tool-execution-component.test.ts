@@ -35,6 +35,58 @@ describe("ToolExecutionComponent parity", () => {
 		initTheme("dark");
 	});
 
+	test("renders the status dot inline with the first call line, not on its own line", () => {
+		const toolDefinition: ToolDefinition = {
+			...createBaseToolDefinition(),
+			renderCall: () => new Text("$ npm run check", 0, 0),
+		};
+
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"tool-dot",
+			{},
+			{},
+			toolDefinition,
+			createFakeTui(),
+			process.cwd(),
+		);
+		const lines = component.render(120).map((l) => stripAnsi(l));
+		const dotLine = lines.find((l) => l.includes("\u25cf"));
+		expect(dotLine).toBeDefined();
+		// The dot must share a line with the call content, not stack above it.
+		expect(dotLine).toContain("$ npm run check");
+		// And there must be no line that is only the dot.
+		expect(lines.some((l) => l.trim() === "\u25cf")).toBe(false);
+	});
+
+	test("prefixes the dot on the first line and indents wrapped continuation lines", () => {
+		const longCall = "$ cd /Users/example/very/long/path && npm run check 2>&1 | tail -6";
+		const toolDefinition: ToolDefinition = {
+			...createBaseToolDefinition(),
+			renderCall: () => new Text(longCall, 0, 0),
+		};
+
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"tool-dot-wrap",
+			{},
+			{},
+			toolDefinition,
+			createFakeTui(),
+			process.cwd(),
+		);
+		// Narrow width forces the call text to wrap onto a second line.
+		const lines = component.render(30).map((l) => stripAnsi(l));
+		const dotIndex = lines.findIndex((l) => l.includes("\u25cf"));
+		expect(dotIndex).toBeGreaterThanOrEqual(0);
+		expect(lines[dotIndex]).toContain("$ cd");
+		// The continuation line should be indented (aligned under the content, no dot).
+		const continuation = lines[dotIndex + 1];
+		expect(continuation).toBeDefined();
+		expect(continuation.startsWith("  ")).toBe(true);
+		expect(continuation).not.toContain("\u25cf");
+	});
+
 	test("stacks custom call and result renderers like the old implementation", () => {
 		const toolDefinition: ToolDefinition = {
 			...createBaseToolDefinition(),

@@ -402,6 +402,28 @@ export function getBundledInteractiveAssetPath(name: string): string {
 }
 
 /**
+ * Resolve the command used to spawn a hoocode subagent child process by
+ * re-running the current process.
+ *
+ * - Bun binary: the compiled executable spawns itself (argv[1] is not a script).
+ * - Node.js / tsx: spawn the current runtime (process.execPath) replaying the
+ *   runtime flags (process.execArgv, e.g. tsx's `--import`) and the entry script
+ *   that launched this process (process.argv[1]).
+ *
+ * This mirrors exactly how the parent was started, so it works whether running
+ * from dist/, from source via tsx, or as a packaged binary.
+ */
+export function getSubagentSpawnCommand(): { executable: string; prefixArgs: string[] } {
+	if (isBunBinary) {
+		return { executable: process.execPath, prefixArgs: [] };
+	}
+	const entry = process.argv[1];
+	const prefixArgs = [...process.execArgv];
+	if (entry) prefixArgs.push(entry);
+	return { executable: process.execPath, prefixArgs };
+}
+
+/**
  * Get path to bundled init templates (default modes/profiles seeded into HOOCODE_DIR on first run).
  * - For Bun binary: templates/ next to executable
  * - For Node.js (dist/) and tsx (src/): templates/ at the package root

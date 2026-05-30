@@ -1,13 +1,7 @@
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-	type FauxProviderRegistration,
-	fauxAssistantMessage,
-	fauxToolCall,
-	type Model,
-	registerFauxProvider,
-} from "@kolisachint/hoocode-ai";
+import { type FauxProviderRegistration, type Model, registerFauxProvider } from "@kolisachint/hoocode-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../../src/core/auth-storage.js";
 import type { ExtensionContext } from "../../src/core/extensions/types.js";
@@ -15,7 +9,9 @@ import { ModelRegistry } from "../../src/core/model-registry.js";
 import { createAgentSession } from "../../src/core/sdk.js";
 import { SessionManager } from "../../src/core/session-manager.js";
 import { SettingsManager } from "../../src/core/settings-manager.js";
-import { runSubagent } from "../../src/core/subagent.js";
+import type { SubagentPool, TaskResult } from "../../src/core/subagent-pool.js";
+import { setSubagentPoolForTesting } from "../../src/core/subagent-pool-instance.js";
+import type { SubagentResultFile } from "../../src/core/subagent-result.js";
 import { taskStore } from "../../src/core/task-store.js";
 import { createSubagentToolDefinition } from "../../src/core/tools/subagent.js";
 import { createTestResourceLoader } from "../utilities.js";
@@ -63,67 +59,41 @@ function setupFaux(): FauxSetup {
 	return { faux, model, modelRegistry, authStorage };
 }
 
+/**
+ * A minimal fake SubagentPool that returns a canned result without spawning a
+ * child process. Lets us drive the tool's success/failure paths deterministically.
+ */
+function makeFakePool(result: TaskResult): SubagentPool {
+	return {
+		dispatch: async () => result,
+	} as unknown as SubagentPool;
+}
+
+function fakeResult(ok: boolean, data: Partial<SubagentResultFile>, error?: string): TaskResult {
+	return {
+		handled_inline: false,
+		task_id: "fake-1",
+		agent_type: "explore",
+		reason: "test",
+		duration: 1,
+		result: {
+			task_id: "fake-1",
+			ok,
+			stdout: "",
+			stderr: "",
+			exit_code: ok ? 0 : 1,
+			error,
+			status: ok ? "complete" : "failed",
+			result_data: { summary: "", files_changed: [], confidence: 0.9, status: "complete", ...data },
+		},
+	};
+}
+
 afterEach(() => {
+	setSubagentPoolForTesting(undefined);
 	while (cleanups.length > 0) {
 		cleanups.pop()?.();
 	}
-});
-
-describe("runSubagent execution", () => {
-	it("returns the subagent's final answer", async () => {
-		const { faux, model, modelRegistry } = setupFaux();
-		faux.setResponses([fauxAssistantMessage("the answer")]);
-
-		const result = await runSubagent({
-			task: "what is the answer",
-			mode: "explore",
-			cwd: makeTempDir(),
-			model,
-			modelRegistry,
-		});
-
-		expect(result.ok).toBe(true);
-		expect(result.answer).toBe("the answer");
-		expect(result.mode).toBe("explore");
-	});
-
-	it("returns ONLY the final answer, stripping intermediate tool-call turns", async () => {
-		const { faux, model, modelRegistry } = setupFaux();
-		// Turn 1: a tool call (no final text). Turn 2: the final answer.
-		faux.setResponses([
-			fauxAssistantMessage(fauxToolCall("ls", { path: "." }), { stopReason: "toolUse" }),
-			fauxAssistantMessage("FINAL ONLY"),
-		]);
-
-		const result = await runSubagent({
-			task: "look around then answer",
-			mode: "explore",
-			cwd: makeTempDir(),
-			model,
-			modelRegistry,
-		});
-
-		expect(result.ok).toBe(true);
-		// The intermediate ls tool call and its result are not part of the answer.
-		expect(result.answer).toBe("FINAL ONLY");
-	});
-
-	it("reports failure when the subagent ends in an error", async () => {
-		const { faux, model, modelRegistry } = setupFaux();
-		faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "boom" })]);
-
-		const result = await runSubagent({
-			task: "explode",
-			mode: "edit",
-			cwd: makeTempDir(),
-			model,
-			modelRegistry,
-		});
-
-		expect(result.ok).toBe(false);
-		expect(result.answer).toBe("");
-		expect(result.error).toContain("boom");
-	});
 });
 
 describe("subagent tool (opt-in) execution and task integration", () => {
@@ -142,14 +112,14 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 
 	it("runs the subagent, returns its answer, and tracks a task to completion", async () => {
 		const setup = setupFaux();
-		setup.faux.setResponses([fauxAssistantMessage("done exploring")]);
+		setSubagentPoolForTesting(makeFakePool(fakeResult(true, { summary: "done exploring" })));
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
 		const tool = createSubagentToolDefinition();
 		const result = await tool.execute(
 			"call-1",
-			{ task: "explore the repo", context: "", mode: "explore" },
+			{ task: "explore the repo thoroughly and report findings", context: "", mode: "explore", force: true },
 			undefined,
 			undefined,
 			ctx,
@@ -158,14 +128,15 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		expect(result.content[0]).toEqual({ type: "text", text: "done exploring" });
 		expect(result.details).toMatchObject({ mode: "explore", ok: true, taskId: expect.any(Number) });
 
-		// Completed tasks are retired (removed) from the store.
+		// The finished task stays visible until the next user turn.
 		const created = taskStore.list().slice(before);
-		expect(created).toHaveLength(0);
+		expect(created).toHaveLength(1);
+		expect(created[0].status).toBe("done");
 	});
 
 	it("marks the task failed and throws when the subagent errors", async () => {
 		const setup = setupFaux();
-		setup.faux.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "nope" })]);
+		setSubagentPoolForTesting(makeFakePool(fakeResult(false, {}, "nope")));
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
@@ -175,7 +146,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		await expect(
 			tool.execute(
 				"call-2",
-				{ task: "do a thing", context: "some context", mode: "fix" },
+				{ task: "do a complicated multi-file thing now", context: "some context", mode: "fix", force: true },
 				undefined,
 				undefined,
 				ctx,

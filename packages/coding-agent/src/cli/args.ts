@@ -21,6 +21,8 @@ export interface Args {
 	version?: boolean;
 	mode?: Mode;
 	noSession?: boolean;
+	/** Internal: task id assigned by SubagentPool when this process is a spawned subagent. */
+	taskId?: string;
 	session?: string;
 	fork?: string;
 	sessionDir?: string;
@@ -91,6 +93,8 @@ export function parseArgs(args: string[]): Args {
 			result.systemPrompt = args[++i];
 		} else if (arg === "--no-session") {
 			result.noSession = true;
+		} else if (arg === "--task-id" && i + 1 < args.length) {
+			result.taskId = args[++i];
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
 		} else if (arg === "--fork" && i + 1 < args.length) {

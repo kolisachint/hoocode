@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Subagents now run as isolated `hoocode` child processes through `SubagentPool` instead of in-process loops. The `subagent` tool and `/subagent` command dispatch through a shared pool with bounded concurrency, per-mode tool allowlists, token budgets, and lifeguard monitoring (heartbeat + hard timeout).
+- Added a `--task-id` CLI flag (internal) and made `--mode json` subagents emit a `{"ping":true}` heartbeat and write a verified `result.json` on exit, so the parent pool can monitor liveness and validate output.
+
+### Removed
+
+- Removed the in-process `runSubagent` path; subagent execution is now exclusively pool/child-process based.
+
+### Fixed
+
+- Tool execution status dot (`●`) is now rendered inline with the tool/command on the first line instead of on its own line above it. Renderer-backed tools (e.g. bash) previously stacked the dot as a separate line.
+
 ## [0.4.11] - 2026-05-30
 
 ### Changed

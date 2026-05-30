@@ -4,10 +4,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { CONFIG_DIR_NAME } from "../config.js";
 import { waitForChildProcess } from "../utils/child-process.js";
-import { type AgentType, DispatchEvaluator } from "./dispatch-evaluator.js";
+import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
-import { getSubagentSystemPrompt, type SubagentMode } from "./subagent.js";
+import { getSubagentSystemPrompt, MODE_TOOLS, type SubagentMode } from "./subagent.js";
 import { TokenBudget } from "./token-budget.js";
 
 export interface SubagentPoolTask {
@@ -58,9 +58,22 @@ export interface TaskResult {
 	duration?: number;
 }
 
+export interface DispatchOptions {
+	/** Skip evaluation and force this agent type (user/explicit override). */
+	forceAgent?: SubagentMode;
+	/** Context distilled from the calling agent, passed to the subagent. */
+	context?: string;
+	/** Model id for the subagent (defaults to the child's configured default). */
+	model?: string;
+	/** Provider for the subagent. */
+	provider?: string;
+}
+
 export interface SubagentPoolOptions {
-	/** Path to the hoocode executable. */
+	/** Path to the hoocode executable (or the runtime, e.g. node, when prefixArgs is set). */
 	executable: string;
+	/** Args inserted before task args (e.g. the CLI entry script for node/tsx). */
+	prefixArgs?: string[];
 	/** Maximum concurrent child processes. Defaults to 5. */
 	maxConcurrency?: number;
 	/** Working directory for spawned processes. Defaults to process.cwd(). */
@@ -85,6 +98,7 @@ export interface SubagentPoolOptions {
 export class SubagentPool extends EventEmitter {
 	private readonly maxConcurrency: number;
 	private readonly executable: string;
+	private readonly prefixArgs: string[];
 	private readonly cwd: string;
 	private readonly env: NodeJS.ProcessEnv;
 	private readonly defaultTokenBudget: number;
@@ -106,6 +120,7 @@ export class SubagentPool extends EventEmitter {
 		super();
 		this.maxConcurrency = options.maxConcurrency ?? 5;
 		this.executable = options.executable;
+		this.prefixArgs = options.prefixArgs ?? [];
 		this.cwd = options.cwd ?? process.cwd();
 		this.env = options.env ?? process.env;
 		this.defaultTokenBudget = options.defaultTokenBudget ?? 0;
@@ -203,17 +218,18 @@ export class SubagentPool extends EventEmitter {
 	/**
 	 * Dispatch a task through the evaluator.
 	 *
-	 * - If `forceAgent` is provided, skip evaluation and spawn directly.
+	 * - If `options.forceAgent` is provided, skip evaluation and spawn directly.
 	 * - Otherwise evaluate the task. If it should be handled inline, return
 	 *   `{ handled_inline: true }` immediately.
 	 * - If delegating, spawn the subagent, wait for completion, write
 	 *   `output.json`, and return the result.
 	 */
-	async dispatch(task: string, forceAgent?: AgentType): Promise<TaskResult> {
+	async dispatch(task: string, options: DispatchOptions = {}): Promise<TaskResult> {
 		if (this.disposed) {
 			return Promise.reject(new Error("SubagentPool has been disposed"));
 		}
 
+		const { forceAgent, context, model, provider } = options;
 		const evaluator = new DispatchEvaluator();
 		const analysis = evaluator.evaluate(task);
 
@@ -221,20 +237,24 @@ export class SubagentPool extends EventEmitter {
 			return { handled_inline: true, reason: analysis.reason };
 		}
 
-		const agent_type: AgentType = forceAgent ?? (analysis.agent_type as AgentType) ?? "explore";
+		const agent_type: SubagentMode = forceAgent ?? (analysis.agent_type as SubagentMode) ?? "explore";
 		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const reason = forceAgent ? "user_override" : analysis.reason;
 		const complexity = analysis.estimated_complexity;
 
-		// Pre-dispatch logging
+		// Pre-dispatch logging. Use stderr: stdout is reserved for the JSON event
+		// stream / TUI render and must not be polluted.
 		const logLine = `[DISPATCH] agent=${agent_type} reason=${reason} complexity=${complexity} task_id=${task_id}`;
-		console.log(logLine);
+		console.error(logLine);
 		this.writeDispatchLog(task_id, agent_type, reason, complexity, task);
 
 		const poolTask: SubagentPoolTask = {
 			task_id,
 			agent_type,
 			task,
+			context,
+			model,
+			provider,
 			cwd: this.cwd,
 		};
 
@@ -259,13 +279,16 @@ export class SubagentPool extends EventEmitter {
 	 * Spawns up to `maxConcurrency` at once; overflow is queued with FIFO.
 	 * Returns aggregated results in the same order as the input.
 	 */
-	async dispatchBatch(tasks: Array<{ agent_type: AgentType; prompt: string }>): Promise<TaskResult[]> {
+	async dispatchBatch(
+		tasks: Array<{ agent_type: SubagentMode; prompt: string }>,
+		shared: Omit<DispatchOptions, "forceAgent"> = {},
+	): Promise<TaskResult[]> {
 		if (this.disposed) {
 			return Promise.reject(new Error("SubagentPool has been disposed"));
 		}
 
 		const promises = tasks.map(async ({ agent_type, prompt }) => {
-			return this.dispatch(prompt, agent_type);
+			return this.dispatch(prompt, { ...shared, forceAgent: agent_type });
 		});
 
 		return Promise.all(promises);
@@ -354,12 +377,18 @@ export class SubagentPool extends EventEmitter {
 
 	/** Build CLI arguments for a task. */
 	private buildArgs(task: SubagentPoolTask): string[] {
-		const args: string[] = ["--mode", "json", "--no-session"];
+		const args: string[] = [...this.prefixArgs, "--mode", "json", "--no-session", "--task-id", task.task_id];
 
 		if (task.agent_type) {
 			try {
-				const systemPrompt = getSubagentSystemPrompt(task.agent_type as SubagentMode);
+				const mode = task.agent_type as SubagentMode;
+				const systemPrompt = getSubagentSystemPrompt(mode);
 				args.push("--system-prompt", systemPrompt);
+				// Enforce the per-mode tool allowlist so read-only modes cannot edit/write.
+				const tools = MODE_TOOLS[mode];
+				if (tools) {
+					args.push("--tools", tools.join(","));
+				}
 			} catch {
 				// Unknown mode, skip custom system prompt
 			}
@@ -406,7 +435,9 @@ export class SubagentPool extends EventEmitter {
 		try {
 			proc = spawn(this.executable, this.buildArgs(task), {
 				cwd: task.cwd ?? this.cwd,
-				env: this.env,
+				// Mark the child as a subagent so its own DispatchEvaluator refuses to
+				// spawn further subagents (depth guard).
+				env: { ...this.env, HOOCODE_SUBAGENT_DEPTH: "1" },
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 			});
@@ -550,6 +581,9 @@ export class SubagentPool extends EventEmitter {
 						this.resolveWaiter(task.task_id, result);
 						return;
 					}
+					// Attach the verified result.json so callers can read the summary
+					// without parsing the raw event stream.
+					result.result_data = this.tryReadResultJson(task.task_id, task.cwd ?? this.cwd);
 				}
 
 				this.writeOutputJson(task.task_id, result);

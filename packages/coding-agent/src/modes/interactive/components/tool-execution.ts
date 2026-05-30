@@ -7,6 +7,7 @@ import {
 	Spacer,
 	Text,
 	type TUI,
+	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.js";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.js";
@@ -17,6 +18,40 @@ import { theme } from "../theme/theme.js";
 export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
+}
+
+/**
+ * Renders a child component and prepends a prefix (e.g. a status dot) to its
+ * first line, indenting continuation lines so they align under the content.
+ *
+ * This keeps the dot inline with the first line instead of stacking it on its
+ * own line (which happens when a Container holds the dot as a separate child).
+ */
+class PrefixFirstLine implements Component {
+	private prefix: string;
+	private child: Component;
+	private indentWidth: number;
+
+	constructor(prefix: string, child: Component) {
+		this.prefix = prefix;
+		this.child = child;
+		this.indentWidth = visibleWidth(prefix);
+	}
+
+	invalidate(): void {
+		this.child.invalidate?.();
+	}
+
+	render(width: number): string[] {
+		// Reserve room for the prefix so the child wraps within the remaining width.
+		const childWidth = Math.max(1, width - this.indentWidth);
+		const lines = this.child.render(childWidth);
+		if (lines.length === 0) {
+			return [this.prefix];
+		}
+		const indent = " ".repeat(this.indentWidth);
+		return lines.map((line, i) => (i === 0 ? this.prefix + line : indent + line));
+	}
 }
 
 export class ToolExecutionComponent extends Container {
@@ -246,23 +281,25 @@ export class ToolExecutionComponent extends Container {
 			}
 			renderContainer.clear();
 
-			// Status dot prefix: green for complete success, yellow for pending/partial, red for error
+			// Status dot prefix: green for complete success, yellow for pending/partial, red for error.
+			// The dot is prepended to the first line of the call renderer so it stays inline
+			// (adding it as a separate child would stack it on its own line).
 			const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
-			renderContainer.addChild(new Text(theme.fg(dotColor, "● "), 0, 0));
+			const dot = theme.fg(dotColor, "● ");
 
 			const callRenderer = this.getCallRenderer();
 			if (!callRenderer) {
-				renderContainer.addChild(this.createCallFallback());
+				renderContainer.addChild(new PrefixFirstLine(dot, this.createCallFallback()));
 				hasContent = true;
 			} else {
 				try {
 					const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
 					this.callRendererComponent = component;
-					renderContainer.addChild(component);
+					renderContainer.addChild(new PrefixFirstLine(dot, component));
 					hasContent = true;
 				} catch {
 					this.callRendererComponent = undefined;
-					renderContainer.addChild(this.createCallFallback());
+					renderContainer.addChild(new PrefixFirstLine(dot, this.createCallFallback()));
 					hasContent = true;
 				}
 			}

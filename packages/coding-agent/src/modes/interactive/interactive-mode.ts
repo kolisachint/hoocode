@@ -81,7 +81,9 @@ import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../cor
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
-import { runSubagent, type SubagentMode } from "../../core/subagent.js";
+import type { SubagentMode } from "../../core/subagent.js";
+import { getSubagentPool } from "../../core/subagent-pool-instance.js";
+import type { SubagentResultFile } from "../../core/subagent-result.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { WORDMARK } from "../../core/wordmark.js";
@@ -4291,27 +4293,26 @@ export class InteractiveMode {
 
 		this.showStatus(`Spawning ${mode} subagent...`);
 		try {
-			const result = await runSubagent({
-				task,
-				context: "",
-				mode,
-				cwd: this.session.sessionManager.getCwd(),
-				model: this.session.model ?? undefined,
-				modelRegistry: this.runtimeHost.services.modelRegistry,
-				signal: undefined,
+			const pool = getSubagentPool(this.session.sessionManager.getCwd());
+			const dispatchResult = await pool.dispatch(task, {
+				forceAgent: mode,
+				model: this.session.model?.id,
+				provider: this.session.model?.provider,
 			});
-			if (result.ok) {
+			const result = dispatchResult.result;
+			const resultData = result?.result_data as SubagentResultFile | undefined;
+			if (result?.ok) {
 				this.showStatus(`${mode} subagent completed`);
 				// Inject the subagent answer as a custom message so the user can see it in the chat
 				this.sessionManager.appendMessage({
 					role: "custom",
 					customType: "subagent",
-					content: result.answer || "(no output)",
+					content: resultData?.summary || "(no output)",
 					display: true,
 					timestamp: Date.now(),
 				});
 			} else {
-				this.showError(`Subagent (${mode}) failed: ${result.error ?? "unknown error"}`);
+				this.showError(`Subagent (${mode}) failed: ${result?.error ?? "unknown error"}`);
 			}
 		} catch (error: unknown) {
 			this.showError(error instanceof Error ? error.message : String(error));
