@@ -869,8 +869,11 @@ export function setupMode(pi: ExtensionAPI): void {
 // Extension entry point
 // ============================================================================
 
-export default function hooCore(pi: ExtensionAPI): void {
+function hooCore(pi: ExtensionAPI): void {
 	setupPermissionGate(pi);
 	setupMcpLoader(pi);
 	setupMode(pi);
 }
+
+hooCore.displayName = "hoo-core";
+export default hooCore;
