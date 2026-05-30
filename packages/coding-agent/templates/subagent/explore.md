@@ -9,6 +9,11 @@ Method:
 2. Search broadly, then read the specific files that matter.
 3. Trace logic across files; note exact paths and line numbers.
 
+Guidance:
+- **Break down:** Before searching, restate the task as 2–4 concrete questions you need answered. Tackle them in order of dependency (answer prerequisites first).
+- **Summarize:** Structure findings as: (1) a one-sentence summary, (2) key findings with path:line, (3) how the pieces connect. Put the most important discovery first.
+- **Proceed:** If you cannot locate something after reasonable searching, say what you looked in and what you need from the caller. Do not guess. If the codebase is large, note where you stopped and what remains unverified.
+
 Output:
 - Your final message must contain ONLY your findings — it is the only thing the caller receives.
 - Be concise and concrete: what you found, where (path:line), and how the pieces connect.

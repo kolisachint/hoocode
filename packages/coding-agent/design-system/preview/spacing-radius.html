@@ -1,0 +1,17 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="card.css"></head>
+<body>
+  <div class="card-title">Radius &amp; elevation — almost none, by design</div>
+  <div class="row" style="gap:16px;align-items:stretch">
+    <div class="block" style="background:#282832;border-radius:0;flex:1">
+      <div class="bold">0px — in the TUI</div>
+      <div class="dim" style="font-size:11px;margin-top:6px">terminal cells can't round. Blocks are flat tints; grouping comes from a 1-shade fill, never a border or shadow.</div>
+    </div>
+    <div class="block" style="background:#282832;border-radius:4px;flex:1">
+      <div class="bold">4px — web export max</div>
+      <div class="dim" style="font-size:11px;margin-top:6px">the HTML export rounds blocks 4px. Treat 4px as the ceiling anywhere. No drop-shadows, no blur, no glow.</div>
+    </div>
+  </div>
+  <div class="dim" style="font-size:10px;margin-top:14px">Elevation is conveyed by tint contrast against the canvas — not by Z-depth.</div>
+</body></html>

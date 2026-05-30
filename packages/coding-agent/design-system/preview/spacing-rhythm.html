@@ -1,0 +1,22 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<link rel="stylesheet" href="../colors_and_type.css">
+<link rel="stylesheet" href="card.css"></head>
+<body>
+  <div class="card-title">Vertical rhythm — the row (18px) is the only unit</div>
+  <div class="row" style="align-items:stretch;gap:18px">
+    <div style="position:relative;width:230px">
+      <div style="position:absolute;inset:0;background:repeating-linear-gradient(#23232b 0 1px,transparent 1px 18px)"></div>
+      <pre style="position:relative;font-size:12px;line-height:18px">assistant text line
+<span style="color:#666">·· Spacer(1) ··</span>
+tool block (pad 1 row)
+<span style="color:#666">·· Spacer(1) ··</span>
+next block</pre>
+    </div>
+    <div class="col" style="gap:10px;font-size:11px;justify-content:center">
+      <div class="row"><b style="width:64px;display:inline-block">--lh</b><span class="dim">18px · one terminal row / one \n</span></div>
+      <div class="row"><b style="width:64px;display:inline-block">block pad</b><span class="dim">1 row × 1 col inside tinted blocks</span></div>
+      <div class="row"><b style="width:64px;display:inline-block">--cell</b><span class="dim">0.6em · one glyph column</span></div>
+      <div class="row"><b style="width:64px;display:inline-block">gap</b><span class="dim">Spacer(1) between every block</span></div>
+    </div>
+  </div>
+</body></html>

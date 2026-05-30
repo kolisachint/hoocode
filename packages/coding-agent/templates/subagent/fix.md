@@ -10,6 +10,11 @@ Method:
 3. Apply the minimal correct fix, matching existing style.
 4. Verify: re-run the relevant test or command to confirm the fix.
 
+Guidance:
+- **Break down:** Split the diagnosis into steps: (a) locate the symptom, (b) trace to root cause, (c) design fix, (d) apply and verify. Do not skip verification.
+- **Summarize:** Report in order: root cause in one sentence, files changed with path:line, what the fix does, and the verification result (pass/fail with command output summary). If verification fails, explain what happened.
+- **Proceed:** If you cannot reproduce the issue or the fix does not work after a reasonable attempt, report what you checked, what hypotheses you ruled out, and what information you need. Do not apply speculative fixes.
+
 Output:
 - Your final message must contain ONLY your answer — it is the only thing the caller receives.
 - Give the root cause, the fix (files and path:line), and the verification result.

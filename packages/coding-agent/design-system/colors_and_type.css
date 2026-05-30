@@ -1,0 +1,238 @@
+/* ============================================================================
+   HooCode Design System — Colors & Type
+   ----------------------------------------------------------------------------
+   HooCode is a deterministic terminal coding agent (a fork of pi-mono).
+   Its "design system" is a TUI: everything is monospaced text painted with
+   ANSI colors on a terminal grid. These tokens are the faithful HTML/CSS
+   translation of the agent's two built-in themes (dark.json + light.json),
+   so prototypes and mocks render with the exact terminal palette.
+
+   Source of truth:
+   packages/coding-agent/src/modes/interactive/theme/{dark,light}.json
+   ============================================================================ */
+
+/* ---------------------------------------------------------------------------
+   0. BRAND FONTS — self-hosted (uploaded). Both are genuine terminal/coding
+   monospaced families. JetBrains Mono is the primary UI/body face; MesloLGS NF
+   (a Menlo-derived Nerd Font, the quintessential terminal font) backs it and
+   is used for the wordmark/banner via --font-terminal. url() paths resolve
+   relative to THIS file (project root), so every importer gets them.
+   --------------------------------------------------------------------------- */
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Medium.ttf") format("truetype"); font-weight: 500; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-SemiBold.ttf") format("truetype"); font-weight: 600; font-style: normal; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("fonts/JetBrainsMono-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+
+@font-face { font-family: "MesloLGS NF"; src: url("fonts/MesloLGSNF-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; font-display: swap; }
+@font-face { font-family: "MesloLGS NF"; src: url("fonts/MesloLGSNF-Italic.ttf") format("truetype"); font-weight: 400; font-style: italic; font-display: swap; }
+@font-face { font-family: "MesloLGS NF"; src: url("fonts/MesloLGSNF-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "MesloLGS NF"; src: url("fonts/MesloLGSNF-BoldItalic.ttf") format("truetype"); font-weight: 700; font-style: italic; font-display: swap; }
+
+/* ---------------------------------------------------------------------------
+   1. BASE PALETTE — raw named colors (the theme `vars` block)
+   The dark theme is the canonical default. Names mirror the theme JSON.
+   --------------------------------------------------------------------------- */
+:root {
+  /* Dark theme raw vars */
+  --hc-cyan:        #00d7ff; /* bright info / borderAccent */
+  --hc-blue:        #5f87ff; /* structural border */
+  --hc-green:       #b5bd68; /* success, diff added */
+  --hc-red:         #cc6666; /* error, diff removed */
+  --hc-yellow:      #ffff00; /* warning, line numbers */
+  --hc-gray:        #808080; /* muted text */
+  --hc-dim-gray:    #666666; /* dim / secondary */
+  --hc-dark-gray:   #505050; /* borderMuted, thinking off */
+  --hc-accent:      #8abeb7; /* signature aqua accent */
+
+  /* Background fills */
+  --hc-selected-bg:     #3a3a4a;
+  --hc-user-msg-bg:     #343541;
+  --hc-tool-pending-bg: #282832;
+  --hc-tool-success-bg: #283228;
+  --hc-tool-error-bg:   #3c2828;
+  --hc-custom-msg-bg:   #2d2838;
+
+  /* Surfaces (export/HTML rendering of the terminal) */
+  --hc-page-bg:   #18181e; /* terminal canvas */
+  --hc-card-bg:   #1e1e24; /* panel / sidebar */
+  --hc-info-bg:   #3c3728; /* highlighted info strip */
+
+  /* Default foreground (terminal default fg, dark) */
+  --hc-text:      #e5e5e7;
+}
+
+/* ---------------------------------------------------------------------------
+   2. SEMANTIC TOKENS — how the agent actually uses color
+   These are the names you reach for when building UI.
+   --------------------------------------------------------------------------- */
+:root {
+  --fg:              var(--hc-text);      /* primary text */
+  --fg-muted:        var(--hc-gray);      /* labels, secondary */
+  --fg-dim:          var(--hc-dim-gray);  /* tertiary, paths, hints */
+  --fg-thinking:     var(--hc-gray);      /* reasoning traces (italic) */
+
+  --accent:          var(--hc-accent);    /* file paths, list bullets, mode tag, cursor */
+  --border:          var(--hc-blue);      /* rules, focused field outline */
+  --border-accent:   var(--hc-cyan);      /* headings, model name, branch summary */
+  --border-muted:    var(--hc-dark-gray); /* editor frame */
+
+  --success:         var(--hc-green);     /* done, added, [x] */
+  --error:           var(--hc-red);       /* failed, removed, aborted */
+  --warning:         var(--hc-yellow);    /* in-progress, line ranges, truncation notes */
+
+  /* Message & tool surfaces */
+  --user-msg-bg:     var(--hc-user-msg-bg);
+  --tool-pending-bg: var(--hc-tool-pending-bg);
+  --tool-success-bg: var(--hc-tool-success-bg);
+  --tool-error-bg:   var(--hc-tool-error-bg);
+  --custom-msg-bg:   var(--hc-custom-msg-bg);
+  --custom-msg-label:#9575cd;             /* skill / hook / compaction label (purple) */
+  --selected-bg:     var(--hc-selected-bg);
+  --tool-output:     var(--hc-gray);
+
+  /* Markdown */
+  --md-heading:      #f0c674;             /* warm gold */
+  --md-link:         #81a2be;             /* desaturated blue */
+  --md-link-url:     var(--hc-dim-gray);
+  --md-code:         var(--hc-accent);
+  --md-code-block:   var(--hc-green);
+  --md-quote:        var(--hc-gray);
+  --md-quote-border: var(--hc-gray);
+  --md-hr:           var(--hc-gray);
+  --md-list-bullet:  var(--hc-accent);
+
+  /* Diff */
+  --diff-added:      var(--hc-green);
+  --diff-removed:    var(--hc-red);
+  --diff-context:    var(--hc-gray);
+
+  /* Syntax highlighting (VS Code Dark+ lineage) */
+  --syntax-comment:  #6A9955;
+  --syntax-keyword:  #569CD6;
+  --syntax-function: #DCDCAA;
+  --syntax-variable: #9CDCFE;
+  --syntax-string:   #CE9178;
+  --syntax-number:   #B5CEA8;
+  --syntax-type:     #4EC9B0;
+  --syntax-operator: #D4D4D4;
+  --syntax-punct:    #D4D4D4;
+
+  /* Thinking-level border ramp (off → extra-high) */
+  --thinking-off:     #505050;
+  --thinking-minimal: #6e6e6e;
+  --thinking-low:     #5f87af;
+  --thinking-medium:  #81a2be;
+  --thinking-high:    #b294bb;
+  --thinking-xhigh:   #d183e8;
+
+  --bash-mode:       var(--hc-green);     /* bash-mode editor accent */
+}
+
+/* ---------------------------------------------------------------------------
+   3. LIGHT THEME — apply [data-theme="light"] on any ancestor
+   Faithful translation of light.json. Same semantic names.
+   --------------------------------------------------------------------------- */
+[data-theme="light"] {
+  --hc-text:        #000000;
+
+  --fg:             #000000;
+  --fg-muted:       #6c6c6c;
+  --fg-dim:         #767676;
+  --fg-thinking:    #6c6c6c;
+
+  --accent:         #5a8080;  /* teal */
+  --border:         #547da7;  /* blue */
+  --border-accent:  #5a8080;
+  --border-muted:   #b0b0b0;
+
+  --success:        #588458;
+  --error:          #aa5555;
+  --warning:        #9a7326;
+
+  --user-msg-bg:    #e8e8e8;
+  --tool-pending-bg:#e8e8f0;
+  --tool-success-bg:#e8f0e8;
+  --tool-error-bg:  #f0e8e8;
+  --custom-msg-bg:  #ede7f6;
+  --custom-msg-label:#7e57c2;
+  --selected-bg:    #d0d0e0;
+  --tool-output:    #6c6c6c;
+
+  --page-bg:        #f8f8f8;
+  --card-bg:        #ffffff;
+  --info-bg:        #fffae6;
+  --hc-page-bg:     #f8f8f8;
+  --hc-card-bg:     #ffffff;
+
+  --md-heading:     #9a7326;
+  --md-link:        #547da7;
+  --md-code:        #5a8080;
+  --md-code-block:  #588458;
+  --md-quote:       #6c6c6c;
+  --md-list-bullet: #588458;
+
+  --diff-added:     #588458;
+  --diff-removed:   #aa5555;
+  --diff-context:   #6c6c6c;
+
+  --syntax-comment: #008000;
+  --syntax-keyword: #0000FF;
+  --syntax-function:#795E26;
+  --syntax-variable:#001080;
+  --syntax-string:  #A31515;
+  --syntax-number:  #098658;
+  --syntax-type:    #267F99;
+  --syntax-operator:#000000;
+  --syntax-punct:   #000000;
+
+  --thinking-off:    #b0b0b0;
+  --thinking-minimal:#767676;
+  --thinking-low:    #547da7;
+  --thinking-medium: #5a8080;
+  --thinking-high:   #875f87;
+  --thinking-xhigh:  #8b008b;
+
+  --bash-mode:      #588458;
+}
+
+/* ---------------------------------------------------------------------------
+   4. TYPE SYSTEM
+   The TUI is 100% monospaced. There is exactly one family and one base size.
+   Hierarchy comes from COLOR, WEIGHT (bold), and ITALIC — never from size.
+   In a real terminal each cell is one column; the web equivalent below keeps
+   the 12px / 18px (1.5) rhythm the HTML export uses.
+   --------------------------------------------------------------------------- */
+:root {
+  /* Self-hosted brand fonts (see §0). Both are real terminal/coding faces, so
+     this is authentic, not a substitution. JetBrains Mono leads; MesloLGS NF
+     and system monospaces back it up. */
+  --font-mono: "JetBrains Mono", "MesloLGS NF", ui-monospace, "Cascadia Code",
+               "DejaVu Sans Mono", Menlo, Consolas, monospace;
+  /* Terminal/wordmark face — Meslo first for that classic console look. */
+  --font-terminal: "MesloLGS NF", "JetBrains Mono", ui-monospace, Menlo, monospace;
+
+  --fs-base: 12px;   /* terminal body */
+  --fs-ui:   11px;   /* sidebar / secondary chrome */
+  --fs-meta: 10px;   /* timestamps, scroll counters */
+  --lh:      18px;   /* one "row" — 1.5 × base */
+
+  --fw-normal: 400;
+  --fw-bold:   700;  /* the only weight bump available; used for tool titles,
+                        headings, active items, labels */
+
+  /* One "cell" — useful for grid-aligning glyphs to text */
+  --cell: 0.6em;
+}
+
+/* Semantic text roles (apply as classes when prototyping) */
+.hc-body   { font: var(--fw-normal) var(--fs-base)/var(--lh) var(--font-mono); color: var(--fg); }
+.hc-ui     { font: var(--fw-normal) var(--fs-ui)/15px var(--font-mono); color: var(--fg); }
+.hc-meta   { font: var(--fw-normal) var(--fs-meta)/14px var(--font-mono); color: var(--fg-dim); }
+.hc-bold   { font-weight: var(--fw-bold); }
+.hc-italic { font-style: italic; }          /* reasoning / thinking traces */
+.hc-h      { font-weight: var(--fw-bold); color: var(--md-heading); } /* markdown heading */
+.hc-tool   { font-weight: var(--fw-bold); color: var(--fg); }         /* tool title */
+.hc-path   { color: var(--accent); }
+.hc-dim    { color: var(--fg-dim); }
+.hc-muted  { color: var(--fg-muted); }

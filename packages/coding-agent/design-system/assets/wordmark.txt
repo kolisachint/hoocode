@@ -1,0 +1,10 @@
+                   __  __            ______          __
+                  / / / /___  ____  / ____/___  ____/ /__
+                 / /_/ / __ \/ __ \/ /   / __ \/ __  / _ \
+                / __  / /_/ / /_/ / /___/ /_/ / /_/ /  __/
+               /_/ /_/\____/\____/\____/\____/\__,_/\___/
+
+               deterministic terminal coding agent   ›  hoo
+
+  The "logo" of a TUI is its name in the grid. Render in --font-terminal
+  (MesloLGS NF), --accent (#8abeb7) on --page-bg (#18181e). No emoji. No raster art.
