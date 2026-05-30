@@ -95,8 +95,10 @@ export function createSubagentToolDefinition(): ToolDefinition {
 					throw new Error(`Subagent (${mode}) failed: ${result.error ?? "unknown error"}`);
 				}
 
+				// Leave the task in the store with its final status. It stays visible in
+				// the task panel until the main agent moves on (retireFinished is called
+				// when the main agent starts its next turn).
 				taskStore.update(task.id, { status: "done" });
-				taskStore.remove(task.id);
 				return {
 					content: [{ type: "text", text: result.answer || "(subagent returned no output)" }],
 					details: { mode, ok: true, taskId: task.id },

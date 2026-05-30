@@ -26,7 +26,7 @@ describe("task panel rendering", () => {
 		return panel.render(width);
 	}
 
-	test("collapses to empty when no active tasks", () => {
+	test("collapses to empty when there are no tasks", () => {
 		const lines = renderPanel();
 		expect(lines).toEqual([]);
 	});
@@ -57,29 +57,43 @@ describe("task panel rendering", () => {
 		expect(text).toContain(`#${plain.id}`);
 	});
 
-	test("completed tasks drop out of the panel", () => {
+	test("completed and failed tasks stay visible with their status", () => {
 		taskStore.create("Still running", { subagentMode: "explore" });
 		const doneTask = taskStore.create("Finished work");
 		taskStore.update(doneTask.id, { status: "done" });
-
-		const lines = renderPanel();
-		const text = lines.join("\n");
-		expect(text).not.toContain("Finished work");
-		expect(text).toContain("Still running");
-	});
-
-	test("failed tasks drop out of the panel", () => {
-		taskStore.create("Still running", { subagentMode: "explore" });
 		const failedTask = taskStore.create("Broken build");
 		taskStore.update(failedTask.id, { status: "failed" });
 
 		const lines = renderPanel();
+		expect(lines.length).toBe(3);
+
 		const text = lines.join("\n");
-		expect(text).not.toContain("Broken build");
 		expect(text).toContain("Still running");
+		expect(text).toContain("Finished work");
+		expect(text).toContain("Broken build");
+		expect(text).toContain("✓");
+		expect(text).toContain("✗");
 	});
 
-	test("shows all active tasks without a line limit", () => {
+	test("retireFinished removes done and failed tasks but keeps active ones", () => {
+		const running = taskStore.create("Still running", { subagentMode: "explore" });
+		taskStore.update(running.id, { status: "in_progress" });
+		const doneTask = taskStore.create("Finished work");
+		taskStore.update(doneTask.id, { status: "done" });
+		const failedTask = taskStore.create("Broken build");
+		taskStore.update(failedTask.id, { status: "failed" });
+
+		taskStore.retireFinished();
+
+		const lines = renderPanel();
+		const text = lines.join("\n");
+		expect(lines.length).toBe(1);
+		expect(text).toContain("Still running");
+		expect(text).not.toContain("Finished work");
+		expect(text).not.toContain("Broken build");
+	});
+
+	test("shows all tasks without a line limit", () => {
 		for (let i = 0; i < 6; i++) {
 			const t = taskStore.create(`Task ${i}`);
 			taskStore.update(t.id, { status: "in_progress" });

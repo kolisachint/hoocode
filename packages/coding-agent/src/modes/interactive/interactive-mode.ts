@@ -1310,11 +1310,14 @@ export class InteractiveMode {
 		const themesResult = this.session.resourceLoader.getThemes();
 		const extensions =
 			options?.extensions ??
-			this.session.resourceLoader.getExtensions().extensions.map((extension) => ({
-				path: extension.path,
-				sourceInfo: extension.sourceInfo,
-				displayName: extension.displayName,
-			}));
+			this.session.resourceLoader
+				.getExtensions()
+				.extensions.filter((extension) => !extension.internal)
+				.map((extension) => ({
+					path: extension.path,
+					sourceInfo: extension.sourceInfo,
+					displayName: extension.displayName,
+				}));
 		const sourceInfos = new Map<string, SourceInfo>();
 		for (const extension of extensions) {
 			if (extension.sourceInfo) {
@@ -2580,7 +2583,10 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
+				const prefix = "/compact ";
+				const customInstructions = text.startsWith(prefix)
+					? text.slice(prefix.length).trim() || undefined
+					: undefined;
 				this.editor.setText("");
 				await this.handleCompactCommand(customInstructions);
 				return;
@@ -2729,6 +2735,9 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					// Main agent is moving on to its next turn: retire any finished subagent
+					// tasks that were kept visible after a parallel spawn.
+					taskStore.retireFinished();
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -5480,14 +5489,10 @@ export class InteractiveMode {
 	}
 
 	private async handleCompactCommand(customInstructions?: string): Promise<void> {
-		const entries = this.sessionManager.getEntries();
-		const messageCount = entries.filter((e) => e.type === "message").length;
-
-		if (messageCount < 2) {
-			this.showWarning("Nothing to compact (no messages yet)");
-			return;
-		}
-
+		// The session is the single source of truth for whether compaction is
+		// possible (e.g. "Already compacted", "Nothing to compact (session too
+		// small)"). Its specific error is surfaced via the compaction_end event,
+		// so we don't pre-check here and risk a divergent message.
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();
 			this.loadingAnimation = undefined;

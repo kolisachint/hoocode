@@ -64,6 +64,18 @@ class TaskStore {
 		this.emit();
 	}
 
+	/**
+	 * Remove all finished tasks (done or failed), keeping pending/in_progress ones.
+	 *
+	 * Called when the main agent moves on after a parallel subagent spawn: finished
+	 * tasks stay visible (with their final status) until that point, then retire.
+	 */
+	retireFinished(): void {
+		const before = this.tasks.length;
+		this.tasks = this.tasks.filter((t) => t.status !== "done" && t.status !== "failed");
+		if (this.tasks.length !== before) this.emit();
+	}
+
 	list(): readonly Task[] {
 		return this.tasks;
 	}

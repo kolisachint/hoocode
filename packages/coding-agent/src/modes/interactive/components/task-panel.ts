@@ -39,10 +39,11 @@ function formatTaskLine(task: Task, width: number): string {
 /**
  * Task panel rendered just above the editor prompt.
  *
- * - Shows only active (pending / in_progress) tasks.
+ * - Shows all tasks with all statuses (pending / in_progress / done / failed).
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
- * - Completed or failed tasks drop out automatically so the panel only reflects ongoing work.
- * - Collapses to zero lines when there is nothing running.
+ * - Finished tasks retire only when the main agent moves on after a parallel
+ *   subagent spawn (see taskStore.retireFinished()), not the moment they finish.
+ * - Collapses to zero lines when there are no tasks.
  */
 export class TaskPanelComponent implements Component {
 	invalidate(): void {
@@ -51,13 +52,12 @@ export class TaskPanelComponent implements Component {
 
 	render(width: number): string[] {
 		const tasks = taskStore.list();
-		const active = tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
-		if (active.length === 0) {
+		if (tasks.length === 0) {
 			return [];
 		}
 
 		const lines: string[] = [];
-		for (const task of active) {
+		for (const task of tasks) {
 			lines.push(formatTaskLine(task, width));
 		}
 		return lines;

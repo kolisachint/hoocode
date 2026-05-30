@@ -588,6 +588,13 @@ export async function generateSummary(
 		.map((c) => c.text)
 		.join("\n");
 
+	// A non-error response with no usable text would otherwise produce an empty
+	// summary and silently discard the history being compacted. Fail instead so
+	// the caller surfaces it and the conversation is left intact.
+	if (textContent.trim() === "") {
+		throw new Error("Summarization produced an empty summary");
+	}
+
 	return textContent;
 }
 
@@ -843,8 +850,14 @@ async function generateTurnPrefixSummary(
 		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
 	}
 
-	return response.content
+	const textContent = response.content
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
+
+	if (textContent.trim() === "") {
+		throw new Error("Turn prefix summarization produced an empty summary");
+	}
+
+	return textContent;
 }

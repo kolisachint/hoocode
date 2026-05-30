@@ -38,6 +38,7 @@ import { sleep } from "../utils/sleep.js";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.js";
 import {
+	type CompactionPreparation,
 	type CompactionResult,
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
@@ -80,7 +81,7 @@ import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
-import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.js";
+import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
 import type { SlashCommandInfo } from "./slash-commands.js";
@@ -1603,6 +1604,85 @@ export class AgentSession {
 	// =========================================================================
 
 	/**
+	 * Shared core for manual and auto compaction.
+	 *
+	 * Runs the `session_before_compact` extension hook, produces the compaction
+	 * (from an extension or by summarizing), persists it, updates agent context,
+	 * and emits `session_compact`. Returns `{ status: "cancelled" }` if an
+	 * extension cancels or the signal aborts; callers map that to their own
+	 * cancel handling (manual throws, auto emits).
+	 */
+	private async _applyCompaction(params: {
+		preparation: CompactionPreparation;
+		branchEntries: SessionEntry[];
+		model: Model<any>;
+		apiKey: string;
+		headers?: Record<string, string>;
+		customInstructions?: string;
+		signal: AbortSignal;
+	}): Promise<{ status: "ok"; result: CompactionResult } | { status: "cancelled" }> {
+		const { preparation, branchEntries, model, apiKey, headers, customInstructions, signal } = params;
+
+		let extensionCompaction: CompactionResult | undefined;
+		let fromExtension = false;
+
+		if (this._extensionRunner.hasHandlers("session_before_compact")) {
+			const result = (await this._extensionRunner.emit({
+				type: "session_before_compact",
+				preparation,
+				branchEntries,
+				customInstructions,
+				signal,
+			})) as SessionBeforeCompactResult | undefined;
+
+			if (result?.cancel) {
+				return { status: "cancelled" };
+			}
+			if (result?.compaction) {
+				extensionCompaction = result.compaction;
+				fromExtension = true;
+			}
+		}
+
+		const generated =
+			extensionCompaction ??
+			(await compact(preparation, model, apiKey, headers, customInstructions, signal, this.thinkingLevel));
+
+		if (signal.aborted) {
+			return { status: "cancelled" };
+		}
+
+		const { summary, firstKeptEntryId, tokensBefore, tokensAfter, details } = generated;
+
+		this.sessionManager.appendCompaction(
+			summary,
+			firstKeptEntryId,
+			tokensBefore,
+			details,
+			fromExtension,
+			tokensAfter,
+		);
+		const newEntries = this.sessionManager.getEntries();
+		this.agent.state.messages = this.sessionManager.buildSessionContext().messages;
+
+		const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
+			| CompactionEntry
+			| undefined;
+		if (this._extensionRunner && savedCompactionEntry) {
+			await this._extensionRunner.emit({
+				type: "session_compact",
+				compactionEntry: savedCompactionEntry,
+				fromExtension,
+			});
+		}
+
+		return {
+			status: "ok",
+			result: { summary, firstKeptEntryId, tokensBefore, tokensAfter: tokensAfter ?? tokensBefore, details },
+		};
+	}
+
+	/**
 	 * Manually compact the session context.
 	 * Aborts current agent operation first.
 	 * @param customInstructions Optional instructions for the compaction summary
@@ -1633,95 +1713,21 @@ export class AgentSession {
 				throw new Error("Nothing to compact (session too small)");
 			}
 
-			let extensionCompaction: CompactionResult | undefined;
-			let fromExtension = false;
+			const applied = await this._applyCompaction({
+				preparation,
+				branchEntries: pathEntries,
+				model: this.model,
+				apiKey,
+				headers,
+				customInstructions,
+				signal: this._compactionAbortController.signal,
+			});
 
-			if (this._extensionRunner.hasHandlers("session_before_compact")) {
-				const result = (await this._extensionRunner.emit({
-					type: "session_before_compact",
-					preparation,
-					branchEntries: pathEntries,
-					customInstructions,
-					signal: this._compactionAbortController.signal,
-				})) as SessionBeforeCompactResult | undefined;
-
-				if (result?.cancel) {
-					throw new Error("Compaction cancelled");
-				}
-
-				if (result?.compaction) {
-					extensionCompaction = result.compaction;
-					fromExtension = true;
-				}
-			}
-
-			let summary: string;
-			let firstKeptEntryId: string;
-			let tokensBefore: number;
-			let tokensAfter: number | undefined;
-			let details: unknown;
-
-			if (extensionCompaction) {
-				// Extension provided compaction content
-				summary = extensionCompaction.summary;
-				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
-				tokensBefore = extensionCompaction.tokensBefore;
-				tokensAfter = extensionCompaction.tokensAfter;
-				details = extensionCompaction.details;
-			} else {
-				// Generate compaction result
-				const result = await compact(
-					preparation,
-					this.model,
-					apiKey,
-					headers,
-					customInstructions,
-					this._compactionAbortController.signal,
-					this.thinkingLevel,
-				);
-				summary = result.summary;
-				firstKeptEntryId = result.firstKeptEntryId;
-				tokensBefore = result.tokensBefore;
-				tokensAfter = result.tokensAfter;
-				details = result.details;
-			}
-
-			if (this._compactionAbortController.signal.aborted) {
+			if (applied.status === "cancelled") {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.appendCompaction(
-				summary,
-				firstKeptEntryId,
-				tokensBefore,
-				details,
-				fromExtension,
-				tokensAfter,
-			);
-			const newEntries = this.sessionManager.getEntries();
-			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.state.messages = sessionContext.messages;
-
-			// Get the saved compaction entry for the extension event
-			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
-				| CompactionEntry
-				| undefined;
-
-			if (this._extensionRunner && savedCompactionEntry) {
-				await this._extensionRunner.emit({
-					type: "session_compact",
-					compactionEntry: savedCompactionEntry,
-					fromExtension,
-				});
-			}
-
-			const compactionResult = {
-				summary,
-				firstKeptEntryId,
-				tokensBefore,
-				tokensAfter: tokensAfter ?? tokensBefore,
-				details,
-			};
+			const compactionResult = applied.result;
 			this._emit({
 				type: "compaction_end",
 				reason: "manual",
@@ -1902,67 +1908,17 @@ export class AgentSession {
 				return;
 			}
 
-			let extensionCompaction: CompactionResult | undefined;
-			let fromExtension = false;
+			const applied = await this._applyCompaction({
+				preparation,
+				branchEntries: pathEntries,
+				model: this.model,
+				apiKey,
+				headers,
+				customInstructions: undefined,
+				signal: this._autoCompactionAbortController.signal,
+			});
 
-			if (this._extensionRunner.hasHandlers("session_before_compact")) {
-				const extensionResult = (await this._extensionRunner.emit({
-					type: "session_before_compact",
-					preparation,
-					branchEntries: pathEntries,
-					customInstructions: undefined,
-					signal: this._autoCompactionAbortController.signal,
-				})) as SessionBeforeCompactResult | undefined;
-
-				if (extensionResult?.cancel) {
-					this._emit({
-						type: "compaction_end",
-						reason,
-						result: undefined,
-						aborted: true,
-						willRetry: false,
-					});
-					return;
-				}
-
-				if (extensionResult?.compaction) {
-					extensionCompaction = extensionResult.compaction;
-					fromExtension = true;
-				}
-			}
-
-			let summary: string;
-			let firstKeptEntryId: string;
-			let tokensBefore: number;
-			let tokensAfter: number | undefined;
-			let details: unknown;
-
-			if (extensionCompaction) {
-				// Extension provided compaction content
-				summary = extensionCompaction.summary;
-				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
-				tokensBefore = extensionCompaction.tokensBefore;
-				tokensAfter = extensionCompaction.tokensAfter;
-				details = extensionCompaction.details;
-			} else {
-				// Generate compaction result
-				const compactResult = await compact(
-					preparation,
-					this.model,
-					apiKey,
-					headers,
-					undefined,
-					this._autoCompactionAbortController.signal,
-					this.thinkingLevel,
-				);
-				summary = compactResult.summary;
-				firstKeptEntryId = compactResult.firstKeptEntryId;
-				tokensBefore = compactResult.tokensBefore;
-				tokensAfter = compactResult.tokensAfter;
-				details = compactResult.details;
-			}
-
-			if (this._autoCompactionAbortController.signal.aborted) {
+			if (applied.status === "cancelled") {
 				this._emit({
 					type: "compaction_end",
 					reason,
@@ -1973,38 +1929,7 @@ export class AgentSession {
 				return;
 			}
 
-			this.sessionManager.appendCompaction(
-				summary,
-				firstKeptEntryId,
-				tokensBefore,
-				details,
-				fromExtension,
-				tokensAfter,
-			);
-			const newEntries = this.sessionManager.getEntries();
-			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.state.messages = sessionContext.messages;
-
-			// Get the saved compaction entry for the extension event
-			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
-				| CompactionEntry
-				| undefined;
-
-			if (this._extensionRunner && savedCompactionEntry) {
-				await this._extensionRunner.emit({
-					type: "session_compact",
-					compactionEntry: savedCompactionEntry,
-					fromExtension,
-				});
-			}
-
-			const result: CompactionResult = {
-				summary,
-				firstKeptEntryId,
-				tokensBefore,
-				tokensAfter: tokensAfter ?? tokensBefore,
-				details,
-			};
+			const result = applied.result;
 			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
 
 			if (willRetry) {
