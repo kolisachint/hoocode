@@ -230,7 +230,7 @@ export function createWriteToolDefinition(
 										],
 										details: undefined,
 									});
-								} catch (error: any) {
+								} catch (error) {
 									signal?.removeEventListener("abort", onAbort);
 									if (!aborted) reject(error);
 								}

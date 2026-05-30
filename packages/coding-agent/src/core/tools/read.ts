@@ -332,7 +332,7 @@ export function createReadToolDefinition(
 							if (aborted) return;
 							signal?.removeEventListener("abort", onAbort);
 							resolve({ content, details });
-						} catch (error: any) {
+						} catch (error) {
 							signal?.removeEventListener("abort", onAbort);
 							if (!aborted) reject(error);
 						}

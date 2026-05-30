@@ -145,8 +145,12 @@ export function createLsToolDefinition(
 						let entries: string[];
 						try {
 							entries = await ops.readdir(dirPath);
-						} catch (e: any) {
-							reject(new Error(`Cannot read directory: ${e.message}`));
+						} catch (e) {
+							if (e instanceof Error) {
+								reject(new Error(`Cannot read directory: ${e.message}`));
+							} else {
+								reject(new Error(`Cannot read directory: ${String(e)}`));
+							}
 							return;
 						}
 
@@ -204,7 +208,7 @@ export function createLsToolDefinition(
 							content: [{ type: "text", text: output }],
 							details: Object.keys(details).length > 0 ? details : undefined,
 						});
-					} catch (e: any) {
+					} catch (e) {
 						signal?.removeEventListener("abort", onAbort);
 						reject(e);
 					}
