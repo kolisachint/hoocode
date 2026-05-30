@@ -46,6 +46,7 @@ const resourceLoader: ResourceLoader = {
 	getSystemPrompt: () => `You are a minimal assistant.
 Available: read, bash. Be concise.`,
 	getAppendSystemPrompt: () => [],
+	addAppendSystemPrompt: () => {},
 	extendResources: () => {},
 	reload: async () => {},
 };

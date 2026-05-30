@@ -105,6 +105,10 @@ class MinimalResourceLoader implements ResourceLoader {
 		return [];
 	}
 
+	addAppendSystemPrompt(_text: string): void {
+		// Subagents do not accept dynamic prompt appendages.
+	}
+
 	extendResources(_paths: ResourceExtensionPaths): void {
 		// Subagents do not accept additional resource paths.
 	}

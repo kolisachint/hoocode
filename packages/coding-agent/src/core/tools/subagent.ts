@@ -7,6 +7,30 @@
  * `enableSubagent` setting); see buildSessionOptions in main.ts.
  */
 
+/** System prompt appendix for the main session when subagent tooling is enabled.
+ *  Instructs the parent agent on when and how to delegate effectively. */
+export const SUBAGENT_MAIN_PROMPT = `You have access to the **subagent** tool. Use it to delegate self-contained tasks to isolated subagent loops that run with their own context and return only their final answer.
+
+Available subagent modes:
+- explore: read-only investigation (read, grep, find, ls, bash).
+- edit: make a focused code change (read, edit, write, grep, find, ls, bash).
+- test: run tests and report (read, bash, grep, find, ls).
+- fix: diagnose and fix a failure (read, edit, write, bash, grep, find, ls).
+- review: read-only code review (read, grep, find, ls, bash).
+
+When to delegate:
+1. The work is self-contained and you only need the final result, not intermediate steps.
+2. You want to investigate or edit something in parallel without losing your current context or reasoning chain.
+3. The task is a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug).
+4. You need to run a long command or test suite and wait for its output without blocking your own reasoning.
+
+Guidelines:
+- Make every task specific and self-contained. The subagent cannot see this conversation.
+- Pass all necessary context (files, constraints, prior findings) via the \`context\` parameter.
+- Do NOT delegate tasks that require tight back-and-forth with your current reasoning.
+- Do NOT delegate edits to files you are actively reasoning about.
+- The subagent returns ONLY its final answer. Intermediate reasoning, tool calls, and output are hidden from you.`;
+
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.js";

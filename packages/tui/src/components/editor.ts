@@ -237,6 +237,11 @@ export class Editor implements Component, Focusable {
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
 
+	// Prompt prefix shown on the first line (e.g. "> " or "! ")
+	public promptPrefix: string = "";
+	// Color function for the prompt prefix
+	public promptColor: (str: string) => string = (s) => s;
+
 	// Autocomplete support
 	private autocompleteProvider?: AutocompleteProvider;
 	private autocompleteList?: SelectList;
@@ -411,9 +416,13 @@ export class Editor implements Component, Focusable {
 		const paddingX = Math.min(this.paddingX, maxPadding);
 		const contentWidth = Math.max(1, width - paddingX * 2);
 
+		// Prompt prefix reserves space on the first line
+		const promptPrefixWidth = this.promptPrefix ? visibleWidth(this.promptPrefix + " ") : 0;
+
 		// Layout width: with padding the cursor can overflow into it,
 		// without padding we reserve 1 column for the cursor.
-		const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1));
+		// Also reserve space for prompt prefix on the first line.
+		const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1) - promptPrefixWidth);
 
 		// Store for cursor navigation (must match wrapping width)
 		this.lastWidth = layoutWidth;
@@ -466,7 +475,8 @@ export class Editor implements Component, Focusable {
 		// Emit hardware cursor marker only when focused and not showing autocomplete
 		const emitCursorMarker = this.focused && !this.autocompleteState;
 
-		for (const layoutLine of visibleLines) {
+		for (let visibleLineIndex = 0; visibleLineIndex < visibleLines.length; visibleLineIndex++) {
+			const layoutLine = visibleLines[visibleLineIndex]!;
 			let displayText = layoutLine.text;
 			let lineVisibleWidth = visibleWidth(layoutLine.text);
 			let cursorInPadding = false;
@@ -498,6 +508,13 @@ export class Editor implements Component, Focusable {
 						cursorInPadding = true;
 					}
 				}
+			}
+
+			// Prepend prompt prefix to the first visible line
+			if (visibleLineIndex === 0 && this.promptPrefix) {
+				const coloredPrefix = this.promptColor(this.promptPrefix + " ");
+				displayText = coloredPrefix + displayText;
+				lineVisibleWidth += promptPrefixWidth;
 			}
 
 			// Calculate padding based on actual visible width

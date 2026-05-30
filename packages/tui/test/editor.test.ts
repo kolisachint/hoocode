@@ -726,6 +726,49 @@ describe("Editor component", () => {
 		});
 	});
 
+	describe("Prompt prefix", () => {
+		it("renders prompt prefix on the first line", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 20;
+
+			editor.promptPrefix = ">";
+			editor.setText("hello");
+			const lines = editor.render(width);
+
+			const contentLines = lines.slice(1, -1).map((l) => stripVTControlCharacters(l).trimEnd());
+			assert.strictEqual(contentLines.length, 1);
+			assert.ok(contentLines[0]!.startsWith("> "), `Should start with "> ", got: "${contentLines[0]}"`);
+			assert.ok(contentLines[0]!.includes("hello"), `Should contain text, got: "${contentLines[0]}"`);
+		});
+
+		it("applies prompt color to the prefix", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 20;
+
+			editor.promptPrefix = "!";
+			editor.promptColor = (s: string) => `\x1b[32m${s}\x1b[0m`;
+			editor.setText("bash");
+			const lines = editor.render(width);
+
+			const contentLine = lines[1]!;
+			assert.ok(contentLine.includes("\x1b[32m"), "Prefix should be colored");
+		});
+
+		it("accounts for prefix width in first-line wrapping", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const width = 12;
+
+			editor.promptPrefix = ">";
+			editor.setText("helloworld");
+			const lines = editor.render(width);
+
+			const contentLines = lines.slice(1, -1).map((l) => stripVTControlCharacters(l).trimEnd());
+			assert.strictEqual(contentLines.length, 2, "Should wrap to 2 lines accounting for prefix");
+			assert.ok(contentLines[0]!.startsWith("> "), "First line should have prefix");
+			assert.ok(!contentLines[1]!.startsWith(">"), "Second line should not have prefix");
+		});
+	});
+
 	describe("Word wrapping", () => {
 		it("wraps at word boundaries instead of mid-word", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);

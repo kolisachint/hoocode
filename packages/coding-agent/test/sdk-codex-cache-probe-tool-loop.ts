@@ -179,6 +179,7 @@ function createMinimalResourceLoader(systemPrompt: string): ResourceLoader {
 		getAgentsFiles: () => ({ agentsFiles: [], warnings: [] }),
 		getSystemPrompt: () => systemPrompt,
 		getAppendSystemPrompt: () => [],
+		addAppendSystemPrompt: () => {},
 		extendResources: () => {},
 		reload: async () => {},
 	};

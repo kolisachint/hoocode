@@ -72,6 +72,7 @@ function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
 			return () => {};
 		},
 		getActiveMode: () => "build",
+		getSubagentEnabled: () => false,
 	};
 
 	return provider;

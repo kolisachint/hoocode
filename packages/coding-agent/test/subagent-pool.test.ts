@@ -26,6 +26,20 @@ else run();
 	return path;
 }
 
+function createValidResultJson(cwd: string, taskId: string): void {
+	const dir = join(cwd, ".hoocode", "agents", taskId);
+	mkdirSync(dir, { recursive: true });
+	writeFileSync(
+		join(dir, "result.json"),
+		JSON.stringify({
+			summary: "All files updated successfully",
+			files_changed: ["src/foo.ts"],
+			confidence: 0.95,
+			status: "complete",
+		}),
+	);
+}
+
 describe("SubagentPool", () => {
 	let tmpDir: string;
 	let pool: SubagentPool | undefined;
@@ -44,8 +58,9 @@ describe("SubagentPool", () => {
 
 	test("spawns a subagent and waits for result", async () => {
 		const exe = createMockExecutable(tmpDir, 0);
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 2 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
 		const task: SubagentPoolTask = { task_id: "t1", agent_type: "explore", task: "hello" };
+		createValidResultJson(tmpDir, "t1");
 		pool.spawn(task);
 		const result = await pool.wait_for("t1");
 		expect(result.task_id).toBe("t1");
@@ -58,13 +73,16 @@ describe("SubagentPool", () => {
 
 	test("respects max concurrency", async () => {
 		const exe = createMockExecutable(tmpDir, 0, 50);
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 2 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
 		const tasks: SubagentPoolTask[] = [
 			{ task_id: "t1", agent_type: "explore", task: "a" },
 			{ task_id: "t2", agent_type: "explore", task: "b" },
 			{ task_id: "t3", agent_type: "explore", task: "c" },
 		];
-		for (const t of tasks) pool!.spawn(t);
+		for (const t of tasks) {
+			createValidResultJson(tmpDir, t.task_id);
+			pool!.spawn(t);
+		}
 		expect(pool!.running_count()).toBe(2);
 		expect(pool!.queued_count()).toBe(1);
 		await pool!.wait_for("t1");
@@ -76,14 +94,18 @@ describe("SubagentPool", () => {
 
 	test("priority ordering: explore before doc when queued", async () => {
 		const exe = createMockExecutable(tmpDir, 0, 50);
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 1 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
 
 		// Occupy the single slot with a slow blocker
+		createValidResultJson(tmpDir, "blocker");
 		pool.spawn({ task_id: "blocker", agent_type: "edit", task: "block" });
 
 		// Queue tasks while slot is occupied
+		createValidResultJson(tmpDir, "t1");
 		pool.spawn({ task_id: "t1", agent_type: "doc", task: "doc task" });
+		createValidResultJson(tmpDir, "t2");
 		pool.spawn({ task_id: "t2", agent_type: "explore", task: "explore task" });
+		createValidResultJson(tmpDir, "t3");
 		pool.spawn({ task_id: "t3", agent_type: "edit", task: "edit task" });
 
 		const order: string[] = [];
@@ -96,11 +118,11 @@ describe("SubagentPool", () => {
 		expect(order).toEqual(["t2", "t3", "t1"]);
 	});
 
-	test("emits subagent_failed after retry on persistent spawn failure", async () => {
+	test("emits task_failed after retry on persistent spawn failure", async () => {
 		const exe = join(tmpDir, "nonexistent-binary");
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 2 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
 		const failedEvents: Array<{ task_id: string; error: string }> = [];
-		pool.on("subagent_failed", (data) => {
+		pool.on("task_failed", (data) => {
 			failedEvents.push(data as { task_id: string; error: string });
 		});
 		const task: SubagentPoolTask = { task_id: "t1", agent_type: "explore", task: "hello" };
@@ -114,15 +136,17 @@ describe("SubagentPool", () => {
 
 	test("duplicate task_id throws", async () => {
 		const exe = createMockExecutable(tmpDir, 0);
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 2 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
 		const task: SubagentPoolTask = { task_id: "t1", agent_type: "explore", task: "hello" };
+		createValidResultJson(tmpDir, "t1");
 		pool.spawn(task);
 		expect(() => pool!.spawn(task)).toThrow("Duplicate task_id: t1");
 	});
 
 	test("wait_for returns immediately for already-completed task", async () => {
 		const exe = createMockExecutable(tmpDir, 0);
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 2 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
+		createValidResultJson(tmpDir, "t1");
 		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
 		const first = await pool.wait_for("t1");
 		expect(first.ok).toBe(true);
@@ -132,7 +156,7 @@ describe("SubagentPool", () => {
 
 	test("dispose kills running processes and rejects waiters", async () => {
 		const exe = createMockExecutable(tmpDir, 0, 5000);
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 2 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
 		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
 		// Give the process a moment to start
 		await new Promise((r) => setTimeout(r, 50));
@@ -147,15 +171,98 @@ describe("SubagentPool", () => {
 
 	test("tracks slot metadata correctly", async () => {
 		const exe = createMockExecutable(tmpDir, 0, 50);
-		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, defaultTokenBudget: 1000 });
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, defaultTokenBudget: 1000, cwd: tmpDir });
 		const task: SubagentPoolTask = {
 			task_id: "t1",
 			agent_type: "explore",
 			task: "hello",
 			token_budget: 500,
 		};
+		createValidResultJson(tmpDir, "t1");
 		pool.spawn(task);
 		const result = await pool.wait_for("t1");
 		expect(result.ok).toBe(true);
+	});
+
+	test("marks task failed when output verification fails", async () => {
+		const exe = createMockExecutable(tmpDir, 0);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
+		const task: SubagentPoolTask = { task_id: "bad-output", agent_type: "explore", task: "hello" };
+		// Intentionally do NOT create result.json
+		pool.spawn(task);
+		const result = await pool.wait_for("bad-output");
+		expect(result.task_id).toBe("bad-output");
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("result.json not found");
+		expect(result.exit_code).toBe(0);
+	});
+
+	test("emits task_failed when output verification fails", async () => {
+		const exe = createMockExecutable(tmpDir, 0);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
+		const failedEvents: Array<{ task_id: string; error: string }> = [];
+		pool.on("task_failed", (data) => {
+			failedEvents.push(data as { task_id: string; error: string });
+		});
+		const task: SubagentPoolTask = { task_id: "bad-output", agent_type: "explore", task: "hello" };
+		pool.spawn(task);
+		const result = await pool.wait_for("bad-output");
+		expect(result.ok).toBe(false);
+		expect(failedEvents.length).toBe(1);
+		expect(failedEvents[0].task_id).toBe("bad-output");
+		expect(failedEvents[0].error).toContain("result.json not found");
+	});
+
+	test("emits task_done on successful completion", async () => {
+		const exe = createMockExecutable(tmpDir, 0);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
+		const doneEvents: Array<{ task_id: string; status: string }> = [];
+		pool.on("task_done", (data) => {
+			doneEvents.push(data as { task_id: string; status: string });
+		});
+		const task: SubagentPoolTask = { task_id: "t1", agent_type: "explore", task: "hello" };
+		createValidResultJson(tmpDir, "t1");
+		pool.spawn(task);
+		const result = await pool.wait_for("t1");
+		expect(result.ok).toBe(true);
+		expect(doneEvents.length).toBe(1);
+		expect(doneEvents[0].task_id).toBe("t1");
+		expect(doneEvents[0].status).toBe("complete");
+	});
+
+	test("get_status returns running for active tasks", async () => {
+		const exe = createMockExecutable(tmpDir, 0, 5000);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
+		createValidResultJson(tmpDir, "t1");
+		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
+		await new Promise((r) => setTimeout(r, 50));
+		expect(pool!.get_status("t1")).toBe("running");
+	});
+
+	test("get_status returns queued for pending tasks", () => {
+		const exe = createMockExecutable(tmpDir, 0, 5000);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		createValidResultJson(tmpDir, "t1");
+		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
+		createValidResultJson(tmpDir, "t2");
+		pool.spawn({ task_id: "t2", agent_type: "explore", task: "world" });
+		expect(pool!.get_status("t2")).toBe("queued");
+	});
+
+	test("get_status returns done after successful completion", async () => {
+		const exe = createMockExecutable(tmpDir, 0);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
+		createValidResultJson(tmpDir, "t1");
+		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
+		await pool.wait_for("t1");
+		expect(pool!.get_status("t1")).toBe("done");
+	});
+
+	test("get_status returns failed after bad exit", async () => {
+		const exe = createMockExecutable(tmpDir, 1);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
+		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
+		await pool.wait_for("t1");
+		expect(pool!.get_status("t1")).toBe("failed");
 	});
 });

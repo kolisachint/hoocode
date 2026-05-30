@@ -40,7 +40,7 @@ import {
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
-import { createSubagentToolDefinition } from "./core/tools/subagent.js";
+import { createSubagentToolDefinition, SUBAGENT_MAIN_PROMPT } from "./core/tools/subagent.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -581,6 +581,11 @@ export async function main(args: string[], options?: MainOptions) {
 				message: `Failed to load extension "${path}": ${error}`,
 			})),
 		];
+
+		// When subagent tooling is enabled, append the main session subagent instructions.
+		if (parsed.subagent ?? settingsManager.getEnableSubagent()) {
+			resourceLoader.addAppendSystemPrompt(SUBAGENT_MAIN_PROMPT);
+		}
 
 		const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
 		const scopedModels =

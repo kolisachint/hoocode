@@ -66,6 +66,12 @@ export interface EditorComponent extends Component {
 	/** Border color function */
 	borderColor?: (str: string) => string;
 
+	/** Prompt prefix shown on the first line (e.g. "> " or "! ") */
+	promptPrefix?: string;
+
+	/** Color function for the prompt prefix */
+	promptColor?: (str: string) => string;
+
 	/** Set horizontal padding */
 	setPaddingX?(padding: number): void;
 

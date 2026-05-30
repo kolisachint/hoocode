@@ -382,11 +382,13 @@ export class InteractiveMode {
 			autocompleteMaxVisible,
 		});
 		this.editor = this.defaultEditor;
+		this.editor.promptPrefix = ">";
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("subagent"));
 		this.taskPanel = new TaskPanelComponent();
 
 		// Load hide thinking block setting
@@ -1355,9 +1357,17 @@ export class InteractiveMode {
 			const totalItems =
 				contextFiles.length + skills.length + templates.length + extensions.length + customThemes.length;
 
+			// Meta items: active mode and subagent system prompt (always shown)
+			const metaItems: string[] = [];
+			const rawMode = this.footerDataProvider.getActiveMode().replace(" + subagent", "");
+			metaItems.push(`mode/${rawMode}`);
+			if (this.footerDataProvider.getSubagentEnabled()) {
+				metaItems.push("subagent_system_prompt");
+			}
+
 			if (totalItems > 0 && totalItems <= 5) {
 				this.chatContainer.addChild(new Spacer(1));
-				const allCompactItems: string[] = [];
+				const allCompactItems: string[] = [...metaItems];
 				if (contextFiles.length > 0) {
 					allCompactItems.push(...contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)));
 				}
@@ -1379,7 +1389,12 @@ export class InteractiveMode {
 					);
 				}
 				addLoadedSection("Resources", formatCompactList(allCompactItems), formatCompactList(allCompactItems));
+			} else if (totalItems === 0) {
+				this.chatContainer.addChild(new Spacer(1));
+				addLoadedSection("Resources", formatCompactList(metaItems), formatCompactList(metaItems));
 			} else {
+				this.chatContainer.addChild(new Spacer(1));
+				addLoadedSection("Resources", formatCompactList(metaItems), formatCompactList(metaItems));
 				if (contextFiles.length > 0) {
 					this.chatContainer.addChild(new Spacer(1));
 					const contextList = contextFiles
@@ -2464,6 +2479,7 @@ export class InteractiveMode {
 			this.isBashMode = text.trimStart().startsWith("!");
 			if (wasBashMode !== this.isBashMode) {
 				this.updateEditorBorderColor();
+				this.updateEditorPromptPrefix();
 			}
 		};
 
@@ -3439,6 +3455,17 @@ export class InteractiveMode {
 		} else {
 			const level = this.session.thinkingLevel || "off";
 			this.editor.borderColor = theme.getThinkingBorderColor(level);
+		}
+		this.ui.requestRender();
+	}
+
+	private updateEditorPromptPrefix(): void {
+		if (this.isBashMode) {
+			this.editor.promptPrefix = "!";
+			this.editor.promptColor = theme.getBashModeBorderColor();
+		} else {
+			this.editor.promptPrefix = ">";
+			this.editor.promptColor = (s: string) => s;
 		}
 		this.ui.requestRender();
 	}

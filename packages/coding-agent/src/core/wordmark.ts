@@ -4,15 +4,15 @@
  * Source: design-system/assets/wordmark.txt
  */
 
-export const WORDMARK = String.raw`
-                   __  __            ______          __
-                  / / / /___  ____  / ____/___  ____/ /__
-                 / /_/ / __ \/ __ \/ /   / __ \/ __  / _ \
-                / __  / /_/ / /_/ / /___/ /_/ / /_/ /  __/
-               /_/ /_/\____/\____/\____/\____/\__,_/\___/
-
-               deterministic terminal coding agent   >  hoo
-`.trim();
+export const WORDMARK = [
+	"                   __  __            ______          __",
+	"                  / / / /___  ____  / ____/___  ____/ /__",
+	"                 / /_/ / __ \\/ __ \\/ /   / __ \\/ __  / _ \\",
+	"                / __  / /_/ / /_/ / /___/ /_/ / /_/ /  __/",
+	"               /_/ /_/\\____/\\____/\\____/\\____/\\__,_/\\___/",
+	"",
+	"               deterministic terminal coding agent   >  hoo",
+].join("\n");
 
 /** Compact one-line logo for tight spaces. */
 export const WORDMARK_COMPACT = "hoo — deterministic terminal coding agent";

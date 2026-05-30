@@ -346,9 +346,13 @@ export class FooterDataProvider {
 		}
 	}
 	private activeMode = "build";
+	private subagentEnabled = false;
 
 	/** Current active mode (e.g., ask, plan, build, debug) */
 	getActiveMode(): string {
+		if (this.subagentEnabled) {
+			return `${this.activeMode} + subagent`;
+		}
 		return this.activeMode;
 	}
 
@@ -356,10 +360,25 @@ export class FooterDataProvider {
 	setActiveMode(mode: string): void {
 		this.activeMode = mode;
 	}
+
+	/** Whether the subagent system prompt is active */
+	getSubagentEnabled(): boolean {
+		return this.subagentEnabled;
+	}
+
+	/** Enable/disable subagent indicator */
+	setSubagentEnabled(enabled: boolean): void {
+		this.subagentEnabled = enabled;
+	}
 }
 
 /** Read-only view for extensions - excludes setExtensionStatus, setAvailableProviderCount and dispose */
 export type ReadonlyFooterDataProvider = Pick<
 	FooterDataProvider,
-	"getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange" | "getActiveMode"
+	| "getGitBranch"
+	| "getExtensionStatuses"
+	| "getAvailableProviderCount"
+	| "onBranchChange"
+	| "getActiveMode"
+	| "getSubagentEnabled"
 >;

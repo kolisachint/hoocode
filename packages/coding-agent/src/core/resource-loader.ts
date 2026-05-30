@@ -34,6 +34,7 @@ export interface ResourceLoader {
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
+	addAppendSystemPrompt(text: string): void;
 	extendResources(paths: ResourceExtensionPaths): void;
 	reload(): Promise<void>;
 }
@@ -305,6 +306,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getAppendSystemPrompt(): string[] {
 		return this.appendSystemPrompt;
+	}
+
+	addAppendSystemPrompt(text: string): void {
+		this.appendSystemPrompt.push(text);
 	}
 
 	extendResources(paths: ResourceExtensionPaths): void {
