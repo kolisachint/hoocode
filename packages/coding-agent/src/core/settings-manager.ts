@@ -4,6 +4,7 @@ import { homedir } from "os";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
+import { DEFAULT_SETTINGS } from "./settings-defaults.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -401,6 +402,10 @@ export class SettingsManager {
 		return structuredClone(this.projectSettings);
 	}
 
+	getDefaultSettings(): Settings {
+		return structuredClone(DEFAULT_SETTINGS);
+	}
+
 	async reload(): Promise<void> {
 		await this.writeQueue;
 		const globalLoad = SettingsManager.tryLoadFromStorage(this.storage, "global");
@@ -617,7 +622,7 @@ export class SettingsManager {
 	}
 
 	getSteeringMode(): "all" | "one-at-a-time" {
-		return this.settings.steeringMode || "one-at-a-time";
+		return this.settings.steeringMode || DEFAULT_SETTINGS.steeringMode!;
 	}
 
 	setSteeringMode(mode: "all" | "one-at-a-time"): void {
@@ -627,7 +632,7 @@ export class SettingsManager {
 	}
 
 	getFollowUpMode(): "all" | "one-at-a-time" {
-		return this.settings.followUpMode || "one-at-a-time";
+		return this.settings.followUpMode || DEFAULT_SETTINGS.followUpMode!;
 	}
 
 	setFollowUpMode(mode: "all" | "one-at-a-time"): void {
@@ -657,7 +662,7 @@ export class SettingsManager {
 	}
 
 	getTransport(): TransportSetting {
-		return this.settings.transport ?? "auto";
+		return this.settings.transport ?? DEFAULT_SETTINGS.transport!;
 	}
 
 	setTransport(transport: TransportSetting): void {
@@ -667,7 +672,7 @@ export class SettingsManager {
 	}
 
 	getCompactionEnabled(): boolean {
-		return this.settings.compaction?.enabled ?? true;
+		return this.settings.compaction?.enabled ?? DEFAULT_SETTINGS.compaction!.enabled;
 	}
 
 	setCompactionEnabled(enabled: boolean): void {
@@ -680,34 +685,27 @@ export class SettingsManager {
 	}
 
 	getCompactionReserveTokens(): number {
-		return this.settings.compaction?.reserveTokens ?? 16384;
+		return this.settings.compaction?.reserveTokens ?? DEFAULT_SETTINGS.compaction!.reserveTokens;
 	}
 
 	getCompactionKeepRecentTokens(): number {
-		return this.settings.compaction?.keepRecentTokens ?? 20000;
+		return this.settings.compaction?.keepRecentTokens ?? DEFAULT_SETTINGS.compaction!.keepRecentTokens;
 	}
 
-	getCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
-		return {
-			enabled: this.getCompactionEnabled(),
-			reserveTokens: this.getCompactionReserveTokens(),
-			keepRecentTokens: this.getCompactionKeepRecentTokens(),
-		};
+	getCompactionSettings(): Required<CompactionSettings> {
+		return { ...DEFAULT_SETTINGS.compaction, ...this.settings.compaction };
 	}
 
-	getBranchSummarySettings(): { reserveTokens: number; skipPrompt: boolean } {
-		return {
-			reserveTokens: this.settings.branchSummary?.reserveTokens ?? 16384,
-			skipPrompt: this.settings.branchSummary?.skipPrompt ?? false,
-		};
+	getBranchSummarySettings(): Required<BranchSummarySettings> {
+		return { ...DEFAULT_SETTINGS.branchSummary, ...this.settings.branchSummary };
 	}
 
 	getBranchSummarySkipPrompt(): boolean {
-		return this.settings.branchSummary?.skipPrompt ?? false;
+		return this.settings.branchSummary?.skipPrompt ?? DEFAULT_SETTINGS.branchSummary!.skipPrompt;
 	}
 
 	getRetryEnabled(): boolean {
-		return this.settings.retry?.enabled ?? true;
+		return this.settings.retry?.enabled ?? DEFAULT_SETTINGS.retry!.enabled;
 	}
 
 	setRetryEnabled(enabled: boolean): void {
@@ -722,21 +720,20 @@ export class SettingsManager {
 	getRetrySettings(): { enabled: boolean; maxRetries: number; baseDelayMs: number } {
 		return {
 			enabled: this.getRetryEnabled(),
-			maxRetries: this.settings.retry?.maxRetries ?? 3,
-			baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
+			maxRetries: this.settings.retry?.maxRetries ?? DEFAULT_SETTINGS.retry!.maxRetries,
+			baseDelayMs: this.settings.retry?.baseDelayMs ?? DEFAULT_SETTINGS.retry!.baseDelayMs,
 		};
 	}
 
 	getProviderRetrySettings(): { timeoutMs?: number; maxRetries?: number; maxRetryDelayMs: number } {
 		return {
-			timeoutMs: this.settings.retry?.provider?.timeoutMs,
-			maxRetries: this.settings.retry?.provider?.maxRetries,
-			maxRetryDelayMs: this.settings.retry?.provider?.maxRetryDelayMs ?? 60000,
+			...DEFAULT_SETTINGS.retry!.provider,
+			...this.settings.retry?.provider,
 		};
 	}
 
 	getHideThinkingBlock(): boolean {
-		return this.settings.hideThinkingBlock ?? false;
+		return this.settings.hideThinkingBlock ?? DEFAULT_SETTINGS.hideThinkingBlock!;
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
@@ -756,7 +753,7 @@ export class SettingsManager {
 	}
 
 	getQuietStartup(): boolean {
-		return this.settings.quietStartup ?? false;
+		return this.settings.quietStartup ?? DEFAULT_SETTINGS.quietStartup!;
 	}
 
 	setQuietStartup(quiet: boolean): void {
@@ -786,7 +783,7 @@ export class SettingsManager {
 	}
 
 	getCollapseChangelog(): boolean {
-		return this.settings.collapseChangelog ?? false;
+		return this.settings.collapseChangelog ?? DEFAULT_SETTINGS.collapseChangelog!;
 	}
 
 	setCollapseChangelog(collapse: boolean): void {
@@ -796,7 +793,7 @@ export class SettingsManager {
 	}
 
 	getEnableInstallTelemetry(): boolean {
-		return this.settings.enableInstallTelemetry ?? true;
+		return this.settings.enableInstallTelemetry ?? DEFAULT_SETTINGS.enableInstallTelemetry!;
 	}
 
 	setEnableInstallTelemetry(enabled: boolean): void {
@@ -806,7 +803,7 @@ export class SettingsManager {
 	}
 
 	getPackages(): PackageSource[] {
-		return [...(this.settings.packages ?? [])];
+		return [...(this.settings.packages ?? DEFAULT_SETTINGS.packages!)];
 	}
 
 	setPackages(packages: PackageSource[]): void {
@@ -823,7 +820,7 @@ export class SettingsManager {
 	}
 
 	getExtensionPaths(): string[] {
-		return [...(this.settings.extensions ?? [])];
+		return [...(this.settings.extensions ?? DEFAULT_SETTINGS.extensions!)];
 	}
 
 	setExtensionPaths(paths: string[]): void {
@@ -840,7 +837,7 @@ export class SettingsManager {
 	}
 
 	getSkillPaths(): string[] {
-		return [...(this.settings.skills ?? [])];
+		return [...(this.settings.skills ?? DEFAULT_SETTINGS.skills!)];
 	}
 
 	setSkillPaths(paths: string[]): void {
@@ -857,7 +854,7 @@ export class SettingsManager {
 	}
 
 	getPromptTemplatePaths(): string[] {
-		return [...(this.settings.prompts ?? [])];
+		return [...(this.settings.prompts ?? DEFAULT_SETTINGS.prompts!)];
 	}
 
 	setPromptTemplatePaths(paths: string[]): void {
@@ -874,7 +871,7 @@ export class SettingsManager {
 	}
 
 	getThemePaths(): string[] {
-		return [...(this.settings.themes ?? [])];
+		return [...(this.settings.themes ?? DEFAULT_SETTINGS.themes!)];
 	}
 
 	setThemePaths(paths: string[]): void {
@@ -891,7 +888,7 @@ export class SettingsManager {
 	}
 
 	getEnableSkillCommands(): boolean {
-		return this.settings.enableSkillCommands ?? true;
+		return this.settings.enableSkillCommands ?? DEFAULT_SETTINGS.enableSkillCommands!;
 	}
 
 	setEnableSkillCommands(enabled: boolean): void {
@@ -901,7 +898,7 @@ export class SettingsManager {
 	}
 
 	getEnableSubagent(): boolean {
-		return this.settings.enableSubagent ?? false;
+		return this.settings.enableSubagent ?? DEFAULT_SETTINGS.enableSubagent!;
 	}
 
 	setEnableSubagent(enabled: boolean): void {
@@ -915,7 +912,7 @@ export class SettingsManager {
 	}
 
 	getShowImages(): boolean {
-		return this.settings.terminal?.showImages ?? true;
+		return this.settings.terminal?.showImages ?? DEFAULT_SETTINGS.terminal!.showImages;
 	}
 
 	setShowImages(show: boolean): void {
@@ -928,9 +925,9 @@ export class SettingsManager {
 	}
 
 	getImageWidthCells(): number {
-		const width = this.settings.terminal?.imageWidthCells;
+		const width = this.settings.terminal?.imageWidthCells ?? DEFAULT_SETTINGS.terminal!.imageWidthCells;
 		if (typeof width !== "number" || !Number.isFinite(width)) {
-			return 60;
+			return DEFAULT_SETTINGS.terminal!.imageWidthCells;
 		}
 		return Math.max(1, Math.floor(width));
 	}
@@ -962,7 +959,7 @@ export class SettingsManager {
 	}
 
 	getShowTerminalProgress(): boolean {
-		return this.settings.terminal?.showTerminalProgress ?? false;
+		return this.settings.terminal?.showTerminalProgress ?? DEFAULT_SETTINGS.terminal!.showTerminalProgress;
 	}
 
 	setShowTerminalProgress(enabled: boolean): void {
@@ -975,7 +972,7 @@ export class SettingsManager {
 	}
 
 	getImageAutoResize(): boolean {
-		return this.settings.images?.autoResize ?? true;
+		return this.settings.images?.autoResize ?? DEFAULT_SETTINGS.images!.autoResize;
 	}
 
 	setImageAutoResize(enabled: boolean): void {
@@ -988,7 +985,7 @@ export class SettingsManager {
 	}
 
 	getBlockImages(): boolean {
-		return this.settings.images?.blockImages ?? false;
+		return this.settings.images?.blockImages ?? DEFAULT_SETTINGS.images!.blockImages;
 	}
 
 	setBlockImages(blocked: boolean): void {
@@ -1011,7 +1008,7 @@ export class SettingsManager {
 	}
 
 	getDoubleEscapeAction(): "fork" | "tree" | "none" {
-		return this.settings.doubleEscapeAction ?? "tree";
+		return this.settings.doubleEscapeAction ?? DEFAULT_SETTINGS.doubleEscapeAction!;
 	}
 
 	setDoubleEscapeAction(action: "fork" | "tree" | "none"): void {
@@ -1023,7 +1020,7 @@ export class SettingsManager {
 	getTreeFilterMode(): "default" | "no-tools" | "user-only" | "labeled-only" | "all" {
 		const mode = this.settings.treeFilterMode;
 		const valid = ["default", "no-tools", "user-only", "labeled-only", "all"];
-		return mode && valid.includes(mode) ? mode : "default";
+		return mode && valid.includes(mode) ? mode : DEFAULT_SETTINGS.treeFilterMode!;
 	}
 
 	setTreeFilterMode(mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all"): void {
@@ -1046,7 +1043,7 @@ export class SettingsManager {
 	}
 
 	getEditorPaddingX(): number {
-		return this.settings.editorPaddingX ?? 0;
+		return this.settings.editorPaddingX ?? DEFAULT_SETTINGS.editorPaddingX!;
 	}
 
 	setEditorPaddingX(padding: number): void {
@@ -1056,7 +1053,7 @@ export class SettingsManager {
 	}
 
 	getAutocompleteMaxVisible(): number {
-		return this.settings.autocompleteMaxVisible ?? 5;
+		return this.settings.autocompleteMaxVisible ?? DEFAULT_SETTINGS.autocompleteMaxVisible!;
 	}
 
 	setAutocompleteMaxVisible(maxVisible: number): void {
@@ -1066,11 +1063,11 @@ export class SettingsManager {
 	}
 
 	getCodeBlockIndent(): string {
-		return this.settings.markdown?.codeBlockIndent ?? "  ";
+		return this.settings.markdown?.codeBlockIndent ?? DEFAULT_SETTINGS.markdown!.codeBlockIndent;
 	}
 
 	getWarnings(): WarningSettings {
-		return { ...(this.settings.warnings ?? {}) };
+		return { ...DEFAULT_SETTINGS.warnings, ...this.settings.warnings };
 	}
 
 	setWarnings(warnings: WarningSettings): void {
