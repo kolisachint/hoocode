@@ -25,7 +25,7 @@ import {
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import type { ExtensionFactory } from "./core/extensions/types.js";
+import type { ExtensionAPI, ExtensionFactory } from "./core/extensions/types.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
@@ -535,9 +535,12 @@ export async function main(args: string[], options?: MainOptions) {
 		cliModePaths.length === 0
 			? []
 			: [
-					(pi) => {
-						for (const p of cliModePaths) pi.addModeSearchPath(p);
-					},
+					Object.assign(
+						(pi: ExtensionAPI) => {
+							for (const p of cliModePaths) pi.addModeSearchPath(p);
+						},
+						{ internal: true },
+					),
 				];
 	const allExtensionFactories: ExtensionFactory[] = [
 		...cliResourcePathFactories,

@@ -1396,7 +1396,11 @@ export interface ProviderModelConfig {
 }
 
 /** Extension factory function type. Supports both sync and async initialization. */
-export type ExtensionFactory = ((pi: ExtensionAPI) => void | Promise<void>) & { displayName?: string };
+export type ExtensionFactory = ((pi: ExtensionAPI) => void | Promise<void>) & {
+	displayName?: string;
+	/** Internal plumbing factory; excluded from the loaded resources listing. */
+	internal?: boolean;
+};
 
 // ============================================================================
 // Loaded Extension Types
@@ -1561,6 +1565,8 @@ export interface Extension {
 	path: string;
 	resolvedPath: string;
 	displayName?: string;
+	/** Internal plumbing extension; excluded from the loaded resources listing. */
+	internal?: boolean;
 	sourceInfo: SourceInfo;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool>;

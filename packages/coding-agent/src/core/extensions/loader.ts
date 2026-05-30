@@ -440,6 +440,7 @@ export async function loadExtensionFromFactory(
 		});
 	}
 	extension.displayName = displayName;
+	extension.internal = factory.internal === true;
 	const api = createExtensionAPI(extension, runtime, cwd, eventBus);
 	await factory(api);
 	return extension;
