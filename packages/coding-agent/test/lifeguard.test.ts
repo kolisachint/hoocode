@@ -1,9 +1,8 @@
-import assert from "node:assert";
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, it } from "node:test";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SubagentLifeguard } from "../src/core/lifeguard.js";
 
 describe("SubagentLifeguard", () => {
@@ -28,8 +27,8 @@ describe("SubagentLifeguard", () => {
 		writeFileSync(script, "setTimeout(() => {}, 10000)\n");
 		const proc = spawn(process.execPath, [script], { detached: true });
 		guard.monitor("t1", "explore", proc);
-		assert.strictEqual(guard.isMonitoring("t1"), true);
-		assert.ok(guard.lastHeartbeatAt("t1") !== null);
+		expect(guard.isMonitoring("t1")).toBe(true);
+		expect(guard.lastHeartbeatAt("t1")).not.toBeNull();
 		proc.kill("SIGKILL");
 	});
 
@@ -43,7 +42,7 @@ describe("SubagentLifeguard", () => {
 		// Simulate heartbeat
 		guard.recordHeartbeat("t1");
 		const after = guard.lastHeartbeatAt("t1")!;
-		assert.ok(after >= before);
+		expect(after).toBeGreaterThanOrEqual(before);
 		proc.kill("SIGKILL");
 	});
 
@@ -68,8 +67,8 @@ describe("SubagentLifeguard", () => {
 		// @ts-expect-error – accessing internal method for test
 		guard.checkHeartbeats();
 
-		assert.ok(stalledEvent);
-		assert.strictEqual(stalledEvent.task_id, "t1");
+		expect(stalledEvent).toBeDefined();
+		expect(stalledEvent?.task_id).toBe("t1");
 		proc.kill("SIGKILL");
 	});
 
@@ -101,8 +100,8 @@ describe("SubagentLifeguard", () => {
 		);
 
 		await new Promise((r) => setTimeout(r, 100));
-		assert.ok(timeoutEvent);
-		assert.strictEqual(timeoutEvent.task_id, "t1");
+		expect(timeoutEvent).toBeDefined();
+		expect(timeoutEvent?.task_id).toBe("t1");
 		proc.kill("SIGKILL");
 	});
 
@@ -113,13 +112,13 @@ describe("SubagentLifeguard", () => {
 		const proc = spawn(process.execPath, [script]);
 
 		guard.monitor("t1", "explore", proc);
-		assert.strictEqual(guard.isMonitoring("t1"), true);
+		expect(guard.isMonitoring("t1")).toBe(true);
 
 		await new Promise<void>((resolve) => {
 			proc.on("exit", () => {
 				// Give the lifeguard a tick to process the exit
 				setTimeout(() => {
-					assert.strictEqual(guard.isMonitoring("t1"), false);
+					expect(guard.isMonitoring("t1")).toBe(false);
 					resolve();
 				}, 50);
 			});
@@ -139,10 +138,10 @@ describe("SubagentLifeguard", () => {
 		const past = new Date(Date.now() - 25 * 60 * 60 * 1000); // 25 hours ago
 		utimesSync(oldDir, past, past);
 
-		assert.strictEqual(existsSync(oldDir), true);
+		expect(existsSync(oldDir)).toBe(true);
 		guard = new SubagentLifeguard(testCwd);
 		// Sweep runs synchronously in constructor
-		assert.strictEqual(existsSync(oldDir), false);
+		expect(existsSync(oldDir)).toBe(false);
 	});
 
 	it("does not sweep directories with running PIDs", () => {
@@ -158,9 +157,9 @@ describe("SubagentLifeguard", () => {
 		const past = new Date(Date.now() - 25 * 60 * 60 * 1000);
 		utimesSync(oldFile, past, past);
 
-		assert.strictEqual(existsSync(oldDir), true);
+		expect(existsSync(oldDir)).toBe(true);
 		guard = new SubagentLifeguard(testCwd);
-		assert.strictEqual(existsSync(oldDir), true);
+		expect(existsSync(oldDir)).toBe(true);
 	});
 
 	it("dispose kills all monitored processes", () => {
@@ -170,6 +169,6 @@ describe("SubagentLifeguard", () => {
 		const proc = spawn(process.execPath, [script], { detached: true });
 		guard.monitor("t1", "explore", proc);
 		guard.dispose();
-		assert.strictEqual(guard.isMonitoring("t1"), false);
+		expect(guard.isMonitoring("t1")).toBe(false);
 	});
 });

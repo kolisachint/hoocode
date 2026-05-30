@@ -86,10 +86,18 @@ export interface SubagentToolDetails {
 	inline?: boolean;
 }
 
-/** First line of the task, trimmed to a short summary for the task list/footer. */
+/**
+ * A short, human-readable task name for the task panel: the first line of the
+ * task limited to ~4–8 words so it stays glanceable in the pane. A character cap
+ * guards against a single very long word.
+ */
 function summarize(task: string): string {
-	const firstLine = task.trim().split("\n")[0] ?? "";
-	return firstLine.length > 60 ? `${firstLine.slice(0, 57)}...` : firstLine || "(task)";
+	const firstLine = (task.trim().split("\n")[0] ?? "").trim();
+	if (!firstLine) return "(task)";
+	const words = firstLine.split(/\s+/);
+	let name = words.length > 8 ? `${words.slice(0, 8).join(" ")}…` : firstLine;
+	if (name.length > 60) name = `${name.slice(0, 59)}…`;
+	return name;
 }
 
 /** Quick check: should this task go to a subagent? */
@@ -168,8 +176,8 @@ export function createSubagentToolDefinition(): ToolDefinition {
 				}
 
 				// Leave the task in the store with its final status. It stays visible in
-				// the task panel until the main agent moves on (retireFinished is called
-				// when the main agent starts its next turn).
+				// the task panel until the next user message arrives (retireFinished is
+				// called when the user starts the next turn).
 				taskStore.update(task.id, { status: "done", usage: result.usage });
 				return {
 					content: [{ type: "text", text: result.answer || "(subagent returned no output)" }],

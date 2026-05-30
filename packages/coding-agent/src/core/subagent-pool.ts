@@ -334,6 +334,9 @@ export class SubagentPool extends EventEmitter {
 			this.waiters.delete(task_id);
 		}
 		this.completed.clear();
+		for (const budget of this.budgets.values()) {
+			budget.removeAllListeners();
+		}
 		this.budgets.clear();
 		this.killReasons.clear();
 		this.taskStatus.clear();
@@ -443,7 +446,6 @@ export class SubagentPool extends EventEmitter {
 
 		let stdout = "";
 		let stderr = "";
-		let budgetExceeded = false;
 
 		proc.stdout?.on("data", (data: Buffer) => {
 			const chunk = data.toString();
@@ -468,10 +470,6 @@ export class SubagentPool extends EventEmitter {
 			stderr += data.toString();
 		});
 
-		budget.once("budget_exceeded", () => {
-			budgetExceeded = true;
-		});
-
 		waitForChildProcess(proc)
 			.then((code) => {
 				this.slots.delete(task.task_id);
@@ -482,6 +480,7 @@ export class SubagentPool extends EventEmitter {
 
 				const duration = Date.now() - slot.spawned_at;
 				const tokens_used = budget.getUsed();
+				const budgetExceeded = budget.isExceeded();
 
 				// If killed by lifeguard, override exit handling
 				if (killReason === "stalled" || killReason === "timeout") {
@@ -605,6 +604,7 @@ export class SubagentPool extends EventEmitter {
 				this.resolveWaiter(task.task_id, result);
 			})
 			.finally(() => {
+				budget.removeAllListeners();
 				this.budgets.delete(task.task_id);
 				this.pull();
 			});

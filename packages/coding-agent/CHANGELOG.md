@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Task panel: subagent task titles are now limited to ~4–8 words so they stay legible in the pane.
+- Task panel: finished tasks show combined token usage and elapsed time (`tokens · time`).
+- Task panel: header shows a per-turn token + cost delta (`turn ↑in ↓out $cost`) summed across the turn's tasks.
+- Task panel: the `[mode]` tag (e.g. `[explore]`) is no longer shown per row — the task title is the meaningful label.
+- Finished subagent tasks now persist in the task panel until the next user message, instead of retiring when the main agent starts its next turn.
+
 ## [0.4.10] - 2026-05-30
 
 ## [0.4.8] - 2026-05-30

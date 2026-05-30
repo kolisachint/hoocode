@@ -76,8 +76,9 @@ class TaskStore {
 	/**
 	 * Remove all finished tasks (done or failed), keeping pending/in_progress ones.
 	 *
-	 * Called when the main agent moves on after a parallel subagent spawn: finished
-	 * tasks stay visible (with their final status) until that point, then retire.
+	 * Called when a new user message arrives: finished subagent tasks stay visible
+	 * (with their final status) for the whole turn and only retire when the user
+	 * starts the next turn, so their outcome remains glanceable until then.
 	 */
 	retireFinished(): void {
 		const before = this.tasks.length;

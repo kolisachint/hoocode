@@ -34,10 +34,26 @@ function formatElapsed(task: Task): string {
 	return `${mins}m${rem.toString().padStart(2, "0")}s`;
 }
 
+/** Sum the token + cost usage reported by the tasks shown this turn. */
+function sumTurnUsage(tasks: readonly Task[]): { input: number; output: number; cost: number } | null {
+	let input = 0;
+	let output = 0;
+	let cost = 0;
+	for (const task of tasks) {
+		if (!task.usage) continue;
+		input += task.usage.input;
+		output += task.usage.output;
+		cost += task.usage.cost;
+	}
+	if (input === 0 && output === 0 && cost === 0) return null;
+	return { input, output, cost };
+}
+
 /**
- * Ledger header: a watched/reviewed stamp on the left, the done/total count on
- * the right. The panel is an audit trail — the stamp makes the deterministic
- * "every task watched & reviewed" state glanceable.
+ * Ledger header: a watched/reviewed stamp plus done/total count on the left, and
+ * the per-turn token + cost delta (summed across the tasks below) on the right.
+ * The panel is an audit trail — the stamp makes the deterministic "every task
+ * watched & reviewed" state glanceable, and the delta surfaces what the turn cost.
  */
 function formatHeader(tasks: readonly Task[], width: number): string {
 	const total = tasks.length;
@@ -50,14 +66,33 @@ function formatHeader(tasks: readonly Task[], width: number): string {
 		: theme.fg("success", "reviewed ✓") + theme.fg("dim", " · deterministic");
 
 	const countPlain = `${done}/${total} done`;
-	const count = theme.fg("dim", countPlain);
+	const leftPlain = `${stampPlain}  ${countPlain}`;
+	const left = `${stamp}  ${theme.fg("dim", countPlain)}`;
 
-	const pad = Math.max(2, width - visibleWidth(stampPlain) - visibleWidth(countPlain));
-	if (visibleWidth(stampPlain) + 2 + visibleWidth(countPlain) > width) {
-		// Too narrow for both — keep just the stamp.
-		return stamp;
+	const turn = sumTurnUsage(tasks);
+	if (!turn) {
+		return truncateToWidth(left, width, "…");
 	}
-	return stamp + " ".repeat(pad) + count;
+
+	// Cost is omitted when zero (e.g. subscription/untracked) — still show tokens.
+	const showCost = turn.cost > 0;
+	const costPlain = showCost ? ` $${turn.cost.toFixed(3)}` : "";
+	const turnPlain = `turn ↑${formatTokens(turn.input)} ↓${formatTokens(turn.output)}${costPlain}`;
+	let turnText =
+		theme.fg("dim", "turn ↑") +
+		theme.bold(formatTokens(turn.input)) +
+		theme.fg("dim", " ↓") +
+		theme.bold(formatTokens(turn.output));
+	if (showCost) {
+		turnText += theme.fg("dim", " ") + theme.bold(`$${turn.cost.toFixed(3)}`);
+	}
+
+	if (visibleWidth(leftPlain) + 2 + visibleWidth(turnPlain) > width) {
+		// Too narrow for both — keep the stamp + count.
+		return truncateToWidth(left, width, "…");
+	}
+	const pad = Math.max(2, width - visibleWidth(leftPlain) - visibleWidth(turnPlain));
+	return left + " ".repeat(pad) + turnText;
 }
 
 function formatTokens(count: number): string {
@@ -69,19 +104,17 @@ function formatTokens(count: number): string {
 
 function formatTaskLine(task: Task, width: number): string {
 	const icon = theme.fg(taskStatusColor(task.status), TASK_STATUS_ICON[task.status]);
-	const modeTag = task.subagentMode ? theme.fg("accent", ` [${task.subagentMode}]`) : "";
-	const plainModeTag = task.subagentMode ? ` [${task.subagentMode}]` : "";
 	const idLabel = `#${task.id}`;
 	const title = task.title;
 
-	// Finished tasks carry an audit stamp: tokens + elapsed time.
+	// Finished tasks carry an audit stamp: total tokens used + elapsed time.
 	const settled = task.status === "done" || task.status === "failed";
 	let rightPlain = "";
 	if (settled) {
 		const parts: string[] = [];
 		if (task.usage) {
-			if (task.usage.input) parts.push(`↑${formatTokens(task.usage.input)}`);
-			if (task.usage.output) parts.push(`↓${formatTokens(task.usage.output)}`);
+			const total = task.usage.input + task.usage.output;
+			if (total > 0) parts.push(formatTokens(total));
 		}
 		parts.push(formatElapsed(task));
 		rightPlain = parts.join(" · ");
@@ -89,9 +122,9 @@ function formatTaskLine(task: Task, width: number): string {
 	const rightWidth = rightPlain ? visibleWidth(rightPlain) + 1 : 0;
 	const leftWidth = Math.max(0, width - rightWidth);
 
-	const plainText = `${TASK_STATUS_ICON[task.status]} ${idLabel} ${title}${plainModeTag}`;
+	const plainText = `${TASK_STATUS_ICON[task.status]} ${idLabel} ${title}`;
 	const available = Math.max(0, leftWidth - visibleWidth(plainText) + visibleWidth(title));
-	const left = truncateToWidth(`${icon} ${idLabel} ${title}`, available, "...") + modeTag;
+	const left = truncateToWidth(`${icon} ${idLabel} ${title}`, available, "…");
 
 	if (!rightPlain) return left;
 
@@ -104,10 +137,11 @@ function formatTaskLine(task: Task, width: number): string {
  *
  * - A ledger header (watched/reviewed stamp + done/total count) tops the list.
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
+ * - Subagent mode is intentionally NOT shown here (e.g. no "[explore]" tag) — the
+ *   task title is the meaningful label; the mode adds noise in the pane.
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
- * - Finished tasks carry their wall-clock cost and retire only when the main
- *   agent moves on after a parallel subagent spawn (see taskStore.retireFinished()),
- *   not the moment they finish.
+ * - Finished tasks carry their wall-clock cost and stay visible until the next
+ *   user message arrives (see taskStore.retireFinished()), not the moment they finish.
  * - Collapses to zero lines when there are no tasks.
  */
 export class TaskPanelComponent implements Component {

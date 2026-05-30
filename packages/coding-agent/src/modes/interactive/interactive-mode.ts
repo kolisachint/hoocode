@@ -2758,13 +2758,15 @@ export class InteractiveMode {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
+					// A new user message starts a new turn: retire any finished subagent
+					// tasks from the previous turn. Finished tasks stay visible (with their
+					// final status, tokens, and time) until this point — not the moment they
+					// finish — so their outcome remains glanceable for the whole turn.
+					taskStore.retireFinished();
 					this.addMessageToChat(event.message);
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
-					// Main agent is moving on to its next turn: retire any finished subagent
-					// tasks that were kept visible after a parallel spawn.
-					taskStore.retireFinished();
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,

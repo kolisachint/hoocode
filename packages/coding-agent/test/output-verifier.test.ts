@@ -1,8 +1,7 @@
-import assert from "node:assert";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import { CONFIG_DIR_NAME } from "../src/config.js";
 import { OutputVerifier } from "../src/core/output-verifier.js";
 
@@ -17,7 +16,7 @@ function createResultJson(task_id: string, cwd: string, content: Record<string, 
 describe("OutputVerifier", () => {
 	describe("verify", () => {
 		it("returns valid for a correct result.json", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("task-1", testCwd, {
 				summary: "All files updated successfully",
@@ -27,51 +26,51 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("task-1");
-			assert.strictEqual(result.valid, true);
-			assert.strictEqual(result.reason, undefined);
+			expect(result.valid).toBe(true);
+			expect(result.reason).toBeUndefined();
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when result.json does not exist", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 
 			const result = verifier.verify("missing-task");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("not found"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("not found");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when result.json contains invalid JSON", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			const dir = join(testCwd, CONFIG_DIR_NAME, "agents", "bad-json");
 			mkdirSync(dir, { recursive: true });
 			writeFileSync(join(dir, "result.json"), "not json");
 
 			const result = verifier.verify("bad-json");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("Invalid JSON"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("Invalid JSON");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when result.json is not an object", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("not-obj", testCwd, "string" as unknown as Record<string, unknown>);
 
 			const result = verifier.verify("not-obj");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("not an object"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("not an object");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when summary is missing", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("no-summary", testCwd, {
 				files_changed: [],
@@ -80,14 +79,14 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("no-summary");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("summary"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("summary");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when summary is empty", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("empty-summary", testCwd, {
 				summary: "   ",
@@ -97,14 +96,14 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("empty-summary");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("Empty"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("Empty");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when files_changed is missing", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("no-files", testCwd, {
 				summary: "Done",
@@ -113,14 +112,14 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("no-files");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("files_changed"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("files_changed");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when files_changed contains non-strings", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("bad-files", testCwd, {
 				summary: "Done",
@@ -130,14 +129,14 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("bad-files");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("Non-string"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("Non-string");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when confidence is missing", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("no-confidence", testCwd, {
 				summary: "Done",
@@ -146,14 +145,14 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("no-confidence");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("confidence"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("confidence");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when confidence is below 0.5", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("low-confidence", testCwd, {
 				summary: "Done",
@@ -163,15 +162,15 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("low-confidence");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("0.3"));
-			assert.ok(result.reason?.includes("0.5"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("0.3");
+			expect(result.reason).toContain("0.5");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("passes when confidence is exactly 0.5", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("exact-confidence", testCwd, {
 				summary: "Done",
@@ -181,13 +180,13 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("exact-confidence");
-			assert.strictEqual(result.valid, true);
+			expect(result.valid).toBe(true);
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when status is missing", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("no-status", testCwd, {
 				summary: "Done",
@@ -196,14 +195,14 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("no-status");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("status"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("status");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("fails when status is invalid", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("bad-status", testCwd, {
 				summary: "Done",
@@ -213,14 +212,14 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("bad-status");
-			assert.strictEqual(result.valid, false);
-			assert.ok(result.reason?.includes("Invalid status"));
+			expect(result.valid).toBe(false);
+			expect(result.reason).toContain("Invalid status");
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("passes for status 'partial'", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("partial", testCwd, {
 				summary: "Some changes applied",
@@ -230,13 +229,13 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("partial");
-			assert.strictEqual(result.valid, true);
+			expect(result.valid).toBe(true);
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("passes for status 'failed'", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
 			createResultJson("failed", testCwd, {
 				summary: "Could not apply changes",
@@ -246,13 +245,13 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("failed");
-			assert.strictEqual(result.valid, true);
+			expect(result.valid).toBe(true);
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});
 
 		it("accepts a cwd override", () => {
-			const testCwd = join(tmpdir(), `hoocode-test-${Date.now()}`);
+			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier("/nonexistent");
 			createResultJson("override", testCwd, {
 				summary: "Done",
@@ -262,7 +261,7 @@ describe("OutputVerifier", () => {
 			});
 
 			const result = verifier.verify("override", testCwd);
-			assert.strictEqual(result.valid, true);
+			expect(result.valid).toBe(true);
 
 			rmSync(testCwd, { recursive: true, force: true });
 		});

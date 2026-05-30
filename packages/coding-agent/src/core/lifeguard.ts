@@ -34,6 +34,7 @@ export class SubagentLifeguard extends EventEmitter {
 	private checkInterval: NodeJS.Timeout | null = null;
 	private disposed = false;
 	private readonly cwd: string;
+	private parentShutdownHandler?: () => void;
 
 	constructor(cwd: string) {
 		super();
@@ -105,6 +106,11 @@ export class SubagentLifeguard extends EventEmitter {
 		this.processes.clear();
 		this.lastHeartbeat.clear();
 		this.removeAllListeners();
+
+		if (this.parentShutdownHandler) {
+			process.removeListener("SIGINT", this.parentShutdownHandler);
+			process.removeListener("SIGTERM", this.parentShutdownHandler);
+		}
 	}
 
 	private checkHeartbeats(): void {
@@ -155,6 +161,7 @@ export class SubagentLifeguard extends EventEmitter {
 
 	private setupParentExitHandlers(): void {
 		const shutdown = () => this.gracefulShutdown();
+		this.parentShutdownHandler = shutdown;
 		process.setMaxListeners(Math.max(process.getMaxListeners(), 20));
 		process.once("SIGINT", shutdown);
 		process.once("SIGTERM", shutdown);
