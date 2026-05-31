@@ -23,6 +23,8 @@ export interface Args {
 	noSession?: boolean;
 	/** Internal: task id assigned by SubagentPool when this process is a spawned subagent. */
 	taskId?: string;
+	/** Hard cap on assistant turns. Near the cap the agent is asked to wrap up; at the cap it is stopped. */
+	maxTurns?: number;
 	session?: string;
 	fork?: string;
 	sessionDir?: string;
@@ -95,6 +97,11 @@ export function parseArgs(args: string[]): Args {
 			result.noSession = true;
 		} else if (arg === "--task-id" && i + 1 < args.length) {
 			result.taskId = args[++i];
+		} else if (arg === "--max-turns" && i + 1 < args.length) {
+			const n = Number.parseInt(args[++i], 10);
+			if (Number.isInteger(n) && n > 0) {
+				result.maxTurns = n;
+			}
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
 		} else if (arg === "--fork" && i + 1 < args.length) {
@@ -239,6 +246,8 @@ ${chalk.bold("Options:")}
   --no-builtin-tools, -nbt       Disable built-in tools by default but keep extension/custom tools enabled
   --tools, -t <tools>            Comma-separated allowlist of tool names to enable
                                  Applies to built-in, extension, and custom tools
+  --max-turns <n>                Hard cap on assistant turns; the agent is asked to wrap up near the
+                                 cap and stopped at it (mainly used for spawned subagents)
   --subagent                     Enable the subagent tool (delegate tasks to isolated agent loops)
                                  Also enablable via the "enableSubagent" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh

@@ -2,8 +2,10 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { getDispatchTaskDir } from "../config.js";
 import { waitForChildProcess } from "../utils/child-process.js";
+import { MODEL_INHERIT } from "./agent-frontmatter.js";
+import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
@@ -19,6 +21,12 @@ export interface SubagentPoolTask {
 	cwd?: string;
 	model?: string;
 	provider?: string;
+	/**
+	 * Explicit session file for the child to persist/continue. When omitted the
+	 * child uses its own dispatch dir (`<dispatch>/<task_id>/session.jsonl`).
+	 * Resume reuses the original task's session file to continue the transcript.
+	 */
+	sessionFile?: string;
 }
 
 export interface SubagentSlot {
@@ -59,14 +67,17 @@ export interface TaskResult {
 }
 
 export interface DispatchOptions {
-	/** Skip evaluation and force this agent type (user/explicit override). */
-	forceAgent?: SubagentMode;
+	/** Skip evaluation and force this agent type (user/explicit override).
+	 *  Accepts any registry-defined agent name, not just the built-in modes. */
+	forceAgent?: SubagentMode | string;
 	/** Context distilled from the calling agent, passed to the subagent. */
 	context?: string;
 	/** Model id for the subagent (defaults to the child's configured default). */
 	model?: string;
 	/** Provider for the subagent. */
 	provider?: string;
+	/** Explicit session file to persist/continue (used by resume). */
+	sessionFile?: string;
 }
 
 export interface SubagentPoolOptions {
@@ -85,6 +96,13 @@ export interface SubagentPoolOptions {
 }
 
 /**
+ * Default hard cap on assistant turns for a spawned subagent when its definition
+ * does not set `maxTurns`. The token budget is advisory (it warns but never
+ * kills), so this turn cap is the guaranteed hard stop for every subagent.
+ */
+export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
+
+/**
  * Pool for running hoocode subagents as child processes with bounded concurrency,
  * FIFO queuing with priority support, and automatic slot refill.
  *
@@ -93,7 +111,8 @@ export interface SubagentPoolOptions {
  * - "task_failed"  – task failed (spawn error, bad exit code, verification failure)
  * - "task_stalled" – heartbeat missed for 60s, process was SIGKILLed
  * - "task_timeout" – hard timeout exceeded, process was SIGKILLed
- * - "budget_warning" – token usage crossed 80% threshold
+ * - "budget_warning" – token usage crossed 80% threshold (advisory)
+ * - "budget_exceeded" – token usage crossed 100% threshold (advisory; never kills)
  */
 export class SubagentPool extends EventEmitter {
 	private readonly maxConcurrency: number;
@@ -111,6 +130,8 @@ export class SubagentPool extends EventEmitter {
 	private verifier = new OutputVerifier();
 	private lifeguard: SubagentLifeguard;
 	private disposed = false;
+	/** Lazily-loaded agent registry (frontmatter definitions) for this pool's cwd. */
+	private registry?: AgentRegistry;
 	/** Tracks why a task was killed (stalled / timeout) before exit handler fires. */
 	private killReasons = new Map<string, "stalled" | "timeout">();
 	/** Persistent terminal status map, survives wait_for consumption. */
@@ -134,6 +155,14 @@ export class SubagentPool extends EventEmitter {
 			this.killReasons.set(data.task_id, "timeout");
 			this.emit("task_timeout", data);
 		});
+	}
+
+	/** Lazily load the agent registry for this pool's cwd. */
+	private getRegistry(): AgentRegistry {
+		if (!this.registry) {
+			this.registry = loadAgentRegistry({ cwd: this.cwd });
+		}
+		return this.registry;
 	}
 
 	/** Priority value: higher numbers run first. */
@@ -228,8 +257,50 @@ export class SubagentPool extends EventEmitter {
 		if (this.disposed) {
 			return Promise.reject(new Error("SubagentPool has been disposed"));
 		}
+		const begin = this.beginDispatch(task, options);
+		if (begin.handled_inline) {
+			return { handled_inline: true, reason: begin.reason };
+		}
+		const result = await this.wait_for(begin.task_id);
+		return {
+			handled_inline: false,
+			task_id: begin.task_id,
+			agent_type: begin.agent_type,
+			reason: begin.reason,
+			result,
+			duration: Date.now() - begin.startTime,
+		};
+	}
 
-		const { forceAgent, context, model, provider } = options;
+	/**
+	 * Fire-and-forget dispatch for background agents. Spawns the subagent and
+	 * returns its handle immediately; the caller polls get_status()/collect().
+	 */
+	dispatchDetached(
+		task: string,
+		options: DispatchOptions = {},
+	): { handled_inline: boolean; task_id?: string; agent_type?: string; reason?: string } {
+		if (this.disposed) {
+			throw new Error("SubagentPool has been disposed");
+		}
+		const begin = this.beginDispatch(task, options);
+		if (begin.handled_inline) {
+			return { handled_inline: true, reason: begin.reason };
+		}
+		return { handled_inline: false, task_id: begin.task_id, agent_type: begin.agent_type, reason: begin.reason };
+	}
+
+	/**
+	 * Evaluate, log, and spawn a task without waiting. Shared by dispatch()
+	 * (blocking) and dispatchDetached() (background).
+	 */
+	private beginDispatch(
+		task: string,
+		options: DispatchOptions,
+	):
+		| { handled_inline: true; reason?: string }
+		| { handled_inline: false; task_id: string; agent_type: string; reason?: string; startTime: number } {
+		const { forceAgent, context, model, provider, sessionFile } = options;
 		const evaluator = new DispatchEvaluator();
 		const analysis = evaluator.evaluate(task);
 
@@ -237,15 +308,14 @@ export class SubagentPool extends EventEmitter {
 			return { handled_inline: true, reason: analysis.reason };
 		}
 
-		const agent_type: SubagentMode = forceAgent ?? (analysis.agent_type as SubagentMode) ?? "explore";
+		const agent_type: SubagentMode | string = forceAgent ?? (analysis.agent_type as SubagentMode) ?? "explore";
 		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const reason = forceAgent ? "user_override" : analysis.reason;
 		const complexity = analysis.estimated_complexity;
 
 		// Pre-dispatch logging. Use stderr: stdout is reserved for the JSON event
 		// stream / TUI render and must not be polluted.
-		const logLine = `[DISPATCH] agent=${agent_type} reason=${reason} complexity=${complexity} task_id=${task_id}`;
-		console.error(logLine);
+		console.error(`[DISPATCH] agent=${agent_type} reason=${reason} complexity=${complexity} task_id=${task_id}`);
 		this.writeDispatchLog(task_id, agent_type, reason, complexity, task);
 
 		const poolTask: SubagentPoolTask = {
@@ -255,22 +325,59 @@ export class SubagentPool extends EventEmitter {
 			context,
 			model,
 			provider,
+			sessionFile,
 			cwd: this.cwd,
 		};
-
 		const startTime = Date.now();
 		this.spawn(poolTask);
-		const result = await this.wait_for(task_id);
-		const duration = Date.now() - startTime;
+		return { handled_inline: false, task_id, agent_type, reason, startTime };
+	}
 
-		return {
-			handled_inline: false,
-			task_id,
-			agent_type,
-			reason,
-			result,
-			duration,
-		};
+	/**
+	 * Non-destructively read a completed task's result (for background polling).
+	 * Returns undefined while the task is still running/queued, or if its result
+	 * was already consumed via wait_for().
+	 */
+	collect(task_id: string): SubagentResult | undefined {
+		return this.completed.get(task_id);
+	}
+
+	/** Absolute path of the persisted session file for a task. */
+	getSessionFile(task_id: string, cwd: string = this.cwd): string {
+		return join(getDispatchTaskDir(cwd, task_id), "session.jsonl");
+	}
+
+	/**
+	 * Resume a previously dispatched subagent, continuing its persisted session
+	 * with a follow-up prompt. Recovers the original agent type from its dispatch
+	 * log. Rejects if no resumable session exists for the task.
+	 */
+	async resume(
+		task_id: string,
+		prompt: string,
+		options: Omit<DispatchOptions, "forceAgent" | "sessionFile"> = {},
+	): Promise<TaskResult> {
+		if (this.disposed) {
+			return Promise.reject(new Error("SubagentPool has been disposed"));
+		}
+		const sessionFile = this.getSessionFile(task_id);
+		if (!existsSync(sessionFile)) {
+			return Promise.reject(new Error(`No resumable session for task "${task_id}" (expected ${sessionFile}).`));
+		}
+		const agent_type = this.readDispatchAgentType(task_id) ?? "explore";
+		return this.dispatch(prompt, { ...options, forceAgent: agent_type, sessionFile });
+	}
+
+	/** Recover the agent type a task was dispatched with, from its dispatch log. */
+	private readDispatchAgentType(task_id: string): string | undefined {
+		const path = join(getDispatchTaskDir(this.cwd, task_id), "dispatch-log.json");
+		if (!existsSync(path)) return undefined;
+		try {
+			const parsed = JSON.parse(readFileSync(path, "utf-8")) as { agent_type?: string };
+			return typeof parsed.agent_type === "string" ? parsed.agent_type : undefined;
+		} catch {
+			return undefined;
+		}
 	}
 
 	/**
@@ -309,7 +416,7 @@ export class SubagentPool extends EventEmitter {
 			complexity,
 			task,
 		};
-		const path = join(this.cwd, CONFIG_DIR_NAME, "agents", task_id, "dispatch-log.json");
+		const path = join(getDispatchTaskDir(this.cwd, task_id), "dispatch-log.json");
 		try {
 			mkdirSync(dirname(path), { recursive: true });
 			writeFileSync(path, JSON.stringify(log, null, 2));
@@ -330,7 +437,7 @@ export class SubagentPool extends EventEmitter {
 			budget_exceeded: result.budget_exceeded,
 			result_data: result.result_data,
 		};
-		const path = join(this.cwd, CONFIG_DIR_NAME, "agents", task_id, "output.json");
+		const path = join(getDispatchTaskDir(this.cwd, task_id), "output.json");
 		try {
 			mkdirSync(dirname(path), { recursive: true });
 			writeFileSync(path, JSON.stringify(output, null, 2));
@@ -377,29 +484,61 @@ export class SubagentPool extends EventEmitter {
 
 	/** Build CLI arguments for a task. */
 	private buildArgs(task: SubagentPoolTask): string[] {
-		const args: string[] = [...this.prefixArgs, "--mode", "json", "--no-session", "--task-id", task.task_id];
+		// Persist the child's session so a finished/interrupted subagent can be
+		// resumed later (see resume()). SessionManager.open() creates the file on
+		// first run and continues it on subsequent runs.
+		const sessionFile = task.sessionFile ?? this.getSessionFile(task.task_id, task.cwd ?? this.cwd);
+		const args: string[] = [
+			...this.prefixArgs,
+			"--mode",
+			"json",
+			"--session",
+			sessionFile,
+			"--task-id",
+			task.task_id,
+		];
+
+		// Prefer the data-driven agent definition from the registry; fall back to the
+		// built-in mode prompt/allowlist for legacy modes not present in the registry.
+		const def = task.agent_type ? this.getRegistry().get(task.agent_type) : undefined;
 
 		if (task.agent_type) {
-			try {
-				const mode = task.agent_type as SubagentMode;
-				const systemPrompt = getSubagentSystemPrompt(mode);
-				args.push("--system-prompt", systemPrompt);
-				// Enforce the per-mode tool allowlist so read-only modes cannot edit/write.
-				const tools = MODE_TOOLS[mode];
-				if (tools) {
-					args.push("--tools", tools.join(","));
+			const mode = task.agent_type as SubagentMode;
+			let systemPrompt = def?.prompt;
+			if (!systemPrompt) {
+				try {
+					systemPrompt = getSubagentSystemPrompt(mode);
+				} catch {
+					systemPrompt = undefined;
 				}
-			} catch {
-				// Unknown mode, skip custom system prompt
+			}
+			if (systemPrompt) {
+				args.push("--system-prompt", systemPrompt);
+			}
+			// Tool allowlist: prefer the definition's normalized allowlist. When the
+			// definition omits tools (inherit-all) but the agent maps to a built-in
+			// mode, fall back to MODE_TOOLS to preserve the read-only sandbox.
+			const tools = def?.tools ?? MODE_TOOLS[mode];
+			if (tools && tools.length > 0) {
+				args.push("--tools", tools.join(","));
 			}
 		}
 
-		if (task.model) {
-			args.push("--model", task.model);
+		// Model precedence: a definition's explicit model wins (unless it is the
+		// `inherit` sentinel), otherwise use the caller-provided model.
+		const explicitModel = def?.model && def.model !== MODEL_INHERIT ? def.model : undefined;
+		const modelToUse = explicitModel ?? task.model;
+		if (modelToUse) {
+			args.push("--model", modelToUse);
 		}
 		if (task.provider) {
 			args.push("--provider", task.provider);
 		}
+
+		// Always give subagents a hard turn cap. With the token budget now advisory
+		// (warn-only), this is the guaranteed hard stop for a runaway subagent.
+		const maxTurns = def?.maxTurns && def.maxTurns > 0 ? def.maxTurns : DEFAULT_SUBAGENT_MAX_TURNS;
+		args.push("--max-turns", String(maxTurns));
 
 		const prompt = task.context?.trim()
 			? `Context from the calling agent:\n\n${task.context.trim()}\n\nTask: ${task.task.trim()}`
@@ -422,11 +561,11 @@ export class SubagentPool extends EventEmitter {
 			budget.on("budget_warning", (data: { task_id: string; message: string; used: number; limit: number }) => {
 				this.emit("budget_warning", data);
 			});
-			budget.on("budget_exceeded", () => {
-				const slot = this.slots.get(task.task_id);
-				if (slot && !slot.process.killed) {
-					slot.process.kill("SIGTERM");
-				}
+			// The token budget is advisory: surface telemetry but never kill. The
+			// guaranteed hard stop is the per-subagent turn cap (--max-turns); see
+			// DEFAULT_SUBAGENT_MAX_TURNS.
+			budget.on("budget_exceeded", (data: { task_id: string; used: number; limit: number }) => {
+				this.emit("budget_exceeded", data);
 			});
 			this.budgets.set(task.task_id, budget);
 		}
@@ -536,37 +675,14 @@ export class SubagentPool extends EventEmitter {
 
 				const result: SubagentResult = {
 					task_id: task.task_id,
-					ok: code === 0 && !budgetExceeded,
+					ok: code === 0,
 					stdout,
 					stderr,
 					exit_code: code,
+					// Advisory telemetry only: exceeding the budget never fails the task.
 					budget_exceeded: budgetExceeded,
-					status: code === 0 && !budgetExceeded ? "complete" : "failed",
+					status: code === 0 ? "complete" : "failed",
 				};
-
-				if (budgetExceeded) {
-					// Force-return whatever exists in result.json, mark partial
-					const resultData = this.tryReadResultJson(task.task_id, task.cwd ?? this.cwd);
-					result.status = resultData ? "partial" : "failed";
-					result.result_data = resultData;
-					if (resultData) {
-						result.ok = true; // partial is considered success with data
-					} else {
-						// Hard-stopped before any result.json was written. Surface a clear,
-						// actionable reason instead of letting callers report "unknown error".
-						result.error = `Token budget exceeded (used ${tokens_used} of ${budget.getLimit()}) before the subagent produced a result. Narrow the task scope or raise the budget for ${task.agent_type} subagents.`;
-					}
-					this.writeOutputJson(task.task_id, result);
-					this.emit(resultData ? "task_done" : "task_failed", {
-						task_id: task.task_id,
-						agent_type: task.agent_type,
-						duration,
-						tokens_used,
-						...(resultData ? { status: "partial" } : { error: result.error }),
-					});
-					this.resolveWaiter(task.task_id, result);
-					return;
-				}
 
 				if (result.ok) {
 					const verification = this.verifier.verify(task.task_id, task.cwd ?? this.cwd);
@@ -649,7 +765,7 @@ export class SubagentPool extends EventEmitter {
 	}
 
 	private tryReadResultJson(task_id: string, cwd: string): Record<string, unknown> | undefined {
-		const path = join(cwd, CONFIG_DIR_NAME, "agents", task_id, "result.json");
+		const path = join(getDispatchTaskDir(cwd, task_id), "result.json");
 		if (!existsSync(path)) return undefined;
 		try {
 			const raw = readFileSync(path, "utf-8");

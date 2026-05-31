@@ -1,7 +1,7 @@
 /**
  * Integration coverage for the spawned-subagent protocol the pool depends on:
  *
- * - the child writes its own `.hoocode/agents/<task_id>/result.json` (the real
+ * - the child writes its own `.hoocode/dispatch/<task_id>/result.json` (the real
  *   round-trip, not a test-prewritten file), and the pool verifies + surfaces it;
  * - the child emits `{"ping":true}` heartbeats on stdout, which the pool parses
  *   and forwards to the lifeguard's recordHeartbeat.
@@ -39,7 +39,7 @@ process.stdout.write(
 );
 
 // The subagent writes its own audit file, exactly as print-mode does for real.
-const resultDir = join(process.cwd(), ".hoocode", "agents", taskId);
+const resultDir = join(process.cwd(), ".hoocode", "dispatch", taskId);
 mkdirSync(resultDir, { recursive: true });
 writeFileSync(
 	join(resultDir, "result.json"),

@@ -2,7 +2,7 @@ import type { ChildProcess } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, readdirSync, readFileSync, rmdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { getDispatchRoot } from "../config.js";
 
 const TIMEOUTS_MS: Record<string, number> = {
 	explore: 5 * 60 * 1000,
@@ -186,14 +186,14 @@ export class SubagentLifeguard extends EventEmitter {
 	}
 
 	private sweepOldAgents(): void {
-		const agentsDir = join(this.cwd, CONFIG_DIR_NAME, "agents");
-		if (!existsSync(agentsDir)) return;
+		const dispatchDir = getDispatchRoot(this.cwd);
+		if (!existsSync(dispatchDir)) return;
 
 		const now = Date.now();
 		const cutoff = 24 * 60 * 60 * 1000; // 24 hours
 
-		for (const entry of readdirSync(agentsDir)) {
-			const entryPath = join(agentsDir, entry);
+		for (const entry of readdirSync(dispatchDir)) {
+			const entryPath = join(dispatchDir, entry);
 			try {
 				const stats = statSync(entryPath);
 				if (!stats.isDirectory()) continue;

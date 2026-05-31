@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { getDispatchTaskDir } from "../config.js";
 
 export interface VerificationResult {
 	valid: boolean;
@@ -25,7 +25,7 @@ export class OutputVerifier {
 	 */
 	verify(task_id: string, cwd?: string): VerificationResult {
 		const base = cwd ?? this.defaultCwd;
-		const path = join(base, CONFIG_DIR_NAME, "agents", task_id, "result.json");
+		const path = join(getDispatchTaskDir(base, task_id), "result.json");
 
 		if (!existsSync(path)) {
 			return {

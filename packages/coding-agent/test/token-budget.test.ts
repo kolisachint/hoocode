@@ -214,7 +214,7 @@ describe("TokenBudget", () => {
 `,
 			);
 
-			const path = join(testCwd, CONFIG_DIR_NAME, "agents", "persist-task", "budget.json");
+			const path = join(testCwd, CONFIG_DIR_NAME, "dispatch", "persist-task", "budget.json");
 			const raw = readFileSync(path, "utf-8");
 			const state = JSON.parse(raw) as {
 				task_id: string;
@@ -247,7 +247,7 @@ describe("TokenBudget", () => {
 `,
 			);
 
-			const path = join(testCwd, CONFIG_DIR_NAME, "agents", "persist-task2", "budget.json");
+			const path = join(testCwd, CONFIG_DIR_NAME, "dispatch", "persist-task2", "budget.json");
 			const state1 = JSON.parse(readFileSync(path, "utf-8"));
 			expect(state1.used).toBe(200);
 			expect(state1.warned).toBe(false);

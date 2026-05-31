@@ -126,7 +126,7 @@ describe("SubagentLifeguard", () => {
 	});
 
 	it("sweeps old agent directories on init", () => {
-		const agentsDir = join(testCwd, ".hoocode", "agents");
+		const agentsDir = join(testCwd, ".hoocode", "dispatch");
 		mkdirSync(agentsDir, { recursive: true });
 
 		const oldDir = join(agentsDir, "old-task");
@@ -145,7 +145,7 @@ describe("SubagentLifeguard", () => {
 	});
 
 	it("does not sweep directories with running PIDs", () => {
-		const agentsDir = join(testCwd, ".hoocode", "agents");
+		const agentsDir = join(testCwd, ".hoocode", "dispatch");
 		mkdirSync(agentsDir, { recursive: true });
 
 		const oldDir = join(agentsDir, "old-task-with-pid");

@@ -73,12 +73,35 @@ describe("buildSubagentResult", () => {
 		expect(result.confidence).toBeGreaterThanOrEqual(0.5);
 	});
 
+	it("reports a partial result with the agent's summary when stopped at the turn cap", () => {
+		const aborted = {
+			role: "assistant",
+			content: [{ type: "text", text: "Found the bug in auth.ts; ran out of turns before fixing it." }],
+			stopReason: "aborted",
+		} as unknown as AgentMessage;
+		const result = buildSubagentResult([assistantText("investigating"), aborted], undefined, {
+			reachedMaxTurns: true,
+		});
+		expect(result.status).toBe("partial");
+		expect(result.confidence).toBeGreaterThanOrEqual(0.5);
+		expect(result.summary).toContain("Found the bug");
+	});
+
+	it("yields a verifier-passing partial result even with no assistant text at the turn cap", () => {
+		const result = buildSubagentResult([assistantToolCall("edit", { path: "x.ts" })], undefined, {
+			reachedMaxTurns: true,
+		});
+		expect(result.status).toBe("partial");
+		expect(result.summary.length).toBeGreaterThan(0);
+		expect(result.confidence).toBeGreaterThanOrEqual(0.5);
+	});
+
 	it("produces output that passes OutputVerifier", () => {
 		const cwd = tempCwd();
 		const result = buildSubagentResult([assistantText("all good")]);
 		writeSubagentResult(cwd, "task-1", result);
 
-		const path = join(cwd, CONFIG_DIR_NAME, "agents", "task-1", "result.json");
+		const path = join(cwd, CONFIG_DIR_NAME, "dispatch", "task-1", "result.json");
 		expect(existsSync(path)).toBe(true);
 		const parsed = JSON.parse(readFileSync(path, "utf-8"));
 		expect(parsed.summary).toBe("all good");

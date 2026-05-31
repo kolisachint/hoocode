@@ -2,7 +2,7 @@
  * Writes a subagent's `result.json` audit file.
  *
  * When a subagent runs as a spawned child process (`--task-id <id>`), the parent
- * SubagentPool verifies `.hoocode/agents/<task_id>/result.json` against a fixed
+ * SubagentPool verifies `.hoocode/dispatch/<task_id>/result.json` against a fixed
  * schema (see OutputVerifier). This module derives that file deterministically
  * from the finished session so subagents never have to write it themselves.
  */
@@ -11,7 +11,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage } from "@kolisachint/hoocode-ai";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { getDispatchTaskDir } from "../config.js";
 
 export interface SubagentUsage {
 	input: number;
@@ -76,13 +76,37 @@ function deriveStatus(messages: readonly AgentMessage[]): "complete" | "failed" 
 	return "complete";
 }
 
+/** Extra build options that override the status derived from the transcript. */
+export interface BuildSubagentResultOptions {
+	/** The run was stopped at its turn cap. Report a usable partial result rather than a failure. */
+	reachedMaxTurns?: boolean;
+}
+
 /**
  * Build the `result.json` payload for a finished subagent session.
  *
  * The verifier requires a non-empty summary and confidence >= 0.5, so a
  * successful run with no assistant text still yields a usable summary.
+ *
+ * When the run was stopped at its turn cap (`reachedMaxTurns`), the result is
+ * reported as `partial` with whatever summary the agent managed to produce,
+ * instead of the `failed` status an aborted final message would otherwise yield.
  */
-export function buildSubagentResult(messages: readonly AgentMessage[], usage?: SubagentUsage): SubagentResultFile {
+export function buildSubagentResult(
+	messages: readonly AgentMessage[],
+	usage?: SubagentUsage,
+	options?: BuildSubagentResultOptions,
+): SubagentResultFile {
+	if (options?.reachedMaxTurns) {
+		return {
+			summary: deriveSummary(messages) || "Reached the turn limit before completing. Returning partial findings.",
+			files_changed: collectChangedFiles(messages),
+			confidence: 0.6,
+			status: "partial",
+			usage,
+		};
+	}
+
 	const status = deriveStatus(messages);
 	const summary =
 		deriveSummary(messages) || (status === "complete" ? "Task completed with no textual summary." : "Task failed.");
@@ -97,7 +121,7 @@ export function buildSubagentResult(messages: readonly AgentMessage[], usage?: S
 
 /** Write `result.json` for a task. Best-effort: never throws. */
 export function writeSubagentResult(cwd: string, taskId: string, result: SubagentResultFile): void {
-	const path = join(cwd, CONFIG_DIR_NAME, "agents", taskId, "result.json");
+	const path = join(getDispatchTaskDir(cwd, taskId), "result.json");
 	try {
 		mkdirSync(dirname(path), { recursive: true });
 		writeFileSync(path, JSON.stringify(result, null, 2));

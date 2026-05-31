@@ -6,7 +6,7 @@ import { CONFIG_DIR_NAME } from "../src/config.js";
 import { OutputVerifier } from "../src/core/output-verifier.js";
 
 function createResultJson(task_id: string, cwd: string, content: Record<string, unknown>): string {
-	const dir = join(cwd, CONFIG_DIR_NAME, "agents", task_id);
+	const dir = join(cwd, CONFIG_DIR_NAME, "dispatch", task_id);
 	mkdirSync(dir, { recursive: true });
 	const path = join(dir, "result.json");
 	writeFileSync(path, JSON.stringify(content, null, 2));
@@ -46,7 +46,7 @@ describe("OutputVerifier", () => {
 		it("fails when result.json contains invalid JSON", () => {
 			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
 			const verifier = new OutputVerifier(testCwd);
-			const dir = join(testCwd, CONFIG_DIR_NAME, "agents", "bad-json");
+			const dir = join(testCwd, CONFIG_DIR_NAME, "dispatch", "bad-json");
 			mkdirSync(dir, { recursive: true });
 			writeFileSync(join(dir, "result.json"), "not json");
 

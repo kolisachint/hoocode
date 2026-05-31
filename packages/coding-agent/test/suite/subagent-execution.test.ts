@@ -13,7 +13,7 @@ import type { SubagentPool, TaskResult } from "../../src/core/subagent-pool.js";
 import { setSubagentPoolForTesting } from "../../src/core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../src/core/subagent-result.js";
 import { taskStore } from "../../src/core/task-store.js";
-import { createSubagentToolDefinition } from "../../src/core/tools/subagent.js";
+import { createTaskToolDefinition } from "../../src/core/tools/subagent.js";
 import { createTestResourceLoader } from "../utilities.js";
 
 interface FauxSetup {
@@ -116,17 +116,21 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
-		const tool = createSubagentToolDefinition();
+		const tool = createTaskToolDefinition();
 		const result = await tool.execute(
 			"call-1",
-			{ task: "explore the repo thoroughly and report findings", context: "", mode: "explore", force: true },
+			{
+				description: "explore repo",
+				prompt: "explore the repo thoroughly and report findings",
+				subagent_type: "explore",
+			},
 			undefined,
 			undefined,
 			ctx,
 		);
 
 		expect(result.content[0]).toEqual({ type: "text", text: "done exploring" });
-		expect(result.details).toMatchObject({ mode: "explore", ok: true, taskId: expect.any(Number) });
+		expect(result.details).toMatchObject({ subagent_type: "explore", ok: true, taskId: expect.any(Number) });
 
 		// The finished task stays visible until the next user turn.
 		const created = taskStore.list().slice(before);
@@ -140,13 +144,17 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
-		const tool = createSubagentToolDefinition();
+		const tool = createTaskToolDefinition();
 
 		// A hard subagent failure surfaces as a thrown tool error (idiomatic for this runtime).
 		await expect(
 			tool.execute(
 				"call-2",
-				{ task: "do a complicated multi-file thing now", context: "some context", mode: "fix", force: true },
+				{
+					description: "multi-file change",
+					prompt: "do a complicated multi-file thing now",
+					subagent_type: "edit",
+				},
 				undefined,
 				undefined,
 				ctx,
@@ -170,22 +178,22 @@ describe("subagent tool gating (opt-in vs opt-out)", () => {
 			settingsManager: SettingsManager.inMemory(),
 			sessionManager: SessionManager.inMemory(),
 			resourceLoader: createTestResourceLoader(),
-			customTools: withSubagent ? [createSubagentToolDefinition()] : [],
+			customTools: withSubagent ? [createTaskToolDefinition()] : [],
 		});
 		const names = session.getActiveToolNames();
 		session.dispose();
 		return names;
 	}
 
-	it("activates the subagent tool when registered (opted in)", async () => {
+	it("activates the Task tool when registered (opted in)", async () => {
 		const names = await activeToolNames(true);
-		expect(names).toContain("subagent");
+		expect(names).toContain("Task");
 		expect(names).toContain("read");
 	});
 
-	it("does not expose the subagent tool when not registered (opted out)", async () => {
+	it("does not expose the Task tool when not registered (opted out)", async () => {
 		const names = await activeToolNames(false);
-		expect(names).not.toContain("subagent");
+		expect(names).not.toContain("Task");
 		expect(names).toContain("read");
 	});
 });

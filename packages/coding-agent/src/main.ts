@@ -40,7 +40,11 @@ import {
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
-import { createSubagentToolDefinition, SUBAGENT_MAIN_PROMPT } from "./core/tools/subagent.js";
+import {
+	buildTaskMainPrompt,
+	createTaskOutputToolDefinition,
+	createTaskToolDefinition,
+} from "./core/tools/subagent.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -376,10 +380,17 @@ function buildSessionOptions(
 		options.tools = [...parsed.tools];
 	}
 
-	// Optional subagent tool: opt-in via --subagent flag or the enableSubagent setting.
+	// Optional Task (subagent) tool: opt-in via --subagent flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
-	if (parsed.subagent ?? settingsManager.getEnableSubagent()) {
-		options.customTools = [...(options.customTools ?? []), createSubagentToolDefinition()];
+	// Never register it inside a spawned subagent (--task-id present): subagents must not
+	// recursively dispatch, even if a project's enableSubagent setting is on.
+	const isSubagentChild = parsed.taskId !== undefined;
+	if (!isSubagentChild && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
+		options.customTools = [
+			...(options.customTools ?? []),
+			createTaskToolDefinition(),
+			createTaskOutputToolDefinition(),
+		];
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };
@@ -584,7 +595,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 		// When subagent tooling is enabled, append the main session subagent instructions.
 		if (parsed.subagent ?? settingsManager.getEnableSubagent()) {
-			resourceLoader.addAppendSystemPrompt(SUBAGENT_MAIN_PROMPT);
+			resourceLoader.addAppendSystemPrompt(buildTaskMainPrompt());
 		}
 
 		const modelPatterns = parsed.models ?? settingsManager.getEnabledModels();
@@ -749,6 +760,7 @@ export async function main(args: string[], options?: MainOptions) {
 			initialMessage,
 			initialImages,
 			taskId: parsed.taskId,
+			maxTurns: parsed.maxTurns,
 		});
 		stopThemeWatcher();
 		restoreStdout();

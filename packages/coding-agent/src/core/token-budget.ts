@@ -1,7 +1,7 @@
 import { EventEmitter } from "node:events";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { CONFIG_DIR_NAME } from "../config.js";
+import { getDispatchTaskDir } from "../config.js";
 
 export interface TokenBudgetConfig {
 	/** Budget limit in tokens. */
@@ -141,7 +141,7 @@ export class TokenBudget extends EventEmitter {
 	}
 
 	private budgetPath(): string {
-		return join(this.cwd, CONFIG_DIR_NAME, "agents", this.task_id, "budget.json");
+		return join(getDispatchTaskDir(this.cwd, this.task_id), "budget.json");
 	}
 
 	private parseLine(line: string): void {

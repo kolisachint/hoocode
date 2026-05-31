@@ -490,6 +490,21 @@ export function getAgentDir(): string {
 	return join(homedir(), CONFIG_DIR_NAME, "agent");
 }
 
+/** Subdirectory under the project config dir holding subagent runtime state
+ *  (result.json, output.json, dispatch-log.json, budget.json) per dispatch.
+ *  Kept separate from the `agents/` directory, which holds agent definitions. */
+export const DISPATCH_DIR_NAME = "dispatch";
+
+/** Root directory for subagent runtime state within a project. */
+export function getDispatchRoot(cwd: string): string {
+	return join(cwd, CONFIG_DIR_NAME, DISPATCH_DIR_NAME);
+}
+
+/** Per-task runtime directory for a single subagent dispatch. */
+export function getDispatchTaskDir(cwd: string, taskId: string): string {
+	return join(getDispatchRoot(cwd), taskId);
+}
+
 /** Get the hoocode config root directory (parent of agent dir).
  *  Returns parent of getAgentDir(), e.g.:
  *    HOOCODE_CODING_AGENT_DIR=/custom/agent -> /custom

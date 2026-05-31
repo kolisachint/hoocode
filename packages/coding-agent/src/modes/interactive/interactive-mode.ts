@@ -58,6 +58,7 @@ import {
 	getShareViewerUrl,
 	VERSION,
 } from "../../config.js";
+import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import type {
@@ -81,7 +82,6 @@ import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../cor
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
-import type { SubagentMode } from "../../core/subagent.js";
 import { getSubagentPool } from "../../core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../core/subagent-result.js";
 import { taskStore } from "../../core/task-store.js";
@@ -4280,16 +4280,18 @@ export class InteractiveMode {
 			return;
 		}
 
-		const mode = args.slice(0, firstSpace).trim() as SubagentMode;
+		const mode = args.slice(0, firstSpace).trim();
 		const task = args.slice(firstSpace + 1).trim();
 		if (!task) {
 			this.showStatus("Usage: /subagent <mode> <task>");
 			return;
 		}
 
-		const validModes: readonly string[] = ["explore", "edit", "test", "fix", "review", "doc"];
+		const validModes = loadAgentRegistry({ cwd: this.session.sessionManager.getCwd() })
+			.list()
+			.map((a) => a.name);
 		if (!validModes.includes(mode)) {
-			this.showStatus(`Unknown subagent mode: ${mode}. Valid: ${validModes.join(", ")}`);
+			this.showStatus(`Unknown subagent_type: ${mode}. Available: ${validModes.join(", ")}`);
 			return;
 		}
 

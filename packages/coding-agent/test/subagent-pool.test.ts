@@ -1,8 +1,8 @@
-import { chmodSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { SubagentPool, type SubagentPoolTask } from "../src/core/subagent-pool.js";
+import { DEFAULT_SUBAGENT_MAX_TURNS, SubagentPool, type SubagentPoolTask } from "../src/core/subagent-pool.js";
 
 function createMockExecutable(dir: string, exitCode: number = 0, delayMs: number = 0): string {
 	const path = join(dir, "mock-hoocode.js");
@@ -28,14 +28,54 @@ else run();
 
 /**
  * Mock that emits a single assistant message_end with enough tokens to blow the
- * budget, then stays alive so the pool's budget killer must SIGTERM it. Used to
- * reproduce a budget hard-stop before any result.json is written.
+ * budget, then exits cleanly. Used to verify the budget is advisory: the pool
+ * emits telemetry but neither kills nor fails the task.
  */
 function createBudgetBusterExecutable(dir: string, tokens: number): string {
 	const path = join(dir, "mock-budget-buster.js");
 	const content = `#!/usr/bin/env node
 console.log(JSON.stringify({ type: "message_end", message: { role: "assistant", usage: { totalTokens: ${tokens} } } }));
-setInterval(() => {}, 1000);
+process.exit(0);
+`;
+	writeFileSync(path, content);
+	chmodSync(path, 0o755);
+	return path;
+}
+
+/** Mock that records the CLI args it was spawned with, then exits cleanly. */
+function createArgvCaptureExecutable(dir: string): string {
+	const path = join(dir, "mock-argv.js");
+	const content = `#!/usr/bin/env node
+const fs = require("node:fs");
+const p = require("node:path");
+fs.writeFileSync(p.join(process.cwd(), "argv.json"), JSON.stringify(process.argv.slice(2)));
+console.log(JSON.stringify({ type: "done", reason: "stop", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));
+process.exit(0);
+`;
+	writeFileSync(path, content);
+	chmodSync(path, 0o755);
+	return path;
+}
+
+/** Mock that records argv and writes a valid result.json under its --task-id dir, then exits 0. */
+function createResultWritingExecutable(dir: string, delayMs = 0): string {
+	const path = join(dir, "mock-result.js");
+	const content = `#!/usr/bin/env node
+const fs = require("node:fs");
+const p = require("node:path");
+const argv = process.argv.slice(2);
+const ti = argv.indexOf("--task-id");
+const taskId = ti >= 0 ? argv[ti + 1] : "unknown";
+fs.writeFileSync(p.join(process.cwd(), "argv.json"), JSON.stringify(argv));
+function run() {
+	const outDir = p.join(process.cwd(), ".hoocode", "dispatch", taskId);
+	fs.mkdirSync(outDir, { recursive: true });
+	fs.writeFileSync(p.join(outDir, "result.json"), JSON.stringify({ summary: "background done", files_changed: [], confidence: 0.9, status: "complete" }));
+	console.log(JSON.stringify({ type: "done", reason: "stop", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));
+	process.exit(0);
+}
+const delay = ${delayMs};
+if (delay > 0) setTimeout(run, delay); else run();
 `;
 	writeFileSync(path, content);
 	chmodSync(path, 0o755);
@@ -43,7 +83,7 @@ setInterval(() => {}, 1000);
 }
 
 function createValidResultJson(cwd: string, taskId: string): void {
-	const dir = join(cwd, ".hoocode", "agents", taskId);
+	const dir = join(cwd, ".hoocode", "dispatch", taskId);
 	mkdirSync(dir, { recursive: true });
 	writeFileSync(
 		join(dir, "result.json"),
@@ -282,24 +322,91 @@ describe("SubagentPool", () => {
 		expect(pool!.get_status("t1")).toBe("failed");
 	});
 
-	test("surfaces a clear error when budget is exceeded before result.json exists", async () => {
+	test("passes a default --max-turns hard cap to spawned subagents", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		createValidResultJson(tmpDir, "mt-task");
+		pool.spawn({ task_id: "mt-task", agent_type: "explore", task: "scan" });
+		await pool.wait_for("mt-task");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		const idx = argv.indexOf("--max-turns");
+		expect(idx).toBeGreaterThanOrEqual(0);
+		expect(argv[idx + 1]).toBe(String(DEFAULT_SUBAGENT_MAX_TURNS));
+		// Sessions are now persisted (not ephemeral) so subagents can be resumed.
+		const si = argv.indexOf("--session");
+		expect(si).toBeGreaterThanOrEqual(0);
+		expect(argv[si + 1]).toBe(join(tmpDir, ".hoocode", "dispatch", "mt-task", "session.jsonl"));
+		expect(argv).not.toContain("--no-session");
+	});
+
+	test("dispatchDetached returns a handle immediately and the result is collectable when done", async () => {
+		const exe = createResultWritingExecutable(tmpDir, 150);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		const dispatched = pool.dispatchDetached("do background work", { forceAgent: "explore" });
+		expect(dispatched.handled_inline).toBe(false);
+		const id = dispatched.task_id!;
+		expect(id).toBeTruthy();
+		// Still running: not yet collectable.
+		expect(["running", "queued"]).toContain(pool.get_status(id));
+		expect(pool.collect(id)).toBeUndefined();
+		// Wait for the pool to report completion (without consuming via wait_for).
+		await new Promise<void>((resolve) => {
+			pool!.on("task_done", (d: { task_id: string }) => {
+				if (d.task_id === id) resolve();
+			});
+		});
+		const result = pool.collect(id);
+		expect(result?.ok).toBe(true);
+		expect((result?.result_data as { summary?: string } | undefined)?.summary).toBe("background done");
+		// collect is non-destructive: a second call still returns the result.
+		expect(pool.collect(id)).toBeDefined();
+		expect(pool.get_status(id)).toBe("done");
+	});
+
+	test("resume continues the original task's persisted session file", async () => {
+		const exe = createResultWritingExecutable(tmpDir);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		// Simulate a prior dispatch: persisted session + dispatch log for the original task.
+		const originalId = "orig-task";
+		const originalDir = join(tmpDir, ".hoocode", "dispatch", originalId);
+		mkdirSync(originalDir, { recursive: true });
+		const originalSession = join(originalDir, "session.jsonl");
+		writeFileSync(originalSession, '{"type":"session"}\n');
+		writeFileSync(join(originalDir, "dispatch-log.json"), JSON.stringify({ agent_type: "explore" }));
+
+		const resumed = await pool.resume(originalId, "follow-up instruction");
+		expect(resumed.handled_inline).toBe(false);
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		const si = argv.indexOf("--session");
+		expect(argv[si + 1]).toBe(originalSession);
+		// The resumed run uses a fresh task id, not the original.
+		const ti = argv.indexOf("--task-id");
+		expect(argv[ti + 1]).not.toBe(originalId);
+	});
+
+	test("resume rejects when there is no persisted session", async () => {
+		const exe = createMockExecutable(tmpDir);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		await expect(pool.resume("missing", "go")).rejects.toThrow(/No resumable session/);
+	});
+
+	test("treats an exceeded token budget as advisory: emits telemetry but does not kill or fail the task", async () => {
 		const exe = createBudgetBusterExecutable(tmpDir, 1000);
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
-		const failedEvents: Array<{ task_id: string; error: string }> = [];
-		pool.on("task_failed", (data) => {
-			failedEvents.push(data as { task_id: string; error: string });
+		const exceededEvents: Array<{ task_id: string; used: number; limit: number }> = [];
+		pool.on("budget_exceeded", (data) => {
+			exceededEvents.push(data as { task_id: string; used: number; limit: number });
 		});
-		// Intentionally do NOT create result.json: budget hard-stop before output.
+		// The child "wrote" a valid result.json; exceeding the budget must not change that.
+		createValidResultJson(tmpDir, "budget-task");
 		pool.spawn({ task_id: "budget-task", agent_type: "explore", task: "big task", token_budget: 500 });
 		const result = await pool.wait_for("budget-task");
-		expect(result.ok).toBe(false);
+		expect(result.ok).toBe(true);
+		expect(result.status).toBe("complete");
 		expect(result.budget_exceeded).toBe(true);
-		expect(result.status).toBe("failed");
-		expect(result.error).toBeTruthy();
-		expect(result.error).not.toContain("unknown error");
-		expect(result.error).toContain("Token budget exceeded");
-		expect(failedEvents.length).toBe(1);
-		expect(failedEvents[0].task_id).toBe("budget-task");
-		expect(failedEvents[0].error).toContain("Token budget exceeded");
+		expect(result.error).toBeUndefined();
+		expect(exceededEvents.length).toBe(1);
+		expect(exceededEvents[0].task_id).toBe("budget-task");
+		expect(exceededEvents[0].limit).toBe(500);
 	});
 });

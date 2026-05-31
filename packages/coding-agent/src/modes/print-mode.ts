@@ -29,6 +29,8 @@ export interface PrintModeOptions {
 	initialImages?: ImageContent[];
 	/** Internal: set when this process is a spawned subagent. Enables heartbeats and result.json. */
 	taskId?: string;
+	/** Hard cap on assistant turns. Near the cap the agent is asked to wrap up; at the cap it is aborted. */
+	maxTurns?: number;
 }
 
 /**
@@ -36,7 +38,7 @@ export interface PrintModeOptions {
  * Sends prompts to the agent and outputs the result.
  */
 export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: PrintModeOptions): Promise<number> {
-	const { mode, messages = [], initialMessage, initialImages, taskId } = options;
+	const { mode, messages = [], initialMessage, initialImages, taskId, maxTurns } = options;
 	let exitCode = 0;
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
@@ -52,6 +54,10 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		}, SUBAGENT_HEARTBEAT_MS);
 		heartbeat.unref();
 	}
+	// Turn-limit enforcement for spawned subagents: ask the agent to wrap up near
+	// the cap, then hard-stop at the cap so a runaway agent always terminates.
+	let reachedMaxTurns = false;
+	let turnLimitUnsub: (() => void) | undefined;
 	const signalCleanupHandlers: Array<() => void> = [];
 
 	const disposeRuntime = async (): Promise<void> => {
@@ -134,6 +140,30 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		await rebindSession();
 
+		if (isSubagent && typeof maxTurns === "number" && maxTurns > 0) {
+			const cap = maxTurns;
+			const wrapUpAt = Math.floor(cap * 0.9);
+			let turns = 0;
+			let warned = false;
+			turnLimitUnsub = session.subscribe((event) => {
+				if (event.type !== "turn_end") return;
+				turns += 1;
+				if (turns >= cap) {
+					if (!reachedMaxTurns) {
+						reachedMaxTurns = true;
+						void session.abort();
+					}
+					return;
+				}
+				if (!warned && wrapUpAt >= 1 && wrapUpAt < cap && turns >= wrapUpAt) {
+					warned = true;
+					void session.steer(
+						`You are at turn ${turns} of your ${cap}-turn limit. Stop investigating or making changes now and write your final summary of findings and results in your next message.`,
+					);
+				}
+			});
+		}
+
 		if (initialMessage) {
 			await session.prompt(initialMessage, { images: initialImages });
 		}
@@ -145,13 +175,17 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		// Spawned subagents write the audit file the parent pool verifies.
 		if (isSubagent && taskId) {
 			const stats = session.getSessionStats();
-			const result = buildSubagentResult(session.state.messages, {
-				input: stats.tokens.input,
-				output: stats.tokens.output,
-				cacheRead: stats.tokens.cacheRead,
-				cacheWrite: stats.tokens.cacheWrite,
-				cost: stats.cost,
-			});
+			const result = buildSubagentResult(
+				session.state.messages,
+				{
+					input: stats.tokens.input,
+					output: stats.tokens.output,
+					cacheRead: stats.tokens.cacheRead,
+					cacheWrite: stats.tokens.cacheWrite,
+					cost: stats.cost,
+				},
+				{ reachedMaxTurns },
+			);
 			writeSubagentResult(session.sessionManager.getCwd(), taskId, result);
 			if (result.status === "failed") exitCode = 1;
 		}
@@ -181,6 +215,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		return 1;
 	} finally {
 		if (heartbeat) clearInterval(heartbeat);
+		turnLimitUnsub?.();
 		for (const cleanup of signalCleanupHandlers) {
 			cleanup();
 		}
