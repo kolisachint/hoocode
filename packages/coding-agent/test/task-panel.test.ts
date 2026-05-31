@@ -27,6 +27,10 @@ describe("task panel rendering", () => {
 		return panel.render(width);
 	}
 
+	// The id is dimmed and titles can be muted, so an ANSI reset sits between the
+	// id and the title. Strip color when asserting they render adjacent.
+	const stripAnsi = (s: string): string => s.replace(/\x1b\[[0-9;]*m/g, "");
+
 	test("collapses to empty when there are no tasks", () => {
 		const lines = renderPanel();
 		expect(lines).toEqual([]);
@@ -152,22 +156,42 @@ describe("task panel rendering", () => {
 		expect(header).not.toContain("turn ↑");
 	});
 
-	test("retireFinished removes done and failed tasks but keeps active ones", () => {
-		const running = taskStore.create("Still running", { subagentMode: "explore" });
-		taskStore.update(running.id, { status: "in_progress" });
+	test("reset clears finished tasks and restarts numbering from #1", () => {
 		const doneTask = taskStore.create("Finished work");
 		taskStore.update(doneTask.id, { status: "done" });
 		const failedTask = taskStore.create("Broken build");
 		taskStore.update(failedTask.id, { status: "failed" });
 
-		taskStore.retireFinished();
+		taskStore.reset();
 
-		const lines = renderPanel();
-		const text = lines.join("\n");
-		expect(lines.length).toBe(2); // 1 task + 1 header
+		expect(renderPanel()).toEqual([]); // empty pane, no header
+
+		// Next turn starts numbering over at #1.
+		const next = taskStore.create("Fresh task");
+		expect(next.id).toBe(1);
+		expect(stripAnsi(renderPanel().join("\n"))).toContain("#1 Fresh task");
+	});
+
+	test("reset keeps active tasks and does not restart numbering while one survives", () => {
+		const running = taskStore.create("Still running", { subagentMode: "explore" });
+		taskStore.update(running.id, { status: "in_progress" });
+		const doneTask = taskStore.create("Finished work");
+		taskStore.update(doneTask.id, { status: "done" });
+
+		taskStore.reset();
+
+		const text = renderPanel().join("\n");
 		expect(text).toContain("Still running");
 		expect(text).not.toContain("Finished work");
-		expect(text).not.toContain("Broken build");
+
+		// A late status update on the surviving task still lands (id not orphaned).
+		taskStore.update(running.id, { status: "done" });
+		expect(renderPanel().join("\n")).toContain("Still running");
+
+		// Numbering did not reset: the next task keeps counting up, not back to #1.
+		const next = taskStore.create("Next task");
+		expect(next.id).not.toBe(1);
+		expect(next.id).toBeGreaterThan(running.id);
 	});
 
 	test("shows all tasks without a line limit", () => {

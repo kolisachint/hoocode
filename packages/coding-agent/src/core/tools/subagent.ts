@@ -32,10 +32,11 @@ Guidelines:
 - Do NOT delegate edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Intermediate reasoning, tool calls, and output are hidden from you.
 
-Dispatch evaluator:
-- The dispatch evaluator determines if a subagent is needed. Do not spawn subagents directly unless the user explicitly requests it.
-- For simple single-file changes (<50 lines, read-only or trivial edit), handle them inline.
-- Use force=true to bypass evaluation when you are certain a subagent is required.`;
+Choosing inline vs subagent:
+- Default to handling work inline. Delegate only when one of the "When to delegate" cases clearly applies.
+- Handle inline (do NOT delegate): quick lookups, single-file reads, edits under ~50 lines, anything needing tight back-and-forth with your current reasoning, and follow-ups on files you are actively reasoning about.
+- When you do call subagent, a deterministic dispatch evaluator confirms the task is worth delegating and selects the mode for you. Pass the mode you think fits; it is corrected automatically if a better match is detected.
+- Use force=true to bypass evaluation only when you are certain a subagent is required.`;
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
@@ -122,7 +123,8 @@ export function createSubagentToolDefinition(): ToolDefinition {
 			"(3) The task is a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs).",
 			"(4) You need to run a long command or test suite and wait for its output without blocking your own reasoning.",
 			"Do NOT use for tasks that require tight back-and-forth with your current reasoning or that change files you are actively reasoning about.",
-			"Use force=true to bypass dispatch evaluation when you are certain a subagent is required.",
+			"Prefer handling small, quick, or single-file tasks yourself; delegate only self-contained units of work.",
+			"The dispatch evaluator confirms whether delegation is warranted and picks the mode; force=true bypasses it when you are certain a subagent is required.",
 		].join(" "),
 		promptSnippet: "delegate a self-contained task to an isolated subagent (modes: explore/edit/test/fix/review/doc)",
 		parameters: subagentParams,
@@ -179,7 +181,7 @@ export function createSubagentToolDefinition(): ToolDefinition {
 				}
 
 				// Leave the task in the store with its final status. It stays visible in
-				// the task panel until the next user message arrives (retireFinished is
+				// the task panel until the next user message arrives (taskStore.reset is
 				// called when the user starts the next turn).
 				taskStore.update(task.id, { status: "done", usage });
 				const answer = resultData?.summary || "(subagent returned no output)";

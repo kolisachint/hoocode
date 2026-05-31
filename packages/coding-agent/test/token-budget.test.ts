@@ -8,12 +8,13 @@ import { getDefaultBudget, TokenBudget } from "../src/core/token-budget.js";
 describe("TokenBudget", () => {
 	describe("getDefaultBudget", () => {
 		it("returns correct defaults per agent type", () => {
-			expect(getDefaultBudget("explore")).toBe(8000);
-			expect(getDefaultBudget("edit")).toBe(16000);
-			expect(getDefaultBudget("test")).toBe(16000);
-			expect(getDefaultBudget("review")).toBe(12000);
-			expect(getDefaultBudget("doc")).toBe(10000);
-			expect(getDefaultBudget("unknown")).toBe(16000);
+			expect(getDefaultBudget("explore")).toBe(35000);
+			expect(getDefaultBudget("edit")).toBe(60000);
+			expect(getDefaultBudget("test")).toBe(45000);
+			expect(getDefaultBudget("fix")).toBe(45000);
+			expect(getDefaultBudget("review")).toBe(35000);
+			expect(getDefaultBudget("doc")).toBe(30000);
+			expect(getDefaultBudget("unknown")).toBe(35000);
 		});
 	});
 
@@ -227,7 +228,7 @@ describe("TokenBudget", () => {
 
 			expect(state.task_id).toBe("persist-task");
 			expect(state.agent_type).toBe("edit");
-			expect(state.budget).toBe(16000);
+			expect(state.budget).toBe(60000);
 			expect(state.used).toBe(2500);
 			expect(state.warned).toBe(false);
 			expect(state.exceeded).toBe(false);

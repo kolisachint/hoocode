@@ -61,9 +61,9 @@ function formatHeader(tasks: readonly Task[], width: number): string {
 	const watching = tasks.some((t) => t.status === "in_progress" || t.status === "pending");
 
 	const stampPlain = watching ? "⟳ watching" : "reviewed ✓ · deterministic";
-	const stamp = watching
-		? theme.fg("warning", "⟳ watching")
-		: theme.fg("success", "reviewed ✓") + theme.fg("dim", " · deterministic");
+	// Header is quiet audit chrome: the reviewed stamp sits in dim, only the active
+	// "watching" state earns a warning tint. (Design: .task-head color = fg-dim.)
+	const stamp = watching ? theme.fg("warning", "⟳ watching") : theme.fg("dim", stampPlain);
 
 	const countPlain = `${done}/${total} done`;
 	const leftPlain = `${stampPlain}  ${countPlain}`;
@@ -78,13 +78,15 @@ function formatHeader(tasks: readonly Task[], width: number): string {
 	const showCost = turn.cost > 0;
 	const costPlain = showCost ? ` $${turn.cost.toFixed(3)}` : "";
 	const turnPlain = `turn ↑${formatTokens(turn.input)} ↓${formatTokens(turn.output)}${costPlain}`;
+	// Turn delta: muted framing with the numbers one step brighter (bold/full fg),
+	// matching the design's `.turntok` (fg-muted) / `.turntok b` (fg) hierarchy.
 	let turnText =
-		theme.fg("dim", "turn ↑") +
+		theme.fg("muted", "turn ↑") +
 		theme.bold(formatTokens(turn.input)) +
-		theme.fg("dim", " ↓") +
+		theme.fg("muted", " ↓") +
 		theme.bold(formatTokens(turn.output));
 	if (showCost) {
-		turnText += theme.fg("dim", " ") + theme.bold(`$${turn.cost.toFixed(3)}`);
+		turnText += ` ${theme.bold(`$${turn.cost.toFixed(3)}`)}`;
 	}
 
 	if (visibleWidth(leftPlain) + 2 + visibleWidth(turnPlain) > width) {
@@ -106,17 +108,33 @@ function formatTaskLine(task: Task, width: number): string {
 	const icon = theme.fg(taskStatusColor(task.status), TASK_STATUS_ICON[task.status]);
 	const idLabel = `#${task.id}`;
 	const title = task.title;
+	// The id recedes (dim) so the title carries the line. Done tasks fade their
+	// title to muted (work that's settled); active/failed keep full foreground.
+	// (Design: .task .id = fg-dim, .task .ttitle = fg, .task.is-done .ttitle = fg-muted.)
+	const styledId = theme.fg("dim", idLabel);
+	const styledTitle = task.status === "done" ? theme.fg("muted", title) : title;
 
-	// Finished tasks carry an audit stamp: total tokens used + elapsed time.
+	// Finished tasks carry an audit stamp: total tokens used + elapsed time. The
+	// token count sits one step brighter (muted) than the time (dim), per the
+	// design's `.cost` (fg-dim) / `.cost b` (fg-muted) split.
 	const settled = task.status === "done" || task.status === "failed";
 	let rightPlain = "";
+	let rightStyled = "";
 	if (settled) {
 		const parts: string[] = [];
+		let tokenText = "";
 		if (task.usage) {
 			const total = task.usage.input + task.usage.output;
-			if (total > 0) parts.push(formatTokens(total));
+			if (total > 0) tokenText = formatTokens(total);
 		}
-		parts.push(formatElapsed(task));
+		const elapsed = formatElapsed(task);
+		if (tokenText) {
+			parts.push(tokenText, elapsed);
+			rightStyled = theme.fg("muted", tokenText) + theme.fg("dim", ` · ${elapsed}`);
+		} else {
+			parts.push(elapsed);
+			rightStyled = theme.fg("dim", elapsed);
+		}
 		rightPlain = parts.join(" · ");
 	}
 	const rightWidth = rightPlain ? visibleWidth(rightPlain) + 1 : 0;
@@ -124,12 +142,12 @@ function formatTaskLine(task: Task, width: number): string {
 
 	const plainText = `${TASK_STATUS_ICON[task.status]} ${idLabel} ${title}`;
 	const available = Math.max(0, leftWidth - visibleWidth(plainText) + visibleWidth(title));
-	const left = truncateToWidth(`${icon} ${idLabel} ${title}`, available, "…");
+	const left = truncateToWidth(`${icon} ${styledId} ${styledTitle}`, available, "…");
 
 	if (!rightPlain) return left;
 
 	const pad = Math.max(1, width - visibleWidth(left) - visibleWidth(rightPlain));
-	return left + " ".repeat(pad) + theme.fg("dim", rightPlain);
+	return left + " ".repeat(pad) + rightStyled;
 }
 
 /**
@@ -141,7 +159,7 @@ function formatTaskLine(task: Task, width: number): string {
  *   task title is the meaningful label; the mode adds noise in the pane.
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
- *   user message arrives (see taskStore.retireFinished()), not the moment they finish.
+ *   user message arrives (see taskStore.reset()), not the moment they finish.
  * - Collapses to zero lines when there are no tasks.
  */
 export class TaskPanelComponent implements Component {

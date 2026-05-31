@@ -2760,11 +2760,13 @@ export class InteractiveMode {
 					this.addMessageToChat(event.message);
 					this.ui.requestRender();
 				} else if (event.message.role === "user") {
-					// A new user message starts a new turn: retire any finished subagent
-					// tasks from the previous turn. Finished tasks stay visible (with their
-					// final status, tokens, and time) until this point — not the moment they
-					// finish — so their outcome remains glanceable for the whole turn.
-					taskStore.retireFinished();
+					// A new user message starts a new turn: drop finished tasks from the
+					// previous turn and restart numbering from #1 once the pane is empty.
+					// Finished tasks stay visible (with their final status, tokens, and time)
+					// until this point — not the moment they finish — so their outcome remains
+					// glanceable for the whole turn. Active tasks are kept: a follow-up/steer
+					// message can arrive while a subagent is still running.
+					taskStore.reset();
 					this.addMessageToChat(event.message);
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();

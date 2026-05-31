@@ -74,20 +74,34 @@ class TaskStore {
 	}
 
 	/**
-	 * Remove all finished tasks (done or failed), keeping pending/in_progress ones.
+	 * Drop finished tasks and restart numbering from #1 once the pane is empty.
 	 *
-	 * Called when a new user message arrives: finished subagent tasks stay visible
-	 * (with their final status) for the whole turn and only retire when the user
-	 * starts the next turn, so their outcome remains glanceable until then.
+	 * Called when a new user message arrives: finished tasks from the previous turn
+	 * stay visible (with their final status) for the whole turn and are wiped only
+	 * when the user starts the next turn, so the next turn opens with an empty pane
+	 * and its first task is #1 again. Active (pending/in_progress) tasks are kept —
+	 * a follow-up/steer message can arrive while a subagent is still running, and
+	 * dropping its task here would orphan the live work (its later status update
+	 * would target a removed id and silently vanish). Numbering only restarts once
+	 * no active task survives, so ids never collide with a kept task.
 	 */
-	retireFinished(): void {
-		const before = this.tasks.length;
-		this.tasks = this.tasks.filter((t) => t.status !== "done" && t.status !== "failed");
-		if (this.tasks.length !== before) this.emit();
+	reset(): void {
+		const active = this.tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
+		if (active.length === this.tasks.length && this.nextId === 1) return;
+		this.tasks = active;
+		if (active.length === 0) this.nextId = 1;
+		this.emit();
 	}
 
 	list(): readonly Task[] {
 		return this.tasks;
+	}
+
+	/** Wipe all tasks and restart numbering. Intended for test isolation only. */
+	clear(): void {
+		this.tasks = [];
+		this.nextId = 1;
+		this.emit();
 	}
 
 	subscribe(listener: Listener): () => void {
@@ -95,13 +109,6 @@ class TaskStore {
 		return () => {
 			this.listeners.delete(listener);
 		};
-	}
-
-	/** Clear all tasks. Intended for test isolation only. */
-	clear(): void {
-		this.tasks = [];
-		this.nextId = 1;
-		this.emit();
 	}
 
 	private emit(): void {

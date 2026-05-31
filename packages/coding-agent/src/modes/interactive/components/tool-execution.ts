@@ -110,8 +110,10 @@ export class ToolExecutionComponent extends Container {
 		// selfRenderContainer is used when the tool renders its own framing.
 		// contentText is reserved for generic fallback rendering when no tool definition exists.
 		// Boxless: no filled background — hierarchy comes from status dots + indent.
-		this.contentBox = new Box(1, 1);
-		this.contentText = new Text("", 1, 1);
+		// paddingY is 0: the single leading Spacer(1) is the only separator between
+		// tool blocks, so consecutive commands don't stack 3 blank lines between them.
+		this.contentBox = new Box(1, 0);
+		this.contentText = new Text("", 1, 0);
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {

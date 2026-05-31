@@ -19,24 +19,27 @@ export interface TokenBudgetState {
 }
 
 /**
- * Default token budgets per agent type (in tokens).
- * - explore: 8 000
- * - edit: 16 000
- * - test: 16 000
- * - review: 12 000
- * - doc: 10 000
+ * Default token budgets per agent type (in tokens). Raised from the previous
+ * 8k–16k range, which was too low and hard-stopped subagents mid-task.
+ * - explore: 35 000 (read-only scanning, tracing deps)
+ * - edit: 60 000 (reads, plans, writes, iterates — heaviest)
+ * - test: 45 000 (writes tests, runs, debugs failures)
+ * - fix: 45 000 (reads, edits, re-runs to verify the fix)
+ * - review: 35 000 (read-only audit, security analysis)
+ * - doc: 30 000 (reads code, writes docs/comments)
  */
 const DEFAULT_BUDGETS: Record<string, number> = {
-	explore: 8000,
-	edit: 16000,
-	test: 16000,
-	review: 12000,
-	doc: 10000,
+	explore: 35000,
+	edit: 60000,
+	test: 45000,
+	fix: 45000,
+	review: 35000,
+	doc: 30000,
 };
 
 /** Get the default budget for an agent type. */
 export function getDefaultBudget(agent_type: string): number {
-	return DEFAULT_BUDGETS[agent_type] ?? 16000;
+	return DEFAULT_BUDGETS[agent_type] ?? 35000;
 }
 
 /**

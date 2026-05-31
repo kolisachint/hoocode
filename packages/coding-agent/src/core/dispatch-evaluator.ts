@@ -15,6 +15,11 @@ export interface TaskAnalysis {
 	estimated_complexity: "low" | "medium" | "high";
 	parallelizable: boolean;
 	context_needed: string[];
+	/**
+	 * Normalized routing confidence in [0, 1]: the share of matched keyword
+	 * signal that pointed at the chosen agent type. 0 when no keywords matched.
+	 */
+	confidence: number;
 }
 
 export interface Subtask {
@@ -125,7 +130,15 @@ function countMatches(text: string, keywords: readonly string[]): number {
 	return keywords.reduce((count, kw) => count + (lower.includes(kw) ? 1 : 0), 0);
 }
 
-function detectAgentType(task: string): AgentType | null {
+/**
+ * Explicit, deterministic tie-break order. When two agent types match the same
+ * number of keywords, the earliest type in this list wins. This mirrors the
+ * previous (accidental) object-iteration order so routing stays stable, but the
+ * order is now intentional and documented rather than incidental.
+ */
+const AGENT_PRIORITY: readonly AgentType[] = ["explore", "edit", "test", "review", "doc"];
+
+function scoreAgents(task: string): Record<AgentType, number> {
 	const lower = task.toLowerCase();
 	const scores: Record<AgentType, number> = {
 		explore: countMatches(task, EXPLORE_KEYWORDS),
@@ -150,15 +163,38 @@ function detectAgentType(task: string): AgentType | null {
 		scores.review += 2;
 	}
 
-	let best: AgentType | null = null;
-	let bestScore = 0;
-	for (const [type, score] of Object.entries(scores)) {
-		if (score > bestScore) {
-			bestScore = score;
-			best = type as AgentType;
+	return scores;
+}
+
+/**
+ * Classify a task to an agent type with a normalized confidence in [0, 1].
+ *
+ * confidence = winning score / total matched score across all agent types, i.e.
+ * the share of keyword signal that agrees on the winner. 1.0 means every matched
+ * keyword pointed at one type; lower values mean the signal was split. Returns a
+ * null type with confidence 0 when nothing matched.
+ */
+export function classifyWithConfidence(task: string): { agent_type: AgentType | null; confidence: number } {
+	const scores = scoreAgents(task);
+
+	let total = 0;
+	for (const type of AGENT_PRIORITY) total += scores[type];
+	if (total === 0) return { agent_type: null, confidence: 0 };
+
+	let best: AgentType = AGENT_PRIORITY[0];
+	let bestScore = -1;
+	for (const type of AGENT_PRIORITY) {
+		if (scores[type] > bestScore) {
+			bestScore = scores[type];
+			best = type;
 		}
 	}
-	return bestScore > 0 ? best : null;
+
+	return { agent_type: bestScore > 0 ? best : null, confidence: bestScore / total };
+}
+
+function detectAgentType(task: string): AgentType | null {
+	return classifyWithConfidence(task).agent_type;
 }
 
 function estimateComplexity(task: string): "low" | "medium" | "high" {
@@ -270,10 +306,11 @@ export class DispatchEvaluator {
 				estimated_complexity: "low",
 				parallelizable: false,
 				context_needed: [],
+				confidence: 0,
 			};
 		}
 
-		const agentType = detectAgentType(task);
+		const { agent_type: agentType, confidence } = classifyWithConfidence(task);
 		const complexity = estimateComplexity(task);
 		const inline = canHandleInline(task);
 		const subtasks = extractSubtasks(task);
@@ -287,16 +324,23 @@ export class DispatchEvaluator {
 				estimated_complexity: complexity,
 				parallelizable: false,
 				context_needed: [],
+				confidence,
 			};
 		}
 
+		// When delegating, a missing keyword match defaults to explore: a fresh
+		// read-only investigation is the safest start for an ambiguous task, and the
+		// parent can re-delegate with a specific mode afterwards.
+		const delegateType: AgentType = agentType ?? "explore";
+
 		return {
 			should_delegate: true,
-			agent_type: agentType,
-			reason: `${agentType ?? "general"} task with ${complexity} complexity requires isolated subagent`,
+			agent_type: delegateType,
+			reason: `${delegateType} task with ${complexity} complexity requires isolated subagent`,
 			estimated_complexity: complexity,
 			parallelizable,
 			context_needed: parallelizable ? subtasks.map((st) => st.prompt) : [task],
+			confidence,
 		};
 	}
 
