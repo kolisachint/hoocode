@@ -384,6 +384,12 @@ export class Theme {
 		return chalk.bold(text);
 	}
 
+	blink(text: string): string {
+		// Terminal-native blink (SGR 5). Zero overhead; terminals that support
+		// blink will animate, others render it as a steady glyph.
+		return `\x1b[5m${text}\x1b[25m`;
+	}
+
 	italic(text: string): string {
 		return chalk.italic(text);
 	}

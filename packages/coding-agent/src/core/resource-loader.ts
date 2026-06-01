@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve, sep } from "node:path";
+import { basename, join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
@@ -75,12 +75,10 @@ function loadContextFileFromDir(dir: string): { file: { path: string; content: s
 					content =
 						content.slice(0, CONTEXT_FILE_MAX_BYTES) +
 						`\n\n[truncated: file exceeded ${CONTEXT_FILE_MAX_BYTES} bytes (~10k tokens); keep context files brief — large specs belong in linked files, not in the system prompt]`;
-					warnings.push(
-						`${filePath} is ${bytes} bytes (>${CONTEXT_FILE_MAX_BYTES}). Truncated; this file is injected into the prompt on every turn.`,
-					);
+					warnings.push(`${basename(filePath)} ${bytes} bytes, truncated.`);
 				} else if (bytes > CONTEXT_FILE_WARN_BYTES) {
 					warnings.push(
-						`${filePath} is ${bytes} bytes (~${Math.round(bytes / 4)} tokens). It is injected into the system prompt on every turn — consider trimming.`,
+						`${basename(filePath)} ~${Math.round(bytes / 4)} tokens, injected every turn — consider trimming.`,
 					);
 				}
 				return { file: { path: filePath, content }, warnings };

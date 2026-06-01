@@ -86,7 +86,7 @@ import { getSubagentPool } from "../../core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../core/subagent-result.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
-import { WORDMARK, WORDMARK_SYMBOL } from "../../core/wordmark.js";
+import { buildCompactWordmark } from "../../core/wordmark.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
@@ -181,7 +181,7 @@ function isDeadTerminalError(error: unknown): boolean {
 }
 
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
-	"Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
+	"Anthropic subscription auth: billed per token as extra usage, not plan limits.";
 
 function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
 	return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
@@ -589,14 +589,18 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const termW = this.ui.terminal.columns;
-			const wordmark = `${theme.fg("accent", WORDMARK)}\n${theme.fg("dim", `v${this.version}`)}`;
-			// The owl symbol carries baked-in brand colors, so only show it on
-			// truecolor terminals; otherwise the wordmark/app name stands alone.
 			const logo =
-				termW >= 70
-					? getCapabilities().trueColor
-						? `${WORDMARK_SYMBOL}\n${wordmark}`
-						: wordmark
+				termW >= 40
+					? buildCompactWordmark({
+							appName: APP_NAME,
+							version: this.version,
+							cwd: this.formatDisplayPath(this.sessionManager.getCwd()),
+							accent: (text) => theme.fg("accent", text),
+							dim: (text) => theme.fg("dim", text),
+							muted: (text) => theme.fg("muted", text),
+							cursor: (text) => theme.blink(theme.fg("accent", text)),
+							note: () => theme.fg("dim", `  ${keyText("app.tools.expand")} more`),
+						})
 					: theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers
@@ -623,23 +627,12 @@ export class InteractiveMode {
 				hint("app.clipboard.pasteImage", "to paste image"),
 				rawKeyHint("drop files", "to attach"),
 			].join("\n");
-			const compactInstructions = [
-				hint("app.interrupt", "interrupt"),
-				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
-				rawKeyHint("/", "commands"),
-				rawKeyHint("!", "bash"),
-				hint("app.tools.expand", "more"),
-			].join(theme.fg("muted", " · "));
-			const compactOnboarding = theme.fg(
-				"dim",
-				`Press ${keyText("app.tools.expand")} to show full startup help and loaded resources.`,
-			);
 			const onboarding = theme.fg(
 				"dim",
 				`${APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend ${APP_NAME}.`,
 			);
 			this.builtInHeader = new ExpandableText(
-				() => `${logo}\n${compactInstructions}\n${compactOnboarding}\n\n${onboarding}`,
+				() => logo,
 				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
@@ -647,9 +640,7 @@ export class InteractiveMode {
 			);
 
 			// Setup UI layout
-			this.headerContainer.addChild(new Spacer(1));
 			this.headerContainer.addChild(this.builtInHeader);
-			this.headerContainer.addChild(new Spacer(1));
 		} else {
 			// Minimal header when silenced
 			this.builtInHeader = new Text("", 0, 0);
@@ -1356,6 +1347,8 @@ export class InteractiveMode {
 		}
 
 		if (showListing) {
+			this.chatContainer.addChild(new Spacer(1));
+
 			const { agentsFiles: contextFiles, warnings: contextWarnings } = this.session.resourceLoader.getAgentsFiles();
 			const skills = skillsResult.skills;
 			const templates = this.session.promptTemplates;
@@ -1374,7 +1367,6 @@ export class InteractiveMode {
 			}
 
 			if (totalItems > 0 && totalItems <= 5) {
-				this.chatContainer.addChild(new Spacer(1));
 				const allCompactItems: string[] = [...metaItems];
 				if (contextFiles.length > 0) {
 					allCompactItems.push(...contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)));
@@ -1396,12 +1388,14 @@ export class InteractiveMode {
 						),
 					);
 				}
-				addLoadedSection("Resources", formatCompactList(allCompactItems), formatCompactList(allCompactItems));
+				this.chatContainer.addChild(
+					new Text(`${theme.fg("mdHeading", "[Resources]")} ${theme.fg("dim", allCompactItems.join(", "))}`, 0, 0),
+				);
 			} else if (totalItems === 0) {
-				this.chatContainer.addChild(new Spacer(1));
-				addLoadedSection("Resources", formatCompactList(metaItems), formatCompactList(metaItems));
+				this.chatContainer.addChild(
+					new Text(`${theme.fg("mdHeading", "[Resources]")} ${theme.fg("dim", metaItems.join(", "))}`, 0, 0),
+				);
 			} else {
-				this.chatContainer.addChild(new Spacer(1));
 				addLoadedSection("Resources", formatCompactList(metaItems), formatCompactList(metaItems));
 				if (contextFiles.length > 0) {
 					this.chatContainer.addChild(new Spacer(1));
@@ -1480,9 +1474,8 @@ export class InteractiveMode {
 
 			if (contextWarnings.length > 0) {
 				for (const warning of contextWarnings) {
-					this.chatContainer.addChild(new Text(theme.fg("warning", `  ${warning}`), 0, 0));
+					this.chatContainer.addChild(new Text(theme.fg("warning", warning), 0, 0));
 				}
-				this.chatContainer.addChild(new Spacer(1));
 			}
 		}
 
@@ -3617,8 +3610,7 @@ export class InteractiveMode {
 	}
 
 	showWarning(warningMessage: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("warning", `Warning: ${warningMessage}`), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("warning", warningMessage), 1, 0));
 		this.ui.requestRender();
 	}
 
