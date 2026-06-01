@@ -391,7 +391,7 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
-		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("subagent"));
+		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
 		this.taskPanel = new TaskPanelComponent();
 
 		// Load hide thinking block setting

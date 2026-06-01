@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import { getSubagentSystemPrompt, SUBAGENT_MODES, type SubagentMode } from "../src/core/subagent.js";
 import { taskStore } from "../src/core/task-store.js";
+import { buildTaskMainPrompt, summarizeAgentDescription } from "../src/core/tools/subagent.js";
 
 describe("subagent system prompts", () => {
 	test("exposes the six tool modes", () => {
@@ -55,5 +56,52 @@ describe("task store", () => {
 
 	test("update ignores unknown ids", () => {
 		expect(() => taskStore.update(999999, { status: "done" })).not.toThrow();
+	});
+});
+
+describe("summarizeAgentDescription", () => {
+	const builtinStyle = [
+		"Use this subagent ONLY when:",
+		"- Reading or understanding code without changes",
+		"- Scouting a codebase for plans or maps",
+		"- Analyzing dependencies, imports, project structure",
+		"",
+		"DO NOT use for:",
+		"- Writing or modifying code",
+	].join("\n");
+
+	test("drops the boilerplate header and surfaces the first bullets", () => {
+		const summary = summarizeAgentDescription(builtinStyle);
+		expect(summary).toBe(
+			"Reading or understanding code without changes; Scouting a codebase for plans or maps; Analyzing dependencies, imports, project structure",
+		);
+		expect(summary).not.toContain("Use this subagent ONLY when");
+		expect(summary).not.toContain("DO NOT");
+	});
+
+	test("keeps a plain single-line description as-is", () => {
+		expect(summarizeAgentDescription("Expert TypeScript reviewer")).toBe("Expert TypeScript reviewer");
+	});
+
+	test("falls back to the first prose line when there are no bullets", () => {
+		expect(summarizeAgentDescription("Reviews PRs for correctness and risk.\nMore detail here.")).toBe(
+			"Reviews PRs for correctness and risk.",
+		);
+	});
+
+	test("returns empty string for empty input", () => {
+		expect(summarizeAgentDescription("")).toBe("");
+	});
+});
+
+describe("buildTaskMainPrompt agent list", () => {
+	test("renders distinct, meaningful summaries instead of a repeated header", () => {
+		const prompt = buildTaskMainPrompt(process.cwd());
+		// The old bug rendered every agent row as the same boilerplate header.
+		expect(prompt).not.toContain(": Use this subagent ONLY when:");
+		expect(prompt).toContain("- explore: ");
+		const exploreLine = prompt.split("\n").find((line) => line.startsWith("- explore: "));
+		expect(exploreLine).toBeDefined();
+		expect(exploreLine).not.toBe("- explore: Use this subagent ONLY when:");
 	});
 });
