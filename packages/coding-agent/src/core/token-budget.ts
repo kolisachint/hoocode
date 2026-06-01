@@ -24,7 +24,6 @@ export interface TokenBudgetState {
  * - explore: 35 000 (read-only scanning, tracing deps)
  * - edit: 60 000 (reads, plans, writes, iterates — heaviest)
  * - test: 45 000 (writes tests, runs, debugs failures)
- * - fix: 45 000 (reads, edits, re-runs to verify the fix)
  * - review: 35 000 (read-only audit, security analysis)
  * - doc: 30 000 (reads code, writes docs/comments)
  */
@@ -32,7 +31,6 @@ const DEFAULT_BUDGETS: Record<string, number> = {
 	explore: 35000,
 	edit: 60000,
 	test: 45000,
-	fix: 45000,
 	review: 35000,
 	doc: 30000,
 };
@@ -45,6 +43,10 @@ export function getDefaultBudget(agent_type: string): number {
 /**
  * Tracks cumulative token usage for a single subagent task by parsing
  * newline-delimited JSON events from the subagent's stdout stream.
+ *
+ * Advisory only: this never stops or penalizes a subagent. The guaranteed hard
+ * stop is the per-subagent turn cap (--max-turns); these events exist purely for
+ * telemetry and for callers that want to surface usage.
  *
  * Emits:
  * - "budget_warning" when 80% of the budget is consumed

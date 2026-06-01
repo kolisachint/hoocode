@@ -11,7 +11,6 @@ describe("TokenBudget", () => {
 			expect(getDefaultBudget("explore")).toBe(35000);
 			expect(getDefaultBudget("edit")).toBe(60000);
 			expect(getDefaultBudget("test")).toBe(45000);
-			expect(getDefaultBudget("fix")).toBe(45000);
 			expect(getDefaultBudget("review")).toBe(35000);
 			expect(getDefaultBudget("doc")).toBe(30000);
 			expect(getDefaultBudget("unknown")).toBe(35000);

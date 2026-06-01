@@ -1,31 +1,36 @@
 import { describe, expect, test } from "vitest";
-import { getSubagentSystemPrompt, SUBAGENT_MODES, type SubagentMode } from "../src/core/subagent.js";
+import { parseAgentDefinition } from "../src/core/agent-frontmatter.js";
 import { taskStore } from "../src/core/task-store.js";
 import { buildTaskMainPrompt, summarizeAgentDescription } from "../src/core/tools/subagent.js";
+import { EMBEDDED_AGENT_PROMPTS } from "../src/init-templates.generated.js";
 
-describe("subagent system prompts", () => {
-	test("exposes the six tool modes", () => {
-		expect([...SUBAGENT_MODES]).toEqual(["explore", "edit", "test", "fix", "review", "doc"]);
+describe("built-in subagent tool allowlists (frontmatter)", () => {
+	function toolsFor(name: string): string[] {
+		const { agent } = parseAgentDefinition(EMBEDDED_AGENT_PROMPTS[name]!, { source: "builtin", fallbackName: name });
+		return agent?.tools ?? [];
+	}
+
+	test("defines the five built-in agents", () => {
+		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual(["doc", "edit", "explore", "review", "test"]);
 	});
 
-	test("every mode has a non-empty prompt", () => {
-		for (const mode of SUBAGENT_MODES) {
-			const prompt = getSubagentSystemPrompt(mode);
-			expect(prompt.trim().length).toBeGreaterThan(0);
+	test("every built-in agent declares a non-empty tool allowlist", () => {
+		for (const name of Object.keys(EMBEDDED_AGENT_PROMPTS)) {
+			expect(toolsFor(name).length).toBeGreaterThan(0);
 		}
 	});
 
-	test("every prompt stays well under 500 tokens", () => {
-		// Rough token estimate: ~4 characters per token is a standard heuristic.
-		for (const mode of SUBAGENT_MODES) {
-			const prompt = getSubagentSystemPrompt(mode);
-			const approxTokens = Math.ceil(prompt.length / 4);
-			expect(approxTokens).toBeLessThan(500);
+	test("read-only agents omit edit and write", () => {
+		for (const name of ["explore", "test", "review"]) {
+			expect(toolsFor(name)).not.toContain("edit");
+			expect(toolsFor(name)).not.toContain("write");
 		}
 	});
 
-	test("throws for an unknown mode", () => {
-		expect(() => getSubagentSystemPrompt("bogus" as SubagentMode)).toThrow();
+	test("edit and doc agents can write", () => {
+		for (const name of ["edit", "doc"]) {
+			expect(toolsFor(name)).toContain("write");
+		}
 	});
 });
 

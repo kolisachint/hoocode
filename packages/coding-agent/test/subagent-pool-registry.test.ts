@@ -87,14 +87,14 @@ describe("SubagentPool registry wiring", () => {
 		expect(argv[modelIdx + 1]).toBe("haiku");
 	});
 
-	test("falls back to the built-in mode allowlist when a definition omits tools", async () => {
+	test("uses the built-in agent's frontmatter tool allowlist", async () => {
 		const mock = createArgvRecorder(cwd);
 		pool = new SubagentPool({ executable: process.execPath, prefixArgs: [mock], cwd });
 
 		const result = await pool.dispatch("run a read-only scan", { forceAgent: "explore" });
 		const argv = readArgv(cwd, result.task_id!);
 
-		// Built-in explore template declares no `tools`, so MODE_TOOLS applies.
+		// Built-in explore template declares its read-only allowlist in frontmatter.
 		const toolsIdx = argv.indexOf("--tools");
 		expect(toolsIdx).toBeGreaterThanOrEqual(0);
 		expect(argv[toolsIdx + 1]).toBe("read,grep,find,ls,bash");

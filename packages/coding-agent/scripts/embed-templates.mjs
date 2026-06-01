@@ -62,7 +62,6 @@ function readSubdirEntries(parent, filename) {
 const defaultConfig = readFileSync(join(templatesDir, "default-config.json"), "utf8");
 const modes = readSubdirEntries(join(templatesDir, "modes"), "system.md");
 const profiles = readSubdirEntries(join(templatesDir, "profiles"), "context.md");
-const subagentPrompts = readFlatMarkdown(join(templatesDir, "subagent"));
 const agentPrompts = readFlatMarkdown(join(templatesDir, "agents"));
 
 const modeEntries = Object.entries(modes)
@@ -71,11 +70,6 @@ const modeEntries = Object.entries(modes)
 	.join("\n");
 
 const profileEntries = Object.entries(profiles)
-	.sort(([a], [b]) => a.localeCompare(b))
-	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
-	.join("\n");
-
-const subagentEntries = Object.entries(subagentPrompts)
 	.sort(([a], [b]) => a.localeCompare(b))
 	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
 	.join("\n");
@@ -101,10 +95,6 @@ export const EMBEDDED_PROFILES: Record<string, string> = {
 ${profileEntries}
 };
 
-export const EMBEDDED_SUBAGENT_PROMPTS: Record<string, string> = {
-${subagentEntries}
-};
-
 export const EMBEDDED_AGENT_PROMPTS: Record<string, string> = {
 ${agentEntries}
 };
@@ -113,8 +103,7 @@ ${agentEntries}
 writeFileSync(outFile, body);
 const modeCount = Object.keys(modes).length;
 const profileCount = Object.keys(profiles).length;
-const subagentCount = Object.keys(subagentPrompts).length;
 const agentCount = Object.keys(agentPrompts).length;
 console.log(
-	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"}, ${subagentCount} subagent prompt${subagentCount === 1 ? "" : "s"}, ${agentCount} agent prompt${agentCount === 1 ? "" : "s"})`,
+	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"}, ${agentCount} agent prompt${agentCount === 1 ? "" : "s"})`,
 );

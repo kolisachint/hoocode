@@ -9,12 +9,11 @@ import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
-import { getSubagentSystemPrompt, MODE_TOOLS, type SubagentMode } from "./subagent.js";
 import { TokenBudget } from "./token-budget.js";
 
 export interface SubagentPoolTask {
 	task_id: string;
-	agent_type: SubagentMode | string;
+	agent_type: string;
 	task: string;
 	context?: string;
 	token_budget?: number;
@@ -69,7 +68,7 @@ export interface TaskResult {
 export interface DispatchOptions {
 	/** Skip evaluation and force this agent type (user/explicit override).
 	 *  Accepts any registry-defined agent name, not just the built-in modes. */
-	forceAgent?: SubagentMode | string;
+	forceAgent?: string;
 	/** Context distilled from the calling agent, passed to the subagent. */
 	context?: string;
 	/** Model id for the subagent (defaults to the child's configured default). */
@@ -308,7 +307,7 @@ export class SubagentPool extends EventEmitter {
 			return { handled_inline: true, reason: analysis.reason };
 		}
 
-		const agent_type: SubagentMode | string = forceAgent ?? (analysis.agent_type as SubagentMode) ?? "explore";
+		const agent_type = forceAgent ?? "explore";
 		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const reason = forceAgent ? "user_override" : analysis.reason;
 		const complexity = analysis.estimated_complexity;
@@ -378,27 +377,6 @@ export class SubagentPool extends EventEmitter {
 		} catch {
 			return undefined;
 		}
-	}
-
-	/**
-	 * Dispatch a batch of subtasks concurrently.
-	 *
-	 * Spawns up to `maxConcurrency` at once; overflow is queued with FIFO.
-	 * Returns aggregated results in the same order as the input.
-	 */
-	async dispatchBatch(
-		tasks: Array<{ agent_type: SubagentMode; prompt: string }>,
-		shared: Omit<DispatchOptions, "forceAgent"> = {},
-	): Promise<TaskResult[]> {
-		if (this.disposed) {
-			return Promise.reject(new Error("SubagentPool has been disposed"));
-		}
-
-		const promises = tasks.map(async ({ agent_type, prompt }) => {
-			return this.dispatch(prompt, { ...shared, forceAgent: agent_type });
-		});
-
-		return Promise.all(promises);
 	}
 
 	private writeDispatchLog(
@@ -503,22 +481,14 @@ export class SubagentPool extends EventEmitter {
 		const def = task.agent_type ? this.getRegistry().get(task.agent_type) : undefined;
 
 		if (task.agent_type) {
-			const mode = task.agent_type as SubagentMode;
-			let systemPrompt = def?.prompt;
-			if (!systemPrompt) {
-				try {
-					systemPrompt = getSubagentSystemPrompt(mode);
-				} catch {
-					systemPrompt = undefined;
-				}
-			}
+			const systemPrompt = def?.prompt;
 			if (systemPrompt) {
 				args.push("--system-prompt", systemPrompt);
 			}
-			// Tool allowlist: prefer the definition's normalized allowlist. When the
-			// definition omits tools (inherit-all) but the agent maps to a built-in
-			// mode, fall back to MODE_TOOLS to preserve the read-only sandbox.
-			const tools = def?.tools ?? MODE_TOOLS[mode];
+			// Tool allowlist comes from the agent definition's frontmatter `tools`
+			// field (read-only built-ins declare their own sandbox). When omitted, no
+			// --tools is passed and the subagent inherits all parent tools.
+			const tools = def?.tools;
 			if (tools && tools.length > 0) {
 				args.push("--tools", tools.join(","));
 			}

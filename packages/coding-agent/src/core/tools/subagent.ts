@@ -14,7 +14,6 @@
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { loadAgentRegistry } from "../agent-registry.js";
-import { DispatchEvaluator } from "../dispatch-evaluator.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
 import type { SubagentPool, TaskResult } from "../subagent-pool.js";
@@ -138,12 +137,6 @@ function summarize(task: string): string {
 	let name = words.length > 8 ? `${words.slice(0, 8).join(" ")}…` : firstLine;
 	if (name.length > 60) name = `${name.slice(0, 59)}…`;
 	return name;
-}
-
-/** Quick advisory check: would the dispatch evaluator delegate this task?
- *  The evaluator is non-blocking; this is exposed for diagnostics/tools only. */
-export function isSubagentRecommended(task: string): boolean {
-	return new DispatchEvaluator().evaluate(task).should_delegate;
 }
 
 /** Create the Task tool definition. Registered as a customTool when enabled. */
