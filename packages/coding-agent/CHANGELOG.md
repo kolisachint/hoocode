@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Removed leading space from startup warning lines (`showWarning` paddingX changed from 1 to 0).
+
 ## [0.4.20] - 2026-06-01
 
 ## [0.4.19] - 2026-06-01

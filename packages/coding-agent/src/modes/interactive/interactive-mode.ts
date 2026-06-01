@@ -3610,7 +3610,7 @@ export class InteractiveMode {
 	}
 
 	showWarning(warningMessage: string): void {
-		this.chatContainer.addChild(new Text(theme.fg("warning", warningMessage), 1, 0));
+		this.chatContainer.addChild(new Text(theme.fg("warning", warningMessage), 0, 0));
 		this.ui.requestRender();
 	}
 
