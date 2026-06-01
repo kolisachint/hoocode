@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getDispatchTaskDir } from "../config.js";
 import { waitForChildProcess } from "../utils/child-process.js";
@@ -424,6 +424,18 @@ export class SubagentPool extends EventEmitter {
 		}
 	}
 
+	/**
+	 * Remove a task's dispatch dir after a clean, verified success. Best-effort:
+	 * a cleanup failure must never fail an otherwise successful task.
+	 */
+	private cleanupDispatchDir(task_id: string, cwd: string): void {
+		try {
+			rmSync(getDispatchTaskDir(cwd, task_id), { recursive: true, force: true });
+		} catch {
+			// Best-effort cleanup
+		}
+	}
+
 	/** Kill all running processes, clear the queue, and reject pending waiters. */
 	dispose(): void {
 		if (this.disposed) return;
@@ -674,11 +686,13 @@ export class SubagentPool extends EventEmitter {
 					// Attach the verified result.json so callers can read the summary
 					// without parsing the raw event stream.
 					result.result_data = this.tryReadResultJson(task.task_id, task.cwd ?? this.cwd);
-				}
 
-				this.writeOutputJson(task.task_id, result);
+					// Clean success: discard the per-task dispatch dir entirely
+					// (session.jsonl, result.json, dispatch-log.json, budget.json). The
+					// in-memory result already carries result_data, so callers lose
+					// nothing. Trade-off: resume() only works for non-successful tasks.
+					this.cleanupDispatchDir(task.task_id, task.cwd ?? this.cwd);
 
-				if (result.ok) {
 					this.emit("task_done", {
 						task_id: task.task_id,
 						agent_type: task.agent_type,
@@ -686,16 +700,19 @@ export class SubagentPool extends EventEmitter {
 						tokens_used,
 						status: "complete",
 					});
-				} else {
-					this.emit("task_failed", {
-						task_id: task.task_id,
-						agent_type: task.agent_type,
-						duration,
-						tokens_used,
-						error: result.error ?? `Exited with code ${code}`,
-					});
+					this.resolveWaiter(task.task_id, result);
+					return;
 				}
 
+				// Failure path: keep the dispatch dir for debugging and persist output.
+				this.writeOutputJson(task.task_id, result);
+				this.emit("task_failed", {
+					task_id: task.task_id,
+					agent_type: task.agent_type,
+					duration,
+					tokens_used,
+					error: result.error ?? `Exited with code ${code}`,
+				});
 				this.resolveWaiter(task.task_id, result);
 			})
 			.catch((err) => {

@@ -314,6 +314,31 @@ describe("SubagentPool", () => {
 		expect(pool!.get_status("t1")).toBe("done");
 	});
 
+	test("removes the dispatch dir on a clean, verified success", async () => {
+		const exe = createMockExecutable(tmpDir, 0);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		const dispatchDir = join(tmpDir, ".hoocode", "dispatch", "t1");
+		createValidResultJson(tmpDir, "t1");
+		expect(existsSync(dispatchDir)).toBe(true);
+		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
+		const result = await pool.wait_for("t1");
+		expect(result.ok).toBe(true);
+		// result_data is preserved in-memory even though the files are gone.
+		expect((result.result_data as { status?: string } | undefined)?.status).toBe("complete");
+		expect(existsSync(dispatchDir)).toBe(false);
+	});
+
+	test("keeps the dispatch dir on failure for debugging", async () => {
+		const exe = createMockExecutable(tmpDir, 0);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		const dispatchDir = join(tmpDir, ".hoocode", "dispatch", "bad-output");
+		// No result.json -> verification fails -> dir is retained with output.json.
+		pool.spawn({ task_id: "bad-output", agent_type: "explore", task: "hello" });
+		const result = await pool.wait_for("bad-output");
+		expect(result.ok).toBe(false);
+		expect(existsSync(join(dispatchDir, "output.json"))).toBe(true);
+	});
+
 	test("get_status returns failed after bad exit", async () => {
 		const exe = createMockExecutable(tmpDir, 1);
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 2, cwd: tmpDir });
