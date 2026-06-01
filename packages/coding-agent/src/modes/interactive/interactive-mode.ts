@@ -86,7 +86,7 @@ import { getSubagentPool } from "../../core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../core/subagent-result.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
-import { WORDMARK } from "../../core/wordmark.js";
+import { WORDMARK, WORDMARK_SYMBOL } from "../../core/wordmark.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
@@ -589,9 +589,14 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const termW = this.ui.terminal.columns;
+			const wordmark = `${theme.fg("accent", WORDMARK)}\n${theme.fg("dim", `v${this.version}`)}`;
+			// The owl symbol carries baked-in brand colors, so only show it on
+			// truecolor terminals; otherwise the wordmark/app name stands alone.
 			const logo =
 				termW >= 70
-					? `${theme.fg("accent", WORDMARK)}\n${theme.fg("dim", `v${this.version}`)}`
+					? getCapabilities().trueColor
+						? `${WORDMARK_SYMBOL}\n${wordmark}`
+						: wordmark
 					: theme.bold(theme.fg("accent", APP_NAME)) + theme.fg("dim", ` v${this.version}`);
 
 			// Build startup instructions using keybinding hint helpers

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Startup banner now renders the Hoo owl symbol as colored half-block ANSI art above the ASCII wordmark on truecolor terminals (wide layout only). Non-truecolor or narrow terminals keep the existing wordmark/app-name banner. The art is generated from `assets/symbol.svg` via `scripts/generate-wordmark-symbol.ts` into `src/core/wordmark-symbol.generated.ts`.
+
 ## [0.4.18] - 2026-06-01
 
 ### Changed

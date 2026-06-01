@@ -1,6 +1,11 @@
-# HooCode
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/hoocode.svg">
+    <img alt="HooCode" src="assets/hoocode-light.svg" height="64">
+  </picture>
+</p>
 
-Deterministic terminal coding agent.
+<p align="center">Deterministic terminal coding agent.</p>
 
 ## Credits
 
