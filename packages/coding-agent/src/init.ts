@@ -29,6 +29,10 @@ export async function initConfig(): Promise<void> {
 	await mkdir(join(HOOCODE_DIR, "modes"), { recursive: true });
 	await mkdir(join(HOOCODE_DIR, "mcp-servers"), { recursive: true });
 	await mkdir(join(HOOCODE_DIR, "agent", "extensions"), { recursive: true });
+	// Skill and agent directories — created up-front so users know where to put files.
+	// Use /new-skill <name> or /new-agent <name> to scaffold correctly-formatted files.
+	await mkdir(join(HOOCODE_DIR, "agent", "skills"), { recursive: true });
+	await mkdir(join(HOOCODE_DIR, "agent", "agents"), { recursive: true });
 
 	await writeSeedFile(configPath, EMBEDDED_DEFAULT_CONFIG);
 
