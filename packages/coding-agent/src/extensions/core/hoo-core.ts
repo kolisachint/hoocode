@@ -11,7 +11,7 @@
  *                         and /approve commands
  *
  * Config merge order (lowest → highest priority):
- *   1. ~/.hoocode/agent/hoo-config.json   (global defaults)
+ *   1. ~/.hoocode/hoo-config.json         (global defaults)
  *   2. ./.hoocode/config.json             (project overrides — scalars win; arrays union)
  */
 
@@ -663,7 +663,7 @@ export function setupMode(pi: ExtensionAPI): void {
 
 	// ── session_start ─────────────────────────────────────────────────────────
 	// Config resolution order:
-	//   1. Read global config  (~/.hoocode/agent/hoo-config.json)
+	//   1. Read global config  (~/.hoocode/hoo-config.json)
 	//   2. Read project config (./.hoocode/config.json) if present
 	//   3. Merge — project scalars win; arrays are unioned
 	//   4. Re-resolve active_mode from the merged result
