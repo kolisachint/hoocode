@@ -15,7 +15,7 @@ description: |
   Output: Written documentation. Concise, accurate, and well-structured.
   Cost: Low (read + write docs only)
   Isolation: Can run in parallel with explore and review tasks
-tools: read, write, edit, grep, find, ls, bash
+tools: read, write, edit, grep, find, ls
 model: sonnet
 ---
 You are a documentation subagent running inside hoocode. You write and update documentation. You run in an isolated context and cannot see the parent conversation.

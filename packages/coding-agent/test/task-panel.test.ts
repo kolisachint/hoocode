@@ -55,8 +55,11 @@ describe("task panel rendering", () => {
 		// Subagent mode tags are intentionally not shown in the task pane.
 		expect(text).not.toContain("[explore]");
 		expect(text).not.toContain("[edit]");
+		// Active work shows the WORKING stamp (◐) and a pending dot (●).
 		expect(text).toContain("◐");
 		expect(text).toContain("●");
+		// A pending task is tagged queued.
+		expect(text).toContain("queued");
 		// Task IDs should be visible
 		expect(text).toContain(`#${explore.id}`);
 		expect(text).toContain(`#${edit.id}`);
@@ -119,6 +122,10 @@ describe("task panel rendering", () => {
 		expect(header).toContain("5.0k");
 		expect(header).toContain("1.2k");
 		expect(header).toContain("$0.030");
+		// Both tasks done → REVIEWED stamp + a full progress bar.
+		expect(stripAnsi(header)).toContain("REVIEWED");
+		expect(header).toContain("━");
+		expect(stripAnsi(header)).toContain("2/2");
 	});
 
 	test("header omits the turn delta when no task reported usage", () => {
@@ -127,7 +134,9 @@ describe("task panel rendering", () => {
 
 		const header = renderPanel()[0];
 		expect(header).not.toContain("turn ↑");
-		expect(header).toContain("0/1 done");
+		// Active task → WORKING stamp + 0/1 count.
+		expect(stripAnsi(header)).toContain("WORKING");
+		expect(stripAnsi(header)).toContain("0/1");
 	});
 
 	test("header turn delta omits cost when it is zero (e.g. subscription)", () => {

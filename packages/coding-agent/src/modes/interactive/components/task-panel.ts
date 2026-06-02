@@ -1,4 +1,4 @@
-import type { Component } from "@kolisachint/hoocode-tui";
+import type { Component, TUI } from "@kolisachint/hoocode-tui";
 import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { Task, TaskStatus } from "../../../core/task-store.js";
 import { taskStore } from "../../../core/task-store.js";
@@ -10,6 +10,37 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	done: "✓",
 	failed: "✗",
 };
+
+/** Braille spinner frames + cadence, matched to the TUI Loader so the active row animates in step. */
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+const SPINNER_INTERVAL_MS = 80;
+
+/** A thin colored left rail groups the pane without a box, the way the design's `border-left` does. */
+const RAIL = "▎";
+
+/** Cells in the deterministic progress bar (matches the design's 14-cell track). */
+const PROGRESS_CELLS = 14;
+
+/** Overall pane state, derived from the task statuses. Drives the rail color + header stamp. */
+type PanelState = "working" | "reviewed" | "stopped";
+
+interface StatePresentation {
+	readonly icon: string;
+	readonly label: string;
+	readonly color: "warning" | "success" | "error";
+}
+
+const STATE_PRESENTATION: Record<PanelState, StatePresentation> = {
+	working: { icon: "◐", label: "working", color: "warning" },
+	reviewed: { icon: "✓", label: "reviewed", color: "success" },
+	stopped: { icon: "✗", label: "stopped", color: "error" },
+};
+
+function panelState(tasks: readonly Task[]): PanelState {
+	if (tasks.some((t) => t.status === "failed")) return "stopped";
+	const active = tasks.some((t) => t.status === "in_progress" || t.status === "pending");
+	return active ? "working" : "reviewed";
+}
 
 function taskStatusColor(status: TaskStatus): "dim" | "warning" | "success" | "error" {
 	switch (status) {
@@ -24,14 +55,19 @@ function taskStatusColor(status: TaskStatus): "dim" | "warning" | "success" | "e
 	}
 }
 
-/** Wall-clock time a task occupied, derived from its create/update stamps. */
-function formatElapsed(task: Task): string {
-	const secs = Math.max(0, (task.updatedAt - task.createdAt) / 1000);
-	if (secs < 10) return `${secs.toFixed(1)}s`;
-	if (secs < 60) return `${Math.round(secs)}s`;
-	const mins = Math.floor(secs / 60);
-	const rem = Math.round(secs % 60);
+/** Format a duration in seconds into a compact, terminal-friendly string. */
+function formatDuration(secs: number): string {
+	const s = Math.max(0, secs);
+	if (s < 10) return `${s.toFixed(1)}s`;
+	if (s < 60) return `${Math.round(s)}s`;
+	const mins = Math.floor(s / 60);
+	const rem = Math.round(s % 60);
 	return `${mins}m${rem.toString().padStart(2, "0")}s`;
+}
+
+/** Wall-clock time a task occupied, derived from its create/update stamps. */
+function taskElapsedSecs(task: Task): number {
+	return Math.max(0, (task.updatedAt - task.createdAt) / 1000);
 }
 
 /** Sum the token + cost usage reported by the tasks shown this turn. */
@@ -50,51 +86,79 @@ function sumTurnUsage(tasks: readonly Task[]): { input: number; output: number; 
 }
 
 /**
- * Ledger header: a watched/reviewed stamp plus done/total count on the left, and
- * the per-turn token + cost delta (summed across the tasks below) on the right.
- * The panel is an audit trail — the stamp makes the deterministic "every task
- * watched & reviewed" state glanceable, and the delta surfaces what the turn cost.
+ * Deterministic block-glyph progress bar: a heavy run (━) for the completed
+ * fraction over a dim track. In-progress tasks count as half, so the bar moves
+ * the moment work starts. Fraction is the only input — no animation, no guess.
  */
-function formatHeader(tasks: readonly Task[], width: number): string {
+function progressBar(done: number, active: number, total: number): { plain: string; styled: string } {
+	const ratio = total > 0 ? Math.max(0, Math.min(1, (done + active * 0.5) / total)) : 0;
+	const filled = Math.round(ratio * PROGRESS_CELLS);
+	const fill = "━".repeat(filled);
+	const track = "━".repeat(PROGRESS_CELLS - filled);
+	return {
+		plain: fill + track,
+		styled: theme.fg("success", fill) + theme.fg("dim", track),
+	};
+}
+
+/**
+ * Ledger header: a state stamp (◐ working / ✓ reviewed / ✗ stopped) + a
+ * deterministic progress bar and done/total count on the left, and the per-turn
+ * token + elapsed + cost delta (summed across the tasks below) on the right.
+ */
+function formatHeader(tasks: readonly Task[], width: number, state: PanelState, totalSecs: number): string {
 	const total = tasks.length;
 	const done = tasks.filter((t) => t.status === "done").length;
-	const watching = tasks.some((t) => t.status === "in_progress" || t.status === "pending");
+	const active = tasks.filter((t) => t.status === "in_progress").length;
 
-	const stampPlain = watching ? "⟳ watching" : "reviewed ✓ · deterministic";
-	// Header is quiet audit chrome: the reviewed stamp sits in dim, only the active
-	// "watching" state earns a warning tint. (Design: .task-head color = fg-dim.)
-	const stamp = watching ? theme.fg("warning", "⟳ watching") : theme.fg("dim", stampPlain);
+	const { icon, label, color } = STATE_PRESENTATION[state];
+	const stampPlain = `${icon} ${label.toUpperCase()}`;
+	const stamp = `${theme.fg(color, icon)} ${theme.bold(theme.fg(color, label.toUpperCase()))}`;
 
-	const countPlain = `${done}/${total} done`;
-	const leftPlain = `${stampPlain}  ${countPlain}`;
-	const left = `${stamp}  ${theme.fg("dim", countPlain)}`;
+	const bar = progressBar(done, active, total);
+	const countPlain = `${done}/${total}`;
+	const count = theme.fg("muted", `${done}`) + theme.fg("dim", "/") + theme.fg("muted", `${total}`);
+
+	// Left cluster has a full form (stamp · bar · count) and a compact fallback
+	// (stamp · count) that drops the bar when the terminal is too narrow.
+	const leftFullPlain = `${stampPlain}  ${bar.plain} ${countPlain}`;
+	const leftFull = `${stamp}  ${bar.styled} ${count}`;
+	const leftMinPlain = `${stampPlain} ${countPlain}`;
+	const leftMin = `${stamp} ${count}`;
 
 	const turn = sumTurnUsage(tasks);
-	if (!turn) {
-		return truncateToWidth(left, width, "…");
+	let turnPlain = "";
+	let turnText = "";
+	if (turn) {
+		const inTok = formatTokens(turn.input);
+		const outTok = formatTokens(turn.output);
+		const elapsed = formatDuration(totalSecs);
+		const showCost = turn.cost > 0;
+		const costStr = showCost ? `$${turn.cost.toFixed(3)}` : "";
+		turnPlain = `turn ↑${inTok} ↓${outTok} · ${elapsed}${showCost ? ` · ${costStr}` : ""}`;
+		// Turn delta: muted framing, numbers one step brighter (bold), separators dim.
+		turnText =
+			theme.fg("muted", "turn ↑") +
+			theme.bold(inTok) +
+			theme.fg("muted", " ↓") +
+			theme.bold(outTok) +
+			theme.fg("dim", " · ") +
+			theme.fg("muted", elapsed) +
+			(showCost ? theme.fg("dim", " · ") + theme.bold(costStr) : "");
 	}
 
-	// Cost is omitted when zero (e.g. subscription/untracked) — still show tokens.
-	const showCost = turn.cost > 0;
-	const costPlain = showCost ? ` $${turn.cost.toFixed(3)}` : "";
-	const turnPlain = `turn ↑${formatTokens(turn.input)} ↓${formatTokens(turn.output)}${costPlain}`;
-	// Turn delta: muted framing with the numbers one step brighter (bold/full fg),
-	// matching the design's `.turntok` (fg-muted) / `.turntok b` (fg) hierarchy.
-	let turnText =
-		theme.fg("muted", "turn ↑") +
-		theme.bold(formatTokens(turn.input)) +
-		theme.fg("muted", " ↓") +
-		theme.bold(formatTokens(turn.output));
-	if (showCost) {
-		turnText += ` ${theme.bold(`$${turn.cost.toFixed(3)}`)}`;
+	if (turnPlain) {
+		if (visibleWidth(leftFullPlain) + 2 + visibleWidth(turnPlain) <= width) {
+			const pad = Math.max(2, width - visibleWidth(leftFullPlain) - visibleWidth(turnPlain));
+			return leftFull + " ".repeat(pad) + turnText;
+		}
+		if (visibleWidth(leftMinPlain) + 2 + visibleWidth(turnPlain) <= width) {
+			const pad = Math.max(2, width - visibleWidth(leftMinPlain) - visibleWidth(turnPlain));
+			return leftMin + " ".repeat(pad) + turnText;
+		}
 	}
-
-	if (visibleWidth(leftPlain) + 2 + visibleWidth(turnPlain) > width) {
-		// Too narrow for both — keep the stamp + count.
-		return truncateToWidth(left, width, "…");
-	}
-	const pad = Math.max(2, width - visibleWidth(leftPlain) - visibleWidth(turnPlain));
-	return left + " ".repeat(pad) + turnText;
+	if (visibleWidth(leftFullPlain) <= width) return leftFull;
+	return truncateToWidth(leftMin, width, "…");
 }
 
 function formatTokens(count: number): string {
@@ -104,30 +168,48 @@ function formatTokens(count: number): string {
 	return `${(count / 1000000).toFixed(1)}M`;
 }
 
-function formatTaskLine(task: Task, width: number): string {
-	const icon = theme.fg(taskStatusColor(task.status), TASK_STATUS_ICON[task.status]);
+function formatTaskLine(task: Task, width: number, frame: number): string {
+	const isProgress = task.status === "in_progress";
+	const iconGlyph = isProgress
+		? (SPINNER_FRAMES[frame] ?? TASK_STATUS_ICON.in_progress)
+		: TASK_STATUS_ICON[task.status];
+	const icon = theme.fg(taskStatusColor(task.status), iconGlyph);
+
 	const idLabel = `#${task.id}`;
 	const title = task.title;
-	// The id recedes (dim) so the title carries the line. Done tasks fade their
-	// title to muted (work that's settled); active/failed keep full foreground.
-	// (Design: .task .id = fg-dim, .task .ttitle = fg, .task.is-done .ttitle = fg-muted.)
+	// The id recedes (dim); the title carries the line. Done titles fade to muted
+	// (settled work), pending dim (not started), active goes bold, failed turns red.
 	const styledId = theme.fg("dim", idLabel);
-	const styledTitle = task.status === "done" ? theme.fg("muted", title) : title;
+	let styledTitle: string;
+	switch (task.status) {
+		case "done":
+			styledTitle = theme.fg("muted", title);
+			break;
+		case "pending":
+			styledTitle = theme.fg("dim", title);
+			break;
+		case "failed":
+			styledTitle = theme.fg("error", title);
+			break;
+		case "in_progress":
+			styledTitle = theme.bold(title);
+			break;
+		default:
+			styledTitle = title;
+	}
 
-	// Finished tasks carry an audit stamp: total tokens used + elapsed time. The
-	// token count sits one step brighter (muted) than the time (dim), per the
-	// design's `.cost` (fg-dim) / `.cost b` (fg-muted) split.
-	const settled = task.status === "done" || task.status === "failed";
+	// Right column: settled rows carry their audit stamp (tokens + elapsed); the
+	// active row reads `running…`, pending rows read `queued`.
 	let rightPlain = "";
 	let rightStyled = "";
-	if (settled) {
+	if (task.status === "done" || task.status === "failed") {
 		const parts: string[] = [];
 		let tokenText = "";
 		if (task.usage) {
-			const total = task.usage.input + task.usage.output;
-			if (total > 0) tokenText = formatTokens(total);
+			const totalTok = task.usage.input + task.usage.output;
+			if (totalTok > 0) tokenText = formatTokens(totalTok);
 		}
-		const elapsed = formatElapsed(task);
+		const elapsed = formatDuration(taskElapsedSecs(task));
 		if (tokenText) {
 			parts.push(tokenText, elapsed);
 			rightStyled = theme.fg("muted", tokenText) + theme.fg("dim", ` · ${elapsed}`);
@@ -136,11 +218,18 @@ function formatTaskLine(task: Task, width: number): string {
 			rightStyled = theme.fg("dim", elapsed);
 		}
 		rightPlain = parts.join(" · ");
+	} else if (task.status === "in_progress") {
+		rightPlain = "running…";
+		rightStyled = theme.fg("warning", rightPlain);
+	} else if (task.status === "pending") {
+		rightPlain = "queued";
+		rightStyled = theme.fg("dim", rightPlain);
 	}
+
 	const rightWidth = rightPlain ? visibleWidth(rightPlain) + 1 : 0;
 	const leftWidth = Math.max(0, width - rightWidth);
 
-	const plainText = `${TASK_STATUS_ICON[task.status]} ${idLabel} ${title}`;
+	const plainText = `${iconGlyph} ${idLabel} ${title}`;
 	const available = Math.max(0, leftWidth - visibleWidth(plainText) + visibleWidth(title));
 	const left = truncateToWidth(`${icon} ${styledId} ${styledTitle}`, available, "…");
 
@@ -153,29 +242,73 @@ function formatTaskLine(task: Task, width: number): string {
 /**
  * Task panel rendered just above the editor prompt.
  *
- * - A ledger header (watched/reviewed stamp + done/total count) tops the list.
+ * - A state-colored left rail groups the pane (working=warning, reviewed=success,
+ *   stopped=error) without drawing a box.
+ * - A ledger header tops the list: a state stamp + deterministic progress bar +
+ *   done/total count on the left, the per-turn token/elapsed/cost delta on the right.
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
- * - Subagent mode is intentionally NOT shown here (e.g. no "[explore]" tag) — the
- *   task title is the meaningful label; the mode adds noise in the pane.
+ *   The active row animates a braille spinner; pending rows read `queued`.
+ * - Subagent mode is intentionally NOT shown here (e.g. no "[explore]" tag).
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
  *   user message arrives (see taskStore.reset()), not the moment they finish.
  * - Collapses to zero lines when there are no tasks.
  */
 export class TaskPanelComponent implements Component {
+	private readonly ui: TUI | null;
+	private frame = 0;
+	private animationTimer: ReturnType<typeof setInterval> | null = null;
+
+	constructor(ui?: TUI) {
+		this.ui = ui ?? null;
+	}
+
 	invalidate(): void {
 		// No cached rendering state.
+	}
+
+	/** Run the spinner timer only while a task is active, ticking re-renders. */
+	private ensureAnimation(active: boolean): void {
+		if (active && this.ui && !this.animationTimer) {
+			this.animationTimer = setInterval(() => {
+				this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
+				this.ui?.requestRender();
+			}, SPINNER_INTERVAL_MS);
+			this.animationTimer.unref?.();
+		} else if (!active && this.animationTimer) {
+			clearInterval(this.animationTimer);
+			this.animationTimer = null;
+			this.frame = 0;
+		}
+	}
+
+	/** Stop the spinner timer. Call on teardown. */
+	dispose(): void {
+		if (this.animationTimer) {
+			clearInterval(this.animationTimer);
+			this.animationTimer = null;
+		}
 	}
 
 	render(width: number): string[] {
 		const tasks = taskStore.list();
 		if (tasks.length === 0) {
+			this.ensureAnimation(false);
 			return [];
 		}
 
-		const lines: string[] = [formatHeader(tasks, width)];
+		const hasActive = tasks.some((t) => t.status === "in_progress");
+		this.ensureAnimation(hasActive);
+
+		const state = panelState(tasks);
+		const totalSecs = tasks.reduce((sum, t) => sum + taskElapsedSecs(t), 0);
+		const railColor = STATE_PRESENTATION[state].color;
+		const gutter = `${theme.fg(railColor, RAIL)} `;
+		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
+
+		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs)];
 		for (const task of tasks) {
-			lines.push(formatTaskLine(task, width));
+			lines.push(gutter + formatTaskLine(task, inner, this.frame));
 		}
 		return lines;
 	}

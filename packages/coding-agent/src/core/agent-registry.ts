@@ -24,8 +24,8 @@ import { homedir } from "os";
 import { dirname, join, resolve } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { EMBEDDED_AGENT_PROMPTS } from "../init-templates.generated.js";
-import { getAgentCliPaths, getAgentManifestPaths } from "./agent-manifest-paths.js";
 import { type AgentDefinition, type AgentSource, parseAgentDefinition } from "./agent-frontmatter.js";
+import { getAgentCliPaths, getAgentManifestPaths } from "./agent-manifest-paths.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
 /** Registry of agent definitions keyed by name. */

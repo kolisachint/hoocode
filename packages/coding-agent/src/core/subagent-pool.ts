@@ -321,7 +321,7 @@ export class SubagentPool extends EventEmitter {
 			return { handled_inline: true, reason: analysis.reason };
 		}
 
-		const agent_type = forceAgent ?? "explore";
+		const agent_type = forceAgent ?? "general-purpose";
 		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const reason = forceAgent ? "user_override" : analysis.reason;
 		const complexity = analysis.estimated_complexity;
@@ -377,7 +377,7 @@ export class SubagentPool extends EventEmitter {
 		if (!existsSync(sessionFile)) {
 			return Promise.reject(new Error(`No resumable session for task "${task_id}" (expected ${sessionFile}).`));
 		}
-		const agent_type = this.readDispatchAgentType(task_id) ?? "explore";
+		const agent_type = this.readDispatchAgentType(task_id) ?? "general-purpose";
 		return this.dispatch(prompt, { ...options, forceAgent: agent_type, sessionFile });
 	}
 
