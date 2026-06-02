@@ -73,7 +73,7 @@ To fix, switch to /mode build.`,
 // ============================================================================
 
 const HOOCODE_DIR = getHooCodeDir();
-const GLOBAL_CONFIG_PATH = join(HOOCODE_DIR, "agent", "hoo-config.json");
+const GLOBAL_CONFIG_PATH = join(HOOCODE_DIR, "hoo-config.json");
 
 /**
  * Per-session plan file path. Keying on sessionId lets concurrent or resumed
@@ -123,8 +123,7 @@ function readConfig(): HooConfig {
 }
 
 function writeConfig(config: HooConfig): void {
-	const dir = join(HOOCODE_DIR, "agent");
-	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+	if (!existsSync(HOOCODE_DIR)) mkdirSync(HOOCODE_DIR, { recursive: true });
 	writeFileSync(GLOBAL_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 

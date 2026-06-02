@@ -6,10 +6,13 @@
  * increasing order of precedence:
  *
  *   1. builtin            embedded templates (EMBEDDED_AGENT_PROMPTS)
- *   2. claude-user        ~/.claude/agents/*.md          (D7 native import)
- *   3. user               ~/.hoocode/agent/agents/*.md
- *   4. claude-project     <cwd>/.claude/agents/*.md       (D7 native import)
- *   5. project            <cwd>/.hoocode/agents/*.md
+ *   2. package-manifest   paths from hoocode.agents in package.json
+ *   3. claude-user        ~/.claude/agents/*.md          (D7 native import)
+ *   4. user               ~/.hoocode/agents/*.md
+ *   5. ancestor-walk      <git-root..cwd>/.agents/agents/*.md
+ *   6. claude-project     <cwd>/.claude/agents/*.md       (D7 native import)
+ *   7. project            <cwd>/.hoocode/agents/*.md
+ *   8. cli                paths injected via --agent <path>
  *
  * Higher-precedence sources override lower ones by name. Overrides are recorded
  * as collision diagnostics. Loading never throws; problems surface as
@@ -18,10 +21,10 @@
 
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { homedir } from "os";
-import { join, resolve } from "path";
+import { dirname, join, resolve } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { EMBEDDED_AGENT_PROMPTS } from "../init-templates.generated.js";
-import { getAgentManifestPaths } from "./agent-manifest-paths.js";
+import { getAgentCliPaths, getAgentManifestPaths } from "./agent-manifest-paths.js";
 import { type AgentDefinition, type AgentSource, parseAgentDefinition } from "./agent-frontmatter.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
@@ -113,10 +116,51 @@ function registerDir(registry: AgentRegistry, dir: string, source: AgentSource):
 	}
 }
 
+function findGitRepoRoot(startDir: string): string | null {
+	let dir = resolve(startDir);
+	while (true) {
+		if (existsSync(join(dir, ".git"))) return dir;
+		const parent = dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
+}
+
+/** Collect `.agents/agents/` dirs from cwd up to the git root (cwd-first order). */
+function collectAncestorAgentsDirs(startDir: string): string[] {
+	const dirs: string[] = [];
+	const resolvedStart = resolve(startDir);
+	const gitRoot = findGitRepoRoot(resolvedStart);
+	let dir = resolvedStart;
+	while (true) {
+		dirs.push(join(dir, ".agents", "agents"));
+		if (gitRoot && dir === gitRoot) break;
+		const parent = dirname(dir);
+		if (parent === dir) break;
+		dir = parent;
+	}
+	return dirs;
+}
+
+/** Register a single file as an agent. */
+function registerFile(registry: AgentRegistry, filePath: string, source: AgentSource): void {
+	if (!existsSync(filePath)) return;
+	try {
+		if (!statSync(filePath).isFile()) return;
+		const raw = readFileSync(filePath, "utf-8");
+		const { agent, diagnostics } = parseAgentDefinition(raw, { source, filePath });
+		registry.addDiagnostics(diagnostics);
+		if (agent) registry.register(agent);
+	} catch (error) {
+		const message = error instanceof Error ? error.message : "failed to read agent file";
+		registry.addDiagnostics([{ type: "warning", message, path: filePath }]);
+	}
+}
+
 export interface LoadAgentRegistryOptions {
 	/** Working directory for project-local agents. */
 	cwd: string;
-	/** User agent config directory (parent of `agents/`). Defaults to getAgentDir(). */
+	/** User agent config directory (contains `agents/` subdir). Defaults to getAgentDir(). */
 	agentDir?: string;
 	/** Include embedded built-in agents. Defaults to true. */
 	includeBuiltins?: boolean;
@@ -142,27 +186,36 @@ export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegis
 
 	// Package-manifest agents (declared via `hoocode.agents` in package.json).
 	for (const filePath of getAgentManifestPaths()) {
-		if (!existsSync(filePath)) continue;
-		try {
-			if (!statSync(filePath).isFile()) continue;
-			const raw = readFileSync(filePath, "utf-8");
-			const { agent, diagnostics } = parseAgentDefinition(raw, { source: "user", filePath });
-			registry.addDiagnostics(diagnostics);
-			if (agent) registry.register(agent);
-		} catch (error) {
-			const message = error instanceof Error ? error.message : "failed to read agent file";
-			registry.addDiagnostics([{ type: "warning", message, path: filePath }]);
-		}
+		registerFile(registry, filePath, "user");
 	}
 
 	if (includeClaude) {
 		registerDir(registry, join(homedir(), ".claude", "agents"), "claude-user");
 	}
 	registerDir(registry, join(userAgentDir, "agents"), "user");
+
+	// Ancestor-walk .agents/agents/ dirs (git-root first so cwd-level overrides ancestors).
+	for (const dir of collectAncestorAgentsDirs(cwd).reverse()) {
+		registerDir(registry, dir, "project");
+	}
+
 	if (includeClaude) {
 		registerDir(registry, resolve(cwd, ".claude", "agents"), "claude-project");
 	}
 	registerDir(registry, resolve(cwd, CONFIG_DIR_NAME, "agents"), "project");
+
+	// CLI-injected paths have highest precedence (support both files and dirs).
+	for (const p of getAgentCliPaths()) {
+		if (!existsSync(p)) {
+			registry.addDiagnostics([{ type: "warning", message: `Agent path does not exist: ${p}`, path: p }]);
+			continue;
+		}
+		if (statSync(p).isDirectory()) {
+			registerDir(registry, p, "user");
+		} else {
+			registerFile(registry, p, "user");
+		}
+	}
 
 	return registry;
 }

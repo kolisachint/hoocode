@@ -1,13 +1,14 @@
 /**
- * Module-level store for agent paths discovered from package manifests.
+ * Module-level stores for agent paths:
  *
- * Agents declared via `hoocode.agents` in a package.json are resolved by
- * DefaultResourceLoader.reload() and stored here so every subsequent call to
- * loadAgentRegistry() picks them up without requiring callers to plumb paths
- * through every call site.
+ *   manifestPaths — agents declared via `hoocode.agents` in package.json,
+ *                   refreshed on every DefaultResourceLoader.reload().
+ *   cliPaths      — agents injected via `--agent <path>` at startup,
+ *                   set once and never cleared across reloads.
  */
 
 let manifestPaths: string[] = [];
+let cliPaths: string[] = [];
 
 /** Replace the stored manifest paths (called by DefaultResourceLoader.reload). */
 export function setAgentManifestPaths(paths: string[]): void {
@@ -17,4 +18,14 @@ export function setAgentManifestPaths(paths: string[]): void {
 /** Return the current manifest paths. */
 export function getAgentManifestPaths(): string[] {
 	return [...manifestPaths];
+}
+
+/** Set CLI-injected agent paths (called once at startup from main). */
+export function setAgentCliPaths(paths: string[]): void {
+	cliPaths = [...paths];
+}
+
+/** Return the CLI-injected agent paths. */
+export function getAgentCliPaths(): string[] {
+	return [...cliPaths];
 }

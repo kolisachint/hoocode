@@ -478,16 +478,16 @@ export function getShareViewerUrl(gistId: string): string {
 }
 
 // =============================================================================
-// User Config Paths (~/.hoocode/agent/*)
+// User Config Paths (~/.hoocode/*)
 // =============================================================================
 
-/** Get the agent config directory (e.g., ~/.hoocode/agent/) */
+/** Get the agent config directory (e.g., ~/.hoocode/) */
 export function getAgentDir(): string {
 	const envDir = process.env[ENV_AGENT_DIR];
 	if (envDir) {
 		return expandTildePath(envDir);
 	}
-	return join(homedir(), CONFIG_DIR_NAME, "agent");
+	return join(homedir(), CONFIG_DIR_NAME);
 }
 
 /** Subdirectory under the project config dir holding subagent runtime state
@@ -505,13 +505,13 @@ export function getDispatchTaskDir(cwd: string, taskId: string): string {
 	return join(getDispatchRoot(cwd), taskId);
 }
 
-/** Get the hoocode config root directory (parent of agent dir).
- *  Returns parent of getAgentDir(), e.g.:
- *    HOOCODE_CODING_AGENT_DIR=/custom/agent -> /custom
+/** Get the hoocode config root directory (same as getAgentDir() after path flattening).
+ *  Returns getAgentDir(), e.g.:
+ *    HOOCODE_CODING_AGENT_DIR=/custom -> /custom
  *    (no env var) -> ~/.hoocode
  */
 export function getHooCodeDir(): string {
-	return dirname(getAgentDir());
+	return getAgentDir();
 }
 
 /** Get path to user's custom themes directory */
