@@ -12,7 +12,7 @@
  *
  * Config merge order (lowest → highest priority):
  *   1. ~/.hoocode/hoo-config.json         (global defaults)
- *   2. ./.hoocode/config.json             (project overrides — scalars win; arrays union)
+ *   2. ./.hoocode/hoo-config.json             (project overrides — scalars win; arrays union)
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
@@ -192,12 +192,12 @@ function mergeSearchPaths(...sources: (string[] | undefined)[]): string[] {
 
 /**
  * Reads the global config and optionally overlays the project-local config at
- * `./.hoocode/config.json`. Project values win on all scalar fields; arrays are
+ * `./.hoocode/hoo-config.json`. Project values win on all scalar fields; arrays are
  * unioned (see mergeConfigs for full rules).
  */
 export function readMergedConfig(cwd: string): HooConfig {
 	const global = readConfig();
-	const projectPath = join(cwd, ".hoocode", "config.json");
+	const projectPath = join(cwd, ".hoocode", "hoo-config.json");
 	if (!existsSync(projectPath)) return global;
 	try {
 		const project = JSON.parse(readFileSync(projectPath, "utf8")) as HooConfig;
@@ -664,7 +664,7 @@ export function setupMode(pi: ExtensionAPI): void {
 	// ── session_start ─────────────────────────────────────────────────────────
 	// Config resolution order:
 	//   1. Read global config  (~/.hoocode/hoo-config.json)
-	//   2. Read project config (./.hoocode/config.json) if present
+	//   2. Read project config (./.hoocode/hoo-config.json) if present
 	//   3. Merge — project scalars win; arrays are unioned
 	//   4. Re-resolve active_mode from the merged result
 
