@@ -171,6 +171,8 @@ export const KEYBINDINGS = {
 		defaultKeys: "alt+down",
 		description: "Move model down in order",
 	},
+	"app.options.next": { defaultKeys: "right", description: "Confirm and advance to the next question" },
+	"app.options.back": { defaultKeys: "left", description: "Go back to the previous question" },
 	"app.tree.filter.default": {
 		defaultKeys: "ctrl+d",
 		description: "Tree filter: default view",

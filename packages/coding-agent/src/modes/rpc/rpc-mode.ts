@@ -142,6 +142,39 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
 			),
 
+		// RPC clients don't have the rich inline options pane, so ask each
+		// question sequentially with the existing select/input dialogs. A custom
+		// answer is offered as an extra option that opens a text input.
+		askOptions: async (questions, opts) => {
+			const CUSTOM_LABEL = "Custom answer\u2026";
+			const answers: string[] = [];
+			for (const q of questions) {
+				const options = q.options.map((o) => o.label);
+				if (q.allowCustom) options.push(CUSTOM_LABEL);
+				const title = q.detail ? `${q.question}\n${q.detail}` : q.question;
+				const choice = await createDialogPromise(
+					opts,
+					undefined,
+					{ method: "select", title, options, timeout: opts?.timeout },
+					(r) => ("cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined),
+				);
+				if (choice === undefined) return undefined;
+				if (q.allowCustom && choice === CUSTOM_LABEL) {
+					const typed = await createDialogPromise(
+						opts,
+						undefined,
+						{ method: "input", title: q.question, timeout: opts?.timeout },
+						(r) => ("cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined),
+					);
+					if (typed === undefined || !typed.trim()) return undefined;
+					answers.push(typed.trim());
+				} else {
+					answers.push(choice);
+				}
+			}
+			return answers;
+		},
+
 		notify(message: string, type?: "info" | "warning" | "error"): void {
 			// Fire and forget - no response needed
 			output({

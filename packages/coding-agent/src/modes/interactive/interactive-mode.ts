@@ -62,6 +62,7 @@ import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import type {
+	AskQuestion,
 	AutocompleteProviderFactory,
 	EditorFactory,
 	ExtensionCommandContext,
@@ -96,6 +97,7 @@ import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { ArminComponent } from "./components/armin.js";
+import { AskOptionsComponent } from "./components/ask-options.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
@@ -318,6 +320,7 @@ export class InteractiveMode {
 	// Extension UI state
 	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
 	private extensionInput: ExtensionInputComponent | undefined = undefined;
+	private askOptions: AskOptionsComponent | undefined = undefined;
 	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
 	private extensionTerminalInputUnsubscribers = new Set<() => void>();
 
@@ -392,7 +395,7 @@ export class InteractiveMode {
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
-		this.taskPanel = new TaskPanelComponent();
+		this.taskPanel = new TaskPanelComponent(this.ui);
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -1848,6 +1851,9 @@ export class InteractiveMode {
 		if (this.extensionInput) {
 			this.hideExtensionInput();
 		}
+		if (this.askOptions) {
+			this.hideAskOptions();
+		}
 		if (this.extensionEditor) {
 			this.hideExtensionEditor();
 		}
@@ -2011,6 +2017,7 @@ export class InteractiveMode {
 			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
 			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
 			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
+			askOptions: (questions, opts) => this.showAskOptions(questions, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
@@ -2119,6 +2126,56 @@ export class InteractiveMode {
 		this.editorContainer.clear();
 		this.editorContainer.addChild(this.editor);
 		this.extensionSelector = undefined;
+		this.ui.setFocus(this.editor);
+		this.ui.requestRender();
+	}
+
+	/**
+	 * Show the options pane — the agent asking the user one or more questions.
+	 * Resolves with one answer per question, or undefined if skipped/aborted.
+	 */
+	private showAskOptions(questions: AskQuestion[], opts?: ExtensionUIDialogOptions): Promise<string[] | undefined> {
+		return new Promise((resolve) => {
+			if (!questions.length || opts?.signal?.aborted) {
+				resolve(undefined);
+				return;
+			}
+
+			const onAbort = () => {
+				this.hideAskOptions();
+				resolve(undefined);
+			};
+			opts?.signal?.addEventListener("abort", onAbort, { once: true });
+
+			this.askOptions = new AskOptionsComponent(
+				questions,
+				(answers) => {
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this.hideAskOptions();
+					resolve(answers);
+				},
+				() => {
+					opts?.signal?.removeEventListener("abort", onAbort);
+					this.hideAskOptions();
+					resolve(undefined);
+				},
+			);
+
+			this.editorContainer.clear();
+			this.editorContainer.addChild(this.askOptions);
+			this.ui.setFocus(this.askOptions);
+			this.ui.requestRender();
+		});
+	}
+
+	/**
+	 * Hide the options pane and restore the editor.
+	 */
+	private hideAskOptions(): void {
+		if (!this.askOptions) return;
+		this.editorContainer.clear();
+		this.editorContainer.addChild(this.editor);
+		this.askOptions = undefined;
 		this.ui.setFocus(this.editor);
 		this.ui.requestRender();
 	}
@@ -3320,6 +3377,7 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		this.taskStoreUnsubscribe?.();
+		this.taskPanel.dispose();
 		this.stop();
 		await this.runtimeHost.dispose();
 		process.exit(0);

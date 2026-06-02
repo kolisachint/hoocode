@@ -1,5 +1,6 @@
 // UI Components for extensions
 export { ArminComponent } from "./armin.js";
+export { AskOptionsComponent } from "./ask-options.js";
 export { AssistantMessageComponent } from "./assistant-message.js";
 export { BashExecutionComponent } from "./bash-execution.js";
 export { BorderedLoader } from "./bordered-loader.js";

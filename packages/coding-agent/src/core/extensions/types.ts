@@ -93,6 +93,28 @@ export interface ExtensionUIDialogOptions {
 	timeout?: number;
 }
 
+/** A single selectable option in an {@link AskQuestion}. */
+export interface AskOption {
+	/** The option text shown to the user and returned when chosen. */
+	label: string;
+	/** Optional secondary description shown next to the label. */
+	description?: string;
+}
+
+/** One decision the agent asks the user to make in the options pane. */
+export interface AskQuestion {
+	/** The question shown to the user. */
+	question: string;
+	/** Short label used in the answered-step breadcrumb. Defaults to `question`. */
+	short?: string;
+	/** Optional sub-text rendered under the question. */
+	detail?: string;
+	/** The selectable options. */
+	options: AskOption[];
+	/** When true, a custom row lets the user type their own answer. */
+	allowCustom?: boolean;
+}
+
 /** Placement for extension widgets. */
 export type WidgetPlacement = "aboveEditor" | "belowEditor";
 
@@ -130,6 +152,13 @@ export interface ExtensionUIContext {
 
 	/** Show a text input dialog. */
 	input(title: string, placeholder?: string, opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
+
+	/**
+	 * Show the options pane and ask the user one or more questions, each with a
+	 * set of options (and optionally a free-form custom answer). Returns one
+	 * answer string per question in order, or undefined if the user skipped.
+	 */
+	askOptions(questions: AskQuestion[], opts?: ExtensionUIDialogOptions): Promise<string[] | undefined>;
 
 	/** Show a notification to the user. */
 	notify(message: string, type?: "info" | "warning" | "error"): void;

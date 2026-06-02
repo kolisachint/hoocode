@@ -29,6 +29,8 @@ export type {
 	AppendEntryHandler,
 	// App keybindings (for custom editors)
 	AppKeybinding,
+	AskOption,
+	AskQuestion,
 	AutocompleteProviderFactory,
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
