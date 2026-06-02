@@ -11,8 +11,8 @@
  *                         and /approve commands
  *
  * Config merge order (lowest → highest priority):
- *   1. ~/.hoocode/hoo-config.json         (global defaults)
- *   2. ./.hoocode/hoo-config.json             (project overrides — scalars win; arrays union)
+ *   1. ~/.hoocode/hoo-config.json    (global defaults)
+ *   2. ./.hoocode/hoo-config.json   (project overrides — scalars win; arrays union)
  */
 
 import { type ChildProcess, spawn } from "node:child_process";

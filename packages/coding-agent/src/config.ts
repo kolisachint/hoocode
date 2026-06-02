@@ -505,11 +505,7 @@ export function getDispatchTaskDir(cwd: string, taskId: string): string {
 	return join(getDispatchRoot(cwd), taskId);
 }
 
-/** Get the hoocode config root directory (same as getAgentDir() after path flattening).
- *  Returns getAgentDir(), e.g.:
- *    HOOCODE_CODING_AGENT_DIR=/custom -> /custom
- *    (no env var) -> ~/.hoocode
- */
+/** Get the hoocode config root directory (e.g., ~/.hoocode/). Equivalent to getAgentDir(). */
 export function getHooCodeDir(): string {
 	return getAgentDir();
 }

@@ -168,12 +168,7 @@ export interface LoadAgentRegistryOptions {
 	includeClaude?: boolean;
 }
 
-/**
- * Build an AgentRegistry from all configured locations, applying precedence.
- * Agent files discovered from package manifests (via `hoocode.agents` in
- * package.json) are automatically included from the module-level store set by
- * DefaultResourceLoader.reload().
- */
+/** Build an AgentRegistry from all configured locations, applying precedence. */
 export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegistry {
 	const { cwd, includeBuiltins = true, includeClaude = true } = options;
 	const userAgentDir = options.agentDir ?? getAgentDir();

@@ -99,11 +99,6 @@ export interface AgentDefinition {
 	background?: boolean;
 }
 
-/**
- * Standard Claude Code model aliases. Any value outside this set that also
- * doesn't look like a full model ID (claude-*) gets a warning so authors
- * catch typos early.
- */
 const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit"]);
 
 /** Validate an agent name. Returns warning messages (empty when valid). */
@@ -139,10 +134,6 @@ function validateDescription(description: string | undefined): string[] {
 	return errors;
 }
 
-/**
- * Validate a model value against the Claude Code standard.
- * Returns warning messages (empty when valid).
- */
 function validateModel(value: string): string[] {
 	const trimmed = value.trim();
 	if (!trimmed) return [];

@@ -102,8 +102,7 @@ export type {
 	ToolDefinition,
 } from "./extensions/index.js";
 export type { AgentDefinition, AgentSource } from "./agent-frontmatter.js";
-export { AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
-export { formatAgentsForPrompt } from "./agent-registry.js";
+export { AgentRegistry, formatAgentsForPrompt, loadAgentRegistry } from "./agent-registry.js";
 export type { PromptTemplate } from "./prompt-templates.js";
 export type { Skill } from "./skills.js";
 export type { Tool } from "./tools/index.js";

@@ -76,14 +76,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		}
 
 		// Append skills section (only if read tool is available)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
+		const hasRead = !selectedTools || selectedTools.includes("read");
+		if (hasRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
 		}
 
 		// Append agents section (only when Task tool is active)
-		const customPromptHasTask = !selectedTools || selectedTools.includes("Task");
-		if (customPromptHasTask && agents.length > 0) {
+		const hasTask = !selectedTools || selectedTools.includes("Task");
+		if (hasTask && agents.length > 0) {
 			prompt += formatAgentsForPrompt(agents);
 		}
 
