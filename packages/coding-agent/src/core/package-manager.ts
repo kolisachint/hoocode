@@ -47,7 +47,7 @@ function isOfflineModeEnabled(): boolean {
 export interface PathMetadata {
 	source: string;
 	scope: SourceScope;
-	origin: "package" | "top-level";
+	origin: "package" | "top-level" | "claude-code";
 	baseDir?: string;
 }
 
@@ -165,15 +165,18 @@ interface ResourceAccumulator {
  *
  * Precedence (highest to lowest):
  *   0  project + settings entry (source: "local", scope: "project")
- *   1  project + auto-discovered (source: "auto", scope: "project")
- *   2  user + settings entry (source: "local", scope: "user")
- *   3  user + auto-discovered (source: "auto", scope: "user")
- *   4  package resource (origin: "package")
+ *   1  project + auto-discovered (source: "auto", scope: "project")      (.hoocode/skills/)
+ *   2  project + claude-code (source: "auto", scope: "project")           (.claude/skills/)
+ *   3  user + settings entry (source: "local", scope: "user")
+ *   4  user + auto-discovered (source: "auto", scope: "user")             (~/.hoocode/agent/skills/)
+ *   5  user + claude-code (source: "auto", scope: "user")                 (~/.claude/skills/)
+ *   6  package resource (origin: "package")
  */
 function resourcePrecedenceRank(m: PathMetadata): number {
-	if (m.origin === "package") return 4;
-	const scopeBase = m.scope === "project" ? 0 : 2;
-	return scopeBase + (m.source === "local" ? 0 : 1);
+	if (m.origin === "package") return 6;
+	const scopeBase = m.scope === "project" ? 0 : 3;
+	const sourceRank = m.source === "local" ? 0 : m.origin === "claude-code" ? 2 : 1;
+	return scopeBase + sourceRank;
 }
 
 interface PackageFilter {
@@ -2200,6 +2203,23 @@ export class DefaultPackageManager implements PackageManager {
 			projectBaseDir,
 		);
 
+		// Project skills from .claude/ (D7 native import, lower precedence than .hoocode/)
+		const claudeProjectBaseDir = resolve(this.cwd, ".claude");
+		const claudeProjectSkillsDir = join(claudeProjectBaseDir, "skills");
+		const claudeProjectMetadata: PathMetadata = {
+			source: "auto",
+			scope: "project",
+			origin: "claude-code",
+			baseDir: claudeProjectBaseDir,
+		};
+		addResources(
+			"skills",
+			collectAutoSkillEntries(claudeProjectSkillsDir, "pi"),
+			claudeProjectMetadata,
+			projectOverrides.skills,
+			claudeProjectBaseDir,
+		);
+
 		// Project skills from .agents/ (each with its own baseDir)
 		for (const agentsSkillsDir of projectAgentsSkillDirs) {
 			const agentsBaseDir = dirname(agentsSkillsDir); // the .agents directory
@@ -2247,6 +2267,23 @@ export class DefaultPackageManager implements PackageManager {
 			userMetadata,
 			userOverrides.skills,
 			globalBaseDir,
+		);
+
+		// User skills from ~/.claude/ (D7 native import, lower precedence than ~/.hoocode/)
+		const claudeUserBaseDir = join(getHomeDir(), ".claude");
+		const claudeUserSkillsDir = join(claudeUserBaseDir, "skills");
+		const claudeUserMetadata: PathMetadata = {
+			source: "auto",
+			scope: "user",
+			origin: "claude-code",
+			baseDir: claudeUserBaseDir,
+		};
+		addResources(
+			"skills",
+			collectAutoSkillEntries(claudeUserSkillsDir, "pi"),
+			claudeUserMetadata,
+			userOverrides.skills,
+			claudeUserBaseDir,
 		);
 
 		// User skills from ~/.agents/ (with its own baseDir)

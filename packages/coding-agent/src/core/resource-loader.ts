@@ -29,6 +29,11 @@ export interface ResourceExtensionPaths {
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+	/**
+	 * Returns the resolved skill paths currently in use.
+	 * Used to forward non-default skill paths to subagent child processes.
+	 */
+	getSkillPaths(): string[];
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] };
@@ -284,6 +289,10 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
 		return { skills: this.skills, diagnostics: this.skillDiagnostics };
+	}
+
+	getSkillPaths(): string[] {
+		return [...this.lastSkillPaths];
 	}
 
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {

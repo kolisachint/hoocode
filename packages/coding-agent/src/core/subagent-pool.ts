@@ -92,6 +92,12 @@ export interface SubagentPoolOptions {
 	env?: NodeJS.ProcessEnv;
 	/** Default token budget per task. Defaults to 0. */
 	defaultTokenBudget?: number;
+	/**
+	 * Non-default skill paths to forward to every spawned subagent via --skill.
+	 * Subagents auto-discover skills from standard locations; only paths that
+	 * won't be found by default discovery need to be forwarded here.
+	 */
+	skillPaths?: string[];
 }
 
 /**
@@ -120,6 +126,8 @@ export class SubagentPool extends EventEmitter {
 	private readonly cwd: string;
 	private readonly env: NodeJS.ProcessEnv;
 	private readonly defaultTokenBudget: number;
+	/** Non-default skill paths forwarded to every spawned subagent via --skill. */
+	private skillPaths: string[];
 
 	private slots = new Map<string, SubagentSlot>();
 	private queue: SubagentPoolTask[] = [];
@@ -144,6 +152,7 @@ export class SubagentPool extends EventEmitter {
 		this.cwd = options.cwd ?? process.cwd();
 		this.env = options.env ?? process.env;
 		this.defaultTokenBudget = options.defaultTokenBudget ?? 0;
+		this.skillPaths = options.skillPaths ? [...options.skillPaths] : [];
 		this.verifier = new OutputVerifier(this.cwd);
 		this.lifeguard = new SubagentLifeguard(this.cwd);
 		this.lifeguard.on("stalled", (data: { task_id: string; pid: number }) => {
@@ -154,6 +163,11 @@ export class SubagentPool extends EventEmitter {
 			this.killReasons.set(data.task_id, "timeout");
 			this.emit("task_timeout", data);
 		});
+	}
+
+	/** Update the non-default skill paths forwarded to new subagents. */
+	updateSkillPaths(paths: string[]): void {
+		this.skillPaths = [...paths];
 	}
 
 	/** Lazily load the agent registry for this pool's cwd. */
@@ -521,6 +535,12 @@ export class SubagentPool extends EventEmitter {
 		// (warn-only), this is the guaranteed hard stop for a runaway subagent.
 		const maxTurns = def?.maxTurns && def.maxTurns > 0 ? def.maxTurns : DEFAULT_SUBAGENT_MAX_TURNS;
 		args.push("--max-turns", String(maxTurns));
+
+		// Forward non-default skill paths so the subagent has access to all parent skills.
+		// Standard discovery locations (~/.hoocode/, .hoocode/, .claude/) are found automatically.
+		for (const skillPath of this.skillPaths) {
+			args.push("--skill", skillPath);
+		}
 
 		const prompt = task.context?.trim()
 			? `Context from the calling agent:\n\n${task.context.trim()}\n\nTask: ${task.task.trim()}`

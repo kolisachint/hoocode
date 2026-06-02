@@ -355,6 +355,7 @@ describe("skills", () => {
 				cwd: emptyCwd,
 				skillPaths: [join(fixturesDir, "valid-skill")],
 				includeDefaults: true,
+				includeClaude: false,
 			});
 			expect(skills).toHaveLength(1);
 			expect(skills[0].sourceInfo.scope).toBe("temporary");
@@ -367,6 +368,7 @@ describe("skills", () => {
 				cwd: emptyCwd,
 				skillPaths: ["/non/existent/path"],
 				includeDefaults: true,
+				includeClaude: false,
 			});
 			expect(skills).toHaveLength(0);
 			expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("does not exist"))).toBe(true);
