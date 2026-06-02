@@ -15,9 +15,12 @@ describe("normalizeTools (D7 Claude Code shim)", () => {
 		expect(diagnostics).toHaveLength(0);
 	});
 
-	test("accepts a YAML list as well as a comma string", () => {
-		const { tools } = normalizeTools(["Read", "LS"]);
+	test("accepts a YAML list but emits a format warning", () => {
+		const { tools, diagnostics } = normalizeTools(["Read", "LS"]);
 		expect(tools).toEqual(["read", "ls"]);
+		expect(diagnostics).toHaveLength(1);
+		expect(diagnostics[0]!.type).toBe("warning");
+		expect(diagnostics[0]!.message).toMatch(/comma-separated string/);
 	});
 
 	test("drops unknown tools with a diagnostic", () => {
@@ -141,5 +144,55 @@ description: A normal foreground agent.
 ---
 body`;
 		expect(parseAgentDefinition(plain, { source: "project" }).agent?.background).toBeUndefined();
+	});
+
+	test("warns when background is not a boolean", () => {
+		const raw = `---
+name: bad-bg
+description: Agent with invalid background.
+background: yes
+---
+body`;
+		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.background).toBeUndefined();
+		expect(diagnostics.some((d) => d.message.includes("background must be a boolean"))).toBe(true);
+	});
+
+	test("warns on unknown model alias", () => {
+		const raw = `---
+name: weird-model
+description: Agent using a non-standard model name.
+model: gpt-4o
+---
+body`;
+		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent).not.toBeNull();
+		expect(agent?.model).toBe("gpt-4o");
+		expect(diagnostics.some((d) => d.message.includes("not a recognized Claude alias"))).toBe(true);
+	});
+
+	test("allows full Claude model IDs without warning", () => {
+		const raw = `---
+name: full-id
+description: Agent using a full model ID.
+model: claude-sonnet-4-6
+---
+body`;
+		const { diagnostics } = parseAgentDefinition(raw, { source: "project" });
+		expect(diagnostics.every((d) => !d.message.includes("not a recognized Claude alias"))).toBe(true);
+	});
+
+	test("warns when tools is a YAML list (prefer comma string)", () => {
+		const raw = `---
+name: list-tools
+description: Agent declaring tools as a YAML list.
+tools:
+  - read
+  - bash
+---
+body`;
+		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.tools).toEqual(["read", "bash"]);
+		expect(diagnostics.some((d) => d.message.includes("comma-separated string"))).toBe(true);
 	});
 });

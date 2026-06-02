@@ -6,6 +6,7 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { parseFrontmatter } from "../utils/frontmatter.js";
 import { canonicalizePath } from "../utils/paths.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
+import { normalizeTools } from "./agent-frontmatter.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
 
 /** Max name length per spec */
@@ -69,6 +70,8 @@ export interface SkillFrontmatter {
 	name?: string;
 	description?: string;
 	"disable-model-invocation"?: boolean;
+	/** Tools this skill requires. Mapped via the Claude Code alias table (same as agent `tools`). */
+	"allowed-tools"?: string | string[];
 	[key: string]: unknown;
 }
 
@@ -79,6 +82,8 @@ export interface Skill {
 	baseDir: string;
 	sourceInfo: SourceInfo;
 	disableModelInvocation: boolean;
+	/** Normalized hoocode tool names this skill needs, parsed from `allowed-tools`. */
+	allowedTools?: string[];
 }
 
 export interface LoadSkillsResult {
@@ -147,6 +152,18 @@ function createSkillSourceInfo(filePath: string, baseDir: string, source: string
 				baseDir,
 			});
 		case "project":
+			return createSyntheticSourceInfo(filePath, {
+				source: "local",
+				scope: "project",
+				baseDir,
+			});
+		case "claude-user":
+			return createSyntheticSourceInfo(filePath, {
+				source: "local",
+				scope: "user",
+				baseDir,
+			});
+		case "claude-project":
 			return createSyntheticSourceInfo(filePath, {
 				source: "local",
 				scope: "project",
@@ -311,6 +328,15 @@ function loadSkillFromFile(
 			return { skill: null, diagnostics };
 		}
 
+		let allowedTools: string[] | undefined;
+		if (frontmatter["allowed-tools"] !== undefined) {
+			const normalized = normalizeTools(frontmatter["allowed-tools"], filePath);
+			diagnostics.push(...normalized.diagnostics);
+			if (normalized.tools.length > 0) {
+				allowedTools = normalized.tools;
+			}
+		}
+
 		return {
 			skill: {
 				name,
@@ -319,6 +345,7 @@ function loadSkillFromFile(
 				baseDir: skillDir,
 				sourceInfo: createSkillSourceInfo(filePath, skillDir, source),
 				disableModelInvocation: frontmatter["disable-model-invocation"] === true,
+				allowedTools,
 			},
 			diagnostics,
 		};
@@ -356,6 +383,9 @@ export function formatSkillsForPrompt(skills: Skill[]): string {
 		lines.push("  <skill>");
 		lines.push(`    <name>${escapeXml(skill.name)}</name>`);
 		lines.push(`    <description>${escapeXml(skill.description)}</description>`);
+		if (skill.allowedTools && skill.allowedTools.length > 0) {
+			lines.push(`    <tools>${escapeXml(skill.allowedTools.join(", "))}</tools>`);
+		}
 		lines.push(`    <location>${escapeXml(skill.filePath)}</location>`);
 		lines.push("  </skill>");
 	}
@@ -383,6 +413,11 @@ export interface LoadSkillsOptions {
 	skillPaths: string[];
 	/** Include default skills directories. */
 	includeDefaults: boolean;
+	/**
+	 * Discover skills from `.claude/skills/` directories (D7 native import).
+	 * Defaults to true. Set false in tests or when explicit path control is needed.
+	 */
+	includeClaude?: boolean;
 }
 
 function normalizePath(input: string): string {
@@ -403,7 +438,7 @@ function resolveSkillPath(p: string, cwd: string): string {
  * Returns skills and any validation diagnostics.
  */
 export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
-	const { cwd, agentDir, skillPaths, includeDefaults } = options;
+	const { cwd, agentDir, skillPaths, includeDefaults, includeClaude = true } = options;
 
 	// Resolve agentDir - if not provided, use default from config
 	const resolvedAgentDir = agentDir ?? getAgentDir();
@@ -445,6 +480,12 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 	}
 
 	if (includeDefaults) {
+		if (includeClaude) {
+			// D7 native import: mirror agent-registry.ts for interop with .claude/ directories
+			addSkills(loadSkillsFromDirInternal(join(homedir(), ".claude", "skills"), "claude-user", true));
+			addSkills(loadSkillsFromDirInternal(resolve(cwd, ".claude", "skills"), "claude-project", true));
+		}
+		// hoocode-native locations take precedence (loaded after = win on name collision)
 		addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
 		addSkills(loadSkillsFromDirInternal(resolve(cwd, CONFIG_DIR_NAME, "skills"), "project", true));
 	}

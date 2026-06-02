@@ -13,13 +13,15 @@ import { SubagentPool } from "./subagent-pool.js";
 let pool: SubagentPool | undefined;
 let override: SubagentPool | undefined;
 let exitHandlerRegistered = false;
+/** Latest non-default skill paths to forward to subagents, kept in sync with the resource loader. */
+let latestSkillPaths: string[] = [];
 
 /** Get the shared pool for a given working directory, creating it on first use. */
 export function getSubagentPool(cwd: string): SubagentPool {
 	if (override) return override;
 	if (!pool) {
 		const { executable, prefixArgs } = getSubagentSpawnCommand();
-		pool = new SubagentPool({ executable, prefixArgs, cwd });
+		pool = new SubagentPool({ executable, prefixArgs, cwd, skillPaths: latestSkillPaths });
 
 		if (!exitHandlerRegistered) {
 			exitHandlerRegistered = true;
@@ -29,10 +31,22 @@ export function getSubagentPool(cwd: string): SubagentPool {
 	return pool;
 }
 
+/**
+ * Update the skill paths forwarded to every subagent.
+ * Call this after the resource loader reloads or extends its skill set.
+ * If the pool has already been created, updates it immediately.
+ * If not, the paths will be passed in when the pool is first created.
+ */
+export function updateSubagentSkillPaths(paths: string[]): void {
+	latestSkillPaths = paths;
+	pool?.updateSkillPaths(paths);
+}
+
 /** Dispose and clear the shared pool. Intended for test isolation and shutdown. */
 export function disposeSubagentPool(): void {
 	pool?.dispose();
 	pool = undefined;
+	latestSkillPaths = [];
 }
 
 /**

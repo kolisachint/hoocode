@@ -47,7 +47,7 @@ function isOfflineModeEnabled(): boolean {
 export interface PathMetadata {
 	source: string;
 	scope: SourceScope;
-	origin: "package" | "top-level";
+	origin: "package" | "top-level" | "claude-code";
 	baseDir?: string;
 }
 
@@ -62,6 +62,7 @@ export interface ResolvedPaths {
 	skills: ResolvedResource[];
 	prompts: ResolvedResource[];
 	themes: ResolvedResource[];
+	agents: ResolvedResource[];
 }
 
 export type MissingSourceAction = "install" | "skip" | "error";
@@ -149,6 +150,7 @@ interface HooCodeManifest {
 	skills?: string[];
 	prompts?: string[];
 	themes?: string[];
+	agents?: string[];
 }
 
 interface ResourceAccumulator {
@@ -156,6 +158,7 @@ interface ResourceAccumulator {
 	skills: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	prompts: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	themes: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	agents: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 }
 
 /**
@@ -165,15 +168,18 @@ interface ResourceAccumulator {
  *
  * Precedence (highest to lowest):
  *   0  project + settings entry (source: "local", scope: "project")
- *   1  project + auto-discovered (source: "auto", scope: "project")
- *   2  user + settings entry (source: "local", scope: "user")
- *   3  user + auto-discovered (source: "auto", scope: "user")
- *   4  package resource (origin: "package")
+ *   1  project + auto-discovered (source: "auto", scope: "project")      (.hoocode/skills/)
+ *   2  project + claude-code (source: "auto", scope: "project")           (.claude/skills/)
+ *   3  user + settings entry (source: "local", scope: "user")
+ *   4  user + auto-discovered (source: "auto", scope: "user")             (~/.hoocode/agent/skills/)
+ *   5  user + claude-code (source: "auto", scope: "user")                 (~/.claude/skills/)
+ *   6  package resource (origin: "package")
  */
 function resourcePrecedenceRank(m: PathMetadata): number {
-	if (m.origin === "package") return 4;
-	const scopeBase = m.scope === "project" ? 0 : 2;
-	return scopeBase + (m.source === "local" ? 0 : 1);
+	if (m.origin === "package") return 6;
+	const scopeBase = m.scope === "project" ? 0 : 3;
+	const sourceRank = m.source === "local" ? 0 : m.origin === "claude-code" ? 2 : 1;
+	return scopeBase + sourceRank;
 }
 
 interface PackageFilter {
@@ -183,15 +189,22 @@ interface PackageFilter {
 	themes?: string[];
 }
 
-type ResourceType = "extensions" | "skills" | "prompts" | "themes";
+type ResourceType = "extensions" | "skills" | "prompts" | "themes" | "agents";
 
-const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes"];
+const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes", "agents"];
+
+/** Resource types that are configurable via user/project settings. Excludes "agents" because
+ *  agent discovery is handled by AgentRegistry from conventional directories; only package
+ *  manifests supply agents through the package manager. */
+type SettingsResourceType = Exclude<ResourceType, "agents">;
+const SETTINGS_RESOURCE_TYPES: SettingsResourceType[] = ["extensions", "skills", "prompts", "themes"];
 
 const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 	extensions: /\.(ts|js)$/,
 	skills: /\.md$/,
 	prompts: /\.md$/,
 	themes: /\.json$/,
+	agents: /\.md$/,
 };
 
 const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
@@ -869,7 +882,7 @@ export class DefaultPackageManager implements PackageManager {
 		const globalBaseDir = this.agentDir;
 		const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);
 
-		for (const resourceType of RESOURCE_TYPES) {
+		for (const resourceType of SETTINGS_RESOURCE_TYPES) {
 			const target = this.getTargetMap(accumulator, resourceType);
 			const globalEntries = (globalSettings[resourceType] ?? []) as string[];
 			const projectEntries = (projectSettings[resourceType] ?? []) as string[];
@@ -2200,6 +2213,23 @@ export class DefaultPackageManager implements PackageManager {
 			projectBaseDir,
 		);
 
+		// Project skills from .claude/ (D7 native import, lower precedence than .hoocode/)
+		const claudeProjectBaseDir = resolve(this.cwd, ".claude");
+		const claudeProjectSkillsDir = join(claudeProjectBaseDir, "skills");
+		const claudeProjectMetadata: PathMetadata = {
+			source: "auto",
+			scope: "project",
+			origin: "claude-code",
+			baseDir: claudeProjectBaseDir,
+		};
+		addResources(
+			"skills",
+			collectAutoSkillEntries(claudeProjectSkillsDir, "pi"),
+			claudeProjectMetadata,
+			projectOverrides.skills,
+			claudeProjectBaseDir,
+		);
+
 		// Project skills from .agents/ (each with its own baseDir)
 		for (const agentsSkillsDir of projectAgentsSkillDirs) {
 			const agentsBaseDir = dirname(agentsSkillsDir); // the .agents directory
@@ -2247,6 +2277,23 @@ export class DefaultPackageManager implements PackageManager {
 			userMetadata,
 			userOverrides.skills,
 			globalBaseDir,
+		);
+
+		// User skills from ~/.claude/ (D7 native import, lower precedence than ~/.hoocode/)
+		const claudeUserBaseDir = join(getHomeDir(), ".claude");
+		const claudeUserSkillsDir = join(claudeUserBaseDir, "skills");
+		const claudeUserMetadata: PathMetadata = {
+			source: "auto",
+			scope: "user",
+			origin: "claude-code",
+			baseDir: claudeUserBaseDir,
+		};
+		addResources(
+			"skills",
+			collectAutoSkillEntries(claudeUserSkillsDir, "pi"),
+			claudeUserMetadata,
+			userOverrides.skills,
+			claudeUserBaseDir,
 		);
 
 		// User skills from ~/.agents/ (with its own baseDir)
@@ -2311,6 +2358,8 @@ export class DefaultPackageManager implements PackageManager {
 				return accumulator.prompts;
 			case "themes":
 				return accumulator.themes;
+			case "agents":
+				return accumulator.agents;
 			default:
 				throw new Error(`Unknown resource type: ${resourceType}`);
 		}
@@ -2334,6 +2383,7 @@ export class DefaultPackageManager implements PackageManager {
 			skills: new Map(),
 			prompts: new Map(),
 			themes: new Map(),
+			agents: new Map(),
 		};
 	}
 
@@ -2362,6 +2412,7 @@ export class DefaultPackageManager implements PackageManager {
 			skills: mapToResolved(accumulator.skills),
 			prompts: mapToResolved(accumulator.prompts),
 			themes: mapToResolved(accumulator.themes),
+			agents: mapToResolved(accumulator.agents),
 		};
 	}
 

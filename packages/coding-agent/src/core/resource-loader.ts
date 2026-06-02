@@ -9,6 +9,7 @@ import type { ResourceDiagnostic } from "./diagnostics.js";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 
 import { canonicalizePath, isLocalPath } from "../utils/paths.js";
+import { setAgentManifestPaths } from "./agent-manifest-paths.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
@@ -29,6 +30,17 @@ export interface ResourceExtensionPaths {
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
+	/**
+	 * Returns the resolved skill paths currently in use.
+	 * Used to forward non-default skill paths to subagent child processes.
+	 */
+	getSkillPaths(): string[];
+	/**
+	 * Returns agent file paths discovered from package manifests (`hoocode.agents`).
+	 * These are passed to loadAgentRegistry() via the module-level store so
+	 * package-distributed agents appear alongside conventionally discovered ones.
+	 */
+	getAgentPaths(): string[];
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
 	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] };
@@ -224,6 +236,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private systemPrompt?: string;
 	private appendSystemPrompt: string[];
 	private lastSkillPaths: string[];
+	private lastAgentPaths: string[];
 	private extensionSkillSourceInfos: Map<string, SourceInfo>;
 	private extensionPromptSourceInfos: Map<string, SourceInfo>;
 	private extensionThemeSourceInfos: Map<string, SourceInfo>;
@@ -271,6 +284,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.agentsFileWarnings = [];
 		this.appendSystemPrompt = [];
 		this.lastSkillPaths = [];
+		this.lastAgentPaths = [];
 		this.extensionSkillSourceInfos = new Map();
 		this.extensionPromptSourceInfos = new Map();
 		this.extensionThemeSourceInfos = new Map();
@@ -284,6 +298,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
 		return { skills: this.skills, diagnostics: this.skillDiagnostics };
+	}
+
+	getSkillPaths(): string[] {
+		return [...this.lastSkillPaths];
+	}
+
+	getAgentPaths(): string[] {
+		return [...this.lastAgentPaths];
 	}
 
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {
@@ -381,6 +403,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const enabledSkillResources = getEnabledResources(resolvedPaths.skills);
 		const enabledPrompts = getEnabledPaths(resolvedPaths.prompts);
 		const enabledThemes = getEnabledPaths(resolvedPaths.themes);
+		const enabledAgents = getEnabledPaths(resolvedPaths.agents);
 
 		const mapSkillPath = (resource: { path: string; metadata: PathMetadata }): string => {
 			if (resource.metadata.source !== "auto" && resource.metadata.origin !== "package") {
@@ -482,6 +505,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.themeDiagnostics.push({ type: "error", message: "Theme path does not exist", path: p });
 			}
 		}
+
+		this.lastAgentPaths = enabledAgents;
+		setAgentManifestPaths(enabledAgents);
 
 		const contextResult = this.noContextFiles
 			? { agentsFiles: [] as Array<{ path: string; content: string }>, warnings: [] }

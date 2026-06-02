@@ -2,6 +2,8 @@
  * System prompt construction and project context loading
  */
 
+import type { AgentDefinition } from "./agent-frontmatter.js";
+import { formatAgentsForPrompt } from "./agent-registry.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 
 export interface BuildSystemPromptOptions {
@@ -21,6 +23,12 @@ export interface BuildSystemPromptOptions {
 	contextFiles?: Array<{ path: string; content: string }>;
 	/** Pre-loaded skills. */
 	skills?: Skill[];
+	/**
+	 * Available agents for delegation, emitted as `<available_agents>` XML.
+	 * Only populated when the Task tool is active so the model knows which
+	 * agents exist without re-reading the agent registry each turn.
+	 */
+	agents?: AgentDefinition[];
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -34,6 +42,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		cwd,
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
+		agents: providedAgents,
 	} = options;
 	const resolvedCwd = cwd;
 	const promptCwd = resolvedCwd.replace(/\\/g, "/");
@@ -48,6 +57,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
+	const agents = providedAgents ?? [];
 
 	if (customPrompt) {
 		let prompt = customPrompt;
@@ -66,9 +76,15 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		}
 
 		// Append skills section (only if read tool is available)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-		if (customPromptHasRead && skills.length > 0) {
+		const hasRead = !selectedTools || selectedTools.includes("read");
+		if (hasRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
+		}
+
+		// Append agents section (only when Task tool is active)
+		const hasTask = !selectedTools || selectedTools.includes("Task");
+		if (hasTask && agents.length > 0) {
+			prompt += formatAgentsForPrompt(agents);
 		}
 
 		// Add date and working directory last
@@ -148,6 +164,12 @@ ${guidelines}`;
 	// Append skills section (only if read tool is available)
 	if (hasRead && skills.length > 0) {
 		prompt += formatSkillsForPrompt(skills);
+	}
+
+	// Append agents section (only when Task tool is active)
+	const hasTask = tools.includes("Task");
+	if (hasTask && agents.length > 0) {
+		prompt += formatAgentsForPrompt(agents);
 	}
 
 	// Add date and working directory last

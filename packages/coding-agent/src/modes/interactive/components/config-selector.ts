@@ -50,7 +50,7 @@ interface ResourceGroup {
 	key: string;
 	label: string;
 	scope: "user" | "project" | "temporary";
-	origin: "package" | "top-level";
+	origin: "package" | "top-level" | "claude-code";
 	source: string;
 	subgroups: ResourceSubgroup[];
 }

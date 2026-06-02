@@ -45,6 +45,7 @@ import {
 	createTaskOutputToolDefinition,
 	createTaskToolDefinition,
 } from "./core/tools/subagent.js";
+import { setAgentCliPaths } from "./core/agent-manifest-paths.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -535,8 +536,12 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const resolvedExtensionPaths = resolveCliPaths(cwd, parsed.extensions);
 	const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
+	const resolvedAgentPaths = resolveCliPaths(cwd, parsed.agents);
 	const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
 	const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
+
+	// Populate the module-level CLI agent store before any session is created.
+	setAgentCliPaths(resolvedAgentPaths ?? []);
 
 	// Synthetic factory: feed CLI --mode-path values into the extension runtime
 	// so hoo-core (and any other extension that reads pi.getModeSearchPaths)

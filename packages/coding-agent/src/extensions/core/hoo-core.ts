@@ -11,8 +11,8 @@
  *                         and /approve commands
  *
  * Config merge order (lowest → highest priority):
- *   1. ~/.hoocode/agent/hoo-config.json   (global defaults)
- *   2. ./.hoocode/config.json             (project overrides — scalars win; arrays union)
+ *   1. ~/.hoocode/hoo-config.json    (global defaults)
+ *   2. ./.hoocode/hoo-config.json   (project overrides — scalars win; arrays union)
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
@@ -73,7 +73,7 @@ To fix, switch to /mode build.`,
 // ============================================================================
 
 const HOOCODE_DIR = getHooCodeDir();
-const GLOBAL_CONFIG_PATH = join(HOOCODE_DIR, "agent", "hoo-config.json");
+const GLOBAL_CONFIG_PATH = join(HOOCODE_DIR, "hoo-config.json");
 
 /**
  * Per-session plan file path. Keying on sessionId lets concurrent or resumed
@@ -123,8 +123,7 @@ function readConfig(): HooConfig {
 }
 
 function writeConfig(config: HooConfig): void {
-	const dir = join(HOOCODE_DIR, "agent");
-	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+	if (!existsSync(HOOCODE_DIR)) mkdirSync(HOOCODE_DIR, { recursive: true });
 	writeFileSync(GLOBAL_CONFIG_PATH, `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
@@ -193,12 +192,12 @@ function mergeSearchPaths(...sources: (string[] | undefined)[]): string[] {
 
 /**
  * Reads the global config and optionally overlays the project-local config at
- * `./.hoocode/config.json`. Project values win on all scalar fields; arrays are
+ * `./.hoocode/hoo-config.json`. Project values win on all scalar fields; arrays are
  * unioned (see mergeConfigs for full rules).
  */
 export function readMergedConfig(cwd: string): HooConfig {
 	const global = readConfig();
-	const projectPath = join(cwd, ".hoocode", "config.json");
+	const projectPath = join(cwd, ".hoocode", "hoo-config.json");
 	if (!existsSync(projectPath)) return global;
 	try {
 		const project = JSON.parse(readFileSync(projectPath, "utf8")) as HooConfig;
@@ -664,8 +663,8 @@ export function setupMode(pi: ExtensionAPI): void {
 
 	// ── session_start ─────────────────────────────────────────────────────────
 	// Config resolution order:
-	//   1. Read global config  (~/.hoocode/agent/hoo-config.json)
-	//   2. Read project config (./.hoocode/config.json) if present
+	//   1. Read global config  (~/.hoocode/hoo-config.json)
+	//   2. Read project config (./.hoocode/hoo-config.json) if present
 	//   3. Merge — project scalars win; arrays are unioned
 	//   4. Re-resolve active_mode from the merged result
 
@@ -866,6 +865,130 @@ export function setupMode(pi: ExtensionAPI): void {
 }
 
 // ============================================================================
+// Scaffold commands — /new-skill and /new-agent
+// ============================================================================
+
+/** Validates a resource name: lowercase a-z, 0-9, hyphens, no leading/trailing/double hyphens. */
+function validateResourceName(name: string): string | null {
+	if (!name) return "name is required";
+	if (!/^[a-z0-9-]+$/.test(name)) return "name must be lowercase a-z, 0-9, and hyphens only";
+	if (name.startsWith("-") || name.endsWith("-")) return "name must not start or end with a hyphen";
+	if (name.includes("--")) return "name must not contain consecutive hyphens";
+	return null;
+}
+
+function setupScaffold(pi: ExtensionAPI): void {
+	// ── /new-skill <name> ─────────────────────────────────────────────────────
+	// Creates .hoocode/skills/<name>/SKILL.md with a valid Agent Skills frontmatter
+	// template so the file is ready to edit and will be picked up on next reload.
+
+	pi.registerCommand("new-skill", {
+		description: "Scaffold a new skill. Usage: /new-skill <name>",
+		getArgumentCompletions: () => [],
+		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			const name = args.trim();
+			const error = validateResourceName(name);
+			if (error) {
+				ctx.ui.notify(`/new-skill: ${error}. Usage: /new-skill <name>`, "warning");
+				return;
+			}
+
+			const skillDir = join(ctx.cwd, ".hoocode", "skills", name);
+			const skillFile = join(skillDir, "SKILL.md");
+
+			if (existsSync(skillFile)) {
+				ctx.ui.notify(`/new-skill: ${skillFile} already exists`, "warning");
+				return;
+			}
+
+			mkdirSync(skillDir, { recursive: true });
+			writeFileSync(
+				skillFile,
+				[
+					"---",
+					`name: ${name}`,
+					"description: |",
+					"  TODO: describe when to use this skill — one clear sentence per bullet.",
+					"  The model reads this to decide whether to load the skill.",
+					"allowed-tools: read, bash",
+					"---",
+					"",
+					`# ${name}`,
+					"",
+					"TODO: write the skill instructions here.",
+					"",
+					"When relative paths appear below, they are resolved from this file's directory.",
+					"",
+				].join("\n"),
+				"utf8",
+			);
+
+			ctx.ui.notify(
+				`Skill created: ${join(".hoocode", "skills", name, "SKILL.md")}\nEdit the file, then run /reload to activate it.`,
+				"info",
+			);
+		},
+	});
+
+	// ── /new-agent <name> ─────────────────────────────────────────────────────
+	// Creates .hoocode/agents/<name>.md following the Claude Code subagent standard
+	// (name, description, tools comma-string, model alias, optional background).
+
+	pi.registerCommand("new-agent", {
+		description: "Scaffold a new subagent. Usage: /new-agent <name>",
+		getArgumentCompletions: () => [],
+		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			const name = args.trim();
+			const error = validateResourceName(name);
+			if (error) {
+				ctx.ui.notify(`/new-agent: ${error}. Usage: /new-agent <name>`, "warning");
+				return;
+			}
+
+			const agentsDir = join(ctx.cwd, ".hoocode", "agents");
+			const agentFile = join(agentsDir, `${name}.md`);
+
+			if (existsSync(agentFile)) {
+				ctx.ui.notify(`/new-agent: ${agentFile} already exists`, "warning");
+				return;
+			}
+
+			mkdirSync(agentsDir, { recursive: true });
+			writeFileSync(
+				agentFile,
+				[
+					"---",
+					`name: ${name}`,
+					"description: |",
+					"  Use this subagent ONLY when:",
+					"  - TODO: describe the task(s) to delegate here",
+					"",
+					"  DO NOT use for:",
+					"  - TODO: describe what this agent should NOT handle",
+					"tools: read, bash",
+					"model: sonnet",
+					"---",
+					`You are a ${name} subagent running inside hoocode.`,
+					"You run in an isolated context and cannot see the parent conversation.",
+					"",
+					"TODO: write the system prompt here.",
+					"",
+					"Your final message must contain ONLY your answer — it is the only output",
+					"the caller receives. Do not include intermediate reasoning or tool logs.",
+					"",
+				].join("\n"),
+				"utf8",
+			);
+
+			ctx.ui.notify(
+				`Agent created: ${join(".hoocode", "agents", `${name}.md`)}\nEdit the file, then run /reload to activate it.`,
+				"info",
+			);
+		},
+	});
+}
+
+// ============================================================================
 // Extension entry point
 // ============================================================================
 
@@ -873,6 +996,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupPermissionGate(pi);
 	setupMcpLoader(pi);
 	setupMode(pi);
+	setupScaffold(pi);
 }
 
 hooCore.displayName = "hoo-core";

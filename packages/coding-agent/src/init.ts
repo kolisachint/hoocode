@@ -20,7 +20,7 @@ async function writeSeedFile(dest: string, contents: string): Promise<void> {
 }
 
 export async function initConfig(): Promise<void> {
-	const configPath = join(HOOCODE_DIR, "agent", "hoo-config.json");
+	const configPath = join(HOOCODE_DIR, "hoo-config.json");
 
 	if (await exists(configPath)) {
 		return;
@@ -28,7 +28,11 @@ export async function initConfig(): Promise<void> {
 
 	await mkdir(join(HOOCODE_DIR, "modes"), { recursive: true });
 	await mkdir(join(HOOCODE_DIR, "mcp-servers"), { recursive: true });
-	await mkdir(join(HOOCODE_DIR, "agent", "extensions"), { recursive: true });
+	await mkdir(join(HOOCODE_DIR, "extensions"), { recursive: true });
+	// Skill and agent directories — created up-front so users know where to put files.
+	// Use /new-skill <name> or /new-agent <name> to scaffold correctly-formatted files.
+	await mkdir(join(HOOCODE_DIR, "skills"), { recursive: true });
+	await mkdir(join(HOOCODE_DIR, "agents"), { recursive: true });
 
 	await writeSeedFile(configPath, EMBEDDED_DEFAULT_CONFIG);
 

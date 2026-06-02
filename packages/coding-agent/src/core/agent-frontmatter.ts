@@ -99,6 +99,8 @@ export interface AgentDefinition {
 	background?: boolean;
 }
 
+const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit"]);
+
 /** Validate an agent name. Returns warning messages (empty when valid). */
 function validateName(name: string): string[] {
 	const errors: string[] = [];
@@ -132,6 +134,16 @@ function validateDescription(description: string | undefined): string[] {
 	return errors;
 }
 
+function validateModel(value: string): string[] {
+	const trimmed = value.trim();
+	if (!trimmed) return [];
+	if (KNOWN_MODEL_ALIASES.has(trimmed)) return [];
+	if (/^claude-/.test(trimmed)) return [];
+	return [
+		`model "${trimmed}" is not a recognized Claude alias (sonnet | opus | haiku | inherit) or full model ID (claude-*); the agent may not load correctly`,
+	];
+}
+
 /** Split a `tools` frontmatter value (string or list) into raw token names. */
 function splitToolsValue(value: string | string[]): string[] {
 	const tokens = Array.isArray(value) ? value : value.split(",");
@@ -142,12 +154,23 @@ function splitToolsValue(value: string | string[]): string[] {
  * Normalize a raw `tools` allowlist into hoocode tool names via the Claude Code
  * alias map. Returns the deduped, resolved list plus diagnostics for any tokens
  * that could not be mapped.
+ *
+ * Emits a warning when `value` is a YAML list rather than a comma-separated
+ * string — the Claude Code standard format is `tools: read, bash` (string).
  */
 export function normalizeTools(
 	value: string | string[],
 	filePath?: string,
 ): { tools: string[]; diagnostics: ResourceDiagnostic[] } {
 	const diagnostics: ResourceDiagnostic[] = [];
+	if (Array.isArray(value)) {
+		diagnostics.push({
+			type: "warning",
+			message:
+				'tools: use a comma-separated string ("tools: read, bash") instead of a YAML list for Claude Code compatibility',
+			path: filePath,
+		});
+	}
 	const resolved: string[] = [];
 	for (const raw of splitToolsValue(value)) {
 		const mapped = CLAUDE_TOOL_ALIASES[raw.toLowerCase()];
@@ -233,13 +256,29 @@ export function parseAgentDefinition(
 	}
 
 	const model = normalizeModel(frontmatter.model);
+	if (model !== undefined) {
+		for (const error of validateModel(model)) {
+			diagnostics.push({ type: "warning", message: error, path: filePath });
+		}
+	}
 
 	const maxTurns =
 		typeof frontmatter.maxTurns === "number" && Number.isInteger(frontmatter.maxTurns) && frontmatter.maxTurns > 0
 			? frontmatter.maxTurns
 			: undefined;
 
-	const background = frontmatter.background === true ? true : undefined;
+	let background: boolean | undefined;
+	if (frontmatter.background !== undefined) {
+		if (typeof frontmatter.background !== "boolean") {
+			diagnostics.push({
+				type: "warning",
+				message: `background must be a boolean (true or false), got "${frontmatter.background}" — field ignored`,
+				path: filePath,
+			});
+		} else {
+			background = frontmatter.background === true ? true : undefined;
+		}
+	}
 
 	return {
 		agent: {
