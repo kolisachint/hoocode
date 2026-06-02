@@ -97,8 +97,14 @@ interface ModeConfig {
 	auto_allow?: string[];
 	/** Tool names available in this mode (if set, only these tools are active) */
 	enabled_tools?: string[];
+	/** Tool names explicitly blocked in this mode regardless of enabled_tools */
+	denied_tools?: string[];
 	/** Allowed write paths in this mode (glob patterns, only applies if write/edit is enabled) */
 	allowed_write_paths?: string[];
+	/** Regex patterns for allowed bash commands. If set, a command must match at least one to execute. */
+	allowed_bash_commands?: string[];
+	/** Regex patterns for denied bash commands. A command matching any pattern is blocked. */
+	denied_bash_commands?: string[];
 }
 
 export interface HooConfig {
@@ -157,6 +163,14 @@ export function mergeConfigs(global: HooConfig, project: HooConfig): HooConfig {
 				),
 				// enabled_tools: project wins if set, else falls back to global
 				enabled_tools: projectCfg.enabled_tools ?? globalCfg.enabled_tools,
+				// denied_tools: union so project can add more denied tools on top of global
+				denied_tools: Array.from(new Set([...(globalCfg.denied_tools ?? []), ...(projectCfg.denied_tools ?? [])])),
+				// allowed_bash_commands: project wins if set, else falls back to global
+				allowed_bash_commands: projectCfg.allowed_bash_commands ?? globalCfg.allowed_bash_commands,
+				// denied_bash_commands: union so project can add more denied patterns on top of global
+				denied_bash_commands: Array.from(
+					new Set([...(globalCfg.denied_bash_commands ?? []), ...(projectCfg.denied_bash_commands ?? [])]),
+				),
 			};
 		}
 	}
@@ -231,6 +245,18 @@ function matchesAllowedPath(filePath: string, allowedPatterns: string[]): boolea
 	return false;
 }
 
+/**
+ * Tests a bash command string against a regex pattern string.
+ * Returns false (no match) if the pattern is an invalid regex.
+ */
+function matchesBashPattern(pattern: string, command: string): boolean {
+	try {
+		return new RegExp(pattern).test(command);
+	} catch {
+		return false;
+	}
+}
+
 function describeTool(event: ToolCallEvent): string {
 	if (isToolCallEventType("bash", event)) {
 		return `$ ${event.input.command.replace(/\s+/g, " ").slice(0, 100)}`;
@@ -248,12 +274,65 @@ function describeTool(event: ToolCallEvent): string {
 
 export function setupPermissionGate(pi: ExtensionAPI): void {
 	pi.on("tool_call", async (event: ToolCallEvent, ctx: ExtensionContext): Promise<ToolCallEventResult | undefined> => {
-		if (!GATED_TOOLS.has(event.toolName) || !ctx.hasUI) return;
-
-		// Use the merged config so project-local auto_allow entries are respected
+		// Use the merged config so project-local entries are respected
 		const config = readMergedConfig(ctx.cwd);
 		const mode = config.active_mode ?? "build";
 		const modeCfg = config.modes?.[mode];
+
+		// ── Hard enforcement (always applies, regardless of UI) ───────────────────
+
+		// Explicitly denied tools are blocked unconditionally
+		if (modeCfg?.denied_tools?.includes(event.toolName)) {
+			return {
+				block: true,
+				reason: `Tool "${event.toolName}" is denied in mode "${mode}".`,
+			};
+		}
+
+		// enabled_tools acts as a strict allowlist: only listed tools may execute
+		if (modeCfg?.enabled_tools && modeCfg.enabled_tools.length > 0 && !modeCfg.enabled_tools.includes(event.toolName)) {
+			return {
+				block: true,
+				reason:
+					`Tool "${event.toolName}" is not enabled in mode "${mode}" ` +
+					`(enabled: ${modeCfg.enabled_tools.join(", ")}).`,
+			};
+		}
+
+		// Bash command-level filtering
+		if (isToolCallEventType("bash", event)) {
+			const command = (event.input as { command?: string }).command ?? "";
+
+			// denied_bash_commands: block if any pattern matches
+			if (modeCfg?.denied_bash_commands?.length) {
+				for (const pattern of modeCfg.denied_bash_commands) {
+					if (matchesBashPattern(pattern, command)) {
+						return {
+							block: true,
+							reason: `Bash command matches a denied pattern in mode "${mode}": ${pattern}`,
+						};
+					}
+				}
+			}
+
+			// allowed_bash_commands: block unless at least one pattern matches
+			if (modeCfg?.allowed_bash_commands?.length) {
+				const permitted = modeCfg.allowed_bash_commands.some((p) => matchesBashPattern(p, command));
+				if (!permitted) {
+					return {
+						block: true,
+						reason:
+							`Bash command is not permitted in mode "${mode}". ` +
+							`Allowed patterns: ${modeCfg.allowed_bash_commands.join(", ")}`,
+					};
+				}
+			}
+		}
+
+		// ── UI-based permission prompting (interactive sessions only) ─────────────
+
+		if (!GATED_TOOLS.has(event.toolName) || !ctx.hasUI) return;
+
 		const autoAllow = modeCfg?.auto_allow ?? [];
 
 		// Check allowed_write_paths for write/edit operations
