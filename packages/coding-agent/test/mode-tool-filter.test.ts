@@ -123,6 +123,77 @@ describe("mergeConfigs", () => {
 		});
 	});
 
+	describe("denied_tools", () => {
+		it("uses global denied_tools when project has none", () => {
+			const global: HooConfig = { modes: { build: { denied_tools: ["write"] } } };
+			const merged = mergeConfigs(global, {});
+			expect(merged.modes?.build?.denied_tools).toEqual(["write"]);
+		});
+
+		it("unions global and project denied_tools", () => {
+			const global: HooConfig = { modes: { build: { denied_tools: ["write"] } } };
+			const project: HooConfig = { modes: { build: { denied_tools: ["edit"] } } };
+			const merged = mergeConfigs(global, project);
+			expect(merged.modes?.build?.denied_tools).toEqual(["write", "edit"]);
+		});
+
+		it("deduplicates denied_tools", () => {
+			const global: HooConfig = { modes: { build: { denied_tools: ["write"] } } };
+			const project: HooConfig = { modes: { build: { denied_tools: ["write", "edit"] } } };
+			const merged = mergeConfigs(global, project);
+			expect(merged.modes?.build?.denied_tools).toEqual(["write", "edit"]);
+		});
+
+		it("is undefined when neither side declares it", () => {
+			const merged = mergeConfigs({ modes: { build: {} } }, { modes: { build: {} } });
+			expect(merged.modes?.build?.denied_tools).toEqual([]);
+		});
+	});
+
+	describe("allowed_bash_commands", () => {
+		it("uses global allowed_bash_commands when project has none", () => {
+			const global: HooConfig = { modes: { build: { allowed_bash_commands: ["^git\\s"] } } };
+			const merged = mergeConfigs(global, {});
+			expect(merged.modes?.build?.allowed_bash_commands).toEqual(["^git\\s"]);
+		});
+
+		it("project allowed_bash_commands overrides global", () => {
+			const global: HooConfig = { modes: { build: { allowed_bash_commands: ["^git\\s"] } } };
+			const project: HooConfig = { modes: { build: { allowed_bash_commands: ["^npm\\s"] } } };
+			const merged = mergeConfigs(global, project);
+			expect(merged.modes?.build?.allowed_bash_commands).toEqual(["^npm\\s"]);
+		});
+
+		it("falls back to global when project does not declare", () => {
+			const global: HooConfig = { modes: { build: { allowed_bash_commands: ["^ls"] } } };
+			const project: HooConfig = { modes: { build: {} } };
+			const merged = mergeConfigs(global, project);
+			expect(merged.modes?.build?.allowed_bash_commands).toEqual(["^ls"]);
+		});
+	});
+
+	describe("denied_bash_commands", () => {
+		it("uses global denied_bash_commands when project has none", () => {
+			const global: HooConfig = { modes: { build: { denied_bash_commands: ["\\brm\\b"] } } };
+			const merged = mergeConfigs(global, {});
+			expect(merged.modes?.build?.denied_bash_commands).toEqual(["\\brm\\b"]);
+		});
+
+		it("unions global and project denied_bash_commands", () => {
+			const global: HooConfig = { modes: { build: { denied_bash_commands: ["\\brm\\b"] } } };
+			const project: HooConfig = { modes: { build: { denied_bash_commands: ["\\bsudo\\b"] } } };
+			const merged = mergeConfigs(global, project);
+			expect(merged.modes?.build?.denied_bash_commands).toEqual(["\\brm\\b", "\\bsudo\\b"]);
+		});
+
+		it("deduplicates denied_bash_commands", () => {
+			const global: HooConfig = { modes: { build: { denied_bash_commands: ["\\brm\\b"] } } };
+			const project: HooConfig = { modes: { build: { denied_bash_commands: ["\\brm\\b", "\\bsudo\\b"] } } };
+			const merged = mergeConfigs(global, project);
+			expect(merged.modes?.build?.denied_bash_commands).toEqual(["\\brm\\b", "\\bsudo\\b"]);
+		});
+	});
+
 	describe("mode_paths", () => {
 		it("project paths come before global paths and dedupe is applied", () => {
 			const global: HooConfig = { mode_paths: ["/global/a", "/shared"] };

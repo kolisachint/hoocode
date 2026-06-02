@@ -653,6 +653,63 @@ describe("Coding Agent Tools", () => {
 			expect(fullOutput).toContain("1\n2\n3");
 			expect(fullOutput).toContain("2998\n2999\n3000");
 		});
+
+		describe("command-level enforcement (allowedCommands / deniedCommands)", () => {
+			it("allows a command that matches an allowedCommands pattern", async () => {
+				const bash = createBashTool(testDir, { allowedCommands: ["^echo\\b"] });
+				const result = await bash.execute("allow-1", { command: "echo hello" });
+				expect(getTextOutput(result).trim()).toBe("hello");
+			});
+
+			it("blocks a command that does not match any allowedCommands pattern", async () => {
+				const bash = createBashTool(testDir, { allowedCommands: ["^echo\\b"] });
+				await expect(bash.execute("allow-2", { command: "ls" })).rejects.toThrow(
+					"Command blocked: does not match any allowed command pattern",
+				);
+			});
+
+			it("blocks a command matching a deniedCommands pattern", async () => {
+				const bash = createBashTool(testDir, { deniedCommands: ["\\brm\\b"] });
+				await expect(bash.execute("deny-1", { command: "rm -rf /" })).rejects.toThrow(
+					/Command blocked: matches denied pattern/,
+				);
+			});
+
+			it("allows a command that does not match any deniedCommands pattern", async () => {
+				const bash = createBashTool(testDir, { deniedCommands: ["\\brm\\b"] });
+				const result = await bash.execute("deny-2", { command: "echo safe" });
+				expect(getTextOutput(result).trim()).toBe("safe");
+			});
+
+			it("denied check runs before allowed check", async () => {
+				const bash = createBashTool(testDir, {
+					allowedCommands: [".*"],
+					deniedCommands: ["^echo\\b"],
+				});
+				await expect(bash.execute("deny-before-allow", { command: "echo hi" })).rejects.toThrow(
+					/Command blocked: matches denied pattern/,
+				);
+			});
+
+			it("invalid regex patterns in deniedCommands are skipped (do not throw)", async () => {
+				const bash = createBashTool(testDir, { deniedCommands: ["[invalid", "\\brm\\b"] });
+				await expect(bash.execute("invalid-regex-deny", { command: "rm foo" })).rejects.toThrow(
+					/Command blocked: matches denied pattern/,
+				);
+			});
+
+			it("invalid regex patterns in allowedCommands are skipped (do not throw)", async () => {
+				const bash = createBashTool(testDir, { allowedCommands: ["[invalid", "^echo\\b"] });
+				const result = await bash.execute("invalid-regex-allow", { command: "echo valid" });
+				expect(getTextOutput(result).trim()).toBe("valid");
+			});
+
+			it("allows any command when neither option is set", async () => {
+				const bash = createBashTool(testDir, {});
+				const result = await bash.execute("no-filter", { command: "echo unrestricted" });
+				expect(getTextOutput(result).trim()).toBe("unrestricted");
+			});
+		});
 	});
 
 	describe("grep tool", () => {

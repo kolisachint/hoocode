@@ -148,6 +148,16 @@ export interface BashToolOptions {
 	shellPath?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/**
+	 * Regex patterns for allowed commands. When set, a command must match at least one
+	 * pattern to execute; non-matching commands are blocked before the shell is invoked.
+	 */
+	allowedCommands?: string[];
+	/**
+	 * Regex patterns for denied commands. A command matching any pattern is blocked
+	 * before the shell is invoked. Evaluated before allowedCommands.
+	 */
+	deniedCommands?: string[];
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -281,6 +291,41 @@ export function createBashToolDefinition(
 			onUpdate?,
 			_ctx?,
 		) {
+			// Command-level enforcement before the shell is invoked
+			const deniedCommands = options?.deniedCommands;
+			const allowedCommands = options?.allowedCommands;
+
+			if (deniedCommands?.length) {
+				for (const pattern of deniedCommands) {
+					let matches = false;
+					try {
+						matches = new RegExp(pattern).test(command);
+					} catch {
+						// invalid regex — treat as no match
+					}
+					if (matches) {
+						throw new Error(`Command blocked: matches denied pattern "${pattern}"`);
+					}
+				}
+			}
+
+			if (allowedCommands?.length) {
+				let permitted = false;
+				for (const pattern of allowedCommands) {
+					try {
+						if (new RegExp(pattern).test(command)) {
+							permitted = true;
+							break;
+						}
+					} catch {
+						// invalid regex — skip
+					}
+				}
+				if (!permitted) {
+					throw new Error("Command blocked: does not match any allowed command pattern");
+				}
+			}
+
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
 			const output = new OutputAccumulator({ tempFilePrefix: "hoocode-bash" });
