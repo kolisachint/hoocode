@@ -62,6 +62,7 @@ export interface ResolvedPaths {
 	skills: ResolvedResource[];
 	prompts: ResolvedResource[];
 	themes: ResolvedResource[];
+	agents: ResolvedResource[];
 }
 
 export type MissingSourceAction = "install" | "skip" | "error";
@@ -149,6 +150,7 @@ interface HooCodeManifest {
 	skills?: string[];
 	prompts?: string[];
 	themes?: string[];
+	agents?: string[];
 }
 
 interface ResourceAccumulator {
@@ -156,6 +158,7 @@ interface ResourceAccumulator {
 	skills: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	prompts: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 	themes: Map<string, { metadata: PathMetadata; enabled: boolean }>;
+	agents: Map<string, { metadata: PathMetadata; enabled: boolean }>;
 }
 
 /**
@@ -186,15 +189,22 @@ interface PackageFilter {
 	themes?: string[];
 }
 
-type ResourceType = "extensions" | "skills" | "prompts" | "themes";
+type ResourceType = "extensions" | "skills" | "prompts" | "themes" | "agents";
 
-const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes"];
+const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes", "agents"];
+
+/** Resource types that are configurable via user/project settings. Excludes "agents" because
+ *  agent discovery is handled by AgentRegistry from conventional directories; only package
+ *  manifests supply agents through the package manager. */
+type SettingsResourceType = Exclude<ResourceType, "agents">;
+const SETTINGS_RESOURCE_TYPES: SettingsResourceType[] = ["extensions", "skills", "prompts", "themes"];
 
 const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 	extensions: /\.(ts|js)$/,
 	skills: /\.md$/,
 	prompts: /\.md$/,
 	themes: /\.json$/,
+	agents: /\.md$/,
 };
 
 const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
@@ -625,6 +635,7 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
+
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
@@ -872,7 +883,7 @@ export class DefaultPackageManager implements PackageManager {
 		const globalBaseDir = this.agentDir;
 		const projectBaseDir = join(this.cwd, CONFIG_DIR_NAME);
 
-		for (const resourceType of RESOURCE_TYPES) {
+		for (const resourceType of SETTINGS_RESOURCE_TYPES) {
 			const target = this.getTargetMap(accumulator, resourceType);
 			const globalEntries = (globalSettings[resourceType] ?? []) as string[];
 			const projectEntries = (projectSettings[resourceType] ?? []) as string[];
@@ -2348,6 +2359,8 @@ export class DefaultPackageManager implements PackageManager {
 				return accumulator.prompts;
 			case "themes":
 				return accumulator.themes;
+			case "agents":
+				return accumulator.agents;
 			default:
 				throw new Error(`Unknown resource type: ${resourceType}`);
 		}
@@ -2371,6 +2384,7 @@ export class DefaultPackageManager implements PackageManager {
 			skills: new Map(),
 			prompts: new Map(),
 			themes: new Map(),
+			agents: new Map(),
 		};
 	}
 
@@ -2399,6 +2413,7 @@ export class DefaultPackageManager implements PackageManager {
 			skills: mapToResolved(accumulator.skills),
 			prompts: mapToResolved(accumulator.prompts),
 			themes: mapToResolved(accumulator.themes),
+			agents: mapToResolved(accumulator.agents),
 		};
 	}
 

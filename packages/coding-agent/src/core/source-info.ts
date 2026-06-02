@@ -1,7 +1,7 @@
 import type { PathMetadata } from "./package-manager.js";
 
 export type SourceScope = "user" | "project" | "temporary";
-export type SourceOrigin = "package" | "top-level";
+export type SourceOrigin = "package" | "top-level" | "claude-code";
 
 export interface SourceInfo {
 	path: string;

@@ -21,6 +21,7 @@ import { homedir } from "os";
 import { join, resolve } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.js";
 import { EMBEDDED_AGENT_PROMPTS } from "../init-templates.generated.js";
+import { getAgentManifestPaths } from "./agent-manifest-paths.js";
 import { type AgentDefinition, type AgentSource, parseAgentDefinition } from "./agent-frontmatter.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
@@ -125,6 +126,9 @@ export interface LoadAgentRegistryOptions {
 
 /**
  * Build an AgentRegistry from all configured locations, applying precedence.
+ * Agent files discovered from package manifests (via `hoocode.agents` in
+ * package.json) are automatically included from the module-level store set by
+ * DefaultResourceLoader.reload().
  */
 export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegistry {
 	const { cwd, includeBuiltins = true, includeClaude = true } = options;
@@ -135,6 +139,22 @@ export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegis
 	if (includeBuiltins) {
 		registerBuiltins(registry);
 	}
+
+	// Package-manifest agents (declared via `hoocode.agents` in package.json).
+	for (const filePath of getAgentManifestPaths()) {
+		if (!existsSync(filePath)) continue;
+		try {
+			if (!statSync(filePath).isFile()) continue;
+			const raw = readFileSync(filePath, "utf-8");
+			const { agent, diagnostics } = parseAgentDefinition(raw, { source: "user", filePath });
+			registry.addDiagnostics(diagnostics);
+			if (agent) registry.register(agent);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "failed to read agent file";
+			registry.addDiagnostics([{ type: "warning", message, path: filePath }]);
+		}
+	}
+
 	if (includeClaude) {
 		registerDir(registry, join(homedir(), ".claude", "agents"), "claude-user");
 	}
@@ -145,4 +165,46 @@ export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegis
 	registerDir(registry, resolve(cwd, CONFIG_DIR_NAME, "agents"), "project");
 
 	return registry;
+}
+
+/**
+ * Format a list of agent definitions as an XML block for inclusion in a system
+ * prompt, mirroring the `<available_skills>` format used by formatSkillsForPrompt.
+ * Only intended for display when the Task tool is active.
+ */
+export function formatAgentsForPrompt(agents: AgentDefinition[]): string {
+	if (agents.length === 0) return "";
+
+	const lines = [
+		"\n\nThe following specialized agents are available for delegation via the Task tool.",
+		"Choose the agent whose description best matches the task and pass it as `subagent_type`.",
+		"",
+		"<available_agents>",
+	];
+
+	for (const agent of agents) {
+		lines.push("  <agent>");
+		lines.push(`    <name>${escapeXml(agent.name)}</name>`);
+		lines.push(`    <description>${escapeXml(agent.description)}</description>`);
+		if (agent.tools && agent.tools.length > 0) {
+			lines.push(`    <tools>${escapeXml(agent.tools.join(", "))}</tools>`);
+		}
+		if (agent.model) {
+			lines.push(`    <model>${escapeXml(agent.model)}</model>`);
+		}
+		lines.push("  </agent>");
+	}
+
+	lines.push("</available_agents>");
+
+	return lines.join("\n");
+}
+
+function escapeXml(str: string): string {
+	return str
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;")
+		.replace(/'/g, "&apos;");
 }
