@@ -7,37 +7,36 @@
 
 <p align="center">Deterministic terminal coding agent.</p>
 
+<p align="center">
+  <img src="assets/demo.svg" alt="HooCode session: plan a change, approve it, then build — with a Yes/No/Always permission gate on every edit and command" width="840">
+</p>
+
 ## Why HooCode?
 
-Most AI coding tools are black boxes — you type a request and hope the output is correct. HooCode takes a different approach:
+Most coding agents act first and tell you later. HooCode works the other way around. It's *deterministic*: every edit and every shell command passes through a permission gate you control, and the agent is scoped by an explicit mode instead of one do-everything prompt.
 
-| | HooCode | Other AI editors |
+| | HooCode | Typical AI editor |
 |---|---|---|
-| **Approval gates** | Every file edit and shell command requires your sign-off | Changes land silently |
-| **Mode-driven focus** | Separate Ask / Plan / Build / Debug modes keep the agent on-task | Single chat interface does everything |
-| **Provider flexibility** | 25+ LLM providers — Claude, GPT, Gemini, Groq, Ollama… — swappable in one config line | Locked to one vendor |
-| **Extensible** | MCP servers, TypeScript extensions, and custom profiles per project | Closed plugin systems |
-| **Runs anywhere** | Compiles to a self-contained binary; no Node.js required at runtime | Requires IDE or cloud subscription |
+| **Approval gates** | `Yes (once) / No (block) / Always` on every edit and command | Edits and commands apply on their own |
+| **Mode-driven focus** | Ask · Plan · Build · Debug — each with its own prompt and tool set | One chat does everything |
+| **Provider flexibility** | 25+ providers; switch with `--provider` / `--model` | Locked to one vendor |
+| **Extensibility** | MCP servers, TypeScript extensions, per-project profiles | Closed plugin system |
+| **Binary distribution** | Single self-contained binary, no Node.js at runtime | Requires an IDE or cloud account |
 
-**The core workflow:**
+## How it works
 
-1. **Ask** — read-only Q&A about your codebase. The agent never writes.
-2. **Plan** — the agent explores your repo and drafts `.hoocode/plan.md`. You review and approve before anything changes.
-3. **Build** — implements the approved plan, prompting you before each edit or shell command.
-4. **Debug** — root-cause analysis that explains without touching files.
+Four modes, switched any time with `/mode <name>`:
+
+1. **ask** — read-only Q&A. The agent explains, never writes.
+2. **plan** — explores the repo and writes `.hoocode/plan.md` for you to review.
+3. **build** — executes the approved plan, gating each edit and command.
+4. **debug** — root-causes a failure without touching files.
 
 ```bash
-hoocode /mode plan   # draft a plan first
-hoocode /approve     # execute it when you're ready
+hoocode               # start in build mode
+hoocode /mode plan    # or draft a plan first
+hoocode /approve      # review .hoocode/plan.md, then execute it
 ```
-
----
-
-## Demo
-
-See all features in action → **[`assets/demo.html`](assets/demo.html)**
-
----
 
 ## Credits
 
