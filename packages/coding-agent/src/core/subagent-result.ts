@@ -76,6 +76,23 @@ function deriveStatus(messages: readonly AgentMessage[]): "complete" | "failed" 
 	return "complete";
 }
 
+/**
+ * Concrete error text from the final assistant message when the run ended in an
+ * error (e.g. a provider usage/quota or rate-limit message). Surfacing this in
+ * the summary lets the parent report the real cause instead of "subagent failed".
+ */
+function deriveErrorMessage(messages: readonly AgentMessage[]): string | undefined {
+	const last = messages[messages.length - 1];
+	if (last?.role === "assistant") {
+		const assistant = last as AssistantMessage;
+		if (assistant.stopReason === "error" && assistant.errorMessage) {
+			const trimmed = assistant.errorMessage.trim();
+			if (trimmed) return trimmed;
+		}
+	}
+	return undefined;
+}
+
 /** Extra build options that override the status derived from the transcript. */
 export interface BuildSubagentResultOptions {
 	/** The run was stopped at its turn cap. Report a usable partial result rather than a failure. */
@@ -108,12 +125,25 @@ export function buildSubagentResult(
 	}
 
 	const status = deriveStatus(messages);
-	const summary =
-		deriveSummary(messages) || (status === "complete" ? "Task completed with no textual summary." : "Task failed.");
+	if (status === "failed") {
+		// Prefer the provider/model error over any partial assistant text so the
+		// caller sees the real cause (e.g. "usage limit reached").
+		const errorMessage = deriveErrorMessage(messages);
+		const summary = errorMessage ? `Task failed: ${errorMessage}` : deriveSummary(messages) || "Task failed.";
+		return {
+			summary,
+			files_changed: collectChangedFiles(messages),
+			confidence: 0.5,
+			status,
+			usage,
+		};
+	}
+
+	const summary = deriveSummary(messages) || "Task completed with no textual summary.";
 	return {
 		summary,
 		files_changed: collectChangedFiles(messages),
-		confidence: status === "complete" ? 0.9 : 0.5,
+		confidence: 0.9,
 		status,
 		usage,
 	};

@@ -11,7 +11,14 @@ describe("built-in subagent tool allowlists (frontmatter)", () => {
 	}
 
 	test("defines the five built-in agents", () => {
-		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual(["doc", "edit", "explore", "review", "test"]);
+		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual([
+			"doc",
+			"edit",
+			"explore",
+			"general-purpose",
+			"review",
+			"test",
+		]);
 	});
 
 	test("every built-in agent declares a non-empty tool allowlist", () => {

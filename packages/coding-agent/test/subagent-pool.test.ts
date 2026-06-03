@@ -82,6 +82,29 @@ if (delay > 0) setTimeout(run, delay); else run();
 	return path;
 }
 
+/**
+ * Mock that writes a failed result.json (carrying a provider usage-limit error
+ * in its summary) under its --task-id dir, then exits 1. Used to verify the
+ * pool surfaces the concrete failure reason instead of a generic message.
+ */
+function createFailingResultExecutable(dir: string, summary: string): string {
+	const path = join(dir, "mock-failing-result.js");
+	const content = `#!/usr/bin/env node
+const fs = require("node:fs");
+const p = require("node:path");
+const argv = process.argv.slice(2);
+const ti = argv.indexOf("--task-id");
+const taskId = ti >= 0 ? argv[ti + 1] : "unknown";
+const outDir = p.join(process.cwd(), ".hoocode", "dispatch", taskId);
+fs.mkdirSync(outDir, { recursive: true });
+fs.writeFileSync(p.join(outDir, "result.json"), JSON.stringify({ summary: ${JSON.stringify(summary)}, files_changed: [], confidence: 0.5, status: "failed" }));
+process.exit(1);
+`;
+	writeFileSync(path, content);
+	chmodSync(path, 0o755);
+	return path;
+}
+
 function createValidResultJson(cwd: string, taskId: string): void {
 	const dir = join(cwd, ".hoocode", "dispatch", taskId);
 	mkdirSync(dir, { recursive: true });
@@ -345,6 +368,27 @@ describe("SubagentPool", () => {
 		pool.spawn({ task_id: "t1", agent_type: "explore", task: "hello" });
 		await pool.wait_for("t1");
 		expect(pool!.get_status("t1")).toBe("failed");
+	});
+
+	test("surfaces the child's failure reason from result.json on a non-zero exit", async () => {
+		const reason = "Task failed: Anthropic usage limit reached. Please try again later.";
+		const exe = createFailingResultExecutable(tmpDir, reason);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		pool.spawn({ task_id: "quota", agent_type: "general-purpose", task: "do work" });
+		const result = await pool.wait_for("quota");
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("usage limit reached");
+		expect((result.result_data as { status?: string } | undefined)?.status).toBe("failed");
+	});
+
+	test("falls back to the stderr tail when no result.json is present", async () => {
+		// createMockExecutable(exit=1) writes "mock error" to stderr and no result.json.
+		const exe = createMockExecutable(tmpDir, 1);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		pool.spawn({ task_id: "stderr-only", agent_type: "explore", task: "hello" });
+		const result = await pool.wait_for("stderr-only");
+		expect(result.ok).toBe(false);
+		expect(result.error).toContain("mock error");
 	});
 
 	test("passes a default --max-turns hard cap to spawned subagents", async () => {

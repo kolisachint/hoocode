@@ -725,6 +725,13 @@ export class SubagentPool extends EventEmitter {
 				}
 
 				// Failure path: keep the dispatch dir for debugging and persist output.
+				// Attach the child's result.json (if any) and derive a concrete failure
+				// reason so callers see the real cause (e.g. a provider usage/quota
+				// error) instead of a generic "subagent failed".
+				result.result_data = this.tryReadResultJson(task.task_id, task.cwd ?? this.cwd);
+				if (!result.error) {
+					result.error = this.deriveFailureReason(result);
+				}
 				this.writeOutputJson(task.task_id, result);
 				this.emit("task_failed", {
 					task_id: task.task_id,
@@ -769,6 +776,28 @@ export class SubagentPool extends EventEmitter {
 				this.budgets.delete(task.task_id);
 				this.pull();
 			});
+	}
+
+	/**
+	 * Best-effort concrete failure reason for a non-zero-exit subagent. Prefers
+	 * the child's result.json summary (which carries the provider/model error
+	 * message on failure), then the tail of stderr, then the exit code.
+	 */
+	private deriveFailureReason(result: SubagentResult): string {
+		const summary = (result.result_data as { summary?: string } | undefined)?.summary?.trim();
+		if (summary) {
+			return summary;
+		}
+		const stderrTail = result.stderr
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0)
+			.slice(-5)
+			.join("\n");
+		if (stderrTail) {
+			return stderrTail;
+		}
+		return `Exited with code ${result.exit_code}`;
 	}
 
 	private tryReadResultJson(task_id: string, cwd: string): Record<string, unknown> | undefined {

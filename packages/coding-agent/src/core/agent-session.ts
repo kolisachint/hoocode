@@ -81,6 +81,7 @@ import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
+import { clearProviderExhaustion, isProviderQuotaError, markProviderExhausted } from "./provider-health.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
@@ -558,6 +559,10 @@ export class AgentSession {
 				const assistantMsg = event.message as AssistantMessage;
 				if (assistantMsg.stopReason !== "error") {
 					this._overflowRecoveryAttempted = false;
+					// A successful response clears any prior provider-exhaustion flag so
+					// subagent dispatch is unblocked as soon as the provider recovers.
+					const provider = this.model?.provider;
+					if (provider) clearProviderExhaustion(provider);
 				}
 
 				// Reset retry counter immediately on successful assistant response
@@ -582,6 +587,14 @@ export class AgentSession {
 			if (this._isRetryableError(msg)) {
 				const didRetry = await this._handleRetryableError(msg);
 				if (didRetry) return; // Retry was initiated, don't proceed to compaction
+				// Retries are exhausted/disabled and a quota or rate-limit error
+				// persists: flag the provider so subagent dispatch can skip pointless
+				// spawns (subagents inherit this provider). Self-expires via TTL and is
+				// cleared on the next successful response.
+				const provider = this.model?.provider;
+				if (provider && isProviderQuotaError(msg.errorMessage)) {
+					markProviderExhausted(provider, msg.errorMessage ?? "provider error");
+				}
 			}
 
 			this._resolveRetry();

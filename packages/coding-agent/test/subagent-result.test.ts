@@ -67,6 +67,20 @@ describe("buildSubagentResult", () => {
 		expect(result.status).toBe("failed");
 	});
 
+	it("surfaces the provider error message in the summary on failure", () => {
+		const errored = {
+			role: "assistant",
+			content: [{ type: "text", text: "partial progress" }],
+			stopReason: "error",
+			errorMessage: "Anthropic usage limit reached. Please try again later.",
+		} as unknown as AgentMessage;
+		const result = buildSubagentResult([errored]);
+		expect(result.status).toBe("failed");
+		expect(result.summary).toContain("usage limit reached");
+		// Verifier still passes (non-empty summary, confidence >= 0.5).
+		expect(result.confidence).toBeGreaterThanOrEqual(0.5);
+	});
+
 	it("falls back to a placeholder summary when there is no assistant text", () => {
 		const result = buildSubagentResult([assistantToolCall("edit", { path: "x.ts" })]);
 		expect(result.summary.length).toBeGreaterThan(0);

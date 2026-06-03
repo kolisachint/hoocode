@@ -19,7 +19,7 @@ const i = argv.indexOf("--task-id");
 const taskId = i >= 0 ? argv[i + 1] : "unknown";
 const outDir = p.join(process.cwd(), ".hoocode", "dispatch", taskId);
 fs.mkdirSync(outDir, { recursive: true });
-fs.writeFileSync(p.join(outDir, "argv.json"), JSON.stringify(argv));
+fs.writeFileSync(p.join(process.cwd(), "argv.json"), JSON.stringify(argv));
 fs.writeFileSync(p.join(outDir, "result.json"), JSON.stringify({ summary: "ok", files_changed: [], confidence: 0.9, status: "complete" }));
 console.log(JSON.stringify({ type: "done", reason: "stop", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));
 process.exit(0);
@@ -35,8 +35,8 @@ function writeProjectAgent(cwd: string, name: string, frontmatter: string, body:
 	writeFileSync(join(dir, `${name}.md`), `---\nname: ${name}\n${frontmatter}---\n${body}`);
 }
 
-function readArgv(cwd: string, taskId: string): string[] {
-	const path = join(cwd, ".hoocode", "dispatch", taskId, "argv.json");
+function readArgv(cwd: string, _taskId: string): string[] {
+	const path = join(cwd, "argv.json");
 	return JSON.parse(readFileSync(path, "utf-8")) as string[];
 }
 

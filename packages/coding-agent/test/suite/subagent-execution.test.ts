@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../../src/core/auth-storage.js";
 import type { ExtensionContext } from "../../src/core/extensions/types.js";
 import { ModelRegistry } from "../../src/core/model-registry.js";
+import { markProviderExhausted, resetProviderHealthForTesting } from "../../src/core/provider-health.js";
 import { createAgentSession } from "../../src/core/sdk.js";
 import { SessionManager } from "../../src/core/session-manager.js";
 import { SettingsManager } from "../../src/core/settings-manager.js";
@@ -69,6 +70,15 @@ function makeFakePool(result: TaskResult): SubagentPool {
 	} as unknown as SubagentPool;
 }
 
+/** A pool that fails the test if dispatch is ever called (used to prove a skip). */
+function makeNeverDispatchPool(): SubagentPool {
+	return {
+		dispatch: async () => {
+			throw new Error("dispatch must not be called when the provider is flagged exhausted");
+		},
+	} as unknown as SubagentPool;
+}
+
 function fakeResult(ok: boolean, data: Partial<SubagentResultFile>, error?: string): TaskResult {
 	return {
 		handled_inline: false,
@@ -91,6 +101,7 @@ function fakeResult(ok: boolean, data: Partial<SubagentResultFile>, error?: stri
 
 afterEach(() => {
 	setSubagentPoolForTesting(undefined);
+	resetProviderHealthForTesting();
 	while (cleanups.length > 0) {
 		cleanups.pop()?.();
 	}
@@ -136,6 +147,39 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const created = taskStore.list().slice(before);
 		expect(created).toHaveLength(1);
 		expect(created[0].status).toBe("done");
+	});
+
+	it("skips dispatch when the inherited provider is flagged exhausted", async () => {
+		const setup = setupFaux();
+		setSubagentPoolForTesting(makeNeverDispatchPool());
+		const ctx = makeCtx(setup, makeTempDir());
+		// Flag the model's provider as exhausted (as the parent session would on a
+		// persistent usage/quota error).
+		markProviderExhausted(setup.model.provider, "Usage limit reached. Please try again later.");
+
+		const before = taskStore.list().length;
+		const tool = createTaskToolDefinition();
+		const result = await tool.execute(
+			"call-skip",
+			{
+				description: "explore repo",
+				prompt: "explore the repo thoroughly",
+				subagent_type: "explore",
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(result.details).toMatchObject({ subagent_type: "explore", ok: false });
+		expect(result.content[0].type).toBe("text");
+		expect((result.content[0] as { text: string }).text).toContain("exhausted");
+		expect((result.content[0] as { text: string }).text).toContain("Usage limit reached");
+
+		// A failed task row is recorded so the skip is visible in the panel.
+		const created = taskStore.list().slice(before);
+		expect(created).toHaveLength(1);
+		expect(created[0].status).toBe("failed");
 	});
 
 	it("marks the task failed and throws when the subagent errors", async () => {

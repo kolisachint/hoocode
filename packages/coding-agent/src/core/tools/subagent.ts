@@ -16,6 +16,7 @@ import { type Static, Type } from "typebox";
 import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
+import { getProviderExhaustion } from "../provider-health.js";
 import type { SubagentPool, TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile } from "../subagent-result.js";
@@ -162,6 +163,33 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 
 		async execute(_toolCallId, params: TaskParams, _signal, _onUpdate, ctx) {
 			const pool = getSubagentPool(ctx.cwd);
+
+			// Pre-flight: if the inherited provider recently exhausted its quota (the
+			// parent's own turn failed with a usage/rate-limit error that did not
+			// recover), skip the spawn. Subagents run on the same provider, so this
+			// would only burn another failed attempt. The signal self-expires and is
+			// cleared on the next successful response.
+			const provider = ctx.model?.provider;
+			const exhaustion = provider ? getProviderExhaustion(provider) : undefined;
+			if (exhaustion) {
+				const skipped = taskStore.create(params.description?.trim() || summarize(params.prompt), {
+					subagentMode: params.subagent_type,
+				});
+				taskStore.update(skipped.id, { status: "failed" });
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text:
+								`Did not dispatch subagent "${params.subagent_type}": the "${provider}" provider appears ` +
+								`exhausted or rate-limited (this session just failed with: ${exhaustion.message}). ` +
+								`Subagents run on the same provider, so dispatching would fail too. Wait for the quota to ` +
+								`reset or switch model/provider, then retry — or complete the work directly in this session.`,
+						},
+					],
+					details: { subagent_type: params.subagent_type, ok: false, taskId: skipped.id },
+				};
+			}
 
 			// Resume path: continue a previously dispatched subagent with a follow-up
 			// prompt, reusing its persisted session (full prior transcript).
