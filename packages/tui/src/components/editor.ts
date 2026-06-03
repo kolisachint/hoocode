@@ -417,7 +417,7 @@ export class Editor implements Component, Focusable {
 		const contentWidth = Math.max(1, width - paddingX * 2);
 
 		// Prompt prefix reserves space on the first line
-		const promptPrefixWidth = this.promptPrefix ? visibleWidth(this.promptPrefix + " ") : 0;
+		const promptPrefixWidth = this.promptPrefix ? visibleWidth(`${this.promptPrefix} `) : 0;
 
 		// Layout width: with padding the cursor can overflow into it,
 		// without padding we reserve 1 column for the cursor.
@@ -512,7 +512,7 @@ export class Editor implements Component, Focusable {
 
 			// Prepend prompt prefix to the first visible line
 			if (visibleLineIndex === 0 && this.promptPrefix) {
-				const coloredPrefix = this.promptColor(this.promptPrefix + " ");
+				const coloredPrefix = this.promptColor(`${this.promptPrefix} `);
 				displayText = coloredPrefix + displayText;
 				lineVisibleWidth += promptPrefixWidth;
 			}
