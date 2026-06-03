@@ -1,23 +1,17 @@
 ---
 name: ship
 description: |
-  Ship a release: commit current changes, then run the release script.
+  Ship a release: run the release script to bump version, publish, tag, and push.
   Usage: /ship <patch|minor|major>
+  Ensure all changes are committed before running.
 argument-hint: patch|minor|major
 ---
 Ship a release with version bump type: **$1**
 
-Run these steps in order:
+Run the release script (bumps version, updates changelogs, commits, tags, publishes, pushes):
 
-1. **Stage and commit current changes:**
-   ```bash
-   git add .
-   git commit -m "ship: $1"
-   ```
+```bash
+node scripts/release.mjs $1
+```
 
-2. **Run the release script** (bumps version, updates changelogs, tags, publishes, pushes):
-   ```bash
-   node scripts/release.mjs $1
-   ```
-
-If any step fails, stop and report the error.
+If there are uncommitted changes, commit them first with a descriptive message before running this command.
