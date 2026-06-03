@@ -145,15 +145,15 @@ function addUnreleasedSection() {
 // Main flow
 console.log("\n=== Release Script ===\n");
 
-// 1. Check for uncommitted changes
+// 1. Check for uncommitted changes and auto-stage them
 console.log("Checking for uncommitted changes...");
 const status = run("git status --porcelain", { silent: true });
 if (status && status.trim()) {
-	console.error("Error: Uncommitted changes detected. Commit or stash first.");
-	console.error(status);
-	process.exit(1);
+	console.log("  Uncommitted changes detected, staging all changes...");
+	run("git add .");
+} else {
+	console.log("  Working directory clean\n");
 }
-console.log("  Working directory clean\n");
 
 // 2. Bump or set version
 const version = bumpOrSetVersion(RELEASE_TARGET);
