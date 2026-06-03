@@ -229,6 +229,39 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--enable-subagents flag", () => {
+		test("parses --enable-subagents flag", () => {
+			const result = parseArgs(["--enable-subagents"]);
+			expect(result.subagent).toBe(true);
+		});
+		test("defaults to undefined when absent", () => {
+			const result = parseArgs([]);
+			expect(result.subagent).toBeUndefined();
+		});
+	});
+
+	describe("--slash-command flag", () => {
+		test("parses single --slash-command", () => {
+			const result = parseArgs(["--slash-command", "./commands"]);
+			expect(result.slashCommands).toEqual(["./commands"]);
+		});
+		test("parses multiple --slash-command flags", () => {
+			const result = parseArgs(["--slash-command", "./one", "--slash-command", "./two"]);
+			expect(result.slashCommands).toEqual(["./one", "./two"]);
+		});
+	});
+
+	describe("--no-slash-commands flag", () => {
+		test("parses --no-slash-commands flag", () => {
+			const result = parseArgs(["--no-slash-commands"]);
+			expect(result.noSlashCommands).toBe(true);
+		});
+		test("parses -nsc shorthand", () => {
+			const result = parseArgs(["-nsc"]);
+			expect(result.noSlashCommands).toBe(true);
+		});
+	});
+
 	describe("--no-themes flag", () => {
 		test("parses --no-themes flag", () => {
 			const result = parseArgs(["--no-themes"]);

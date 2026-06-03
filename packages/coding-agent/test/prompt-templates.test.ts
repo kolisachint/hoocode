@@ -13,7 +13,13 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, describe, expect, test } from "vitest";
 import { getAgentDir } from "../src/config.js";
-import { loadPromptTemplates, parseCommandArgs, substituteArgs } from "../src/core/prompt-templates.js";
+import {
+	loadPromptTemplates,
+	type PromptTemplate,
+	parseCommandArgs,
+	substituteArgs,
+	tryExpandPromptTemplate,
+} from "../src/core/prompt-templates.js";
 
 // ============================================================================
 // substituteArgs
@@ -511,5 +517,218 @@ Analyze GitHub issue(s): $ARGUMENTS`,
 		try {
 			rmSync(testDir, { recursive: true, force: true });
 		} catch {}
+	});
+});
+
+// ============================================================================
+// loadPromptTemplates - type frontmatter
+// ============================================================================
+
+describe("loadPromptTemplates - type", () => {
+	const testDir = join(tmpdir(), `hoocode-test-types-${Date.now()}`);
+
+	function writeTemplate(name: string, content: string) {
+		mkdirSync(testDir, { recursive: true });
+		writeFileSync(join(testDir, `${name}.md`), content);
+	}
+
+	test("should default type to user when not specified", () => {
+		writeTemplate(
+			"default",
+			`---
+description: Default type
+---
+Content`,
+		);
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [testDir],
+			includeDefaults: false,
+		});
+		const tmpl = templates.find((t) => t.name === "default");
+		expect(tmpl).toBeDefined();
+		expect(tmpl!.type).toBe("user");
+	});
+
+	test("should parse system type from frontmatter", () => {
+		writeTemplate(
+			"system",
+			`---
+description: System type
+type: system
+---
+Think step by step`,
+		);
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [testDir],
+			includeDefaults: false,
+		});
+		const tmpl = templates.find((t) => t.name === "system");
+		expect(tmpl).toBeDefined();
+		expect(tmpl!.type).toBe("system");
+	});
+
+	test("should parse context type from frontmatter", () => {
+		writeTemplate(
+			"context",
+			`---
+description: Context type
+type: context
+---
+Context info`,
+		);
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [testDir],
+			includeDefaults: false,
+		});
+		const tmpl = templates.find((t) => t.name === "context");
+		expect(tmpl).toBeDefined();
+		expect(tmpl!.type).toBe("context");
+	});
+
+	test("should ignore invalid type and default to user", () => {
+		writeTemplate(
+			"invalid",
+			`---
+description: Invalid type
+type: banana
+---
+Content`,
+		);
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [testDir],
+			includeDefaults: false,
+		});
+		const tmpl = templates.find((t) => t.name === "invalid");
+		expect(tmpl).toBeDefined();
+		expect(tmpl!.type).toBe("user");
+	});
+
+	afterAll(() => {
+		try {
+			rmSync(testDir, { recursive: true, force: true });
+		} catch {}
+	});
+});
+
+// ============================================================================
+// loadPromptTemplates - slash-command paths
+// ============================================================================
+
+describe("loadPromptTemplates - slash-command paths", () => {
+	const promptDir = join(tmpdir(), `hoocode-test-sc-prompts-${Date.now()}`);
+	const slashDir = join(tmpdir(), `hoocode-test-sc-slash-${Date.now()}`);
+
+	function writePrompt(name: string, content: string) {
+		mkdirSync(promptDir, { recursive: true });
+		writeFileSync(join(promptDir, `${name}.md`), content);
+	}
+
+	function writeSlashCommand(name: string, content: string) {
+		mkdirSync(slashDir, { recursive: true });
+		writeFileSync(join(slashDir, `${name}.md`), content);
+	}
+
+	test("should load from explicit slash-command paths", () => {
+		writeSlashCommand(
+			"deploy",
+			`---
+description: Deploy the app
+---
+Run deploy script`,
+		);
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [],
+			slashCommandPaths: [slashDir],
+			includeDefaults: false,
+		});
+		const tmpl = templates.find((t) => t.name === "deploy");
+		expect(tmpl).toBeDefined();
+		expect(tmpl!.description).toBe("Deploy the app");
+	});
+
+	test("should merge prompt paths and slash-command paths", () => {
+		writePrompt("review", "Review code");
+		writeSlashCommand("deploy", "Deploy app");
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [promptDir],
+			slashCommandPaths: [slashDir],
+			includeDefaults: false,
+		});
+		expect(templates.some((t) => t.name === "review")).toBe(true);
+		expect(templates.some((t) => t.name === "deploy")).toBe(true);
+	});
+
+	afterAll(() => {
+		try {
+			rmSync(promptDir, { recursive: true, force: true });
+			rmSync(slashDir, { recursive: true, force: true });
+		} catch {}
+	});
+});
+
+// ============================================================================
+// tryExpandPromptTemplate
+// ============================================================================
+
+describe("tryExpandPromptTemplate", () => {
+	const templates: PromptTemplate[] = [
+		{
+			name: "review",
+			description: "Review",
+			type: "user",
+			content: "Review: $ARGUMENTS",
+			filePath: "/virtual/review.md",
+			sourceInfo: { path: "/virtual/review.md", source: "local", scope: "project", origin: "top-level" },
+		},
+		{
+			name: "system",
+			description: "System",
+			type: "system",
+			content: "Think step by step: $ARGUMENTS",
+			filePath: "/virtual/system.md",
+			sourceInfo: { path: "/virtual/system.md", source: "local", scope: "project", origin: "top-level" },
+		},
+	];
+
+	test("should return template metadata when matched", () => {
+		const expansion = tryExpandPromptTemplate("/review some code", templates);
+		expect(expansion.text).toBe("Review: some code");
+		expect(expansion.template).toBeDefined();
+		expect(expansion.template!.name).toBe("review");
+		expect(expansion.template!.type).toBe("user");
+		expect(expansion.args).toEqual(["some", "code"]);
+		expect(expansion.argsString).toBe("some code");
+	});
+
+	test("should return system template type", () => {
+		const expansion = tryExpandPromptTemplate("/system hello", templates);
+		expect(expansion.text).toBe("Think step by step: hello");
+		expect(expansion.template!.type).toBe("system");
+	});
+
+	test("should return undefined template when not matched", () => {
+		const expansion = tryExpandPromptTemplate("/unknown", templates);
+		expect(expansion.text).toBe("/unknown");
+		expect(expansion.template).toBeUndefined();
+		expect(expansion.args).toEqual([]);
+	});
+
+	test("should return empty args for non-slash input", () => {
+		const expansion = tryExpandPromptTemplate("hello world", templates);
+		expect(expansion.text).toBe("hello world");
+		expect(expansion.template).toBeUndefined();
+		expect(expansion.argsString).toBe("");
 	});
 });

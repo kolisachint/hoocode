@@ -7,7 +7,7 @@
  * fresh, isolated child process (SubagentPool) and only its final answer is
  * returned to the parent.
  *
- * It is an optional, opt-in tool (enabled via --subagent or the
+ * It is an optional, opt-in tool (enabled via --enable-subagents or the
  * `enableSubagent` setting); see buildSessionOptions in main.ts.
  */
 

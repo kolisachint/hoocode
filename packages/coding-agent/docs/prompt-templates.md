@@ -16,6 +16,20 @@ HooCode loads prompt templates from:
 
 Disable discovery with `--no-prompt-templates`.
 
+### Slash command directories
+
+Templates are also loaded from dedicated command directories, invoked the same way (`/name`):
+
+- Global: `~/.hoocode/commands/*.md`
+- Project: `.hoocode/commands/*.md`
+- Claude Code (native import): `~/.claude/commands/*.md` and `.claude/commands/*.md`, at lower precedence than `.hoocode/commands/`
+- Settings: `slashCommands` array with files or directories
+- CLI: `--slash-command <path>` (repeatable)
+
+Disable discovery with `--no-slash-commands` (`-nsc`). Explicit `--slash-command` paths still load when discovery is disabled.
+
+Claude Code commands are loaded with hoocode's prompt-template engine, so the supported subset is `description`/`argument-hint` frontmatter and `$1`/`$@`/`$ARGUMENTS` substitution. Claude-specific features (`allowed-tools`/`model` frontmatter, `!` bash execution, `@` file references, subdirectory `namespace:command` naming) are not interpreted, and discovery is non-recursive.
+
 ## Format
 
 ```markdown
@@ -82,7 +96,25 @@ Create a React component named $1 with features: $@
 
 Usage: `/component Button "onClick handler" "disabled support"`
 
+## Injection Type
+
+Commands may set a `type` in frontmatter to control how the expanded text is injected. This applies to templates loaded from any location.
+
+- `user` (default): the expanded text is sent as a normal user message.
+- `system`: the expanded text is appended to the system prompt for the turn. If arguments are passed, the raw argument string is sent as the user message.
+- `context`: the expanded text is added as a hidden context message (not displayed). If arguments are passed, the raw argument string is sent as the user message.
+
+```markdown
+---
+description: Enforce strict review standards for the rest of the session
+type: system
+---
+You are in strict review mode. Reject any change that lacks tests.
+```
+
+An unrecognized `type` value falls back to `user`.
+
 ## Loading Rules
 
-- Template discovery in `prompts/` is non-recursive.
-- If you want templates in subdirectories, add them explicitly via `prompts` settings or a package manifest.
+- Template discovery in `prompts/` and `commands/` is non-recursive.
+- If you want templates in subdirectories, add them explicitly via `prompts`/`slashCommands` settings or a package manifest.

@@ -243,6 +243,10 @@ describe("InteractiveMode.showLoadedResources", () => {
 			sessionManager: {
 				getCwd: () => options.cwd ?? "/tmp/project",
 			},
+			footerDataProvider: {
+				getActiveMode: () => "build",
+				getSubagentEnabled: () => false,
+			},
 			session: {
 				promptTemplates: [],
 				extensionRunner: {
@@ -489,8 +493,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  @scope/pi-scoped, answer.ts, cli-extension.ts, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index"`);
+			"[Resources]
+			  mode/build
+
+			[Extensions]
+			  @scope/pi-scoped, answer.ts, cli-extension.ts, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index"
+		`);
 	});
 
 	test("adds more parent folders until local extension labels are unique", () => {
@@ -534,9 +542,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  alpha/one, beta/one, gamma/one"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, alpha/one, beta/one, gamma/one"`,
+		);
 	});
 
 	test("strips index.ts from local extension label, showing parent dir", () => {
@@ -562,9 +570,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  plan-mode"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, plan-mode"`,
+		);
 	});
 
 	test("strips index.js from local extension label, showing parent dir", () => {
@@ -590,9 +598,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  plan-mode"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, plan-mode"`,
+		);
 	});
 
 	test("mixed single-file and subdirectory index.ts extensions strip index.ts", () => {
@@ -627,9 +635,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  plan-mode, webfetch.ts"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, webfetch.ts, plan-mode"`,
+		);
 	});
 
 	test("multiple index.ts with unique parent dirs need no disambiguation", () => {
@@ -664,9 +672,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  bar, foo"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, foo, bar"`,
+		);
 	});
 
 	test("multiple index.ts with same parent dir name disambiguated with grandparent", () => {
@@ -701,9 +709,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  alpha/tools, beta/tools"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, alpha/tools, beta/tools"`,
+		);
 	});
 
 	test("non-index file in subdirectory stays as filename", () => {
@@ -729,9 +737,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  main.ts"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, main.ts"`,
+		);
 	});
 
 	test("package extensions still strip index.ts correctly (regression guard)", () => {
@@ -760,9 +768,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 			force: false,
 		});
 
-		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Resources]
-  pi-markdown-preview"`);
+		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
+			`"[Resources] mode/build, pi-markdown-preview"`,
+		);
 	});
 	test("captures mixed extension layouts in expanded output", () => {
 		const fakeThis = createShowLoadedResourcesThis({
@@ -777,21 +785,25 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  project
-    /tmp/project/.hoocode/extensions/answer.ts
-    /tmp/project/.hoocode/extensions/local-index
-    git:github.com/HazAT/pi-interactive-subagents
-      extensions
-      extensions/subagents
-    npm:@scope/pi-scoped
-      extensions
-    npm:pi-markdown-preview
-      extensions
-  user
-    /tmp/agent/extensions/user-index
-  path
-    /tmp/temp/cli-extension.ts"`);
+			"[Resources]
+			  mode/build
+
+			[Extensions]
+			  project
+			    /tmp/project/.hoocode/extensions/answer.ts
+			    /tmp/project/.hoocode/extensions/local-index
+			    git:github.com/HazAT/pi-interactive-subagents
+			      extensions
+			      extensions/subagents
+			    npm:@scope/pi-scoped
+			      extensions
+			    npm:pi-markdown-preview
+			      extensions
+			  user
+			    /tmp/agent/extensions/user-index
+			  path
+			    /tmp/temp/cli-extension.ts"
+		`);
 	});
 
 	test("shows context paths relative to cwd while preserving full external paths", () => {
@@ -931,6 +943,9 @@ describe("InteractiveMode.showLoadedResources", () => {
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
 		expect(output).toContain("[Context]");
 		expect(output).toContain("[Skills]");
-		expect(output).not.toContain("[Resources]");
+		// Above the threshold the meta items render as their own [Resources] section
+		// (mode + optional subagent prompt) alongside the individual sections.
+		expect(output).toContain("[Resources]");
+		expect(output).toContain("mode/build");
 	});
 });

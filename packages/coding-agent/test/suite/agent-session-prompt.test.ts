@@ -194,6 +194,7 @@ describe("AgentSession prompt characterization", () => {
 		const template: PromptTemplate = {
 			name: "review",
 			description: "Review template",
+			type: "user",
 			content: "Review this code: $1",
 			filePath: "/virtual/review.md",
 			sourceInfo: createSyntheticSourceInfo("/virtual/review.md", {

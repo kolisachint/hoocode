@@ -42,6 +42,8 @@ export interface Args {
 	agents?: string[];
 	promptTemplates?: string[];
 	noPromptTemplates?: boolean;
+	slashCommands?: string[];
+	noSlashCommands?: boolean;
 	themes?: string[];
 	noThemes?: boolean;
 	modePaths?: string[];
@@ -115,7 +117,7 @@ export function parseArgs(args: string[]): Args {
 			result.noTools = true;
 		} else if (arg === "--no-builtin-tools" || arg === "-nbt") {
 			result.noBuiltinTools = true;
-		} else if (arg === "--subagent") {
+		} else if (arg === "--enable-subagents") {
 			result.subagent = true;
 		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
 			result.tools = args[++i]
@@ -155,6 +157,9 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--prompt-template" && i + 1 < args.length) {
 			result.promptTemplates = result.promptTemplates ?? [];
 			result.promptTemplates.push(args[++i]);
+		} else if (arg === "--slash-command" && i + 1 < args.length) {
+			result.slashCommands = result.slashCommands ?? [];
+			result.slashCommands.push(args[++i]);
 		} else if (arg === "--theme" && i + 1 < args.length) {
 			result.themes = result.themes ?? [];
 			result.themes.push(args[++i]);
@@ -165,6 +170,8 @@ export function parseArgs(args: string[]): Args {
 			result.noSkills = true;
 		} else if (arg === "--no-prompt-templates" || arg === "-np") {
 			result.noPromptTemplates = true;
+		} else if (arg === "--no-slash-commands" || arg === "-nsc") {
+			result.noSlashCommands = true;
 		} else if (arg === "--no-themes") {
 			result.noThemes = true;
 		} else if (arg === "--no-context-files" || arg === "-nc") {
@@ -252,7 +259,7 @@ ${chalk.bold("Options:")}
                                  Applies to built-in, extension, and custom tools
   --max-turns <n>                Hard cap on assistant turns; the agent is asked to wrap up near the
                                  cap and stopped at it (mainly used for spawned subagents)
-  --subagent                     Enable the subagent tool (delegate tasks to isolated agent loops)
+  --enable-subagents             Enable the subagent tool (delegate tasks to isolated agent loops)
                                  Also enablable via the "enableSubagent" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
@@ -260,8 +267,10 @@ ${chalk.bold("Options:")}
   --skill <path>                 Load a skill file or directory (can be used multiple times)
   --no-skills, -ns               Disable skills discovery and loading
   --agent <path>                 Load an agent file or directory (can be used multiple times)
-  --prompt-template <path>       Load a prompt template file or directory (can be used multiple times)
-  --no-prompt-templates, -np     Disable prompt template discovery and loading
+  --prompt-template <path>       Load a prompt template / slash command file or directory (repeatable)
+  --slash-command <path>         Alias of --prompt-template (prompts and slash commands are one feature)
+  --no-prompt-templates, -np     Disable prompt template / slash command discovery (same as --no-slash-commands)
+  --no-slash-commands, -nsc      Disable prompt template / slash command discovery (same as --no-prompt-templates)
   --theme <path>                 Load a theme file or directory (can be used multiple times)
   --no-themes                    Disable theme discovery and loading
   --mode-path <dir>              Add a directory to search for {name}/system.md mode files (can be used multiple times)

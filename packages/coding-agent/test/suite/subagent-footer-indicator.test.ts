@@ -6,7 +6,7 @@ import { createTaskToolDefinition } from "../../src/core/tools/subagent.js";
 import { createHarness, type Harness } from "./harness.js";
 
 /**
- * Regression: enabling the subagent (`--subagent` / `enableSubagent`) registers
+ * Regression: enabling the subagent (`--enable-subagents` / `enableSubagent`) registers
  * the model-facing tool as `Task`, but the interactive footer/resources wiring
  * checked `getActiveToolNames().includes("subagent")` and so never lit up.
  *

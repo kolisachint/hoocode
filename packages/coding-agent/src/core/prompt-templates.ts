@@ -8,10 +8,14 @@ import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
 /**
  * Represents a prompt template loaded from a markdown file
  */
+export type PromptTemplateType = "user" | "system" | "context";
+
 export interface PromptTemplate {
 	name: string;
 	description: string;
 	argumentHint?: string;
+	/** How the expanded template is injected into the conversation. */
+	type: PromptTemplateType;
 	content: string;
 	sourceInfo: SourceInfo;
 	filePath: string; // Absolute path to the template file
@@ -119,10 +123,14 @@ function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptT
 			}
 		}
 
+		const type: PromptTemplateType =
+			frontmatter.type === "system" ? "system" : frontmatter.type === "context" ? "context" : "user";
+
 		return {
 			name,
 			description,
 			...(frontmatter["argument-hint"] && { argumentHint: frontmatter["argument-hint"] }),
+			type,
 			content: body,
 			sourceInfo,
 			filePath,
@@ -181,6 +189,8 @@ export interface LoadPromptTemplatesOptions {
 	agentDir: string;
 	/** Explicit prompt template paths (files or directories). */
 	promptPaths: string[];
+	/** Explicit slash-command paths (files or directories). */
+	slashCommandPaths?: string[];
 	/** Include default prompt directories. */
 	includeDefaults: boolean;
 }
@@ -208,12 +218,15 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions): Prompt
 	const resolvedCwd = options.cwd;
 	const resolvedAgentDir = options.agentDir;
 	const promptPaths = options.promptPaths;
+	const slashCommandPaths = options.slashCommandPaths ?? [];
 	const includeDefaults = options.includeDefaults;
 
 	const templates: PromptTemplate[] = [];
 
 	const globalPromptsDir = options.agentDir ? join(options.agentDir, "prompts") : resolvedAgentDir;
 	const projectPromptsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, "prompts");
+	const globalSlashCommandsDir = options.agentDir ? join(options.agentDir, "commands") : resolvedAgentDir;
+	const projectSlashCommandsDir = resolve(resolvedCwd, CONFIG_DIR_NAME, "commands");
 
 	const isUnderPath = (target: string, root: string): boolean => {
 		const normalizedRoot = resolve(root);
@@ -225,18 +238,18 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions): Prompt
 	};
 
 	const getSourceInfo = (resolvedPath: string): SourceInfo => {
-		if (isUnderPath(resolvedPath, globalPromptsDir)) {
+		if (isUnderPath(resolvedPath, globalPromptsDir) || isUnderPath(resolvedPath, globalSlashCommandsDir)) {
 			return createSyntheticSourceInfo(resolvedPath, {
 				source: "local",
 				scope: "user",
-				baseDir: globalPromptsDir,
+				baseDir: isUnderPath(resolvedPath, globalPromptsDir) ? globalPromptsDir : globalSlashCommandsDir,
 			});
 		}
-		if (isUnderPath(resolvedPath, projectPromptsDir)) {
+		if (isUnderPath(resolvedPath, projectPromptsDir) || isUnderPath(resolvedPath, projectSlashCommandsDir)) {
 			return createSyntheticSourceInfo(resolvedPath, {
 				source: "local",
 				scope: "project",
-				baseDir: projectPromptsDir,
+				baseDir: isUnderPath(resolvedPath, projectPromptsDir) ? projectPromptsDir : projectSlashCommandsDir,
 			});
 		}
 		return createSyntheticSourceInfo(resolvedPath, {
@@ -248,6 +261,8 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions): Prompt
 	if (includeDefaults) {
 		templates.push(...loadTemplatesFromDir(globalPromptsDir, getSourceInfo));
 		templates.push(...loadTemplatesFromDir(projectPromptsDir, getSourceInfo));
+		templates.push(...loadTemplatesFromDir(globalSlashCommandsDir, getSourceInfo));
+		templates.push(...loadTemplatesFromDir(projectSlashCommandsDir, getSourceInfo));
 	}
 
 	// 3. Load explicit prompt paths
@@ -272,15 +287,53 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions): Prompt
 		}
 	}
 
+	// 4. Load explicit slash-command paths
+	for (const rawPath of slashCommandPaths) {
+		const resolvedPath = resolvePromptPath(rawPath, resolvedCwd);
+		if (!existsSync(resolvedPath)) {
+			continue;
+		}
+
+		try {
+			const stats = statSync(resolvedPath);
+			if (stats.isDirectory()) {
+				templates.push(...loadTemplatesFromDir(resolvedPath, getSourceInfo));
+			} else if (stats.isFile() && resolvedPath.endsWith(".md")) {
+				const template = loadTemplateFromFile(resolvedPath, getSourceInfo(resolvedPath));
+				if (template) {
+					templates.push(template);
+				}
+			}
+		} catch {
+			// Ignore read failures
+		}
+	}
+
 	return templates;
 }
 
 /**
- * Expand a prompt template if it matches a template name.
- * Returns the expanded content or the original text if not a template.
+ * Result of attempting to expand a prompt template.
  */
-export function expandPromptTemplate(text: string, templates: PromptTemplate[]): string {
-	if (!text.startsWith("/")) return text;
+export interface PromptTemplateExpansion {
+	/** The expanded text (or original text if not a template). */
+	text: string;
+	/** The matched template, if any. */
+	template?: PromptTemplate;
+	/** Parsed arguments. */
+	args: string[];
+	/** Raw argument string (everything after the command name). */
+	argsString: string;
+}
+
+/**
+ * Try to expand a prompt template if it matches a template name.
+ * Returns expansion metadata so callers can handle `type: "system"` or `type: "context"`.
+ */
+export function tryExpandPromptTemplate(text: string, templates: PromptTemplate[]): PromptTemplateExpansion {
+	if (!text.startsWith("/")) {
+		return { text, args: [], argsString: "" };
+	}
 
 	const spaceIndex = text.indexOf(" ");
 	const templateName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
@@ -289,8 +342,16 @@ export function expandPromptTemplate(text: string, templates: PromptTemplate[]):
 	const template = templates.find((t) => t.name === templateName);
 	if (template) {
 		const args = parseCommandArgs(argsString);
-		return substituteArgs(template.content, args);
+		return { text: substituteArgs(template.content, args), template, args, argsString };
 	}
 
-	return text;
+	return { text, args: [], argsString: "" };
+}
+
+/**
+ * Expand a prompt template if it matches a template name.
+ * Returns the expanded content or the original text if not a template.
+ */
+export function expandPromptTemplate(text: string, templates: PromptTemplate[]): string {
+	return tryExpandPromptTemplate(text, templates).text;
 }

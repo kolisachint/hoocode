@@ -1090,6 +1090,11 @@ const askOptionsSchema = Type.Object({
 					description: Type.Optional(
 						Type.String({ description: "Optional short description shown next to the option." }),
 					),
+					recommended: Type.Optional(
+						Type.Boolean({
+							description: "When true, the option is marked '(recommended)' to help the user choose.",
+						}),
+					),
 				}),
 				{ description: "The options the user can choose from." },
 			),
@@ -1147,7 +1152,7 @@ export function setupAskOptions(pi: ExtensionAPI): void {
 			const questions: AskQuestion[] = params.questions.map((q) => ({
 				question: q.question,
 				detail: q.detail,
-				options: q.options.map((o) => ({ label: o.label, description: o.description })),
+				options: q.options.map((o) => ({ label: o.label, description: o.description, recommended: o.recommended })),
 				allowCustom: q.allow_custom,
 			}));
 

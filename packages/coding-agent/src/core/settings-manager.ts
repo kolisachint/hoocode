@@ -97,6 +97,7 @@ export interface Settings {
 	extensions?: string[]; // Array of local extension file paths or directories
 	skills?: string[]; // Array of local skill file paths or directories
 	prompts?: string[]; // Array of local prompt template paths or directories
+	slashCommands?: string[]; // Array of local slash-command paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	enableSubagent?: boolean; // default: false - enable the subagent tool (delegate tasks to isolated agent loops)
@@ -867,6 +868,23 @@ export class SettingsManager {
 		const projectSettings = structuredClone(this.projectSettings);
 		projectSettings.prompts = paths;
 		this.markProjectModified("prompts");
+		this.saveProjectSettings(projectSettings);
+	}
+
+	getSlashCommandPaths(): string[] {
+		return [...(this.settings.slashCommands ?? DEFAULT_SETTINGS.slashCommands!)];
+	}
+
+	setSlashCommandPaths(paths: string[]): void {
+		this.globalSettings.slashCommands = paths;
+		this.markModified("slashCommands");
+		this.save();
+	}
+
+	setProjectSlashCommandPaths(paths: string[]): void {
+		const projectSettings = structuredClone(this.projectSettings);
+		projectSettings.slashCommands = paths;
+		this.markProjectModified("slashCommands");
 		this.saveProjectSettings(projectSettings);
 	}
 

@@ -97,6 +97,99 @@ Prompt content.`,
 			expect(prompts.some((p) => p.name === "test-prompt")).toBe(true);
 		});
 
+		it("should discover slash commands from agentDir and project commands dirs", async () => {
+			const userCommandsDir = join(agentDir, "commands");
+			const projectCommandsDir = join(cwd, ".hoocode", "commands");
+			mkdirSync(userCommandsDir, { recursive: true });
+			mkdirSync(projectCommandsDir, { recursive: true });
+			writeFileSync(join(userCommandsDir, "user-cmd.md"), "User command body.");
+			writeFileSync(join(projectCommandsDir, "project-cmd.md"), "Project command body.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const { prompts } = loader.getPrompts();
+			expect(prompts.some((p) => p.name === "user-cmd")).toBe(true);
+			expect(prompts.some((p) => p.name === "project-cmd")).toBe(true);
+		});
+
+		it("should not discover slash commands when noSlashCommands is set", async () => {
+			const userCommandsDir = join(agentDir, "commands");
+			mkdirSync(userCommandsDir, { recursive: true });
+			writeFileSync(join(userCommandsDir, "hidden-cmd.md"), "Should not load.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, noSlashCommands: true });
+			await loader.reload();
+
+			const { prompts } = loader.getPrompts();
+			expect(prompts.some((p) => p.name === "hidden-cmd")).toBe(false);
+		});
+
+		it("should import Claude Code slash commands from project .claude/commands", async () => {
+			const claudeCommandsDir = join(cwd, ".claude", "commands");
+			mkdirSync(claudeCommandsDir, { recursive: true });
+			writeFileSync(join(claudeCommandsDir, "cc-cmd.md"), "Claude Code command body.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			expect(loader.getPrompts().prompts.some((p) => p.name === "cc-cmd")).toBe(true);
+		});
+
+		it("should not import Claude Code slash commands when noSlashCommands is set", async () => {
+			const claudeCommandsDir = join(cwd, ".claude", "commands");
+			mkdirSync(claudeCommandsDir, { recursive: true });
+			writeFileSync(join(claudeCommandsDir, "cc-hidden.md"), "Should not load.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, noSlashCommands: true });
+			await loader.reload();
+
+			expect(loader.getPrompts().prompts.some((p) => p.name === "cc-hidden")).toBe(false);
+		});
+
+		it("should prefer .hoocode/commands over .claude/commands on name collision", async () => {
+			const hoocodeCommandsDir = join(cwd, ".hoocode", "commands");
+			const claudeCommandsDir = join(cwd, ".claude", "commands");
+			mkdirSync(hoocodeCommandsDir, { recursive: true });
+			mkdirSync(claudeCommandsDir, { recursive: true });
+			writeFileSync(join(hoocodeCommandsDir, "deploy.md"), "hoocode deploy");
+			writeFileSync(join(claudeCommandsDir, "deploy.md"), "claude deploy");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const deploy = loader.getPrompts().prompts.find((p) => p.name === "deploy");
+			expect(deploy?.filePath).toBe(join(hoocodeCommandsDir, "deploy.md"));
+		});
+
+		it("disables both prompts and commands when noPromptTemplates is set", async () => {
+			mkdirSync(join(cwd, ".hoocode", "prompts"), { recursive: true });
+			mkdirSync(join(cwd, ".hoocode", "commands"), { recursive: true });
+			writeFileSync(join(cwd, ".hoocode", "prompts", "bar.md"), "bar body");
+			writeFileSync(join(cwd, ".hoocode", "commands", "foo.md"), "foo body");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, noPromptTemplates: true });
+			await loader.reload();
+
+			const { prompts } = loader.getPrompts();
+			expect(prompts.some((p) => p.name === "bar")).toBe(false);
+			expect(prompts.some((p) => p.name === "foo")).toBe(false);
+		});
+
+		it("disables both prompts and commands when noSlashCommands is set", async () => {
+			mkdirSync(join(cwd, ".hoocode", "prompts"), { recursive: true });
+			mkdirSync(join(cwd, ".hoocode", "commands"), { recursive: true });
+			writeFileSync(join(cwd, ".hoocode", "prompts", "baz.md"), "baz body");
+			writeFileSync(join(cwd, ".hoocode", "commands", "qux.md"), "qux body");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, noSlashCommands: true });
+			await loader.reload();
+
+			const { prompts } = loader.getPrompts();
+			expect(prompts.some((p) => p.name === "baz")).toBe(false);
+			expect(prompts.some((p) => p.name === "qux")).toBe(false);
+		});
+
 		it("should prefer project resources over user on name collisions", async () => {
 			const userPromptsDir = join(agentDir, "prompts");
 			const projectPromptsDir = join(cwd, ".hoocode", "prompts");
@@ -327,7 +420,7 @@ Content`,
 
 			const { warnings } = loader.getAgentsFiles();
 			expect(warnings.length).toBe(1);
-			expect(warnings[0]).toContain("bytes");
+			expect(warnings[0]).toContain("tokens");
 			expect(warnings[0]).toContain("consider trimming");
 		});
 
@@ -342,7 +435,7 @@ Content`,
 			expect(agentsFiles.length).toBe(1);
 			expect(agentsFiles[0]!.content).toContain("[truncated:");
 			expect(warnings.length).toBe(1);
-			expect(warnings[0]).toContain("Truncated");
+			expect(warnings[0]).toContain("truncated");
 		});
 	});
 

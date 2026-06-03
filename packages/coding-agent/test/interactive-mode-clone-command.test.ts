@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
+import { type CommandContext, CommandExecutor } from "../src/modes/interactive/command-executor.js";
 
 type CloneCommandContext = {
 	sessionManager: { getLeafId: () => string | null };
@@ -13,13 +13,11 @@ type CloneCommandContext = {
 	ui: { requestRender: () => void };
 };
 
-type InteractiveModePrototype = {
-	handleCloneCommand(this: CloneCommandContext): Promise<void>;
-};
+function makeExecutor(context: CloneCommandContext): CommandExecutor {
+	return new CommandExecutor(context as unknown as CommandContext);
+}
 
-const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrototype;
-
-describe("InteractiveMode /clone", () => {
+describe("CommandExecutor /clone", () => {
 	it("clones the current leaf into a new session", async () => {
 		const fork = vi.fn(async () => ({ cancelled: false }));
 		const renderCurrentSessionState = vi.fn();
@@ -38,7 +36,7 @@ describe("InteractiveMode /clone", () => {
 			ui: { requestRender },
 		};
 
-		await interactiveModePrototype.handleCloneCommand.call(context);
+		await makeExecutor(context).handleClone();
 
 		expect(fork).toHaveBeenCalledWith("leaf-123", { position: "at" });
 		expect(renderCurrentSessionState).toHaveBeenCalled();
@@ -63,7 +61,7 @@ describe("InteractiveMode /clone", () => {
 			ui: { requestRender: vi.fn() },
 		};
 
-		await interactiveModePrototype.handleCloneCommand.call(context);
+		await makeExecutor(context).handleClone();
 
 		expect(fork).not.toHaveBeenCalled();
 		expect(showStatus).toHaveBeenCalledWith("Nothing to clone yet");

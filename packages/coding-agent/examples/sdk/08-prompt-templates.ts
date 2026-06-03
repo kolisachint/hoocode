@@ -17,6 +17,7 @@ import {
 const deployTemplate: PromptTemplate = {
 	name: "deploy",
 	description: "Deploy the application",
+	type: "user",
 	filePath: "/virtual/prompts/deploy.md",
 	sourceInfo: createSyntheticSourceInfo("/virtual/prompts/deploy.md", { source: "sdk" }),
 	content: `# Deploy Instructions

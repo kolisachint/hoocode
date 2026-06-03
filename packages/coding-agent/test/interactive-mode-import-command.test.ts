@@ -1,54 +1,66 @@
 import { describe, expect, it, vi } from "vitest";
 import { SessionImportFileNotFoundError } from "../src/core/agent-session-runtime.js";
-import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
+import { type CommandContext, CommandExecutor } from "../src/modes/interactive/command-executor.js";
 
 type PathCommand = "/export" | "/import";
 
-type InteractiveModePrototype = {
-	getPathCommandArgument(this: unknown, text: string, command: PathCommand): string | undefined;
-	handleImportCommand(this: ImportCommandContext, text: string): Promise<void>;
-};
-
 type ImportCommandContext = {
-	loadingAnimation?: { stop: () => void };
+	stopLoadingAnimation: () => void;
 	statusContainer: { clear: () => void };
 	runtimeHost: { importFromJsonl: (inputPath: string, cwdOverride?: string) => Promise<{ cancelled: boolean }> };
 	showError: (message: string) => void;
 	showStatus: (message: string) => void;
 	showExtensionConfirm: (title: string, message: string) => Promise<boolean>;
-	handleRuntimeSessionChange: () => Promise<void>;
 	renderCurrentSessionState: () => void;
 	handleFatalRuntimeError: (prefix: string, error: unknown) => Promise<never>;
 	promptForMissingSessionCwd: (error: unknown) => Promise<string | undefined>;
-	getPathCommandArgument: (text: string, command: PathCommand) => string | undefined;
 };
 
-const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrototype;
+// getPathArgument is a pure helper on CommandExecutor (does not use `this`).
+const getPathArgument = (text: string, command: PathCommand): string | undefined =>
+	(
+		CommandExecutor.prototype as unknown as {
+			getPathArgument(text: string, command: PathCommand): string | undefined;
+		}
+	).getPathArgument(text, command);
 
-describe("InteractiveMode /import parsing", () => {
+function makeExecutor(context: ImportCommandContext): CommandExecutor {
+	return new CommandExecutor(context as unknown as CommandContext);
+}
+
+function createImportContext(overrides: Partial<ImportCommandContext> = {}): ImportCommandContext {
+	return {
+		stopLoadingAnimation: vi.fn(),
+		statusContainer: { clear: vi.fn() },
+		runtimeHost: { importFromJsonl: vi.fn(async () => ({ cancelled: false })) },
+		showError: vi.fn(),
+		showStatus: vi.fn(),
+		showExtensionConfirm: vi.fn(async () => true),
+		renderCurrentSessionState: vi.fn(),
+		handleFatalRuntimeError: vi.fn(async () => {
+			throw new Error("unexpected fatal error");
+		}),
+		promptForMissingSessionCwd: vi.fn(async () => undefined),
+		...overrides,
+	};
+}
+
+describe("CommandExecutor /import parsing", () => {
 	it("strips quotes from /import path arguments", () => {
-		expect(interactiveModePrototype.getPathCommandArgument('/import "path/to/session.jsonl"', "/import")).toBe(
-			"path/to/session.jsonl",
+		expect(getPathArgument('/import "path/to/session.jsonl"', "/import")).toBe("path/to/session.jsonl");
+		expect(getPathArgument('/import "path with spaces/session.jsonl"', "/import")).toBe(
+			"path with spaces/session.jsonl",
 		);
-		expect(
-			interactiveModePrototype.getPathCommandArgument('/import "path with spaces/session.jsonl"', "/import"),
-		).toBe("path with spaces/session.jsonl");
 	});
 
 	it("preserves apostrophes in unquoted /import path arguments", () => {
-		expect(interactiveModePrototype.getPathCommandArgument("/import john's/session.jsonl", "/import")).toBe(
-			"john's/session.jsonl",
-		);
+		expect(getPathArgument("/import john's/session.jsonl", "/import")).toBe("john's/session.jsonl");
 	});
 
 	it("enforces command token boundaries", () => {
-		expect(interactiveModePrototype.getPathCommandArgument("/important /tmp/session.jsonl", "/import")).toBe(
-			undefined,
-		);
-		expect(interactiveModePrototype.getPathCommandArgument("/exporter out.html", "/export")).toBe(undefined);
-		expect(interactiveModePrototype.getPathCommandArgument("/import /tmp/session.jsonl", "/import")).toBe(
-			"/tmp/session.jsonl",
-		);
+		expect(getPathArgument("/important /tmp/session.jsonl", "/import")).toBe(undefined);
+		expect(getPathArgument("/exporter out.html", "/export")).toBe(undefined);
+		expect(getPathArgument("/import /tmp/session.jsonl", "/import")).toBe("/tmp/session.jsonl");
 	});
 
 	it("passes unquoted path to runtimeHost.importFromJsonl", async () => {
@@ -57,22 +69,14 @@ describe("InteractiveMode /import parsing", () => {
 		const showStatus = vi.fn();
 		const showError = vi.fn();
 
-		const context: ImportCommandContext = {
-			statusContainer: { clear: vi.fn() },
+		const context = createImportContext({
 			runtimeHost: { importFromJsonl },
 			showError,
 			showStatus,
 			showExtensionConfirm,
-			handleRuntimeSessionChange: vi.fn(async () => {}),
-			renderCurrentSessionState: vi.fn(),
-			handleFatalRuntimeError: vi.fn(async () => {
-				throw new Error("unexpected fatal error");
-			}),
-			promptForMissingSessionCwd: vi.fn(async () => undefined),
-			getPathCommandArgument: interactiveModePrototype.getPathCommandArgument,
-		};
+		});
 
-		await interactiveModePrototype.handleImportCommand.call(context, '/import "path/to/session.jsonl"');
+		await makeExecutor(context).handleImport('/import "path/to/session.jsonl"');
 
 		expect(showExtensionConfirm).toHaveBeenCalledWith(
 			"Import session",
@@ -85,26 +89,16 @@ describe("InteractiveMode /import parsing", () => {
 
 	it("passes unquoted apostrophe path to runtimeHost.importFromJsonl unchanged", async () => {
 		const importFromJsonl = vi.fn(async () => ({ cancelled: false }));
-		const showExtensionConfirm = vi.fn(async () => true);
 		const showStatus = vi.fn();
 		const showError = vi.fn();
 
-		const context: ImportCommandContext = {
-			statusContainer: { clear: vi.fn() },
+		const context = createImportContext({
 			runtimeHost: { importFromJsonl },
 			showError,
 			showStatus,
-			showExtensionConfirm,
-			handleRuntimeSessionChange: vi.fn(async () => {}),
-			renderCurrentSessionState: vi.fn(),
-			handleFatalRuntimeError: vi.fn(async () => {
-				throw new Error("unexpected fatal error");
-			}),
-			promptForMissingSessionCwd: vi.fn(async () => undefined),
-			getPathCommandArgument: interactiveModePrototype.getPathCommandArgument,
-		};
+		});
 
-		await interactiveModePrototype.handleImportCommand.call(context, "/import john's/session.jsonl");
+		await makeExecutor(context).handleImport("/import john's/session.jsonl");
 
 		expect(importFromJsonl).toHaveBeenCalledWith("john's/session.jsonl");
 		expect(showError).not.toHaveBeenCalled();
@@ -115,27 +109,20 @@ describe("InteractiveMode /import parsing", () => {
 		const importFromJsonl = vi.fn(async () => {
 			throw new SessionImportFileNotFoundError("/tmp/missing-session.jsonl");
 		});
-		const showExtensionConfirm = vi.fn(async () => true);
 		const showStatus = vi.fn();
 		const showError = vi.fn();
 		const handleFatalRuntimeError = vi.fn(async () => {
 			throw new Error("unexpected fatal error");
 		});
 
-		const context: ImportCommandContext = {
-			statusContainer: { clear: vi.fn() },
+		const context = createImportContext({
 			runtimeHost: { importFromJsonl },
 			showError,
 			showStatus,
-			showExtensionConfirm,
-			handleRuntimeSessionChange: vi.fn(async () => {}),
-			renderCurrentSessionState: vi.fn(),
 			handleFatalRuntimeError,
-			promptForMissingSessionCwd: vi.fn(async () => undefined),
-			getPathCommandArgument: interactiveModePrototype.getPathCommandArgument,
-		};
+		});
 
-		await interactiveModePrototype.handleImportCommand.call(context, "/import /tmp/missing-session.jsonl");
+		await makeExecutor(context).handleImport("/import /tmp/missing-session.jsonl");
 
 		expect(showError).toHaveBeenCalledWith("Failed to import session: File not found: /tmp/missing-session.jsonl");
 		expect(showStatus).not.toHaveBeenCalled();

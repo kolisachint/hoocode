@@ -99,6 +99,8 @@ export interface AskOption {
 	label: string;
 	/** Optional secondary description shown next to the label. */
 	description?: string;
+	/** When true, the option is marked "(recommended)" to help the user choose. */
+	recommended?: boolean;
 }
 
 /** One decision the agent asks the user to make in the options pane. */

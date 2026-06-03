@@ -51,5 +51,6 @@ export const DEFAULT_SETTINGS = {
 	extensions: [],
 	skills: [],
 	prompts: [],
+	slashCommands: [],
 	themes: [],
 } satisfies Settings;

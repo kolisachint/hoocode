@@ -508,6 +508,9 @@ describe("AgentSessionRuntime characterization", () => {
 		cleanups.push(async () => {
 			await otherRuntime.dispose();
 		});
+		// Pin the faux model so the turn streams from the in-memory faux provider
+		// instead of resolving a real default model (which would attempt a network call).
+		await otherRuntime.session.setModel(faux.getModel());
 		await otherRuntime.session.prompt("other");
 		const otherSessionFile = otherRuntime.session.sessionFile!;
 

@@ -18,9 +18,9 @@ export default defineConfig({
 	},
 	resolve: {
 		alias: [
-			{ find: /^@hoo\/hoocode-ai$/, replacement: aiSrcIndex },
-			{ find: /^@hoo\/hoocode-ai\/oauth$/, replacement: aiSrcOAuth },
-			{ find: /^@hoo\/hoocode-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@kolisachint\/hoocode-ai$/, replacement: aiSrcIndex },
+			{ find: /^@kolisachint\/hoocode-ai\/oauth$/, replacement: aiSrcOAuth },
+			{ find: /^@kolisachint\/hoocode-agent-core$/, replacement: agentSrcIndex },
 		],
 	},
 });

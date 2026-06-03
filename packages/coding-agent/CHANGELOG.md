@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- Options pane (`ask_options`) options can now be flagged `recommended: true`, which renders a green `(recommended)` marker next to the option label to guide the user's choice.
+- File-based slash commands: reusable command Markdown invoked with `/name`, auto-discovered from `~/.hoocode/commands/*.md` (global) and `.hoocode/commands/*.md` (project), plus the `slashCommands` settings array and the repeatable `--slash-command <path>` flag. A `type` frontmatter field controls how the command is injected: `user` (default, sent as a user message), `system` (appended to the system prompt), or `context` (added as a hidden context message). Disable discovery with `--no-slash-commands` (`-nsc`).
+- Claude Code slash commands are now imported natively (D7) from `.claude/commands/*.md` (project) and `~/.claude/commands/*.md` (user), at lower precedence than `.hoocode/commands/`. Discovery respects `--no-slash-commands`.
+
+### Changed
+
+- Renamed the `--subagent` CLI flag to `--enable-subagents` for readability (the `enableSubagent` setting and `/subagent` command are unchanged).
+- Release workflow no longer publishes binaries; releases now ship only GitHub's auto-generated source code archives.
+
+### Fixed
+
+- Removed the leading blank line inside the edit tool's output box (call render box paddingY changed from 1 to 0).
+
 ## [0.4.24] - 2026-06-03
 
 ### Added

@@ -153,11 +153,13 @@ export interface DefaultResourceLoaderOptions {
 	additionalExtensionPaths?: string[];
 	additionalSkillPaths?: string[];
 	additionalPromptTemplatePaths?: string[];
+	additionalSlashCommandPaths?: string[];
 	additionalThemePaths?: string[];
 	extensionFactories?: ExtensionFactory[];
 	noExtensions?: boolean;
 	noSkills?: boolean;
 	noPromptTemplates?: boolean;
+	noSlashCommands?: boolean;
 	noThemes?: boolean;
 	noContextFiles?: boolean;
 	systemPrompt?: string;
@@ -192,11 +194,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private additionalExtensionPaths: string[];
 	private additionalSkillPaths: string[];
 	private additionalPromptTemplatePaths: string[];
+	private additionalSlashCommandPaths: string[];
 	private additionalThemePaths: string[];
 	private extensionFactories: ExtensionFactory[];
 	private noExtensions: boolean;
 	private noSkills: boolean;
 	private noPromptTemplates: boolean;
+	private noSlashCommands: boolean;
 	private noThemes: boolean;
 	private noContextFiles: boolean;
 	private systemPromptSource?: string;
@@ -241,6 +245,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private extensionPromptSourceInfos: Map<string, SourceInfo>;
 	private extensionThemeSourceInfos: Map<string, SourceInfo>;
 	private lastPromptPaths: string[];
+	private lastSlashCommandPaths: string[];
 	private lastThemePaths: string[];
 
 	constructor(options: DefaultResourceLoaderOptions) {
@@ -256,11 +261,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.additionalExtensionPaths = options.additionalExtensionPaths ?? [];
 		this.additionalSkillPaths = options.additionalSkillPaths ?? [];
 		this.additionalPromptTemplatePaths = options.additionalPromptTemplatePaths ?? [];
+		this.additionalSlashCommandPaths = options.additionalSlashCommandPaths ?? [];
 		this.additionalThemePaths = options.additionalThemePaths ?? [];
 		this.extensionFactories = options.extensionFactories ?? [];
 		this.noExtensions = options.noExtensions ?? false;
 		this.noSkills = options.noSkills ?? false;
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
+		this.noSlashCommands = options.noSlashCommands ?? false;
 		this.noThemes = options.noThemes ?? false;
 		this.noContextFiles = options.noContextFiles ?? false;
 		this.systemPromptSource = options.systemPrompt;
@@ -289,6 +296,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.extensionPromptSourceInfos = new Map();
 		this.extensionThemeSourceInfos = new Map();
 		this.lastPromptPaths = [];
+		this.lastSlashCommandPaths = [];
 		this.lastThemePaths = [];
 	}
 
@@ -360,7 +368,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 				this.lastPromptPaths,
 				promptPaths.map((entry) => entry.path),
 			);
-			this.updatePromptsFromPaths(this.lastPromptPaths);
+			this.updatePromptsFromPaths(this.lastPromptPaths, this.lastSlashCommandPaths);
 		}
 
 		if (themePaths.length > 0) {
@@ -482,15 +490,42 @@ export class DefaultResourceLoader implements ResourceLoader {
 			}
 		}
 
-		const promptPaths = this.noPromptTemplates
+		// Prompt templates and slash commands are a single feature sharing one `/name` namespace.
+		// Either disable flag (--no-prompt-templates / --no-slash-commands) turns the whole feature
+		// off; explicit --prompt-template / --slash-command paths still load.
+		const featureDisabled = this.noPromptTemplates || this.noSlashCommands;
+		const promptPaths = featureDisabled
 			? this.mergePaths(cliEnabledPrompts, this.additionalPromptTemplatePaths)
 			: this.mergePaths([...cliEnabledPrompts, ...enabledPrompts], this.additionalPromptTemplatePaths);
 
 		this.lastPromptPaths = promptPaths;
-		this.updatePromptsFromPaths(promptPaths, metadataByPath);
+		// Auto-discover default command directories, mirroring how prompt templates are discovered.
+		// Includes Claude Code slash commands via D7 native import (`.claude/commands/`), at lower
+		// precedence than `.hoocode/commands/`; project wins over user (dedupe is first-match-wins).
+		// Either --no-slash-commands or --no-prompt-templates disables defaults and settings paths;
+		// explicit --slash-command paths still load.
+		const defaultSlashCommandDirs = [
+			join(this.cwd, CONFIG_DIR_NAME, "commands"),
+			join(this.cwd, ".claude", "commands"),
+			join(this.agentDir, "commands"),
+			join(homedir(), ".claude", "commands"),
+		].filter((dir) => existsSync(dir));
+		const slashCommandPaths = featureDisabled
+			? this.mergePaths([], this.additionalSlashCommandPaths)
+			: this.mergePaths(
+					[...defaultSlashCommandDirs, ...this.settingsManager.getSlashCommandPaths()],
+					this.additionalSlashCommandPaths,
+				);
+		this.lastSlashCommandPaths = slashCommandPaths;
+		this.updatePromptsFromPaths(promptPaths, slashCommandPaths, metadataByPath);
 		for (const p of this.additionalPromptTemplatePaths) {
 			if (isLocalPath(p) && !existsSync(p) && !this.promptDiagnostics.some((d) => d.path === p)) {
 				this.promptDiagnostics.push({ type: "error", message: "Prompt template path does not exist", path: p });
+			}
+		}
+		for (const p of this.additionalSlashCommandPaths) {
+			if (isLocalPath(p) && !existsSync(p) && !this.promptDiagnostics.some((d) => d.path === p)) {
+				this.promptDiagnostics.push({ type: "error", message: "Slash command path does not exist", path: p });
 			}
 		}
 
@@ -559,15 +594,24 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.skillDiagnostics = resolvedSkills.diagnostics;
 	}
 
-	private updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
+	private updatePromptsFromPaths(
+		promptPaths: string[],
+		slashCommandPaths: string[] = [],
+		metadataByPath?: Map<string, PathMetadata>,
+	): void {
 		let promptsResult: { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
-		if (this.noPromptTemplates && promptPaths.length === 0) {
+		if (
+			(this.noPromptTemplates || this.noSlashCommands) &&
+			promptPaths.length === 0 &&
+			slashCommandPaths.length === 0
+		) {
 			promptsResult = { prompts: [], diagnostics: [] };
 		} else {
 			const allPrompts = loadPromptTemplates({
 				cwd: this.cwd,
 				agentDir: this.agentDir,
 				promptPaths,
+				slashCommandPaths,
 				includeDefaults: false,
 			});
 			promptsResult = this.dedupePrompts(allPrompts);
@@ -689,12 +733,14 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const agentRoots = [
 			join(this.agentDir, "skills"),
 			join(this.agentDir, "prompts"),
+			join(this.agentDir, "commands"),
 			join(this.agentDir, "themes"),
 			join(this.agentDir, "extensions"),
 		];
 		const projectRoots = [
 			join(this.cwd, CONFIG_DIR_NAME, "skills"),
 			join(this.cwd, CONFIG_DIR_NAME, "prompts"),
+			join(this.cwd, CONFIG_DIR_NAME, "commands"),
 			join(this.cwd, CONFIG_DIR_NAME, "themes"),
 			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
 		];

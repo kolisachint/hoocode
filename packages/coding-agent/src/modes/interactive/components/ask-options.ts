@@ -122,6 +122,7 @@ export class AskOptionsComponent implements Component, Focusable {
 			const num = theme.fg(active ? "accent" : "dim", String(i + 1));
 			const label = active ? theme.bold(o.label) : o.label;
 			let line = `${cursor} ${num} ${label}`;
+			if (o.recommended) line += theme.fg("success", " (recommended)");
 			if (o.description) line += theme.fg("muted", `   ${o.description}`);
 			lines.push(truncateToWidth(line, width, "..."));
 		}

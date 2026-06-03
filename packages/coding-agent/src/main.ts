@@ -381,7 +381,7 @@ function buildSessionOptions(
 		options.tools = [...parsed.tools];
 	}
 
-	// Optional Task (subagent) tool: opt-in via --subagent flag or the enableSubagent setting.
+	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
 	// Never register it inside a spawned subagent (--task-id present): subagents must not
 	// recursively dispatch, even if a project's enableSubagent setting is on.
@@ -538,6 +538,7 @@ export async function main(args: string[], options?: MainOptions) {
 	const resolvedSkillPaths = resolveCliPaths(cwd, parsed.skills);
 	const resolvedAgentPaths = resolveCliPaths(cwd, parsed.agents);
 	const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
+	const resolvedSlashCommandPaths = resolveCliPaths(cwd, parsed.slashCommands);
 	const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
 
 	// Populate the module-level CLI agent store before any session is created.
@@ -578,10 +579,12 @@ export async function main(args: string[], options?: MainOptions) {
 				additionalExtensionPaths: resolvedExtensionPaths,
 				additionalSkillPaths: resolvedSkillPaths,
 				additionalPromptTemplatePaths: resolvedPromptTemplatePaths,
+				additionalSlashCommandPaths: resolvedSlashCommandPaths,
 				additionalThemePaths: resolvedThemePaths,
 				noExtensions: parsed.noExtensions,
 				noSkills: parsed.noSkills,
 				noPromptTemplates: parsed.noPromptTemplates,
+				noSlashCommands: parsed.noSlashCommands,
 				noThemes: parsed.noThemes,
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,

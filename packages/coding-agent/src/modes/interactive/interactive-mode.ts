@@ -21,7 +21,6 @@ import type {
 	AutocompleteItem,
 	AutocompleteProvider,
 	EditorComponent,
-	Keybinding,
 	KeyId,
 	MarkdownTheme,
 	OverlayHandle,
@@ -45,22 +44,11 @@ import {
 	Text,
 	TruncatedText,
 	TUI,
-	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import { spawn, spawnSync } from "child_process";
-import {
-	APP_NAME,
-	APP_TITLE,
-	getAgentDir,
-	getAuthPath,
-	getDebugLogPath,
-	getDocsPath,
-	getShareViewerUrl,
-	VERSION,
-} from "../../config.js";
-import { loadAgentRegistry } from "../../core/agent-registry.js";
+import { APP_NAME, APP_TITLE, getAgentDir, getAuthPath, getDocsPath, VERSION } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
-import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
+import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
 	AskQuestion,
 	AutocompleteProviderFactory,
@@ -83,24 +71,20 @@ import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../cor
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
-import { getSubagentPool } from "../../core/subagent-pool-instance.js";
-import type { SubagentResultFile } from "../../core/subagent-result.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
-import { copyToClipboard } from "../../utils/clipboard.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
-import { ArminComponent } from "./components/armin.js";
+import { type CommandContext, CommandExecutor } from "./command-executor.js";
 import { AskOptionsComponent } from "./components/ask-options.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
-import { BorderedLoader } from "./components/bordered-loader.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
 import { CountdownTimer } from "./components/countdown-timer.js";
@@ -112,7 +96,7 @@ import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
-import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+import { keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.js";
@@ -348,6 +332,72 @@ export class InteractiveMode {
 	// Convenience accessors
 	private get session(): AgentSession {
 		return this.runtimeHost.session;
+	}
+	private _commandExecutor?: CommandExecutor;
+	/**
+	 * Lazily-built command executor. The context uses getters for mutable
+	 * dependencies (e.g. the active session) so handlers always operate on the
+	 * current state even after a session switch.
+	 */
+	private get commandExecutor(): CommandExecutor {
+		if (!this._commandExecutor) {
+			const self = this;
+			const context: CommandContext = {
+				get session() {
+					return self.session;
+				},
+				get sessionManager() {
+					return self.sessionManager;
+				},
+				get runtimeHost() {
+					return self.runtimeHost;
+				},
+				get ui() {
+					return self.ui;
+				},
+				get editor() {
+					return self.editor;
+				},
+				get editorContainer() {
+					return self.editorContainer;
+				},
+				get chatContainer() {
+					return self.chatContainer;
+				},
+				get statusContainer() {
+					return self.statusContainer;
+				},
+				get footer() {
+					return self.footer;
+				},
+				get keybindings() {
+					return self.keybindings;
+				},
+				showStatus: (message) => self.showStatus(message),
+				showError: (message) => self.showError(message),
+				showWarning: (message) => self.showWarning(message),
+				updateEditorBorderColor: () => self.updateEditorBorderColor(),
+				renderCurrentSessionState: () => self.renderCurrentSessionState(),
+				rebuildChatFromMessages: () => self.rebuildChatFromMessages(),
+				getMarkdownThemeWithSettings: () => self.getMarkdownThemeWithSettings(),
+				stopLoadingAnimation: () => self.stopLoadingAnimation(),
+				findExactModelMatch: (searchTerm) => self.findExactModelMatch(searchTerm),
+				maybeWarnAboutAnthropicSubscriptionAuth: (model) => self.maybeWarnAboutAnthropicSubscriptionAuth(model),
+				checkDaxnutsEasterEgg: (model) => self.checkDaxnutsEasterEgg(model),
+				showModelSelector: (searchTerm) => self.showModelSelector(searchTerm),
+				showExtensionConfirm: (title, message) => self.showExtensionConfirm(title, message),
+				promptForMissingSessionCwd: (error) => self.promptForMissingSessionCwd(error),
+				handleFatalRuntimeError: (prefix, error) => self.handleFatalRuntimeError(prefix, error),
+			};
+			this._commandExecutor = new CommandExecutor(context);
+		}
+		return this._commandExecutor;
+	}
+	private stopLoadingAnimation(): void {
+		if (this.loadingAnimation) {
+			this.loadingAnimation.stop();
+			this.loadingAnimation = undefined;
+		}
 	}
 	private get agent() {
 		return this.session.agent;
@@ -2520,14 +2570,14 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.model.cycleBackward", () => this.cycleModel("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
-		this.ui.onDebug = () => this.handleDebugCommand();
+		this.ui.onDebug = () => this.commandExecutor.handleDebug();
 		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
-		this.defaultEditor.onAction("app.session.new", () => this.handleClearCommand());
+		this.defaultEditor.onAction("app.session.new", () => this.commandExecutor.handleClear());
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
@@ -2588,46 +2638,46 @@ export class InteractiveMode {
 			if (text === "/model" || text.startsWith("/model ")) {
 				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
 				this.editor.setText("");
-				await this.handleModelCommand(searchTerm);
+				await this.commandExecutor.handleModel(searchTerm);
 				return;
 			}
 			if (text === "/export" || text.startsWith("/export ")) {
-				await this.handleExportCommand(text);
+				await this.commandExecutor.handleExport(text);
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/import" || text.startsWith("/import ")) {
-				await this.handleImportCommand(text);
+				await this.commandExecutor.handleImport(text);
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/share") {
-				await this.handleShareCommand();
+				await this.commandExecutor.handleShare();
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/copy") {
-				await this.handleCopyCommand();
+				await this.commandExecutor.handleCopy();
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/name" || text.startsWith("/name ")) {
-				this.handleNameCommand(text);
+				this.commandExecutor.handleName(text);
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/session") {
-				this.handleSessionCommand();
+				this.commandExecutor.handleSession();
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/changelog") {
-				this.handleChangelogCommand();
+				this.commandExecutor.handleChangelog();
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/hotkeys") {
-				this.handleHotkeysCommand();
+				this.commandExecutor.handleHotkeys();
 				this.editor.setText("");
 				return;
 			}
@@ -2638,7 +2688,7 @@ export class InteractiveMode {
 			}
 			if (text === "/clone") {
 				this.editor.setText("");
-				await this.handleCloneCommand();
+				await this.commandExecutor.handleClone();
 				return;
 			}
 			if (text === "/tree") {
@@ -2658,7 +2708,7 @@ export class InteractiveMode {
 			}
 			if (text === "/new") {
 				this.editor.setText("");
-				await this.handleClearCommand();
+				await this.commandExecutor.handleClear();
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
@@ -2676,12 +2726,12 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/debug") {
-				this.handleDebugCommand();
+				this.commandExecutor.handleDebug();
 				this.editor.setText("");
 				return;
 			}
 			if (text === "/arminsayshi") {
-				this.handleArminSaysHi();
+				this.commandExecutor.handleArminSaysHi();
 				this.editor.setText("");
 				return;
 			}
@@ -2697,7 +2747,7 @@ export class InteractiveMode {
 			}
 			if (text === "/subagent" || text.startsWith("/subagent ")) {
 				this.editor.setText("");
-				await this.handleSubagentCommand(text);
+				await this.commandExecutor.handleSubagent(text);
 				return;
 			}
 
@@ -4068,30 +4118,6 @@ export class InteractiveMode {
 		});
 	}
 
-	private async handleModelCommand(searchTerm?: string): Promise<void> {
-		if (!searchTerm) {
-			this.showModelSelector();
-			return;
-		}
-
-		const model = await this.findExactModelMatch(searchTerm);
-		if (model) {
-			try {
-				await this.session.setModel(model);
-				this.footer.invalidate();
-				this.updateEditorBorderColor();
-				this.showStatus(`Model: ${model.id}`);
-				void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
-				this.checkDaxnutsEasterEgg(model);
-			} catch (error) {
-				this.showError(error instanceof Error ? error.message : String(error));
-			}
-			return;
-		}
-
-		this.showModelSelector(searchTerm);
-	}
-
 	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {
 		const models = await this.getModelCandidates();
 		return findExactModelReferenceMatch(searchTerm, models);
@@ -4297,85 +4323,6 @@ export class InteractiveMode {
 			);
 			return { component: selector, focus: selector.getMessageList() };
 		});
-	}
-
-	private async handleCloneCommand(): Promise<void> {
-		const leafId = this.sessionManager.getLeafId();
-		if (!leafId) {
-			this.showStatus("Nothing to clone yet");
-			return;
-		}
-
-		try {
-			const result = await this.runtimeHost.fork(leafId, { position: "at" });
-			if (result.cancelled) {
-				this.ui.requestRender();
-				return;
-			}
-
-			this.renderCurrentSessionState();
-			this.editor.setText("");
-			this.showStatus("Cloned to new session");
-		} catch (error: unknown) {
-			this.showError(error instanceof Error ? error.message : String(error));
-		}
-	}
-
-	private async handleSubagentCommand(text: string): Promise<void> {
-		const prefix = "/subagent ";
-		const args = text.startsWith(prefix) ? text.slice(prefix.length).trim() : "";
-		if (!args) {
-			this.showStatus("Usage: /subagent <mode> <task>");
-			return;
-		}
-
-		const firstSpace = args.indexOf(" ");
-		if (firstSpace === -1) {
-			this.showStatus("Usage: /subagent <mode> <task>");
-			return;
-		}
-
-		const mode = args.slice(0, firstSpace).trim();
-		const task = args.slice(firstSpace + 1).trim();
-		if (!task) {
-			this.showStatus("Usage: /subagent <mode> <task>");
-			return;
-		}
-
-		const validModes = loadAgentRegistry({ cwd: this.session.sessionManager.getCwd() })
-			.list()
-			.map((a) => a.name);
-		if (!validModes.includes(mode)) {
-			this.showStatus(`Unknown subagent_type: ${mode}. Available: ${validModes.join(", ")}`);
-			return;
-		}
-
-		this.showStatus(`Spawning ${mode} subagent...`);
-		try {
-			const pool = getSubagentPool(this.session.sessionManager.getCwd());
-			const dispatchResult = await pool.dispatch(task, {
-				forceAgent: mode,
-				model: this.session.model?.id,
-				provider: this.session.model?.provider,
-			});
-			const result = dispatchResult.result;
-			const resultData = result?.result_data as SubagentResultFile | undefined;
-			if (result?.ok) {
-				this.showStatus(`${mode} subagent completed`);
-				// Inject the subagent answer as a custom message so the user can see it in the chat
-				this.sessionManager.appendMessage({
-					role: "custom",
-					customType: "subagent",
-					content: resultData?.summary || "(no output)",
-					display: true,
-					timestamp: Date.now(),
-				});
-			} else {
-				this.showError(`Subagent (${mode}) failed: ${result?.error ?? "unknown error"}`);
-			}
-		} catch (error: unknown) {
-			this.showError(error instanceof Error ? error.message : String(error));
-		}
 	}
 
 	private showTreeSelector(initialSelectedId?: string): void {
@@ -5070,479 +5017,11 @@ export class InteractiveMode {
 		}
 	}
 
-	private async handleExportCommand(text: string): Promise<void> {
-		const outputPath = this.getPathCommandArgument(text, "/export");
-
-		try {
-			if (outputPath?.endsWith(".jsonl")) {
-				const filePath = this.session.exportToJsonl(outputPath);
-				this.showStatus(`Session exported to: ${filePath}`);
-			} else {
-				const filePath = await this.session.exportToHtml(outputPath);
-				this.showStatus(`Session exported to: ${filePath}`);
-			}
-		} catch (error: unknown) {
-			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
-		}
-	}
-
-	private getPathCommandArgument(text: string, command: "/export" | "/import"): string | undefined {
-		if (text === command) {
-			return undefined;
-		}
-		if (!text.startsWith(`${command} `)) {
-			return undefined;
-		}
-
-		const argsString = text.slice(command.length + 1).trimStart();
-		if (!argsString) {
-			return undefined;
-		}
-
-		const firstChar = argsString[0];
-		if (firstChar === '"' || firstChar === "'") {
-			const closingQuoteIndex = argsString.indexOf(firstChar, 1);
-			if (closingQuoteIndex < 0) {
-				return undefined;
-			}
-			return argsString.slice(1, closingQuoteIndex);
-		}
-
-		const firstWhitespaceIndex = argsString.search(/\s/);
-		if (firstWhitespaceIndex < 0) {
-			return argsString;
-		}
-		return argsString.slice(0, firstWhitespaceIndex);
-	}
-
-	private async handleImportCommand(text: string): Promise<void> {
-		const inputPath = this.getPathCommandArgument(text, "/import");
-		if (!inputPath) {
-			this.showError("Usage: /import <path.jsonl>");
-			return;
-		}
-
-		const confirmed = await this.showExtensionConfirm("Import session", `Replace current session with ${inputPath}?`);
-		if (!confirmed) {
-			this.showStatus("Import cancelled");
-			return;
-		}
-
-		try {
-			if (this.loadingAnimation) {
-				this.loadingAnimation.stop();
-				this.loadingAnimation = undefined;
-			}
-			this.statusContainer.clear();
-			const result = await this.runtimeHost.importFromJsonl(inputPath);
-			if (result.cancelled) {
-				this.showStatus("Import cancelled");
-				return;
-			}
-			this.renderCurrentSessionState();
-			this.showStatus(`Session imported from: ${inputPath}`);
-		} catch (error: unknown) {
-			if (error instanceof MissingSessionCwdError) {
-				const selectedCwd = await this.promptForMissingSessionCwd(error);
-				if (!selectedCwd) {
-					this.showStatus("Import cancelled");
-					return;
-				}
-				const result = await this.runtimeHost.importFromJsonl(inputPath, selectedCwd);
-				if (result.cancelled) {
-					this.showStatus("Import cancelled");
-					return;
-				}
-				this.renderCurrentSessionState();
-				this.showStatus(`Session imported from: ${inputPath}`);
-				return;
-			}
-			if (error instanceof SessionImportFileNotFoundError) {
-				this.showError(`Failed to import session: ${error.message}`);
-				return;
-			}
-			await this.handleFatalRuntimeError("Failed to import session", error);
-		}
-	}
-
-	private async handleShareCommand(): Promise<void> {
-		// Check if gh is available and logged in
-		try {
-			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
-			if (authResult.status !== 0) {
-				this.showError("GitHub CLI is not logged in. Run 'gh auth login' first.");
-				return;
-			}
-		} catch {
-			this.showError("GitHub CLI (gh) is not installed. Install it from https://cli.github.com/");
-			return;
-		}
-
-		// Export to a temp file
-		const tmpFile = path.join(os.tmpdir(), "session.html");
-		try {
-			await this.session.exportToHtml(tmpFile);
-		} catch (error: unknown) {
-			this.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
-			return;
-		}
-
-		// Show cancellable loader, replacing the editor
-		const loader = new BorderedLoader(this.ui, theme, "Creating gist...");
-		this.editorContainer.clear();
-		this.editorContainer.addChild(loader);
-		this.ui.setFocus(loader);
-		this.ui.requestRender();
-
-		const restoreEditor = () => {
-			loader.dispose();
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.ui.setFocus(this.editor);
-			try {
-				fs.unlinkSync(tmpFile);
-			} catch {
-				// Ignore cleanup errors
-			}
-		};
-
-		// Create a secret gist asynchronously
-		let proc: ReturnType<typeof spawn> | null = null;
-
-		loader.onAbort = () => {
-			proc?.kill();
-			restoreEditor();
-			this.showStatus("Share cancelled");
-		};
-
-		try {
-			const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
-				proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
-				let stdout = "";
-				let stderr = "";
-				proc.stdout?.on("data", (data) => {
-					stdout += data.toString();
-				});
-				proc.stderr?.on("data", (data) => {
-					stderr += data.toString();
-				});
-				proc.on("close", (code) => resolve({ stdout, stderr, code }));
-			});
-
-			if (loader.signal.aborted) return;
-
-			restoreEditor();
-
-			if (result.code !== 0) {
-				const errorMsg = result.stderr?.trim() || "Unknown error";
-				this.showError(`Failed to create gist: ${errorMsg}`);
-				return;
-			}
-
-			// Extract gist ID from the URL returned by gh
-			// gh returns something like: https://gist.github.com/username/GIST_ID
-			const gistUrl = result.stdout?.trim();
-			const gistId = gistUrl?.split("/").pop();
-			if (!gistId) {
-				this.showError("Failed to parse gist ID from gh output");
-				return;
-			}
-
-			// Create the preview URL
-			const previewUrl = getShareViewerUrl(gistId);
-			this.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
-		} catch (error: unknown) {
-			if (!loader.signal.aborted) {
-				restoreEditor();
-				this.showError(`Failed to create gist: ${error instanceof Error ? error.message : "Unknown error"}`);
-			}
-		}
-	}
-
-	private async handleCopyCommand(): Promise<void> {
-		const text = this.session.getLastAssistantText();
-		if (!text) {
-			this.showError("No agent messages to copy yet.");
-			return;
-		}
-
-		try {
-			await copyToClipboard(text);
-			this.showStatus("Copied last agent message to clipboard");
-		} catch (error) {
-			this.showError(error instanceof Error ? error.message : String(error));
-		}
-	}
-
-	private handleNameCommand(text: string): void {
-		const name = text.replace(/^\/name\s*/, "").trim();
-		if (!name) {
-			const currentName = this.sessionManager.getSessionName();
-			if (currentName) {
-				this.chatContainer.addChild(new Spacer(1));
-				this.chatContainer.addChild(new Text(theme.fg("dim", `Session name: ${currentName}`), 1, 0));
-			} else {
-				this.showWarning("Usage: /name <name>");
-			}
-			this.ui.requestRender();
-			return;
-		}
-
-		this.session.setSessionName(name);
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
-		this.ui.requestRender();
-	}
-
-	private handleSessionCommand(): void {
-		const stats = this.session.getSessionStats();
-		const sessionName = this.sessionManager.getSessionName();
-
-		let info = `${theme.bold("Session Info")}\n\n`;
-		if (sessionName) {
-			info += `${theme.fg("dim", "Name:")} ${sessionName}\n`;
-		}
-		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
-		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
-		info += `${theme.bold("Messages")}\n`;
-		info += `${theme.fg("dim", "User:")} ${stats.userMessages}\n`;
-		info += `${theme.fg("dim", "Assistant:")} ${stats.assistantMessages}\n`;
-		info += `${theme.fg("dim", "Tool Calls:")} ${stats.toolCalls}\n`;
-		info += `${theme.fg("dim", "Tool Results:")} ${stats.toolResults}\n`;
-		info += `${theme.fg("dim", "Total:")} ${stats.totalMessages}\n\n`;
-		info += `${theme.bold("Tokens")}\n`;
-		info += `${theme.fg("dim", "Input:")} ${stats.tokens.input.toLocaleString()}\n`;
-		info += `${theme.fg("dim", "Output:")} ${stats.tokens.output.toLocaleString()}\n`;
-		if (stats.tokens.cacheRead > 0) {
-			info += `${theme.fg("dim", "Cache Read:")} ${stats.tokens.cacheRead.toLocaleString()}\n`;
-		}
-		if (stats.tokens.cacheWrite > 0) {
-			info += `${theme.fg("dim", "Cache Write:")} ${stats.tokens.cacheWrite.toLocaleString()}\n`;
-		}
-		info += `${theme.fg("dim", "Total:")} ${stats.tokens.total.toLocaleString()}\n`;
-
-		if (stats.cost > 0) {
-			info += `\n${theme.bold("Cost")}\n`;
-			info += `${theme.fg("dim", "Total:")} ${stats.cost.toFixed(4)}`;
-		}
-
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(info, 1, 0));
-		this.ui.requestRender();
-	}
-
-	private handleChangelogCommand(): void {
-		const changelogPath = getChangelogPath();
-		const allEntries = parseChangelog(changelogPath);
-
-		if (allEntries.length === 0) {
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(theme.fg("dim", "No changelog entries found."), 1, 0));
-			this.ui.requestRender();
-			return;
-		}
-
-		const changelogMarkdown = allEntries
-			.slice()
-			.reverse()
-			.map((e) => e.content)
-			.join("\n\n");
-
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, this.getMarkdownThemeWithSettings()));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.ui.requestRender();
-	}
-
 	/**
 	 * Get capitalized display string for an app keybinding action.
 	 */
 	private getAppKeyDisplay(action: AppKeybinding): string {
 		return keyDisplayText(action);
-	}
-
-	/**
-	 * Get capitalized display string for an editor keybinding action.
-	 */
-	private getEditorKeyDisplay(action: Keybinding): string {
-		return keyDisplayText(action);
-	}
-
-	private handleHotkeysCommand(): void {
-		// Navigation keybindings
-		const cursorUp = this.getEditorKeyDisplay("tui.editor.cursorUp");
-		const cursorDown = this.getEditorKeyDisplay("tui.editor.cursorDown");
-		const cursorLeft = this.getEditorKeyDisplay("tui.editor.cursorLeft");
-		const cursorRight = this.getEditorKeyDisplay("tui.editor.cursorRight");
-		const cursorWordLeft = this.getEditorKeyDisplay("tui.editor.cursorWordLeft");
-		const cursorWordRight = this.getEditorKeyDisplay("tui.editor.cursorWordRight");
-		const cursorLineStart = this.getEditorKeyDisplay("tui.editor.cursorLineStart");
-		const cursorLineEnd = this.getEditorKeyDisplay("tui.editor.cursorLineEnd");
-		const jumpForward = this.getEditorKeyDisplay("tui.editor.jumpForward");
-		const jumpBackward = this.getEditorKeyDisplay("tui.editor.jumpBackward");
-		const pageUp = this.getEditorKeyDisplay("tui.editor.pageUp");
-		const pageDown = this.getEditorKeyDisplay("tui.editor.pageDown");
-
-		// Editing keybindings
-		const submit = this.getEditorKeyDisplay("tui.input.submit");
-		const newLine = this.getEditorKeyDisplay("tui.input.newLine");
-		const deleteWordBackward = this.getEditorKeyDisplay("tui.editor.deleteWordBackward");
-		const deleteWordForward = this.getEditorKeyDisplay("tui.editor.deleteWordForward");
-		const deleteToLineStart = this.getEditorKeyDisplay("tui.editor.deleteToLineStart");
-		const deleteToLineEnd = this.getEditorKeyDisplay("tui.editor.deleteToLineEnd");
-		const yank = this.getEditorKeyDisplay("tui.editor.yank");
-		const yankPop = this.getEditorKeyDisplay("tui.editor.yankPop");
-		const undo = this.getEditorKeyDisplay("tui.editor.undo");
-		const tab = this.getEditorKeyDisplay("tui.input.tab");
-
-		// App keybindings
-		const interrupt = this.getAppKeyDisplay("app.interrupt");
-		const clear = this.getAppKeyDisplay("app.clear");
-		const exit = this.getAppKeyDisplay("app.exit");
-		const suspend = this.getAppKeyDisplay("app.suspend");
-		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
-		const cycleModelForward = this.getAppKeyDisplay("app.model.cycleForward");
-		const selectModel = this.getAppKeyDisplay("app.model.select");
-		const expandTools = this.getAppKeyDisplay("app.tools.expand");
-		const toggleThinking = this.getAppKeyDisplay("app.thinking.toggle");
-		const externalEditor = this.getAppKeyDisplay("app.editor.external");
-		const cycleModelBackward = this.getAppKeyDisplay("app.model.cycleBackward");
-		const followUp = this.getAppKeyDisplay("app.message.followUp");
-		const dequeue = this.getAppKeyDisplay("app.message.dequeue");
-		const pasteImage = this.getAppKeyDisplay("app.clipboard.pasteImage");
-
-		let hotkeys = `
-**Navigation**
-| Key | Action |
-|-----|--------|
-| \`${cursorUp}\` / \`${cursorDown}\` / \`${cursorLeft}\` / \`${cursorRight}\` | Move cursor / browse history (Up when empty) |
-| \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
-| \`${cursorLineStart}\` | Start of line |
-| \`${cursorLineEnd}\` | End of line |
-| \`${jumpForward}\` | Jump forward to character |
-| \`${jumpBackward}\` | Jump backward to character |
-| \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
-
-**Editing**
-| Key | Action |
-|-----|--------|
-| \`${submit}\` | Send message |
-| \`${newLine}\` | New line${process.platform === "win32" ? " (Ctrl+Enter on Windows Terminal)" : ""} |
-| \`${deleteWordBackward}\` | Delete word backwards |
-| \`${deleteWordForward}\` | Delete word forwards |
-| \`${deleteToLineStart}\` | Delete to start of line |
-| \`${deleteToLineEnd}\` | Delete to end of line |
-| \`${yank}\` | Paste the most-recently-deleted text |
-| \`${yankPop}\` | Cycle through the deleted text after pasting |
-| \`${undo}\` | Undo |
-
-**Other**
-| Key | Action |
-|-----|--------|
-| \`${tab}\` | Path completion / accept autocomplete |
-| \`${interrupt}\` | Cancel autocomplete / abort streaming |
-| \`${clear}\` | Clear editor (first) / exit (second) |
-| \`${exit}\` | Exit (when editor is empty) |
-| \`${suspend}\` | Suspend to background |
-| \`${cycleThinkingLevel}\` | Cycle thinking level |
-| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
-| \`${selectModel}\` | Open model selector |
-| \`${expandTools}\` | Toggle tool output expansion |
-| \`${toggleThinking}\` | Toggle thinking block visibility |
-| \`${externalEditor}\` | Edit message in external editor |
-| \`${followUp}\` | Queue follow-up message |
-| \`${dequeue}\` | Restore queued messages |
-| \`${pasteImage}\` | Paste image from clipboard |
-| \`/\` | Slash commands |
-| \`!\` | Run bash command |
-| \`!!\` | Run bash command (excluded from context) |
-`;
-
-		// Add extension-registered shortcuts
-		const extensionRunner = this.session.extensionRunner;
-		const shortcuts = extensionRunner.getShortcuts(this.keybindings.getEffectiveConfig());
-		if (shortcuts.size > 0) {
-			hotkeys += `
-**Extensions**
-| Key | Action |
-|-----|--------|
-`;
-			for (const [key, shortcut] of shortcuts) {
-				const description = shortcut.description ?? shortcut.extensionPath;
-				const keyDisplay = formatKeyText(key, { capitalize: true });
-				hotkeys += `| \`${keyDisplay}\` | ${description} |\n`;
-			}
-		}
-
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.getMarkdownThemeWithSettings()));
-		this.chatContainer.addChild(new DynamicBorder());
-		this.ui.requestRender();
-	}
-
-	private async handleClearCommand(): Promise<void> {
-		if (this.loadingAnimation) {
-			this.loadingAnimation.stop();
-			this.loadingAnimation = undefined;
-		}
-		this.statusContainer.clear();
-		try {
-			const result = await this.runtimeHost.newSession();
-			if (result.cancelled) {
-				return;
-			}
-			this.renderCurrentSessionState();
-			this.chatContainer.addChild(new Spacer(1));
-			this.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
-			this.ui.requestRender();
-		} catch (error: unknown) {
-			await this.handleFatalRuntimeError("Failed to create session", error);
-		}
-	}
-
-	private handleDebugCommand(): void {
-		const width = this.ui.terminal.columns;
-		const height = this.ui.terminal.rows;
-		const allLines = this.ui.render(width);
-
-		const debugLogPath = getDebugLogPath();
-		const debugData = [
-			`Debug output at ${new Date().toISOString()}`,
-			`Terminal: ${width}x${height}`,
-			`Total lines: ${allLines.length}`,
-			"",
-			"=== All rendered lines with visible widths ===",
-			...allLines.map((line, idx) => {
-				const vw = visibleWidth(line);
-				const escaped = JSON.stringify(line);
-				return `[${idx}] (w=${vw}) ${escaped}`;
-			}),
-			"",
-			"=== Agent messages (JSONL) ===",
-			...this.session.messages.map((msg) => JSON.stringify(msg)),
-			"",
-		].join("\n");
-
-		fs.mkdirSync(path.dirname(debugLogPath), { recursive: true });
-		fs.writeFileSync(debugLogPath, debugData);
-
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(
-			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
-		);
-		this.ui.requestRender();
-	}
-
-	private handleArminSaysHi(): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new ArminComponent(this.ui));
-		this.ui.requestRender();
 	}
 
 	private handleDaxnuts(): void {

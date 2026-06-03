@@ -80,7 +80,7 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
-import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
+import { expandPromptTemplate, type PromptTemplate, tryExpandPromptTemplate } from "./prompt-templates.js";
 import { clearProviderExhaustion, isProviderQuotaError, markProviderExhausted } from "./provider-health.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.js";
@@ -1024,9 +1024,14 @@ export class AgentSession {
 
 			// Expand skill commands (/skill:name args) and prompt templates (/template args)
 			let expandedText = currentText;
+			let expansionTemplate: PromptTemplate | undefined;
+			let expansionArgsString = "";
 			if (expandPromptTemplates) {
 				expandedText = this._expandSkillCommand(expandedText);
-				expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
+				const expansion = tryExpandPromptTemplate(expandedText, [...this.promptTemplates]);
+				expandedText = expansion.text;
+				expansionTemplate = expansion.template;
+				expansionArgsString = expansion.argsString;
 			}
 
 			// If streaming, queue via steer() or followUp() based on option
@@ -1074,8 +1079,25 @@ export class AgentSession {
 			// Build messages array (custom message if any, then user message)
 			messages = [];
 
+			// For system/context slash commands, user message is the raw args if present
+			const userMessageText =
+				expansionTemplate && expansionTemplate.type !== "user" && expansionArgsString.trim()
+					? expansionArgsString
+					: expandedText;
+
+			// Inject context-type slash command as a custom message
+			if (expansionTemplate?.type === "context") {
+				messages.push({
+					role: "custom",
+					customType: "slash_command",
+					content: expandedText,
+					display: false,
+					timestamp: Date.now(),
+				});
+			}
+
 			// Add user message
-			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: expandedText }];
+			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userMessageText }];
 			if (currentImages) {
 				userContent.push(...currentImages);
 			}
@@ -1117,6 +1139,12 @@ export class AgentSession {
 			} else {
 				// Ensure we're using the base prompt (in case previous turn had modifications)
 				this.agent.state.systemPrompt = this._baseSystemPrompt;
+			}
+
+			// Inject system-type slash command into system prompt
+			if (expansionTemplate?.type === "system") {
+				const prefix = this.agent.state.systemPrompt ? "\n\n" : "";
+				this.agent.state.systemPrompt += prefix + expandedText;
 			}
 		} catch (error) {
 			preflightResult?.(false);
