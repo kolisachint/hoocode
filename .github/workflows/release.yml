@@ -35,6 +35,9 @@ jobs:
           git config user.name "GitHub Actions"
           git config user.email "github-actions@github.com"
 
+      - name: Configure npm auth
+        run: npm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
+
       - name: Run release script
         run: npm run release:${{ inputs.version }}
 
