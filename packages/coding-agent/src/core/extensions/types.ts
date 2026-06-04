@@ -10,6 +10,7 @@
 
 import type {
 	AgentMessage,
+	AgentToolCall,
 	AgentToolResult,
 	AgentToolUpdateCallback,
 	ThinkingLevel,
@@ -487,6 +488,14 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	 * If omitted, the default execution mode applies.
 	 */
 	executionMode?: ToolExecutionMode;
+
+	/**
+	 * Run this tool non-blocking. The agent loop answers the tool call with a
+	 * placeholder immediately and keeps reasoning while `execute` runs detached;
+	 * the real result is injected later as a follow-up message. May be a predicate
+	 * evaluated per tool call when background-ness depends on the arguments.
+	 */
+	background?: boolean | ((toolCall: AgentToolCall) => boolean);
 
 	/** Execute the tool. */
 	execute(

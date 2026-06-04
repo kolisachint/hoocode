@@ -383,10 +383,15 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 	 * user message — delivered alongside steering messages — so the agent can react
 	 * to it naturally rather than freezing at the tool-call boundary.
 	 *
+	 * May also be a predicate evaluated per tool call, for tools whose
+	 * background-ness depends on their arguments (e.g. a delegation tool that only
+	 * runs in the background for certain targets). The predicate must be cheap and
+	 * synchronous; it runs while the loop partitions a tool-call batch.
+	 *
 	 * Background execution is independent of `executionMode`: a background tool never
 	 * blocks the loop or the other tool calls in the same batch.
 	 */
-	background?: boolean;
+	background?: boolean | ((toolCall: AgentToolCall) => boolean);
 }
 
 /** Context snapshot passed into the low-level agent loop. */

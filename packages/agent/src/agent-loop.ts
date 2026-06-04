@@ -414,8 +414,12 @@ async function executeToolCalls(
 	background: BackgroundTaskManager,
 ): Promise<ExecutedToolCallBatch> {
 	const toolCalls = assistantMessage.content.filter((c) => c.type === "toolCall");
-	const backgroundCalls = toolCalls.filter((tc) => isBackgroundTool(currentContext, tc));
-	const foregroundCalls = toolCalls.filter((tc) => !isBackgroundTool(currentContext, tc));
+	// Single pass so a per-call `background` predicate is evaluated exactly once.
+	const backgroundCalls: AgentToolCall[] = [];
+	const foregroundCalls: AgentToolCall[] = [];
+	for (const toolCall of toolCalls) {
+		(isBackgroundTool(currentContext, toolCall) ? backgroundCalls : foregroundCalls).push(toolCall);
+	}
 
 	// Dispatch background tool calls first so their placeholder results are ready
 	// before any (potentially slow) foreground tools start executing.
@@ -450,7 +454,16 @@ async function executeToolCalls(
 }
 
 function isBackgroundTool(currentContext: AgentContext, toolCall: AgentToolCall): boolean {
-	return currentContext.tools?.find((t) => t.name === toolCall.name)?.background === true;
+	const background = currentContext.tools?.find((t) => t.name === toolCall.name)?.background;
+	if (typeof background === "function") {
+		try {
+			return background(toolCall) === true;
+		} catch {
+			// A throwing predicate must not break tool dispatch; treat as foreground.
+			return false;
+		}
+	}
+	return background === true;
 }
 
 /** Reorder finalized tool result messages to match the assistant's tool-call order. */

@@ -4,11 +4,12 @@
 
 ### Added
 
-- Non-blocking background tools. A tool can set `background: true` to run detached:
-  the agent loop answers the tool call with a placeholder result immediately and keeps
-  reasoning and producing text instead of freezing at the tool-call boundary. When the
-  tool finishes, its result is injected into a later turn as a follow-up user message
-  (delivered alongside steering messages), so the agent picks it up naturally.
+- Non-blocking background tools. A tool can set `background: true` (or a per-call
+  predicate `(toolCall) => boolean`) to run detached: the agent loop answers the tool
+  call with a placeholder result immediately and keeps reasoning and producing text
+  instead of freezing at the tool-call boundary. When the tool finishes, its result is
+  injected into a later turn as a follow-up user message (delivered alongside steering
+  messages), so the agent picks it up naturally.
 
 ## [0.4.31] - 2026-06-03
 

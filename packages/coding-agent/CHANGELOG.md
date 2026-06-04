@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Background subagents (`Task` with an agent whose definition sets `background: true`)
+  now run via the agent loop's non-blocking tool mechanism. The parent keeps reasoning
+  while the subagent runs and its final answer is injected automatically as a follow-up
+  message when it finishes — no `TaskOutput` polling required.
+
 ## [0.4.31] - 2026-06-03
 
 ## [0.4.30] - 2026-06-03

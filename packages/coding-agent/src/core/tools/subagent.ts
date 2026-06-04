@@ -17,7 +17,7 @@ import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
 import { getProviderExhaustion } from "../provider-health.js";
-import type { SubagentPool, TaskResult } from "../subagent-pool.js";
+import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
@@ -85,7 +85,7 @@ Guidelines:
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
 - Default to handling small, quick, or single-file work inline; delegate only self-contained units.
-- Some agents are configured to run in the background (non-blocking). For those, Task returns immediately with a task_id; use the **TaskOutput** tool with that task_id to check status and collect the final answer.
+- Some agents are configured to run in the background (non-blocking). For those, the Task call does not block your turn: you keep reasoning and producing output while the subagent runs, and its final answer is delivered to you automatically as a follow-up message once it finishes. You do not need to poll for it.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
 
@@ -143,9 +143,15 @@ function summarize(task: string): string {
 /** Create the Task tool definition. Registered as a customTool when enabled. */
 export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefinition {
 	const agentList = describeAvailableAgents(cwd);
+	// Agents whose definitions opt into background execution. The agent loop reads
+	// the tool's `background` flag per call and, for these, runs the dispatch
+	// detached: the parent keeps reasoning and the subagent's answer is injected as
+	// a follow-up message when it finishes (no polling needed).
+	const backgroundAgents = collectBackgroundAgentNames(cwd);
 	return defineTool<typeof taskParams, TaskToolDetails>({
 		name: "Task",
 		label: "Task",
+		background: (toolCall) => backgroundAgents.has(String(toolCall.arguments?.subagent_type ?? "")),
 		description: [
 			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation).",
 			"Select the agent via `subagent_type`; pass everything it needs via `prompt`. The subagent returns only its final answer.",
@@ -204,7 +210,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 						provider: ctx.model?.provider,
 					});
 					// The session lives under the original task id; keep it as the resume handle.
-					return finalizeForegroundResult(dispatchResult, params.subagent_type, task.id, resumeId);
+					return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, resumeId);
 				} catch (error) {
 					taskStore.update(task.id, { status: "failed" });
 					throw error;
@@ -228,35 +234,11 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			const summary = params.description?.trim() || summarize(params.prompt);
 			const task = taskStore.create(summary, { subagentMode: params.subagent_type });
 
-			// Background agents: dispatch detached and return a handle immediately so
-			// the parent keeps reasoning. The parent polls via the TaskOutput tool.
-			if (def.background) {
-				taskStore.update(task.id, { status: "in_progress" });
-				const dispatched = pool.dispatchDetached(params.prompt, {
-					forceAgent: params.subagent_type,
-					context: "",
-					model: ctx.model?.id,
-					provider: ctx.model?.provider,
-				});
-				const poolTaskId = dispatched.task_id;
-				if (poolTaskId) trackBackgroundTask(pool, poolTaskId, task.id);
-				return {
-					content: [
-						{
-							type: "text" as const,
-							text: `Background subagent (${params.subagent_type}) started with task_id "${poolTaskId}". It runs without blocking you. Call the TaskOutput tool with this task_id to check its status and collect the final answer.`,
-						},
-					],
-					details: {
-						subagent_type: params.subagent_type,
-						ok: true,
-						taskId: task.id,
-						poolTaskId,
-						background: true,
-					},
-				};
-			}
-
+			// Always dispatch and await the subagent's full result here. Background
+			// agents (def.background) are made non-blocking by the agent loop via this
+			// tool's `background` flag: the loop runs this execute() detached, answers
+			// the call with a placeholder, and injects the answer below as a follow-up
+			// message when it resolves. Foreground agents block the turn as usual.
 			taskStore.update(task.id, { status: "in_progress" });
 			try {
 				const dispatchResult = await pool.dispatch(params.prompt, {
@@ -265,7 +247,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 					model: ctx.model?.id,
 					provider: ctx.model?.provider,
 				});
-				return finalizeForegroundResult(dispatchResult, params.subagent_type, task.id, dispatchResult.task_id);
+				return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, dispatchResult.task_id);
 			} catch (error) {
 				taskStore.update(task.id, { status: "failed" });
 				throw error;
@@ -284,8 +266,17 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 	});
 }
 
+/** Names of agents configured to run in the background (non-blocking). */
+function collectBackgroundAgentNames(cwd: string): Set<string> {
+	const names = new Set<string>();
+	for (const agent of loadAgentRegistry({ cwd }).list()) {
+		if (agent.background) names.add(agent.name);
+	}
+	return names;
+}
+
 /** Extract the final answer from a finished dispatch, updating the task panel. */
-function finalizeForegroundResult(
+function finalizeDispatchResult(
 	dispatchResult: TaskResult,
 	subagentType: string,
 	taskStoreId: number,
@@ -315,30 +306,6 @@ function finalizeForegroundResult(
 		content: [{ type: "text", text: answer }],
 		details: { subagent_type: subagentType, ok: true, taskId: taskStoreId, poolTaskId: resumeHandle },
 	};
-}
-
-/**
- * Keep the task panel in sync for a detached background subagent: when the pool
- * reports the task finished, update the stored task's status and detach.
- */
-function trackBackgroundTask(pool: SubagentPool, poolTaskId: string, taskStoreId: number): void {
-	function finish(status: "done" | "failed"): void {
-		taskStore.update(taskStoreId, { status });
-		pool.off("task_done", onDone);
-		pool.off("task_failed", onFail);
-		pool.off("task_stalled", onFail);
-		pool.off("task_timeout", onFail);
-	}
-	function onDone(data: { task_id?: string }): void {
-		if (data?.task_id === poolTaskId) finish("done");
-	}
-	function onFail(data: { task_id?: string }): void {
-		if (data?.task_id === poolTaskId) finish("failed");
-	}
-	pool.on("task_done", onDone);
-	pool.on("task_failed", onFail);
-	pool.on("task_stalled", onFail);
-	pool.on("task_timeout", onFail);
 }
 
 const taskOutputParams = Type.Object({

@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type FauxProviderRegistration, type Model, registerFauxProvider } from "@kolisachint/hoocode-ai";
@@ -208,6 +208,34 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const created = taskStore.list().slice(before);
 		expect(created).toHaveLength(1);
 		expect(created[0].status).toBe("failed");
+	});
+
+	it("marks the Task tool background only for agents whose definition opts in", () => {
+		// A project-local agent with `background: true`; the agent loop reads the
+		// tool's `background` flag per call to run such dispatches non-blocking.
+		const cwd = makeTempDir();
+		const agentsDir = join(cwd, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "watcher.md"),
+			[
+				"---",
+				"name: watcher",
+				"description: A non-blocking background agent.",
+				"background: true",
+				"---",
+				"Body.",
+			].join("\n"),
+		);
+
+		const tool = createTaskToolDefinition(cwd);
+		expect(typeof tool.background).toBe("function");
+		const isBackground = tool.background as (toolCall: { arguments: Record<string, unknown> }) => boolean;
+
+		expect(isBackground({ arguments: { subagent_type: "watcher" } })).toBe(true);
+		// A foreground built-in (and an unknown agent) must not run in the background.
+		expect(isBackground({ arguments: { subagent_type: "explore" } })).toBe(false);
+		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(false);
 	});
 });
 
