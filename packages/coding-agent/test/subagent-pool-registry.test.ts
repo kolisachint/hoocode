@@ -40,6 +40,40 @@ function readArgv(cwd: string, _taskId: string): string[] {
 	return JSON.parse(readFileSync(path, "utf-8")) as string[];
 }
 
+function createModelFallbackRecorder(dir: string): string {
+	const path = join(dir, "mock-model-fallback.js");
+	const content = `#!/usr/bin/env node
+const fs = require("node:fs");
+const p = require("node:path");
+const argv = process.argv.slice(2);
+const argvListPath = p.join(process.cwd(), "argv-list.json");
+const argvList = fs.existsSync(argvListPath) ? JSON.parse(fs.readFileSync(argvListPath, "utf-8")) : [];
+argvList.push(argv);
+fs.writeFileSync(argvListPath, JSON.stringify(argvList));
+const modelIdx = argv.indexOf("--model");
+const model = modelIdx >= 0 ? argv[modelIdx + 1] : undefined;
+if (model !== "parent-model") {
+  console.error("No API key found for preferred model");
+  process.exit(1);
+}
+const i = argv.indexOf("--task-id");
+const taskId = i >= 0 ? argv[i + 1] : "unknown";
+const outDir = p.join(process.cwd(), ".hoocode", "dispatch", taskId);
+fs.mkdirSync(outDir, { recursive: true });
+fs.writeFileSync(p.join(outDir, "result.json"), JSON.stringify({ summary: "ok", files_changed: [], confidence: 0.9, status: "complete" }));
+console.log(JSON.stringify({ type: "done", reason: "stop", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));
+process.exit(0);
+`;
+	writeFileSync(path, content);
+	chmodSync(path, 0o755);
+	return path;
+}
+
+function readArgvList(cwd: string): string[][] {
+	const path = join(cwd, "argv-list.json");
+	return JSON.parse(readFileSync(path, "utf-8")) as string[][];
+}
+
 describe("SubagentPool registry wiring", () => {
 	let cwd: string;
 	let pool: SubagentPool | undefined;
@@ -98,5 +132,28 @@ describe("SubagentPool registry wiring", () => {
 		const toolsIdx = argv.indexOf("--tools");
 		expect(toolsIdx).toBeGreaterThanOrEqual(0);
 		expect(argv[toolsIdx + 1]).toBe("read,grep,find,ls,bash");
+	});
+
+	test("retries built-in agents with the inherited model when the preferred model is unavailable", async () => {
+		const mock = createModelFallbackRecorder(cwd);
+		pool = new SubagentPool({ executable: process.execPath, prefixArgs: [mock], cwd });
+
+		const result = await pool.dispatch("run a read-only scan", {
+			forceAgent: "explore",
+			model: "parent-model",
+			provider: "parent-provider",
+		});
+		expect(result.result?.ok).toBe(true);
+
+		const argvList = readArgvList(cwd);
+		expect(argvList).toHaveLength(2);
+
+		const firstModelIdx = argvList[0].indexOf("--model");
+		expect(firstModelIdx).toBeGreaterThanOrEqual(0);
+		expect(argvList[0][firstModelIdx + 1]).toBe("haiku");
+
+		const fallbackModelIdx = argvList[1].indexOf("--model");
+		expect(fallbackModelIdx).toBeGreaterThanOrEqual(0);
+		expect(argvList[1][fallbackModelIdx + 1]).toBe("parent-model");
 	});
 });

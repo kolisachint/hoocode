@@ -26,6 +26,8 @@ export interface SubagentPoolTask {
 	 * Resume reuses the original task's session file to continue the transcript.
 	 */
 	sessionFile?: string;
+	/** Internal: retry using the caller's model when a built-in agent's preferred model fails. */
+	useInheritedModelFallback?: boolean;
 }
 
 export interface SubagentSlot {
@@ -521,8 +523,11 @@ export class SubagentPool extends EventEmitter {
 		}
 
 		// Model precedence: a definition's explicit model wins (unless it is the
-		// `inherit` sentinel), otherwise use the caller-provided model.
-		const explicitModel = def?.model && def.model !== MODEL_INHERIT ? def.model : undefined;
+		// `inherit` sentinel), otherwise use the caller-provided model. Built-in
+		// agents can retry with the inherited model when their preferred model is
+		// unavailable or quota-limited.
+		const explicitModel =
+			!task.useInheritedModelFallback && def?.model && def.model !== MODEL_INHERIT ? def.model : undefined;
 		const modelToUse = explicitModel ?? task.model;
 		if (modelToUse) {
 			args.push("--model", modelToUse);
@@ -732,6 +737,14 @@ export class SubagentPool extends EventEmitter {
 				if (!result.error) {
 					result.error = this.deriveFailureReason(result);
 				}
+				if (this.shouldRetryWithInheritedModel(task, result)) {
+					console.error(
+						`[DISPATCH] agent=${task.agent_type} task_id=${task.task_id} preferred model failed; retrying with inherited model`,
+					);
+					this.cleanupRetryArtifacts(task);
+					this.queue.unshift({ ...task, useInheritedModelFallback: true });
+					return;
+				}
 				this.writeOutputJson(task.task_id, result);
 				this.emit("task_failed", {
 					task_id: task.task_id,
@@ -776,6 +789,44 @@ export class SubagentPool extends EventEmitter {
 				this.budgets.delete(task.task_id);
 				this.pull();
 			});
+	}
+
+	/** Whether a failed built-in subagent should be retried with `model: inherit`. */
+	private shouldRetryWithInheritedModel(task: SubagentPoolTask, result: SubagentResult): boolean {
+		if (task.useInheritedModelFallback) return false;
+		if (task.sessionFile) return false;
+		if (!task.model || !task.provider) return false;
+
+		const def = task.agent_type ? this.getRegistry().get(task.agent_type) : undefined;
+		if (def?.source !== "builtin") return false;
+		if (!def.model || def.model === MODEL_INHERIT) return false;
+
+		return this.isInheritedModelFallbackError(result);
+	}
+
+	/** Detect provider/model failures where inheriting the parent model can recover. */
+	private isInheritedModelFallbackError(result: SubagentResult): boolean {
+		const text = [result.error, result.stderr, JSON.stringify(result.result_data ?? {})]
+			.filter((part): part is string => typeof part === "string" && part.length > 0)
+			.join("\n");
+
+		return /usage[_\s-]?limit|subscription|quota|rate.?limit|too many requests|429|insufficient|out of credit|credit balance|billing|payment required|402|model[^\n]*(not found|unavailable|not available|does not exist|invalid|unsupported)|no api key|no auth configured|authentication|unauthorized|forbidden|permission/i.test(
+			text,
+		);
+	}
+
+	/** Remove failed attempt artifacts before rerunning the same task id. */
+	private cleanupRetryArtifacts(task: SubagentPoolTask): void {
+		const cwd = task.cwd ?? this.cwd;
+		const taskDir = getDispatchTaskDir(cwd, task.task_id);
+		const sessionFile = task.sessionFile ?? this.getSessionFile(task.task_id, cwd);
+		try {
+			rmSync(sessionFile, { force: true });
+			rmSync(join(taskDir, "result.json"), { force: true });
+			rmSync(join(taskDir, "output.json"), { force: true });
+		} catch {
+			// Best-effort cleanup; retry can still proceed with existing artifacts.
+		}
 	}
 
 	/**
