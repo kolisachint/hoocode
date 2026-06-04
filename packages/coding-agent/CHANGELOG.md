@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Built-in subagents now retry with the inherited parent model when their preferred model fails due to model availability, auth, quota, or rate-limit errors.
+
 ## [0.4.32] - 2026-06-04
 
 ### Changed
