@@ -39,6 +39,19 @@ export type ToolExecutionMode = "sequential" | "parallel";
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
 
 /**
+ * A finished background tool call, passed to `createBackgroundResultMessage` so the
+ * app can shape the follow-up message injected when the tool completes.
+ */
+export interface BackgroundToolResult {
+	/** The originating tool call block from the assistant message. */
+	toolCall: AgentToolCall;
+	/** The executed tool result (after any `afterToolCall` overrides). */
+	result: AgentToolResult<any>;
+	/** Whether the executed result is treated as an error. */
+	isError: boolean;
+}
+
+/**
  * Result returned from `beforeToolCall`.
  *
  * Returning `{ block: true }` prevents the tool from executing. The loop emits an error tool result instead.
@@ -233,6 +246,20 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * Contract: must not throw or reject. Return [] when no follow-up messages are available.
 	 */
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
+
+	/**
+	 * Builds the follow-up message injected when a background tool (`background: true`)
+	 * finishes. The returned message is injected into the next loop iteration like a
+	 * steering message, so it must convert to a `user`/`toolResult` message via
+	 * `convertToLlm` (custom message types are fine as long as they convert).
+	 *
+	 * When omitted, the loop injects a default user message carrying the tool's result
+	 * content. Provide this to deliver a richer, app-specific message type (e.g. for
+	 * dedicated UI rendering).
+	 *
+	 * Contract: must not throw or reject. Return a safe fallback message instead.
+	 */
+	createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
 
 	/**
 	 * Tool execution mode.

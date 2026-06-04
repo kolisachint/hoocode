@@ -1498,4 +1498,74 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect((toolResults[0] as any).content[0].text).toContain("background");
 		expect((toolResults[1] as any).content[0].text).toBe("fg:F");
 	});
+
+	it("should use createBackgroundResultMessage to shape the background follow-up message", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const bgTool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "bg",
+			label: "Background",
+			description: "Background tool",
+			parameters: toolSchema,
+			background: true,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `bg-result: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [bgTool] };
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			// A custom message type the app can render specially. It converts to a user
+			// message via convertToLlm; here identityConverter drops it, which is fine —
+			// we only assert the loop injected exactly this object. Cast because the base
+			// AgentMessage union has no app-specific custom types.
+			createBackgroundResultMessage: (result) =>
+				({
+					role: "custom",
+					customType: "backgroundTask",
+					isError: result.isError,
+					content: result.result.content,
+					timestamp: Date.now(),
+				}) as unknown as AgentMessage,
+		};
+
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("go")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "bg-1", name: "bg", arguments: { value: "hi" } }],
+						"toolUse",
+					);
+					mockStream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }]);
+					mockStream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+
+		for await (const _event of stream) {
+			// consume
+		}
+		const messages = await stream.result();
+
+		const custom = messages.find((m) => (m as any).role === "custom");
+		expect(custom).toBeDefined();
+		expect((custom as any).customType).toBe("backgroundTask");
+		expect((custom as any).content[0].text).toBe("bg-result: hi");
+		// No plain user follow-up was injected for the background result.
+		const userFollowUps = messages.filter(
+			(m) =>
+				m.role === "user" && Array.isArray(m.content) && m.content.some((c: any) => c.text?.includes("bg-result")),
+		);
+		expect(userFollowUps).toHaveLength(0);
+	});
 });

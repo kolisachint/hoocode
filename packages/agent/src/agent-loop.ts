@@ -541,7 +541,14 @@ async function dispatchBackgroundToolCalls(
 				config,
 				signal,
 			);
-			return createBackgroundResultMessage(finalized);
+			if (config.createBackgroundResultMessage) {
+				return config.createBackgroundResultMessage({
+					toolCall: finalized.toolCall,
+					result: finalized.result,
+					isError: finalized.isError,
+				});
+			}
+			return createDefaultBackgroundResultMessage(finalized);
 		});
 	}
 
@@ -568,13 +575,14 @@ function createBackgroundPlaceholderOutcome(toolCall: AgentToolCall): FinalizedT
 }
 
 /**
- * Build the follow-up user message that carries a finished background tool's result.
+ * Build the default follow-up user message carrying a finished background tool's result.
  *
  * The tool call itself was already answered by a placeholder, so the real result is
  * delivered as a fresh user message (rather than a second tool result for the same id)
- * and injected like a steering message on the next loop iteration.
+ * and injected like a steering message on the next loop iteration. Apps can override
+ * this shape via `config.createBackgroundResultMessage`.
  */
-function createBackgroundResultMessage(finalized: FinalizedToolCallOutcome): UserMessage {
+function createDefaultBackgroundResultMessage(finalized: FinalizedToolCallOutcome): UserMessage {
 	const header = finalized.isError
 		? `Background tool "${finalized.toolCall.name}" (id ${finalized.toolCall.id}) failed:`
 		: `Background tool "${finalized.toolCall.name}" (id ${finalized.toolCall.id}) finished:`;

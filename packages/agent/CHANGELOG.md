@@ -9,7 +9,9 @@
   call with a placeholder result immediately and keeps reasoning and producing text
   instead of freezing at the tool-call boundary. When the tool finishes, its result is
   injected into a later turn as a follow-up user message (delivered alongside steering
-  messages), so the agent picks it up naturally.
+  messages), so the agent picks it up naturally. Apps can override the injected message
+  shape via the `createBackgroundResultMessage` config/option (e.g. to use a custom
+  message type with dedicated UI rendering).
 
 ## [0.4.31] - 2026-06-03
 
