@@ -373,6 +373,20 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 	 * If omitted, the default execution mode applies.
 	 */
 	executionMode?: ToolExecutionMode;
+	/**
+	 * When true, the agent loop treats this tool as non-blocking.
+	 *
+	 * Instead of awaiting the tool, the loop emits a placeholder tool result
+	 * immediately (so the assistant's tool call is satisfied) and keeps reasoning
+	 * and producing text while the tool runs detached. When the tool eventually
+	 * finishes, its result is injected into the next loop iteration as a follow-up
+	 * user message — delivered alongside steering messages — so the agent can react
+	 * to it naturally rather than freezing at the tool-call boundary.
+	 *
+	 * Background execution is independent of `executionMode`: a background tool never
+	 * blocks the loop or the other tool calls in the same batch.
+	 */
+	background?: boolean;
 }
 
 /** Context snapshot passed into the low-level agent loop. */
