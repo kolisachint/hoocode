@@ -5,7 +5,7 @@
  * and provides a transformer to convert them to LLM-compatible messages.
  */
 
-import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
+import type { AgentMessage, BackgroundToolResult } from "@kolisachint/hoocode-agent-core";
 import type { ImageContent, Message, TextContent } from "@kolisachint/hoocode-ai";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
@@ -120,6 +120,32 @@ export function createCompactionSummaryMessage(
 		tokensBefore,
 		tokensAfter,
 		timestamp: new Date(timestamp).getTime(),
+	};
+}
+
+/** customType used for the follow-up message a finished background subagent injects. */
+export const BACKGROUND_TASK_CUSTOM_TYPE = "backgroundTask";
+
+/**
+ * Build the follow-up message injected when a background subagent (a `Task` call
+ * to a `background: true` agent) finishes. Rendered as a distinct custom message
+ * rather than a plain user message, and converted to a user message for the LLM.
+ */
+export function createBackgroundTaskMessage(result: BackgroundToolResult): CustomMessage {
+	const subagentType =
+		typeof result.toolCall.arguments?.subagent_type === "string"
+			? result.toolCall.arguments.subagent_type
+			: result.toolCall.name;
+	const header = result.isError
+		? `Background subagent (${subagentType}) failed:`
+		: `Background subagent (${subagentType}) finished:`;
+	return {
+		role: "custom",
+		customType: BACKGROUND_TASK_CUSTOM_TYPE,
+		content: [{ type: "text", text: header }, ...result.result.content],
+		display: true,
+		details: { subagentType, isError: result.isError },
+		timestamp: Date.now(),
 	};
 }
 

@@ -39,6 +39,19 @@ export type ToolExecutionMode = "sequential" | "parallel";
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
 
 /**
+ * A finished background tool call, passed to `createBackgroundResultMessage` so the
+ * app can shape the follow-up message injected when the tool completes.
+ */
+export interface BackgroundToolResult {
+	/** The originating tool call block from the assistant message. */
+	toolCall: AgentToolCall;
+	/** The executed tool result (after any `afterToolCall` overrides). */
+	result: AgentToolResult<any>;
+	/** Whether the executed result is treated as an error. */
+	isError: boolean;
+}
+
+/**
  * Result returned from `beforeToolCall`.
  *
  * Returning `{ block: true }` prevents the tool from executing. The loop emits an error tool result instead.
@@ -235,6 +248,20 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	getFollowUpMessages?: () => Promise<AgentMessage[]>;
 
 	/**
+	 * Builds the follow-up message injected when a background tool (`background: true`)
+	 * finishes. The returned message is injected into the next loop iteration like a
+	 * steering message, so it must convert to a `user`/`toolResult` message via
+	 * `convertToLlm` (custom message types are fine as long as they convert).
+	 *
+	 * When omitted, the loop injects a default user message carrying the tool's result
+	 * content. Provide this to deliver a richer, app-specific message type (e.g. for
+	 * dedicated UI rendering).
+	 *
+	 * Contract: must not throw or reject. Return a safe fallback message instead.
+	 */
+	createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
+
+	/**
 	 * Tool execution mode.
 	 * - "sequential": execute tool calls one by one
 	 * - "parallel": preflight tool calls sequentially, then execute allowed tools concurrently;
@@ -373,6 +400,25 @@ export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any
 	 * If omitted, the default execution mode applies.
 	 */
 	executionMode?: ToolExecutionMode;
+	/**
+	 * When true, the agent loop treats this tool as non-blocking.
+	 *
+	 * Instead of awaiting the tool, the loop emits a placeholder tool result
+	 * immediately (so the assistant's tool call is satisfied) and keeps reasoning
+	 * and producing text while the tool runs detached. When the tool eventually
+	 * finishes, its result is injected into the next loop iteration as a follow-up
+	 * user message — delivered alongside steering messages — so the agent can react
+	 * to it naturally rather than freezing at the tool-call boundary.
+	 *
+	 * May also be a predicate evaluated per tool call, for tools whose
+	 * background-ness depends on their arguments (e.g. a delegation tool that only
+	 * runs in the background for certain targets). The predicate must be cheap and
+	 * synchronous; it runs while the loop partitions a tool-call batch.
+	 *
+	 * Background execution is independent of `executionMode`: a background tool never
+	 * blocks the loop or the other tool calls in the same batch.
+	 */
+	background?: boolean | ((toolCall: AgentToolCall) => boolean);
 }
 
 /** Context snapshot passed into the low-level agent loop. */

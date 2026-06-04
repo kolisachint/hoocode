@@ -1348,4 +1348,224 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect(messages.length).toBe(1);
 		expect(messages[0].role).toBe("assistant");
 	});
+
+	it("should not block on background tools and deliver the result as a follow-up message", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		let releaseBg: (() => void) | undefined;
+		const bgGate = new Promise<void>((resolve) => {
+			releaseBg = resolve;
+		});
+		let executed = false;
+
+		const bgTool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "bg",
+			label: "Background",
+			description: "Background tool",
+			parameters: toolSchema,
+			background: true,
+			async execute(_toolCallId, params) {
+				await bgGate;
+				executed = true;
+				return {
+					content: [{ type: "text", text: `bg-result: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [bgTool] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("go")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "bg-1", name: "bg", arguments: { value: "hello" } }],
+						"toolUse",
+					);
+					mockStream.push({ type: "done", reason: "toolUse", message });
+				} else if (callIndex === 1) {
+					// Agent keeps reasoning while the background tool is still running.
+					const message = createAssistantMessage([{ type: "text", text: "still working" }]);
+					mockStream.push({ type: "done", reason: "stop", message });
+					// Release the background tool only after this non-blocking turn streamed,
+					// proving the loop did not freeze waiting on it.
+					setTimeout(() => releaseBg?.(), 10);
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }]);
+					mockStream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+		const messages = await stream.result();
+
+		expect(executed).toBe(true);
+
+		// The background tool call is answered immediately with a placeholder tool result.
+		const placeholder = messages.find((m) => m.role === "toolResult");
+		expect(placeholder).toBeDefined();
+		expect((placeholder as any).content[0].text).toContain("background");
+
+		// The real result is delivered later as a follow-up user message.
+		const followUp = messages.find(
+			(m) =>
+				m.role === "user" &&
+				Array.isArray(m.content) &&
+				m.content.some((c: any) => c.type === "text" && c.text.includes("bg-result: hello")),
+		);
+		expect(followUp).toBeDefined();
+
+		// That follow-up arrives only after the agent produced its "still working" turn.
+		const stillWorkingIdx = messages.findIndex(
+			(m) =>
+				m.role === "assistant" &&
+				(m.content as any).some((c: any) => c.type === "text" && c.text === "still working"),
+		);
+		expect(stillWorkingIdx).toBeGreaterThanOrEqual(0);
+		expect(messages.indexOf(followUp!)).toBeGreaterThan(stillWorkingIdx);
+	});
+
+	it("should execute foreground tools and dispatch background ones, preserving source order", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const bgTool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "bg",
+			label: "Background",
+			description: "Background tool",
+			parameters: toolSchema,
+			background: true,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `bg:${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const fgTool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "fg",
+			label: "Foreground",
+			description: "Foreground tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `fg:${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [bgTool, fgTool] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("go")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const message = createAssistantMessage(
+						[
+							{ type: "toolCall", id: "bg-1", name: "bg", arguments: { value: "B" } },
+							{ type: "toolCall", id: "fg-1", name: "fg", arguments: { value: "F" } },
+						],
+						"toolUse",
+					);
+					mockStream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }]);
+					mockStream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+
+		for await (const _event of stream) {
+			// consume
+		}
+		const messages = await stream.result();
+
+		const toolResults = messages.filter((m) => m.role === "toolResult");
+		expect(toolResults.map((m) => (m as any).toolCallId)).toEqual(["bg-1", "fg-1"]);
+		// bg-1 is answered by the placeholder; fg-1 carries the real foreground result.
+		expect((toolResults[0] as any).content[0].text).toContain("background");
+		expect((toolResults[1] as any).content[0].text).toBe("fg:F");
+	});
+
+	it("should use createBackgroundResultMessage to shape the background follow-up message", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const bgTool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "bg",
+			label: "Background",
+			description: "Background tool",
+			parameters: toolSchema,
+			background: true,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `bg-result: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const context: AgentContext = { systemPrompt: "", messages: [], tools: [bgTool] };
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+			// A custom message type the app can render specially. It converts to a user
+			// message via convertToLlm; here identityConverter drops it, which is fine —
+			// we only assert the loop injected exactly this object. Cast because the base
+			// AgentMessage union has no app-specific custom types.
+			createBackgroundResultMessage: (result) =>
+				({
+					role: "custom",
+					customType: "backgroundTask",
+					isError: result.isError,
+					content: result.result.content,
+					timestamp: Date.now(),
+				}) as unknown as AgentMessage,
+		};
+
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("go")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					const message = createAssistantMessage(
+						[{ type: "toolCall", id: "bg-1", name: "bg", arguments: { value: "hi" } }],
+						"toolUse",
+					);
+					mockStream.push({ type: "done", reason: "toolUse", message });
+				} else {
+					const message = createAssistantMessage([{ type: "text", text: "done" }]);
+					mockStream.push({ type: "done", reason: "stop", message });
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+
+		for await (const _event of stream) {
+			// consume
+		}
+		const messages = await stream.result();
+
+		const custom = messages.find((m) => (m as any).role === "custom");
+		expect(custom).toBeDefined();
+		expect((custom as any).customType).toBe("backgroundTask");
+		expect((custom as any).content[0].text).toBe("bg-result: hi");
+		// No plain user follow-up was injected for the background result.
+		const userFollowUps = messages.filter(
+			(m) =>
+				m.role === "user" && Array.isArray(m.content) && m.content.some((c: any) => c.text?.includes("bg-result")),
+		);
+		expect(userFollowUps).toHaveLength(0);
+	});
 });
