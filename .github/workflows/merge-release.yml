@@ -8,9 +8,9 @@ jobs:
   release:
     if: >
       github.event.pull_request.merged == true && (
-        contains(github.event.pull_request.labels.*.name, 'release:patch') ||
-        contains(github.event.pull_request.labels.*.name, 'release:minor') ||
-        contains(github.event.pull_request.labels.*.name, 'release:major')
+        contains(github.event.pull_request.labels.*.name, 'npm:patch') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:minor') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:major')
       )
     runs-on: ubuntu-latest
     permissions:
@@ -45,9 +45,9 @@ jobs:
       - name: Determine release type from label
         id: release-type
         run: |
-          if ${{ contains(github.event.pull_request.labels.*.name, 'release:major') }}; then
+          if ${{ contains(github.event.pull_request.labels.*.name, 'npm:major') }}; then
             echo "type=major" >> "$GITHUB_OUTPUT"
-          elif ${{ contains(github.event.pull_request.labels.*.name, 'release:minor') }}; then
+          elif ${{ contains(github.event.pull_request.labels.*.name, 'npm:minor') }}; then
             echo "type=minor" >> "$GITHUB_OUTPUT"
           else
             echo "type=patch" >> "$GITHUB_OUTPUT"
@@ -63,9 +63,9 @@ jobs:
     needs: [release]
     if: >
       github.event.pull_request.merged == true && (
-        contains(github.event.pull_request.labels.*.name, 'release:patch') ||
-        contains(github.event.pull_request.labels.*.name, 'release:minor') ||
-        contains(github.event.pull_request.labels.*.name, 'release:major')
+        contains(github.event.pull_request.labels.*.name, 'npm:patch') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:minor') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:major')
       )
     runs-on: ubuntu-latest
     permissions:
