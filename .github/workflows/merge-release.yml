@@ -23,19 +23,11 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-
       - name: Pin npm to 10.x
         run: sudo npm install -g npm@10
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Hoist Bun deps for tsgo/tsc compatibility
-        run: node scripts/hoist-bun-deps.mjs
+        run: npm ci
 
       - name: Configure Git
         run: |
@@ -54,7 +46,7 @@ jobs:
           fi
 
       - name: Run release script
-        run: bun run release:${{ steps.release-type.outputs.type }}
+        run: npm run release:${{ steps.release-type.outputs.type }}
 
       - name: Push version bump and tag
         run: git push --follow-tags origin main
