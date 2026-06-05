@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- MCP tools failed with `MCP server "<name>" is not connected` once the server's
+  connection was torn down (server process exit, host process churn between turns,
+  or a racing teardown). The tool call gave up immediately with no recovery, and
+  the server config was not retained so it could not reconnect. The loader now
+  retains each server's config and a tool call lazily reconnects from it before
+  failing. The client also now sends the spec-required `notifications/initialized`
+  after `initialize`, the handshake (`initialize`/`tools/list`) is bounded by a
+  timeout so a dead server can't hang startup, and spawned MCP servers are killed
+  when the host process exits so they no longer linger as orphans.
+- Quick-finishing subagents were reported as "stalled". A spawned subagent
+  (`--mode json` with a task id) finished its work and wrote a valid
+  `result.json`, but the child process did not exit on its own: lingering open
+  handles in its runtime kept the event loop alive, so it sat idle until the
+  parent lifeguard SIGKILLed it at the 60s heartbeat threshold (`exit_code: null`,
+  `status: "stalled"`). Spawned subagents now force a clean, flushed exit as soon
+  as their work is done, so they terminate in seconds instead of hanging until the
+  reap. As a defense in depth, the pool now treats a child as successfully
+  completed whenever it produced a verified `result.json`, regardless of exit
+  code, so a kill that races a finished child still returns the real answer.
+
 ## [0.4.41] - 2026-06-05
 
 ### Added

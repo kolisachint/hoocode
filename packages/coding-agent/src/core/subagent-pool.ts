@@ -679,15 +679,17 @@ export class SubagentPool extends EventEmitter {
 				const tokens_used = budget.getUsed();
 				const budgetExceeded = budget.isExceeded();
 
-				// A late lifeguard kill can race a child that already finished and wrote a
-				// valid result.json: SIGKILL on the dead pid is a no-op, the child still
-				// exits 0, and its result is real. Only honor stalled/timeout when the child
-				// did not actually complete, otherwise we discard a genuine success and
-				// report a false-positive stall.
-				const cleanlyCompleted = code === 0 && this.verifier.verify(task.task_id, task.cwd ?? this.cwd).valid;
+				// A subagent's success is defined by a valid, verified result.json, not by
+				// its exit code. A child that finished its work and wrote a valid result can
+				// still be SIGKILLed by the lifeguard before it exits on its own (lingering
+				// open handles delay a natural exit past the heartbeat threshold), which forces
+				// exit_code === null. Keying completion off the verified result, not code === 0,
+				// honors that genuine success instead of discarding it as a false stall.
+				const verification = this.verifier.verify(task.task_id, task.cwd ?? this.cwd);
+				const cleanlyCompleted = code === 0 || verification.valid;
 
-				// If killed by lifeguard before completing, override exit handling
-				if ((killReason === "stalled" || killReason === "timeout") && !cleanlyCompleted) {
+				// If killed by lifeguard before producing a valid result, honor the kill.
+				if ((killReason === "stalled" || killReason === "timeout") && !verification.valid) {
 					const result: SubagentResult = {
 						task_id: task.task_id,
 						ok: false,
@@ -709,18 +711,17 @@ export class SubagentPool extends EventEmitter {
 
 				const result: SubagentResult = {
 					task_id: task.task_id,
-					ok: code === 0,
+					ok: cleanlyCompleted,
 					stdout,
 					stderr,
 					exit_code: code,
 					// Advisory telemetry only: exceeding the budget never fails the task.
 					budget_exceeded: budgetExceeded,
-					status: code === 0 ? "complete" : "failed",
+					status: cleanlyCompleted ? "complete" : "failed",
 					usedInheritedModelFallback: task.useInheritedModelFallback === true,
 				};
 
 				if (result.ok) {
-					const verification = this.verifier.verify(task.task_id, task.cwd ?? this.cwd);
 					if (!verification.valid) {
 						result.ok = false;
 						result.error = verification.reason;

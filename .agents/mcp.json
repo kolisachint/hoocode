@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "mock-tools": {
+      "command": "node",
+      "args": ["mcp-servers/mock-tools/server.js"]
+    }
+  }
+}
