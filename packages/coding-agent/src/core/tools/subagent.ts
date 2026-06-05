@@ -295,7 +295,7 @@ function finalizeDispatchResult(
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
 		const stderr = result?.stderr?.trim();
 		throw new Error(
-			`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ""}`,
+			`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`,
 		);
 	}
 
