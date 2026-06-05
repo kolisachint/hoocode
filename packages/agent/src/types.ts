@@ -276,6 +276,16 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	createBackgroundPlaceholder?: (toolCall: AgentToolCall) => string | undefined;
 
 	/**
+	 * Called whenever the number of in-flight background tool calls changes (one is
+	 * dispatched, or one settles). Lets the app account for the load these detached
+	 * tools place on the process — e.g. reporting it to the subagent lifeguard so it
+	 * widens its heartbeat/timeout tolerance for concurrently-monitored subagents.
+	 *
+	 * Contract: must not throw or reject.
+	 */
+	onBackgroundTaskCountChange?: (count: number) => void;
+
+	/**
 	 * Tool execution mode.
 	 * - "sequential": execute tool calls one by one
 	 * - "parallel": preflight tool calls sequentially, then execute allowed tools concurrently;
