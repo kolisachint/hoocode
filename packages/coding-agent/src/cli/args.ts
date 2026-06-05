@@ -260,7 +260,7 @@ ${chalk.bold("Options:")}
   --max-turns <n>                Hard cap on assistant turns; the agent is asked to wrap up near the
                                  cap and stopped at it (mainly used for spawned subagents)
   --enable-subagents             Enable the subagent tool (delegate tasks to isolated agent loops)
-                                 Also enablable via the "enableSubagent" setting
+                                 Can also be enabled via the "enableSubagent" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
