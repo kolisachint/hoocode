@@ -156,4 +156,22 @@ describe("SubagentPool registry wiring", () => {
 		expect(fallbackModelIdx).toBeGreaterThanOrEqual(0);
 		expect(argvList[1][fallbackModelIdx + 1]).toBe("parent-model");
 	});
+
+	test("falls back to the inherited model when only the parent model is known (no provider)", async () => {
+		const mock = createModelFallbackRecorder(cwd);
+		pool = new SubagentPool({ executable: process.execPath, prefixArgs: [mock], cwd });
+
+		// Parent threads through a model but no provider (e.g. gateway routing). The
+		// preferred model still fails, so the retry must inherit the parent model.
+		const result = await pool.dispatch("run a read-only scan", {
+			forceAgent: "explore",
+			model: "parent-model",
+		});
+		expect(result.result?.ok).toBe(true);
+
+		const argvList = readArgvList(cwd);
+		expect(argvList).toHaveLength(2);
+		expect(argvList[0][argvList[0].indexOf("--model") + 1]).toBe("haiku");
+		expect(argvList[1][argvList[1].indexOf("--model") + 1]).toBe("parent-model");
+	});
 });

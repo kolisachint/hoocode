@@ -825,7 +825,10 @@ export class SubagentPool extends EventEmitter {
 	private shouldRetryWithInheritedModel(task: SubagentPoolTask, result: SubagentResult): boolean {
 		if (task.useInheritedModelFallback) return false;
 		if (task.sessionFile) return false;
-		if (!task.model || !task.provider) return false;
+		// Only the parent model is required: the provider may be unset when the
+		// harness routes through a gateway. The retry inherits the parent model and
+		// lets the child resolve the provider from its own default when none was threaded through.
+		if (!task.model) return false;
 
 		const def = task.agent_type ? this.getRegistry().get(task.agent_type) : undefined;
 		if (def?.source !== "builtin") return false;
