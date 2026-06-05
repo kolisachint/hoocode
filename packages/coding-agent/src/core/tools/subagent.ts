@@ -293,7 +293,10 @@ function finalizeDispatchResult(
 		const failNote = result?.usedInheritedModelFallback ? "inherited-model retry failed" : undefined;
 		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
-		throw new Error(`Subagent (${subagentType}) failed: ${reason}`);
+		const stderr = result?.stderr?.trim();
+		throw new Error(
+			`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(0, 500)}` : ""}`,
+		);
 	}
 
 	// Leave the task in the store with its final status; it stays visible in the
