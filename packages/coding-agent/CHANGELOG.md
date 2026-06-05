@@ -29,6 +29,8 @@
   rows, ⧉ for MCP rows (plain tasks reserve a blank cell) — so the two kinds of
   background work are distinguishable at a glance. The pane stays tag-free: the
   subagent *mode* tag (e.g. "[explore]") is still not shown.
+- Task-pane ids are padded to a uniform column width, so titles stay aligned across
+  rows regardless of id digit count (#1 vs #10 vs #100) instead of jagging right.
 
 ## [0.4.37] - 2026-06-05
 

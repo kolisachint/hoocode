@@ -179,7 +179,7 @@ function formatTokens(count: number): string {
 	return `${(count / 1000000).toFixed(1)}M`;
 }
 
-function formatTaskLine(task: Task, width: number, frame: number): string {
+function formatTaskLine(task: Task, width: number, frame: number, idColWidth: number): string {
 	const isProgress = task.status === "in_progress";
 	const iconGlyph = isProgress
 		? (SPINNER_FRAMES[frame] ?? TASK_STATUS_ICON.in_progress)
@@ -191,7 +191,10 @@ function formatTaskLine(task: Task, width: number, frame: number): string {
 	const sourceGlyph = task.source ? TASK_SOURCE_GLYPH[task.source] : " ";
 	const styledSource = task.source ? theme.fg("dim", sourceGlyph) : " ";
 
-	const idLabel = `#${task.id}`;
+	// Right-pad the id to the shared column width so titles line up across rows even
+	// when ids differ in digit count (#1 vs #10). Padding is plain spaces inside the
+	// dim styling, so it adds no visible color.
+	const idLabel = `#${task.id}`.padEnd(idColWidth);
 	const title = task.title;
 	// The id recedes (dim); the title carries the line. Done titles fade to muted
 	// (settled work), pending dim (not started), active goes bold, failed turns red.
@@ -332,9 +335,13 @@ export class TaskPanelComponent implements Component {
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
 
+		// Width of the id column, sized to the widest id on screen, so every title
+		// starts at the same column regardless of digit count (#1 vs #10 vs #100).
+		const idColWidth = tasks.reduce((max, t) => Math.max(max, `#${t.id}`.length), 0);
+
 		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs)];
 		for (const task of tasks) {
-			lines.push(gutter + formatTaskLine(task, inner, this.frame));
+			lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth));
 		}
 		return lines;
 	}

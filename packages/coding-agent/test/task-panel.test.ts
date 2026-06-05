@@ -93,6 +93,24 @@ describe("task panel rendering", () => {
 		}
 	});
 
+	test("title column stays aligned across single- and double-digit ids", () => {
+		for (let i = 1; i <= 10; i++) {
+			const t = taskStore.create(`task-${i}`);
+			taskStore.update(t.id, { status: "in_progress" });
+		}
+
+		const lines = renderPanel().map(stripAnsi);
+		// The #1 row contains "task-1" but not "task-10"; the #10 row contains "task-10".
+		const row1 = lines.find((l) => l.includes("task-1") && !l.includes("task-10"));
+		const row10 = lines.find((l) => l.includes("task-10"));
+		expect(row1).toBeDefined();
+		expect(row10).toBeDefined();
+
+		// The id column is padded to the widest id, so the title starts at the same
+		// column on both rows (no jagged indentation between #1 and #10).
+		expect((row1 as string).indexOf("task-1")).toBe((row10 as string).indexOf("task-10"));
+	});
+
 	test("completed and failed tasks stay visible with their status", () => {
 		taskStore.create("Still running", { subagentMode: "explore" });
 		const doneTask = taskStore.create("Finished work");
