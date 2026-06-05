@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Built-in subagents now fall back to the parent's inherited model on a
+  credits/auth/quota failure even when no provider was threaded through the
+  dispatch. Previously the inherited-model retry required both a model and a
+  provider from the parent; when the harness routed through a gateway without an
+  explicit provider, a preferred-model failure (e.g. `CreditsError: Insufficient
+  balance`) was reported as a hard failure instead of retrying on the inherited
+  model. The retry now requires only the parent model and lets the child resolve
+  the provider from its own default.
+
 ## [0.4.42] - 2026-06-05
 
 ### Fixed
