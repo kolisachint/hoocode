@@ -10,6 +10,15 @@ Before searching, check these maps:
 - `docs/bun-migration.md` - npm -> bun migration plan, phases, and coexistence rules
 - `docs/agent-spec-tree-map.md` - on-disk agent-spec surfaces, their standard status, and what hoocode scans/supports
 
+## Recent Changes
+
+- **MCP Standard Config Support**: Now reads standard `mcp.json` format from:
+  - `~/.agents/mcp.json` (user-level)
+  - `.agents/mcp.json` (project-level)
+  - `~/.config/claude/mcp.json` (Claude Desktop)
+  - Existing per-server JSON files in `mcp-servers/` still work as fallback
+  - First-wins deduplication across all sources
+
 ## Conversational Style
 
 - Keep answers short and concise
