@@ -679,8 +679,15 @@ export class SubagentPool extends EventEmitter {
 				const tokens_used = budget.getUsed();
 				const budgetExceeded = budget.isExceeded();
 
-				// If killed by lifeguard, override exit handling
-				if (killReason === "stalled" || killReason === "timeout") {
+				// A late lifeguard kill can race a child that already finished and wrote a
+				// valid result.json: SIGKILL on the dead pid is a no-op, the child still
+				// exits 0, and its result is real. Only honor stalled/timeout when the child
+				// did not actually complete, otherwise we discard a genuine success and
+				// report a false-positive stall.
+				const cleanlyCompleted = code === 0 && this.verifier.verify(task.task_id, task.cwd ?? this.cwd).valid;
+
+				// If killed by lifeguard before completing, override exit handling
+				if ((killReason === "stalled" || killReason === "timeout") && !cleanlyCompleted) {
 					const result: SubagentResult = {
 						task_id: task.task_id,
 						ok: false,

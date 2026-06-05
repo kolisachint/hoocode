@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- Slash commands are now discovered from `.agents/commands/` (project
+  ancestor-walk up to the git root, plus user-level `~/.agents/commands/`), so
+  commands written under the cross-vendor `.agents/` tree round-trip. Precedence
+  is first-match-wins: project `.hoocode` > project `.claude` > project
+  `.agents` (cwd-first) > user `.hoocode` > user `.agents` > user `.claude`.
+
+### Fixed
+
+- Background subagents that finished cleanly were sometimes reported as "stalled".
+  A late lifeguard heartbeat-miss could fire SIGKILL just as a healthy child was
+  already exiting; the kill was a no-op, the child still exited 0 and wrote a valid
+  result.json, but the pool honored the stale stall verdict and discarded the real
+  success. The exit handler now only honors a stalled/timeout kill when the child
+  did not actually complete (non-zero exit or no verified result.json), so a
+  genuine completion always wins over a racing stall verdict.
+
 ## [0.4.40] - 2026-06-05
 
 ## [0.4.39] - 2026-06-05
