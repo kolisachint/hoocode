@@ -21,6 +21,12 @@
   a matching "finished/failed" follow-up message using the same label. Subagent and
   MCP background work already appear in the task pane (pending → in_progress →
   done/failed); the chat side is now in sync with it.
+- MCP tool calls now render a clean, prefixed title in chat — `MCP [server › tool]
+  <args>` — parallel to the subagent `Task [type] <desc>` line, instead of falling
+  back to the raw `mcp_<server>_<tool>` tool name. The args summary reuses the same
+  helper as the background start/finish messages so the title stays in sync with them.
+  (The task pane is intentionally left tag-free; its row titles already convey the
+  work.)
 
 ## [0.4.37] - 2026-06-05
 

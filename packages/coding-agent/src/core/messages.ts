@@ -151,7 +151,7 @@ function firstLine(text: string, max = 120): string {
 }
 
 /** Summarize a tool's arguments as up to three `key: value` pairs for a one-liner. */
-function summarizeArgs(args: Record<string, unknown>): string | undefined {
+export function summarizeArgs(args: Record<string, unknown>): string | undefined {
 	const parts: string[] = [];
 	for (const [key, value] of Object.entries(args)) {
 		if (value === undefined || value === null || value === "") continue;
