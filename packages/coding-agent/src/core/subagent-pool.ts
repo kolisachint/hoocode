@@ -632,6 +632,13 @@ export class SubagentPool extends EventEmitter {
 			stdout += chunk;
 			budget.processStdout(chunk);
 
+			// Any output proves the child is alive and working, so treat it as a
+			// heartbeat. The dedicated {"ping":true} line below still matters for
+			// quiet phases (e.g. a long single model turn that emits nothing), but
+			// relying on it alone falsely reaps subagents that are busily streaming
+			// events while the parent's event loop is starved by concurrent load.
+			this.lifeguard.recordHeartbeat(task.task_id);
+
 			// Heartbeat detection: look for {"ping":true} JSON lines
 			for (const raw of chunk.split("\n")) {
 				const line = raw.trim();
