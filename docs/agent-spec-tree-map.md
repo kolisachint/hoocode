@@ -382,3 +382,16 @@ the loader and keeps precedence/dedup logic simple.
 - Promote a [P1]/[D] row to **Full** only after the loader lands and is tested.
 - Keep the proposal tree and "What hoocode actually scans" in sync; divergence
   between them is the gap list.
+
+### Test coverage by surface
+
+| Surface | Dedicated test file | Coverage |
+|---|---|---|
+| Agent frontmatter | `test/agent-frontmatter.test.ts` | 15 tests: parsing, validation, tool normalization |
+| Agent registry | `test/agent-registry.test.ts` | 5 tests: loading, precedence, dedup |
+| Skills | No dedicated file | Covered indirectly via integration tests |
+| Commands | No dedicated file | Covered indirectly via integration tests |
+| MCP servers | No dedicated file | Covered indirectly via extension tests |
+
+Validation rules live inline in source (`agent-frontmatter.ts`, `skills.ts`).
+No formal schemas (JSON Schema, Zod) exist yet.
