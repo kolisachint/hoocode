@@ -9,10 +9,15 @@
 
 export type TaskStatus = "pending" | "in_progress" | "done" | "failed";
 
+/** What kind of background work owns a task, surfaced as a source glyph in the pane. */
+export type TaskSource = "subagent" | "mcp";
+
 export interface Task {
 	readonly id: number;
 	title: string;
 	status: TaskStatus;
+	/** Origin of the task (subagent delegation vs MCP tool call); drives the pane's source glyph. */
+	source?: TaskSource;
 	/** Subagent mode when this task is owned by a subagent (e.g. "explore"). */
 	subagentMode?: string;
 	/**
@@ -34,10 +39,11 @@ export interface Task {
 }
 
 export interface CreateTaskOptions {
+	source?: TaskSource;
 	subagentMode?: string;
 }
 
-export type TaskPatch = Partial<Pick<Task, "title" | "status" | "subagentMode" | "usage" | "note">>;
+export type TaskPatch = Partial<Pick<Task, "title" | "status" | "source" | "subagentMode" | "usage" | "note">>;
 
 type Listener = () => void;
 
@@ -52,6 +58,7 @@ class TaskStore {
 			id: this.nextId++,
 			title: title.trim() || "(untitled task)",
 			status: "pending",
+			source: options.source,
 			subagentMode: options.subagentMode,
 			createdAt: now,
 			updatedAt: now,
@@ -66,6 +73,7 @@ class TaskStore {
 		if (!task) return;
 		if (patch.title !== undefined) task.title = patch.title;
 		if (patch.status !== undefined) task.status = patch.status;
+		if (patch.source !== undefined) task.source = patch.source;
 		if (patch.subagentMode !== undefined) task.subagentMode = patch.subagentMode;
 		if (patch.usage !== undefined) task.usage = patch.usage;
 		if (patch.note !== undefined) task.note = patch.note;

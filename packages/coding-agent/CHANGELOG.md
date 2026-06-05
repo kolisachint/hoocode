@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Subagents no longer get killed under heavy load. When many subagents (plus
+  background MCP tools) run at once, CPU contention starved the parent event loop
+  so it missed a healthy child's heartbeat and SIGKILLed it as "stalled" (or hit a
+  wall-clock timeout that inflated faster than real work). The lifeguard now scales
+  the heartbeat-miss and hard-timeout budgets by the number of concurrent
+  subagents and forgives measured event-loop lag, so contention alone no longer
+  reaps a working subagent. A genuinely stuck agent is still reaped at a hard
+  ceiling.
+
+### Changed
+
+- Background tools now explain themselves verbosely and consistently in chat. Both
+  background subagents and background MCP tools get the same shape: a verbose
+  "started" line that names the subagent/MCP tool and summarizes its arguments, and
+  a matching "finished/failed" follow-up message using the same label. Subagent and
+  MCP background work already appear in the task pane (pending → in_progress →
+  done/failed); the chat side is now in sync with it.
+- MCP tool calls now render a clean, prefixed title in chat — `MCP [server › tool]
+  <args>` — parallel to the subagent `Task [type] <desc>` line, instead of falling
+  back to the raw `mcp_<server>_<tool>` tool name. The args summary reuses the same
+  helper as the background start/finish messages so the title stays in sync with them.
+- The task pane now shows a single-cell source glyph before the id — ⚙ for subagent
+  rows, ⧉ for MCP rows (plain tasks reserve a blank cell) — so the two kinds of
+  background work are distinguishable at a glance. The pane stays tag-free: the
+  subagent *mode* tag (e.g. "[explore]") is still not shown.
+- Task-pane ids are padded to a uniform column width, so titles stay aligned across
+  rows regardless of id digit count (#1 vs #10 vs #100) instead of jagging right.
+
 ## [0.4.37] - 2026-06-05
 
 ## [0.4.36] - 2026-06-05

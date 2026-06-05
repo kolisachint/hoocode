@@ -72,6 +72,64 @@ describe("SubagentLifeguard", () => {
 		proc.kill("SIGKILL");
 	});
 
+	it("does not stall under high concurrency until the load-scaled threshold is crossed", () => {
+		guard = new SubagentLifeguard(testCwd);
+		const script = join(testCwd, "silent.js");
+		writeFileSync(script, "setTimeout(() => {}, 10000)\n");
+
+		const procs = Array.from({ length: 5 }, () => spawn(process.execPath, [script], { detached: true }));
+
+		const stalled: string[] = [];
+		guard.on("stalled", (data) => stalled.push((data as { task_id: string }).task_id));
+
+		procs.forEach((proc, i) => {
+			guard.monitor(`t${i}`, "explore", proc);
+		});
+
+		// 5 concurrent processes → loadMultiplier = 1 + 4*0.5 = 3 → threshold = 180s.
+		// A 150s-stale heartbeat is forgiven under load (would have been killed at 60s).
+		// @ts-expect-error – internal map access for the test
+		guard.lastHeartbeat.set("t0", Date.now() - 150_000);
+		// @ts-expect-error – internal method access for the test
+		guard.checkHeartbeats();
+		expect(stalled).not.toContain("t0");
+
+		// Past the load-scaled threshold (180s) it is reaped.
+		// @ts-expect-error – internal map access for the test
+		guard.lastHeartbeat.set("t0", Date.now() - 200_000);
+		// @ts-expect-error – internal method access for the test
+		guard.checkHeartbeats();
+		expect(stalled).toContain("t0");
+
+		for (const proc of procs) proc.kill("SIGKILL");
+	});
+
+	it("forgives a stale heartbeat caused by parent event-loop lag", () => {
+		guard = new SubagentLifeguard(testCwd);
+		const script = join(testCwd, "silent.js");
+		writeFileSync(script, "setTimeout(() => {}, 10000)\n");
+		const proc = spawn(process.execPath, [script], { detached: true });
+
+		let stalled = false;
+		guard.on("stalled", () => {
+			stalled = true;
+		});
+
+		guard.monitor("t1", "explore", proc);
+		// Heartbeat looks 70s stale (over the 60s base threshold)…
+		// @ts-expect-error – internal map access for the test
+		guard.lastHeartbeat.set("t1", Date.now() - 70_000);
+		// …but the parent's own check loop was starved for ~200s (event-loop lag),
+		// which is exactly why the heartbeat could not be read. That lag is forgiven.
+		// @ts-expect-error – internal field access for the test
+		guard.lastCheckAt = Date.now() - 200_000;
+		// @ts-expect-error – internal method access for the test
+		guard.checkHeartbeats();
+
+		expect(stalled).toBe(false);
+		proc.kill("SIGKILL");
+	});
+
 	it("emits timeout when hard timeout is exceeded", async () => {
 		guard = new SubagentLifeguard(testCwd);
 		const script = join(testCwd, "slow.js");

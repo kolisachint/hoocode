@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `createBackgroundPlaceholder` config/option: a hook `(toolCall) => string | undefined`
+  that shapes the placeholder result returned immediately when a `background: true`
+  tool is dispatched. Lets apps explain *what* started (which subagent / MCP tool, an
+  args summary) instead of the generic "Started <tool> in the background" line. Pairs
+  with the existing `createBackgroundResultMessage` (finish) hook. Falls back to the
+  generic line when omitted or on error.
+
 ## [0.4.37] - 2026-06-05
 
 ## [0.4.36] - 2026-06-05

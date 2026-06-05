@@ -21,6 +21,7 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
+import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
 import type {
@@ -37,6 +38,7 @@ import type {
 	ToolCallEventResult,
 } from "../../core/extensions/types.js";
 import { isToolCallEventType } from "../../core/extensions/types.js";
+import { summarizeArgs } from "../../core/messages.js";
 import { taskStore } from "../../core/task-store.js";
 
 // ============================================================================
@@ -646,6 +648,19 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 						description: tool.description,
 						parameters: schema,
 						background: isBackground,
+						// Render a clean, prefixed title in chat — `MCP [server › tool] <args>` —
+						// parallel to the subagent `Task [type] <desc>` line. Without this the
+						// ToolExecutionComponent falls back to the raw `mcp_<server>_<tool>` name.
+						// The args summary reuses the same helper as the background start/finish
+						// messages so the chat title stays in sync with them.
+						renderCall(args, theme) {
+							const summary = summarizeArgs((args ?? {}) as Record<string, unknown>);
+							const text =
+								theme.fg("toolTitle", theme.bold("MCP ")) +
+								theme.fg("accent", `[${capturedServer} › ${capturedTool}]`) +
+								(summary ? theme.fg("dim", ` ${summary}`) : "");
+							return new Text(text, 0, 0);
+						},
 						async execute(
 							_toolCallId: string,
 							params: Static<typeof schema>,
@@ -654,7 +669,9 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 						): Promise<AgentToolResult<undefined>> {
 							// Background MCP tools get a task store entry so they appear in the task pane.
 							// Foreground tools skip this (their result is awaited inline).
-							const task = isBackground ? taskStore.create(`${capturedServer} › ${capturedTool}`) : undefined;
+							const task = isBackground
+								? taskStore.create(`${capturedServer} › ${capturedTool}`, { source: "mcp" })
+								: undefined;
 							if (task) taskStore.update(task.id, { status: "in_progress" });
 
 							const activeConn = mcpConnections.get(capturedServer);

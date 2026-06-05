@@ -66,6 +66,51 @@ describe("task panel rendering", () => {
 		expect(text).toContain(`#${plain.id}`);
 	});
 
+	test("shows a source glyph for subagent and MCP rows, but not for plain tasks or mode tags", () => {
+		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
+		const mcp = taskStore.create("web › fetch", { source: "mcp" });
+		const plain = taskStore.create("init project");
+		taskStore.update(sub.id, { status: "in_progress" });
+		taskStore.update(mcp.id, { status: "in_progress" });
+		taskStore.update(plain.id, { status: "in_progress" });
+
+		const lines = renderPanel();
+		const subRow = lines.find((l) => l.includes("find the bug"));
+		const mcpRow = lines.find((l) => l.includes("web › fetch"));
+		const plainRow = lines.find((l) => l.includes("init project"));
+
+		// Subagent row carries the ⚙ glyph; MCP row carries ⧉.
+		expect(subRow).toContain("⚙");
+		expect(mcpRow).toContain("⧉");
+		// Plain task gets neither glyph.
+		expect(plainRow).not.toContain("⚙");
+		expect(plainRow).not.toContain("⧉");
+		// The glyph is a source marker, NOT a mode tag — the pane stays tag-free.
+		expect(lines.join("\n")).not.toContain("[explore]");
+		// Each row is still padded to the full pane width (glyph cell didn't break alignment).
+		for (const row of [subRow, mcpRow, plainRow]) {
+			expect(visibleWidth(row as string)).toBe(120);
+		}
+	});
+
+	test("title column stays aligned across single- and double-digit ids", () => {
+		for (let i = 1; i <= 10; i++) {
+			const t = taskStore.create(`task-${i}`);
+			taskStore.update(t.id, { status: "in_progress" });
+		}
+
+		const lines = renderPanel().map(stripAnsi);
+		// The #1 row contains "task-1" but not "task-10"; the #10 row contains "task-10".
+		const row1 = lines.find((l) => l.includes("task-1") && !l.includes("task-10"));
+		const row10 = lines.find((l) => l.includes("task-10"));
+		expect(row1).toBeDefined();
+		expect(row10).toBeDefined();
+
+		// The id column is padded to the widest id, so the title starts at the same
+		// column on both rows (no jagged indentation between #1 and #10).
+		expect((row1 as string).indexOf("task-1")).toBe((row10 as string).indexOf("task-10"));
+	});
+
 	test("completed and failed tasks stay visible with their status", () => {
 		taskStore.create("Still running", { subagentMode: "explore" });
 		const doneTask = taskStore.create("Finished work");
