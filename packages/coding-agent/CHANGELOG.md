@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- MCP tools now run in background mode by default (non-blocking), since MCP servers are external processes that may have high latency. Configure per-server with `"background": false` in mcp.json.
+
+### Fixed
+
+- Slash commands in `.hoocode/commands/` now take precedence over prompt templates in `.hoocode/prompts/` when there is a name collision, instead of the reverse.
+
 ## [0.4.35] - 2026-06-05
 
 ## [0.4.34] - 2026-06-05

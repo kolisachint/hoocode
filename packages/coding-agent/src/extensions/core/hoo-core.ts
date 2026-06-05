@@ -405,6 +405,8 @@ export interface McpServerConfig {
 	args?: string[];
 	/** Optional extra environment variables for the server process */
 	env?: Record<string, string>;
+	/** Run MCP tools in background by default (default: true for MCP servers) */
+	background?: boolean;
 }
 
 /** Standard MCP config format used by Claude Desktop and other tools */
@@ -412,6 +414,7 @@ interface StandardMcpServerConfig {
 	command: string;
 	args?: string[];
 	env?: Record<string, string>;
+	background?: boolean;
 }
 
 interface StandardMcpConfig {
@@ -533,6 +536,7 @@ function parseStandardMcpConfig(config: StandardMcpConfig, _source: string): Mcp
 			command: serverConfig.command,
 			args: serverConfig.args,
 			env: serverConfig.env,
+			background: serverConfig.background,
 		});
 	}
 	return servers;
@@ -632,12 +636,15 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 					const schema = buildMcpSchema(tool);
 					const capturedServer = serverConfig.name;
 					const capturedTool = tool.name;
+					// MCP tools default to background mode since they are external processes with potential high latency
+					const isBackground = serverConfig.background !== false;
 
 					pi.registerTool({
 						name: toolName,
 						label: `[MCP] ${serverConfig.name} › ${tool.name}`,
 						description: tool.description,
 						parameters: schema,
+						background: isBackground,
 						async execute(
 							_toolCallId: string,
 							params: Static<typeof schema>,
@@ -677,8 +684,9 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 					});
 				}
 
+				const bgMode = serverConfig.background !== false ? "background" : "foreground";
 				ctx.ui.notify(
-					`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"})`,
+					`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"}, ${bgMode})`,
 					"info",
 				);
 			} catch (err) {
