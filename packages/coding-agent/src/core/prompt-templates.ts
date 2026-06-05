@@ -259,14 +259,15 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions): Prompt
 	};
 
 	if (includeDefaults) {
-		templates.push(...loadTemplatesFromDir(globalPromptsDir, getSourceInfo));
-		templates.push(...loadTemplatesFromDir(projectPromptsDir, getSourceInfo));
+		// Load slash command dirs first so they win over prompt dirs on name collision
 		templates.push(...loadTemplatesFromDir(globalSlashCommandsDir, getSourceInfo));
 		templates.push(...loadTemplatesFromDir(projectSlashCommandsDir, getSourceInfo));
+		templates.push(...loadTemplatesFromDir(globalPromptsDir, getSourceInfo));
+		templates.push(...loadTemplatesFromDir(projectPromptsDir, getSourceInfo));
 	}
 
-	// 3. Load explicit prompt paths
-	for (const rawPath of promptPaths) {
+	// 3. Load explicit slash-command paths (before prompt paths so commands win on collision)
+	for (const rawPath of slashCommandPaths) {
 		const resolvedPath = resolvePromptPath(rawPath, resolvedCwd);
 		if (!existsSync(resolvedPath)) {
 			continue;
@@ -287,8 +288,8 @@ export function loadPromptTemplates(options: LoadPromptTemplatesOptions): Prompt
 		}
 	}
 
-	// 4. Load explicit slash-command paths
-	for (const rawPath of slashCommandPaths) {
+	// 4. Load explicit prompt paths
+	for (const rawPath of promptPaths) {
 		const resolvedPath = resolvePromptPath(rawPath, resolvedCwd);
 		if (!existsSync(resolvedPath)) {
 			continue;
