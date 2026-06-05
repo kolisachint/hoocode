@@ -37,6 +37,7 @@ import type {
 	ToolCallEventResult,
 } from "../../core/extensions/types.js";
 import { isToolCallEventType } from "../../core/extensions/types.js";
+import { taskStore } from "../../core/task-store.js";
 
 // ============================================================================
 // Fallback defaults for mode prompts
@@ -651,8 +652,14 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 							signal: AbortSignal,
 							_onUpdate: AgentToolUpdateCallback,
 						): Promise<AgentToolResult<undefined>> {
+							// Background MCP tools get a task store entry so they appear in the task pane.
+							// Foreground tools skip this (their result is awaited inline).
+							const task = isBackground ? taskStore.create(`${capturedServer} › ${capturedTool}`) : undefined;
+							if (task) taskStore.update(task.id, { status: "in_progress" });
+
 							const activeConn = mcpConnections.get(capturedServer);
 							if (!activeConn) {
+								if (task) taskStore.update(task.id, { status: "failed" });
 								return {
 									content: [
 										{
@@ -664,22 +671,28 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 								};
 							}
 
-							const abortPromise = new Promise<never>((_, reject) => {
-								signal.addEventListener("abort", () => reject(new Error("Aborted")));
-							});
+							try {
+								const abortPromise = new Promise<never>((_, reject) => {
+									signal.addEventListener("abort", () => reject(new Error("Aborted")));
+								});
 
-							const result = await Promise.race([
-								activeConn.rpc("tools/call", {
-									name: capturedTool,
-									arguments: params,
-								}),
-								abortPromise,
-							]);
+								const result = await Promise.race([
+									activeConn.rpc("tools/call", {
+										name: capturedTool,
+										arguments: params,
+									}),
+									abortPromise,
+								]);
 
-							return {
-								content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-								details: undefined,
-							};
+								if (task) taskStore.update(task.id, { status: "done" });
+								return {
+									content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+									details: undefined,
+								};
+							} catch (error) {
+								if (task) taskStore.update(task.id, { status: "failed" });
+								throw error;
+							}
 						},
 					});
 				}

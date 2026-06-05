@@ -644,9 +644,20 @@ function createBackgroundTaskManager(): BackgroundTaskManager {
 			const task = (async () => {
 				try {
 					results.push(await run());
-				} catch {
+				} catch (err) {
 					// `run` is expected to encode failures into its result message, so a throw
-					// here is unexpected; drop it rather than crash the detached task.
+					// here is unexpected. Push a minimal error message so the loop can inform
+					// the agent rather than silently losing the result.
+					results.push({
+						role: "user",
+						content: [
+							{
+								type: "text",
+								text: `A background tool failed unexpectedly: ${err instanceof Error ? err.message : String(err)}`,
+							},
+						],
+						timestamp: Date.now(),
+					});
 				}
 			})();
 			inflight.add(task);
