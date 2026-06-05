@@ -775,6 +775,22 @@ export async function main(args: string[], options?: MainOptions) {
 		if (exitCode !== 0) {
 			process.exitCode = exitCode;
 		}
+		// Spawned subagents (run with a task id) must exit promptly once their work is
+		// done and result.json is written. The child's runtime can leave handles open
+		// (e.g. MCP client connections) that keep the event loop alive, so a natural
+		// exit may never happen. When that occurs the parent lifeguard SIGKILLs the idle
+		// child at the 60s heartbeat threshold and misreports an already-completed task
+		// as "stalled". Force a clean exit after draining output to avoid that false stall.
+		const ranAsSubagent = typeof parsed.taskId === "string" && parsed.taskId.length > 0;
+		if (ranAsSubagent) {
+			if (process.stdout.writableLength > 0) {
+				await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
+			}
+			if (process.stderr.writableLength > 0) {
+				await new Promise<void>((resolve) => process.stderr.once("drain", resolve));
+			}
+			process.exit(exitCode);
+		}
 		return;
 	}
 }

@@ -425,11 +425,23 @@ interface StandardMcpConfig {
 }
 
 interface McpConnection {
-	rpc(method: string, params?: unknown): Promise<unknown>;
+	rpc(method: string, params?: unknown, timeoutMs?: number): Promise<unknown>;
+	/** Send a JSON-RPC notification (no id, no response expected). */
+	notify(method: string, params?: unknown): void;
 	terminate(): void;
 }
 
 const mcpConnections = new Map<string, McpConnection>();
+/**
+ * Server configs retained by name so a tool call can transparently reconnect a
+ * dropped server (process churn between turns, server exit, a racing teardown)
+ * instead of permanently failing with "not connected".
+ */
+const mcpServerConfigs = new Map<string, McpServerConfig>();
+
+/** Timeout for the connection handshake (initialize / tools/list). Tool calls
+ *  themselves are left untimed since MCP tools can be long-running. */
+const MCP_HANDSHAKE_TIMEOUT_MS = 15000;
 
 function spawnMcpServer(config: McpServerConfig): McpConnection {
 	const proc: ChildProcess = spawn(config.command, config.args ?? [], {
@@ -466,16 +478,39 @@ function spawnMcpServer(config: McpServerConfig): McpConnection {
 		mcpConnections.delete(config.name);
 	});
 
-	function rpc(method: string, params?: unknown): Promise<unknown> {
+	function rpc(method: string, params?: unknown, timeoutMs?: number): Promise<unknown> {
 		const id = nextId++;
 		return new Promise<unknown>((resolve, reject) => {
-			pending.set(id, { resolve, reject });
+			let timer: NodeJS.Timeout | undefined;
+			if (timeoutMs && timeoutMs > 0) {
+				timer = setTimeout(() => {
+					if (pending.delete(id)) {
+						reject(new Error(`MCP server "${config.name}" timed out after ${timeoutMs}ms on ${method}`));
+					}
+				}, timeoutMs);
+				timer.unref?.();
+			}
+			pending.set(id, {
+				resolve: (r) => {
+					if (timer) clearTimeout(timer);
+					resolve(r);
+				},
+				reject: (e) => {
+					if (timer) clearTimeout(timer);
+					reject(e);
+				},
+			});
 			proc.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
 		});
 	}
 
+	function notify(method: string, params?: unknown): void {
+		proc.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
+	}
+
 	return {
 		rpc,
+		notify,
 		terminate: () => {
 			rl.close();
 			proc.kill();
@@ -489,16 +524,61 @@ async function connectMcpServer(config: McpServerConfig): Promise<{ conn: McpCon
 	const conn = spawnMcpServer(config);
 	mcpConnections.set(config.name, conn);
 
-	await conn.rpc("initialize", {
-		protocolVersion: "2024-11-05",
-		capabilities: { tools: {} },
-		clientInfo: { name: "hoocode", version: "1.0.0" },
-	});
+	await conn.rpc(
+		"initialize",
+		{
+			protocolVersion: "2024-11-05",
+			capabilities: { tools: {} },
+			clientInfo: { name: "hoocode", version: "1.0.0" },
+		},
+		MCP_HANDSHAKE_TIMEOUT_MS,
+	);
 
-	const toolsResult = (await conn.rpc("tools/list", {})) as {
+	// Per the MCP spec the client must acknowledge a successful initialize with the
+	// initialized notification before issuing further requests; strict servers gate
+	// tools/call on it.
+	conn.notify("notifications/initialized");
+
+	const toolsResult = (await conn.rpc("tools/list", {}, MCP_HANDSHAKE_TIMEOUT_MS)) as {
 		tools?: McpToolDef[];
 	};
 	return { conn, tools: toolsResult.tools ?? [] };
+}
+
+/**
+ * Return a live connection for a server, lazily reconnecting from the retained
+ * config when the previous connection was torn down. Returns undefined only when
+ * no config is known or a fresh connect attempt fails.
+ */
+async function getOrConnectMcp(name: string): Promise<McpConnection | undefined> {
+	const existing = mcpConnections.get(name);
+	if (existing) return existing;
+	const config = mcpServerConfigs.get(name);
+	if (!config) return undefined;
+	try {
+		const { conn } = await connectMcpServer(config);
+		return conn;
+	} catch {
+		return undefined;
+	}
+}
+
+let mcpExitCleanupInstalled = false;
+/** Kill spawned MCP servers when the host process exits so they don't linger as
+ *  orphans (their stdin merely goes idle, which doesn't terminate them). */
+function installMcpExitCleanup(): void {
+	if (mcpExitCleanupInstalled) return;
+	mcpExitCleanupInstalled = true;
+	process.once("exit", () => {
+		for (const conn of mcpConnections.values()) {
+			try {
+				conn.terminate();
+			} catch {
+				// best-effort cleanup
+			}
+		}
+		mcpConnections.clear();
+	});
 }
 
 function buildMcpSchema(tool: McpToolDef): ReturnType<typeof Type.Object> {
@@ -563,6 +643,7 @@ function loadStandardMcpFile(filePath: string): McpServerConfig[] {
 
 export function setupMcpLoader(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+		installMcpExitCleanup();
 		const allServerConfigs: McpServerConfig[] = [];
 		const seenNames = new Set<string>();
 
@@ -631,6 +712,8 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 
 		// 3. Connect to all servers and register tools
 		for (const serverConfig of allServerConfigs) {
+			// Retain the config so a tool call can lazily reconnect a dropped server.
+			mcpServerConfigs.set(serverConfig.name, serverConfig);
 			try {
 				const { tools } = await connectMcpServer(serverConfig);
 
@@ -674,14 +757,17 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 								: undefined;
 							if (task) taskStore.update(task.id, { status: "in_progress" });
 
-							const activeConn = mcpConnections.get(capturedServer);
+							// Lazily (re)connect: a dropped connection (server exit, process churn
+							// between turns, a racing teardown) should transparently reconnect from
+							// the retained config rather than permanently fail with "not connected".
+							const activeConn = await getOrConnectMcp(capturedServer);
 							if (!activeConn) {
 								if (task) taskStore.update(task.id, { status: "failed" });
 								return {
 									content: [
 										{
 											type: "text",
-											text: `MCP server "${capturedServer}" is not connected`,
+											text: `MCP server "${capturedServer}" is not connected (reconnect attempt failed)`,
 										},
 									],
 									details: undefined,
