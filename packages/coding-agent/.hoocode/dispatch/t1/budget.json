@@ -1,0 +1,9 @@
+{
+  "task_id": "t1",
+  "agent_type": "explore",
+  "budget": 100,
+  "used": 110,
+  "warned": true,
+  "exceeded": true,
+  "last_updated": 1780633492396
+}
