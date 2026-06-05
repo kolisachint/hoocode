@@ -294,9 +294,7 @@ function finalizeDispatchResult(
 		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
 		const stderr = result?.stderr?.trim();
-		throw new Error(
-			`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`,
-		);
+		throw new Error(`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`);
 	}
 
 	// Leave the task in the store with its final status; it stays visible in the
