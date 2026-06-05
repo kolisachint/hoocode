@@ -49,6 +49,9 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	const isSubagent = mode === "json" && typeof taskId === "string" && taskId.length > 0;
 	let heartbeat: NodeJS.Timeout | undefined;
 	if (isSubagent) {
+		// Emit an immediate ping so a child that crashes during startup surfaces its
+		// real error instead of stalling silently until the first delayed heartbeat.
+		writeRawStdout(`${JSON.stringify({ ping: true })}\n`);
 		heartbeat = setInterval(() => {
 			writeRawStdout(`${JSON.stringify({ ping: true })}\n`);
 		}, SUBAGENT_HEARTBEAT_MS);

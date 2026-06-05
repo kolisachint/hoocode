@@ -184,6 +184,17 @@ export class SubagentLifeguard extends EventEmitter {
 		const monitored = this.processes.get(task_id);
 		if (!monitored) return;
 
+		// Record why we reaped this child so a recurrence is diagnosable rather than
+		// just "stalled": how long since the last heartbeat, and the load factors
+		// (concurrent monitored subagents, threshold) that fed the decision.
+		const last = this.lastHeartbeat.get(task_id);
+		const silentMs = last === undefined ? -1 : Date.now() - last;
+		console.error(
+			`[LIFEGUARD] stalled task_id=${task_id} agent=${monitored.agent_type} ` +
+				`silent_ms=${silentMs} concurrent=${this.processes.size} ` +
+				`load_mult=${this.loadMultiplier().toFixed(2)} base_threshold_ms=${HEARTBEAT_MISS_THRESHOLD_MS}`,
+		);
+
 		if (!monitored.process.killed) {
 			monitored.process.kill("SIGKILL");
 		}
