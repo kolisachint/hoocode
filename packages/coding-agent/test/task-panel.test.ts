@@ -66,6 +66,33 @@ describe("task panel rendering", () => {
 		expect(text).toContain(`#${plain.id}`);
 	});
 
+	test("shows a source glyph for subagent and MCP rows, but not for plain tasks or mode tags", () => {
+		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
+		const mcp = taskStore.create("web › fetch", { source: "mcp" });
+		const plain = taskStore.create("init project");
+		taskStore.update(sub.id, { status: "in_progress" });
+		taskStore.update(mcp.id, { status: "in_progress" });
+		taskStore.update(plain.id, { status: "in_progress" });
+
+		const lines = renderPanel();
+		const subRow = lines.find((l) => l.includes("find the bug"));
+		const mcpRow = lines.find((l) => l.includes("web › fetch"));
+		const plainRow = lines.find((l) => l.includes("init project"));
+
+		// Subagent row carries the ⚙ glyph; MCP row carries ⧉.
+		expect(subRow).toContain("⚙");
+		expect(mcpRow).toContain("⧉");
+		// Plain task gets neither glyph.
+		expect(plainRow).not.toContain("⚙");
+		expect(plainRow).not.toContain("⧉");
+		// The glyph is a source marker, NOT a mode tag — the pane stays tag-free.
+		expect(lines.join("\n")).not.toContain("[explore]");
+		// Each row is still padded to the full pane width (glyph cell didn't break alignment).
+		for (const row of [subRow, mcpRow, plainRow]) {
+			expect(visibleWidth(row as string)).toBe(120);
+		}
+	});
+
 	test("completed and failed tasks stay visible with their status", () => {
 		taskStore.create("Still running", { subagentMode: "explore" });
 		const doneTask = taskStore.create("Finished work");

@@ -179,6 +179,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			const exhaustion = provider ? getProviderExhaustion(provider) : undefined;
 			if (exhaustion) {
 				const skipped = taskStore.create(params.description?.trim() || summarize(params.prompt), {
+					source: "subagent",
 					subagentMode: params.subagent_type,
 				});
 				taskStore.update(skipped.id, { status: "failed", note: `${provider} exhausted` });
@@ -202,7 +203,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			const resumeId = params.resume_task_id?.trim();
 			if (resumeId) {
 				const summary = params.description?.trim() || summarize(params.prompt);
-				const task = taskStore.create(summary, { subagentMode: params.subagent_type });
+				const task = taskStore.create(summary, { source: "subagent", subagentMode: params.subagent_type });
 				taskStore.update(task.id, { status: "in_progress" });
 				try {
 					const dispatchResult = await pool.resume(resumeId, params.prompt, {
@@ -232,7 +233,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			}
 
 			const summary = params.description?.trim() || summarize(params.prompt);
-			const task = taskStore.create(summary, { subagentMode: params.subagent_type });
+			const task = taskStore.create(summary, { source: "subagent", subagentMode: params.subagent_type });
 
 			// Always dispatch and await the subagent's full result here. Background
 			// agents (def.background) are made non-blocking by the agent loop via this

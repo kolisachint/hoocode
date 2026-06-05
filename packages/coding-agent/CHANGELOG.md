@@ -25,8 +25,10 @@
   <args>` — parallel to the subagent `Task [type] <desc>` line, instead of falling
   back to the raw `mcp_<server>_<tool>` tool name. The args summary reuses the same
   helper as the background start/finish messages so the title stays in sync with them.
-  (The task pane is intentionally left tag-free; its row titles already convey the
-  work.)
+- The task pane now shows a single-cell source glyph before the id — ⚙ for subagent
+  rows, ⧉ for MCP rows (plain tasks reserve a blank cell) — so the two kinds of
+  background work are distinguishable at a glance. The pane stays tag-free: the
+  subagent *mode* tag (e.g. "[explore]") is still not shown.
 
 ## [0.4.37] - 2026-06-05
 

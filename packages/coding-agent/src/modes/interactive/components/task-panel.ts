@@ -1,6 +1,6 @@
 import type { Component, TUI } from "@kolisachint/hoocode-tui";
 import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
-import type { Task, TaskStatus } from "../../../core/task-store.js";
+import type { Task, TaskSource, TaskStatus } from "../../../core/task-store.js";
 import { taskStore } from "../../../core/task-store.js";
 import { theme } from "../theme/theme.js";
 
@@ -9,6 +9,17 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	in_progress: "◐",
 	done: "✓",
 	failed: "✗",
+};
+
+/**
+ * A single-cell source marker placed before the id so a subagent row and an MCP
+ * row are distinguishable at a glance. Plain tasks reserve the cell (blank) to keep
+ * the id column aligned. Deliberately a glyph, not a text tag — the pane stays
+ * tag-free (no `[explore]`); the glyph just says *where the work came from*.
+ */
+const TASK_SOURCE_GLYPH: Record<TaskSource, string> = {
+	subagent: "⚙",
+	mcp: "⧉",
 };
 
 /** Braille spinner frames + cadence, matched to the TUI Loader so the active row animates in step. */
@@ -175,6 +186,11 @@ function formatTaskLine(task: Task, width: number, frame: number): string {
 		: TASK_STATUS_ICON[task.status];
 	const icon = theme.fg(taskStatusColor(task.status), iconGlyph);
 
+	// Source marker between the status icon and the id. Reserve the cell (blank) for
+	// plain tasks so ids stay column-aligned whether or not a glyph is present.
+	const sourceGlyph = task.source ? TASK_SOURCE_GLYPH[task.source] : " ";
+	const styledSource = task.source ? theme.fg("dim", sourceGlyph) : " ";
+
 	const idLabel = `#${task.id}`;
 	const title = task.title;
 	// The id recedes (dim); the title carries the line. Done titles fade to muted
@@ -239,7 +255,7 @@ function formatTaskLine(task: Task, width: number, frame: number): string {
 	// truncateToWidth measures visible width (ANSI-aware), so the styled left can be
 	// truncated against the full left budget directly. Subtracting the prefix here
 	// (as a prior version did) truncated titles early and unevenly per id width.
-	const left = truncateToWidth(`${icon} ${styledId} ${styledTitle}`, leftWidth, "…");
+	const left = truncateToWidth(`${icon} ${styledSource} ${styledId} ${styledTitle}`, leftWidth, "…");
 
 	if (!rightPlain) return left;
 
@@ -256,7 +272,9 @@ function formatTaskLine(task: Task, width: number, frame: number): string {
  *   done/total count on the left, the per-turn token/elapsed/cost delta on the right.
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
  *   The active row animates a braille spinner; pending rows read `queued`.
- * - Subagent mode is intentionally NOT shown here (e.g. no "[explore]" tag).
+ * - A single-cell source glyph (⚙ subagent / ⧉ MCP) sits before the id so the two
+ *   kinds of background work are distinguishable. The subagent *mode* tag (e.g.
+ *   "[explore]") is still intentionally NOT shown — the pane stays tag-free.
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
  *   user message arrives (see taskStore.reset()), not the moment they finish.
