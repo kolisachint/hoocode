@@ -162,6 +162,32 @@ Prompt content.`,
 			expect(deploy?.filePath).toBe(join(hoocodeCommandsDir, "deploy.md"));
 		});
 
+		it("should discover slash commands from project .agents/commands", async () => {
+			const agentsCommandsDir = join(cwd, ".agents", "commands");
+			mkdirSync(agentsCommandsDir, { recursive: true });
+			writeFileSync(join(agentsCommandsDir, "agents-cmd.md"), "Dot-agents command body.");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			expect(loader.getPrompts().prompts.some((p) => p.name === "agents-cmd")).toBe(true);
+		});
+
+		it("should prefer .hoocode/commands over .agents/commands on name collision", async () => {
+			const hoocodeCommandsDir = join(cwd, ".hoocode", "commands");
+			const agentsCommandsDir = join(cwd, ".agents", "commands");
+			mkdirSync(hoocodeCommandsDir, { recursive: true });
+			mkdirSync(agentsCommandsDir, { recursive: true });
+			writeFileSync(join(hoocodeCommandsDir, "deploy.md"), "hoocode deploy");
+			writeFileSync(join(agentsCommandsDir, "deploy.md"), "dot-agents deploy");
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir });
+			await loader.reload();
+
+			const deploy = loader.getPrompts().prompts.find((p) => p.name === "deploy");
+			expect(deploy?.filePath).toBe(join(hoocodeCommandsDir, "deploy.md"));
+		});
+
 		it("disables both prompts and commands when noPromptTemplates is set", async () => {
 			mkdirSync(join(cwd, ".hoocode", "prompts"), { recursive: true });
 			mkdirSync(join(cwd, ".hoocode", "commands"), { recursive: true });

@@ -8,7 +8,7 @@ import type { ResourceDiagnostic } from "./diagnostics.js";
 
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 
-import { canonicalizePath, isLocalPath } from "../utils/paths.js";
+import { canonicalizePath, collectAgentsAncestorDirs, isLocalPath } from "../utils/paths.js";
 import { setAgentManifestPaths } from "./agent-manifest-paths.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
@@ -500,14 +500,18 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		this.lastPromptPaths = promptPaths;
 		// Auto-discover default command directories, mirroring how prompt templates are discovered.
-		// Includes Claude Code slash commands via D7 native import (`.claude/commands/`), at lower
-		// precedence than `.hoocode/commands/`; project wins over user (dedupe is first-match-wins).
-		// Either --no-slash-commands or --no-prompt-templates disables defaults and settings paths;
-		// explicit --slash-command paths still load.
+		// Includes Claude Code slash commands via D7 native import (`.claude/commands/`) and the
+		// cross-vendor `.agents/commands/` surface (project ancestor-walk + global `~/.agents`), so
+		// commands written under `.agents/` round-trip. Precedence is first-match-wins, highest first:
+		// project `.hoocode` > project `.claude` > project `.agents` (cwd-first) > user `.hoocode` >
+		// user `.agents` > user `.claude`. Either --no-slash-commands or --no-prompt-templates disables
+		// defaults and settings paths; explicit --slash-command paths still load.
 		const defaultSlashCommandDirs = [
 			join(this.cwd, CONFIG_DIR_NAME, "commands"),
 			join(this.cwd, ".claude", "commands"),
+			...collectAgentsAncestorDirs(this.cwd, "commands"),
 			join(this.agentDir, "commands"),
+			join(homedir(), ".agents", "commands"),
 			join(homedir(), ".claude", "commands"),
 		].filter((dir) => existsSync(dir));
 		const slashCommandPaths = featureDisabled
@@ -736,6 +740,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			join(this.agentDir, "commands"),
 			join(this.agentDir, "themes"),
 			join(this.agentDir, "extensions"),
+			join(homedir(), ".agents", "commands"),
 		];
 		const projectRoots = [
 			join(this.cwd, CONFIG_DIR_NAME, "skills"),
@@ -743,6 +748,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			join(this.cwd, CONFIG_DIR_NAME, "commands"),
 			join(this.cwd, CONFIG_DIR_NAME, "themes"),
 			join(this.cwd, CONFIG_DIR_NAME, "extensions"),
+			join(this.cwd, ".agents", "commands"),
 		];
 
 		for (const root of agentRoots) {

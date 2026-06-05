@@ -478,4 +478,49 @@ describe("SubagentPool", () => {
 		expect(exceededEvents[0].task_id).toBe("budget-task");
 		expect(exceededEvents[0].limit).toBe(500);
 	});
+
+	// Reach into the private lifeguard to inject a "stalled" verdict while the child
+	// is still running, reproducing the race where checkHeartbeats fires SIGKILL just
+	// as a healthy child is finishing.
+	function injectStall(p: SubagentPool, task_id: string): void {
+		const lifeguard = (
+			p as unknown as { lifeguard: { emit(event: string, payload: { task_id: string; pid: number }): boolean } }
+		).lifeguard;
+		lifeguard.emit("stalled", { task_id, pid: 0 });
+	}
+
+	test("a late lifeguard stall does not clobber a child that already completed cleanly", async () => {
+		// Child writes a valid result.json and exits 0 after a short delay.
+		const exe = createResultWritingExecutable(tmpDir, 150);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		const dispatchDir = join(tmpDir, ".hoocode", "dispatch", "race");
+		pool.spawn({ task_id: "race", agent_type: "explore", task: "work" });
+		// Let the child start and get monitored, then fire a stall verdict mid-flight.
+		await new Promise((r) => setTimeout(r, 40));
+		injectStall(pool, "race");
+		const result = await pool.wait_for("race");
+		// The genuine completion wins over the stale stall verdict.
+		expect(result.ok).toBe(true);
+		expect(result.status).toBe("complete");
+		expect((result.result_data as { summary?: string } | undefined)?.summary).toBe("background done");
+		expect(pool.get_status("race")).toBe("done");
+		// Clean-success path ran, so the dispatch dir was removed.
+		expect(existsSync(dispatchDir)).toBe(false);
+	});
+
+	test("a genuine stall (no verified result) still reports stalled", async () => {
+		// Child exits 0 but never writes result.json, so verification fails.
+		const exe = createMockExecutable(tmpDir, 0, 150);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		const stalledEvents: Array<{ task_id: string }> = [];
+		pool.on("task_stalled", (data) => stalledEvents.push(data as { task_id: string }));
+		pool.spawn({ task_id: "hung", agent_type: "explore", task: "work" });
+		await new Promise((r) => setTimeout(r, 40));
+		injectStall(pool, "hung");
+		const result = await pool.wait_for("hung");
+		expect(result.ok).toBe(false);
+		expect(result.status).toBe("stalled");
+		expect(pool.get_status("hung")).toBe("stalled");
+		expect(stalledEvents.map((e) => e.task_id)).toContain("hung");
+	});
 });

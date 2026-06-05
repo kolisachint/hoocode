@@ -56,9 +56,9 @@ surfaces:
   - id: slash-commands
     support: full
     files: ["*.md"]
-    paths: [./.hoocode/commands, ./.claude/commands, ~/.hoocode/commands, ~/.claude/commands]
+    paths: [./.hoocode/commands, ./.claude/commands, "<git-root..cwd>/.agents/commands", ~/.hoocode/commands, ~/.agents/commands, ~/.claude/commands]
     keys: [name, description, type, argument-hint]
-    src: core/resource-loader.ts:340-360
+    src: core/resource-loader.ts:509-519
   - id: skills
     support: full
     files: [SKILL.md]
@@ -218,7 +218,7 @@ standard (read by everyone) or non-standard (needs `.agents/AGENTS.md`).
 | Instructions (`AGENTS.md`) | Standard | `.agents/AGENTS.md` | No (reads `~/.hoocode`, cwd-walk) | No (writes `.hoocode`) | Read+write `.agents/AGENTS.md` |
 | Skills (`SKILL.md`) | Standard | `.agents/skills/<n>/SKILL.md` | Yes (`~/.agents/skills`, ancestor) | No (writes `.hoocode`) | Write to `.agents/skills` |
 | MCP (`mcp.json`) | Standard | `.agents/mcp.json` | No (per-server `mcp-servers/*.json`) | No | Read+write standard `.agents/mcp.json` |
-| Commands (`*.md`) | Non-standard | `.agents/commands/` + doc in `.agents/AGENTS.md` | No (`.hoocode`/`.claude` only) | No | Read+write `.agents/commands`; document |
+| Commands (`*.md`) | Non-standard | `.agents/commands/` + doc in `.agents/AGENTS.md` | Yes (`.agents/commands` ancestor + `~/.agents/commands`) | No (writes `.hoocode`) | Write `.agents/commands`; document shape |
 | Subagents (`*.md`) | Non-standard | `.agents/agents/` + doc in `.agents/AGENTS.md` | Yes (`.agents/agents` ancestor) | No | Write `.agents/agents`; document shape |
 | Settings | Non-standard | `.agents/` (hoocode shape) + doc | n/a | No (`.hoocode/settings.json`) | Optional: relocate + document |
 | Models | Non-standard | `.agents/models.json` + doc | No | No (`~/.hoocode/models.json`) | Optional: relocate + document |
@@ -245,8 +245,10 @@ Ordered by value-to-effort. Each is small and standards-aligned.
    standard mismatch on format.
 4. **Read `~/.agents/AGENTS.md` (and `.agents/AGENTS.md`) as instructions.**
    Trivial addition to the instruction scanner; honors the standard location.
-5. **Read `.agents/commands/`.** Add `.agents/commands` (global + ancestor) to
-   the command search path so commands written there round-trip.
+5. ~~**Read `.agents/commands/`.**~~ **Done.** Added `.agents/commands` (project
+   ancestor-walk via `collectAgentsAncestorDirs`) and `~/.agents/commands`
+   (global) to the slash-command search path, so commands written under
+   `.agents/` round-trip. See `core/resource-loader.ts:509-519`.
 
 ---
 
@@ -262,7 +264,7 @@ differs; **None** = not scanned.
 | `mcp.json` | [A] | **Full** | `~/.agents/mcp.json`, `.agents/mcp.json`, `~/.config/claude/mcp.json`, `~/.hoocode/mcp-servers/*.json`, `./.hoocode/mcp-servers/*.json` | Standard `{"mcpServers":{...}}` + per-server JSON fallback | `extensions/core/hoo-core.ts:385-600` |
 | `models.json` | [P1] | **Full** (own format) | `~/.hoocode/models.json` | hoocode custom providers/models; not the [P1] schema | `core/model-registry.ts:345`, `core/sdk.ts:202` |
 | `speakmcp-settings.json` | [P1] | **None (equivalent)** | `~/.hoocode/settings.json`, `./.hoocode/settings.json` | hoocode `settings.json` (~40 keys), deep-merged | `core/settings-manager.ts:74-201` |
-| `commands/*.md` | [D] | **Full** | `./.hoocode/commands`, `./.claude/commands`, `~/.hoocode/commands`, `~/.claude/commands` | `*.md` frontmatter: `name`, `description`, `type`, `argument-hint` | `core/resource-loader.ts:340-360`, `core/prompt-templates.ts` |
+| `commands/*.md` | [D] | **Full** | `./.hoocode/commands`, `./.claude/commands`, `<git-root..cwd>/.agents/commands`, `~/.hoocode/commands`, `~/.agents/commands`, `~/.claude/commands` | `*.md` frontmatter: `name`, `description`, `type`, `argument-hint` | `core/resource-loader.ts:509-519`, `core/prompt-templates.ts` |
 | `skills/<n>/SKILL.md` | [A] | **Full** | `~/.hoocode/skills`, `~/.claude/skills`, `~/.agents/skills`, project `.hoocode`/`.claude`/`.agents` skills, ancestor-walk | `SKILL.md` frontmatter: `name`, `description`, `allowed-tools`, `disable-model-invocation` | `core/skills.ts`, `core/package-manager.ts:442,2179,2233` |
 | `agents/<n>/{agent.md,config.json}` | [P1]/[C1]/[C2] | **Partial (different shape)** | `.hoocode/agents`, `.claude/agents`, `.agents/agents` (ancestor), `~/.hoocode`/`~/.claude`, package manifest, `--agent` | **Single `.md` + YAML frontmatter** (Claude/[C1] shape), NOT paired `agent.md`+`config.json`. Keys: `name`, `description`, `tools`, `model`, `maxTurns`, `background` | `core/agent-registry.ts:9-16,129-192`, `core/agent-frontmatter.ts` |
 | `tasks/<n>/task.md` | [P1]/[C3] | **None (spec)** | — | No file-based task specs. Only `background: true` agent frontmatter + runtime `./.hoocode/dispatch/<id>/` state | `core/agent-frontmatter.ts:41-45`, `config.ts:337-342` |
@@ -354,11 +356,12 @@ Ordered by leverage. Each is a candidate, not a commitment.
    reusable tasks are desired, a `task.md` spec (prompt + schedule + target
    agent) maps cleanly onto the existing dispatch machinery.
 
-5. **`~/.agents/` instructions/commands.** hoocode reads `~/.agents/skills` and
-   `.agents/agents` but **not** `~/.agents/AGENTS.md`, `~/.agents/commands/`, etc.
-   If we want to be a good `.agents` citizen, extend the instruction and command
-   scanners to include `~/.agents/` and the ancestor-walk `.agents/` (commands),
-   mirroring the skills/agents treatment. Note: `~/.agents/mcp.json` is now read.
+5. **`~/.agents/` instructions.** hoocode reads `~/.agents/skills`,
+   `.agents/agents`, and now `.agents/commands` (project ancestor-walk +
+   `~/.agents/commands`), but **not** `~/.agents/AGENTS.md`. If we want to be a
+   good `.agents` citizen, extend the instruction scanner to include
+   `~/.agents/AGENTS.md` and the ancestor-walk `.agents/AGENTS.md`, mirroring the
+   skills/agents/commands treatment. Note: `~/.agents/mcp.json` is now read.
 
 6. **Layouts / `.backups` ([P1]).** Low priority. hoocode covers the need via
    compiled UI + `sessions/`. Skip unless an explicit interop requirement
