@@ -167,7 +167,17 @@ async function runLoop(
 
 	// Tracks tool calls that run detached (background tools). Their results are
 	// injected into a later turn as follow-up messages instead of blocking the loop.
-	const background = createBackgroundTaskManager();
+	// The count-change callback lets the app account for the load these in-process
+	// tools place on the event loop (e.g. notifying the subagent lifeguard so it
+	// widens its tolerance for concurrently-monitored subagents). `config` is
+	// reassigned across turns, so read the latest callback lazily.
+	const background = createBackgroundTaskManager((count) => {
+		try {
+			config.onBackgroundTaskCountChange?.(count);
+		} catch {
+			// A throwing callback must not break background dispatch.
+		}
+	});
 
 	// Collect messages to inject before the next assistant turn: results from any
 	// finished background tools take priority, then app-provided steering messages.
@@ -626,7 +636,7 @@ interface BackgroundTaskManager {
 	waitForNext(): Promise<void>;
 }
 
-function createBackgroundTaskManager(): BackgroundTaskManager {
+function createBackgroundTaskManager(onCountChange?: (count: number) => void): BackgroundTaskManager {
 	const results: AgentMessage[] = [];
 	const inflight = new Set<Promise<void>>();
 	let waiter: { promise: Promise<void>; resolve: () => void } | undefined;
@@ -676,8 +686,10 @@ function createBackgroundTaskManager(): BackgroundTaskManager {
 				}
 			})();
 			inflight.add(task);
+			onCountChange?.(inflight.size);
 			void task.finally(() => {
 				inflight.delete(task);
+				onCountChange?.(inflight.size);
 				signalSettled();
 			});
 		},

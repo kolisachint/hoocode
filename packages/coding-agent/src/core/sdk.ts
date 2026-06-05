@@ -14,6 +14,7 @@ import type { ResourceLoader } from "./resource-loader.js";
 import { DefaultResourceLoader } from "./resource-loader.js";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.js";
 import { SettingsManager } from "./settings-manager.js";
+import { peekSubagentPool } from "./subagent-pool-instance.js";
 import { isInstallTelemetryEnabled } from "./telemetry.js";
 import { time } from "./timings.js";
 import {
@@ -329,6 +330,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		convertToLlm: convertToLlmWithBlockImages,
 		createBackgroundResultMessage: createBackgroundTaskMessage,
 		createBackgroundPlaceholder: (toolCall) => createBackgroundPlaceholderText(toolCall),
+		// Report in-process background tool load (e.g. background MCP tools) to the
+		// subagent lifeguard so it widens its heartbeat/timeout tolerance for
+		// concurrently-monitored subagents. Peek (don't create) the pool: background
+		// tools can run before any subagent is ever dispatched.
+		onBackgroundTaskCountChange: (count) => peekSubagentPool()?.setExternalLoad(count),
 		streamFn: async (model, context, options) => {
 			const auth = await modelRegistry.getApiKeyAndHeaders(model);
 			if (!auth.ok) {

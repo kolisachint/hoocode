@@ -58,6 +58,13 @@ export class SubagentLifeguard extends EventEmitter {
 	private checkInterval: NodeJS.Timeout | null = null;
 	/** Wall-clock time the heartbeat check last ran, to measure event-loop lag. */
 	private lastCheckAt = Date.now();
+	/**
+	 * Count of external in-process tasks (e.g. background MCP tools) running in the
+	 * parent alongside the monitored subagents. These don't show up in `processes`
+	 * but still saturate the parent's CPU/event loop, so they're folded into the
+	 * load multiplier. Updated by the pool via setExternalLoad().
+	 */
+	private externalLoad = 0;
 	private disposed = false;
 	private readonly cwd: string;
 	private parentShutdownHandler?: () => void;
@@ -72,11 +79,23 @@ export class SubagentLifeguard extends EventEmitter {
 	}
 
 	/**
-	 * Tolerance multiplier for the current load. 1 process → 1x; each extra
-	 * concurrent process adds LOAD_TOLERANCE_PER_PROCESS, capped at MAX_LOAD_MULTIPLIER.
+	 * Set the count of external in-process tasks (background MCP tools) sharing the
+	 * parent's CPU/event loop. Folded into loadMultiplier() so concurrent MCP work
+	 * widens the heartbeat/timeout budgets just like extra monitored subagents do.
+	 * Negative values are clamped to 0.
+	 */
+	setExternalLoad(count: number): void {
+		this.externalLoad = Math.max(0, Math.floor(count));
+	}
+
+	/**
+	 * Tolerance multiplier for the current load. 1 concurrent task → 1x; each extra
+	 * concurrent task adds LOAD_TOLERANCE_PER_PROCESS, capped at MAX_LOAD_MULTIPLIER.
+	 * Concurrency counts both monitored subagents and external load (background MCP
+	 * tools), since both contend for the same parent event loop.
 	 */
 	private loadMultiplier(): number {
-		const concurrent = this.processes.size;
+		const concurrent = this.processes.size + this.externalLoad;
 		const mult = 1 + Math.max(0, concurrent - 1) * LOAD_TOLERANCE_PER_PROCESS;
 		return Math.min(mult, MAX_LOAD_MULTIPLIER);
 	}

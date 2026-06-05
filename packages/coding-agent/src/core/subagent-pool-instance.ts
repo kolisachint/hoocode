@@ -32,6 +32,15 @@ export function getSubagentPool(cwd: string): SubagentPool {
 }
 
 /**
+ * Return the shared pool if one already exists, without creating it. Use this for
+ * best-effort signaling (e.g. reporting external load) that must not spin up a pool
+ * and its lifeguard just because the signal fired before any subagent was dispatched.
+ */
+export function peekSubagentPool(): SubagentPool | undefined {
+	return override ?? pool;
+}
+
+/**
  * Update the skill paths forwarded to every subagent.
  * Call this after the resource loader reloads or extends its skill set.
  * If the pool has already been created, updates it immediately.

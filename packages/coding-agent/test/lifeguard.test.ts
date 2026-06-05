@@ -104,6 +104,60 @@ describe("SubagentLifeguard", () => {
 		for (const proc of procs) proc.kill("SIGKILL");
 	});
 
+	it("accounts for external load (background MCP tools) in the stall threshold", () => {
+		guard = new SubagentLifeguard(testCwd);
+		const script = join(testCwd, "silent.js");
+		writeFileSync(script, "setTimeout(() => {}, 10000)\n");
+		const proc = spawn(process.execPath, [script], { detached: true });
+
+		const stalled: string[] = [];
+		guard.on("stalled", (data) => stalled.push((data as { task_id: string }).task_id));
+
+		guard.monitor("t0", "explore", proc);
+		// One monitored subagent alone → loadMultiplier 1 → 60s threshold.
+		// Report 4 concurrent background MCP tools: concurrent = 1 + 4 = 5 →
+		// loadMultiplier = 1 + 4*0.5 = 3 → threshold = 180s.
+		guard.setExternalLoad(4);
+
+		// A 150s-stale heartbeat is forgiven under the widened budget.
+		// @ts-expect-error – internal map access for the test
+		guard.lastHeartbeat.set("t0", Date.now() - 150_000);
+		// @ts-expect-error – internal method access for the test
+		guard.checkHeartbeats();
+		expect(stalled).not.toContain("t0");
+
+		// Once the background tools drain, the budget shrinks back to 60s and the
+		// same stale heartbeat is reaped.
+		guard.setExternalLoad(0);
+		// @ts-expect-error – internal method access for the test
+		guard.checkHeartbeats();
+		expect(stalled).toContain("t0");
+
+		proc.kill("SIGKILL");
+	});
+
+	it("clamps negative external load to zero", () => {
+		guard = new SubagentLifeguard(testCwd);
+		const script = join(testCwd, "silent.js");
+		writeFileSync(script, "setTimeout(() => {}, 10000)\n");
+		const proc = spawn(process.execPath, [script], { detached: true });
+
+		const stalled: string[] = [];
+		guard.on("stalled", (data) => stalled.push((data as { task_id: string }).task_id));
+
+		guard.monitor("t0", "explore", proc);
+		guard.setExternalLoad(-5);
+
+		// Clamped to 0 → multiplier stays 1 → base 60s threshold applies.
+		// @ts-expect-error – internal map access for the test
+		guard.lastHeartbeat.set("t0", Date.now() - 70_000);
+		// @ts-expect-error – internal method access for the test
+		guard.checkHeartbeats();
+		expect(stalled).toContain("t0");
+
+		proc.kill("SIGKILL");
+	});
+
 	it("forgives a stale heartbeat caused by parent event-loop lag", () => {
 		guard = new SubagentLifeguard(testCwd);
 		const script = join(testCwd, "silent.js");

@@ -175,6 +175,16 @@ export class SubagentPool extends EventEmitter {
 		this.skillPaths = [...paths];
 	}
 
+	/**
+	 * Report external in-process load (e.g. the number of background MCP tools
+	 * currently executing in the parent) to the lifeguard. This widens its
+	 * heartbeat/timeout tolerance so monitored subagents aren't false-positive
+	 * reaped when the parent's event loop is busy with concurrent background work.
+	 */
+	setExternalLoad(count: number): void {
+		this.lifeguard.setExternalLoad(count);
+	}
+
 	/** Lazily load the agent registry for this pool's cwd. */
 	private getRegistry(): AgentRegistry {
 		if (!this.registry) {

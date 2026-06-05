@@ -109,6 +109,7 @@ export interface AgentOptions {
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
 	createBackgroundPlaceholder?: (toolCall: AgentToolCall) => string | undefined;
+	onBackgroundTaskCountChange?: (count: number) => void;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
 	sessionId?: string;
@@ -190,6 +191,8 @@ export class Agent {
 	public createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
 	/** Builds the placeholder text returned immediately when a background tool starts. */
 	public createBackgroundPlaceholder?: (toolCall: AgentToolCall) => string | undefined;
+	/** Notified when the number of in-flight background tool calls changes. */
+	public onBackgroundTaskCountChange?: (count: number) => void;
 	private activeRun?: ActiveRun;
 	/** Session identifier forwarded to providers for cache-aware backends. */
 	public sessionId?: string;
@@ -215,6 +218,7 @@ export class Agent {
 		this.prepareNextTurn = options.prepareNextTurn;
 		this.createBackgroundResultMessage = options.createBackgroundResultMessage;
 		this.createBackgroundPlaceholder = options.createBackgroundPlaceholder;
+		this.onBackgroundTaskCountChange = options.onBackgroundTaskCountChange;
 		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
 		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
 		this.sessionId = options.sessionId;
@@ -442,6 +446,7 @@ export class Agent {
 			prepareNextTurn: this.prepareNextTurn ? async () => await this.prepareNextTurn?.(this.signal) : undefined,
 			createBackgroundResultMessage: this.createBackgroundResultMessage,
 			createBackgroundPlaceholder: this.createBackgroundPlaceholder,
+			onBackgroundTaskCountChange: this.onBackgroundTaskCountChange,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,
