@@ -19,6 +19,7 @@ import type {
 	AgentMessage,
 	AgentState,
 	AgentTool,
+	AgentToolCall,
 	BackgroundToolResult,
 	BeforeToolCallContext,
 	BeforeToolCallResult,
@@ -107,6 +108,7 @@ export interface AgentOptions {
 		signal?: AbortSignal,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
+	createBackgroundPlaceholder?: (toolCall: AgentToolCall) => string | undefined;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
 	sessionId?: string;
@@ -186,6 +188,8 @@ export class Agent {
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	/** Builds the follow-up message injected when a background tool finishes. */
 	public createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
+	/** Builds the placeholder text returned immediately when a background tool starts. */
+	public createBackgroundPlaceholder?: (toolCall: AgentToolCall) => string | undefined;
 	private activeRun?: ActiveRun;
 	/** Session identifier forwarded to providers for cache-aware backends. */
 	public sessionId?: string;
@@ -210,6 +214,7 @@ export class Agent {
 		this.afterToolCall = options.afterToolCall;
 		this.prepareNextTurn = options.prepareNextTurn;
 		this.createBackgroundResultMessage = options.createBackgroundResultMessage;
+		this.createBackgroundPlaceholder = options.createBackgroundPlaceholder;
 		this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
 		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
 		this.sessionId = options.sessionId;
@@ -436,6 +441,7 @@ export class Agent {
 			afterToolCall: this.afterToolCall,
 			prepareNextTurn: this.prepareNextTurn ? async () => await this.prepareNextTurn?.(this.signal) : undefined,
 			createBackgroundResultMessage: this.createBackgroundResultMessage,
+			createBackgroundPlaceholder: this.createBackgroundPlaceholder,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

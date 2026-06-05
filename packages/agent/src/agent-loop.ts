@@ -523,7 +523,7 @@ async function dispatchBackgroundToolCalls(
 
 		// The tool was prepared successfully: answer the tool call with a placeholder now,
 		// run the real work detached, and surface its result on a later turn.
-		const placeholder = createBackgroundPlaceholderOutcome(toolCall);
+		const placeholder = createBackgroundPlaceholderOutcome(toolCall, config);
 		await emitToolExecutionEnd(placeholder, emit);
 		const placeholderMessage = createToolResultMessage(placeholder);
 		await emitToolResultMessage(placeholderMessage, emit);
@@ -558,14 +558,29 @@ async function dispatchBackgroundToolCalls(
 const NOOP_EMIT: AgentEventSink = () => {};
 
 /** Placeholder result returned immediately for a dispatched background tool call. */
-function createBackgroundPlaceholderOutcome(toolCall: AgentToolCall): FinalizedToolCallOutcome {
+function createBackgroundPlaceholderOutcome(
+	toolCall: AgentToolCall,
+	config: AgentLoopConfig,
+): FinalizedToolCallOutcome {
+	// Apps can supply a verbose, tool-specific explanation (which subagent / MCP
+	// tool, an args summary). Fall back to a generic line when absent or on error.
+	let text: string | undefined;
+	if (config.createBackgroundPlaceholder) {
+		try {
+			text = config.createBackgroundPlaceholder(toolCall);
+		} catch {
+			text = undefined;
+		}
+	}
 	return {
 		toolCall,
 		result: {
 			content: [
 				{
 					type: "text",
-					text: `Started "${toolCall.name}" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.`,
+					text:
+						text ??
+						`Started "${toolCall.name}" in the background. Its result will arrive as a follow-up message once it finishes — keep working in the meantime.`,
 				},
 			],
 			details: { background: true, status: "running" },

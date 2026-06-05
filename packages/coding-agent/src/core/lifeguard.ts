@@ -13,7 +13,27 @@ const TIMEOUTS_MS: Record<string, number> = {
 };
 
 const HEARTBEAT_MISS_THRESHOLD_MS = 60000;
+const HEARTBEAT_CHECK_INTERVAL_MS = 5000;
 const PARENT_SHUTDOWN_GRACE_MS = 5000;
+
+/**
+ * Concurrency tolerance. Each *additional* concurrently-monitored subagent adds
+ * this fraction to the heartbeat-miss and hard-timeout budgets.
+ *
+ * When several subagents run at once (plus background MCP tools), they saturate
+ * the CPU and starve the parent's event loop: its `setInterval` heartbeat check
+ * fires late, and it cannot read a child's `{"ping":true}` line in time even
+ * though the child is healthy and still working. Scaling the budgets by load
+ * stops that contention from false-positive SIGKILLing healthy subagents — the
+ * failure the demo hit when running many agents + MCP tools in the background.
+ */
+const LOAD_TOLERANCE_PER_PROCESS = 0.5;
+
+/**
+ * Hard ceiling on the load tolerance multiplier, so a genuinely stuck subagent
+ * is still eventually reaped no matter how busy the pool is.
+ */
+const MAX_LOAD_MULTIPLIER = 4;
 
 export interface LifeguardProcess {
 	pid: number;
@@ -31,7 +51,13 @@ export class SubagentLifeguard extends EventEmitter {
 	private processes = new Map<string, LifeguardProcess>();
 	private lastHeartbeat = new Map<string, number>();
 	private timeouts = new Map<string, NodeJS.Timeout>();
+	/** When each task started, used to compute the load-scaled hard timeout. */
+	private startedAt = new Map<string, number>();
+	/** Per-agent base hard timeout (before load scaling), captured at monitor(). */
+	private baseTimeoutMs = new Map<string, number>();
 	private checkInterval: NodeJS.Timeout | null = null;
+	/** Wall-clock time the heartbeat check last ran, to measure event-loop lag. */
+	private lastCheckAt = Date.now();
 	private disposed = false;
 	private readonly cwd: string;
 	private parentShutdownHandler?: () => void;
@@ -41,7 +67,18 @@ export class SubagentLifeguard extends EventEmitter {
 		this.cwd = cwd;
 		this.setupParentExitHandlers();
 		this.sweepOldAgents();
-		this.checkInterval = setInterval(() => this.checkHeartbeats(), 5000);
+		this.lastCheckAt = Date.now();
+		this.checkInterval = setInterval(() => this.checkHeartbeats(), HEARTBEAT_CHECK_INTERVAL_MS);
+	}
+
+	/**
+	 * Tolerance multiplier for the current load. 1 process → 1x; each extra
+	 * concurrent process adds LOAD_TOLERANCE_PER_PROCESS, capped at MAX_LOAD_MULTIPLIER.
+	 */
+	private loadMultiplier(): number {
+		const concurrent = this.processes.size;
+		const mult = 1 + Math.max(0, concurrent - 1) * LOAD_TOLERANCE_PER_PROCESS;
+		return Math.min(mult, MAX_LOAD_MULTIPLIER);
 	}
 
 	/**
@@ -56,9 +93,17 @@ export class SubagentLifeguard extends EventEmitter {
 		this.lastHeartbeat.set(task_id, Date.now());
 
 		const timeoutMs = TIMEOUTS_MS[agent_type] ?? TIMEOUTS_MS.explore;
-		const timeout = setTimeout(() => {
-			this.handleTimeout(task_id);
-		}, timeoutMs);
+		this.startedAt.set(task_id, Date.now());
+		this.baseTimeoutMs.set(task_id, timeoutMs);
+		// Arm the hard timeout scaled by current load. When it fires, handleTimeout
+		// re-checks load and re-arms (up to MAX_LOAD_MULTIPLIER) if the pool is still
+		// busy, so a slow-but-progressing subagent isn't killed for CPU contention.
+		const timeout = setTimeout(
+			() => {
+				this.handleTimeout(task_id);
+			},
+			Math.round(timeoutMs * this.loadMultiplier()),
+		);
 		this.timeouts.set(task_id, timeout);
 
 		proc.once("exit", () => {
@@ -105,6 +150,8 @@ export class SubagentLifeguard extends EventEmitter {
 		}
 		this.processes.clear();
 		this.lastHeartbeat.clear();
+		this.startedAt.clear();
+		this.baseTimeoutMs.clear();
 		this.removeAllListeners();
 
 		if (this.parentShutdownHandler) {
@@ -115,10 +162,19 @@ export class SubagentLifeguard extends EventEmitter {
 
 	private checkHeartbeats(): void {
 		const now = Date.now();
+		// Event-loop lag: how much later than scheduled this check actually ran.
+		// Heavy CPU load (many concurrent subagents + background MCP tools) starves
+		// the loop, delaying both this check *and* our reading of child heartbeats.
+		// Forgive that gap so the parent's own starvation isn't charged against the
+		// children as a missed heartbeat.
+		const loopLag = Math.max(0, now - this.lastCheckAt - HEARTBEAT_CHECK_INTERVAL_MS);
+		this.lastCheckAt = now;
+
+		const threshold = HEARTBEAT_MISS_THRESHOLD_MS * this.loadMultiplier() + loopLag;
 		for (const [task_id] of this.processes) {
 			const last = this.lastHeartbeat.get(task_id);
 			if (last === undefined) continue;
-			if (now - last > HEARTBEAT_MISS_THRESHOLD_MS) {
+			if (now - last > threshold) {
 				this.handleStalled(task_id);
 			}
 		}
@@ -140,6 +196,27 @@ export class SubagentLifeguard extends EventEmitter {
 		const monitored = this.processes.get(task_id);
 		if (!monitored) return;
 
+		// Under load the wall-clock timer can fire while the subagent is still doing
+		// real work — its turns are just slow because the CPU is shared. Re-arm rather
+		// than kill, up to a hard ceiling (base * MAX_LOAD_MULTIPLIER) so a genuinely
+		// stuck agent still terminates.
+		const started = this.startedAt.get(task_id) ?? Date.now();
+		const base = this.baseTimeoutMs.get(task_id) ?? TIMEOUTS_MS[monitored.agent_type] ?? TIMEOUTS_MS.explore;
+		const elapsed = Date.now() - started;
+		const ceiling = base * MAX_LOAD_MULTIPLIER;
+		if (this.loadMultiplier() > 1 && elapsed < ceiling) {
+			const remaining = ceiling - elapsed;
+			const next = Math.min(
+				Math.round(base * this.loadMultiplier()),
+				Math.max(HEARTBEAT_CHECK_INTERVAL_MS, remaining),
+			);
+			this.timeouts.set(
+				task_id,
+				setTimeout(() => this.handleTimeout(task_id), next),
+			);
+			return;
+		}
+
 		if (!monitored.process.killed) {
 			monitored.process.kill("SIGKILL");
 		}
@@ -157,6 +234,8 @@ export class SubagentLifeguard extends EventEmitter {
 		}
 		this.processes.delete(task_id);
 		this.lastHeartbeat.delete(task_id);
+		this.startedAt.delete(task_id);
+		this.baseTimeoutMs.delete(task_id);
 	}
 
 	private setupParentExitHandlers(): void {

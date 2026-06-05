@@ -7,7 +7,7 @@ import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.js";
-import { convertToLlm, createBackgroundTaskMessage } from "./messages.js";
+import { convertToLlm, createBackgroundPlaceholderText, createBackgroundTaskMessage } from "./messages.js";
 import { ModelRegistry } from "./model-registry.js";
 import { findInitialModel } from "./model-resolver.js";
 import type { ResourceLoader } from "./resource-loader.js";
@@ -328,6 +328,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 		convertToLlm: convertToLlmWithBlockImages,
 		createBackgroundResultMessage: createBackgroundTaskMessage,
+		createBackgroundPlaceholder: (toolCall) => createBackgroundPlaceholderText(toolCall),
 		streamFn: async (model, context, options) => {
 			const auth = await modelRegistry.getApiKeyAndHeaders(model);
 			if (!auth.ok) {

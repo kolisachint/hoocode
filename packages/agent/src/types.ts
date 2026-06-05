@@ -262,6 +262,20 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
 
 	/**
+	 * Builds the placeholder text returned immediately for a dispatched background
+	 * tool call (before its real result is known). The tool call must be answered
+	 * synchronously, so this stands in for the result until the real one arrives via
+	 * `createBackgroundResultMessage`.
+	 *
+	 * Receives the originating tool call so the app can explain *what* started (which
+	 * subagent / MCP tool, a summary of its arguments). When omitted, the loop uses a
+	 * generic "Started <tool> in the background" line.
+	 *
+	 * Contract: must not throw or reject. Return undefined to fall back to the default.
+	 */
+	createBackgroundPlaceholder?: (toolCall: AgentToolCall) => string | undefined;
+
+	/**
 	 * Tool execution mode.
 	 * - "sequential": execute tool calls one by one
 	 * - "parallel": preflight tool calls sequentially, then execute allowed tools concurrently;

@@ -118,7 +118,8 @@ export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
  * Events:
  * - "task_done"    – task completed successfully and output was verified
  * - "task_failed"  – task failed (spawn error, bad exit code, verification failure)
- * - "task_stalled" – heartbeat missed for 60s, process was SIGKILLed
+ * - "task_stalled" – heartbeat missed past the load-scaled threshold (60s base,
+ *                    widened under concurrency/event-loop lag), process SIGKILLed
  * - "task_timeout" – hard timeout exceeded, process was SIGKILLed
  * - "budget_warning" – token usage crossed 80% threshold (advisory)
  * - "budget_exceeded" – token usage crossed 100% threshold (advisory; never kills)
