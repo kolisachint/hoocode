@@ -18,6 +18,7 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
+import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
 import { type Static, Type } from "typebox";
@@ -406,6 +407,17 @@ export interface McpServerConfig {
 	env?: Record<string, string>;
 }
 
+/** Standard MCP config format used by Claude Desktop and other tools */
+interface StandardMcpServerConfig {
+	command: string;
+	args?: string[];
+	env?: Record<string, string>;
+}
+
+interface StandardMcpConfig {
+	mcpServers?: Record<string, StandardMcpServerConfig>;
+}
+
 interface McpConnection {
 	rpc(method: string, params?: unknown): Promise<unknown>;
 	terminate(): void;
@@ -507,8 +519,75 @@ function buildMcpSchema(tool: McpToolDef): ReturnType<typeof Type.Object> {
 	return Type.Object(shape);
 }
 
+/**
+ * Parse standard MCP config format (used by Claude Desktop, VS Code, etc.)
+ * into hoocode's McpServerConfig format.
+ */
+function parseStandardMcpConfig(config: StandardMcpConfig, _source: string): McpServerConfig[] {
+	if (!config.mcpServers) return [];
+
+	const servers: McpServerConfig[] = [];
+	for (const [name, serverConfig] of Object.entries(config.mcpServers)) {
+		servers.push({
+			name,
+			command: serverConfig.command,
+			args: serverConfig.args,
+			env: serverConfig.env,
+		});
+	}
+	return servers;
+}
+
+/**
+ * Load MCP servers from a standard mcp.json file.
+ * Returns an array of McpServerConfig, or empty array if file doesn't exist or is invalid.
+ */
+function loadStandardMcpFile(filePath: string): McpServerConfig[] {
+	if (!existsSync(filePath)) return [];
+
+	try {
+		const content = readFileSync(filePath, "utf8");
+		const config = JSON.parse(content) as StandardMcpConfig;
+		return parseStandardMcpConfig(config, filePath);
+	} catch {
+		return [];
+	}
+}
+
 export function setupMcpLoader(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+		const allServerConfigs: McpServerConfig[] = [];
+		const seenNames = new Set<string>();
+
+		// 1. Load from standard mcp.json locations
+		// User-level: ~/.agents/mcp.json
+		const userAgentsConfig = loadStandardMcpFile(join(homedir(), ".agents", "mcp.json"));
+		for (const config of userAgentsConfig) {
+			if (!seenNames.has(config.name)) {
+				seenNames.add(config.name);
+				allServerConfigs.push(config);
+			}
+		}
+
+		// Project-level: ./.agents/mcp.json
+		const projectAgentsConfig = loadStandardMcpFile(join(ctx.cwd, ".agents", "mcp.json"));
+		for (const config of projectAgentsConfig) {
+			if (!seenNames.has(config.name)) {
+				seenNames.add(config.name);
+				allServerConfigs.push(config);
+			}
+		}
+
+		// Claude Desktop: ~/.config/claude/mcp.json
+		const claudeDesktopConfig = loadStandardMcpFile(join(homedir(), ".config", "claude", "mcp.json"));
+		for (const config of claudeDesktopConfig) {
+			if (!seenNames.has(config.name)) {
+				seenNames.add(config.name);
+				allServerConfigs.push(config);
+			}
+		}
+
+		// 2. Load from hoocode's per-server format (existing behavior)
 		const searchDirs = [join(HOOCODE_DIR, "mcp-servers"), join(ctx.cwd, ".hoocode", "mcp-servers")];
 
 		for (const dir of searchDirs) {
@@ -536,66 +615,74 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 					continue;
 				}
 
-				try {
-					const { tools } = await connectMcpServer(serverConfig);
+				// Skip if already loaded from standard config
+				if (seenNames.has(serverConfig.name)) continue;
+				seenNames.add(serverConfig.name);
+				allServerConfigs.push(serverConfig);
+			}
+		}
 
-					for (const tool of tools) {
-						const toolName = `mcp_${serverConfig.name}_${tool.name}`;
-						const schema = buildMcpSchema(tool);
-						const capturedServer = serverConfig.name;
-						const capturedTool = tool.name;
+		// 3. Connect to all servers and register tools
+		for (const serverConfig of allServerConfigs) {
+			try {
+				const { tools } = await connectMcpServer(serverConfig);
 
-						pi.registerTool({
-							name: toolName,
-							label: `[MCP] ${serverConfig.name} › ${tool.name}`,
-							description: tool.description,
-							parameters: schema,
-							async execute(
-								_toolCallId: string,
-								params: Static<typeof schema>,
-								signal: AbortSignal,
-								_onUpdate: AgentToolUpdateCallback,
-							): Promise<AgentToolResult<undefined>> {
-								const activeConn = mcpConnections.get(capturedServer);
-								if (!activeConn) {
-									return {
-										content: [
-											{
-												type: "text",
-												text: `MCP server "${capturedServer}" is not connected`,
-											},
-										],
-										details: undefined,
-									};
-								}
+				for (const tool of tools) {
+					const toolName = `mcp_${serverConfig.name}_${tool.name}`;
+					const schema = buildMcpSchema(tool);
+					const capturedServer = serverConfig.name;
+					const capturedTool = tool.name;
 
-								const abortPromise = new Promise<never>((_, reject) => {
-									signal.addEventListener("abort", () => reject(new Error("Aborted")));
-								});
-
-								const result = await Promise.race([
-									activeConn.rpc("tools/call", {
-										name: capturedTool,
-										arguments: params,
-									}),
-									abortPromise,
-								]);
-
+					pi.registerTool({
+						name: toolName,
+						label: `[MCP] ${serverConfig.name} › ${tool.name}`,
+						description: tool.description,
+						parameters: schema,
+						async execute(
+							_toolCallId: string,
+							params: Static<typeof schema>,
+							signal: AbortSignal,
+							_onUpdate: AgentToolUpdateCallback,
+						): Promise<AgentToolResult<undefined>> {
+							const activeConn = mcpConnections.get(capturedServer);
+							if (!activeConn) {
 								return {
-									content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+									content: [
+										{
+											type: "text",
+											text: `MCP server "${capturedServer}" is not connected`,
+										},
+									],
 									details: undefined,
 								};
-							},
-						});
-					}
+							}
 
-					ctx.ui.notify(
-						`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"})`,
-						"info",
-					);
-				} catch (err) {
-					ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(err)}`, "error");
+							const abortPromise = new Promise<never>((_, reject) => {
+								signal.addEventListener("abort", () => reject(new Error("Aborted")));
+							});
+
+							const result = await Promise.race([
+								activeConn.rpc("tools/call", {
+									name: capturedTool,
+									arguments: params,
+								}),
+								abortPromise,
+							]);
+
+							return {
+								content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+								details: undefined,
+							};
+						},
+					});
 				}
+
+				ctx.ui.notify(
+					`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"})`,
+					"info",
+				);
+			} catch (err) {
+				ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(err)}`, "error");
 			}
 		}
 	});

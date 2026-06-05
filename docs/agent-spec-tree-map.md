@@ -72,10 +72,10 @@ surfaces:
     keys: [name, description, tools, model, maxTurns, background]
     src: core/agent-registry.ts:9-16
   - id: mcp
-    support: partial   # per-server JSON files, NOT a single mcp.json
+    support: full     # reads standard mcp.json + per-server JSON
     files: ["*.json"]
-    paths: [~/.hoocode/mcp-servers, ./.hoocode/mcp-servers]
-    keys: [name, command, args, env]
+    paths: [~/.agents/mcp.json, ./.agents/mcp.json, ~/.config/claude/mcp.json, ~/.hoocode/mcp-servers, ./.hoocode/mcp-servers]
+    keys: [name, command, args, env] (per-server) or [mcpServers] (standard)
     src: extensions/core/hoo-core.ts:385-600
   - id: models
     support: full      # hoocode-specific schema
@@ -167,7 +167,7 @@ compatibility. Filenames and formats below are the ones hoocode resolves.
 ├── skills/<n>/SKILL.md                                         ├── agents/*.md    [S]  single-file frontmatter
 ├── agents/*.md     [S]  single-file frontmatter                ├── extensions/    [S]
 ├── extensions/     [S]                                         ├── mcp-servers/*.json
-├── mcp-servers/*.json  [S]  per-server JSON (NOT mcp.json)     └── dispatch/<id>/  runtime task state (not a spec)
+├── mcp-servers/*.json  [S]  per-server JSON (fallback)         └── dispatch/<id>/  runtime task state (not a spec)
 └── sessions/<id>/session.jsonl  runtime, not a spec
 
 Compatibility locations also scanned:
@@ -239,9 +239,10 @@ Ordered by value-to-effort. Each is small and standards-aligned.
 2. **Generate `.agents/AGENTS.md` on write.** When writing a non-standard
    surface, append/update its entry (location, file shape, honored keys) in the
    top-level `.agents/AGENTS.md`. Make it auto-generated ("do not edit").
-3. **Read + write standard `.agents/mcp.json`.** Add a reader that desugars
-   `{ "mcpServers": {...} }` into the existing per-server config, and write that
-   shape. Closes the only [A] standard hoocode mismatches on format.
+3. ~~Read + write standard `.agents/mcp.json`.~~ **Done.** Added readers for
+   `~/.agents/mcp.json`, `.agents/mcp.json`, and `~/.config/claude/mcp.json`.
+   Standard format desugared into existing per-server config. Closes the [A]
+   standard mismatch on format.
 4. **Read `~/.agents/AGENTS.md` (and `.agents/AGENTS.md`) as instructions.**
    Trivial addition to the instruction scanner; honors the standard location.
 5. **Read `.agents/commands/`.** Add `.agents/commands` (global + ancestor) to
@@ -258,7 +259,7 @@ differs; **None** = not scanned.
 |---|---|---|---|---|---|
 | `AGENTS.md` instructions | [A] | **Full** (relocated) | Global `~/.hoocode/`; walk cwd→root | `AGENTS.md`/`CLAUDE.md` (+`.MD`); plain markdown | `core/resource-loader.ts:76-128` |
 | `system-prompt.md` (`~/.claude/CLAUDE.md`) | [D] | **Partial** | Same as above; `--system-prompt` / `--append-system-prompt` flags | `CLAUDE.md` read as instructions; no `system-prompt.md` filename | `core/resource-loader.ts:76-128`, `core/system-prompt.ts` |
-| `mcp.json` | [A] | **Partial** (format differs) | `~/.hoocode/mcp-servers/*.json`, `./.hoocode/mcp-servers/*.json` | One JSON **per server**: `{name,command,args,env}`. No single `mcp.json` | `extensions/core/hoo-core.ts:385-600` |
+| `mcp.json` | [A] | **Full** | `~/.agents/mcp.json`, `.agents/mcp.json`, `~/.config/claude/mcp.json`, `~/.hoocode/mcp-servers/*.json`, `./.hoocode/mcp-servers/*.json` | Standard `{"mcpServers":{...}}` + per-server JSON fallback | `extensions/core/hoo-core.ts:385-600` |
 | `models.json` | [P1] | **Full** (own format) | `~/.hoocode/models.json` | hoocode custom providers/models; not the [P1] schema | `core/model-registry.ts:345`, `core/sdk.ts:202` |
 | `speakmcp-settings.json` | [P1] | **None (equivalent)** | `~/.hoocode/settings.json`, `./.hoocode/settings.json` | hoocode `settings.json` (~40 keys), deep-merged | `core/settings-manager.ts:74-201` |
 | `commands/*.md` | [D] | **Full** | `./.hoocode/commands`, `./.claude/commands`, `~/.hoocode/commands`, `~/.claude/commands` | `*.md` frontmatter: `name`, `description`, `type`, `argument-hint` | `core/resource-loader.ts:340-360`, `core/prompt-templates.ts` |
@@ -338,11 +339,10 @@ Ordered by leverage. Each is a candidate, not a commitment.
    frontmatter `.md` (the loader you proposed). Keep the canonical store
    single-file.
 
-2. **MCP: align on a single `mcp.json`.** hoocode uses per-server JSON files in
-   `mcp-servers/`. `mcp.json` (the [A] Accepted shape, `{ "mcpServers": {...} }`)
-   is the cross-vendor standard. Recommendation: add a reader for `mcp.json`
-   (global + project) that desugars into the existing per-server config, keeping
-   `mcp-servers/*.json` as an optional override directory.
+2. ~~**MCP: align on a single `mcp.json`.~~** **Done.** Added readers for standard
+   `mcp.json` format at `~/.agents/mcp.json`, `.agents/mcp.json`, and
+   `~/.config/claude/mcp.json`. Desugars into existing per-server config with
+   deduplication (first-wins).
 
 3. **Memories ([C4]) — currently None.** If we want persistent agent memory,
    the lowest-friction path is reading `memory:` frontmatter + a
@@ -355,10 +355,10 @@ Ordered by leverage. Each is a candidate, not a commitment.
    agent) maps cleanly onto the existing dispatch machinery.
 
 5. **`~/.agents/` instructions/commands.** hoocode reads `~/.agents/skills` and
-   `.agents/agents` but **not** `~/.agents/AGENTS.md`, `~/.agents/commands/`,
-   `~/.agents/mcp.json`, etc. If we want to be a good `.agents` citizen, extend
-   the instruction and command scanners to include `~/.agents/` and the
-   ancestor-walk `.agents/` (commands), mirroring the skills/agents treatment.
+   `.agents/agents` but **not** `~/.agents/AGENTS.md`, `~/.agents/commands/`, etc.
+   If we want to be a good `.agents` citizen, extend the instruction and command
+   scanners to include `~/.agents/` and the ancestor-walk `.agents/` (commands),
+   mirroring the skills/agents treatment. Note: `~/.agents/mcp.json` is now read.
 
 6. **Layouts / `.backups` ([P1]).** Low priority. hoocode covers the need via
    compiled UI + `sessions/`. Skip unless an explicit interop requirement
