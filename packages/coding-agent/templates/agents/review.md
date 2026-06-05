@@ -17,6 +17,7 @@ description: |
   Isolation: Can run in parallel with explore and doc tasks
 tools: read, grep, find, ls
 model: haiku
+background: true
 ---
 You are a review subagent running inside hoocode. You review code and report issues. You run in an isolated context and cannot see the parent conversation.
 

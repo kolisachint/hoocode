@@ -15,6 +15,12 @@ export interface Task {
 	status: TaskStatus;
 	/** Subagent mode when this task is owned by a subagent (e.g. "explore"). */
 	subagentMode?: string;
+	/**
+	 * Short warning note surfaced as a ⚠ cue in the task pane (e.g. the subagent
+	 * fell back to the inherited model, or was skipped because the provider was
+	 * exhausted). Kept terse so it fits the row's right column.
+	 */
+	note?: string;
 	readonly createdAt: number;
 	updatedAt: number;
 	/** Token and cost usage attributed to this task (e.g. from a subagent session). */
@@ -31,7 +37,7 @@ export interface CreateTaskOptions {
 	subagentMode?: string;
 }
 
-export type TaskPatch = Partial<Pick<Task, "title" | "status" | "subagentMode" | "usage">>;
+export type TaskPatch = Partial<Pick<Task, "title" | "status" | "subagentMode" | "usage" | "note">>;
 
 type Listener = () => void;
 
@@ -62,6 +68,7 @@ class TaskStore {
 		if (patch.status !== undefined) task.status = patch.status;
 		if (patch.subagentMode !== undefined) task.subagentMode = patch.subagentMode;
 		if (patch.usage !== undefined) task.usage = patch.usage;
+		if (patch.note !== undefined) task.note = patch.note;
 		task.updatedAt = Date.now();
 		this.emit();
 	}

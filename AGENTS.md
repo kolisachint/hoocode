@@ -1,5 +1,14 @@
 # Development Rules
 
+## Repo Map
+
+Before searching, check these maps:
+
+- `docs/package-map.md` - packages, dependency graph, build order, and a "where is X" index
+- `docs/npm-packages.md` - install/build/test mechanics, the src-vs-dist resolution split, and common traps
+- `docs/ui-map.md` - tui library and interactive-mode components grouped by purpose
+- `docs/bun-migration.md` - npm -> bun migration plan, phases, and coexistence rules
+
 ## Conversational Style
 
 - Keep answers short and concise
@@ -24,6 +33,11 @@
 - After code changes (not documentation changes): `npm run check` (get full output, no tail). Fix all errors, warnings, and infos before committing.
 - Note: `npm run check` does not run tests.
 - NEVER run: `npm run dev`, `npm run build`, `npm test`
+- Package manager: npm is the supported default; a gradual npm -> bun migration is
+  underway (dual-track). `bunfig.toml` pins `linker = "hoisted"` so `bun install`
+  stays npm-compatible. Never use bun's isolated linker. After any `bun install`,
+  run `npm run check`; recover a broken tree with `npm install`. See
+  `docs/bun-migration.md` before changing install/build tooling.
 - Only run specific tests if user instructs: `npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`
 - Run tests from the package root, not the repo root.
 - If you create or modify a test file, you MUST run that test file and iterate until it passes.
@@ -67,6 +81,14 @@ When closing issues via commit:
 - Analyze PRs without pulling locally first
 - If the user approves: create a feature branch, pull PR, rebase on main, apply adjustments, commit, merge into main, push, close PR, and leave a comment in the user's tone
 - You never open PRs yourself. We work in feature branches until everything is according to the user's requirements, then merge into main, and push.
+
+### Slash commands
+
+- `/pr <patch|minor|major>` - opens a release PR on a feature branch labeled `npm:<bump>`, so the merge-release workflow publishes on merge. Defined in `.hoocode/commands/pr.md`.
+- `/push` - pushes your session's changes straight to `origin/main` (stage only your files, commit, rebase, fast-forward push). No PR, no release label, no publish. Defined in `.hoocode/commands/push.md`.
+- Both stage only the files you changed (never `git add -A/.`) and never force push, reset, checkout, clean, or stash.
+- `/bun-migration [status|next|phase <n>]` - drives the npm -> bun migration one safe, reversible phase at a time per `docs/bun-migration.md`. Defined in `.hoocode/commands/bun-migration.md`.
+- Slash-command definitions live in `.hoocode/commands/`. Scaffold a new one with `/new-command <name>`.
 
 ## Testing hoocode Interactive Mode with tmux
 

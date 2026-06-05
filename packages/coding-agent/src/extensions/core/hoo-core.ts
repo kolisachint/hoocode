@@ -949,7 +949,7 @@ export function setupMode(pi: ExtensionAPI): void {
 }
 
 // ============================================================================
-// Scaffold commands — /new-skill and /new-agent
+// Scaffold commands — /new-skill, /new-agent, and /new-command
 // ============================================================================
 
 /** Validates a resource name: lowercase a-z, 0-9, hyphens, no leading/trailing/double hyphens. */
@@ -1066,6 +1066,59 @@ function setupScaffold(pi: ExtensionAPI): void {
 
 			ctx.ui.notify(
 				`Agent created: ${join(".hoocode", "agents", `${name}.md`)}\nEdit the file, then run /reload to activate it.`,
+				"info",
+			);
+		},
+	});
+
+	// ── /new-command <name> ───────────────────────────────────────────────────
+	// Creates .hoocode/commands/<name>.md with a slash-command prompt-template
+	// frontmatter (name, description, argument-hint) so it is ready to edit and
+	// picked up on next reload. Body supports $1, $@, $ARGUMENTS placeholders.
+
+	pi.registerCommand("new-command", {
+		description: "Scaffold a new slash command. Usage: /new-command <name>",
+		getArgumentCompletions: () => [],
+		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			const name = args.trim();
+			const error = validateResourceName(name);
+			if (error) {
+				ctx.ui.notify(`/new-command: ${error}. Usage: /new-command <name>`, "warning");
+				return;
+			}
+
+			const commandsDir = join(ctx.cwd, ".hoocode", "commands");
+			const commandFile = join(commandsDir, `${name}.md`);
+
+			if (existsSync(commandFile)) {
+				ctx.ui.notify(`/new-command: ${commandFile} already exists`, "warning");
+				return;
+			}
+
+			mkdirSync(commandsDir, { recursive: true });
+			writeFileSync(
+				commandFile,
+				[
+					"---",
+					`name: ${name}`,
+					"description: |",
+					`  TODO: describe what /${name} does and when to use it.`,
+					`  Usage: /${name} <args>`,
+					"argument-hint: <args>",
+					"---",
+					`Run the /${name} command with arguments: **$ARGUMENTS**.`,
+					"",
+					"TODO: write the instructions here. Placeholders you can use:",
+					"- $1, $2, ... for positional arguments",
+					"- $@ or $ARGUMENTS for all arguments",
+					`- $${"{"}@:N} / $${"{"}@:N:L} for bash-style slices`,
+					"",
+				].join("\n"),
+				"utf8",
+			);
+
+			ctx.ui.notify(
+				`Command created: ${join(".hoocode", "commands", `${name}.md`)}\nEdit the file, then run /reload to activate it.`,
 				"info",
 			);
 		},

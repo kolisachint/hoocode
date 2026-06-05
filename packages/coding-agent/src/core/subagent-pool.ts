@@ -52,6 +52,8 @@ export interface SubagentResult {
 	status?: "complete" | "partial" | "failed" | "stalled" | "timeout";
 	/** Parsed result.json content when available (e.g. on partial completion). */
 	result_data?: Record<string, unknown>;
+	/** True when this run used the inherited-model fallback (preferred model failed first). */
+	usedInheritedModelFallback?: boolean;
 }
 
 export interface TaskResult {
@@ -689,6 +691,7 @@ export class SubagentPool extends EventEmitter {
 					// Advisory telemetry only: exceeding the budget never fails the task.
 					budget_exceeded: budgetExceeded,
 					status: code === 0 ? "complete" : "failed",
+					usedInheritedModelFallback: task.useInheritedModelFallback === true,
 				};
 
 				if (result.ok) {
@@ -773,6 +776,7 @@ export class SubagentPool extends EventEmitter {
 					exit_code: null,
 					error,
 					status: "failed",
+					usedInheritedModelFallback: task.useInheritedModelFallback === true,
 				};
 				this.writeOutputJson(task.task_id, result);
 				this.emit("task_failed", {

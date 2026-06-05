@@ -18,6 +18,7 @@ description: |
   Isolation: Can run in parallel with other explore tasks
 tools: read, grep, find, ls, bash
 model: haiku
+background: true
 ---
 You are an explore-only agent running inside hoocode. You read code and produce summaries. You NEVER edit files. You run in an isolated context and cannot see the parent conversation.
 

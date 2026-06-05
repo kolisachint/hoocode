@@ -181,7 +181,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				const skipped = taskStore.create(params.description?.trim() || summarize(params.prompt), {
 					subagentMode: params.subagent_type,
 				});
-				taskStore.update(skipped.id, { status: "failed" });
+				taskStore.update(skipped.id, { status: "failed", note: `${provider} exhausted` });
 				return {
 					content: [
 						{
@@ -289,14 +289,17 @@ function finalizeDispatchResult(
 	if (!result || !result.ok) {
 		// Signal failure by throwing: the agent loop derives a tool's error state
 		// from a thrown error, not from a returned flag.
-		taskStore.update(taskStoreId, { status: "failed", usage });
+		const failNote = result?.usedInheritedModelFallback ? "inherited-model retry failed" : undefined;
+		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
 		throw new Error(`Subagent (${subagentType}) failed: ${reason}`);
 	}
 
 	// Leave the task in the store with its final status; it stays visible in the
-	// task panel until the next user message arrives.
-	taskStore.update(taskStoreId, { status: "done", usage });
+	// task panel until the next user message arrives. Surface a ⚠ cue when the run
+	// fell back to the inherited model rather than emitting a chat message.
+	const fallbackNote = dispatchResult.result?.usedInheritedModelFallback ? "ran on inherited model" : undefined;
+	taskStore.update(taskStoreId, { status: "done", usage, note: fallbackNote });
 	let answer = resultData?.summary || "(subagent returned no output)";
 	// Partial results are resumable; surface the handle so the parent can continue.
 	if (result.status === "partial" && resumeHandle) {

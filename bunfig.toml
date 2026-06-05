@@ -2,8 +2,12 @@
 # Use the default registry
 registry = "https://registry.npmjs.org"
 
-# Enable hoisting for compatibility
-hoist = true
+# Use the hoisted (npm-compatible) linker, NOT the default "isolated" linker.
+# Isolated builds a symlink store under node_modules/.bun which npm cannot use
+# and which breaks the per-package nested deps the npm toolchain relies on.
+# Hoisted keeps a flat, npm-compatible node_modules so bun and npm can coexist
+# during the gradual npm -> bun migration. See docs/bun-migration.md.
+linker = "hoisted"
 
 # Include peer dependencies
 peer = true

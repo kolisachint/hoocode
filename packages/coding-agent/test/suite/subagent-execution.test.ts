@@ -233,8 +233,10 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const isBackground = tool.background as (toolCall: { arguments: Record<string, unknown> }) => boolean;
 
 		expect(isBackground({ arguments: { subagent_type: "watcher" } })).toBe(true);
-		// A foreground built-in (and an unknown agent) must not run in the background.
-		expect(isBackground({ arguments: { subagent_type: "explore" } })).toBe(false);
+		// Built-in `explore` opts into background by default.
+		expect(isBackground({ arguments: { subagent_type: "explore" } })).toBe(true);
+		// A foreground built-in (`edit`) and an unknown agent must not run in the background.
+		expect(isBackground({ arguments: { subagent_type: "edit" } })).toBe(false);
 		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(false);
 	});
 });

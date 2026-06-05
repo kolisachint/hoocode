@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Built-in `explore`, `review`, `test`, and `doc` subagents now run in the background by default (their templates set `background: true`), so delegating to them no longer blocks the parent turn — it keeps reasoning while the subagent runs and the answer arrives as a follow-up message.
+
+### Fixed
+
+- Task pane no longer truncates task titles early or unevenly: rows now use the full available width (the previous budget subtracted the row prefix, so titles clipped ~5-7 columns short and differently per task-id width).
+- Subagent fallbacks and exhaustion skips now surface as a compact ⚠ cue in the task pane (e.g. "ran on inherited model", "<provider> exhausted") instead of relying on a chat message.
+
 ## [0.4.33] - 2026-06-04
 
 ### Fixed

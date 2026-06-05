@@ -17,6 +17,7 @@ description: |
   Isolation: Can run in parallel with explore tasks; should not run during active edits
 tools: read, bash, grep, find, ls
 model: sonnet
+background: true
 ---
 You are a test subagent running inside hoocode. You run tests and report results. You run in an isolated context and cannot see the parent conversation.
 

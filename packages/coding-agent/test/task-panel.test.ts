@@ -84,6 +84,42 @@ describe("task panel rendering", () => {
 		expect(text).toContain("✗");
 	});
 
+	test("a task note renders as a \u26a0 cue, replacing the usage/status stamp", () => {
+		const done = taskStore.create("Audit reconnect path");
+		taskStore.update(done.id, {
+			status: "done",
+			usage: { input: 4000, output: 500, cacheRead: 0, cacheWrite: 0, cost: 0 },
+			note: "ran on inherited model",
+		});
+		const skipped = taskStore.create("Run suite");
+		taskStore.update(skipped.id, { status: "failed", note: "anthropic exhausted" });
+
+		const lines = renderPanel();
+		const noteRow = lines.find((l) => l.includes("Audit reconnect path"));
+		expect(noteRow).toBeDefined();
+		expect(noteRow).toContain("\u26a0 ran on inherited model");
+		// The ⚠ cue takes over the right column, so the usage stamp is not shown.
+		expect(noteRow).not.toContain("4.5k");
+
+		const failRow = lines.find((l) => l.includes("Run suite"));
+		expect(failRow).toContain("\u26a0 anthropic exhausted");
+	});
+
+	test("long titles use the full left width regardless of task-id digit count", () => {
+		const long = "A deliberately long task title that should fill the row up to the right column";
+		const a = taskStore.create(long);
+		taskStore.update(a.id, { status: "in_progress" });
+
+		const width = 80;
+		const row = renderPanel(width).find((l) => stripAnsi(l).includes("#1"));
+		expect(row).toBeDefined();
+		// The row fills the full pane width: header + rows are padded to `width`.
+		expect(visibleWidth(row as string)).toBe(width);
+		// The title is truncated (too long to fit) but uses the full budget, so the
+		// last visible title chars before the ellipsis reach deep into the row.
+		expect(stripAnsi(row as string)).toMatch(/should fill the row\b/);
+	});
+
 	test("finished tasks show combined token usage and elapsed time per row", () => {
 		const done = taskStore.create("Investigate flaky test");
 		taskStore.update(done.id, {

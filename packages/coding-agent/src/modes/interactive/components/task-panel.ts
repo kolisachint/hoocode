@@ -226,12 +226,20 @@ function formatTaskLine(task: Task, width: number, frame: number): string {
 		rightStyled = theme.fg("dim", rightPlain);
 	}
 
+	// A warning note (e.g. inherited-model fallback, exhaustion skip) takes over the
+	// right column as a ⚠ cue, replacing the usage/status stamp for that row.
+	if (task.note) {
+		rightPlain = `⚠ ${task.note}`;
+		rightStyled = theme.fg("warning", rightPlain);
+	}
+
 	const rightWidth = rightPlain ? visibleWidth(rightPlain) + 1 : 0;
 	const leftWidth = Math.max(0, width - rightWidth);
 
-	const plainText = `${iconGlyph} ${idLabel} ${title}`;
-	const available = Math.max(0, leftWidth - visibleWidth(plainText) + visibleWidth(title));
-	const left = truncateToWidth(`${icon} ${styledId} ${styledTitle}`, available, "…");
+	// truncateToWidth measures visible width (ANSI-aware), so the styled left can be
+	// truncated against the full left budget directly. Subtracting the prefix here
+	// (as a prior version did) truncated titles early and unevenly per id width.
+	const left = truncateToWidth(`${icon} ${styledId} ${styledTitle}`, leftWidth, "…");
 
 	if (!rightPlain) return left;
 
