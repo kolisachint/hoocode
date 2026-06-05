@@ -8,6 +8,7 @@ Before searching, check these maps:
 - `docs/npm-packages.md` - install/build/test mechanics, the src-vs-dist resolution split, and common traps
 - `docs/ui-map.md` - tui library and interactive-mode components grouped by purpose
 - `docs/bun-migration.md` - npm -> bun migration plan, phases, and coexistence rules
+- `docs/agent-spec-tree-map.md` - on-disk agent-spec surfaces, their standard status, and what hoocode scans/supports
 
 ## Conversational Style
 
@@ -84,8 +85,8 @@ When closing issues via commit:
 
 ### Slash commands
 
-- `/pr <patch|minor|major>` - opens a release PR on a feature branch labeled `npm:<bump>`, so the merge-release workflow publishes on merge. Defined in `.hoocode/commands/pr.md`.
-- `/push` - pushes your session's changes straight to `origin/main` (stage only your files, commit, rebase, fast-forward push). No PR, no release label, no publish. Defined in `.hoocode/commands/push.md`.
+- `/pr [patch|minor|major]` - opens a PR on a feature branch. With a bump it labels the PR `npm:<bump>` so the merge-release workflow publishes on merge; without one it only opens a PR (no publish). Defined in `.hoocode/commands/pr.md`.
+- `/push [patch|minor|major]` - pushes your session's changes straight to `origin/main` (stage only your files, commit, rebase, fast-forward push). Without a bump it publishes nothing; with `patch|minor|major` it runs the release to publish. Defined in `.hoocode/commands/push.md`.
 - Both stage only the files you changed (never `git add -A/.`) and never force push, reset, checkout, clean, or stash.
 - `/bun-migration [status|next|phase <n>]` - drives the npm -> bun migration one safe, reversible phase at a time per `docs/bun-migration.md`. Defined in `.hoocode/commands/bun-migration.md`.
 - Slash-command definitions live in `.hoocode/commands/`. Scaffold a new one with `/new-command <name>`.
