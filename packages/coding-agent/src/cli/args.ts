@@ -236,6 +236,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} update [source|self|pi]   Update hoocode and installed extensions
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
+  ${APP_NAME} resources                 List discovered skills, subagents, slash commands, and MCP servers
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}

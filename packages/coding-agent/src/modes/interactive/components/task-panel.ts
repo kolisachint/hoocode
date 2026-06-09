@@ -14,8 +14,8 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 /**
  * A single-cell source marker placed before the id so a subagent row and an MCP
  * row are distinguishable at a glance. Plain tasks reserve the cell (blank) to keep
- * the id column aligned. Deliberately a glyph, not a text tag — the pane stays
- * tag-free (no `[explore]`); the glyph just says *where the work came from*.
+ * the id column aligned. The glyph says *where the work came from* at a glance; the
+ * row also carries a text origin tag before the title (see formatTaskLine).
  */
 const TASK_SOURCE_GLYPH: Record<TaskSource, string> = {
 	subagent: "⚙",
@@ -195,6 +195,11 @@ function formatTaskLine(task: Task, width: number, frame: number, idColWidth: nu
 	// when ids differ in digit count (#1 vs #10). Padding is plain spaces inside the
 	// dim styling, so it adds no visible color.
 	const idLabel = `#${task.id}`.padEnd(idColWidth);
+	// Source tag prefixed to the title: the subagent mode (e.g. "[explore]") for
+	// subagent rows, "[MCP]" for MCP rows. Drawn in accent so it reads as the row's
+	// origin label, parallel to the chat's `Agent [explore]` / `MCP [server › tool]`.
+	const tag = task.source === "mcp" ? "[MCP]" : task.subagentMode ? `[${task.subagentMode}]` : "";
+	const styledTag = tag ? `${theme.fg("accent", tag)} ` : "";
 	const title = task.title;
 	// The id recedes (dim); the title carries the line. Done titles fade to muted
 	// (settled work), pending dim (not started), active goes bold, failed turns red.
@@ -258,7 +263,7 @@ function formatTaskLine(task: Task, width: number, frame: number, idColWidth: nu
 	// truncateToWidth measures visible width (ANSI-aware), so the styled left can be
 	// truncated against the full left budget directly. Subtracting the prefix here
 	// (as a prior version did) truncated titles early and unevenly per id width.
-	const left = truncateToWidth(`${icon} ${styledSource} ${styledId} ${styledTitle}`, leftWidth, "…");
+	const left = truncateToWidth(`${icon} ${styledSource} ${styledId} ${styledTag}${styledTitle}`, leftWidth, "…");
 
 	if (!rightPlain) return left;
 
@@ -276,8 +281,8 @@ function formatTaskLine(task: Task, width: number, frame: number, idColWidth: nu
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
  *   The active row animates a braille spinner; pending rows read `queued`.
  * - A single-cell source glyph (⚙ subagent / ⧉ MCP) sits before the id so the two
- *   kinds of background work are distinguishable. The subagent *mode* tag (e.g.
- *   "[explore]") is still intentionally NOT shown — the pane stays tag-free.
+ *   kinds of background work are distinguishable, and a text origin tag is shown
+ *   before the title: the subagent mode (e.g. "[explore]") or "[MCP]".
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
  *   user message arrives (see taskStore.reset()), not the moment they finish.

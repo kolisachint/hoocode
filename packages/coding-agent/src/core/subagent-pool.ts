@@ -831,7 +831,9 @@ export class SubagentPool extends EventEmitter {
 		if (!task.model) return false;
 
 		const def = task.agent_type ? this.getRegistry().get(task.agent_type) : undefined;
-		if (def?.source !== "builtin") return false;
+		// Built-in agents always inherit; project agents may pin an explicit model in
+		// frontmatter, so let them fall back too when that model is rejected.
+		if (def?.source !== "builtin" && def?.source !== "project") return false;
 		if (!def.model || def.model === MODEL_INHERIT) return false;
 
 		return this.isInheritedModelFallbackError(result);
@@ -843,7 +845,7 @@ export class SubagentPool extends EventEmitter {
 			.filter((part): part is string => typeof part === "string" && part.length > 0)
 			.join("\n");
 
-		return /usage[_\s-]?limit|subscription|quota|rate.?limit|too many requests|429|insufficient|out of credit|credit balance|billing|payment required|402|model[^\n]*(not found|unavailable|not available|does not exist|invalid|unsupported)|no api key|no auth configured|authentication|unauthorized|forbidden|permission/i.test(
+		return /usage[_\s-]?limit|subscription|quota|rate.?limit|too many requests|429|insufficient|out of credit|credit balance|billing|payment required|402|model[^\n]*(not found|unavailable|not available|not supported|does not exist|invalid|unsupported)|no api key|no auth configured|authentication|unauthorized|forbidden|permission/i.test(
 			text,
 		);
 	}

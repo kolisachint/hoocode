@@ -126,11 +126,24 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 	}
 
 	// No exact match - fall back to partial matching
-	const matches = availableModels.filter(
+	let matches = availableModels.filter(
 		(m) =>
 			m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
 			m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
 	);
+
+	// Still nothing - retry with dash/dot separators normalized. Providers differ on
+	// separator conventions (e.g. anthropic "claude-haiku-4-5" vs github-copilot
+	// "claude-haiku-4.5"), which defeats plain substring matching.
+	if (matches.length === 0) {
+		const normalize = (s: string): string => s.toLowerCase().replace(/[.-]/g, "-");
+		const normalizedPattern = normalize(modelPattern);
+		matches = availableModels.filter(
+			(m) =>
+				normalize(m.id).includes(normalizedPattern) ||
+				(m.name ? normalize(m.name).includes(normalizedPattern) : false),
+		);
+	}
 
 	if (matches.length === 0) {
 		return undefined;
