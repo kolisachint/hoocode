@@ -206,6 +206,40 @@ describe("parseModelPattern", () => {
 	});
 });
 
+describe("dash/dot separator normalization", () => {
+	// GitHub Copilot exposes Anthropic models with dot separators (claude-haiku-4.5)
+	// while Anthropic itself uses dashes (claude-haiku-4-5). Patterns should bridge both.
+	const copilotModels: Model<"anthropic-messages">[] = [
+		{
+			id: "claude-haiku-4.5",
+			name: "Claude Haiku 4.5",
+			api: "anthropic-messages",
+			provider: "github-copilot",
+			baseUrl: "https://api.githubcopilot.com",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 },
+			contextWindow: 200000,
+			maxTokens: 8192,
+		},
+	];
+
+	test("matches dash pattern against dotted model id", () => {
+		const result = parseModelPattern("claude-haiku-4-5", copilotModels);
+		expect(result.model?.id).toBe("claude-haiku-4.5");
+	});
+
+	test("matches dotted pattern against dotted model id", () => {
+		const result = parseModelPattern("claude-haiku-4.5", copilotModels);
+		expect(result.model?.id).toBe("claude-haiku-4.5");
+	});
+
+	test("still returns undefined for genuinely unrelated patterns", () => {
+		const result = parseModelPattern("gpt-4o", copilotModels);
+		expect(result.model).toBeUndefined();
+	});
+});
+
 describe("resolveCliModel", () => {
 	test("resolves --model provider/id without --provider", () => {
 		const registry = {

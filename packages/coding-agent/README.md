@@ -156,6 +156,9 @@ Edit any `.md` file to customise a mode or profile for all your projects.
 
 ## Project-local overrides
 
+See [Project-local resources](docs/project-local-resources.md) for the full discovery rules covering slash commands, subagents, MCP servers, `.agents/` ancestor-walk, and the `hoocode resources` debug command.
+
+
 Drop a `.hoocode/` directory in your project root.
 
 ### `.hoocode/config.json` — per-project config

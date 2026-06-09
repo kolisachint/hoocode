@@ -67,6 +67,10 @@
         {
           "title": "Custom Providers",
           "path": "custom-provider.md"
+        },
+        {
+          "title": "Project-local Resources",
+          "path": "project-local-resources.md"
         }
       ]
     },
