@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.51] - 2026-06-11
 ### Fixed
 
 - `--team` no longer corrupts the interactive TUI. Team-view warnings went to
