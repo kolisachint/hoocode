@@ -9,7 +9,11 @@
 
 export type TaskStatus = "pending" | "in_progress" | "done" | "failed";
 
-/** What kind of background work owns a task, surfaced as a source glyph in the pane. */
+/**
+ * What kind of background work owns a task, surfaced as a source glyph in the
+ * pane. Unset means the main agent. A "team" origin is reserved for the
+ * hooteams integration and stays unwired until that lands.
+ */
 export type TaskSource = "subagent" | "mcp";
 
 /**
@@ -44,7 +48,7 @@ export interface Task {
 	readonly id: number;
 	title: string;
 	status: TaskStatus;
-	/** Origin of the task (subagent delegation vs MCP tool call); drives the pane's source glyph. */
+	/** Origin of the task (subagent delegation vs MCP tool call; unset = main agent); drives the pane's source glyph. */
 	source?: TaskSource;
 	/** Subagent mode when this task is owned by a subagent (e.g. "explore"). */
 	subagentMode?: string;
@@ -79,6 +83,17 @@ export type TaskPatch = Partial<
 >;
 
 export type TaskAgentPatch = Partial<Omit<TaskAgent, "id">>;
+
+/**
+ * Owner group for a task when no explicit agent is set: subagent-sourced work
+ * falls into a generic "subagent" group, everything else belongs to main.
+ * Shared by the store's reset() and the pane's grouped views so the two never
+ * disagree about which agents still own live tasks.
+ */
+export function taskOwnerId(task: Pick<Task, "agent" | "source">): string {
+	if (task.agent) return task.agent;
+	return task.source === "subagent" ? "subagent" : "main";
+}
 
 type Listener = () => void;
 
@@ -208,7 +223,7 @@ class TaskStore {
 			// are kept (their group header must not vanish under live rows).
 			this.taskAgents = [];
 		} else {
-			const liveOwners = new Set(active.map((t) => t.agent ?? (t.source === "subagent" ? "subagent" : "main")));
+			const liveOwners = new Set(active.map(taskOwnerId));
 			this.taskAgents = this.taskAgents.filter((a) => liveOwners.has(a.id));
 		}
 		this.emit();

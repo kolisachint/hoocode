@@ -67,7 +67,7 @@ describe("task panel rendering", () => {
 		expect(text).toContain(`#${plain.id}`);
 	});
 
-	test("shows a source glyph for subagent and MCP rows, but not for plain tasks", () => {
+	test("shows a source glyph on every row: ◇ subagent, ⧉ MCP, ◆ main", () => {
 		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
 		const mcp = taskStore.create("web › fetch", { source: "mcp" });
 		const plain = taskStore.create("init project");
@@ -80,11 +80,12 @@ describe("task panel rendering", () => {
 		const mcpRow = lines.find((l) => l.includes("web › fetch"));
 		const plainRow = lines.find((l) => l.includes("init project"));
 
-		// Subagent row carries the ⚙ glyph; MCP row carries ⧉.
-		expect(subRow).toContain("⚙");
+		// Subagent row carries the ◇ glyph; MCP row carries ⧉.
+		expect(subRow).toContain("◇");
 		expect(mcpRow).toContain("⧉");
-		// Plain task gets neither glyph.
-		expect(plainRow).not.toContain("⚙");
+		// Plain (main-agent) task carries ◆, not the delegated-work glyphs.
+		expect(plainRow).toContain("◆");
+		expect(plainRow).not.toContain("◇");
 		expect(plainRow).not.toContain("⧉");
 		// The glyph is a source marker; the row also carries its origin tag.
 		expect(lines.join("\n")).toContain("[explore]");
@@ -346,7 +347,7 @@ describe("task panel rendering", () => {
 		expect(mainHeader).toMatch(/1\/1\s*$/);
 
 		const subHeader = lines[3] as string;
-		expect(subHeader).toContain("⊕ explore");
+		expect(subHeader).toContain("◇ explore");
 		expect(subHeader).toContain("[done]");
 		// Per-agent stats: own token/cost totals before the count.
 		expect(subHeader).toContain("↑2.8k ↓360 · $0.011");
@@ -356,7 +357,7 @@ describe("task panel rendering", () => {
 		expect(subRow.startsWith("▎ │ ")).toBe(true);
 		expect(subRow).toContain("Port runtime http client");
 		expect(subRow).not.toContain("[explore]");
-		expect(subRow).not.toContain("⚙");
+		expect(subRow).not.toContain("◇");
 	});
 
 	test("teams view renders role-agents with ▸ glyphs, states, and handoff arrows", () => {
@@ -406,10 +407,10 @@ describe("task panel rendering", () => {
 
 		panel.setView("subagents");
 		const lines = renderPanel().map(stripAnsi);
-		// Untagged tasks group under a default ◆ main; subagent-sourced ones under ⊕ subagent.
+		// Untagged tasks group under a default ◆ main; subagent-sourced ones under ◇ subagent.
 		expect(lines[1]).toContain("◆ main");
 		expect(lines[1]).toContain("orchestrator");
-		expect(lines[3]).toContain("⊕ subagent");
+		expect(lines[3]).toContain("◇ subagent");
 	});
 
 	test("reset drops the roster with the tasks but keeps owners of live tasks", () => {
