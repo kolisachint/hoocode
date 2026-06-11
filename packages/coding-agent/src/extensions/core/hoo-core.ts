@@ -751,9 +751,11 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 							_onUpdate: AgentToolUpdateCallback,
 						): Promise<AgentToolResult<undefined>> {
 							// Background MCP tools get a task store entry so they appear in the task pane.
-							// Foreground tools skip this (their result is awaited inline).
+							// Foreground tools skip this (their result is awaited inline). The server
+							// name rides in subagentMode and becomes the row's `[server]` origin tag;
+							// the title carries just the tool.
 							const task = isBackground
-								? taskStore.create(`${capturedServer} › ${capturedTool}`, { source: "mcp" })
+								? taskStore.create(capturedTool, { source: "mcp", subagentMode: capturedServer })
 								: undefined;
 							if (task) taskStore.update(task.id, { status: "in_progress" });
 

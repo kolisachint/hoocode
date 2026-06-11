@@ -67,32 +67,68 @@ describe("task panel rendering", () => {
 		expect(text).toContain(`#${plain.id}`);
 	});
 
-	test("shows a source glyph on every row: ◇ subagent, ⧉ MCP, ◆ main", () => {
+	test("shows an owner glyph on every row: ◇ subagent, ⧉ MCP, ▸ team role, ◆ main", () => {
+		taskStore.upsertAgent({ id: "team:planner", name: "planner", kind: "role", state: "running" });
 		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
-		const mcp = taskStore.create("web › fetch", { source: "mcp" });
+		const mcp = taskStore.create("fetch", { source: "mcp", subagentMode: "web" });
+		const role = taskStore.create("draft plan", { agent: "team:planner" });
 		const plain = taskStore.create("init project");
 		taskStore.update(sub.id, { status: "in_progress" });
 		taskStore.update(mcp.id, { status: "in_progress" });
+		taskStore.update(role.id, { status: "in_progress" });
 		taskStore.update(plain.id, { status: "in_progress" });
 
 		const lines = renderPanel();
 		const subRow = lines.find((l) => l.includes("find the bug"));
-		const mcpRow = lines.find((l) => l.includes("web › fetch"));
+		const mcpRow = lines.find((l) => l.includes("fetch"));
+		const roleRow = lines.find((l) => l.includes("draft plan"));
 		const plainRow = lines.find((l) => l.includes("init project"));
 
-		// Subagent row carries the ◇ glyph; MCP row carries ⧉.
+		// Subagent row carries the ◇ glyph; MCP row carries ⧉; a team role's task
+		// carries ▸ even in the flat lens (glyph follows the owner, not just source).
 		expect(subRow).toContain("◇");
 		expect(mcpRow).toContain("⧉");
+		expect(roleRow).toContain("▸");
 		// Plain (main-agent) task carries ◆, not the delegated-work glyphs.
 		expect(plainRow).toContain("◆");
 		expect(plainRow).not.toContain("◇");
 		expect(plainRow).not.toContain("⧉");
-		// The glyph is a source marker; the row also carries its origin tag.
-		expect(lines.join("\n")).toContain("[explore]");
+		expect(plainRow).not.toContain("▸");
+		// The tag names the owner: subagent type, MCP server, role name.
+		expect(subRow).toContain("[explore]");
+		expect(mcpRow).toContain("[web]");
+		expect(roleRow).toContain("[planner]");
 		// Each row is still padded to the full pane width (glyph cell didn't break alignment).
-		for (const row of [subRow, mcpRow, plainRow]) {
+		for (const row of [subRow, mcpRow, roleRow, plainRow]) {
 			expect(visibleWidth(row as string)).toBe(120);
 		}
+	});
+
+	test("an MCP row without a recorded server falls back to the [MCP] tag", () => {
+		const mcp = taskStore.create("legacy call", { source: "mcp" });
+		taskStore.update(mcp.id, { status: "in_progress" });
+
+		const text = renderPanel().join("\n");
+		expect(text).toContain("⧉");
+		expect(text).toContain("[MCP]");
+	});
+
+	test("grouped rows drop the origin tag except MCP rows, which keep theirs", () => {
+		taskStore.upsertAgent({ id: "explore", name: "explore", role: "subagent", kind: "subagent", state: "running" });
+		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore", agent: "explore" });
+		const mcp = taskStore.create("fetch", { source: "mcp", subagentMode: "web" });
+		taskStore.update(sub.id, { status: "in_progress" });
+		taskStore.update(mcp.id, { status: "in_progress" });
+		panel.setView("subagents");
+
+		const lines = renderPanel().map(stripAnsi);
+		// The subagent task's tag lives on its group header, not the row.
+		const subRow = lines.find((l) => l.includes("find the bug"));
+		expect(subRow).not.toContain("[explore]");
+		// The MCP row groups under main, whose header says nothing about MCP, so
+		// the row keeps its [server] tag.
+		const mcpRow = lines.find((l) => l.includes("fetch"));
+		expect(mcpRow).toContain("[web]");
 	});
 
 	test("title column stays aligned across single- and double-digit ids", () => {
@@ -300,17 +336,56 @@ describe("task panel rendering", () => {
 		expect(text).toContain("Task 5");
 	});
 
-	test("header shows the view switcher with the active lens highlighted", () => {
+	test("header shows the view switcher only when more than one lens has content", () => {
 		const t = taskStore.create("Plain work");
 		taskStore.update(t.id, { status: "in_progress" });
 
+		// Plain session: only the flat lens has content → no switcher.
+		expect(stripAnsi(renderPanel()[0] as string)).not.toContain("subagents");
+
+		// Subagent work appears: the switcher lists flat + subagents, not teams.
+		taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
+		expect(stripAnsi(renderPanel()[0] as string)).toContain("tasks · subagents");
+		expect(stripAnsi(renderPanel()[0] as string)).not.toContain("teams");
+
+		// A role agent registers (hooteams): the full switcher shows.
+		taskStore.upsertAgent({ id: "planner", name: "planner", kind: "role" });
 		expect(stripAnsi(renderPanel()[0] as string)).toContain("tasks · subagents · teams");
 	});
 
-	test("cycleView advances flat → subagents → teams → flat", () => {
+	test("cycleView advances through the lenses that have content", () => {
+		taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
+		taskStore.upsertAgent({ id: "planner", name: "planner", kind: "role" });
+
 		expect(panel.getView()).toBe("flat");
 		expect(panel.cycleView()).toBe("subagents");
 		expect(panel.cycleView()).toBe("teams");
+		expect(panel.cycleView()).toBe("flat");
+	});
+
+	test("cycleView skips empty lenses", () => {
+		// Nothing delegated: the cycle is a no-op on flat.
+		const t = taskStore.create("Plain work");
+		taskStore.update(t.id, { status: "in_progress" });
+		expect(panel.cycleView()).toBe("flat");
+
+		// Subagent work but no role agents: teams is skipped.
+		taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
+		expect(panel.cycleView()).toBe("subagents");
+		expect(panel.cycleView()).toBe("flat");
+	});
+
+	test("a selected lens that empties falls back to flat rendering", () => {
+		const t = taskStore.create("Plain work");
+		taskStore.update(t.id, { status: "in_progress" });
+
+		// teams was selected but no role agents exist → rows render flat.
+		panel.setView("teams");
+		const lines = renderPanel().map(stripAnsi);
+		expect(lines.join("\n")).toContain("Plain work");
+		expect(lines.length).toBe(2); // header + the flat task row
+
+		// The next cycle press lands on a real lens, not a dead one.
 		expect(panel.cycleView()).toBe("flat");
 	});
 
