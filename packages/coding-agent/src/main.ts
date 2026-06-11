@@ -740,6 +740,14 @@ export async function main(args: string[], options?: MainOptions) {
 			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
 		}
 
+		// Optional read-only hooteams mirror. Fire-and-forget: connect failures
+		// and drops warn in the background and never block the main agent.
+		let teamView: { stop(): void } | undefined;
+		if (parsed.team) {
+			const { connectTeamView } = await import("./core/team-view.js");
+			teamView = connectTeamView(parsed.team);
+		}
+
 		const interactiveMode = new InteractiveMode(runtime, {
 			migratedProviders,
 			modelFallbackMessage,
@@ -752,6 +760,7 @@ export async function main(args: string[], options?: MainOptions) {
 			await interactiveMode.init();
 			time("interactiveMode.init");
 			printTimings();
+			teamView?.stop();
 			interactiveMode.stop();
 			stopThemeWatcher();
 			if (process.stdout.writableLength > 0) {
@@ -764,7 +773,11 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 
 		printTimings();
-		await interactiveMode.run();
+		try {
+			await interactiveMode.run();
+		} finally {
+			teamView?.stop();
+		}
 	} else {
 		printTimings();
 		const exitCode = await runPrintMode(runtime, {

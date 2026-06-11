@@ -26,6 +26,8 @@ export interface Args {
 	/** Hard cap on assistant turns. Near the cap the agent is asked to wrap up; at the cap it is stopped. */
 	maxTurns?: number;
 	session?: string;
+	/** Base URL of a hooteams server to mirror (read-only) into the task panel's teams view. */
+	team?: string;
 	fork?: string;
 	sessionDir?: string;
 	models?: string[];
@@ -107,6 +109,8 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--session" && i + 1 < args.length) {
 			result.session = args[++i];
+		} else if (arg === "--team" && i + 1 < args.length) {
+			result.team = args[++i];
 		} else if (arg === "--fork" && i + 1 < args.length) {
 			result.fork = args[++i];
 		} else if (arg === "--session-dir" && i + 1 < args.length) {
@@ -252,6 +256,7 @@ ${chalk.bold("Options:")}
   --fork <path|id>               Fork specific session file or partial UUID into a new session
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
+  --team <url>                   Mirror a hooteams server (read-only) into the task panel's teams view
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
                                  Supports globs (anthropic/*, *sonnet*) and fuzzy matching
   --no-tools, -nt                Disable all tools by default (built-in and extension)
