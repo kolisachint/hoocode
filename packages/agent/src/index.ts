@@ -37,5 +37,8 @@ export * from "./harness/utils/shell-output.js";
 export * from "./harness/utils/truncate.js";
 // Proxy utilities
 export * from "./proxy.js";
+// Headless tool bundles
+export * from "./tools/default-tools.js";
+export * from "./tools/mcp-tools.js";
 // Types
 export * from "./types.js";

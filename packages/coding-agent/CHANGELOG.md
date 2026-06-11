@@ -3,6 +3,14 @@
 ## [Unreleased]
 
 ## [0.4.48] - 2026-06-11
+### Added
+
+- `--team <url>`: mirror a running hooteams server (read-only) into the task
+  panel's teams view. Roles from `GET /status` register as `kind="role"`
+  agents and the single `GET /events` SSE stream maps TeamEvents onto live
+  task/agent patches. Connection failures and drops log a warning and never
+  block the main agent.
+=======
 
 ## [0.4.47] - 2026-06-11
 
