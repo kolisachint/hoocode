@@ -181,6 +181,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				const skipped = taskStore.create(params.description?.trim() || summarize(params.prompt), {
 					source: "subagent",
 					subagentMode: params.subagent_type,
+					agent: params.subagent_type,
 				});
 				taskStore.update(skipped.id, { status: "failed", note: `${provider} exhausted` });
 				return {
@@ -203,7 +204,12 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			const resumeId = params.resume_task_id?.trim();
 			if (resumeId) {
 				const summary = params.description?.trim() || summarize(params.prompt);
-				const task = taskStore.create(summary, { source: "subagent", subagentMode: params.subagent_type });
+				const task = taskStore.create(summary, {
+					source: "subagent",
+					subagentMode: params.subagent_type,
+					agent: params.subagent_type,
+				});
+				registerSubagentDispatch(params.subagent_type);
 				taskStore.update(task.id, { status: "in_progress" });
 				try {
 					const dispatchResult = await pool.resume(resumeId, params.prompt, {
@@ -233,7 +239,12 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			}
 
 			const summary = params.description?.trim() || summarize(params.prompt);
-			const task = taskStore.create(summary, { source: "subagent", subagentMode: params.subagent_type });
+			const task = taskStore.create(summary, {
+				source: "subagent",
+				subagentMode: params.subagent_type,
+				agent: params.subagent_type,
+			});
+			registerSubagentDispatch(params.subagent_type);
 
 			// Always dispatch and await the subagent's full result here. Background
 			// agents (def.background) are made non-blocking by the agent loop via this
@@ -267,6 +278,15 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 	});
 }
 
+/**
+ * Register the dispatched agent in the task store's roster so the task pane's
+ * grouped views (subagents/teams) can draw a group header for it. Upsert keeps
+ * accumulated stats across re-dispatches of the same agent type.
+ */
+function registerSubagentDispatch(type: string): void {
+	taskStore.upsertAgent({ id: type, name: type, role: "subagent", kind: "subagent", state: "running" });
+}
+
 /** Names of agents configured to run in the background (non-blocking). */
 function collectBackgroundAgentNames(cwd: string): Set<string> {
 	const names = new Set<string>();
@@ -287,11 +307,18 @@ function finalizeDispatchResult(
 	const resultData = result?.result_data as SubagentResultFile | undefined;
 	const usage = resultData?.usage;
 
+	// Roll the agent's per-run usage into its roster stats so the grouped views'
+	// header carries the agent's own token/cost totals.
+	if (usage) {
+		taskStore.addAgentStats(subagentType, { input: usage.input, output: usage.output, cost: usage.cost });
+	}
+
 	if (!result || !result.ok) {
 		// Signal failure by throwing: the agent loop derives a tool's error state
 		// from a thrown error, not from a returned flag.
 		const failNote = result?.usedInheritedModelFallback ? "inherited-model retry failed" : undefined;
 		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
+		taskStore.patchAgent(subagentType, { state: "failed" });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
 		const stderr = result?.stderr?.trim();
 		throw new Error(`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`);
@@ -302,6 +329,12 @@ function finalizeDispatchResult(
 	// fell back to the inherited model rather than emitting a chat message.
 	const fallbackNote = dispatchResult.result?.usedInheritedModelFallback ? "ran on inherited model" : undefined;
 	taskStore.update(taskStoreId, { status: "done", usage, note: fallbackNote });
+	// Parallel dispatches share one roster entry per agent type: stay `running`
+	// while a sibling task is still live, settle to `done` otherwise.
+	const siblingLive = taskStore
+		.list()
+		.some((t) => t.agent === subagentType && (t.status === "in_progress" || t.status === "pending"));
+	taskStore.patchAgent(subagentType, { state: siblingLive ? "running" : "done" });
 	let answer = resultData?.summary || "(subagent returned no output)";
 	// Partial results are resumable; surface the handle so the parent can continue.
 	if (result.status === "partial" && resumeHandle) {

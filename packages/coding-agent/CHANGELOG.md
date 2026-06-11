@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- The task panel now has three views over the same task list, cycled with
+  shift+ctrl+t (`app.tasks.cycleView`) and shown as a `tasks · subagents · teams`
+  switcher in the ledger header: flat (unchanged), subagents (tasks grouped by
+  owning agent: ◆ main orchestrator + ⊕ workers), and teams (grouped by named
+  role-agent: ▸, with lifecycle `[state]` tags and handoff arrows). Group headers
+  carry each agent's own token/cost totals and done/total count; grouped rows sit
+  on a faint indent guide and drop their per-row origin tag. Subagent dispatches
+  register themselves in the new `TaskAgent` roster on the task store
+  (`upsertAgent`/`patchAgent`/`addAgentStats`), which external orchestrators
+  (e.g. hooteams) can also feed to drive the teams view.
+
 ## [0.4.44] - 2026-06-09
 
 ## [0.4.43] - 2026-06-05

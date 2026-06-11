@@ -12,6 +12,34 @@ export type TaskStatus = "pending" | "in_progress" | "done" | "failed";
 /** What kind of background work owns a task, surfaced as a source glyph in the pane. */
 export type TaskSource = "subagent" | "mcp";
 
+/**
+ * Kind of agent that can own tasks in the pane's grouped views:
+ * the main session (orchestrator), a spawned subagent, or a named
+ * team role-agent (e.g. fed by a hooteams bridge).
+ */
+export type TaskAgentKind = "main" | "subagent" | "role";
+
+/** Lifecycle word shown as the agent's `[state]` tag in grouped views. */
+export type TaskAgentState = "active" | "running" | "done" | "queued" | "idle" | "waiting" | "failed";
+
+/**
+ * An agent that owns tasks, rendered as a group header in the pane's
+ * `subagents` / `teams` views. Subagent dispatches register themselves here;
+ * external orchestrators (hooteams) can upsert role-agents with handoffs.
+ */
+export interface TaskAgent {
+	readonly id: string;
+	name: string;
+	/** Short descriptor after the name: "orchestrator", "subagent", or a team role like "architect". */
+	role?: string;
+	kind: TaskAgentKind;
+	state?: TaskAgentState;
+	/** Handoff arrow text for team views (e.g. "→ reviewer", "← builder"). */
+	handoff?: string;
+	/** Per-agent token + cost totals, shown right-aligned on the group header. */
+	stats?: { input: number; output: number; cost: number };
+}
+
 export interface Task {
 	readonly id: number;
 	title: string;
@@ -20,6 +48,8 @@ export interface Task {
 	source?: TaskSource;
 	/** Subagent mode when this task is owned by a subagent (e.g. "explore"). */
 	subagentMode?: string;
+	/** Id of the owning TaskAgent; drives grouping in the pane's subagents/teams views. */
+	agent?: string;
 	/**
 	 * Short warning note surfaced as a ⚠ cue in the task pane (e.g. the subagent
 	 * fell back to the inherited model, or was skipped because the provider was
@@ -41,14 +71,20 @@ export interface Task {
 export interface CreateTaskOptions {
 	source?: TaskSource;
 	subagentMode?: string;
+	agent?: string;
 }
 
-export type TaskPatch = Partial<Pick<Task, "title" | "status" | "source" | "subagentMode" | "usage" | "note">>;
+export type TaskPatch = Partial<
+	Pick<Task, "title" | "status" | "source" | "subagentMode" | "agent" | "usage" | "note">
+>;
+
+export type TaskAgentPatch = Partial<Omit<TaskAgent, "id">>;
 
 type Listener = () => void;
 
 class TaskStore {
 	private tasks: Task[] = [];
+	private taskAgents: TaskAgent[] = [];
 	private nextId = 1;
 	private readonly listeners = new Set<Listener>();
 
@@ -60,6 +96,7 @@ class TaskStore {
 			status: "pending",
 			source: options.source,
 			subagentMode: options.subagentMode,
+			agent: options.agent,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -75,10 +112,70 @@ class TaskStore {
 		if (patch.status !== undefined) task.status = patch.status;
 		if (patch.source !== undefined) task.source = patch.source;
 		if (patch.subagentMode !== undefined) task.subagentMode = patch.subagentMode;
+		if (patch.agent !== undefined) task.agent = patch.agent;
 		if (patch.usage !== undefined) task.usage = patch.usage;
 		if (patch.note !== undefined) task.note = patch.note;
 		task.updatedAt = Date.now();
 		this.emit();
+	}
+
+	/**
+	 * Register or update an agent for the grouped task views. Merges into an
+	 * existing entry with the same id (accumulated stats survive a re-dispatch);
+	 * creates it otherwise.
+	 */
+	upsertAgent(agent: { id: string } & TaskAgentPatch & Pick<TaskAgent, "name" | "kind">): TaskAgent {
+		const existing = this.taskAgents.find((a) => a.id === agent.id);
+		if (existing) {
+			this.applyAgentPatch(existing, agent);
+			this.emit();
+			return existing;
+		}
+		const created: TaskAgent = {
+			id: agent.id,
+			name: agent.name,
+			role: agent.role,
+			kind: agent.kind,
+			state: agent.state,
+			handoff: agent.handoff,
+			stats: agent.stats,
+		};
+		this.taskAgents.push(created);
+		this.emit();
+		return created;
+	}
+
+	/** Patch an existing agent (state/handoff/stats…). Unknown ids are ignored. */
+	patchAgent(id: string, patch: TaskAgentPatch): void {
+		const agent = this.taskAgents.find((a) => a.id === id);
+		if (!agent) return;
+		this.applyAgentPatch(agent, patch);
+		this.emit();
+	}
+
+	/** Add a usage delta to an agent's running totals (creating them at zero). */
+	addAgentStats(id: string, delta: { input?: number; output?: number; cost?: number }): void {
+		const agent = this.taskAgents.find((a) => a.id === id);
+		if (!agent) return;
+		const stats = agent.stats ?? { input: 0, output: 0, cost: 0 };
+		stats.input += delta.input ?? 0;
+		stats.output += delta.output ?? 0;
+		stats.cost += delta.cost ?? 0;
+		agent.stats = stats;
+		this.emit();
+	}
+
+	agents(): readonly TaskAgent[] {
+		return this.taskAgents;
+	}
+
+	private applyAgentPatch(agent: TaskAgent, patch: TaskAgentPatch): void {
+		if (patch.name !== undefined) agent.name = patch.name;
+		if (patch.role !== undefined) agent.role = patch.role;
+		if (patch.kind !== undefined) agent.kind = patch.kind;
+		if (patch.state !== undefined) agent.state = patch.state;
+		if (patch.handoff !== undefined) agent.handoff = patch.handoff;
+		if (patch.stats !== undefined) agent.stats = patch.stats;
 	}
 
 	remove(id: number): void {
@@ -104,7 +201,16 @@ class TaskStore {
 		const active = this.tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
 		if (active.length === this.tasks.length && this.nextId === 1) return;
 		this.tasks = active;
-		if (active.length === 0) this.nextId = 1;
+		if (active.length === 0) {
+			this.nextId = 1;
+			// The roster only matters while it has tasks to group; drop it with them
+			// so a fresh turn opens with a clean pane. Agents owning surviving tasks
+			// are kept (their group header must not vanish under live rows).
+			this.taskAgents = [];
+		} else {
+			const liveOwners = new Set(active.map((t) => t.agent ?? (t.source === "subagent" ? "subagent" : "main")));
+			this.taskAgents = this.taskAgents.filter((a) => liveOwners.has(a.id));
+		}
 		this.emit();
 	}
 
@@ -115,6 +221,7 @@ class TaskStore {
 	/** Wipe all tasks and restart numbering. Intended for test isolation only. */
 	clear(): void {
 		this.tasks = [];
+		this.taskAgents = [];
 		this.nextId = 1;
 		this.emit();
 	}

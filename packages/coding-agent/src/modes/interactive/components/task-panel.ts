@@ -1,7 +1,15 @@
 import type { Component, TUI } from "@kolisachint/hoocode-tui";
 import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
-import type { Task, TaskSource, TaskStatus } from "../../../core/task-store.js";
+import type {
+	Task,
+	TaskAgent,
+	TaskAgentKind,
+	TaskAgentState,
+	TaskSource,
+	TaskStatus,
+} from "../../../core/task-store.js";
 import { taskStore } from "../../../core/task-store.js";
+import type { ThemeColor } from "../theme/theme.js";
 import { theme } from "../theme/theme.js";
 
 const TASK_STATUS_ICON: Record<TaskStatus, string> = {
@@ -31,6 +39,39 @@ const RAIL = "▎";
 
 /** Cells in the deterministic progress bar (matches the design's 14-cell track). */
 const PROGRESS_CELLS = 14;
+
+/**
+ * How the same task list is presented:
+ * - flat       → one ungrouped list (default)
+ * - subagents  → grouped by owning agent (◆ main orchestrator + ⊕ workers)
+ * - teams      → grouped by named role-agent (▸), with handoff arrows
+ */
+export type TaskPanelView = "flat" | "subagents" | "teams";
+
+const VIEW_ORDER: readonly TaskPanelView[] = ["flat", "subagents", "teams"];
+const VIEW_LABEL: Record<TaskPanelView, string> = { flat: "tasks", subagents: "subagents", teams: "teams" };
+
+/** Owner glyphs: main agent a filled diamond, spawned subagents a plus-in-circle, team roles a triangle. */
+const AGENT_GLYPH: Record<TaskAgentKind, string> = { main: "◆", subagent: "⊕", role: "▸" };
+const AGENT_GLYPH_COLOR: Record<TaskAgentKind, ThemeColor> = {
+	main: "accent",
+	subagent: "accent",
+	role: "borderAccent",
+};
+
+/** Color for an agent's lifecycle `[state]` tag (mirrors the design's .ast-* classes). */
+const AGENT_STATE_COLOR: Record<TaskAgentState, ThemeColor> = {
+	active: "warning",
+	running: "warning",
+	done: "success",
+	queued: "dim",
+	idle: "dim",
+	waiting: "mdLink",
+	failed: "error",
+};
+
+/** Two-cell indent under a group header, with a faint vertical guide. */
+const GROUP_INDENT_PLAIN = "│ ";
 
 /** Overall pane state, derived from the task statuses. Drives the rail color + header stamp. */
 type PanelState = "working" | "reviewed" | "stopped";
@@ -113,11 +154,31 @@ function progressBar(done: number, active: number, total: number): { plain: stri
 }
 
 /**
+ * View switcher rendered at the right edge of the ledger header: the three
+ * lens labels joined by `·`, the active one in bold accent. Purely an
+ * indicator in the TUI — the bound key cycles it (see app.tasks.cycleView).
+ */
+function formatViewSwitcher(view: TaskPanelView): { plain: string; styled: string } {
+	const plain = VIEW_ORDER.map((v) => VIEW_LABEL[v]).join(" · ");
+	const styled = VIEW_ORDER.map((v) =>
+		v === view ? theme.bold(theme.fg("accent", VIEW_LABEL[v])) : theme.fg("dim", VIEW_LABEL[v]),
+	).join(theme.fg("dim", " · "));
+	return { plain, styled };
+}
+
+/**
  * Ledger header: a state stamp (◐ working / ✓ reviewed / ✗ stopped) + a
  * deterministic progress bar and done/total count on the left, and the per-turn
- * token + elapsed + cost delta (summed across the tasks below) on the right.
+ * token + elapsed + cost delta (summed across the tasks below) plus the view
+ * switcher on the right.
  */
-function formatHeader(tasks: readonly Task[], width: number, state: PanelState, totalSecs: number): string {
+function formatHeader(
+	tasks: readonly Task[],
+	width: number,
+	state: PanelState,
+	totalSecs: number,
+	view: TaskPanelView,
+): string {
 	const total = tasks.length;
 	const done = tasks.filter((t) => t.status === "done").length;
 	const active = tasks.filter((t) => t.status === "in_progress").length;
@@ -158,14 +219,29 @@ function formatHeader(tasks: readonly Task[], width: number, state: PanelState, 
 			(showCost ? theme.fg("dim", " · ") + theme.bold(costStr) : "");
 	}
 
+	// Right cluster: turn delta, then the view switcher at the far edge. The
+	// switcher is the first thing dropped when the terminal narrows; the turn
+	// delta next; the stamp/count survive to the end.
+	const switcher = formatViewSwitcher(view);
+	const rightVariants: Array<{ plain: string; styled: string }> = [];
 	if (turnPlain) {
-		if (visibleWidth(leftFullPlain) + 2 + visibleWidth(turnPlain) <= width) {
-			const pad = Math.max(2, width - visibleWidth(leftFullPlain) - visibleWidth(turnPlain));
-			return leftFull + " ".repeat(pad) + turnText;
+		rightVariants.push({
+			plain: `${turnPlain}  ${switcher.plain}`,
+			styled: `${turnText}  ${switcher.styled}`,
+		});
+		rightVariants.push({ plain: turnPlain, styled: turnText });
+	} else {
+		rightVariants.push(switcher);
+	}
+
+	for (const right of rightVariants) {
+		if (visibleWidth(leftFullPlain) + 2 + visibleWidth(right.plain) <= width) {
+			const pad = Math.max(2, width - visibleWidth(leftFullPlain) - visibleWidth(right.plain));
+			return leftFull + " ".repeat(pad) + right.styled;
 		}
-		if (visibleWidth(leftMinPlain) + 2 + visibleWidth(turnPlain) <= width) {
-			const pad = Math.max(2, width - visibleWidth(leftMinPlain) - visibleWidth(turnPlain));
-			return leftMin + " ".repeat(pad) + turnText;
+		if (visibleWidth(leftMinPlain) + 2 + visibleWidth(right.plain) <= width) {
+			const pad = Math.max(2, width - visibleWidth(leftMinPlain) - visibleWidth(right.plain));
+			return leftMin + " ".repeat(pad) + right.styled;
 		}
 	}
 	if (visibleWidth(leftFullPlain) <= width) return leftFull;
@@ -179,17 +255,28 @@ function formatTokens(count: number): string {
 	return `${(count / 1000000).toFixed(1)}M`;
 }
 
-function formatTaskLine(task: Task, width: number, frame: number, idColWidth: number): string {
+function formatTaskLine(
+	task: Task,
+	width: number,
+	frame: number,
+	idColWidth: number,
+	options: { grouped?: boolean } = {},
+): string {
 	const isProgress = task.status === "in_progress";
 	const iconGlyph = isProgress
 		? (SPINNER_FRAMES[frame] ?? TASK_STATUS_ICON.in_progress)
 		: TASK_STATUS_ICON[task.status];
 	const icon = theme.fg(taskStatusColor(task.status), iconGlyph);
 
+	// In grouped views the group header already carries the row's origin, so the
+	// source glyph and tag are suppressed; the rows sit on a faint indent guide.
+	const grouped = options.grouped === true;
+	const indent = grouped ? theme.fg("borderMuted", GROUP_INDENT_PLAIN) : "";
+
 	// Source marker between the status icon and the id. Reserve the cell (blank) for
 	// plain tasks so ids stay column-aligned whether or not a glyph is present.
 	const sourceGlyph = task.source ? TASK_SOURCE_GLYPH[task.source] : " ";
-	const styledSource = task.source ? theme.fg("dim", sourceGlyph) : " ";
+	const styledSource = !grouped && task.source ? theme.fg("dim", sourceGlyph) : grouped ? "" : " ";
 
 	// Right-pad the id to the shared column width so titles line up across rows even
 	// when ids differ in digit count (#1 vs #10). Padding is plain spaces inside the
@@ -198,7 +285,7 @@ function formatTaskLine(task: Task, width: number, frame: number, idColWidth: nu
 	// Source tag prefixed to the title: the subagent mode (e.g. "[explore]") for
 	// subagent rows, "[MCP]" for MCP rows. Drawn in accent so it reads as the row's
 	// origin label, parallel to the chat's `Agent [explore]` / `MCP [server › tool]`.
-	const tag = task.source === "mcp" ? "[MCP]" : task.subagentMode ? `[${task.subagentMode}]` : "";
+	const tag = grouped ? "" : task.source === "mcp" ? "[MCP]" : task.subagentMode ? `[${task.subagentMode}]` : "";
 	const styledTag = tag ? `${theme.fg("accent", tag)} ` : "";
 	const title = task.title;
 	// The id recedes (dim); the title carries the line. Done titles fade to muted
@@ -263,10 +350,91 @@ function formatTaskLine(task: Task, width: number, frame: number, idColWidth: nu
 	// truncateToWidth measures visible width (ANSI-aware), so the styled left can be
 	// truncated against the full left budget directly. Subtracting the prefix here
 	// (as a prior version did) truncated titles early and unevenly per id width.
-	const left = truncateToWidth(`${icon} ${styledSource} ${styledId} ${styledTag}${styledTitle}`, leftWidth, "…");
+	const leftBody = grouped
+		? `${indent}${icon} ${styledId} ${styledTitle}`
+		: `${icon} ${styledSource} ${styledId} ${styledTag}${styledTitle}`;
+	const left = truncateToWidth(leftBody, leftWidth, "…");
 
 	if (!rightPlain) return left;
 
+	const pad = Math.max(1, width - visibleWidth(left) - visibleWidth(rightPlain));
+	return left + " ".repeat(pad) + rightStyled;
+}
+
+/** Fallback group metadata when a task's owner has no roster entry. */
+function defaultAgentMeta(id: string): TaskAgent {
+	return id === "main"
+		? { id, name: "main", role: "orchestrator", kind: "main" }
+		: { id, name: id, role: "subagent", kind: "subagent" };
+}
+
+/**
+ * Partition the flat task list into owner groups. An explicit task.agent wins;
+ * otherwise a subagent-sourced task falls into a generic "subagent" group and
+ * everything else into "main". Group order is deterministic — main first, then
+ * roster order, then stragglers — never reordered by status.
+ */
+function groupTasks(
+	tasks: readonly Task[],
+	agents: readonly TaskAgent[],
+): Array<{ id: string; meta: TaskAgent; items: Task[] }> {
+	const meta = new Map<string, TaskAgent>(agents.map((a) => [a.id, a]));
+	const groups = new Map<string, Task[]>();
+	for (const task of tasks) {
+		const owner = task.agent ?? (task.source === "subagent" ? "subagent" : "main");
+		const items = groups.get(owner);
+		if (items) items.push(task);
+		else groups.set(owner, [task]);
+	}
+	const order: string[] = [];
+	if (groups.has("main")) order.push("main");
+	for (const agent of agents) {
+		if (groups.has(agent.id) && !order.includes(agent.id)) order.push(agent.id);
+	}
+	for (const id of groups.keys()) {
+		if (!order.includes(id)) order.push(id);
+	}
+	return order.map((id) => ({
+		id,
+		meta: meta.get(id) ?? defaultAgentMeta(id),
+		items: groups.get(id) ?? [],
+	}));
+}
+
+/**
+ * Group header for the grouped views: owner glyph + bold name + role, the
+ * agent's lifecycle `[state]` tag, an optional handoff arrow (teams), then the
+ * agent's own token/cost totals + done/total on the right. Mirrors the footer's
+ * "every number accounted for" stance, but per agent.
+ */
+function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: number): string {
+	const glyph = theme.fg(AGENT_GLYPH_COLOR[meta.kind], AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
+	const name = theme.bold(meta.name);
+	// Roles read as a dim "· role" suffix for spawned/team agents; the main
+	// orchestrator's role sits brighter (muted), matching the design's .grp-role.
+	const role = meta.role
+		? meta.kind === "main"
+			? ` ${theme.fg("muted", meta.role)}`
+			: theme.fg("dim", ` · ${meta.role}`)
+		: "";
+	const state = meta.state ? ` ${theme.fg(AGENT_STATE_COLOR[meta.state] ?? "dim", `[${meta.state}]`)}` : "";
+	const handoff = meta.handoff ? ` ${theme.fg("dim", meta.handoff)}` : "";
+
+	const done = items.filter((t) => t.status === "done").length;
+	const countPlain = `${done}/${items.length}`;
+	const count = theme.fg("muted", `${done}`) + theme.fg("dim", "/") + theme.fg("muted", `${items.length}`);
+	const stats = meta.stats;
+	let rightPlain = countPlain;
+	let rightStyled = count;
+	if (stats && (stats.input > 0 || stats.output > 0 || stats.cost > 0)) {
+		const statsPlain = `↑${formatTokens(stats.input)} ↓${formatTokens(stats.output)} · $${stats.cost.toFixed(3)}`;
+		rightPlain = `${statsPlain}  ${countPlain}`;
+		rightStyled = `${theme.fg("dim", statsPlain)}  ${count}`;
+	}
+
+	const rightWidth = visibleWidth(rightPlain) + 1;
+	const leftWidth = Math.max(0, width - rightWidth);
+	const left = truncateToWidth(`${glyph} ${name}${role}${state}${handoff}`, leftWidth, "…");
 	const pad = Math.max(1, width - visibleWidth(left) - visibleWidth(rightPlain));
 	return left + " ".repeat(pad) + rightStyled;
 }
@@ -283,6 +451,11 @@ function formatTaskLine(task: Task, width: number, frame: number, idColWidth: nu
  * - A single-cell source glyph (⚙ subagent / ⧉ MCP) sits before the id so the two
  *   kinds of background work are distinguishable, and a text origin tag is shown
  *   before the title: the subagent mode (e.g. "[explore]") or "[MCP]".
+ * - Three views over the same list (cycled via app.tasks.cycleView, shown as a
+ *   `tasks · subagents · teams` switcher in the header): flat, grouped by owning
+ *   agent (subagents), or grouped by named role-agent with handoffs (teams).
+ *   Grouped rows drop their origin glyph/tag (the group header carries it) and
+ *   sit on a faint `│` indent guide.
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
  *   user message arrives (see taskStore.reset()), not the moment they finish.
@@ -292,6 +465,7 @@ export class TaskPanelComponent implements Component {
 	private readonly ui: TUI | null;
 	private frame = 0;
 	private animationTimer: ReturnType<typeof setInterval> | null = null;
+	private view: TaskPanelView = "flat";
 
 	constructor(ui?: TUI) {
 		this.ui = ui ?? null;
@@ -299,6 +473,23 @@ export class TaskPanelComponent implements Component {
 
 	invalidate(): void {
 		// No cached rendering state.
+	}
+
+	getView(): TaskPanelView {
+		return this.view;
+	}
+
+	setView(view: TaskPanelView): void {
+		this.view = view;
+		this.ui?.requestRender();
+	}
+
+	/** Advance to the next view lens (flat → subagents → teams → flat). */
+	cycleView(): TaskPanelView {
+		const idx = VIEW_ORDER.indexOf(this.view);
+		this.view = VIEW_ORDER[(idx + 1) % VIEW_ORDER.length] ?? "flat";
+		this.ui?.requestRender();
+		return this.view;
 	}
 
 	/** Run the spinner timer only while a task is active, ticking re-renders. */
@@ -344,9 +535,22 @@ export class TaskPanelComponent implements Component {
 		// starts at the same column regardless of digit count (#1 vs #10 vs #100).
 		const idColWidth = tasks.reduce((max, t) => Math.max(max, `#${t.id}`.length), 0);
 
-		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs)];
-		for (const task of tasks) {
-			lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth));
+		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs, this.view)];
+		if (this.view === "flat") {
+			for (const task of tasks) {
+				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth));
+			}
+			return lines;
+		}
+
+		// Grouped lenses (subagents / teams): a header line per owning agent, its
+		// tasks indented beneath on a faint guide. Hierarchy is carried by the
+		// indent and owner glyph alone — no fills, no boxes.
+		for (const group of groupTasks(tasks, taskStore.agents())) {
+			lines.push(gutter + formatGroupHeader(group.meta, group.items, inner));
+			for (const task of group.items) {
+				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { grouped: true }));
+			}
 		}
 		return lines;
 	}
