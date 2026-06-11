@@ -71,9 +71,10 @@ function stateWarrantsTask(state: TaskAgentState): boolean {
  * Each role owns one roster entry (id `team:<role>`) and at most one task whose
  * title tracks the role's latest activity. Tasks exist only while a role is
  * actually doing something (active/running, or failed so the error is visible);
- * idle roles keep their roster entry but no task, so a quiet team leaves the
- * pane collapsed instead of pinning it at "working". Entries are re-created on
- * demand because taskStore.reset() wipes finished tasks between user turns.
+ * idle roles keep their roster entry but no task — the panel's teams lens
+ * renders them as placeholder groups, so a quiet team reads as an idle roster
+ * instead of pinning the pane at "working". Entries are re-created on demand
+ * because taskStore.reset() wipes finished tasks between user turns.
  */
 export class TeamViewMapper {
 	private readonly store: typeof taskStore;

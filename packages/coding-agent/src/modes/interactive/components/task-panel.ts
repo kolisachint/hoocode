@@ -518,7 +518,10 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
  *   user message arrives (see taskStore.reset()), not the moment they finish.
- * - Collapses to zero lines when there are no tasks.
+ * - Collapses to zero lines when there are no tasks — unless a team roster is
+ *   registered (`--team`), in which case the empty flat lens falls through to
+ *   teams and every role renders as a placeholder group, so idle roles are
+ *   visible from startup.
  */
 export class TaskPanelComponent implements Component {
 	private readonly ui: TUI | null;
@@ -599,13 +602,20 @@ export class TaskPanelComponent implements Component {
 		// reset) renders as flat; the stored view is untouched so an explicit
 		// setView choice survives if its content comes back.
 		const available = availableViews(tasks, allAgents);
-		const view = available.includes(this.view) ? this.view : "flat";
+		let view = available.includes(this.view) ? this.view : "flat";
 
-		// In teams view, queued role agents with no tasks still render as placeholders.
-		const hasQueuedRolePlaceholders =
-			view === "teams" && allAgents.some((a) => a.kind === "role" && a.state === "queued");
+		// With no tasks the flat lens has nothing to draw; when a team roster is
+		// registered (--team) fall through to the teams lens so the roles are
+		// visible from startup. The stored view is untouched — the chosen lens
+		// resumes the moment tasks exist again.
+		if (tasks.length === 0 && view === "flat" && available.includes("teams")) view = "teams";
 
-		if (tasks.length === 0 && !hasQueuedRolePlaceholders) {
+		// In teams view the roster itself is content: role agents render as
+		// placeholder groups even without tasks (idle roles at startup, queued
+		// upcoming work).
+		const hasRoleRoster = view === "teams" && allAgents.some((a) => a.kind === "role");
+
+		if (tasks.length === 0 && !hasRoleRoster) {
 			this.ensureAnimation(false);
 			return [];
 		}
@@ -659,9 +669,11 @@ export class TaskPanelComponent implements Component {
 		// teams view: role-agent groups with handoff connectors and queued placeholders.
 		const groups = groupTasks(filteredTasks, filteredAgents);
 		const groupIds = new Set(groups.map((g) => g.id));
-		// Queued role agents with no tasks are shown as upcoming-work placeholders.
+		// Role agents with no tasks still get a group header: idle roles are the
+		// roster at startup, queued ones upcoming work, done/failed ones the
+		// state they settled in after reset() dropped their tasks.
 		for (const agent of filteredAgents) {
-			if (!groupIds.has(agent.id) && agent.state === "queued") {
+			if (!groupIds.has(agent.id)) {
 				groups.push({ id: agent.id, meta: agent, items: [] });
 			}
 		}

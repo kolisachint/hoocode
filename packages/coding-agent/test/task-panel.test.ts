@@ -536,6 +536,43 @@ describe("task panel rendering", () => {
 		expect(lines.some((l) => l.includes("queued-role") && l.includes("0/0"))).toBe(true);
 	});
 
+	test("teams view renders idle role placeholder with no tasks", () => {
+		taskStore.upsertAgent({
+			id: "team:planner",
+			name: "planner",
+			kind: "role",
+			state: "idle",
+		});
+
+		panel.setView("teams");
+		const lines = renderPanel().map(stripAnsi);
+		// pane header + one group header for the idle role (no task rows).
+		expect(lines.length).toBe(2);
+		expect(lines.some((l) => l.includes("planner") && l.includes("[idle]") && l.includes("0/0"))).toBe(true);
+	});
+
+	test("empty flat view falls through to the team roster at startup", () => {
+		// --team registers idle roles before any task exists; the default flat
+		// lens has nothing to draw, so the pane shows the teams roster instead
+		// of collapsing.
+		taskStore.upsertAgent({ id: "team:planner", name: "planner", kind: "role", state: "idle" });
+		taskStore.upsertAgent({ id: "team:builder", name: "builder", kind: "role", state: "idle" });
+
+		const lines = renderPanel().map(stripAnsi);
+		// pane header + one group header per idle role.
+		expect(lines.length).toBe(3);
+		expect(lines.some((l) => l.includes("planner"))).toBe(true);
+		expect(lines.some((l) => l.includes("builder"))).toBe(true);
+
+		// The fallback never sticks: once a task exists the stored flat lens resumes.
+		const task = taskStore.create("Init project");
+		taskStore.update(task.id, { status: "in_progress" });
+		const flatLines = renderPanel().map(stripAnsi);
+		expect(flatLines.some((l) => l.includes("Init project"))).toBe(true);
+		// Roster placeholders belong to the teams lens, not flat.
+		expect(flatLines.some((l) => l.includes("planner"))).toBe(false);
+	});
+
 	test("grouped views fall back to default owner metadata without a roster", () => {
 		const mine = taskStore.create("Init project");
 		taskStore.update(mine.id, { status: "in_progress" });
