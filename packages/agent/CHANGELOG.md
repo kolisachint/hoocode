@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `getDefaultTools(opts?: { cwd?: string })`: headless bundle of the built-in
+  coding tools (bash/read/edit/write/grep/find/ls) usable from any process —
+  no CLI singletons, no top-level side effects, cwd configurable per bundle.
+  The CLI's Task tool is not included since it requires the CLI subagent
+  runtime.
+- `loadMcpTools(mcpJsonPath)`: parse a standard `mcp.json`
+  (`{ "mcpServers": ... }`), start the declared stdio MCP servers, and return
+  their tools as `AgentTool`s (named `mcp_<server>_<tool>`). Servers are
+  reaped on process exit; `closeMcpTools()` terminates them earlier.
+
 ## [0.4.47] - 2026-06-11
 
 ## [0.4.46] - 2026-06-11
