@@ -740,14 +740,6 @@ export async function main(args: string[], options?: MainOptions) {
 			console.log(chalk.dim(`Model scope: ${modelList} ${chalk.gray("(Ctrl+P to cycle)")}`));
 		}
 
-		// Optional read-only hooteams mirror. Fire-and-forget: connect failures
-		// and drops warn in the background and never block the main agent.
-		let teamView: { stop(): void } | undefined;
-		if (parsed.team) {
-			const { connectTeamView } = await import("./core/team-view.js");
-			teamView = connectTeamView(parsed.team);
-		}
-
 		const interactiveMode = new InteractiveMode(runtime, {
 			migratedProviders,
 			modelFallbackMessage,
@@ -756,6 +748,19 @@ export async function main(args: string[], options?: MainOptions) {
 			initialMessages: parsed.messages,
 			verbose: parsed.verbose,
 		});
+
+		// Optional read-only hooteams mirror. Fire-and-forget: connect failures
+		// and drops warn in the background and never block the main agent.
+		// Warnings go through the chat, not console.error: a raw stderr write
+		// while the TUI owns the screen scribbles over the render and can leave
+		// the editor looking frozen.
+		let teamView: { stop(): void } | undefined;
+		if (parsed.team) {
+			const { connectTeamView } = await import("./core/team-view.js");
+			teamView = connectTeamView(parsed.team, {
+				warn: (message) => interactiveMode.showWarning(message),
+			});
+		}
 		if (startupBenchmark) {
 			await interactiveMode.init();
 			time("interactiveMode.init");

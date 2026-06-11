@@ -89,7 +89,10 @@ export const KEYBINDINGS = {
 		description: "Toggle thinking blocks",
 	},
 	"app.tasks.cycleView": {
-		defaultKeys: "shift+ctrl+t",
+		// alt+t primary: Windows Terminal swallows ctrl+shift+t as its own "new
+		// tab" shortcut, so that combo never reaches the app there. It stays as
+		// an alias for terminals that do pass it through.
+		defaultKeys: ["alt+t", "shift+ctrl+t"],
 		description: "Cycle task panel view (tasks → subagents → teams)",
 	},
 	"app.session.toggleNamedFilter": {
