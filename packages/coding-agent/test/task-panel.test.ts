@@ -1,5 +1,5 @@
 import { visibleWidth } from "@kolisachint/hoocode-tui";
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { taskStore } from "../src/core/task-store.js";
 import { TaskPanelComponent } from "../src/modes/interactive/components/task-panel.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
@@ -379,7 +379,8 @@ describe("task panel rendering", () => {
 
 		panel.setView("teams");
 		const lines = renderPanel().map(stripAnsi);
-		expect(lines.length).toBe(5);
+		// header + planner-header + planner-task + connector + builder-header + builder-task
+		expect(lines.length).toBe(6);
 
 		const plannerHeader = lines[1] as string;
 		expect(plannerHeader).toContain("▸ planner");
@@ -388,7 +389,10 @@ describe("task panel rendering", () => {
 		expect(plannerHeader).toContain("→ builder");
 		expect(plannerHeader).toContain("↑1.4k ↓260 · $0.004");
 
-		const builderHeader = lines[3] as string;
+		// Connector line injected after planner's task row (handoff "→ builder", builder exists).
+		expect(lines.some((l) => l.includes("└──→") && l.includes("builder"))).toBe(true);
+
+		const builderHeader = lines[4] as string;
 		expect(builderHeader).toContain("▸ builder");
 		expect(builderHeader).toContain("[active]");
 		expect(builderHeader).toMatch(/0\/1\s*$/);
@@ -397,6 +401,64 @@ describe("task panel rendering", () => {
 		for (const line of renderPanel()) {
 			expect(visibleWidth(line)).toBe(120);
 		}
+	});
+
+	test("subagents view hides role-agent groups", () => {
+		taskStore.upsertAgent({ id: "worker", name: "worker", kind: "subagent" });
+		taskStore.upsertAgent({ id: "planner", name: "planner", kind: "role" });
+
+		const workerTask = taskStore.create("worker task", { agent: "worker" });
+		taskStore.update(workerTask.id, { status: "in_progress" });
+		const plannerTask = taskStore.create("planner task", { agent: "planner" });
+		taskStore.update(plannerTask.id, { status: "in_progress" });
+
+		panel.setView("subagents");
+		const text = renderPanel().map(stripAnsi).join("\n");
+
+		// Role-agent group and its task must not appear.
+		expect(text).not.toContain("planner task");
+		// Non-role agent and its task must appear.
+		expect(text).toContain("worker");
+		expect(text).toContain("worker task");
+	});
+
+	test("teams view hides non-role-agent groups", () => {
+		taskStore.upsertAgent({ id: "main-ag", name: "main-ag", kind: "main" });
+		taskStore.upsertAgent({ id: "worker", name: "worker", kind: "subagent" });
+		taskStore.upsertAgent({ id: "architect", name: "architect", kind: "role" });
+
+		const mainTask = taskStore.create("main task", { agent: "main-ag" });
+		taskStore.update(mainTask.id, { status: "in_progress" });
+		const workerTask = taskStore.create("worker task", { agent: "worker" });
+		taskStore.update(workerTask.id, { status: "in_progress" });
+		const archTask = taskStore.create("arch task", { agent: "architect" });
+		taskStore.update(archTask.id, { status: "in_progress" });
+
+		panel.setView("teams");
+		const text = renderPanel().map(stripAnsi).join("\n");
+
+		// Non-role task titles must not appear.
+		expect(text).not.toContain("main task");
+		expect(text).not.toContain("worker task");
+		// Role agent task must appear.
+		expect(text).toContain("arch task");
+		expect(text).toContain("architect");
+	});
+
+	test("teams view renders queued role placeholder with no tasks", () => {
+		taskStore.upsertAgent({
+			id: "queued-role",
+			name: "queued-role",
+			role: "pending",
+			kind: "role",
+			state: "queued",
+		});
+
+		panel.setView("teams");
+		const lines = renderPanel().map(stripAnsi);
+		// pane header + one group header for the queued agent (no task rows).
+		expect(lines.length).toBe(2);
+		expect(lines.some((l) => l.includes("queued-role") && l.includes("0/0"))).toBe(true);
 	});
 
 	test("grouped views fall back to default owner metadata without a roster", () => {
@@ -441,5 +503,48 @@ describe("task panel rendering", () => {
 		// Upserting the same id again (re-dispatch) keeps the accumulated stats.
 		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent", state: "running" });
 		expect(taskStore.agents().find((a) => a.id === "explore")?.stats?.input).toBe(1500);
+	});
+});
+
+describe("task store", () => {
+	beforeEach(() => {
+		taskStore.clear();
+	});
+
+	test("addAgentStats warns on unknown agent id", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		taskStore.addAgentStats("nonexistent", { input: 100 });
+		expect(warn).toHaveBeenCalledWith(expect.stringMatching(/unknown agent id/));
+		warn.mockRestore();
+	});
+
+	test("update warns on unknown task id", () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		taskStore.update(9999, { status: "done" });
+		expect(warn).toHaveBeenCalledWith(expect.stringMatching(/unknown task id/));
+		warn.mockRestore();
+	});
+
+	test("reset preserves agents with non-zero stats", () => {
+		// Create a task so reset() actually runs (not early-return path).
+		const dummy = taskStore.create("dummy");
+		taskStore.update(dummy.id, { status: "done" });
+		taskStore.upsertAgent({ id: "stats-agent", name: "stats-agent", kind: "subagent" });
+		taskStore.addAgentStats("stats-agent", { input: 100, output: 50, cost: 0.001 });
+
+		taskStore.reset();
+		// stats-agent has non-zero stats — must survive reset.
+		expect(taskStore.agents().some((a) => a.id === "stats-agent")).toBe(true);
+
+		// Register a zero-stats agent; create + finish a dummy to force reset to run
+		// (nextId is 1 after the previous reset, so a new task makes it 2).
+		taskStore.upsertAgent({ id: "zero-agent", name: "zero-agent", kind: "subagent" });
+		const dummy2 = taskStore.create("dummy2");
+		taskStore.update(dummy2.id, { status: "done" });
+		taskStore.reset();
+		// Zero-stats agent is dropped.
+		expect(taskStore.agents().some((a) => a.id === "zero-agent")).toBe(false);
+		// Stats-agent still preserved.
+		expect(taskStore.agents().some((a) => a.id === "stats-agent")).toBe(true);
 	});
 });

@@ -365,6 +365,34 @@ function formatTaskLine(
 	return left + " ".repeat(pad) + rightStyled;
 }
 
+/**
+ * Filter tasks and agents for the current view lens:
+ * - subagents: only non-role agents and their tasks.
+ * - teams: only role agents and their tasks.
+ * - flat: no filtering (returns inputs unchanged).
+ */
+function filterTasksForView(
+	tasks: readonly Task[],
+	agents: readonly TaskAgent[],
+	view: TaskPanelView,
+): { filteredTasks: readonly Task[]; filteredAgents: readonly TaskAgent[] } {
+	if (view === "subagents") {
+		const roleIds = new Set(agents.filter((a) => a.kind === "role").map((a) => a.id));
+		return {
+			filteredAgents: agents.filter((a) => a.kind !== "role"),
+			filteredTasks: tasks.filter((t) => !roleIds.has(taskOwnerId(t))),
+		};
+	}
+	if (view === "teams") {
+		const roleIds = new Set(agents.filter((a) => a.kind === "role").map((a) => a.id));
+		return {
+			filteredAgents: agents.filter((a) => a.kind === "role"),
+			filteredTasks: tasks.filter((t) => roleIds.has(taskOwnerId(t))),
+		};
+	}
+	return { filteredTasks: tasks, filteredAgents: agents };
+}
+
 /** Fallback group metadata when a task's owner has no roster entry. */
 function defaultAgentMeta(id: string): TaskAgent {
 	return id === "main"
@@ -471,6 +499,7 @@ export class TaskPanelComponent implements Component {
 	private frame = 0;
 	private animationTimer: ReturnType<typeof setInterval> | null = null;
 	private view: TaskPanelView = "flat";
+	private disposed = false;
 
 	constructor(ui?: TUI) {
 		this.ui = ui ?? null;
@@ -499,6 +528,14 @@ export class TaskPanelComponent implements Component {
 
 	/** Run the spinner timer only while a task is active, ticking re-renders. */
 	private ensureAnimation(active: boolean): void {
+		if (this.disposed) {
+			if (this.animationTimer) {
+				clearInterval(this.animationTimer);
+				this.animationTimer = null;
+				this.frame = 0;
+			}
+			return;
+		}
 		if (active && this.ui && !this.animationTimer) {
 			this.animationTimer = setInterval(() => {
 				this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
@@ -518,11 +555,20 @@ export class TaskPanelComponent implements Component {
 			clearInterval(this.animationTimer);
 			this.animationTimer = null;
 		}
+		this.disposed = true;
 	}
 
 	render(width: number): string[] {
+		if (this.disposed) return [];
+
 		const tasks = taskStore.list();
-		if (tasks.length === 0) {
+		const allAgents = taskStore.agents();
+
+		// In teams view, queued role agents with no tasks still render as placeholders.
+		const hasQueuedRolePlaceholders =
+			this.view === "teams" && allAgents.some((a) => a.kind === "role" && a.state === "queued");
+
+		if (tasks.length === 0 && !hasQueuedRolePlaceholders) {
 			this.ensureAnimation(false);
 			return [];
 		}
@@ -540,7 +586,10 @@ export class TaskPanelComponent implements Component {
 		// starts at the same column regardless of digit count (#1 vs #10 vs #100).
 		const idColWidth = tasks.reduce((max, t) => Math.max(max, `#${t.id}`.length), 0);
 
+		// The header always reflects all tasks — it is a panel-wide summary, not
+		// scoped to the filtered subset that the lens shows.
 		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs, this.view)];
+
 		if (this.view === "flat") {
 			for (const task of tasks) {
 				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth));
@@ -548,13 +597,55 @@ export class TaskPanelComponent implements Component {
 			return lines;
 		}
 
-		// Grouped lenses (subagents / teams): a header line per owning agent, its
-		// tasks indented beneath on a faint guide. Hierarchy is carried by the
-		// indent and owner glyph alone — no fills, no boxes.
-		for (const group of groupTasks(tasks, taskStore.agents())) {
+		// Subagents / teams views: filter roster and tasks by agent kind so each
+		// lens shows only the agents and tasks relevant to its perspective.
+		const { filteredTasks, filteredAgents } = filterTasksForView(tasks, allAgents, this.view);
+
+		if (this.view === "subagents") {
+			// Non-role agents and their tasks, grouped. Hierarchy carried by indent
+			// and owner glyph alone — no fills, no boxes.
+			for (const group of groupTasks(filteredTasks, filteredAgents)) {
+				lines.push(gutter + formatGroupHeader(group.meta, group.items, inner));
+				for (const task of group.items) {
+					lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { grouped: true }));
+				}
+			}
+			return lines;
+		}
+
+		// teams view: role-agent groups with handoff connectors and queued placeholders.
+		const groups = groupTasks(filteredTasks, filteredAgents);
+		const groupIds = new Set(groups.map((g) => g.id));
+		// Queued role agents with no tasks are shown as upcoming-work placeholders.
+		for (const agent of filteredAgents) {
+			if (!groupIds.has(agent.id) && agent.state === "queued") {
+				groups.push({ id: agent.id, meta: agent, items: [] });
+			}
+		}
+		for (const group of groups) {
 			lines.push(gutter + formatGroupHeader(group.meta, group.items, inner));
 			for (const task of group.items) {
 				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { grouped: true }));
+			}
+			// Forward-handoff connector: emit "└──→ name" only for "→ name" arrows
+			// (not back-references "← name"), and only when the target exists in the
+			// visible role roster.
+			const { handoff } = group.meta;
+			if (handoff) {
+				const arrowIdx = handoff.indexOf("→ ");
+				if (arrowIdx !== -1) {
+					const nextName = handoff.slice(arrowIdx + 2).trim();
+					if (filteredAgents.some((a) => a.name === nextName)) {
+						const connectorPrefix = `${GROUP_INDENT_PLAIN}  └──→ `;
+						const connectorPad = Math.max(0, inner - visibleWidth(connectorPrefix) - visibleWidth(nextName));
+						lines.push(
+							gutter +
+								theme.fg("borderMuted", connectorPrefix) +
+								theme.fg("dim", nextName) +
+								" ".repeat(connectorPad),
+						);
+					}
+				}
 			}
 		}
 		return lines;

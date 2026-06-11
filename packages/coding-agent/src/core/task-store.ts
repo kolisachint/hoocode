@@ -122,7 +122,10 @@ class TaskStore {
 
 	update(id: number, patch: TaskPatch): void {
 		const task = this.tasks.find((t) => t.id === id);
-		if (!task) return;
+		if (!task) {
+			console.warn(`[task-store] update: unknown task id ${id}`);
+			return;
+		}
 		if (patch.title !== undefined) task.title = patch.title;
 		if (patch.status !== undefined) task.status = patch.status;
 		if (patch.source !== undefined) task.source = patch.source;
@@ -171,7 +174,10 @@ class TaskStore {
 	/** Add a usage delta to an agent's running totals (creating them at zero). */
 	addAgentStats(id: string, delta: { input?: number; output?: number; cost?: number }): void {
 		const agent = this.taskAgents.find((a) => a.id === id);
-		if (!agent) return;
+		if (!agent) {
+			console.warn(`[task-store] addAgentStats: unknown agent id "${id}"`);
+			return;
+		}
 		const stats = agent.stats ?? { input: 0, output: 0, cost: 0 };
 		stats.input += delta.input ?? 0;
 		stats.output += delta.output ?? 0;
@@ -211,6 +217,8 @@ class TaskStore {
 	 * dropping its task here would orphan the live work (its later status update
 	 * would target a removed id and silently vanish). Numbering only restarts once
 	 * no active task survives, so ids never collide with a kept task.
+	 * Agents with accumulated stats are preserved across resets so cross-turn cost
+	 * accounting survives.
 	 */
 	reset(): void {
 		const active = this.tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
@@ -218,13 +226,16 @@ class TaskStore {
 		this.tasks = active;
 		if (active.length === 0) {
 			this.nextId = 1;
-			// The roster only matters while it has tasks to group; drop it with them
-			// so a fresh turn opens with a clean pane. Agents owning surviving tasks
-			// are kept (their group header must not vanish under live rows).
-			this.taskAgents = [];
+			// Keep agents with non-zero accumulated stats so cross-turn cost accounting
+			// survives; drop everyone else (fresh turn opens with a clean roster).
+			this.taskAgents = this.taskAgents.filter(
+				(a) => a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0),
+			);
 		} else {
 			const liveOwners = new Set(active.map(taskOwnerId));
-			this.taskAgents = this.taskAgents.filter((a) => liveOwners.has(a.id));
+			this.taskAgents = this.taskAgents.filter(
+				(a) => liveOwners.has(a.id) || (a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0)),
+			);
 		}
 		this.emit();
 	}
