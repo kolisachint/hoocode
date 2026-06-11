@@ -8,7 +8,7 @@ import type {
 	TaskSource,
 	TaskStatus,
 } from "../../../core/task-store.js";
-import { taskStore } from "../../../core/task-store.js";
+import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
 import { theme } from "../theme/theme.js";
 
@@ -20,15 +20,19 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 };
 
 /**
- * A single-cell source marker placed before the id so a subagent row and an MCP
- * row are distinguishable at a glance. Plain tasks reserve the cell (blank) to keep
- * the id column aligned. The glyph says *where the work came from* at a glance; the
+ * A single-cell source marker placed before the id telling where the work came
+ * from: main agent, subagent, or MCP. Mirrors the owner glyphs used by the
+ * grouped views' headers so the pane speaks one vocabulary across lenses. The
  * row also carries a text origin tag before the title (see formatTaskLine).
+ * ▸ is allocated for hooteams team rows and stays unwired until that lands.
  */
 const TASK_SOURCE_GLYPH: Record<TaskSource, string> = {
-	subagent: "⚙",
+	subagent: "◇",
 	mcp: "⧉",
 };
+
+/** Source marker for tasks without a source — work the main agent runs itself. */
+const MAIN_SOURCE_GLYPH = "◆";
 
 /** Braille spinner frames + cadence, matched to the TUI Loader so the active row animates in step. */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -43,7 +47,7 @@ const PROGRESS_CELLS = 14;
 /**
  * How the same task list is presented:
  * - flat       → one ungrouped list (default)
- * - subagents  → grouped by owning agent (◆ main orchestrator + ⊕ workers)
+ * - subagents  → grouped by owning agent (◆ main orchestrator + ◇ workers)
  * - teams      → grouped by named role-agent (▸), with handoff arrows
  */
 export type TaskPanelView = "flat" | "subagents" | "teams";
@@ -51,8 +55,8 @@ export type TaskPanelView = "flat" | "subagents" | "teams";
 const VIEW_ORDER: readonly TaskPanelView[] = ["flat", "subagents", "teams"];
 const VIEW_LABEL: Record<TaskPanelView, string> = { flat: "tasks", subagents: "subagents", teams: "teams" };
 
-/** Owner glyphs: main agent a filled diamond, spawned subagents a plus-in-circle, team roles a triangle. */
-const AGENT_GLYPH: Record<TaskAgentKind, string> = { main: "◆", subagent: "⊕", role: "▸" };
+/** Owner glyphs: main agent a filled diamond, spawned subagents the hollow counterpart, team roles a triangle. */
+const AGENT_GLYPH: Record<TaskAgentKind, string> = { main: "◆", subagent: "◇", role: "▸" };
 const AGENT_GLYPH_COLOR: Record<TaskAgentKind, ThemeColor> = {
 	main: "accent",
 	subagent: "accent",
@@ -273,10 +277,10 @@ function formatTaskLine(
 	const grouped = options.grouped === true;
 	const indent = grouped ? theme.fg("borderMuted", GROUP_INDENT_PLAIN) : "";
 
-	// Source marker between the status icon and the id. Reserve the cell (blank) for
-	// plain tasks so ids stay column-aligned whether or not a glyph is present.
-	const sourceGlyph = task.source ? TASK_SOURCE_GLYPH[task.source] : " ";
-	const styledSource = !grouped && task.source ? theme.fg("dim", sourceGlyph) : grouped ? "" : " ";
+	// Source marker between the status icon and the id; every row carries one
+	// (◆ main when no source is set), so the id column stays aligned.
+	const sourceGlyph = task.source ? TASK_SOURCE_GLYPH[task.source] : MAIN_SOURCE_GLYPH;
+	const styledSource = grouped ? "" : theme.fg("dim", sourceGlyph);
 
 	// Right-pad the id to the shared column width so titles line up across rows even
 	// when ids differ in digit count (#1 vs #10). Padding is plain spaces inside the
@@ -381,7 +385,7 @@ function groupTasks(
 	const meta = new Map<string, TaskAgent>(agents.map((a) => [a.id, a]));
 	const groups = new Map<string, Task[]>();
 	for (const task of tasks) {
-		const owner = task.agent ?? (task.source === "subagent" ? "subagent" : "main");
+		const owner = taskOwnerId(task);
 		const items = groups.get(owner);
 		if (items) items.push(task);
 		else groups.set(owner, [task]);
@@ -448,9 +452,10 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   done/total count on the left, the per-turn token/elapsed/cost delta on the right.
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
  *   The active row animates a braille spinner; pending rows read `queued`.
- * - A single-cell source glyph (⚙ subagent / ⧉ MCP) sits before the id so the two
- *   kinds of background work are distinguishable, and a text origin tag is shown
- *   before the title: the subagent mode (e.g. "[explore]") or "[MCP]".
+ * - A single-cell source glyph (◆ main / ◇ subagent / ⧉ MCP) sits before the id
+ *   so every row's origin is readable at a glance, and a text origin tag is shown
+ *   before the title: the subagent mode (e.g. "[explore]") or "[MCP]". The ▸ team
+ *   marker is allocated for hooteams and unwired until that integration lands.
  * - Three views over the same list (cycled via app.tasks.cycleView, shown as a
  *   `tasks · subagents · teams` switcher in the header): flat, grouped by owning
  *   agent (subagents), or grouped by named role-agent with handoffs (teams).
