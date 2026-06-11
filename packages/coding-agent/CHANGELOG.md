@@ -23,6 +23,26 @@
 
 ## [0.4.50] - 2026-06-11
 
+### Fixed
+
+- Task panel: the `teams` view is now a real lens distinct from `subagents`
+  instead of an alias for the same grouped path. `subagents` filters out
+  `kind: "role"` agents and `teams` filters to only role agents; non-matching
+  agents and their tasks no longer leak between lenses. The `teams` view also
+  renders forward-handoff connectors (`└──→ next`) between successive role
+  agents and keeps a placeholder header for queued roles with no tasks yet.
+- Task store: `update()` and `addAgentStats()` now log a `console.warn` when
+  called with an unknown task or agent id. Previously straggler completions
+  (late MCP/SSE events whose owner had been reaped) silently no-opped, hiding
+  observability data.
+- Task store: `reset()` now preserves agents with non-zero accumulated stats
+  across user turns. Previously an agent that finished all of its tasks before
+  the next user message would be wiped along with its cross-turn cost
+  accounting; subsequent re-dispatches restarted from zero.
+- Task panel: animation timer is now guarded against post-`dispose()` revival.
+  A `disposed` flag short-circuits both `render()` and `ensureAnimation()` so a
+  late render call cannot resurrect the spinner interval after teardown.
+
 ## [0.4.49] - 2026-06-11
 
 ## [0.4.48] - 2026-06-11
