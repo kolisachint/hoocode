@@ -686,7 +686,17 @@ export class SubagentPool extends EventEmitter {
 				// exit_code === null. Keying completion off the verified result, not code === 0,
 				// honors that genuine success instead of discarding it as a false stall.
 				const verification = this.verifier.verify(task.task_id, task.cwd ?? this.cwd);
-				const cleanlyCompleted = code === 0 || verification.valid;
+				// A well-formed result.json counts as clean completion unless its own
+				// status field declares failure (e.g. "failed" from a provider quota
+				// error). Without this check the pool would treat a child that wrote a
+				// valid-but-failed result.json and exited non-zero as a success.
+				let cleanlyCompleted = code === 0 || verification.valid;
+				if (cleanlyCompleted && verification.valid) {
+					const rd = this.tryReadResultJson(task.task_id, task.cwd ?? this.cwd);
+					if (rd && (rd as Record<string, unknown>).status === "failed") {
+						cleanlyCompleted = false;
+					}
+				}
 
 				// If killed by lifeguard before producing a valid result, honor the kill.
 				if ((killReason === "stalled" || killReason === "timeout") && !verification.valid) {

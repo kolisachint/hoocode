@@ -4,6 +4,13 @@
 
 ## [0.4.45] - 2026-06-11
 
+### Fixed
+
+- Subagent pool now correctly marks tasks as failed when a child process writes a
+  valid `result.json` with `status: "failed"` and exits non-zero. Previously the
+  pool treated a well-formed but failed result as a clean completion, causing
+  `result.ok` to be `true` and suppressing the concrete failure reason.
+
 ### Added
 
 - The task panel now has three views over the same task list, cycled with
