@@ -24,7 +24,7 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
  * from: main agent, subagent, or MCP. Mirrors the owner glyphs used by the
  * grouped views' headers so the pane speaks one vocabulary across lenses. The
  * row also carries a text origin tag before the title (see formatTaskLine).
- * ▸ is allocated for hooteams team rows and stays unwired until that lands.
+ * ▸ marks hooteams team rows (fed by `--team <url>` via the team-view bridge).
  */
 const TASK_SOURCE_GLYPH: Record<TaskSource, string> = {
 	subagent: "◇",
@@ -455,7 +455,7 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  * - A single-cell source glyph (◆ main / ◇ subagent / ⧉ MCP) sits before the id
  *   so every row's origin is readable at a glance, and a text origin tag is shown
  *   before the title: the subagent mode (e.g. "[explore]") or "[MCP]". The ▸ team
- *   marker is allocated for hooteams and unwired until that integration lands.
+ *   marker is used by role agents fed by `--team <url>`.
  * - Three views over the same list (cycled via app.tasks.cycleView, shown as a
  *   `tasks · subagents · teams` switcher in the header): flat, grouped by owning
  *   agent (subagents), or grouped by named role-agent with handoffs (teams).
