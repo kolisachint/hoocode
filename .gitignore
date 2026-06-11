@@ -7,5 +7,5 @@ node_modules
 **/dist/
 
 # IDE / tool artifacts
-.hoocode/dispatch/
+**/.hoocode/dispatch/
 mcp-servers/*
