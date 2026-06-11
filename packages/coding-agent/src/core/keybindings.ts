@@ -89,11 +89,11 @@ export const KEYBINDINGS = {
 		description: "Toggle thinking blocks",
 	},
 	"app.tasks.cycleView": {
-		// alt+t primary: Windows Terminal swallows ctrl+shift+t as its own "new
-		// tab" shortcut, so that combo never reaches the app there. It stays as
-		// an alias for terminals that do pass it through.
-		defaultKeys: ["alt+t", "shift+ctrl+t"],
-		description: "Cycle task panel view (tasks → subagents → teams)",
+		// ctrl+n is free in the main editor (no emacs next-line binding here);
+		// app.session.toggleNamedFilter also uses ctrl+n but only inside the
+		// session-selector overlay, which captures keys while open.
+		defaultKeys: "ctrl+n",
+		description: "Cycle task panel view (tasks → subagents → teams, skips empty lenses)",
 	},
 	"app.session.toggleNamedFilter": {
 		defaultKeys: "ctrl+n",

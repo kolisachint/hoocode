@@ -5,7 +5,6 @@ import type {
 	TaskAgent,
 	TaskAgentKind,
 	TaskAgentState,
-	TaskSource,
 	TaskStatus,
 } from "../../../core/task-store.js";
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
@@ -20,19 +19,13 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 };
 
 /**
- * A single-cell source marker placed before the id telling where the work came
- * from: main agent, subagent, or MCP. Mirrors the owner glyphs used by the
- * grouped views' headers so the pane speaks one vocabulary across lenses. The
- * row also carries a text origin tag before the title (see formatTaskLine).
- * ▸ marks hooteams team rows (fed by `--team <url>` via the team-view bridge).
+ * Single-cell marker for MCP-sourced rows, which have no owning agent. Every
+ * other row derives its marker from the owner's kind via AGENT_GLYPH (◆ main /
+ * ◇ subagent / ▸ team role), so the flat lens attributes a row exactly the way
+ * the grouped lenses do. The row also carries a text origin tag before the
+ * title (see formatTaskLine).
  */
-const TASK_SOURCE_GLYPH: Record<TaskSource, string> = {
-	subagent: "◇",
-	mcp: "⧉",
-};
-
-/** Source marker for tasks without a source — work the main agent runs itself. */
-const MAIN_SOURCE_GLYPH = "◆";
+const MCP_SOURCE_GLYPH = "⧉";
 
 /** Braille spinner frames + cadence, matched to the TUI Loader so the active row animates in step. */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
@@ -52,8 +45,22 @@ const PROGRESS_CELLS = 14;
  */
 export type TaskPanelView = "flat" | "subagents" | "teams";
 
-const VIEW_ORDER: readonly TaskPanelView[] = ["flat", "subagents", "teams"];
 const VIEW_LABEL: Record<TaskPanelView, string> = { flat: "tasks", subagents: "subagents", teams: "teams" };
+
+/**
+ * Lenses that currently have content: flat always; subagents only when
+ * subagent work exists (a registered subagent or a subagent-sourced task);
+ * teams only when role agents are registered (hooteams `--team`). The cycle
+ * key and the header switcher both skip empty lenses, so a plain session
+ * reads as a single view with no switcher noise.
+ */
+function availableViews(tasks: readonly Task[], agents: readonly TaskAgent[]): TaskPanelView[] {
+	const views: TaskPanelView[] = ["flat"];
+	const hasSubagentWork = agents.some((a) => a.kind === "subagent") || tasks.some((t) => t.source === "subagent");
+	if (hasSubagentWork) views.push("subagents");
+	if (agents.some((a) => a.kind === "role")) views.push("teams");
+	return views;
+}
 
 /** Owner glyphs: main agent a filled diamond, spawned subagents the hollow counterpart, team roles a triangle. */
 const AGENT_GLYPH: Record<TaskAgentKind, string> = { main: "◆", subagent: "◇", role: "▸" };
@@ -158,15 +165,20 @@ function progressBar(done: number, active: number, total: number): { plain: stri
 }
 
 /**
- * View switcher rendered at the right edge of the ledger header: the three
- * lens labels joined by `·`, the active one in bold accent. Purely an
+ * View switcher rendered at the right edge of the ledger header: the labels
+ * of the lenses that have content joined by `·`, the active one in bold
+ * accent. Hidden entirely when only one lens is available. Purely an
  * indicator in the TUI — the bound key cycles it (see app.tasks.cycleView).
  */
-function formatViewSwitcher(view: TaskPanelView): { plain: string; styled: string } {
-	const plain = VIEW_ORDER.map((v) => VIEW_LABEL[v]).join(" · ");
-	const styled = VIEW_ORDER.map((v) =>
-		v === view ? theme.bold(theme.fg("accent", VIEW_LABEL[v])) : theme.fg("dim", VIEW_LABEL[v]),
-	).join(theme.fg("dim", " · "));
+function formatViewSwitcher(
+	view: TaskPanelView,
+	available: readonly TaskPanelView[],
+): { plain: string; styled: string } {
+	if (available.length < 2) return { plain: "", styled: "" };
+	const plain = available.map((v) => VIEW_LABEL[v]).join(" · ");
+	const styled = available
+		.map((v) => (v === view ? theme.bold(theme.fg("accent", VIEW_LABEL[v])) : theme.fg("dim", VIEW_LABEL[v])))
+		.join(theme.fg("dim", " · "));
 	return { plain, styled };
 }
 
@@ -182,6 +194,7 @@ function formatHeader(
 	state: PanelState,
 	totalSecs: number,
 	view: TaskPanelView,
+	available: readonly TaskPanelView[],
 ): string {
 	const total = tasks.length;
 	const done = tasks.filter((t) => t.status === "done").length;
@@ -225,18 +238,18 @@ function formatHeader(
 
 	// Right cluster: turn delta, then the view switcher at the far edge. The
 	// switcher is the first thing dropped when the terminal narrows; the turn
-	// delta next; the stamp/count survive to the end.
-	const switcher = formatViewSwitcher(view);
+	// delta next; the stamp/count survive to the end. Either piece may be
+	// absent (no usage reported / only one lens available).
+	const switcher = formatViewSwitcher(view, available);
 	const rightVariants: Array<{ plain: string; styled: string }> = [];
-	if (turnPlain) {
+	if (turnPlain && switcher.plain) {
 		rightVariants.push({
 			plain: `${turnPlain}  ${switcher.plain}`,
 			styled: `${turnText}  ${switcher.styled}`,
 		});
-		rightVariants.push({ plain: turnPlain, styled: turnText });
-	} else {
-		rightVariants.push(switcher);
 	}
+	if (turnPlain) rightVariants.push({ plain: turnPlain, styled: turnText });
+	else if (switcher.plain) rightVariants.push(switcher);
 
 	for (const right of rightVariants) {
 		if (visibleWidth(leftFullPlain) + 2 + visibleWidth(right.plain) <= width) {
@@ -248,7 +261,9 @@ function formatHeader(
 			return leftMin + " ".repeat(pad) + right.styled;
 		}
 	}
-	if (visibleWidth(leftFullPlain) <= width) return leftFull;
+	if (visibleWidth(leftFullPlain) <= width) {
+		return leftFull + " ".repeat(width - visibleWidth(leftFullPlain));
+	}
 	return truncateToWidth(leftMin, width, "…");
 }
 
@@ -264,7 +279,7 @@ function formatTaskLine(
 	width: number,
 	frame: number,
 	idColWidth: number,
-	options: { grouped?: boolean } = {},
+	options: { grouped?: boolean; owner?: TaskAgent } = {},
 ): string {
 	const isProgress = task.status === "in_progress";
 	const iconGlyph = isProgress
@@ -273,23 +288,36 @@ function formatTaskLine(
 	const icon = theme.fg(taskStatusColor(task.status), iconGlyph);
 
 	// In grouped views the group header already carries the row's origin, so the
-	// source glyph and tag are suppressed; the rows sit on a faint indent guide.
+	// owner glyph and tag are suppressed; the rows sit on a faint indent guide.
 	const grouped = options.grouped === true;
 	const indent = grouped ? theme.fg("borderMuted", GROUP_INDENT_PLAIN) : "";
 
-	// Source marker between the status icon and the id; every row carries one
-	// (◆ main when no source is set), so the id column stays aligned.
-	const sourceGlyph = task.source ? TASK_SOURCE_GLYPH[task.source] : MAIN_SOURCE_GLYPH;
+	// Owner marker between the status icon and the id, derived from the owning
+	// agent's kind so the flat lens attributes rows the same way the grouped
+	// lenses do (a roster-less owner falls back on the task's source). MCP rows
+	// have no owning agent and keep their own ⧉ marker. Every row carries one
+	// cell, so the id column stays aligned.
+	const isMcp = task.source === "mcp";
+	const ownerKind = options.owner?.kind ?? (task.source === "subagent" ? "subagent" : "main");
+	const sourceGlyph = isMcp ? MCP_SOURCE_GLYPH : AGENT_GLYPH[ownerKind];
 	const styledSource = grouped ? "" : theme.fg("dim", sourceGlyph);
 
 	// Right-pad the id to the shared column width so titles line up across rows even
 	// when ids differ in digit count (#1 vs #10). Padding is plain spaces inside the
 	// dim styling, so it adds no visible color.
 	const idLabel = `#${task.id}`.padEnd(idColWidth);
-	// Source tag prefixed to the title: the subagent mode (e.g. "[explore]") for
-	// subagent rows, "[MCP]" for MCP rows. Drawn in accent so it reads as the row's
-	// origin label, parallel to the chat's `Agent [explore]` / `MCP [server › tool]`.
-	const tag = grouped ? "" : task.source === "mcp" ? "[MCP]" : task.subagentMode ? `[${task.subagentMode}]` : "";
+	// Origin tag prefixed to the title, naming who runs the row: the subagent
+	// type ("[explore]"), the team role's name ("[planner]"), or the MCP server
+	// ("[github]"; "[MCP]" when no server label was recorded). Drawn in accent,
+	// parallel to the chat's `Agent [explore]` / `MCP [server › tool]`. Grouped
+	// rows drop it — the group header carries the origin — except MCP rows,
+	// which group under main without being main's own work.
+	let tag = "";
+	if (isMcp) tag = `[${task.subagentMode ?? "MCP"}]`;
+	else if (!grouped) {
+		if (task.subagentMode) tag = `[${task.subagentMode}]`;
+		else if (ownerKind === "role" && options.owner) tag = `[${options.owner.name}]`;
+	}
 	const styledTag = tag ? `${theme.fg("accent", tag)} ` : "";
 	const title = task.title;
 	// The id recedes (dim); the title carries the line. Done titles fade to muted
@@ -355,7 +383,7 @@ function formatTaskLine(
 	// truncated against the full left budget directly. Subtracting the prefix here
 	// (as a prior version did) truncated titles early and unevenly per id width.
 	const leftBody = grouped
-		? `${indent}${icon} ${styledId} ${styledTitle}`
+		? `${indent}${icon} ${styledId} ${styledTag}${styledTitle}`
 		: `${icon} ${styledSource} ${styledId} ${styledTag}${styledTitle}`;
 	const left = truncateToWidth(leftBody, leftWidth, "…");
 
@@ -480,15 +508,19 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   done/total count on the left, the per-turn token/elapsed/cost delta on the right.
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
  *   The active row animates a braille spinner; pending rows read `queued`.
- * - A single-cell source glyph (◆ main / ◇ subagent / ⧉ MCP) sits before the id
- *   so every row's origin is readable at a glance, and a text origin tag is shown
- *   before the title: the subagent mode (e.g. "[explore]") or "[MCP]". The ▸ team
- *   marker is used by role agents fed by `--team <url>`.
+ * - A single-cell owner glyph (◆ main / ◇ subagent / ▸ team role / ⧉ MCP) sits
+ *   before the id, derived from the owning agent's kind, so every row's origin
+ *   is readable at a glance even in the flat lens. A text origin tag before the
+ *   title names the owner: the subagent type ("[explore]"), the team role
+ *   ("[planner]", fed by `--team <url>`), or the MCP server ("[github]").
  * - Three views over the same list (cycled via app.tasks.cycleView, shown as a
  *   `tasks · subagents · teams` switcher in the header): flat, grouped by owning
  *   agent (subagents), or grouped by named role-agent with handoffs (teams).
- *   Grouped rows drop their origin glyph/tag (the group header carries it) and
- *   sit on a faint `│` indent guide.
+ *   The cycle is adaptive: empty lenses are skipped and dropped from the
+ *   switcher, which hides entirely when only flat has content. Grouped rows
+ *   drop their origin glyph/tag (the group header carries it) and sit on a
+ *   faint `│` indent guide; MCP rows keep their tag even grouped, since they
+ *   sit under the main group without being main's own work.
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
  *   user message arrives (see taskStore.reset()), not the moment they finish.
@@ -518,10 +550,15 @@ export class TaskPanelComponent implements Component {
 		this.ui?.requestRender();
 	}
 
-	/** Advance to the next view lens (flat → subagents → teams → flat). */
+	/**
+	 * Advance to the next view lens with content (flat → subagents → teams →
+	 * flat), skipping empty lenses. With nothing delegated this is a no-op on
+	 * flat; a stale view (its lens emptied since selection) snaps back to flat.
+	 */
 	cycleView(): TaskPanelView {
-		const idx = VIEW_ORDER.indexOf(this.view);
-		this.view = VIEW_ORDER[(idx + 1) % VIEW_ORDER.length] ?? "flat";
+		const available = availableViews(taskStore.list(), taskStore.agents());
+		const idx = available.indexOf(this.view);
+		this.view = available[(idx + 1) % available.length] ?? "flat";
 		this.ui?.requestRender();
 		return this.view;
 	}
@@ -564,9 +601,15 @@ export class TaskPanelComponent implements Component {
 		const tasks = taskStore.list();
 		const allAgents = taskStore.agents();
 
+		// A selected lens whose content has since drained (e.g. teams after
+		// reset) renders as flat; the stored view is untouched so an explicit
+		// setView choice survives if its content comes back.
+		const available = availableViews(tasks, allAgents);
+		const view = available.includes(this.view) ? this.view : "flat";
+
 		// In teams view, queued role agents with no tasks still render as placeholders.
 		const hasQueuedRolePlaceholders =
-			this.view === "teams" && allAgents.some((a) => a.kind === "role" && a.state === "queued");
+			view === "teams" && allAgents.some((a) => a.kind === "role" && a.state === "queued");
 
 		if (tasks.length === 0 && !hasQueuedRolePlaceholders) {
 			this.ensureAnimation(false);
@@ -588,20 +631,25 @@ export class TaskPanelComponent implements Component {
 
 		// The header always reflects all tasks — it is a panel-wide summary, not
 		// scoped to the filtered subset that the lens shows.
-		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs, this.view)];
+		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs, view, available)];
 
-		if (this.view === "flat") {
+		if (view === "flat") {
+			// Resolve each row's owner from the roster so the glyph/tag reflect the
+			// owning agent's kind (◇ subagent / ▸ role), not just the task source.
+			const agentById = new Map(allAgents.map((a) => [a.id, a]));
 			for (const task of tasks) {
-				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth));
+				lines.push(
+					gutter + formatTaskLine(task, inner, this.frame, idColWidth, { owner: agentById.get(taskOwnerId(task)) }),
+				);
 			}
 			return lines;
 		}
 
 		// Subagents / teams views: filter roster and tasks by agent kind so each
 		// lens shows only the agents and tasks relevant to its perspective.
-		const { filteredTasks, filteredAgents } = filterTasksForView(tasks, allAgents, this.view);
+		const { filteredTasks, filteredAgents } = filterTasksForView(tasks, allAgents, view);
 
-		if (this.view === "subagents") {
+		if (view === "subagents") {
 			// Non-role agents and their tasks, grouped. Hierarchy carried by indent
 			// and owner glyph alone — no fills, no boxes.
 			for (const group of groupTasks(filteredTasks, filteredAgents)) {

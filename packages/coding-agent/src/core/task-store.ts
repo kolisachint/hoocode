@@ -50,7 +50,11 @@ export interface Task {
 	status: TaskStatus;
 	/** Origin of the task (subagent delegation vs MCP tool call; unset = main agent); drives the pane's source glyph. */
 	source?: TaskSource;
-	/** Subagent mode when this task is owned by a subagent (e.g. "explore"). */
+	/**
+	 * Origin label shown as the row's `[tag]` in the task pane: the subagent
+	 * type for delegations (e.g. "explore"), the MCP server name for MCP tasks
+	 * (e.g. "github").
+	 */
 	subagentMode?: string;
 	/** Id of the owning TaskAgent; drives grouping in the pane's subagents/teams views. */
 	agent?: string;
