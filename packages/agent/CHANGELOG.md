@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+
+## [0.4.48] - 2026-06-11
+
 ### Added
 
 - `getDefaultTools(opts?: { cwd?: string })`: headless bundle of the built-in
@@ -13,6 +16,7 @@
   (`{ "mcpServers": ... }`), start the declared stdio MCP servers, and return
   their tools as `AgentTool`s (named `mcp_<server>_<tool>`). Servers are
   reaped on process exit; `closeMcpTools()` terminates them earlier.
+=======
 
 ## [0.4.47] - 2026-06-11
 
