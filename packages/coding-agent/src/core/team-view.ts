@@ -52,17 +52,27 @@ function taskStatusFromState(state: TaskAgentState): TaskStatus {
 		case "failed":
 			return "failed";
 		case "idle":
-			return "pending";
+			// Idle is settled, not queued: a "pending" task here would survive every
+			// taskStore.reset() and pin the pane at "working" for the whole session.
+			return "done";
 		default:
 			return "in_progress";
 	}
 }
 
+/** Only these states represent activity worth a task row of its own. */
+function stateWarrantsTask(state: TaskAgentState): boolean {
+	return state === "active" || state === "running" || state === "failed";
+}
+
 /**
  * Maps team status snapshots and TeamEvents onto task-store patches.
  *
- * Each role owns one roster entry (id `team:<role>`) and one live task; the
- * task's title tracks the role's latest activity. Both are re-created on
+ * Each role owns one roster entry (id `team:<role>`) and at most one task whose
+ * title tracks the role's latest activity. Tasks exist only while a role is
+ * actually doing something (active/running, or failed so the error is visible);
+ * idle roles keep their roster entry but no task, so a quiet team leaves the
+ * pane collapsed instead of pinning it at "working". Entries are re-created on
  * demand because taskStore.reset() wipes finished tasks between user turns.
  */
 export class TeamViewMapper {
@@ -133,13 +143,17 @@ export class TeamViewMapper {
 		return `team:${role}`;
 	}
 
-	/** Make sure the role's roster entry and live task exist (reset() may have dropped them). */
+	/**
+	 * Make sure the role's roster entry exists, plus its task when the state
+	 * warrants one (reset() may have dropped both). Idle/done states never
+	 * create a task — only patch one that live activity already opened.
+	 */
 	private ensureRole(role: string, state: TaskAgentState, title: string): void {
 		const id = this.agentId(role);
 		this.store.upsertAgent({ id, name: role, kind: "role", state });
 		const taskId = this.taskIds.get(role);
 		const existing = taskId !== undefined ? this.store.list().find((task) => task.id === taskId) : undefined;
-		if (!existing) {
+		if (!existing && stateWarrantsTask(state)) {
 			const task = this.store.create(title, { agent: id });
 			this.store.update(task.id, { status: taskStatusFromState(state) });
 			this.taskIds.set(role, task.id);
@@ -203,13 +217,16 @@ export function connectTeamView(url: string, options: TeamViewOptions = {}): Tea
 			try {
 				const response = await fetch(`${base}/events`, { signal: controller.signal });
 				if (!response.ok || !response.body) throw new Error(`HTTP ${response.status}`);
-				announcedDrop = false;
 				const reader = response.body.getReader();
 				const decoder = new TextDecoder();
 				let buffer = "";
 				while (true) {
 					const { value, done } = await reader.read();
 					if (done) break;
+					// Only a stream that actually delivers data counts as recovered. A 200
+					// that closes immediately (e.g. a server that answers /events without
+					// streaming) used to re-arm the warning and repeat it every retry.
+					announcedDrop = false;
 					buffer += decoder.decode(value, { stream: true });
 					let index = buffer.indexOf("\n\n");
 					while (index !== -1) {

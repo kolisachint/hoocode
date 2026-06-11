@@ -1,6 +1,25 @@
 # Changelog
 
 ## [Unreleased]
+### Fixed
+
+- `--team` no longer corrupts the interactive TUI. Team-view warnings went to
+  raw stderr while the TUI owned the screen, scribbling over the render until
+  the editor stopped echoing input; an `/events` endpoint that answered 200
+  but closed without streaming repeated that warning every 5s retry. Warnings
+  now surface in the chat, and a reconnect only counts as recovered once the
+  stream actually delivers data.
+- Idle team roles no longer pin the task pane at "◐ WORKING". The mirror gave
+  every role a `pending` task that never finished, so the pane never collapsed
+  and task numbering never reset. Roles now get a task row only while they are
+  actually doing something (or failed); an all-idle team leaves the pane
+  collapsed.
+
+### Changed
+
+- Default key for `app.tasks.cycleView` is now `alt+t` (with `shift+ctrl+t`
+  kept as an alias). Windows Terminal intercepts `ctrl+shift+t` as its own
+  "new tab" shortcut, so the old default never reached the app there.
 
 ## [0.4.49] - 2026-06-11
 
@@ -12,7 +31,6 @@
   agents and the single `GET /events` SSE stream maps TeamEvents onto live
   task/agent patches. Connection failures and drops log a warning and never
   block the main agent.
-=======
 
 ## [0.4.47] - 2026-06-11
 
