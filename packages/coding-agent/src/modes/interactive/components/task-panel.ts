@@ -1,12 +1,6 @@
 import type { Component, TUI } from "@kolisachint/hoocode-tui";
 import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
-import type {
-	Task,
-	TaskAgent,
-	TaskAgentKind,
-	TaskAgentState,
-	TaskStatus,
-} from "../../../core/task-store.js";
+import type { Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskStatus } from "../../../core/task-store.js";
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
 import { theme } from "../theme/theme.js";
@@ -639,7 +633,8 @@ export class TaskPanelComponent implements Component {
 			const agentById = new Map(allAgents.map((a) => [a.id, a]));
 			for (const task of tasks) {
 				lines.push(
-					gutter + formatTaskLine(task, inner, this.frame, idColWidth, { owner: agentById.get(taskOwnerId(task)) }),
+					gutter +
+						formatTaskLine(task, inner, this.frame, idColWidth, { owner: agentById.get(taskOwnerId(task)) }),
 				);
 			}
 			return lines;
