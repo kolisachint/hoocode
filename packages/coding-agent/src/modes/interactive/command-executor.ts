@@ -501,6 +501,7 @@ export class CommandExecutor {
 		const selectModel = keyDisplayText("app.model.select");
 		const expandTools = keyDisplayText("app.tools.expand");
 		const toggleThinking = keyDisplayText("app.thinking.toggle");
+		const cycleTaskView = keyDisplayText("app.tasks.cycleView");
 		const externalEditor = keyDisplayText("app.editor.external");
 		const cycleModelBackward = keyDisplayText("app.model.cycleBackward");
 		const followUp = keyDisplayText("app.message.followUp");
@@ -545,6 +546,7 @@ export class CommandExecutor {
 | \`${selectModel}\` | Open model selector |
 | \`${expandTools}\` | Toggle tool output expansion |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
+| \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |
 | \`${externalEditor}\` | Edit message in external editor |
 | \`${followUp}\` | Queue follow-up message |
 | \`${dequeue}\` | Restore queued messages |

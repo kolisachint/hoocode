@@ -17,6 +17,7 @@ describe("task panel rendering", () => {
 
 	beforeEach(() => {
 		taskStore.clear();
+		panel.setView("flat");
 	});
 
 	afterAll(() => {
@@ -36,7 +37,7 @@ describe("task panel rendering", () => {
 		expect(lines).toEqual([]);
 	});
 
-	test("shows active subagent tasks with status icons and task IDs, but no mode tags", () => {
+	test("shows active subagent tasks with status icons, task IDs, and mode tags", () => {
 		const explore = taskStore.create("SSE watch endpoint", { subagentMode: "explore" });
 		const edit = taskStore.create("Auth refactor", { subagentMode: "edit" });
 		const plain = taskStore.create("Init project");
@@ -52,9 +53,9 @@ describe("task panel rendering", () => {
 		expect(text).toContain("SSE watch endpoint");
 		expect(text).toContain("Auth refactor");
 		expect(text).toContain("Init project");
-		// Subagent mode tags are intentionally not shown in the task pane.
-		expect(text).not.toContain("[explore]");
-		expect(text).not.toContain("[edit]");
+		// In the flat view, the origin tag precedes the title (design: .mode tag).
+		expect(text).toContain("[explore]");
+		expect(text).toContain("[edit]");
 		// Active work shows the WORKING stamp (◐) and a pending dot (●).
 		expect(text).toContain("◐");
 		expect(text).toContain("●");
@@ -66,7 +67,7 @@ describe("task panel rendering", () => {
 		expect(text).toContain(`#${plain.id}`);
 	});
 
-	test("shows a source glyph for subagent and MCP rows, but not for plain tasks or mode tags", () => {
+	test("shows a source glyph for subagent and MCP rows, but not for plain tasks", () => {
 		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
 		const mcp = taskStore.create("web › fetch", { source: "mcp" });
 		const plain = taskStore.create("init project");
@@ -85,8 +86,8 @@ describe("task panel rendering", () => {
 		// Plain task gets neither glyph.
 		expect(plainRow).not.toContain("⚙");
 		expect(plainRow).not.toContain("⧉");
-		// The glyph is a source marker, NOT a mode tag — the pane stays tag-free.
-		expect(lines.join("\n")).not.toContain("[explore]");
+		// The glyph is a source marker; the row also carries its origin tag.
+		expect(lines.join("\n")).toContain("[explore]");
 		// Each row is still padded to the full pane width (glyph cell didn't break alignment).
 		for (const row of [subRow, mcpRow, plainRow]) {
 			expect(visibleWidth(row as string)).toBe(120);
@@ -296,5 +297,148 @@ describe("task panel rendering", () => {
 		const text = lines.join("\n");
 		expect(text).toContain("Task 0");
 		expect(text).toContain("Task 5");
+	});
+
+	test("header shows the view switcher with the active lens highlighted", () => {
+		const t = taskStore.create("Plain work");
+		taskStore.update(t.id, { status: "in_progress" });
+
+		expect(stripAnsi(renderPanel()[0] as string)).toContain("tasks · subagents · teams");
+	});
+
+	test("cycleView advances flat → subagents → teams → flat", () => {
+		expect(panel.getView()).toBe("flat");
+		expect(panel.cycleView()).toBe("subagents");
+		expect(panel.cycleView()).toBe("teams");
+		expect(panel.cycleView()).toBe("flat");
+	});
+
+	test("subagents view groups tasks under owner headers with glyphs and per-agent counts", () => {
+		taskStore.upsertAgent({ id: "main", name: "main", role: "orchestrator", kind: "main", state: "running" });
+		taskStore.upsertAgent({
+			id: "explore",
+			name: "explore",
+			role: "subagent",
+			kind: "subagent",
+			state: "done",
+			stats: { input: 2800, output: 360, cost: 0.011 },
+		});
+
+		const mine = taskStore.create("Map fetch() call sites");
+		taskStore.update(mine.id, { status: "done" });
+		const sub = taskStore.create("Port runtime http client", {
+			source: "subagent",
+			subagentMode: "explore",
+			agent: "explore",
+		});
+		taskStore.update(sub.id, { status: "done" });
+
+		panel.setView("subagents");
+		const lines = renderPanel().map(stripAnsi);
+		// 1 header + 2 group headers + 2 task rows.
+		expect(lines.length).toBe(5);
+
+		// Group order is deterministic: main first, then roster order.
+		const mainHeader = lines[1] as string;
+		expect(mainHeader).toContain("◆ main");
+		expect(mainHeader).toContain("orchestrator");
+		expect(mainHeader).toContain("[running]");
+		expect(mainHeader).toMatch(/1\/1\s*$/);
+
+		const subHeader = lines[3] as string;
+		expect(subHeader).toContain("⊕ explore");
+		expect(subHeader).toContain("[done]");
+		// Per-agent stats: own token/cost totals before the count.
+		expect(subHeader).toContain("↑2.8k ↓360 · $0.011");
+
+		// Grouped rows are indented on a guide and drop the origin glyph/tag.
+		const subRow = lines[4] as string;
+		expect(subRow.startsWith("▎ │ ")).toBe(true);
+		expect(subRow).toContain("Port runtime http client");
+		expect(subRow).not.toContain("[explore]");
+		expect(subRow).not.toContain("⚙");
+	});
+
+	test("teams view renders role-agents with ▸ glyphs, states, and handoff arrows", () => {
+		taskStore.upsertAgent({
+			id: "planner",
+			name: "planner",
+			role: "architect",
+			kind: "role",
+			state: "done",
+			handoff: "→ builder",
+			stats: { input: 1400, output: 260, cost: 0.004 },
+		});
+		taskStore.upsertAgent({ id: "builder", name: "builder", role: "engineer", kind: "role", state: "active" });
+
+		const draft = taskStore.create("Draft the retry design", { agent: "planner" });
+		taskStore.update(draft.id, { status: "done" });
+		const impl = taskStore.create("Implement withRetry()", { agent: "builder" });
+		taskStore.update(impl.id, { status: "in_progress" });
+
+		panel.setView("teams");
+		const lines = renderPanel().map(stripAnsi);
+		expect(lines.length).toBe(5);
+
+		const plannerHeader = lines[1] as string;
+		expect(plannerHeader).toContain("▸ planner");
+		expect(plannerHeader).toContain("· architect");
+		expect(plannerHeader).toContain("[done]");
+		expect(plannerHeader).toContain("→ builder");
+		expect(plannerHeader).toContain("↑1.4k ↓260 · $0.004");
+
+		const builderHeader = lines[3] as string;
+		expect(builderHeader).toContain("▸ builder");
+		expect(builderHeader).toContain("[active]");
+		expect(builderHeader).toMatch(/0\/1\s*$/);
+
+		// Rows are still padded to the full pane width in grouped views.
+		for (const line of renderPanel()) {
+			expect(visibleWidth(line)).toBe(120);
+		}
+	});
+
+	test("grouped views fall back to default owner metadata without a roster", () => {
+		const mine = taskStore.create("Init project");
+		taskStore.update(mine.id, { status: "in_progress" });
+		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(sub.id, { status: "in_progress" });
+
+		panel.setView("subagents");
+		const lines = renderPanel().map(stripAnsi);
+		// Untagged tasks group under a default ◆ main; subagent-sourced ones under ⊕ subagent.
+		expect(lines[1]).toContain("◆ main");
+		expect(lines[1]).toContain("orchestrator");
+		expect(lines[3]).toContain("⊕ subagent");
+	});
+
+	test("reset drops the roster with the tasks but keeps owners of live tasks", () => {
+		taskStore.upsertAgent({ id: "explore", name: "explore", role: "subagent", kind: "subagent", state: "running" });
+		taskStore.upsertAgent({ id: "review", name: "review", role: "subagent", kind: "subagent", state: "done" });
+		const live = taskStore.create("Still running", { source: "subagent", agent: "explore" });
+		taskStore.update(live.id, { status: "in_progress" });
+		const finished = taskStore.create("Finished work", { source: "subagent", agent: "review" });
+		taskStore.update(finished.id, { status: "done" });
+
+		taskStore.reset();
+		// The live task's owner survives; the settled one is dropped with its task.
+		expect(taskStore.agents().map((a) => a.id)).toEqual(["explore"]);
+
+		taskStore.update(live.id, { status: "done" });
+		taskStore.reset();
+		expect(taskStore.agents()).toEqual([]);
+	});
+
+	test("addAgentStats accumulates usage across dispatches of the same agent", () => {
+		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent" });
+		taskStore.addAgentStats("explore", { input: 1000, output: 200, cost: 0.01 });
+		taskStore.addAgentStats("explore", { input: 500, output: 100, cost: 0.005 });
+
+		const agent = taskStore.agents().find((a) => a.id === "explore");
+		expect(agent?.stats).toEqual({ input: 1500, output: 300, cost: 0.015 });
+
+		// Upserting the same id again (re-dispatch) keeps the accumulated stats.
+		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent", state: "running" });
+		expect(taskStore.agents().find((a) => a.id === "explore")?.stats?.input).toBe(1500);
 	});
 });

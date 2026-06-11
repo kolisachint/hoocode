@@ -57,8 +57,12 @@ Rendered in order as the conversation scrolls:
 
 ### Status / chrome
 
-- `task-panel.ts` - the subagent task list shown above the prompt (status icons, usage
-  stamps, and the warning cue). Owns `formatTaskLine`.
+- `task-panel.ts` - the task ledger shown above the prompt (status icons, usage
+  stamps, and the warning cue). Owns `formatTaskLine`. Has three views cycled with
+  `app.tasks.cycleView` (shift+ctrl+t): flat, subagents (grouped by owning agent),
+  and teams (grouped by named role-agent with handoffs). Grouping is driven by
+  `task.agent` + the `TaskAgent` roster in `core/task-store.ts`, which subagent
+  dispatches populate and external orchestrators (hooteams) can feed.
 - `footer.ts` - the bottom status/footer line.
 - `keybinding-hints.ts` - the hint strip.
 - `countdown-timer.ts`, `bordered-loader.ts`, `dynamic-border.ts` - timers, loaders, and
