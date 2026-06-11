@@ -154,7 +154,7 @@ describe("connectTeamView", () => {
 		let dataStreams = 0;
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async (input: RequestInfo | URL): Promise<Response> => {
+			vi.fn(async (input: string | URL | Request): Promise<Response> => {
 				if (String(input).endsWith("/status")) return Response.json({});
 				eventsCalls++;
 				if (dataStreams > 0) {
