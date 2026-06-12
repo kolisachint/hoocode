@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- Approval gates for `--team`: when a hooteams orchestrator pauses a task
+  (`task_paused` over the shared `/events` stream, or already pending on
+  attach via `GET /tasks/pending`), the question and its options surface in
+  the INPUT NEEDED pane (free-form answers allowed). The answer goes back as
+  `POST /tasks/:id/resume`; first answer across surfaces wins, and a gate
+  answered from hoocanvas (or another hoocode) dismisses itself with a notice.
+  Paused roles show as "waiting" with an "awaiting approval: …" task row in
+  the teams view, and orchestrator `task_started`/`task_finished` events now
+  drive role state too.
+
 ## [0.4.53] - 2026-06-12
 
 ### Added

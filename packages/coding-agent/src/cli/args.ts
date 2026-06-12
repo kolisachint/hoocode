@@ -257,7 +257,8 @@ ${chalk.bold("Options:")}
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
   --team <url|auto>              Bridge a hooteams server into the task panel's teams view
-                                 (focus roles, nudge, attach); "auto" finds .agents/teams/default.json
+                                 (focus roles, nudge, attach, answer approval gates);
+                                 "auto" finds .agents/teams/default.json
                                  or hooteams.config.json upward from cwd and spawns hooteams locally
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
                                  Supports globs (anthropic/*, *sonnet*) and fuzzy matching

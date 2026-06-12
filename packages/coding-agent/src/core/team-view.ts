@@ -35,6 +35,24 @@ export interface TeamViewEvent {
 		errorMessage?: string;
 		usage?: { input?: number; output?: number; cost?: { total?: number } };
 	};
+	/** Task lifecycle fields carried by task_* events from the orchestrator. */
+	taskId?: string;
+	/** Approval gate carried by task_paused. */
+	question?: string;
+	options?: string[];
+	/** Answer carried by task_resumed. */
+	chosenOption?: string;
+	/** "done" | "error" on task_finished. */
+	status?: string;
+	/** Run id carried by dag_complete / dag_failed. */
+	runId?: string;
+}
+
+/** One unanswered approval gate from GET /tasks/pending. */
+export interface TeamPendingApproval {
+	taskId: string;
+	question: string;
+	options: string[];
 }
 
 /** hooteams AgentStatus word → task panel agent state. */
@@ -51,6 +69,8 @@ function stateFromStatus(status: string | undefined): TaskAgentState {
 			return "done";
 		case "error":
 			return "failed";
+		case "paused":
+			return "waiting";
 		default:
 			return "idle";
 	}
@@ -73,7 +93,7 @@ function taskStatusFromState(state: TaskAgentState): TaskStatus {
 
 /** Only these states represent activity worth a task row of its own. */
 function stateWarrantsTask(state: TaskAgentState): boolean {
-	return state === "active" || state === "running" || state === "failed";
+	return state === "active" || state === "running" || state === "failed" || state === "waiting";
 }
 
 /**
@@ -107,6 +127,9 @@ export class TeamViewMapper {
 	/** Map one TeamEvent from GET /events onto the store. */
 	applyEvent(event: TeamViewEvent): void {
 		if (!event || typeof event.role !== "string" || event.role.length === 0) return;
+		// Dag settlement events are tagged role="orchestrator" — they describe
+		// the run, not a member, and must not create a phantom roster entry.
+		if (event.type === "dag_complete" || event.type === "dag_failed") return;
 		const role = event.role;
 		switch (event.type) {
 			case "agent_start":
@@ -142,6 +165,26 @@ export class TeamViewMapper {
 					this.ensureRole(role, "done", "idle");
 					this.patchRole(role, "done", "idle");
 				}
+				break;
+			}
+			case "task_started":
+				this.ensureRole(role, "active", `task: ${event.taskId ?? "?"}`);
+				this.patchRole(role, "active", `task: ${event.taskId ?? "?"}`);
+				break;
+			case "task_paused": {
+				const title = `awaiting approval: ${event.question ?? "?"}`;
+				this.ensureRole(role, "waiting", title);
+				this.patchRole(role, "waiting", title);
+				break;
+			}
+			case "task_resumed":
+				this.ensureRole(role, "active", `task: ${event.taskId ?? "?"}`);
+				this.patchRole(role, "active", `task: ${event.taskId ?? "?"}`);
+				break;
+			case "task_finished": {
+				const state = event.status === "error" ? "failed" : "done";
+				this.ensureRole(role, state, state === "failed" ? "error" : "idle");
+				this.patchRole(role, state, state === "failed" ? "error" : "idle");
 				break;
 			}
 			default:
@@ -194,6 +237,18 @@ export interface TeamViewConnection {
 	stop(): void;
 	/** POST /steer { role, message }. Rejects on network or HTTP error. */
 	steer(role: string, message: string): Promise<void>;
+	/**
+	 * Answer a paused task: POST /tasks/:taskId/resume { option, feedback? }.
+	 * Rejects with "answered elsewhere" on 409 (first answer wins across
+	 * surfaces) and with HTTP/network errors otherwise.
+	 */
+	resume(taskId: string, option: string, feedback?: string): Promise<void>;
+	/**
+	 * GET /tasks/pending — gates that opened before we attached. Resolves to
+	 * [] when the server has no active run (404) so callers need no special
+	 * casing.
+	 */
+	pendingApprovals(): Promise<TeamPendingApproval[]>;
 	/**
 	 * Subscribe to every TeamEvent delivered by the shared /events stream.
 	 * Returns an unsubscribe function. Listeners receive events for all roles;
@@ -309,6 +364,25 @@ export function connectTeamView(url: string, options: TeamViewOptions = {}): Tea
 				signal: AbortSignal.any([controller.signal, AbortSignal.timeout(STEER_TIMEOUT_MS)]),
 			});
 			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		},
+		async resume(taskId: string, option: string, feedback?: string): Promise<void> {
+			const response = await fetch(`${base}/tasks/${encodeURIComponent(taskId)}/resume`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ option, ...(feedback !== undefined ? { feedback } : {}) }),
+				signal: AbortSignal.any([controller.signal, AbortSignal.timeout(STEER_TIMEOUT_MS)]),
+			});
+			if (response.status === 409) throw new Error(`task "${taskId}" was answered elsewhere`);
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		},
+		async pendingApprovals(): Promise<TeamPendingApproval[]> {
+			const response = await fetch(`${base}/tasks/pending`, {
+				signal: AbortSignal.any([controller.signal, AbortSignal.timeout(STATUS_TIMEOUT_MS)]),
+			});
+			if (response.status === 404) return [];
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+			const body = (await response.json()) as { pending?: TeamPendingApproval[] };
+			return Array.isArray(body.pending) ? body.pending : [];
 		},
 		subscribe(listener: (event: TeamViewEvent) => void): () => void {
 			listeners.add(listener);
