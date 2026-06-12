@@ -1,10 +1,13 @@
 /**
- * Read-only hooteams team view (`--team <url>`).
+ * hooteams team client (`--team <url>`).
  *
  * Connects to a running hooteams server, registers every role as a
  * kind="role" agent in the task store, and maps the server's TeamEvent SSE
  * stream onto task-store patches so the task panel's existing "teams" view
- * shows live role state. Strictly observational: no steering, no attach.
+ * shows live role state. On top of that mirror the connection exposes
+ * steering (POST /steer) and an event subscription used by the attach
+ * side-panel — both share the single /events stream; no second SSE
+ * connection is ever opened.
  *
  * The connection is best-effort by design — a connect failure or a later
  * drop logs a warning and never blocks (or crashes) the main agent. At most
@@ -23,7 +26,15 @@ export interface TeamViewEvent {
 	agentId?: string;
 	ts?: number;
 	toolName?: string;
-	message?: { role?: string; errorMessage?: string };
+	args?: unknown;
+	isError?: boolean;
+	/** Streaming assistant-message delta carried by message_update events. */
+	assistantMessageEvent?: { type?: string; delta?: string };
+	message?: {
+		role?: string;
+		errorMessage?: string;
+		usage?: { input?: number; output?: number; cost?: { total?: number } };
+	};
 }
 
 /** hooteams AgentStatus word → task panel agent state. */
@@ -181,9 +192,20 @@ export interface TeamViewOptions {
 export interface TeamViewConnection {
 	/** Close the SSE connection and stop reconnecting. */
 	stop(): void;
+	/** POST /steer { role, message }. Rejects on network or HTTP error. */
+	steer(role: string, message: string): Promise<void>;
+	/**
+	 * Subscribe to every TeamEvent delivered by the shared /events stream.
+	 * Returns an unsubscribe function. Listeners receive events for all roles;
+	 * per-role filtering is the subscriber's job (the attach panel filters).
+	 */
+	subscribe(listener: (event: TeamViewEvent) => void): () => void;
+	/** Number of live event subscribers. Exposed for leak tests. */
+	subscriberCount(): number;
 }
 
 const STATUS_TIMEOUT_MS = 5000;
+const STEER_TIMEOUT_MS = 5000;
 
 /**
  * Start the read-only team view against a hooteams server base URL.
@@ -197,7 +219,19 @@ export function connectTeamView(url: string, options: TeamViewOptions = {}): Tea
 	const retryDelayMs = options.retryDelayMs ?? 5000;
 	const mapper = new TeamViewMapper(options.store);
 	const controller = new AbortController();
+	const listeners = new Set<(event: TeamViewEvent) => void>();
 	let stopped = false;
+
+	const deliver = (event: TeamViewEvent): void => {
+		mapper.applyEvent(event);
+		for (const listener of listeners) {
+			try {
+				listener(event);
+			} catch {
+				// A broken subscriber must not take down the stream or its peers.
+			}
+		}
+	};
 
 	const run = async (): Promise<void> => {
 		// 1. Status snapshot: register the current roles.
@@ -236,7 +270,7 @@ export function connectTeamView(url: string, options: TeamViewOptions = {}): Tea
 						for (const line of frame.split("\n")) {
 							if (!line.startsWith("data:")) continue;
 							try {
-								mapper.applyEvent(JSON.parse(line.slice(5).trim()) as TeamViewEvent);
+								deliver(JSON.parse(line.slice(5).trim()) as TeamViewEvent);
 							} catch {
 								// Malformed frames are dropped; the stream stays up.
 							}
@@ -264,7 +298,26 @@ export function connectTeamView(url: string, options: TeamViewOptions = {}): Tea
 	return {
 		stop() {
 			stopped = true;
+			listeners.clear();
 			controller.abort();
+		},
+		async steer(role: string, message: string): Promise<void> {
+			const response = await fetch(`${base}/steer`, {
+				method: "POST",
+				headers: { "content-type": "application/json" },
+				body: JSON.stringify({ role, message }),
+				signal: AbortSignal.any([controller.signal, AbortSignal.timeout(STEER_TIMEOUT_MS)]),
+			});
+			if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		},
+		subscribe(listener: (event: TeamViewEvent) => void): () => void {
+			listeners.add(listener);
+			return () => {
+				listeners.delete(listener);
+			};
+		},
+		subscriberCount(): number {
+			return listeners.size;
 		},
 	};
 }

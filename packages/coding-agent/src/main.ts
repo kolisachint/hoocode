@@ -749,23 +749,43 @@ export async function main(args: string[], options?: MainOptions) {
 			verbose: parsed.verbose,
 		});
 
-		// Optional read-only hooteams mirror. Fire-and-forget: connect failures
-		// and drops warn in the background and never block the main agent.
-		// Warnings go through the chat, not console.error: a raw stderr write
-		// while the TUI owns the screen scribbles over the render and can leave
-		// the editor looking frozen.
+		// Optional hooteams bridge. `--team auto` discovers a config, spawns a
+		// local hooteams child on a free port, and proceeds as if its URL had
+		// been passed; the child is reaped on exit (clean or signal) via a
+		// process "exit" hook plus the explicit stop below.
+		let autoTeam: { url: string; stop(): Promise<void> } | undefined;
+		let teamUrl = parsed.team;
+		if (teamUrl === "auto") {
+			const { startAutoTeam } = await import("./core/team-auto.js");
+			try {
+				autoTeam = await startAutoTeam(process.cwd(), { log: (message) => console.log(chalk.dim(message)) });
+				teamUrl = autoTeam.url;
+			} catch (error) {
+				console.error(chalk.red(error instanceof Error ? error.message : String(error)));
+				process.exit(1);
+			}
+		}
+
+		// Team mirror + client. Fire-and-forget: connect failures and drops warn
+		// in the background and never block the main agent. Warnings go through
+		// the chat, not console.error: a raw stderr write while the TUI owns the
+		// screen scribbles over the render and can leave the editor looking
+		// frozen. The same connection powers team focus / nudge / attach.
 		let teamView: { stop(): void } | undefined;
-		if (parsed.team) {
+		if (teamUrl) {
 			const { connectTeamView } = await import("./core/team-view.js");
-			teamView = connectTeamView(parsed.team, {
+			const teamClient = connectTeamView(teamUrl, {
 				warn: (message) => interactiveMode.showWarning(message),
 			});
+			teamView = teamClient;
+			interactiveMode.attachTeamClient(teamClient);
 		}
 		if (startupBenchmark) {
 			await interactiveMode.init();
 			time("interactiveMode.init");
 			printTimings();
 			teamView?.stop();
+			await autoTeam?.stop();
 			interactiveMode.stop();
 			stopThemeWatcher();
 			if (process.stdout.writableLength > 0) {
@@ -782,6 +802,7 @@ export async function main(args: string[], options?: MainOptions) {
 			await interactiveMode.run();
 		} finally {
 			teamView?.stop();
+			await autoTeam?.stop();
 		}
 	} else {
 		printTimings();
