@@ -14,6 +14,8 @@ function fakeConnection(): { connection: TeamViewConnection; emit: (event: TeamV
 		connection: {
 			stop() {},
 			async steer() {},
+			async resume() {},
+			pendingApprovals: async () => [],
 			subscribe(listener) {
 				listeners.add(listener);
 				return () => {

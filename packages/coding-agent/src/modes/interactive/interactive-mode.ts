@@ -72,6 +72,7 @@ import { type SessionContext, SessionManager } from "../../core/session-manager.
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
 import { taskStore } from "../../core/task-store.js";
+import { type TeamApproval, TeamApprovalCoordinator } from "../../core/team-approvals.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
@@ -2641,11 +2642,56 @@ export class InteractiveMode {
 
 	/**
 	 * Wire a hooteams connection into the TUI. Called by main.ts when `--team`
-	 * is set, before run(). Enables team focus (app.team.focus), nudging (n)
-	 * and the attach side panel (a) on the task panel's teams view.
+	 * is set, before run(). Enables team focus (app.team.focus), nudging (n),
+	 * the attach side panel (a) on the task panel's teams view, and approval
+	 * gates: task_paused events (and gates already pending on the server)
+	 * surface in the options pane; the answer goes back over
+	 * POST /tasks/:id/resume.
 	 */
 	attachTeamClient(client: TeamViewConnection): void {
 		this.teamClient = client;
+		const approvals = new TeamApprovalCoordinator({
+			present: (approval, signal) => this.presentTeamApproval(approval, signal),
+			resume: (taskId, option) => client.resume(taskId, option),
+			info: (message) => this.showStatus(message),
+			warn: (message) => this.showWarning(message),
+		});
+		client.subscribe((event) => approvals.handleEvent(event));
+		// Gates that opened before we attached don't replay as task_paused.
+		void client.pendingApprovals().then(
+			(pending) => {
+				for (const gate of pending) approvals.enqueuePending(gate);
+			},
+			() => {
+				// Best-effort like the rest of the bridge; live gates still arrive via SSE.
+			},
+		);
+	}
+
+	/**
+	 * Show one team approval gate in the options pane and resolve with the
+	 * chosen (or free-form) answer, undefined when skipped. Waits politely
+	 * while another ask is on screen; the signal (gate answered elsewhere)
+	 * dismisses both the wait and the pane.
+	 */
+	private async presentTeamApproval(approval: TeamApproval, signal: AbortSignal): Promise<string | undefined> {
+		while (this.askOptions && !signal.aborted) {
+			await new Promise((resolve) => setTimeout(resolve, 200));
+		}
+		if (signal.aborted) return undefined;
+		const answers = await this.showAskOptions(
+			[
+				{
+					question: approval.question,
+					short: approval.taskId,
+					detail: `team task "${approval.taskId}"${approval.role ? ` (${approval.role})` : ""} is paused until answered`,
+					options: approval.options.map((label) => ({ label })),
+					allowCustom: true,
+				},
+			],
+			{ signal },
+		);
+		return answers?.[0];
 	}
 
 	/** Move keyboard focus to the task panel's team roster. */

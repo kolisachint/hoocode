@@ -122,6 +122,54 @@ describe("TeamViewMapper", () => {
 		expect(taskStore.agents()).toHaveLength(0);
 		expect(taskStore.list()).toHaveLength(0);
 	});
+
+	test("maps the orchestrator task lifecycle: started → paused (waiting) → resumed → finished", () => {
+		mapper.applyEvent({ type: "task_started", role: "ops", taskId: "deploy" });
+		expect(agent("ops")?.state).toBe("active");
+		expect(roleTask("ops")?.title).toBe("task: deploy");
+
+		mapper.applyEvent({
+			type: "task_paused",
+			role: "ops",
+			taskId: "deploy",
+			question: "Ship it?",
+			options: ["yes", "no"],
+		});
+		expect(agent("ops")?.state).toBe("waiting");
+		expect(roleTask("ops")?.title).toBe("awaiting approval: Ship it?");
+		expect(roleTask("ops")?.status).toBe("in_progress");
+
+		mapper.applyEvent({ type: "task_resumed", role: "ops", taskId: "deploy", chosenOption: "yes" });
+		expect(agent("ops")?.state).toBe("active");
+
+		mapper.applyEvent({ type: "task_finished", role: "ops", taskId: "deploy", status: "done" });
+		expect(agent("ops")?.state).toBe("done");
+		expect(roleTask("ops")?.status).toBe("done");
+	});
+
+	test("task_finished with status error marks the role failed", () => {
+		mapper.applyEvent({ type: "task_started", role: "ops", taskId: "deploy" });
+		mapper.applyEvent({ type: "task_finished", role: "ops", taskId: "deploy", status: "error" });
+		expect(agent("ops")?.state).toBe("failed");
+		expect(roleTask("ops")?.status).toBe("failed");
+	});
+
+	test("a paused role opens a waiting task even from cold (gate pending before attach)", () => {
+		mapper.applyEvent({ type: "task_paused", role: "ops", taskId: "deploy", question: "Ship it?", options: [] });
+		expect(agent("ops")?.state).toBe("waiting");
+		expect(roleTask("ops")?.status).toBe("in_progress");
+	});
+
+	test("applyStatus maps the paused status word to waiting", () => {
+		mapper.applyStatus({ ops: { status: "paused" } });
+		expect(agent("ops")?.state).toBe("waiting");
+	});
+
+	test("dag settlement events never create an orchestrator roster entry", () => {
+		mapper.applyEvent({ type: "dag_complete", role: "orchestrator", runId: "run-1" });
+		mapper.applyEvent({ type: "dag_failed", role: "orchestrator", runId: "run-1" });
+		expect(taskStore.agents()).toHaveLength(0);
+	});
 });
 
 describe("connectTeamView", () => {
@@ -250,6 +298,83 @@ describe("connectTeamView", () => {
 
 			steerStatus = 500;
 			await expect(view.steer("coder", "again")).rejects.toThrow("HTTP 500");
+			view.stop();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test("resume POSTs { option, feedback } to /tasks/:id/resume; 409 reads as answered elsewhere", async () => {
+		const resumeCalls: Array<{ url: string; body: unknown }> = [];
+		let resumeStatus = 200;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+				const url = String(input);
+				if (url.endsWith("/status")) return Response.json({});
+				if (url.includes("/tasks/")) {
+					expect(init?.method).toBe("POST");
+					resumeCalls.push({ url, body: JSON.parse(String(init?.body)) });
+					return new Response(null, { status: resumeStatus });
+				}
+				return sseResponse([]);
+			}),
+		);
+		try {
+			const view = connectTeamView("http://localhost:9", {
+				warn: () => {},
+				retryDelayMs: 60_000,
+				store: taskStore,
+			});
+			await view.resume("deploy", "yes", "ship it");
+			expect(resumeCalls).toEqual([
+				{ url: "http://localhost:9/tasks/deploy/resume", body: { option: "yes", feedback: "ship it" } },
+			]);
+
+			resumeStatus = 409;
+			await expect(view.resume("deploy", "no")).rejects.toThrow("answered elsewhere");
+			expect(resumeCalls[1]?.body).toEqual({ option: "no" });
+
+			resumeStatus = 500;
+			await expect(view.resume("deploy", "no")).rejects.toThrow("HTTP 500");
+			view.stop();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test("pendingApprovals returns the open gates; a 404 (no active run) reads as none", async () => {
+		let pendingStatus = 200;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request): Promise<Response> => {
+				const url = String(input);
+				if (url.endsWith("/status")) return Response.json({});
+				if (url.endsWith("/tasks/pending")) {
+					if (pendingStatus !== 200) return new Response(null, { status: pendingStatus });
+					return Response.json({
+						runId: "run-1",
+						pending: [{ taskId: "deploy", question: "Ship it?", options: ["yes", "no"] }],
+					});
+				}
+				return sseResponse([]);
+			}),
+		);
+		try {
+			const view = connectTeamView("http://localhost:9", {
+				warn: () => {},
+				retryDelayMs: 60_000,
+				store: taskStore,
+			});
+			expect(await view.pendingApprovals()).toEqual([
+				{ taskId: "deploy", question: "Ship it?", options: ["yes", "no"] },
+			]);
+
+			pendingStatus = 404;
+			expect(await view.pendingApprovals()).toEqual([]);
+
+			pendingStatus = 500;
+			await expect(view.pendingApprovals()).rejects.toThrow("HTTP 500");
 			view.stop();
 		} finally {
 			vi.unstubAllGlobals();
