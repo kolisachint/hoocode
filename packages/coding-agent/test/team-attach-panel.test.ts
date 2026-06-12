@@ -1,4 +1,6 @@
+import { setKeybindings } from "@kolisachint/hoocode-tui";
 import { beforeEach, describe, expect, test } from "vitest";
+import { KeybindingsManager } from "../src/core/keybindings.js";
 import type { TeamViewConnection, TeamViewEvent } from "../src/core/team-view.js";
 import { RingBuffer, TeamAttachPanelComponent } from "../src/modes/interactive/components/team-attach-panel.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
@@ -47,6 +49,7 @@ describe("RingBuffer", () => {
 describe("TeamAttachPanelComponent", () => {
 	beforeEach(() => {
 		initTheme("dark");
+		setKeybindings(new KeybindingsManager());
 	});
 
 	test("attach → detach → attach 10× leaves zero leaked subscribers", () => {
@@ -128,6 +131,118 @@ describe("TeamAttachPanelComponent", () => {
 		for (let i = 0; i < 500; i++) emit({ type: "agent_start", role: "coder" });
 		expect(panel.bufferedLineCount()).toBe(25);
 		panel.dispose();
+	});
+
+	test("task lifecycle events render as stream lines, filtered by role", () => {
+		const { connection, emit } = fakeConnection();
+		const panel = new TeamAttachPanelComponent("coder", connection, { onDetach: () => {}, onNudge: () => {} });
+
+		emit({ type: "task_started", role: "coder", taskId: "t1" });
+		emit({ type: "task_paused", role: "coder", taskId: "t1", question: "Deploy to production?" });
+		emit({ type: "task_resumed", role: "coder", taskId: "t1", chosenOption: "no" });
+		emit({ type: "task_finished", role: "coder", taskId: "t1", status: "done" });
+		emit({ type: "task_finished", role: "planner", taskId: "t2", status: "error" });
+
+		const text = panel.render(80).map(stripAnsi).join("\n");
+		expect(text).toContain("◉ task t1 started");
+		expect(text).toContain("⏸ awaiting approval: Deploy to production?");
+		expect(text).toContain("▶ task t1 resumed: no");
+		expect(text).toContain("✓ task t1 done");
+		expect(text).not.toContain("t2");
+		panel.dispose();
+	});
+
+	test("presentApproval embeds the gate and resolves with the picked option", async () => {
+		const { connection } = fakeConnection();
+		let detached = 0;
+		const panel = new TeamAttachPanelComponent("coder", connection, {
+			onDetach: () => detached++,
+			onNudge: () => {},
+		});
+
+		const promise = panel.presentApproval(
+			{ taskId: "t1", question: "Deploy to production?", options: ["yes", "no"], role: "coder" },
+			new AbortController().signal,
+		);
+
+		let text = panel.render(80).map(stripAnsi).join("\n");
+		expect(text).toContain("INPUT NEEDED");
+		expect(text).toContain("Deploy to production?");
+		expect(text).toContain("1 yes");
+		expect(text).toContain("2 no");
+
+		// The gate owns the keyboard: q must not detach while it is open.
+		panel.handleInput("q");
+		expect(detached).toBe(0);
+
+		panel.handleInput("2"); // quick-pick "no"
+		await expect(promise).resolves.toBe("no");
+
+		text = panel.render(80).map(stripAnsi).join("\n");
+		expect(text).not.toContain("INPUT NEEDED");
+		expect(text).toContain("✓ answered: no");
+
+		// With the gate settled, panel keys work again.
+		panel.handleInput("q");
+		expect(detached).toBe(1);
+		panel.dispose();
+	});
+
+	test("esc skips the gate without detaching and leaves no answered stamp", async () => {
+		const { connection } = fakeConnection();
+		let detached = 0;
+		const panel = new TeamAttachPanelComponent("coder", connection, {
+			onDetach: () => detached++,
+			onNudge: () => {},
+		});
+
+		const promise = panel.presentApproval(
+			{ taskId: "t1", question: "Deploy?", options: ["yes"] },
+			new AbortController().signal,
+		);
+		panel.handleInput("\x1b");
+		await expect(promise).resolves.toBeUndefined();
+		expect(detached).toBe(0);
+
+		const text = panel.render(80).map(stripAnsi).join("\n");
+		expect(text).not.toContain("INPUT NEEDED");
+		expect(text).not.toContain("answered:");
+		panel.dispose();
+	});
+
+	test("the abort signal (answered elsewhere) dismisses the gate", async () => {
+		const { connection } = fakeConnection();
+		const panel = new TeamAttachPanelComponent("coder", connection, { onDetach: () => {}, onNudge: () => {} });
+
+		const controller = new AbortController();
+		const promise = panel.presentApproval({ taskId: "t1", question: "Deploy?", options: ["yes"] }, controller.signal);
+		controller.abort();
+		await expect(promise).resolves.toBeUndefined();
+
+		const text = panel.render(80).map(stripAnsi).join("\n");
+		expect(text).not.toContain("INPUT NEEDED");
+		panel.dispose();
+	});
+
+	test("dispose settles a pending gate as skipped", async () => {
+		const { connection } = fakeConnection();
+		const panel = new TeamAttachPanelComponent("coder", connection, { onDetach: () => {}, onNudge: () => {} });
+
+		const promise = panel.presentApproval(
+			{ taskId: "t1", question: "Deploy?", options: ["yes"] },
+			new AbortController().signal,
+		);
+		panel.dispose();
+		await expect(promise).resolves.toBeUndefined();
+	});
+
+	test("presenting on a disposed panel resolves immediately", async () => {
+		const { connection } = fakeConnection();
+		const panel = new TeamAttachPanelComponent("coder", connection, { onDetach: () => {}, onNudge: () => {} });
+		panel.dispose();
+		await expect(
+			panel.presentApproval({ taskId: "t1", question: "Deploy?", options: ["yes"] }, new AbortController().signal),
+		).resolves.toBeUndefined();
 	});
 
 	test("q detaches, n nudges the attached role", () => {

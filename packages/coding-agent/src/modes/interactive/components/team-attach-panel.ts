@@ -11,12 +11,21 @@
  * The panel filters the team connection's single shared /events subscription —
  * it never opens its own SSE connection — and unsubscribes on dispose(), so
  * attach/detach cycles leave no leaked subscribers.
+ *
+ * Approval gates: task_* lifecycle events render as stream lines, and when the
+ * attached role pauses, presentApproval() embeds the AskOptions pane right
+ * where the stream stopped — pick an option (or type a free-form answer) and
+ * the caller answers the server; the stream then carries on under a
+ * "✓ answered: …" stamp.
  */
 
 import type { Component, Focusable, TUI } from "@kolisachint/hoocode-tui";
 import { getKeybindings, matchesKey, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "@kolisachint/hoocode-tui";
+import type { AskQuestion } from "../../../core/extensions/types.js";
+import type { TeamApproval } from "../../../core/team-approvals.js";
 import type { TeamViewConnection, TeamViewEvent } from "../../../core/team-view.js";
 import { theme } from "../theme/theme.js";
+import { AskOptionsComponent } from "./ask-options.js";
 
 /** Fixed-capacity FIFO over a circular array: push evicts the oldest entry. */
 export class RingBuffer<T> {
@@ -72,6 +81,8 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 	private partial = "";
 	private partialKind: "text" | "thinking" = "text";
 	private unsubscribe: (() => void) | undefined;
+	/** Gate currently embedded in the panel; input is delegated to it. */
+	private approval: { component: AskOptionsComponent; settle: (answer: string | undefined) => void } | undefined;
 
 	constructor(
 		readonly role: string,
@@ -89,17 +100,75 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 		});
 	}
 
-	/** Detach from the shared event stream. Idempotent. */
+	/** Detach from the shared event stream; settles any open gate as skipped. Idempotent. */
 	dispose(): void {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
+		this.approval?.settle(undefined);
 	}
 
 	invalidate(): void {
 		// No cached rendering state.
 	}
 
+	/**
+	 * Embed one approval gate in the panel (the attached role paused). Resolves
+	 * with the chosen or free-form answer; undefined when skipped (esc), when
+	 * the signal aborts (answered elsewhere), or when the panel is disposed.
+	 * Answering the server is the caller's job — on an answer the panel just
+	 * stamps "✓ answered: …" into the stream.
+	 */
+	presentApproval(approval: TeamApproval, signal: AbortSignal): Promise<string | undefined> {
+		return new Promise((resolve) => {
+			if (signal.aborted || this.unsubscribe === undefined) {
+				resolve(undefined);
+				return;
+			}
+			// The coordinator shows one gate at a time; a stray second call
+			// settles the first as skipped instead of stacking panes.
+			this.approval?.settle(undefined);
+
+			let settled = false;
+			const settle = (answer: string | undefined): void => {
+				if (settled) return;
+				settled = true;
+				signal.removeEventListener("abort", onAbort);
+				this.approval = undefined;
+				if (answer !== undefined) {
+					this.breakLine();
+					this.lines.push(theme.fg("success", `  ✓ answered: ${answer}`));
+				}
+				this.ui?.requestRender();
+				resolve(answer);
+			};
+			const onAbort = (): void => settle(undefined);
+			signal.addEventListener("abort", onAbort, { once: true });
+
+			const question: AskQuestion = {
+				question: approval.question,
+				short: approval.taskId,
+				detail: `team task "${approval.taskId}" is paused until answered`,
+				options: approval.options.map((label) => ({ label })),
+				allowCustom: true,
+			};
+			const component = new AskOptionsComponent(
+				[question],
+				(answers) => settle(answers[0]),
+				() => settle(undefined),
+			);
+			component.focused = this.focused;
+			this.approval = { component, settle };
+			this.ui?.requestRender();
+		});
+	}
+
 	handleInput(data: string): void {
+		// An open gate owns the keyboard: q/n must type into the custom row, not
+		// detach or nudge. esc skips the gate (AskOptions cancel), not the panel.
+		if (this.approval) {
+			this.approval.component.handleInput(data);
+			return;
+		}
 		if (matchesKey(data, "q") || getKeybindings().matches(data, "tui.select.cancel")) {
 			this.callbacks.onDetach();
 			return;
@@ -193,6 +262,31 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 				this.breakLine();
 				this.lines.push(theme.fg("accent", `◉ ${event.role} idle`));
 				break;
+			case "task_started":
+				this.breakLine();
+				this.lines.push(theme.fg("accent", `◉ task ${event.taskId ?? "?"} started`));
+				break;
+			case "task_paused":
+				this.breakLine();
+				this.lines.push(theme.fg("warning", `⏸ awaiting approval: ${event.question ?? "?"}`));
+				break;
+			case "task_resumed":
+				this.breakLine();
+				this.lines.push(
+					theme.fg(
+						"accent",
+						`▶ task ${event.taskId ?? "?"} resumed${event.chosenOption ? `: ${event.chosenOption}` : ""}`,
+					),
+				);
+				break;
+			case "task_finished":
+				this.breakLine();
+				this.lines.push(
+					event.status === "error"
+						? theme.fg("error", `✗ task ${event.taskId ?? "?"} failed`)
+						: theme.fg("success", `✓ task ${event.taskId ?? "?"} done`),
+				);
+				break;
 		}
 	}
 
@@ -204,11 +298,12 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 	render(width: number): string[] {
 		const inner = Math.max(1, width);
 
-		// Header: role identity left, key hints right.
+		// Header: role identity left, key hints right. An open gate owns the
+		// keyboard and renders its own hints, so the panel's would lie.
 		const titlePlain = `◉ ${this.role} — attached`;
 		const title =
 			theme.fg("accent", "◉ ") + theme.bold(theme.fg("accent", this.role)) + theme.fg("muted", " — attached");
-		const hintsPlain = "n nudge · q detach";
+		const hintsPlain = this.approval ? "" : "n nudge · q detach";
 		const hints = theme.fg("dim", hintsPlain);
 		let header: string;
 		if (visibleWidth(titlePlain) + 2 + visibleWidth(hintsPlain) <= inner) {
@@ -225,6 +320,15 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 		// bottom — exactly the rows we care about).
 		const rows = this.ui?.terminal.rows ?? 24;
 		const bodyBudget = Math.max(5, Math.floor(rows * 0.6) - 3);
+
+		// An open gate takes its rows out of the stream's budget: the freshest
+		// output stays visible above the question for context.
+		let approvalLines: string[] = [];
+		if (this.approval) {
+			this.approval.component.focused = this.focused;
+			approvalLines = this.approval.component.render(inner);
+		}
+
 		const wrapped: string[] = [];
 		for (const line of this.lines.toArray()) {
 			if (line.length === 0) {
@@ -236,11 +340,14 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 		if (this.partial.length > 0) {
 			wrapped.push(...wrapTextWithAnsi(this.styledPartial(), inner));
 		}
-		const body = wrapped.slice(-bodyBudget);
-		if (body.length === 0) {
+		const keep = Math.max(0, bodyBudget - approvalLines.length);
+		const body = keep > 0 ? wrapped.slice(-keep) : [];
+		if (body.length === 0 && approvalLines.length === 0) {
 			body.push(theme.fg("dim", "waiting for events…"));
 		}
 
+		// The gate brings its own accent rules, so it closes the panel itself.
+		if (approvalLines.length > 0) return [header, rule, ...body, ...approvalLines];
 		return [header, rule, ...body, rule];
 	}
 }

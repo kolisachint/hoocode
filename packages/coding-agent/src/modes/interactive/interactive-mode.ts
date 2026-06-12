@@ -2645,7 +2645,8 @@ export class InteractiveMode {
 	 * is set, before run(). Enables team focus (app.team.focus), nudging (n),
 	 * the attach side panel (a) on the task panel's teams view, and approval
 	 * gates: task_paused events (and gates already pending on the server)
-	 * surface in the options pane; the answer goes back over
+	 * surface inline in the attach panel when it shows the paused role,
+	 * otherwise in the options pane; the answer goes back over
 	 * POST /tasks/:id/resume.
 	 */
 	attachTeamClient(client: TeamViewConnection): void {
@@ -2669,12 +2670,23 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Show one team approval gate in the options pane and resolve with the
-	 * chosen (or free-form) answer, undefined when skipped. Waits politely
-	 * while another ask is on screen; the signal (gate answered elsewhere)
-	 * dismisses both the wait and the pane.
+	 * Show one team approval gate and resolve with the chosen (or free-form)
+	 * answer, undefined when skipped. When the attach side panel is open on the
+	 * role that paused, the gate renders inline in the panel — right where its
+	 * stream stopped; otherwise it goes to the options pane, waiting politely
+	 * while another ask is on screen. Either way the signal (gate answered
+	 * elsewhere) dismisses the prompt.
 	 */
 	private async presentTeamApproval(approval: TeamApproval, signal: AbortSignal): Promise<string | undefined> {
+		const panel = this.teamAttachPanel;
+		if (panel && approval.role === panel.role) {
+			this.teamAttachHandle?.focus();
+			const answer = await panel.presentApproval(approval, signal);
+			// Detaching mid-gate settles as skipped — fall through to the options
+			// pane so the question isn't silently lost. A skip with the panel
+			// still open is a real skip.
+			if (answer !== undefined || signal.aborted || this.teamAttachPanel === panel) return answer;
+		}
 		while (this.askOptions && !signal.aborted) {
 			await new Promise((resolve) => setTimeout(resolve, 200));
 		}
