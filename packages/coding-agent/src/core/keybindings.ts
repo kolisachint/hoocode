@@ -22,6 +22,7 @@ export interface AppKeybindings {
 	"app.tools.expand": true;
 	"app.thinking.toggle": true;
 	"app.tasks.cycleView": true;
+	"app.team.focus": true;
 	"app.session.toggleNamedFilter": true;
 	"app.editor.external": true;
 	"app.message.followUp": true;
@@ -98,6 +99,14 @@ export const KEYBINDINGS = {
 	"app.session.toggleNamedFilter": {
 		defaultKeys: "ctrl+n",
 		description: "Toggle named session filter",
+	},
+	"app.team.focus": {
+		// Pairs with ctrl+n (cycle task panel view): alt+n steps INTO the teams
+		// lens and focuses the role roster (--team only). Not shift+ctrl+n —
+		// Windows Terminal intercepts that as its "new window" shortcut, the
+		// same trap that moved app.tasks.cycleView off ctrl+shift+t.
+		defaultKeys: "alt+n",
+		description: "Focus the team roster (navigate roles, n nudge, a attach)",
 	},
 	"app.editor.external": {
 		defaultKeys: "ctrl+g",

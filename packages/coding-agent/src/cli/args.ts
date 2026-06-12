@@ -26,7 +26,7 @@ export interface Args {
 	/** Hard cap on assistant turns. Near the cap the agent is asked to wrap up; at the cap it is stopped. */
 	maxTurns?: number;
 	session?: string;
-	/** Base URL of a hooteams server to mirror (read-only) into the task panel's teams view. */
+	/** Base URL of a hooteams server to bridge into the task panel's teams view, or "auto" to discover a config and spawn one locally. */
 	team?: string;
 	fork?: string;
 	sessionDir?: string;
@@ -256,7 +256,9 @@ ${chalk.bold("Options:")}
   --fork <path|id>               Fork specific session file or partial UUID into a new session
   --session-dir <dir>            Directory for session storage and lookup
   --no-session                   Don't save session (ephemeral)
-  --team <url>                   Mirror a hooteams server (read-only) into the task panel's teams view
+  --team <url|auto>              Bridge a hooteams server into the task panel's teams view
+                                 (focus roles, nudge, attach); "auto" finds .agents/teams/default.json
+                                 or hooteams.config.json upward from cwd and spawns hooteams locally
   --models <patterns>            Comma-separated model patterns for Ctrl+P cycling
                                  Supports globs (anthropic/*, *sonnet*) and fuzzy matching
   --no-tools, -nt                Disable all tools by default (built-in and extension)

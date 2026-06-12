@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { taskStore } from "../src/core/task-store.js";
-import { connectTeamView, TeamViewMapper } from "../src/core/team-view.js";
+import { connectTeamView, type TeamViewEvent, TeamViewMapper } from "../src/core/team-view.js";
 
 describe("TeamViewMapper", () => {
 	let mapper: TeamViewMapper;
@@ -183,6 +183,98 @@ describe("connectTeamView", () => {
 			await until(() => taskStore.agents().some((a) => a.id === "team:coder"));
 			await until(() => dropWarnings() === 2);
 			view.stop();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test("subscribers receive every event from the shared stream; unsubscribe detaches", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request): Promise<Response> => {
+				if (String(input).endsWith("/status")) return Response.json({});
+				return sseResponse([
+					'data: {"type":"agent_start","role":"coder"}\n\n',
+					'data: {"type":"agent_start","role":"planner"}\n\n',
+				]);
+			}),
+		);
+		try {
+			const view = connectTeamView("http://localhost:9", {
+				warn: () => {},
+				retryDelayMs: 60_000,
+				store: taskStore,
+			});
+			const seen: TeamViewEvent[] = [];
+			const unsubscribe = view.subscribe((event) => seen.push(event));
+			expect(view.subscriberCount()).toBe(1);
+
+			await until(() => seen.length >= 2);
+			// Unfiltered fan-out: events for all roles arrive (the attach panel filters).
+			expect(seen.map((event) => event.role)).toEqual(["coder", "planner"]);
+			// The task-store mirror keeps working alongside subscribers.
+			expect(taskStore.agents().some((a) => a.id === "team:coder")).toBe(true);
+
+			unsubscribe();
+			expect(view.subscriberCount()).toBe(0);
+			view.stop();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test("steer POSTs { role, message } to /steer and rejects on HTTP errors", async () => {
+		const steerBodies: unknown[] = [];
+		let steerStatus = 200;
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request, init?: RequestInit): Promise<Response> => {
+				const url = String(input);
+				if (url.endsWith("/status")) return Response.json({});
+				if (url.endsWith("/steer")) {
+					expect(init?.method).toBe("POST");
+					steerBodies.push(JSON.parse(String(init?.body)));
+					return new Response(null, { status: steerStatus });
+				}
+				return sseResponse([]);
+			}),
+		);
+		try {
+			const view = connectTeamView("http://localhost:9", {
+				warn: () => {},
+				retryDelayMs: 60_000,
+				store: taskStore,
+			});
+			await view.steer("coder", "focus on the failing test");
+			expect(steerBodies).toEqual([{ role: "coder", message: "focus on the failing test" }]);
+
+			steerStatus = 500;
+			await expect(view.steer("coder", "again")).rejects.toThrow("HTTP 500");
+			view.stop();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test("stop() clears subscribers", async () => {
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (input: string | URL | Request): Promise<Response> => {
+				if (String(input).endsWith("/status")) return Response.json({});
+				return sseResponse([]);
+			}),
+		);
+		try {
+			const view = connectTeamView("http://localhost:9", {
+				warn: () => {},
+				retryDelayMs: 60_000,
+				store: taskStore,
+			});
+			view.subscribe(() => {});
+			view.subscribe(() => {});
+			expect(view.subscriberCount()).toBe(2);
+			view.stop();
+			expect(view.subscriberCount()).toBe(0);
 		} finally {
 			vi.unstubAllGlobals();
 		}

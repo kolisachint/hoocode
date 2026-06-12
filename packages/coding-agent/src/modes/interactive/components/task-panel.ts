@@ -1,5 +1,5 @@
-import type { Component, TUI } from "@kolisachint/hoocode-tui";
-import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import type { Component, Focusable, TUI } from "@kolisachint/hoocode-tui";
+import { getKeybindings, matchesKey, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskStatus } from "../../../core/task-store.js";
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
@@ -461,9 +461,13 @@ function groupTasks(
  * agent's own token/cost totals + done/total on the right. Mirrors the footer's
  * "every number accounted for" stance, but per agent.
  */
-function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: number): string {
-	const glyph = theme.fg(AGENT_GLYPH_COLOR[meta.kind], AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
-	const name = theme.bold(meta.name);
+function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: number, selected = false): string {
+	// A focused role row swaps its ▸ for a filled ▶ in accent — the team-focus
+	// selection cursor (the owner-kind glyph mapping itself is unchanged).
+	const glyph = selected
+		? theme.fg("accent", "▶")
+		: theme.fg(AGENT_GLYPH_COLOR[meta.kind], AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
+	const name = selected ? theme.bold(theme.fg("accent", meta.name)) : theme.bold(meta.name);
 	// Roles read as a dim "· role" suffix for spawned/team agents; the main
 	// orchestrator's role sits brighter (muted), matching the design's .grp-role.
 	const role = meta.role
@@ -523,12 +527,24 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   teams and every role renders as a placeholder group, so idle roles are
  *   visible from startup.
  */
-export class TaskPanelComponent implements Component {
+export class TaskPanelComponent implements Component, Focusable {
 	private readonly ui: TUI | null;
 	private frame = 0;
 	private animationTimer: ReturnType<typeof setInterval> | null = null;
 	private view: TaskPanelView = "flat";
 	private disposed = false;
+
+	// Team focus mode: when the TUI focuses the panel, role rows become a
+	// navigable list (↑/↓ select, n nudge, a attach, q/esc back). The selection
+	// is tracked by role name so a roster reorder doesn't move the cursor.
+	focused = false;
+	private selectedRole: string | undefined;
+	/** Open the inline nudge editor for the selected role. */
+	onNudge?: (role: string) => void;
+	/** Open the attach side panel for the selected role. */
+	onAttach?: (role: string) => void;
+	/** Leave team focus (focus returns to the main editor). */
+	onExitFocus?: () => void;
 
 	constructor(ui?: TUI) {
 		this.ui = ui ?? null;
@@ -536,6 +552,45 @@ export class TaskPanelComponent implements Component {
 
 	invalidate(): void {
 		// No cached rendering state.
+	}
+
+	private roleAgents(): TaskAgent[] {
+		return taskStore.agents().filter((a) => a.kind === "role");
+	}
+
+	/** The role the team-focus cursor sits on (clamped to the live roster). */
+	focusedRole(): string | undefined {
+		const roles = this.roleAgents();
+		if (roles.length === 0) return undefined;
+		const match = roles.find((a) => a.name === this.selectedRole);
+		return (match ?? roles[0]).name;
+	}
+
+	handleInput(data: string): void {
+		const roles = this.roleAgents();
+		if (roles.length === 0) {
+			this.onExitFocus?.();
+			return;
+		}
+		const keybindings = getKeybindings();
+		const index = Math.max(
+			0,
+			roles.findIndex((a) => a.name === this.selectedRole),
+		);
+		if (keybindings.matches(data, "tui.select.up")) {
+			this.selectedRole = roles[Math.max(0, index - 1)].name;
+		} else if (keybindings.matches(data, "tui.select.down")) {
+			this.selectedRole = roles[Math.min(roles.length - 1, index + 1)].name;
+		} else if (matchesKey(data, "n")) {
+			const role = this.focusedRole();
+			if (role) this.onNudge?.(role);
+		} else if (matchesKey(data, "a")) {
+			const role = this.focusedRole();
+			if (role) this.onAttach?.(role);
+		} else if (matchesKey(data, "q") || keybindings.matches(data, "tui.select.cancel")) {
+			this.onExitFocus?.();
+		}
+		this.ui?.requestRender();
 	}
 
 	getView(): TaskPanelView {
@@ -603,6 +658,10 @@ export class TaskPanelComponent implements Component {
 		// setView choice survives if its content comes back.
 		const available = availableViews(tasks, allAgents);
 		let view = available.includes(this.view) ? this.view : "flat";
+
+		// Team focus always operates on the teams lens — the focused role list is
+		// exactly what the lens renders, so the cursor is never invisible.
+		if (this.focused) view = "teams";
 
 		// With no tasks the flat lens has nothing to draw; when a team roster is
 		// registered (--team) fall through to the teams lens so the roles are
@@ -677,8 +736,10 @@ export class TaskPanelComponent implements Component {
 				groups.push({ id: agent.id, meta: agent, items: [] });
 			}
 		}
+		const cursorRole = this.focused ? this.focusedRole() : undefined;
 		for (const group of groups) {
-			lines.push(gutter + formatGroupHeader(group.meta, group.items, inner));
+			const selected = cursorRole !== undefined && group.meta.kind === "role" && group.meta.name === cursorRole;
+			lines.push(gutter + formatGroupHeader(group.meta, group.items, inner, selected));
 			for (const task of group.items) {
 				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { grouped: true }));
 			}
@@ -702,6 +763,11 @@ export class TaskPanelComponent implements Component {
 					}
 				}
 			}
+		}
+		if (this.focused) {
+			lines.push(
+				gutter + truncateToWidth(theme.fg("dim", "↑/↓ select · n nudge · a attach · q/esc back"), inner, "…"),
+			);
 		}
 		return lines;
 	}

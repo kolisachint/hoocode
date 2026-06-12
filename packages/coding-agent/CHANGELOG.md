@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- Team focus for `--team`: `alt+n` (`app.team.focus`) focuses the task panel's
+  teams roster. With a role focused, `↑/↓` move the ▶ cursor, `n` opens an
+  inline editor that nudges the role (POST `/steer`), `a` opens an attach side
+  panel, and `q`/`esc` return to the prompt. Outside team focus all keys behave
+  exactly as before.
+- Attach side panel: `a` on a focused role streams that role's live events in
+  the style of `hooteams attach <role>` (themed, bounded buffer). `q` detaches
+  (the role keeps running), `n` nudges the attached role. The panel filters the
+  existing team SSE stream — no second connection — and detaching leaks no
+  subscribers.
+- `--team auto`: walks up from cwd for `.agents/teams/default.json` or
+  `hooteams.config.json`, spawns `hooteams start --config <path> --port <free>`
+  (from PATH, falling back to `bunx`), waits for `/health`, then proceeds as if
+  `--team http://localhost:<port>` was passed. The child is reaped on exit,
+  clean or signalled. Missing config or launcher fails with a clear error;
+  `--team <url>` is unchanged.
+
 ## [0.4.52] - 2026-06-11
 
 ## [0.4.51] - 2026-06-11
