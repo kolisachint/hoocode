@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- Approval gates inline in the attach panel: when the attached role pauses
+  (`task_paused`), the question and its options render inside the side panel —
+  right where the stream stopped — instead of the editor's INPUT NEEDED pane.
+  While a gate is open it owns the panel's keyboard (`q`/`n` type into the
+  custom row, esc skips); answering stamps "✓ answered: …" into the stream and
+  resumes it. Detaching mid-gate falls back to the options pane so the
+  question isn't lost, and a gate answered elsewhere still dismisses itself.
+  The panel also renders orchestrator task lifecycle lines now
+  (`task_started`/`task_paused`/`task_resumed`/`task_finished`).
+
 ## [0.4.54] - 2026-06-12
 
 ### Added
