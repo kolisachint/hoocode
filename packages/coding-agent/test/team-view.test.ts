@@ -159,7 +159,13 @@ describe("TeamViewMapper", () => {
 		// approval gate). Without the guard this flipped the role to done/idle while
 		// the AskOptions pane was still open.
 		mapper.applyEvent({ type: "task_started", role: "ops", taskId: "deploy" });
-		mapper.applyEvent({ type: "task_paused", role: "ops", taskId: "deploy", question: "Ship it?", options: ["yes", "no"] });
+		mapper.applyEvent({
+			type: "task_paused",
+			role: "ops",
+			taskId: "deploy",
+			question: "Ship it?",
+			options: ["yes", "no"],
+		});
 		expect(agent("ops")?.state).toBe("waiting");
 
 		mapper.applyEvent({ type: "agent_end", role: "ops" });
