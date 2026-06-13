@@ -154,6 +154,25 @@ describe("TeamViewMapper", () => {
 		expect(roleTask("ops")?.status).toBe("failed");
 	});
 
+	test("agent_end after task_paused keeps the role waiting (gate stays open, not idle)", () => {
+		// hooteams mirrors agent_end right after task_paused (the run ends on the
+		// approval gate). Without the guard this flipped the role to done/idle while
+		// the AskOptions pane was still open.
+		mapper.applyEvent({ type: "task_started", role: "ops", taskId: "deploy" });
+		mapper.applyEvent({ type: "task_paused", role: "ops", taskId: "deploy", question: "Ship it?", options: ["yes", "no"] });
+		expect(agent("ops")?.state).toBe("waiting");
+
+		mapper.applyEvent({ type: "agent_end", role: "ops" });
+		expect(agent("ops")?.state).toBe("waiting");
+		expect(roleTask("ops")?.title).toBe("awaiting approval: Ship it?");
+
+		// Answering resumes the role; a later agent_end then settles it done.
+		mapper.applyEvent({ type: "task_resumed", role: "ops", taskId: "deploy", chosenOption: "yes" });
+		expect(agent("ops")?.state).toBe("active");
+		mapper.applyEvent({ type: "agent_end", role: "ops" });
+		expect(agent("ops")?.state).toBe("done");
+	});
+
 	test("a paused role opens a waiting task even from cold (gate pending before attach)", () => {
 		mapper.applyEvent({ type: "task_paused", role: "ops", taskId: "deploy", question: "Ship it?", options: [] });
 		expect(agent("ops")?.state).toBe("waiting");
