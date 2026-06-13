@@ -1,6 +1,6 @@
 {
 	"name": "@kolisachint/hoocode-agent",
-	"version": "0.4.55",
+	"version": "0.4.56",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"hoocodeConfig": {
@@ -44,9 +44,9 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@kolisachint/hoocode-agent-core": "^0.4.55",
-		"@kolisachint/hoocode-ai": "^0.4.55",
-		"@kolisachint/hoocode-tui": "^0.4.55",
+		"@kolisachint/hoocode-agent-core": "^0.4.56",
+		"@kolisachint/hoocode-ai": "^0.4.56",
+		"@kolisachint/hoocode-tui": "^0.4.56",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
