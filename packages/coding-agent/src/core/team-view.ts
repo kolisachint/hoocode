@@ -158,10 +158,13 @@ export class TeamViewMapper {
 				}
 				break;
 			case "agent_end": {
-				// A failed run stays failed; agent_end only marks clean completions
-				// (mirrors hooteams' own status tracking).
-				const failed = this.store.agents().find((a) => a.id === this.agentId(role))?.state === "failed";
-				if (!failed) {
+				// A failed run stays failed; a paused run (waiting on an approval gate)
+				// stays waiting — hooteams mirrors agent_end right after task_paused, so
+				// without this guard the gate's "waiting" state would flip to idle and the
+				// roster would read as done while the AskOptions pane is still open.
+				// agent_end only marks clean completions (mirrors hooteams' own tracking).
+				const current = this.store.agents().find((a) => a.id === this.agentId(role))?.state;
+				if (current !== "failed" && current !== "waiting") {
 					this.ensureRole(role, "done", "idle");
 					this.patchRole(role, "done", "idle");
 				}
