@@ -18,6 +18,7 @@
 		"check:browser-smoke": "node scripts/check-browser-smoke.mjs",
 		"profile:tui": "node scripts/profile-coding-agent-node.mjs --mode tui",
 		"profile:rpc": "node scripts/profile-coding-agent-node.mjs --mode rpc",
+		"bench:latency": "node scripts/bench-latency.mjs",
 		"test": "npm run test --workspaces --if-present",
 		"version:patch": "node scripts/bump-versions.mjs patch && node scripts/sync-versions.js",
 		"version:minor": "node scripts/bump-versions.mjs minor && node scripts/sync-versions.js",
