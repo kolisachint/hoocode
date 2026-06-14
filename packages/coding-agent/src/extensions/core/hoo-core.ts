@@ -21,10 +21,12 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
+import type { ThinkingLevel } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
 import type {
+	AgentStartEvent,
 	AgentToolResult,
 	AgentToolUpdateCallback,
 	AskQuestion,
@@ -36,6 +38,8 @@ import type {
 	SessionStartEvent,
 	ToolCallEvent,
 	ToolCallEventResult,
+	ToolExecutionEndEvent,
+	TurnEndEvent,
 } from "../../core/extensions/types.js";
 import { isToolCallEventType } from "../../core/extensions/types.js";
 import { summarizeArgs } from "../../core/messages.js";
@@ -112,6 +116,33 @@ interface ModeConfig {
 	denied_bash_commands?: string[];
 }
 
+/**
+ * Tool-outcome-driven thinking escalation (on by default).
+ *
+ * The default (fast) path keeps thinking low so mechanical tool turns — reads,
+ * greps, successful edits — don't pay the extended-thinking prefill tax. When a
+ * tool *fails*, the next turn(s) escalate to a higher thinking level so the model
+ * reasons through the failure, then the level is restored. This buys low latency
+ * on the happy path while preserving deep reasoning exactly when something breaks.
+ *
+ * Enabled by default; set `thinking_escalation.enabled` to `false` to turn it off.
+ *
+ * Note: escalation uses the same setter as manual thinking control, so the
+ * escalated level is briefly written to settings and restored when the window
+ * ends. If a run is interrupted mid-window, the escalated level may persist until
+ * the next change.
+ */
+interface ThinkingEscalationConfig {
+	/** Master switch. Default: true (set to false to disable). */
+	enabled?: boolean;
+	/** Level to escalate to after a tool error. Default: "high". */
+	on_error?: ThinkingLevel;
+	/** Restrict escalation to errors from these tool names. Default: any tool. */
+	tools?: string[];
+	/** Number of subsequent turns to stay escalated after an error. Default: 1. */
+	cooldown_turns?: number;
+}
+
 export interface HooConfig {
 	/** Manually-pinned active mode (overrides default "build") */
 	active_mode?: string;
@@ -119,6 +150,8 @@ export interface HooConfig {
 	modes?: Record<string, ModeConfig>;
 	/** Extra directories to search for `{name}/system.md` mode files (after project + user). */
 	mode_paths?: string[];
+	/** Raise thinking after tool failures, restore on success. On by default; set `enabled: false` to disable. */
+	thinking_escalation?: ThinkingEscalationConfig;
 }
 
 // ============================================================================
@@ -147,11 +180,15 @@ function writeConfig(config: HooConfig): void {
  * - modes[x].allowed_write_paths: union of global + project arrays
  * - modes[x].enabled_tools: project wins if set, else falls back to global
  * - mode_paths: project list is prepended so project paths are searched first
+ * - thinking_escalation: project wins as a whole if set, else inherit global
  */
 export function mergeConfigs(global: HooConfig, project: HooConfig): HooConfig {
 	const merged: HooConfig = { ...global };
 
 	if (project.active_mode !== undefined) merged.active_mode = project.active_mode;
+
+	// thinking_escalation: project wins as a whole if set, else inherit global.
+	if (project.thinking_escalation !== undefined) merged.thinking_escalation = project.thinking_escalation;
 
 	if (project.modes) {
 		merged.modes = { ...(global.modes ?? {}) };
@@ -1446,6 +1483,80 @@ export function setupAskOptions(pi: ExtensionAPI): void {
 }
 
 // ============================================================================
+// D. setupThinkingEscalation — tool-outcome-driven thinking
+// ============================================================================
+
+/**
+ * Raise the thinking level for the turn(s) following a tool error, then restore
+ * it. Opt-in via `thinking_escalation.enabled` in hoo-config.json.
+ *
+ * Timing model (per agent run):
+ *   turn N: assistant calls tools → tool_execution_end(s) → turn_end
+ *           a failing tool here escalates the level used by turn N+1
+ *   turn N+1: runs escalated; its turn_end decrements the cooldown and, at zero,
+ *             restores the captured baseline so turn N+2 is fast again
+ *
+ * `escalatedThisTurn` ensures the error turn's own `turn_end` does not consume a
+ * cooldown step — the cooldown counts the turns *after* the failure.
+ */
+export function setupThinkingEscalation(pi: ExtensionAPI): void {
+	// Captured user level to restore to; null means "not currently escalated".
+	let baseline: ThinkingLevel | null = null;
+	let remaining = 0;
+	let escalatedThisTurn = false;
+
+	const restore = (): void => {
+		if (baseline !== null) {
+			pi.setThinkingLevel(baseline);
+		}
+		baseline = null;
+		remaining = 0;
+		escalatedThisTurn = false;
+	};
+
+	// A fresh user prompt starts clean — restore any lingering escalation.
+	pi.on("agent_start", (_event: AgentStartEvent) => {
+		restore();
+	});
+
+	pi.on("tool_execution_end", (event: ToolExecutionEndEvent, ctx: ExtensionContext) => {
+		if (!event.isError) return;
+
+		const cfg = readMergedConfig(ctx.cwd).thinking_escalation;
+		// On by default: only an explicit `enabled: false` disables it. `cfg` may be
+		// undefined when no thinking_escalation block is configured at all.
+		if (cfg?.enabled === false) return;
+		if (cfg?.tools && cfg.tools.length > 0 && !cfg.tools.includes(event.toolName)) return;
+
+		const target = cfg?.on_error ?? "high";
+		const cooldown = Math.max(1, cfg?.cooldown_turns ?? 1);
+
+		// Capture the user's level only on the first escalation so repeated errors
+		// extend the window without overwriting the restore point with "high".
+		if (baseline === null) {
+			baseline = pi.getThinkingLevel();
+		}
+		pi.setThinkingLevel(target);
+		remaining = cooldown;
+		escalatedThisTurn = true;
+	});
+
+	pi.on("turn_end", (_event: TurnEndEvent) => {
+		if (baseline === null) return; // not escalated
+		if (escalatedThisTurn) {
+			// This is the turn_end of the turn that failed; the cooldown applies to
+			// subsequent turns, so don't consume a step here.
+			escalatedThisTurn = false;
+			return;
+		}
+		remaining -= 1;
+		if (remaining <= 0) {
+			restore();
+		}
+	});
+}
+
+// ============================================================================
 // Extension entry point
 // ============================================================================
 
@@ -1455,6 +1566,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupMode(pi);
 	setupScaffold(pi);
 	setupAskOptions(pi);
+	setupThinkingEscalation(pi);
 }
 
 hooCore.displayName = "hoo-core";
