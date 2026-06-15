@@ -29,6 +29,21 @@ export const DEFAULT_MAX_SUBAGENT_DEPTH = 1;
 /** Concurrency cap for pools running at depth >= 1, keeping nested fan-out bounded. */
 export const NESTED_SUBAGENT_CONCURRENCY = 2;
 
+/**
+ * Hard ceiling on the configurable nesting depth. The worst-case live process
+ * count grows geometrically with depth (each level's pool can run
+ * NESTED_SUBAGENT_CONCURRENCY children), so an unbounded cap would let a
+ * mis-configured setting exhaust the host. At this ceiling the worst case stays
+ * modest: 5 * (2^3 - 1) = 35 processes.
+ */
+export const ABSOLUTE_MAX_SUBAGENT_DEPTH = 3;
+
+/** Clamp a requested cap into the supported range [1, ABSOLUTE_MAX_SUBAGENT_DEPTH]. */
+export function clampMaxSubagentDepth(n: number): number {
+	if (!Number.isFinite(n)) return DEFAULT_MAX_SUBAGENT_DEPTH;
+	return Math.min(Math.max(1, Math.floor(n)), ABSOLUTE_MAX_SUBAGENT_DEPTH);
+}
+
 /** Depth of the current process (0 = root/main session). */
 export function currentSubagentDepth(env: NodeJS.ProcessEnv = process.env): number {
 	const n = Number.parseInt(env[SUBAGENT_DEPTH_ENV] ?? "0", 10);
@@ -44,10 +59,10 @@ export function resolveMaxSubagentDepth(settingValue?: number, env: NodeJS.Proce
 	const raw = env[SUBAGENT_MAX_DEPTH_ENV];
 	if (raw !== undefined) {
 		const n = Number.parseInt(raw, 10);
-		if (Number.isFinite(n) && n >= 1) return n;
+		if (Number.isFinite(n) && n >= 1) return clampMaxSubagentDepth(n);
 	}
 	if (settingValue !== undefined && Number.isFinite(settingValue) && settingValue >= 1) {
-		return Math.floor(settingValue);
+		return clampMaxSubagentDepth(settingValue);
 	}
 	return DEFAULT_MAX_SUBAGENT_DEPTH;
 }

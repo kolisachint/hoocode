@@ -7,7 +7,9 @@
 
 import { describe, expect, it } from "vitest";
 import {
+	ABSOLUTE_MAX_SUBAGENT_DEPTH,
 	canSpawnSubagent,
+	clampMaxSubagentDepth,
 	currentSubagentDepth,
 	DEFAULT_MAX_SUBAGENT_DEPTH,
 	NESTED_SUBAGENT_CONCURRENCY,
@@ -43,6 +45,23 @@ describe("resolveMaxSubagentDepth", () => {
 		expect(resolveMaxSubagentDepth(2, env({}))).toBe(2);
 		expect(resolveMaxSubagentDepth(0, env({}))).toBe(1);
 		expect(resolveMaxSubagentDepth(-5, env({}))).toBe(1);
+	});
+
+	it("clamps an over-large cap to the hard ceiling (env and setting paths)", () => {
+		expect(resolveMaxSubagentDepth(99, env({}))).toBe(ABSOLUTE_MAX_SUBAGENT_DEPTH);
+		expect(resolveMaxSubagentDepth(undefined, env({ HOOCODE_SUBAGENT_MAX_DEPTH: "50" }))).toBe(
+			ABSOLUTE_MAX_SUBAGENT_DEPTH,
+		);
+	});
+});
+
+describe("clampMaxSubagentDepth", () => {
+	it("keeps values within [1, ABSOLUTE_MAX_SUBAGENT_DEPTH] and floors fractions", () => {
+		expect(clampMaxSubagentDepth(0)).toBe(1);
+		expect(clampMaxSubagentDepth(2)).toBe(2);
+		expect(clampMaxSubagentDepth(2.9)).toBe(2);
+		expect(clampMaxSubagentDepth(999)).toBe(ABSOLUTE_MAX_SUBAGENT_DEPTH);
+		expect(clampMaxSubagentDepth(Number.NaN)).toBe(DEFAULT_MAX_SUBAGENT_DEPTH);
 	});
 });
 

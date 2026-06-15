@@ -9,8 +9,9 @@
   behavior is unchanged — subagents cannot spawn subagents. Raising it
   (e.g. `"maxSubagentDepth": 2`) lets a subagent delegate one further level. Fan-out
   stays bounded: the cap is seeded into the environment so every process in the tree
-  agrees, and nested pools (depth ≥ 1) run with a reduced concurrency, giving a fixed
-  worst-case live process count by depth with no shared state to leak on crash. The
+  agrees, and nested pools (depth ≥ 1) run with a reduced concurrency. The requested
+  cap is clamped to a hard ceiling of 3 (worst case ≈ 35 live processes) so a
+  mis-configuration can't exhaust the host, with no shared state to leak on crash. The
   child's depth is recorded in the `[DISPATCH]` log line and `dispatch-log.json`.
 
 ## [0.4.61] - 2026-06-15

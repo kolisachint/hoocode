@@ -40,7 +40,7 @@ import {
 } from "./core/session-cwd.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { canSpawnSubagent, SUBAGENT_MAX_DEPTH_ENV } from "./core/subagent-depth.js";
+import { canSpawnSubagent, resolveMaxSubagentDepth, SUBAGENT_MAX_DEPTH_ENV } from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import {
 	buildTaskMainPrompt,
@@ -395,8 +395,12 @@ function buildSessionOptions(
 	const isSubagentChild = parsed.taskId !== undefined;
 	if (process.env[SUBAGENT_MAX_DEPTH_ENV] === undefined) {
 		// The root seeds the tree-wide cap; the --max-subagent-depth flag overrides the
-		// setting. Descendants inherit it via the environment (env already set => keep it).
-		process.env[SUBAGENT_MAX_DEPTH_ENV] = String(parsed.maxSubagentDepth ?? settingsManager.getMaxSubagentDepth());
+		// setting. resolveMaxSubagentDepth clamps it to the supported range so the seeded
+		// env (and everything that inherits it) carries a sane value. Descendants inherit
+		// it via the environment (env already set => keep it).
+		process.env[SUBAGENT_MAX_DEPTH_ENV] = String(
+			resolveMaxSubagentDepth(parsed.maxSubagentDepth ?? settingsManager.getMaxSubagentDepth()),
+		);
 	}
 	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 		options.customTools = [
