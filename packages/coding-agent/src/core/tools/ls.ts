@@ -1,6 +1,7 @@
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { existsSync, readdirSync, statSync } from "fs";
+import { minimatch } from "minimatch";
 import nodePath from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
@@ -13,6 +14,12 @@ import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } fr
 const lsSchema = Type.Object({
 	path: Type.Optional(Type.String({ description: "Directory to list (default: current directory)" })),
 	limit: Type.Optional(Type.Number({ description: "Maximum number of entries to return (default: 500)" })),
+	ignore: Type.Optional(
+		Type.Array(Type.String(), {
+			description:
+				"Glob patterns matched against entry names to exclude, e.g. ['node_modules', '*.log', '.git']. Matching is on the entry name only (ls is non-recursive); dotfiles are matched.",
+		}),
+	),
 });
 
 export type LsToolInput = Static<typeof lsSchema>;
@@ -104,12 +111,12 @@ export function createLsToolDefinition(
 	return {
 		name: "ls",
 		label: "ls",
-		description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
+		description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Lists a single directory (not recursive) and shows everything on disk; pass 'ignore' glob patterns to skip entries like node_modules or .git. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 		promptSnippet: "List directory contents",
 		parameters: lsSchema,
 		async execute(
 			_toolCallId,
-			{ path, limit }: { path?: string; limit?: number },
+			{ path, limit, ignore }: { path?: string; limit?: number; ignore?: string[] },
 			signal?: AbortSignal,
 			_onUpdate?,
 			_ctx?,
@@ -152,6 +159,17 @@ export function createLsToolDefinition(
 								reject(new Error(`Cannot read directory: ${String(e)}`));
 							}
 							return;
+						}
+
+						// Exclude entries matching any ignore glob. Match on the bare entry
+						// name (ls is non-recursive) with dot:true so patterns can target
+						// dotfiles like '.git'. Default behavior (no patterns) still shows
+						// everything on disk.
+						const ignorePatterns = (ignore ?? []).filter((p) => typeof p === "string" && p.length > 0);
+						if (ignorePatterns.length > 0) {
+							entries = entries.filter(
+								(entry) => !ignorePatterns.some((pattern) => minimatch(entry, pattern, { dot: true })),
+							);
 						}
 
 						// Sort alphabetically, case-insensitive.
