@@ -278,6 +278,31 @@ describe("Coding Agent Tools", () => {
 			).rejects.toThrow(/Found 3 occurrences/);
 		});
 
+		it("should replace every occurrence when replaceAll is true", async () => {
+			const testFile = join(testDir, "edit-replace-all.txt");
+			writeFileSync(testFile, "foo foo foo");
+
+			const result = await editTool.execute("test-call-7b", {
+				path: testFile,
+				edits: [{ oldText: "foo", newText: "bar", replaceAll: true }],
+			});
+
+			expect(getTextOutput(result)).toContain("Successfully replaced");
+			expect(readFileSync(testFile, "utf-8")).toBe("bar bar bar");
+		});
+
+		it("should still require uniqueness when replaceAll is absent", async () => {
+			const testFile = join(testDir, "edit-replace-all-off.txt");
+			writeFileSync(testFile, "foo foo foo");
+
+			await expect(
+				editTool.execute("test-call-7c", {
+					path: testFile,
+					edits: [{ oldText: "foo", newText: "bar", replaceAll: false }],
+				}),
+			).rejects.toThrow(/Found 3 occurrences/);
+		});
+
 		it("should replace multiple disjoint regions in one call", async () => {
 			const testFile = join(testDir, "edit-multi.txt");
 			writeFileSync(testFile, "alpha\nbeta\ngamma\ndelta\n");
@@ -830,6 +855,24 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).toContain(".hidden-file");
 			expect(output).toContain(".hidden-dir/");
+		});
+
+		it("should exclude entries matching ignore globs (including dotfiles)", async () => {
+			writeFileSync(join(testDir, "keep.ts"), "");
+			writeFileSync(join(testDir, "debug.log"), "");
+			mkdirSync(join(testDir, "node_modules"));
+			mkdirSync(join(testDir, ".git"));
+
+			const result = await lsTool.execute("test-call-15b", {
+				path: testDir,
+				ignore: ["node_modules", "*.log", ".git"],
+			});
+			const output = getTextOutput(result);
+
+			expect(output).toContain("keep.ts");
+			expect(output).not.toContain("debug.log");
+			expect(output).not.toContain("node_modules");
+			expect(output).not.toContain(".git");
 		});
 	});
 });

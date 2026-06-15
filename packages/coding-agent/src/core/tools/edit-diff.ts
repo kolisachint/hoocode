@@ -73,6 +73,11 @@ export interface FuzzyMatchResult {
 export interface Edit {
 	oldText: string;
 	newText: string;
+	/**
+	 * When true, replace every occurrence of oldText instead of requiring it to
+	 * be unique. Default (false/undefined) keeps the uniqueness guardrail.
+	 */
+	replaceAll?: boolean;
 }
 
 interface MatchedEdit {
@@ -144,6 +149,34 @@ function countOccurrences(content: string, oldText: string): number {
 	return fuzzyContent.split(fuzzyOldText).length - 1;
 }
 
+/**
+ * Find the start index of every non-overlapping occurrence of oldText in
+ * content, using the same exact-then-fuzzy strategy as fuzzyFindText. Indices
+ * are valid in the content passed in (which, in the fuzzy case, the caller has
+ * already normalized — see applyEditsToNormalizedContent's baseContent).
+ */
+function findAllMatches(content: string, oldText: string): { indices: number[]; matchLength: number } {
+	const collect = (haystack: string, needle: string): number[] => {
+		const indices: number[] = [];
+		if (needle.length === 0) return indices;
+		let from = 0;
+		while (true) {
+			const idx = haystack.indexOf(needle, from);
+			if (idx === -1) break;
+			indices.push(idx);
+			from = idx + needle.length; // non-overlapping
+		}
+		return indices;
+	};
+
+	if (content.indexOf(oldText) !== -1) {
+		return { indices: collect(content, oldText), matchLength: oldText.length };
+	}
+
+	const fuzzyOldText = normalizeForFuzzyMatch(oldText);
+	return { indices: collect(normalizeForFuzzyMatch(content), fuzzyOldText), matchLength: fuzzyOldText.length };
+}
+
 function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
 	if (totalEdits === 1) {
 		return new Error(
@@ -198,6 +231,7 @@ export function applyEditsToNormalizedContent(
 	const normalizedEdits = edits.map((edit) => ({
 		oldText: normalizeToLF(edit.oldText),
 		newText: normalizeToLF(edit.newText),
+		replaceAll: edit.replaceAll === true,
 	}));
 
 	for (let i = 0; i < normalizedEdits.length; i++) {
@@ -217,6 +251,16 @@ export function applyEditsToNormalizedContent(
 		const matchResult = fuzzyFindText(baseContent, edit.oldText);
 		if (!matchResult.found) {
 			throw getNotFoundError(path, i, normalizedEdits.length);
+		}
+
+		if (edit.replaceAll) {
+			// Replace every occurrence; emit one matched span per occurrence so
+			// the shared reverse-order applier rewrites them all.
+			const { indices, matchLength } = findAllMatches(baseContent, edit.oldText);
+			for (const matchIndex of indices) {
+				matchedEdits.push({ editIndex: i, matchIndex, matchLength, newText: edit.newText });
+			}
+			continue;
 		}
 
 		const occurrences = countOccurrences(baseContent, edit.oldText);

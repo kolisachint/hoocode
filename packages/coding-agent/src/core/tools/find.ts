@@ -222,7 +222,9 @@ export function createFindToolDefinition(
 						if (!fdPath) {
 							settle(() =>
 								reject(
-									new Error("fd unavailable and could not be downloaded — use the bash tool to run find instead"),
+									new Error(
+										"fd unavailable and could not be downloaded — use the bash tool to run find instead",
+									),
 								),
 							);
 							return;
