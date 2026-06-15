@@ -138,6 +138,53 @@ describe("Anthropic thinking disable payload", () => {
 		expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
 		expect(payload.output_config).toEqual({ effort: "xhigh" });
 	});
+
+	it("sends thinking.type=disabled for Claude Opus 4.8 when thinking is off", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-4-8"));
+
+		expect(payload.thinking).toEqual({ type: "disabled" });
+		expect(payload.output_config).toBeUndefined();
+	});
+
+	it("uses adaptive thinking for Claude Opus 4.8 when reasoning is enabled", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-4-8"), { reasoning: "high" });
+
+		// Regression: Opus 4.8 must use adaptive thinking, not budget-based
+		// thinking.type=enabled (which the API rejects). Display defaults to
+		// "omitted" for faster tool-use turns; effort (capability) is unchanged.
+		expect(payload.thinking).toEqual({ type: "adaptive", display: "omitted" });
+		expect(payload.output_config).toEqual({ effort: "high" });
+	});
+
+	it("maps xhigh reasoning to effort=xhigh for Claude Opus 4.8", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-4-8"), { reasoning: "xhigh" });
+
+		expect(payload.thinking).toEqual({ type: "adaptive", display: "omitted" });
+		expect(payload.output_config).toEqual({ effort: "xhigh" });
+	});
+
+	it("defaults Claude Opus 4.8 thinking display to omitted for faster tool use", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-4-8"), { reasoning: "high" });
+
+		expect(payload.thinking).toEqual({ type: "adaptive", display: "omitted" });
+	});
+
+	it("respects explicit thinkingDisplay=summarized override for Claude Opus 4.8", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-4-8"), {
+			reasoning: "high",
+			thinkingDisplay: "summarized",
+		});
+
+		expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
+		expect(payload.output_config).toEqual({ effort: "high" });
+	});
+
+	it("keeps Claude Opus 4.7 thinking display as summarized by default", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-4-7"), { reasoning: "high" });
+
+		// Only Opus 4.8 flips to omitted; other adaptive models keep visible thinking.
+		expect(payload.thinking).toEqual({ type: "adaptive", display: "summarized" });
+	});
 });
 
 describe.skipIf(!process.env.ANTHROPIC_API_KEY)("Anthropic thinking disable E2E", () => {

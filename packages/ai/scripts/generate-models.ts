@@ -219,6 +219,9 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.id.includes("opus-4-7") || model.id.includes("opus-4.7")) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
+	if (model.id.includes("opus-4-8") || model.id.includes("opus-4.8")) {
+		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
+	}
 	if (model.api === "openai-completions" && model.id.includes("deepseek-v4")) {
 		mergeThinkingLevelMap(model, DEEPSEEK_V4_THINKING_LEVEL_MAP);
 	}

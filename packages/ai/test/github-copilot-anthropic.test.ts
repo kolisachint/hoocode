@@ -91,6 +91,29 @@ describe("Copilot Claude via Anthropic Messages", () => {
 		expect(Array.isArray(params.messages)).toBe(true);
 	});
 
+	it("uses adaptive thinking (not type=enabled) for Copilot Claude Opus 4.8", async () => {
+		// Regression for the Copilot Opus 4.8 error:
+		// `"thinking.type.enabled" is not supported for this model.`
+		// Opus 4.8 must use adaptive thinking with output_config.effort.
+		const model = getModel("github-copilot", "claude-opus-4.8");
+		expect(model.api).toBe("anthropic-messages");
+
+		const { streamAnthropic } = await import("../src/providers/anthropic.js");
+		const s = streamAnthropic(model, context, {
+			apiKey: "tid_copilot_session_test_token",
+			thinkingEnabled: true,
+			effort: "high",
+		});
+		for await (const event of s) {
+			if (event.type === "error") break;
+		}
+
+		const params = mockState.createParams as Record<string, unknown>;
+		// Opus 4.8 defaults to display "omitted" (faster tool use); effort stays high.
+		expect(params.thinking).toEqual({ type: "adaptive", display: "omitted" });
+		expect(params.output_config).toEqual({ effort: "high" });
+	});
+
 	it("includes interleaved-thinking beta when reasoning is enabled", async () => {
 		const model = getModel("github-copilot", "claude-sonnet-4.5");
 		const { streamAnthropic } = await import("../src/providers/anthropic.js");

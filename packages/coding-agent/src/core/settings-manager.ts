@@ -108,6 +108,7 @@ export interface Settings {
 	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
 	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening /tree
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
+	thinkingDisplay?: "summarized" | "omitted"; // How adaptive-thinking models return thinking content. Opus 4.8 defaults to "omitted" (faster tool use); set "summarized" to surface thinking text.
 	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
@@ -938,6 +939,10 @@ export class SettingsManager {
 
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
 		return this.settings.thinkingBudgets;
+	}
+
+	getThinkingDisplay(): "summarized" | "omitted" | undefined {
+		return this.settings.thinkingDisplay;
 	}
 
 	getShowImages(): boolean {
