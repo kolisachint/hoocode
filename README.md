@@ -38,6 +38,25 @@ hoocode /mode plan    # or draft a plan first
 hoocode /approve      # review .hoocode/plan.md, then execute it
 ```
 
+## Tools
+
+The agent works through a small, deterministic tool set. Available by default:
+
+| Tool | What it does |
+|---|---|
+| `read` · `write` · `edit` | Read files, create new ones, and make exact-text edits. One `edit` call can apply several replacements at once, and an edit can set `replaceAll` to replace every occurrence instead of requiring a unique match. |
+| `bash` | Run shell commands — each one gated by the `Yes / No / Always` permission prompt. |
+| `grep` · `find` · `ls` | Search file contents (ripgrep), find files by glob (fd), and list directories. `grep`/`find` respect `.gitignore`; `ls` lists a single directory and takes an optional `ignore` list to skip noise like `node_modules`. |
+
+When running interactively, the agent can also ask you to make a decision through a multiple-choice prompt when it genuinely needs your input to proceed. In non-interactive (`-p`) runs it falls back to proceeding on its own.
+
+Two extra tools are **off by default** — turn them on per session with a flag, or persistently in settings:
+
+| Tool | Enable | What it does |
+|---|---|---|
+| **Task** (subagents) | `--enable-subagents` or `"enableSubagent": true` | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer. |
+| **TodoWrite** | `--enable-todowrite` or `"enableTodoWrite": true` | Maintain a live todo list for the current task, shown in the task panel. |
+
 ## Credits
 
 HooCode is a fork of the upstream [`pi-mono`](https://github.com/earendil-works/pi-mono) project (originally [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)) by **Mario Zechner** ([@badlogicgames](https://github.com/badlogic)). The upstream project is MIT-licensed and all original copyright is preserved in [LICENSE](LICENSE). Huge thanks to Mario and the upstream contributors — without their work, this fork would not exist.
