@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- TodoWrite tool is now enabled by default (`enableTodoWrite` defaults to `true`).
+  Set `"enableTodoWrite": false` in settings to opt out.
+
 ## [0.4.58] - 2026-06-15
 
 ## [0.4.57] - 2026-06-14
