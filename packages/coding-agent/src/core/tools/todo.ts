@@ -92,16 +92,18 @@ export function createTodoWriteToolDefinition(): ToolDefinition {
 		name: "TodoWrite",
 		label: "TodoWrite",
 		description: [
-			"Maintain a structured todo list for the current task; it is shown live in the task panel.",
-			"Use it for multi-step or non-trivial work to plan, track progress, and give the user visibility.",
-			"Each call sends the FULL list and replaces the previous one — always include every item with its current status.",
-			"Keep exactly one item in_progress at a time, and mark items completed as soon as they are done.",
-			"Skip it for trivial single-step tasks where a list adds no value.",
+			"Maintain a structured todo list for the current task, shown live in the task panel.",
+			"Use it PROACTIVELY: at the start of any multi-step or non-trivial task, write the full plan as todos before you begin, then keep it current as you work.",
+			"Mark exactly ONE item in_progress at a time, and flip an item to completed immediately after finishing it — do not batch completions or leave finished work marked in_progress.",
+			"Each call sends the FULL list and REPLACES the previous one — always include every item with its current status; omitting an item removes it.",
+			"Skip it only for trivial, single-step tasks where a list adds no value. When in doubt on multi-step work, use it — it keeps you from losing track of steps.",
 		].join("\n"),
-		promptSnippet: "Track multi-step work as a live todo list (replaces the whole list each call)",
+		promptSnippet:
+			"Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
 		promptGuidelines: [
-			"For multi-step or complex tasks, track progress with TodoWrite: keep exactly one item in_progress and update statuses as you go.",
+			"Use TodoWrite proactively for any multi-step or non-trivial task: write the plan as todos up front, keep exactly one item in_progress, and mark items completed immediately as you finish them.",
 			"TodoWrite replaces the entire list each call — always send all items with their current status.",
+			"Skip TodoWrite for trivial single-step tasks where a checklist adds no value.",
 		],
 		parameters: todoWriteParams,
 		async execute(_toolCallId, params: TodoWriteParams) {
