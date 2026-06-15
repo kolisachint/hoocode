@@ -40,6 +40,7 @@ import {
 } from "./core/session-cwd.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
+import { canSpawnSubagent, SUBAGENT_MAX_DEPTH_ENV } from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import {
 	buildTaskMainPrompt,
@@ -385,10 +386,17 @@ function buildSessionOptions(
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
-	// Never register it inside a spawned subagent (--task-id present): subagents must not
-	// recursively dispatch, even if a project's enableSubagent setting is on.
+	//
+	// Nesting is bounded by the tree-wide cap (maxSubagentDepth, default 1). The root
+	// seeds the cap into the environment so every descendant agrees on one value; the
+	// Task tool is registered only while this process's depth is below that cap. At the
+	// default cap this reproduces the original guard exactly: subagents (depth >= 1) get
+	// no Task tool and cannot recursively dispatch.
 	const isSubagentChild = parsed.taskId !== undefined;
-	if (!isSubagentChild && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
+	if (process.env[SUBAGENT_MAX_DEPTH_ENV] === undefined) {
+		process.env[SUBAGENT_MAX_DEPTH_ENV] = String(settingsManager.getMaxSubagentDepth());
+	}
+	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 		options.customTools = [
 			...(options.customTools ?? []),
 			createTaskToolDefinition(),

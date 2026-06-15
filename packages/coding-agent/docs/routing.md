@@ -21,8 +21,10 @@ Guidance baked into the parent prompt:
 
 The `DispatchEvaluator` no longer routes. It survives only to:
 
-1. **Block nested delegation** — a subagent (`HOOCODE_SUBAGENT_DEPTH>=1`) must not
-   spawn further subagents.
+1. **Enforce the nesting cap** — a process may delegate only while its
+   `HOOCODE_SUBAGENT_DEPTH` is below the tree-wide cap `HOOCODE_SUBAGENT_MAX_DEPTH`
+   (seeded from the `maxSubagentDepth` setting, default `1`). At the default cap a
+   subagent cannot spawn further subagents.
 2. **Record a complexity estimate** in `.hoocode/dispatch/<task_id>/dispatch-log.json`
    for diagnostics. This is a cheap heuristic, not a routing decision.
 
@@ -75,6 +77,6 @@ multiple `Task` calls; there is no batch-dispatch API.
 ## Guardrails
 
 - **Token budget is advisory.** It emits `budget_warning` (80%) and `budget_exceeded` (100%) for telemetry but never kills or fails a subagent; the turn cap is the guaranteed hard stop.
-- **No nested delegation.** The `Task`/`TaskOutput` tools are never registered inside a spawned subagent (`--task-id` present), and `HOOCODE_SUBAGENT_DEPTH=1` is set in each child's environment as defense in depth.
+- **Bounded nesting (default: none).** Nesting is capped by `maxSubagentDepth` (default `1`). The root seeds the cap into `HOOCODE_SUBAGENT_MAX_DEPTH`; each spawned child is stamped with its depth (`HOOCODE_SUBAGENT_DEPTH` = parent + 1). The `Task`/`TaskOutput` tools are registered only while a process's depth is below the cap, and the `DispatchEvaluator` enforces the same bound as defense in depth — so at the default cap subagents cannot recursively dispatch. When the cap is raised, nested pools (depth ≥ 1) run with a reduced concurrency so the worst-case live process count stays a fixed function of depth (e.g. `5 + 5×2 = 15` at depth 2), with no shared state to leak on crash.
 - The pool prioritizes `explore` and `review` tasks over `doc` tasks because they often block downstream work.
 - On completion, the subagent writes `.hoocode/dispatch/<task_id>/result.json` (verified by the parent) and the pool writes `.hoocode/dispatch/<task_id>/output.json` (raw process outcome).

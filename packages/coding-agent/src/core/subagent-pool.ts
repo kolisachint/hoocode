@@ -9,6 +9,7 @@ import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
+import { currentSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
 
 export interface SubagentPoolTask {
@@ -594,9 +595,14 @@ export class SubagentPool extends EventEmitter {
 		try {
 			proc = spawn(this.executable, this.buildArgs(task), {
 				cwd: task.cwd ?? this.cwd,
-				// Mark the child as a subagent so its own DispatchEvaluator refuses to
-				// spawn further subagents (depth guard).
-				env: { ...this.env, HOOCODE_SUBAGENT_DEPTH: "1" },
+				// Stamp the child's depth (parent depth + 1) so its own guard knows where
+				// it sits in the tree. The tree-wide cap (HOOCODE_SUBAGENT_MAX_DEPTH) is
+				// inherited via the spread; at the default cap of 1 the child lands at
+				// depth 1 and cannot spawn further subagents.
+				env: {
+					...this.env,
+					[SUBAGENT_DEPTH_ENV]: String(currentSubagentDepth(this.env) + 1),
+				},
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 			});

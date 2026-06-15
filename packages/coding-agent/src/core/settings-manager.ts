@@ -101,6 +101,7 @@ export interface Settings {
 	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	enableSubagent?: boolean; // default: false - enable the subagent tool (delegate tasks to isolated agent loops)
+	maxSubagentDepth?: number; // default: 1 - tree-wide subagent nesting cap (1 = subagents cannot spawn subagents)
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -925,6 +926,12 @@ export class SettingsManager {
 		this.globalSettings.enableSubagent = enabled;
 		this.markModified("enableSubagent");
 		this.save();
+	}
+
+	/** Tree-wide subagent nesting cap. Clamped to >= 1 (delegation can never be disabled here). */
+	getMaxSubagentDepth(): number {
+		const v = this.settings.maxSubagentDepth ?? DEFAULT_SETTINGS.maxSubagentDepth!;
+		return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1;
 	}
 
 	getEnableTodoWrite(): boolean {
