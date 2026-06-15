@@ -27,7 +27,7 @@ export const DEFAULT_SETTINGS = {
 	enableInstallTelemetry: true,
 	enableSkillCommands: true,
 	enableSubagent: false,
-	enableTodoWrite: true,
+	enableTodoWrite: false,
 	terminal: {
 		showImages: true,
 		imageWidthCells: 60,

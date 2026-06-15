@@ -396,10 +396,10 @@ function buildSessionOptions(
 		];
 	}
 
-	// Optional TodoWrite tool: on by default (opt out via the enableTodoWrite
-	// setting). Never registered inside a spawned subagent child — its todos
-	// would otherwise leak into the parent's "main" task group in the pane.
-	if (!isSubagentChild && settingsManager.getEnableTodoWrite()) {
+	// Optional TodoWrite tool: opt-in via --enable-todowrite flag or the
+	// enableTodoWrite setting. Never registered inside a spawned subagent child —
+	// its todos would otherwise leak into the parent's "main" task group in the pane.
+	if (!isSubagentChild && (parsed.todoWrite ?? settingsManager.getEnableTodoWrite())) {
 		options.customTools = [...(options.customTools ?? []), createTodoWriteToolDefinition()];
 	}
 

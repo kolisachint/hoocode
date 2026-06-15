@@ -240,6 +240,17 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--enable-todowrite flag", () => {
+		test("parses --enable-todowrite flag", () => {
+			const result = parseArgs(["--enable-todowrite"]);
+			expect(result.todoWrite).toBe(true);
+		});
+		test("defaults to undefined when absent", () => {
+			const result = parseArgs([]);
+			expect(result.todoWrite).toBeUndefined();
+		});
+	});
+
 	describe("--slash-command flag", () => {
 		test("parses single --slash-command", () => {
 			const result = parseArgs(["--slash-command", "./commands"]);
