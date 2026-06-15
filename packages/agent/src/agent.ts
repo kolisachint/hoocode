@@ -114,6 +114,8 @@ export interface AgentOptions {
 	followUpMode?: QueueMode;
 	sessionId?: string;
 	thinkingBudgets?: ThinkingBudgets;
+	/** How adaptive-thinking models return thinking content ("summarized" | "omitted"). */
+	thinkingDisplay?: "summarized" | "omitted";
 	transport?: Transport;
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
@@ -198,6 +200,8 @@ export class Agent {
 	public sessionId?: string;
 	/** Optional per-level thinking token budgets forwarded to the stream function. */
 	public thinkingBudgets?: ThinkingBudgets;
+	/** Optional thinking-display mode forwarded to the stream function. */
+	public thinkingDisplay?: "summarized" | "omitted";
 	/** Preferred transport forwarded to the stream function. */
 	public transport: Transport;
 	/** Optional cap for provider-requested retry delays. */
@@ -223,6 +227,7 @@ export class Agent {
 		this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
 		this.sessionId = options.sessionId;
 		this.thinkingBudgets = options.thinkingBudgets;
+		this.thinkingDisplay = options.thinkingDisplay;
 		this.transport = options.transport ?? "auto";
 		this.maxRetryDelayMs = options.maxRetryDelayMs;
 		this.toolExecution = options.toolExecution ?? "parallel";
@@ -439,6 +444,7 @@ export class Agent {
 			onResponse: this.onResponse,
 			transport: this.transport,
 			thinkingBudgets: this.thinkingBudgets,
+			thinkingDisplay: this.thinkingDisplay,
 			maxRetryDelayMs: this.maxRetryDelayMs,
 			toolExecution: this.toolExecution,
 			beforeToolCall: this.beforeToolCall,

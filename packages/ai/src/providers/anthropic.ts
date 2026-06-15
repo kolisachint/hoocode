@@ -680,6 +680,20 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 }
 
 /**
+ * Default thinking display for adaptive-thinking models when the caller does
+ * not specify one. Opus 4.8 defaults to "omitted" (matching Anthropic's own
+ * API default for Opus 4.7+): the model still reasons at full effort, but
+ * skipping the streamed thinking summary lowers time-to-first-token and speeds
+ * up tool-use turns. Other models keep "summarized" for visible reasoning.
+ */
+function defaultThinkingDisplay(modelId: string): AnthropicThinkingDisplay {
+	if (modelId.includes("opus-4-8") || modelId.includes("opus-4.8")) {
+		return "omitted";
+	}
+	return "summarized";
+}
+
+/**
  * Map ThinkingLevel to Anthropic effort levels for adaptive thinking.
  * Note: effort "max" is only valid on Opus 4.6, while Opus 4.7 supports "xhigh".
  */
@@ -722,6 +736,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 			...base,
 			thinkingEnabled: true,
 			effort,
+			...(options.thinkingDisplay ? { thinkingDisplay: options.thinkingDisplay } : {}),
 		} satisfies AnthropicOptions);
 	}
 
@@ -737,6 +752,7 @@ export const streamSimpleAnthropic: StreamFunction<"anthropic-messages", SimpleS
 		maxTokens: adjusted.maxTokens,
 		thinkingEnabled: true,
 		thinkingBudgetTokens: adjusted.thinkingBudget,
+		...(options.thinkingDisplay ? { thinkingDisplay: options.thinkingDisplay } : {}),
 	} satisfies AnthropicOptions);
 };
 
@@ -909,9 +925,10 @@ function buildParams(
 	// budget-based (older models), or explicitly disabled.
 	if (model.reasoning) {
 		if (options?.thinkingEnabled) {
-			// Default to "summarized" so Opus 4.7 and Mythos Preview behave like
-			// older Claude 4 models (whose API default is also "summarized").
-			const display: AnthropicThinkingDisplay = options.thinkingDisplay ?? "summarized";
+			// When unset, pick a per-model default: Opus 4.8 uses "omitted" (faster
+			// tool-use turns, matching Anthropic's own default), other models keep
+			// "summarized" so they behave like older Claude 4 models.
+			const display: AnthropicThinkingDisplay = options.thinkingDisplay ?? defaultThinkingDisplay(model.id);
 			if (supportsAdaptiveThinking(model.id)) {
 				// Adaptive thinking: Claude decides when and how much to think.
 				params.thinking = { type: "adaptive", display };

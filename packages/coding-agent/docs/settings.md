@@ -20,6 +20,20 @@ Edit directly or use `/settings` for common options.
 | `defaultThinkingLevel` | string | - | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"` |
 | `hideThinkingBlock` | boolean | `false` | Hide thinking blocks in output |
 | `thinkingBudgets` | object | - | Custom token budgets per thinking level |
+| `thinkingDisplay` | string | - | `"summarized"` or `"omitted"`. Controls how adaptive-thinking models return thinking content. Opus 4.8 defaults to `"omitted"` (faster tool-use turns, reasoning effort unchanged); set `"summarized"` to surface thinking text. |
+
+#### thinkingDisplay
+
+`"omitted"` keeps full reasoning effort but skips streaming the thinking summary,
+lowering time-to-first-token (faster tool use) at the cost of not showing thinking
+text. `"summarized"` returns visible thinking. When unset, Opus 4.8 defaults to
+`"omitted"`; other models default to `"summarized"`.
+
+```json
+{
+  "thinkingDisplay": "summarized"
+}
+```
 
 #### thinkingBudgets
 

@@ -109,7 +109,8 @@ describe("Copilot Claude via Anthropic Messages", () => {
 		}
 
 		const params = mockState.createParams as Record<string, unknown>;
-		expect(params.thinking).toEqual({ type: "adaptive", display: "summarized" });
+		// Opus 4.8 defaults to display "omitted" (faster tool use); effort stays high.
+		expect(params.thinking).toEqual({ type: "adaptive", display: "omitted" });
 		expect(params.output_config).toEqual({ effort: "high" });
 	});
 
