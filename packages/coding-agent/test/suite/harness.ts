@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@kolisachint/hoocode-agent-core";
-import { Agent } from "@kolisachint/hoocode-agent-core";
+import { Agent, getDefaultTools } from "@kolisachint/hoocode-agent-core";
 import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@kolisachint/hoocode-ai";
 import { registerFauxProvider } from "@kolisachint/hoocode-ai";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.js";
@@ -96,7 +96,16 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 	});
 	fauxProvider.setResponses([]);
 	const model = fauxProvider.getModel();
-	const toolMap = options.tools ? Object.fromEntries(options.tools.map((tool) => [tool.name, tool])) : undefined;
+	// Seed the override with the full default coding tool set (read/bash/edit/write/grep/find/ls).
+	// Any test-provided tools override the defaults by name.
+	const toolMap: Record<string, AgentTool> = Object.fromEntries(
+		getDefaultTools({ cwd: tempDir }).map((tool) => [tool.name, tool]),
+	);
+	if (options.tools) {
+		for (const tool of options.tools) {
+			toolMap[tool.name] = tool;
+		}
+	}
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
