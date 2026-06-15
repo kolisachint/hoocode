@@ -341,11 +341,16 @@ export class SubagentPool extends EventEmitter {
 		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const reason = forceAgent ? "user_override" : analysis.reason;
 		const complexity = analysis.estimated_complexity;
+		// Depth of the child about to be spawned (this process's depth + 1). Surfaced
+		// so a delegation tree's nesting is visible in logs without extra tooling.
+		const childDepth = currentSubagentDepth(this.env) + 1;
 
 		// Pre-dispatch logging. Use stderr: stdout is reserved for the JSON event
 		// stream / TUI render and must not be polluted.
-		console.error(`[DISPATCH] agent=${agent_type} reason=${reason} complexity=${complexity} task_id=${task_id}`);
-		this.writeDispatchLog(task_id, agent_type, reason, complexity, task);
+		console.error(
+			`[DISPATCH] agent=${agent_type} depth=${childDepth} reason=${reason} complexity=${complexity} task_id=${task_id}`,
+		);
+		this.writeDispatchLog(task_id, agent_type, reason, complexity, task, childDepth);
 
 		const poolTask: SubagentPoolTask = {
 			task_id,
@@ -415,11 +420,13 @@ export class SubagentPool extends EventEmitter {
 		reason: string,
 		complexity: string,
 		task: string,
+		depth: number,
 	): void {
 		const log = {
 			timestamp: new Date().toISOString(),
 			task_id,
 			agent_type,
+			depth,
 			reason,
 			complexity,
 			task,

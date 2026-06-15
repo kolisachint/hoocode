@@ -119,6 +119,24 @@ function createValidResultJson(cwd: string, taskId: string): void {
 	);
 }
 
+/** Mock that records the HOOCODE_SUBAGENT_DEPTH env it was spawned with, then exits cleanly. */
+function createEnvCaptureExecutable(dir: string): string {
+	const path = join(dir, "mock-env.js");
+	const content = `#!/usr/bin/env node
+const fs = require("node:fs");
+const p = require("node:path");
+fs.writeFileSync(p.join(process.cwd(), "env.json"), JSON.stringify({
+	depth: process.env.HOOCODE_SUBAGENT_DEPTH ?? null,
+	maxDepth: process.env.HOOCODE_SUBAGENT_MAX_DEPTH ?? null,
+}));
+console.log(JSON.stringify({ type: "done", reason: "stop", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));
+process.exit(0);
+`;
+	writeFileSync(path, content);
+	chmodSync(path, 0o755);
+	return path;
+}
+
 describe("SubagentPool", () => {
 	let tmpDir: string;
 	let pool: SubagentPool | undefined;
@@ -406,6 +424,37 @@ describe("SubagentPool", () => {
 		expect(si).toBeGreaterThanOrEqual(0);
 		expect(argv[si + 1]).toBe(join(tmpDir, ".hoocode", "dispatch", "mt-task", "session.jsonl"));
 		expect(argv).not.toContain("--no-session");
+	});
+
+	test("stamps a spawned child with depth 1 and propagates the tree-wide cap from the root", async () => {
+		const exe = createEnvCaptureExecutable(tmpDir);
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		delete env.HOOCODE_SUBAGENT_DEPTH; // simulate a root process
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "d-root");
+		pool.spawn({ task_id: "d-root", agent_type: "explore", task: "scan" });
+		await pool.wait_for("d-root");
+		const captured = JSON.parse(readFileSync(join(tmpDir, "env.json"), "utf-8")) as {
+			depth: string | null;
+			maxDepth: string | null;
+		};
+		expect(captured.depth).toBe("1");
+		expect(captured.maxDepth).toBe("2");
+	});
+
+	test("increments depth across nesting levels (a depth-1 pool spawns a depth-2 child)", async () => {
+		const exe = createEnvCaptureExecutable(tmpDir);
+		const env = { ...process.env, HOOCODE_SUBAGENT_DEPTH: "1", HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "d-nested");
+		pool.spawn({ task_id: "d-nested", agent_type: "explore", task: "scan" });
+		await pool.wait_for("d-nested");
+		const captured = JSON.parse(readFileSync(join(tmpDir, "env.json"), "utf-8")) as {
+			depth: string | null;
+			maxDepth: string | null;
+		};
+		expect(captured.depth).toBe("2");
+		expect(captured.maxDepth).toBe("2");
 	});
 
 	test("dispatchDetached returns a handle immediately and the result is collectable when done", async () => {
