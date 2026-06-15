@@ -9,7 +9,7 @@ import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
-import { currentSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
+import { currentSubagentDepth, resolveMaxSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
 
 export interface SubagentPoolTask {
@@ -534,12 +534,33 @@ export class SubagentPool extends EventEmitter {
 			if (systemPrompt) {
 				args.push("--system-prompt", systemPrompt);
 			}
+
+			// A `delegate: true` agent may itself dispatch via the Task tool, but only
+			// while the child it becomes can still nest (childDepth < cap) — so the
+			// deepest permitted level cannot delegate further. Gating here keeps the
+			// authorization explicit and bounded by the same cap as the depth guard.
+			const childDepth = currentSubagentDepth(this.env) + 1;
+			const canChildDelegate = def?.delegate === true && childDepth < resolveMaxSubagentDepth(undefined, this.env);
+
 			// Tool allowlist comes from the agent definition's frontmatter `tools`
 			// field (read-only built-ins declare their own sandbox). When omitted, no
-			// --tools is passed and the subagent inherits all parent tools.
-			const tools = def?.tools;
+			// --tools is passed and the subagent inherits all parent tools (so the Task
+			// tool already survives). A delegating agent with an explicit allowlist must
+			// have Task/TaskOutput added, or the child would filter them out.
+			const tools = def?.tools ? [...def.tools] : undefined;
+			if (canChildDelegate && tools) {
+				for (const t of ["Task", "TaskOutput"]) {
+					if (!tools.includes(t)) tools.push(t);
+				}
+			}
 			if (tools && tools.length > 0) {
 				args.push("--tools", tools.join(","));
+			}
+
+			// Propagate subagent enablement so the child registers the Task tool; without
+			// this the flag-based enablement would not reach a spawned child.
+			if (canChildDelegate) {
+				args.push("--enable-subagents");
 			}
 		}
 

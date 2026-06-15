@@ -70,6 +70,12 @@ export interface AgentFrontmatter {
 	maxTurns?: number;
 	/** Claude Code extension: run this agent detached (non-blocking) so the parent polls for its result. */
 	background?: boolean;
+	/**
+	 * hoocode extension: when true, this agent may itself delegate via the Task tool
+	 * (subject to the tree-wide nesting cap). Opt-in per agent so the deliberate
+	 * "Task is not a normal tool" boundary stays intact for everyone else.
+	 */
+	delegate?: boolean;
 	[key: string]: unknown;
 }
 
@@ -97,6 +103,8 @@ export interface AgentDefinition {
 	maxTurns?: number;
 	/** When true, dispatch is non-blocking: the parent receives a handle and polls for the result. */
 	background?: boolean;
+	/** When true, this agent may delegate via the Task tool, subject to the nesting cap. */
+	delegate?: boolean;
 }
 
 const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit"]);
@@ -280,6 +288,19 @@ export function parseAgentDefinition(
 		}
 	}
 
+	let delegate: boolean | undefined;
+	if (frontmatter.delegate !== undefined) {
+		if (typeof frontmatter.delegate !== "boolean") {
+			diagnostics.push({
+				type: "warning",
+				message: `delegate must be a boolean (true or false), got "${frontmatter.delegate}" — field ignored`,
+				path: filePath,
+			});
+		} else {
+			delegate = frontmatter.delegate === true ? true : undefined;
+		}
+	}
+
 	return {
 		agent: {
 			name,
@@ -291,6 +312,7 @@ export function parseAgentDefinition(
 			filePath,
 			maxTurns,
 			background,
+			delegate,
 		},
 		diagnostics,
 	};

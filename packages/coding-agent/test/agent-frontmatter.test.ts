@@ -158,6 +158,35 @@ body`;
 		expect(diagnostics.some((d) => d.message.includes("background must be a boolean"))).toBe(true);
 	});
 
+	test("captures the delegate flag and leaves it undefined when absent", () => {
+		const orchestrator = `---
+name: orchestrator
+description: An agent that delegates to other subagents.
+delegate: true
+---
+body`;
+		expect(parseAgentDefinition(orchestrator, { source: "project" }).agent?.delegate).toBe(true);
+
+		const plain = `---
+name: plain
+description: A normal agent.
+---
+body`;
+		expect(parseAgentDefinition(plain, { source: "project" }).agent?.delegate).toBeUndefined();
+	});
+
+	test("warns when delegate is not a boolean", () => {
+		const raw = `---
+name: bad-delegate
+description: Agent with invalid delegate.
+delegate: sure
+---
+body`;
+		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.delegate).toBeUndefined();
+		expect(diagnostics.some((d) => d.message.includes("delegate must be a boolean"))).toBe(true);
+	});
+
 	test("warns on unknown model alias", () => {
 		const raw = `---
 name: weird-model

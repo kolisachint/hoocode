@@ -457,6 +457,52 @@ describe("SubagentPool", () => {
 		expect(captured.maxDepth).toBe("2");
 	});
 
+	test("a delegate:true agent gets Task in its allowlist and subagents enabled when nesting is permitted", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		// Project-local orchestrator agent that opts into delegation with a restricted allowlist.
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "orchestrator.md"),
+			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, grep, find, ls\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
+		);
+		// Cap raised to 2 (as --max-subagent-depth 2 would seed): the depth-1 child may still nest.
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		delete env.HOOCODE_SUBAGENT_DEPTH;
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "orch-task");
+		pool.spawn({ task_id: "orch-task", agent_type: "orchestrator", task: "do a multi-part job" });
+		await pool.wait_for("orch-task");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		expect(argv).toContain("--enable-subagents");
+		const ti = argv.indexOf("--tools");
+		expect(ti).toBeGreaterThanOrEqual(0);
+		const toolList = argv[ti + 1].split(",");
+		expect(toolList).toContain("Task");
+		expect(toolList).toContain("TaskOutput");
+	});
+
+	test("a delegate:true agent does NOT get delegation tools at the default cap (no nesting)", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "orchestrator.md"),
+			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, grep, find, ls\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
+		);
+		// Default cap (1): the spawned child is at depth 1 == cap, so it cannot nest further.
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "1" };
+		delete env.HOOCODE_SUBAGENT_DEPTH;
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "orch-task2");
+		pool.spawn({ task_id: "orch-task2", agent_type: "orchestrator", task: "do a multi-part job" });
+		await pool.wait_for("orch-task2");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		expect(argv).not.toContain("--enable-subagents");
+		const ti = argv.indexOf("--tools");
+		expect(argv[ti + 1].split(",")).not.toContain("Task");
+	});
+
 	test("dispatchDetached returns a handle immediately and the result is collectable when done", async () => {
 		const exe = createResultWritingExecutable(tmpDir, 150);
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
