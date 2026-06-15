@@ -35,6 +35,7 @@ export interface Args {
 	noTools?: boolean;
 	noBuiltinTools?: boolean;
 	subagent?: boolean;
+	todoWrite?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
 	print?: boolean;
@@ -123,6 +124,8 @@ export function parseArgs(args: string[]): Args {
 			result.noBuiltinTools = true;
 		} else if (arg === "--enable-subagents") {
 			result.subagent = true;
+		} else if (arg === "--enable-todowrite") {
+			result.todoWrite = true;
 		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
 			result.tools = args[++i]
 				.split(",")
@@ -270,6 +273,8 @@ ${chalk.bold("Options:")}
                                  cap and stopped at it (mainly used for spawned subagents)
   --enable-subagents             Enable the subagent tool (delegate tasks to isolated agent loops)
                                  Can also be enabled via the "enableSubagent" setting
+  --enable-todowrite             Enable the TodoWrite tool (maintain a live todo list in the task panel)
+                                 Can also be enabled via the "enableTodoWrite" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)

@@ -46,6 +46,7 @@ import {
 	createTaskOutputToolDefinition,
 	createTaskToolDefinition,
 } from "./core/tools/subagent.js";
+import { createTodoWriteToolDefinition } from "./core/tools/todo.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -393,6 +394,13 @@ function buildSessionOptions(
 			createTaskToolDefinition(),
 			createTaskOutputToolDefinition(),
 		];
+	}
+
+	// Optional TodoWrite tool: opt-in via --enable-todowrite flag or the
+	// enableTodoWrite setting. Never registered inside a spawned subagent child —
+	// its todos would otherwise leak into the parent's "main" task group in the pane.
+	if (!isSubagentChild && (parsed.todoWrite ?? settingsManager.getEnableTodoWrite())) {
+		options.customTools = [...(options.customTools ?? []), createTodoWriteToolDefinition()];
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };
