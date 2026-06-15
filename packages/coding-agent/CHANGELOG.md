@@ -4,12 +4,14 @@
 
 ### Added
 
-- Configurable subagent nesting via `maxSubagentDepth` (default `1`, opt-in). At the
-  default cap behavior is unchanged — subagents cannot spawn subagents. Raising it
+- Configurable subagent nesting via `maxSubagentDepth` (default `1`, opt-in) or the
+  `--max-subagent-depth <n>` CLI flag (overrides the setting). At the default cap
+  behavior is unchanged — subagents cannot spawn subagents. Raising it
   (e.g. `"maxSubagentDepth": 2`) lets a subagent delegate one further level. Fan-out
   stays bounded: the cap is seeded into the environment so every process in the tree
   agrees, and nested pools (depth ≥ 1) run with a reduced concurrency, giving a fixed
-  worst-case live process count by depth with no shared state to leak on crash.
+  worst-case live process count by depth with no shared state to leak on crash. The
+  child's depth is recorded in the `[DISPATCH]` log line and `dispatch-log.json`.
 
 ## [0.4.61] - 2026-06-15
 

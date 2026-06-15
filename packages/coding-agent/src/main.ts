@@ -394,7 +394,9 @@ function buildSessionOptions(
 	// no Task tool and cannot recursively dispatch.
 	const isSubagentChild = parsed.taskId !== undefined;
 	if (process.env[SUBAGENT_MAX_DEPTH_ENV] === undefined) {
-		process.env[SUBAGENT_MAX_DEPTH_ENV] = String(settingsManager.getMaxSubagentDepth());
+		// The root seeds the tree-wide cap; the --max-subagent-depth flag overrides the
+		// setting. Descendants inherit it via the environment (env already set => keep it).
+		process.env[SUBAGENT_MAX_DEPTH_ENV] = String(parsed.maxSubagentDepth ?? settingsManager.getMaxSubagentDepth());
 	}
 	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 		options.customTools = [

@@ -240,6 +240,19 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--max-subagent-depth flag", () => {
+		test("parses a valid depth", () => {
+			expect(parseArgs(["--max-subagent-depth", "2"]).maxSubagentDepth).toBe(2);
+		});
+		test("ignores non-positive or non-numeric values (falls back to the setting)", () => {
+			expect(parseArgs(["--max-subagent-depth", "0"]).maxSubagentDepth).toBeUndefined();
+			expect(parseArgs(["--max-subagent-depth", "x"]).maxSubagentDepth).toBeUndefined();
+		});
+		test("defaults to undefined when absent", () => {
+			expect(parseArgs([]).maxSubagentDepth).toBeUndefined();
+		});
+	});
+
 	describe("--enable-todowrite flag", () => {
 		test("parses --enable-todowrite flag", () => {
 			const result = parseArgs(["--enable-todowrite"]);
