@@ -142,6 +142,9 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createBashToolDefinition(cwd, options?.bash),
 		createEditToolDefinition(cwd, options?.edit),
 		createWriteToolDefinition(cwd, options?.write),
+		createGrepToolDefinition(cwd, options?.grep),
+		createFindToolDefinition(cwd, options?.find),
+		createLsToolDefinition(cwd, options?.ls),
 	];
 }
 
@@ -172,6 +175,9 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createBashTool(cwd, options?.bash),
 		createEditTool(cwd, options?.edit),
 		createWriteTool(cwd, options?.write),
+		createGrepTool(cwd, options?.grep),
+		createFindTool(cwd, options?.find),
+		createLsTool(cwd, options?.ls),
 	];
 }
 
