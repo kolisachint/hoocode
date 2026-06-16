@@ -33,14 +33,16 @@ The `DispatchEvaluator` no longer routes. It survives only to:
 Agents are defined by frontmatter `.md` files loaded from a registry with
 precedence **project > user > built-in**:
 
-- Built-in: `templates/agents/*.md` (explore, edit, test, review, doc)
+- Built-in: `templates/agents/*.md` (`explore`, `general-purpose`) — matching
+  Claude Code's built-in roster. `explore` is strictly read-only; `general-purpose`
+  is the delegating agent (`delegate: true`). Ship task-specialized agents (edit,
+  review, etc.) yourself under `.hoocode/agents/` or `.claude/agents/`.
 - Project: `.hoocode/agents/`, and `.claude/agents/` (Claude Code compatible)
 - User: `~/.hoocode/agents/`, and `~/.claude/agents/`
 
 Each definition supplies `name`, `description`, and optional `tools`, `model`,
-`maxTurns`, and `background`. When a definition omits `tools`, built-in modes
-fall back to a per-mode allowlist (`MODE_TOOLS`) so read-only modes (`explore`,
-`test`, `review`) cannot edit or write files.
+`maxTurns`, `background`, and `delegate`. When a definition omits `tools`, the
+subagent inherits all parent tools (Claude Code behavior).
 
 ## Forcing a Subagent with `/subagent`
 
@@ -49,9 +51,7 @@ decision (the mode is still validated against the registry):
 
 ```
 /subagent explore "How does the auth middleware work?"
-/subagent test "Run the parser unit tests"
-/subagent review "Audit login.ts for security issues"
-/subagent doc "Write a README for the API package"
+/subagent general-purpose "Add a --json flag to the export command and update its tests"
 ```
 
 ## Execution Model

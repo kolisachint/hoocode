@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Trimmed the built-in subagent roster to match Claude Code: only `explore` and
+  `general-purpose` ship by default (the `doc`, `edit`, `review`, and `test` agents
+  were removed — author them under `.hoocode/agents/` if needed). `explore` is now
+  strictly read-only (dropped `bash`), and `general-purpose` inherits the parent
+  model and sets `delegate: true` so it can spawn subagents when nesting is enabled.
+
 ### Added
 
 - Configurable subagent nesting via `maxSubagentDepth` (default `1`, opt-in) or the

@@ -5,20 +5,15 @@ import { buildTaskMainPrompt, summarizeAgentDescription } from "../src/core/tool
 import { EMBEDDED_AGENT_PROMPTS } from "../src/init-templates.generated.js";
 
 describe("built-in subagent tool allowlists (frontmatter)", () => {
+	function agentFor(name: string) {
+		return parseAgentDefinition(EMBEDDED_AGENT_PROMPTS[name]!, { source: "builtin", fallbackName: name }).agent;
+	}
 	function toolsFor(name: string): string[] {
-		const { agent } = parseAgentDefinition(EMBEDDED_AGENT_PROMPTS[name]!, { source: "builtin", fallbackName: name });
-		return agent?.tools ?? [];
+		return agentFor(name)?.tools ?? [];
 	}
 
-	test("defines the five built-in agents", () => {
-		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual([
-			"doc",
-			"edit",
-			"explore",
-			"general-purpose",
-			"review",
-			"test",
-		]);
+	test("defines the two built-in agents (matching Claude Code's roster)", () => {
+		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual(["explore", "general-purpose"]);
 	});
 
 	test("every built-in agent declares a non-empty tool allowlist", () => {
@@ -27,17 +22,16 @@ describe("built-in subagent tool allowlists (frontmatter)", () => {
 		}
 	});
 
-	test("read-only agents omit edit and write", () => {
-		for (const name of ["explore", "test", "review"]) {
-			expect(toolsFor(name)).not.toContain("edit");
-			expect(toolsFor(name)).not.toContain("write");
-		}
+	test("explore is strictly read-only (no edit, write, or bash)", () => {
+		const tools = toolsFor("explore");
+		expect(tools).not.toContain("edit");
+		expect(tools).not.toContain("write");
+		expect(tools).not.toContain("bash");
 	});
 
-	test("edit and doc agents can write", () => {
-		for (const name of ["edit", "doc"]) {
-			expect(toolsFor(name)).toContain("write");
-		}
+	test("general-purpose can write and is the delegating agent", () => {
+		expect(toolsFor("general-purpose")).toContain("write");
+		expect(agentFor("general-purpose")?.delegate).toBe(true);
 	});
 });
 
