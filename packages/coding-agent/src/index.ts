@@ -166,6 +166,18 @@ export type {
 	ResolvedResource,
 } from "./core/package-manager.js";
 export { DefaultPackageManager } from "./core/package-manager.js";
+// Prompt templates (.md slash-command / system / context templates).
+// `PromptTemplate` is already re-exported via the SDK barrel above.
+export {
+	expandPromptTemplate,
+	type LoadPromptTemplatesOptions,
+	loadPromptTemplates,
+	type PromptTemplateExpansion,
+	type PromptTemplateType,
+	parseCommandArgs,
+	substituteArgs,
+	tryExpandPromptTemplate,
+} from "./core/prompt-templates.js";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.js";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.js";
 // SDK for programmatic usage
