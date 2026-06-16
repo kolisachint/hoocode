@@ -67,7 +67,7 @@ describe("task panel rendering", () => {
 		expect(text).toContain(`#${plain.id}`);
 	});
 
-	test("shows an owner glyph on every row: ◇ subagent, ⧉ MCP, ▸ team role, ◆ main", () => {
+	test("each lens carries the owner glyph and tag for its own rows", () => {
 		taskStore.upsertAgent({ id: "team:planner", name: "planner", kind: "role", state: "running" });
 		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
 		const mcp = taskStore.create("fetch", { source: "mcp", subagentMode: "web" });
@@ -78,55 +78,55 @@ describe("task panel rendering", () => {
 		taskStore.update(role.id, { status: "in_progress" });
 		taskStore.update(plain.id, { status: "in_progress" });
 
-		const lines = renderPanel();
-		const subRow = lines.find((l) => l.includes("find the bug"));
-		const mcpRow = lines.find((l) => l.includes("fetch"));
-		const roleRow = lines.find((l) => l.includes("draft plan"));
-		const plainRow = lines.find((l) => l.includes("init project"));
-
-		// Subagent row carries the ◇ glyph; MCP row carries ⧉; a team role's task
-		// carries ▸ even in the flat lens (glyph follows the owner, not just source).
-		expect(subRow).toContain("◇");
-		expect(mcpRow).toContain("⧉");
-		expect(roleRow).toContain("▸");
-		// Plain (main-agent) task carries ◆, not the delegated-work glyphs.
+		// flat ("tasks") shows only the main agent's own plan: ◆, no delegated rows.
+		panel.setView("flat");
+		const flat = renderPanel();
+		const plainRow = flat.find((l) => l.includes("init project"));
 		expect(plainRow).toContain("◆");
 		expect(plainRow).not.toContain("◇");
-		expect(plainRow).not.toContain("⧉");
-		expect(plainRow).not.toContain("▸");
-		// The tag names the owner: subagent type, MCP server, role name.
+		expect(flat.some((l) => l.includes("find the bug"))).toBe(false);
+		expect(flat.some((l) => l.includes("fetch"))).toBe(false);
+
+		// subagents tree shows delegated rows: ◇ subagent with [mode], ⧉ MCP with [server].
+		panel.setView("subagents");
+		const sa = renderPanel();
+		const subRow = sa.find((l) => l.includes("find the bug"));
+		const mcpRow = sa.find((l) => l.includes("fetch"));
+		expect(subRow).toContain("◇");
 		expect(subRow).toContain("[explore]");
+		expect(mcpRow).toContain("⧉");
 		expect(mcpRow).toContain("[web]");
-		expect(roleRow).toContain("[planner]");
-		// Each row is still padded to the full pane width (glyph cell didn't break alignment).
-		for (const row of [subRow, mcpRow, roleRow, plainRow]) {
-			expect(visibleWidth(row as string)).toBe(120);
-		}
+		// Every row stays padded to the full pane width (the tree prefix didn't break it).
+		for (const row of sa) expect(visibleWidth(row)).toBe(120);
+
+		// teams shows the role row under its ▸ group header.
+		panel.setView("teams");
+		const teams = renderPanel();
+		expect(teams.some((l) => l.includes("▸") && l.includes("planner"))).toBe(true);
+		expect(teams.some((l) => l.includes("draft plan"))).toBe(true);
 	});
 
 	test("an MCP row without a recorded server falls back to the [MCP] tag", () => {
 		const mcp = taskStore.create("legacy call", { source: "mcp" });
 		taskStore.update(mcp.id, { status: "in_progress" });
 
+		panel.setView("subagents");
 		const text = renderPanel().join("\n");
 		expect(text).toContain("⧉");
 		expect(text).toContain("[MCP]");
 	});
 
-	test("grouped rows drop the origin tag except MCP rows, which keep theirs", () => {
-		taskStore.upsertAgent({ id: "explore", name: "explore", role: "subagent", kind: "subagent", state: "running" });
-		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore", agent: "explore" });
+	test("subagents tree keeps each row's [mode]/[server] tag (no key-by-type collapse)", () => {
+		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
 		const mcp = taskStore.create("fetch", { source: "mcp", subagentMode: "web" });
 		taskStore.update(sub.id, { status: "in_progress" });
 		taskStore.update(mcp.id, { status: "in_progress" });
 		panel.setView("subagents");
 
 		const lines = renderPanel().map(stripAnsi);
-		// The subagent task's tag lives on its group header, not the row.
+		// Unlike the old grouped lens, the tree keeps every node's own origin tag.
 		const subRow = lines.find((l) => l.includes("find the bug"));
-		expect(subRow).not.toContain("[explore]");
-		// The MCP row groups under main, whose header says nothing about MCP, so
-		// the row keeps its [server] tag.
+		expect(subRow).toContain("[explore]");
 		const mcpRow = lines.find((l) => l.includes("fetch"));
 		expect(mcpRow).toContain("[web]");
 	});
@@ -354,6 +354,7 @@ describe("task panel rendering", () => {
 	});
 
 	test("cycleView advances through the lenses that have content", () => {
+		taskStore.create("plan the work"); // main/TodoWrite task → flat lens has content
 		taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
 		taskStore.upsertAgent({ id: "planner", name: "planner", kind: "role" });
 
@@ -389,50 +390,116 @@ describe("task panel rendering", () => {
 		expect(panel.cycleView()).toBe("flat");
 	});
 
-	test("subagents view groups tasks under owner headers with glyphs and per-agent counts", () => {
-		taskStore.upsertAgent({ id: "main", name: "main", role: "orchestrator", kind: "main", state: "running" });
-		taskStore.upsertAgent({
-			id: "explore",
-			name: "explore",
-			role: "subagent",
-			kind: "subagent",
-			state: "done",
-			stats: { input: 2800, output: 360, cost: 0.011 },
-		});
-
-		const mine = taskStore.create("Map fetch() call sites");
-		taskStore.update(mine.id, { status: "done" });
-		const sub = taskStore.create("Port runtime http client", {
+	test("subagents view renders a recursive task tree (depth-2 nesting indented)", () => {
+		// Root dispatched explore; explore in turn dispatched review, whose subtree
+		// was merged back under explore via parentTaskId (cross-process propagation).
+		const explore = taskStore.create("Explore module", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(explore.id, { status: "done" });
+		const review = taskStore.create("Review findings", {
 			source: "subagent",
-			subagentMode: "explore",
-			agent: "explore",
+			subagentMode: "review",
+			parentTaskId: explore.id,
 		});
-		taskStore.update(sub.id, { status: "done" });
+		taskStore.update(review.id, { status: "done" });
 
 		panel.setView("subagents");
 		const lines = renderPanel().map(stripAnsi);
-		// 1 header + 2 group headers + 2 task rows.
-		expect(lines.length).toBe(5);
+		// header + 2 task rows; no group headers in the tree.
+		expect(lines.length).toBe(3);
 
-		// Group order is deterministic: main first, then roster order.
-		const mainHeader = lines[1] as string;
-		expect(mainHeader).toContain("◆ main");
-		expect(mainHeader).toContain("orchestrator");
-		expect(mainHeader).toContain("[running]");
-		expect(mainHeader).toMatch(/1\/1\s*$/);
+		const exploreRow = lines.find((l) => l.includes("Explore module")) as string;
+		const reviewRow = lines.find((l) => l.includes("Review findings")) as string;
+		// The root carries no connector (reads flat) and keeps its own [explore] tag.
+		expect(exploreRow).not.toContain("└─");
+		expect(exploreRow).not.toContain("├─");
+		expect(exploreRow).toContain("[explore]");
+		// The nested child is drawn with a └─ connector and keeps its own [review] tag.
+		expect(reviewRow).toContain("└─");
+		expect(reviewRow).toContain("[review]");
+		// The child title is indented past the root (depth is visible).
+		expect(reviewRow.indexOf("Review findings")).toBeGreaterThan(exploreRow.indexOf("Explore module"));
+		// Each Task is its own node — the child carries its own usage/duration column.
+		expect(reviewRow).toMatch(/\d+(\.\d+)?(s|m\d{2}s)/);
+	});
 
-		const subHeader = lines[3] as string;
-		expect(subHeader).toContain("◇ explore");
-		expect(subHeader).toContain("[done]");
-		// Per-agent stats: own token/cost totals before the count.
-		expect(subHeader).toContain("↑2.8k ↓360 · $0.011");
+	test("subagents view draws ├─/│ connectors for a sibling under a deeper parent", () => {
+		const explore = taskStore.create("Explore module", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(explore.id, { status: "done" });
+		const first = taskStore.create("First child", {
+			source: "subagent",
+			subagentMode: "edit",
+			parentTaskId: explore.id,
+		});
+		taskStore.update(first.id, { status: "done" });
+		const second = taskStore.create("Second child", {
+			source: "subagent",
+			subagentMode: "review",
+			parentTaskId: explore.id,
+		});
+		taskStore.update(second.id, { status: "done" });
 
-		// Grouped rows are indented on a guide and drop the origin glyph/tag.
-		const subRow = lines[4] as string;
-		expect(subRow.startsWith("▎ │ ")).toBe(true);
-		expect(subRow).toContain("Port runtime http client");
-		expect(subRow).not.toContain("[explore]");
-		expect(subRow).not.toContain("◇");
+		panel.setView("subagents");
+		const lines = renderPanel().map(stripAnsi);
+		// A non-last child uses ├─; the last child uses └─.
+		const firstRow = lines.find((l) => l.includes("First child")) as string;
+		const secondRow = lines.find((l) => l.includes("Second child")) as string;
+		expect(firstRow).toContain("├─");
+		expect(secondRow).toContain("└─");
+	});
+
+	test("subagents tree with only top-level tasks renders flat (no extra indent)", () => {
+		const a = taskStore.create("Explore A", { source: "subagent", subagentMode: "explore" });
+		const b = taskStore.create("Explore B", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(a.id, { status: "in_progress" });
+		taskStore.update(b.id, { status: "in_progress" });
+
+		panel.setView("subagents");
+		const lines = renderPanel().map(stripAnsi);
+		expect(lines.length).toBe(3); // header + 2 roots
+		const rowA = lines.find((l) => l.includes("Explore A")) as string;
+		const rowB = lines.find((l) => l.includes("Explore B")) as string;
+		// Roots carry no tree connectors: they read exactly like flat rows.
+		for (const row of [rowA, rowB]) {
+			expect(row).not.toContain("└─");
+			expect(row).not.toContain("├─");
+		}
+		// Sibling roots start at the same column (no indent drift).
+		expect(rowA.indexOf("Explore A")).toBe(rowB.indexOf("Explore B"));
+	});
+
+	test("the tasks and subagents lenses split work by ownership", () => {
+		const plan = taskStore.create("Write the plan"); // main TodoWrite plan
+		taskStore.update(plan.id, { status: "in_progress" });
+		const sub = taskStore.create("Explore the API", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(sub.id, { status: "in_progress" });
+		const mcp = taskStore.create("Fetch the spec", { source: "mcp", subagentMode: "web" });
+		taskStore.update(mcp.id, { status: "in_progress" });
+
+		// flat ("tasks"): only the main agent's own plan.
+		panel.setView("flat");
+		const flat = renderPanel().map(stripAnsi).join("\n");
+		expect(flat).toContain("Write the plan");
+		expect(flat).not.toContain("Explore the API");
+		expect(flat).not.toContain("Fetch the spec");
+
+		// subagents: only the delegated/MCP work, never the main plan.
+		panel.setView("subagents");
+		const sa = renderPanel().map(stripAnsi).join("\n");
+		expect(sa).not.toContain("Write the plan");
+		expect(sa).toContain("Explore the API");
+		expect(sa).toContain("Fetch the spec");
+	});
+
+	test("an empty flat lens falls through to the subagents tree", () => {
+		// Only delegated work exists (no main TodoWrite task), so the default flat
+		// lens has nothing to draw and the pane shows the subagents tree instead.
+		const sub = taskStore.create("Explore the API", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(sub.id, { status: "in_progress" });
+
+		// Stored view is still flat, but flat has no content → falls through.
+		expect(panel.getView()).toBe("flat");
+		const text = renderPanel().map(stripAnsi).join("\n");
+		expect(text).toContain("Explore the API");
 	});
 
 	test("teams view renders role-agents with ▸ glyphs, states, and handoff arrows", () => {
@@ -478,11 +545,14 @@ describe("task panel rendering", () => {
 		}
 	});
 
-	test("subagents view hides role-agent groups", () => {
-		taskStore.upsertAgent({ id: "worker", name: "worker", kind: "subagent" });
+	test("subagents tree shows delegated work and excludes role-agent tasks", () => {
 		taskStore.upsertAgent({ id: "planner", name: "planner", kind: "role" });
 
-		const workerTask = taskStore.create("worker task", { agent: "worker" });
+		const workerTask = taskStore.create("worker task", {
+			source: "subagent",
+			subagentMode: "build",
+			agent: "worker",
+		});
 		taskStore.update(workerTask.id, { status: "in_progress" });
 		const plannerTask = taskStore.create("planner task", { agent: "planner" });
 		taskStore.update(plannerTask.id, { status: "in_progress" });
@@ -490,10 +560,9 @@ describe("task panel rendering", () => {
 		panel.setView("subagents");
 		const text = renderPanel().map(stripAnsi).join("\n");
 
-		// Role-agent group and its task must not appear.
+		// A role task (no subagent/MCP source) must not appear in the subagents tree.
 		expect(text).not.toContain("planner task");
-		// Non-role agent and its task must appear.
-		expect(text).toContain("worker");
+		// Delegated (subagent-sourced) work appears.
 		expect(text).toContain("worker task");
 	});
 
@@ -573,18 +642,17 @@ describe("task panel rendering", () => {
 		expect(flatLines.some((l) => l.includes("planner"))).toBe(false);
 	});
 
-	test("grouped views fall back to default owner metadata without a roster", () => {
-		const mine = taskStore.create("Init project");
-		taskStore.update(mine.id, { status: "in_progress" });
+	test("subagents tree renders delegated roots without a roster", () => {
 		const sub = taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
 		taskStore.update(sub.id, { status: "in_progress" });
 
 		panel.setView("subagents");
 		const lines = renderPanel().map(stripAnsi);
-		// Untagged tasks group under a default ◆ main; subagent-sourced ones under ◇ subagent.
-		expect(lines[1]).toContain("◆ main");
-		expect(lines[1]).toContain("orchestrator");
-		expect(lines[3]).toContain("◇ subagent");
+		// header + the one delegated root; no group headers, no roster needed.
+		expect(lines.length).toBe(2);
+		expect(lines[1]).toContain("find the bug");
+		expect(lines[1]).toContain("[explore]");
+		expect(lines[1]).toContain("◇");
 	});
 
 	test("reset drops the roster with the tasks but keeps owners of live tasks", () => {

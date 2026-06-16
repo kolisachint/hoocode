@@ -42,15 +42,33 @@ export type TaskPanelView = "flat" | "subagents" | "teams";
 const VIEW_LABEL: Record<TaskPanelView, string> = { flat: "tasks", subagents: "subagents", teams: "teams" };
 
 /**
- * Lenses that currently have content: flat always; subagents only when
- * subagent work exists (a registered subagent or a subagent-sourced task);
- * teams only when role agents are registered (hooteams `--team`). The cycle
- * key and the header switcher both skip empty lenses, so a plain session
- * reads as a single view with no switcher noise.
+ * A top-level task the main agent owns directly: its own TodoWrite plan. Source
+ * is unset (not a subagent/MCP delegation) and it sits at the root of the forest
+ * (not a child merged in from a subagent's subtree). These are exactly the rows
+ * the flat ("tasks") lens shows.
+ */
+function isMainTask(task: Task): boolean {
+	// Source-unset (not a subagent/MCP delegation — note taskOwnerId folds MCP into
+	// "main", so check source directly), not owned by a role agent, and a forest
+	// root (not a child merged in from a subagent's subtree).
+	return task.source === undefined && task.agent === undefined && task.parentTaskId === undefined;
+}
+
+/**
+ * Lenses that currently have content, split by ownership:
+ * - flat ("tasks")  → only when the main agent has its own TodoWrite plan.
+ * - subagents       → when delegated work exists (a registered subagent, or any
+ *                     subagent/MCP-sourced task).
+ * - teams           → when role agents are registered (hooteams `--team`).
+ * The cycle key and the header switcher both skip empty lenses, and an empty
+ * flat lens falls through to subagents (see render), so a session that only
+ * delegated work opens straight on the task tree with no empty "tasks" view.
  */
 function availableViews(tasks: readonly Task[], agents: readonly TaskAgent[]): TaskPanelView[] {
-	const views: TaskPanelView[] = ["flat"];
-	const hasSubagentWork = agents.some((a) => a.kind === "subagent") || tasks.some((t) => t.source === "subagent");
+	const views: TaskPanelView[] = [];
+	if (tasks.some(isMainTask)) views.push("flat");
+	const hasSubagentWork =
+		agents.some((a) => a.kind === "subagent") || tasks.some((t) => t.source === "subagent" || t.source === "mcp");
 	if (hasSubagentWork) views.push("subagents");
 	if (agents.some((a) => a.kind === "role")) views.push("teams");
 	return views;
@@ -273,7 +291,7 @@ function formatTaskLine(
 	width: number,
 	frame: number,
 	idColWidth: number,
-	options: { grouped?: boolean; owner?: TaskAgent } = {},
+	options: { grouped?: boolean; owner?: TaskAgent; treePrefix?: string } = {},
 ): string {
 	const isProgress = task.status === "in_progress";
 	const iconGlyph = isProgress
@@ -376,9 +394,12 @@ function formatTaskLine(
 	// truncateToWidth measures visible width (ANSI-aware), so the styled left can be
 	// truncated against the full left budget directly. Subtracting the prefix here
 	// (as a prior version did) truncated titles early and unevenly per id width.
+	// In the subagents tree, a depth-first connector prefix (└─/├─/│) sits before
+	// the row's glyph; roots pass an empty prefix and read exactly like flat rows.
+	const treePrefix = options.treePrefix ? theme.fg("borderMuted", options.treePrefix) : "";
 	const leftBody = grouped
 		? `${indent}${icon} ${styledId} ${styledTag}${styledTitle}`
-		: `${icon} ${styledSource} ${styledId} ${styledTag}${styledTitle}`;
+		: `${treePrefix}${icon} ${styledSource} ${styledId} ${styledTag}${styledTitle}`;
 	const left = truncateToWidth(leftBody, leftWidth, "…");
 
 	if (!rightPlain) return left;
@@ -388,31 +409,20 @@ function formatTaskLine(
 }
 
 /**
- * Filter tasks and agents for the current view lens:
- * - subagents: only non-role agents and their tasks.
- * - teams: only role agents and their tasks.
- * - flat: no filtering (returns inputs unchanged).
+ * Filter tasks and agents to the teams lens: only role agents and the tasks they
+ * own. The flat and subagents lenses do their own ownership filtering inline (by
+ * source and parentTaskId), so this is teams-specific.
  */
 function filterTasksForView(
 	tasks: readonly Task[],
 	agents: readonly TaskAgent[],
-	view: TaskPanelView,
+	_view: TaskPanelView,
 ): { filteredTasks: readonly Task[]; filteredAgents: readonly TaskAgent[] } {
-	if (view === "subagents") {
-		const roleIds = new Set(agents.filter((a) => a.kind === "role").map((a) => a.id));
-		return {
-			filteredAgents: agents.filter((a) => a.kind !== "role"),
-			filteredTasks: tasks.filter((t) => !roleIds.has(taskOwnerId(t))),
-		};
-	}
-	if (view === "teams") {
-		const roleIds = new Set(agents.filter((a) => a.kind === "role").map((a) => a.id));
-		return {
-			filteredAgents: agents.filter((a) => a.kind === "role"),
-			filteredTasks: tasks.filter((t) => roleIds.has(taskOwnerId(t))),
-		};
-	}
-	return { filteredTasks: tasks, filteredAgents: agents };
+	const roleIds = new Set(agents.filter((a) => a.kind === "role").map((a) => a.id));
+	return {
+		filteredAgents: agents.filter((a) => a.kind === "role"),
+		filteredTasks: tasks.filter((t) => roleIds.has(taskOwnerId(t))),
+	};
 }
 
 /** Fallback group metadata when a task's owner has no roster entry. */
@@ -511,14 +521,19 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   is readable at a glance even in the flat lens. A text origin tag before the
  *   title names the owner: the subagent type ("[explore]"), the team role
  *   ("[planner]", fed by `--team <url>`), or the MCP server ("[github]").
- * - Three views over the same list (cycled via app.tasks.cycleView, shown as a
- *   `tasks · subagents · teams` switcher in the header): flat, grouped by owning
- *   agent (subagents), or grouped by named role-agent with handoffs (teams).
+ * - Three views split by ownership (cycled via app.tasks.cycleView, shown as a
+ *   `tasks · subagents · teams` switcher in the header):
+ *     - flat ("tasks") — only the main agent's own TodoWrite plan;
+ *     - subagents — a recursive task tree over delegated work, where a subagent
+ *       that spawned a subagent shows its nested tasks (roots are the dispatched
+ *       subagents and direct MCP calls; children link via parentTaskId, merged
+ *       across the process boundary). Each task is its own node keeping its
+ *       [subagentMode]/[server] tag, with depth drawn by └─/├─/│ connectors; a
+ *       run with only top-level tasks reads flat (no extra indent);
+ *     - teams — grouped by named role-agent with handoff arrows.
  *   The cycle is adaptive: empty lenses are skipped and dropped from the
- *   switcher, which hides entirely when only flat has content. Grouped rows
- *   drop their origin glyph/tag (the group header carries it) and sit on a
- *   faint `│` indent guide; MCP rows keep their tag even grouped, since they
- *   sit under the main group without being main's own work.
+ *   switcher, which hides entirely when only one lens has content. An empty flat
+ *   lens (no main task) falls through to subagents when delegated work exists.
  * - LIFO within the window: newest tasks appear at the bottom (closest to the prompt).
  * - Finished tasks carry their wall-clock cost and stay visible until the next
  *   user message arrives (see taskStore.reset()), not the moment they finish.
@@ -653,21 +668,18 @@ export class TaskPanelComponent implements Component, Focusable {
 		const tasks = taskStore.list();
 		const allAgents = taskStore.agents();
 
-		// A selected lens whose content has since drained (e.g. teams after
-		// reset) renders as flat; the stored view is untouched so an explicit
-		// setView choice survives if its content comes back.
+		// Resolve the lens: keep the stored view while it still has content, else
+		// fall through to the first available lens (flat → subagents → teams). The
+		// stored view is untouched so an explicit setView choice resumes once its
+		// content returns. This is how an empty flat lens (no main/TodoWrite task)
+		// falls through to the subagents tree when only delegated work exists, and
+		// how an empty pane falls through to the teams roster at startup.
 		const available = availableViews(tasks, allAgents);
-		let view = available.includes(this.view) ? this.view : "flat";
+		let view: TaskPanelView = available.includes(this.view) ? this.view : (available[0] ?? "flat");
 
 		// Team focus always operates on the teams lens — the focused role list is
 		// exactly what the lens renders, so the cursor is never invisible.
 		if (this.focused) view = "teams";
-
-		// With no tasks the flat lens has nothing to draw; when a team roster is
-		// registered (--team) fall through to the teams lens so the roles are
-		// visible from startup. The stored view is untouched — the chosen lens
-		// resumes the moment tasks exist again.
-		if (tasks.length === 0 && view === "flat" && available.includes("teams")) view = "teams";
 
 		// In teams view the roster itself is content: role agents render as
 		// placeholder groups even without tasks (idle roles at startup, queued
@@ -697,10 +709,12 @@ export class TaskPanelComponent implements Component, Focusable {
 		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs, view, available)];
 
 		if (view === "flat") {
-			// Resolve each row's owner from the roster so the glyph/tag reflect the
-			// owning agent's kind (◇ subagent / ▸ role), not just the task source.
+			// Only the main agent's own TodoWrite plan — delegated (subagent/MCP) work
+			// belongs to the subagents lens. Resolve each row's owner from the roster
+			// so the glyph/tag reflect the owning agent's kind, not just the source.
 			const agentById = new Map(allAgents.map((a) => [a.id, a]));
 			for (const task of tasks) {
+				if (!isMainTask(task)) continue;
 				lines.push(
 					gutter +
 						formatTaskLine(task, inner, this.frame, idColWidth, { owner: agentById.get(taskOwnerId(task)) }),
@@ -709,23 +723,39 @@ export class TaskPanelComponent implements Component, Focusable {
 			return lines;
 		}
 
-		// Subagents / teams views: filter roster and tasks by agent kind so each
-		// lens shows only the agents and tasks relevant to its perspective.
-		const { filteredTasks, filteredAgents } = filterTasksForView(tasks, allAgents, view);
-
 		if (view === "subagents") {
-			// Non-role agents and their tasks, grouped. Hierarchy carried by indent
-			// and owner glyph alone — no fills, no boxes.
-			for (const group of groupTasks(filteredTasks, filteredAgents)) {
-				lines.push(gutter + formatGroupHeader(group.meta, group.items, inner));
-				for (const task of group.items) {
-					lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { grouped: true }));
-				}
+			// A recursive task tree over the delegated forest: roots are the main
+			// agent's dispatched subagents (and direct MCP calls), children are the
+			// tasks they spawned in turn (linked by parentTaskId, merged across the
+			// process boundary), so a subagent that spawned a subagent is visible.
+			// Each task is its own node keeping its [subagentMode]/[server] tag; depth
+			// is drawn with └─/├─/│ connectors. With only top-level tasks the roots
+			// carry an empty prefix and read exactly like flat rows (no extra indent).
+			const childrenByParent = new Map<number, Task[]>();
+			for (const task of tasks) {
+				if (task.parentTaskId === undefined) continue;
+				const siblings = childrenByParent.get(task.parentTaskId);
+				if (siblings) siblings.push(task);
+				else childrenByParent.set(task.parentTaskId, [task]);
 			}
+			const roots = tasks.filter(
+				(t) => t.parentTaskId === undefined && (t.source === "subagent" || t.source === "mcp"),
+			);
+			const walk = (task: Task, prefix: string, isLast: boolean, isRoot: boolean): void => {
+				const connector = isRoot ? "" : `${prefix}${isLast ? "└─ " : "├─ "}`;
+				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { treePrefix: connector }));
+				const kids = childrenByParent.get(task.id) ?? [];
+				const childPrefix = isRoot ? "" : `${prefix}${isLast ? "   " : "│  "}`;
+				for (let i = 0; i < kids.length; i++) {
+					walk(kids[i] as Task, childPrefix, i === kids.length - 1, false);
+				}
+			};
+			for (const root of roots) walk(root, "", true, true);
 			return lines;
 		}
 
 		// teams view: role-agent groups with handoff connectors and queued placeholders.
+		const { filteredTasks, filteredAgents } = filterTasksForView(tasks, allAgents, view);
 		const groups = groupTasks(filteredTasks, filteredAgents);
 		const groupIds = new Set(groups.map((g) => g.id));
 		// Role agents with no tasks still get a group header: idle roles are the

@@ -22,7 +22,7 @@ import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
 import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
-import type { SubagentResultFile } from "../subagent-result.js";
+import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
 
 /**
@@ -87,7 +87,7 @@ Guidelines:
 - Make every task specific and self-contained. The subagent cannot see this conversation; pass all necessary context (files, constraints, prior findings) in \`prompt\`.
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
-- Default to handling small, quick, or single-file work inline; delegate only self-contained units.
+- Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
 - Some agents are configured to run in the background (non-blocking). For those, the Task call does not block your turn: you keep reasoning and producing output while the subagent runs, and its final answer is delivered to you automatically as a follow-up message once it finishes. You do not need to poll for it.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
@@ -165,7 +165,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			"(3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs);",
 			"(4) a long command or test suite you want to run without blocking your reasoning.",
 			"Do NOT use for tasks needing tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.",
-			"Prefer handling small, quick, or single-file tasks yourself; delegate only self-contained units of work.",
+			"Delegate proactively for self-contained or parallelizable work; handle only trivial single-step or tightly interactive work inline.",
 		].join("\n"),
 		promptSnippet: "delegate a self-contained task to a specialized subagent (choose via subagent_type)",
 		parameters: taskParams,
@@ -333,6 +333,26 @@ function collectBackgroundAgentNames(cwd: string): Set<string> {
 	return names;
 }
 
+/**
+ * Merge a child subagent's task subtree into the parent's task store, rooting
+ * each top-level node under the dispatching task (`parentTaskId`). Recurses so a
+ * subagent that itself delegated shows its nested work — the subtree the child
+ * could not surface across the process boundary on its own. Each node is its own
+ * task (no key-by-type collapse), preserving the order the child created them.
+ */
+function mergeChildTaskTree(nodes: readonly SubagentTaskNode[] | undefined, parentTaskId: number): void {
+	if (!nodes) return;
+	for (const node of nodes) {
+		const created = taskStore.create(node.title, {
+			source: node.source,
+			subagentMode: node.subagentMode,
+			parentTaskId,
+		});
+		taskStore.update(created.id, { status: node.status, usage: node.usage });
+		mergeChildTaskTree(node.children, created.id);
+	}
+}
+
 /** Extract the final answer from a finished dispatch, updating the task panel. */
 function finalizeDispatchResult(
 	dispatchResult: TaskResult,
@@ -343,6 +363,10 @@ function finalizeDispatchResult(
 	const result = dispatchResult.result;
 	const resultData = result?.result_data as SubagentResultFile | undefined;
 	const usage = resultData?.usage;
+
+	// Merge the child's own task subtree under the dispatching task so nested
+	// delegation (depth >= 2) is visible in the subagents lens's task tree.
+	mergeChildTaskTree(resultData?.task_tree, taskStoreId);
 
 	// Roll the agent's per-run usage into its roster stats so the grouped views'
 	// header carries the agent's own token/cost totals.
