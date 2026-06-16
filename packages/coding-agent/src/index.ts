@@ -6,6 +6,8 @@ export { getAgentDir, VERSION } from "./config.js";
 export {
 	type AgentDefinition,
 	HOOCODE_TOOL_NAMES,
+	TASK_TOOL_NAME,
+	TODO_WRITE_TOOL_NAME,
 } from "./core/agent-frontmatter.js";
 export {
 	AgentRegistry,

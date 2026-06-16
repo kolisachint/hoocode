@@ -13,7 +13,7 @@
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
-import type { AgentDefinition } from "../agent-frontmatter.js";
+import { type AgentDefinition, TASK_TOOL_NAME } from "../agent-frontmatter.js";
 import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
@@ -152,8 +152,8 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 	// a follow-up message when it finishes (no polling needed).
 	const backgroundAgents = collectBackgroundAgentNames(cwd);
 	return defineTool<typeof taskParams, TaskToolDetails>({
-		name: "Task",
-		label: "Task",
+		name: TASK_TOOL_NAME,
+		label: TASK_TOOL_NAME,
 		background: (toolCall) => backgroundAgents.has(String(toolCall.arguments?.subagent_type ?? "")),
 		description: [
 			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation).",

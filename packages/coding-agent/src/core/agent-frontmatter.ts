@@ -40,6 +40,15 @@ export const MODEL_INHERIT = "inherit";
 export const HOOCODE_TOOL_NAMES: readonly string[] = ["bash", "edit", "find", "grep", "ls", "read", "write"];
 
 /**
+ * Canonical registered names of the two opt-in tools. These are case-sensitive
+ * identifiers the system prompt and tool gating match exactly, so downstream
+ * callers should reference these constants instead of hardcoding the strings
+ * (a mis-cased `"task"` silently disables the agents/skills prompt sections).
+ */
+export const TASK_TOOL_NAME = "Task";
+export const TODO_WRITE_TOOL_NAME = "TodoWrite";
+
+/**
  * D7 — Claude Code compatibility shim.
  *
  * Maps Claude Code tool names (case-insensitive) to their hoocode equivalents.

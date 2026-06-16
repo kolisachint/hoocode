@@ -20,6 +20,7 @@
  */
 
 import { type Static, Type } from "typebox";
+import { TODO_WRITE_TOOL_NAME } from "../agent-frontmatter.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
 import { type Task, type TaskStatus, taskOwnerId, taskStore } from "../task-store.js";
 
@@ -89,8 +90,8 @@ function mainTasks(): Task[] {
 /** Create the TodoWrite tool definition. Registered as a customTool when enabled. */
 export function createTodoWriteToolDefinition(): ToolDefinition {
 	return defineTool<typeof todoWriteParams, TodoWriteDetails>({
-		name: "TodoWrite",
-		label: "TodoWrite",
+		name: TODO_WRITE_TOOL_NAME,
+		label: TODO_WRITE_TOOL_NAME,
 		description: [
 			"Maintain a structured todo list for the current task, shown live in the task panel.",
 			"Use it PROACTIVELY: at the start of any multi-step or non-trivial task, write the full plan as todos before you begin, then keep it current as you work.",
