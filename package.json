@@ -51,7 +51,6 @@
 
 	"version": "0.4.8",
 	"dependencies": {
-		"@kolisachint/hoocode-agent": "^0.2.0",
 		"get-east-asian-width": "^1.4.0"
 	},
 	"overrides": {
