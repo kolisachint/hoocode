@@ -11,26 +11,25 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # bun is the toolchain. bunfig.toml pins the npm-compatible hoisted linker.
+  # See docs/bun-migration.md.
+  bun-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-
-      - name: Pin npm to 10.x
-        run: npm install -g npm@10
+          bun-version: '1.3.13'
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Check code quality
-        run: npm run check
+        run: bun run check
 
-  test:
+  bun-test:
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -38,41 +37,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-
-      - name: Pin npm to 10.x
-        run: npm install -g npm@10
+          bun-version: '1.3.13'
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build dependencies
         run: |
-          cd packages/ai && npm run build
-          cd ../agent && npm run build
-          cd ../tui && npm run build
+          cd packages/ai && bun run build
+          cd ../agent && bun run build
+          cd ../tui && bun run build
 
       - name: Test ${{ matrix.package }}
-        run: cd packages/${{ matrix.package }} && npm run test
+        run: cd packages/${{ matrix.package }} && bun run test
 
-  build:
+  bun-build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
         with:
-          node-version: '22'
-
-      - name: Pin npm to 10.x
-        run: npm install -g npm@10
+          bun-version: '1.3.13'
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build all packages
-        run: npm run build
+        run: bun run build

@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `build:bun-binary` script: builds a self-contained standalone executable with
+  `bun build --compile` (embeds the Bun runtime; no Node.js/Bun required to run).
+  Stages the runtime assets (themes, HTML export templates, docs, examples,
+  templates, photon wasm, package.json) next to the executable in
+  `dist/bun-binary/`, and supports cross-compilation via `--target` (e.g.
+  `bun-linux-x64`, `bun-darwin-arm64`, `bun-windows-x64`).
+
 ## [0.4.63] - 2026-06-16
 
 ## [0.4.62] - 2026-06-16
