@@ -2,6 +2,12 @@
 
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";
+// Agent/subagent definitions and prompt formatting for delegation.
+export {
+	type AgentDefinition,
+	HOOCODE_TOOL_NAMES,
+} from "./core/agent-frontmatter.js";
+export { formatAgentsForPrompt } from "./core/agent-registry.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
@@ -148,6 +154,8 @@ export {
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
 export { convertToLlm } from "./core/messages.js";
+// Built-in mode prompts (ask / plan / build / debug) and the default mode.
+export { DEFAULT_MODE, DEFAULT_MODE_PROMPTS } from "./core/mode-prompts.js";
 export { ModelRegistry } from "./core/model-registry.js";
 export type {
 	PackageManager,
@@ -229,21 +237,35 @@ export {
 	type SkillFrontmatter,
 } from "./core/skills.js";
 export { createSyntheticSourceInfo } from "./core/source-info.js";
+// System prompt construction (base coding-agent prompt builder).
+// `BuildSystemPromptOptions` is re-exported via the extensions barrel below.
+export { buildSystemPrompt } from "./core/system-prompt.js";
 // Tools
 export {
+	allToolNames,
 	type BashOperations,
 	type BashSpawnContext,
 	type BashSpawnHook,
 	type BashToolDetails,
 	type BashToolInput,
 	type BashToolOptions,
+	buildTaskMainPrompt,
+	createAllToolDefinitions,
+	createAllTools,
 	createBashToolDefinition,
+	createCodingToolDefinitions,
 	createEditToolDefinition,
 	createFindToolDefinition,
 	createGrepToolDefinition,
 	createLocalBashOperations,
 	createLsToolDefinition,
+	createReadOnlyToolDefinitions,
 	createReadToolDefinition,
+	createTaskOutputToolDefinition,
+	createTaskToolDefinition,
+	createTodoWriteToolDefinition,
+	createTool,
+	createToolDefinition,
 	createWriteToolDefinition,
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -268,6 +290,12 @@ export {
 	type ReadToolDetails,
 	type ReadToolInput,
 	type ReadToolOptions,
+	type TaskOutputDetails,
+	type TaskToolDetails,
+	type TodoWriteDetails,
+	type Tool,
+	type ToolDef,
+	type ToolName,
 	type ToolsOptions,
 	type TruncationOptions,
 	type TruncationResult,
