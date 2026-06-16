@@ -59,6 +59,15 @@ export interface Task {
 	/** Id of the owning TaskAgent; drives grouping in the pane's subagents/teams views. */
 	agent?: string;
 	/**
+	 * Id of the task that spawned this one, linking a dispatched subagent (and its
+	 * own delegations) back to the Task call that created it. Root tasks omit it.
+	 * Drives the subagents lens's recursive task tree: a node's children are the
+	 * tasks whose `parentTaskId` is its id, so nesting deeper than one level (a
+	 * subagent that spawns a subagent) is visible. Set when a child subagent's task
+	 * subtree is merged into the parent (see finalizeDispatchResult).
+	 */
+	parentTaskId?: number;
+	/**
 	 * Short warning note surfaced as a ⚠ cue in the task pane (e.g. the subagent
 	 * fell back to the inherited model, or was skipped because the provider was
 	 * exhausted). Kept terse so it fits the row's right column.
@@ -80,10 +89,11 @@ export interface CreateTaskOptions {
 	source?: TaskSource;
 	subagentMode?: string;
 	agent?: string;
+	parentTaskId?: number;
 }
 
 export type TaskPatch = Partial<
-	Pick<Task, "title" | "status" | "source" | "subagentMode" | "agent" | "usage" | "note">
+	Pick<Task, "title" | "status" | "source" | "subagentMode" | "agent" | "usage" | "note" | "parentTaskId">
 >;
 
 export type TaskAgentPatch = Partial<Omit<TaskAgent, "id">>;
@@ -116,6 +126,7 @@ class TaskStore {
 			source: options.source,
 			subagentMode: options.subagentMode,
 			agent: options.agent,
+			parentTaskId: options.parentTaskId,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -135,6 +146,7 @@ class TaskStore {
 		if (patch.source !== undefined) task.source = patch.source;
 		if (patch.subagentMode !== undefined) task.subagentMode = patch.subagentMode;
 		if (patch.agent !== undefined) task.agent = patch.agent;
+		if (patch.parentTaskId !== undefined) task.parentTaskId = patch.parentTaskId;
 		if (patch.usage !== undefined) task.usage = patch.usage;
 		if (patch.note !== undefined) task.note = patch.note;
 		task.updatedAt = Date.now();

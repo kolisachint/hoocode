@@ -22,7 +22,7 @@ import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
 import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
-import type { SubagentResultFile } from "../subagent-result.js";
+import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
 
 /**
@@ -333,6 +333,26 @@ function collectBackgroundAgentNames(cwd: string): Set<string> {
 	return names;
 }
 
+/**
+ * Merge a child subagent's task subtree into the parent's task store, rooting
+ * each top-level node under the dispatching task (`parentTaskId`). Recurses so a
+ * subagent that itself delegated shows its nested work — the subtree the child
+ * could not surface across the process boundary on its own. Each node is its own
+ * task (no key-by-type collapse), preserving the order the child created them.
+ */
+function mergeChildTaskTree(nodes: readonly SubagentTaskNode[] | undefined, parentTaskId: number): void {
+	if (!nodes) return;
+	for (const node of nodes) {
+		const created = taskStore.create(node.title, {
+			source: node.source,
+			subagentMode: node.subagentMode,
+			parentTaskId,
+		});
+		taskStore.update(created.id, { status: node.status, usage: node.usage });
+		mergeChildTaskTree(node.children, created.id);
+	}
+}
+
 /** Extract the final answer from a finished dispatch, updating the task panel. */
 function finalizeDispatchResult(
 	dispatchResult: TaskResult,
@@ -343,6 +363,10 @@ function finalizeDispatchResult(
 	const result = dispatchResult.result;
 	const resultData = result?.result_data as SubagentResultFile | undefined;
 	const usage = resultData?.usage;
+
+	// Merge the child's own task subtree under the dispatching task so nested
+	// delegation (depth >= 2) is visible in the subagents lens's task tree.
+	mergeChildTaskTree(resultData?.task_tree, taskStoreId);
 
 	// Roll the agent's per-run usage into its roster stats so the grouped views'
 	// header carries the agent's own token/cost totals.

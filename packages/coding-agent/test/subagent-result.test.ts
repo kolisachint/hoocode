@@ -5,7 +5,8 @@ import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import { afterEach, describe, expect, it } from "vitest";
 import { CONFIG_DIR_NAME } from "../src/config.js";
 import { OutputVerifier } from "../src/core/output-verifier.js";
-import { buildSubagentResult, writeSubagentResult } from "../src/core/subagent-result.js";
+import { buildSubagentResult, buildTaskForest, writeSubagentResult } from "../src/core/subagent-result.js";
+import type { Task } from "../src/core/task-store.js";
 
 const dirs: string[] = [];
 
@@ -122,5 +123,48 @@ describe("buildSubagentResult", () => {
 
 		const verification = new OutputVerifier(cwd).verify("task-1");
 		expect(verification.valid).toBe(true);
+	});
+});
+
+describe("buildTaskForest", () => {
+	const now = Date.now();
+	const task = (id: number, fields: Partial<Task>): Task => ({
+		id,
+		title: `task-${id}`,
+		status: "done",
+		createdAt: now,
+		updatedAt: now,
+		...fields,
+	});
+
+	it("nests children under their parent via parentTaskId", () => {
+		const tasks: Task[] = [
+			task(1, { source: "subagent", subagentMode: "explore" }),
+			task(2, { source: "subagent", subagentMode: "review", parentTaskId: 1 }),
+			task(3, { source: "mcp", subagentMode: "web", parentTaskId: 2 }),
+		];
+
+		const forest = buildTaskForest(tasks);
+		expect(forest.length).toBe(1);
+		expect(forest[0]?.id).toBe(1);
+		expect(forest[0]?.subagentMode).toBe("explore");
+		expect(forest[0]?.children.map((c) => c.id)).toEqual([2]);
+		// Grandchild nests two levels deep, preserving source for MCP rendering.
+		const grandchild = forest[0]?.children[0]?.children[0];
+		expect(grandchild?.id).toBe(3);
+		expect(grandchild?.source).toBe("mcp");
+	});
+
+	it("returns multiple roots and preserves store order for siblings", () => {
+		const tasks: Task[] = [
+			task(1, { source: "subagent" }),
+			task(2, { source: "subagent" }),
+			task(3, { source: "subagent", parentTaskId: 1 }),
+			task(4, { source: "subagent", parentTaskId: 1 }),
+		];
+
+		const forest = buildTaskForest(tasks);
+		expect(forest.map((n) => n.id)).toEqual([1, 2]);
+		expect(forest[0]?.children.map((c) => c.id)).toEqual([3, 4]);
 	});
 });

@@ -12,6 +12,7 @@ import { dirname, join } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage } from "@kolisachint/hoocode-ai";
 import { getDispatchTaskDir } from "../config.js";
+import type { Task, TaskSource, TaskStatus } from "./task-store.js";
 
 export interface SubagentUsage {
 	input: number;
@@ -21,6 +22,24 @@ export interface SubagentUsage {
 	cost: number;
 }
 
+/**
+ * One node in a subagent's task subtree, propagated to the parent so nested
+ * delegation (a subagent that spawns a subagent) is visible above the process
+ * boundary. Serialized from the child's task store at session end and merged
+ * under the dispatching task by the parent (see finalizeDispatchResult). The
+ * `children` are the child's own delegations/MCP calls, recursively.
+ */
+export interface SubagentTaskNode {
+	id: number;
+	title: string;
+	status: TaskStatus;
+	/** Origin of the task (subagent/mcp; unset = the subagent's own TodoWrite plan). */
+	source?: TaskSource;
+	subagentMode?: string;
+	usage?: SubagentUsage;
+	children: SubagentTaskNode[];
+}
+
 export interface SubagentResultFile {
 	summary: string;
 	files_changed: string[];
@@ -28,6 +47,42 @@ export interface SubagentResultFile {
 	status: "complete" | "partial" | "failed";
 	/** Token and cost usage for the subagent session (extra field; ignored by the verifier). */
 	usage?: SubagentUsage;
+	/**
+	 * The child's own task subtree (its TodoWrite plan, delegations, and MCP calls)
+	 * so the parent can render nested work below the dispatching task. Extra field;
+	 * ignored by the verifier.
+	 */
+	task_tree?: SubagentTaskNode[];
+}
+
+/**
+ * Build the nested task forest from a flat task list, linking children to
+ * parents via `parentTaskId`. Roots are tasks with no `parentTaskId`; each
+ * node's children preserve store order. Used to serialize a subagent's task
+ * store into its `result.json` for the parent to merge.
+ */
+export function buildTaskForest(tasks: readonly Task[]): SubagentTaskNode[] {
+	const childrenByParent = new Map<number, Task[]>();
+	const roots: Task[] = [];
+	for (const task of tasks) {
+		if (task.parentTaskId === undefined) {
+			roots.push(task);
+			continue;
+		}
+		const siblings = childrenByParent.get(task.parentTaskId);
+		if (siblings) siblings.push(task);
+		else childrenByParent.set(task.parentTaskId, [task]);
+	}
+	const toNode = (task: Task): SubagentTaskNode => ({
+		id: task.id,
+		title: task.title,
+		status: task.status,
+		source: task.source,
+		subagentMode: task.subagentMode,
+		usage: task.usage,
+		children: (childrenByParent.get(task.id) ?? []).map(toNode),
+	});
+	return roots.map(toNode);
 }
 
 /** Tool names that mutate files. Their `path`/`file_path` argument is a changed file. */

@@ -9,7 +9,8 @@
 import type { AssistantMessage, ImageContent } from "@kolisachint/hoocode-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.js";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
-import { buildSubagentResult, writeSubagentResult } from "../core/subagent-result.js";
+import { buildSubagentResult, buildTaskForest, writeSubagentResult } from "../core/subagent-result.js";
+import { taskStore } from "../core/task-store.js";
 import { killTrackedDetachedChildren } from "../utils/shell.js";
 
 /** Heartbeat cadence for spawned subagents (parent lifeguard stalls after 60s of silence). */
@@ -189,6 +190,11 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 				},
 				{ reachedMaxTurns },
 			);
+			// Propagate this subagent's own task subtree (its TodoWrite plan plus any
+			// nested delegations/MCP calls) so the parent can render work deeper than
+			// one level under the dispatching task.
+			const tree = buildTaskForest(taskStore.list());
+			if (tree.length > 0) result.task_tree = tree;
 			writeSubagentResult(session.sessionManager.getCwd(), taskId, result);
 			if (result.status === "failed") exitCode = 1;
 		}
