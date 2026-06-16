@@ -388,6 +388,13 @@ describe("SubagentPool", () => {
 		expect(pool!.get_status("t1")).toBe("failed");
 	});
 
+	test("get_status returns unknown for non-existent task ids", () => {
+		pool = new SubagentPool({ executable: "/bin/true", maxConcurrency: 1, cwd: tmpDir });
+		expect(pool.get_status("dispatch-0000-abc")).toBe("unknown");
+		expect(pool.get_status("1")).toBe("unknown");
+		expect(pool.get_status("explore-1")).toBe("unknown");
+	});
+
 	test("surfaces the child's failure reason from result.json on a non-zero exit", async () => {
 		const reason = "Task failed: Anthropic usage limit reached. Please try again later.";
 		const exe = createFailingResultExecutable(tmpDir, reason);

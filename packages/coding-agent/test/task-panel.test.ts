@@ -490,6 +490,29 @@ describe("task panel rendering", () => {
 		expect(sa).toContain("Fetch the spec");
 	});
 
+	test("header count is scoped to the current lens, not all tasks", () => {
+		const plan = taskStore.create("Write the plan");
+		taskStore.update(plan.id, { status: "in_progress" });
+		const sub = taskStore.create("Explore the API", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(sub.id, { status: "done" });
+		const mcp = taskStore.create("Fetch the spec", { source: "mcp", subagentMode: "web" });
+		taskStore.update(mcp.id, { status: "done" });
+
+		// 3 total tasks: 1 main (in_progress) + 2 delegated (done).
+		// flat lens: header should show 0/1 (only the main task), not 2/3.
+		panel.setView("flat");
+		const flatHeader = stripAnsi(renderPanel()[0]);
+		expect(flatHeader).toContain("0/1");
+		expect(flatHeader).not.toContain("0/3");
+		expect(flatHeader).toContain("WORKING");
+
+		// subagents lens: header should show 2/2 (only the delegated tasks), not 2/3.
+		panel.setView("subagents");
+		const saHeader = stripAnsi(renderPanel()[0]);
+		expect(saHeader).toContain("2/2");
+		expect(saHeader).toContain("REVIEWED");
+	});
+
 	test("an empty flat lens falls through to the subagents tree", () => {
 		// Only delegated work exists (no main TodoWrite task), so the default flat
 		// lens has nothing to draw and the pane shows the subagents tree instead.

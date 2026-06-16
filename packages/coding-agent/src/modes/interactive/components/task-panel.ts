@@ -425,6 +425,31 @@ function filterTasksForView(
 	};
 }
 
+/**
+ * Scope the full task list to the tasks visible in the given lens. The header,
+ * state stamp, and done/total count are derived from this subset so they match
+ * exactly what the user sees in the current view.
+ */
+function filterTasksForLens(
+	tasks: readonly Task[],
+	agents: readonly TaskAgent[],
+	view: TaskPanelView,
+): readonly Task[] {
+	switch (view) {
+		case "flat":
+			return tasks.filter(isMainTask);
+		case "subagents":
+			return tasks.filter((t) => t.source === "subagent" || t.source === "mcp" || t.parentTaskId !== undefined);
+		case "teams": {
+			const roleIds = new Set<string>();
+			for (const a of agents) {
+				if (a.kind === "role") roleIds.add(a.id);
+			}
+			return tasks.filter((t) => roleIds.has(taskOwnerId(t)));
+		}
+	}
+}
+
 /** Fallback group metadata when a task's owner has no roster entry. */
 function defaultAgentMeta(id: string): TaskAgent {
 	return id === "main"
@@ -691,22 +716,23 @@ export class TaskPanelComponent implements Component, Focusable {
 			return [];
 		}
 
-		const hasActive = tasks.some((t) => t.status === "in_progress");
+		// Scope all visual state to the tasks visible in the current lens so the
+		// animation, rail color, and header count match exactly what the user sees.
+		const lensTasks = filterTasksForLens(tasks, allAgents, view);
+		const hasActive = lensTasks.some((t) => t.status === "in_progress");
 		this.ensureAnimation(hasActive);
 
-		const state = panelState(tasks);
-		const totalSecs = tasks.reduce((sum, t) => sum + taskElapsedSecs(t), 0);
+		const state = panelState(lensTasks);
+		const totalSecs = lensTasks.reduce((sum, t) => sum + taskElapsedSecs(t), 0);
 		const railColor = STATE_PRESENTATION[state].color;
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
 
 		// Width of the id column, sized to the widest id on screen, so every title
 		// starts at the same column regardless of digit count (#1 vs #10 vs #100).
-		const idColWidth = tasks.reduce((max, t) => Math.max(max, `#${t.id}`.length), 0);
+		const idColWidth = lensTasks.reduce((max, t) => Math.max(max, `#${t.id}`.length), 0);
 
-		// The header always reflects all tasks — it is a panel-wide summary, not
-		// scoped to the filtered subset that the lens shows.
-		const lines: string[] = [gutter + formatHeader(tasks, inner, state, totalSecs, view, available)];
+		const lines: string[] = [gutter + formatHeader(lensTasks, inner, state, totalSecs, view, available)];
 
 		if (view === "flat") {
 			// Only the main agent's own TodoWrite plan — delegated (subagent/MCP) work
