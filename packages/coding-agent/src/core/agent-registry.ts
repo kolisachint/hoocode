@@ -166,6 +166,23 @@ export interface LoadAgentRegistryOptions {
 	includeBuiltins?: boolean;
 	/** Discover `.claude/agents/` directories for native Claude Code import (D7). Defaults to true. */
 	includeClaude?: boolean;
+	/**
+	 * Explicit agent definition paths (files or directories), resolved relative
+	 * to `cwd` (with `~` expansion). Mirrors `skillPaths`/`promptPaths` on the
+	 * skills and prompt-template loaders. These override all discovered sources
+	 * by name but yield to CLI-injected `--agent` paths.
+	 */
+	agentPaths?: string[];
+}
+
+/** Resolve an explicit path: expand a leading `~` and resolve against `cwd`. */
+function normalizeAgentPath(input: string, cwd: string): string {
+	const trimmed = input.trim();
+	let expanded = trimmed;
+	if (trimmed === "~") expanded = homedir();
+	else if (trimmed.startsWith("~/")) expanded = join(homedir(), trimmed.slice(2));
+	else if (trimmed.startsWith("~")) expanded = join(homedir(), trimmed.slice(1));
+	return resolve(cwd, expanded);
 }
 
 /** Build an AgentRegistry from all configured locations, applying precedence. */
@@ -198,6 +215,20 @@ export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegis
 		registerDir(registry, resolve(cwd, ".claude", "agents"), "claude-project");
 	}
 	registerDir(registry, resolve(cwd, CONFIG_DIR_NAME, "agents"), "project");
+
+	// Explicit caller-provided paths override discovered sources (files or dirs).
+	for (const rawPath of options.agentPaths ?? []) {
+		const p = normalizeAgentPath(rawPath, cwd);
+		if (!existsSync(p)) {
+			registry.addDiagnostics([{ type: "warning", message: `Agent path does not exist: ${p}`, path: p }]);
+			continue;
+		}
+		if (statSync(p).isDirectory()) {
+			registerDir(registry, p, "project");
+		} else {
+			registerFile(registry, p, "project");
+		}
+	}
 
 	// CLI-injected paths have highest precedence (support both files and dirs).
 	for (const p of getAgentCliPaths()) {

@@ -2,7 +2,7 @@
  * System prompt construction and project context loading
  */
 
-import type { AgentDefinition } from "./agent-frontmatter.js";
+import { type AgentDefinition, TASK_TOOL_NAME } from "./agent-frontmatter.js";
 import { formatAgentsForPrompt } from "./agent-registry.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 
@@ -82,7 +82,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		}
 
 		// Append agents section (only when Task tool is active)
-		const hasTask = !selectedTools || selectedTools.includes("Task");
+		const hasTask = !selectedTools || selectedTools.includes(TASK_TOOL_NAME);
 		if (hasTask && agents.length > 0) {
 			prompt += formatAgentsForPrompt(agents);
 		}
@@ -176,7 +176,7 @@ ${guidelines}`;
 	}
 
 	// Append agents section (only when Task tool is active)
-	const hasTask = tools.includes("Task");
+	const hasTask = tools.includes(TASK_TOOL_NAME);
 	if (hasTask && agents.length > 0) {
 		prompt += formatAgentsForPrompt(agents);
 	}

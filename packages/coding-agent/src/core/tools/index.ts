@@ -51,6 +51,15 @@ export {
 	type ReadToolInput,
 	type ReadToolOptions,
 } from "./read.js";
+// Off-by-default tools (enabled per session via flags/settings).
+export {
+	buildTaskMainPrompt,
+	createTaskOutputToolDefinition,
+	createTaskToolDefinition,
+	type TaskOutputDetails,
+	type TaskToolDetails,
+} from "./subagent.js";
+export { createTodoWriteToolDefinition, type TodoWriteDetails } from "./todo.js";
 export {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,

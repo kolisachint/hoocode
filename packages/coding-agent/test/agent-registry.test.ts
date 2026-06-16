@@ -92,6 +92,58 @@ describe("loadAgentRegistry", () => {
 		expect(reg.get("shared")?.prompt).toBe("HOOCODE version");
 	});
 
+	test("explicit agentPaths load files and directories", () => {
+		const cwd = makeTmp();
+		const agentDir = makeTmp();
+		const extraDir = makeTmp();
+		writeAgent(extraDir, "from-dir", "dir agent");
+		const fileDir = makeTmp();
+		writeAgent(fileDir, "from-file", "file agent");
+
+		const reg = loadAgentRegistry({
+			cwd,
+			agentDir,
+			includeBuiltins: false,
+			includeClaude: false,
+			agentPaths: [extraDir, join(fileDir, "from-file.md")],
+		});
+		expect(reg.get("from-dir")?.prompt).toBe("dir agent");
+		expect(reg.get("from-file")?.prompt).toBe("file agent");
+	});
+
+	test("explicit agentPaths override discovered project agents by name", () => {
+		const cwd = makeTmp();
+		const agentDir = makeTmp();
+		const overrideDir = makeTmp();
+		writeAgent(join(cwd, ".hoocode", "agents"), "shared", "PROJECT version");
+		writeAgent(overrideDir, "shared", "OVERRIDE version");
+
+		const reg = loadAgentRegistry({
+			cwd,
+			agentDir,
+			includeBuiltins: false,
+			includeClaude: false,
+			agentPaths: [overrideDir],
+		});
+		expect(reg.get("shared")?.prompt).toBe("OVERRIDE version");
+	});
+
+	test("missing agentPaths surface a diagnostic instead of throwing", () => {
+		const cwd = makeTmp();
+		const agentDir = makeTmp();
+		const missing = join(makeTmp(), "does-not-exist");
+
+		const reg = loadAgentRegistry({
+			cwd,
+			agentDir,
+			includeBuiltins: false,
+			includeClaude: false,
+			agentPaths: [missing],
+		});
+		expect(reg.list()).toHaveLength(0);
+		expect(reg.getDiagnostics().some((d) => d.type === "warning" && d.path === missing)).toBe(true);
+	});
+
 	test("ignores subdirectories and non-md files (runtime dispatch dirs)", () => {
 		const cwd = makeTmp();
 		const agentDir = makeTmp();
