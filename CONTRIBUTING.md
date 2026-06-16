@@ -49,10 +49,10 @@ If you send a large volume of issues through automation, your GitHub account wil
 
 Do not open a PR unless you have already been approved with `lgtm`.
 
-Before submitting a PR:
+Before submitting a PR (bun is the toolchain):
 
 ```bash
-npm run check
+bun run check
 ./test.sh
 ```
 

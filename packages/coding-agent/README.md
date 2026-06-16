@@ -286,7 +286,50 @@ export default function (pi: ExtensionAPI) {
 
 ## Standalone binary (optional)
 
-Install `pkg` to build a self-contained binary that does not require Node.js:
+### Bun-compiled binary (recommended)
+
+`bun build --compile` produces a self-contained executable that embeds the Bun
+runtime, so end users need neither Node.js nor Bun installed. Requires
+[Bun](https://bun.sh) on the build machine.
+
+```sh
+cd packages/coding-agent
+bun run build:bun-binary
+```
+
+This builds the workspace dependencies, compiles the executable, and stages the
+runtime assets next to it. Output goes to `dist/bun-binary/`:
+
+```
+dist/bun-binary/
+  hoocode            # the executable
+  package.json       # read for name/version/config
+  README.md, CHANGELOG.md
+  photon_rs_bg.wasm  # image processing
+  theme/             # built-in themes
+  export-html/       # HTML export templates
+  docs/, examples/, templates/
+```
+
+Distribute the entire `dist/bun-binary/` directory: the assets must sit next to
+the executable (the runtime resolves them relative to `process.execPath`).
+
+Cross-compile for another platform with `--target` (the binary is written to
+`dist/bun-binary/<target>/`):
+
+```sh
+bun run build:bun-binary -- --target bun-linux-x64
+bun run build:bun-binary -- --target bun-darwin-arm64
+bun run build:bun-binary -- --target bun-windows-x64
+```
+
+Supported targets follow Bun's naming: `bun-<os>-<arch>` where `os` is `linux`,
+`darwin`, or `windows` and `arch` is `x64` or `arm64`. Cross-compiled binaries
+are not smoke-tested on the host.
+
+### pkg-compiled binary (legacy)
+
+Alternatively, install `pkg` to build a Node.js-based self-contained binary:
 
 ```sh
 npm install -g pkg

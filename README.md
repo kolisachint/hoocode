@@ -79,12 +79,19 @@ hoocode --help
 
 ## Development
 
+bun is the toolchain. It is pinned to the npm-compatible **hoisted** linker in
+`bunfig.toml`, so it produces a flat `node_modules`. `bun.lock` is the
+authoritative lockfile.
+
 ```bash
-npm install          # Install all dependencies
-npm run build        # Build all packages
-npm run check        # Lint, format, and type check
+bun install          # Install all dependencies
+bun run build        # Build all packages
+bun run check        # Lint, format, and type check
 ./test.sh            # Run tests (skips LLM-dependent tests without API keys)
 ```
+
+See [docs/bun-migration.md](docs/bun-migration.md) for the completed npm -> bun
+migration history and rules.
 
 ## Contributing
 
