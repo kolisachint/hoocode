@@ -161,4 +161,10 @@ describe("buildTaskMainPrompt agent list", () => {
 		expect(exploreLine).toBeDefined();
 		expect(exploreLine).not.toBe("- explore: Use this subagent ONLY when:");
 	});
+
+	test("guides the agent to delegate proactively", () => {
+		const prompt = buildTaskMainPrompt(process.cwd());
+		expect(prompt).toContain("Delegate proactively");
+		expect(prompt).not.toContain("Default to handling small, quick, or single-file work inline");
+	});
 });

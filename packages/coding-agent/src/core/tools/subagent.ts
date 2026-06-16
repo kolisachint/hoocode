@@ -87,7 +87,7 @@ Guidelines:
 - Make every task specific and self-contained. The subagent cannot see this conversation; pass all necessary context (files, constraints, prior findings) in \`prompt\`.
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
-- Default to handling small, quick, or single-file work inline; delegate only self-contained units.
+- Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
 - Some agents are configured to run in the background (non-blocking). For those, the Task call does not block your turn: you keep reasoning and producing output while the subagent runs, and its final answer is delivered to you automatically as a follow-up message once it finishes. You do not need to poll for it.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
@@ -165,7 +165,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			"(3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs);",
 			"(4) a long command or test suite you want to run without blocking your reasoning.",
 			"Do NOT use for tasks needing tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.",
-			"Prefer handling small, quick, or single-file tasks yourself; delegate only self-contained units of work.",
+			"Delegate proactively for self-contained or parallelizable work; handle only trivial single-step or tightly interactive work inline.",
 		].join("\n"),
 		promptSnippet: "delegate a self-contained task to a specialized subagent (choose via subagent_type)",
 		parameters: taskParams,
