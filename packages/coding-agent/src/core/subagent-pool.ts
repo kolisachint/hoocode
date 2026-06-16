@@ -225,7 +225,7 @@ export class SubagentPool extends EventEmitter {
 	}
 
 	/** Current status of a task. */
-	get_status(task_id: string): "running" | "queued" | "done" | "failed" | "stalled" | "timeout" {
+	get_status(task_id: string): "running" | "queued" | "done" | "failed" | "stalled" | "timeout" | "unknown" {
 		if (this.slots.has(task_id)) return "running";
 		if (this.queue.some((t) => t.task_id === task_id)) return "queued";
 		const persisted = this.taskStatus.get(task_id);
@@ -237,7 +237,7 @@ export class SubagentPool extends EventEmitter {
 			if (result.ok) return "done";
 			return "failed";
 		}
-		return "failed";
+		return "unknown";
 	}
 
 	/** Wait for a task to complete and return its result. */

@@ -446,6 +446,18 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 				};
 			}
 
+			if (status === "unknown") {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `No result available for task "${params.task_id}" (status: unknown). It may not exist or its result was already collected.`,
+						},
+					],
+					details: { task_id: params.task_id, status, ok: false },
+				};
+			}
+
 			const result = pool.collect(params.task_id);
 			if (!result) {
 				throw new Error(
