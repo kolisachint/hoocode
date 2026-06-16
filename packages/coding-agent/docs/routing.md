@@ -33,10 +33,10 @@ The `DispatchEvaluator` no longer routes. It survives only to:
 Agents are defined by frontmatter `.md` files loaded from a registry with
 precedence **project > user > built-in**:
 
-- Built-in: `templates/agents/*.md` (`explore`, `general-purpose`) — matching
-  Claude Code's built-in roster. `explore` is strictly read-only; `general-purpose`
-  is the delegating agent (`delegate: true`). Ship task-specialized agents (edit,
-  review, etc.) yourself under `.hoocode/agents/` or `.claude/agents/`.
+- Built-in: `templates/agents/*.md` (`explore`, `plan`, `general-purpose`) — matching
+  Claude Code's built-in roster. `explore` and `plan` are strictly read-only;
+  `general-purpose` is the delegating agent (`delegate: true`). Ship task-specialized
+  agents (edit, review, etc.) yourself under `.hoocode/agents/` or `.claude/agents/`.
 - Project: `.hoocode/agents/`, and `.claude/agents/` (Claude Code compatible)
 - User: `~/.hoocode/agents/`, and `~/.claude/agents/`
 

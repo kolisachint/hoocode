@@ -4,14 +4,18 @@
 
 ### Changed
 
-- Trimmed the built-in subagent roster to match Claude Code: only `explore` and
+- Trimmed the built-in subagent roster to match Claude Code: `explore`, `plan`, and
   `general-purpose` ship by default (the `doc`, `edit`, `review`, and `test` agents
-  were removed — author them under `.hoocode/agents/` if needed). `explore` is now
-  strictly read-only (dropped `bash`), and `general-purpose` inherits the parent
-  model and sets `delegate: true` so it can spawn subagents when nesting is enabled.
+  were removed — author them under `.hoocode/agents/` if needed). `explore` and `plan`
+  are strictly read-only, and `general-purpose` inherits the parent model and sets
+  `delegate: true` so it can spawn subagents when nesting is enabled.
+- `embed-templates` now formats its generated output with biome, so regenerating the
+  embedded templates can no longer break the CI lint check.
 
 ### Added
 
+- Built-in read-only `plan` subagent (research that backs plan mode), matching Claude
+  Code's Plan agent.
 - Configurable subagent nesting via `maxSubagentDepth` (default `1`, opt-in) or the
   `--max-subagent-depth <n>` CLI flag (overrides the setting). At the default cap
   behavior is unchanged — subagents cannot spawn subagents. Raising it

@@ -11,6 +11,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { execSync } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const packageDir = resolve(__dirname, "..");
@@ -101,6 +102,13 @@ ${agentEntries}
 `;
 
 writeFileSync(outFile, body);
+// Format the generated file so it satisfies the repo's biome check (CI lints it;
+// only models.generated.ts is exempt). Best-effort: skip if biome is unavailable.
+try {
+	execSync(`npx biome format --write "${outFile}"`, { stdio: "ignore" });
+} catch {
+	console.warn("embed-templates: biome format skipped (not available); run `biome format --write` manually");
+}
 const modeCount = Object.keys(modes).length;
 const profileCount = Object.keys(profiles).length;
 const agentCount = Object.keys(agentPrompts).length;

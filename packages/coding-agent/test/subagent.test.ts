@@ -12,8 +12,15 @@ describe("built-in subagent tool allowlists (frontmatter)", () => {
 		return agentFor(name)?.tools ?? [];
 	}
 
-	test("defines the two built-in agents (matching Claude Code's roster)", () => {
-		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual(["explore", "general-purpose"]);
+	test("defines the built-in agents matching Claude Code's roster", () => {
+		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual(["explore", "general-purpose", "plan"]);
+	});
+
+	test("plan is a read-only research agent", () => {
+		const tools = toolsFor("plan");
+		expect(tools).not.toContain("edit");
+		expect(tools).not.toContain("write");
+		expect(tools).not.toContain("bash");
 	});
 
 	test("every built-in agent declares a non-empty tool allowlist", () => {
