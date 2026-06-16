@@ -7,7 +7,12 @@ export {
 	type AgentDefinition,
 	HOOCODE_TOOL_NAMES,
 } from "./core/agent-frontmatter.js";
-export { formatAgentsForPrompt } from "./core/agent-registry.js";
+export {
+	AgentRegistry,
+	formatAgentsForPrompt,
+	type LoadAgentRegistryOptions,
+	loadAgentRegistry,
+} from "./core/agent-registry.js";
 export {
 	AgentSession,
 	type AgentSessionConfig,
