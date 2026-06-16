@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added
+
+- Public API surface for downstream apps that build their own agents on top of
+  hoocode's prompt/tool machinery:
+  - System prompt: `buildSystemPrompt`, plus the built-in mode prompts
+    `DEFAULT_MODE_PROMPTS` and `DEFAULT_MODE` (extracted to
+    `core/mode-prompts.ts`).
+  - Tool registry: `createTool`, `createToolDefinition`, `createAllTools`,
+    `createAllToolDefinitions`, `createCodingToolDefinitions`,
+    `createReadOnlyToolDefinitions`, `allToolNames`, and the `Tool` / `ToolDef`
+    / `ToolName` types.
+  - Opt-in tools: `createTaskToolDefinition`, `createTaskOutputToolDefinition`,
+    `createTodoWriteToolDefinition`, and `buildTaskMainPrompt`.
+  - Prompt templates: `loadPromptTemplates`, `expandPromptTemplate`,
+    `tryExpandPromptTemplate`, `parseCommandArgs`, `substituteArgs`, and their
+    option/result types.
+  - Skills/agents: `LoadSkillsOptions`, `AgentRegistry`, `loadAgentRegistry`,
+    `LoadAgentRegistryOptions`, `formatAgentsForPrompt`, `AgentDefinition`, and
+    `HOOCODE_TOOL_NAMES`.
+  - Canonical opt-in tool-name constants `TASK_TOOL_NAME` and
+    `TODO_WRITE_TOOL_NAME`, now the single source of truth at the tool
+    definition sites and in system-prompt gating, so downstream callers
+    reference a value instead of hardcoding case-sensitive strings.
+
 ## [0.4.66] - 2026-06-16
 
 ## [0.4.65] - 2026-06-16
