@@ -131,7 +131,7 @@ describe("SubagentPool registry wiring", () => {
 		// Built-in explore template declares its read-only allowlist in frontmatter.
 		const toolsIdx = argv.indexOf("--tools");
 		expect(toolsIdx).toBeGreaterThanOrEqual(0);
-		expect(argv[toolsIdx + 1]).toBe("read,grep,find,ls,bash");
+		expect(argv[toolsIdx + 1]).toBe("read,grep,find,ls");
 	});
 
 	test("retries built-in agents with the inherited model when the preferred model is unavailable", async () => {

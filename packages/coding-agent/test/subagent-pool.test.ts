@@ -428,7 +428,7 @@ describe("SubagentPool", () => {
 
 	test("stamps a spawned child with depth 1 and propagates the tree-wide cap from the root", async () => {
 		const exe = createEnvCaptureExecutable(tmpDir);
-		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		const env: NodeJS.ProcessEnv = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
 		delete env.HOOCODE_SUBAGENT_DEPTH; // simulate a root process
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
 		createValidResultJson(tmpDir, "d-root");
@@ -467,7 +467,7 @@ describe("SubagentPool", () => {
 			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, grep, find, ls\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
 		);
 		// Cap raised to 2 (as --max-subagent-depth 2 would seed): the depth-1 child may still nest.
-		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		const env: NodeJS.ProcessEnv = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
 		delete env.HOOCODE_SUBAGENT_DEPTH;
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
 		createValidResultJson(tmpDir, "orch-task");
@@ -491,7 +491,7 @@ describe("SubagentPool", () => {
 			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, grep, find, ls\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
 		);
 		// Default cap (1): the spawned child is at depth 1 == cap, so it cannot nest further.
-		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "1" };
+		const env: NodeJS.ProcessEnv = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "1" };
 		delete env.HOOCODE_SUBAGENT_DEPTH;
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
 		createValidResultJson(tmpDir, "orch-task2");
@@ -511,7 +511,7 @@ describe("SubagentPool", () => {
 			join(agentsDir, "scoped.md"),
 			`---\nname: scoped\ndescription: delegates only to explore.\ntools: read, grep, find, ls\ndelegate: explore\n---\nbody`,
 		);
-		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		const env: NodeJS.ProcessEnv = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
 		delete env.HOOCODE_SUBAGENT_DEPTH;
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
 		createValidResultJson(tmpDir, "scoped-task");
