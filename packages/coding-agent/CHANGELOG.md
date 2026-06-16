@@ -21,6 +21,10 @@
   - Skills/agents: `LoadSkillsOptions`, `AgentRegistry`, `loadAgentRegistry`,
     `LoadAgentRegistryOptions`, `formatAgentsForPrompt`, `AgentDefinition`, and
     `HOOCODE_TOOL_NAMES`.
+- `loadAgentRegistry` now accepts an explicit `agentPaths` option (files or
+  directories, resolved against `cwd` with `~` expansion), mirroring
+  `skillPaths`/`promptPaths` on the skills and prompt-template loaders. These
+  override discovered agents by name and yield to CLI `--agent` paths.
   - Canonical opt-in tool-name constants `TASK_TOOL_NAME` and
     `TODO_WRITE_TOOL_NAME`, now the single source of truth at the tool
     definition sites and in system-prompt gating, so downstream callers
