@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- bun CI (`bun-check`/`bun-build`) failed on `main` with TS7016/TS7006 errors
+  because `bun install --frozen-lockfile` never installed coding-agent's
+  `@types/*` devDeps. The workspace `packages/coding-agent` is named
+  `@kolisachint/hoocode-agent`, which collided with the root `package.json`
+  self-dependency `@kolisachint/hoocode-agent: ^0.2.0`; bun resolved that name
+  to the registry package and dropped the local workspace (and its devDeps)
+  from `bun.lock`. Removed the unused root self-dependency (root is private and
+  `tsconfig.json` already maps the name to the workspace source) and
+  regenerated `bun.lock` so the workspace and its `@types/proper-lockfile` /
+  `@types/hosted-git-info` devDeps are captured.
+
 ### Added
 
 - `build:bun-binary` script: builds a self-contained standalone executable with

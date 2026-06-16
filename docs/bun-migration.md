@@ -60,9 +60,17 @@ removed.
 - bun warns: `Bun currently does not support nested "overrides"` for the `gaxios`
   override in root `package.json`. Warning only; the override still applies under
   npm. Track whether bun honors it once it gains nested-override support.
-- The root `package.json` depends on `@kolisachint/hoocode-agent: ^0.2.0`, which
-  both npm and bun install from the registry (currently 0.2.x) as a real
-  directory. This is identical under both managers, not a bun-specific issue.
+- RESOLVED: the root `package.json` previously self-depended on
+  `@kolisachint/hoocode-agent: ^0.2.0`. Under npm this was harmless (npm keys
+  workspaces by directory), but under bun the name collided with the workspace
+  `packages/coding-agent` (also named `@kolisachint/hoocode-agent`): bun
+  resolved the name to the registry package and dropped the local workspace and
+  its devDeps from `bun.lock`, so `bun install --frozen-lockfile` in CI never
+  installed `@types/proper-lockfile` / `@types/hosted-git-info` and `bun-check`
+  / `bun-build` failed with TS7016/TS7006. Fixed by removing the unused root
+  self-dependency (root is private; `tsconfig.json` already maps the name to
+  the workspace source) and regenerating `bun.lock`. When adding root
+  dependencies, never reuse a workspace package name.
 - `bun run <script>` rewrites nested `npm run <x>` invocations inside a script to
   `bun run <x>` (observed with `check` -> `check:browser-smoke`). Behavior matches
   the npm path here; no action needed, but note scripts that hardcode `npm` will
