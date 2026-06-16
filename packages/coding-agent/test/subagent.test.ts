@@ -1,7 +1,10 @@
-import { describe, expect, test } from "vitest";
+import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { parseAgentDefinition } from "../src/core/agent-frontmatter.js";
 import { taskStore } from "../src/core/task-store.js";
-import { buildTaskMainPrompt, summarizeAgentDescription } from "../src/core/tools/subagent.js";
+import { buildTaskMainPrompt, resolveForkSessionFile, summarizeAgentDescription } from "../src/core/tools/subagent.js";
 import { EMBEDDED_AGENT_PROMPTS } from "../src/init-templates.generated.js";
 
 describe("built-in subagent tool allowlists (frontmatter)", () => {
@@ -39,6 +42,47 @@ describe("built-in subagent tool allowlists (frontmatter)", () => {
 	test("general-purpose can write and is the delegating agent", () => {
 		expect(toolsFor("general-purpose")).toContain("write");
 		expect(agentFor("general-purpose")?.delegate).toBe(true);
+	});
+});
+
+describe("resolveForkSessionFile", () => {
+	let tmpDir: string;
+	beforeEach(() => {
+		tmpDir = join(tmpdir(), `fork-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tmpDir, { recursive: true });
+	});
+	afterEach(() => {
+		delete process.env.HOOCODE_SESSION_DIR;
+	});
+
+	function writeParentSession(): string {
+		const path = join(tmpDir, "parent.jsonl");
+		writeFileSync(
+			path,
+			`${JSON.stringify({ type: "session", version: 3, id: "parent", timestamp: new Date().toISOString(), cwd: tmpDir })}\n`,
+		);
+		return path;
+	}
+
+	test("returns undefined for a non-fork agent", () => {
+		expect(resolveForkSessionFile({ fork: undefined }, writeParentSession(), tmpDir)).toBeUndefined();
+	});
+
+	test("returns undefined when there is no parent session", () => {
+		expect(resolveForkSessionFile({ fork: true }, undefined, tmpDir)).toBeUndefined();
+	});
+
+	test("forks the parent session for a fork agent", () => {
+		const forked = resolveForkSessionFile({ fork: true }, writeParentSession(), tmpDir);
+		expect(forked).toBeTruthy();
+		expect(existsSync(forked!)).toBe(true);
+		expect(forked).not.toBe(join(tmpDir, "parent.jsonl"));
+	});
+
+	test("falls back to undefined when the parent session is empty/invalid", () => {
+		const empty = join(tmpDir, "empty.jsonl");
+		writeFileSync(empty, "");
+		expect(resolveForkSessionFile({ fork: true }, empty, tmpDir)).toBeUndefined();
 	});
 });
 

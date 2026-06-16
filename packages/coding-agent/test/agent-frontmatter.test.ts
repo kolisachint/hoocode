@@ -202,6 +202,22 @@ body`;
 		expect(agent?.delegateTo).toEqual(["explore", "plan"]);
 	});
 
+	test("captures the fork flag", () => {
+		const raw = `---
+name: forker
+description: An agent that inherits the parent conversation.
+fork: true
+---
+body`;
+		expect(parseAgentDefinition(raw, { source: "project" }).agent?.fork).toBe(true);
+		const plain = `---
+name: plain
+description: A normal agent.
+---
+body`;
+		expect(parseAgentDefinition(plain, { source: "project" }).agent?.fork).toBeUndefined();
+	});
+
 	test("warns when delegate is neither a boolean nor a name list", () => {
 		const raw = `---
 name: bad-delegate

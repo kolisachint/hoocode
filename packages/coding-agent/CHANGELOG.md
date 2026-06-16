@@ -18,6 +18,9 @@
   Code's Plan agent.
 - `disallowedTools` agent frontmatter field and `--disallowed-tools` CLI flag — a tool
   denylist subtracted from the allowlist/default set (Claude Code's allow+deny model).
+- Fork subagents: a `fork: true` agent inherits the parent's full conversation (via a
+  forked session that reuses the parent's prompt cache) instead of starting from a fresh
+  context, matching Claude Code's fork subagents. Ships `examples/agents/fork-reviewer.md`.
 - `nestedSubagentConcurrency` setting (default 2) to tune how many subagents a nested
   pool runs concurrently.
 - Configurable subagent nesting via `maxSubagentDepth` (default `1`, opt-in) or the

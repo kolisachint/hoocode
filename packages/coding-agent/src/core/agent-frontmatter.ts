@@ -73,11 +73,17 @@ export interface AgentFrontmatter {
 	/** Claude Code extension: run this agent detached (non-blocking) so the parent polls for its result. */
 	background?: boolean;
 	/**
-	 * hoocode extension: when true, this agent may itself delegate via the Task tool
-	 * (subject to the tree-wide nesting cap). Opt-in per agent so the deliberate
-	 * "Task is not a normal tool" boundary stays intact for everyone else.
+	 * hoocode extension: opt a agent into delegating via the Task tool (subject to the
+	 * tree-wide nesting cap). `true` = any subagent type; a comma-separated string or
+	 * YAML list = only those types. Opt-in per agent so the deliberate "Task is not a
+	 * normal tool" boundary stays intact for everyone else.
 	 */
-	delegate?: boolean;
+	delegate?: boolean | string | string[];
+	/**
+	 * When true, this agent inherits the parent's full conversation (a fork) instead
+	 * of starting from a fresh context, reusing the parent's prompt cache.
+	 */
+	fork?: boolean;
 	[key: string]: unknown;
 }
 
@@ -111,6 +117,8 @@ export interface AgentDefinition {
 	delegate?: boolean;
 	/** Restricts delegation to these subagent types (undefined = any when `delegate` is true). */
 	delegateTo?: string[];
+	/** When true, the agent inherits the parent's full conversation (a fork). */
+	fork?: boolean;
 }
 
 const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit"]);
@@ -303,6 +311,19 @@ export function parseAgentDefinition(
 
 	// `delegate` accepts a boolean (delegate to any agent) or a comma-separated
 	// string / YAML list of agent type names (delegate only to those).
+	let fork: boolean | undefined;
+	if (frontmatter.fork !== undefined) {
+		if (typeof frontmatter.fork !== "boolean") {
+			diagnostics.push({
+				type: "warning",
+				message: `fork must be a boolean (true or false), got "${frontmatter.fork}" — field ignored`,
+				path: filePath,
+			});
+		} else {
+			fork = frontmatter.fork === true ? true : undefined;
+		}
+	}
+
 	let delegate: boolean | undefined;
 	let delegateTo: string[] | undefined;
 	if (frontmatter.delegate !== undefined) {
@@ -349,6 +370,7 @@ export function parseAgentDefinition(
 			background,
 			delegate,
 			delegateTo,
+			fork,
 		},
 		diagnostics,
 	};
