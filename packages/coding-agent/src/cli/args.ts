@@ -32,9 +32,14 @@ export interface Args {
 	sessionDir?: string;
 	models?: string[];
 	tools?: string[];
+	disallowedTools?: string[];
 	noTools?: boolean;
 	noBuiltinTools?: boolean;
 	subagent?: boolean;
+	/** Tree-wide subagent nesting cap (overrides the maxSubagentDepth setting). */
+	maxSubagentDepth?: number;
+	/** Internal: restricts which subagent types this process may delegate to. */
+	delegateAllow?: string[];
 	todoWrite?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
@@ -124,10 +129,25 @@ export function parseArgs(args: string[]): Args {
 			result.noBuiltinTools = true;
 		} else if (arg === "--enable-subagents") {
 			result.subagent = true;
+		} else if (arg === "--max-subagent-depth" && i + 1 < args.length) {
+			const n = Number.parseInt(args[++i], 10);
+			if (Number.isInteger(n) && n >= 1) {
+				result.maxSubagentDepth = n;
+			}
+		} else if (arg === "--delegate-allow" && i + 1 < args.length) {
+			result.delegateAllow = args[++i]
+				.split(",")
+				.map((s) => s.trim())
+				.filter((name) => name.length > 0);
 		} else if (arg === "--enable-todowrite") {
 			result.todoWrite = true;
 		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
 			result.tools = args[++i]
+				.split(",")
+				.map((s) => s.trim())
+				.filter((name) => name.length > 0);
+		} else if (arg === "--disallowed-tools" && i + 1 < args.length) {
+			result.disallowedTools = args[++i]
 				.split(",")
 				.map((s) => s.trim())
 				.filter((name) => name.length > 0);
@@ -269,9 +289,13 @@ ${chalk.bold("Options:")}
   --no-builtin-tools, -nbt       Disable built-in tools by default but keep extension/custom tools enabled
   --tools, -t <tools>            Comma-separated allowlist of tool names to enable
                                  Applies to built-in, extension, and custom tools
+  --disallowed-tools <tools>     Comma-separated denylist of tool names to disable
+                                 (subtracted from the allowlist or default set)
   --max-turns <n>                Hard cap on assistant turns; the agent is asked to wrap up near the
                                  cap and stopped at it (mainly used for spawned subagents)
   --enable-subagents             Enable the subagent tool (delegate tasks to isolated agent loops)
+  --max-subagent-depth <n>       Tree-wide subagent nesting cap (default 1 = no nesting). Overrides
+                                 the "maxSubagentDepth" setting
                                  Can also be enabled via the "enableSubagent" setting
   --enable-todowrite             Enable the TodoWrite tool (maintain a live todo list in the task panel)
                                  Can also be enabled via the "enableTodoWrite" setting

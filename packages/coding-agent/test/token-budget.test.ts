@@ -9,10 +9,9 @@ describe("TokenBudget", () => {
 	describe("getDefaultBudget", () => {
 		it("returns correct defaults per agent type", () => {
 			expect(getDefaultBudget("explore")).toBe(35000);
-			expect(getDefaultBudget("edit")).toBe(60000);
-			expect(getDefaultBudget("test")).toBe(45000);
-			expect(getDefaultBudget("review")).toBe(35000);
-			expect(getDefaultBudget("doc")).toBe(30000);
+			expect(getDefaultBudget("plan")).toBe(35000);
+			expect(getDefaultBudget("general-purpose")).toBe(60000);
+			// Custom / unknown agents fall back to the default.
 			expect(getDefaultBudget("unknown")).toBe(35000);
 		});
 	});
@@ -207,7 +206,7 @@ describe("TokenBudget", () => {
 	describe("persist", () => {
 		it("saves budget state to disk", () => {
 			const testCwd = mkdtempSync(join(tmpdir(), "hoocode-test-"));
-			const budget = new TokenBudget("persist-task", "edit", { cwd: testCwd });
+			const budget = new TokenBudget("persist-task", "general-purpose", { cwd: testCwd });
 			budget.processStdout(
 				`${JSON.stringify({ type: "message_end", message: { role: "assistant", usage: { totalTokens: 2500 } } })}
 `,
@@ -226,7 +225,7 @@ describe("TokenBudget", () => {
 			};
 
 			expect(state.task_id).toBe("persist-task");
-			expect(state.agent_type).toBe("edit");
+			expect(state.agent_type).toBe("general-purpose");
 			expect(state.budget).toBe(60000);
 			expect(state.used).toBe(2500);
 			expect(state.warned).toBe(false);

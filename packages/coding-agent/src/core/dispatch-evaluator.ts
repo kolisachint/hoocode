@@ -4,11 +4,14 @@
  * The parent agent selects which subagent to delegate to (via the Task tool),
  * so this module performs NO keyword routing. It survives for two narrow
  * responsibilities, both cheap and LLM-free:
- *   1. Depth guard — a subagent (HOOCODE_SUBAGENT_DEPTH>=1) must not spawn
- *      further subagents.
+ *   1. Depth guard — a process may only delegate while its depth is below the
+ *      tree-wide cap (HOOCODE_SUBAGENT_MAX_DEPTH, default 1). At the default cap
+ *      this means a subagent cannot spawn further subagents.
  *   2. Complexity estimate — a heuristic recorded in the dispatch log for
  *      diagnostics only.
  */
+
+import { canSpawnSubagent, resolveMaxSubagentDepth } from "./subagent-depth.js";
 
 export interface TaskAnalysis {
 	/** False only when the depth guard blocks delegation. */
@@ -37,11 +40,13 @@ function estimateComplexity(task: string): "low" | "medium" | "high" {
 
 export class DispatchEvaluator {
 	evaluate(task: string): TaskAnalysis {
-		const depth = Number.parseInt(process.env.HOOCODE_SUBAGENT_DEPTH ?? "0", 10);
-		if (depth >= 1) {
+		if (!canSpawnSubagent()) {
+			const maxDepth = resolveMaxSubagentDepth();
 			return {
 				should_delegate: false,
-				reason: "Subagents cannot spawn subagents",
+				// Preserve the original message at the default cap; report the depth
+				// reached when nesting has been opted into.
+				reason: maxDepth <= 1 ? "Subagents cannot spawn subagents" : `Maximum subagent depth (${maxDepth}) reached`,
 				estimated_complexity: "low",
 			};
 		}

@@ -118,6 +118,19 @@ body`;
 		expect(diagnostics.some((d) => d.message.includes("invalid characters"))).toBe(true);
 	});
 
+	test("captures a disallowedTools denylist", () => {
+		const raw = `---
+name: limited
+description: An agent with a denied tool.
+tools: read, grep, find, ls, bash
+disallowedTools: bash
+---
+body`;
+		const { agent } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.tools).toContain("bash");
+		expect(agent?.disallowedTools).toEqual(["bash"]);
+	});
+
 	test("captures the hoocode maxTurns extension", () => {
 		const raw = `---
 name: capped
@@ -156,6 +169,65 @@ body`;
 		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
 		expect(agent?.background).toBeUndefined();
 		expect(diagnostics.some((d) => d.message.includes("background must be a boolean"))).toBe(true);
+	});
+
+	test("captures the delegate flag and leaves it undefined when absent", () => {
+		const orchestrator = `---
+name: orchestrator
+description: An agent that delegates to other subagents.
+delegate: true
+---
+body`;
+		const orchAgent = parseAgentDefinition(orchestrator, { source: "project" }).agent;
+		expect(orchAgent?.delegate).toBe(true);
+		expect(orchAgent?.delegateTo).toBeUndefined(); // `true` = delegate to any type
+
+		const plain = `---
+name: plain
+description: A normal agent.
+---
+body`;
+		expect(parseAgentDefinition(plain, { source: "project" }).agent?.delegate).toBeUndefined();
+	});
+
+	test("captures a scoped delegate list (delegate to specific types only)", () => {
+		const raw = `---
+name: scoped
+description: Delegates only to explore and plan.
+delegate: explore, plan
+---
+body`;
+		const { agent } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.delegate).toBe(true);
+		expect(agent?.delegateTo).toEqual(["explore", "plan"]);
+	});
+
+	test("captures the fork flag", () => {
+		const raw = `---
+name: forker
+description: An agent that inherits the parent conversation.
+fork: true
+---
+body`;
+		expect(parseAgentDefinition(raw, { source: "project" }).agent?.fork).toBe(true);
+		const plain = `---
+name: plain
+description: A normal agent.
+---
+body`;
+		expect(parseAgentDefinition(plain, { source: "project" }).agent?.fork).toBeUndefined();
+	});
+
+	test("warns when delegate is neither a boolean nor a name list", () => {
+		const raw = `---
+name: bad-delegate
+description: Agent with invalid delegate.
+delegate: 123
+---
+body`;
+		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.delegate).toBeUndefined();
+		expect(diagnostics.some((d) => d.message.includes("delegate must be"))).toBe(true);
 	});
 
 	test("warns on unknown model alias", () => {

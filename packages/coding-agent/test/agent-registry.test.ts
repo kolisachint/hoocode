@@ -53,8 +53,8 @@ describe("loadAgentRegistry", () => {
 	test("loads embedded built-in agents by default", () => {
 		const reg = loadAgentRegistry({ cwd: makeTmp(), agentDir: makeTmp(), includeClaude: false });
 		expect(reg.has("explore")).toBe(true);
-		expect(reg.has("edit")).toBe(true);
-		expect(reg.list().length).toBeGreaterThanOrEqual(4);
+		expect(reg.has("general-purpose")).toBe(true);
+		expect(reg.list().length).toBeGreaterThanOrEqual(2);
 	});
 
 	test("project agents override user agents and built-ins", () => {

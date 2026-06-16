@@ -21,8 +21,10 @@ Guidance baked into the parent prompt:
 
 The `DispatchEvaluator` no longer routes. It survives only to:
 
-1. **Block nested delegation** — a subagent (`HOOCODE_SUBAGENT_DEPTH>=1`) must not
-   spawn further subagents.
+1. **Enforce the nesting cap** — a process may delegate only while its
+   `HOOCODE_SUBAGENT_DEPTH` is below the tree-wide cap `HOOCODE_SUBAGENT_MAX_DEPTH`
+   (seeded from the `maxSubagentDepth` setting, default `1`). At the default cap a
+   subagent cannot spawn further subagents.
 2. **Record a complexity estimate** in `.hoocode/dispatch/<task_id>/dispatch-log.json`
    for diagnostics. This is a cheap heuristic, not a routing decision.
 
@@ -31,14 +33,16 @@ The `DispatchEvaluator` no longer routes. It survives only to:
 Agents are defined by frontmatter `.md` files loaded from a registry with
 precedence **project > user > built-in**:
 
-- Built-in: `templates/agents/*.md` (explore, edit, test, review, doc)
+- Built-in: `templates/agents/*.md` (`explore`, `plan`, `general-purpose`) — matching
+  Claude Code's built-in roster. `explore` and `plan` are strictly read-only;
+  `general-purpose` is the delegating agent (`delegate: true`). Ship task-specialized
+  agents (edit, review, etc.) yourself under `.hoocode/agents/` or `.claude/agents/`.
 - Project: `.hoocode/agents/`, and `.claude/agents/` (Claude Code compatible)
 - User: `~/.hoocode/agents/`, and `~/.claude/agents/`
 
 Each definition supplies `name`, `description`, and optional `tools`, `model`,
-`maxTurns`, and `background`. When a definition omits `tools`, built-in modes
-fall back to a per-mode allowlist (`MODE_TOOLS`) so read-only modes (`explore`,
-`test`, `review`) cannot edit or write files.
+`maxTurns`, `background`, and `delegate`. When a definition omits `tools`, the
+subagent inherits all parent tools (Claude Code behavior).
 
 ## Forcing a Subagent with `/subagent`
 
@@ -47,9 +51,7 @@ decision (the mode is still validated against the registry):
 
 ```
 /subagent explore "How does the auth middleware work?"
-/subagent test "Run the parser unit tests"
-/subagent review "Audit login.ts for security issues"
-/subagent doc "Write a README for the API package"
+/subagent general-purpose "Add a --json flag to the export command and update its tests"
 ```
 
 ## Execution Model
@@ -75,6 +77,9 @@ multiple `Task` calls; there is no batch-dispatch API.
 ## Guardrails
 
 - **Token budget is advisory.** It emits `budget_warning` (80%) and `budget_exceeded` (100%) for telemetry but never kills or fails a subagent; the turn cap is the guaranteed hard stop.
-- **No nested delegation.** The `Task`/`TaskOutput` tools are never registered inside a spawned subagent (`--task-id` present), and `HOOCODE_SUBAGENT_DEPTH=1` is set in each child's environment as defense in depth.
+- **Bounded nesting (default: none).** Nesting is capped by `maxSubagentDepth` (default `1`). The root seeds the cap into `HOOCODE_SUBAGENT_MAX_DEPTH`; each spawned child is stamped with its depth (`HOOCODE_SUBAGENT_DEPTH` = parent + 1). The `Task`/`TaskOutput` tools are registered only while a process's depth is below the cap, and the `DispatchEvaluator` enforces the same bound as defense in depth — so at the default cap subagents cannot recursively dispatch. When the cap is raised, nested pools (depth ≥ 1) run with a reduced concurrency so the worst-case live process count stays a fixed function of depth (e.g. `5 + 5×2 = 15` at depth 2), with no shared state to leak on crash.
+- **Delegation is opt-in per agent.** A subagent only receives the `Task` tool when its agent definition sets `delegate` *and* it is spawned below the cap (`childDepth < maxSubagentDepth`). On spawn, such an agent has `Task`/`TaskOutput` added to its tool allowlist and `--enable-subagents` propagated, so it can dispatch one further level. Every other agent keeps its declared sandbox and cannot delegate, preserving the deliberate "Task is not a normal tool" boundary. `delegate: true` permits any subagent type; `delegate: explore, plan` scopes it to those types (forwarded as `--delegate-allow`; the Task tool rejects out-of-scope dispatches). See `examples/agents/orchestrator.md` for a ready-to-use delegating agent.
+
+  To exercise depth-2 end to end: drop the orchestrator into a discovered agents dir (e.g. `.hoocode/agents/`), then run with `--enable-subagents --max-subagent-depth 2` and delegate to it. A `[DISPATCH] … depth=2 …` line confirms a subagent delegated.
 - The pool prioritizes `explore` and `review` tasks over `doc` tasks because they often block downstream work.
 - On completion, the subagent writes `.hoocode/dispatch/<task_id>/result.json` (verified by the parent) and the pool writes `.hoocode/dispatch/<task_id>/output.json` (raw process outcome).

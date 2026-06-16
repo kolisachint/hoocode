@@ -13,10 +13,13 @@
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
+import type { AgentDefinition } from "../agent-frontmatter.js";
 import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
 import { getProviderExhaustion } from "../provider-health.js";
+import { SessionManager } from "../session-manager.js";
+import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
 import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile } from "../subagent-result.js";
@@ -199,6 +202,15 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				};
 			}
 
+			// Scoped delegation: a delegating agent may be restricted to certain subagent
+			// types (its `delegate: <types>` frontmatter). The root is unrestricted.
+			if (!isDelegateAllowed(params.subagent_type)) {
+				const allowed = delegateAllowList()?.join(", ") ?? "";
+				throw new Error(
+					`This agent may not delegate to "${params.subagent_type}". Allowed subagent types: ${allowed || "(none)"}.`,
+				);
+			}
+
 			// Resume path: continue a previously dispatched subagent with a follow-up
 			// prompt, reusing its persisted session (full prior transcript).
 			const resumeId = params.resume_task_id?.trim();
@@ -252,12 +264,17 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			// the call with a placeholder, and injects the answer below as a follow-up
 			// message when it resolves. Foreground agents block the turn as usual.
 			taskStore.update(task.id, { status: "in_progress" });
+			// Fork agents inherit the parent's conversation via a forked session.
+			const forkSessionFile = def.fork
+				? resolveForkSessionFile(def, ctx.sessionManager?.getSessionFile(), ctx.cwd)
+				: undefined;
 			try {
 				const dispatchResult = await pool.dispatch(params.prompt, {
 					forceAgent: params.subagent_type,
 					context: "",
 					model: ctx.model?.id,
 					provider: ctx.model?.provider,
+					sessionFile: forkSessionFile,
 				});
 				return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, dispatchResult.task_id);
 			} catch (error) {
@@ -276,6 +293,26 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			return new Text(text, 0, 0);
 		},
 	});
+}
+
+/**
+ * For a `fork: true` agent, fork the parent's session so the subagent inherits the
+ * full parent conversation (and its prompt cache) instead of starting fresh. Returns
+ * the forked session file to dispatch the child with, or undefined to fall back to a
+ * fresh session (non-fork agent, no parent session, or an empty/invalid source).
+ */
+export function resolveForkSessionFile(
+	def: Pick<AgentDefinition, "fork">,
+	parentSessionPath: string | undefined,
+	cwd: string,
+): string | undefined {
+	if (!def.fork || !parentSessionPath) return undefined;
+	try {
+		return SessionManager.forkFrom(parentSessionPath, cwd).getSessionFile();
+	} catch {
+		// Empty/invalid parent session: fall back to a fresh subagent session.
+		return undefined;
+	}
 }
 
 /**

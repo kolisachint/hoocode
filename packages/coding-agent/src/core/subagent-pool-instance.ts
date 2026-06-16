@@ -8,6 +8,7 @@
  */
 
 import { getSubagentSpawnCommand } from "../config.js";
+import { poolConcurrencyForDepth } from "./subagent-depth.js";
 import { SubagentPool } from "./subagent-pool.js";
 
 let pool: SubagentPool | undefined;
@@ -21,7 +22,16 @@ export function getSubagentPool(cwd: string): SubagentPool {
 	if (override) return override;
 	if (!pool) {
 		const { executable, prefixArgs } = getSubagentSpawnCommand();
-		pool = new SubagentPool({ executable, prefixArgs, cwd, skillPaths: latestSkillPaths });
+		// Pools created inside a nested subagent (depth >= 1) run with a reduced
+		// concurrency cap so deep delegation trees stay bounded; the root keeps the
+		// SubagentPool default.
+		pool = new SubagentPool({
+			executable,
+			prefixArgs,
+			cwd,
+			skillPaths: latestSkillPaths,
+			maxConcurrency: poolConcurrencyForDepth(),
+		});
 
 		if (!exitHandlerRegistered) {
 			exitHandlerRegistered = true;

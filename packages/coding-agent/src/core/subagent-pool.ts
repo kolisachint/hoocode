@@ -9,6 +9,7 @@ import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
+import { currentSubagentDepth, resolveMaxSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
 
 export interface SubagentPoolTask {
@@ -195,15 +196,9 @@ export class SubagentPool extends EventEmitter {
 
 	/** Priority value: higher numbers run first. */
 	private priorityOf(agent_type: string): number {
-		switch (agent_type) {
-			case "explore":
-			case "review":
-				return 2;
-			case "doc":
-				return 0;
-			default:
-				return 1;
-		}
+		// Read-only investigation (explore/plan) often unblocks downstream work, so
+		// it runs ahead of other agents.
+		return agent_type === "explore" || agent_type === "plan" ? 2 : 1;
 	}
 
 	/** Queue a task. It will run when a slot is free. */
@@ -340,11 +335,16 @@ export class SubagentPool extends EventEmitter {
 		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const reason = forceAgent ? "user_override" : analysis.reason;
 		const complexity = analysis.estimated_complexity;
+		// Depth of the child about to be spawned (this process's depth + 1). Surfaced
+		// so a delegation tree's nesting is visible in logs without extra tooling.
+		const childDepth = currentSubagentDepth(this.env) + 1;
 
 		// Pre-dispatch logging. Use stderr: stdout is reserved for the JSON event
 		// stream / TUI render and must not be polluted.
-		console.error(`[DISPATCH] agent=${agent_type} reason=${reason} complexity=${complexity} task_id=${task_id}`);
-		this.writeDispatchLog(task_id, agent_type, reason, complexity, task);
+		console.error(
+			`[DISPATCH] agent=${agent_type} depth=${childDepth} reason=${reason} complexity=${complexity} task_id=${task_id}`,
+		);
+		this.writeDispatchLog(task_id, agent_type, reason, complexity, task, childDepth);
 
 		const poolTask: SubagentPoolTask = {
 			task_id,
@@ -414,11 +414,13 @@ export class SubagentPool extends EventEmitter {
 		reason: string,
 		complexity: string,
 		task: string,
+		depth: number,
 	): void {
 		const log = {
 			timestamp: new Date().toISOString(),
 			task_id,
 			agent_type,
+			depth,
 			reason,
 			complexity,
 			task,
@@ -526,12 +528,40 @@ export class SubagentPool extends EventEmitter {
 			if (systemPrompt) {
 				args.push("--system-prompt", systemPrompt);
 			}
+
+			// A `delegate: true` agent may itself dispatch via the Task tool, but only
+			// while the child it becomes can still nest (childDepth < cap) — so the
+			// deepest permitted level cannot delegate further. Gating here keeps the
+			// authorization explicit and bounded by the same cap as the depth guard.
+			const childDepth = currentSubagentDepth(this.env) + 1;
+			const canChildDelegate = def?.delegate === true && childDepth < resolveMaxSubagentDepth(undefined, this.env);
+
 			// Tool allowlist comes from the agent definition's frontmatter `tools`
 			// field (read-only built-ins declare their own sandbox). When omitted, no
-			// --tools is passed and the subagent inherits all parent tools.
-			const tools = def?.tools;
+			// --tools is passed and the subagent inherits all parent tools (so the Task
+			// tool already survives). A delegating agent with an explicit allowlist must
+			// have Task/TaskOutput added, or the child would filter them out.
+			const tools = def?.tools ? [...def.tools] : undefined;
+			if (canChildDelegate && tools) {
+				for (const t of ["Task", "TaskOutput"]) {
+					if (!tools.includes(t)) tools.push(t);
+				}
+			}
 			if (tools && tools.length > 0) {
 				args.push("--tools", tools.join(","));
+			}
+			if (def?.disallowedTools && def.disallowedTools.length > 0) {
+				args.push("--disallowed-tools", def.disallowedTools.join(","));
+			}
+
+			// Propagate subagent enablement so the child registers the Task tool; without
+			// this the flag-based enablement would not reach a spawned child.
+			if (canChildDelegate) {
+				args.push("--enable-subagents");
+				// Scoped delegation: restrict which agent types this child may spawn.
+				if (def?.delegateTo && def.delegateTo.length > 0) {
+					args.push("--delegate-allow", def.delegateTo.join(","));
+				}
 			}
 		}
 
@@ -594,9 +624,14 @@ export class SubagentPool extends EventEmitter {
 		try {
 			proc = spawn(this.executable, this.buildArgs(task), {
 				cwd: task.cwd ?? this.cwd,
-				// Mark the child as a subagent so its own DispatchEvaluator refuses to
-				// spawn further subagents (depth guard).
-				env: { ...this.env, HOOCODE_SUBAGENT_DEPTH: "1" },
+				// Stamp the child's depth (parent depth + 1) so its own guard knows where
+				// it sits in the tree. The tree-wide cap (HOOCODE_SUBAGENT_MAX_DEPTH) is
+				// inherited via the spread; at the default cap of 1 the child lands at
+				// depth 1 and cannot spawn further subagents.
+				env: {
+					...this.env,
+					[SUBAGENT_DEPTH_ENV]: String(currentSubagentDepth(this.env) + 1),
+				},
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 			});

@@ -197,7 +197,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 				{
 					description: "multi-file change",
 					prompt: "do a complicated multi-file thing now",
-					subagent_type: "edit",
+					subagent_type: "general-purpose",
 				},
 				undefined,
 				undefined,
@@ -235,8 +235,8 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		expect(isBackground({ arguments: { subagent_type: "watcher" } })).toBe(true);
 		// Built-in `explore` opts into background by default.
 		expect(isBackground({ arguments: { subagent_type: "explore" } })).toBe(true);
-		// A foreground built-in (`edit`) and an unknown agent must not run in the background.
-		expect(isBackground({ arguments: { subagent_type: "edit" } })).toBe(false);
+		// A foreground built-in (`general-purpose`) and an unknown agent must not run in the background.
+		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(false);
 		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(false);
 	});
 });

@@ -64,12 +64,26 @@ export interface AgentFrontmatter {
 	description?: string;
 	/** Claude Code uses a comma-separated string; a YAML list is also accepted. */
 	tools?: string | string[];
+	/** Tools to subtract from the agent's set (allow + deny), Claude Code compatible. */
+	disallowedTools?: string | string[];
 	/** sonnet | opus | haiku | inherit | a model id/pattern. */
 	model?: string;
 	/** hoocode extension (not part of the Claude Code format): turn cap. */
 	maxTurns?: number;
 	/** Claude Code extension: run this agent detached (non-blocking) so the parent polls for its result. */
 	background?: boolean;
+	/**
+	 * hoocode extension: opt a agent into delegating via the Task tool (subject to the
+	 * tree-wide nesting cap). `true` = any subagent type; a comma-separated string or
+	 * YAML list = only those types. Opt-in per agent so the deliberate "Task is not a
+	 * normal tool" boundary stays intact for everyone else.
+	 */
+	delegate?: boolean | string | string[];
+	/**
+	 * When true, this agent inherits the parent's full conversation (a fork) instead
+	 * of starting from a fresh context, reusing the parent's prompt cache.
+	 */
+	fork?: boolean;
 	[key: string]: unknown;
 }
 
@@ -82,6 +96,8 @@ export interface AgentDefinition {
 	 * tools" (Claude Code behavior when `tools` is omitted).
 	 */
 	tools?: string[];
+	/** Resolved denylist subtracted from the agent's tool set. */
+	disallowedTools?: string[];
 	/**
 	 * Model alias/pattern, the `inherit` sentinel, or `undefined` for the
 	 * subagent default.
@@ -97,6 +113,12 @@ export interface AgentDefinition {
 	maxTurns?: number;
 	/** When true, dispatch is non-blocking: the parent receives a handle and polls for the result. */
 	background?: boolean;
+	/** When true, this agent may delegate via the Task tool, subject to the nesting cap. */
+	delegate?: boolean;
+	/** Restricts delegation to these subagent types (undefined = any when `delegate` is true). */
+	delegateTo?: string[];
+	/** When true, the agent inherits the parent's full conversation (a fork). */
+	fork?: boolean;
 }
 
 const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit"]);
@@ -255,6 +277,13 @@ export function parseAgentDefinition(
 		tools = normalized.tools;
 	}
 
+	let disallowedTools: string[] | undefined;
+	if (frontmatter.disallowedTools !== undefined) {
+		const normalized = normalizeTools(frontmatter.disallowedTools, filePath);
+		diagnostics.push(...normalized.diagnostics);
+		disallowedTools = normalized.tools.length > 0 ? normalized.tools : undefined;
+	}
+
 	const model = normalizeModel(frontmatter.model);
 	if (model !== undefined) {
 		for (const error of validateModel(model)) {
@@ -280,17 +309,68 @@ export function parseAgentDefinition(
 		}
 	}
 
+	// `delegate` accepts a boolean (delegate to any agent) or a comma-separated
+	// string / YAML list of agent type names (delegate only to those).
+	let fork: boolean | undefined;
+	if (frontmatter.fork !== undefined) {
+		if (typeof frontmatter.fork !== "boolean") {
+			diagnostics.push({
+				type: "warning",
+				message: `fork must be a boolean (true or false), got "${frontmatter.fork}" — field ignored`,
+				path: filePath,
+			});
+		} else {
+			fork = frontmatter.fork === true ? true : undefined;
+		}
+	}
+
+	let delegate: boolean | undefined;
+	let delegateTo: string[] | undefined;
+	if (frontmatter.delegate !== undefined) {
+		const value = frontmatter.delegate;
+		if (value === true) {
+			delegate = true;
+		} else if (value === false) {
+			delegate = undefined;
+		} else if (typeof value === "string" || Array.isArray(value)) {
+			const names = (Array.isArray(value) ? value.join(",") : value)
+				.split(",")
+				.map((s) => s.trim().toLowerCase())
+				.filter((s) => /^[a-z0-9-]+$/.test(s));
+			if (names.length > 0) {
+				delegate = true;
+				delegateTo = [...new Set(names)];
+			} else {
+				diagnostics.push({
+					type: "warning",
+					message: `delegate list "${value}" contained no valid agent names — field ignored`,
+					path: filePath,
+				});
+			}
+		} else {
+			diagnostics.push({
+				type: "warning",
+				message: `delegate must be a boolean or a list of agent names, got "${value}" — field ignored`,
+				path: filePath,
+			});
+		}
+	}
+
 	return {
 		agent: {
 			name,
 			description,
 			tools,
+			disallowedTools,
 			model,
 			prompt: body.trim(),
 			source,
 			filePath,
 			maxTurns,
 			background,
+			delegate,
+			delegateTo,
+			fork,
 		},
 		diagnostics,
 	};

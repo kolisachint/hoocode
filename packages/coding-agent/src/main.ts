@@ -40,6 +40,14 @@ import {
 } from "./core/session-cwd.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
+import {
+	canSpawnSubagent,
+	DELEGATE_ALLOW_ENV,
+	NESTED_CONCURRENCY_ENV,
+	resolveMaxSubagentDepth,
+	resolveNestedConcurrency,
+	SUBAGENT_MAX_DEPTH_ENV,
+} from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import {
 	buildTaskMainPrompt,
@@ -382,13 +390,43 @@ function buildSessionOptions(
 	if (parsed.tools) {
 		options.tools = [...parsed.tools];
 	}
+	if (parsed.disallowedTools) {
+		options.disallowedTools = [...parsed.disallowedTools];
+	}
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
-	// Never register it inside a spawned subagent (--task-id present): subagents must not
-	// recursively dispatch, even if a project's enableSubagent setting is on.
+	//
+	// Nesting is bounded by the tree-wide cap (maxSubagentDepth, default 1). The root
+	// seeds the cap into the environment so every descendant agrees on one value; the
+	// Task tool is registered only while this process's depth is below that cap. At the
+	// default cap this reproduces the original guard exactly: subagents (depth >= 1) get
+	// no Task tool and cannot recursively dispatch.
 	const isSubagentChild = parsed.taskId !== undefined;
-	if (!isSubagentChild && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
+	if (process.env[SUBAGENT_MAX_DEPTH_ENV] === undefined) {
+		// The root seeds the tree-wide cap; the --max-subagent-depth flag overrides the
+		// setting. resolveMaxSubagentDepth clamps it to the supported range so the seeded
+		// env (and everything that inherits it) carries a sane value. Descendants inherit
+		// it via the environment (env already set => keep it).
+		process.env[SUBAGENT_MAX_DEPTH_ENV] = String(
+			resolveMaxSubagentDepth(parsed.maxSubagentDepth ?? settingsManager.getMaxSubagentDepth()),
+		);
+	}
+	if (process.env[NESTED_CONCURRENCY_ENV] === undefined) {
+		// Seed the nested-pool concurrency from settings so descendants agree on one value.
+		process.env[NESTED_CONCURRENCY_ENV] = String(
+			resolveNestedConcurrency(settingsManager.getNestedSubagentConcurrency()),
+		);
+	}
+	// Scoped delegation: --delegate-allow is the authoritative restriction for this
+	// process. Set it from the flag, or clear any inherited value so a restricted
+	// parent's scope never leaks into a child that wasn't given its own.
+	if (parsed.delegateAllow && parsed.delegateAllow.length > 0) {
+		process.env[DELEGATE_ALLOW_ENV] = parsed.delegateAllow.join(",");
+	} else {
+		delete process.env[DELEGATE_ALLOW_ENV];
+	}
+	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 		options.customTools = [
 			...(options.customTools ?? []),
 			createTaskToolDefinition(),

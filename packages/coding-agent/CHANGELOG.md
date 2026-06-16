@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Trimmed the built-in subagent roster to match Claude Code: `explore`, `plan`, and
+  `general-purpose` ship by default (the `doc`, `edit`, `review`, and `test` agents
+  were removed — author them under `.hoocode/agents/` if needed). `explore` and `plan`
+  are strictly read-only, and `general-purpose` inherits the parent model and sets
+  `delegate: true` so it can spawn subagents when nesting is enabled.
+- `embed-templates` now formats its generated output with biome, so regenerating the
+  embedded templates can no longer break the CI lint check.
+
+### Added
+
+- Built-in read-only `plan` subagent (research that backs plan mode), matching Claude
+  Code's Plan agent.
+- `disallowedTools` agent frontmatter field and `--disallowed-tools` CLI flag — a tool
+  denylist subtracted from the allowlist/default set (Claude Code's allow+deny model).
+- Fork subagents: a `fork: true` agent inherits the parent's full conversation (via a
+  forked session that reuses the parent's prompt cache) instead of starting from a fresh
+  context, matching Claude Code's fork subagents. Ships `examples/agents/fork-reviewer.md`.
+- `nestedSubagentConcurrency` setting (default 2) to tune how many subagents a nested
+  pool runs concurrently.
+- Configurable subagent nesting via `maxSubagentDepth` (default `1`, opt-in) or the
+  `--max-subagent-depth <n>` CLI flag (overrides the setting). At the default cap
+  behavior is unchanged — subagents cannot spawn subagents. Raising it
+  (e.g. `"maxSubagentDepth": 2`) lets a subagent delegate one further level. Fan-out
+  stays bounded: the cap is seeded into the environment so every process in the tree
+  agrees, and nested pools (depth ≥ 1) run with a reduced concurrency. The requested
+  cap is clamped to a hard ceiling of 3 (worst case ≈ 35 live processes) so a
+  mis-configuration can't exhaust the host, with no shared state to leak on crash. The
+  child's depth is recorded in the `[DISPATCH]` log line and `dispatch-log.json`.
+- Per-agent delegation opt-in via the `delegate` agent frontmatter flag. A delegating
+  agent spawned below the nesting cap has `Task`/`TaskOutput` added to its tool allowlist
+  and subagents enabled, so it can dispatch one further level; every other agent keeps its
+  declared sandbox. `delegate: true` allows any subagent type; `delegate: explore, plan`
+  scopes delegation to those types only (the Task tool rejects out-of-scope dispatches),
+  matching Claude Code's `Agent(types)` syntax. Ships an example `examples/agents/orchestrator.md`.
+
 ## [0.4.61] - 2026-06-15
 
 ## [0.4.60] - 2026-06-15

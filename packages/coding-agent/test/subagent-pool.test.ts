@@ -119,6 +119,24 @@ function createValidResultJson(cwd: string, taskId: string): void {
 	);
 }
 
+/** Mock that records the HOOCODE_SUBAGENT_DEPTH env it was spawned with, then exits cleanly. */
+function createEnvCaptureExecutable(dir: string): string {
+	const path = join(dir, "mock-env.js");
+	const content = `#!/usr/bin/env node
+const fs = require("node:fs");
+const p = require("node:path");
+fs.writeFileSync(p.join(process.cwd(), "env.json"), JSON.stringify({
+	depth: process.env.HOOCODE_SUBAGENT_DEPTH ?? null,
+	maxDepth: process.env.HOOCODE_SUBAGENT_MAX_DEPTH ?? null,
+}));
+console.log(JSON.stringify({ type: "done", reason: "stop", message: { role: "assistant", content: [{ type: "text", text: "ok" }] } }));
+process.exit(0);
+`;
+	writeFileSync(path, content);
+	chmodSync(path, 0o755);
+	return path;
+}
+
 describe("SubagentPool", () => {
 	let tmpDir: string;
 	let pool: SubagentPool | undefined;
@@ -406,6 +424,122 @@ describe("SubagentPool", () => {
 		expect(si).toBeGreaterThanOrEqual(0);
 		expect(argv[si + 1]).toBe(join(tmpDir, ".hoocode", "dispatch", "mt-task", "session.jsonl"));
 		expect(argv).not.toContain("--no-session");
+	});
+
+	test("stamps a spawned child with depth 1 and propagates the tree-wide cap from the root", async () => {
+		const exe = createEnvCaptureExecutable(tmpDir);
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		delete env.HOOCODE_SUBAGENT_DEPTH; // simulate a root process
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "d-root");
+		pool.spawn({ task_id: "d-root", agent_type: "explore", task: "scan" });
+		await pool.wait_for("d-root");
+		const captured = JSON.parse(readFileSync(join(tmpDir, "env.json"), "utf-8")) as {
+			depth: string | null;
+			maxDepth: string | null;
+		};
+		expect(captured.depth).toBe("1");
+		expect(captured.maxDepth).toBe("2");
+	});
+
+	test("increments depth across nesting levels (a depth-1 pool spawns a depth-2 child)", async () => {
+		const exe = createEnvCaptureExecutable(tmpDir);
+		const env = { ...process.env, HOOCODE_SUBAGENT_DEPTH: "1", HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "d-nested");
+		pool.spawn({ task_id: "d-nested", agent_type: "explore", task: "scan" });
+		await pool.wait_for("d-nested");
+		const captured = JSON.parse(readFileSync(join(tmpDir, "env.json"), "utf-8")) as {
+			depth: string | null;
+			maxDepth: string | null;
+		};
+		expect(captured.depth).toBe("2");
+		expect(captured.maxDepth).toBe("2");
+	});
+
+	test("a delegate:true agent gets Task in its allowlist and subagents enabled when nesting is permitted", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		// Project-local orchestrator agent that opts into delegation with a restricted allowlist.
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "orchestrator.md"),
+			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, grep, find, ls\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
+		);
+		// Cap raised to 2 (as --max-subagent-depth 2 would seed): the depth-1 child may still nest.
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		delete env.HOOCODE_SUBAGENT_DEPTH;
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "orch-task");
+		pool.spawn({ task_id: "orch-task", agent_type: "orchestrator", task: "do a multi-part job" });
+		await pool.wait_for("orch-task");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		expect(argv).toContain("--enable-subagents");
+		const ti = argv.indexOf("--tools");
+		expect(ti).toBeGreaterThanOrEqual(0);
+		const toolList = argv[ti + 1].split(",");
+		expect(toolList).toContain("Task");
+		expect(toolList).toContain("TaskOutput");
+	});
+
+	test("a delegate:true agent does NOT get delegation tools at the default cap (no nesting)", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "orchestrator.md"),
+			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, grep, find, ls\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
+		);
+		// Default cap (1): the spawned child is at depth 1 == cap, so it cannot nest further.
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "1" };
+		delete env.HOOCODE_SUBAGENT_DEPTH;
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "orch-task2");
+		pool.spawn({ task_id: "orch-task2", agent_type: "orchestrator", task: "do a multi-part job" });
+		await pool.wait_for("orch-task2");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		expect(argv).not.toContain("--enable-subagents");
+		const ti = argv.indexOf("--tools");
+		expect(argv[ti + 1].split(",")).not.toContain("Task");
+	});
+
+	test("forwards a scoped delegate list to the child as --delegate-allow", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "scoped.md"),
+			`---\nname: scoped\ndescription: delegates only to explore.\ntools: read, grep, find, ls\ndelegate: explore\n---\nbody`,
+		);
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		delete env.HOOCODE_SUBAGENT_DEPTH;
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "scoped-task");
+		pool.spawn({ task_id: "scoped-task", agent_type: "scoped", task: "orchestrate" });
+		await pool.wait_for("scoped-task");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		expect(argv).toContain("--enable-subagents");
+		const ai = argv.indexOf("--delegate-allow");
+		expect(ai).toBeGreaterThanOrEqual(0);
+		expect(argv[ai + 1]).toBe("explore");
+	});
+
+	test("forwards an agent's disallowedTools denylist to the child", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "limited.md"),
+			`---\nname: limited\ndescription: restricted agent.\ntools: read, grep, find, ls, bash\ndisallowedTools: bash\n---\nbody`,
+		);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		createValidResultJson(tmpDir, "lim-task");
+		pool.spawn({ task_id: "lim-task", agent_type: "limited", task: "scan" });
+		await pool.wait_for("lim-task");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		const di = argv.indexOf("--disallowed-tools");
+		expect(di).toBeGreaterThanOrEqual(0);
+		expect(argv[di + 1]).toBe("bash");
 	});
 
 	test("dispatchDetached returns a handle immediately and the result is collectable when done", async () => {

@@ -65,6 +65,11 @@ export interface CreateAgentSessionOptions {
 	 * When provided, only the listed tool names are enabled.
 	 */
 	tools?: string[];
+	/**
+	 * Optional denylist of tool names, subtracted from whatever set is otherwise
+	 * enabled (allowlist or default). Applied to built-in, extension, and custom tools.
+	 */
+	disallowedTools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
 
@@ -411,6 +416,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		modelRegistry,
 		initialActiveToolNames,
 		allowedToolNames,
+		disallowedToolNames: options.disallowedTools,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
 	});
