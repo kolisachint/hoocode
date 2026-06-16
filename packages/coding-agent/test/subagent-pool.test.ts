@@ -503,6 +503,27 @@ describe("SubagentPool", () => {
 		expect(argv[ti + 1].split(",")).not.toContain("Task");
 	});
 
+	test("forwards a scoped delegate list to the child as --delegate-allow", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "scoped.md"),
+			`---\nname: scoped\ndescription: delegates only to explore.\ntools: read, grep, find, ls\ndelegate: explore\n---\nbody`,
+		);
+		const env = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
+		delete env.HOOCODE_SUBAGENT_DEPTH;
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir, env });
+		createValidResultJson(tmpDir, "scoped-task");
+		pool.spawn({ task_id: "scoped-task", agent_type: "scoped", task: "orchestrate" });
+		await pool.wait_for("scoped-task");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		expect(argv).toContain("--enable-subagents");
+		const ai = argv.indexOf("--delegate-allow");
+		expect(ai).toBeGreaterThanOrEqual(0);
+		expect(argv[ai + 1]).toBe("explore");
+	});
+
 	test("forwards an agent's disallowedTools denylist to the child", async () => {
 		const exe = createArgvCaptureExecutable(tmpDir);
 		const agentsDir = join(tmpDir, ".hoocode", "agents");

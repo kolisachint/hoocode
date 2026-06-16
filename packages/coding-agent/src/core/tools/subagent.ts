@@ -17,6 +17,7 @@ import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
 import { getProviderExhaustion } from "../provider-health.js";
+import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
 import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile } from "../subagent-result.js";
@@ -197,6 +198,15 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 					],
 					details: { subagent_type: params.subagent_type, ok: false, taskId: skipped.id },
 				};
+			}
+
+			// Scoped delegation: a delegating agent may be restricted to certain subagent
+			// types (its `delegate: <types>` frontmatter). The root is unrestricted.
+			if (!isDelegateAllowed(params.subagent_type)) {
+				const allowed = delegateAllowList()?.join(", ") ?? "";
+				throw new Error(
+					`This agent may not delegate to "${params.subagent_type}". Allowed subagent types: ${allowed || "(none)"}.`,
+				);
 			}
 
 			// Resume path: continue a previously dispatched subagent with a follow-up

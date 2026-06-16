@@ -29,10 +29,12 @@
   cap is clamped to a hard ceiling of 3 (worst case ≈ 35 live processes) so a
   mis-configuration can't exhaust the host, with no shared state to leak on crash. The
   child's depth is recorded in the `[DISPATCH]` log line and `dispatch-log.json`.
-- Per-agent delegation opt-in via a `delegate: true` agent frontmatter flag. A
-  delegating agent spawned below the nesting cap has `Task`/`TaskOutput` added to its
-  tool allowlist and subagents enabled, so it can dispatch one further level; every
-  other agent keeps its declared sandbox. Ships an example `examples/agents/orchestrator.md`.
+- Per-agent delegation opt-in via the `delegate` agent frontmatter flag. A delegating
+  agent spawned below the nesting cap has `Task`/`TaskOutput` added to its tool allowlist
+  and subagents enabled, so it can dispatch one further level; every other agent keeps its
+  declared sandbox. `delegate: true` allows any subagent type; `delegate: explore, plan`
+  scopes delegation to those types only (the Task tool rejects out-of-scope dispatches),
+  matching Claude Code's `Agent(types)` syntax. Ships an example `examples/agents/orchestrator.md`.
 
 ## [0.4.61] - 2026-06-15
 

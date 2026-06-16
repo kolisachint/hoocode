@@ -564,6 +564,10 @@ export class SubagentPool extends EventEmitter {
 			// this the flag-based enablement would not reach a spawned child.
 			if (canChildDelegate) {
 				args.push("--enable-subagents");
+				// Scoped delegation: restrict which agent types this child may spawn.
+				if (def?.delegateTo && def.delegateTo.length > 0) {
+					args.push("--delegate-allow", def.delegateTo.join(","));
+				}
 			}
 		}
 

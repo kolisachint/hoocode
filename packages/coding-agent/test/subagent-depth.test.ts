@@ -12,6 +12,8 @@ import {
 	clampMaxSubagentDepth,
 	currentSubagentDepth,
 	DEFAULT_MAX_SUBAGENT_DEPTH,
+	delegateAllowList,
+	isDelegateAllowed,
 	NESTED_SUBAGENT_CONCURRENCY,
 	poolConcurrencyForDepth,
 	resolveMaxSubagentDepth,
@@ -91,6 +93,20 @@ describe("poolConcurrencyForDepth", () => {
 		).toBe(4);
 		// Root still uses the pool default regardless of the nested setting.
 		expect(poolConcurrencyForDepth(env({ HOOCODE_NESTED_SUBAGENT_CONCURRENCY: "4" }))).toBeUndefined();
+	});
+});
+
+describe("delegate scoping", () => {
+	it("is unrestricted when the env var is absent", () => {
+		expect(isDelegateAllowed("explore", env({}))).toBe(true);
+		expect(delegateAllowList(env({}))).toBeUndefined();
+	});
+
+	it("restricts to the listed types when set", () => {
+		const e = env({ HOOCODE_DELEGATE_ALLOW: "explore, plan" });
+		expect(delegateAllowList(e)).toEqual(["explore", "plan"]);
+		expect(isDelegateAllowed("explore", e)).toBe(true);
+		expect(isDelegateAllowed("general-purpose", e)).toBe(false);
 	});
 });
 

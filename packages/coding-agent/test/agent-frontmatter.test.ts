@@ -178,7 +178,9 @@ description: An agent that delegates to other subagents.
 delegate: true
 ---
 body`;
-		expect(parseAgentDefinition(orchestrator, { source: "project" }).agent?.delegate).toBe(true);
+		const orchAgent = parseAgentDefinition(orchestrator, { source: "project" }).agent;
+		expect(orchAgent?.delegate).toBe(true);
+		expect(orchAgent?.delegateTo).toBeUndefined(); // `true` = delegate to any type
 
 		const plain = `---
 name: plain
@@ -188,16 +190,28 @@ body`;
 		expect(parseAgentDefinition(plain, { source: "project" }).agent?.delegate).toBeUndefined();
 	});
 
-	test("warns when delegate is not a boolean", () => {
+	test("captures a scoped delegate list (delegate to specific types only)", () => {
+		const raw = `---
+name: scoped
+description: Delegates only to explore and plan.
+delegate: explore, plan
+---
+body`;
+		const { agent } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.delegate).toBe(true);
+		expect(agent?.delegateTo).toEqual(["explore", "plan"]);
+	});
+
+	test("warns when delegate is neither a boolean nor a name list", () => {
 		const raw = `---
 name: bad-delegate
 description: Agent with invalid delegate.
-delegate: sure
+delegate: 123
 ---
 body`;
 		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
 		expect(agent?.delegate).toBeUndefined();
-		expect(diagnostics.some((d) => d.message.includes("delegate must be a boolean"))).toBe(true);
+		expect(diagnostics.some((d) => d.message.includes("delegate must be"))).toBe(true);
 	});
 
 	test("warns on unknown model alias", () => {

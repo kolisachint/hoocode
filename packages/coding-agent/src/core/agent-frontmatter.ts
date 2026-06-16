@@ -109,6 +109,8 @@ export interface AgentDefinition {
 	background?: boolean;
 	/** When true, this agent may delegate via the Task tool, subject to the nesting cap. */
 	delegate?: boolean;
+	/** Restricts delegation to these subagent types (undefined = any when `delegate` is true). */
+	delegateTo?: string[];
 }
 
 const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit"]);
@@ -299,16 +301,37 @@ export function parseAgentDefinition(
 		}
 	}
 
+	// `delegate` accepts a boolean (delegate to any agent) or a comma-separated
+	// string / YAML list of agent type names (delegate only to those).
 	let delegate: boolean | undefined;
+	let delegateTo: string[] | undefined;
 	if (frontmatter.delegate !== undefined) {
-		if (typeof frontmatter.delegate !== "boolean") {
+		const value = frontmatter.delegate;
+		if (value === true) {
+			delegate = true;
+		} else if (value === false) {
+			delegate = undefined;
+		} else if (typeof value === "string" || Array.isArray(value)) {
+			const names = (Array.isArray(value) ? value.join(",") : value)
+				.split(",")
+				.map((s) => s.trim().toLowerCase())
+				.filter((s) => /^[a-z0-9-]+$/.test(s));
+			if (names.length > 0) {
+				delegate = true;
+				delegateTo = [...new Set(names)];
+			} else {
+				diagnostics.push({
+					type: "warning",
+					message: `delegate list "${value}" contained no valid agent names — field ignored`,
+					path: filePath,
+				});
+			}
+		} else {
 			diagnostics.push({
 				type: "warning",
-				message: `delegate must be a boolean (true or false), got "${frontmatter.delegate}" — field ignored`,
+				message: `delegate must be a boolean or a list of agent names, got "${value}" — field ignored`,
 				path: filePath,
 			});
-		} else {
-			delegate = frontmatter.delegate === true ? true : undefined;
 		}
 	}
 
@@ -325,6 +348,7 @@ export function parseAgentDefinition(
 			maxTurns,
 			background,
 			delegate,
+			delegateTo,
 		},
 		diagnostics,
 	};

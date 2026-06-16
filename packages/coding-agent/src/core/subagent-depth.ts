@@ -23,6 +23,8 @@
 export const SUBAGENT_DEPTH_ENV = "HOOCODE_SUBAGENT_DEPTH";
 export const SUBAGENT_MAX_DEPTH_ENV = "HOOCODE_SUBAGENT_MAX_DEPTH";
 export const NESTED_CONCURRENCY_ENV = "HOOCODE_NESTED_SUBAGENT_CONCURRENCY";
+/** Comma-separated allowlist of subagent types the current process may delegate to. */
+export const DELEGATE_ALLOW_ENV = "HOOCODE_DELEGATE_ALLOW";
 
 /** Default tree-wide cap: subagents cannot spawn subagents (original behavior). */
 export const DEFAULT_MAX_SUBAGENT_DEPTH = 1;
@@ -93,4 +95,25 @@ export function resolveNestedConcurrency(settingValue?: number, env: NodeJS.Proc
 /** Concurrency for a pool created in the current process: reduced when nested. */
 export function poolConcurrencyForDepth(env: NodeJS.ProcessEnv = process.env): number | undefined {
 	return currentSubagentDepth(env) >= 1 ? resolveNestedConcurrency(undefined, env) : undefined;
+}
+
+/**
+ * Subagent types the current process is restricted to delegating to, or undefined
+ * when unrestricted (may delegate to any type). Set per spawned agent from its
+ * `delegate: <types>` frontmatter; the root is always unrestricted.
+ */
+export function delegateAllowList(env: NodeJS.ProcessEnv = process.env): string[] | undefined {
+	const raw = env[DELEGATE_ALLOW_ENV];
+	if (raw === undefined) return undefined;
+	const list = raw
+		.split(",")
+		.map((s) => s.trim())
+		.filter((s) => s.length > 0);
+	return list.length > 0 ? list : undefined;
+}
+
+/** Whether the current process may delegate to the given subagent type. */
+export function isDelegateAllowed(subagentType: string, env: NodeJS.ProcessEnv = process.env): boolean {
+	const allow = delegateAllowList(env);
+	return !allow || allow.includes(subagentType);
 }

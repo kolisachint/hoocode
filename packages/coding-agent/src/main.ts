@@ -42,6 +42,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import {
 	canSpawnSubagent,
+	DELEGATE_ALLOW_ENV,
 	NESTED_CONCURRENCY_ENV,
 	resolveMaxSubagentDepth,
 	resolveNestedConcurrency,
@@ -416,6 +417,14 @@ function buildSessionOptions(
 		process.env[NESTED_CONCURRENCY_ENV] = String(
 			resolveNestedConcurrency(settingsManager.getNestedSubagentConcurrency()),
 		);
+	}
+	// Scoped delegation: --delegate-allow is the authoritative restriction for this
+	// process. Set it from the flag, or clear any inherited value so a restricted
+	// parent's scope never leaks into a child that wasn't given its own.
+	if (parsed.delegateAllow && parsed.delegateAllow.length > 0) {
+		process.env[DELEGATE_ALLOW_ENV] = parsed.delegateAllow.join(",");
+	} else {
+		delete process.env[DELEGATE_ALLOW_ENV];
 	}
 	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 		options.customTools = [

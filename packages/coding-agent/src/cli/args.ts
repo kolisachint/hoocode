@@ -38,6 +38,8 @@ export interface Args {
 	subagent?: boolean;
 	/** Tree-wide subagent nesting cap (overrides the maxSubagentDepth setting). */
 	maxSubagentDepth?: number;
+	/** Internal: restricts which subagent types this process may delegate to. */
+	delegateAllow?: string[];
 	todoWrite?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
@@ -132,6 +134,11 @@ export function parseArgs(args: string[]): Args {
 			if (Number.isInteger(n) && n >= 1) {
 				result.maxSubagentDepth = n;
 			}
+		} else if (arg === "--delegate-allow" && i + 1 < args.length) {
+			result.delegateAllow = args[++i]
+				.split(",")
+				.map((s) => s.trim())
+				.filter((name) => name.length > 0);
 		} else if (arg === "--enable-todowrite") {
 			result.todoWrite = true;
 		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
