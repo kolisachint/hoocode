@@ -242,6 +242,7 @@ export {
 export {
 	formatSkillsForPrompt,
 	type LoadSkillsFromDirOptions,
+	type LoadSkillsOptions,
 	type LoadSkillsResult,
 	loadSkills,
 	loadSkillsFromDir,
