@@ -40,7 +40,13 @@ import {
 } from "./core/session-cwd.js";
 import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
-import { canSpawnSubagent, resolveMaxSubagentDepth, SUBAGENT_MAX_DEPTH_ENV } from "./core/subagent-depth.js";
+import {
+	canSpawnSubagent,
+	NESTED_CONCURRENCY_ENV,
+	resolveMaxSubagentDepth,
+	resolveNestedConcurrency,
+	SUBAGENT_MAX_DEPTH_ENV,
+} from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import {
 	buildTaskMainPrompt,
@@ -400,6 +406,12 @@ function buildSessionOptions(
 		// it via the environment (env already set => keep it).
 		process.env[SUBAGENT_MAX_DEPTH_ENV] = String(
 			resolveMaxSubagentDepth(parsed.maxSubagentDepth ?? settingsManager.getMaxSubagentDepth()),
+		);
+	}
+	if (process.env[NESTED_CONCURRENCY_ENV] === undefined) {
+		// Seed the nested-pool concurrency from settings so descendants agree on one value.
+		process.env[NESTED_CONCURRENCY_ENV] = String(
+			resolveNestedConcurrency(settingsManager.getNestedSubagentConcurrency()),
 		);
 	}
 	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {

@@ -102,6 +102,7 @@ export interface Settings {
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	enableSubagent?: boolean; // default: false - enable the subagent tool (delegate tasks to isolated agent loops)
 	maxSubagentDepth?: number; // default: 1 - tree-wide subagent nesting cap (1 = subagents cannot spawn subagents)
+	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -932,6 +933,12 @@ export class SettingsManager {
 	getMaxSubagentDepth(): number {
 		const v = this.settings.maxSubagentDepth ?? DEFAULT_SETTINGS.maxSubagentDepth!;
 		return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 1;
+	}
+
+	/** Max concurrent subagents per pool at nesting depth >= 1. Clamped to >= 1. */
+	getNestedSubagentConcurrency(): number {
+		const v = this.settings.nestedSubagentConcurrency ?? DEFAULT_SETTINGS.nestedSubagentConcurrency!;
+		return Number.isFinite(v) && v >= 1 ? Math.floor(v) : 2;
 	}
 
 	getEnableTodoWrite(): boolean {

@@ -22,6 +22,7 @@
 
 export const SUBAGENT_DEPTH_ENV = "HOOCODE_SUBAGENT_DEPTH";
 export const SUBAGENT_MAX_DEPTH_ENV = "HOOCODE_SUBAGENT_MAX_DEPTH";
+export const NESTED_CONCURRENCY_ENV = "HOOCODE_NESTED_SUBAGENT_CONCURRENCY";
 
 /** Default tree-wide cap: subagents cannot spawn subagents (original behavior). */
 export const DEFAULT_MAX_SUBAGENT_DEPTH = 1;
@@ -72,7 +73,24 @@ export function canSpawnSubagent(settingValue?: number, env: NodeJS.ProcessEnv =
 	return currentSubagentDepth(env) < resolveMaxSubagentDepth(settingValue, env);
 }
 
+/**
+ * Concurrency cap for pools running at depth >= 1. Reads the inherited env value
+ * (seeded by the root from the `nestedSubagentConcurrency` setting) when present,
+ * else the provided setting, else the default. Clamped to >= 1.
+ */
+export function resolveNestedConcurrency(settingValue?: number, env: NodeJS.ProcessEnv = process.env): number {
+	const raw = env[NESTED_CONCURRENCY_ENV];
+	if (raw !== undefined) {
+		const n = Number.parseInt(raw, 10);
+		if (Number.isFinite(n) && n >= 1) return n;
+	}
+	if (settingValue !== undefined && Number.isFinite(settingValue) && settingValue >= 1) {
+		return Math.floor(settingValue);
+	}
+	return NESTED_SUBAGENT_CONCURRENCY;
+}
+
 /** Concurrency for a pool created in the current process: reduced when nested. */
 export function poolConcurrencyForDepth(env: NodeJS.ProcessEnv = process.env): number | undefined {
-	return currentSubagentDepth(env) >= 1 ? NESTED_SUBAGENT_CONCURRENCY : undefined;
+	return currentSubagentDepth(env) >= 1 ? resolveNestedConcurrency(undefined, env) : undefined;
 }

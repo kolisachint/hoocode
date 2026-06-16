@@ -15,6 +15,7 @@ import {
 	NESTED_SUBAGENT_CONCURRENCY,
 	poolConcurrencyForDepth,
 	resolveMaxSubagentDepth,
+	resolveNestedConcurrency,
 } from "../src/core/subagent-depth.js";
 
 const env = (overrides: Record<string, string>): NodeJS.ProcessEnv => ({ ...overrides });
@@ -82,5 +83,22 @@ describe("poolConcurrencyForDepth", () => {
 		expect(poolConcurrencyForDepth(env({}))).toBeUndefined();
 		expect(poolConcurrencyForDepth(env({ HOOCODE_SUBAGENT_DEPTH: "1" }))).toBe(NESTED_SUBAGENT_CONCURRENCY);
 		expect(poolConcurrencyForDepth(env({ HOOCODE_SUBAGENT_DEPTH: "2" }))).toBe(NESTED_SUBAGENT_CONCURRENCY);
+	});
+
+	it("honors a configured nested concurrency from the env", () => {
+		expect(
+			poolConcurrencyForDepth(env({ HOOCODE_SUBAGENT_DEPTH: "1", HOOCODE_NESTED_SUBAGENT_CONCURRENCY: "4" })),
+		).toBe(4);
+		// Root still uses the pool default regardless of the nested setting.
+		expect(poolConcurrencyForDepth(env({ HOOCODE_NESTED_SUBAGENT_CONCURRENCY: "4" }))).toBeUndefined();
+	});
+});
+
+describe("resolveNestedConcurrency", () => {
+	it("prefers env, then setting, then default; clamps to >= 1", () => {
+		expect(resolveNestedConcurrency(undefined, env({}))).toBe(NESTED_SUBAGENT_CONCURRENCY);
+		expect(resolveNestedConcurrency(3, env({}))).toBe(3);
+		expect(resolveNestedConcurrency(0, env({}))).toBe(NESTED_SUBAGENT_CONCURRENCY);
+		expect(resolveNestedConcurrency(2, env({ HOOCODE_NESTED_SUBAGENT_CONCURRENCY: "5" }))).toBe(5);
 	});
 });

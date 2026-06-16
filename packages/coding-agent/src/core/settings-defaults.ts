@@ -28,6 +28,7 @@ export const DEFAULT_SETTINGS = {
 	enableSkillCommands: true,
 	enableSubagent: false,
 	maxSubagentDepth: 1,
+	nestedSubagentConcurrency: 2,
 	enableTodoWrite: true,
 	terminal: {
 		showImages: true,
