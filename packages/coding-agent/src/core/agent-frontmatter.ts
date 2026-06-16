@@ -64,6 +64,8 @@ export interface AgentFrontmatter {
 	description?: string;
 	/** Claude Code uses a comma-separated string; a YAML list is also accepted. */
 	tools?: string | string[];
+	/** Tools to subtract from the agent's set (allow + deny), Claude Code compatible. */
+	disallowedTools?: string | string[];
 	/** sonnet | opus | haiku | inherit | a model id/pattern. */
 	model?: string;
 	/** hoocode extension (not part of the Claude Code format): turn cap. */
@@ -88,6 +90,8 @@ export interface AgentDefinition {
 	 * tools" (Claude Code behavior when `tools` is omitted).
 	 */
 	tools?: string[];
+	/** Resolved denylist subtracted from the agent's tool set. */
+	disallowedTools?: string[];
 	/**
 	 * Model alias/pattern, the `inherit` sentinel, or `undefined` for the
 	 * subagent default.
@@ -263,6 +267,13 @@ export function parseAgentDefinition(
 		tools = normalized.tools;
 	}
 
+	let disallowedTools: string[] | undefined;
+	if (frontmatter.disallowedTools !== undefined) {
+		const normalized = normalizeTools(frontmatter.disallowedTools, filePath);
+		diagnostics.push(...normalized.diagnostics);
+		disallowedTools = normalized.tools.length > 0 ? normalized.tools : undefined;
+	}
+
 	const model = normalizeModel(frontmatter.model);
 	if (model !== undefined) {
 		for (const error of validateModel(model)) {
@@ -306,6 +317,7 @@ export function parseAgentDefinition(
 			name,
 			description,
 			tools,
+			disallowedTools,
 			model,
 			prompt: body.trim(),
 			source,

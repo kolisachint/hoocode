@@ -389,6 +389,9 @@ function buildSessionOptions(
 	if (parsed.tools) {
 		options.tools = [...parsed.tools];
 	}
+	if (parsed.disallowedTools) {
+		options.disallowedTools = [...parsed.disallowedTools];
+	}
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.

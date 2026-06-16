@@ -118,6 +118,19 @@ body`;
 		expect(diagnostics.some((d) => d.message.includes("invalid characters"))).toBe(true);
 	});
 
+	test("captures a disallowedTools denylist", () => {
+		const raw = `---
+name: limited
+description: An agent with a denied tool.
+tools: read, grep, find, ls, bash
+disallowedTools: bash
+---
+body`;
+		const { agent } = parseAgentDefinition(raw, { source: "project" });
+		expect(agent?.tools).toContain("bash");
+		expect(agent?.disallowedTools).toEqual(["bash"]);
+	});
+
 	test("captures the hoocode maxTurns extension", () => {
 		const raw = `---
 name: capped

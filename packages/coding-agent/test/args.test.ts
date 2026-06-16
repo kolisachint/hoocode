@@ -240,6 +240,15 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--disallowed-tools flag", () => {
+		test("parses a comma-separated denylist", () => {
+			expect(parseArgs(["--disallowed-tools", "bash, write"]).disallowedTools).toEqual(["bash", "write"]);
+		});
+		test("defaults to undefined when absent", () => {
+			expect(parseArgs([]).disallowedTools).toBeUndefined();
+		});
+	});
+
 	describe("--max-subagent-depth flag", () => {
 		test("parses a valid depth", () => {
 			expect(parseArgs(["--max-subagent-depth", "2"]).maxSubagentDepth).toBe(2);

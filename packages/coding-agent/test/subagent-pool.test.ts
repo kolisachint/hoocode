@@ -503,6 +503,24 @@ describe("SubagentPool", () => {
 		expect(argv[ti + 1].split(",")).not.toContain("Task");
 	});
 
+	test("forwards an agent's disallowedTools denylist to the child", async () => {
+		const exe = createArgvCaptureExecutable(tmpDir);
+		const agentsDir = join(tmpDir, ".hoocode", "agents");
+		mkdirSync(agentsDir, { recursive: true });
+		writeFileSync(
+			join(agentsDir, "limited.md"),
+			`---\nname: limited\ndescription: restricted agent.\ntools: read, grep, find, ls, bash\ndisallowedTools: bash\n---\nbody`,
+		);
+		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
+		createValidResultJson(tmpDir, "lim-task");
+		pool.spawn({ task_id: "lim-task", agent_type: "limited", task: "scan" });
+		await pool.wait_for("lim-task");
+		const argv = JSON.parse(readFileSync(join(tmpDir, "argv.json"), "utf-8")) as string[];
+		const di = argv.indexOf("--disallowed-tools");
+		expect(di).toBeGreaterThanOrEqual(0);
+		expect(argv[di + 1]).toBe("bash");
+	});
+
 	test("dispatchDetached returns a handle immediately and the result is collectable when done", async () => {
 		const exe = createResultWritingExecutable(tmpDir, 150);
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });

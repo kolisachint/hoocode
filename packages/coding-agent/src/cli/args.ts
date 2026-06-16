@@ -32,6 +32,7 @@ export interface Args {
 	sessionDir?: string;
 	models?: string[];
 	tools?: string[];
+	disallowedTools?: string[];
 	noTools?: boolean;
 	noBuiltinTools?: boolean;
 	subagent?: boolean;
@@ -135,6 +136,11 @@ export function parseArgs(args: string[]): Args {
 			result.todoWrite = true;
 		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
 			result.tools = args[++i]
+				.split(",")
+				.map((s) => s.trim())
+				.filter((name) => name.length > 0);
+		} else if (arg === "--disallowed-tools" && i + 1 < args.length) {
+			result.disallowedTools = args[++i]
 				.split(",")
 				.map((s) => s.trim())
 				.filter((name) => name.length > 0);
@@ -276,6 +282,8 @@ ${chalk.bold("Options:")}
   --no-builtin-tools, -nbt       Disable built-in tools by default but keep extension/custom tools enabled
   --tools, -t <tools>            Comma-separated allowlist of tool names to enable
                                  Applies to built-in, extension, and custom tools
+  --disallowed-tools <tools>     Comma-separated denylist of tool names to disable
+                                 (subtracted from the allowlist or default set)
   --max-turns <n>                Hard cap on assistant turns; the agent is asked to wrap up near the
                                  cap and stopped at it (mainly used for spawned subagents)
   --enable-subagents             Enable the subagent tool (delegate tasks to isolated agent loops)

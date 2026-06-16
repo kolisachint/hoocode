@@ -556,6 +556,9 @@ export class SubagentPool extends EventEmitter {
 			if (tools && tools.length > 0) {
 				args.push("--tools", tools.join(","));
 			}
+			if (def?.disallowedTools && def.disallowedTools.length > 0) {
+				args.push("--disallowed-tools", def.disallowedTools.join(","));
+			}
 
 			// Propagate subagent enablement so the child registers the Task tool; without
 			// this the flag-based enablement would not reach a spawned child.

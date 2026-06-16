@@ -16,6 +16,10 @@
 
 - Built-in read-only `plan` subagent (research that backs plan mode), matching Claude
   Code's Plan agent.
+- `disallowedTools` agent frontmatter field and `--disallowed-tools` CLI flag — a tool
+  denylist subtracted from the allowlist/default set (Claude Code's allow+deny model).
+- `nestedSubagentConcurrency` setting (default 2) to tune how many subagents a nested
+  pool runs concurrently.
 - Configurable subagent nesting via `maxSubagentDepth` (default `1`, opt-in) or the
   `--max-subagent-depth <n>` CLI flag (overrides the setting). At the default cap
   behavior is unchanged — subagents cannot spawn subagents. Raising it
