@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 #
-# Build the hoocode Windows standalone binary locally.
-# Mirrors .github/workflows/release.yml (binaries job).
+# Build the hoocode Windows standalone binary locally (bun-only).
+# Mirrors the `binaries` job in .github/workflows/release.yml and
+# .github/workflows/merge-release.yml.
 #
 # Usage:
 #   ./scripts/build-binaries.sh [--skip-deps]
@@ -33,11 +34,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 echo "==> Installing dependencies (bun)..."
-# Use bun instead of npm to avoid an arborist regression in npm 11.x that
-# crashes with "Invalid Version" when resolving this monorepo's workspace
-# cycle. Bun's default isolated layout is then hoisted to a flat node_modules
-# tree (see scripts/hoist-bun-deps.mjs) so tsc / tsgo still resolve packages
-# the way npm install would.
+# bun is the toolchain. The hoisted (npm-compatible) linker is pinned in
+# bunfig.toml, so a plain `bun install` yields a flat node_modules that tsgo
+# resolves correctly -- no post-install hoisting step is needed.
 bun install --frozen-lockfile
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
@@ -50,11 +49,8 @@ else
     echo "==> Skipping Windows native bindings (--skip-deps)"
 fi
 
-echo "==> Hoisting bun deps to flat node_modules layout..."
-node scripts/hoist-bun-deps.mjs
-
 echo "==> Building all packages..."
-npm run build
+bun run build
 
 echo "==> Building Windows binary..."
 cd packages/coding-agent
@@ -83,7 +79,9 @@ if [ -d dist/modes/interactive/assets ]; then
 fi
 cp -r dist/core/export-html binaries/windows-x64/
 cp -r docs binaries/windows-x64/
-cp -r examples binaries/windows-x64/
+# Exclude examples' node_modules: they contain bun workspace symlinks that do
+# not resolve once copied, and the runtime only needs the example sources.
+rsync -a --exclude 'node_modules' examples/ binaries/windows-x64/examples/
 # templates/ intentionally not copied — seed content is embedded into the
 # compiled binary by scripts/embed-templates.mjs (see src/init-templates.generated.ts).
 

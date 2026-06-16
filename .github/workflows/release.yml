@@ -60,9 +60,36 @@ jobs:
           fetch-depth: 0
           ref: main
 
-      # GitHub automatically attaches the "Source code (zip)" and "Source code
-      # (tar.gz)" assets to every release/tag; no binaries are published.
       - name: Create Release
         run: gh release create v$(node -p "require('./packages/coding-agent/package.json').version") --title "v$(node -p "require('./packages/coding-agent/package.json').version")" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  binaries:
+    needs: [github-release]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build Windows standalone binary (zip)
+        run: bash scripts/build-binaries.sh
+
+      - name: Upload Windows binary to release
+        run: |
+          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          gh release upload "v$VERSION" packages/coding-agent/binaries/hoocode-windows-x64.zip --clobber
         env:
           GH_TOKEN: ${{ github.token }}

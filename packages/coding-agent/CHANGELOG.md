@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- Release workflows now build and attach a 64-bit Windows standalone binary
+  (`hoocode-windows-x64.zip`) to each GitHub release. A `binaries` job in
+  `release.yml` and `merge-release.yml` runs the bun-only
+  `scripts/build-binaries.sh` (`bun build --compile --target=bun-windows-x64`),
+  stages the runtime assets and the koffi native module next to `hoocode.exe`,
+  zips them, and uploads the archive to the release.
+
+### Changed
+
+- `scripts/build-binaries.sh` is now bun-only: dropped the `npm run build` step
+  (replaced with `bun run build`) and the obsolete `hoist-bun-deps.mjs` step
+  (the hoisted linker pinned in `bunfig.toml` already yields a flat
+  `node_modules`). Example sources are copied without their `node_modules` to
+  avoid unresolved bun workspace symlinks.
+
 ## [0.4.64] - 2026-06-16
 
 ### Fixed
