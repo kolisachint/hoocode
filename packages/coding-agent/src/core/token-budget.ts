@@ -20,19 +20,16 @@ export interface TokenBudgetState {
 
 /**
  * Default token budgets per agent type (in tokens). Raised from the previous
- * 8k–16k range, which was too low and hard-stopped subagents mid-task.
+ * 8k–16k range, which was too low and hard-stopped subagents mid-task. Keyed by
+ * the built-in agents; custom agents fall back to the default below.
  * - explore: 35 000 (read-only scanning, tracing deps)
- * - edit: 60 000 (reads, plans, writes, iterates — heaviest)
- * - test: 45 000 (writes tests, runs, debugs failures)
- * - review: 35 000 (read-only audit, security analysis)
- * - doc: 30 000 (reads code, writes docs/comments)
+ * - plan: 35 000 (read-only research to back a plan)
+ * - general-purpose: 60 000 (reads, plans, writes, runs, iterates — heaviest)
  */
 const DEFAULT_BUDGETS: Record<string, number> = {
 	explore: 35000,
-	edit: 60000,
-	test: 45000,
-	review: 35000,
-	doc: 30000,
+	plan: 35000,
+	"general-purpose": 60000,
 };
 
 /** Get the default budget for an agent type. */

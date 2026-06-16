@@ -196,15 +196,9 @@ export class SubagentPool extends EventEmitter {
 
 	/** Priority value: higher numbers run first. */
 	private priorityOf(agent_type: string): number {
-		switch (agent_type) {
-			case "explore":
-			case "review":
-				return 2;
-			case "doc":
-				return 0;
-			default:
-				return 1;
-		}
+		// Read-only investigation (explore/plan) often unblocks downstream work, so
+		// it runs ahead of other agents.
+		return agent_type === "explore" || agent_type === "plan" ? 2 : 1;
 	}
 
 	/** Queue a task. It will run when a slot is free. */
