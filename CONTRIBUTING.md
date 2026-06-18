@@ -62,6 +62,19 @@ Do not edit `CHANGELOG.md`. Changelog entries are added by maintainers.
 
 If you are adding a new provider to `packages/ai`, see `AGENTS.md` for required tests.
 
+## Releases & Versioning
+
+**Do not bump package versions by hand.** When a PR is merged to `main`, the
+`Release on PR Merge` workflow (`.github/workflows/merge-release.yml`)
+automatically bumps the workspace version (patch by default, controlled by the
+PR's release label), tags it, publishes the packages to npm, and attaches the
+standalone binaries to the GitHub release.
+
+Workspace packages are versioned in lockstep. A manual `version` edit in any
+`packages/*/package.json` stacks on top of the pipeline's bump and burns an
+extra patch number for no benefit — leave it at the current value and let the
+merge handle it.
+
 ## Philosophy
 
 pi's core is minimal. If your feature does not belong in the core, it should be an extension. PRs that bloat the core will likely be rejected.
