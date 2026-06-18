@@ -37,11 +37,12 @@ subagent of its own, so the **subagents lens shows a depth-2 tree** (◇ explore
 ◇ scan). Press **Ctrl+N** to swap the pane between the **tasks** and **agents**
 lenses; **Ctrl+C** exits.
 
-Here's what it draws (no need to run it) — the three panels, rendered straight
-from the real components:
+Here it is playing (no need to run anything — it loops inline): the options
+pane, the TodoWrite tasks lens, then the depth-2 subagents tree, captured frame
+by frame straight from the real components.
 
 <p align="center">
-  <img src="../../../assets/subagents-demo.svg" alt="HooCode subagents demo: the options pane, the TodoWrite tasks lens, and a depth-2 subagents tree (explore → scan)" width="720">
+  <img src="../../../assets/subagents-demo.svg" alt="HooCode subagents demo, animated: the options pane, the TodoWrite tasks lens, and a depth-2 subagents tree (explore → scan)" width="577">
 </p>
 
 ```bash
@@ -49,9 +50,11 @@ npm run demo:subagents
 # or: npx tsx packages/coding-agent/demo/subagents.ts
 ```
 
-> The preview above is generated from the real component output by
-> `scripts/gen-subagents-svg.ts` (`npx tsx scripts/gen-subagents-svg.ts`) — it
-> renders the actual components, so it always matches what the demo draws.
+> The animation above is generated from real component output by
+> `scripts/gen-subagents-svg.ts` (`npx tsx scripts/gen-subagents-svg.ts`): it
+> renders the actual components at each stage of the run and cross-fades the
+> frames with pure CSS, so it plays on GitHub with no JS and always matches what
+> the demo draws.
 
 ## Notes
 
