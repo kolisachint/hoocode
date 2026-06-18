@@ -3,7 +3,7 @@
  */
 
 import chalk from "chalk";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.js";
 import { migrateKeybindingsConfig } from "./core/keybindings.js";
@@ -37,7 +37,17 @@ export function migrateAuthToAuthJson(): string[] {
 				migrated[provider] = { type: "oauth", ...(cred as object) };
 				providers.push(provider);
 			}
-			renameSync(oauthPath, `${oauthPath}.migrated`);
+			const backupPath = `${oauthPath}.migrated`;
+			renameSync(oauthPath, backupPath);
+			// renameSync preserves the original file's permissions, which may be
+			// group/world-readable. The backup still holds plaintext OAuth tokens,
+			// so restrict it to the owner. Best-effort: chmod is a no-op on some
+			// filesystems/platforms (e.g. Windows).
+			try {
+				chmodSync(backupPath, 0o600);
+			} catch {
+				// Ignore — backup remains, just without tightened permissions.
+			}
 		} catch {
 			// Skip on error
 		}

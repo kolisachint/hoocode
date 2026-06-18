@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+## [0.4.68] - 2026-06-18
+
+### Fixed
+
+- `truncated-tool` example extension: run ripgrep via `spawnSync` with an argv
+  array instead of `execSync(args.join(" "))`. Joining into a single string and
+  running it through a shell broke on search paths or patterns containing
+  spaces, parentheses, or other shell metacharacters (e.g. a home directory like
+  `/home/user (admin)/project` produced `syntax error near unexpected token '('`).
+
+### Changed
+
+- Bumped workspace packages to `0.4.68` so the reported version reflects the
+  current build.
+
+### Documentation
+
+- Corrected the README config paths from `config.json` to `hoo-config.json`, the
+  filename the agent actually reads/writes (`src/init.ts`,
+  `src/extensions/core/hoo-core.ts`). A `config.json` placed in `~/.hoocode/` or
+  `.hoocode/` was silently ignored.
+
 ## [0.4.67] - 2026-06-16
 
 ### Added
