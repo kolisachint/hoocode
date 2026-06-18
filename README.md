@@ -8,7 +8,7 @@
 <p align="center">Deterministic terminal coding agent.</p>
 
 <p align="center">
-  <img src="assets/demo.svg" alt="HooCode session: plan a change, approve it, then build — with a Yes/No/Always permission gate on every edit and command" width="840">
+  <img src="assets/subagents-demo.svg" alt="HooCode: the agent asks before it acts (options pane), plans with TodoWrite, and dispatches subagents shown live in the task pane — including a depth-2 subagent tree" width="577">
 </p>
 
 ## Why HooCode?
@@ -56,6 +56,34 @@ Two extra tools are **off by default** — turn them on per session with a flag,
 |---|---|---|
 | **Task** (subagents) | `--enable-subagents` or `"enableSubagent": true` | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer. |
 | **TodoWrite** | `--enable-todowrite` or `"enableTodoWrite": true` | Maintain a live todo list for the current task, shown in the task panel. |
+
+## Demos
+
+Runnable demos built from the **real internals** — no mocked or copied components.
+The image above is the interactive `subagents` demo. Full details:
+[packages/coding-agent/demo](packages/coding-agent/demo) ·
+[packages/tui/demo](packages/tui/demo).
+
+**Agent-level** (`packages/coding-agent/demo`, run with `npm run demo:<name>`):
+
+| Demo | What it shows |
+|---|---|
+| [`subagents`](packages/coding-agent/demo/subagents.ts) | Interactive: options pane → TodoWrite task pane → **depth-2 subagent tree** (the image above) |
+| [`provider-handoff`](packages/coding-agent/demo/provider-handoff.ts) | One conversation spanning **two providers** (vs single-vendor agents) |
+| [`deterministic-gate`](packages/coding-agent/demo/deterministic-gate.ts) | Mode-scoped **Yes/No/Always permission gate**; blocks `rm -rf` |
+| [`claude-subagents`](packages/coding-agent/demo/claude-subagents.ts) | Reads Claude `.claude/agents` subagents natively, with precedence diagnostics |
+| [`claude-skills`](packages/coding-agent/demo/claude-skills.ts) | Reads Claude `SKILL.md` skills, normalizing `allowed-tools` to HooCode names |
+
+**TUI library** (`packages/tui/demo`, run with `npm run demo:<name>`):
+
+| Demo | What it shows |
+|---|---|
+| [`live-dashboard`](packages/tui/demo/live-dashboard.ts) | Differential rendering — flicker-free live updates |
+| [`command-palette`](packages/tui/demo/command-palette.ts) | Overlays + `SelectList` + focus capture/restore |
+| [`settings-menu`](packages/tui/demo/settings-menu.ts) | `SettingsList` with cycling values + fuzzy search |
+| [`markdown-viewer`](packages/tui/demo/markdown-viewer.ts) | `Markdown` rendering + live theme switching |
+
+Any demo also runs directly with `npx tsx <path>`.
 
 ## Credits
 

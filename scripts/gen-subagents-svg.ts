@@ -13,7 +13,7 @@
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { setKeybindings } from "@kolisachint/hoocode-tui";
+import { setKeybindings, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AskQuestion } from "../packages/coding-agent/src/core/extensions/types.js";
 import { KeybindingsManager } from "../packages/coding-agent/src/core/keybindings.js";
 import { taskStore } from "../packages/coding-agent/src/core/task-store.js";
@@ -33,13 +33,15 @@ const C = {
 	muted: "#808080",
 	cyan: "#00d7ff",
 };
-const PADX = 22;
-const HEAD = 46;
-const LH = 19;
-const FS = 13.5;
+const PADX = 18;
+const HEAD = 38;
+const LH = 15.5;
+const FS = 11;
 // Slightly generous advance so the right-aligned status column never clips,
 // whatever monospace font the SVG viewer resolves.
-const CW = FS * 0.635;
+// Natural monospace advance. Each glyph is placed on the cell grid via a per-character
+// x list (below), so columns stay aligned without stretching any glyph.
+const CW = FS * 0.6;
 const W = Math.round(PADX * 2 + COLS * CW);
 
 // ── xterm-256 → hex ────────────────────────────────────────────────────────────
@@ -120,26 +122,39 @@ const ask = new AskOptionsComponent([question], () => {}, () => {});
 ask.focused = true;
 const optionLines = ask.render(COLS);
 
-// Build the depth-2 scenario the demo ends on.
+// Build the depth-2 scenario the demo ends on, including per-task token/cost
+// usage so the header carries its `turn ↑… ↓… · $…` audit stamp and done rows
+// show their token + elapsed column. createdAt is backdated so elapsed reads
+// realistically instead of 0.0s.
+const use = (input: number, output: number, cost: number) => ({ input, output, cacheRead: 0, cacheWrite: 0, cost });
+const elapsed = (t: { id: number }, secs: number) => {
+	const task = taskStore.list().find((x) => x.id === t.id);
+	if (task) (task as { createdAt: number }).createdAt = Date.now() - secs * 1000;
+};
+const done = (t: { id: number }, secs: number, usage?: ReturnType<typeof use>) => {
+	elapsed(t, secs);
+	taskStore.update(t.id, usage ? { status: "done", usage } : { status: "done" });
+};
+
 taskStore.upsertAgent({ id: "main", name: "hoocode", role: "orchestrator", kind: "main", state: "running" });
 const survey = taskStore.create("Survey the codebase");
 const implement = taskStore.create("Implement provider handoff");
 const test = taskStore.create("Add cross-provider tests");
 taskStore.create("Update the docs");
-taskStore.update(survey.id, { status: "done" });
-taskStore.update(implement.id, { status: "done" });
+done(survey, 4.1);
+done(implement, 6.3);
 taskStore.update(test.id, { status: "in_progress" });
 
-taskStore.upsertAgent({ id: "explore", name: "explore", role: "subagent", kind: "subagent", state: "done" });
+taskStore.upsertAgent({ id: "explore", name: "explore", role: "subagent", kind: "subagent", state: "done", stats: { input: 12500, output: 2100, cost: 0.09 } });
 const ec = taskStore.create("explore: map the ai providers", { source: "subagent", agent: "explore", subagentMode: "explore" });
 const e1 = taskStore.create("list provider modules", { source: "subagent", agent: "explore", parentTaskId: ec.id });
 taskStore.upsertAgent({ id: "scan", name: "scan", role: "subagent", kind: "subagent", state: "running" });
 const sc = taskStore.create("scan: grep for stream() impls", { source: "subagent", agent: "scan", subagentMode: "scan", parentTaskId: ec.id });
 const s1 = taskStore.create("read openai-responses.ts", { source: "subagent", agent: "scan", parentTaskId: sc.id });
 const s2 = taskStore.create("read anthropic.ts", { source: "subagent", agent: "scan", parentTaskId: sc.id });
-taskStore.update(ec.id, { status: "done" });
-taskStore.update(e1.id, { status: "done" });
-taskStore.update(s1.id, { status: "done" });
+done(e1, 2.4, use(3100, 480, 0.02));
+done(s1, 1.2, use(2200, 300, 0.01));
+done(ec, 5.6, use(8200, 1400, 0.06));
 taskStore.update(s2.id, { status: "in_progress" });
 taskStore.upsertAgent({ id: "reviewer", name: "reviewer", role: "subagent", kind: "subagent", state: "running" });
 const rc = taskStore.create("reviewer: audit the handoff diff", { source: "subagent", agent: "reviewer", subagentMode: "reviewer" });
@@ -173,11 +188,22 @@ let y = TOP;
 const lineEls: string[] = [];
 for (const row of rows) {
 	if (row.gap) y += row.gap;
-	const tspans = row.runs
-		.map((r) => `<tspan fill="${r.fill}"${r.bold ? ' font-weight="600"' : ""}>${esc(r.text)}</tspan>`)
-		.join("");
+	// Place every character on the monospace cell grid with a per-character x list.
+	// No textLength/lengthAdjust, so glyphs render at their natural width (no
+	// stretching) while tree connectors and right-aligned columns stay aligned.
+	let col = 0;
+	let tspans = "";
+	for (const r of row.runs) {
+		if (r.text.length === 0) continue;
+		const xs: string[] = [];
+		for (const ch of r.text) {
+			xs.push((PADX + col * CW).toFixed(1));
+			col += visibleWidth(ch) || 1;
+		}
+		tspans += `<tspan x="${xs.join(" ")}" fill="${r.fill}"${r.bold ? ' font-weight="600"' : ""}>${esc(r.text)}</tspan>`;
+	}
 	lineEls.push(
-		`<text x="${PADX}" y="${y.toFixed(1)}" font-size="${FS}" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" xml:space="preserve">${tspans}</text>`,
+		`<text y="${y.toFixed(1)}" font-size="${FS}" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" xml:space="preserve">${tspans}</text>`,
 	);
 	y += LH;
 }
@@ -193,7 +219,7 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" wid
   <circle cx="24" cy="${HEAD / 2}" r="6" fill="#cc6666"/>
   <circle cx="44" cy="${HEAD / 2}" r="6" fill="#e6c547"/>
   <circle cx="64" cy="${HEAD / 2}" r="6" fill="#7fb069"/>
-  <text x="${W / 2}" y="${HEAD / 2 + 4}" text-anchor="middle" font-size="12.5" fill="${C.muted}" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">hoocode — subagents demo</text>
+  <text x="${W / 2}" y="${(HEAD / 2 + 3.5).toFixed(1)}" text-anchor="middle" font-size="${FS}" fill="${C.muted}" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">hoocode — subagents demo</text>
   ${lineEls.join("\n  ")}
 </svg>
 `;

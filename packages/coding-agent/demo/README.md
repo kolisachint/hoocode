@@ -50,8 +50,8 @@ npm run demo:subagents
 ```
 
 > The preview above is generated from the real component output by
-> `scripts/gen-subagents-svg.ts` (`npx tsx scripts/gen-subagents-svg.ts`), the same
-> way `assets/demo.svg` is generated — so it always matches what the demo renders.
+> `scripts/gen-subagents-svg.ts` (`npx tsx scripts/gen-subagents-svg.ts`) — it
+> renders the actual components, so it always matches what the demo draws.
 
 ## Notes
 
