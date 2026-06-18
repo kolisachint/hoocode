@@ -135,7 +135,7 @@ Add `.hoocode/` to your `.gitignore` to keep plans and local overrides out of ve
 
 ```
 ~/.hoocode/
-├── config.json          # Global defaults (mode, profile, auto-allow lists, LLM providers)
+├── hoo-config.json      # Global defaults (mode, profile, auto-allow lists, LLM providers)
 ├── agent/               # Session state written by the agent
 ├── modes/               # Mode system prompts (one dir per mode)
 │   ├── ask/system.md
@@ -161,7 +161,7 @@ See [Project-local resources](docs/project-local-resources.md) for the full disc
 
 Drop a `.hoocode/` directory in your project root.
 
-### `.hoocode/config.json` — per-project config
+### `.hoocode/hoo-config.json` — per-project config
 
 Overrides global defaults for this project only. Scalar fields win; `auto_allow` arrays
 are unioned.
@@ -188,8 +188,8 @@ Never commit directly to main — always open a PR.
 
 ### Merge order (lowest → highest priority)
 
-1. `~/.hoocode/config.json` — global defaults
-2. `.hoocode/config.json` — project overrides (scalar fields win; `auto_allow` arrays unioned)
+1. `~/.hoocode/hoo-config.json` — global defaults
+2. `.hoocode/hoo-config.json` — project overrides (scalar fields win; `auto_allow` arrays unioned)
 3. `before_agent_start` — mode + profile + agents.md injected into system prompt
 
 ---
@@ -206,7 +206,7 @@ Allow: $ npm test
 ```
 
 Selecting **Always** writes the tool name into `modes.<active_mode>.auto_allow` in
-`~/.hoocode/config.json`. It applies globally. Use `.hoocode/config.json` to set
+`~/.hoocode/hoo-config.json`. It applies globally. Use `.hoocode/hoo-config.json` to set
 project-scoped auto-allow lists instead.
 
 ---

@@ -25,7 +25,7 @@ import {
 	withFileMutationQueue,
 } from "@kolisachint/hoocode-agent";
 import { Text } from "@kolisachint/hoocode-tui";
-import { execSync } from "child_process";
+import { spawnSync } from "child_process";
 import { tmpdir } from "os";
 import { join } from "path";
 import { Type } from "typebox";
@@ -56,29 +56,37 @@ export default function (pi: ExtensionAPI) {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const { pattern, path: searchPath, glob } = params;
 
-			// Build the ripgrep command
-			const args = ["rg", "--line-number", "--color=never"];
+			// Build the ripgrep argv. `--` terminates option parsing so a pattern or
+			// path beginning with `-` is treated as a positional argument.
+			const args = ["--line-number", "--color=never"];
 			if (glob) args.push("--glob", glob);
-			args.push(pattern);
-			args.push(searchPath || ".");
+			args.push("--", pattern, searchPath || ".");
 
-			let output: string;
-			try {
-				output = execSync(args.join(" "), {
-					cwd: ctx.cwd,
-					encoding: "utf-8",
-					maxBuffer: 100 * 1024 * 1024, // 100MB buffer to capture full output
-				});
-			} catch (err: any) {
-				// ripgrep exits with 1 when no matches found
-				if (err.status === 1) {
-					return {
-						content: [{ type: "text", text: "No matches found" }],
-						details: { pattern, path: searchPath, glob, matchCount: 0 } as RgDetails,
-					};
-				}
-				throw new Error(`ripgrep failed: ${err.message}`);
+			// Run ripgrep via spawnSync with an argv array (no shell). Passing the
+			// arguments directly means paths/patterns containing spaces, parentheses,
+			// or other shell metacharacters are forwarded verbatim instead of being
+			// re-parsed by a shell — joining into a string and running it through the
+			// shell breaks on values like `/home/user (admin)/project`.
+			const result = spawnSync("rg", args, {
+				cwd: ctx.cwd,
+				encoding: "utf-8",
+				maxBuffer: 100 * 1024 * 1024, // 100MB buffer to capture full output
+			});
+
+			if (result.error) {
+				throw new Error(`ripgrep failed: ${result.error.message}`);
 			}
+			// ripgrep exits with 1 when no matches were found.
+			if (result.status === 1) {
+				return {
+					content: [{ type: "text", text: "No matches found" }],
+					details: { pattern, path: searchPath, glob, matchCount: 0 } as RgDetails,
+				};
+			}
+			if (result.status !== 0) {
+				throw new Error(`ripgrep failed: ${result.stderr?.trim() || `exit code ${result.status}`}`);
+			}
+			const output = result.stdout;
 
 			if (!output.trim()) {
 				return {
