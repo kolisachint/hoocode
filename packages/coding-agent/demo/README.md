@@ -37,10 +37,21 @@ subagent of its own, so the **subagents lens shows a depth-2 tree** (◇ explore
 ◇ scan). Press **Ctrl+N** to swap the pane between the **tasks** and **agents**
 lenses; **Ctrl+C** exits.
 
+Here's what it draws (no need to run it) — the three panels, rendered straight
+from the real components:
+
+<p align="center">
+  <img src="../../../assets/subagents-demo.svg" alt="HooCode subagents demo: the options pane, the TodoWrite tasks lens, and a depth-2 subagents tree (explore → scan)" width="720">
+</p>
+
 ```bash
 npm run demo:subagents
 # or: npx tsx packages/coding-agent/demo/subagents.ts
 ```
+
+> The preview above is generated from the real component output by
+> `scripts/gen-subagents-svg.ts` (`npx tsx scripts/gen-subagents-svg.ts`), the same
+> way `assets/demo.svg` is generated — so it always matches what the demo renders.
 
 ## Notes
 
