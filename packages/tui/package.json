@@ -16,6 +16,11 @@
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "node --test --import tsx test/*.test.ts",
+		"demo": "tsx demo/live-dashboard.ts",
+		"demo:dashboard": "tsx demo/live-dashboard.ts",
+		"demo:palette": "tsx demo/command-palette.ts",
+		"demo:settings": "tsx demo/settings-menu.ts",
+		"demo:markdown": "tsx demo/markdown-viewer.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"files": [
