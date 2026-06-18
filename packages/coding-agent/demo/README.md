@@ -26,6 +26,22 @@ npx tsx packages/coding-agent/demo/claude-subagents.ts
 npx tsx packages/coding-agent/demo/claude-skills.ts
 ```
 
+## Interactive UI demo
+
+`subagents.ts` is an **interactive** demo (it takes over the terminal) built from
+the real interactive-mode components — the `AskOptionsComponent` options pane and
+the `TaskPanelComponent` task ledger — both fed by the real `taskStore` singleton.
+It runs a scripted session: the agent asks a scoping question (options pane), lays
+out a TodoWrite plan, then dispatches subagents where one subagent dispatches a
+subagent of its own, so the **subagents lens shows a depth-2 tree** (◇ explore →
+◇ scan). Press **Ctrl+N** to swap the pane between the **tasks** and **agents**
+lenses; **Ctrl+C** exits.
+
+```bash
+npm run demo:subagents
+# or: npx tsx packages/coding-agent/demo/subagents.ts
+```
+
 ## Notes
 
 - **Faux provider, real everything else.** `provider-handoff` and
