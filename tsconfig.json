@@ -18,6 +18,11 @@
 			"@kolisachint/hoocode-tui/*": ["./packages/tui/src/*"]
 		}
 	},
-	"include": ["packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"include": [
+		"packages/*/src/**/*",
+		"packages/*/test/**/*",
+		"packages/*/demo/**/*",
+		"packages/coding-agent/examples/**/*"
+	],
 	"exclude": ["**/dist/**"]
 }
