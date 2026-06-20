@@ -3,7 +3,8 @@ import { describe, expect, test } from "vitest";
 import type { ModelRegistry } from "../src/core/model-registry.js";
 import {
 	COMPRESSIBLE_TOOLS,
-	DEFAULT_TOOL_RESULT_MIN_BYTES,
+	DEFAULT_MAX_BYTES,
+	DEFAULT_MIN_BYTES,
 	LocalInferenceRouter,
 	type RoutingConfig,
 	resolveRoutingMode,
@@ -113,8 +114,9 @@ describe("LocalInferenceRouter.selectModel", () => {
 describe("LocalInferenceRouter.shouldCompressToolResult", () => {
 	const executor = fakeModel("mlx", "qwen3");
 	const registry = fakeRegistry([executor]);
-	const big = DEFAULT_TOOL_RESULT_MIN_BYTES + 1;
-	const small = DEFAULT_TOOL_RESULT_MIN_BYTES - 1;
+	const inBand = DEFAULT_MIN_BYTES + 1;
+	const tooSmall = DEFAULT_MIN_BYTES - 1;
+	const tooBig = DEFAULT_MAX_BYTES + 1;
 
 	test("only compresses in executor-for-tool-results mode", () => {
 		const summ = LocalInferenceRouter.create({
@@ -122,48 +124,52 @@ describe("LocalInferenceRouter.shouldCompressToolResult", () => {
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(summ.shouldCompressToolResult("read", big)).toBe(false);
+		expect(summ.shouldCompressToolResult("bash", inBand)).toBe(false);
 
 		const tr = LocalInferenceRouter.create({
 			mode: "executor-for-tool-results",
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("read", big)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", inBand)).toBe(true);
 	});
 
-	test("only compresses read and bash", () => {
+	test("only compresses bash; read and fact-list tools pass through", () => {
 		const tr = LocalInferenceRouter.create({
 			mode: "executor-for-tool-results",
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("read", big)).toBe(true);
-		expect(tr.shouldCompressToolResult("bash", big)).toBe(true);
-		expect(tr.shouldCompressToolResult("grep", big)).toBe(false);
-		expect(tr.shouldCompressToolResult("find", big)).toBe(false);
-		expect(tr.shouldCompressToolResult("ls", big)).toBe(false);
-		expect(tr.shouldCompressToolResult("edit", big)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", inBand)).toBe(true);
+		expect(tr.shouldCompressToolResult("read", inBand)).toBe(false);
+		expect(tr.shouldCompressToolResult("grep", inBand)).toBe(false);
+		expect(tr.shouldCompressToolResult("find", inBand)).toBe(false);
+		expect(tr.shouldCompressToolResult("ls", inBand)).toBe(false);
+		expect(tr.shouldCompressToolResult("edit", inBand)).toBe(false);
 	});
 
-	test("respects the size threshold", () => {
+	test("respects the global size band (min and max)", () => {
 		const tr = LocalInferenceRouter.create({
 			mode: "executor-for-tool-results",
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("read", small)).toBe(false);
-		expect(tr.shouldCompressToolResult("read", DEFAULT_TOOL_RESULT_MIN_BYTES)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", tooSmall)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", DEFAULT_MIN_BYTES)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", DEFAULT_MAX_BYTES)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", tooBig)).toBe(false);
 	});
 
-	test("honors a custom toolResultMinBytes", () => {
+	test("honors custom minBytes/maxBytes", () => {
 		const tr = LocalInferenceRouter.create({
 			mode: "executor-for-tool-results",
-			config: { executor: { ...executorRef, toolResultMinBytes: 10 } },
+			config: { executor: { ...executorRef, minBytes: 10, maxBytes: 20 } },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("read", 10)).toBe(true);
-		expect(tr.shouldCompressToolResult("read", 9)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", 9)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", 10)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", 20)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", 21)).toBe(false);
 	});
 
 	test("never compresses when executor unavailable", () => {
@@ -172,14 +178,47 @@ describe("LocalInferenceRouter.shouldCompressToolResult", () => {
 			config: { executor: { provider: "mlx", model: "missing" } },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("read", big)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", inBand)).toBe(false);
+	});
+});
+
+describe("LocalInferenceRouter.shouldRouteSummarization", () => {
+	const executor = fakeModel("mlx", "qwen3");
+	const registry = fakeRegistry([executor]);
+	const inBand = DEFAULT_MIN_BYTES + 1;
+
+	test("routes only in executor-for-summarization mode within the band", () => {
+		const summ = LocalInferenceRouter.create({
+			mode: "executor-for-summarization",
+			config: { executor: executorRef },
+			registry,
+		});
+		expect(summ.shouldRouteSummarization(inBand)).toBe(true);
+		expect(summ.shouldRouteSummarization(DEFAULT_MIN_BYTES - 1)).toBe(false);
+		expect(summ.shouldRouteSummarization(DEFAULT_MAX_BYTES + 1)).toBe(false);
+
+		const tr = LocalInferenceRouter.create({
+			mode: "executor-for-tool-results",
+			config: { executor: executorRef },
+			registry,
+		});
+		expect(tr.shouldRouteSummarization(inBand)).toBe(false);
+	});
+
+	test("never routes when executor unavailable", () => {
+		const summ = LocalInferenceRouter.create({
+			mode: "executor-for-summarization",
+			config: { executor: { provider: "mlx", model: "missing" } },
+			registry,
+		});
+		expect(summ.shouldRouteSummarization(inBand)).toBe(false);
 	});
 });
 
 describe("tool-result prompts", () => {
-	test("read and bash have prompts; fact-list tools do not", () => {
-		expect(getToolResultPrompt("read")).toBeTypeOf("string");
+	test("only bash has a prompt; read and fact-list tools do not", () => {
 		expect(getToolResultPrompt("bash")).toBeTypeOf("string");
+		expect(getToolResultPrompt("read")).toBeUndefined();
 		expect(getToolResultPrompt("grep")).toBeUndefined();
 		expect(getToolResultPrompt("find")).toBeUndefined();
 		expect(getToolResultPrompt("ls")).toBeUndefined();
@@ -191,9 +230,10 @@ describe("tool-result prompts", () => {
 		}
 	});
 
-	test("buildToolResultPrompt embeds the output and returns undefined for unknown tools", () => {
-		const prompt = buildToolResultPrompt("read", "FILE CONTENT HERE");
-		expect(prompt).toContain("FILE CONTENT HERE");
+	test("buildToolResultPrompt embeds the output and returns undefined for non-compressible tools", () => {
+		const prompt = buildToolResultPrompt("bash", "COMMAND OUTPUT HERE");
+		expect(prompt).toContain("COMMAND OUTPUT HERE");
+		expect(buildToolResultPrompt("read", "x")).toBeUndefined();
 		expect(buildToolResultPrompt("grep", "x")).toBeUndefined();
 	});
 });

@@ -2,13 +2,14 @@
  * Validated per-tool extractive compression prompts.
  *
  * These prompts were validated against Qwen3-4B (see
- * docs/local-executor-routing.md). Only `read` and `bash` outputs compress
- * safely (95%/94% size reduction at 100% critical-fact retention) because their
- * verbose output is mostly low-value noise around a few load-bearing facts.
- * Fact-list outputs (grep/find/ls) are intentionally excluded: every line is a
- * distinct fact, so compression drops matches.
+ * docs/local-executor-routing.md). Only `bash` output compresses safely: its
+ * verbose output is mostly low-value noise (progress/passing lines) around a
+ * few load-bearing facts (errors, counts, exit codes). `read` was removed after
+ * measurement showed ~0% reduction on real source code (every line is a
+ * keep-line). Fact-list outputs (grep/find/ls) are intentionally excluded:
+ * every line is a distinct fact, so compression drops matches.
  *
- * The prompts are extractive (keep identifiers, drop only redundant filler),
+ * The prompt is extractive (keep identifiers, drop only redundant filler),
  * not abstractive (rewrite in prose), which is what made retention reliable.
  */
 
@@ -16,19 +17,12 @@ export const TOOL_RESULT_SYSTEM_PROMPT =
 	"You compress tool output for another AI to consume. Be extractive: keep exact identifiers, " +
 	"never paraphrase facts, and never invent anything. Output only the compressed result.";
 
-const READ_PROMPT =
-	"Compress this file read. Output the path EXACTLY as given, then ONLY declaration lines as " +
-	"`LINE: code` for: imports, class/function/const declarations WITH their values, throw/status-check " +
-	"lines, and TODO comments. Drop plain function-body statements and blank/comment-only lines. Keep " +
-	"every line number, identifier, string literal, and numeric value exactly. No prose.";
-
 const BASH_PROMPT =
 	"Compress this command output. Keep ONLY: the command, every error/warning with its file:line:col " +
 	"and code, and any final counts/timings/exit code. Drop progress bars, info lines, and passing/OK " +
 	"lines. Keep all numbers and paths exactly. No prose.";
 
 const TOOL_RESULT_PROMPTS: Record<string, string> = {
-	read: READ_PROMPT,
 	bash: BASH_PROMPT,
 };
 

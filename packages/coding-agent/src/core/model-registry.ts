@@ -206,7 +206,8 @@ const ExecutorServerConfigSchema = Type.Object({
 const ExecutorConfigSchema = Type.Object({
 	provider: Type.String({ minLength: 1 }),
 	model: Type.String({ minLength: 1 }),
-	toolResultMinBytes: Type.Optional(Type.Number()),
+	minBytes: Type.Optional(Type.Number()),
+	maxBytes: Type.Optional(Type.Number()),
 	server: Type.Optional(ExecutorServerConfigSchema),
 });
 

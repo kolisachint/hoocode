@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Local-inference routing (`--enable-local-inference`) narrowed after post-ship
+  measurement on an 8 GB M1:
+  - Tool-result compression now targets `bash` only. `read` was removed: on real
+    source code it compressed ~0% (every line is a keep-line under the extractive
+    prompt) while adding 60-90s of latency. `bash` still compresses noisy command
+    output ~85% at full fact retention.
+  - Added a global input size band for all local inference (compaction and bash
+    compression). Only inputs within the band are routed to the executor
+    (`minBytes`/`maxBytes` in the executor config, default 2048-8192). Oversized
+    inputs fall back to the primary model; this prevents the GPU OOM that large
+    compaction inputs caused on small machines. Replaces the old
+    `toolResultMinBytes` setting.
+
 ## [0.4.71] - 2026-06-20
 
 ## [0.4.70] - 2026-06-20
