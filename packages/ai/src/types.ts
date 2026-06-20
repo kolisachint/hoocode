@@ -409,6 +409,13 @@ export interface OpenAICompletionsCompat {
 	sendSessionAffinityHeaders?: boolean;
 	/** Whether the provider supports long prompt cache retention (`prompt_cache_retention: "24h"` or Anthropic-style `cache_control.ttl: "1h"`, depending on format). Default: true. */
 	supportsLongCacheRetention?: boolean;
+	/**
+	 * Text appended to the last user message before sending. Used to pass
+	 * inline model directives that some local/OpenAI-compatible runtimes only
+	 * honor in the prompt text (for example Qwen3 `/no_think` on an MLX server,
+	 * which may not respect `chat_template_kwargs.enable_thinking`). Default: none.
+	 */
+	promptSuffix?: string;
 }
 
 /** Compatibility settings for OpenAI Responses APIs. */

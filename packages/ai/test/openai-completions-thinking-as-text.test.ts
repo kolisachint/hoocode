@@ -39,8 +39,10 @@ const compat = {
 	cacheControlFormat: undefined,
 	sendSessionAffinityHeaders: false,
 	supportsLongCacheRetention: true,
-} satisfies Required<Omit<OpenAICompletionsCompat, "cacheControlFormat">> & {
+	promptSuffix: undefined,
+} satisfies Required<Omit<OpenAICompletionsCompat, "cacheControlFormat" | "promptSuffix">> & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
+	promptSuffix?: OpenAICompletionsCompat["promptSuffix"];
 };
 
 function buildModel(baseUrl = "http://127.0.0.1:1"): Model<"openai-completions"> {
