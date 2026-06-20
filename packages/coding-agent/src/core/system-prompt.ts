@@ -143,6 +143,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Always include these
 	addGuideline("Be concise in your responses");
+	addGuideline("No preamble or postamble; do not restate the task or summarize what you just did");
+	addGuideline('Do not add closers like "Let me know" or "Hope this helps"');
+	addGuideline(
+		"Do not narrate routine tool calls or results — the permission gate already shows them; speak when you have the answer or need a decision",
+	);
+	addGuideline(
+		"Match the surrounding code's conventions for comments, docstrings, and types — do not add or strip them by default",
+	);
 	addGuideline("Show file paths clearly when working with files");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");

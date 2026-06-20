@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Default system prompt now includes output-constraint guidelines that trim
+  primary-model tokens without fighting hoocode's design: no preamble/postamble
+  or task restatement, no filler closers, no narration of routine tool
+  calls/results (the permission gate already surfaces them), and matching the
+  surrounding code's conventions for comments/docstrings/types rather than
+  adding or stripping them by default.
+
 ## [0.4.73] - 2026-06-20
 
 ### Fixed

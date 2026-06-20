@@ -26,6 +26,22 @@ describe("buildSystemPrompt", () => {
 		});
 	});
 
+	describe("output constraints", () => {
+		test("includes the default output-constraint guidelines", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: [],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("do not restate the task");
+			expect(prompt).toContain('"Let me know"');
+			expect(prompt).toContain("Do not narrate routine tool calls or results");
+			expect(prompt).toContain("Match the surrounding code's conventions");
+		});
+	});
+
 	describe("default tools", () => {
 		test("includes all default tools when snippets are provided", () => {
 			const prompt = buildSystemPrompt({
