@@ -48,6 +48,7 @@ import {
 	estimateContextTokens,
 	generateBranchSummary,
 	prepareCompaction,
+	serializeConversation,
 	shouldCompact,
 } from "./compaction/index.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
@@ -79,7 +80,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
-import type { BashExecutionMessage, CustomMessage } from "./messages.js";
+import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate, tryExpandPromptTemplate } from "./prompt-templates.js";
 import { clearProviderExhaustion, isProviderQuotaError, markProviderExhausted } from "./provider-health.js";
@@ -503,7 +504,7 @@ export class AgentSession {
 				}
 			}
 
-			// Optionally compress large read/bash output before it enters context.
+			// Optionally compress large bash output before it enters context.
 			// Only when local-inference tool-result routing is active; on any
 			// failure the original (uncompressed) content is kept (fallback to raw).
 			if (!resolvedIsError) {
@@ -522,7 +523,8 @@ export class AgentSession {
 	/**
 	 * Compress a tool result via the local executor when routing is active and the
 	 * tool/size qualify. Returns the compressed content blocks, or undefined to
-	 * keep the original (no routing, not compressible, too small, or any failure).
+	 * keep the original (no routing, not compressible, outside the size band, or
+	 * any failure).
 	 */
 	private async _maybeCompressToolResult(
 		toolName: string,
@@ -1911,7 +1913,14 @@ export class AgentSession {
 	): Promise<CompactionResult> {
 		const router = this.localRouter;
 		const executor = router?.selectModel("summarization", primaryModel);
-		if (router && executor && executor !== primaryModel) {
+		// Size band guards local inference globally: only route conversations within
+		// the configured byte band to the executor. Oversized conversations are slow
+		// locally and can OOM small machines, so they fall back to the primary model.
+		const conversationBytes = Buffer.byteLength(
+			serializeConversation(convertToLlm(preparation.messagesToSummarize)),
+			"utf8",
+		);
+		if (router && executor && executor !== primaryModel && router.withinSizeBand(conversationBytes)) {
 			try {
 				if (!(await this._ensureExecutorServer(signal))) {
 					throw new Error("executor server unavailable");

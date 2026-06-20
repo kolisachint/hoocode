@@ -2,7 +2,7 @@
  * Local-inference routing.
  *
  * Optional, opt-in routing of certain non-critical work (conversation
- * compaction, and large read/bash tool-result compression) to a local
+ * compaction, and large bash tool-result compression) to a local
  * "executor" model running on an OpenAI-compatible endpoint (for example an
  * MLX server), while the primary model handles all planning, reasoning, edits,
  * and tool-call synthesis.
@@ -35,11 +35,24 @@ export const ROUTING_MODES: readonly RoutingMode[] = [
 	"shadow-executor",
 ] as const;
 
-/** Tool names whose output is worth compressing (validated). Others pass through. */
-export const COMPRESSIBLE_TOOLS = new Set(["read", "bash"]);
+/**
+ * Tool names whose output is worth compressing (validated). Others pass
+ * through. Only `bash` qualifies: its verbose output is mostly low-value noise
+ * around a few load-bearing facts. `read` was measured to compress ~0% on real
+ * source code (every line is a keep-line) and was removed. Fact-list tools
+ * (grep/find/ls) were never compressible (every line is a distinct fact).
+ */
+export const COMPRESSIBLE_TOOLS = new Set(["bash"]);
 
-/** Default minimum tool-result size (bytes) before compression is attempted. */
-export const DEFAULT_TOOL_RESULT_MIN_BYTES = 2048;
+/**
+ * Global size band (bytes) for local-inference routing. Applies to BOTH
+ * tool-result compression and compaction summarization. Inputs below the
+ * minimum are not worth offloading; inputs above the maximum are slow and risk
+ * GPU OOM on small machines, so they fall back to the primary model. Tunable
+ * per-machine via `minBytes`/`maxBytes` in the executor config block.
+ */
+export const DEFAULT_MIN_BYTES = 2048;
+export const DEFAULT_MAX_BYTES = 8192;
 
 /** Optional local server the harness manages for the executor. */
 export interface ExecutorServerConfig {
@@ -59,8 +72,10 @@ export interface ExecutorServerConfig {
 export interface ExecutorConfig {
 	provider: string;
 	model: string;
-	/** Minimum tool-result size (bytes) before compression is attempted. */
-	toolResultMinBytes?: number;
+	/** Minimum input size (bytes) before local inference is attempted. */
+	minBytes?: number;
+	/** Maximum input size (bytes); larger inputs fall back to the primary model. */
+	maxBytes?: number;
 	/** When set, the harness spawns/health-checks/stops this local server. */
 	server?: ExecutorServerConfig;
 }
@@ -107,7 +122,8 @@ export class LocalInferenceRouter {
 	private readonly mode: RoutingMode;
 	private readonly executorConfig: ExecutorConfig | undefined;
 	private readonly executor: Model<Api> | undefined;
-	private readonly toolResultMinBytes: number;
+	private readonly minBytes: number;
+	private readonly maxBytes: number;
 
 	private constructor(
 		mode: RoutingMode,
@@ -117,7 +133,8 @@ export class LocalInferenceRouter {
 		this.mode = mode;
 		this.executorConfig = executorConfig;
 		this.executor = executor;
-		this.toolResultMinBytes = executorConfig?.toolResultMinBytes ?? DEFAULT_TOOL_RESULT_MIN_BYTES;
+		this.minBytes = executorConfig?.minBytes ?? DEFAULT_MIN_BYTES;
+		this.maxBytes = executorConfig?.maxBytes ?? DEFAULT_MAX_BYTES;
 	}
 
 	static create(opts: {
@@ -165,12 +182,34 @@ export class LocalInferenceRouter {
 		}
 	}
 
+	/** True when an input size falls within the configured local-inference band. */
+	withinSizeBand(bytes: number): boolean {
+		return bytes >= this.minBytes && bytes <= this.maxBytes;
+	}
+
+	/** The configured size band, for logging/diagnostics. */
+	getSizeBand(): { minBytes: number; maxBytes: number } {
+		return { minBytes: this.minBytes, maxBytes: this.maxBytes };
+	}
+
 	/** Whether a given tool's result should be compressed via the executor. */
 	shouldCompressToolResult(toolName: string, contentBytes: number): boolean {
 		if (this.mode !== "executor-for-tool-results") return false;
 		if (!this.isExecutorAvailable()) return false;
 		if (!COMPRESSIBLE_TOOLS.has(toolName)) return false;
-		return contentBytes >= this.toolResultMinBytes;
+		return this.withinSizeBand(contentBytes);
+	}
+
+	/**
+	 * Whether to route summarization to the executor for a conversation of the
+	 * given serialized size. Requires summarization routing active, the executor
+	 * available, and the size within the band (oversized conversations fall back
+	 * to the primary to avoid slow local runs and GPU OOM).
+	 */
+	shouldRouteSummarization(bytes: number): boolean {
+		if (this.mode !== "executor-for-summarization") return false;
+		if (!this.isExecutorAvailable()) return false;
+		return this.withinSizeBand(bytes);
 	}
 
 	getExecutorModel(): Model<Api> | undefined {

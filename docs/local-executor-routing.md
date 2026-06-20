@@ -1,8 +1,33 @@
 # Local Executor Routing — Findings and Design
 
-Status: investigation complete, design proposed, not yet implemented.
+Status: shipped in v0.4.71, then narrowed after post-ship measurement (see
+"Post-ship revision" below).
 Goal: reduce Opus token spend by offloading suitable work to a local MLX model
 on Apple Silicon, without degrading output quality.
+
+## Post-ship revision (measured on 8 GB M1)
+
+A controlled re-measurement against the real local executor at realistic input
+sizes corrected two of the original investigation's claims:
+
+- **`read` compression was removed.** The original "95% smaller" figure was
+  measured on synthetic noise-heavy input. On real source code, read output is
+  almost entirely declaration/keep-lines, so the extractive prompt reproduces
+  the file nearly verbatim: measured **0.3-1.2% reduction** (decl-heavy and
+  body-heavy real files), at 60-90s latency. Not worth it. `COMPRESSIBLE_TOOLS`
+  is now `{ bash }` only.
+- **`bash` compression kept.** On noisy command output (test runs, build logs)
+  it measured **85% reduction at 5/5 fact retention**. On structured output
+  (e.g. `git log --stat`, which is fact-data like grep) it is weaker, but the
+  size guard plus extractive prompt keep it safe.
+- **Global size band.** Local inference (both compaction and bash compression)
+  now only runs for inputs within a byte band (default **2048-8192**, tunable
+  via `minBytes`/`maxBytes` in the executor config). Inputs above the max are
+  slow locally and OOM-crashed the 8 GB machine during compaction, so oversized
+  inputs fall back to the primary model.
+
+The rest of this document is the original investigation, preserved for context;
+where it says read compresses ~95%, read the revision above instead.
 
 ## TL;DR
 

@@ -320,9 +320,10 @@ ${chalk.bold("Options:")}
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
-  --enable-local-inference       Route compaction and large read/bash tool-result compression to a
+  --enable-local-inference       Route compaction and large bash tool-result compression to a
                                  local executor model (see routing config in models.json). Off by
-                                 default; falls back to the primary model on any executor failure.
+                                 default; only inputs within the configured size band are routed,
+                                 and it falls back to the primary model on any executor failure.
                                  Can also be enabled via HOOCODE_ROUTING_MODE.
   --offline                      Disable startup network operations (same as HOOCODE_OFFLINE=1)
   --help, -h                     Show this help
