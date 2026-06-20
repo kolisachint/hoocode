@@ -1916,30 +1916,34 @@ export class AgentSession {
 		// Size band guards local inference globally: only route conversations within
 		// the configured byte band to the executor. Oversized conversations are slow
 		// locally and can OOM small machines, so they fall back to the primary model.
-		const conversationBytes = Buffer.byteLength(
-			serializeConversation(convertToLlm(preparation.messagesToSummarize)),
-			"utf8",
-		);
-		if (router && executor && executor !== primaryModel && router.withinSizeBand(conversationBytes)) {
-			try {
-				if (!(await this._ensureExecutorServer(signal))) {
-					throw new Error("executor server unavailable");
+		// Only serialize to measure size when routing is actually engaged (avoids
+		// needless work on the common primary-only path).
+		if (router && executor && executor !== primaryModel) {
+			const conversationBytes = Buffer.byteLength(
+				serializeConversation(convertToLlm(preparation.messagesToSummarize)),
+				"utf8",
+			);
+			if (router.withinSizeBand(conversationBytes)) {
+				try {
+					if (!(await this._ensureExecutorServer(signal))) {
+						throw new Error("executor server unavailable");
+					}
+					const { apiKey: exKey, headers: exHeaders } = await this._getRequiredRequestAuth(executor);
+					return await compact(
+						preparation,
+						executor,
+						exKey,
+						exHeaders,
+						customInstructions,
+						signal,
+						// Executor runs without thinking (validated config); summary quality
+						// relies on /no_think via the model's promptSuffix compat setting.
+						"off",
+					);
+				} catch (error) {
+					if (signal.aborted) throw error;
+					logLocalInferenceFallback("summarization", error);
 				}
-				const { apiKey: exKey, headers: exHeaders } = await this._getRequiredRequestAuth(executor);
-				return await compact(
-					preparation,
-					executor,
-					exKey,
-					exHeaders,
-					customInstructions,
-					signal,
-					// Executor runs without thinking (validated config); summary quality
-					// relies on /no_think via the model's promptSuffix compat setting.
-					"off",
-				);
-			} catch (error) {
-				if (signal.aborted) throw error;
-				logLocalInferenceFallback("summarization", error);
 			}
 		}
 		return compact(preparation, primaryModel, apiKey, headers, customInstructions, signal, this.thinkingLevel);

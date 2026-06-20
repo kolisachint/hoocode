@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Local-inference compaction routing no longer serializes the conversation on
+  the common primary-only path. `_compactWithRouting` computed the conversation
+  byte size unconditionally, which both did needless work when routing is off
+  and broke compaction in environments that mock `compaction/index.js` without
+  `serializeConversation`. The size is now measured only when an executor is
+  actually selected for summarization.
+
 ## [0.4.72] - 2026-06-20
 
 ### Changed
