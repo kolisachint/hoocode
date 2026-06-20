@@ -19,7 +19,9 @@ const emptyUsage: Usage = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-const compat: Required<OpenAICompletionsCompat> = {
+const compat: Required<Omit<OpenAICompletionsCompat, "promptSuffix">> & {
+	promptSuffix?: OpenAICompletionsCompat["promptSuffix"];
+} = {
 	supportsStore: true,
 	supportsDeveloperRole: true,
 	supportsReasoningEffort: true,
@@ -37,6 +39,7 @@ const compat: Required<OpenAICompletionsCompat> = {
 	cacheControlFormat: "anthropic",
 	sendSessionAffinityHeaders: false,
 	supportsLongCacheRetention: true,
+	promptSuffix: undefined,
 };
 
 function buildToolResult(toolCallId: string, timestamp: number): ToolResultMessage {

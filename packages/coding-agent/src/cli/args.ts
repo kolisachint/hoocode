@@ -59,6 +59,8 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
+	/** Master gate for local-inference routing (compaction + tool-result compression via a local executor model). Off by default. */
+	enableLocalInference?: boolean;
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -212,6 +214,8 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--verbose") {
 			result.verbose = true;
+		} else if (arg === "--enable-local-inference") {
+			result.enableLocalInference = true;
 		} else if (arg === "--offline") {
 			result.offline = true;
 		} else if (arg.startsWith("@")) {
@@ -316,6 +320,10 @@ ${chalk.bold("Options:")}
   --export <file>                Export session file to HTML and exit
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
+  --enable-local-inference       Route compaction and large read/bash tool-result compression to a
+                                 local executor model (see routing config in models.json). Off by
+                                 default; falls back to the primary model on any executor failure.
+                                 Can also be enabled via HOOCODE_ROUTING_MODE.
   --offline                      Disable startup network operations (same as HOOCODE_OFFLINE=1)
   --help, -h                     Show this help
   --version, -v                  Show version number
@@ -410,6 +418,9 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
   HOOCODE_PACKAGE_DIR              - Override package directory (for Nix/Guix store paths). Legacy: PI_PACKAGE_DIR
   HOOCODE_OFFLINE                  - Disable startup network operations when set to 1/true/yes. Legacy: PI_OFFLINE
+  HOOCODE_ROUTING_MODE             - Local-inference routing mode: primary-only (default),
+                                     executor-for-summarization, executor-for-tool-results, shadow-executor.
+                                     Requires --enable-local-inference or this var to activate.
   HOOCODE_TELEMETRY                - Override install telemetry when set to 1/true/yes or 0/false/no. Legacy: PI_TELEMETRY
   HOOCODE_SHARE_VIEWER_URL         - Base URL for /share command (default: https://pi.dev/session/). Legacy: PI_SHARE_VIEWER_URL
 

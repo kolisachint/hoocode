@@ -85,8 +85,12 @@ interface OpenAICompatCacheControl {
 	ttl?: string;
 }
 
-type ResolvedOpenAICompletionsCompat = Omit<Required<OpenAICompletionsCompat>, "cacheControlFormat"> & {
+type ResolvedOpenAICompletionsCompat = Omit<
+	Required<OpenAICompletionsCompat>,
+	"cacheControlFormat" | "promptSuffix"
+> & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
+	promptSuffix?: OpenAICompletionsCompat["promptSuffix"];
 };
 
 type ChatCompletionInstructionMessageParam = ChatCompletionDeveloperMessageParam | ChatCompletionSystemMessageParam;
@@ -489,6 +493,9 @@ function buildParams(
 	cacheRetention: CacheRetention = resolveCacheRetention(options?.cacheRetention),
 ) {
 	const messages = convertMessages(model, context, compat);
+	if (compat.promptSuffix) {
+		appendPromptSuffix(messages, compat.promptSuffix);
+	}
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
@@ -717,6 +724,28 @@ function addCacheControlToTextContent(
 	}
 
 	return false;
+}
+
+/**
+ * Append a directive suffix to the last user message's text. Used for inline
+ * model controls some runtimes only honor in the prompt (e.g. Qwen3 `/no_think`).
+ */
+function appendPromptSuffix(messages: ChatCompletionMessageParam[], suffix: string): void {
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role !== "user") continue;
+		if (typeof msg.content === "string") {
+			msg.content = `${msg.content} ${suffix}`;
+		} else if (Array.isArray(msg.content)) {
+			const lastText = [...msg.content].reverse().find((p): p is ChatCompletionContentPartText => p.type === "text");
+			if (lastText) {
+				lastText.text = `${lastText.text} ${suffix}`;
+			} else {
+				msg.content.push({ type: "text", text: suffix });
+			}
+		}
+		return;
+	}
 }
 
 export function convertMessages(
@@ -1104,6 +1133,7 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		cacheControlFormat,
 		sendSessionAffinityHeaders: false,
 		supportsLongCacheRetention: !(isTogether || isCloudflareWorkersAI || isCloudflareAiGateway || isOpencodeGo),
+		promptSuffix: undefined,
 	};
 }
 
@@ -1136,5 +1166,6 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 		cacheControlFormat: model.compat.cacheControlFormat ?? detected.cacheControlFormat,
 		sendSessionAffinityHeaders: model.compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
 		supportsLongCacheRetention: model.compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
+		promptSuffix: model.compat.promptSuffix ?? detected.promptSuffix,
 	};
 }

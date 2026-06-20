@@ -27,6 +27,7 @@ import type { AssistantMessage, ImageContent, Message, Model, TextContent } from
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
+	completeSimple,
 	getSupportedThinkingLevels,
 	isContextOverflow,
 	modelsAreEqual,
@@ -83,6 +84,10 @@ import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate, tryExpandPromptTemplate } from "./prompt-templates.js";
 import { clearProviderExhaustion, isProviderQuotaError, markProviderExhausted } from "./provider-health.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
+import { LocalInferenceRouter, resolveRoutingMode } from "./routing/local-inference.js";
+import { logLocalInferenceFallback, logRoutingMetrics } from "./routing/metrics.js";
+import { MlxServerManager } from "./routing/mlx-server.js";
+import { buildToolResultPrompt, stripThinkTags, TOOL_RESULT_SYSTEM_PROMPT } from "./routing/tool-result-prompts.js";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
@@ -180,6 +185,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Master gate for local-inference routing (compaction + tool-result compression). Off by default. */
+	enableLocalInference?: boolean;
 }
 
 export interface ExtensionBindings {
@@ -307,6 +314,13 @@ export class AgentSession {
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
 
+	// Local-inference routing (opt-in via enableLocalInference). Lazily built.
+	private _enableLocalInference: boolean;
+	private _localRouter: LocalInferenceRouter | undefined;
+	private _localRouterBuilt = false;
+	private _mlxServer: MlxServerManager | undefined;
+	private _mlxServerBuilt = false;
+
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
 	private _toolDefinitions: Map<string, ToolDefinitionEntry> = new Map();
@@ -327,6 +341,7 @@ export class AgentSession {
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._modelRegistry = config.modelRegistry;
+		this._enableLocalInference = config.enableLocalInference ?? false;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -351,6 +366,57 @@ export class AgentSession {
 	/** Model registry for API key resolution and model discovery */
 	get modelRegistry(): ModelRegistry {
 		return this._modelRegistry;
+	}
+
+	/**
+	 * Local-inference router, built lazily from the flag + env + models.json
+	 * routing config. Returns undefined when routing is not active.
+	 */
+	get localRouter(): LocalInferenceRouter | undefined {
+		if (!this._localRouterBuilt) {
+			this._localRouterBuilt = true;
+			const mode = resolveRoutingMode({
+				enableFlag: this._enableLocalInference,
+				envMode: process.env.HOOCODE_ROUTING_MODE,
+				configMode: this._modelRegistry.getRoutingConfig()?.mode,
+			});
+			this._localRouter =
+				mode === "primary-only"
+					? undefined
+					: LocalInferenceRouter.create({
+							mode,
+							config: this._modelRegistry.getRoutingConfig(),
+							registry: this._modelRegistry,
+						});
+		}
+		return this._localRouter;
+	}
+
+	/**
+	 * Ensure the harness-managed executor server (if configured) is healthy before
+	 * the executor is used. Returns false when routing is inactive or the server
+	 * could not be started (caller degrades to primary/raw). Reuses an externally
+	 * started server when one is already healthy.
+	 */
+	private async _ensureExecutorServer(signal?: AbortSignal): Promise<boolean> {
+		const router = this.localRouter;
+		if (!router?.isExecutorAvailable()) return false;
+		const serverConfig = router.getExecutorConfig()?.server;
+		if (!serverConfig) return true; // user-managed server; assume available
+
+		if (!this._mlxServerBuilt) {
+			this._mlxServerBuilt = true;
+			const executor = router.getExecutorModel();
+			if (executor) {
+				this._mlxServer = new MlxServerManager({
+					config: serverConfig,
+					modelId: executor.id,
+					baseUrl: executor.baseUrl,
+				});
+			}
+		}
+		if (!this._mlxServer) return false;
+		return this._mlxServer.ensureStarted(signal);
 	}
 
 	private async _getRequiredRequestAuth(model: Model<any>): Promise<{
@@ -413,30 +479,121 @@ export class AgentSession {
 
 		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
 			const runner = this._extensionRunner;
-			if (!runner.hasHandlers("tool_result")) {
-				return undefined;
+			let content = result.content;
+			let details = result.details;
+			let resolvedIsError = isError;
+			let changed = false;
+
+			// Extensions see the real (uncompressed) tool result first.
+			if (runner.hasHandlers("tool_result")) {
+				const hookResult = await runner.emitToolResult({
+					type: "tool_result",
+					toolName: toolCall.name,
+					toolCallId: toolCall.id,
+					input: args as Record<string, unknown>,
+					content: result.content,
+					details: result.details,
+					isError,
+				});
+				if (hookResult) {
+					content = hookResult.content ?? content;
+					details = hookResult.details ?? details;
+					resolvedIsError = hookResult.isError ?? isError;
+					changed = true;
+				}
 			}
 
-			const hookResult = await runner.emitToolResult({
-				type: "tool_result",
-				toolName: toolCall.name,
-				toolCallId: toolCall.id,
-				input: args as Record<string, unknown>,
-				content: result.content,
-				details: result.details,
-				isError,
+			// Optionally compress large read/bash output before it enters context.
+			// Only when local-inference tool-result routing is active; on any
+			// failure the original (uncompressed) content is kept (fallback to raw).
+			if (!resolvedIsError) {
+				const compressed = await this._maybeCompressToolResult(toolCall.name, content);
+				if (compressed) {
+					content = compressed;
+					changed = true;
+				}
+			}
+
+			if (!changed) return undefined;
+			return { content, details, isError: resolvedIsError };
+		};
+	}
+
+	/**
+	 * Compress a tool result via the local executor when routing is active and the
+	 * tool/size qualify. Returns the compressed content blocks, or undefined to
+	 * keep the original (no routing, not compressible, too small, or any failure).
+	 */
+	private async _maybeCompressToolResult(
+		toolName: string,
+		content: (TextContent | ImageContent)[],
+	): Promise<(TextContent | ImageContent)[] | undefined> {
+		const router = this.localRouter;
+		if (!router) return undefined;
+
+		const text = extractTextContent(content);
+		if (text === undefined) return undefined;
+		const bytes = Buffer.byteLength(text, "utf8");
+		if (!router.shouldCompressToolResult(toolName, bytes)) return undefined;
+
+		const executor = router.getExecutorModel();
+		const prompt = buildToolResultPrompt(toolName, text);
+		if (!executor || !prompt) return undefined;
+
+		const startedAt = Date.now();
+		try {
+			if (!(await this._ensureExecutorServer())) {
+				throw new Error("executor server unavailable");
+			}
+			const { apiKey, headers } = await this._getRequiredRequestAuth(executor);
+			const response = await completeSimple(
+				executor,
+				{
+					systemPrompt: TOOL_RESULT_SYSTEM_PROMPT,
+					messages: [
+						{
+							role: "user" as const,
+							content: [{ type: "text" as const, text: prompt }],
+							timestamp: Date.now(),
+						},
+					],
+				},
+				{ apiKey, headers },
+			);
+			if (response.stopReason === "error") {
+				throw new Error(response.errorMessage || "executor error");
+			}
+			const rawSummary = response.content
+				.filter((c): c is { type: "text"; text: string } => c.type === "text")
+				.map((c) => c.text)
+				.join("\n");
+			const summary = stripThinkTags(rawSummary);
+			if (summary === "") throw new Error("empty compression");
+
+			const compressedBytes = Buffer.byteLength(summary, "utf8");
+			// Guard: if the model failed to compress (output not smaller), keep raw.
+			if (compressedBytes >= bytes) return undefined;
+
+			logRoutingMetrics({
+				turnKind: "tool-result",
+				provider: executor.provider,
+				model: executor.id,
+				latencyMs: Date.now() - startedAt,
+				bytesBefore: bytes,
+				bytesAfter: compressedBytes,
+				fallback: false,
 			});
 
-			if (!hookResult) {
-				return undefined;
-			}
-
-			return {
-				content: hookResult.content,
-				details: hookResult.details,
-				isError: hookResult.isError ?? isError,
-			};
-		};
+			return [
+				{
+					type: "text" as const,
+					text: `${summary}\n\n[compressed from ${bytes} to ${compressedBytes} bytes by local executor]`,
+				},
+			];
+		} catch (error) {
+			logLocalInferenceFallback("tool-result", error);
+			return undefined;
+		}
 	}
 
 	// =========================================================================
@@ -777,6 +934,7 @@ export class AgentSession {
 		);
 		this._disconnectFromAgent();
 		this._eventListeners = [];
+		this._mlxServer?.stop();
 		cleanupSessionResources(this.sessionId);
 	}
 
@@ -1702,7 +1860,7 @@ export class AgentSession {
 
 		const generated =
 			extensionCompaction ??
-			(await compact(preparation, model, apiKey, headers, customInstructions, signal, this.thinkingLevel));
+			(await this._compactWithRouting(preparation, model, apiKey, headers, customInstructions, signal));
 
 		if (signal.aborted) {
 			return { status: "cancelled" };
@@ -1736,6 +1894,46 @@ export class AgentSession {
 			status: "ok",
 			result: { summary, firstKeptEntryId, tokensBefore, tokensAfter: tokensAfter ?? tokensBefore, details },
 		};
+	}
+
+	/**
+	 * Run compaction, routing the summarization to the local executor model when
+	 * local-inference routing is active for summarization. Any executor
+	 * failure falls back to the primary model so compaction never hard-fails.
+	 */
+	private async _compactWithRouting(
+		preparation: CompactionPreparation,
+		primaryModel: Model<any>,
+		apiKey: string,
+		headers: Record<string, string> | undefined,
+		customInstructions: string | undefined,
+		signal: AbortSignal,
+	): Promise<CompactionResult> {
+		const router = this.localRouter;
+		const executor = router?.selectModel("summarization", primaryModel);
+		if (router && executor && executor !== primaryModel) {
+			try {
+				if (!(await this._ensureExecutorServer(signal))) {
+					throw new Error("executor server unavailable");
+				}
+				const { apiKey: exKey, headers: exHeaders } = await this._getRequiredRequestAuth(executor);
+				return await compact(
+					preparation,
+					executor,
+					exKey,
+					exHeaders,
+					customInstructions,
+					signal,
+					// Executor runs without thinking (validated config); summary quality
+					// relies on /no_think via the model's promptSuffix compat setting.
+					"off",
+				);
+			} catch (error) {
+				if (signal.aborted) throw error;
+				logLocalInferenceFallback("summarization", error);
+			}
+		}
+		return compact(preparation, primaryModel, apiKey, headers, customInstructions, signal, this.thinkingLevel);
 	}
 
 	/**
@@ -3114,4 +3312,18 @@ export class AgentSession {
 	get extensionRunner(): ExtensionRunner {
 		return this._extensionRunner;
 	}
+}
+
+/**
+ * Join all text blocks of a tool result. Returns undefined if any non-text
+ * (e.g. image) content is present, since those must not be compressed.
+ */
+function extractTextContent(content: (TextContent | ImageContent)[]): string | undefined {
+	if (content.length === 0) return undefined;
+	const texts: string[] = [];
+	for (const block of content) {
+		if (block.type !== "text") return undefined;
+		texts.push(block.text);
+	}
+	return texts.join("\n");
 }
