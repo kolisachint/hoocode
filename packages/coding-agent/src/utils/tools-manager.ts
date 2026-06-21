@@ -82,14 +82,31 @@ function commandExists(cmd: string): boolean {
 	}
 }
 
+// Resolved tool paths are stable for the life of the process. Cache the first
+// successful resolution so we never re-run the synchronous spawnSync probe in
+// commandExists() on every grep/find/glob invocation, which blocks the event loop.
+const resolvedToolPathCache = new Map<"fd" | "rg", string>();
+
 // Get the path to a tool (system-wide or in our tools dir)
 export function getToolPath(tool: "fd" | "rg"): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 
+	// Reuse a previously resolved path. A bare command name resolves via PATH;
+	// an absolute path must still exist (revalidate cheaply with existsSync).
+	const cached = resolvedToolPathCache.get(tool);
+	if (cached !== undefined) {
+		const isAbsolutePath = cached.includes("/") || cached.includes("\\");
+		if (!isAbsolutePath || existsSync(cached)) {
+			return cached;
+		}
+		resolvedToolPathCache.delete(tool);
+	}
+
 	// Check our tools directory first
 	const localPath = join(TOOLS_DIR, config.binaryName + (platform() === "win32" ? ".exe" : ""));
 	if (existsSync(localPath)) {
+		resolvedToolPathCache.set(tool, localPath);
 		return localPath;
 	}
 
@@ -97,6 +114,7 @@ export function getToolPath(tool: "fd" | "rg"): string | null {
 	const systemBinaryNames = config.systemBinaryNames ?? [config.binaryName];
 	for (const systemBinaryName of systemBinaryNames) {
 		if (commandExists(systemBinaryName)) {
+			resolvedToolPathCache.set(tool, systemBinaryName);
 			return systemBinaryName;
 		}
 	}

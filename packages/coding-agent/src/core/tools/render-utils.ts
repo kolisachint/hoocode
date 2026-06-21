@@ -33,8 +33,13 @@ export function getTextOutput(
 ): string {
 	if (!result) return "";
 
-	const textBlocks = result.content.filter((c) => c.type === "text");
-	const imageBlocks = result.content.filter((c) => c.type === "image");
+	// Single pass partition instead of filtering the same array twice.
+	const textBlocks: typeof result.content = [];
+	const imageBlocks: typeof result.content = [];
+	for (const c of result.content) {
+		if (c.type === "text") textBlocks.push(c);
+		else if (c.type === "image") imageBlocks.push(c);
+	}
 
 	let output = textBlocks.map((c) => sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "")).join("\n");
 

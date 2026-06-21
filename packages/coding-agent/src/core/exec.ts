@@ -44,8 +44,13 @@ export async function execCommand(
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 
-		let stdout = "";
-		let stderr = "";
+		// Collect chunks and decode with streaming decoders so multibyte UTF-8
+		// sequences split across chunk boundaries are not corrupted, and to avoid
+		// repeated string reallocation for large output.
+		const stdoutChunks: string[] = [];
+		const stderrChunks: string[] = [];
+		const stdoutDecoder = new TextDecoder();
+		const stderrDecoder = new TextDecoder();
 		let killed = false;
 		let timeoutId: NodeJS.Timeout | undefined;
 
@@ -78,12 +83,12 @@ export async function execCommand(
 			}, options.timeout);
 		}
 
-		proc.stdout?.on("data", (data) => {
-			stdout += data.toString();
+		proc.stdout?.on("data", (data: Buffer) => {
+			stdoutChunks.push(stdoutDecoder.decode(data, { stream: true }));
 		});
 
-		proc.stderr?.on("data", (data) => {
-			stderr += data.toString();
+		proc.stderr?.on("data", (data: Buffer) => {
+			stderrChunks.push(stderrDecoder.decode(data, { stream: true }));
 		});
 
 		// Wait for process termination without hanging on inherited stdio handles
@@ -94,6 +99,8 @@ export async function execCommand(
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
 				}
+				const stdout = stdoutChunks.join("") + stdoutDecoder.decode();
+				const stderr = stderrChunks.join("") + stderrDecoder.decode();
 				resolve({ stdout, stderr, code: code ?? 0, killed });
 			})
 			.catch((_err) => {
@@ -101,6 +108,8 @@ export async function execCommand(
 				if (options?.signal) {
 					options.signal.removeEventListener("abort", killProcess);
 				}
+				const stdout = stdoutChunks.join("") + stdoutDecoder.decode();
+				const stderr = stderrChunks.join("") + stderrDecoder.decode();
 				resolve({ stdout, stderr, code: 1, killed });
 			});
 	});

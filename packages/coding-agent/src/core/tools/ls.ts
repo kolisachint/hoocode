@@ -1,6 +1,7 @@
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { existsSync, readdirSync, statSync } from "fs";
+import { readdir as fsReaddir } from "fs/promises";
 import { minimatch } from "minimatch";
 import nodePath from "path";
 import { type Static, Type } from "typebox";
@@ -40,14 +41,24 @@ export interface LsOperations {
 	exists: (absolutePath: string) => Promise<boolean> | boolean;
 	/** Get file or directory stats. Throws if not found. */
 	stat: (absolutePath: string) => Promise<{ isDirectory: () => boolean }> | { isDirectory: () => boolean };
-	/** Read directory entries */
+	/** Read directory entries as strings (used when readdirEntries is not provided) */
 	readdir: (absolutePath: string) => Promise<string[]> | string[];
+	/**
+	 * Optional: read directory entries with type info in a single syscall.
+	 * When provided, eliminates per-entry stat() calls for the isDirectory check.
+	 */
+	readdirEntries?: (
+		absolutePath: string,
+	) =>
+		| Promise<Array<{ name: string; isDirectory: () => boolean }>>
+		| Array<{ name: string; isDirectory: () => boolean }>;
 }
 
 const defaultLsOperations: LsOperations = {
 	exists: existsSync,
 	stat: statSync,
 	readdir: readdirSync,
+	readdirEntries: (p) => fsReaddir(p, { withFileTypes: true }),
 };
 
 export interface LsToolOptions {
@@ -148,52 +159,74 @@ export function createLsToolDefinition(
 							return;
 						}
 
-						// Read directory entries.
-						let entries: string[];
-						try {
-							entries = await ops.readdir(dirPath);
-						} catch (e) {
-							if (e instanceof Error) {
-								reject(new Error(`Cannot read directory: ${e.message}`));
-							} else {
-								reject(new Error(`Cannot read directory: ${String(e)}`));
-							}
-							return;
-						}
-
 						// Exclude entries matching any ignore glob. Match on the bare entry
 						// name (ls is non-recursive) with dot:true so patterns can target
 						// dotfiles like '.git'. Default behavior (no patterns) still shows
 						// everything on disk.
 						const ignorePatterns = (ignore ?? []).filter((p) => typeof p === "string" && p.length > 0);
-						if (ignorePatterns.length > 0) {
-							entries = entries.filter(
-								(entry) => !ignorePatterns.some((pattern) => minimatch(entry, pattern, { dot: true })),
-							);
-						}
 
-						// Sort alphabetically, case-insensitive.
-						entries.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
-
-						// Format entries with directory indicators.
+						// Fast path: use readdirEntries (single syscall with type info).
+						// Slow path: fall back to readdir + per-entry stat.
 						const results: string[] = [];
 						let entryLimitReached = false;
-						for (const entry of entries) {
-							if (results.length >= effectiveLimit) {
-								entryLimitReached = true;
-								break;
-							}
 
-							const fullPath = nodePath.join(dirPath, entry);
-							let suffix = "";
+						if (ops.readdirEntries) {
+							let dirents: Array<{ name: string; isDirectory: () => boolean }>;
 							try {
-								const entryStat = await ops.stat(fullPath);
-								if (entryStat.isDirectory()) suffix = "/";
+								dirents = await ops.readdirEntries(dirPath);
 							} catch {
-								// Skip entries we cannot stat.
-								continue;
+								reject(new Error(`Cannot read directory: ${dirPath}`));
+								return;
 							}
-							results.push(entry + suffix);
+							let filtered = dirents;
+							if (ignorePatterns.length > 0) {
+								filtered = dirents.filter(
+									(d) => !ignorePatterns.some((pattern) => minimatch(d.name, pattern, { dot: true })),
+								);
+							}
+							filtered.sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+							for (const entry of filtered) {
+								if (results.length >= effectiveLimit) {
+									entryLimitReached = true;
+									break;
+								}
+								results.push(entry.name + (entry.isDirectory() ? "/" : ""));
+							}
+						} else {
+							// Fallback: readdir returns strings, stat each entry.
+							let entries: string[];
+							try {
+								entries = await ops.readdir(dirPath);
+							} catch (e) {
+								if (e instanceof Error) {
+									reject(new Error(`Cannot read directory: ${e.message}`));
+								} else {
+									reject(new Error(`Cannot read directory: ${String(e)}`));
+								}
+								return;
+							}
+							const ignoreFiltered =
+								ignorePatterns.length > 0
+									? entries.filter(
+											(entry) => !ignorePatterns.some((pattern) => minimatch(entry, pattern, { dot: true })),
+										)
+									: entries;
+							ignoreFiltered.sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+							for (const entry of ignoreFiltered) {
+								if (results.length >= effectiveLimit) {
+									entryLimitReached = true;
+									break;
+								}
+								const fullPath = nodePath.join(dirPath, entry);
+								let suffix = "";
+								try {
+									const entryStat = await ops.stat(fullPath);
+									if (entryStat.isDirectory()) suffix = "/";
+								} catch {
+									continue;
+								}
+								results.push(entry + suffix);
+							}
 						}
 
 						signal?.removeEventListener("abort", onAbort);

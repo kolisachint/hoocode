@@ -1114,9 +1114,16 @@ export class SessionManager {
 		// Sort children by timestamp (oldest first, newest at bottom)
 		// Use iterative approach to avoid stack overflow on deep trees
 		const stack: SessionTreeNode[] = [...roots];
+		const timestampMs = (node: SessionTreeNode): number => new Date(node.entry.timestamp).getTime();
 		while (stack.length > 0) {
 			const node = stack.pop()!;
-			node.children.sort((a, b) => new Date(a.entry.timestamp).getTime() - new Date(b.entry.timestamp).getTime());
+			// Decorate-sort-undecorate: parse each timestamp once instead of twice per
+			// comparison (O(n) Date allocations instead of O(n log n)).
+			if (node.children.length > 1) {
+				const decorated = node.children.map((child) => ({ child, ms: timestampMs(child) }));
+				decorated.sort((a, b) => a.ms - b.ms);
+				node.children = decorated.map((d) => d.child);
+			}
 			stack.push(...node.children);
 		}
 
@@ -1217,9 +1224,11 @@ export class SessionManager {
 			let parentId = lastEntryId;
 			const labelEntries: LabelEntry[] = [];
 			for (const { targetId, label, timestamp: labelTimestamp } of labelsToWrite) {
+				// pathEntryIds is the live collision set; generateId only reads it and we
+				// add the new id below, so pass it directly instead of copying per label.
 				const labelEntry: LabelEntry = {
 					type: "label",
-					id: generateId(new Set(pathEntryIds)),
+					id: generateId(pathEntryIds),
 					parentId,
 					timestamp: labelTimestamp,
 					targetId,
@@ -1254,15 +1263,19 @@ export class SessionManager {
 		// In-memory mode: replace current session with the path + labels
 		const labelEntries: LabelEntry[] = [];
 		let parentId = pathWithoutLabels[pathWithoutLabels.length - 1]?.id || null;
+		// Maintain one collision set and add each new id, instead of rebuilding a Set
+		// from spreads on every iteration.
+		const usedIds = new Set(pathEntryIds);
 		for (const { targetId, label, timestamp: labelTimestamp } of labelsToWrite) {
 			const labelEntry: LabelEntry = {
 				type: "label",
-				id: generateId(new Set([...pathEntryIds, ...labelEntries.map((e) => e.id)])),
+				id: generateId(usedIds),
 				parentId,
 				timestamp: labelTimestamp,
 				targetId,
 				label,
 			};
+			usedIds.add(labelEntry.id);
 			labelEntries.push(labelEntry);
 			parentId = labelEntry.id;
 		}

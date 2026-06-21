@@ -56,6 +56,12 @@ export class OutputAccumulator {
 	private tempFilePath: string | undefined;
 	private tempFileStream: WriteStream | undefined;
 
+	// Cache for the most recent snapshot computation. Invalidated whenever new
+	// text is appended or the stream finishes, so repeated snapshot() calls
+	// between flushes (the streaming UI polls on a timer) reuse the result
+	// instead of re-running truncateTail/compression on the tail each time.
+	private snapshotCache: { content: string; truncation: TruncationResult } | undefined;
+
 	constructor(options: OutputAccumulatorOptions = {}) {
 		this.maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
 		this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -70,6 +76,7 @@ export class OutputAccumulator {
 		}
 
 		this.totalRawBytes += data.length;
+		this.snapshotCache = undefined;
 		this.appendDecodedText(this.decoder.decode(data, { stream: true }));
 
 		if (this.tempFileStream || this.shouldUseTempFile()) {
@@ -85,6 +92,7 @@ export class OutputAccumulator {
 			return;
 		}
 		this.finished = true;
+		this.snapshotCache = undefined;
 		this.appendDecodedText(this.decoder.decode());
 		if (this.shouldUseTempFile()) {
 			this.ensureTempFile();
@@ -92,35 +100,40 @@ export class OutputAccumulator {
 	}
 
 	snapshot(options: { persistIfTruncated?: boolean } = {}): OutputSnapshot {
-		// Get raw text for display (no compression during streaming)
-		const rawText = this.getSnapshotText();
-		// Only apply compression when finished (final snapshot)
-		const text = this.finished && this.command ? compressBashOutput(this.command, rawText) : rawText;
-		const tailTruncation = truncateTail(text, {
-			maxLines: this.maxLines,
-			maxBytes: this.maxBytes,
-		});
-		const truncated = this.totalLines > this.maxLines || this.totalDecodedBytes > this.maxBytes;
-		const truncatedBy = truncated
-			? (tailTruncation.truncatedBy ?? (this.totalDecodedBytes > this.maxBytes ? "bytes" : "lines"))
-			: null;
-		const truncation: TruncationResult = {
-			...tailTruncation,
-			truncated,
-			truncatedBy,
-			totalLines: this.totalLines,
-			totalBytes: this.totalDecodedBytes,
-			maxLines: this.maxLines,
-			maxBytes: this.maxBytes,
-		};
+		let cached = this.snapshotCache;
+		if (!cached) {
+			// Get raw text for display (no compression during streaming)
+			const rawText = this.getSnapshotText();
+			// Only apply compression when finished (final snapshot)
+			const text = this.finished && this.command ? compressBashOutput(this.command, rawText) : rawText;
+			const tailTruncation = truncateTail(text, {
+				maxLines: this.maxLines,
+				maxBytes: this.maxBytes,
+			});
+			const truncated = this.totalLines > this.maxLines || this.totalDecodedBytes > this.maxBytes;
+			const truncatedBy = truncated
+				? (tailTruncation.truncatedBy ?? (this.totalDecodedBytes > this.maxBytes ? "bytes" : "lines"))
+				: null;
+			const truncation: TruncationResult = {
+				...tailTruncation,
+				truncated,
+				truncatedBy,
+				totalLines: this.totalLines,
+				totalBytes: this.totalDecodedBytes,
+				maxLines: this.maxLines,
+				maxBytes: this.maxBytes,
+			};
+			cached = { content: truncation.content, truncation };
+			this.snapshotCache = cached;
+		}
 
-		if (options.persistIfTruncated && truncation.truncated) {
+		if (options.persistIfTruncated && cached.truncation.truncated) {
 			this.ensureTempFile();
 		}
 
 		return {
-			content: truncation.content,
-			truncation,
+			content: cached.content,
+			truncation: cached.truncation,
 			fullOutputPath: this.tempFilePath,
 		};
 	}
