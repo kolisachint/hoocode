@@ -1,8 +1,12 @@
 /**
  * Model categories for subagent model selection.
  *
- * Categories map to explicit model IDs configured in settings.
- * When a category is not configured, fallback defaults are used.
+ * A category (`fast` | `standard` | `capable`) is a provider-neutral indirection
+ * that maps to an explicit model id via `settings.modelCategories`. No concrete
+ * model names are baked in here, so the feature never assumes a particular
+ * provider. When a category is not configured, it resolves to `undefined` —
+ * callers treat that as "no override" and fall back to the agent's or parent's
+ * default model.
  */
 
 import type { Settings } from "./settings-manager.js";
@@ -16,46 +20,28 @@ export function isModelCategory(value: string): value is ModelCategory {
 }
 
 /**
- * Fallback default models for each category when not configured.
- * These are provider-agnostic patterns that will be resolved via model matching.
- */
-const CATEGORY_FALLBACKS: Record<ModelCategory, string> = {
-	fast: "haiku",
-	standard: "sonnet",
-	capable: "opus",
-};
-
-/**
- * Resolve a model category to an actual model ID.
+ * Resolve a model category to the model id configured for it in settings, or
+ * `undefined` when the category is not configured. There is no built-in default:
+ * an unconfigured category is a no-op so the caller keeps its existing model.
  *
  * @param category - The model category (fast, standard, capable)
  * @param settings - The current settings (may contain modelCategories config)
- * @returns The resolved model ID or pattern
  */
-export function resolveModelCategory(category: ModelCategory, settings?: Settings): string {
-	// Check if the category is configured in settings
-	const configured = settings?.modelCategories?.[category];
-	if (configured) {
-		return configured;
-	}
-
-	// Use fallback default
-	return CATEGORY_FALLBACKS[category];
+export function resolveModelCategory(category: ModelCategory, settings?: Settings): string | undefined {
+	return settings?.modelCategories?.[category];
 }
 
 /**
- * Resolve a model string that might be a category reference.
+ * Resolve a model string that might be a category reference. A category resolves
+ * to its configured model id (or `undefined` when unconfigured); any other string
+ * is already a concrete model id or alias and is returned as-is.
  *
  * @param model - The model string (could be a category, alias, or full model ID)
  * @param settings - The current settings (may contain modelCategories config)
- * @returns The resolved model ID or pattern
  */
-export function resolveModelReference(model: string, settings?: Settings): string {
-	// If it's a category, resolve it
+export function resolveModelReference(model: string, settings?: Settings): string | undefined {
 	if (isModelCategory(model)) {
 		return resolveModelCategory(model, settings);
 	}
-
-	// Otherwise return as-is (it's already a model ID or alias)
 	return model;
 }

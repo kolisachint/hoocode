@@ -28,6 +28,11 @@
 - TaskStore gains a `batch(fn)` method that defers listener notifications until
   the batch completes. TodoWrite reconciliation and child-task-tree merging now
   emit a single render invalidation instead of one per item.
+- Model categories are now provider-neutral: the `fast`/`standard`/`capable`
+  tiers resolve only from `settings.modelCategories` and no longer fall back to
+  hardcoded model names. An unconfigured category is a no-op, so the dispatch
+  keeps the agent's or parent's default model instead of forcing a specific
+  provider's model.
 
 ## [0.4.77] - 2026-06-21
 

@@ -629,7 +629,9 @@ export class SubagentPool extends EventEmitter {
 		// unavailable or quota-limited.
 		const explicitModel =
 			!task.useInheritedModelFallback && def?.model && def.model !== MODEL_INHERIT ? def.model : undefined;
-		// Resolve model categories (fast, standard, capable) to actual model IDs
+		// Resolve a model-category reference (fast/standard/capable) to its
+		// configured model id. An unconfigured category resolves to undefined, so no
+		// `--model` is passed and the child keeps its default model.
 		const rawModel = explicitModel ?? task.model;
 		const modelToUse = rawModel ? resolveModelReference(rawModel, this.settings) : undefined;
 		if (modelToUse) {
