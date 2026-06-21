@@ -151,19 +151,17 @@ describe("summarizeAgentDescription", () => {
 	});
 });
 
-describe("buildTaskMainPrompt agent list", () => {
-	test("renders distinct, meaningful summaries instead of a repeated header", () => {
-		const prompt = buildTaskMainPrompt(process.cwd());
-		// The old bug rendered every agent row as the same boilerplate header.
-		expect(prompt).not.toContain(": Use this subagent ONLY when:");
-		expect(prompt).toContain("- explore: ");
-		const exploreLine = prompt.split("\n").find((line) => line.startsWith("- explore: "));
-		expect(exploreLine).toBeDefined();
-		expect(exploreLine).not.toBe("- explore: Use this subagent ONLY when:");
+describe("buildTaskMainPrompt", () => {
+	test("references the <available_agents> list instead of re-rendering the roster", () => {
+		const prompt = buildTaskMainPrompt();
+		// The roster is emitted once, authoritatively, in the system prompt's
+		// <available_agents> block; the appendix must not duplicate it.
+		expect(prompt).toContain("<available_agents>");
+		expect(prompt).not.toContain("- explore: ");
 	});
 
 	test("guides the agent to delegate proactively", () => {
-		const prompt = buildTaskMainPrompt(process.cwd());
+		const prompt = buildTaskMainPrompt();
 		expect(prompt).toContain("Delegate proactively");
 		expect(prompt).not.toContain("Default to handling small, quick, or single-file work inline");
 	});

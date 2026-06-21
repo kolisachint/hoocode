@@ -62,20 +62,14 @@ export function summarizeAgentDescription(description: string): string {
 	return summary.length > MAX ? `${summary.slice(0, MAX - 1).trimEnd()}\u2026` : summary;
 }
 
-/** Render the available agents as a "- name: description" list for prompts. */
-function describeAvailableAgents(cwd: string): string {
-	const agents = loadAgentRegistry({ cwd }).list();
-	if (agents.length === 0) return "(no agents available)";
-	return agents.map((a) => `- ${a.name}: ${summarizeAgentDescription(a.description)}`).join("\n");
-}
-
 /** System prompt appendix for the main session when the Task tool is enabled.
- *  Instructs the parent agent on when and how to delegate effectively. */
-export function buildTaskMainPrompt(cwd: string = process.cwd()): string {
-	return `You have access to the **Task** tool. Use it to delegate self-contained tasks to specialized subagents that run in their own isolated context and return only their final answer.
-
-Available agents (choose one via \`subagent_type\`):
-${describeAvailableAgents(cwd)}
+ *  Instructs the parent agent on when and how to delegate effectively. The
+ *  available agents themselves are listed once, authoritatively, in the
+ *  `<available_agents>` block the system prompt emits whenever the Task tool is
+ *  active (see agent-session `_rebuildSystemPrompt`); this appendix references
+ *  that list rather than re-rendering the roster and paying for it twice. */
+export function buildTaskMainPrompt(): string {
+	return `You have access to the **Task** tool. Use it to delegate self-contained tasks to specialized subagents that run in their own isolated context and return only their final answer. Pick an agent by name from the <available_agents> list in this prompt and pass it as \`subagent_type\`.
 
 When to delegate:
 1. The work is self-contained and you only need the final result, not intermediate steps.
