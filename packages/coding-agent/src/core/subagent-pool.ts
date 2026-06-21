@@ -113,6 +113,19 @@ export interface SubagentPoolOptions {
 export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
 
 /**
+ * AgentSession event `type`s forwarded from a subagent's json event stream as
+ * `task_progress` events. Deliberately coarse: the child also emits per-delta
+ * `message_update` / `tool_execution_update` events (a high-volume firehose) and
+ * large `message_*` bodies, which are dropped here to keep the parent's event loop
+ * and the task panel from thrashing under concurrent subagents.
+ */
+export const FORWARDED_SUBAGENT_EVENTS: ReadonlySet<string> = new Set([
+	"turn_end",
+	"tool_execution_start",
+	"tool_execution_end",
+]);
+
+/**
  * Pool for running hoocode subagents as child processes with bounded concurrency,
  * FIFO queuing with priority support, and automatic slot refill.
  *
@@ -124,6 +137,8 @@ export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
  * - "task_timeout" – hard timeout exceeded, process was SIGKILLed
  * - "budget_warning" – token usage crossed 80% threshold (advisory)
  * - "budget_exceeded" – token usage crossed 100% threshold (advisory; never kills)
+ * - "task_progress" – coarse lifecycle event (turn_end, tool start/end) parsed
+ *                    from the child's json event stream, for live UI updates
  */
 export class SubagentPool extends EventEmitter {
 	private readonly maxConcurrency: number;
@@ -671,6 +686,12 @@ export class SubagentPool extends EventEmitter {
 
 		let stdout = "";
 		let stderr = "";
+		// Carries a trailing partial line across `data` chunks. The child emits one
+		// JSON object per line, but pipe chunks don't align to newlines — without
+		// buffering, an object split across two chunks fails to parse and is silently
+		// dropped. Pings tolerate that (frequent, idempotent); coarse lifecycle events
+		// that fire once do not.
+		let stdoutLineBuffer = "";
 
 		proc.stdout?.on("data", (data: Buffer) => {
 			const chunk = data.toString();
@@ -684,17 +705,34 @@ export class SubagentPool extends EventEmitter {
 			// events while the parent's event loop is starved by concurrent load.
 			this.lifeguard.recordHeartbeat(task.task_id);
 
-			// Heartbeat detection: look for {"ping":true} JSON lines
-			for (const raw of chunk.split("\n")) {
+			// Parse complete newline-delimited JSON lines, buffering any trailing
+			// partial line for the next chunk.
+			stdoutLineBuffer += chunk;
+			const lastNewline = stdoutLineBuffer.lastIndexOf("\n");
+			if (lastNewline === -1) return;
+			const complete = stdoutLineBuffer.slice(0, lastNewline);
+			stdoutLineBuffer = stdoutLineBuffer.slice(lastNewline + 1);
+			for (const raw of complete.split("\n")) {
 				const line = raw.trim();
 				if (!line.startsWith("{")) continue;
+				let parsed: Record<string, unknown>;
 				try {
-					const parsed = JSON.parse(line) as Record<string, unknown>;
-					if (parsed.ping === true) {
-						this.lifeguard.recordHeartbeat(task.task_id);
-					}
+					parsed = JSON.parse(line) as Record<string, unknown>;
 				} catch {
-					// Not a ping line, ignore
+					continue; // Incomplete or non-JSON line, ignore
+				}
+				if (parsed.ping === true) {
+					this.lifeguard.recordHeartbeat(task.task_id);
+					continue;
+				}
+				// Forward only coarse lifecycle events; the child also streams
+				// per-delta `*_update` events and large message bodies, dropped here.
+				if (typeof parsed.type === "string" && FORWARDED_SUBAGENT_EVENTS.has(parsed.type)) {
+					this.emit("task_progress", {
+						task_id: task.task_id,
+						agent_type: task.agent_type,
+						event: parsed,
+					});
 				}
 			}
 		});
