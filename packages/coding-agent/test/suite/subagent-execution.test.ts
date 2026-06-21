@@ -239,6 +239,75 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(false);
 		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(false);
 	});
+
+	it("lets a per-call `background` argument override the agent's default in either direction", () => {
+		const tool = createTaskToolDefinition();
+		const isBackground = tool.background as (toolCall: { arguments: Record<string, unknown> }) => boolean;
+
+		// `explore` defaults to background; `background: false` forces it to wait inline.
+		expect(isBackground({ arguments: { subagent_type: "explore", background: false } })).toBe(false);
+		// `general-purpose` is foreground by default; `background: true` forces it detached.
+		expect(isBackground({ arguments: { subagent_type: "general-purpose", background: true } })).toBe(true);
+		// Omitting the argument falls back to the agent default.
+		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(false);
+	});
+
+	it("passes `complexity` to dispatch as the model so the pool resolves the tier", async () => {
+		const setup = setupFaux();
+		let captured: { model?: string } | undefined;
+		const capturingPool = {
+			dispatch: async (_prompt: string, options: { model?: string }) => {
+				captured = options;
+				return fakeResult(true, { summary: "ok" });
+			},
+		} as unknown as SubagentPool;
+		setSubagentPoolForTesting(capturingPool);
+		const ctx = makeCtx(setup, makeTempDir());
+
+		const tool = createTaskToolDefinition();
+		await tool.execute(
+			"call-complexity",
+			{
+				description: "quick read",
+				prompt: "read one file and report",
+				subagent_type: "general-purpose",
+				complexity: "fast",
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(captured?.model).toBe("fast");
+	});
+
+	it("falls back to the parent model when `complexity` is omitted", async () => {
+		const setup = setupFaux();
+		let captured: { model?: string } | undefined;
+		const capturingPool = {
+			dispatch: async (_prompt: string, options: { model?: string }) => {
+				captured = options;
+				return fakeResult(true, { summary: "ok" });
+			},
+		} as unknown as SubagentPool;
+		setSubagentPoolForTesting(capturingPool);
+		const ctx = makeCtx(setup, makeTempDir());
+
+		const tool = createTaskToolDefinition();
+		await tool.execute(
+			"call-nocomplexity",
+			{
+				description: "do work",
+				prompt: "do some work",
+				subagent_type: "general-purpose",
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(captured?.model).toBe(setup.model.id);
+	});
 });
 
 describe("subagent tool gating (opt-in vs opt-out)", () => {

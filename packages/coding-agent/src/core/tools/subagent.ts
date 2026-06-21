@@ -82,13 +82,15 @@ When to delegate:
 3. The task is a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug).
 4. You need to run a long command or test suite and wait for its output without blocking your own reasoning.
 
+Model tier (optional \`complexity\`): set \`fast\` for quick reads/lookups, \`standard\` for multi-file edits, \`capable\` for deep architecture work. It maps to a model from \`settings.modelCategories\`. Omit it to use the agent's default; an agent that pins its own model ignores \`complexity\`.
+
 Guidelines:
 - Choose the agent whose description best matches the task.
 - Make every task specific and self-contained. The subagent cannot see this conversation; pass all necessary context (files, constraints, prior findings) in \`prompt\`.
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
 - Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
-- Some agents are configured to run in the background (non-blocking). For those, the Task call does not block your turn: you keep reasoning and producing output while the subagent runs, and its final answer is delivered to you automatically as a follow-up message once it finishes. You do not need to poll for it.
+- Some agents are configured to run in the background (non-blocking). For those, the Task call does not block your turn: you keep reasoning and producing output while the subagent runs, and its final answer is delivered to you automatically as a follow-up message once it finishes. You do not need to poll for it. You can also force this per call by passing \`background: true\` (or \`background: false\` to wait inline even for a background agent).
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
 
@@ -103,6 +105,18 @@ const taskParams = Type.Object({
 	subagent_type: Type.String({
 		description: "The name of the specialized agent to delegate to. Must be one of the available agents.",
 	}),
+	complexity: Type.Optional(
+		Type.Union([Type.Literal("fast"), Type.Literal("standard"), Type.Literal("capable")], {
+			description:
+				"Model tier for this dispatch: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Maps to settings.modelCategories. Ignored if the chosen agent pins its own model; omit to use the agent's default.",
+		}),
+	),
+	background: Type.Optional(
+		Type.Boolean({
+			description:
+				"Set true to run this dispatch non-blocking: the call returns immediately and the answer arrives as a follow-up message (poll with TaskOutput). Defaults to the agent's own background setting.",
+		}),
+	),
 	resume_task_id: Type.Optional(
 		Type.String({
 			description:
@@ -149,17 +163,24 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 	// Agents whose definitions opt into background execution. The agent loop reads
 	// the tool's `background` flag per call and, for these, runs the dispatch
 	// detached: the parent keeps reasoning and the subagent's answer is injected as
-	// a follow-up message when it finishes (no polling needed).
+	// a follow-up message when it finishes (no polling needed). A per-call
+	// `background` argument overrides the agent's default in either direction.
 	const backgroundAgents = collectBackgroundAgentNames(cwd);
 	return defineTool<typeof taskParams, TaskToolDetails>({
 		name: TASK_TOOL_NAME,
 		label: TASK_TOOL_NAME,
-		background: (toolCall) => backgroundAgents.has(String(toolCall.arguments?.subagent_type ?? "")),
+		background: (toolCall) => {
+			const override = toolCall.arguments?.background;
+			if (typeof override === "boolean") return override;
+			return backgroundAgents.has(String(toolCall.arguments?.subagent_type ?? ""));
+		},
 		description: [
 			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation).",
 			"Select the agent via `subagent_type`; pass everything it needs via `prompt`. The subagent returns only its final answer.",
 			"Available agents:",
 			agentList,
+			"Optional `complexity` picks a model tier: fast (quick reads), standard (multi-file edits), capable (deep architecture); omit to use the agent's default.",
+			"Optional `background: true` runs the dispatch non-blocking (answer arrives as a follow-up); some agents already default to background.",
 			"WHEN TO USE: (1) self-contained work where you only need the final result;",
 			"(2) parallel investigation/edits without losing your reasoning chain;",
 			"(3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs);",
@@ -269,10 +290,15 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				? resolveForkSessionFile(def, ctx.sessionManager?.getSessionFile(), ctx.cwd)
 				: undefined;
 			try {
+				// `complexity` is passed as the model: the pool's spawn() already lets a
+				// non-`inherit` agent model win, then resolves a category string (fast/
+				// standard/capable) via settings.modelCategories. So a pinned-model agent
+				// ignores complexity, and an `inherit` agent picks up the requested tier —
+				// no settings lookup needed here.
 				const dispatchResult = await pool.dispatch(params.prompt, {
 					forceAgent: params.subagent_type,
 					context: "",
-					model: ctx.model?.id,
+					model: params.complexity ?? ctx.model?.id,
 					provider: ctx.model?.provider,
 					sessionFile: forkSessionFile,
 				});

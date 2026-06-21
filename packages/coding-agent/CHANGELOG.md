@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **`Task` tool gains an optional `complexity` parameter** (`"fast"`,
+  `"standard"`, `"capable"`). It selects a model tier from
+  `settings.modelCategories` for that one dispatch. An agent that pins its own
+  model ignores `complexity`; agents using `inherit` pick up the requested tier.
+  The tool passes the value straight through as the dispatch model, so the
+  pool's existing model-precedence and category resolution handle it — no
+  duplicate settings lookup.
+- **Per-call `background` override on the `Task` tool**. Passing
+  `background: true` runs a normally-foreground dispatch detached (answer arrives
+  as a follow-up message); `background: false` waits inline even for an agent
+  that defaults to background. Omitting it keeps the agent's own default.
+
+### Fixed
+
+- TodoWrite reconciliation now filters to root main-agent tasks only (no
+  `source`/`agent`/`parentTaskId`), excluding MCP-sourced and delegated rows that
+  `taskOwnerId()` folded under "main". This prevented overwriting or dropping
+  those rows when the TodoWrite list was shorter than the combined task count.
+
+### Changed
+
+- TaskStore gains a `batch(fn)` method that defers listener notifications until
+  the batch completes. TodoWrite reconciliation and child-task-tree merging now
+  emit a single render invalidation instead of one per item.
+
 ## [0.4.77] - 2026-06-21
 
 ## [0.4.76] - 2026-06-21
