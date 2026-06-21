@@ -4,6 +4,23 @@
 
 ### Added
 
+- **Background subagents are now notify-and-pull.** A background `Task` dispatch
+  no longer pushes its full result into the conversation. It posts a compact
+  one-line notification ("explore#1 finished — <preview>") and retains the body
+  in a new subagent inbox; the model pulls the full result with `TaskOutput` when
+  it wants it. This keeps a wide swarm of subagents from flooding the parent's
+  context with N full summaries.
+- **`TaskOutput` reworked into a status-aware probe + swarm barrier.** It never
+  errors on a valid handle (a running task reports its status and current
+  activity; a finished one returns its body; an already-read one says so). New
+  modes: `list: true` shows every background subagent with status/activity (no
+  bodies), and `wait: true` blocks until a named task — or, with no `task_id`,
+  all outstanding subagents — finish. Tasks are addressable by a friendly label
+  (`explore#1`) or their task id. Fixes the previous behavior where polling a
+  background task threw "no result available" and confused the main agent.
+- The on-spawn placeholder is now a single compact line instead of a multi-line
+  explainer, so dispatching several subagents at once no longer floods the TUI.
+
 - **`Task` tool gains an optional `complexity` parameter** (`"fast"`,
   `"standard"`, `"capable"`). It selects a model tier from
   `settings.modelCategories` for that one dispatch. An agent that pins its own

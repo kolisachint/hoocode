@@ -50,7 +50,12 @@ const MAX_SETTLED = 50;
 
 /** First non-empty line of a block of text, length-capped. */
 function firstLine(text: string, max = 120): string {
-	const line = (text.trim().split("\n").find((l) => l.trim()) ?? "").trim();
+	const line = (
+		text
+			.trim()
+			.split("\n")
+			.find((l) => l.trim()) ?? ""
+	).trim();
 	return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
@@ -76,6 +81,63 @@ class SubagentInbox {
 	private order: string[] = [];
 	private labelCounters = new Map<string, number>();
 	private observedPools = new WeakSet<SubagentPool>();
+	/** One-shot callbacks fired after any record settles, for the wait helpers. */
+	private settleListeners = new Set<() => void>();
+
+	private notifySettle(): void {
+		for (const listener of [...this.settleListeners]) listener();
+	}
+
+	/**
+	 * Resolve once the given task settles (or immediately if already settled /
+	 * unknown), bounded by `timeoutMs`. Backs TaskOutput's per-task wait.
+	 */
+	waitFor(handle: string, timeoutMs: number): Promise<InboxRecord | undefined> {
+		const current = this.get(handle);
+		if (!current || !isOutstanding(current.lifecycle)) return Promise.resolve(current);
+		return new Promise((resolve) => {
+			const cleanup = () => {
+				this.settleListeners.delete(check);
+				clearTimeout(timer);
+			};
+			const check = () => {
+				const rec = this.get(handle);
+				if (!rec || !isOutstanding(rec.lifecycle)) {
+					cleanup();
+					resolve(rec);
+				}
+			};
+			const timer = setTimeout(() => {
+				cleanup();
+				resolve(this.get(handle));
+			}, timeoutMs);
+			timer.unref?.();
+			this.settleListeners.add(check);
+		});
+	}
+
+	/** Resolve once nothing is outstanding (the swarm barrier), bounded by `timeoutMs`. */
+	waitForAll(timeoutMs: number): Promise<void> {
+		if (this.outstanding().length === 0) return Promise.resolve();
+		return new Promise((resolve) => {
+			const cleanup = () => {
+				this.settleListeners.delete(check);
+				clearTimeout(timer);
+			};
+			const check = () => {
+				if (this.outstanding().length === 0) {
+					cleanup();
+					resolve();
+				}
+			};
+			const timer = setTimeout(() => {
+				cleanup();
+				resolve();
+			}, timeoutMs);
+			timer.unref?.();
+			this.settleListeners.add(check);
+		});
+	}
 
 	/** Allocate the next friendly label for an agent type (`explore#1`, `explore#2`, …). */
 	nextLabel(agentType: string): string {
@@ -128,6 +190,7 @@ class SubagentInbox {
 			rec.error = r?.error ?? (r?.status ? `subagent ${r.status}` : "unknown error");
 			rec.summaryLine = rec.error;
 		}
+		this.notifySettle();
 		return rec;
 	}
 
@@ -140,6 +203,7 @@ class SubagentInbox {
 		rec.lifecycle = lifecycle;
 		rec.error = reason;
 		rec.summaryLine = reason;
+		this.notifySettle();
 		return rec;
 	}
 

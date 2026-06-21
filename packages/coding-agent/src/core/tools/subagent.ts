@@ -20,9 +20,9 @@ import { defineTool } from "../extensions/types.js";
 import { getProviderExhaustion } from "../provider-health.js";
 import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
+import { type InboxRecord, subagentInbox } from "../subagent-inbox.js";
 import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
-import { subagentInbox } from "../subagent-inbox.js";
 import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
 
@@ -91,7 +91,8 @@ Guidelines:
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
 - Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
-- Some agents are configured to run in the background (non-blocking). For those, the Task call does not block your turn: you keep reasoning and producing output while the subagent runs, and its final answer is delivered to you automatically as a follow-up message once it finishes. You do not need to poll for it. You can also force this per call by passing \`background: true\` (or \`background: false\` to wait inline even for a background agent).
+- Some agents run in the background (non-blocking); force it per call with \`background: true\` (or \`background: false\` to wait inline). A background Task does not block your turn and does not return its answer inline: you get a short notification ("explore#1 finished") and the full result is held for you to pull with \`TaskOutput\`. Keep working in the meantime.
+- Use **TaskOutput** to manage background subagents: \`TaskOutput(list: true)\` shows every running/finished subagent and what each is doing; \`TaskOutput("explore#1")\` reads a finished subagent's full result (or reports its status if still running); \`TaskOutput(wait: true)\` blocks until a named task — or, with no task_id, ALL outstanding subagents — finish. Dispatch a batch in one turn, then barrier on them with \`TaskOutput(wait: true)\`.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
 
@@ -115,7 +116,7 @@ const taskParams = Type.Object({
 	background: Type.Optional(
 		Type.Boolean({
 			description:
-				"Set true to run this dispatch non-blocking: the call returns immediately and the answer arrives as a follow-up message (poll with TaskOutput). Defaults to the agent's own background setting.",
+				"Set true to run non-blocking: you get a short notification when it finishes and pull the full result with TaskOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting.",
 		}),
 	),
 	resume_task_id: Type.Optional(
@@ -140,9 +141,13 @@ export interface TaskToolDetails {
 }
 
 export interface TaskOutputDetails {
-	task_id: string;
+	/** The handle queried, when a specific task was named. */
+	task_id?: string;
+	/** running | done | collected | failed | stalled | timeout | list | empty | unknown */
 	status: string;
 	ok: boolean;
+	/** Number of subagents still running, included on roster/list responses. */
+	outstanding?: number;
 }
 
 /**
@@ -327,7 +332,14 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 					// thrown tool error — the call was already answered by a placeholder.
 					return {
 						content: [{ type: "text" as const, text: `${label} failed ✗ — ${reason}` }],
-						details: { subagent_type: params.subagent_type, ok: false, error: reason, taskId: task.id, poolTaskId, background: true },
+						details: {
+							subagent_type: params.subagent_type,
+							ok: false,
+							error: reason,
+							taskId: task.id,
+							poolTaskId,
+							background: true,
+						},
 					};
 				}
 			}
@@ -500,7 +512,13 @@ function finalizeDispatchResult(
 			`Read the full result with TaskOutput("${background.label}").`;
 		return {
 			content: [{ type: "text", text }],
-			details: { subagent_type: subagentType, ok: true, taskId: taskStoreId, poolTaskId: background.taskId, background: true },
+			details: {
+				subagent_type: subagentType,
+				ok: true,
+				taskId: taskStoreId,
+				poolTaskId: background.taskId,
+				background: true,
+			},
 		};
 	}
 
@@ -511,76 +529,171 @@ function finalizeDispatchResult(
 }
 
 const taskOutputParams = Type.Object({
-	task_id: Type.String({
-		description: "The task_id of a background (or previously dispatched) subagent, as returned by the Task tool.",
-	}),
+	task_id: Type.Optional(
+		Type.String({
+			description:
+				'Handle of a background subagent — its task_id or friendly label (e.g. "explore#1") from a Task notification. Omit (or set list:true) to see every background task.',
+		}),
+	),
+	list: Type.Optional(
+		Type.Boolean({
+			description:
+				"List all background subagents with their status (running/done/failed) and current activity. No result bodies are returned.",
+		}),
+	),
+	wait: Type.Optional(
+		Type.Boolean({
+			description:
+				"Block until the named task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier) — before returning. Bounded by timeout_ms.",
+		}),
+	),
+	timeout_ms: Type.Optional(
+		Type.Number({ description: "Maximum time to block in wait mode, in milliseconds (default 120000)." }),
+	),
 });
 
 type TaskOutputParams = Static<typeof taskOutputParams>;
 
+const TASK_OUTPUT_DEFAULT_TIMEOUT_MS = 120_000;
+
+/** Whole seconds a record has run (so far, or until it settled). */
+function recordElapsed(rec: InboxRecord): string {
+	const end = rec.endedAt ?? Date.now();
+	return `${Math.max(0, Math.round((end - rec.startedAt) / 1000))}s`;
+}
+
+/** A compact roster of every known background subagent — status + activity, no bodies. */
+function formatTaskRoster(): { content: Array<{ type: "text"; text: string }>; details: TaskOutputDetails } {
+	const all = subagentInbox.list();
+	const outstanding = subagentInbox.outstanding().length;
+	if (all.length === 0) {
+		return {
+			content: [{ type: "text", text: "No background subagents have been dispatched." }],
+			details: { status: "empty", ok: true, outstanding: 0 },
+		};
+	}
+	const lines = all.map((r) => {
+		const when = recordElapsed(r);
+		switch (r.lifecycle) {
+			case "running":
+				return `- ${r.label}  running  ${when}${r.lastActivity ? `  · ${r.lastActivity}` : ""}`;
+			case "done":
+				return `- ${r.label}  done (uncollected)  ${when} — ${r.summaryLine ?? ""}`;
+			case "collected":
+				return `- ${r.label}  collected  ${when} — ${r.summaryLine ?? ""}`;
+			default:
+				return `- ${r.label}  ${r.lifecycle} ✗  — ${r.error ?? "unknown error"}`;
+		}
+	});
+	const header = `${all.length} background subagent${all.length === 1 ? "" : "s"} (${outstanding} running):`;
+	const hint = all.some((r) => r.lifecycle === "done") ? '\nRead a finished one with TaskOutput("<label>").' : "";
+	return {
+		content: [{ type: "text", text: `${header}\n${lines.join("\n")}${hint}` }],
+		details: { status: "list", ok: true, outstanding },
+	};
+}
+
 /**
- * TaskOutput tool: poll a background subagent and collect its final answer.
- * Returns the current status while running, or the subagent's final answer once
- * complete. Registered alongside the Task tool when subagents are enabled.
+ * TaskOutput tool: check on background subagents and pull their results.
+ *
+ * Background `Task` calls don't push their body into the conversation — they
+ * leave it in the inbox and post a compact notification. TaskOutput is how the
+ * model pulls a body, checks liveness, or waits. It never throws on a valid
+ * handle (an error tool result would only confuse the loop): it reports status
+ * instead. Modes: `list` (roster), a `task_id` to read/check one, and `wait` to
+ * block until one task — or all outstanding tasks — finish.
  */
 export function createTaskOutputToolDefinition(): ToolDefinition {
 	return defineTool<typeof taskOutputParams, TaskOutputDetails>({
 		name: "TaskOutput",
 		label: "TaskOutput",
 		description: [
-			"Check the status of a background subagent and collect its final answer once it finishes.",
-			"Pass the task_id returned by a background Task call. While the subagent runs this reports its status; once complete it returns only the subagent's final answer.",
+			"Check on background subagents dispatched via Task, and pull their results.",
+			'Pass a task_id/label (e.g. "explore#1") to read a finished subagent\'s full result, or to see its status while it runs.',
+			"Set list:true (or omit task_id) to list every background subagent with its status and current activity.",
+			"Set wait:true to block until that task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier).",
+			"It never errors on a valid handle: a running task reports status, a finished one returns its result, an already-read one says so.",
 		].join("\n"),
-		promptSnippet: "check status / collect the result of a background subagent",
+		promptSnippet: "check status / list / collect the results of background subagents",
 		parameters: taskOutputParams,
 
 		async execute(_toolCallId, params: TaskOutputParams, _signal, _onUpdate, ctx) {
-			const pool = getSubagentPool(ctx.cwd);
-			const status = pool.get_status(params.task_id);
-			if (status === "running" || status === "queued") {
+			// Touch the pool so the inbox is wired to its progress stream for activity.
+			subagentInbox.observe(getSubagentPool(ctx.cwd));
+			const handle = params.task_id?.trim();
+
+			// Barrier: wait for the target (or all outstanding) to settle first.
+			if (params.wait) {
+				const timeout = params.timeout_ms ?? TASK_OUTPUT_DEFAULT_TIMEOUT_MS;
+				if (handle) await subagentInbox.waitFor(handle, timeout);
+				else await subagentInbox.waitForAll(timeout);
+			}
+
+			// Roster when asked, or when no specific task was named.
+			if (params.list || !handle) {
+				return formatTaskRoster();
+			}
+
+			const rec = subagentInbox.get(handle);
+			if (!rec) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `Subagent task "${params.task_id}" is ${status}. Call TaskOutput again later to collect its result.`,
+							text: `No background task "${handle}". Call TaskOutput with list:true to see active tasks.`,
 						},
 					],
-					details: { task_id: params.task_id, status, ok: true },
+					details: { task_id: handle, status: "unknown", ok: false },
 				};
 			}
 
-			if (status === "unknown") {
+			if (rec.lifecycle === "running") {
+				const activity = rec.lastActivity ? ` (currently: ${rec.lastActivity})` : "";
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `No result available for task "${params.task_id}" (status: unknown). It may not exist or its result was already collected.`,
+							text: `${rec.label} is still running — ${recordElapsed(rec)} elapsed${activity}. Call TaskOutput again, or with wait:true to block until it finishes.`,
 						},
 					],
-					details: { task_id: params.task_id, status, ok: false },
+					details: { task_id: handle, status: "running", ok: true },
 				};
 			}
 
-			const result = pool.collect(params.task_id);
-			if (!result) {
-				throw new Error(
-					`No result available for task "${params.task_id}" (status: ${status}). It may not exist or its result was already collected.`,
-				);
+			if (rec.lifecycle === "done") {
+				const collected = subagentInbox.collect(handle);
+				const body = collected?.body ?? rec.summaryLine ?? "(subagent returned no output)";
+				return {
+					content: [{ type: "text" as const, text: body }],
+					details: { task_id: handle, status: "done", ok: true },
+				};
 			}
-			if (!result.ok) {
-				const reason = result.error ?? (result.status ? `subagent ${result.status}` : status);
-				throw new Error(`Background subagent "${params.task_id}" failed: ${reason}`);
+
+			if (rec.lifecycle === "collected") {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `${rec.label} was already delivered — ${rec.summaryLine ?? "(no summary kept)"}.`,
+						},
+					],
+					details: { task_id: handle, status: "collected", ok: true },
+				};
 			}
-			const resultData = result.result_data as SubagentResultFile | undefined;
-			const answer = resultData?.summary || "(subagent returned no output)";
+
+			// failed / stalled / timeout
 			return {
-				content: [{ type: "text" as const, text: answer }],
-				details: { task_id: params.task_id, status: result.status ?? "complete", ok: true },
+				content: [
+					{ type: "text" as const, text: `${rec.label} ${rec.lifecycle} ✗ — ${rec.error ?? "unknown error"}.` },
+				],
+				details: { task_id: handle, status: rec.lifecycle, ok: false },
 			};
 		},
 
 		renderCall(args, theme) {
-			const text = theme.fg("toolTitle", theme.bold("TaskOutput ")) + theme.fg("dim", String(args.task_id ?? ""));
+			const target = args.list ? "list" : String(args.task_id ?? "");
+			const text =
+				theme.fg("toolTitle", theme.bold("TaskOutput ")) + theme.fg("dim", args.wait ? `${target} (wait)` : target);
 			return new Text(text, 0, 0);
 		},
 	});

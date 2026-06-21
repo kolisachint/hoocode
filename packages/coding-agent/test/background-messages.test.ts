@@ -54,7 +54,9 @@ describe("background start/finish messages stay in sync", () => {
 	it("subagent placeholder is one compact line and the finish passes the tool's notification through", () => {
 		const toolCall = { name: "Task", arguments: { subagent_type: "review", description: "review the diff" } };
 		const placeholder = createBackgroundPlaceholderText(toolCall);
-		const finish = createBackgroundTaskMessage(bgResult("Task", toolCall.arguments, "review#1 finished ✓ — looks good"));
+		const finish = createBackgroundTaskMessage(
+			bgResult("Task", toolCall.arguments, "review#1 finished ✓ — looks good"),
+		);
 
 		const label = describeBackgroundTool(toolCall).label;
 		expect(placeholder).toContain(label);
