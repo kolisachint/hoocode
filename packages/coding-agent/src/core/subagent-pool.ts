@@ -92,6 +92,9 @@ export interface DispatchOptions {
 	provider?: string;
 	/** Explicit session file to persist/continue (used by resume). */
 	sessionFile?: string;
+	/** Caller-supplied task id. Defaults to a generated `dispatch-…` id. Lets a
+	 *  caller register liveness/inbox state under the id before dispatch resolves. */
+	taskId?: string;
 }
 
 export interface SubagentPoolOptions {
@@ -390,7 +393,7 @@ export class SubagentPool extends EventEmitter {
 		}
 
 		const agent_type = forceAgent ?? "general-purpose";
-		const task_id = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+		const task_id = options.taskId ?? `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		const reason = forceAgent ? "user_override" : analysis.reason;
 		const complexity = analysis.estimated_complexity;
 		// Depth of the child about to be spawned (this process's depth + 1). Surfaced
