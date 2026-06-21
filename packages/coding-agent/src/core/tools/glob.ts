@@ -8,14 +8,11 @@ import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import { applyFdGlobPattern, relativizeFdLine, toPosixPath } from "./fd-utils.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
-
-function toPosixPath(value: string): string {
-	return value.split(path.sep).join("/");
-}
 
 const globSchema = Type.Object({
 	patterns: Type.Union([Type.String(), Type.Array(Type.String())], {
@@ -442,14 +439,7 @@ export function createGlobToolDefinition(
 								args.push("--max-depth", String(depth));
 							}
 
-							// Handle path-containing patterns
-							let effectivePattern = pattern;
-							if (pattern.includes("/")) {
-								args.push("--full-path");
-								if (!pattern.startsWith("/") && !pattern.startsWith("**/") && pattern !== "**") {
-									effectivePattern = `**/${pattern}`;
-								}
-							}
+							const effectivePattern = applyFdGlobPattern(args, pattern);
 							args.push("--", effectivePattern, searchPath);
 
 							return new Promise<string[]>((res, rej) => {
@@ -487,14 +477,7 @@ export function createGlobToolDefinition(
 								const line = rawLine.replace(/\r$/, "").trim();
 								if (!line) continue;
 
-								let relativePath: string;
-								if (line.startsWith(searchPath)) {
-									relativePath = line.slice(searchPath.length + 1);
-								} else {
-									relativePath = path.relative(searchPath, line);
-								}
-								const posixPath = toPosixPath(relativePath);
-
+								const posixPath = relativizeFdLine(line, searchPath);
 								if (!seen.has(posixPath)) {
 									seen.add(posixPath);
 									allResults.push(posixPath);

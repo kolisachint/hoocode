@@ -15,6 +15,13 @@ import type { Settings } from "./settings-manager.js";
 import { currentSubagentDepth, resolveMaxSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
 
+/**
+ * Provider/model failure signatures where inheriting the parent model can
+ * recover. Compiled once at module load instead of on every error check.
+ */
+const INHERITED_MODEL_FALLBACK_ERROR =
+	/usage[_\s-]?limit|subscription|quota|rate.?limit|too many requests|429|insufficient|out of credit|credit balance|billing|payment required|402|model[^\n]*(not found|unavailable|not available|not supported|does not exist|invalid|unsupported)|no api key|no auth configured|authentication|unauthorized|forbidden|permission/i;
+
 export interface SubagentPoolTask {
 	task_id: string;
 	agent_type: string;
@@ -952,9 +959,7 @@ export class SubagentPool extends EventEmitter {
 			.filter((part): part is string => typeof part === "string" && part.length > 0)
 			.join("\n");
 
-		return /usage[_\s-]?limit|subscription|quota|rate.?limit|too many requests|429|insufficient|out of credit|credit balance|billing|payment required|402|model[^\n]*(not found|unavailable|not available|not supported|does not exist|invalid|unsupported)|no api key|no auth configured|authentication|unauthorized|forbidden|permission/i.test(
-			text,
-		);
+		return INHERITED_MODEL_FALLBACK_ERROR.test(text);
 	}
 
 	/** Remove failed attempt artifacts before rerunning the same task id. */

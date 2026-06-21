@@ -748,7 +748,8 @@ describe("Coding Agent Tools", () => {
 			});
 
 			const output = getTextOutput(result);
-			expect(output).toContain("example.txt:2: match line");
+			expect(output).toContain("example.txt");
+			expect(output).toContain("2: match line");
 		});
 
 		it("should respect global limit and include context lines", async () => {
@@ -764,9 +765,10 @@ describe("Coding Agent Tools", () => {
 			});
 
 			const output = getTextOutput(result);
-			expect(output).toContain("context.txt-1- before");
-			expect(output).toContain("context.txt:2: match one");
-			expect(output).toContain("context.txt-3- after");
+			expect(output).toContain("context.txt");
+			expect(output).toContain("1- before");
+			expect(output).toContain("2: match one");
+			expect(output).toContain("3- after");
 			expect(output).toContain("[1 matches limit reached. Use limit=2 for more, or refine pattern]");
 			// Ensure second match is not present
 			expect(output).not.toContain("match two");
@@ -1050,6 +1052,33 @@ describe("edit tool fuzzy matching", () => {
 		});
 
 		expect(readFileSync(testFile, "utf-8")).toBe("console.log('world');\nhello universe\n");
+	});
+
+	it("should match a block when leading indentation differs (tabs vs spaces)", async () => {
+		const testFile = join(testDir, "indent-tabs.txt");
+		// File is indented with tabs.
+		writeFileSync(testFile, "function f() {\n\tif (x) {\n\t\treturn 1;\n\t}\n}\n");
+
+		// Model emits the block with 2-space indentation instead of tabs.
+		const result = await editTool.execute("test-indent-1", {
+			path: testFile,
+			edits: [{ oldText: "  if (x) {\n    return 1;\n  }", newText: "  if (x) {\n    return 2;\n  }" }],
+		});
+
+		expect(getTextOutput(result)).toContain("Successfully replaced");
+		expect(readFileSync(testFile, "utf-8")).toContain("return 2;");
+	});
+
+	it("should report duplicates for indentation-tolerant block matches", async () => {
+		const testFile = join(testDir, "indent-dups.txt");
+		writeFileSync(testFile, "\tfoo();\n\tbar();\n  foo();\n  bar();\n");
+
+		await expect(
+			editTool.execute("test-indent-2", {
+				path: testFile,
+				edits: [{ oldText: "foo();\nbar();", newText: "baz();" }],
+			}),
+		).rejects.toThrow(/Found 2 occurrences/);
 	});
 });
 

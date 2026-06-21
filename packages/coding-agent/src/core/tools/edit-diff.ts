@@ -176,38 +176,82 @@ export function stripBom(content: string): { bom: string; text: string } {
 	return content.startsWith("\uFEFF") ? { bom: "\uFEFF", text: content.slice(1) } : { bom: "", text: content };
 }
 
-function countOccurrences(content: string, oldText: string): number {
-	const fuzzyContent = normalizeForFuzzyMatch(content);
-	const fuzzyOldText = normalizeForFuzzyMatch(oldText);
-	return fuzzyContent.split(fuzzyOldText).length - 1;
+/**
+ * Collect the start index of every non-overlapping occurrence of needle in
+ * haystack. The needle must already be in the same space as haystack (raw for
+ * exact matches, fuzzy-normalized when haystack is fuzzy-normalized).
+ */
+function collectMatchIndices(haystack: string, needle: string): number[] {
+	const indices: number[] = [];
+	if (needle.length === 0) return indices;
+	let from = 0;
+	while (true) {
+		const idx = haystack.indexOf(needle, from);
+		if (idx === -1) break;
+		indices.push(idx);
+		from = idx + needle.length; // non-overlapping
+	}
+	return indices;
 }
 
 /**
- * Find the start index of every non-overlapping occurrence of oldText in
- * content, using the same exact-then-fuzzy strategy as fuzzyFindText. Indices
- * are valid in the content passed in (which, in the fuzzy case, the caller has
- * already normalized — see applyEditsToNormalizedContent's baseContent).
+ * Per-line normalization for indentation-tolerant block matching. Applies the
+ * same Unicode/space normalization as fuzzy matching, then strips all leading
+ * and trailing whitespace so indentation differences are ignored entirely.
  */
-function findAllMatches(content: string, oldText: string): { indices: number[]; matchLength: number } {
-	const collect = (haystack: string, needle: string): number[] => {
-		const indices: number[] = [];
-		if (needle.length === 0) return indices;
-		let from = 0;
-		while (true) {
-			const idx = haystack.indexOf(needle, from);
-			if (idx === -1) break;
-			indices.push(idx);
-			from = idx + needle.length; // non-overlapping
-		}
-		return indices;
-	};
+function blockNormalizeLine(line: string): string {
+	return normalizeForFuzzyMatch(line).trim();
+}
 
-	if (content.indexOf(oldText) !== -1) {
-		return { indices: collect(content, oldText), matchLength: oldText.length };
+interface LineBlockMatch {
+	matchIndex: number;
+	matchLength: number;
+}
+
+/**
+ * Indentation-tolerant fallback matcher. Compares oldText against content line
+ * by line, ignoring each line's leading/trailing whitespace (and Unicode
+ * formatting). Returns character spans in `content` for every block whose
+ * trimmed lines equal the trimmed oldText lines. Replacement still happens in
+ * the original content space, so surrounding formatting is preserved.
+ */
+function findLineBlockMatches(content: string, oldText: string): LineBlockMatch[] {
+	const hadTrailingNewline = oldText.endsWith("\n");
+	const oldLines = oldText.split("\n");
+	if (hadTrailingNewline) oldLines.pop();
+	if (oldLines.length === 0) return [];
+	const trimmedOld = oldLines.map(blockNormalizeLine);
+
+	const contentLines = content.split("\n");
+	const k = trimmedOld.length;
+	if (k > contentLines.length) return [];
+
+	// Char offset of each line start within content.
+	const offsets = new Array<number>(contentLines.length);
+	let acc = 0;
+	for (let i = 0; i < contentLines.length; i++) {
+		offsets[i] = acc;
+		acc += contentLines[i].length + 1; // + newline
 	}
 
-	const fuzzyOldText = normalizeForFuzzyMatch(oldText);
-	return { indices: collect(normalizeForFuzzyMatch(content), fuzzyOldText), matchLength: fuzzyOldText.length };
+	const matches: LineBlockMatch[] = [];
+	for (let i = 0; i + k <= contentLines.length; i++) {
+		let ok = true;
+		for (let j = 0; j < k; j++) {
+			if (blockNormalizeLine(contentLines[i + j]) !== trimmedOld[j]) {
+				ok = false;
+				break;
+			}
+		}
+		if (!ok) continue;
+		const matchIndex = offsets[i];
+		let matchLength = 0;
+		for (let j = 0; j < k; j++) matchLength += contentLines[i + j].length + (j < k - 1 ? 1 : 0);
+		// Include the trailing newline when oldText carried one and a line follows the block.
+		if (hadTrailingNewline && i + k < contentLines.length) matchLength += 1;
+		matches.push({ matchIndex, matchLength });
+	}
+	return matches;
 }
 
 function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
@@ -282,29 +326,46 @@ export function applyEditsToNormalizedContent(
 	for (let i = 0; i < normalizedEdits.length; i++) {
 		const edit = normalizedEdits[i];
 		const matchResult = fuzzyFindText(baseContent, edit.oldText);
-		if (!matchResult.found) {
-			throw getNotFoundError(path, i, normalizedEdits.length);
+
+		// Resolve the match spans for this edit, all in baseContent space.
+		// Tier 1/2: exact then fuzzy (fuzzyFindText). Tier 3: indentation-tolerant
+		// line-block fallback, only when both fail — the common cause of edit
+		// failures is leading-whitespace drift that survives fuzzy normalization.
+		let spans: LineBlockMatch[];
+		if (matchResult.found) {
+			const needle = matchResult.usedFuzzyMatch ? normalizeForFuzzyMatch(edit.oldText) : edit.oldText;
+			spans = collectMatchIndices(baseContent, needle).map((matchIndex) => ({
+				matchIndex,
+				matchLength: matchResult.matchLength,
+			}));
+		} else {
+			spans = findLineBlockMatches(baseContent, edit.oldText);
+			if (spans.length === 0) {
+				throw getNotFoundError(path, i, normalizedEdits.length);
+			}
 		}
 
 		if (edit.replaceAll) {
-			// Replace every occurrence; emit one matched span per occurrence so
-			// the shared reverse-order applier rewrites them all.
-			const { indices, matchLength } = findAllMatches(baseContent, edit.oldText);
-			for (const matchIndex of indices) {
-				matchedEdits.push({ editIndex: i, matchIndex, matchLength, newText: edit.newText });
+			// Replace every occurrence so the shared reverse-order applier rewrites them all.
+			for (const span of spans) {
+				matchedEdits.push({
+					editIndex: i,
+					matchIndex: span.matchIndex,
+					matchLength: span.matchLength,
+					newText: edit.newText,
+				});
 			}
 			continue;
 		}
 
-		const occurrences = countOccurrences(baseContent, edit.oldText);
-		if (occurrences > 1) {
-			throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
+		if (spans.length > 1) {
+			throw getDuplicateError(path, i, normalizedEdits.length, spans.length);
 		}
 
 		matchedEdits.push({
 			editIndex: i,
-			matchIndex: matchResult.index,
-			matchLength: matchResult.matchLength,
+			matchIndex: spans[0].matchIndex,
+			matchLength: spans[0].matchLength,
 			newText: edit.newText,
 		});
 	}

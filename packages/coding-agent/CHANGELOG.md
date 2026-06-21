@@ -2,6 +2,59 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Tool calls that shell out to `fd`/`rg` (`grep`, `find`, `glob`) no longer
+  re-run a synchronous `spawnSync(<tool>, ["--version"])` probe on every
+  invocation. When a tool resolves from `PATH` instead of `~/.hoocode/bin`,
+  this blocking probe ran on each call and stalled the event loop; the resolved
+  path is now cached for the process lifetime.
+- `ls` tool uses `readdir` with `{ withFileTypes: true }` on the default local
+  filesystem backend, replacing N sequential `stat()` syscalls with a single
+  `readdir` call that returns file type info inline. Extension backends that
+  only implement the existing `readdir` string return continue to work via the
+  fallback path.
+- `grep` tool output now shows each filename once per file instead of repeating
+  it on every matching line, reducing token usage for multi-file matches.
+- `edit` tool now matches blocks even when leading indentation differs (for
+  example the model emits 2-space indentation against a tab-indented file). A
+  third indentation-tolerant matching tier runs only after exact and fuzzy
+  matching fail, comparing whole lines with leading/trailing whitespace ignored,
+  while keeping the uniqueness guardrail and replacing in the original content so
+  surrounding formatting is preserved. This addresses frequent "Could not find
+  the exact text" failures caused by whitespace drift.
+- `edit` tool no longer re-normalizes the entire file just to count occurrences
+  on the exact-match path; occurrence counting now reuses the resolved match
+  spans.
+- File mutation queue caches resolved realpaths instead of running a blocking
+  `realpathSync.native` syscall on every edit/write.
+- `read` tool reuses the original file string for whole-file reads instead of
+  splitting into lines and rejoining them.
+- `write` tool reports the actual UTF-8 byte count instead of the JavaScript
+  string length (which differs for multibyte content).
+- `OutputAccumulator.snapshot()` caches its result and invalidates the cache
+  only when new output is appended or the stream finishes, so the streaming UI's
+  timer-driven polling no longer re-runs tail truncation/compression on every
+  tick when no new data has arrived.
+- `execCommand` (extension command helper) now decodes child process output with
+  streaming `TextDecoder`s and joins collected chunks, fixing corruption of
+  multibyte UTF-8 sequences split across chunk boundaries and avoiding quadratic
+  string concatenation for large output.
+- Hoisted the retryable-error regex (`agent-session`) and the inherited-model
+  fallback regex (`subagent-pool`) to module-level constants so they are compiled
+  once instead of on every error check.
+- Session tree sorting parses each entry timestamp once (decorate-sort-undecorate)
+  instead of allocating two `Date` objects per comparison.
+- Branch-session label creation reuses a single collision-id set instead of
+  rebuilding a `Set` on every label iteration.
+- `getTextOutput` partitions tool result content in a single pass instead of
+  filtering the same array twice.
+
+### Changed
+
+- Extracted the duplicated fd path-normalization and glob-argument helpers from
+  `find` and `glob` into a shared `fd-utils.ts` module.
+
 ## [0.4.75] - 2026-06-21
 
 ## [0.4.74] - 2026-06-21

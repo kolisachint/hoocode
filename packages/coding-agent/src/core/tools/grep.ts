@@ -253,10 +253,10 @@ export function createGrepToolDefinition(
 							stderr += chunk.toString();
 						});
 
+						// Format a context block around a match line. Path is omitted (emitted once per file).
 						const formatBlock = async (filePath: string, lineNumber: number): Promise<string[]> => {
-							const relativePath = formatPath(filePath);
 							const lines = await getFileLines(filePath);
-							if (!lines.length) return [`${relativePath}:${lineNumber}: (unable to read file)`];
+							if (!lines.length) return [`  ${lineNumber}: (unable to read file)`];
 							const block: string[] = [];
 							const start = contextValue > 0 ? Math.max(1, lineNumber - contextValue) : lineNumber;
 							const end = contextValue > 0 ? Math.min(lines.length, lineNumber + contextValue) : lineNumber;
@@ -267,8 +267,8 @@ export function createGrepToolDefinition(
 								// Truncate long lines so grep output stays compact.
 								const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
 								if (wasTruncated) linesTruncated = true;
-								if (isMatchLine) block.push(`${relativePath}:${current}: ${truncatedText}`);
-								else block.push(`${relativePath}-${current}- ${truncatedText}`);
+								if (isMatchLine) block.push(`${current}: ${truncatedText}`);
+								else block.push(`${current}- ${truncatedText}`);
 							}
 							return block;
 						};
@@ -319,20 +319,33 @@ export function createGrepToolDefinition(
 								return;
 							}
 
-							// Format matches after streaming finishes so custom readFile() backends can be async.
+							// Group matches by file path, showing filename once per file.
+							const fileGroups = new Map<string, typeof matches>();
 							for (const match of matches) {
-								if (contextValue === 0 && match.lineText !== undefined) {
-									const relativePath = formatPath(match.filePath);
-									const sanitized = match.lineText
-										.replace(/\r\n/g, "\n")
-										.replace(/\r/g, "")
-										.replace(/\n$/, "");
-									const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
-									if (wasTruncated) linesTruncated = true;
-									outputLines.push(`${relativePath}:${match.lineNumber}: ${truncatedText}`);
-								} else {
-									const block = await formatBlock(match.filePath, match.lineNumber);
-									outputLines.push(...block);
+								let group = fileGroups.get(match.filePath);
+								if (!group) {
+									group = [];
+									fileGroups.set(match.filePath, group);
+								}
+								group.push(match);
+							}
+
+							for (const [filePath, fileMatches] of fileGroups) {
+								const relativePath = formatPath(filePath);
+								outputLines.push(relativePath);
+								for (const match of fileMatches) {
+									if (contextValue === 0 && match.lineText !== undefined) {
+										const sanitized = match.lineText
+											.replace(/\r\n/g, "\n")
+											.replace(/\r/g, "")
+											.replace(/\n$/, "");
+										const { text: truncatedText, wasTruncated } = truncateLine(sanitized);
+										if (wasTruncated) linesTruncated = true;
+										outputLines.push(`${match.lineNumber}: ${truncatedText}`);
+									} else {
+										const block = await formatBlock(match.filePath, match.lineNumber);
+										outputLines.push(...block);
+									}
 								}
 							}
 

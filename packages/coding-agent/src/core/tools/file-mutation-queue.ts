@@ -3,13 +3,26 @@ import { resolve } from "node:path";
 
 const fileMutationQueues = new Map<string, Promise<void>>();
 
+/**
+ * Cache resolved realpaths keyed by the absolute input path. realpathSync.native
+ * is a blocking syscall; the canonical path for a given absolute path is stable
+ * for the process lifetime, so caching keeps the hot edit/write path off the
+ * filesystem after the first lookup.
+ */
+const realpathCache = new Map<string, string>();
+
 function getMutationQueueKey(filePath: string): string {
 	const resolvedPath = resolve(filePath);
+	const cached = realpathCache.get(resolvedPath);
+	if (cached !== undefined) return cached;
+	let key: string;
 	try {
-		return realpathSync.native(resolvedPath);
+		key = realpathSync.native(resolvedPath);
 	} catch {
-		return resolvedPath;
+		key = resolvedPath;
 	}
+	realpathCache.set(resolvedPath, key);
+	return key;
 }
 
 /**

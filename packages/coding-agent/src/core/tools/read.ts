@@ -296,6 +296,10 @@ export function createReadToolDefinition(
 									const endLine = Math.min(startLine + limit, allLines.length);
 									selectedContent = allLines.slice(startLine, endLine).join("\n");
 									userLimitedLines = endLine - startLine;
+								} else if (startLine === 0) {
+									// Whole-file read (common case): reuse the original string instead of
+									// rebuilding it from the split lines.
+									selectedContent = textContent;
 								} else {
 									selectedContent = allLines.slice(startLine).join("\n");
 								}
