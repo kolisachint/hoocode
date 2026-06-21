@@ -420,7 +420,7 @@ ${chalk.bold("Environment Variables:")}
   HOOCODE_PACKAGE_DIR              - Override package directory (for Nix/Guix store paths). Legacy: PI_PACKAGE_DIR
   HOOCODE_OFFLINE                  - Disable startup network operations when set to 1/true/yes. Legacy: PI_OFFLINE
   HOOCODE_ROUTING_MODE             - Local-inference routing mode: primary-only (default),
-                                     executor-for-summarization, executor-for-tool-results, shadow-executor.
+                                     executor-for-summarization, executor-for-tool-results.
                                      Requires --enable-local-inference or this var to activate.
   HOOCODE_TELEMETRY                - Override install telemetry when set to 1/true/yes or 0/false/no. Legacy: PI_TELEMETRY
   HOOCODE_SHARE_VIEWER_URL         - Base URL for /share command (default: https://pi.dev/session/). Legacy: PI_SHARE_VIEWER_URL

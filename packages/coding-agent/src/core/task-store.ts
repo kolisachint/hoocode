@@ -40,6 +40,13 @@ export interface TaskAgent {
 	state?: TaskAgentState;
 	/** Handoff arrow text for team views (e.g. "→ reviewer", "← builder"). */
 	handoff?: string;
+	/**
+	 * Live activity descriptor for a running subagent (e.g. the tool it is
+	 * currently executing), fed by the pool's `task_progress` events. Empty string
+	 * means "no current activity" — `applyAgentPatch` skips `undefined`, so callers
+	 * clear it by patching `""`, not `undefined`.
+	 */
+	activity?: string;
 	/** Per-agent token + cost totals, shown right-aligned on the group header. */
 	stats?: { input: number; output: number; cost: number };
 }
@@ -172,6 +179,7 @@ class TaskStore {
 			kind: agent.kind,
 			state: agent.state,
 			handoff: agent.handoff,
+			activity: agent.activity,
 			stats: agent.stats,
 		};
 		this.taskAgents.push(created);
@@ -211,6 +219,7 @@ class TaskStore {
 		if (patch.role !== undefined) agent.role = patch.role;
 		if (patch.kind !== undefined) agent.kind = patch.kind;
 		if (patch.state !== undefined) agent.state = patch.state;
+		if (patch.activity !== undefined) agent.activity = patch.activity;
 		if (patch.handoff !== undefined) agent.handoff = patch.handoff;
 		if (patch.stats !== undefined) agent.stats = patch.stats;
 	}

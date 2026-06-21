@@ -217,7 +217,6 @@ const RoutingConfigSchema = Type.Object({
 			Type.Literal("primary-only"),
 			Type.Literal("executor-for-summarization"),
 			Type.Literal("executor-for-tool-results"),
-			Type.Literal("shadow-executor"),
 		]),
 	),
 	executor: Type.Optional(ExecutorConfigSchema),

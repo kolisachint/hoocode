@@ -511,6 +511,9 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
 			: theme.fg("dim", ` · ${meta.role}`)
 		: "";
 	const state = meta.state ? ` ${theme.fg(AGENT_STATE_COLOR[meta.state] ?? "dim", `[${meta.state}]`)}` : "";
+	// Live activity for a running subagent (e.g. the tool it's executing). Empty
+	// string means idle/between-tools, so it disappears rather than lingering stale.
+	const activity = meta.activity ? theme.fg("dim", ` ⋯ ${meta.activity}`) : "";
 	const handoff = meta.handoff ? ` ${theme.fg("dim", meta.handoff)}` : "";
 
 	const done = items.filter((t) => t.status === "done").length;
@@ -527,7 +530,7 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
 
 	const rightWidth = visibleWidth(rightPlain) + 1;
 	const leftWidth = Math.max(0, width - rightWidth);
-	const left = truncateToWidth(`${glyph} ${name}${role}${state}${handoff}`, leftWidth, "…");
+	const left = truncateToWidth(`${glyph} ${name}${role}${state}${activity}${handoff}`, leftWidth, "…");
 	const pad = Math.max(1, width - visibleWidth(left) - visibleWidth(rightPlain));
 	return left + " ".repeat(pad) + rightStyled;
 }

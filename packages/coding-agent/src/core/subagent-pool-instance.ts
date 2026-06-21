@@ -10,6 +10,7 @@
 import { getSubagentSpawnCommand } from "../config.js";
 import { poolConcurrencyForDepth } from "./subagent-depth.js";
 import { SubagentPool } from "./subagent-pool.js";
+import { taskStore } from "./task-store.js";
 
 let pool: SubagentPool | undefined;
 let override: SubagentPool | undefined;
@@ -33,12 +34,38 @@ export function getSubagentPool(cwd: string): SubagentPool {
 			maxConcurrency: poolConcurrencyForDepth(),
 		});
 
+		wireProgressToTaskStore(pool);
+
 		if (!exitHandlerRegistered) {
 			exitHandlerRegistered = true;
 			process.once("exit", () => pool?.dispose());
 		}
 	}
 	return pool;
+}
+
+/**
+ * Surface live subagent progress on the task panel's agent roster row. The pool
+ * forwards only coarse lifecycle events; we map the currently-executing tool onto
+ * the agent's `activity` and clear it between tools and on completion. This touches
+ * only the roster row (keyed by agent type, a no-op if no such row exists), never
+ * task nodes — so it cannot collide with the end-of-run task-tree merge. Render
+ * coalescing is handled by the TUI's `requestRender`, so per-event patches are fine.
+ */
+function wireProgressToTaskStore(p: SubagentPool): void {
+	p.on("task_progress", (data: { agent_type: string; event: { type?: string; toolName?: string } }) => {
+		const { agent_type, event } = data;
+		if (event.type === "tool_execution_start") {
+			taskStore.patchAgent(agent_type, { activity: typeof event.toolName === "string" ? event.toolName : "" });
+		} else if (event.type === "tool_execution_end" || event.type === "turn_end") {
+			taskStore.patchAgent(agent_type, { activity: "" });
+		}
+	});
+	for (const terminal of ["task_done", "task_failed", "task_stalled", "task_timeout"] as const) {
+		p.on(terminal, (data: { agent_type?: string }) => {
+			if (data.agent_type) taskStore.patchAgent(data.agent_type, { activity: "" });
+		});
+	}
 }
 
 /**

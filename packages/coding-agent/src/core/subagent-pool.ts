@@ -11,6 +11,7 @@ import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
 import { currentSubagentDepth, resolveMaxSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
+import { attachJsonlLineReader } from "../modes/rpc/jsonl.js";
 
 export interface SubagentPoolTask {
 	task_id: string;
@@ -113,6 +114,47 @@ export interface SubagentPoolOptions {
 export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
 
 /**
+ * AgentSession event `type`s forwarded from a subagent's json event stream as
+ * `task_progress` events. Deliberately coarse: the child also emits per-delta
+ * `message_update` / `tool_execution_update` events (a high-volume firehose) and
+ * large `message_*` bodies, which are dropped here to keep the parent's event loop
+ * and the task panel from thrashing under concurrent subagents.
+ */
+export const FORWARDED_SUBAGENT_EVENTS: ReadonlySet<string> = new Set([
+	"turn_end",
+	"tool_execution_start",
+	"tool_execution_end",
+]);
+
+/** The action the pool should take for one JSONL line from a subagent's stdout. */
+export type SubagentStdoutLine =
+	| { kind: "heartbeat" }
+	| { kind: "progress"; event: Record<string, unknown> }
+	| { kind: "ignore" };
+
+/**
+ * Classify one JSONL line from a subagent's stdout into the action to take.
+ * Pure (no side effects) so the ping/forward/drop policy is unit-testable without
+ * spawning a child. Line framing — UTF-8-safe reassembly of chunks split mid-line
+ * — is handled upstream by attachJsonlLineReader; this only sees complete lines.
+ */
+export function classifySubagentLine(line: string): SubagentStdoutLine {
+	const trimmed = line.trim();
+	if (!trimmed.startsWith("{")) return { kind: "ignore" };
+	let parsed: Record<string, unknown>;
+	try {
+		parsed = JSON.parse(trimmed) as Record<string, unknown>;
+	} catch {
+		return { kind: "ignore" };
+	}
+	if (parsed.ping === true) return { kind: "heartbeat" };
+	if (typeof parsed.type === "string" && FORWARDED_SUBAGENT_EVENTS.has(parsed.type)) {
+		return { kind: "progress", event: parsed };
+	}
+	return { kind: "ignore" };
+}
+
+/**
  * Pool for running hoocode subagents as child processes with bounded concurrency,
  * FIFO queuing with priority support, and automatic slot refill.
  *
@@ -124,6 +166,8 @@ export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
  * - "task_timeout" – hard timeout exceeded, process was SIGKILLed
  * - "budget_warning" – token usage crossed 80% threshold (advisory)
  * - "budget_exceeded" – token usage crossed 100% threshold (advisory; never kills)
+ * - "task_progress" – coarse lifecycle event (turn_end, tool start/end) parsed
+ *                    from the child's json event stream, for live UI updates
  */
 export class SubagentPool extends EventEmitter {
 	private readonly maxConcurrency: number;
@@ -671,6 +715,7 @@ export class SubagentPool extends EventEmitter {
 
 		let stdout = "";
 		let stderr = "";
+		let detachStdoutReader: (() => void) | undefined;
 
 		proc.stdout?.on("data", (data: Buffer) => {
 			const chunk = data.toString();
@@ -678,26 +723,33 @@ export class SubagentPool extends EventEmitter {
 			budget.processStdout(chunk);
 
 			// Any output proves the child is alive and working, so treat it as a
-			// heartbeat. The dedicated {"ping":true} line below still matters for
-			// quiet phases (e.g. a long single model turn that emits nothing), but
-			// relying on it alone falsely reaps subagents that are busily streaming
-			// events while the parent's event loop is starved by concurrent load.
+			// heartbeat. The dedicated {"ping":true} line (parsed below via the JSONL
+			// reader) still matters for quiet phases (e.g. a long single model turn
+			// that emits nothing), but relying on it alone falsely reaps subagents
+			// that are busily streaming events while the parent's event loop is
+			// starved by concurrent load.
 			this.lifeguard.recordHeartbeat(task.task_id);
-
-			// Heartbeat detection: look for {"ping":true} JSON lines
-			for (const raw of chunk.split("\n")) {
-				const line = raw.trim();
-				if (!line.startsWith("{")) continue;
-				try {
-					const parsed = JSON.parse(line) as Record<string, unknown>;
-					if (parsed.ping === true) {
-						this.lifeguard.recordHeartbeat(task.task_id);
-					}
-				} catch {
-					// Not a ping line, ignore
-				}
-			}
 		});
+
+		// Parse the child's newline-delimited JSON event stream with UTF-8-safe,
+		// LF-only framing — multi-byte characters and large events split across pipe
+		// chunks are reassembled before parsing, which the raw handler above cannot do.
+		// Pings refresh the heartbeat; coarse lifecycle events are forwarded for live
+		// UI. Detached when the child exits (see cleanup below).
+		if (proc.stdout) {
+			detachStdoutReader = attachJsonlLineReader(proc.stdout, (line) => {
+				const action = classifySubagentLine(line);
+				if (action.kind === "heartbeat") {
+					this.lifeguard.recordHeartbeat(task.task_id);
+				} else if (action.kind === "progress") {
+					this.emit("task_progress", {
+						task_id: task.task_id,
+						agent_type: task.agent_type,
+						event: action.event,
+					});
+				}
+			});
+		}
 		proc.stderr?.on("data", (data: Buffer) => {
 			stderr += data.toString();
 		});
@@ -705,6 +757,7 @@ export class SubagentPool extends EventEmitter {
 		waitForChildProcess(proc)
 			.then((code) => {
 				this.slots.delete(task.task_id);
+				detachStdoutReader?.();
 				budget.flush();
 
 				const killReason = this.killReasons.get(task.task_id);

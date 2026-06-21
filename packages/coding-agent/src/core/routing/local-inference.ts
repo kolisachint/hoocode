@@ -25,14 +25,12 @@ export type TurnKind = "primary" | "summarization" | "tool-result";
 export type RoutingMode =
 	| "primary-only"
 	| "executor-for-summarization"
-	| "executor-for-tool-results"
-	| "shadow-executor";
+	| "executor-for-tool-results";
 
 export const ROUTING_MODES: readonly RoutingMode[] = [
 	"primary-only",
 	"executor-for-summarization",
 	"executor-for-tool-results",
-	"shadow-executor",
 ] as const;
 
 /**
@@ -43,16 +41,6 @@ export const ROUTING_MODES: readonly RoutingMode[] = [
  * (grep/find/ls) were never compressible (every line is a distinct fact).
  */
 export const COMPRESSIBLE_TOOLS = new Set(["bash"]);
-
-/**
- * Global size band (bytes) for local-inference routing. Applies to BOTH
- * tool-result compression and compaction summarization. Inputs below the
- * minimum are not worth offloading; inputs above the maximum are slow and risk
- * GPU OOM on small machines, so they fall back to the primary model. Tunable
- * per-machine via `minBytes`/`maxBytes` in the executor config block.
- */
-export const DEFAULT_MIN_BYTES = 2048;
-export const DEFAULT_MAX_BYTES = 8192;
 
 /** Optional local server the harness manages for the executor. */
 export interface ExecutorServerConfig {
@@ -68,13 +56,22 @@ export interface ExecutorServerConfig {
 	startupTimeoutMs?: number;
 }
 
-/** Executor model reference as configured in models.json. */
+/**
+ * Executor model reference as configured in models.json.
+ *
+ * The size band (`minBytes`/`maxBytes`) is wired entirely from config — there
+ * are no built-in byte defaults. When a bound is omitted it is not applied:
+ * `minBytes` defaults to 0 (no lower gate) and `maxBytes` to unbounded. Set
+ * both in models.json to gate which inputs route to the executor; on local
+ * hardware a `maxBytes` guards against slow runs / GPU OOM, while a hosted or
+ * large-memory executor can leave it unset (or high) to offload large inputs.
+ */
 export interface ExecutorConfig {
 	provider: string;
 	model: string;
-	/** Minimum input size (bytes) before local inference is attempted. */
+	/** Minimum input size (bytes) before local inference is attempted. Omitted = 0 (no lower gate). */
 	minBytes?: number;
-	/** Maximum input size (bytes); larger inputs fall back to the primary model. */
+	/** Maximum input size (bytes); larger inputs fall back to the primary model. Omitted = unbounded. */
 	maxBytes?: number;
 	/** When set, the harness spawns/health-checks/stops this local server. */
 	server?: ExecutorServerConfig;
@@ -133,8 +130,11 @@ export class LocalInferenceRouter {
 		this.mode = mode;
 		this.executorConfig = executorConfig;
 		this.executor = executor;
-		this.minBytes = executorConfig?.minBytes ?? DEFAULT_MIN_BYTES;
-		this.maxBytes = executorConfig?.maxBytes ?? DEFAULT_MAX_BYTES;
+		// No built-in byte defaults: an omitted bound is simply not applied
+		// (min 0 = no lower gate, max +Infinity = unbounded). The band is wired
+		// entirely from the models.json executor config.
+		this.minBytes = executorConfig?.minBytes ?? 0;
+		this.maxBytes = executorConfig?.maxBytes ?? Number.POSITIVE_INFINITY;
 	}
 
 	static create(opts: {
@@ -166,8 +166,7 @@ export class LocalInferenceRouter {
 	/**
 	 * Pick the model to use for a turn. Returns the executor when the mode routes
 	 * that turn kind and the executor is available; otherwise returns the primary
-	 * model. `shadow-executor` always returns the primary for the live path (the
-	 * executor is exercised separately for measurement).
+	 * model.
 	 */
 	selectModel(turnKind: TurnKind, primary: Model<Api>): Model<Api> {
 		if (!this.isExecutorAvailable() || !this.executor) return primary;
@@ -176,7 +175,6 @@ export class LocalInferenceRouter {
 				return turnKind === "summarization" ? this.executor : primary;
 			case "executor-for-tool-results":
 				return turnKind === "tool-result" ? this.executor : primary;
-			case "shadow-executor":
 			case "primary-only":
 				return primary;
 		}
