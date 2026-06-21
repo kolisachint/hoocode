@@ -1,7 +1,7 @@
 /**
  * Subagent dispatch guard + lightweight task telemetry.
  *
- * The parent agent selects which subagent to delegate to (via the Task tool),
+ * The parent agent selects which subagent to delegate to (via the ExecuteTask tool),
  * so this module performs NO keyword routing. It survives for two narrow
  * responsibilities, both cheap and LLM-free:
  *   1. Depth guard — a process may only delegate while its depth is below the

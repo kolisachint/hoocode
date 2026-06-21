@@ -12,15 +12,6 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	failed: "✗",
 };
 
-/**
- * Single-cell marker for MCP-sourced rows, which have no owning agent. Every
- * other row derives its marker from the owner's kind via AGENT_GLYPH (◆ main /
- * ◇ subagent / ▸ team role), so the flat lens attributes a row exactly the way
- * the grouped lenses do. The row also carries a text origin tag before the
- * title (see formatTaskLine).
- */
-const MCP_SOURCE_GLYPH = "⧉";
-
 /** Braille spinner frames + cadence, matched to the TUI Loader so the active row animates in step. */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 const SPINNER_INTERVAL_MS = 80;
@@ -310,8 +301,6 @@ function formatTaskLine(
 	// cell, so the id column stays aligned.
 	const isMcp = task.source === "mcp";
 	const ownerKind = options.owner?.kind ?? (task.source === "subagent" ? "subagent" : "main");
-	const sourceGlyph = isMcp ? MCP_SOURCE_GLYPH : AGENT_GLYPH[ownerKind];
-	const styledSource = grouped ? "" : theme.fg("dim", sourceGlyph);
 
 	// Origin tag prefixed to the title, naming who runs the row: the subagent
 	// type ("[explore]"), the team role's name ("[planner]"), or the MCP server
@@ -387,7 +376,7 @@ function formatTaskLine(
 	const treePrefix = options.treePrefix ? theme.fg("borderMuted", options.treePrefix) : "";
 	const leftBody = grouped
 		? `${indent}${icon} ${styledTag}${styledTitle}`
-		: `${treePrefix}${icon} ${styledSource} ${styledTag}${styledTitle}`;
+		: `${treePrefix}${icon} ${styledTag}${styledTitle}`;
 	const left = truncateToWidth(leftBody, leftWidth, "…");
 
 	// Pad every row to the full pane width so rows align regardless of whether they

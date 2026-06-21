@@ -485,7 +485,7 @@ describe("SubagentPool", () => {
 		const ti = argv.indexOf("--tools");
 		expect(ti).toBeGreaterThanOrEqual(0);
 		const toolList = argv[ti + 1].split(",");
-		expect(toolList).toContain("Task");
+		expect(toolList).toContain("ExecuteTask");
 		expect(toolList).toContain("TaskOutput");
 	});
 

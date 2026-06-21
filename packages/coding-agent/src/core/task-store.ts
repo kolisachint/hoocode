@@ -43,7 +43,7 @@ export interface TaskAgent {
 	/**
 	 * Live activity descriptor for a running subagent (e.g. the tool it is
 	 * currently executing), fed by the pool's `task_progress` events. Empty string
-	 * means "no current activity" — `applyAgentPatch` skips `undefined`, so callers
+	 * means "no current activity" - `applyAgentPatch` skips `undefined`, so callers
 	 * clear it by patching `""`, not `undefined`.
 	 */
 	activity?: string;
@@ -67,7 +67,7 @@ export interface Task {
 	agent?: string;
 	/**
 	 * Id of the task that spawned this one, linking a dispatched subagent (and its
-	 * own delegations) back to the Task call that created it. Root tasks omit it.
+	 * own delegations) back to the ExecuteTask call that created it. Root tasks omit it.
 	 * Drives the subagents lens's recursive task tree: a node's children are the
 	 * tasks whose `parentTaskId` is its id, so nesting deeper than one level (a
 	 * subagent that spawns a subagent) is visible. Set when a child subagent's task
@@ -123,6 +123,21 @@ class TaskStore {
 	private taskAgents: TaskAgent[] = [];
 	private nextId = 1;
 	private readonly listeners = new Set<Listener>();
+	private batchDepth = 0;
+
+	/**
+	 * Run a series of mutations without notifying listeners until the batch
+	 * completes. Nested batches are supported: only the outermost batch flushes.
+	 */
+	batch(fn: () => void): void {
+		this.batchDepth++;
+		try {
+			fn();
+		} finally {
+			this.batchDepth--;
+			if (this.batchDepth === 0) this.emit();
+		}
+	}
 
 	create(title: string, options: CreateTaskOptions = {}): Task {
 		const now = Date.now();
@@ -187,7 +202,7 @@ class TaskStore {
 		return created;
 	}
 
-	/** Patch an existing agent (state/handoff/stats…). Unknown ids are ignored. */
+	/** Patch an existing agent (state/handoff/stats...). Unknown ids are ignored. */
 	patchAgent(id: string, patch: TaskAgentPatch): void {
 		const agent = this.taskAgents.find((a) => a.id === id);
 		if (!agent) return;
@@ -237,7 +252,7 @@ class TaskStore {
 	 * Called when a new user message arrives: finished tasks from the previous turn
 	 * stay visible (with their final status) for the whole turn and are wiped only
 	 * when the user starts the next turn, so the next turn opens with an empty pane
-	 * and its first task is #1 again. Active (pending/in_progress) tasks are kept —
+	 * and its first task is #1 again. Active (pending/in_progress) tasks are kept -
 	 * a follow-up/steer message can arrive while a subagent is still running, and
 	 * dropping its task here would orphan the live work (its later status update
 	 * would target a removed id and silently vanish). Numbering only restarts once
@@ -285,6 +300,7 @@ class TaskStore {
 	}
 
 	private emit(): void {
+		if (this.batchDepth > 0) return;
 		for (const listener of this.listeners) {
 			listener();
 		}

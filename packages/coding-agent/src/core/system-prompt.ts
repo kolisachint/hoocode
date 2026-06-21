@@ -2,7 +2,7 @@
  * System prompt construction and project context loading
  */
 
-import { type AgentDefinition, TASK_TOOL_NAME } from "./agent-frontmatter.js";
+import { type AgentDefinition, EXECUTE_TASK_TOOL_NAME } from "./agent-frontmatter.js";
 import { formatAgentsForPrompt } from "./agent-registry.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 
@@ -25,7 +25,7 @@ export interface BuildSystemPromptOptions {
 	skills?: Skill[];
 	/**
 	 * Available agents for delegation, emitted as `<available_agents>` XML.
-	 * Only populated when the Task tool is active so the model knows which
+	 * Only populated when the ExecuteTask tool is active so the model knows which
 	 * agents exist without re-reading the agent registry each turn.
 	 */
 	agents?: AgentDefinition[];
@@ -81,8 +81,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += formatSkillsForPrompt(skills);
 		}
 
-		// Append agents section (only when Task tool is active)
-		const hasTask = !selectedTools || selectedTools.includes(TASK_TOOL_NAME);
+		// Append agents section (only when ExecuteTask tool is active)
+		const hasTask = !selectedTools || selectedTools.includes(EXECUTE_TASK_TOOL_NAME);
 		if (hasTask && agents.length > 0) {
 			prompt += formatAgentsForPrompt(agents);
 		}
@@ -128,7 +128,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	if (hasLs) explore.push("ls (list directory contents)");
 	if (explore.length > 0) {
 		addGuideline(
-			`For file exploration use the dedicated tools — ${explore.join(", ")} — instead of bash (grep/find/ls in the shell); they are faster, and respect .gitignore where applicable`,
+			`For file exploration use the dedicated tools - ${explore.join(", ")} - instead of bash (grep/find/ls in the shell); they are faster, and respect .gitignore where applicable`,
 		);
 	} else if (hasBash) {
 		addGuideline("Use bash for file exploration (ls, rg/grep, find)");
@@ -146,10 +146,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	addGuideline("No preamble or postamble; do not restate the task or summarize what you just did");
 	addGuideline('Do not add closers like "Let me know" or "Hope this helps"');
 	addGuideline(
-		"Do not narrate routine tool calls or results — the permission gate already shows them; speak when you have the answer or need a decision",
+		"Do not narrate routine tool calls or results - the permission gate already shows them; speak when you have the answer or need a decision",
 	);
 	addGuideline(
-		"Match the surrounding code's conventions for comments, docstrings, and types — do not add or strip them by default",
+		"Match the surrounding code's conventions for comments, docstrings, and types - do not add or strip them by default",
 	);
 	addGuideline("Show file paths clearly when working with files");
 
@@ -183,8 +183,8 @@ ${guidelines}`;
 		prompt += formatSkillsForPrompt(skills);
 	}
 
-	// Append agents section (only when Task tool is active)
-	const hasTask = tools.includes(TASK_TOOL_NAME);
+	// Append agents section (only when ExecuteTask tool is active)
+	const hasTask = tools.includes(EXECUTE_TASK_TOOL_NAME);
 	if (hasTask && agents.length > 0) {
 		prompt += formatAgentsForPrompt(agents);
 	}

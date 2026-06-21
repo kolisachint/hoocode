@@ -315,6 +315,60 @@ export class SubagentPool extends EventEmitter {
 		});
 	}
 
+	/**
+	 * Wait for a task to finish without consuming its result. Returns the result
+	 * once the task reaches a terminal state, or undefined if the task is not
+	 * found. Unlike wait_for(), the result remains in the completed map so
+	 * collect() can still read it afterward.
+	 */
+	wait_for_completion(task_id: string): Promise<SubagentResult | undefined> {
+		if (this.disposed) {
+			return Promise.reject(new Error("SubagentPool has been disposed"));
+		}
+
+		const existing = this.completed.get(task_id);
+		if (existing) return Promise.resolve(existing);
+
+		const persisted = this.taskStatus.get(task_id);
+		if (persisted) {
+			const result = this.completed.get(task_id);
+			return Promise.resolve(result);
+		}
+
+		return new Promise<SubagentResult | undefined>((resolve) => {
+			const onDone = (data: { task_id: string }) => {
+				if (data.task_id !== task_id) return;
+				cleanup();
+				resolve(this.completed.get(task_id));
+			};
+			const onFailed = (data: { task_id: string }) => {
+				if (data.task_id !== task_id) return;
+				cleanup();
+				resolve(this.completed.get(task_id));
+			};
+			const onStalled = (data: { task_id: string }) => {
+				if (data.task_id !== task_id) return;
+				cleanup();
+				resolve(this.completed.get(task_id));
+			};
+			const onTimeout = (data: { task_id: string }) => {
+				if (data.task_id !== task_id) return;
+				cleanup();
+				resolve(this.completed.get(task_id));
+			};
+			const cleanup = () => {
+				this.off("task_done", onDone);
+				this.off("task_failed", onFailed);
+				this.off("task_stalled", onStalled);
+				this.off("task_timeout", onTimeout);
+			};
+			this.on("task_done", onDone);
+			this.on("task_failed", onFailed);
+			this.on("task_stalled", onStalled);
+			this.on("task_timeout", onTimeout);
+		});
+	}
+
 	/** Number of currently running subagents. */
 	running_count(): number {
 		return this.slots.size;
@@ -587,7 +641,7 @@ export class SubagentPool extends EventEmitter {
 				args.push("--system-prompt", systemPrompt);
 			}
 
-			// A `delegate: true` agent may itself dispatch via the Task tool, but only
+			// A `delegate: true` agent may itself dispatch via the ExecuteTask tool, but only
 			// while the child it becomes can still nest (childDepth < cap) — so the
 			// deepest permitted level cannot delegate further. Gating here keeps the
 			// authorization explicit and bounded by the same cap as the depth guard.
@@ -601,7 +655,7 @@ export class SubagentPool extends EventEmitter {
 			// have Task/TaskOutput added, or the child would filter them out.
 			const tools = def?.tools ? [...def.tools] : undefined;
 			if (canChildDelegate && tools) {
-				for (const t of ["Task", "TaskOutput"]) {
+				for (const t of ["ExecuteTask", "TaskOutput"]) {
 					if (!tools.includes(t)) tools.push(t);
 				}
 			}
@@ -612,7 +666,7 @@ export class SubagentPool extends EventEmitter {
 				args.push("--disallowed-tools", def.disallowedTools.join(","));
 			}
 
-			// Propagate subagent enablement so the child registers the Task tool; without
+			// Propagate subagent enablement so the child registers the ExecuteTask tool; without
 			// this the flag-based enablement would not reach a spawned child.
 			if (canChildDelegate) {
 				args.push("--enable-subagents");
@@ -1016,12 +1070,13 @@ export class SubagentPool extends EventEmitter {
 		else if (result.ok) this.taskStatus.set(task_id, "done");
 		else this.taskStatus.set(task_id, "failed");
 
+		// Always persist the result so collect() can read it after wait_for() resolves.
+		this.completed.set(task_id, result);
+
 		const waiter = this.waiters.get(task_id);
 		if (waiter) {
 			waiter.resolve(result);
 			this.waiters.delete(task_id);
-			return;
 		}
-		this.completed.set(task_id, result);
 	}
 }

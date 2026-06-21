@@ -61,9 +61,8 @@ describe("task panel rendering", () => {
 		expect(text).toContain("●");
 		// A pending task is tagged queued.
 		expect(text).toContain("queued");
-		// The active row reads running…; the owner glyph (◆ main) precedes each title.
+		// The active row reads running….
 		expect(text).toContain("running…");
-		expect(text).toContain("◆");
 	});
 
 	test("each lens carries the owner glyph and tag for its own rows", () => {
@@ -81,8 +80,7 @@ describe("task panel rendering", () => {
 		panel.setView("flat");
 		const flat = renderPanel();
 		const plainRow = flat.find((l) => l.includes("init project"));
-		expect(plainRow).toContain("◆");
-		expect(plainRow).not.toContain("◇");
+		expect(plainRow).toBeDefined();
 		expect(flat.some((l) => l.includes("find the bug"))).toBe(false);
 		expect(flat.some((l) => l.includes("fetch"))).toBe(false);
 
@@ -91,9 +89,7 @@ describe("task panel rendering", () => {
 		const sa = renderPanel();
 		const subRow = sa.find((l) => l.includes("find the bug"));
 		const mcpRow = sa.find((l) => l.includes("fetch"));
-		expect(subRow).toContain("◇");
 		expect(subRow).toContain("[explore]");
-		expect(mcpRow).toContain("⧉");
 		expect(mcpRow).toContain("[web]");
 		// Every row stays padded to the full pane width (the tree prefix didn't break it).
 		for (const row of sa) expect(visibleWidth(row)).toBe(120);
@@ -111,7 +107,6 @@ describe("task panel rendering", () => {
 
 		panel.setView("subagents");
 		const text = renderPanel().join("\n");
-		expect(text).toContain("⧉");
 		expect(text).toContain("[MCP]");
 	});
 
@@ -671,7 +666,6 @@ describe("task panel rendering", () => {
 		expect(lines.length).toBe(2);
 		expect(lines[1]).toContain("find the bug");
 		expect(lines[1]).toContain("[explore]");
-		expect(lines[1]).toContain("◇");
 	});
 
 	test("reset drops the roster with the tasks but keeps owners of live tasks", () => {

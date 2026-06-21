@@ -40,12 +40,14 @@ export const MODEL_INHERIT = "inherit";
 export const HOOCODE_TOOL_NAMES: readonly string[] = ["bash", "edit", "find", "grep", "ls", "read", "write"];
 
 /**
- * Canonical registered names of the two opt-in tools. These are case-sensitive
+ * Canonical registered names of the opt-in tools. These are case-sensitive
  * identifiers the system prompt and tool gating match exactly, so downstream
  * callers should reference these constants instead of hardcoding the strings
  * (a mis-cased `"task"` silently disables the agents/skills prompt sections).
  */
-export const TASK_TOOL_NAME = "Task";
+export const EXECUTE_TASK_TOOL_NAME = "ExecuteTask";
+/** @deprecated Use EXECUTE_TASK_TOOL_NAME. Kept for backward compatibility. */
+export const TASK_TOOL_NAME = EXECUTE_TASK_TOOL_NAME;
 export const TODO_WRITE_TOOL_NAME = "TodoWrite";
 
 /**
@@ -82,9 +84,9 @@ export interface AgentFrontmatter {
 	/** Claude Code extension: run this agent detached (non-blocking) so the parent polls for its result. */
 	background?: boolean;
 	/**
-	 * hoocode extension: opt a agent into delegating via the Task tool (subject to the
+	 * hoocode extension: opt a agent into delegating via the ExecuteTask tool (subject to the
 	 * tree-wide nesting cap). `true` = any subagent type; a comma-separated string or
-	 * YAML list = only those types. Opt-in per agent so the deliberate "Task is not a
+	 * YAML list = only those types. Opt-in per agent so the deliberate "ExecuteTask is not a
 	 * normal tool" boundary stays intact for everyone else.
 	 */
 	delegate?: boolean | string | string[];
@@ -122,7 +124,7 @@ export interface AgentDefinition {
 	maxTurns?: number;
 	/** When true, dispatch is non-blocking: the parent receives a handle and polls for the result. */
 	background?: boolean;
-	/** When true, this agent may delegate via the Task tool, subject to the nesting cap. */
+	/** When true, this agent may delegate via the ExecuteTask tool, subject to the nesting cap. */
 	delegate?: boolean;
 	/** Restricts delegation to these subagent types (undefined = any when `delegate` is true). */
 	delegateTo?: string[];
