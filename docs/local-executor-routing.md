@@ -29,6 +29,47 @@ sizes corrected two of the original investigation's claims:
 The rest of this document is the original investigation, preserved for context;
 where it says read compresses ~95%, read the revision above instead.
 
+## Executor runtimes: local and hosted
+
+The router only speaks to an OpenAI-compatible endpoint; it does not care what
+serves it. The original investigation used MLX on Apple Silicon, but the same
+`routing.executor` config works against any of these:
+
+- **Local MLX (Apple Silicon).** `mlx_lm.server`, harness-managed via the
+  optional `routing.executor.server` block (default `command` is
+  `mlx_lm.server`). This path is Apple-only.
+- **Local on Windows/Linux.** Any OpenAI-compatible server — `llama.cpp`
+  (`llama-server`), Ollama, LM Studio, or vLLM (NVIDIA). Either set
+  `routing.executor.server.command` to launch it, or start it yourself: when a
+  healthy server already answers the executor `baseUrl`, the harness reuses it
+  without spawning (it health-checks `/v1/models` before launching anything).
+  MLX does not run here — pick a portable runtime. On Windows the deciding
+  factor is GPU/VRAM, not system RAM: a 7B 4-bit model in VRAM is fast, while
+  CPU-only inference is slow.
+- **Hosted provider (no local hardware).** Point `routing.executor` at any
+  configured provider/model — e.g. a free `opencode` model. Omit the `server`
+  block entirely; with no server config the harness assumes the endpoint is
+  available and just calls it, resolving auth from the provider's API key. This
+  offloads compaction/bash-compression with no local model or GPU at all.
+
+Whatever the runtime, Qwen3 still requires `/no_think` (see the compression
+results); a non-thinking or instruct model avoids that concern.
+
+### Size band is two guards, not one
+
+`minBytes`/`maxBytes` (default 2048/8192) gate which inputs route to the
+executor, but the two bounds exist for different reasons:
+
+- `minBytes` — inputs below this are too small to be worth offloading. Applies
+  to *every* runtime.
+- `maxBytes` — inputs above this fall back to the primary model. This bound is a
+  **local-hardware guard**: large inputs were slow on MLX and OOM-crashed the
+  8 GB M1 during compaction. On a **hosted** (or large-memory) executor there is
+  no local OOM, so the cap is counter-productive — it sends the *largest, most
+  token-expensive* compactions back to the paid primary, exactly the inputs most
+  worth offloading. For those runtimes, raise `maxBytes` substantially (or high
+  enough to cover your whole context) via the executor config.
+
 ## TL;DR
 
 - Buildable win: route **tool-result compression / summarization** to a local
@@ -352,10 +393,6 @@ default OFF. Nothing routes to the executor silently.
   results before Opus sees them, using the per-tool prompts above. Higher risk
   (no original seen by Opus), so: raw result kept retrievable, dense types are
   pass-through only, and the mode must be explicitly enabled per session/command.
-- `shadow-executor` (later) — primary remains the live path; the same
-  workload is mirrored to the executor for measurement only, never affecting
-  output. Note: doubles memory pressure during the mirrored call on 8 GB; run
-  only in deliberate measurement sessions.
 
 Explicit gating: modes are selected per session via config
 (`routing.mode`) or env (`HOOCODE_ROUTING_MODE`), and v2 additionally requires
@@ -540,6 +577,5 @@ unchanged.
 1. `executor-for-summarization` with Qwen3-4B (`/no_think`), behind the flag,
    default `primary-only`, fallback to primary on executor error.
 2. Per-turn metrics logging.
-3. `shadow-executor` for honest measurement on real traffic.
-4. Extend to other low-risk reproductive offloads only if data supports it
+3. Extend to other low-risk reproductive offloads only if data supports it
    (e.g. session titles, commit-message drafts).

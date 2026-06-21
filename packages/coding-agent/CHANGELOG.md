@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Dropped the `shadow-executor` local-inference routing mode. It was an
+  unimplemented no-op (the live path always used the primary and the
+  measurement mirror was never built), so removing it deletes a misleading
+  option from `routing.mode` / `HOOCODE_ROUTING_MODE` with no behavior loss.
+  Setting it now falls through to the default activated mode.
+
 ### Changed
 
 - Default system prompt now includes output-constraint guidelines that trim
@@ -10,6 +18,11 @@
   calls/results (the permission gate already surfaces them), and matching the
   surrounding code's conventions for comments/docstrings/types rather than
   adding or stripping them by default.
+- Generalized the local-executor routing docs beyond MLX on Apple Silicon:
+  documented hosted executors (e.g. a free `opencode` model, no `server`
+  block), Windows/Linux runtimes (llama.cpp, Ollama, LM Studio, vLLM), and
+  clarified that the `maxBytes` size-band cap is a local-hardware OOM guard that
+  should be raised for hosted or large-memory executors.
 
 ## [0.4.73] - 2026-06-20
 

@@ -25,14 +25,12 @@ export type TurnKind = "primary" | "summarization" | "tool-result";
 export type RoutingMode =
 	| "primary-only"
 	| "executor-for-summarization"
-	| "executor-for-tool-results"
-	| "shadow-executor";
+	| "executor-for-tool-results";
 
 export const ROUTING_MODES: readonly RoutingMode[] = [
 	"primary-only",
 	"executor-for-summarization",
 	"executor-for-tool-results",
-	"shadow-executor",
 ] as const;
 
 /**
@@ -166,8 +164,7 @@ export class LocalInferenceRouter {
 	/**
 	 * Pick the model to use for a turn. Returns the executor when the mode routes
 	 * that turn kind and the executor is available; otherwise returns the primary
-	 * model. `shadow-executor` always returns the primary for the live path (the
-	 * executor is exercised separately for measurement).
+	 * model.
 	 */
 	selectModel(turnKind: TurnKind, primary: Model<Api>): Model<Api> {
 		if (!this.isExecutorAvailable() || !this.executor) return primary;
@@ -176,7 +173,6 @@ export class LocalInferenceRouter {
 				return turnKind === "summarization" ? this.executor : primary;
 			case "executor-for-tool-results":
 				return turnKind === "tool-result" ? this.executor : primary;
-			case "shadow-executor":
 			case "primary-only":
 				return primary;
 		}

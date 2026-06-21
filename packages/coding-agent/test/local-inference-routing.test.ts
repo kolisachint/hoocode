@@ -45,7 +45,7 @@ describe("resolveRoutingMode", () => {
 
 	test("env var activates and selects mode", () => {
 		expect(resolveRoutingMode({ envMode: "executor-for-tool-results" })).toBe("executor-for-tool-results");
-		expect(resolveRoutingMode({ envMode: "shadow-executor" })).toBe("shadow-executor");
+		expect(resolveRoutingMode({ envMode: "executor-for-summarization" })).toBe("executor-for-summarization");
 	});
 
 	test("env primary-only does not activate", () => {
@@ -54,8 +54,12 @@ describe("resolveRoutingMode", () => {
 
 	test("env precedence over config; invalid env with flag falls back to default", () => {
 		expect(
-			resolveRoutingMode({ enableFlag: true, envMode: "shadow-executor", configMode: "executor-for-summarization" }),
-		).toBe("shadow-executor");
+			resolveRoutingMode({
+				enableFlag: true,
+				envMode: "executor-for-tool-results",
+				configMode: "executor-for-summarization",
+			}),
+		).toBe("executor-for-tool-results");
 		// Invalid env string still activates (non-empty, not primary-only) but resolves to default.
 		expect(resolveRoutingMode({ enableFlag: true, envMode: "garbage" })).toBe("executor-for-summarization");
 	});
@@ -85,13 +89,6 @@ describe("LocalInferenceRouter.selectModel", () => {
 		const r = LocalInferenceRouter.create({ mode: "executor-for-tool-results", config, registry });
 		expect(r.selectModel("tool-result", primary)).toBe(executor);
 		expect(r.selectModel("summarization", primary)).toBe(primary);
-	});
-
-	test("shadow-executor keeps primary on the live path", () => {
-		const r = LocalInferenceRouter.create({ mode: "shadow-executor", config, registry });
-		expect(r.isExecutorAvailable()).toBe(true);
-		expect(r.selectModel("summarization", primary)).toBe(primary);
-		expect(r.selectModel("tool-result", primary)).toBe(primary);
 	});
 
 	test("unresolved executor model degrades to primary", () => {
