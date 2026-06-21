@@ -61,10 +61,9 @@ describe("task panel rendering", () => {
 		expect(text).toContain("●");
 		// A pending task is tagged queued.
 		expect(text).toContain("queued");
-		// Task IDs should be visible
-		expect(text).toContain(`#${explore.id}`);
-		expect(text).toContain(`#${edit.id}`);
-		expect(text).toContain(`#${plain.id}`);
+		// The active row reads running…; the owner glyph (◆ main) precedes each title.
+		expect(text).toContain("running…");
+		expect(text).toContain("◆");
 	});
 
 	test("each lens carries the owner glyph and tag for its own rows", () => {
@@ -194,7 +193,7 @@ describe("task panel rendering", () => {
 		taskStore.update(a.id, { status: "in_progress" });
 
 		const width = 80;
-		const row = renderPanel(width).find((l) => stripAnsi(l).includes("#1"));
+		const row = renderPanel(width).find((l) => stripAnsi(l).includes("deliberately long"));
 		expect(row).toBeDefined();
 		// The row fills the full pane width: header + rows are padded to `width`.
 		expect(visibleWidth(row as string)).toBe(width);
@@ -203,7 +202,7 @@ describe("task panel rendering", () => {
 		expect(stripAnsi(row as string)).toMatch(/should fill the row\b/);
 	});
 
-	test("finished tasks show combined token usage and elapsed time per row", () => {
+	test("finished tasks show combined token usage per row", () => {
 		const done = taskStore.create("Investigate flaky test");
 		taskStore.update(done.id, {
 			status: "done",
@@ -213,9 +212,8 @@ describe("task panel rendering", () => {
 		const lines = renderPanel();
 		const row = lines.find((l) => l.includes("Investigate flaky test"));
 		expect(row).toBeDefined();
-		// 9000 + 1100 = 10100 → "10k"; elapsed is derived from create/update stamps.
+		// 9000 + 1100 = 10100 → "10k". Elapsed is summed in the header, not per row.
 		expect(row).toContain("10k");
-		expect(row).toMatch(/\d+(\.\d+)?(s|m\d{2}s)/);
 		// The per-row stamp uses a single combined total, not split ↑/↓ arrows.
 		expect(row).not.toContain("↑");
 		expect(row).not.toContain("↓");
@@ -297,7 +295,7 @@ describe("task panel rendering", () => {
 		// Next turn starts numbering over at #1.
 		const next = taskStore.create("Fresh task");
 		expect(next.id).toBe(1);
-		expect(stripAnsi(renderPanel().join("\n"))).toContain("#1 Fresh task");
+		expect(stripAnsi(renderPanel().join("\n"))).toContain("Fresh task");
 	});
 
 	test("reset keeps active tasks and does not restart numbering while one survives", () => {
@@ -418,8 +416,6 @@ describe("task panel rendering", () => {
 		expect(reviewRow).toContain("[review]");
 		// The child title is indented past the root (depth is visible).
 		expect(reviewRow.indexOf("Review findings")).toBeGreaterThan(exploreRow.indexOf("Explore module"));
-		// Each Task is its own node — the child carries its own usage/duration column.
-		expect(reviewRow).toMatch(/\d+(\.\d+)?(s|m\d{2}s)/);
 	});
 
 	test("subagents view draws ├─/│ connectors for a sibling under a deeper parent", () => {

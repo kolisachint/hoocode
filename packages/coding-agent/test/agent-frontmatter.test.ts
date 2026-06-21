@@ -240,7 +240,7 @@ body`;
 		const { agent, diagnostics } = parseAgentDefinition(raw, { source: "project" });
 		expect(agent).not.toBeNull();
 		expect(agent?.model).toBe("gpt-4o");
-		expect(diagnostics.some((d) => d.message.includes("not a recognized Claude alias"))).toBe(true);
+		expect(diagnostics.some((d) => d.message.includes("is not a recognized alias"))).toBe(true);
 	});
 
 	test("allows full Claude model IDs without warning", () => {
@@ -251,7 +251,7 @@ model: claude-sonnet-4-6
 ---
 body`;
 		const { diagnostics } = parseAgentDefinition(raw, { source: "project" });
-		expect(diagnostics.every((d) => !d.message.includes("not a recognized Claude alias"))).toBe(true);
+		expect(diagnostics.every((d) => !d.message.includes("is not a recognized alias"))).toBe(true);
 	});
 
 	test("warns when tools is a YAML list (prefer comma string)", () => {

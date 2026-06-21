@@ -390,7 +390,12 @@ function formatTaskLine(
 		: `${treePrefix}${icon} ${styledSource} ${styledTag}${styledTitle}`;
 	const left = truncateToWidth(leftBody, leftWidth, "…");
 
-	if (!rightPlain) return left;
+	// Pad every row to the full pane width so rows align regardless of whether they
+	// carry a right column (token usage / running… / queued).
+	if (!rightPlain) {
+		const pad = Math.max(0, width - visibleWidth(left));
+		return left + " ".repeat(pad);
+	}
 
 	const pad = Math.max(1, width - visibleWidth(left) - visibleWidth(rightPlain));
 	return left + " ".repeat(pad) + rightStyled;
