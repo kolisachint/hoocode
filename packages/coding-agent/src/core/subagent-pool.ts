@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getDispatchTaskDir } from "../config.js";
+import { attachJsonlLineReader } from "../modes/rpc/jsonl.js";
 import { waitForChildProcess } from "../utils/child-process.js";
 import { MODEL_INHERIT } from "./agent-frontmatter.js";
 import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
@@ -11,7 +12,6 @@ import { SubagentLifeguard } from "./lifeguard.js";
 import { OutputVerifier } from "./output-verifier.js";
 import { currentSubagentDepth, resolveMaxSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
-import { attachJsonlLineReader } from "../modes/rpc/jsonl.js";
 
 export interface SubagentPoolTask {
 	task_id: string;

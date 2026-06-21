@@ -22,10 +22,7 @@ import type { ModelRegistry } from "../model-registry.js";
 /** Work that may be routed to the executor instead of the primary model. */
 export type TurnKind = "primary" | "summarization" | "tool-result";
 
-export type RoutingMode =
-	| "primary-only"
-	| "executor-for-summarization"
-	| "executor-for-tool-results";
+export type RoutingMode = "primary-only" | "executor-for-summarization" | "executor-for-tool-results";
 
 export const ROUTING_MODES: readonly RoutingMode[] = [
 	"primary-only",
