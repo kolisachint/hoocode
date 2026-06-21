@@ -20,6 +20,14 @@
   background task threw "no result available" and confused the main agent.
 - The on-spawn placeholder is now a single compact line instead of a multi-line
   explainer, so dispatching several subagents at once no longer floods the TUI.
+- The per-turn prompt overhead of the subagent feature was cut substantially: the
+  available-agents roster is rendered once (was up to three times — the
+  `<available_agents>` block, the buildTaskMainPrompt appendix, and the Task tool
+  description), the Task tool description no longer re-embeds the roster or
+  re-explains parameters covered by their schemas, and `<available_agents>` now
+  carries a one-line summary per agent instead of the full description. Net: the
+  agent roster no longer scales the prompt by ~150-550 tokens per agent across
+  multiple copies; it is a single ~100-token-per-agent rendering.
 
 - **`Task` tool gains an optional `complexity` parameter** (`"fast"`,
   `"standard"`, `"capable"`). It selects a model tier from

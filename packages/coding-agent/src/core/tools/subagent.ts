@@ -26,41 +26,10 @@ import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
 
-/**
- * Condense a (possibly multi-line, bulleted) agent description into a single
- * useful one-liner for the agent picker list.
- *
- * Built-in agent descriptions open with a boilerplate header ("Use this
- * subagent ONLY when:") followed by "when to use" bullets and a "DO NOT use"
- * section. Taking the first line alone yields that identical header for every
- * agent, so instead surface the first meaningful bullets (or the first prose
- * line) from the positive "when to use" region.
- */
-export function summarizeAgentDescription(description: string): string {
-	const lines = description
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
-	if (lines.length === 0) return "";
-
-	// Keep only the positive region: everything before a "DO NOT use" section.
-	const stop = lines.findIndex((line) => /^(do\s*not|don'?t|avoid)\b/i.test(line));
-	const region = stop === -1 ? lines : lines.slice(0, stop);
-
-	// Drop a leading header line (e.g. "Use this subagent ONLY when:").
-	const body = region.length > 1 && region[0]!.endsWith(":") ? region.slice(1) : region;
-
-	const stripBullet = (line: string) => line.replace(/^[-*\u2022]\s+/, "").trim();
-	const bullets = body
-		.filter((line) => /^[-*\u2022]\s+/.test(line))
-		.map(stripBullet)
-		.filter((line) => line.length > 0);
-
-	const summary = bullets.length > 0 ? bullets.slice(0, 3).join("; ") : (body[0] ?? lines[0] ?? "").replace(/:$/, "");
-
-	const MAX = 200;
-	return summary.length > MAX ? `${summary.slice(0, MAX - 1).trimEnd()}\u2026` : summary;
-}
+// Re-exported from its home in agent-registry (where formatAgentsForPrompt uses
+// it to render the roster) so existing importers keep working without creating a
+// tools -> registry -> tools cycle.
+export { summarizeAgentDescription } from "../agent-registry.js";
 
 /** System prompt appendix for the main session when the Task tool is enabled.
  *  Instructs the parent agent on when and how to delegate effectively. The
