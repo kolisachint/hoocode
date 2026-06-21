@@ -22,6 +22,7 @@ import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
 import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
+import { subagentInbox } from "../subagent-inbox.js";
 import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
 
@@ -278,27 +279,65 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				agent: params.subagent_type,
 			});
 			registerSubagentDispatch(params.subagent_type);
-
-			// Always dispatch and await the subagent's full result here. Background
-			// agents (def.background) are made non-blocking by the agent loop via this
-			// tool's `background` flag: the loop runs this execute() detached, answers
-			// the call with a placeholder, and injects the answer below as a follow-up
-			// message when it resolves. Foreground agents block the turn as usual.
 			taskStore.update(task.id, { status: "in_progress" });
 			// Fork agents inherit the parent's conversation via a forked session.
 			const forkSessionFile = def.fork
 				? resolveForkSessionFile(def, ctx.sessionManager?.getSessionFile(), ctx.cwd)
 				: undefined;
+
+			// `complexity` is passed as the model: the pool's spawn() already lets a
+			// non-`inherit` agent model win, then resolves a category string (fast/
+			// standard/capable) via settings.modelCategories. So a pinned-model agent
+			// ignores complexity, and an `inherit` agent picks up the requested tier —
+			// no settings lookup needed here.
+			const dispatchModel = params.complexity ?? ctx.model?.id;
+
+			// Whether this call runs detached. The agent loop reads the tool's
+			// `background` flag (the same predicate) to run execute() detached; we
+			// recompute it here to choose the notify-and-pull return shape.
+			const isBackground = params.background ?? backgroundAgents.has(params.subagent_type);
+
+			if (isBackground) {
+				// Notify-and-pull: register the dispatch in the inbox under a pre-allocated
+				// id, await it, retain the body in the inbox, and return a compact
+				// notification (not the body). The model pulls the body with TaskOutput.
+				const poolTaskId = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+				const label = subagentInbox.nextLabel(params.subagent_type);
+				subagentInbox.observe(pool);
+				subagentInbox.start(poolTaskId, label, params.subagent_type);
+				try {
+					const dispatchResult = await pool.dispatch(params.prompt, {
+						forceAgent: params.subagent_type,
+						context: "",
+						model: dispatchModel,
+						provider: ctx.model?.provider,
+						sessionFile: forkSessionFile,
+						taskId: poolTaskId,
+					});
+					subagentInbox.finish(poolTaskId, dispatchResult);
+					return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, poolTaskId, {
+						taskId: poolTaskId,
+						label,
+					});
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : String(error);
+					taskStore.update(task.id, { status: "failed" });
+					subagentInbox.fail(poolTaskId, reason);
+					// A background dispatch reports failure as a compact notification, not a
+					// thrown tool error — the call was already answered by a placeholder.
+					return {
+						content: [{ type: "text" as const, text: `${label} failed ✗ — ${reason}` }],
+						details: { subagent_type: params.subagent_type, ok: false, error: reason, taskId: task.id, poolTaskId, background: true },
+					};
+				}
+			}
+
+			// Foreground: block the turn and return the subagent's full answer inline.
 			try {
-				// `complexity` is passed as the model: the pool's spawn() already lets a
-				// non-`inherit` agent model win, then resolves a category string (fast/
-				// standard/capable) via settings.modelCategories. So a pinned-model agent
-				// ignores complexity, and an `inherit` agent picks up the requested tier —
-				// no settings lookup needed here.
 				const dispatchResult = await pool.dispatch(params.prompt, {
 					forceAgent: params.subagent_type,
 					context: "",
-					model: params.complexity ?? ctx.model?.id,
+					model: dispatchModel,
 					provider: ctx.model?.provider,
 					sessionFile: forkSessionFile,
 				});
@@ -381,12 +420,21 @@ function mergeChildTaskTree(nodes: readonly SubagentTaskNode[] | undefined, pare
 	});
 }
 
-/** Extract the final answer from a finished dispatch, updating the task panel. */
+/**
+ * Update the task panel from a finished dispatch and shape the tool result.
+ *
+ * Foreground calls return the subagent's full answer inline and signal a hard
+ * failure by throwing (the agent loop derives a tool's error state from a thrown
+ * error). A background call passes `background`: the body already lives in the
+ * inbox, so it returns a compact, self-contained notification (success or
+ * failure) and never throws — the call was already answered by a placeholder.
+ */
 function finalizeDispatchResult(
 	dispatchResult: TaskResult,
 	subagentType: string,
 	taskStoreId: number,
 	resumeHandle: string | undefined,
+	background?: { taskId: string; label: string },
 ): { content: Array<{ type: "text"; text: string }>; details: TaskToolDetails } {
 	const result = dispatchResult.result;
 	const resultData = result?.result_data as SubagentResultFile | undefined;
@@ -403,12 +451,23 @@ function finalizeDispatchResult(
 	}
 
 	if (!result || !result.ok) {
-		// Signal failure by throwing: the agent loop derives a tool's error state
-		// from a thrown error, not from a returned flag.
 		const failNote = result?.usedInheritedModelFallback ? "inherited-model retry failed" : undefined;
 		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
 		taskStore.patchAgent(subagentType, { state: "failed" });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
+		if (background) {
+			return {
+				content: [{ type: "text", text: `${background.label} failed ✗ — ${reason}` }],
+				details: {
+					subagent_type: subagentType,
+					ok: false,
+					error: reason,
+					taskId: taskStoreId,
+					poolTaskId: background.taskId,
+					background: true,
+				},
+			};
+		}
 		const stderr = result?.stderr?.trim();
 		throw new Error(`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`);
 	}
@@ -429,6 +488,22 @@ function finalizeDispatchResult(
 	if (result.status === "partial" && resumeHandle) {
 		answer += `\n\n[Partial result. To continue this subagent, call Task again with resume_task_id="${resumeHandle}".]`;
 	}
+
+	if (background) {
+		// Compact notification: the body is retained in the inbox; the model pulls it
+		// with TaskOutput. Keeps a wide swarm from flooding the parent's context.
+		const partial = result.status === "partial" ? " (partial — resume to continue)" : "";
+		const outstanding = subagentInbox.outstanding().length;
+		const tail = outstanding > 0 ? ` ${outstanding} still running.` : "";
+		const text =
+			`${background.label} finished ✓${partial} — ${summarize(answer)}.${tail}\n` +
+			`Read the full result with TaskOutput("${background.label}").`;
+		return {
+			content: [{ type: "text", text }],
+			details: { subagent_type: subagentType, ok: true, taskId: taskStoreId, poolTaskId: background.taskId, background: true },
+		};
+	}
+
 	return {
 		content: [{ type: "text", text: answer }],
 		details: { subagent_type: subagentType, ok: true, taskId: taskStoreId, poolTaskId: resumeHandle },

@@ -197,11 +197,15 @@ export function describeBackgroundTool(toolCall: BackgroundToolCall): Background
  */
 export function createBackgroundPlaceholderText(toolCall: BackgroundToolCall): string {
 	const info = describeBackgroundTool(toolCall);
-	const lead = info.isMcpTool
-		? `Started ${info.label} in the background — it runs on an external MCP server and may take a while.`
-		: `Delegated to ${info.label} in the background — it runs in its own isolated context and cannot see this conversation.`;
-	const what = info.summary ? `\nTask: ${info.summary}` : "";
-	return `${lead}${what}\nIts result will arrive here as a follow-up message once it finishes — keep working in the meantime; you do not need to poll for it.`;
+	const what = info.summary ? ` — ${firstLine(info.summary, 80)}` : "";
+	if (info.isMcpTool) {
+		return `Started ${info.label} in the background${what}. Its result arrives as a follow-up; keep working.`;
+	}
+	// One compact line: a verbose multi-line placeholder per dispatch floods the
+	// transcript when several subagents spin up at once. The finish notification
+	// names the task and the body is pulled with TaskOutput; TaskOutput(list) shows
+	// progress meanwhile.
+	return `Delegated to ${info.label} in the background${what}. I'll be notified when it finishes; use TaskOutput to check progress or read the result.`;
 }
 
 /**
@@ -214,6 +218,20 @@ export function createBackgroundPlaceholderText(toolCall: BackgroundToolCall): s
  */
 export function createBackgroundTaskMessage(result: BackgroundToolResult): CustomMessage {
 	const info = describeBackgroundTool(result.toolCall);
+	// Subagent `Task`: the tool already returns a compact, self-contained
+	// notification (the full body is retained in the inbox for TaskOutput to pull),
+	// so the follow-up is exactly that line — no second header, no inlined body.
+	if (!info.isMcpTool) {
+		return {
+			role: "custom",
+			customType: BACKGROUND_TASK_CUSTOM_TYPE,
+			content: result.result.content,
+			display: true,
+			details: { subagentType: info.subagentType, isMcpTool: false, isError: result.isError },
+			timestamp: Date.now(),
+		};
+	}
+	// MCP background tool: no inbox, so deliver the header + full result body.
 	const verb = result.isError ? "failed" : "finished";
 	const summary = info.summary ? ` (${info.summary})` : "";
 	const header = `Background ${info.label}${summary} ${verb}:`;
@@ -222,7 +240,7 @@ export function createBackgroundTaskMessage(result: BackgroundToolResult): Custo
 		customType: BACKGROUND_TASK_CUSTOM_TYPE,
 		content: [{ type: "text", text: header }, ...result.result.content],
 		display: true,
-		details: { subagentType: info.subagentType, isMcpTool: info.isMcpTool, isError: result.isError },
+		details: { subagentType: info.subagentType, isMcpTool: true, isError: result.isError },
 		timestamp: Date.now(),
 	};
 }

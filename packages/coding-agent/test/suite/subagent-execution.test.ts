@@ -10,6 +10,7 @@ import { markProviderExhausted, resetProviderHealthForTesting } from "../../src/
 import { createAgentSession } from "../../src/core/sdk.js";
 import { SessionManager } from "../../src/core/session-manager.js";
 import { SettingsManager } from "../../src/core/settings-manager.js";
+import { subagentInbox } from "../../src/core/subagent-inbox.js";
 import type { SubagentPool, TaskResult } from "../../src/core/subagent-pool.js";
 import { setSubagentPoolForTesting } from "../../src/core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../src/core/subagent-result.js";
@@ -102,6 +103,7 @@ function fakeResult(ok: boolean, data: Partial<SubagentResultFile>, error?: stri
 afterEach(() => {
 	setSubagentPoolForTesting(undefined);
 	resetProviderHealthForTesting();
+	subagentInbox.clear();
 	while (cleanups.length > 0) {
 		cleanups.pop()?.();
 	}
@@ -121,32 +123,66 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		} as unknown as ExtensionContext;
 	}
 
-	it("runs the subagent, returns its answer, and tracks a task to completion", async () => {
+	it("runs a foreground subagent, returns its answer inline, and tracks a task to completion", async () => {
 		const setup = setupFaux();
-		setSubagentPoolForTesting(makeFakePool(fakeResult(true, { summary: "done exploring" })));
+		setSubagentPoolForTesting(makeFakePool(fakeResult(true, { summary: "done working" })));
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
 		const tool = createTaskToolDefinition();
+		// general-purpose is foreground (no background frontmatter), so the answer
+		// comes back inline rather than as a notify-and-pull notification.
 		const result = await tool.execute(
 			"call-1",
 			{
-				description: "explore repo",
-				prompt: "explore the repo thoroughly and report findings",
-				subagent_type: "explore",
+				description: "do work",
+				prompt: "do the multi-step thing and report findings",
+				subagent_type: "general-purpose",
 			},
 			undefined,
 			undefined,
 			ctx,
 		);
 
-		expect(result.content[0]).toEqual({ type: "text", text: "done exploring" });
-		expect(result.details).toMatchObject({ subagent_type: "explore", ok: true, taskId: expect.any(Number) });
+		expect(result.content[0]).toEqual({ type: "text", text: "done working" });
+		expect(result.details).toMatchObject({ subagent_type: "general-purpose", ok: true, taskId: expect.any(Number) });
 
 		// The finished task stays visible until the next user turn.
 		const created = taskStore.list().slice(before);
 		expect(created).toHaveLength(1);
 		expect(created[0].status).toBe("done");
+	});
+
+	it("runs a background subagent as notify-and-pull: compact notification + body in the inbox", async () => {
+		const setup = setupFaux();
+		const fullBody =
+			"Found the bug in foo.ts:42, an off-by-one in the loop bounds that overflows the array index and corrupts downstream state";
+		setSubagentPoolForTesting(makeFakePool(fakeResult(true, { summary: fullBody })));
+		const ctx = makeCtx(setup, makeTempDir());
+
+		const tool = createTaskToolDefinition();
+		// explore opts into background, so execute() returns a compact notification and
+		// stashes the body in the inbox for TaskOutput to pull.
+		const result = await tool.execute(
+			"call-bg",
+			{ description: "scan repo", prompt: "scan the repo", subagent_type: "explore" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const text = (result.content[0] as { text: string }).text;
+		expect(text).toContain("explore#");
+		expect(text).toContain("finished");
+		expect(text).toContain("TaskOutput");
+		// The notification carries a short preview, not the whole body.
+		expect(text).not.toContain("corrupts downstream state");
+		expect(result.details).toMatchObject({ subagent_type: "explore", ok: true, background: true });
+
+		// The full body is retrievable from the inbox by the returned label.
+		const label = text.match(/explore#\d+/)?.[0] as string;
+		const collected = subagentInbox.collect(label);
+		expect(collected?.body).toBe(fullBody);
 	});
 
 	it("skips dispatch when the inherited provider is flagged exhausted", async () => {

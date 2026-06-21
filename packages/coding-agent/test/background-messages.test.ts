@@ -51,26 +51,25 @@ describe("describeBackgroundTool", () => {
 });
 
 describe("background start/finish messages stay in sync", () => {
-	it("subagent placeholder and finish message share the same label", () => {
+	it("subagent placeholder is one compact line and the finish passes the tool's notification through", () => {
 		const toolCall = { name: "Task", arguments: { subagent_type: "review", description: "review the diff" } };
 		const placeholder = createBackgroundPlaceholderText(toolCall);
-		const finish = createBackgroundTaskMessage(bgResult("Task", toolCall.arguments, "looks good"));
+		const finish = createBackgroundTaskMessage(bgResult("Task", toolCall.arguments, "review#1 finished ✓ — looks good"));
 
 		const label = describeBackgroundTool(toolCall).label;
-		const finishHeader = (finish.content as Array<{ text: string }>)[0].text;
-
 		expect(placeholder).toContain(label);
-		expect(finishHeader).toContain(label);
-		// Verbose: the placeholder explains delegation + that the result arrives later.
-		expect(placeholder).toContain("isolated context");
-		expect(placeholder).toContain("follow-up message");
-		// Finish carries the original result content after the header.
-		expect((finish.content as Array<{ text: string }>)[1].text).toBe("looks good");
+		// Compact: a single line that points at TaskOutput, not a multi-line explainer.
+		expect(placeholder.split("\n")).toHaveLength(1);
+		expect(placeholder).toContain("TaskOutput");
+		// Subagent finish is the tool's compact notification verbatim — no extra header,
+		// no inlined body (the body is pulled from the inbox).
+		expect((finish.content as Array<{ text: string }>)[0].text).toBe("review#1 finished ✓ — looks good");
+		expect(finish.content).toHaveLength(1);
 		expect(finish.customType).toBe(BACKGROUND_TASK_CUSTOM_TYPE);
 		expect(finish.details).toMatchObject({ subagentType: "review", isMcpTool: false, isError: false });
 	});
 
-	it("MCP placeholder and finish message share the same label", () => {
+	it("MCP placeholder is compact and the finish keeps a header + full body", () => {
 		const toolCall = { name: "mcp_web_fetch", arguments: { url: "https://example.com" } };
 		const placeholder = createBackgroundPlaceholderText(toolCall);
 		const finish = createBackgroundTaskMessage(bgResult("mcp_web_fetch", toolCall.arguments, "{}"));
@@ -79,16 +78,18 @@ describe("background start/finish messages stay in sync", () => {
 		const finishHeader = (finish.content as Array<{ text: string }>)[0].text;
 
 		expect(placeholder).toContain(label);
+		expect(placeholder.split("\n")).toHaveLength(1);
 		expect(finishHeader).toContain(label);
-		// Verbose: the placeholder explains it is an external MCP server call.
-		expect(placeholder).toContain("MCP server");
+		// MCP tools have no inbox, so the body is still inlined after the header.
+		expect((finish.content as Array<{ text: string }>)[1].text).toBe("{}");
 		expect(finish.details).toMatchObject({ isMcpTool: true });
 	});
 
-	it("marks a failed finish as failed", () => {
-		const finish = createBackgroundTaskMessage(bgResult("Task", { subagent_type: "explore" }, "boom", true));
-		const header = (finish.content as Array<{ text: string }>)[0].text;
-		expect(header).toContain("failed");
+	it("marks a failed subagent finish via details, content passed through", () => {
+		const finish = createBackgroundTaskMessage(
+			bgResult("Task", { subagent_type: "explore" }, "explore#1 failed ✗ — boom", true),
+		);
+		expect((finish.content as Array<{ text: string }>)[0].text).toBe("explore#1 failed ✗ — boom");
 		expect(finish.details).toMatchObject({ isError: true });
 	});
 });

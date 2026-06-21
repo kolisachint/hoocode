@@ -89,6 +89,9 @@ class SubagentInbox {
 	 * `lastActivity`. Idempotent per pool, so callers can wire it on every dispatch.
 	 */
 	observe(pool: SubagentPool): void {
+		// Tolerate a non-EventEmitter stand-in (test fakes): without progress events
+		// records simply carry no live activity.
+		if (typeof (pool as { on?: unknown }).on !== "function") return;
 		if (this.observedPools.has(pool)) return;
 		this.observedPools.add(pool);
 		pool.on("task_progress", (data: { task_id: string; event: Record<string, unknown> }) => {
