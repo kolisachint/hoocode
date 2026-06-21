@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Task tool renamed to ExecuteTask**. The subagent delegation tool is now
+  called `ExecuteTask` instead of `Task`. Agent definitions and prompts that
+  reference "Task tool" must be updated. The old name is kept as a deprecated
+  alias for backward compatibility.
+- **TodoWrite schema extended with `complexity` field**. Each todo item can now
+  carry a `complexity` parameter (`"fast"`, `"standard"`, `"capable"`) that
+  maps to a model category via `settings.modelCategories`. This is optional;
+  omitting it uses the agent's default model.
+- **ExecuteTask schema extended with `complexity` and `item_id` fields**. The
+  new `complexity` parameter selects a model category from config. The new
+  `item_id` parameter links the dispatch to a TodoWrite item for tracking.
+
+### Fixed
+
+- TodoWrite reconciliation now filters to root main-agent tasks only, excluding
+  MCP-sourced and delegated tasks that `taskOwnerId()` folded under "main". This
+  prevented silent data corruption of MCP task rows when the TodoWrite list was
+  shorter than the combined main+MCP task count.
+- TaskOutput now waits for a running/queued subagent to finish (up to 120s)
+  instead of returning "call again later" and requiring an extra LLM round-trip
+  per poll. Foreground Task completions are also visible to TaskOutput via a new
+  `wait_for_completion` API on the subagent pool.
+
+### Changed
+
+- TaskStore gains a `batch(fn)` method that defers listener notifications until
+  the batch callback completes. TodoWrite reconciliation and child-task-tree
+  merging now emit a single render invalidation instead of one per item.
+
 ## [0.4.77] - 2026-06-21
 
 ## [0.4.76] - 2026-06-21

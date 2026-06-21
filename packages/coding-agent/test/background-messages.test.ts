@@ -19,7 +19,7 @@ function bgResult(name: string, args: Record<string, unknown>, text: string, isE
 describe("describeBackgroundTool", () => {
 	it("describes a subagent Task call by its subagent_type and description", () => {
 		const info = describeBackgroundTool({
-			name: "Task",
+			name: "ExecuteTask",
 			arguments: { subagent_type: "explore", description: "find the bug", prompt: "long prompt..." },
 		});
 		expect(info.isMcpTool).toBe(false);
@@ -30,7 +30,7 @@ describe("describeBackgroundTool", () => {
 
 	it("falls back to the prompt's first line when no description is given", () => {
 		const info = describeBackgroundTool({
-			name: "Task",
+			name: "ExecuteTask",
 			arguments: { subagent_type: "explore", prompt: "first line\nsecond line" },
 		});
 		expect(info.summary).toBe("first line");
@@ -52,7 +52,7 @@ describe("describeBackgroundTool", () => {
 
 describe("background start/finish messages stay in sync", () => {
 	it("subagent placeholder and finish message share the same label", () => {
-		const toolCall = { name: "Task", arguments: { subagent_type: "review", description: "review the diff" } };
+		const toolCall = { name: "ExecuteTask", arguments: { subagent_type: "review", description: "review the diff" } };
 		const placeholder = createBackgroundPlaceholderText(toolCall);
 		const finish = createBackgroundTaskMessage(bgResult("Task", toolCall.arguments, "looks good"));
 

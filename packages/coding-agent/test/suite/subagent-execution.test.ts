@@ -14,7 +14,7 @@ import type { SubagentPool, TaskResult } from "../../src/core/subagent-pool.js";
 import { setSubagentPoolForTesting } from "../../src/core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../src/core/subagent-result.js";
 import { taskStore } from "../../src/core/task-store.js";
-import { createTaskToolDefinition } from "../../src/core/tools/subagent.js";
+import { createExecuteTaskToolDefinition } from "../../src/core/tools/subagent.js";
 import { createTestResourceLoader } from "../utilities.js";
 
 interface FauxSetup {
@@ -127,7 +127,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
-		const tool = createTaskToolDefinition();
+		const tool = createExecuteTaskToolDefinition();
 		const result = await tool.execute(
 			"call-1",
 			{
@@ -158,7 +158,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		markProviderExhausted(setup.model.provider, "Usage limit reached. Please try again later.");
 
 		const before = taskStore.list().length;
-		const tool = createTaskToolDefinition();
+		const tool = createExecuteTaskToolDefinition();
 		const result = await tool.execute(
 			"call-skip",
 			{
@@ -188,7 +188,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
-		const tool = createTaskToolDefinition();
+		const tool = createExecuteTaskToolDefinition();
 
 		// A hard subagent failure surfaces as a thrown tool error (idiomatic for this runtime).
 		await expect(
@@ -228,16 +228,15 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 			].join("\n"),
 		);
 
-		const tool = createTaskToolDefinition(cwd);
+		const tool = createExecuteTaskToolDefinition(cwd);
 		expect(typeof tool.background).toBe("function");
 		const isBackground = tool.background as (toolCall: { arguments: Record<string, unknown> }) => boolean;
 
+		// All ExecuteTask calls run as background tasks (non-blocking).
 		expect(isBackground({ arguments: { subagent_type: "watcher" } })).toBe(true);
-		// Built-in `explore` opts into background by default.
 		expect(isBackground({ arguments: { subagent_type: "explore" } })).toBe(true);
-		// A foreground built-in (`general-purpose`) and an unknown agent must not run in the background.
-		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(false);
-		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(false);
+		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(true);
+		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(true);
 	});
 });
 
@@ -252,7 +251,7 @@ describe("subagent tool gating (opt-in vs opt-out)", () => {
 			settingsManager: SettingsManager.inMemory(),
 			sessionManager: SessionManager.inMemory(),
 			resourceLoader: createTestResourceLoader(),
-			customTools: withSubagent ? [createTaskToolDefinition()] : [],
+			customTools: withSubagent ? [createExecuteTaskToolDefinition()] : [],
 		});
 		const names = session.getActiveToolNames();
 		session.dispose();
@@ -261,13 +260,13 @@ describe("subagent tool gating (opt-in vs opt-out)", () => {
 
 	it("activates the Task tool when registered (opted in)", async () => {
 		const names = await activeToolNames(true);
-		expect(names).toContain("Task");
+		expect(names).toContain("ExecuteTask");
 		expect(names).toContain("read");
 	});
 
 	it("does not expose the Task tool when not registered (opted out)", async () => {
 		const names = await activeToolNames(false);
-		expect(names).not.toContain("Task");
+		expect(names).not.toContain("ExecuteTask");
 		expect(names).toContain("read");
 	});
 });

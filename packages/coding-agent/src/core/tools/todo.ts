@@ -22,7 +22,7 @@
 import { type Static, Type } from "typebox";
 import { TODO_WRITE_TOOL_NAME } from "../agent-frontmatter.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
-import { type Task, type TaskStatus, taskOwnerId, taskStore } from "../task-store.js";
+import { type Task, type TaskStatus, taskStore } from "../task-store.js";
 
 const todoStatusSchema = Type.Union([Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")], {
 	description: "pending = not started, in_progress = actively being worked on, completed = finished.",
@@ -38,6 +38,12 @@ const todoItemSchema = Type.Object(
 			Type.String({
 				description:
 					"Optional present-tense form shown while the item is in_progress (e.g. 'Adding tests for the parser').",
+			}),
+		),
+		complexity: Type.Optional(
+			Type.Union([Type.Literal("fast"), Type.Literal("standard"), Type.Literal("capable")], {
+				description:
+					"Model category for ExecuteTask dispatch: fast (quick reads), standard (multi-file edits), capable (deep architecture). Optional.",
 			}),
 		),
 	},
@@ -82,9 +88,11 @@ function displayTitle(item: TodoWriteParams["todos"][number]): string {
 	return item.content.trim();
 }
 
-/** Current main-agent tasks (source unset), in stable creation order. */
+/** Current main-agent tasks (source unset, not delegated/MCP), in stable creation order. */
 function mainTasks(): Task[] {
-	return taskStore.list().filter((t) => taskOwnerId(t) === "main");
+	return taskStore
+		.list()
+		.filter((t) => t.source === undefined && t.agent === undefined && t.parentTaskId === undefined);
 }
 
 /** Create the TodoWrite tool definition. Registered as a customTool when enabled. */
@@ -111,22 +119,25 @@ export function createTodoWriteToolDefinition(): ToolDefinition {
 			const todos = params.todos ?? [];
 			const existing = mainTasks();
 
-			// Reconcile by position: update kept items, create new ones, remove the tail.
-			for (let i = 0; i < todos.length; i++) {
-				const item = todos[i]!;
-				const status = toTaskStatus(item.status);
-				const title = displayTitle(item);
-				const current = existing[i];
-				if (current) {
-					taskStore.update(current.id, { title, status });
-				} else {
-					const created = taskStore.create(title);
-					taskStore.update(created.id, { status });
+			// Batch all mutations so the TUI renders once, not per-item.
+			taskStore.batch(() => {
+				// Reconcile by position: update kept items, create new ones, remove the tail.
+				for (let i = 0; i < todos.length; i++) {
+					const item = todos[i]!;
+					const status = toTaskStatus(item.status);
+					const title = displayTitle(item);
+					const current = existing[i];
+					if (current) {
+						taskStore.update(current.id, { title, status });
+					} else {
+						const created = taskStore.create(title);
+						taskStore.update(created.id, { status });
+					}
 				}
-			}
-			for (let i = todos.length; i < existing.length; i++) {
-				taskStore.remove(existing[i]!.id);
-			}
+				for (let i = todos.length; i < existing.length; i++) {
+					taskStore.remove(existing[i]!.id);
+				}
+			});
 
 			const counts = todos.reduce(
 				(acc, t) => {

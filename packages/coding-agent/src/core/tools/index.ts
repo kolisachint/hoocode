@@ -62,8 +62,8 @@ export {
 // Off-by-default tools (enabled per session via flags/settings).
 export {
 	buildTaskMainPrompt,
+	createExecuteTaskToolDefinition,
 	createTaskOutputToolDefinition,
-	createTaskToolDefinition,
 	type TaskOutputDetails,
 	type TaskToolDetails,
 } from "./subagent.js";

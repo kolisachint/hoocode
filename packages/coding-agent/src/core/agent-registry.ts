@@ -249,13 +249,13 @@ export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegis
 /**
  * Format a list of agent definitions as an XML block for inclusion in a system
  * prompt, mirroring the `<available_skills>` format used by formatSkillsForPrompt.
- * Only intended for display when the Task tool is active.
+ * Only intended for display when the ExecuteTask tool is active.
  */
 export function formatAgentsForPrompt(agents: AgentDefinition[]): string {
 	if (agents.length === 0) return "";
 
 	const lines = [
-		"\n\nThe following specialized agents are available for delegation via the Task tool.",
+		"\n\nThe following specialized agents are available for delegation via the ExecuteTask tool.",
 		"Choose the agent whose description best matches the task and pass it as `subagent_type`.",
 		"",
 		"<available_agents>",

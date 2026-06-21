@@ -51,8 +51,8 @@ import {
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import {
 	buildTaskMainPrompt,
+	createExecuteTaskToolDefinition,
 	createTaskOutputToolDefinition,
-	createTaskToolDefinition,
 } from "./core/tools/subagent.js";
 import { createTodoWriteToolDefinition } from "./core/tools/todo.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
@@ -394,14 +394,14 @@ function buildSessionOptions(
 		options.disallowedTools = [...parsed.disallowedTools];
 	}
 
-	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
+	// Optional ExecuteTask (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
 	//
 	// Nesting is bounded by the tree-wide cap (maxSubagentDepth, default 1). The root
 	// seeds the cap into the environment so every descendant agrees on one value; the
-	// Task tool is registered only while this process's depth is below that cap. At the
+	// ExecuteTask tool is registered only while this process's depth is below that cap. At the
 	// default cap this reproduces the original guard exactly: subagents (depth >= 1) get
-	// no Task tool and cannot recursively dispatch.
+	// no ExecuteTask tool and cannot recursively dispatch.
 	const isSubagentChild = parsed.taskId !== undefined;
 	if (process.env[SUBAGENT_MAX_DEPTH_ENV] === undefined) {
 		// The root seeds the tree-wide cap; the --max-subagent-depth flag overrides the
@@ -429,7 +429,7 @@ function buildSessionOptions(
 	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 		options.customTools = [
 			...(options.customTools ?? []),
-			createTaskToolDefinition(),
+			createExecuteTaskToolDefinition(),
 			createTaskOutputToolDefinition(),
 		];
 	}
