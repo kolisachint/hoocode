@@ -342,15 +342,17 @@ function collectBackgroundAgentNames(cwd: string): Set<string> {
  */
 function mergeChildTaskTree(nodes: readonly SubagentTaskNode[] | undefined, parentTaskId: number): void {
 	if (!nodes) return;
-	for (const node of nodes) {
-		const created = taskStore.create(node.title, {
-			source: node.source,
-			subagentMode: node.subagentMode,
-			parentTaskId,
-		});
-		taskStore.update(created.id, { status: node.status, usage: node.usage });
-		mergeChildTaskTree(node.children, created.id);
-	}
+	taskStore.batch(() => {
+		for (const node of nodes) {
+			const created = taskStore.create(node.title, {
+				source: node.source,
+				subagentMode: node.subagentMode,
+				parentTaskId,
+			});
+			taskStore.update(created.id, { status: node.status, usage: node.usage });
+			mergeChildTaskTree(node.children, created.id);
+		}
+	});
 }
 
 /** Extract the final answer from a finished dispatch, updating the task panel. */

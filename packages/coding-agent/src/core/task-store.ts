@@ -123,6 +123,22 @@ class TaskStore {
 	private taskAgents: TaskAgent[] = [];
 	private nextId = 1;
 	private readonly listeners = new Set<Listener>();
+	private batchDepth = 0;
+
+	/**
+	 * Run a series of mutations without notifying listeners until the batch
+	 * completes, so the TUI renders once instead of per-item. Nested batches are
+	 * supported: only the outermost batch flushes.
+	 */
+	batch(fn: () => void): void {
+		this.batchDepth++;
+		try {
+			fn();
+		} finally {
+			this.batchDepth--;
+			if (this.batchDepth === 0) this.emit();
+		}
+	}
 
 	create(title: string, options: CreateTaskOptions = {}): Task {
 		const now = Date.now();
@@ -285,6 +301,7 @@ class TaskStore {
 	}
 
 	private emit(): void {
+		if (this.batchDepth > 0) return;
 		for (const listener of this.listeners) {
 			listener();
 		}
