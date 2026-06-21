@@ -165,7 +165,6 @@ function summarize(task: string): string {
 
 /** Create the Task tool definition. Registered as a customTool when enabled. */
 export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefinition {
-	const agentList = describeAvailableAgents(cwd);
 	// Agents whose definitions opt into background execution. The agent loop reads
 	// the tool's `background` flag per call and, for these, runs the dispatch
 	// detached: the parent keeps reasoning and the subagent's answer is injected as
@@ -180,19 +179,13 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			if (typeof override === "boolean") return override;
 			return backgroundAgents.has(String(toolCall.arguments?.subagent_type ?? ""));
 		},
+		// Kept lean: the available agents are listed in the system prompt, and the
+		// `complexity`/`background` semantics live in their parameter descriptions —
+		// repeating them here would re-spend those tokens on every turn.
 		description: [
-			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation).",
-			"Select the agent via `subagent_type`; pass everything it needs via `prompt`. The subagent returns only its final answer.",
-			"Available agents:",
-			agentList,
-			"Optional `complexity` picks a model tier: fast (quick reads), standard (multi-file edits), capable (deep architecture); omit to use the agent's default.",
-			"Optional `background: true` runs the dispatch non-blocking; some agents default to background. A background dispatch does not return its answer inline — you get a short notification and pull the full result with the TaskOutput tool (which also lists running subagents and can wait for them).",
-			"WHEN TO USE: (1) self-contained work where you only need the final result;",
-			"(2) parallel investigation/edits without losing your reasoning chain;",
-			"(3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs);",
-			"(4) a long command or test suite you want to run without blocking your reasoning.",
-			"Do NOT use for tasks needing tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.",
-			"Delegate proactively for self-contained or parallelizable work; handle only trivial single-step or tightly interactive work inline.",
+			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer.",
+			"WHEN TO USE: (1) self-contained work where you only need the final result; (2) parallel investigation/edits without losing your reasoning chain; (3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs); (4) a long command or test suite you want to run without blocking your reasoning.",
+			"Do NOT use for tasks needing tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about. Delegate proactively for self-contained or parallelizable work; handle only trivial single-step or tightly interactive work inline.",
 		].join("\n"),
 		promptSnippet: "delegate a self-contained task to a specialized subagent (choose via subagent_type)",
 		parameters: taskParams,
