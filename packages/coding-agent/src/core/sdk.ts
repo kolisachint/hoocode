@@ -83,12 +83,6 @@ export interface CreateAgentSessionOptions {
 	settingsManager?: SettingsManager;
 	/** Session start event metadata for extension runtime startup. */
 	sessionStartEvent?: SessionStartEvent;
-	/**
-	 * Master gate for local-inference routing (compaction + tool-result
-	 * compression via a local executor model). Off by default. Routing also
-	 * requires a `routing` block in models.json. See docs/local-executor-routing.md.
-	 */
-	enableLocalInference?: boolean;
 }
 
 /** Result from createAgentSession */
@@ -425,7 +419,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		disallowedToolNames: options.disallowedTools,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
-		enableLocalInference: options.enableLocalInference,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

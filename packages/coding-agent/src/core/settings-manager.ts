@@ -57,6 +57,20 @@ export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
 }
 
+/**
+ * Model categories for subagent model selection.
+ * Categories map to explicit model IDs (e.g., "anthropic/claude-haiku-3.5").
+ * When a category is not configured, fallback defaults are used.
+ */
+export interface ModelCategories {
+	/** Quick, cheap models for read-only exploration (grep, find, file discovery) */
+	fast?: string;
+	/** Balanced models for general work (planning, moderate complexity) */
+	standard?: string;
+	/** Most capable models for complex reasoning (multi-file refactors) */
+	capable?: string;
+}
+
 export type TransportSetting = Transport;
 
 /**
@@ -79,6 +93,7 @@ export interface Settings {
 	defaultProvider?: string;
 	defaultModel?: string;
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	modelCategories?: ModelCategories; // Model categories for subagent model selection (fast, standard, capable)
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";

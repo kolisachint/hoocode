@@ -33,7 +33,6 @@ import {
 	resolveConfigValueUncached,
 	resolveHeadersOrThrow,
 } from "./resolve-config-value.js";
-import type { RoutingConfig } from "./routing/local-inference.js";
 
 // Schema for OpenRouter routing preferences
 const PercentileCutoffsSchema = Type.Object({
@@ -195,36 +194,8 @@ const ProviderConfigSchema = Type.Object({
 	modelOverrides: Type.Optional(Type.Record(Type.String(), ModelOverrideSchema)),
 });
 
-const ExecutorServerConfigSchema = Type.Object({
-	command: Type.Optional(Type.String({ minLength: 1 })),
-	args: Type.Optional(Type.Array(Type.String())),
-	host: Type.Optional(Type.String({ minLength: 1 })),
-	port: Type.Optional(Type.Number()),
-	startupTimeoutMs: Type.Optional(Type.Number()),
-});
-
-const ExecutorConfigSchema = Type.Object({
-	provider: Type.String({ minLength: 1 }),
-	model: Type.String({ minLength: 1 }),
-	minBytes: Type.Optional(Type.Number()),
-	maxBytes: Type.Optional(Type.Number()),
-	server: Type.Optional(ExecutorServerConfigSchema),
-});
-
-const RoutingConfigSchema = Type.Object({
-	mode: Type.Optional(
-		Type.Union([
-			Type.Literal("primary-only"),
-			Type.Literal("executor-for-summarization"),
-			Type.Literal("executor-for-tool-results"),
-		]),
-	),
-	executor: Type.Optional(ExecutorConfigSchema),
-});
-
 const ModelsConfigSchema = Type.Object({
 	providers: Type.Record(Type.String(), ProviderConfigSchema),
-	routing: Type.Optional(RoutingConfigSchema),
 });
 
 const validateModelsConfig = Compile(ModelsConfigSchema);
@@ -364,7 +335,6 @@ export class ModelRegistry {
 	private modelRequestHeaders: Map<string, Record<string, string>> = new Map();
 	private registeredProviders: Map<string, ProviderConfigInput> = new Map();
 	private loadError: string | undefined = undefined;
-	private routingConfig: RoutingConfig | undefined = undefined;
 
 	private constructor(
 		readonly authStorage: AuthStorage,
@@ -408,7 +378,6 @@ export class ModelRegistry {
 	}
 
 	private loadModels(): void {
-		this.routingConfig = undefined;
 		// Load custom models and overrides from models.json
 		const {
 			models: customModels,
@@ -505,8 +474,6 @@ export class ModelRegistry {
 
 			// Additional validation
 			this.validateConfig(config);
-
-			this.routingConfig = config.routing as RoutingConfig | undefined;
 
 			const overrides = new Map<string, ProviderOverride>();
 			const modelOverrides = new Map<string, Map<string, ModelOverride>>();
@@ -664,13 +631,6 @@ export class ModelRegistry {
 	 */
 	find(provider: string, modelId: string): Model<Api> | undefined {
 		return this.models.find((m) => m.provider === provider && m.id === modelId);
-	}
-
-	/**
-	 * Local-inference routing config from models.json (`routing` block), if any.
-	 */
-	getRoutingConfig(): RoutingConfig | undefined {
-		return this.routingConfig;
 	}
 
 	/**

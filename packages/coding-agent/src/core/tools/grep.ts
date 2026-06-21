@@ -8,6 +8,7 @@ import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import { compressGrepOutput } from "./output-compression.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -336,8 +337,10 @@ export function createGrepToolDefinition(
 							}
 
 							const rawOutput = outputLines.join("\n");
+							// Apply lossless compression then byte truncation.
+							const compressedOutput = compressGrepOutput(rawOutput);
 							// Apply byte truncation. There is no line limit here because the match limit already capped rows.
-							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+							const truncation = truncateHead(compressedOutput, { maxLines: Number.MAX_SAFE_INTEGER });
 							let output = truncation.content;
 							const details: GrepToolDetails = {};
 							// Build actionable notices for truncation and match limits.

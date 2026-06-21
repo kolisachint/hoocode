@@ -22,6 +22,9 @@ import { resolveToCwd } from "./path-utils.js";
 import { invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
+/** Maximum characters for diff output sent to the LLM. */
+const MAX_DIFF_CHARS = 4000;
+
 type EditPreview = EditDiffResult | EditDiffError;
 
 type EditRenderState = {
@@ -401,6 +404,11 @@ export function createEditToolDefinition(
 								}
 
 								const diffResult = generateDiffString(baseContent, newContent);
+								// Truncate large diffs to save tokens
+								const diff =
+									diffResult.diff.length > MAX_DIFF_CHARS
+										? `${diffResult.diff.slice(0, MAX_DIFF_CHARS)}\n\n[diff truncated for brevity]`
+										: diffResult.diff;
 								resolve({
 									content: [
 										{
@@ -408,7 +416,7 @@ export function createEditToolDefinition(
 											text: `Successfully replaced ${edits.length} block(s) in ${path}.`,
 										},
 									],
-									details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
+									details: { diff, firstChangedLine: diffResult.firstChangedLine },
 								});
 							} catch (error: unknown) {
 								// Clean up abort handler.

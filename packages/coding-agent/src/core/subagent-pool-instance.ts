@@ -7,7 +7,8 @@
  * down on process exit.
  */
 
-import { getSubagentSpawnCommand } from "../config.js";
+import { getAgentDir, getSubagentSpawnCommand } from "../config.js";
+import { SettingsManager } from "./settings-manager.js";
 import { poolConcurrencyForDepth } from "./subagent-depth.js";
 import { SubagentPool } from "./subagent-pool.js";
 import { taskStore } from "./task-store.js";
@@ -26,12 +27,20 @@ export function getSubagentPool(cwd: string): SubagentPool {
 		// Pools created inside a nested subagent (depth >= 1) run with a reduced
 		// concurrency cap so deep delegation trees stay bounded; the root keeps the
 		// SubagentPool default.
+		// Load settings for model category resolution
+		const settingsManager = SettingsManager.create(cwd, getAgentDir());
+		const globalSettings = settingsManager.getGlobalSettings();
+		const projectSettings = settingsManager.getProjectSettings();
+		// Merge settings (project overrides global)
+		const settings = { ...globalSettings, ...projectSettings };
+
 		pool = new SubagentPool({
 			executable,
 			prefixArgs,
 			cwd,
 			skillPaths: latestSkillPaths,
 			maxConcurrency: poolConcurrencyForDepth(),
+			settings,
 		});
 
 		wireProgressToTaskStore(pool);

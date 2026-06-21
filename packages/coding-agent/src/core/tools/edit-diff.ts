@@ -8,6 +8,10 @@ import { constants } from "fs";
 import { access, readFile } from "fs/promises";
 import { resolveToCwd } from "./path-utils.js";
 
+/** Cache for normalized text to avoid redundant processing. Max 100 entries. */
+const normalizeCache = new Map<string, string>();
+const MAX_CACHE_SIZE = 100;
+
 export function detectLineEnding(content: string): "\r\n" | "\n" {
 	const crlfIdx = content.indexOf("\r\n");
 	const lfIdx = content.indexOf("\n");
@@ -26,32 +30,61 @@ export function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string 
 
 /**
  * Normalize text for fuzzy matching. Applies progressive transformations:
+ * - Normalize line endings to LF
  * - Strip trailing whitespace from each line
+ * - Normalize tabs to spaces (2 spaces per tab)
+ * - Collapse multiple spaces to single space
  * - Normalize smart quotes to ASCII equivalents
  * - Normalize Unicode dashes/hyphens to ASCII hyphen
  * - Normalize special Unicode spaces to regular space
  */
 export function normalizeForFuzzyMatch(text: string): string {
-	return (
-		text
-			.normalize("NFKC")
-			// Strip trailing whitespace per line
-			.split("\n")
-			.map((line) => line.trimEnd())
-			.join("\n")
-			// Smart single quotes → '
-			.replace(/[\u2018\u2019\u201A\u201B]/g, "'")
-			// Smart double quotes → "
-			.replace(/[\u201C\u201D\u201E\u201F]/g, '"')
-			// Various dashes/hyphens → -
-			// U+2010 hyphen, U+2011 non-breaking hyphen, U+2012 figure dash,
-			// U+2013 en-dash, U+2014 em-dash, U+2015 horizontal bar, U+2212 minus
-			.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
-			// Special spaces → regular space
-			// U+00A0 NBSP, U+2002-U+200A various spaces, U+202F narrow NBSP,
-			// U+205F medium math space, U+3000 ideographic space
-			.replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ")
-	);
+	// Check cache first
+	const cached = normalizeCache.get(text);
+	if (cached !== undefined) return cached;
+
+	const normalized = text
+		.normalize("NFKC")
+		// Normalize line endings to LF
+		.replace(/\r\n/g, "\n")
+		.replace(/\r/g, "\n")
+		// Strip trailing whitespace per line
+		.split("\n")
+		.map((line) => {
+			// Normalize tabs to 2 spaces
+			let normalized = line.replace(/\t/g, "  ");
+			// Collapse multiple spaces to single space (but preserve leading indentation pattern)
+			// Only collapse spaces that are NOT at the start of the line (indentation)
+			const leadingSpaces = normalized.match(/^(\s*)/)?.[1] ?? "";
+			const rest = normalized.slice(leadingSpaces.length);
+			normalized = leadingSpaces + rest.replace(/ {2,}/g, " ");
+			return normalized.trimEnd();
+		})
+		.join("\n")
+		// Smart single quotes → '
+		.replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+		// Smart double quotes → "
+		.replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+		// Various dashes/hyphens → -
+		// U+2010 hyphen, U+2011 non-breaking hyphen, U+2012 figure dash,
+		// U+2013 en-dash, U+2014 em-dash, U+2015 horizontal bar, U+2212 minus
+		.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+		// Special spaces → regular space
+		// U+00A0 NBSP, U+2002-U+200A various spaces, U+202F narrow NBSP,
+		// U+205F medium math space, U+3000 ideographic space
+		.replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ");
+
+	// Cache the result (with size limit)
+	if (normalizeCache.size >= MAX_CACHE_SIZE) {
+		// Remove oldest entry (first key)
+		const firstKey = normalizeCache.keys().next().value;
+		if (firstKey !== undefined) {
+			normalizeCache.delete(firstKey);
+		}
+	}
+	normalizeCache.set(text, normalized);
+
+	return normalized;
 }
 
 export interface FuzzyMatchResult {

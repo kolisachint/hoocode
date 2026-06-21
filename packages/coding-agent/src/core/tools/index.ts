@@ -27,6 +27,14 @@ export {
 	type FindToolOptions,
 } from "./find.js";
 export {
+	createGlobTool,
+	createGlobToolDefinition,
+	type GlobOperations,
+	type GlobToolDetails,
+	type GlobToolInput,
+	type GlobToolOptions,
+} from "./glob.js";
+export {
 	createGrepTool,
 	createGrepToolDefinition,
 	type GrepOperations,
@@ -83,6 +91,7 @@ import type { ToolDefinition } from "../extensions/types.js";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.js";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.js";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.js";
+import { createGlobTool, createGlobToolDefinition, type GlobToolOptions } from "./glob.js";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.js";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.js";
@@ -90,8 +99,8 @@ import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } fro
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
-export const allToolNames: Set<ToolName> = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "glob" | "ls";
+export const allToolNames: Set<ToolName> = new Set(["read", "bash", "edit", "write", "grep", "find", "glob", "ls"]);
 
 export interface ToolsOptions {
 	read?: ReadToolOptions;
@@ -100,6 +109,7 @@ export interface ToolsOptions {
 	edit?: EditToolOptions;
 	grep?: GrepToolOptions;
 	find?: FindToolOptions;
+	glob?: GlobToolOptions;
 	ls?: LsToolOptions;
 }
 
@@ -117,6 +127,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createGrepToolDefinition(cwd, options?.grep);
 		case "find":
 			return createFindToolDefinition(cwd, options?.find);
+		case "glob":
+			return createGlobToolDefinition(cwd, options?.glob);
 		case "ls":
 			return createLsToolDefinition(cwd, options?.ls);
 		default:
@@ -138,6 +150,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createGrepTool(cwd, options?.grep);
 		case "find":
 			return createFindTool(cwd, options?.find);
+		case "glob":
+			return createGlobTool(cwd, options?.glob);
 		case "ls":
 			return createLsTool(cwd, options?.ls);
 		default:
@@ -153,6 +167,7 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 		createWriteToolDefinition(cwd, options?.write),
 		createGrepToolDefinition(cwd, options?.grep),
 		createFindToolDefinition(cwd, options?.find),
+		createGlobToolDefinition(cwd, options?.glob),
 		createLsToolDefinition(cwd, options?.ls),
 	];
 }
@@ -162,6 +177,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 		createReadToolDefinition(cwd, options?.read),
 		createGrepToolDefinition(cwd, options?.grep),
 		createFindToolDefinition(cwd, options?.find),
+		createGlobToolDefinition(cwd, options?.glob),
 		createLsToolDefinition(cwd, options?.ls),
 	];
 }
@@ -174,6 +190,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		write: createWriteToolDefinition(cwd, options?.write),
 		grep: createGrepToolDefinition(cwd, options?.grep),
 		find: createFindToolDefinition(cwd, options?.find),
+		glob: createGlobToolDefinition(cwd, options?.glob),
 		ls: createLsToolDefinition(cwd, options?.ls),
 	};
 }
@@ -186,6 +203,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createWriteTool(cwd, options?.write),
 		createGrepTool(cwd, options?.grep),
 		createFindTool(cwd, options?.find),
+		createGlobTool(cwd, options?.glob),
 		createLsTool(cwd, options?.ls),
 	];
 }
@@ -195,6 +213,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 		createReadTool(cwd, options?.read),
 		createGrepTool(cwd, options?.grep),
 		createFindTool(cwd, options?.find),
+		createGlobTool(cwd, options?.glob),
 		createLsTool(cwd, options?.ls),
 	];
 }
@@ -207,6 +226,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		write: createWriteTool(cwd, options?.write),
 		grep: createGrepTool(cwd, options?.grep),
 		find: createFindTool(cwd, options?.find),
+		glob: createGlobTool(cwd, options?.glob),
 		ls: createLsTool(cwd, options?.ls),
 	};
 }

@@ -15,7 +15,7 @@ description: |
   Cost: Low–medium (read-only)
   Isolation: Can run in parallel with explore tasks
 tools: read, grep, find, ls
-model: inherit
+model: standard
 background: false
 ---
 You are a planning agent running inside hoocode. You research the codebase and
