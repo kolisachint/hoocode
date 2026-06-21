@@ -2,12 +2,15 @@ import { randomBytes } from "node:crypto";
 import { createWriteStream, type WriteStream } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { compressBashOutput } from "./output-compression.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, type TruncationResult, truncateTail } from "./truncate.js";
 
 export interface OutputAccumulatorOptions {
 	maxLines?: number;
 	maxBytes?: number;
 	tempFilePrefix?: string;
+	/** Command that produced this output. Used for command-specific compression. */
+	command?: string;
 }
 
 export interface OutputSnapshot {
@@ -37,6 +40,7 @@ export class OutputAccumulator {
 	private readonly maxBytes: number;
 	private readonly maxRollingBytes: number;
 	private readonly tempFilePrefix: string;
+	private readonly command: string | undefined;
 	private readonly decoder = new TextDecoder();
 
 	private rawChunks: Buffer[] = [];
@@ -57,6 +61,7 @@ export class OutputAccumulator {
 		this.maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
 		this.maxRollingBytes = Math.max(this.maxBytes * 2, 1);
 		this.tempFilePrefix = options.tempFilePrefix ?? "hoocode-output";
+		this.command = options.command;
 	}
 
 	append(data: Buffer): void {
@@ -87,7 +92,11 @@ export class OutputAccumulator {
 	}
 
 	snapshot(options: { persistIfTruncated?: boolean } = {}): OutputSnapshot {
-		const tailTruncation = truncateTail(this.getSnapshotText(), {
+		// Get raw text for display (no compression during streaming)
+		const rawText = this.getSnapshotText();
+		// Only apply compression when finished (final snapshot)
+		const text = this.finished && this.command ? compressBashOutput(this.command, rawText) : rawText;
+		const tailTruncation = truncateTail(text, {
 			maxLines: this.maxLines,
 			maxBytes: this.maxBytes,
 		});

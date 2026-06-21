@@ -290,7 +290,6 @@ function formatTaskLine(
 	task: Task,
 	width: number,
 	frame: number,
-	idColWidth: number,
 	options: { grouped?: boolean; owner?: TaskAgent; treePrefix?: string } = {},
 ): string {
 	const isProgress = task.status === "in_progress";
@@ -314,10 +313,6 @@ function formatTaskLine(
 	const sourceGlyph = isMcp ? MCP_SOURCE_GLYPH : AGENT_GLYPH[ownerKind];
 	const styledSource = grouped ? "" : theme.fg("dim", sourceGlyph);
 
-	// Right-pad the id to the shared column width so titles line up across rows even
-	// when ids differ in digit count (#1 vs #10). Padding is plain spaces inside the
-	// dim styling, so it adds no visible color.
-	const idLabel = `#${task.id}`.padEnd(idColWidth);
 	// Origin tag prefixed to the title, naming who runs the row: the subagent
 	// type ("[explore]"), the team role's name ("[planner]"), or the MCP server
 	// ("[github]"; "[MCP]" when no server label was recorded). Drawn in accent,
@@ -332,9 +327,8 @@ function formatTaskLine(
 	}
 	const styledTag = tag ? `${theme.fg("accent", tag)} ` : "";
 	const title = task.title;
-	// The id recedes (dim); the title carries the line. Done titles fade to muted
+	// The title carries the line. Done titles fade to muted
 	// (settled work), pending dim (not started), active goes bold, failed turns red.
-	const styledId = theme.fg("dim", idLabel);
 	let styledTitle: string;
 	switch (task.status) {
 		case "done":
@@ -353,26 +347,20 @@ function formatTaskLine(
 			styledTitle = title;
 	}
 
-	// Right column: settled rows carry their audit stamp (tokens + elapsed); the
+	// Right column: settled rows carry their token usage; the
 	// active row reads `running…`, pending rows read `queued`.
 	let rightPlain = "";
 	let rightStyled = "";
 	if (task.status === "done" || task.status === "failed") {
-		const parts: string[] = [];
 		let tokenText = "";
 		if (task.usage) {
 			const totalTok = task.usage.input + task.usage.output;
 			if (totalTok > 0) tokenText = formatTokens(totalTok);
 		}
-		const elapsed = formatDuration(taskElapsedSecs(task));
 		if (tokenText) {
-			parts.push(tokenText, elapsed);
-			rightStyled = theme.fg("muted", tokenText) + theme.fg("dim", ` · ${elapsed}`);
-		} else {
-			parts.push(elapsed);
-			rightStyled = theme.fg("dim", elapsed);
+			rightPlain = tokenText;
+			rightStyled = theme.fg("muted", tokenText);
 		}
-		rightPlain = parts.join(" · ");
 	} else if (task.status === "in_progress") {
 		rightPlain = "running…";
 		rightStyled = theme.fg("warning", rightPlain);
@@ -398,8 +386,8 @@ function formatTaskLine(
 	// the row's glyph; roots pass an empty prefix and read exactly like flat rows.
 	const treePrefix = options.treePrefix ? theme.fg("borderMuted", options.treePrefix) : "";
 	const leftBody = grouped
-		? `${indent}${icon} ${styledId} ${styledTag}${styledTitle}`
-		: `${treePrefix}${icon} ${styledSource} ${styledId} ${styledTag}${styledTitle}`;
+		? `${indent}${icon} ${styledTag}${styledTitle}`
+		: `${treePrefix}${icon} ${styledSource} ${styledTag}${styledTitle}`;
 	const left = truncateToWidth(leftBody, leftWidth, "…");
 
 	if (!rightPlain) return left;
@@ -731,10 +719,6 @@ export class TaskPanelComponent implements Component, Focusable {
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
 
-		// Width of the id column, sized to the widest id on screen, so every title
-		// starts at the same column regardless of digit count (#1 vs #10 vs #100).
-		const idColWidth = lensTasks.reduce((max, t) => Math.max(max, `#${t.id}`.length), 0);
-
 		const lines: string[] = [gutter + formatHeader(lensTasks, inner, state, totalSecs, view, available)];
 
 		if (view === "flat") {
@@ -744,10 +728,7 @@ export class TaskPanelComponent implements Component, Focusable {
 			const agentById = new Map(allAgents.map((a) => [a.id, a]));
 			for (const task of tasks) {
 				if (!isMainTask(task)) continue;
-				lines.push(
-					gutter +
-						formatTaskLine(task, inner, this.frame, idColWidth, { owner: agentById.get(taskOwnerId(task)) }),
-				);
+				lines.push(gutter + formatTaskLine(task, inner, this.frame, { owner: agentById.get(taskOwnerId(task)) }));
 			}
 			return lines;
 		}
@@ -772,7 +753,7 @@ export class TaskPanelComponent implements Component, Focusable {
 			);
 			const walk = (task: Task, prefix: string, isLast: boolean, isRoot: boolean): void => {
 				const connector = isRoot ? "" : `${prefix}${isLast ? "└─ " : "├─ "}`;
-				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { treePrefix: connector }));
+				lines.push(gutter + formatTaskLine(task, inner, this.frame, { treePrefix: connector }));
 				const kids = childrenByParent.get(task.id) ?? [];
 				const childPrefix = isRoot ? "" : `${prefix}${isLast ? "   " : "│  "}`;
 				for (let i = 0; i < kids.length; i++) {
@@ -800,7 +781,7 @@ export class TaskPanelComponent implements Component, Focusable {
 			const selected = cursorRole !== undefined && group.meta.kind === "role" && group.meta.name === cursorRole;
 			lines.push(gutter + formatGroupHeader(group.meta, group.items, inner, selected));
 			for (const task of group.items) {
-				lines.push(gutter + formatTaskLine(task, inner, this.frame, idColWidth, { grouped: true }));
+				lines.push(gutter + formatTaskLine(task, inner, this.frame, { grouped: true }));
 			}
 			// Forward-handoff connector: emit "└──→ name" only for "→ name" arrows
 			// (not back-references "← name"), and only when the target exists in the

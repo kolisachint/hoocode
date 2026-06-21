@@ -9,7 +9,9 @@ import { MODEL_INHERIT } from "./agent-frontmatter.js";
 import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
+import { resolveModelReference } from "./model-categories.js";
 import { OutputVerifier } from "./output-verifier.js";
+import type { Settings } from "./settings-manager.js";
 import { currentSubagentDepth, resolveMaxSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
 
@@ -104,6 +106,8 @@ export interface SubagentPoolOptions {
 	 * won't be found by default discovery need to be forwarded here.
 	 */
 	skillPaths?: string[];
+	/** Settings for model category resolution. */
+	settings?: Settings;
 }
 
 /**
@@ -193,6 +197,8 @@ export class SubagentPool extends EventEmitter {
 	private killReasons = new Map<string, "stalled" | "timeout">();
 	/** Persistent terminal status map, survives wait_for consumption. */
 	private taskStatus = new Map<string, "done" | "failed" | "stalled" | "timeout">();
+	/** Settings for model category resolution. */
+	private readonly settings?: Settings;
 
 	constructor(options: SubagentPoolOptions) {
 		super();
@@ -203,6 +209,7 @@ export class SubagentPool extends EventEmitter {
 		this.env = options.env ?? process.env;
 		this.defaultTokenBudget = options.defaultTokenBudget ?? 0;
 		this.skillPaths = options.skillPaths ? [...options.skillPaths] : [];
+		this.settings = options.settings;
 		this.verifier = new OutputVerifier(this.cwd);
 		this.lifeguard = new SubagentLifeguard(this.cwd);
 		this.lifeguard.on("stalled", (data: { task_id: string; pid: number }) => {
@@ -615,7 +622,9 @@ export class SubagentPool extends EventEmitter {
 		// unavailable or quota-limited.
 		const explicitModel =
 			!task.useInheritedModelFallback && def?.model && def.model !== MODEL_INHERIT ? def.model : undefined;
-		const modelToUse = explicitModel ?? task.model;
+		// Resolve model categories (fast, standard, capable) to actual model IDs
+		const rawModel = explicitModel ?? task.model;
+		const modelToUse = rawModel ? resolveModelReference(rawModel, this.settings) : undefined;
 		if (modelToUse) {
 			args.push("--model", modelToUse);
 		}

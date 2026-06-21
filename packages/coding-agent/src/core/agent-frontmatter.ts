@@ -130,7 +130,7 @@ export interface AgentDefinition {
 	fork?: boolean;
 }
 
-const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit"]);
+const KNOWN_MODEL_ALIASES = new Set(["sonnet", "opus", "haiku", "inherit", "fast", "standard", "capable"]);
 
 /** Validate an agent name. Returns warning messages (empty when valid). */
 function validateName(name: string): string[] {
@@ -171,7 +171,7 @@ function validateModel(value: string): string[] {
 	if (KNOWN_MODEL_ALIASES.has(trimmed)) return [];
 	if (/^claude-/.test(trimmed)) return [];
 	return [
-		`model "${trimmed}" is not a recognized Claude alias (sonnet | opus | haiku | inherit) or full model ID (claude-*); the agent may not load correctly`,
+		`model "${trimmed}" is not a recognized alias (sonnet | opus | haiku | inherit | fast | standard | capable) or full model ID; the agent may not load correctly`,
 	];
 }
 

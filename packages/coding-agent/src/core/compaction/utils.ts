@@ -4,6 +4,7 @@
 
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { Message } from "@kolisachint/hoocode-ai";
+import { compressGeneral } from "../tools/output-compression.js";
 
 // ============================================================================
 // File Operation Tracking
@@ -90,12 +91,14 @@ const TOOL_RESULT_MAX_CHARS = 2000;
 
 /**
  * Truncate text to a maximum character length for summarization.
- * Keeps the beginning and appends a truncation marker.
+ * Applies lossless compression first, then keeps the beginning.
  */
 function truncateForSummary(text: string, maxChars: number): string {
-	if (text.length <= maxChars) return text;
-	const truncatedChars = text.length - maxChars;
-	return `${text.slice(0, maxChars)}\n\n[... ${truncatedChars} more characters truncated]`;
+	// Apply lossless compression first
+	const compressed = compressGeneral(text);
+	if (compressed.length <= maxChars) return compressed;
+	const truncatedChars = compressed.length - maxChars;
+	return `${compressed.slice(0, maxChars)}\n\n[... ${truncatedChars} more characters truncated]`;
 }
 
 /**

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import stripAnsi from "strip-ansi";
 import { sanitizeBinaryOutput } from "../utils/shell.js";
 import type { BashOperations } from "./tools/bash.js";
+import { compressBashOutput } from "./tools/output-compression.js";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.js";
 
 // ============================================================================
@@ -111,7 +112,8 @@ export async function executeBashWithOperations(
 		});
 
 		const fullOutput = outputChunks.join("");
-		const truncationResult = truncateTail(fullOutput);
+		const compressedOutput = compressBashOutput(command, fullOutput);
+		const truncationResult = truncateTail(compressedOutput);
 		if (truncationResult.truncated) {
 			ensureTempFile();
 		}
@@ -121,7 +123,7 @@ export async function executeBashWithOperations(
 		const cancelled = options?.signal?.aborted ?? false;
 
 		return {
-			output: truncationResult.truncated ? truncationResult.content : fullOutput,
+			output: truncationResult.truncated ? truncationResult.content : compressedOutput,
 			exitCode: cancelled ? undefined : (result.exitCode ?? undefined),
 			cancelled,
 			truncated: truncationResult.truncated,
@@ -131,7 +133,8 @@ export async function executeBashWithOperations(
 		// Check if it was an abort
 		if (options?.signal?.aborted) {
 			const fullOutput = outputChunks.join("");
-			const truncationResult = truncateTail(fullOutput);
+			const compressedOutput = compressBashOutput(command, fullOutput);
+			const truncationResult = truncateTail(compressedOutput);
 			if (truncationResult.truncated) {
 				ensureTempFile();
 			}
@@ -139,7 +142,7 @@ export async function executeBashWithOperations(
 				tempFileStream.end();
 			}
 			return {
-				output: truncationResult.truncated ? truncationResult.content : fullOutput,
+				output: truncationResult.truncated ? truncationResult.content : compressedOutput,
 				exitCode: undefined,
 				cancelled: true,
 				truncated: truncationResult.truncated,
