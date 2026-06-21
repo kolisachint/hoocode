@@ -93,7 +93,7 @@ describe("SubagentPool registry wiring", () => {
 		writeProjectAgent(
 			cwd,
 			"explore",
-			"description: Project explore agent for testing.\ntools: Read, Glob\nmodel: haiku\n",
+			"description: Project explore agent for testing.\ntools: Read, Glob\nmodel: pinned-model\n",
 			"PROJECT EXPLORE PROMPT",
 		);
 		const mock = createArgvRecorder(cwd);
@@ -115,10 +115,11 @@ describe("SubagentPool registry wiring", () => {
 		expect(toolsIdx).toBeGreaterThanOrEqual(0);
 		expect(argv[toolsIdx + 1]).toBe("read,find");
 
-		// Declared model wins over any caller default.
+		// Declared model wins over any caller default. A concrete (non-category)
+		// model id is passed through unchanged.
 		const modelIdx = argv.indexOf("--model");
 		expect(modelIdx).toBeGreaterThanOrEqual(0);
-		expect(argv[modelIdx + 1]).toBe("haiku");
+		expect(argv[modelIdx + 1]).toBe("pinned-model");
 	});
 
 	test("uses the built-in agent's frontmatter tool allowlist", async () => {
@@ -136,7 +137,14 @@ describe("SubagentPool registry wiring", () => {
 
 	test("retries built-in agents with the inherited model when the preferred model is unavailable", async () => {
 		const mock = createModelFallbackRecorder(cwd);
-		pool = new SubagentPool({ executable: process.execPath, prefixArgs: [mock], cwd });
+		// Built-in explore declares `model: fast`; configure that tier so it resolves
+		// to a concrete preferred model the recorder will reject.
+		pool = new SubagentPool({
+			executable: process.execPath,
+			prefixArgs: [mock],
+			cwd,
+			settings: { modelCategories: { fast: "preferred-model" } },
+		});
 
 		const result = await pool.dispatch("run a read-only scan", {
 			forceAgent: "explore",
@@ -150,7 +158,7 @@ describe("SubagentPool registry wiring", () => {
 
 		const firstModelIdx = argvList[0].indexOf("--model");
 		expect(firstModelIdx).toBeGreaterThanOrEqual(0);
-		expect(argvList[0][firstModelIdx + 1]).toBe("haiku");
+		expect(argvList[0][firstModelIdx + 1]).toBe("preferred-model");
 
 		const fallbackModelIdx = argvList[1].indexOf("--model");
 		expect(fallbackModelIdx).toBeGreaterThanOrEqual(0);
@@ -159,7 +167,12 @@ describe("SubagentPool registry wiring", () => {
 
 	test("falls back to the inherited model when only the parent model is known (no provider)", async () => {
 		const mock = createModelFallbackRecorder(cwd);
-		pool = new SubagentPool({ executable: process.execPath, prefixArgs: [mock], cwd });
+		pool = new SubagentPool({
+			executable: process.execPath,
+			prefixArgs: [mock],
+			cwd,
+			settings: { modelCategories: { fast: "preferred-model" } },
+		});
 
 		// Parent threads through a model but no provider (e.g. gateway routing). The
 		// preferred model still fails, so the retry must inherit the parent model.
@@ -171,7 +184,7 @@ describe("SubagentPool registry wiring", () => {
 
 		const argvList = readArgvList(cwd);
 		expect(argvList).toHaveLength(2);
-		expect(argvList[0][argvList[0].indexOf("--model") + 1]).toBe("haiku");
+		expect(argvList[0][argvList[0].indexOf("--model") + 1]).toBe("preferred-model");
 		expect(argvList[1][argvList[1].indexOf("--model") + 1]).toBe("parent-model");
 	});
 });

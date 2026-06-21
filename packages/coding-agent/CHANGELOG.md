@@ -33,6 +33,11 @@
   hardcoded model names. An unconfigured category is a no-op, so the dispatch
   keeps the agent's or parent's default model instead of forcing a specific
   provider's model.
+- Built-in agent templates now select a model by category instead of a concrete
+  model name: the embedded `explore` template uses `model: fast` (was a hardcoded
+  Claude model) and `general-purpose`/`plan` use `model: standard`, matching the
+  source templates. With categories unconfigured these inherit the parent model,
+  so the defaults carry no provider assumption.
 
 ## [0.4.77] - 2026-06-21
 
