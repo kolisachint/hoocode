@@ -186,7 +186,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			"Available agents:",
 			agentList,
 			"Optional `complexity` picks a model tier: fast (quick reads), standard (multi-file edits), capable (deep architecture); omit to use the agent's default.",
-			"Optional `background: true` runs the dispatch non-blocking (answer arrives as a follow-up); some agents already default to background.",
+			"Optional `background: true` runs the dispatch non-blocking; some agents default to background. A background dispatch does not return its answer inline — you get a short notification and pull the full result with the TaskOutput tool (which also lists running subagents and can wait for them).",
 			"WHEN TO USE: (1) self-contained work where you only need the final result;",
 			"(2) parallel investigation/edits without losing your reasoning chain;",
 			"(3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs);",
