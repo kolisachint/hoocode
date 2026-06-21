@@ -21,10 +21,13 @@ sizes corrected two of the original investigation's claims:
   (e.g. `git log --stat`, which is fact-data like grep) it is weaker, but the
   size guard plus extractive prompt keep it safe.
 - **Global size band.** Local inference (both compaction and bash compression)
-  now only runs for inputs within a byte band (default **2048-8192**, tunable
-  via `minBytes`/`maxBytes` in the executor config). Inputs above the max are
-  slow locally and OOM-crashed the 8 GB machine during compaction, so oversized
-  inputs fall back to the primary model.
+  only runs for inputs within a byte band set by `minBytes`/`maxBytes` in the
+  executor config. There are no built-in byte defaults: an omitted bound is not
+  applied (`minBytes` → 0, `maxBytes` → unbounded), so the band is wired
+  entirely from models.json. On the 8 GB machine, inputs above ~8 KB were slow
+  locally and OOM-crashed compaction, so a `maxBytes` was configured to fall
+  oversized inputs back to the primary model; that cap is a local-hardware
+  guard, not a default (see "Size band is two guards" below).
 
 The rest of this document is the original investigation, preserved for context;
 where it says read compresses ~95%, read the revision above instead.
@@ -57,8 +60,10 @@ results); a non-thinking or instruct model avoids that concern.
 
 ### Size band is two guards, not one
 
-`minBytes`/`maxBytes` (default 2048/8192) gate which inputs route to the
-executor, but the two bounds exist for different reasons:
+`minBytes`/`maxBytes` gate which inputs route to the executor. They have no
+built-in defaults — each is wired from the models.json executor config, and an
+omitted bound is not applied (`minBytes` → 0, `maxBytes` → unbounded, i.e. no
+size gating at all). The two bounds exist for different reasons:
 
 - `minBytes` — inputs below this are too small to be worth offloading. Applies
   to *every* runtime.

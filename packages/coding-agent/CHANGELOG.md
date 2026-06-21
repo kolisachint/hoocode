@@ -23,6 +23,12 @@
   block), Windows/Linux runtimes (llama.cpp, Ollama, LM Studio, vLLM), and
   clarified that the `maxBytes` size-band cap is a local-hardware OOM guard that
   should be raised for hosted or large-memory executors.
+- Local-inference size band is now wired entirely from the models.json executor
+  config — the hardcoded `DEFAULT_MIN_BYTES`/`DEFAULT_MAX_BYTES` (2048/8192)
+  defaults were removed. An omitted bound is no longer applied (`minBytes` → 0,
+  `maxBytes` → unbounded), so enabling routing without a configured band now
+  routes inputs of any size instead of silently gating to 2048–8192 bytes. Set
+  `minBytes`/`maxBytes` in `routing.executor` to gate by size.
 
 ## [0.4.73] - 2026-06-20
 

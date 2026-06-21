@@ -42,16 +42,6 @@ export const ROUTING_MODES: readonly RoutingMode[] = [
  */
 export const COMPRESSIBLE_TOOLS = new Set(["bash"]);
 
-/**
- * Global size band (bytes) for local-inference routing. Applies to BOTH
- * tool-result compression and compaction summarization. Inputs below the
- * minimum are not worth offloading; inputs above the maximum are slow and risk
- * GPU OOM on small machines, so they fall back to the primary model. Tunable
- * per-machine via `minBytes`/`maxBytes` in the executor config block.
- */
-export const DEFAULT_MIN_BYTES = 2048;
-export const DEFAULT_MAX_BYTES = 8192;
-
 /** Optional local server the harness manages for the executor. */
 export interface ExecutorServerConfig {
 	/** Command to launch (default: "mlx_lm.server"). */
@@ -66,13 +56,22 @@ export interface ExecutorServerConfig {
 	startupTimeoutMs?: number;
 }
 
-/** Executor model reference as configured in models.json. */
+/**
+ * Executor model reference as configured in models.json.
+ *
+ * The size band (`minBytes`/`maxBytes`) is wired entirely from config — there
+ * are no built-in byte defaults. When a bound is omitted it is not applied:
+ * `minBytes` defaults to 0 (no lower gate) and `maxBytes` to unbounded. Set
+ * both in models.json to gate which inputs route to the executor; on local
+ * hardware a `maxBytes` guards against slow runs / GPU OOM, while a hosted or
+ * large-memory executor can leave it unset (or high) to offload large inputs.
+ */
 export interface ExecutorConfig {
 	provider: string;
 	model: string;
-	/** Minimum input size (bytes) before local inference is attempted. */
+	/** Minimum input size (bytes) before local inference is attempted. Omitted = 0 (no lower gate). */
 	minBytes?: number;
-	/** Maximum input size (bytes); larger inputs fall back to the primary model. */
+	/** Maximum input size (bytes); larger inputs fall back to the primary model. Omitted = unbounded. */
 	maxBytes?: number;
 	/** When set, the harness spawns/health-checks/stops this local server. */
 	server?: ExecutorServerConfig;
@@ -131,8 +130,11 @@ export class LocalInferenceRouter {
 		this.mode = mode;
 		this.executorConfig = executorConfig;
 		this.executor = executor;
-		this.minBytes = executorConfig?.minBytes ?? DEFAULT_MIN_BYTES;
-		this.maxBytes = executorConfig?.maxBytes ?? DEFAULT_MAX_BYTES;
+		// No built-in byte defaults: an omitted bound is simply not applied
+		// (min 0 = no lower gate, max +Infinity = unbounded). The band is wired
+		// entirely from the models.json executor config.
+		this.minBytes = executorConfig?.minBytes ?? 0;
+		this.maxBytes = executorConfig?.maxBytes ?? Number.POSITIVE_INFINITY;
 	}
 
 	static create(opts: {

@@ -3,8 +3,6 @@ import { describe, expect, test } from "vitest";
 import type { ModelRegistry } from "../src/core/model-registry.js";
 import {
 	COMPRESSIBLE_TOOLS,
-	DEFAULT_MAX_BYTES,
-	DEFAULT_MIN_BYTES,
 	LocalInferenceRouter,
 	type RoutingConfig,
 	resolveRoutingMode,
@@ -111,9 +109,9 @@ describe("LocalInferenceRouter.selectModel", () => {
 describe("LocalInferenceRouter.shouldCompressToolResult", () => {
 	const executor = fakeModel("mlx", "qwen3");
 	const registry = fakeRegistry([executor]);
-	const inBand = DEFAULT_MIN_BYTES + 1;
-	const tooSmall = DEFAULT_MIN_BYTES - 1;
-	const tooBig = DEFAULT_MAX_BYTES + 1;
+	// An explicit band lives only in config; the band tests configure it directly.
+	const banded = { ...executorRef, minBytes: 2048, maxBytes: 8192 };
+	const SIZE = 4096;
 
 	test("only compresses in executor-for-tool-results mode", () => {
 		const summ = LocalInferenceRouter.create({
@@ -121,14 +119,14 @@ describe("LocalInferenceRouter.shouldCompressToolResult", () => {
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(summ.shouldCompressToolResult("bash", inBand)).toBe(false);
+		expect(summ.shouldCompressToolResult("bash", SIZE)).toBe(false);
 
 		const tr = LocalInferenceRouter.create({
 			mode: "executor-for-tool-results",
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("bash", inBand)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", SIZE)).toBe(true);
 	});
 
 	test("only compresses bash; read and fact-list tools pass through", () => {
@@ -137,24 +135,34 @@ describe("LocalInferenceRouter.shouldCompressToolResult", () => {
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("bash", inBand)).toBe(true);
-		expect(tr.shouldCompressToolResult("read", inBand)).toBe(false);
-		expect(tr.shouldCompressToolResult("grep", inBand)).toBe(false);
-		expect(tr.shouldCompressToolResult("find", inBand)).toBe(false);
-		expect(tr.shouldCompressToolResult("ls", inBand)).toBe(false);
-		expect(tr.shouldCompressToolResult("edit", inBand)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", SIZE)).toBe(true);
+		expect(tr.shouldCompressToolResult("read", SIZE)).toBe(false);
+		expect(tr.shouldCompressToolResult("grep", SIZE)).toBe(false);
+		expect(tr.shouldCompressToolResult("find", SIZE)).toBe(false);
+		expect(tr.shouldCompressToolResult("ls", SIZE)).toBe(false);
+		expect(tr.shouldCompressToolResult("edit", SIZE)).toBe(false);
 	});
 
-	test("respects the global size band (min and max)", () => {
+	test("respects the size band when configured (min and max)", () => {
+		const tr = LocalInferenceRouter.create({
+			mode: "executor-for-tool-results",
+			config: { executor: banded },
+			registry,
+		});
+		expect(tr.shouldCompressToolResult("bash", 2047)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", 2048)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", 8192)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", 8193)).toBe(false);
+	});
+
+	test("with no band configured, routes any input size (unbounded)", () => {
 		const tr = LocalInferenceRouter.create({
 			mode: "executor-for-tool-results",
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("bash", tooSmall)).toBe(false);
-		expect(tr.shouldCompressToolResult("bash", DEFAULT_MIN_BYTES)).toBe(true);
-		expect(tr.shouldCompressToolResult("bash", DEFAULT_MAX_BYTES)).toBe(true);
-		expect(tr.shouldCompressToolResult("bash", tooBig)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", 1)).toBe(true);
+		expect(tr.shouldCompressToolResult("bash", 5_000_000)).toBe(true);
 	});
 
 	test("honors custom minBytes/maxBytes", () => {
@@ -175,31 +183,52 @@ describe("LocalInferenceRouter.shouldCompressToolResult", () => {
 			config: { executor: { provider: "mlx", model: "missing" } },
 			registry,
 		});
-		expect(tr.shouldCompressToolResult("bash", inBand)).toBe(false);
+		expect(tr.shouldCompressToolResult("bash", SIZE)).toBe(false);
 	});
 });
 
 describe("LocalInferenceRouter.shouldRouteSummarization", () => {
 	const executor = fakeModel("mlx", "qwen3");
 	const registry = fakeRegistry([executor]);
-	const inBand = DEFAULT_MIN_BYTES + 1;
+	const banded = { ...executorRef, minBytes: 2048, maxBytes: 8192 };
+	const SIZE = 4096;
 
-	test("routes only in executor-for-summarization mode within the band", () => {
+	test("routes only in executor-for-summarization mode", () => {
 		const summ = LocalInferenceRouter.create({
 			mode: "executor-for-summarization",
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(summ.shouldRouteSummarization(inBand)).toBe(true);
-		expect(summ.shouldRouteSummarization(DEFAULT_MIN_BYTES - 1)).toBe(false);
-		expect(summ.shouldRouteSummarization(DEFAULT_MAX_BYTES + 1)).toBe(false);
+		expect(summ.shouldRouteSummarization(SIZE)).toBe(true);
 
 		const tr = LocalInferenceRouter.create({
 			mode: "executor-for-tool-results",
 			config: { executor: executorRef },
 			registry,
 		});
-		expect(tr.shouldRouteSummarization(inBand)).toBe(false);
+		expect(tr.shouldRouteSummarization(SIZE)).toBe(false);
+	});
+
+	test("respects the size band when configured", () => {
+		const summ = LocalInferenceRouter.create({
+			mode: "executor-for-summarization",
+			config: { executor: banded },
+			registry,
+		});
+		expect(summ.shouldRouteSummarization(2047)).toBe(false);
+		expect(summ.shouldRouteSummarization(2048)).toBe(true);
+		expect(summ.shouldRouteSummarization(8192)).toBe(true);
+		expect(summ.shouldRouteSummarization(8193)).toBe(false);
+	});
+
+	test("with no band configured, routes any conversation size (unbounded)", () => {
+		const summ = LocalInferenceRouter.create({
+			mode: "executor-for-summarization",
+			config: { executor: executorRef },
+			registry,
+		});
+		expect(summ.shouldRouteSummarization(1)).toBe(true);
+		expect(summ.shouldRouteSummarization(5_000_000)).toBe(true);
 	});
 
 	test("never routes when executor unavailable", () => {
@@ -208,7 +237,7 @@ describe("LocalInferenceRouter.shouldRouteSummarization", () => {
 			config: { executor: { provider: "mlx", model: "missing" } },
 			registry,
 		});
-		expect(summ.shouldRouteSummarization(inBand)).toBe(false);
+		expect(summ.shouldRouteSummarization(SIZE)).toBe(false);
 	});
 });
 
