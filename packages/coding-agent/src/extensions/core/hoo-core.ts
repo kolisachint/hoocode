@@ -44,6 +44,7 @@ import type {
 import { isToolCallEventType } from "../../core/extensions/types.js";
 import { summarizeArgs } from "../../core/messages.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
+import { subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
 
 // Built-in fallback mode prompts (ask / plan / build / debug) now live in
@@ -653,6 +654,12 @@ function loadStandardMcpFile(filePath: string): McpServerConfig[] {
 
 export function setupMcpLoader(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+		// A spawned subagent whose tool allowlist has no MCP tools is told by its
+		// parent to skip server connection entirely (see SUBAGENT_SKIP_MCP_ENV).
+		// Each connect is a ~15s-timeout handshake; doing it for a subagent that can
+		// never call the tools is pure startup latency.
+		if (subagentSkipMcp()) return;
+
 		installMcpExitCleanup();
 		const allServerConfigs: McpServerConfig[] = [];
 		const seenNames = new Set<string>();

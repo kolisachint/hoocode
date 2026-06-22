@@ -615,6 +615,13 @@ export async function main(args: string[], options?: MainOptions) {
 		...(options?.extensionFactories ?? []),
 	];
 	const authStorage = AuthStorage.create();
+	// A spawned subagent (run with a task id) is a single-shot, non-interactive
+	// process: it renders no TUI and its prompt is a plain task, never a slash
+	// command. Themes, slash commands, and prompt templates are dead weight in that
+	// path, so skip loading them to trim the child's cold-boot cost. Skills, context
+	// files, and extensions (which carry the core tools) are kept — they affect the
+	// subagent's actual work.
+	const isSubagentBoot = parsed.taskId !== undefined;
 	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		cwd,
 		agentDir,
@@ -634,9 +641,9 @@ export async function main(args: string[], options?: MainOptions) {
 				additionalThemePaths: resolvedThemePaths,
 				noExtensions: parsed.noExtensions,
 				noSkills: parsed.noSkills,
-				noPromptTemplates: parsed.noPromptTemplates,
-				noSlashCommands: parsed.noSlashCommands,
-				noThemes: parsed.noThemes,
+				noPromptTemplates: parsed.noPromptTemplates || isSubagentBoot,
+				noSlashCommands: parsed.noSlashCommands || isSubagentBoot,
+				noThemes: parsed.noThemes || isSubagentBoot,
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
 				extensionFactories: allExtensionFactories,
