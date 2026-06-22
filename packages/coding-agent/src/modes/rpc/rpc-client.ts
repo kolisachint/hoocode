@@ -26,6 +26,16 @@ type RpcCommandBody = DistributiveOmit<RpcCommand, "id">;
 export interface RpcClientOptions {
 	/** Path to the CLI entry point (default: searches for dist/cli.js) */
 	cliPath?: string;
+	/**
+	 * Explicit executable to spawn (e.g. the bun binary or the node runtime). When
+	 * set, the process is spawned as `executable [...prefixArgs] --mode rpc ...`
+	 * instead of the default `node <cliPath> --mode rpc ...`. Use with
+	 * getSubagentSpawnCommand() so a warm worker boots exactly like a cold spawn
+	 * across the node and bun-binary builds.
+	 */
+	executable?: string;
+	/** Args inserted before the RPC args when `executable` is set (e.g. the CLI entry for node). */
+	prefixArgs?: string[];
 	/** Working directory for the agent */
 	cwd?: string;
 	/** Environment variables */
@@ -59,6 +69,8 @@ export class RpcClient {
 		new Map();
 	private requestId = 0;
 	private stderr = "";
+	private exited = false;
+	private exitListeners: Array<(code: number | null) => void> = [];
 
 	constructor(private options: RpcClientOptions = {}) {}
 
@@ -70,7 +82,6 @@ export class RpcClient {
 			throw new Error("Client already started");
 		}
 
-		const cliPath = this.options.cliPath ?? "dist/cli.js";
 		const args = ["--mode", "rpc"];
 
 		if (this.options.provider) {
@@ -83,7 +94,14 @@ export class RpcClient {
 			args.push(...this.options.args);
 		}
 
-		this.process = spawn("node", [cliPath, ...args], {
+		// Spawn shape: an explicit executable (+ prefixArgs) boots the worker exactly
+		// like a cold subagent spawn across the node and bun-binary builds; otherwise
+		// fall back to the default `node <cliPath>` form used by tests.
+		const [command, commandArgs] = this.options.executable
+			? [this.options.executable, [...(this.options.prefixArgs ?? []), ...args]]
+			: ["node", [this.options.cliPath ?? "dist/cli.js", ...args]];
+
+		this.process = spawn(command, commandArgs, {
 			cwd: this.options.cwd,
 			env: { ...process.env, ...this.options.env },
 			stdio: ["pipe", "pipe", "pipe"],
@@ -94,6 +112,11 @@ export class RpcClient {
 			this.stderr += data.toString();
 			process.stderr.write(data);
 		});
+
+		// Fail fast if the child dies: reject every in-flight request/waiter instead
+		// of letting them hang until their individual timeouts. Callers (e.g. the warm
+		// pool) treat this as an infra failure and fall back.
+		this.process.on("exit", (code) => this.handleExit(code));
 
 		// Set up strict JSONL reader for stdout.
 		this.stopReadingStdout = attachJsonlLineReader(this.process.stdout!, (line) => {
@@ -153,6 +176,24 @@ export class RpcClient {
 	 */
 	getStderr(): string {
 		return this.stderr;
+	}
+
+	/** Subscribe to child process exit. Returns an unsubscribe function. */
+	onExit(listener: (code: number | null) => void): () => void {
+		this.exitListeners.push(listener);
+		return () => {
+			const index = this.exitListeners.indexOf(listener);
+			if (index !== -1) this.exitListeners.splice(index, 1);
+		};
+	}
+
+	/** Reject all in-flight requests and notify exit listeners when the child dies. */
+	private handleExit(code: number | null): void {
+		this.exited = true;
+		const err = new Error(`Agent process exited (code ${code}). Stderr: ${this.stderr}`);
+		for (const pending of this.pendingRequests.values()) pending.reject(err);
+		this.pendingRequests.clear();
+		for (const listener of this.exitListeners.slice()) listener(code);
 	}
 
 	// =========================================================================
@@ -400,15 +441,26 @@ export class RpcClient {
 	 */
 	waitForIdle(timeout = 60000): Promise<void> {
 		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
+			if (this.exited) {
+				reject(new Error(`Agent process already exited. Stderr: ${this.stderr}`));
+				return;
+			}
+			const cleanup = () => {
+				clearTimeout(timer);
 				unsubscribe();
+				offExit();
+			};
+			const timer = setTimeout(() => {
+				cleanup();
 				reject(new Error(`Timeout waiting for agent to become idle. Stderr: ${this.stderr}`));
 			}, timeout);
-
+			const offExit = this.onExit((code) => {
+				cleanup();
+				reject(new Error(`Agent process exited (code ${code}) before becoming idle. Stderr: ${this.stderr}`));
+			});
 			const unsubscribe = this.onEvent((event) => {
 				if (event.type === "agent_end") {
-					clearTimeout(timer);
-					unsubscribe();
+					cleanup();
 					resolve();
 				}
 			});
@@ -420,17 +472,28 @@ export class RpcClient {
 	 */
 	collectEvents(timeout = 60000): Promise<AgentEvent[]> {
 		return new Promise((resolve, reject) => {
+			if (this.exited) {
+				reject(new Error(`Agent process already exited. Stderr: ${this.stderr}`));
+				return;
+			}
 			const events: AgentEvent[] = [];
-			const timer = setTimeout(() => {
+			const cleanup = () => {
+				clearTimeout(timer);
 				unsubscribe();
+				offExit();
+			};
+			const timer = setTimeout(() => {
+				cleanup();
 				reject(new Error(`Timeout collecting events. Stderr: ${this.stderr}`));
 			}, timeout);
-
+			const offExit = this.onExit((code) => {
+				cleanup();
+				reject(new Error(`Agent process exited (code ${code}) before becoming idle. Stderr: ${this.stderr}`));
+			});
 			const unsubscribe = this.onEvent((event) => {
 				events.push(event);
 				if (event.type === "agent_end") {
-					clearTimeout(timer);
-					unsubscribe();
+					cleanup();
 					resolve(events);
 				}
 			});
@@ -442,7 +505,14 @@ export class RpcClient {
 	 */
 	async promptAndWait(message: string, images?: ImageContent[], timeout = 60000): Promise<AgentEvent[]> {
 		const eventsPromise = this.collectEvents(timeout);
-		await this.prompt(message, images);
+		try {
+			await this.prompt(message, images);
+		} catch (error) {
+			// If the prompt send fails (e.g. the child exited), the collectEvents
+			// promise also rejects; swallow it so it isn't an unhandled rejection.
+			eventsPromise.catch(() => {});
+			throw error;
+		}
 		return eventsPromise;
 	}
 
@@ -474,6 +544,9 @@ export class RpcClient {
 	private async send(command: RpcCommandBody): Promise<RpcResponse> {
 		if (!this.process?.stdin) {
 			throw new Error("Client not started");
+		}
+		if (this.exited) {
+			throw new Error(`Agent process has exited. Stderr: ${this.stderr}`);
 		}
 
 		const id = `req_${++this.requestId}`;

@@ -36,6 +36,8 @@ export interface Args {
 	noTools?: boolean;
 	noBuiltinTools?: boolean;
 	subagent?: boolean;
+	/** Dispatch eligible subagents on reused warm RPC workers (overrides the warmSubagents setting). */
+	warmSubagents?: boolean;
 	/** Tree-wide subagent nesting cap (overrides the maxSubagentDepth setting). */
 	maxSubagentDepth?: number;
 	/** Internal: restricts which subagent types this process may delegate to. */
@@ -129,6 +131,8 @@ export function parseArgs(args: string[]): Args {
 			result.noBuiltinTools = true;
 		} else if (arg === "--enable-subagents") {
 			result.subagent = true;
+		} else if (arg === "--warm-subagents") {
+			result.warmSubagents = true;
 		} else if (arg === "--max-subagent-depth" && i + 1 < args.length) {
 			const n = Number.parseInt(args[++i], 10);
 			if (Number.isInteger(n) && n >= 1) {
@@ -294,6 +298,7 @@ ${chalk.bold("Options:")}
   --max-turns <n>                Hard cap on assistant turns; the agent is asked to wrap up near the
                                  cap and stopped at it (mainly used for spawned subagents)
   --enable-subagents             Enable the subagent tool (delegate tasks to isolated agent loops)
+  --warm-subagents               Dispatch eligible subagents on reused warm RPC workers (experimental)
   --max-subagent-depth <n>       Tree-wide subagent nesting cap (default 1 = no nesting). Overrides
                                  the "maxSubagentDepth" setting
                                  Can also be enabled via the "enableSubagent" setting

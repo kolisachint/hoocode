@@ -21,10 +21,12 @@ import { getProviderExhaustion } from "../provider-health.js";
 import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
 import { type InboxRecord, subagentInbox } from "../subagent-inbox.js";
-import type { TaskResult } from "../subagent-pool.js";
+import type { SubagentResult, TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
+import { type WarmRunResult, WarmWorkerError } from "../warm-subagent-pool.js";
+import { getWarmSubagentPool, warmSubagentsEnabled } from "../warm-subagent-pool-instance.js";
 
 // Re-exported from its home in agent-registry (where formatAgentsForPrompt uses
 // it to render the roster) so existing importers keep working without creating a
@@ -301,6 +303,35 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				}
 			}
 
+			// Warm path (opt-in): for an eligible foreground dispatch, run on a reused
+			// RPC worker to skip the cold-boot. Fork agents (forkSessionFile set) and
+			// non-poolable types are excluded. Any infra failure falls through to the
+			// cold pool below, so enabling this can only change latency, never whether
+			// the task can run.
+			if (warmSubagentsEnabled() && !forkSessionFile) {
+				const warm = getWarmSubagentPool(ctx.cwd);
+				if (warm.isPoolable(params.subagent_type)) {
+					try {
+						const warmResult = await warm.dispatch(params.prompt, {
+							agentType: params.subagent_type,
+							cwd: ctx.cwd,
+							model: dispatchModel,
+							provider: ctx.model?.provider,
+						});
+						const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);
+						return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, undefined);
+					} catch (error) {
+						// A genuine infra failure (worker crash/timeout) retries cold; any other
+						// error is a real dispatch failure and propagates.
+						if (!(error instanceof WarmWorkerError)) {
+							taskStore.update(task.id, { status: "failed" });
+							throw error;
+						}
+						console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
+					}
+				}
+			}
+
 			// Foreground: block the turn and return the subagent's full answer inline.
 			try {
 				const dispatchResult = await pool.dispatch(params.prompt, {
@@ -387,6 +418,35 @@ function mergeChildTaskTree(nodes: readonly SubagentTaskNode[] | undefined, pare
 			mergeChildTaskTree(node.children, created.id);
 		}
 	});
+}
+
+/**
+ * Adapt a warm-worker run into the TaskResult shape finalizeDispatchResult
+ * consumes, so the warm and cold paths share one finish/render path. A warm run
+ * returns its answer inline (no result.json), so we synthesize an equivalent
+ * SubagentResult with the answer as the summary and the pulled usage. The warm
+ * path is clean (no persisted session), so there is no task_tree to merge and no
+ * resume handle.
+ */
+function warmResultToTaskResult(warm: WarmRunResult, agentType: string, taskStoreId: number): TaskResult {
+	const resultData: SubagentResultFile = {
+		summary: warm.summary || "(subagent returned no output)",
+		files_changed: [],
+		confidence: warm.ok ? 1 : 0,
+		status: warm.status,
+		usage: warm.usage,
+	};
+	const result: SubagentResult = {
+		task_id: String(taskStoreId),
+		ok: warm.ok,
+		stdout: "",
+		stderr: "",
+		exit_code: warm.ok ? 0 : 1,
+		status: warm.status,
+		error: warm.error,
+		result_data: resultData as unknown as Record<string, unknown>,
+	};
+	return { handled_inline: false, agent_type: agentType, result };
 }
 
 /**

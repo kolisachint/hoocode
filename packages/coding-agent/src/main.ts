@@ -55,6 +55,7 @@ import {
 	createTaskToolDefinition,
 } from "./core/tools/subagent.js";
 import { createTodoWriteToolDefinition } from "./core/tools/todo.js";
+import { WARM_SUBAGENTS_ENV } from "./core/warm-subagent-pool-instance.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -432,6 +433,13 @@ function buildSessionOptions(
 			createTaskToolDefinition(),
 			createTaskOutputToolDefinition(),
 		];
+		// Warm subagents (experimental): dispatch eligible foreground subagents on
+		// reused RPC workers to skip the cold-boot. Root-only — the Task tool exists
+		// only where canSpawnSubagent holds and never inside a spawned child — and
+		// carried via env so the Task tool reads it without threading a setting.
+		if (!isSubagentChild && (parsed.warmSubagents ?? settingsManager.getWarmSubagents())) {
+			process.env[WARM_SUBAGENTS_ENV] = "1";
+		}
 	}
 
 	// Optional TodoWrite tool: opt-in via --enable-todowrite flag or the
