@@ -181,7 +181,7 @@ function migrateKeybindingsConfigFile(): void {
 }
 
 /**
- * Move fd/rg binaries from tools/ to bin/ if they exist.
+ * Move fd/rg/webtools binaries from tools/ to bin/ if they exist.
  */
 function migrateToolsToBin(): void {
 	const agentDir = getAgentDir();
@@ -190,7 +190,7 @@ function migrateToolsToBin(): void {
 
 	if (!existsSync(toolsDir)) return;
 
-	const binaries = ["fd", "rg", "fd.exe", "rg.exe"];
+	const binaries = ["fd", "rg", "webtools", "fd.exe", "rg.exe"];
 	let movedAny = false;
 
 	for (const bin of binaries) {
@@ -226,7 +226,7 @@ function migrateToolsToBin(): void {
 
 /**
  * Check for deprecated hooks/ and tools/ directories.
- * Note: tools/ may contain fd/rg binaries extracted by hoocode, so only warn if it has other files.
+ * Note: tools/ may contain fd/rg/webtools binaries extracted by hoocode, so only warn if it has other files.
  */
 function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] {
 	const hooksDir = join(baseDir, "hooks");
@@ -244,7 +244,12 @@ function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] 
 			const customTools = entries.filter((e) => {
 				const lower = e.toLowerCase();
 				return (
-					lower !== "fd" && lower !== "rg" && lower !== "fd.exe" && lower !== "rg.exe" && !e.startsWith(".") // Ignore .DS_Store and other hidden files
+					lower !== "fd" &&
+					lower !== "rg" &&
+					lower !== "webtools" &&
+					lower !== "fd.exe" &&
+					lower !== "rg.exe" &&
+					!e.startsWith(".") // Ignore .DS_Store and other hidden files
 				);
 			});
 			if (customTools.length > 0) {
