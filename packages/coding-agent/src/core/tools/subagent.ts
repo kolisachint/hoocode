@@ -387,11 +387,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 
 		renderCall(args, theme) {
 			const type = args.subagent_type ?? "agent";
-			const preview = summarize(args.description ?? args.prompt ?? "");
-			const text =
-				theme.fg("toolTitle", theme.bold("Agent ")) +
-				theme.fg("accent", `[${type}]`) +
-				theme.fg("dim", ` ${preview}`);
+			const text = theme.fg("toolTitle", theme.bold("Agent ")) + theme.fg("accent", `[${type}]`);
 			return new Text(text, 0, 0);
 		},
 	});
