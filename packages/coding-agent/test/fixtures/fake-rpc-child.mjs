@@ -43,6 +43,8 @@ rl.on("line", (line) => {
 			// Authoritative prompt response (preflight success), then the event stream.
 			respond(cmd.id, "prompt");
 			write({ type: "agent_start" });
+			write({ type: "tool_execution_start", toolName: "grep" });
+			write({ type: "tool_execution_end", toolName: "grep" });
 			write({
 				type: "turn_end",
 				message: { usage: { input: 11, output: 7 }, stopReason: failPrompt ? "error" : "stop", errorMessage: failPrompt ? "boom" : undefined },

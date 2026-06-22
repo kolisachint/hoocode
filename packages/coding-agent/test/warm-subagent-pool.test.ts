@@ -66,6 +66,17 @@ describe("WarmSubagentPool", () => {
 		expect(second.summary).toContain("n=2");
 	});
 
+	it("reports live tool activity during a run and clears it at the end", async () => {
+		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn());
+		const activity: string[] = [];
+		await pool.dispatch("trace the bug", opts, (a) => activity.push(a));
+
+		// The child runs grep, so the callback sees the tool name then a clear ("").
+		expect(activity).toContain("grep");
+		// Always cleared at the end so the row doesn't linger on a stale tool.
+		expect(activity[activity.length - 1]).toBe("");
+	});
+
 	it("reports a task failure (turn ended in error) without throwing", async () => {
 		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn(["--fail-prompt"]));
 		const result = await pool.dispatch("do the thing", opts);

@@ -64,6 +64,9 @@ export interface WarmDispatchOptions {
 	provider?: string;
 }
 
+/** Reports the tool a warm worker is currently running ("" = idle between tools). */
+export type WarmProgressCallback = (activity: string) => void;
+
 /** A run failed at the infrastructure level (worker crash, timeout, protocol error). */
 export class WarmWorkerError extends Error {}
 
@@ -118,8 +121,16 @@ export class WarmSubagentWorker {
 	 * can fall back to the cold pool; a task that ran but reported failure returns
 	 * `{ ok: false }` instead (no fall back — the work was actually done).
 	 */
-	async run(prompt: string, timeoutMs = WARM_RUN_TIMEOUT_MS): Promise<WarmRunResult> {
+	async run(
+		prompt: string,
+		onActivity?: WarmProgressCallback,
+		timeoutMs = WARM_RUN_TIMEOUT_MS,
+	): Promise<WarmRunResult> {
 		if (!this.alive) throw new WarmWorkerError("worker is not alive");
+		// Mirror the cold pool's coarse progress: report the tool the child is
+		// currently running so a warm dispatch's task row reads "⋯ grep" rather than a
+		// static "running…". Cleared between tools and at turn end.
+		const detachProgress = onActivity ? this.tapProgress(onActivity) : undefined;
 		try {
 			const events = await this.client.promptAndWait(prompt, undefined, timeoutMs);
 			const failure = firstTurnError(events);
@@ -134,7 +145,19 @@ export class WarmSubagentWorker {
 			// dead so the pool discards it, and signal infra failure for fallback.
 			this.alive = false;
 			throw new WarmWorkerError(error instanceof Error ? error.message : String(error));
+		} finally {
+			detachProgress?.();
+			onActivity?.("");
 		}
+	}
+
+	/** Forward the child's coarse tool-lifecycle events to an activity callback. */
+	private tapProgress(onActivity: WarmProgressCallback): () => void {
+		return this.client.onEvent((event) => {
+			const e = event as { type?: string; toolName?: string };
+			if (e.type === "tool_execution_start") onActivity(typeof e.toolName === "string" ? e.toolName : "");
+			else if (e.type === "tool_execution_end" || e.type === "turn_end") onActivity("");
+		});
 	}
 
 	/** Reset the worker's conversation so it can take the next task cleanly. */
@@ -229,11 +252,15 @@ export class WarmSubagentPool {
 	 * release back to the pool. Throws WarmWorkerError on infra failure so the
 	 * caller can fall back to the cold pool.
 	 */
-	async dispatch(prompt: string, options: WarmDispatchOptions): Promise<WarmRunResult> {
+	async dispatch(
+		prompt: string,
+		options: WarmDispatchOptions,
+		onActivity?: WarmProgressCallback,
+	): Promise<WarmRunResult> {
 		if (this.disposed) throw new WarmWorkerError("warm pool disposed");
 		const worker = await this.acquire(options);
 		try {
-			const result = await worker.run(prompt);
+			const result = await worker.run(prompt, onActivity);
 			await this.release(worker);
 			return result;
 		} catch (error) {

@@ -269,6 +269,37 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				const label = subagentInbox.nextLabel(params.subagent_type);
 				subagentInbox.observe(pool);
 				subagentInbox.start(poolTaskId, label, params.subagent_type);
+
+				// Warm path (opt-in): run on a reused RPC worker, retain the body in the
+				// inbox, and return the same notify-and-pull shape as the cold path. An
+				// infra failure falls through to the cold dispatch below.
+				if (warmSubagentsEnabled() && !forkSessionFile) {
+					const warm = getWarmSubagentPool(ctx.cwd);
+					if (warm.isPoolable(params.subagent_type)) {
+						try {
+							const warmResult = await warm.dispatch(
+								params.prompt,
+								{
+									agentType: params.subagent_type,
+									cwd: ctx.cwd,
+									model: dispatchModel,
+									provider: ctx.model?.provider,
+								},
+								(activity) => taskStore.patchAgent(params.subagent_type, { activity }),
+							);
+							const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);
+							subagentInbox.finish(poolTaskId, dispatchResult);
+							return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, poolTaskId, {
+								taskId: poolTaskId,
+								label,
+							});
+						} catch (error) {
+							if (!(error instanceof WarmWorkerError)) throw error;
+							console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
+						}
+					}
+				}
+
 				try {
 					const dispatchResult = await pool.dispatch(params.prompt, {
 						forceAgent: params.subagent_type,
@@ -312,12 +343,18 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				const warm = getWarmSubagentPool(ctx.cwd);
 				if (warm.isPoolable(params.subagent_type)) {
 					try {
-						const warmResult = await warm.dispatch(params.prompt, {
-							agentType: params.subagent_type,
-							cwd: ctx.cwd,
-							model: dispatchModel,
-							provider: ctx.model?.provider,
-						});
+						const warmResult = await warm.dispatch(
+							params.prompt,
+							{
+								agentType: params.subagent_type,
+								cwd: ctx.cwd,
+								model: dispatchModel,
+								provider: ctx.model?.provider,
+							},
+							// Mirror the cold pool's live progress on the task panel roster so a
+							// warm dispatch reads as busy (⋯ grep), not stuck.
+							(activity) => taskStore.patchAgent(params.subagent_type, { activity }),
+						);
 						const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);
 						return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, undefined);
 					} catch (error) {
