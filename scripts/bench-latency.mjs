@@ -25,6 +25,10 @@
  *   --runs 3                   Runs per level (default: 3)
  *   --prompt "..."             Prompt to send (default: a no-tool prompt)
  *   --tool                     Use a built-in tool-triggering prompt instead
+ *   --subagent                 Measure the spawned-subagent boot path: runs with
+ *                              --task-id (trims themes/slash-commands/prompt-templates)
+ *                              and an explore-style MCP-free allowlist + HOOCODE_SKIP_MCP,
+ *                              so startup_ms reflects what a real dispatch pays.
  *   --model <pattern>          Pass --model to hoocode (default: configured model)
  *   --cli <path>              Path to cli.js (default: packages/coding-agent/dist/cli.js)
  *   --build                    Rebuild coding-agent before running
@@ -53,6 +57,7 @@ function parseArgs(argv) {
 		runs: 3,
 		prompt: undefined,
 		useTool: false,
+		subagent: false,
 		model: undefined,
 		cli: resolve(repoRoot, "packages/coding-agent/dist/cli.js"),
 		build: false,
@@ -67,6 +72,7 @@ function parseArgs(argv) {
 		else if (a === "--runs") opts.runs = Number.parseInt(argv[++i], 10);
 		else if (a === "--prompt") opts.prompt = argv[++i];
 		else if (a === "--tool") opts.useTool = true;
+		else if (a === "--subagent") opts.subagent = true;
 		else if (a === "--model") opts.model = argv[++i];
 		else if (a === "--cli") opts.cli = resolve(process.cwd(), argv[++i]);
 		else if (a === "--build") opts.build = true;
@@ -87,6 +93,7 @@ Usage: node scripts/bench-latency.mjs [options]
   --runs 3              Runs per level (default: 3)
   --prompt "..."        Custom prompt
   --tool                Use a tool-triggering prompt
+  --subagent            Measure the spawned-subagent boot path (trimmed boot + MCP skip)
   --model <pattern>     Pass --model to hoocode
   --cli <path>          cli.js path (default: packages/coding-agent/dist/cli.js)
   --build               Rebuild coding-agent first
@@ -103,10 +110,20 @@ function run(cmd, args, opts = {}) {
 }
 
 /** Run one invocation and collect timing + usage. */
-function measureRun(cli, level, prompt, model) {
+function measureRun(cli, level, prompt, model, subagent = false) {
 	return new Promise((resolveP, reject) => {
 		const args = [cli, "-p", "--mode", "json", "--thinking", level];
 		if (model) args.push("--model", model);
+		// Reproduce a spawned subagent's boot path: a task id flips on the trimmed
+		// boot profile (no themes/slash-commands/prompt-templates) and an MCP-free
+		// allowlist mirrors an explore dispatch, with HOOCODE_SKIP_MCP set the way
+		// the pool sets it for such a child.
+		const childEnv = subagent
+			? { ...process.env, HOOCODE_SKIP_MCP: "1", HOOCODE_SUBAGENT_DEPTH: "1" }
+			: process.env;
+		if (subagent) {
+			args.push("--task-id", `bench-${Date.now()}`, "--tools", "read,grep,find,ls");
+		}
 		args.push(prompt);
 
 		const t0 = performance.now();
@@ -124,7 +141,7 @@ function measureRun(cli, level, prompt, model) {
 		let firstStreamAt = null;
 		let firstTextAt = null;
 
-		const child = spawn("node", args, { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"] });
+		const child = spawn("node", args, { cwd: repoRoot, stdio: ["ignore", "pipe", "pipe"], env: childEnv });
 		let stderr = "";
 		child.stderr.on("data", (d) => (stderr += d.toString()));
 
@@ -196,13 +213,14 @@ async function main() {
 	console.error(`  model:   ${opts.model ?? "(configured default)"}`);
 	console.error(`  levels:  ${opts.levels.join(", ")}`);
 	console.error(`  runs:    ${opts.runs} per level`);
+	if (opts.subagent) console.error(`  mode:    subagent boot (trimmed boot + MCP skip)`);
 	console.error(`  prompt:  ${JSON.stringify(opts.prompt)}\n`);
 
 	const all = [];
 	for (const level of opts.levels) {
 		for (let i = 0; i < opts.runs; i++) {
 			process.stderr.write(`  [${level}] run ${i + 1}/${opts.runs}… `);
-			const m = await measureRun(opts.cli, level, opts.prompt, opts.model);
+			const m = await measureRun(opts.cli, level, opts.prompt, opts.model, opts.subagent);
 			all.push(m);
 			const cache = m.usage.cacheRead > 0 ? "warm" : "cold";
 			process.stderr.write(

@@ -55,6 +55,7 @@ import {
 	createTaskToolDefinition,
 } from "./core/tools/subagent.js";
 import { createTodoWriteToolDefinition } from "./core/tools/todo.js";
+import { WARM_SUBAGENTS_ENV } from "./core/warm-subagent-pool-instance.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -432,6 +433,13 @@ function buildSessionOptions(
 			createTaskToolDefinition(),
 			createTaskOutputToolDefinition(),
 		];
+		// Warm subagents (experimental): dispatch eligible foreground subagents on
+		// reused RPC workers to skip the cold-boot. Root-only — the Task tool exists
+		// only where canSpawnSubagent holds and never inside a spawned child — and
+		// carried via env so the Task tool reads it without threading a setting.
+		if (!isSubagentChild && (parsed.warmSubagents ?? settingsManager.getWarmSubagents())) {
+			process.env[WARM_SUBAGENTS_ENV] = "1";
+		}
 	}
 
 	// Optional TodoWrite tool: opt-in via --enable-todowrite flag or the
@@ -615,6 +623,13 @@ export async function main(args: string[], options?: MainOptions) {
 		...(options?.extensionFactories ?? []),
 	];
 	const authStorage = AuthStorage.create();
+	// A spawned subagent (run with a task id) is a single-shot, non-interactive
+	// process: it renders no TUI and its prompt is a plain task, never a slash
+	// command. Themes, slash commands, and prompt templates are dead weight in that
+	// path, so skip loading them to trim the child's cold-boot cost. Skills, context
+	// files, and extensions (which carry the core tools) are kept — they affect the
+	// subagent's actual work.
+	const isSubagentBoot = parsed.taskId !== undefined;
 	const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 		cwd,
 		agentDir,
@@ -634,9 +649,9 @@ export async function main(args: string[], options?: MainOptions) {
 				additionalThemePaths: resolvedThemePaths,
 				noExtensions: parsed.noExtensions,
 				noSkills: parsed.noSkills,
-				noPromptTemplates: parsed.noPromptTemplates,
-				noSlashCommands: parsed.noSlashCommands,
-				noThemes: parsed.noThemes,
+				noPromptTemplates: parsed.noPromptTemplates || isSubagentBoot,
+				noSlashCommands: parsed.noSlashCommands || isSubagentBoot,
+				noThemes: parsed.noThemes || isSubagentBoot,
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
 				extensionFactories: allExtensionFactories,

@@ -93,6 +93,7 @@ import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-promp
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.js";
 import { createAllToolDefinitions } from "./tools/index.js";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.js";
+import { updateWarmSubagentSkillPaths } from "./warm-subagent-pool-instance.js";
 
 /**
  * Retryable error signatures (overloaded, rate limit, server/network errors,
@@ -332,6 +333,7 @@ export class AgentSession {
 		this._scopedModels = config.scopedModels ?? [];
 		this._resourceLoader = config.resourceLoader;
 		updateSubagentSkillPaths(this._resourceLoader.getSkillPaths());
+		updateWarmSubagentSkillPaths(this._resourceLoader.getSkillPaths());
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
 		this._modelRegistry = config.modelRegistry;
@@ -2087,6 +2089,7 @@ export class AgentSession {
 
 		this._resourceLoader.extendResources(extensionPaths);
 		updateSubagentSkillPaths(this._resourceLoader.getSkillPaths());
+		updateWarmSubagentSkillPaths(this._resourceLoader.getSkillPaths());
 		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
 		this.agent.state.systemPrompt = this._baseSystemPrompt;
 	}
@@ -2404,6 +2407,7 @@ export class AgentSession {
 		resetApiProviders();
 		await this._resourceLoader.reload();
 		updateSubagentSkillPaths(this._resourceLoader.getSkillPaths());
+		updateWarmSubagentSkillPaths(this._resourceLoader.getSkillPaths());
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
 			flagValues: previousFlagValues,

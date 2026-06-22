@@ -25,6 +25,14 @@ export const SUBAGENT_MAX_DEPTH_ENV = "HOOCODE_SUBAGENT_MAX_DEPTH";
 export const NESTED_CONCURRENCY_ENV = "HOOCODE_NESTED_SUBAGENT_CONCURRENCY";
 /** Comma-separated allowlist of subagent types the current process may delegate to. */
 export const DELEGATE_ALLOW_ENV = "HOOCODE_DELEGATE_ALLOW";
+/**
+ * Set by the parent pool when a spawned subagent's tool allowlist contains no MCP
+ * tools, telling the child's MCP loader to skip connecting external servers at
+ * startup. Connecting them (one ~15s handshake apiece) is pure boot latency for a
+ * subagent that can never call them. Only set when the allowlist is explicit and
+ * MCP-free; an inherit-all agent leaves it unset and connects as usual.
+ */
+export const SUBAGENT_SKIP_MCP_ENV = "HOOCODE_SKIP_MCP";
 
 /** Default tree-wide cap: subagents cannot spawn subagents (original behavior). */
 export const DEFAULT_MAX_SUBAGENT_DEPTH = 1;
@@ -116,4 +124,19 @@ export function delegateAllowList(env: NodeJS.ProcessEnv = process.env): string[
 export function isDelegateAllowed(subagentType: string, env: NodeJS.ProcessEnv = process.env): boolean {
 	const allow = delegateAllowList(env);
 	return !allow || allow.includes(subagentType);
+}
+
+/** Whether this process should skip connecting MCP servers at startup (see SUBAGENT_SKIP_MCP_ENV). */
+export function subagentSkipMcp(env: NodeJS.ProcessEnv = process.env): boolean {
+	return env[SUBAGENT_SKIP_MCP_ENV] === "1";
+}
+
+/**
+ * Decide whether a child with the given tool allowlist needs MCP servers. A tool
+ * name is MCP-sourced when it carries the `mcp_<server>_<tool>` prefix. An
+ * undefined allowlist means "inherit every tool", so MCP must stay available.
+ */
+export function toolAllowlistNeedsMcp(tools: readonly string[] | undefined): boolean {
+	if (!tools) return true;
+	return tools.some((t) => /^mcp[_-]?/i.test(t.trim()));
 }

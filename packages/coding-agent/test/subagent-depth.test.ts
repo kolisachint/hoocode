@@ -18,6 +18,8 @@ import {
 	poolConcurrencyForDepth,
 	resolveMaxSubagentDepth,
 	resolveNestedConcurrency,
+	subagentSkipMcp,
+	toolAllowlistNeedsMcp,
 } from "../src/core/subagent-depth.js";
 
 const env = (overrides: Record<string, string>): NodeJS.ProcessEnv => ({ ...overrides });
@@ -107,6 +109,31 @@ describe("delegate scoping", () => {
 		expect(delegateAllowList(e)).toEqual(["explore", "plan"]);
 		expect(isDelegateAllowed("explore", e)).toBe(true);
 		expect(isDelegateAllowed("general-purpose", e)).toBe(false);
+	});
+});
+
+describe("MCP skip for subagents", () => {
+	it("needs MCP when the allowlist is undefined (inherit all tools)", () => {
+		expect(toolAllowlistNeedsMcp(undefined)).toBe(true);
+	});
+
+	it("does not need MCP when the explicit allowlist is MCP-free", () => {
+		expect(toolAllowlistNeedsMcp(["read", "grep", "find", "ls"])).toBe(false);
+		expect(toolAllowlistNeedsMcp([])).toBe(false);
+		// Delegating agents get Task/TaskOutput appended — still not MCP.
+		expect(toolAllowlistNeedsMcp(["read", "Task", "TaskOutput"])).toBe(false);
+	});
+
+	it("needs MCP when the allowlist references an mcp tool (prefix-tolerant)", () => {
+		expect(toolAllowlistNeedsMcp(["read", "mcp_github_search"])).toBe(true);
+		expect(toolAllowlistNeedsMcp([" mcp-foo "])).toBe(true);
+		expect(toolAllowlistNeedsMcp(["MCP_Github_Issue"])).toBe(true);
+	});
+
+	it("subagentSkipMcp reads the env flag", () => {
+		expect(subagentSkipMcp(env({}))).toBe(false);
+		expect(subagentSkipMcp(env({ HOOCODE_SKIP_MCP: "1" }))).toBe(true);
+		expect(subagentSkipMcp(env({ HOOCODE_SKIP_MCP: "0" }))).toBe(false);
 	});
 });
 

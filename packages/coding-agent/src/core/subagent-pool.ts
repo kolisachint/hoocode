@@ -12,7 +12,13 @@ import { SubagentLifeguard } from "./lifeguard.js";
 import { resolveModelReference } from "./model-categories.js";
 import { OutputVerifier } from "./output-verifier.js";
 import type { Settings } from "./settings-manager.js";
-import { currentSubagentDepth, resolveMaxSubagentDepth, SUBAGENT_DEPTH_ENV } from "./subagent-depth.js";
+import {
+	currentSubagentDepth,
+	resolveMaxSubagentDepth,
+	SUBAGENT_DEPTH_ENV,
+	SUBAGENT_SKIP_MCP_ENV,
+	toolAllowlistNeedsMcp,
+} from "./subagent-depth.js";
 import { TokenBudget } from "./token-budget.js";
 
 /**
@@ -663,6 +669,31 @@ export class SubagentPool extends EventEmitter {
 		return args;
 	}
 
+	/**
+	 * Environment for a spawned child.
+	 *
+	 * Stamps the child's depth (parent depth + 1) so its own guard knows where it
+	 * sits in the tree; the tree-wide cap (HOOCODE_SUBAGENT_MAX_DEPTH) is inherited
+	 * via the spread, so at the default cap of 1 the child lands at depth 1 and
+	 * cannot spawn further subagents. Also flags the child to skip MCP server
+	 * connection when its tool allowlist is explicit and MCP-free — connecting
+	 * external servers it can never call is pure boot latency.
+	 */
+	private childSpawnEnv(task: SubagentPoolTask): NodeJS.ProcessEnv {
+		const env: NodeJS.ProcessEnv = {
+			...this.env,
+			[SUBAGENT_DEPTH_ENV]: String(currentSubagentDepth(this.env) + 1),
+		};
+		// Use the agent's own frontmatter allowlist (the same source buildArgs passes
+		// via --tools). A delegating child also gets Task/TaskOutput appended there,
+		// but neither is an MCP tool, so the decision is unchanged by that.
+		const def = task.agent_type ? this.getRegistry().get(task.agent_type) : undefined;
+		if (!toolAllowlistNeedsMcp(def?.tools)) {
+			env[SUBAGENT_SKIP_MCP_ENV] = "1";
+		}
+		return env;
+	}
+
 	/** Start a task in a child process, with one retry on failure. */
 	private startTask(task: SubagentPoolTask, isRetry: boolean): void {
 		// Get or create a TokenBudget tracker. On retry, reuse the existing one
@@ -689,14 +720,7 @@ export class SubagentPool extends EventEmitter {
 		try {
 			proc = spawn(this.executable, this.buildArgs(task), {
 				cwd: task.cwd ?? this.cwd,
-				// Stamp the child's depth (parent depth + 1) so its own guard knows where
-				// it sits in the tree. The tree-wide cap (HOOCODE_SUBAGENT_MAX_DEPTH) is
-				// inherited via the spread; at the default cap of 1 the child lands at
-				// depth 1 and cannot spawn further subagents.
-				env: {
-					...this.env,
-					[SUBAGENT_DEPTH_ENV]: String(currentSubagentDepth(this.env) + 1),
-				},
+				env: this.childSpawnEnv(task),
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 			});

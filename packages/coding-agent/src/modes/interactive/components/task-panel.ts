@@ -362,7 +362,13 @@ function formatTaskLine(
 			rightStyled = theme.fg("muted", tokenText);
 		}
 	} else if (task.status === "in_progress") {
-		rightPlain = "running…";
+		// Surface the owning agent's live activity (the tool it's currently running,
+		// fed by the pool's task_progress events) so a delegated row reads "⋯ grep"
+		// rather than a static "running…" — the difference between looking busy and
+		// looking stuck. Falls back to "running…" between tools (activity cleared) or
+		// when no owner is resolved.
+		const liveActivity = options.owner?.activity;
+		rightPlain = liveActivity ? `⋯ ${liveActivity}` : "running…";
 		rightStyled = theme.fg("warning", rightPlain);
 	} else if (task.status === "pending") {
 		rightPlain = "queued";
@@ -756,9 +762,18 @@ export class TaskPanelComponent implements Component, Focusable {
 			const roots = tasks.filter(
 				(t) => t.parentTaskId === undefined && (t.source === "subagent" || t.source === "mcp"),
 			);
+			// Resolve each row's owning agent so an in-progress row can show the agent's
+			// live tool activity (⋯ grep) instead of a static "running…".
+			const agentById = new Map(allAgents.map((a) => [a.id, a]));
 			const walk = (task: Task, prefix: string, isLast: boolean, isRoot: boolean): void => {
 				const connector = isRoot ? "" : `${prefix}${isLast ? "└─ " : "├─ "}`;
-				lines.push(gutter + formatTaskLine(task, inner, this.frame, { treePrefix: connector }));
+				lines.push(
+					gutter +
+						formatTaskLine(task, inner, this.frame, {
+							treePrefix: connector,
+							owner: agentById.get(taskOwnerId(task)),
+						}),
+				);
 				const kids = childrenByParent.get(task.id) ?? [];
 				const childPrefix = isRoot ? "" : `${prefix}${isLast ? "   " : "│  "}`;
 				for (let i = 0; i < kids.length; i++) {

@@ -130,6 +130,42 @@ describe("task panel rendering", () => {
 		expect(mcpRow).toContain("[web]");
 	});
 
+	test("an in-progress subagent row shows the owner's live tool activity", () => {
+		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent", state: "running", activity: "grep" });
+		const sub = taskStore.create("trace the auth flow", {
+			source: "subagent",
+			subagentMode: "explore",
+			agent: "explore",
+		});
+		taskStore.update(sub.id, { status: "in_progress" });
+
+		panel.setView("subagents");
+		const row = renderPanel()
+			.map(stripAnsi)
+			.find((l) => l.includes("trace the auth flow"));
+		// The live tool the subagent is running replaces the static "running…", so the
+		// row reads as busy rather than stuck.
+		expect(row).toContain("⋯ grep");
+		expect(row).not.toContain("running…");
+	});
+
+	test("an in-progress subagent row falls back to running… when the owner is idle between tools", () => {
+		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent", state: "running", activity: "" });
+		const sub = taskStore.create("trace the auth flow", {
+			source: "subagent",
+			subagentMode: "explore",
+			agent: "explore",
+		});
+		taskStore.update(sub.id, { status: "in_progress" });
+
+		panel.setView("subagents");
+		const row = renderPanel()
+			.map(stripAnsi)
+			.find((l) => l.includes("trace the auth flow"));
+		expect(row).toContain("running…");
+		expect(row).not.toContain("⋯");
+	});
+
 	test("title column stays aligned across single- and double-digit ids", () => {
 		for (let i = 1; i <= 10; i++) {
 			const t = taskStore.create(`task-${i}`);

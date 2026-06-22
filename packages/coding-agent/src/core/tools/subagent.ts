@@ -21,10 +21,12 @@ import { getProviderExhaustion } from "../provider-health.js";
 import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
 import { type InboxRecord, subagentInbox } from "../subagent-inbox.js";
-import type { TaskResult } from "../subagent-pool.js";
+import type { SubagentResult, TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
+import { type WarmRunResult, WarmWorkerError } from "../warm-subagent-pool.js";
+import { getWarmSubagentPool, warmSubagentsEnabled } from "../warm-subagent-pool-instance.js";
 
 // Re-exported from its home in agent-registry (where formatAgentsForPrompt uses
 // it to render the roster) so existing importers keep working without creating a
@@ -55,7 +57,8 @@ Guidelines:
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
 - Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
 - Some agents run in the background (non-blocking); force it per call with \`background: true\` (or \`background: false\` to wait inline). A background Task does not block your turn and does not return its answer inline: you get a short notification ("explore#1 finished") and the full result is held for you to pull with \`TaskOutput\`. Keep working in the meantime.
-- Use **TaskOutput** to manage background subagents: \`TaskOutput(list: true)\` shows every running/finished subagent and what each is doing; \`TaskOutput("explore#1")\` reads a finished subagent's full result (or reports its status if still running); \`TaskOutput(wait: true)\` blocks until a named task — or, with no task_id, ALL outstanding subagents — finish. Dispatch a batch in one turn, then barrier on them with \`TaskOutput(wait: true)\`.
+- After dispatching background work, DO NOT stop and wait — that wastes the parallelism and looks stuck. Immediately continue with the next useful thing: read or edit an independent file, draft the parts of your answer that don't depend on the pending result, or dispatch more independent subtasks. Only barrier (with \`TaskOutput(wait: true)\`) when you genuinely cannot proceed without the result. Prefer background dispatch for any self-contained or parallelizable work so your turn never blocks on a subagent.
+- Use **TaskOutput** to manage background subagents: \`TaskOutput(list: true)\` shows every running/finished subagent and what each is doing; \`TaskOutput("explore#1")\` reads a finished subagent's full result (or reports its status if still running); \`TaskOutput(wait: true)\` blocks until a named task — or, with no task_id, ALL outstanding subagents — finish. Dispatch a batch in one turn, then barrier on them with \`TaskOutput(wait: true)\` only once you've exhausted the work you can do without them.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
 
@@ -266,6 +269,37 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				const label = subagentInbox.nextLabel(params.subagent_type);
 				subagentInbox.observe(pool);
 				subagentInbox.start(poolTaskId, label, params.subagent_type);
+
+				// Warm path (opt-in): run on a reused RPC worker, retain the body in the
+				// inbox, and return the same notify-and-pull shape as the cold path. An
+				// infra failure falls through to the cold dispatch below.
+				if (warmSubagentsEnabled() && !forkSessionFile) {
+					const warm = getWarmSubagentPool(ctx.cwd);
+					if (warm.isPoolable(params.subagent_type)) {
+						try {
+							const warmResult = await warm.dispatch(
+								params.prompt,
+								{
+									agentType: params.subagent_type,
+									cwd: ctx.cwd,
+									model: dispatchModel,
+									provider: ctx.model?.provider,
+								},
+								(activity) => taskStore.patchAgent(params.subagent_type, { activity }),
+							);
+							const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);
+							subagentInbox.finish(poolTaskId, dispatchResult);
+							return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, poolTaskId, {
+								taskId: poolTaskId,
+								label,
+							});
+						} catch (error) {
+							if (!(error instanceof WarmWorkerError)) throw error;
+							console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
+						}
+					}
+				}
+
 				try {
 					const dispatchResult = await pool.dispatch(params.prompt, {
 						forceAgent: params.subagent_type,
@@ -297,6 +331,41 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 							background: true,
 						},
 					};
+				}
+			}
+
+			// Warm path (opt-in): for an eligible foreground dispatch, run on a reused
+			// RPC worker to skip the cold-boot. Fork agents (forkSessionFile set) and
+			// non-poolable types are excluded. Any infra failure falls through to the
+			// cold pool below, so enabling this can only change latency, never whether
+			// the task can run.
+			if (warmSubagentsEnabled() && !forkSessionFile) {
+				const warm = getWarmSubagentPool(ctx.cwd);
+				if (warm.isPoolable(params.subagent_type)) {
+					try {
+						const warmResult = await warm.dispatch(
+							params.prompt,
+							{
+								agentType: params.subagent_type,
+								cwd: ctx.cwd,
+								model: dispatchModel,
+								provider: ctx.model?.provider,
+							},
+							// Mirror the cold pool's live progress on the task panel roster so a
+							// warm dispatch reads as busy (⋯ grep), not stuck.
+							(activity) => taskStore.patchAgent(params.subagent_type, { activity }),
+						);
+						const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);
+						return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, undefined);
+					} catch (error) {
+						// A genuine infra failure (worker crash/timeout) retries cold; any other
+						// error is a real dispatch failure and propagates.
+						if (!(error instanceof WarmWorkerError)) {
+							taskStore.update(task.id, { status: "failed" });
+							throw error;
+						}
+						console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
+					}
 				}
 			}
 
@@ -386,6 +455,35 @@ function mergeChildTaskTree(nodes: readonly SubagentTaskNode[] | undefined, pare
 			mergeChildTaskTree(node.children, created.id);
 		}
 	});
+}
+
+/**
+ * Adapt a warm-worker run into the TaskResult shape finalizeDispatchResult
+ * consumes, so the warm and cold paths share one finish/render path. A warm run
+ * returns its answer inline (no result.json), so we synthesize an equivalent
+ * SubagentResult with the answer as the summary and the pulled usage. The warm
+ * path is clean (no persisted session), so there is no task_tree to merge and no
+ * resume handle.
+ */
+function warmResultToTaskResult(warm: WarmRunResult, agentType: string, taskStoreId: number): TaskResult {
+	const resultData: SubagentResultFile = {
+		summary: warm.summary || "(subagent returned no output)",
+		files_changed: [],
+		confidence: warm.ok ? 1 : 0,
+		status: warm.status,
+		usage: warm.usage,
+	};
+	const result: SubagentResult = {
+		task_id: String(taskStoreId),
+		ok: warm.ok,
+		stdout: "",
+		stderr: "",
+		exit_code: warm.ok ? 0 : 1,
+		status: warm.status,
+		error: warm.error,
+		result_data: resultData as unknown as Record<string, unknown>,
+	};
+	return { handled_inline: false, agent_type: agentType, result };
 }
 
 /**

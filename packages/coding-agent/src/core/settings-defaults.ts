@@ -27,6 +27,7 @@ export const DEFAULT_SETTINGS = {
 	enableInstallTelemetry: true,
 	enableSkillCommands: true,
 	enableSubagent: false,
+	warmSubagents: false,
 	maxSubagentDepth: 1,
 	nestedSubagentConcurrency: 2,
 	enableTodoWrite: true,

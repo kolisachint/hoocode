@@ -117,6 +117,7 @@ export interface Settings {
 	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	enableSubagent?: boolean; // default: false - enable the subagent tool (delegate tasks to isolated agent loops)
+	warmSubagents?: boolean; // default: false - dispatch eligible subagents on reused warm RPC workers (experimental)
 	maxSubagentDepth?: number; // default: 1 - tree-wide subagent nesting cap (1 = subagents cannot spawn subagents)
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
@@ -942,6 +943,17 @@ export class SettingsManager {
 	setEnableSubagent(enabled: boolean): void {
 		this.globalSettings.enableSubagent = enabled;
 		this.markModified("enableSubagent");
+		this.save();
+	}
+
+	/** Whether to dispatch eligible subagents on reused warm workers (experimental). */
+	getWarmSubagents(): boolean {
+		return this.settings.warmSubagents ?? DEFAULT_SETTINGS.warmSubagents!;
+	}
+
+	setWarmSubagents(enabled: boolean): void {
+		this.globalSettings.warmSubagents = enabled;
+		this.markModified("warmSubagents");
 		this.save();
 	}
 

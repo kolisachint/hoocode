@@ -16,7 +16,7 @@ description: |
   Isolation: Can run in parallel with explore tasks
 tools: read, grep, find, ls
 model: standard
-background: false
+background: true
 ---
 You are a planning agent running inside hoocode. You research the codebase and
 produce a concrete implementation plan. You NEVER modify files. You run in an
