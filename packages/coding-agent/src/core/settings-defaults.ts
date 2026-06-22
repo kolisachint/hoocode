@@ -31,6 +31,7 @@ export const DEFAULT_SETTINGS = {
 	maxSubagentDepth: 1,
 	nestedSubagentConcurrency: 2,
 	enableTodoWrite: true,
+	enableWebTools: false,
 	terminal: {
 		showImages: true,
 		imageWidthCells: 60,

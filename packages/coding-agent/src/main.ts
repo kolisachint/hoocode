@@ -394,6 +394,12 @@ function buildSessionOptions(
 	if (parsed.disallowedTools) {
 		options.disallowedTools = [...parsed.disallowedTools];
 	}
+	// Web tools (webfetch + websearch): opt-in via --enable-webtools flag or the
+	// enableWebTools setting. They are registered as base tools but inactive by
+	// default; this adds them to the default active set.
+	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
+		options.enableWebTools = true;
+	}
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.

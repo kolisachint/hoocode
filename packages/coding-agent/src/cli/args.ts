@@ -43,6 +43,8 @@ export interface Args {
 	/** Internal: restricts which subagent types this process may delegate to. */
 	delegateAllow?: string[];
 	todoWrite?: boolean;
+	/** Enable the webfetch + websearch tools (off by default). */
+	enableWebTools?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
 	print?: boolean;
@@ -145,6 +147,8 @@ export function parseArgs(args: string[]): Args {
 				.filter((name) => name.length > 0);
 		} else if (arg === "--enable-todowrite") {
 			result.todoWrite = true;
+		} else if (arg === "--enable-webtools") {
+			result.enableWebTools = true;
 		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
 			result.tools = args[++i]
 				.split(",")
@@ -303,7 +307,10 @@ ${chalk.bold("Options:")}
                                  the "maxSubagentDepth" setting
                                  Can also be enabled via the "enableSubagent" setting
   --enable-todowrite             Enable the TodoWrite tool (maintain a live todo list in the task panel)
-                                 Can also be enabled via the "enableTodoWrite" setting
+                                  Can also be enabled via the "enableTodoWrite" setting
+  --enable-webtools              Enable the webfetch + websearch tools (network access, off by default)
+                                  Can also be enabled via the "enableWebTools" setting
+                                  Block hosts with a .webtoolsignore file (gitignore syntax)
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)

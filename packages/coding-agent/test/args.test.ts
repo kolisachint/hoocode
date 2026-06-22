@@ -273,6 +273,17 @@ describe("parseArgs", () => {
 		});
 	});
 
+	describe("--enable-webtools flag", () => {
+		test("parses --enable-webtools flag", () => {
+			const result = parseArgs(["--enable-webtools"]);
+			expect(result.enableWebTools).toBe(true);
+		});
+		test("defaults to undefined when absent", () => {
+			const result = parseArgs([]);
+			expect(result.enableWebTools).toBeUndefined();
+		});
+	});
+
 	describe("--slash-command flag", () => {
 		test("parses single --slash-command", () => {
 			const result = parseArgs(["--slash-command", "./commands"]);

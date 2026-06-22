@@ -34,10 +34,21 @@ export type AgentSource = "builtin" | "user" | "project" | "claude-user" | "clau
 export const MODEL_INHERIT = "inherit";
 
 /**
- * The seven built-in hoocode tools. An agent's `tools` allowlist is normalized
- * against this set; unknown tools are dropped with a diagnostic.
+ * The built-in hoocode tools that an agent's `tools` allowlist is normalized
+ * against; unknown tools are dropped with a diagnostic. Includes the opt-in web
+ * tools (webfetch/websearch) so Claude Code's WebFetch/WebSearch map through.
  */
-export const HOOCODE_TOOL_NAMES: readonly string[] = ["bash", "edit", "find", "grep", "ls", "read", "write"];
+export const HOOCODE_TOOL_NAMES: readonly string[] = [
+	"bash",
+	"edit",
+	"find",
+	"grep",
+	"ls",
+	"read",
+	"webfetch",
+	"websearch",
+	"write",
+];
 
 /**
  * Canonical registered names of the two opt-in tools. These are case-sensitive
@@ -52,9 +63,9 @@ export const TODO_WRITE_TOOL_NAME = "TodoWrite";
  * D7 — Claude Code compatibility shim.
  *
  * Maps Claude Code tool names (case-insensitive) to their hoocode equivalents.
- * Claude tools without a hoocode counterpart (MultiEdit, Task, WebFetch,
- * WebSearch, TodoWrite, NotebookEdit, MCP tools, ...) are intentionally absent
- * and get dropped during normalization.
+ * Claude tools without a hoocode counterpart (MultiEdit, Task, TodoWrite,
+ * NotebookEdit, MCP tools, ...) are intentionally absent and get dropped during
+ * normalization.
  */
 export const CLAUDE_TOOL_ALIASES: Readonly<Record<string, string>> = {
 	read: "read",
@@ -65,6 +76,8 @@ export const CLAUDE_TOOL_ALIASES: Readonly<Record<string, string>> = {
 	glob: "find",
 	find: "find",
 	ls: "ls",
+	webfetch: "webfetch",
+	websearch: "websearch",
 };
 
 /** Raw frontmatter shape before validation/normalization. */

@@ -46,6 +46,7 @@ import { summarizeArgs } from "../../core/messages.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
 import { subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
+import { blockedHostForUrl } from "../../core/tools/webtools-shared.js";
 
 // Built-in fallback mode prompts (ask / plan / build / debug) now live in
 // `core/mode-prompts.ts` so downstream apps can import them. Imported above as
@@ -241,7 +242,7 @@ export function readMergedConfig(cwd: string): HooConfig {
 // A. Permission Gate
 // ============================================================================
 
-const GATED_TOOLS = new Set(["bash", "write", "edit"]);
+const GATED_TOOLS = new Set(["bash", "write", "edit", "webfetch", "websearch"]);
 
 /**
  * Checks if a file path matches any of the allowed patterns.
@@ -284,6 +285,14 @@ function describeTool(event: ToolCallEvent): string {
 	if (isToolCallEventType("write", event)) {
 		const p = (event.input as { file_path?: string }).file_path ?? "(unknown)";
 		return `write ${p}`;
+	}
+	if (event.toolName === "webfetch") {
+		const url = (event.input as { url?: string }).url ?? "(unknown)";
+		return `webfetch ${url}`;
+	}
+	if (event.toolName === "websearch") {
+		const query = (event.input as { query?: string }).query ?? "(unknown)";
+		return `websearch "${query}"`;
 	}
 	return event.toolName;
 }
@@ -346,6 +355,20 @@ export function setupPermissionGate(pi: ExtensionAPI): void {
 							`Allowed patterns: ${modeCfg.allowed_bash_commands.join(", ")}`,
 					};
 				}
+			}
+		}
+
+		// webfetch host policy (.webtoolsignore). Hard enforcement, always applies:
+		// a blocked host is denied even in headless runs. SSRF/private-address
+		// blocking lives in the webtools binary; this is host allow/deny policy only.
+		if (event.toolName === "webfetch") {
+			const url = (event.input as { url?: string }).url ?? "";
+			const blockedHost = url ? blockedHostForUrl(ctx.cwd, url) : undefined;
+			if (blockedHost) {
+				return {
+					block: true,
+					reason: `Host "${blockedHost}" is blocked by .webtoolsignore policy.`,
+				};
 			}
 		}
 
