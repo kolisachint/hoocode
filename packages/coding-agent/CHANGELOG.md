@@ -2,67 +2,74 @@
 
 ## [Unreleased]
 
-### Added
+### Changed
 
-- **Background subagents are now notify-and-pull.** A background `Task` dispatch
-  no longer pushes its full result into the conversation. It posts a compact
-  one-line notification ("explore#1 finished — <preview>") and retains the body
-  in a new subagent inbox; the model pulls the full result with `TaskOutput` when
-  it wants it. This keeps a wide swarm of subagents from flooding the parent's
+- **Reverted the `Task` → `ExecuteTask` rename from 0.4.78.** The subagent
+  delegation tool is `Task` again (no deprecated alias), keeping parity with
+  Claude Code. The never-wired `item_id` parameter and the duplicate `complexity`
+  field on TodoWrite (both added in 0.4.78) are removed.
+- **Background subagents are now notify-and-pull** instead of forced-background.
+  A background `Task` posts a compact one-line notification and retains the body
+  in a new subagent inbox; the model pulls the full result with `TaskOutput`.
+  Background is opt-in per agent with a per-call `background: true|false`
+  override. This keeps a wide swarm of subagents from flooding the parent's
   context with N full summaries.
-- **`TaskOutput` reworked into a status-aware probe + swarm barrier.** It never
-  errors on a valid handle (a running task reports its status and current
-  activity; a finished one returns its body; an already-read one says so). New
-  modes: `list: true` shows every background subagent with status/activity (no
-  bodies), and `wait: true` blocks until a named task — or, with no `task_id`,
+- **`TaskOutput` reworked into a status-aware probe + swarm barrier** (replacing
+  0.4.78's `wait_for_completion` approach). It never errors on a valid handle: a
+  running task reports its status/activity, a finished one returns its body, an
+  already-read one says so. New modes: `list: true` lists every background
+  subagent, and `wait: true` blocks until a named task — or, with no `task_id`,
   all outstanding subagents — finish. Tasks are addressable by a friendly label
-  (`explore#1`) or their task id. Fixes the previous behavior where polling a
-  background task threw "no result available" and confused the main agent.
-- The on-spawn placeholder is now a single compact line instead of a multi-line
+  (`explore#1`) or their task id.
+- **`Task` keeps the optional `complexity` tier** (`"fast"`/`"standard"`/
+  `"capable"`), now passed straight through as the dispatch model so the pool's
+  precedence applies it only when the agent's model is `inherit`; a pinned-model
+  agent ignores it.
+- **Model categories are provider-neutral**: the tiers resolve only from
+  `settings.modelCategories` with no hardcoded fallback, and an unconfigured tier
+  is a no-op (keep the agent's or parent's default model). Built-in agent
+  templates select by category (`explore: fast`, `general-purpose`/`plan:
+  standard`).
+- **Lower per-turn prompt cost**: the available-agents roster renders once (was
+  up to three times — the `<available_agents>` block, the buildTaskMainPrompt
+  appendix, and the Task tool description) and as a one-line summary per agent
+  instead of the full description; the Task tool description no longer re-embeds
+  the roster or re-explains parameters covered by their schemas.
+- The on-spawn placeholder is a single compact line instead of a multi-line
   explainer, so dispatching several subagents at once no longer floods the TUI.
-- The per-turn prompt overhead of the subagent feature was cut substantially: the
-  available-agents roster is rendered once (was up to three times — the
-  `<available_agents>` block, the buildTaskMainPrompt appendix, and the Task tool
-  description), the Task tool description no longer re-embeds the roster or
-  re-explains parameters covered by their schemas, and `<available_agents>` now
-  carries a one-line summary per agent instead of the full description. Net: the
-  agent roster no longer scales the prompt by ~150-550 tokens per agent across
-  multiple copies; it is a single ~100-token-per-agent rendering.
 
-- **`Task` tool gains an optional `complexity` parameter** (`"fast"`,
-  `"standard"`, `"capable"`). It selects a model tier from
-  `settings.modelCategories` for that one dispatch. An agent that pins its own
-  model ignores `complexity`; agents using `inherit` pick up the requested tier.
-  The tool passes the value straight through as the dispatch model, so the
-  pool's existing model-precedence and category resolution handle it — no
-  duplicate settings lookup.
-- **Per-call `background` override on the `Task` tool**. Passing
-  `background: true` runs a normally-foreground dispatch detached (answer arrives
-  as a follow-up message); `background: false` waits inline even for an agent
-  that defaults to background. Omitting it keeps the agent's own default.
+## [0.4.78] - 2026-06-21
+
+### Breaking Changes
+
+- **Task tool renamed to ExecuteTask**. The subagent delegation tool is now
+  called `ExecuteTask` instead of `Task`. Agent definitions and prompts that
+  reference "Task tool" must be updated. The old name is kept as a deprecated
+  alias for backward compatibility.
+- **TodoWrite schema extended with `complexity` field**. Each todo item can now
+  carry a `complexity` parameter (`"fast"`, `"standard"`, `"capable"`) that
+  maps to a model category via `settings.modelCategories`. This is optional;
+  omitting it uses the agent's default model.
+- **ExecuteTask schema extended with `complexity` and `item_id` fields**. The
+  new `complexity` parameter selects a model category from config. The new
+  `item_id` parameter links the dispatch to a TodoWrite item for tracking.
 
 ### Fixed
 
-- TodoWrite reconciliation now filters to root main-agent tasks only (no
-  `source`/`agent`/`parentTaskId`), excluding MCP-sourced and delegated rows that
-  `taskOwnerId()` folded under "main". This prevented overwriting or dropping
-  those rows when the TodoWrite list was shorter than the combined task count.
+- TodoWrite reconciliation now filters to root main-agent tasks only, excluding
+  MCP-sourced and delegated tasks that `taskOwnerId()` folded under "main". This
+  prevented silent data corruption of MCP task rows when the TodoWrite list was
+  shorter than the combined main+MCP task count.
+- TaskOutput now waits for a running/queued subagent to finish (up to 120s)
+  instead of returning "call again later" and requiring an extra LLM round-trip
+  per poll. Foreground Task completions are also visible to TaskOutput via a new
+  `wait_for_completion` API on the subagent pool.
 
 ### Changed
 
 - TaskStore gains a `batch(fn)` method that defers listener notifications until
-  the batch completes. TodoWrite reconciliation and child-task-tree merging now
-  emit a single render invalidation instead of one per item.
-- Model categories are now provider-neutral: the `fast`/`standard`/`capable`
-  tiers resolve only from `settings.modelCategories` and no longer fall back to
-  hardcoded model names. An unconfigured category is a no-op, so the dispatch
-  keeps the agent's or parent's default model instead of forcing a specific
-  provider's model.
-- Built-in agent templates now select a model by category instead of a concrete
-  model name: the embedded `explore` template uses `model: fast` (was a hardcoded
-  Claude model) and `general-purpose`/`plan` use `model: standard`, matching the
-  source templates. With categories unconfigured these inherit the parent model,
-  so the defaults carry no provider assumption.
+  the batch callback completes. TodoWrite reconciliation and child-task-tree
+  merging now emit a single render invalidation instead of one per item.
 
 ## [0.4.77] - 2026-06-21
 
