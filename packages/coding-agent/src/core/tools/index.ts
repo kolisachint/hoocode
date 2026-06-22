@@ -79,6 +79,20 @@ export {
 	truncateTail,
 } from "./truncate.js";
 export {
+	createWebFetchTool,
+	createWebFetchToolDefinition,
+	type WebFetchToolDetails,
+	type WebFetchToolInput,
+	type WebFetchToolOptions,
+} from "./webfetch.js";
+export {
+	createWebSearchTool,
+	createWebSearchToolDefinition,
+	type WebSearchToolDetails,
+	type WebSearchToolInput,
+	type WebSearchToolOptions,
+} from "./websearch.js";
+export {
 	createWriteTool,
 	createWriteToolDefinition,
 	type WriteOperations,
@@ -95,12 +109,25 @@ import { createGlobTool, createGlobToolDefinition, type GlobToolOptions } from "
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.js";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.js";
+import { createWebFetchTool, createWebFetchToolDefinition, type WebFetchToolOptions } from "./webfetch.js";
+import { createWebSearchTool, createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.js";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.js";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "glob" | "ls";
-export const allToolNames: Set<ToolName> = new Set(["read", "bash", "edit", "write", "grep", "find", "glob", "ls"]);
+export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "glob" | "ls" | "webfetch" | "websearch";
+export const allToolNames: Set<ToolName> = new Set([
+	"read",
+	"bash",
+	"edit",
+	"write",
+	"grep",
+	"find",
+	"glob",
+	"ls",
+	"webfetch",
+	"websearch",
+]);
 
 export interface ToolsOptions {
 	read?: ReadToolOptions;
@@ -111,6 +138,8 @@ export interface ToolsOptions {
 	find?: FindToolOptions;
 	glob?: GlobToolOptions;
 	ls?: LsToolOptions;
+	webfetch?: WebFetchToolOptions;
+	websearch?: WebSearchToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -131,6 +160,10 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createGlobToolDefinition(cwd, options?.glob);
 		case "ls":
 			return createLsToolDefinition(cwd, options?.ls);
+		case "webfetch":
+			return createWebFetchToolDefinition(cwd, options?.webfetch);
+		case "websearch":
+			return createWebSearchToolDefinition(cwd, options?.websearch);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -154,6 +187,10 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createGlobTool(cwd, options?.glob);
 		case "ls":
 			return createLsTool(cwd, options?.ls);
+		case "webfetch":
+			return createWebFetchTool(cwd, options?.webfetch);
+		case "websearch":
+			return createWebSearchTool(cwd, options?.websearch);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -192,6 +229,8 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		find: createFindToolDefinition(cwd, options?.find),
 		glob: createGlobToolDefinition(cwd, options?.glob),
 		ls: createLsToolDefinition(cwd, options?.ls),
+		webfetch: createWebFetchToolDefinition(cwd, options?.webfetch),
+		websearch: createWebSearchToolDefinition(cwd, options?.websearch),
 	};
 }
 
@@ -228,5 +267,7 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		find: createFindTool(cwd, options?.find),
 		glob: createGlobTool(cwd, options?.glob),
 		ls: createLsTool(cwd, options?.ls),
+		webfetch: createWebFetchTool(cwd, options?.webfetch),
+		websearch: createWebSearchTool(cwd, options?.websearch),
 	};
 }

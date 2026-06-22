@@ -18,6 +18,9 @@ function isOfflineModeEnabled(): boolean {
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
+/** Tools whose binaries hoocode can resolve from PATH or download on demand. */
+export type ManagedTool = "fd" | "rg" | "webtools";
+
 interface ToolConfig {
 	name: string;
 	repo: string; // GitHub repo (e.g., "sharkdp/fd")
@@ -69,6 +72,26 @@ const TOOLS: Record<string, ToolConfig> = {
 			return null;
 		},
 	},
+	webtools: {
+		name: "webtools",
+		repo: "kolisachint/webtools",
+		binaryName: "webtools",
+		tagPrefix: "v",
+		// Release assets follow Rust target triples: webtools-<arch>-<target>.<ext>.
+		// Some platforms may not be published yet; a missing asset 404s and ensureTool
+		// degrades gracefully (returns undefined, tools fall back to an error message).
+		getAssetName: (_version, plat, architecture) => {
+			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
+			if (plat === "darwin") {
+				return `webtools-${archStr}-apple-darwin.tar.gz`;
+			} else if (plat === "linux") {
+				return `webtools-${archStr}-unknown-linux-gnu.tar.gz`;
+			} else if (plat === "win32") {
+				return `webtools-${archStr}-pc-windows-msvc.zip`;
+			}
+			return null;
+		},
+	},
 };
 
 // Check if a command exists in PATH by trying to run it
@@ -85,10 +108,10 @@ function commandExists(cmd: string): boolean {
 // Resolved tool paths are stable for the life of the process. Cache the first
 // successful resolution so we never re-run the synchronous spawnSync probe in
 // commandExists() on every grep/find/glob invocation, which blocks the event loop.
-const resolvedToolPathCache = new Map<"fd" | "rg", string>();
+const resolvedToolPathCache = new Map<ManagedTool, string>();
 
 // Get the path to a tool (system-wide or in our tools dir)
-export function getToolPath(tool: "fd" | "rg"): string | null {
+export function getToolPath(tool: ManagedTool): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 
@@ -178,7 +201,7 @@ function findBinaryRecursively(rootDir: string, binaryFileName: string): string 
 }
 
 // Download and install a tool
-async function downloadTool(tool: "fd" | "rg"): Promise<string> {
+async function downloadTool(tool: ManagedTool): Promise<string> {
 	const config = TOOLS[tool];
 	if (!config) throw new Error(`Unknown tool: ${tool}`);
 
@@ -260,11 +283,12 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
 const TERMUX_PACKAGES: Record<string, string> = {
 	fd: "fd",
 	rg: "ripgrep",
+	webtools: "webtools",
 };
 
 // Ensure a tool is available, downloading if necessary
 // Returns the path to the tool, or null if unavailable
-export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Promise<string | undefined> {
+export async function ensureTool(tool: ManagedTool, silent: boolean = false): Promise<string | undefined> {
 	const existingPath = getToolPath(tool);
 	if (existingPath) {
 		return existingPath;

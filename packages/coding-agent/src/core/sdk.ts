@@ -70,6 +70,13 @@ export interface CreateAgentSessionOptions {
 	 * enabled (allowlist or default). Applied to built-in, extension, and custom tools.
 	 */
 	disallowedTools?: string[];
+	/**
+	 * Enable the built-in `webfetch` + `websearch` tools, which are defined but
+	 * inactive by default. Ignored when an explicit `tools` allowlist is provided
+	 * (list `webfetch`/`websearch` there instead). Network access is still gated
+	 * per call and filtered by `.webtoolsignore`.
+	 */
+	enableWebTools?: boolean;
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
 
@@ -277,12 +284,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+	// Web tools are registered as base tools but inactive by default; opt-in adds
+	// them to the default active set. An explicit allowlist (`tools`) takes over
+	// fully, so callers must list them there to enable in that mode.
+	const optInActiveToolNames: ToolName[] = options.enableWebTools ? ["webfetch", "websearch"] : [];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const initialActiveToolNames: string[] = options.tools
 		? [...options.tools]
 		: options.noTools
 			? []
-			: defaultActiveToolNames;
+			: [...defaultActiveToolNames, ...optInActiveToolNames];
 
 	let agent: Agent;
 

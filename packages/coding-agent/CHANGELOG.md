@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Web tools: `webfetch` and `websearch`** (off by default). Enable with
+  `--enable-webtools` or the `enableWebTools` setting. Both shell out to the
+  `webtools` CLI (auto-downloaded from `kolisachint/webtools` releases, or used
+  from PATH), which returns token-efficient, reference-style output (`[N]`
+  markers plus a trailing reference block). `websearch` uses DuckDuckGo and needs
+  no API key. Results are cached in-process for 15 minutes. Both tools go through
+  the permission gate (interactive prompt) and can be restricted with a
+  `.webtoolsignore` file (gitignore syntax) that blocks hosts for `webfetch` and
+  filters blocked domains out of `websearch` results. SSRF/private-address
+  protection is enforced by the `webtools` binary.
+
 ## [0.4.80] - 2026-06-22
 
 ## [0.4.79] - 2026-06-22

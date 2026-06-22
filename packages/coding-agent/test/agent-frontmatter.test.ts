@@ -24,11 +24,17 @@ describe("normalizeTools (D7 Claude Code shim)", () => {
 	});
 
 	test("drops unknown tools with a diagnostic", () => {
-		const { tools, diagnostics } = normalizeTools("Read, WebFetch, Task, MultiEdit");
+		const { tools, diagnostics } = normalizeTools("Read, NotebookEdit, Task, MultiEdit");
 		expect(tools).toEqual(["read"]);
 		expect(diagnostics).toHaveLength(3);
 		expect(diagnostics.every((d) => d.type === "warning")).toBe(true);
-		expect(diagnostics.some((d) => d.message.includes("WebFetch"))).toBe(true);
+		expect(diagnostics.some((d) => d.message.includes("NotebookEdit"))).toBe(true);
+	});
+
+	test("maps Claude WebFetch/WebSearch to the opt-in web tools", () => {
+		const { tools, diagnostics } = normalizeTools("WebFetch, WebSearch");
+		expect(tools).toEqual(["webfetch", "websearch"]);
+		expect(diagnostics).toHaveLength(0);
 	});
 
 	test("dedupes resolved tools (Glob and find both map to find)", () => {

@@ -121,6 +121,7 @@ export interface Settings {
 	maxSubagentDepth?: number; // default: 1 - tree-wide subagent nesting cap (1 = subagents cannot spawn subagents)
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
+	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
@@ -976,6 +977,16 @@ export class SettingsManager {
 	setEnableTodoWrite(enabled: boolean): void {
 		this.globalSettings.enableTodoWrite = enabled;
 		this.markModified("enableTodoWrite");
+		this.save();
+	}
+
+	getEnableWebTools(): boolean {
+		return this.settings.enableWebTools ?? DEFAULT_SETTINGS.enableWebTools!;
+	}
+
+	setEnableWebTools(enabled: boolean): void {
+		this.globalSettings.enableWebTools = enabled;
+		this.markModified("enableWebTools");
 		this.save();
 	}
 
