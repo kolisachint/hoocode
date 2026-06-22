@@ -249,13 +249,49 @@ export function loadAgentRegistry(options: LoadAgentRegistryOptions): AgentRegis
 /**
  * Format a list of agent definitions as an XML block for inclusion in a system
  * prompt, mirroring the `<available_skills>` format used by formatSkillsForPrompt.
- * Only intended for display when the ExecuteTask tool is active.
+ * Only intended for display when the Task tool is active.
  */
+/**
+ * Condense a (possibly multi-line, bulleted) agent description into a single
+ * useful one-liner.
+ *
+ * Built-in agent descriptions open with a boilerplate header ("Use this
+ * subagent ONLY when:") followed by "when to use" bullets and a "DO NOT use"
+ * section. Taking the first line alone yields that identical header for every
+ * agent, so instead surface the first meaningful bullets (or the first prose
+ * line) from the positive "when to use" region.
+ */
+export function summarizeAgentDescription(description: string): string {
+	const lines = description
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+	if (lines.length === 0) return "";
+
+	// Keep only the positive region: everything before a "DO NOT use" section.
+	const stop = lines.findIndex((line) => /^(do\s*not|don'?t|avoid)\b/i.test(line));
+	const region = stop === -1 ? lines : lines.slice(0, stop);
+
+	// Drop a leading header line (e.g. "Use this subagent ONLY when:").
+	const body = region.length > 1 && region[0]!.endsWith(":") ? region.slice(1) : region;
+
+	const stripBullet = (line: string) => line.replace(/^[-*•]\s+/, "").trim();
+	const bullets = body
+		.filter((line) => /^[-*•]\s+/.test(line))
+		.map(stripBullet)
+		.filter((line) => line.length > 0);
+
+	const summary = bullets.length > 0 ? bullets.slice(0, 3).join("; ") : (body[0] ?? lines[0] ?? "").replace(/:$/, "");
+
+	const MAX = 200;
+	return summary.length > MAX ? `${summary.slice(0, MAX - 1).trimEnd()}…` : summary;
+}
+
 export function formatAgentsForPrompt(agents: AgentDefinition[]): string {
 	if (agents.length === 0) return "";
 
 	const lines = [
-		"\n\nThe following specialized agents are available for delegation via the ExecuteTask tool.",
+		"\n\nThe following specialized agents are available for delegation via the Task tool.",
 		"Choose the agent whose description best matches the task and pass it as `subagent_type`.",
 		"",
 		"<available_agents>",
@@ -264,7 +300,11 @@ export function formatAgentsForPrompt(agents: AgentDefinition[]): string {
 	for (const agent of agents) {
 		lines.push("  <agent>");
 		lines.push(`    <name>${escapeXml(agent.name)}</name>`);
-		lines.push(`    <description>${escapeXml(agent.description)}</description>`);
+		// Summarized (one positive "when to use" line) rather than the full
+		// description: the roster is rendered every turn and the full text — with its
+		// "DO NOT use"/Cost/Isolation metadata — costs ~2x the tokens for routing
+		// detail the parent rarely needs once it has picked an agent.
+		lines.push(`    <description>${escapeXml(summarizeAgentDescription(agent.description))}</description>`);
 		if (agent.tools && agent.tools.length > 0) {
 			lines.push(`    <tools>${escapeXml(agent.tools.join(", "))}</tools>`);
 		}

@@ -10,11 +10,12 @@ import { markProviderExhausted, resetProviderHealthForTesting } from "../../src/
 import { createAgentSession } from "../../src/core/sdk.js";
 import { SessionManager } from "../../src/core/session-manager.js";
 import { SettingsManager } from "../../src/core/settings-manager.js";
+import { subagentInbox } from "../../src/core/subagent-inbox.js";
 import type { SubagentPool, TaskResult } from "../../src/core/subagent-pool.js";
 import { setSubagentPoolForTesting } from "../../src/core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../src/core/subagent-result.js";
 import { taskStore } from "../../src/core/task-store.js";
-import { createExecuteTaskToolDefinition } from "../../src/core/tools/subagent.js";
+import { createTaskToolDefinition } from "../../src/core/tools/subagent.js";
 import { createTestResourceLoader } from "../utilities.js";
 
 interface FauxSetup {
@@ -102,6 +103,7 @@ function fakeResult(ok: boolean, data: Partial<SubagentResultFile>, error?: stri
 afterEach(() => {
 	setSubagentPoolForTesting(undefined);
 	resetProviderHealthForTesting();
+	subagentInbox.clear();
 	while (cleanups.length > 0) {
 		cleanups.pop()?.();
 	}
@@ -121,32 +123,66 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		} as unknown as ExtensionContext;
 	}
 
-	it("runs the subagent, returns its answer, and tracks a task to completion", async () => {
+	it("runs a foreground subagent, returns its answer inline, and tracks a task to completion", async () => {
 		const setup = setupFaux();
-		setSubagentPoolForTesting(makeFakePool(fakeResult(true, { summary: "done exploring" })));
+		setSubagentPoolForTesting(makeFakePool(fakeResult(true, { summary: "done working" })));
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
-		const tool = createExecuteTaskToolDefinition();
+		const tool = createTaskToolDefinition();
+		// general-purpose is foreground (no background frontmatter), so the answer
+		// comes back inline rather than as a notify-and-pull notification.
 		const result = await tool.execute(
 			"call-1",
 			{
-				description: "explore repo",
-				prompt: "explore the repo thoroughly and report findings",
-				subagent_type: "explore",
+				description: "do work",
+				prompt: "do the multi-step thing and report findings",
+				subagent_type: "general-purpose",
 			},
 			undefined,
 			undefined,
 			ctx,
 		);
 
-		expect(result.content[0]).toEqual({ type: "text", text: "done exploring" });
-		expect(result.details).toMatchObject({ subagent_type: "explore", ok: true, taskId: expect.any(Number) });
+		expect(result.content[0]).toEqual({ type: "text", text: "done working" });
+		expect(result.details).toMatchObject({ subagent_type: "general-purpose", ok: true, taskId: expect.any(Number) });
 
 		// The finished task stays visible until the next user turn.
 		const created = taskStore.list().slice(before);
 		expect(created).toHaveLength(1);
 		expect(created[0].status).toBe("done");
+	});
+
+	it("runs a background subagent as notify-and-pull: compact notification + body in the inbox", async () => {
+		const setup = setupFaux();
+		const fullBody =
+			"Found the bug in foo.ts:42, an off-by-one in the loop bounds that overflows the array index and corrupts downstream state";
+		setSubagentPoolForTesting(makeFakePool(fakeResult(true, { summary: fullBody })));
+		const ctx = makeCtx(setup, makeTempDir());
+
+		const tool = createTaskToolDefinition();
+		// explore opts into background, so execute() returns a compact notification and
+		// stashes the body in the inbox for TaskOutput to pull.
+		const result = await tool.execute(
+			"call-bg",
+			{ description: "scan repo", prompt: "scan the repo", subagent_type: "explore" },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const text = (result.content[0] as { text: string }).text;
+		expect(text).toContain("explore#");
+		expect(text).toContain("finished");
+		expect(text).toContain("TaskOutput");
+		// The notification carries a short preview, not the whole body.
+		expect(text).not.toContain("corrupts downstream state");
+		expect(result.details).toMatchObject({ subagent_type: "explore", ok: true, background: true });
+
+		// The full body is retrievable from the inbox by the returned label.
+		const label = text.match(/explore#\d+/)?.[0] as string;
+		const collected = subagentInbox.collect(label);
+		expect(collected?.body).toBe(fullBody);
 	});
 
 	it("skips dispatch when the inherited provider is flagged exhausted", async () => {
@@ -158,7 +194,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		markProviderExhausted(setup.model.provider, "Usage limit reached. Please try again later.");
 
 		const before = taskStore.list().length;
-		const tool = createExecuteTaskToolDefinition();
+		const tool = createTaskToolDefinition();
 		const result = await tool.execute(
 			"call-skip",
 			{
@@ -188,7 +224,7 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 		const ctx = makeCtx(setup, makeTempDir());
 
 		const before = taskStore.list().length;
-		const tool = createExecuteTaskToolDefinition();
+		const tool = createTaskToolDefinition();
 
 		// A hard subagent failure surfaces as a thrown tool error (idiomatic for this runtime).
 		await expect(
@@ -228,15 +264,85 @@ describe("subagent tool (opt-in) execution and task integration", () => {
 			].join("\n"),
 		);
 
-		const tool = createExecuteTaskToolDefinition(cwd);
+		const tool = createTaskToolDefinition(cwd);
 		expect(typeof tool.background).toBe("function");
 		const isBackground = tool.background as (toolCall: { arguments: Record<string, unknown> }) => boolean;
 
-		// All ExecuteTask calls run as background tasks (non-blocking).
 		expect(isBackground({ arguments: { subagent_type: "watcher" } })).toBe(true);
+		// Built-in `explore` opts into background by default.
 		expect(isBackground({ arguments: { subagent_type: "explore" } })).toBe(true);
-		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(true);
-		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(true);
+		// A foreground built-in (`general-purpose`) and an unknown agent must not run in the background.
+		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(false);
+		expect(isBackground({ arguments: { subagent_type: "does-not-exist" } })).toBe(false);
+	});
+
+	it("lets a per-call `background` argument override the agent's default in either direction", () => {
+		const tool = createTaskToolDefinition();
+		const isBackground = tool.background as (toolCall: { arguments: Record<string, unknown> }) => boolean;
+
+		// `explore` defaults to background; `background: false` forces it to wait inline.
+		expect(isBackground({ arguments: { subagent_type: "explore", background: false } })).toBe(false);
+		// `general-purpose` is foreground by default; `background: true` forces it detached.
+		expect(isBackground({ arguments: { subagent_type: "general-purpose", background: true } })).toBe(true);
+		// Omitting the argument falls back to the agent default.
+		expect(isBackground({ arguments: { subagent_type: "general-purpose" } })).toBe(false);
+	});
+
+	it("passes `complexity` to dispatch as the model so the pool resolves the tier", async () => {
+		const setup = setupFaux();
+		let captured: { model?: string } | undefined;
+		const capturingPool = {
+			dispatch: async (_prompt: string, options: { model?: string }) => {
+				captured = options;
+				return fakeResult(true, { summary: "ok" });
+			},
+		} as unknown as SubagentPool;
+		setSubagentPoolForTesting(capturingPool);
+		const ctx = makeCtx(setup, makeTempDir());
+
+		const tool = createTaskToolDefinition();
+		await tool.execute(
+			"call-complexity",
+			{
+				description: "quick read",
+				prompt: "read one file and report",
+				subagent_type: "general-purpose",
+				complexity: "fast",
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(captured?.model).toBe("fast");
+	});
+
+	it("falls back to the parent model when `complexity` is omitted", async () => {
+		const setup = setupFaux();
+		let captured: { model?: string } | undefined;
+		const capturingPool = {
+			dispatch: async (_prompt: string, options: { model?: string }) => {
+				captured = options;
+				return fakeResult(true, { summary: "ok" });
+			},
+		} as unknown as SubagentPool;
+		setSubagentPoolForTesting(capturingPool);
+		const ctx = makeCtx(setup, makeTempDir());
+
+		const tool = createTaskToolDefinition();
+		await tool.execute(
+			"call-nocomplexity",
+			{
+				description: "do work",
+				prompt: "do some work",
+				subagent_type: "general-purpose",
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		expect(captured?.model).toBe(setup.model.id);
 	});
 });
 
@@ -251,7 +357,7 @@ describe("subagent tool gating (opt-in vs opt-out)", () => {
 			settingsManager: SettingsManager.inMemory(),
 			sessionManager: SessionManager.inMemory(),
 			resourceLoader: createTestResourceLoader(),
-			customTools: withSubagent ? [createExecuteTaskToolDefinition()] : [],
+			customTools: withSubagent ? [createTaskToolDefinition()] : [],
 		});
 		const names = session.getActiveToolNames();
 		session.dispose();
@@ -260,13 +366,13 @@ describe("subagent tool gating (opt-in vs opt-out)", () => {
 
 	it("activates the Task tool when registered (opted in)", async () => {
 		const names = await activeToolNames(true);
-		expect(names).toContain("ExecuteTask");
+		expect(names).toContain("Task");
 		expect(names).toContain("read");
 	});
 
 	it("does not expose the Task tool when not registered (opted out)", async () => {
 		const names = await activeToolNames(false);
-		expect(names).not.toContain("ExecuteTask");
+		expect(names).not.toContain("Task");
 		expect(names).toContain("read");
 	});
 });

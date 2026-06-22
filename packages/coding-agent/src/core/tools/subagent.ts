@@ -13,71 +13,32 @@
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
-import { getAgentDir } from "../../config.js";
-import { type AgentDefinition, EXECUTE_TASK_TOOL_NAME, MODEL_INHERIT } from "../agent-frontmatter.js";
+import { type AgentDefinition, TASK_TOOL_NAME } from "../agent-frontmatter.js";
 import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
-import { resolveModelReference } from "../model-categories.js";
 import { getProviderExhaustion } from "../provider-health.js";
 import { SessionManager } from "../session-manager.js";
-import { SettingsManager } from "../settings-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
-import type { SubagentResult, TaskResult } from "../subagent-pool.js";
+import { type InboxRecord, subagentInbox } from "../subagent-inbox.js";
+import type { TaskResult } from "../subagent-pool.js";
 import { getSubagentPool } from "../subagent-pool-instance.js";
 import type { SubagentResultFile, SubagentTaskNode } from "../subagent-result.js";
 import { taskStore } from "../task-store.js";
 
-/**
- * Condense a (possibly multi-line, bulleted) agent description into a single
- * useful one-liner for the agent picker list.
- *
- * Built-in agent descriptions open with a boilerplate header ("Use this
- * subagent ONLY when:") followed by "when to use" bullets and a "DO NOT use"
- * section. Taking the first line alone yields that identical header for every
- * agent, so instead surface the first meaningful bullets (or the first prose
- * line) from the positive "when to use" region.
- */
-export function summarizeAgentDescription(description: string): string {
-	const lines = description
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0);
-	if (lines.length === 0) return "";
+// Re-exported from its home in agent-registry (where formatAgentsForPrompt uses
+// it to render the roster) so existing importers keep working without creating a
+// tools -> registry -> tools cycle.
+export { summarizeAgentDescription } from "../agent-registry.js";
 
-	// Keep only the positive region: everything before a "DO NOT use" section.
-	const stop = lines.findIndex((line) => /^(do\s*not|don'?t|avoid)\b/i.test(line));
-	const region = stop === -1 ? lines : lines.slice(0, stop);
-
-	// Drop a leading header line (e.g. "Use this subagent ONLY when:").
-	const body = region.length > 1 && region[0]!.endsWith(":") ? region.slice(1) : region;
-
-	const stripBullet = (line: string) => line.replace(/^[-*\u2022]\s+/, "").trim();
-	const bullets = body
-		.filter((line) => /^[-*\u2022]\s+/.test(line))
-		.map(stripBullet)
-		.filter((line) => line.length > 0);
-
-	const summary = bullets.length > 0 ? bullets.slice(0, 3).join("; ") : (body[0] ?? lines[0] ?? "").replace(/:$/, "");
-
-	const MAX = 200;
-	return summary.length > MAX ? `${summary.slice(0, MAX - 1).trimEnd()}\u2026` : summary;
-}
-
-/** Render the available agents as a "- name: description" list for prompts. */
-function describeAvailableAgents(cwd: string): string {
-	const agents = loadAgentRegistry({ cwd }).list();
-	if (agents.length === 0) return "(no agents available)";
-	return agents.map((a) => `- ${a.name}: ${summarizeAgentDescription(a.description)}`).join("\n");
-}
-
-/** System prompt appendix for the main session when the ExecuteTask tool is enabled.
- *  Instructs the parent agent on when and how to delegate effectively. */
-export function buildTaskMainPrompt(cwd: string = process.cwd()): string {
-	return `You have access to the **ExecuteTask** tool. Use it to delegate self-contained tasks to specialized subagents that run in their own isolated context and return only their final answer.
-
-Available agents (choose one via \`subagent_type\`):
-${describeAvailableAgents(cwd)}
+/** System prompt appendix for the main session when the Task tool is enabled.
+ *  Instructs the parent agent on when and how to delegate effectively. The
+ *  available agents themselves are listed once, authoritatively, in the
+ *  `<available_agents>` block the system prompt emits whenever the Task tool is
+ *  active (see agent-session `_rebuildSystemPrompt`); this appendix references
+ *  that list rather than re-rendering the roster and paying for it twice. */
+export function buildTaskMainPrompt(): string {
+	return `You have access to the **Task** tool. Use it to delegate self-contained tasks to specialized subagents that run in their own isolated context and return only their final answer. Pick an agent by name from the <available_agents> list in this prompt and pass it as \`subagent_type\`.
 
 When to delegate:
 1. The work is self-contained and you only need the final result, not intermediate steps.
@@ -85,11 +46,7 @@ When to delegate:
 3. The task is a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug).
 4. You need to run a long command or test suite and wait for its output without blocking your own reasoning.
 
-Model categories:
-- \`complexity: "fast\`\` — quick reads, simple lookups, grep/find operations
-- \`complexity: "standard\`\` — multi-file edits, moderate reasoning, test runs
-- \`complexity: "capable\`\` — deep architecture changes, complex refactors, full PRs
-If omitted, the agent's default model is used.
+Model tier (optional \`complexity\`): set \`fast\` for quick reads/lookups, \`standard\` for multi-file edits, \`capable\` for deep architecture work. It maps to a model from \`settings.modelCategories\`. Omit it to use the agent's default; an agent that pins its own model ignores \`complexity\`.
 
 Guidelines:
 - Choose the agent whose description best matches the task.
@@ -97,8 +54,9 @@ Guidelines:
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
 - Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
-- All ExecuteTask calls run as background tasks (non-blocking). The agent loop continues while the subagent runs. Results arrive as follow-up messages automatically. Use TaskOutput to poll for results while a subagent is running.
-- To continue a previous subagent (for example one that returned partial results), call ExecuteTask again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
+- Some agents run in the background (non-blocking); force it per call with \`background: true\` (or \`background: false\` to wait inline). A background Task does not block your turn and does not return its answer inline: you get a short notification ("explore#1 finished") and the full result is held for you to pull with \`TaskOutput\`. Keep working in the meantime.
+- Use **TaskOutput** to manage background subagents: \`TaskOutput(list: true)\` shows every running/finished subagent and what each is doing; \`TaskOutput("explore#1")\` reads a finished subagent's full result (or reports its status if still running); \`TaskOutput(wait: true)\` blocks until a named task — or, with no task_id, ALL outstanding subagents — finish. Dispatch a batch in one turn, then barrier on them with \`TaskOutput(wait: true)\`.
+- To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
 
 const taskParams = Type.Object({
@@ -112,22 +70,22 @@ const taskParams = Type.Object({
 	subagent_type: Type.String({
 		description: "The name of the specialized agent to delegate to. Must be one of the available agents.",
 	}),
-	item_id: Type.Optional(
-		Type.Number({
-			description:
-				"Optional. References a TodoWrite item id to link this dispatch to a plan item. The task panel shows the linkage.",
-		}),
-	),
 	complexity: Type.Optional(
 		Type.Union([Type.Literal("fast"), Type.Literal("standard"), Type.Literal("capable")], {
 			description:
-				"Model category: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Omit to use the agent's default model.",
+				"Model tier for this dispatch: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Maps to settings.modelCategories. Ignored if the chosen agent pins its own model; omit to use the agent's default.",
+		}),
+	),
+	background: Type.Optional(
+		Type.Boolean({
+			description:
+				"Set true to run non-blocking: you get a short notification when it finishes and pull the full result with TaskOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting.",
 		}),
 	),
 	resume_task_id: Type.Optional(
 		Type.String({
 			description:
-				"Optional. To continue a previous subagent run, pass its task_id (returned by an earlier ExecuteTask or TaskOutput call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction.",
+				"Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Task or TaskOutput call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction.",
 		}),
 	),
 });
@@ -146,9 +104,13 @@ export interface TaskToolDetails {
 }
 
 export interface TaskOutputDetails {
-	task_id: string;
+	/** The handle queried, when a specific task was named. */
+	task_id?: string;
+	/** running | done | collected | failed | stalled | timeout | list | empty | unknown */
 	status: string;
 	ok: boolean;
+	/** Number of subagents still running, included on roster/list responses. */
+	outstanding?: number;
 }
 
 /**
@@ -164,31 +126,29 @@ function summarize(task: string): string {
 	return name;
 }
 
-/** Create the ExecuteTask tool definition. Registered as a customTool when enabled. */
-export function createExecuteTaskToolDefinition(cwd: string = process.cwd()): ToolDefinition {
-	const agentList = describeAvailableAgents(cwd);
-	// All ExecuteTask calls run as background tools. The agent loop runs the
-	// dispatch detached: the parent keeps reasoning and the subagent's answer is
-	// injected as a follow-up message when it finishes. TaskOutput can poll for
-	// results while the subagent runs.
+/** Create the Task tool definition. Registered as a customTool when enabled. */
+export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefinition {
+	// Agents whose definitions opt into background execution. The agent loop reads
+	// the tool's `background` flag per call and, for these, runs the dispatch
+	// detached: the parent keeps reasoning and the subagent's answer is injected as
+	// a follow-up message when it finishes (no polling needed). A per-call
+	// `background` argument overrides the agent's default in either direction.
+	const backgroundAgents = collectBackgroundAgentNames(cwd);
 	return defineTool<typeof taskParams, TaskToolDetails>({
-		name: EXECUTE_TASK_TOOL_NAME,
-		label: EXECUTE_TASK_TOOL_NAME,
-		background: () => true,
+		name: TASK_TOOL_NAME,
+		label: TASK_TOOL_NAME,
+		background: (toolCall) => {
+			const override = toolCall.arguments?.background;
+			if (typeof override === "boolean") return override;
+			return backgroundAgents.has(String(toolCall.arguments?.subagent_type ?? ""));
+		},
+		// Kept lean: the available agents are listed in the system prompt, and the
+		// `complexity`/`background` semantics live in their parameter descriptions —
+		// repeating them here would re-spend those tokens on every turn.
 		description: [
-			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation).",
-			"Select the agent via `subagent_type`; pass everything it needs via `prompt`. The subagent returns only its final answer.",
-			"Available agents:",
-			agentList,
-			"Model categories: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Omit to use agent default.",
-			"All ExecuteTask calls run as background tasks. The agent loop continues while the subagent runs. Results arrive as follow-up messages.",
-			"Use TaskOutput to poll for results while a subagent is running.",
-			"WHEN TO USE: (1) self-contained work where you only need the final result;",
-			"(2) parallel investigation/edits without losing your reasoning chain;",
-			"(3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs);",
-			"(4) a long command or test suite you want to run without blocking your reasoning.",
-			"Do NOT use for tasks needing tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.",
-			"Delegate proactively for self-contained or parallelizable work; handle only trivial single-step or tightly interactive work inline.",
+			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer.",
+			"WHEN TO USE: (1) self-contained work where you only need the final result; (2) parallel investigation/edits without losing your reasoning chain; (3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs); (4) a long command or test suite you want to run without blocking your reasoning.",
+			"Do NOT use for tasks needing tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about. Delegate proactively for self-contained or parallelizable work; handle only trivial single-step or tightly interactive work inline.",
 		].join("\n"),
 		promptSnippet: "delegate a self-contained task to a specialized subagent (choose via subagent_type)",
 		parameters: taskParams,
@@ -280,38 +240,72 @@ export function createExecuteTaskToolDefinition(cwd: string = process.cwd()): To
 				agent: params.subagent_type,
 			});
 			registerSubagentDispatch(params.subagent_type);
-
-			// Always dispatch and await the subagent's full result here. Background
-			// agents (def.background) are made non-blocking by the agent loop via this
-			// tool's `background` flag: the loop runs this execute() detached, answers
-			// the call with a placeholder, and injects the answer below as a follow-up
-			// message when it resolves. Foreground agents block the turn as usual.
 			taskStore.update(task.id, { status: "in_progress" });
-
-			// Resolve model: complexity category > agent definition default > parent model
-			let resolvedModel = ctx.model?.id;
-			if (params.complexity) {
-				// Model category from ExecuteTask's complexity parameter
-				const settingsManager = SettingsManager.create(ctx.cwd, getAgentDir());
-				const globalSettings = settingsManager.getGlobalSettings();
-				const projectSettings = settingsManager.getProjectSettings();
-				const settings = { ...globalSettings, ...projectSettings };
-				const categoryModel = resolveModelReference(params.complexity, settings);
-				if (categoryModel) resolvedModel = categoryModel;
-			} else if (def.model && def.model !== MODEL_INHERIT) {
-				// Agent definition's default model (fallback)
-				resolvedModel = def.model;
-			}
-
 			// Fork agents inherit the parent's conversation via a forked session.
 			const forkSessionFile = def.fork
 				? resolveForkSessionFile(def, ctx.sessionManager?.getSessionFile(), ctx.cwd)
 				: undefined;
+
+			// `complexity` is passed as the model: the pool's spawn() already lets a
+			// non-`inherit` agent model win, then resolves a category string (fast/
+			// standard/capable) via settings.modelCategories. So a pinned-model agent
+			// ignores complexity, and an `inherit` agent picks up the requested tier —
+			// no settings lookup needed here.
+			const dispatchModel = params.complexity ?? ctx.model?.id;
+
+			// Whether this call runs detached. The agent loop reads the tool's
+			// `background` flag (the same predicate) to run execute() detached; we
+			// recompute it here to choose the notify-and-pull return shape.
+			const isBackground = params.background ?? backgroundAgents.has(params.subagent_type);
+
+			if (isBackground) {
+				// Notify-and-pull: register the dispatch in the inbox under a pre-allocated
+				// id, await it, retain the body in the inbox, and return a compact
+				// notification (not the body). The model pulls the body with TaskOutput.
+				const poolTaskId = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+				const label = subagentInbox.nextLabel(params.subagent_type);
+				subagentInbox.observe(pool);
+				subagentInbox.start(poolTaskId, label, params.subagent_type);
+				try {
+					const dispatchResult = await pool.dispatch(params.prompt, {
+						forceAgent: params.subagent_type,
+						context: "",
+						model: dispatchModel,
+						provider: ctx.model?.provider,
+						sessionFile: forkSessionFile,
+						taskId: poolTaskId,
+					});
+					subagentInbox.finish(poolTaskId, dispatchResult);
+					return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, poolTaskId, {
+						taskId: poolTaskId,
+						label,
+					});
+				} catch (error) {
+					const reason = error instanceof Error ? error.message : String(error);
+					taskStore.update(task.id, { status: "failed" });
+					subagentInbox.fail(poolTaskId, reason);
+					// A background dispatch reports failure as a compact notification, not a
+					// thrown tool error — the call was already answered by a placeholder.
+					return {
+						content: [{ type: "text" as const, text: `${label} failed ✗ — ${reason}` }],
+						details: {
+							subagent_type: params.subagent_type,
+							ok: false,
+							error: reason,
+							taskId: task.id,
+							poolTaskId,
+							background: true,
+						},
+					};
+				}
+			}
+
+			// Foreground: block the turn and return the subagent's full answer inline.
 			try {
 				const dispatchResult = await pool.dispatch(params.prompt, {
 					forceAgent: params.subagent_type,
 					context: "",
-					model: resolvedModel,
+					model: dispatchModel,
 					provider: ctx.model?.provider,
 					sessionFile: forkSessionFile,
 				});
@@ -363,6 +357,15 @@ function registerSubagentDispatch(type: string): void {
 	taskStore.upsertAgent({ id: type, name: type, role: "subagent", kind: "subagent", state: "running" });
 }
 
+/** Names of agents configured to run in the background (non-blocking). */
+function collectBackgroundAgentNames(cwd: string): Set<string> {
+	const names = new Set<string>();
+	for (const agent of loadAgentRegistry({ cwd }).list()) {
+		if (agent.background) names.add(agent.name);
+	}
+	return names;
+}
+
 /**
  * Merge a child subagent's task subtree into the parent's task store, rooting
  * each top-level node under the dispatching task (`parentTaskId`). Recurses so a
@@ -385,12 +388,21 @@ function mergeChildTaskTree(nodes: readonly SubagentTaskNode[] | undefined, pare
 	});
 }
 
-/** Extract the final answer from a finished dispatch, updating the task panel. */
+/**
+ * Update the task panel from a finished dispatch and shape the tool result.
+ *
+ * Foreground calls return the subagent's full answer inline and signal a hard
+ * failure by throwing (the agent loop derives a tool's error state from a thrown
+ * error). A background call passes `background`: the body already lives in the
+ * inbox, so it returns a compact, self-contained notification (success or
+ * failure) and never throws — the call was already answered by a placeholder.
+ */
 function finalizeDispatchResult(
 	dispatchResult: TaskResult,
 	subagentType: string,
 	taskStoreId: number,
 	resumeHandle: string | undefined,
+	background?: { taskId: string; label: string },
 ): { content: Array<{ type: "text"; text: string }>; details: TaskToolDetails } {
 	const result = dispatchResult.result;
 	const resultData = result?.result_data as SubagentResultFile | undefined;
@@ -407,12 +419,23 @@ function finalizeDispatchResult(
 	}
 
 	if (!result || !result.ok) {
-		// Signal failure by throwing: the agent loop derives a tool's error state
-		// from a thrown error, not from a returned flag.
 		const failNote = result?.usedInheritedModelFallback ? "inherited-model retry failed" : undefined;
 		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
 		taskStore.patchAgent(subagentType, { state: "failed" });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
+		if (background) {
+			return {
+				content: [{ type: "text", text: `${background.label} failed ✗ — ${reason}` }],
+				details: {
+					subagent_type: subagentType,
+					ok: false,
+					error: reason,
+					taskId: taskStoreId,
+					poolTaskId: background.taskId,
+					background: true,
+				},
+			};
+		}
 		const stderr = result?.stderr?.trim();
 		throw new Error(`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`);
 	}
@@ -433,6 +456,28 @@ function finalizeDispatchResult(
 	if (result.status === "partial" && resumeHandle) {
 		answer += `\n\n[Partial result. To continue this subagent, call Task again with resume_task_id="${resumeHandle}".]`;
 	}
+
+	if (background) {
+		// Compact notification: the body is retained in the inbox; the model pulls it
+		// with TaskOutput. Keeps a wide swarm from flooding the parent's context.
+		const partial = result.status === "partial" ? " (partial — resume to continue)" : "";
+		const outstanding = subagentInbox.outstanding().length;
+		const tail = outstanding > 0 ? ` ${outstanding} still running.` : "";
+		const text =
+			`${background.label} finished ✓${partial} — ${summarize(answer)}.${tail}\n` +
+			`Read the full result with TaskOutput("${background.label}").`;
+		return {
+			content: [{ type: "text", text }],
+			details: {
+				subagent_type: subagentType,
+				ok: true,
+				taskId: taskStoreId,
+				poolTaskId: background.taskId,
+				background: true,
+			},
+		};
+	}
+
 	return {
 		content: [{ type: "text", text: answer }],
 		details: { subagent_type: subagentType, ok: true, taskId: taskStoreId, poolTaskId: resumeHandle },
@@ -440,97 +485,172 @@ function finalizeDispatchResult(
 }
 
 const taskOutputParams = Type.Object({
-	task_id: Type.String({
-		description: "The task_id of a background (or previously dispatched) subagent, as returned by the Task tool.",
-	}),
+	task_id: Type.Optional(
+		Type.String({
+			description:
+				'Handle of a background subagent — its task_id or friendly label (e.g. "explore#1") from a Task notification. Omit (or set list:true) to see every background task.',
+		}),
+	),
+	list: Type.Optional(
+		Type.Boolean({
+			description:
+				"List all background subagents with their status (running/done/failed) and current activity. No result bodies are returned.",
+		}),
+	),
+	wait: Type.Optional(
+		Type.Boolean({
+			description:
+				"Block until the named task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier) — before returning. Bounded by timeout_ms.",
+		}),
+	),
+	timeout_ms: Type.Optional(
+		Type.Number({ description: "Maximum time to block in wait mode, in milliseconds (default 120000)." }),
+	),
 });
 
 type TaskOutputParams = Static<typeof taskOutputParams>;
 
+const TASK_OUTPUT_DEFAULT_TIMEOUT_MS = 120_000;
+
+/** Whole seconds a record has run (so far, or until it settled). */
+function recordElapsed(rec: InboxRecord): string {
+	const end = rec.endedAt ?? Date.now();
+	return `${Math.max(0, Math.round((end - rec.startedAt) / 1000))}s`;
+}
+
+/** A compact roster of every known background subagent — status + activity, no bodies. */
+function formatTaskRoster(): { content: Array<{ type: "text"; text: string }>; details: TaskOutputDetails } {
+	const all = subagentInbox.list();
+	const outstanding = subagentInbox.outstanding().length;
+	if (all.length === 0) {
+		return {
+			content: [{ type: "text", text: "No background subagents have been dispatched." }],
+			details: { status: "empty", ok: true, outstanding: 0 },
+		};
+	}
+	const lines = all.map((r) => {
+		const when = recordElapsed(r);
+		switch (r.lifecycle) {
+			case "running":
+				return `- ${r.label}  running  ${when}${r.lastActivity ? `  · ${r.lastActivity}` : ""}`;
+			case "done":
+				return `- ${r.label}  done (uncollected)  ${when} — ${r.summaryLine ?? ""}`;
+			case "collected":
+				return `- ${r.label}  collected  ${when} — ${r.summaryLine ?? ""}`;
+			default:
+				return `- ${r.label}  ${r.lifecycle} ✗  — ${r.error ?? "unknown error"}`;
+		}
+	});
+	const header = `${all.length} background subagent${all.length === 1 ? "" : "s"} (${outstanding} running):`;
+	const hint = all.some((r) => r.lifecycle === "done") ? '\nRead a finished one with TaskOutput("<label>").' : "";
+	return {
+		content: [{ type: "text", text: `${header}\n${lines.join("\n")}${hint}` }],
+		details: { status: "list", ok: true, outstanding },
+	};
+}
+
 /**
- * TaskOutput tool: poll a background subagent and collect its final answer.
- * Returns the current status while running, or the subagent's final answer once
- * complete. Registered alongside the Task tool when subagents are enabled.
+ * TaskOutput tool: check on background subagents and pull their results.
+ *
+ * Background `Task` calls don't push their body into the conversation — they
+ * leave it in the inbox and post a compact notification. TaskOutput is how the
+ * model pulls a body, checks liveness, or waits. It never throws on a valid
+ * handle (an error tool result would only confuse the loop): it reports status
+ * instead. Modes: `list` (roster), a `task_id` to read/check one, and `wait` to
+ * block until one task — or all outstanding tasks — finish.
  */
 export function createTaskOutputToolDefinition(): ToolDefinition {
 	return defineTool<typeof taskOutputParams, TaskOutputDetails>({
 		name: "TaskOutput",
 		label: "TaskOutput",
 		description: [
-			"Check the status of a background subagent and collect its final answer once it finishes.",
-			"Pass the task_id returned by a background ExecuteTask call. While the subagent runs this reports its status; once complete it returns only the subagent's final answer.",
+			"Check on background subagents dispatched via Task, and pull their results.",
+			'Pass a task_id/label (e.g. "explore#1") to read a finished subagent\'s full result, or to see its status while it runs.',
+			"Set list:true (or omit task_id) to list every background subagent with its status and current activity.",
+			"Set wait:true to block until that task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier).",
+			"It never errors on a valid handle: a running task reports status, a finished one returns its result, an already-read one says so.",
 		].join("\n"),
-		promptSnippet: "check status / collect the result of a background subagent",
+		promptSnippet: "check status / list / collect the results of background subagents",
 		parameters: taskOutputParams,
 
 		async execute(_toolCallId, params: TaskOutputParams, _signal, _onUpdate, ctx) {
-			const pool = getSubagentPool(ctx.cwd);
-			const status = pool.get_status(params.task_id);
+			// Touch the pool so the inbox is wired to its progress stream for activity.
+			subagentInbox.observe(getSubagentPool(ctx.cwd));
+			const handle = params.task_id?.trim();
 
-			// If the task is still running, wait for it to finish (with a timeout)
-			// instead of asking the model to poll. This eliminates the extra LLM
-			// round-trip that polling would require.
-			if (status === "running" || status === "queued") {
-				const TASK_OUTPUT_TIMEOUT_MS = 120_000;
-				const result = await Promise.race([
-					pool.wait_for_completion(params.task_id),
-					new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), TASK_OUTPUT_TIMEOUT_MS)),
-				]);
-				if (!result) {
-					return {
-						content: [
-							{
-								type: "text" as const,
-								text: `Subagent task "${params.task_id}" is still ${pool.get_status(params.task_id)}. Timed out after ${TASK_OUTPUT_TIMEOUT_MS / 1000}s.`,
-							},
-						],
-						details: { task_id: params.task_id, status: pool.get_status(params.task_id), ok: true },
-					};
-				}
-				return formatTaskOutputResult(result, params.task_id);
+			// Barrier: wait for the target (or all outstanding) to settle first.
+			if (params.wait) {
+				const timeout = params.timeout_ms ?? TASK_OUTPUT_DEFAULT_TIMEOUT_MS;
+				if (handle) await subagentInbox.waitFor(handle, timeout);
+				else await subagentInbox.waitForAll(timeout);
 			}
 
-			if (status === "unknown") {
+			// Roster when asked, or when no specific task was named.
+			if (params.list || !handle) {
+				return formatTaskRoster();
+			}
+
+			const rec = subagentInbox.get(handle);
+			if (!rec) {
 				return {
 					content: [
 						{
 							type: "text" as const,
-							text: `No result available for task "${params.task_id}" (status: unknown). It may not exist or its result was already collected.`,
+							text: `No background task "${handle}". Call TaskOutput with list:true to see active tasks.`,
 						},
 					],
-					details: { task_id: params.task_id, status, ok: false },
+					details: { task_id: handle, status: "unknown", ok: false },
 				};
 			}
 
-			const result = pool.collect(params.task_id);
-			if (!result) {
-				throw new Error(
-					`No result available for task "${params.task_id}" (status: ${status}). It may not exist or its result was already collected.`,
-				);
+			if (rec.lifecycle === "running") {
+				const activity = rec.lastActivity ? ` (currently: ${rec.lastActivity})` : "";
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `${rec.label} is still running — ${recordElapsed(rec)} elapsed${activity}. Call TaskOutput again, or with wait:true to block until it finishes.`,
+						},
+					],
+					details: { task_id: handle, status: "running", ok: true },
+				};
 			}
-			return formatTaskOutputResult(result, params.task_id);
+
+			if (rec.lifecycle === "done") {
+				const collected = subagentInbox.collect(handle);
+				const body = collected?.body ?? rec.summaryLine ?? "(subagent returned no output)";
+				return {
+					content: [{ type: "text" as const, text: body }],
+					details: { task_id: handle, status: "done", ok: true },
+				};
+			}
+
+			if (rec.lifecycle === "collected") {
+				return {
+					content: [
+						{
+							type: "text" as const,
+							text: `${rec.label} was already delivered — ${rec.summaryLine ?? "(no summary kept)"}.`,
+						},
+					],
+					details: { task_id: handle, status: "collected", ok: true },
+				};
+			}
+
+			// failed / stalled / timeout
+			return {
+				content: [
+					{ type: "text" as const, text: `${rec.label} ${rec.lifecycle} ✗ — ${rec.error ?? "unknown error"}.` },
+				],
+				details: { task_id: handle, status: rec.lifecycle, ok: false },
+			};
 		},
 
 		renderCall(args, theme) {
-			const text = theme.fg("toolTitle", theme.bold("TaskOutput ")) + theme.fg("dim", String(args.task_id ?? ""));
+			const target = args.list ? "list" : String(args.task_id ?? "");
+			const text =
+				theme.fg("toolTitle", theme.bold("TaskOutput ")) + theme.fg("dim", args.wait ? `${target} (wait)` : target);
 			return new Text(text, 0, 0);
 		},
 	});
-}
-
-/** Format a completed subagent result for TaskOutput. */
-function formatTaskOutputResult(
-	result: SubagentResult,
-	taskId: string,
-): { content: Array<{ type: "text"; text: string }>; details: TaskOutputDetails } {
-	if (!result.ok) {
-		const reason = result.error ?? (result.status ? `subagent ${result.status}` : "unknown error");
-		throw new Error(`Background subagent "${taskId}" failed: ${reason}`);
-	}
-	const resultData = result.result_data as SubagentResultFile | undefined;
-	const answer = resultData?.summary || "(subagent returned no output)";
-	return {
-		content: [{ type: "text" as const, text: answer }],
-		details: { task_id: taskId, status: result.status ?? "complete", ok: true },
-	};
 }

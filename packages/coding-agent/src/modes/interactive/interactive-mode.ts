@@ -452,7 +452,7 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
-		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("ExecuteTask"));
+		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
 		this.taskPanel = new TaskPanelComponent(this.ui);
 		this.taskPanel.onNudge = (role) => this.showTeamNudgeInput(role);
 		this.taskPanel.onAttach = (role) => this.showTeamAttach(role);

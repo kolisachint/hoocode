@@ -59,8 +59,9 @@ export interface WarningSettings {
 
 /**
  * Model categories for subagent model selection.
- * Categories map to explicit model IDs (e.g., "anthropic/claude-haiku-3.5").
- * When a category is not configured, fallback defaults are used.
+ * Categories map to explicit model IDs (e.g., "<provider>/<model-id>").
+ * When a category is not configured, no override is applied and the agent's or
+ * parent's default model is used.
  */
 export interface ModelCategories {
 	/** Quick, cheap models for read-only exploration (grep, find, file discovery) */

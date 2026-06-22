@@ -973,9 +973,9 @@ export class AgentSession {
 		const loadedSkills = this._resourceLoader.getSkills().skills;
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
 
-		// Include agents in the system prompt only when the ExecuteTask tool is active.
-		const hasExecuteTaskTool = validToolNames.includes("ExecuteTask");
-		const loadedAgents = hasExecuteTaskTool ? loadAgentRegistry({ cwd: this._cwd }).list() : [];
+		// Include agents in the system prompt only when the Task tool is active.
+		const hasTaskTool = validToolNames.includes("Task");
+		const loadedAgents = hasTaskTool ? loadAgentRegistry({ cwd: this._cwd }).list() : [];
 
 		this._baseSystemPromptOptions = {
 			cwd: this._cwd,

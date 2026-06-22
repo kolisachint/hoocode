@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Reverted the `Task` → `ExecuteTask` rename from 0.4.78.** The subagent
+  delegation tool is `Task` again (no deprecated alias), keeping parity with
+  Claude Code. The never-wired `item_id` parameter and the duplicate `complexity`
+  field on TodoWrite (both added in 0.4.78) are removed.
+- **Background subagents are now notify-and-pull** instead of forced-background.
+  A background `Task` posts a compact one-line notification and retains the body
+  in a new subagent inbox; the model pulls the full result with `TaskOutput`.
+  Background is opt-in per agent with a per-call `background: true|false`
+  override. This keeps a wide swarm of subagents from flooding the parent's
+  context with N full summaries.
+- **`TaskOutput` reworked into a status-aware probe + swarm barrier** (replacing
+  0.4.78's `wait_for_completion` approach). It never errors on a valid handle: a
+  running task reports its status/activity, a finished one returns its body, an
+  already-read one says so. New modes: `list: true` lists every background
+  subagent, and `wait: true` blocks until a named task — or, with no `task_id`,
+  all outstanding subagents — finish. Tasks are addressable by a friendly label
+  (`explore#1`) or their task id.
+- **`Task` keeps the optional `complexity` tier** (`"fast"`/`"standard"`/
+  `"capable"`), now passed straight through as the dispatch model so the pool's
+  precedence applies it only when the agent's model is `inherit`; a pinned-model
+  agent ignores it.
+- **Model categories are provider-neutral**: the tiers resolve only from
+  `settings.modelCategories` with no hardcoded fallback, and an unconfigured tier
+  is a no-op (keep the agent's or parent's default model). Built-in agent
+  templates select by category (`explore: fast`, `general-purpose`/`plan:
+  standard`).
+- **Lower per-turn prompt cost**: the available-agents roster renders once (was
+  up to three times — the `<available_agents>` block, the buildTaskMainPrompt
+  appendix, and the Task tool description) and as a one-line summary per agent
+  instead of the full description; the Task tool description no longer re-embeds
+  the roster or re-explains parameters covered by their schemas.
+- The on-spawn placeholder is a single compact line instead of a multi-line
+  explainer, so dispatching several subagents at once no longer floods the TUI.
+
 ## [0.4.78] - 2026-06-21
 
 ### Breaking Changes

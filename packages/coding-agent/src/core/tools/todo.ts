@@ -40,12 +40,6 @@ const todoItemSchema = Type.Object(
 					"Optional present-tense form shown while the item is in_progress (e.g. 'Adding tests for the parser').",
 			}),
 		),
-		complexity: Type.Optional(
-			Type.Union([Type.Literal("fast"), Type.Literal("standard"), Type.Literal("capable")], {
-				description:
-					"Model category for ExecuteTask dispatch: fast (quick reads), standard (multi-file edits), capable (deep architecture). Optional.",
-			}),
-		),
 	},
 	{ additionalProperties: false },
 );
@@ -88,7 +82,14 @@ function displayTitle(item: TodoWriteParams["todos"][number]): string {
 	return item.content.trim();
 }
 
-/** Current main-agent tasks (source unset, not delegated/MCP), in stable creation order. */
+/**
+ * Current main-agent tasks, in stable creation order. Filters to root tasks the
+ * main agent itself owns: no `source` (excludes "subagent"/MCP rows), no `agent`
+ * (excludes delegated rows), and no `parentTaskId` (excludes merged child trees).
+ * `taskOwnerId()` would fold MCP-sourced and delegated rows under "main", so
+ * reconciling against it could overwrite or drop those rows when the TodoWrite
+ * list is shorter than the combined count.
+ */
 function mainTasks(): Task[] {
 	return taskStore
 		.list()
@@ -119,9 +120,9 @@ export function createTodoWriteToolDefinition(): ToolDefinition {
 			const todos = params.todos ?? [];
 			const existing = mainTasks();
 
-			// Batch all mutations so the TUI renders once, not per-item.
+			// Reconcile by position, batched so the panel renders once: update kept
+			// items, create new ones, remove the tail.
 			taskStore.batch(() => {
-				// Reconcile by position: update kept items, create new ones, remove the tail.
 				for (let i = 0; i < todos.length; i++) {
 					const item = todos[i]!;
 					const status = toTaskStatus(item.status);

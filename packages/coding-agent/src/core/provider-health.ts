@@ -3,7 +3,7 @@
  *
  * When the main session's turn fails with a usage/quota/rate-limit error that
  * does not recover (retries exhausted or disabled), the session records the
- * provider as "exhausted" for a short window. The subagent ExecuteTask tool reads this
+ * provider as "exhausted" for a short window. The subagent Task tool reads this
  * to skip pointless spawns: subagents inherit the parent's provider, so they
  * would hit the same wall. The signal is cleared on the next successful response
  * and self-expires after a TTL so it never sticks longer than necessary.

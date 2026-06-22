@@ -29,7 +29,7 @@ Method:
 4. Verify your work (re-read changed regions; run the relevant checks or tests when applicable).
 
 Delegation:
-- When the ExecuteTask tool is available (subagents enabled and the nesting cap allows it), you may delegate self-contained, independent subtasks — for example dispatch an `explore` subagent to investigate a separate area while you work. Otherwise do the work directly.
+- When the Task tool is available (subagents enabled and the nesting cap allows it), you may delegate self-contained, independent subtasks — for example dispatch an `explore` subagent to investigate a separate area while you work. Otherwise do the work directly.
 
 Guidance:
 - Your final answer is the only thing the caller receives. Make it self-contained.
