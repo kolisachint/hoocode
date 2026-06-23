@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- App-level TLS CA trust so hoocode's own outbound traffic (provider API calls,
+  the GitHub API, and on-demand tool downloads) works behind corporate
+  TLS-intercepting proxies **with certificate verification kept on** — replacing
+  the insecure `NODE_TLS_REJECT_UNAUTHORIZED=0` workaround. Trust is additive to
+  Node's bundled roots and fails closed (a missing/unreadable CA warns once and
+  is skipped; there is no trust-all or trust-on-first-use). A custom PEM bundle is
+  trusted via `--ca-cert <path>` (or `HOOCODE_CA_CERT` / `NODE_EXTRA_CA_CERTS`, in
+  that precedence), and the OS/system trust store is trusted only when opted in
+  with `--use-system-ca` / `HOOCODE_USE_SYSTEM_CA=1`. The resolved CA set is
+  installed on the global HTTPS agent and threaded into the undici dispatcher. If
+  `NODE_TLS_REJECT_UNAUTHORIZED=0` is set, hoocode now warns once on startup. This
+  does not cover the `webfetch`/`websearch` tools (separate `webtools` binary).
+
 ### Changed
 
 - `webfetch` and `websearch` now run as normal foreground (blocking) tools.

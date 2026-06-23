@@ -45,6 +45,10 @@ export interface Args {
 	todoWrite?: boolean;
 	/** Enable the webfetch + websearch tools (off by default). */
 	enableWebTools?: boolean;
+	/** Path to an explicit PEM CA bundle to trust additively for hoocode's own TLS traffic. */
+	caCert?: string;
+	/** Trust the OS/system CA store additively (opt-in) for hoocode's own TLS traffic. */
+	useSystemCa?: boolean;
 	extensions?: string[];
 	noExtensions?: boolean;
 	print?: boolean;
@@ -149,6 +153,10 @@ export function parseArgs(args: string[]): Args {
 			result.todoWrite = true;
 		} else if (arg === "--enable-webtools") {
 			result.enableWebTools = true;
+		} else if (arg === "--ca-cert" && i + 1 < args.length) {
+			result.caCert = args[++i];
+		} else if (arg === "--use-system-ca") {
+			result.useSystemCa = true;
 		} else if ((arg === "--tools" || arg === "-t") && i + 1 < args.length) {
 			result.tools = args[++i]
 				.split(",")
@@ -329,6 +337,12 @@ ${chalk.bold("Options:")}
   --list-models [search]         List available models (with optional fuzzy search)
   --verbose                      Force verbose startup (overrides quietStartup setting)
   --offline                      Disable startup network operations (same as HOOCODE_OFFLINE=1)
+  --ca-cert <path>               Trust an extra PEM CA bundle for hoocode's own TLS traffic (provider
+                                 calls, GitHub API, downloads). Additive to the bundled roots;
+                                 verification stays ON. Also: HOOCODE_CA_CERT / NODE_EXTRA_CA_CERTS.
+                                 Does not affect the webfetch/websearch binary.
+  --use-system-ca                Also trust the OS/system CA store (opt-in). Same as
+                                 HOOCODE_USE_SYSTEM_CA=1
   --help, -h                     Show this help
   --version, -v                  Show version number
 
@@ -422,6 +436,10 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
   HOOCODE_PACKAGE_DIR              - Override package directory (for Nix/Guix store paths). Legacy: PI_PACKAGE_DIR
   HOOCODE_OFFLINE                  - Disable startup network operations when set to 1/true/yes. Legacy: PI_OFFLINE
+  HOOCODE_CA_CERT                  - Path to an extra PEM CA bundle to trust for hoocode's own TLS traffic
+                                     (additive; verification stays on). Precedence: --ca-cert > this > NODE_EXTRA_CA_CERTS
+  HOOCODE_USE_SYSTEM_CA            - Also trust the OS/system CA store when set to 1/true/yes (same as --use-system-ca)
+  NODE_EXTRA_CA_CERTS              - Standard Node path to an extra PEM CA bundle (used as the lowest-precedence CA source)
   HOOCODE_TELEMETRY                - Override install telemetry when set to 1/true/yes or 0/false/no. Legacy: PI_TELEMETRY
   HOOCODE_SHARE_VIEWER_URL         - Base URL for /share command (default: https://pi.dev/session/). Legacy: PI_SHARE_VIEWER_URL
 

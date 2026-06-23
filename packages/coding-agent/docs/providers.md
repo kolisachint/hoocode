@@ -9,6 +9,7 @@ HooCode supports subscription-based providers via OAuth and API key providers vi
 - [Auth File](#auth-file)
 - [Cloud Providers](#cloud-providers)
 - [Custom Providers](#custom-providers)
+- [Corporate proxies / custom CA](#corporate-proxies--custom-ca)
 - [Resolution Order](#resolution-order)
 
 ## Subscriptions
@@ -202,6 +203,51 @@ Or set `GOOGLE_APPLICATION_CREDENTIALS` to a service account key file.
 **Via models.json:** Add Ollama, LM Studio, vLLM, or any provider that speaks a supported API (OpenAI Completions, OpenAI Responses, Anthropic Messages, Google Generative AI). See [models.md](models.md).
 
 **Via extensions:** For providers that need custom API implementations or OAuth flows, create an extension. See [custom-provider.md](custom-provider.md) and [examples/extensions/custom-provider-gitlab-duo](../examples/extensions/custom-provider-gitlab-duo/).
+
+## Corporate proxies / custom CA
+
+On networks that run a TLS-intercepting proxy, hoocode's own outbound traffic
+(provider API calls, the GitHub API, and on-demand tool downloads) is presented
+with certificates signed by the proxy's internal CA, which Node does not trust by
+default. Instead of disabling certificate verification (the insecure
+`NODE_TLS_REJECT_UNAUTHORIZED=0` workaround), tell hoocode to **additionally**
+trust your CA — verification stays on.
+
+**Recommended — trust an explicit CA bundle:**
+
+```bash
+# Point at a PEM file containing your proxy's root/intermediate CA(s)
+hoocode --ca-cert /path/to/corporate-ca.pem
+
+# Or via environment variable (equivalent precedence shown below)
+export HOOCODE_CA_CERT=/path/to/corporate-ca.pem
+```
+
+The CA is added on top of Node's bundled root certificates — it extends the
+trust set, it does not replace it. The PEM source is resolved from the first of:
+`--ca-cert <path>` > `HOOCODE_CA_CERT` > `NODE_EXTRA_CA_CERTS`.
+
+**Opt in to the OS trust store:**
+
+```bash
+hoocode --use-system-ca           # or: export HOOCODE_USE_SYSTEM_CA=1
+```
+
+This trusts the certificates already installed in your operating system's store
+(where IT-managed machines usually place the corporate CA), in addition to the
+bundled roots. It is **opt-in only** so the OS store is never trusted implicitly.
+
+Notes:
+
+- **Verification is never disabled.** hoocode does not support a "trust all" or
+  trust-on-first-use mode. A missing or unreadable CA file is warned about once
+  and skipped, falling back to the bundled defaults rather than trusting
+  everything.
+- If `NODE_TLS_REJECT_UNAUTHORIZED=0` is set, hoocode warns once on startup —
+  prefer `--ca-cert` / `--use-system-ca` instead.
+- **This does not cover the `webfetch`/`websearch` tools.** Those run in a
+  separate `webtools` binary with its own TLS stack and are not affected by these
+  flags.
 
 ## Resolution Order
 
