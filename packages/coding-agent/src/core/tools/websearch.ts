@@ -116,8 +116,6 @@ export function createWebSearchToolDefinition(
 			"Use websearch to discover URLs when you do not already have one, then webfetch the most relevant result to read it in full.",
 		],
 		parameters: websearchSchema,
-		// External network call with variable latency: run non-blocking.
-		background: true,
 		async execute(_toolCallId, { query, maxResults, safeSearch }: WebSearchToolInput, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 

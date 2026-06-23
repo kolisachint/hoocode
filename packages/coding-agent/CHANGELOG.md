@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `webfetch` and `websearch` now run as normal foreground (blocking) tools.
+  They were previously dispatched in the background (non-blocking); reverting to
+  foreground execution means the agent waits for the result inline instead of
+  continuing to reason while the fetch/search runs.
+
 ## [0.4.84] - 2026-06-23
 
 ## [0.4.83] - 2026-06-22

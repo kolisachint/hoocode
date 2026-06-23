@@ -101,9 +101,6 @@ export function createWebFetchToolDefinition(
 			"Use webfetch to read a known URL instead of bash curl/wget; it returns clean extracted text with reference-style [N] links, not raw HTML.",
 		],
 		parameters: webfetchSchema,
-		// External network call with variable latency: run non-blocking so the
-		// agent keeps reasoning while the page is fetched.
-		background: true,
 		async execute(_toolCallId, { url, maxTokens, output }: WebFetchToolInput, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
