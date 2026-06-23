@@ -8,10 +8,12 @@ import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import {
 	blockedHostForUrl,
+	resolveWebtoolsTLSConfig,
 	runWebtools,
 	WEBTOOLS_DEFAULT_TIMEOUT_SECS,
 	type WebFetchResult,
 	WebToolsCache,
+	type WebtoolsTLSConfig,
 } from "./webtools-shared.js";
 
 const DEFAULT_MAX_TOKENS = 4000;
@@ -50,7 +52,7 @@ export interface WebFetchToolDetails {
 	media?: string;
 }
 
-export interface WebFetchToolOptions {
+export interface WebFetchToolOptions extends WebtoolsTLSConfig {
 	/** Override the result cache (mainly for tests). */
 	cache?: WebToolsCache<WebFetchResult>;
 }
@@ -91,6 +93,9 @@ export function createWebFetchToolDefinition(
 	options?: WebFetchToolOptions,
 ): ToolDefinition<typeof webfetchSchema, WebFetchToolDetails | undefined> {
 	const cache = options?.cache ?? new WebToolsCache<WebFetchResult>();
+	// Resolve CA/insecure plumbing once (settings overrides, else env) and thread
+	// it into every spawn; not hardcoded.
+	const tlsConfig = resolveWebtoolsTLSConfig(options);
 	return {
 		name: "webfetch",
 		label: "webfetch",
@@ -101,9 +106,6 @@ export function createWebFetchToolDefinition(
 			"Use webfetch to read a known URL instead of bash curl/wget; it returns clean extracted text with reference-style [N] links, not raw HTML.",
 		],
 		parameters: webfetchSchema,
-		// External network call with variable latency: run non-blocking so the
-		// agent keeps reasoning while the page is fetched.
-		background: true,
 		async execute(_toolCallId, { url, maxTokens, output }: WebFetchToolInput, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
@@ -120,7 +122,7 @@ export function createWebFetchToolDefinition(
 
 			const args = ["--url", url, "--max-tokens", String(effectiveMaxTokens), "--output", format];
 			const result = await cache.getOrCompute(cacheKey, signal, (sig) =>
-				runWebtools<WebFetchResult>("fetch", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS),
+				runWebtools<WebFetchResult>("fetch", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS, tlsConfig),
 			);
 
 			const header = result.title ? `${result.title}\n${result.final_url}\n\n` : `${result.final_url}\n\n`;

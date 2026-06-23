@@ -1,7 +1,18 @@
 import chalk from "chalk";
 import { spawnSync } from "child_process";
+import { createHash, randomBytes } from "crypto";
 import extractZip from "extract-zip";
-import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "fs";
+import {
+	chmodSync,
+	createWriteStream,
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	statSync,
+} from "fs";
 import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
@@ -160,22 +171,78 @@ async function getLatestVersion(repo: string): Promise<string> {
 	return data.tag_name.replace(/^v/, "");
 }
 
-// Download a file from URL
-async function downloadFile(url: string, dest: string): Promise<void> {
-	const response = await fetch(url, {
-		signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
-	});
-
-	if (!response.ok) {
-		throw new Error(`Failed to download: ${response.status}`);
+// Best-effort SHA-256 verification: fetch "<downloadUrl>.sha256" and, when it is
+// served (HTTP 200), verify the downloaded file against it. A 404 (or any other
+// non-200 / network error) means no published checksum, so verification is
+// skipped rather than treated as a failure. A genuine mismatch throws.
+async function verifyChecksum(downloadUrl: string, filePath: string): Promise<void> {
+	let checksumResponse: Awaited<ReturnType<typeof fetch>>;
+	try {
+		checksumResponse = await fetch(`${downloadUrl}.sha256`, {
+			signal: AbortSignal.timeout(NETWORK_TIMEOUT_MS),
+		});
+	} catch {
+		// Network error fetching the checksum is non-fatal for best-effort verification.
+		return;
 	}
 
-	if (!response.body) {
-		throw new Error("No response body");
+	if (checksumResponse.status !== 200) {
+		return;
 	}
 
-	const fileStream = createWriteStream(dest);
-	await pipeline(Readable.fromWeb(response.body as any), fileStream);
+	// sha256 files are commonly "<hex>  <filename>"; take the leading token.
+	const expectedHash = (await checksumResponse.text()).trim().split(/\s+/)[0]?.toLowerCase();
+	if (!expectedHash || !/^[0-9a-f]{64}$/.test(expectedHash)) {
+		// Unusable checksum body: skip rather than fail (still best-effort).
+		return;
+	}
+
+	const actualHash = createHash("sha256").update(readFileSync(filePath)).digest("hex");
+	if (actualHash !== expectedHash) {
+		throw new Error(`Checksum mismatch for ${downloadUrl}: expected ${expectedHash}, got ${actualHash}`);
+	}
+}
+
+// Download a file from URL into `dest`, validating integrity. Throws (and removes
+// the partial file) on a truncated transfer (bytes written != Content-Length when
+// the header is present) or a SHA-256 mismatch, so a corrupt artifact is never
+// left behind. Exported for tests.
+export async function downloadFile(url: string, dest: string): Promise<void> {
+	try {
+		const response = await fetch(url, {
+			signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
+		});
+
+		if (!response.ok) {
+			throw new Error(`Failed to download: ${response.status}`);
+		}
+
+		if (!response.body) {
+			throw new Error("No response body");
+		}
+
+		const contentLengthHeader = response.headers.get("content-length");
+		const expectedBytes =
+			contentLengthHeader !== null && contentLengthHeader.trim() !== "" ? Number(contentLengthHeader) : null;
+
+		const fileStream = createWriteStream(dest);
+		await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), fileStream);
+
+		if (expectedBytes !== null && Number.isFinite(expectedBytes)) {
+			const bytesWritten = statSync(dest).size;
+			if (bytesWritten !== expectedBytes) {
+				throw new Error(
+					`Truncated download from ${url}: expected ${expectedBytes} bytes, received ${bytesWritten}`,
+				);
+			}
+		}
+
+		await verifyChecksum(url, dest);
+	} catch (e) {
+		// Never leave a partial/corrupt file behind on any failure.
+		rmSync(dest, { force: true });
+		throw e;
+	}
 }
 
 function findBinaryRecursively(rootDir: string, binaryFileName: string): string | null {
@@ -225,8 +292,11 @@ async function downloadTool(tool: ManagedTool): Promise<string> {
 	const binaryExt = plat === "win32" ? ".exe" : "";
 	const binaryPath = join(TOOLS_DIR, config.binaryName + binaryExt);
 
-	// Download
-	await downloadFile(downloadUrl, archivePath);
+	// Download to a unique temp path, validate, then atomically rename into place.
+	// Writing the shared archive path directly would leave a corrupt partial behind
+	// if the transfer fails or is truncated. fd/rg/webtools can also download
+	// concurrently at startup, so the per-attempt temp name must be unique.
+	const tempArchivePath = `${archivePath}.${process.pid}.${randomBytes(6).toString("hex")}.part`;
 
 	// Extract into a unique temp directory. fd and rg downloads can run concurrently
 	// during startup, so sharing a fixed directory causes races.
@@ -234,9 +304,29 @@ async function downloadTool(tool: ManagedTool): Promise<string> {
 		TOOLS_DIR,
 		`extract_tmp_${config.binaryName}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
 	);
-	mkdirSync(extractDir, { recursive: true });
 
 	try {
+		// One retry (2 attempts total) around download + integrity verification.
+		// downloadFile removes its own partial on failure, so each attempt is clean.
+		let lastError: unknown;
+		let downloaded = false;
+		for (let attempt = 1; attempt <= 2 && !downloaded; attempt++) {
+			try {
+				await downloadFile(downloadUrl, tempArchivePath);
+				downloaded = true;
+			} catch (e) {
+				lastError = e;
+				rmSync(tempArchivePath, { force: true });
+			}
+		}
+		if (!downloaded) {
+			throw lastError instanceof Error ? lastError : new Error(String(lastError));
+		}
+
+		// Atomic publish of the verified archive, then extract.
+		renameSync(tempArchivePath, archivePath);
+		mkdirSync(extractDir, { recursive: true });
+
 		if (assetName.endsWith(".tar.gz")) {
 			const extractResult = spawnSync("tar", ["xzf", archivePath, "-C", extractDir], { stdio: "pipe" });
 			if (extractResult.error || extractResult.status !== 0) {
@@ -271,7 +361,10 @@ async function downloadTool(tool: ManagedTool): Promise<string> {
 			chmodSync(binaryPath, 0o755);
 		}
 	} finally {
-		// Cleanup
+		// Guaranteed cleanup of every transient artifact on ANY outcome: the temp
+		// download (if a failure left it before the rename), the published archive,
+		// and the temp extract dir.
+		rmSync(tempArchivePath, { force: true });
 		rmSync(archivePath, { force: true });
 		rmSync(extractDir, { recursive: true, force: true });
 	}

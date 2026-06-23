@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### Added
+
+- The `webfetch`/`websearch` tools can now run behind a TLS-intercepting proxy by
+  forwarding a CA bundle to the `webtools` binary: set `HOOCODE_WEBTOOLS_CA_CERT`
+  to a readable PEM file and it is passed through as `--ca-cert`. An unreadable or
+  missing path is warned about once and ignored (not forwarded). As a strictly
+  opt-in last resort, `HOOCODE_WEBTOOLS_INSECURE=1` forwards `--insecure` to
+  disable the binary's TLS verification, warning once per run while active. Both
+  can also be supplied programmatically via the tool factory options (e.g. from
+  settings.json), which take precedence over the environment. This is the
+  webtools-binary counterpart to hoocode's own app-level CA trust, which does not
+  reach that separate binary.
+
+- App-level TLS CA trust so hoocode's own outbound traffic (provider API calls,
+  the GitHub API, and on-demand tool downloads) works behind corporate
+  TLS-intercepting proxies **with certificate verification kept on** — replacing
+  the insecure `NODE_TLS_REJECT_UNAUTHORIZED=0` workaround. Trust is additive to
+  Node's bundled roots and fails closed (a missing/unreadable CA warns once and
+  is skipped; there is no trust-all or trust-on-first-use). A custom PEM bundle is
+  trusted via `--ca-cert <path>` (or `HOOCODE_CA_CERT` / `NODE_EXTRA_CA_CERTS`, in
+  that precedence), and the OS/system trust store is trusted only when opted in
+  with `--use-system-ca` / `HOOCODE_USE_SYSTEM_CA=1`. The resolved CA set is
+  installed on the global HTTPS agent and threaded into the undici dispatcher. If
+  `NODE_TLS_REJECT_UNAUTHORIZED=0` is set, hoocode now warns once on startup. This
+  does not cover the `webfetch`/`websearch` tools (separate `webtools` binary).
+
+### Changed
+
+- `webfetch` and `websearch` now run as normal foreground (blocking) tools.
+  They were previously dispatched in the background (non-blocking); reverting to
+  foreground execution means the agent waits for the result inline instead of
+  continuing to reason while the fetch/search runs.
+
+### Fixed
+
+- Hardened on-demand tool downloads (`tools-manager`) so a failed or truncated
+  transfer can no longer leave a corrupt partial archive — or a broken binary —
+  in place (the root cause of `webtools` silently never installing). Downloads
+  now go to a unique temp path (`<asset>.<pid>.<rand>.part`), are validated, then
+  atomically renamed to the final archive; the shared archive path is never
+  written directly. `downloadFile()` captures `Content-Length` and asserts the
+  bytes written match it (throwing on a short/truncated transfer), and does a
+  best-effort SHA-256 check against `<downloadUrl>.sha256` (verifying on HTTP 200,
+  skipping on 404). The download + verify step retries once (2 attempts total),
+  and the temp archive plus temp extract directory are now cleaned up on any
+  failure, not just extraction errors. `ensureTool()` still degrades to
+  `undefined` on ultimate failure.
+
 ## [0.4.84] - 2026-06-23
 
 ## [0.4.83] - 2026-06-22

@@ -10,11 +10,13 @@ import {
 	hostnameOf,
 	isHostBlocked,
 	loadWebtoolsIgnore,
+	resolveWebtoolsTLSConfig,
 	runWebtools,
 	WEBTOOLS_DEFAULT_TIMEOUT_SECS,
 	type WebSearchOutput,
 	type WebSearchResultItem,
 	WebToolsCache,
+	type WebtoolsTLSConfig,
 } from "./webtools-shared.js";
 
 const DEFAULT_MAX_RESULTS = 5;
@@ -42,7 +44,7 @@ export interface WebSearchToolDetails {
 	tokenEstimate?: number;
 }
 
-export interface WebSearchToolOptions {
+export interface WebSearchToolOptions extends WebtoolsTLSConfig {
 	/** Override the result cache (mainly for tests). */
 	cache?: WebToolsCache<WebSearchOutput>;
 }
@@ -106,6 +108,9 @@ export function createWebSearchToolDefinition(
 	options?: WebSearchToolOptions,
 ): ToolDefinition<typeof websearchSchema, WebSearchToolDetails | undefined> {
 	const cache = options?.cache ?? new WebToolsCache<WebSearchOutput>();
+	// Resolve CA/insecure plumbing once (settings overrides, else env) and thread
+	// it into every spawn; not hardcoded.
+	const tlsConfig = resolveWebtoolsTLSConfig(options);
 	return {
 		name: "websearch",
 		label: "websearch",
@@ -116,8 +121,6 @@ export function createWebSearchToolDefinition(
 			"Use websearch to discover URLs when you do not already have one, then webfetch the most relevant result to read it in full.",
 		],
 		parameters: websearchSchema,
-		// External network call with variable latency: run non-blocking.
-		background: true,
 		async execute(_toolCallId, { query, maxResults, safeSearch }: WebSearchToolInput, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
@@ -127,7 +130,7 @@ export function createWebSearchToolDefinition(
 			const args = ["--query", query, "--max-results", String(effectiveMax)];
 			if (safeSearch) args.push("--safe-search", safeSearch);
 			const output = await cache.getOrCompute(cacheKey, signal, (sig) =>
-				runWebtools<WebSearchOutput>("search", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS),
+				runWebtools<WebSearchOutput>("search", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS, tlsConfig),
 			);
 
 			// Filter result links through .webtoolsignore policy.
