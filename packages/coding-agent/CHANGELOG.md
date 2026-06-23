@@ -9,6 +9,21 @@
   foreground execution means the agent waits for the result inline instead of
   continuing to reason while the fetch/search runs.
 
+### Fixed
+
+- Hardened on-demand tool downloads (`tools-manager`) so a failed or truncated
+  transfer can no longer leave a corrupt partial archive — or a broken binary —
+  in place (the root cause of `webtools` silently never installing). Downloads
+  now go to a unique temp path (`<asset>.<pid>.<rand>.part`), are validated, then
+  atomically renamed to the final archive; the shared archive path is never
+  written directly. `downloadFile()` captures `Content-Length` and asserts the
+  bytes written match it (throwing on a short/truncated transfer), and does a
+  best-effort SHA-256 check against `<downloadUrl>.sha256` (verifying on HTTP 200,
+  skipping on 404). The download + verify step retries once (2 attempts total),
+  and the temp archive plus temp extract directory are now cleaned up on any
+  failure, not just extraction errors. `ensureTool()` still degrades to
+  `undefined` on ultimate failure.
+
 ## [0.4.84] - 2026-06-23
 
 ## [0.4.83] - 2026-06-22
