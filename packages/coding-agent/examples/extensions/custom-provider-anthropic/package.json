@@ -1,7 +1,7 @@
 {
 	"name": "@kolisachint/hoocode-extension-custom-provider-anthropic",
 	"private": true,
-	"version": "0.2.80",
+	"version": "0.2.81",
 	"type": "module",
 	"engines": {
 		"bun": ">=1.0.0"
