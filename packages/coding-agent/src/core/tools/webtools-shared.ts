@@ -11,7 +11,7 @@
  *   hosts both before a fetch and when filtering search result links.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import ignore from "ignore";
@@ -133,8 +133,20 @@ interface CacheEntry<T> {
 	expiresAt: number;
 }
 
+/**
+ * A computation shared by every caller that requested the same key while it was
+ * still running. The subprocess is only aborted once *all* joined callers have
+ * aborted, tracked by {@link refCount} against a shared {@link controller}.
+ */
+interface InFlightEntry<T> {
+	promise: Promise<T>;
+	controller: AbortController;
+	refCount: number;
+}
+
 export class WebToolsCache<T> {
 	private readonly entries = new Map<string, CacheEntry<T>>();
+	private readonly inflight = new Map<string, InFlightEntry<T>>();
 
 	get(key: string): T | undefined {
 		const entry = this.entries.get(key);
@@ -149,11 +161,98 @@ export class WebToolsCache<T> {
 	set(key: string, value: T): void {
 		this.entries.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
 	}
+
+	/**
+	 * Return a cached value, join an identical in-flight computation, or start a
+	 * new one — collapsing concurrent duplicate fetch/search calls onto a single
+	 * subprocess. Successful results are cached; failures are not.
+	 *
+	 * Cancellation is shared safely: a caller whose own `signal` aborts rejects
+	 * promptly and releases its reference, but the underlying work keeps running
+	 * for the remaining callers and is only cancelled once none are left.
+	 */
+	async getOrCompute(
+		key: string,
+		signal: AbortSignal | undefined,
+		compute: (signal: AbortSignal) => Promise<T>,
+	): Promise<T> {
+		const cached = this.get(key);
+		if (cached !== undefined) return cached;
+		if (signal?.aborted) throw new Error("Operation aborted");
+
+		let entry = this.inflight.get(key);
+		if (!entry) {
+			const controller = new AbortController();
+			const promise = (async () => {
+				try {
+					const value = await compute(controller.signal);
+					this.set(key, value);
+					return value;
+				} finally {
+					this.inflight.delete(key);
+				}
+			})();
+			entry = { promise, controller, refCount: 0 };
+			this.inflight.set(key, entry);
+		}
+
+		const joined = entry;
+		// Every joined caller (signalled or not) holds a reference; the shared work
+		// is cancelled only when an abort drops the count back to zero.
+		joined.refCount++;
+
+		if (!signal) {
+			return joined.promise;
+		}
+
+		const onAbort = () => {
+			if (joined.refCount > 0) joined.refCount--;
+			if (joined.refCount === 0) joined.controller.abort();
+		};
+		signal.addEventListener("abort", onAbort, { once: true });
+		try {
+			return await Promise.race([
+				joined.promise,
+				new Promise<never>((_, reject) => {
+					signal.addEventListener("abort", () => reject(new Error("Operation aborted")), { once: true });
+				}),
+			]);
+		} finally {
+			signal.removeEventListener("abort", onAbort);
+		}
+	}
 }
 
 // ============================================================================
 // .webtoolsignore policy matcher
 // ============================================================================
+
+/**
+ * Memoize the parsed matcher per cwd. The policy is consulted on every webfetch
+ * (twice: permission gate + tool execute) and every websearch, so re-reading and
+ * re-parsing three files each time is wasted sync I/O on the hot path. The cache
+ * is invalidated by a cheap stat signature (existence + mtime + size) so an
+ * edited `.webtoolsignore` still takes effect immediately — correctness matters
+ * here because this gate enforces host policy.
+ */
+interface IgnoreCacheEntry {
+	signature: string;
+	matcher: IgnoreMatcher | undefined;
+}
+const ignoreCacheByCwd = new Map<string, IgnoreCacheEntry>();
+
+function ignoreSignature(files: string[]): string {
+	return files
+		.map((file) => {
+			try {
+				const st = statSync(file);
+				return `${file}:${st.mtimeMs}:${st.size}`;
+			} catch {
+				return `${file}:absent`;
+			}
+		})
+		.join("|");
+}
 
 /**
  * Build an {@link Ignore} matcher from `.webtoolsignore` policy files.
@@ -171,6 +270,13 @@ export function loadWebtoolsIgnore(cwd: string): IgnoreMatcher | undefined {
 		join(homedir(), ".webtoolsignore"),
 		join(cwd, ".webtoolsignore"),
 	];
+
+	const signature = ignoreSignature(files);
+	const cached = ignoreCacheByCwd.get(cwd);
+	if (cached && cached.signature === signature) {
+		return cached.matcher;
+	}
+
 	let found = false;
 	const ig = ignore();
 	for (const file of files) {
@@ -182,7 +288,9 @@ export function loadWebtoolsIgnore(cwd: string): IgnoreMatcher | undefined {
 			// Unreadable policy file: ignore it rather than failing the tool call.
 		}
 	}
-	return found ? ig : undefined;
+	const matcher = found ? ig : undefined;
+	ignoreCacheByCwd.set(cwd, { signature, matcher });
+	return matcher;
 }
 
 /** Extract the lowercased hostname from a URL, or undefined if it cannot be parsed. */
