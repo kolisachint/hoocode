@@ -124,13 +124,11 @@ export function createWebSearchToolDefinition(
 			const effectiveMax = Math.min(MAX_RESULTS_CAP, Math.max(1, maxResults ?? DEFAULT_MAX_RESULTS));
 			const cacheKey = `${effectiveMax}:${safeSearch ?? "default"}:${query}`;
 
-			let output = cache.get(cacheKey);
-			if (!output) {
-				const args = ["--query", query, "--max-results", String(effectiveMax)];
-				if (safeSearch) args.push("--safe-search", safeSearch);
-				output = await runWebtools<WebSearchOutput>("search", args, cwd, signal, WEBTOOLS_DEFAULT_TIMEOUT_SECS);
-				cache.set(cacheKey, output);
-			}
+			const args = ["--query", query, "--max-results", String(effectiveMax)];
+			if (safeSearch) args.push("--safe-search", safeSearch);
+			const output = await cache.getOrCompute(cacheKey, signal, (sig) =>
+				runWebtools<WebSearchOutput>("search", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS),
+			);
 
 			// Filter result links through .webtoolsignore policy.
 			const matcher = loadWebtoolsIgnore(cwd);

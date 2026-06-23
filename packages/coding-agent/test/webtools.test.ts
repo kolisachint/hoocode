@@ -2,8 +2,9 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createWebFetchTool } from "../src/core/tools/webfetch.js";
+import { clampMaxTokens, createWebFetchTool } from "../src/core/tools/webfetch.js";
 import { createWebSearchTool } from "../src/core/tools/websearch.js";
+import { WebToolsCache } from "../src/core/tools/webtools-shared.js";
 
 // A fake `webtools` binary placed on PATH. It echoes canned --json output for
 // the fetch/search subcommands so the tools' spawn + parse + filter paths are
@@ -127,5 +128,85 @@ describe("web tools", () => {
 			expect(text).toContain("1 result hidden");
 			expect((result.details as { hiddenCount?: number }).hiddenCount).toBe(1);
 		});
+	});
+});
+
+describe("clampMaxTokens", () => {
+	it("defaults when unset or non-positive", () => {
+		expect(clampMaxTokens(undefined)).toBe(4000);
+		expect(clampMaxTokens(0)).toBe(4000);
+		expect(clampMaxTokens(-5)).toBe(4000);
+	});
+
+	it("passes values through within range and caps above the ceiling", () => {
+		expect(clampMaxTokens(1000)).toBe(1000);
+		expect(clampMaxTokens(999999)).toBe(25000);
+	});
+});
+
+describe("WebToolsCache.getOrCompute", () => {
+	it("collapses concurrent identical calls onto one computation and then serves from cache", async () => {
+		const cache = new WebToolsCache<number>();
+		let calls = 0;
+		const compute = () =>
+			new Promise<number>((resolve) => {
+				calls++;
+				setTimeout(() => resolve(42), 20);
+			});
+
+		const [a, b] = await Promise.all([
+			cache.getOrCompute("k", undefined, compute),
+			cache.getOrCompute("k", undefined, compute),
+		]);
+		expect(a).toBe(42);
+		expect(b).toBe(42);
+		expect(calls).toBe(1);
+
+		// A later call is served from the cache without recomputing.
+		expect(await cache.getOrCompute("k", undefined, compute)).toBe(42);
+		expect(calls).toBe(1);
+	});
+
+	it("does not cache failures", async () => {
+		const cache = new WebToolsCache<number>();
+		let calls = 0;
+		await expect(
+			cache.getOrCompute("k", undefined, () => {
+				calls++;
+				return Promise.reject(new Error("boom"));
+			}),
+		).rejects.toThrow("boom");
+
+		const ok = await cache.getOrCompute("k", undefined, () => {
+			calls++;
+			return Promise.resolve(7);
+		});
+		expect(ok).toBe(7);
+		expect(calls).toBe(2);
+	});
+
+	it("keeps shared work running for remaining callers when one aborts", async () => {
+		const cache = new WebToolsCache<number>();
+		let calls = 0;
+		let computeAborted = false;
+		const compute = (sig: AbortSignal) =>
+			new Promise<number>((resolve, reject) => {
+				calls++;
+				sig.addEventListener("abort", () => {
+					computeAborted = true;
+					reject(new Error("Operation aborted"));
+				});
+				setTimeout(() => resolve(99), 30);
+			});
+
+		const ac = new AbortController();
+		const aborter = cache.getOrCompute("k", ac.signal, compute);
+		const stayer = cache.getOrCompute("k", undefined, compute);
+		ac.abort();
+
+		await expect(aborter).rejects.toThrow("Operation aborted");
+		expect(await stayer).toBe(99);
+		expect(calls).toBe(1);
+		expect(computeAborted).toBe(false);
 	});
 });

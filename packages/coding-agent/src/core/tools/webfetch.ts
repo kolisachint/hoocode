@@ -15,12 +15,21 @@ import {
 } from "./webtools-shared.js";
 
 const DEFAULT_MAX_TOKENS = 4000;
+// Hard ceiling so a single fetch can never flood the context window, regardless
+// of what the model requests. The binary still applies its own soft cap.
+const MAX_TOKENS_CAP = 25000;
+
+/** Clamp a requested token budget into `(0, MAX_TOKENS_CAP]`, defaulting when unset. */
+export function clampMaxTokens(requested?: number): number {
+	if (!requested || requested <= 0) return DEFAULT_MAX_TOKENS;
+	return Math.min(requested, MAX_TOKENS_CAP);
+}
 
 const webfetchSchema = Type.Object({
 	url: Type.String({ description: "The URL to fetch (http or https)" }),
 	maxTokens: Type.Optional(
 		Type.Number({
-			description: `Soft cap on returned output size in estimated tokens (default: ${DEFAULT_MAX_TOKENS})`,
+			description: `Soft cap on returned output size in estimated tokens (default: ${DEFAULT_MAX_TOKENS}, max: ${MAX_TOKENS_CAP})`,
 		}),
 	),
 	output: Type.Optional(
@@ -105,16 +114,14 @@ export function createWebFetchToolDefinition(
 				throw new Error(`Blocked by .webtoolsignore policy: ${blockedHost}`);
 			}
 
-			const effectiveMaxTokens = maxTokens && maxTokens > 0 ? maxTokens : DEFAULT_MAX_TOKENS;
+			const effectiveMaxTokens = clampMaxTokens(maxTokens);
 			const format = output ?? "text";
 			const cacheKey = `${format}:${effectiveMaxTokens}:${url}`;
 
-			let result = cache.get(cacheKey);
-			if (!result) {
-				const args = ["--url", url, "--max-tokens", String(effectiveMaxTokens), "--output", format];
-				result = await runWebtools<WebFetchResult>("fetch", args, cwd, signal, WEBTOOLS_DEFAULT_TIMEOUT_SECS);
-				cache.set(cacheKey, result);
-			}
+			const args = ["--url", url, "--max-tokens", String(effectiveMaxTokens), "--output", format];
+			const result = await cache.getOrCompute(cacheKey, signal, (sig) =>
+				runWebtools<WebFetchResult>("fetch", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS),
+			);
 
 			const header = result.title ? `${result.title}\n${result.final_url}\n\n` : `${result.final_url}\n\n`;
 			return {
