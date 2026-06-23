@@ -245,9 +245,31 @@ Notes:
   everything.
 - If `NODE_TLS_REJECT_UNAUTHORIZED=0` is set, hoocode warns once on startup —
   prefer `--ca-cert` / `--use-system-ca` instead.
-- **This does not cover the `webfetch`/`websearch` tools.** Those run in a
-  separate `webtools` binary with its own TLS stack and are not affected by these
-  flags.
+- **The flags above do not cover the `webfetch`/`websearch` tools.** Those run in
+  a separate `webtools` binary with its own TLS stack. Configure them separately
+  with the environment variables below.
+
+### webfetch / websearch (webtools binary)
+
+The optional `webfetch`/`websearch` tools shell out to the `webtools` binary,
+which does its own TLS. Point it at your proxy's CA so those tools work behind
+the proxy with verification kept on:
+
+```bash
+# Trust an extra CA for webfetch/websearch (forwarded as --ca-cert)
+export HOOCODE_WEBTOOLS_CA_CERT=/path/to/corporate-ca.pem
+```
+
+`HOOCODE_WEBTOOLS_CA_CERT` must point at a readable PEM file; an unreadable or
+missing path is warned about once and ignored (the flag is not forwarded).
+
+As a last resort on networks where a CA cannot be obtained, you can disable the
+binary's TLS verification entirely. This is **insecure and strictly opt-in**, and
+hoocode warns once per run when it is active — prefer `HOOCODE_WEBTOOLS_CA_CERT`:
+
+```bash
+export HOOCODE_WEBTOOLS_INSECURE=1   # disables webtools TLS verification
+```
 
 ## Resolution Order
 

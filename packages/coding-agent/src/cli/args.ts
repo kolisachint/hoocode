@@ -440,6 +440,8 @@ ${chalk.bold("Environment Variables:")}
                                      (additive; verification stays on). Precedence: --ca-cert > this > NODE_EXTRA_CA_CERTS
   HOOCODE_USE_SYSTEM_CA            - Also trust the OS/system CA store when set to 1/true/yes (same as --use-system-ca)
   NODE_EXTRA_CA_CERTS              - Standard Node path to an extra PEM CA bundle (used as the lowest-precedence CA source)
+  HOOCODE_WEBTOOLS_CA_CERT         - Path to a PEM CA bundle forwarded to the webtools binary (webfetch/websearch) as --ca-cert
+  HOOCODE_WEBTOOLS_INSECURE        - Forward --insecure to the webtools binary (disables its TLS verification) when set to 1/true/yes
   HOOCODE_TELEMETRY                - Override install telemetry when set to 1/true/yes or 0/false/no. Legacy: PI_TELEMETRY
   HOOCODE_SHARE_VIEWER_URL         - Base URL for /share command (default: https://pi.dev/session/). Legacy: PI_SHARE_VIEWER_URL
 

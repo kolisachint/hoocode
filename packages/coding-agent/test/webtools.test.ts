@@ -1,16 +1,19 @@
-import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { clampMaxTokens, createWebFetchTool } from "../src/core/tools/webfetch.js";
 import { createWebSearchTool } from "../src/core/tools/websearch.js";
-import { WebToolsCache } from "../src/core/tools/webtools-shared.js";
+import { resolveWebtoolsTLSConfig, WebToolsCache } from "../src/core/tools/webtools-shared.js";
 
 // A fake `webtools` binary placed on PATH. It echoes canned --json output for
 // the fetch/search subcommands so the tools' spawn + parse + filter paths are
 // exercised without real network access or the real Rust binary.
 const FAKE_BIN = `#!/bin/sh
 sub="$1"
+if [ -n "$WEBTOOLS_ARGV_LOG" ]; then
+  echo "$@" >> "$WEBTOOLS_ARGV_LOG"
+fi
 if [ "$sub" = "fetch" ]; then
   cat <<'JSON'
 {
@@ -127,6 +130,91 @@ describe("web tools", () => {
 			expect(text).not.toContain("blocked.example");
 			expect(text).toContain("1 result hidden");
 			expect((result.details as { hiddenCount?: number }).hiddenCount).toBe(1);
+		});
+	});
+
+	describe("TLS flag forwarding", () => {
+		let argvLog: string;
+		const savedEnv = {
+			HOOCODE_WEBTOOLS_CA_CERT: process.env.HOOCODE_WEBTOOLS_CA_CERT,
+			HOOCODE_WEBTOOLS_INSECURE: process.env.HOOCODE_WEBTOOLS_INSECURE,
+			WEBTOOLS_ARGV_LOG: process.env.WEBTOOLS_ARGV_LOG,
+		};
+
+		beforeEach(() => {
+			argvLog = join(cwd, "argv.log");
+			process.env.WEBTOOLS_ARGV_LOG = argvLog;
+			delete process.env.HOOCODE_WEBTOOLS_CA_CERT;
+			delete process.env.HOOCODE_WEBTOOLS_INSECURE;
+		});
+
+		afterEach(() => {
+			for (const [key, value] of Object.entries(savedEnv)) {
+				if (value === undefined) delete process.env[key];
+				else process.env[key] = value;
+			}
+		});
+
+		function loggedArgs(): string {
+			return existsSync(argvLog) ? readFileSync(argvLog, "utf8") : "";
+		}
+
+		it("does not forward --ca-cert or --insecure when nothing is configured", async () => {
+			const tool = createWebFetchTool(cwd);
+			await tool.execute("tls-1", { url: "https://example.com" });
+			const args = loggedArgs();
+			expect(args).toContain("fetch");
+			expect(args).not.toContain("--ca-cert");
+			expect(args).not.toContain("--insecure");
+		});
+
+		it("forwards --ca-cert when HOOCODE_WEBTOOLS_CA_CERT points to a readable file", async () => {
+			const caPath = join(cwd, "corporate-ca.pem");
+			writeFileSync(caPath, "-----BEGIN CERTIFICATE-----\nFAKE\n-----END CERTIFICATE-----\n");
+			process.env.HOOCODE_WEBTOOLS_CA_CERT = caPath;
+
+			const tool = createWebFetchTool(cwd);
+			await tool.execute("tls-2", { url: "https://example.com" });
+			expect(loggedArgs()).toContain(`--ca-cert ${caPath}`);
+		});
+
+		it("does not forward --ca-cert when the configured file is missing/unreadable", async () => {
+			process.env.HOOCODE_WEBTOOLS_CA_CERT = join(cwd, "nope-does-not-exist.pem");
+			const tool = createWebFetchTool(cwd);
+			await tool.execute("tls-3", { url: "https://example.com" });
+			expect(loggedArgs()).not.toContain("--ca-cert");
+		});
+
+		it("forwards --insecure only when HOOCODE_WEBTOOLS_INSECURE is truthy (websearch)", async () => {
+			process.env.HOOCODE_WEBTOOLS_INSECURE = "1";
+			const tool = createWebSearchTool(cwd);
+			await tool.execute("tls-4", { query: "rust async" });
+			expect(loggedArgs()).toContain("--insecure");
+		});
+
+		it("prefers explicit options over env for CA path", async () => {
+			const envCa = join(cwd, "env-ca.pem");
+			const optCa = join(cwd, "opt-ca.pem");
+			writeFileSync(envCa, "env\n");
+			writeFileSync(optCa, "opt\n");
+			process.env.HOOCODE_WEBTOOLS_CA_CERT = envCa;
+
+			const tool = createWebFetchTool(cwd, { caCertPath: optCa });
+			await tool.execute("tls-5", { url: "https://example.com" });
+			const args = loggedArgs();
+			expect(args).toContain(`--ca-cert ${optCa}`);
+			expect(args).not.toContain(envCa);
+		});
+
+		it("resolveWebtoolsTLSConfig reads env and honors overrides", () => {
+			process.env.HOOCODE_WEBTOOLS_CA_CERT = "/etc/ssl/proxy.pem";
+			process.env.HOOCODE_WEBTOOLS_INSECURE = "yes";
+			expect(resolveWebtoolsTLSConfig()).toEqual({ caCertPath: "/etc/ssl/proxy.pem", insecure: true });
+			// Explicit overrides win over env.
+			expect(resolveWebtoolsTLSConfig({ caCertPath: "/o.pem", insecure: false })).toEqual({
+				caCertPath: "/o.pem",
+				insecure: false,
+			});
 		});
 	});
 });

@@ -4,6 +4,17 @@
 
 ### Added
 
+- The `webfetch`/`websearch` tools can now run behind a TLS-intercepting proxy by
+  forwarding a CA bundle to the `webtools` binary: set `HOOCODE_WEBTOOLS_CA_CERT`
+  to a readable PEM file and it is passed through as `--ca-cert`. An unreadable or
+  missing path is warned about once and ignored (not forwarded). As a strictly
+  opt-in last resort, `HOOCODE_WEBTOOLS_INSECURE=1` forwards `--insecure` to
+  disable the binary's TLS verification, warning once per run while active. Both
+  can also be supplied programmatically via the tool factory options (e.g. from
+  settings.json), which take precedence over the environment. This is the
+  webtools-binary counterpart to hoocode's own app-level CA trust, which does not
+  reach that separate binary.
+
 - App-level TLS CA trust so hoocode's own outbound traffic (provider API calls,
   the GitHub API, and on-demand tool downloads) works behind corporate
   TLS-intercepting proxies **with certificate verification kept on** — replacing

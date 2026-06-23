@@ -11,9 +11,10 @@
  *   hosts both before a fetch and when filtering search result links.
  */
 
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import chalk from "chalk";
 import ignore from "ignore";
 import { getAgentDir } from "../../config.js";
 import { ensureTool } from "../../utils/tools-manager.js";
@@ -85,6 +86,77 @@ const BINARY_MISSING_MESSAGE =
 	"webtools binary unavailable and could not be downloaded — web tools require the `webtools` CLI on PATH or a published release for this platform";
 
 /**
+ * TLS plumbing forwarded to the `webtools` binary for `webfetch`/`websearch`.
+ * Kept separate from hoocode's own app-level TLS trust (utils/tls-ca.ts): the
+ * binary has its own TLS stack, so it needs the CA / insecure flag passed in.
+ */
+export interface WebtoolsTLSConfig {
+	/** Path to a PEM CA bundle forwarded as `--ca-cert <path>` (validated readable). */
+	caCertPath?: string;
+	/** Forward `--insecure` (disables TLS verification in the binary). Strictly opt-in. */
+	insecure?: boolean;
+}
+
+function isTruthyEnv(value: string | undefined): boolean {
+	if (!value) return false;
+	const normalized = value.trim().toLowerCase();
+	return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+/**
+ * Resolve the webtools TLS config from explicit overrides (e.g. settings.json
+ * passed down from the tool factories) falling back to the environment
+ * (`HOOCODE_WEBTOOLS_CA_CERT`, `HOOCODE_WEBTOOLS_INSECURE`). Never hardcoded.
+ */
+export function resolveWebtoolsTLSConfig(overrides?: WebtoolsTLSConfig): WebtoolsTLSConfig {
+	const envCaCert = process.env.HOOCODE_WEBTOOLS_CA_CERT?.trim();
+	const caCertPath = overrides?.caCertPath ?? (envCaCert && envCaCert.length > 0 ? envCaCert : undefined);
+	const insecure = overrides?.insecure ?? isTruthyEnv(process.env.HOOCODE_WEBTOOLS_INSECURE);
+	return { caCertPath, insecure };
+}
+
+// Warn at most once per distinct message for the life of the process.
+const warnedWebtoolsMessages = new Set<string>();
+function warnOnce(message: string): void {
+	if (warnedWebtoolsMessages.has(message)) return;
+	warnedWebtoolsMessages.add(message);
+	console.warn(chalk.yellow(`[webtools] ${message}`));
+}
+
+/** True only when `path` is a readable regular file; warns once and returns false otherwise. */
+function isReadableFile(path: string): boolean {
+	try {
+		if (!statSync(path).isFile()) {
+			warnOnce(`--ca-cert path is not a regular file, ignoring: ${path}`);
+			return false;
+		}
+		accessSync(path, constants.R_OK);
+		return true;
+	} catch (error) {
+		const reason = error instanceof Error ? error.message : String(error);
+		warnOnce(`--ca-cert path is not readable, ignoring: ${path} (${reason})`);
+		return false;
+	}
+}
+
+/** Build the TLS-related argv flags forwarded to the binary (argv array, no shell). */
+function buildTLSArgs(config: WebtoolsTLSConfig | undefined): string[] {
+	const flags: string[] = [];
+	if (!config) return flags;
+	if (config.caCertPath && isReadableFile(config.caCertPath)) {
+		flags.push("--ca-cert", config.caCertPath);
+	}
+	if (config.insecure) {
+		warnOnce(
+			"webtools running with --insecure: TLS verification is DISABLED for webfetch/websearch. " +
+				"Prefer HOOCODE_WEBTOOLS_CA_CERT to trust your proxy's CA with verification kept on.",
+		);
+		flags.push("--insecure");
+	}
+	return flags;
+}
+
+/**
  * Run a `webtools` subcommand with `--json` and return parsed stdout.
  *
  * Throws on missing binary, non-zero exit (surfacing the binary's stderr), or
@@ -96,6 +168,7 @@ export async function runWebtools<T>(
 	cwd: string,
 	signal?: AbortSignal,
 	timeoutSecs: number = WEBTOOLS_DEFAULT_TIMEOUT_SECS,
+	tlsConfig?: WebtoolsTLSConfig,
 ): Promise<T> {
 	if (signal?.aborted) throw new Error("Operation aborted");
 
@@ -105,7 +178,8 @@ export async function runWebtools<T>(
 	// Give the spawn a little headroom over the binary's own request timeout so
 	// the binary reports the timeout itself rather than being killed mid-flight.
 	const spawnTimeoutMs = (timeoutSecs + 5) * 1000;
-	const result = await execCommand(binaryPath, [subcommand, ...args, "--json"], cwd, {
+	const tlsArgs = buildTLSArgs(tlsConfig);
+	const result = await execCommand(binaryPath, [subcommand, ...args, ...tlsArgs, "--json"], cwd, {
 		signal,
 		timeout: spawnTimeoutMs,
 	});
