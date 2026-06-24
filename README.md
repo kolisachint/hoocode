@@ -18,6 +18,10 @@ npm install -g @kolisachint/hoocode-agent
 hoocode --help
 ```
 
+## Demo
+
+https://github.com/kolisachint/hoocode/raw/main/assets/demo-1.mp4
+
 ## Docs
 
 - **[Product](docs/product.md)** — features, modes, tools, and extensibility
