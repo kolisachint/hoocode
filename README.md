@@ -7,87 +7,23 @@
 
 <p align="center">Deterministic terminal coding agent.</p>
 
-<p align="center">
-  <img src="assets/subagents-demo.svg" alt="HooCode: the agent asks before it acts (options pane), plans with TodoWrite, and dispatches subagents shown live in the task pane — including a depth-2 subagent tree" width="577">
-</p>
+---
 
-## Why HooCode?
-
-Most coding agents act first and tell you later. HooCode works the other way around. It's *deterministic*: every edit and every shell command passes through a permission gate you control, and the agent is scoped by an explicit mode instead of one do-everything prompt.
-
-| | HooCode | Typical AI editor |
-|---|---|---|
-| **Approval gates** | `Yes (once) / No (block) / Always` on every edit and command | Edits and commands apply on their own |
-| **Mode-driven focus** | Ask · Plan · Build · Debug — each with its own prompt and tool set | One chat does everything |
-| **Provider flexibility** | 25+ providers; switch with `--provider` / `--model` | Locked to one vendor |
-| **Extensibility** | MCP servers, TypeScript extensions, per-project profiles | Closed plugin system |
-| **Binary distribution** | Single self-contained binary, no Node.js at runtime | Requires an IDE or cloud account |
-
-## How it works
-
-Four modes, switched any time with `/mode <name>`:
-
-1. **ask** — read-only Q&A. The agent explains, never writes.
-2. **plan** — explores the repo and writes `.hoocode/plan.md` for you to review.
-3. **build** — executes the approved plan, gating each edit and command.
-4. **debug** — root-causes a failure without touching files.
+HooCode is a terminal coding agent that keeps you in control: every edit and
+shell command passes through a permission gate, and the agent is scoped by an
+explicit mode (Ask · Plan · Build · Debug) instead of one do-everything prompt.
 
 ```bash
-hoocode               # start in build mode
-hoocode /mode plan    # or draft a plan first
-hoocode /approve      # review .hoocode/plan.md, then execute it
+npm install -g @kolisachint/hoocode-agent
+hoocode --help
 ```
 
-## Tools
+## Docs
 
-The agent works through a small, deterministic tool set. Available by default:
-
-| Tool | What it does |
-|---|---|
-| `read` · `write` · `edit` | Read files, create new ones, and make exact-text edits. One `edit` call can apply several replacements at once, and an edit can set `replaceAll` to replace every occurrence instead of requiring a unique match. |
-| `bash` | Run shell commands — each one gated by the `Yes / No / Always` permission prompt. |
-| `grep` · `find` · `ls` | Search file contents (ripgrep), find files by glob (fd), and list directories. `grep`/`find` respect `.gitignore`; `ls` lists a single directory and takes an optional `ignore` list to skip noise like `node_modules`. |
-
-When running interactively, the agent can also ask you to make a decision through a multiple-choice prompt when it genuinely needs your input to proceed. In non-interactive (`-p`) runs it falls back to proceeding on its own.
-
-Two extra tools are **off by default** — turn them on per session with a flag, or persistently in settings:
-
-| Tool | Enable | What it does |
-|---|---|---|
-| **Task** (subagents) | `--enable-subagents` or `"enableSubagent": true` | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer. |
-| **TodoWrite** | `--enable-todowrite` or `"enableTodoWrite": true` | Maintain a live todo list for the current task, shown in the task panel. |
-
-## Demos
-
-Runnable demos built from the **real internals** — no mocked or copied components.
-The image above is the interactive `subagents` demo. Full details:
-[packages/coding-agent/demo](packages/coding-agent/demo) ·
-[packages/tui/demo](packages/tui/demo).
-
-**Agent-level** (`packages/coding-agent/demo`, run with `npm run demo:<name>`):
-
-| Demo | What it shows |
-|---|---|
-| [`subagents`](packages/coding-agent/demo/subagents.ts) | Interactive: options pane → TodoWrite task pane → **depth-2 subagent tree** (the image above) |
-| [`provider-handoff`](packages/coding-agent/demo/provider-handoff.ts) | One conversation spanning **two providers** (vs single-vendor agents) |
-| [`deterministic-gate`](packages/coding-agent/demo/deterministic-gate.ts) | Mode-scoped **Yes/No/Always permission gate**; blocks `rm -rf` |
-| [`claude-subagents`](packages/coding-agent/demo/claude-subagents.ts) | Reads Claude `.claude/agents` subagents natively, with precedence diagnostics |
-| [`claude-skills`](packages/coding-agent/demo/claude-skills.ts) | Reads Claude `SKILL.md` skills, normalizing `allowed-tools` to HooCode names |
-
-**TUI library** (`packages/tui/demo`, run with `npm run demo:<name>`):
-
-| Demo | What it shows |
-|---|---|
-| [`live-dashboard`](packages/tui/demo/live-dashboard.ts) | Differential rendering — flicker-free live updates |
-| [`command-palette`](packages/tui/demo/command-palette.ts) | Overlays + `SelectList` + focus capture/restore |
-| [`settings-menu`](packages/tui/demo/settings-menu.ts) | `SettingsList` with cycling values + fuzzy search |
-| [`markdown-viewer`](packages/tui/demo/markdown-viewer.ts) | `Markdown` rendering + live theme switching |
-
-Any demo also runs directly with `npx tsx <path>`.
-
-## Credits
-
-HooCode is a fork of the upstream [`pi-mono`](https://github.com/earendil-works/pi-mono) project (originally [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)) by **Mario Zechner** ([@badlogicgames](https://github.com/badlogic)). The upstream project is MIT-licensed and all original copyright is preserved in [LICENSE](LICENSE). Huge thanks to Mario and the upstream contributors — without their work, this fork would not exist.
+- **[Product](docs/product.md)** — features, modes, tools, and extensibility
+- **[Install](docs/install.md)** — installation and building from source
+- **[Contributing](CONTRIBUTING.md)** — contribution guidelines
+- **[AGENTS.md](AGENTS.md)** — project-specific rules for humans and agents
 
 ## Packages
 
@@ -98,32 +34,9 @@ HooCode is a fork of the upstream [`pi-mono`](https://github.com/earendil-works/
 | **[@kolisachint/hoocode-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, …) |
 | **[@kolisachint/hoocode-tui](packages/tui)** | Terminal UI library with differential rendering |
 
-## Install
+## Credits
 
-```bash
-npm install -g @kolisachint/hoocode-agent
-hoocode --help
-```
-
-## Development
-
-bun is the toolchain. It is pinned to the npm-compatible **hoisted** linker in
-`bunfig.toml`, so it produces a flat `node_modules`. `bun.lock` is the
-authoritative lockfile.
-
-```bash
-bun install          # Install all dependencies
-bun run build        # Build all packages
-bun run check        # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-```
-
-See [docs/bun-migration.md](docs/bun-migration.md) for the completed npm -> bun
-migration history and rules.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.md](AGENTS.md) for project-specific rules (for both humans and agents).
+HooCode is a fork of the upstream [`pi-mono`](https://github.com/earendil-works/pi-mono) project (originally [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)) by **Mario Zechner** ([@badlogicgames](https://github.com/badlogic)). The upstream project is MIT-licensed and all original copyright is preserved in [LICENSE](LICENSE). Huge thanks to Mario and the upstream contributors — without their work, this fork would not exist.
 
 ## License
 
