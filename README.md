@@ -20,7 +20,7 @@ hoocode --help
 
 ## Demo
 
-https://github.com/kolisachint/hoocode/raw/main/assets/demo-1.mp4
+<video src="https://github.com/kolisachint/hoocode/raw/main/assets/demo-1.mp4" controls width="100%"></video>
 
 ## Docs
 
