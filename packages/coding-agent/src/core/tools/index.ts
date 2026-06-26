@@ -10,6 +10,27 @@ export {
 	createLocalBashOperations,
 } from "./bash.js";
 export {
+	createDocEditTool,
+	createDocEditToolDefinition,
+	type DocEditToolDetails,
+	type DocEditToolInput,
+	type DocEditToolOptions,
+} from "./docedit.js";
+export {
+	createDocReadTool,
+	createDocReadToolDefinition,
+	type DocReadToolDetails,
+	type DocReadToolInput,
+	type DocReadToolOptions,
+} from "./docread.js";
+export {
+	createDocWriteTool,
+	createDocWriteToolDefinition,
+	type DocWriteToolDetails,
+	type DocWriteToolInput,
+	type DocWriteToolOptions,
+} from "./docwrite.js";
+export {
 	createEditTool,
 	createEditToolDefinition,
 	type EditOperations,
@@ -103,6 +124,9 @@ export {
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.js";
+import { createDocEditTool, createDocEditToolDefinition, type DocEditToolOptions } from "./docedit.js";
+import { createDocReadTool, createDocReadToolDefinition, type DocReadToolOptions } from "./docread.js";
+import { createDocWriteTool, createDocWriteToolDefinition, type DocWriteToolOptions } from "./docwrite.js";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.js";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.js";
 import { createGlobTool, createGlobToolDefinition, type GlobToolOptions } from "./glob.js";
@@ -115,7 +139,20 @@ import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } fro
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "glob" | "ls" | "webfetch" | "websearch";
+export type ToolName =
+	| "read"
+	| "bash"
+	| "edit"
+	| "write"
+	| "grep"
+	| "find"
+	| "glob"
+	| "ls"
+	| "webfetch"
+	| "websearch"
+	| "DocRead"
+	| "DocEdit"
+	| "DocWrite";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -127,6 +164,9 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ls",
 	"webfetch",
 	"websearch",
+	"DocRead",
+	"DocEdit",
+	"DocWrite",
 ]);
 
 export interface ToolsOptions {
@@ -140,6 +180,9 @@ export interface ToolsOptions {
 	ls?: LsToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
+	DocRead?: DocReadToolOptions;
+	DocEdit?: DocEditToolOptions;
+	DocWrite?: DocWriteToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -164,6 +207,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createWebFetchToolDefinition(cwd, options?.webfetch);
 		case "websearch":
 			return createWebSearchToolDefinition(cwd, options?.websearch);
+		case "DocRead":
+			return createDocReadToolDefinition(cwd, options?.DocRead);
+		case "DocEdit":
+			return createDocEditToolDefinition(cwd, options?.DocEdit);
+		case "DocWrite":
+			return createDocWriteToolDefinition(cwd, options?.DocWrite);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -191,6 +240,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createWebFetchTool(cwd, options?.webfetch);
 		case "websearch":
 			return createWebSearchTool(cwd, options?.websearch);
+		case "DocRead":
+			return createDocReadTool(cwd, options?.DocRead);
+		case "DocEdit":
+			return createDocEditTool(cwd, options?.DocEdit);
+		case "DocWrite":
+			return createDocWriteTool(cwd, options?.DocWrite);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -231,6 +286,9 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ls: createLsToolDefinition(cwd, options?.ls),
 		webfetch: createWebFetchToolDefinition(cwd, options?.webfetch),
 		websearch: createWebSearchToolDefinition(cwd, options?.websearch),
+		DocRead: createDocReadToolDefinition(cwd, options?.DocRead),
+		DocEdit: createDocEditToolDefinition(cwd, options?.DocEdit),
+		DocWrite: createDocWriteToolDefinition(cwd, options?.DocWrite),
 	};
 }
 
@@ -269,5 +327,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ls: createLsTool(cwd, options?.ls),
 		webfetch: createWebFetchTool(cwd, options?.webfetch),
 		websearch: createWebSearchTool(cwd, options?.websearch),
+		DocRead: createDocReadTool(cwd, options?.DocRead),
+		DocEdit: createDocEditTool(cwd, options?.DocEdit),
+		DocWrite: createDocWriteTool(cwd, options?.DocWrite),
 	};
 }

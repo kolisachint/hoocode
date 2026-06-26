@@ -400,6 +400,12 @@ function buildSessionOptions(
 	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
 		options.enableWebTools = true;
 	}
+	// Document tools (DocRead + DocEdit + DocWrite): opt-in via --enable-filetools
+	// flag or the enableFileTools setting. Registered as base tools but inactive by
+	// default; this adds them to the default active set.
+	if (parsed.enableFileTools ?? settingsManager.getEnableFileTools()) {
+		options.enableFileTools = true;
+	}
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
@@ -716,6 +722,7 @@ export async function main(args: string[], options?: MainOptions) {
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
 			enableWebTools: sessionOptions.enableWebTools,
+			enableFileTools: sessionOptions.enableFileTools,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {

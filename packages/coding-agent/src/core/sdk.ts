@@ -77,6 +77,13 @@ export interface CreateAgentSessionOptions {
 	 * per call and filtered by `.webtoolsignore`.
 	 */
 	enableWebTools?: boolean;
+	/**
+	 * Enable the built-in `DocRead` + `DocEdit` + `DocWrite` document tools, which
+	 * are defined but inactive by default. Ignored when an explicit `tools`
+	 * allowlist is provided (list them there instead). They shell out to the
+	 * `filetools` binary to losslessly extract/edit structured/binary documents.
+	 */
+	enableFileTools?: boolean;
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
 
@@ -287,7 +294,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Web tools are registered as base tools but inactive by default; opt-in adds
 	// them to the default active set. An explicit allowlist (`tools`) takes over
 	// fully, so callers must list them there to enable in that mode.
-	const optInActiveToolNames: ToolName[] = options.enableWebTools ? ["webfetch", "websearch"] : [];
+	const optInActiveToolNames: ToolName[] = [
+		...(options.enableWebTools ? ["webfetch", "websearch"] : []),
+		...(options.enableFileTools ? ["DocRead", "DocEdit", "DocWrite"] : []),
+	] as ToolName[];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const initialActiveToolNames: string[] = options.tools
 		? [...options.tools]

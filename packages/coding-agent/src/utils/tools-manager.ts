@@ -30,7 +30,7 @@ function isOfflineModeEnabled(): boolean {
 }
 
 /** Tools whose binaries hoocode can resolve from PATH or download on demand. */
-export type ManagedTool = "fd" | "rg" | "webtools";
+export type ManagedTool = "fd" | "rg" | "webtools" | "filetools";
 
 interface ToolConfig {
 	name: string;
@@ -99,6 +99,27 @@ const TOOLS: Record<string, ToolConfig> = {
 				return `webtools-${archStr}-unknown-linux-gnu.tar.gz`;
 			} else if (plat === "win32") {
 				return `webtools-${archStr}-pc-windows-msvc.zip`;
+			}
+			return null;
+		},
+	},
+	filetools: {
+		name: "filetools",
+		repo: "kolisachint/filetools",
+		binaryName: "filetools",
+		tagPrefix: "v",
+		// Release archives are named `filetools-<target-triple>.<ext>` (see the repo's
+		// release.yml `archive: filetools-$target`). A missing platform asset 404s and
+		// ensureTool degrades gracefully (returns undefined; the doc tools then surface
+		// an error result).
+		getAssetName: (_version, plat, architecture) => {
+			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
+			if (plat === "darwin") {
+				return `filetools-${archStr}-apple-darwin.tar.gz`;
+			} else if (plat === "linux") {
+				return `filetools-${archStr}-unknown-linux-gnu.tar.gz`;
+			} else if (plat === "win32") {
+				return `filetools-${archStr}-pc-windows-msvc.zip`;
 			}
 			return null;
 		},
@@ -377,6 +398,7 @@ const TERMUX_PACKAGES: Record<string, string> = {
 	fd: "fd",
 	rg: "ripgrep",
 	webtools: "webtools",
+	filetools: "filetools",
 };
 
 // Ensure a tool is available, downloading if necessary

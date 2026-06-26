@@ -38,6 +38,25 @@ interface CompactReadClassification {
 const COMPACT_RESOURCE_FILE_NAMES = new Set(["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]);
 
 /**
+ * Structured/binary document formats that the filetools-backed DocRead tool can
+ * project into editable JSON. These are container/binary formats (OOXML is a zip,
+ * PDF is binary), so a plain utf-8 read yields garbage — read short-circuits with
+ * a pointer to DocRead instead of dumping bytes.
+ */
+const DOC_FORMAT_EXTENSIONS = new Map<string, string>([
+	[".docx", "Word (OOXML)"],
+	[".xlsx", "Excel (OOXML)"],
+	[".pptx", "PowerPoint (OOXML)"],
+	[".pdf", "PDF"],
+]);
+
+function getDocFormatHint(absolutePath: string): string | undefined {
+	const dot = absolutePath.lastIndexOf(".");
+	if (dot === -1) return undefined;
+	return DOC_FORMAT_EXTENSIONS.get(absolutePath.slice(dot).toLowerCase());
+}
+
+/**
  * Pluggable operations for the read tool.
  * Override these to delegate file reading to remote systems (for example SSH).
  */
@@ -276,6 +295,16 @@ export function createReadToolDefinition(
 										{ type: "image", data: base64, mimeType },
 									];
 								}
+							} else if (getDocFormatHint(absolutePath)) {
+								// Structured/binary document: a utf-8 read is meaningless. Point the
+								// model at DocRead, which extracts it to editable, id-addressed JSON.
+								const label = getDocFormatHint(absolutePath);
+								content = [
+									{
+										type: "text",
+										text: `[${label} document — not plain text. Use DocRead on ${path} to extract editable, id-addressed structure (then DocEdit/DocWrite to modify it losslessly). DocRead requires --enable-filetools.]`,
+									},
+								];
 							} else {
 								// Read text content.
 								const buffer = await ops.readFile(absolutePath);
