@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `DocEdit`/`DocWrite` no longer hard-fail when there is no prior `DocRead` or when
+  the document changed on disk (e.g. a script rewrote the binary). They now
+  re-extract automatically, validate the patch's node ids against the current
+  extract, and only fail when the patch targets ids that no longer exist — in which
+  case the error includes the current id-addressed structure so the agent can
+  re-issue the patch without a separate `DocRead`. `DocEdit` results now include the
+  list of nodes affected by the patch (`details.affected`).
+
 ## [0.4.91] - 2026-06-26
 
 ## [0.4.90] - 2026-06-26

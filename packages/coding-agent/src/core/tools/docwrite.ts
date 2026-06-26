@@ -5,8 +5,9 @@ import { Container, Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { theme as appTheme } from "../../modes/interactive/theme/theme.js";
 import type { ToolDefinition } from "../extensions/types.js";
+import { renderEnvelopeText } from "./docread.js";
 import { withFileMutationQueue } from "./file-mutation-queue.js";
-import { getExtractRecord, patchOpsSchema, reconstructDocument, toPatch } from "./filetools-shared.js";
+import { patchOpsSchema, reconstructDocument, StalePatchError, toPatch } from "./filetools-shared.js";
 import { resolveReadPath, resolveToCwd } from "./path-utils.js";
 import { invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -58,7 +59,7 @@ export function createDocWriteToolDefinition(
 		name: "DocWrite",
 		label: "DocWrite",
 		description:
-			"Apply an id-based patch to a structured/binary document and write the result to a NEW path, leaving the source untouched (save-as). Requires a prior DocRead of the source (the patch targets node ids from that extract). This is the canonical way to rewrite these formats: never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to produce the output — that bypasses the lossless id-map and corrupts the file. Off by default; enabled with --enable-filetools.",
+			"Apply an id-based patch to a structured/binary document and write the result to a NEW path, leaving the source untouched (save-as). Targets node ids from a DocRead extract of the source; if the cache is missing or the source changed on disk (e.g. an external script rewrote it) it is re-extracted automatically, so a separate DocRead is not required. If the patch references ids that no longer exist, the call fails and returns the current structure with fresh ids so you can re-issue. This is the canonical way to rewrite these formats: never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to produce the output — that bypasses the lossless id-map and corrupts the file. Off by default; enabled with --enable-filetools.",
 		promptSnippet: "Reconstruct a patched structured/binary document to a new path",
 		promptGuidelines: [
 			"Use DocWrite to save an edited document to a different file: pass the source path (opened with DocRead), an `out` path, and an id-based patch. The source is left unchanged.",
@@ -67,16 +68,23 @@ export function createDocWriteToolDefinition(
 		async execute(_toolCallId, { path, out, patch }: DocWriteToolInput, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 			const absolutePath = resolveReadPath(path, cwd);
-			if (!getExtractRecord(absolutePath)) {
-				throw new Error(`no extracted envelope for the source — run DocRead on ${path} first, then DocWrite`);
-			}
 			const outPath = resolveToCwd(out, cwd);
 
 			return withFileMutationQueue(outPath, async () => {
 				await fsMkdir(dirname(outPath), { recursive: true });
-				await reconstructDocument(absolutePath, toPatch(patch), outPath, cwd, signal, {
-					timeoutSecs: options?.timeoutSecs,
-				});
+				try {
+					await reconstructDocument(absolutePath, toPatch(patch), outPath, cwd, signal, {
+						timeoutSecs: options?.timeoutSecs,
+					});
+				} catch (err) {
+					if (err instanceof StalePatchError) {
+						// The source was rewritten out-of-band: the cache auto-refreshed
+						// but the patch targets ids that no longer exist. Surface the
+						// current structure so the agent can re-issue without a DocRead.
+						throw new Error(`${err.message}\n\n${renderEnvelopeText(err.envelope, false)}`);
+					}
+					throw err;
+				}
 				return {
 					content: [
 						{

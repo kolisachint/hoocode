@@ -9,7 +9,10 @@ import type { Envelope } from "../src/core/tools/filetools-shared.js";
 import {
 	DOCREAD_MAX_RENDER_TOKENS,
 	estimateTextTokens,
+	findMissingPatchIds,
+	findNodeById,
 	invalidateExtractRecord,
+	patchOpNodeId,
 	truncateRenderToTokenBudget,
 } from "../src/core/tools/filetools-shared.js";
 
@@ -33,6 +36,7 @@ interface DocReadDetails {
 
 interface DocEditDetails {
 	ops?: number;
+	affected?: Array<{ id: string; tag: string; text?: string }>;
 }
 
 interface DocWriteDetails {
@@ -248,6 +252,53 @@ describe("document tools", () => {
 	});
 
 	// =====================================================================
+	// Unit tests for id/patch helpers
+	// =====================================================================
+
+	describe("node/patch helpers", () => {
+		const structure = [
+			{
+				id: "root",
+				tag: "doc",
+				children: [
+					{ id: "a", tag: "title", text: "Hello" },
+					{ id: "b", tag: "body", children: [{ id: "c", tag: "p", text: "deep" }] },
+				],
+			},
+		];
+
+		it("findNodeById finds nested nodes", () => {
+			expect(findNodeById(structure, "c")?.tag).toBe("p");
+			expect(findNodeById(structure, "root")?.tag).toBe("doc");
+			expect(findNodeById(structure, "missing")).toBeUndefined();
+		});
+
+		it("patchOpNodeId extracts ids from pointers and anchors", () => {
+			expect(patchOpNodeId({ op: "replace", path: "/structure/a/text", value: "x" })).toBe("a");
+			expect(patchOpNodeId({ op: "replace", path: "/structure/b/attrs/class", value: "x" })).toBe("b");
+			expect(patchOpNodeId({ op: "remove", path: "/structure/c" })).toBe("c");
+			expect(patchOpNodeId({ op: "test", path: "/structure/root", hash: "sha256:x" })).toBe("root");
+			expect(patchOpNodeId({ op: "add", after: "a", value: { tag: "p" } })).toBe("a");
+			expect(patchOpNodeId({ op: "add", before: "b", value: { tag: "p" } })).toBe("b");
+		});
+
+		it("findMissingPatchIds returns ids absent from the structure", () => {
+			expect(
+				findMissingPatchIds(
+					[
+						{ op: "replace", path: "/structure/a/text", value: "x" },
+						{ op: "replace", path: "/structure/c/text", value: "y" },
+					],
+					structure,
+				),
+			).toEqual([]);
+			expect(findMissingPatchIds([{ op: "replace", path: "/structure/gone/text", value: "x" }], structure)).toEqual([
+				"gone",
+			]);
+		});
+	});
+
+	// =====================================================================
 	// DocRead integration tests (uses real filetools binary)
 	// =====================================================================
 
@@ -332,14 +383,32 @@ describe("document tools", () => {
 	// =====================================================================
 
 	describe("DocEdit", () => {
-		it("requires a prior DocRead", async () => {
+		it("auto-extracts without a prior DocRead and applies a valid patch", async () => {
 			const docPath = join(cwd, "report.xml");
 			writeFileSync(docPath, "<doc><title>Hello</title></doc>");
 			invalidateExtractRecord(docPath);
 			const tool = createDocEditTool(cwd);
+			const result = await tool.execute("e1", {
+				path: docPath,
+				patch: [{ op: "replace", path: `/structure/${TITLE_ID}/text`, value: "Hi" }],
+			});
+			expect((result.details as DocEditDetails).ops).toBe(1);
+			expect(readFileSync(docPath, "utf8")).toContain("Hi");
+		});
+
+		it("throws with the fresh structure when the patch targets stale ids", async () => {
+			const docPath = join(cwd, "stale.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title></doc>");
+			invalidateExtractRecord(docPath);
+			const tool = createDocEditTool(cwd);
 			await expect(
-				tool.execute("e1", { path: docPath, patch: [{ op: "replace", path: "/structure/n1/text", value: "Hi" }] }),
-			).rejects.toThrow(/DocRead/);
+				tool.execute("e1b", {
+					path: docPath,
+					patch: [{ op: "replace", path: "/structure/el_doesnotexist/text", value: "Hi" }],
+				}),
+			).rejects.toThrow(new RegExp(`no longer exist[\\s\\S]*#${TITLE_ID} <title>`));
+			// The document was not modified.
+			expect(readFileSync(docPath, "utf8")).toContain("<title>Hello");
 		});
 
 		it("applies a patch in place after a DocRead", async () => {
@@ -380,6 +449,19 @@ describe("document tools", () => {
 				patch: [{ op: "replace", path: `/structure/${TITLE_ID}/text`, value: "Updated" }],
 			});
 			expect(getText(result as any)).toContain("re-extracted");
+		});
+
+		it("reports the nodes affected by the patch", async () => {
+			const docPath = join(cwd, "affected.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title></doc>");
+			await createDocReadTool(cwd).execute("r4a", { path: docPath });
+			const result = await createDocEditTool(cwd).execute("e4a", {
+				path: docPath,
+				patch: [{ op: "replace", path: `/structure/${TITLE_ID}/text`, value: "Updated" }],
+			});
+			const affected = (result.details as DocEditDetails).affected;
+			expect(affected).toBeDefined();
+			expect(affected?.some((n) => n.id === TITLE_ID)).toBe(true);
 		});
 	});
 
@@ -427,18 +509,34 @@ describe("document tools", () => {
 			expect(readFileSync(outPath, "utf8")).toContain("GuardedWrite");
 		});
 
-		it("requires a prior DocRead on the source", async () => {
+		it("auto-extracts the source without a prior DocRead", async () => {
 			const docPath = join(cwd, "orphan.xml");
 			const outPath = join(cwd, "orphan_out.xml");
-			writeFileSync(docPath, "<doc/>");
+			writeFileSync(docPath, "<doc><title>Hello</title></doc>");
+			invalidateExtractRecord(docPath);
+			const result = await createDocWriteTool(cwd).execute("w3", {
+				path: docPath,
+				out: outPath,
+				patch: [{ op: "replace", path: `/structure/${TITLE_ID}/text`, value: "Auto" }],
+			});
+			expect((result.details as DocWriteDetails).ops).toBe(1);
+			expect(existsSync(outPath)).toBe(true);
+			expect(readFileSync(outPath, "utf8")).toContain("Auto");
+		});
+
+		it("throws with the fresh structure when the patch targets stale ids", async () => {
+			const docPath = join(cwd, "orphan2.xml");
+			const outPath = join(cwd, "orphan2_out.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title></doc>");
 			invalidateExtractRecord(docPath);
 			await expect(
-				createDocWriteTool(cwd).execute("w3", {
+				createDocWriteTool(cwd).execute("w3b", {
 					path: docPath,
 					out: outPath,
-					patch: [{ op: "replace", path: "/structure/n1/text", value: "nope" }],
+					patch: [{ op: "replace", path: "/structure/el_doesnotexist/text", value: "nope" }],
 				}),
-			).rejects.toThrow(/DocRead/);
+			).rejects.toThrow(new RegExp(`no longer exist[\\s\\S]*#${TITLE_ID} <title>`));
+			expect(existsSync(outPath)).toBe(false);
 		});
 	});
 });
