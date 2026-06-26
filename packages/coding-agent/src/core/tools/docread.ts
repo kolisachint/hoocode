@@ -128,7 +128,8 @@ export function createDocReadToolDefinition(
 		promptSnippet: "Extract a structured/binary document into editable, id-addressed JSON",
 		promptGuidelines: [
 			"Use DocRead to open structured/binary documents (XML, drawio, docx/xlsx/pptx, PDF) instead of read; it returns id-addressed nodes you can patch with DocEdit/DocWrite. Never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to parse or edit these formats — that loses the lossless id-map and corrupts the file.",
-			"DocEdit/DocWrite require a prior DocRead of the same file (the id-map is established by the extract).",
+			"Flow: scan first, edit second. To understand a document, start with DocRead readonly:true — an analysis-only projection that strips node ids and is much cheaper in tokens. Only do a full (writable) DocRead when you actually intend to edit, since that view carries the whole id-map and is token-heavy.",
+			"Read once, then edit. A writable DocRead establishes the id-map; DocEdit/DocWrite re-extract on their own, so do not re-run DocRead between edits. If a patch targets stale ids the edit fails and returns the current structure with fresh ids to re-issue against.",
 		],
 		parameters: docReadSchema,
 		async execute(_toolCallId, { path, readonly }: DocReadToolInput, signal?: AbortSignal) {

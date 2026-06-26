@@ -63,6 +63,7 @@ export function createDocWriteToolDefinition(
 		promptSnippet: "Reconstruct a patched structured/binary document to a new path",
 		promptGuidelines: [
 			"Use DocWrite to save an edited document to a different file: pass the source path (opened with DocRead), an `out` path, and an id-based patch. The source is left unchanged.",
+			"Keep the patch minimal and scan before you write: prefer a DocRead readonly:true glimpse to plan the change, and avoid re-running a full writable DocRead between writes — it auto-extracts the source and is token-heavy.",
 		],
 		parameters: docWriteSchema,
 		async execute(_toolCallId, { path, out, patch }: DocWriteToolInput, signal?: AbortSignal) {

@@ -66,6 +66,7 @@ export function createDocEditToolDefinition(
 		promptSnippet: "Patch a structured/binary document in place by node id",
 		promptGuidelines: [
 			"Use DocEdit to modify a document opened with DocRead; pass a patch of id-based ops (replace/add/remove) targeting the #ids from the extract. It edits in place and re-extracts.",
+			"Keep patches minimal — only the ops you actually need. DocEdit re-extracts after writing and refreshes ids, so do not DocRead again between edits; the full extract is token-heavy. Reach for a fresh writable DocRead only when ids have gone stale and the failure output isn't enough to continue.",
 		],
 		parameters: docEditSchema,
 		async execute(_toolCallId, { path, patch }: DocEditToolInput, signal?: AbortSignal) {

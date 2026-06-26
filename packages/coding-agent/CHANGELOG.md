@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Clarified the recommended ordering for the document tools in their prompt
+  guidance: scan first with `DocRead readonly:true` (cheap, analysis-only), do a
+  full writable `DocRead` only when about to edit (it carries the id-map and is
+  token-heavy), then `DocEdit`/`DocWrite` with minimal patches — and do not
+  re-run `DocRead` between edits, since the edit tools re-extract on their own.
+  Documented the flow in `docs/doc-tools-flow.md`.
+
 ## [0.4.92] - 2026-06-26
 
 ### Changed
