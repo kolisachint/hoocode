@@ -405,6 +405,16 @@ function buildSessionOptions(
 	// default; this adds them to the default active set.
 	if (parsed.enableFileTools ?? settingsManager.getEnableFileTools()) {
 		options.enableFileTools = true;
+		// DocRead/DocEdit/DocWrite drive a lossless id-based extract -> patch ->
+		// reconstruct flow that depends on precise, well-formed tool calls. Models
+		// that are weak at tool calling tend to mangle the id-based patches and
+		// corrupt documents, so surface a one-time heads-up when these are enabled.
+		diagnostics.push({
+			type: "warning",
+			message:
+				"Document tools (DocRead/DocEdit/DocWrite) are enabled. They require precise, id-based patches; " +
+				"use a model that is strong at tool calling, or these edits can corrupt files.",
+		});
 	}
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.

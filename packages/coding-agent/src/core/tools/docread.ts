@@ -4,7 +4,13 @@ import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { theme as appTheme } from "../../modes/interactive/theme/theme.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
-import { type DocNode, type Envelope, extractDocument } from "./filetools-shared.js";
+import {
+	DOCREAD_MAX_RENDER_TOKENS,
+	type DocNode,
+	type Envelope,
+	extractDocument,
+	truncateRenderToTokenBudget,
+} from "./filetools-shared.js";
 import { resolveReadPath } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -47,8 +53,12 @@ function countNodes(nodes: DocNode[]): number {
 /**
  * Render the envelope as compact, id-addressed text the model edits against.
  * Each line carries the node id so DocEdit/DocWrite patches can target it.
+ *
+ * The filetools binary has no pagination, so a dense document can project into
+ * a huge dump. We truncate the rendered view to a token budget and append an
+ * actionable notice instead of flooding the model context.
  */
-function renderEnvelopeText(envelope: Envelope): string {
+export function renderEnvelopeText(envelope: Envelope, readonly: boolean | undefined): string {
 	const header =
 		`document ${envelope.source.path} [${envelope.source.type}, ${envelope.fidelity}, ` +
 		`${envelope.writable ? "writable" : "read-only"}]`;
@@ -65,7 +75,18 @@ function renderEnvelopeText(envelope: Envelope): string {
 		}
 	};
 	walk(envelope.structure, 0);
-	return lines.join("\n");
+
+	const { text, droppedLines } = truncateRenderToTokenBudget(lines);
+	if (droppedLines === 0) return text;
+
+	const hint = readonly
+		? "narrow to a smaller or more targeted file"
+		: "re-run with readonly:true for a smaller analysis-only view, or target a smaller file";
+	return (
+		`${text}\n\n[Truncated: document exceeds the ~${DOCREAD_MAX_RENDER_TOKENS} token render budget; ` +
+		`${droppedLines} more node line${droppedLines === 1 ? "" : "s"} omitted. The ids shown are still valid for ` +
+		`DocEdit/DocWrite — ${hint}.]`
+	);
 }
 
 function formatDocReadCall(args: { path?: string; readonly?: boolean } | undefined): string {
@@ -103,10 +124,10 @@ export function createDocReadToolDefinition(
 		name: "DocRead",
 		label: "DocRead",
 		description:
-			"Extract a structured or binary document (XML, drawio, docx/xlsx/pptx, PDF) into editable, id-addressed JSON the agent can patch losslessly. Each node has a stable #id; edit with DocEdit (in place) or DocWrite (to a new path), passing a patch that targets those ids. Off by default; enabled with --enable-filetools.",
+			"Extract a structured or binary document (XML, drawio, docx/xlsx/pptx, PDF) into editable, id-addressed JSON the agent can patch losslessly. Each node has a stable #id; edit with DocEdit (in place) or DocWrite (to a new path), passing a patch that targets those ids. This is the canonical way to read and edit these formats: never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to parse or rewrite them — that loses the lossless id-map and corrupts formatting. Off by default; enabled with --enable-filetools.",
 		promptSnippet: "Extract a structured/binary document into editable, id-addressed JSON",
 		promptGuidelines: [
-			"Use DocRead to open structured/binary documents (XML, drawio, docx/xlsx/pptx, PDF) instead of read; it returns id-addressed nodes you can patch with DocEdit/DocWrite.",
+			"Use DocRead to open structured/binary documents (XML, drawio, docx/xlsx/pptx, PDF) instead of read; it returns id-addressed nodes you can patch with DocEdit/DocWrite. Never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to parse or edit these formats — that loses the lossless id-map and corrupts the file.",
 			"DocEdit/DocWrite require a prior DocRead of the same file (the id-map is established by the extract).",
 		],
 		parameters: docReadSchema,
@@ -118,7 +139,7 @@ export function createDocReadToolDefinition(
 				timeoutSecs: options?.timeoutSecs,
 			});
 			return {
-				content: [{ type: "text" as const, text: renderEnvelopeText(envelope) }],
+				content: [{ type: "text" as const, text: renderEnvelopeText(envelope, readonly) }],
 				details: {
 					type: envelope.source.type,
 					fidelity: envelope.fidelity,

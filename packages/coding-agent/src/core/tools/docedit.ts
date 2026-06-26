@@ -56,7 +56,7 @@ export function createDocEditToolDefinition(
 		name: "DocEdit",
 		label: "DocEdit",
 		description:
-			"Apply an id-based patch to a structured/binary document IN PLACE, losslessly. Requires a prior DocRead of the same file (the patch targets node ids from that extract). Untouched bytes are preserved exactly; the file is then re-extracted so ids stay current for further edits. Off by default; enabled with --enable-filetools.",
+			"Apply an id-based patch to a structured/binary document IN PLACE, losslessly. Requires a prior DocRead of the same file (the patch targets node ids from that extract). Untouched bytes are preserved exactly; the file is then re-extracted so ids stay current for further edits. This is the canonical way to edit these formats: never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to rewrite them — that bypasses the lossless id-map and corrupts the file. Off by default; enabled with --enable-filetools.",
 		promptSnippet: "Patch a structured/binary document in place by node id",
 		promptGuidelines: [
 			"Use DocEdit to modify a document opened with DocRead; pass a patch of id-based ops (replace/add/remove) targeting the #ids from the extract. It edits in place and re-extracts.",
