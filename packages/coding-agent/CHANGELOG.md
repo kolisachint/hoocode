@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- Document tools `DocRead`, `DocEdit`, and `DocWrite` (off by default; enable with
+  `--enable-filetools` or the `enableFileTools` setting). They shell out to the
+  `filetools` binary (resolved from PATH or downloaded from GitHub releases) to
+  losslessly project structured/binary documents (XML, drawio, docx/xlsx/pptx,
+  PDF) into editable, id-addressed JSON: `DocRead` extracts a document to an
+  id-addressed envelope, `DocEdit` applies an id-based RFC-6902 patch in place and
+  re-extracts, and `DocWrite` reconstructs a patched document to a new path,
+  leaving the source untouched. `read` now redirects to `DocRead` when given an
+  OOXML or PDF file instead of dumping binary bytes.
+
 ## [0.4.88] - 2026-06-24
 
 ## [0.4.87] - 2026-06-24

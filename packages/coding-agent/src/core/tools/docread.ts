@@ -1,0 +1,145 @@
+import type { AgentTool } from "@kolisachint/hoocode-agent-core";
+import { Text } from "@kolisachint/hoocode-tui";
+import { type Static, Type } from "typebox";
+import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
+import { theme as appTheme } from "../../modes/interactive/theme/theme.js";
+import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import { type DocNode, type Envelope, extractDocument } from "./filetools-shared.js";
+import { resolveReadPath } from "./path-utils.js";
+import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
+import { wrapToolDefinition } from "./tool-definition-wrapper.js";
+
+const docReadSchema = Type.Object({
+	path: Type.String({
+		description:
+			"Path to the document to extract (relative or absolute). XML, drawio, OOXML (docx/xlsx/pptx), or PDF.",
+	}),
+	readonly: Type.Optional(
+		Type.Boolean({
+			description:
+				"Analysis-only projection: strips node ids for a smaller view that CANNOT be edited. Omit (default false) when you intend to DocEdit/DocWrite afterwards.",
+		}),
+	),
+});
+
+export type DocReadToolInput = Static<typeof docReadSchema>;
+
+export interface DocReadToolDetails {
+	type?: string;
+	fidelity?: string;
+	writable?: boolean;
+	nodeCount?: number;
+}
+
+export interface DocReadToolOptions {
+	/** Timeout (seconds) for the filetools invocation. */
+	timeoutSecs?: number;
+}
+
+function countNodes(nodes: DocNode[]): number {
+	let total = 0;
+	for (const node of nodes) {
+		total += 1 + (node.children ? countNodes(node.children) : 0);
+	}
+	return total;
+}
+
+/**
+ * Render the envelope as compact, id-addressed text the model edits against.
+ * Each line carries the node id so DocEdit/DocWrite patches can target it.
+ */
+function renderEnvelopeText(envelope: Envelope): string {
+	const header =
+		`document ${envelope.source.path} [${envelope.source.type}, ${envelope.fidelity}, ` +
+		`${envelope.writable ? "writable" : "read-only"}]`;
+	const lines: string[] = [header, ""];
+
+	const walk = (nodes: DocNode[], depth: number): void => {
+		for (const node of nodes) {
+			const indent = "  ".repeat(depth);
+			const idPart = node.id ? `#${node.id} ` : "";
+			const attrs = node.attrs?.length ? ` ${node.attrs.map((a) => `${a.name}="${a.value}"`).join(" ")}` : "";
+			const text = node.text !== undefined ? ` :: ${JSON.stringify(node.text)}` : "";
+			lines.push(`${indent}${idPart}<${node.tag}${attrs}>${text}`);
+			if (node.children?.length) walk(node.children, depth + 1);
+		}
+	};
+	walk(envelope.structure, 0);
+	return lines.join("\n");
+}
+
+function formatDocReadCall(args: { path?: string; readonly?: boolean } | undefined): string {
+	const path = str(args?.path);
+	const pathDisplay =
+		path === null ? invalidArgText(appTheme) : path ? shortenPath(path) : appTheme.fg("toolOutput", "...");
+	let text = appTheme.fg("toolTitle", appTheme.bold("DocRead ")) + appTheme.fg("accent", pathDisplay);
+	if (args?.readonly) text += appTheme.fg("muted", " (readonly)");
+	return text;
+}
+
+function formatDocReadResult(
+	result: { content: Array<{ type: string; text?: string }>; details?: DocReadToolDetails },
+	options: ToolRenderResultOptions,
+	showImages: boolean,
+): string {
+	const output = getTextOutput(result as any, showImages).trim();
+	if (!output) return "";
+	const lines = output.split("\n");
+	const maxLines = options.expanded ? lines.length : 15;
+	const displayLines = lines.slice(0, maxLines);
+	const remaining = lines.length - maxLines;
+	let text = `\n${displayLines.map((line) => appTheme.fg("toolOutput", line)).join("\n")}`;
+	if (remaining > 0) {
+		text += `${appTheme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")})`;
+	}
+	return text;
+}
+
+export function createDocReadToolDefinition(
+	cwd: string,
+	options?: DocReadToolOptions,
+): ToolDefinition<typeof docReadSchema, DocReadToolDetails | undefined> {
+	return {
+		name: "DocRead",
+		label: "DocRead",
+		description:
+			"Extract a structured or binary document (XML, drawio, docx/xlsx/pptx, PDF) into editable, id-addressed JSON the agent can patch losslessly. Each node has a stable #id; edit with DocEdit (in place) or DocWrite (to a new path), passing a patch that targets those ids. Off by default; enabled with --enable-filetools.",
+		promptSnippet: "Extract a structured/binary document into editable, id-addressed JSON",
+		promptGuidelines: [
+			"Use DocRead to open structured/binary documents (XML, drawio, docx/xlsx/pptx, PDF) instead of read; it returns id-addressed nodes you can patch with DocEdit/DocWrite.",
+			"DocEdit/DocWrite require a prior DocRead of the same file (the id-map is established by the extract).",
+		],
+		parameters: docReadSchema,
+		async execute(_toolCallId, { path, readonly }: DocReadToolInput, signal?: AbortSignal) {
+			if (signal?.aborted) throw new Error("Operation aborted");
+			const absolutePath = resolveReadPath(path, cwd);
+			const envelope = await extractDocument(absolutePath, cwd, signal, {
+				readonly,
+				timeoutSecs: options?.timeoutSecs,
+			});
+			return {
+				content: [{ type: "text" as const, text: renderEnvelopeText(envelope) }],
+				details: {
+					type: envelope.source.type,
+					fidelity: envelope.fidelity,
+					writable: envelope.writable,
+					nodeCount: countNodes(envelope.structure),
+				},
+			};
+		},
+		renderCall(args, _theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			text.setText(formatDocReadCall(args));
+			return text;
+		},
+		renderResult(result, options, _theme, context) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			text.setText(formatDocReadResult(result as any, options, context.showImages));
+			return text;
+		},
+	};
+}
+
+export function createDocReadTool(cwd: string, options?: DocReadToolOptions): AgentTool<typeof docReadSchema> {
+	return wrapToolDefinition(createDocReadToolDefinition(cwd, options));
+}
