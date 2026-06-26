@@ -58,7 +58,7 @@ export function createDocWriteToolDefinition(
 		name: "DocWrite",
 		label: "DocWrite",
 		description:
-			"Apply an id-based patch to a structured/binary document and write the result to a NEW path, leaving the source untouched (save-as). Requires a prior DocRead of the source (the patch targets node ids from that extract). Off by default; enabled with --enable-filetools.",
+			"Apply an id-based patch to a structured/binary document and write the result to a NEW path, leaving the source untouched (save-as). Requires a prior DocRead of the source (the patch targets node ids from that extract). This is the canonical way to rewrite these formats: never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to produce the output — that bypasses the lossless id-map and corrupts the file. Off by default; enabled with --enable-filetools.",
 		promptSnippet: "Reconstruct a patched structured/binary document to a new path",
 		promptGuidelines: [
 			"Use DocWrite to save an edited document to a different file: pass the source path (opened with DocRead), an `out` path, and an id-based patch. The source is left unchanged.",

@@ -29,6 +29,46 @@ import { execCommand } from "../exec.js";
 /** Default timeout (seconds) for a single filetools invocation. */
 export const FILETOOLS_DEFAULT_TIMEOUT_SECS = 30;
 
+/**
+ * Soft token ceiling for a single DocRead render. The filetools binary has no
+ * pagination, so a dense file (e.g. a large spreadsheet) can project into a
+ * huge id-addressed dump that floods the model context and burns tokens. We
+ * cannot make the extract itself smaller without the binary's help, so DocRead
+ * truncates the rendered view to roughly this budget and tells the model how to
+ * narrow it (readonly projection, a smaller/targeted file, or direct edits).
+ */
+export const DOCREAD_MAX_RENDER_TOKENS = 10000;
+
+/** Rough token estimate (chars/4), matching the agent's compaction heuristic. */
+export function estimateTextTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
+
+/**
+ * Truncate rendered envelope lines to roughly `maxTokens`, keeping whole lines.
+ * Returns the kept text plus how many lines were dropped (0 when nothing was
+ * truncated).
+ */
+export function truncateRenderToTokenBudget(
+	lines: string[],
+	maxTokens: number = DOCREAD_MAX_RENDER_TOKENS,
+): { text: string; droppedLines: number } {
+	const full = lines.join("\n");
+	if (estimateTextTokens(full) <= maxTokens) {
+		return { text: full, droppedLines: 0 };
+	}
+	const budgetChars = maxTokens * 4;
+	const kept: string[] = [];
+	let used = 0;
+	for (const line of lines) {
+		const next = used + line.length + 1; // + newline
+		if (next > budgetChars && kept.length > 0) break;
+		kept.push(line);
+		used = next;
+	}
+	return { text: kept.join("\n"), droppedLines: lines.length - kept.length };
+}
+
 // ============================================================================
 // Wire types (locked against `filetools` model.rs / patch.rs)
 // ============================================================================
