@@ -197,6 +197,46 @@ export function toPatch(ops: PatchOpsInput): Patch {
 	return { patch: ops as PatchOp[] };
 }
 
+/** Find a node by id anywhere in a (recursive) structure tree. */
+export function findNodeById(nodes: DocNode[], id: string): DocNode | undefined {
+	for (const node of nodes) {
+		if (node.id === id) return node;
+		if (node.children) {
+			const hit = findNodeById(node.children, id);
+			if (hit) return hit;
+		}
+	}
+	return undefined;
+}
+
+/**
+ * Extract the target node id from a patch op pointer. Returns undefined for ops
+ * that reference a node by anchor (`add`) rather than a `/structure/<id>/...`
+ * path. Pointer shapes: `/structure/<id>`, `/structure/<id>/text`,
+ * `/structure/<id>/attrs/<name>`.
+ */
+export function patchOpNodeId(op: PatchOp): string | undefined {
+	if (op.op === "add") return op.after ?? op.before;
+	const parts = op.path.split("/");
+	// ["", "structure", "<id>", ...]
+	return parts[1] === "structure" ? parts[2] : undefined;
+}
+
+/**
+ * Validate that every node id referenced by `ops` still exists in `structure`.
+ * Returns the ids that are missing (empty array means the patch is applicable to
+ * this extract). Used to detect when a patch was authored against a stale
+ * extract — e.g. after an external tool rewrote the document.
+ */
+export function findMissingPatchIds(ops: PatchOp[], structure: DocNode[]): string[] {
+	const missing: string[] = [];
+	for (const op of ops) {
+		const id = patchOpNodeId(op);
+		if (id && !findNodeById(structure, id)) missing.push(id);
+	}
+	return missing;
+}
+
 // ============================================================================
 // Binary runner + working directory
 // ============================================================================
@@ -339,9 +379,56 @@ export function invalidateExtractRecord(absolutePath: string): void {
 }
 
 /**
- * Apply `patch` to a previously-extracted document, writing the reconstructed
- * bytes to `outPath`. Requires a prior {@link extractDocument} (the stateful
- * flow): the cached envelope + sidecar carry the id-map reconstruct needs.
+ * Thrown when a patch references node ids that are absent from the current
+ * extract — typically because the document was rewritten out-of-band (e.g. by a
+ * script) after the ids were read, or the patch was authored against an older
+ * extract. Carries the freshly re-extracted envelope so the caller can surface
+ * current ids to the agent without forcing a separate DocRead.
+ */
+export class StalePatchError extends Error {
+	readonly envelope: Envelope;
+	readonly missingIds: string[];
+	constructor(envelope: Envelope, missingIds: string[]) {
+		super(
+			`patch references ${missingIds.length} node id${missingIds.length === 1 ? "" : "s"} that no longer exist ` +
+				`in ${basename(envelope.source.path)} (${missingIds.slice(0, 5).join(", ")}` +
+				`${missingIds.length > 5 ? ", …" : ""}). The document was re-extracted; re-issue the patch against the ids below.`,
+		);
+		this.name = "StalePatchError";
+		this.envelope = envelope;
+		this.missingIds = missingIds;
+	}
+}
+
+/**
+ * Return a valid cached extract for `absolutePath`, re-extracting automatically
+ * when the cache is missing or stale (e.g. the source changed on disk since the
+ * last extract). This keeps DocEdit/DocWrite usable after an out-of-band write
+ * without forcing the agent to call DocRead again.
+ */
+export async function ensureExtractRecord(
+	absolutePath: string,
+	cwd: string,
+	signal: AbortSignal | undefined,
+	options?: { timeoutSecs?: number },
+): Promise<ExtractRecord> {
+	const existing = getExtractRecord(absolutePath);
+	if (existing) return existing;
+	invalidateExtractRecord(absolutePath);
+	await extractDocument(absolutePath, cwd, signal, { timeoutSecs: options?.timeoutSecs });
+	const record = getExtractRecord(absolutePath);
+	if (!record) {
+		throw new Error(`failed to extract ${basename(absolutePath)} — the document tools could not read it`);
+	}
+	return record;
+}
+
+/**
+ * Apply `patch` to a document, writing the reconstructed bytes to `outPath`.
+ * Auto-extracts when the cache is missing or stale (so an out-of-band rewrite no
+ * longer forces a manual DocRead), then validates that the patch's node ids
+ * still exist in the current extract. A mismatch throws {@link StalePatchError}
+ * carrying the fresh envelope so the caller can show current ids.
  */
 export async function reconstructDocument(
 	absolutePath: string,
@@ -351,16 +438,15 @@ export async function reconstructDocument(
 	signal: AbortSignal | undefined,
 	options?: { timeoutSecs?: number },
 ): Promise<void> {
-	const record = getExtractRecord(absolutePath);
-	if (!record) {
-		throw new Error(
-			`no extracted envelope for ${basename(absolutePath)} — run DocRead on it first, then DocEdit/DocWrite`,
-		);
-	}
+	const record = await ensureExtractRecord(absolutePath, cwd, signal, options);
 	if (!record.envelope.writable) {
 		throw new Error(
 			`${basename(absolutePath)} is read-only (fidelity ${record.envelope.fidelity}); it cannot be edited`,
 		);
+	}
+	const missingIds = findMissingPatchIds(patch.patch, record.envelope.structure);
+	if (missingIds.length > 0) {
+		throw new StalePatchError(record.envelope, missingIds);
 	}
 
 	const binaryPath = await resolveBinary();
