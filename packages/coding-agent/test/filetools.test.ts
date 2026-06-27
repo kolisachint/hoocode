@@ -718,3 +718,284 @@ describe("document discovery tools", () => {
 		});
 	});
 });
+
+// ===========================================================================
+// OOXML end-to-end loop (xlsx + pptx): scan → grep → peek → edit.
+// Regression for issue #78 — before filetools v0.1.7 the discovery loop reached
+// xlsx sheet structure only (DocGrep/DocPeek did not see cell values); v0.1.7
+// "reach full cell/text content via scan/grep/read for all formats" closed it,
+// and also covers pptx. These fixtures are minimal valid OOXML packages built
+// with a dependency-free STORED-zip writer, exercised through the real binary.
+// ===========================================================================
+
+const CRC32_TABLE = (() => {
+	const table = new Uint32Array(256);
+	for (let n = 0; n < 256; n++) {
+		let c = n;
+		for (let k = 0; k < 8; k++) {
+			c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+		}
+		table[n] = c >>> 0;
+	}
+	return table;
+})();
+
+function crc32(buf: Buffer): number {
+	let c = 0xffffffff;
+	for (let i = 0; i < buf.length; i++) {
+		c = CRC32_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+	}
+	return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
+ * Write a minimal STORED (uncompressed) zip — enough for filetools to read an
+ * OOXML package without pulling in a zip-writer dependency.
+ */
+function writeZip(path: string, entries: Array<{ name: string; content: string }>): void {
+	const chunks: Buffer[] = [];
+	const centrals: Buffer[] = [];
+	let offset = 0;
+	for (const { name, content } of entries) {
+		const nameBuf = Buffer.from(name, "utf8");
+		const data = Buffer.from(content, "utf8");
+		const crc = crc32(data);
+
+		const local = Buffer.alloc(30 + nameBuf.length);
+		local.writeUInt32LE(0x04034b50, 0);
+		local.writeUInt16LE(20, 4); // version needed
+		local.writeUInt16LE(0, 8); // method: stored
+		local.writeUInt32LE(crc, 14);
+		local.writeUInt32LE(data.length, 18); // compressed size
+		local.writeUInt32LE(data.length, 22); // uncompressed size
+		local.writeUInt16LE(nameBuf.length, 26);
+		nameBuf.copy(local, 30);
+		chunks.push(local, data);
+
+		const central = Buffer.alloc(46 + nameBuf.length);
+		central.writeUInt32LE(0x02014b50, 0);
+		central.writeUInt16LE(20, 4); // version made by
+		central.writeUInt16LE(20, 6); // version needed
+		central.writeUInt16LE(0, 10); // method: stored
+		central.writeUInt32LE(crc, 16);
+		central.writeUInt32LE(data.length, 20);
+		central.writeUInt32LE(data.length, 24);
+		central.writeUInt16LE(nameBuf.length, 28);
+		central.writeUInt32LE(offset, 42); // local header offset
+		nameBuf.copy(central, 46);
+		centrals.push(central);
+
+		offset += local.length + data.length;
+	}
+
+	const centralBuf = Buffer.concat(centrals);
+	const eocd = Buffer.alloc(22);
+	eocd.writeUInt32LE(0x06054b50, 0);
+	eocd.writeUInt16LE(entries.length, 8); // entries on this disk
+	eocd.writeUInt16LE(entries.length, 10); // total entries
+	eocd.writeUInt32LE(centralBuf.length, 12); // central directory size
+	eocd.writeUInt32LE(offset, 16); // central directory offset
+
+	writeFileSync(path, Buffer.concat([...chunks, centralBuf, eocd]));
+}
+
+const XLSX_PARTS: Array<{ name: string; content: string }> = [
+	{
+		name: "[Content_Types].xml",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+			'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+			'<Default Extension="xml" ContentType="application/xml"/>' +
+			'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+			'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+			"</Types>",
+	},
+	{
+		name: "_rels/.rels",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+			'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+			"</Relationships>",
+	},
+	{
+		name: "xl/workbook.xml",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+			'<sheets><sheet name="Budget" sheetId="1" r:id="rId1"/></sheets></workbook>',
+	},
+	{
+		name: "xl/_rels/workbook.xml.rels",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+			'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+			"</Relationships>",
+	},
+	{
+		name: "xl/worksheets/sheet1.xml",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>' +
+			'<row r="1"><c r="A1" t="inlineStr"><is><t>Item</t></is></c><c r="D1" t="inlineStr"><is><t>MAGICVALUE</t></is></c></row>' +
+			'<row r="2"><c r="A2" t="inlineStr"><is><t>Widget</t></is></c><c r="D2" t="inlineStr"><is><t>Quarterly</t></is></c></row>' +
+			"</sheetData></worksheet>",
+	},
+];
+
+const PPTX_PARTS: Array<{ name: string; content: string }> = [
+	{
+		name: "[Content_Types].xml",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+			'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+			'<Default Extension="xml" ContentType="application/xml"/>' +
+			'<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>' +
+			'<Override PartName="/ppt/slides/slide1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>' +
+			"</Types>",
+	},
+	{
+		name: "_rels/.rels",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+			'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>' +
+			"</Relationships>",
+	},
+	{
+		name: "ppt/presentation.xml",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+			'<p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst></p:presentation>',
+	},
+	{
+		name: "ppt/_rels/presentation.xml.rels",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+			'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide1.xml"/>' +
+			"</Relationships>",
+	},
+	{
+		name: "ppt/slides/slide1.xml",
+		content:
+			'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+			'<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">' +
+			"<p:cSld><p:spTree><p:sp><p:txBody>" +
+			"<a:p><a:r><a:t>Hello Slide Title</a:t></a:r></a:p>" +
+			"<a:p><a:r><a:t>PPTXMAGIC body text</a:t></a:r></a:p>" +
+			"</p:txBody></p:sp></p:spTree></p:cSld></p:sld>",
+	},
+];
+
+describe("OOXML end-to-end loop (xlsx)", () => {
+	let cwd: string;
+	let docPath: string;
+
+	beforeEach(() => {
+		cwd = join(tmpdir(), `filetools-xlsx-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(cwd, { recursive: true });
+		docPath = join(cwd, "data.xlsx");
+		writeZip(docPath, XLSX_PARTS);
+		invalidateExtractRecord(docPath);
+	});
+
+	afterEach(() => {
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it("DocScan previews reach cell text", async () => {
+		const text = getText(await createDocScanTool(cwd).execute("xs", { path: docPath }));
+		expect(text).toContain("#sheet[0]");
+		// Pre-v0.1.7 the row preview showed structure only; now it carries cell text.
+		expect(text).toContain("MAGICVALUE");
+	});
+
+	it("DocGrep matches a cell value", async () => {
+		const result = await createDocGrepTool(cwd).execute("xg", { path: docPath, pattern: "MAGICVALUE" });
+		expect((result.details as { matches?: number }).matches).toBe(1);
+		expect(getText(result)).toContain("MAGICVALUE");
+	});
+
+	it("DocPeek hydrates the row-range block into cell text", async () => {
+		const text = getText(await createDocPeekTool(cwd).execute("xp", { path: docPath, id: ["sheet[0].rows[0-1]"] }));
+		expect(text).toContain("MAGICVALUE");
+		expect(text).toContain("Widget");
+	});
+
+	it("DocEdit rewrites a cell and the change is visible to DocGrep", async () => {
+		// The editable el_ id for a spreadsheet cell comes from the extract (DocRead).
+		const readText = getText(await createDocReadTool(cwd).execute("xr", { path: docPath }));
+		const match = readText.match(/#(el_[0-9a-f]+)[^\n]*"MAGICVALUE"/);
+		expect(match).not.toBeNull();
+		const elId = match![1];
+
+		const edit = await createDocEditTool(cwd).execute("xe", {
+			path: docPath,
+			patch: [{ op: "replace", path: `/structure/${elId}/text`, value: "EDITEDVALUE" }],
+		});
+		expect((edit.details as DocEditDetails).ops).toBe(1);
+
+		const after = await createDocGrepTool(cwd).execute("xg2", { path: docPath, pattern: "EDITEDVALUE" });
+		expect((after.details as { matches?: number }).matches).toBe(1);
+		const gone = await createDocGrepTool(cwd).execute("xg3", { path: docPath, pattern: "MAGICVALUE" });
+		expect((gone.details as { matches?: number }).matches).toBe(0);
+	});
+});
+
+describe("OOXML end-to-end loop (pptx)", () => {
+	let cwd: string;
+	let docPath: string;
+
+	beforeEach(() => {
+		cwd = join(tmpdir(), `filetools-pptx-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(cwd, { recursive: true });
+		docPath = join(cwd, "deck.pptx");
+		writeZip(docPath, PPTX_PARTS);
+		invalidateExtractRecord(docPath);
+	});
+
+	afterEach(() => {
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it("DocScan previews reach slide text", async () => {
+		const text = getText(await createDocScanTool(cwd).execute("ps", { path: docPath }));
+		expect(text).toContain("#slide[0]");
+		expect(text).toContain("PPTXMAGIC");
+	});
+
+	it("DocGrep matches slide text", async () => {
+		const result = await createDocGrepTool(cwd).execute("pg", { path: docPath, pattern: "PPTXMAGIC" });
+		expect((result.details as { matches?: number }).matches).toBe(1);
+		expect(getText(result)).toContain("PPTXMAGIC");
+	});
+
+	it("DocPeek hydrates the slide into its text", async () => {
+		const text = getText(await createDocPeekTool(cwd).execute("pp", { path: docPath, id: ["slide[0]"] }));
+		expect(text).toContain("PPTXMAGIC");
+		expect(text).toContain("Hello Slide Title");
+	});
+
+	it("DocEdit rewrites slide text and the change is visible to DocGrep", async () => {
+		const readText = getText(await createDocReadTool(cwd).execute("pr", { path: docPath }));
+		const match = readText.match(/#(el_[0-9a-f]+)[^\n]*"PPTXMAGIC body text"/);
+		expect(match).not.toBeNull();
+		const elId = match![1];
+
+		const edit = await createDocEditTool(cwd).execute("pe", {
+			path: docPath,
+			patch: [{ op: "replace", path: `/structure/${elId}/text`, value: "PPTXEDITED text" }],
+		});
+		expect((edit.details as DocEditDetails).ops).toBe(1);
+
+		const after = await createDocGrepTool(cwd).execute("pg2", { path: docPath, pattern: "PPTXEDITED" });
+		expect((after.details as { matches?: number }).matches).toBe(1);
+		const gone = await createDocGrepTool(cwd).execute("pg3", { path: docPath, pattern: "PPTXMAGIC" });
+		expect((gone.details as { matches?: number }).matches).toBe(0);
+	});
+});
