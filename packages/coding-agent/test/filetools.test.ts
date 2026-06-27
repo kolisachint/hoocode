@@ -3,9 +3,12 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDocEditTool } from "../src/core/tools/docedit.js";
+import { createDocGrepTool, renderGrepView } from "../src/core/tools/docgrep.js";
+import { createDocPeekTool, renderReadView } from "../src/core/tools/docpeek.js";
 import { createDocReadTool, renderEnvelopeText } from "../src/core/tools/docread.js";
+import { createDocScanTool, renderScanView } from "../src/core/tools/docscan.js";
 import { createDocWriteTool } from "../src/core/tools/docwrite.js";
-import type { Envelope } from "../src/core/tools/filetools-shared.js";
+import type { Envelope, GrepView, ReadView, ScanView } from "../src/core/tools/filetools-shared.js";
 import {
 	DOCREAD_MAX_RENDER_TOKENS,
 	estimateTextTokens,
@@ -537,6 +540,181 @@ describe("document tools", () => {
 				}),
 			).rejects.toThrow(new RegExp(`no longer exist[\\s\\S]*#${TITLE_ID} <title>`));
 			expect(existsSync(outPath)).toBe(false);
+		});
+	});
+});
+
+// ===========================================================================
+// Discovery tools: DocScan / DocGrep / DocPeek (the token-sensitive loop)
+// ===========================================================================
+
+describe("document discovery tools", () => {
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = join(tmpdir(), `filetools-disc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(cwd, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(cwd, { recursive: true, force: true });
+	});
+
+	// ---- Pure render unit tests (no binary) -------------------------------
+
+	describe("renderScanView", () => {
+		it("renders block previews with structural-path ids and a pagination notice", () => {
+			const view: ScanView = {
+				file_type: "xml",
+				block_count: 2,
+				total_tokens: 8,
+				offset: 0,
+				returned: 2,
+				total: 5,
+				blocks: [
+					{
+						id: "node[a:0]",
+						block_type: "para",
+						preview: "Hello",
+						content_hash: "el_1",
+						parent_id: null,
+						token_estimate: 3,
+						section_name: "Intro",
+						section_number: 1,
+					},
+					{
+						id: "node[b:1]",
+						block_type: "para",
+						preview: "",
+						content_hash: "el_2",
+						parent_id: "node[a:0]",
+						token_estimate: 1,
+						section_name: "",
+						section_number: 0,
+					},
+				],
+			};
+			const text = renderScanView(view);
+			expect(text).toContain("xml — 2/5 blocks");
+			expect(text).toContain('#node[a:0] [para] Intro#1 ~3tok :: "Hello"');
+			expect(text).toContain("#node[b:1] [para] ~1tok");
+			expect(text).toContain("3 more blocks not shown — re-run with offset:2 to continue");
+		});
+	});
+
+	describe("renderGrepView", () => {
+		it("renders matches as #block_id:line :: snippet and flags read-only", () => {
+			const view: GrepView = {
+				pattern: "Q1",
+				returned: 2,
+				matches: [
+					{ block_id: "el_a", line: 4, snippet: "Q1 revenue", writable: true },
+					{ block_id: "el_b", line: 9, snippet: "Q1 cost", writable: false },
+				],
+			};
+			const text = renderGrepView(view);
+			expect(text).toContain('grep "Q1" — 2 matches');
+			expect(text).toContain('#el_a:4 :: "Q1 revenue"');
+			expect(text).toContain('#el_b:9 (read-only) :: "Q1 cost"');
+		});
+
+		it("renders a header-only line when there are no matches", () => {
+			const text = renderGrepView({ pattern: "zzz", returned: 0, matches: [] });
+			expect(text).toBe('grep "zzz" — 0 matches');
+		});
+	});
+
+	describe("renderReadView", () => {
+		it("renders hydrated nodes in the id-addressed dialect with a pagination notice", () => {
+			const view: ReadView = {
+				offset: 0,
+				returned: 1,
+				total: 3,
+				nodes: [{ id: "el_1", tag: "title", text: "Hello" }],
+			};
+			const text = renderReadView(view);
+			expect(text).toContain("1/3 blocks (offset 0)");
+			expect(text).toContain('#el_1 <title> :: "Hello"');
+			expect(text).toContain("2 more blocks not shown — re-run with offset:1 to continue");
+		});
+	});
+
+	// ---- Integration tests (real filetools binary) ------------------------
+
+	describe("DocScan", () => {
+		it("outlines a document into a paginated block manifest", async () => {
+			const docPath = join(cwd, "report.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title><body>World</body></doc>");
+			const result = await createDocScanTool(cwd).execute("s1", { path: docPath });
+			const text = getText(result);
+			expect(text).toContain("xml — 3/3 blocks");
+			expect(text).toContain("#node[title:0]");
+			expect(text).toContain("Hello");
+			expect((result.details as { total?: number }).total).toBe(3);
+		});
+
+		it("paginates with offset/limit", async () => {
+			const docPath = join(cwd, "report.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title><body>World</body></doc>");
+			const result = await createDocScanTool(cwd).execute("s2", { path: docPath, offset: 0, limit: 1 });
+			const text = getText(result);
+			expect(text).toContain("1/3 blocks");
+			expect(text).toContain("more blocks not shown — re-run with offset:1");
+		});
+	});
+
+	describe("DocGrep", () => {
+		it("returns editable el_ node ids for a literal match", async () => {
+			const docPath = join(cwd, "report.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title><body>World</body></doc>");
+			const result = await createDocGrepTool(cwd).execute("g1", { path: docPath, pattern: "Hello" });
+			const text = getText(result);
+			expect(text).toContain('grep "Hello" — 1 match');
+			// The match id is the same el_ id space DocEdit patches against.
+			expect(text).toMatch(/#el_[0-9a-f]+:1 :: "Hello"/);
+			expect((result.details as { matches?: number }).matches).toBe(1);
+		});
+
+		it("matches case-insensitively with ignoreCase", async () => {
+			const docPath = join(cwd, "report.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title></doc>");
+			const result = await createDocGrepTool(cwd).execute("g2", {
+				path: docPath,
+				pattern: "hello",
+				ignoreCase: true,
+			});
+			expect((result.details as { matches?: number }).matches).toBe(1);
+		});
+
+		it("returns no matches for an absent pattern", async () => {
+			const docPath = join(cwd, "report.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title></doc>");
+			const result = await createDocGrepTool(cwd).execute("g3", { path: docPath, pattern: "absent-xyz" });
+			expect((result.details as { matches?: number }).matches).toBe(0);
+			expect(getText(result)).toContain("0 matches");
+		});
+	});
+
+	describe("DocPeek", () => {
+		it("hydrates a single block by its DocScan path id", async () => {
+			const docPath = join(cwd, "report.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title><body>World</body></doc>");
+			const result = await createDocPeekTool(cwd).execute("p1", { path: docPath, id: ["node[title:0]"] });
+			const text = getText(result);
+			// Hydrated node carries the editable el_ id and the text.
+			expect(text).toMatch(/#el_[0-9a-f]+ <title> :: "Hello"/);
+			expect(text).not.toContain("World");
+			expect((result.details as { returned?: number }).returned).toBe(1);
+		});
+
+		it("reads the whole document when no ids are given", async () => {
+			const docPath = join(cwd, "report.xml");
+			writeFileSync(docPath, "<doc><title>Hello</title><body>World</body></doc>");
+			const result = await createDocPeekTool(cwd).execute("p2", { path: docPath });
+			const text = getText(result);
+			expect(text).toContain("<doc>");
+			expect(text).toContain('<title> :: "Hello"');
+			expect(text).toContain('<body> :: "World"');
 		});
 	});
 });

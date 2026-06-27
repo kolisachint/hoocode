@@ -237,6 +237,27 @@ export function findMissingPatchIds(ops: PatchOp[], structure: DocNode[]): strin
 	return missing;
 }
 
+/**
+ * Render id-addressed node lines (`#id <tag attrs> :: "text"`), the compact
+ * view the model reads and patches against. Shared by DocRead's envelope render
+ * and DocPeek's hydrated-block render so both speak the exact same dialect.
+ */
+export function renderDocNodeLines(nodes: DocNode[]): string[] {
+	const lines: string[] = [];
+	const walk = (ns: DocNode[], depth: number): void => {
+		for (const node of ns) {
+			const indent = "  ".repeat(depth);
+			const idPart = node.id ? `#${node.id} ` : "";
+			const attrs = node.attrs?.length ? ` ${node.attrs.map((a) => `${a.name}="${a.value}"`).join(" ")}` : "";
+			const text = node.text !== undefined ? ` :: ${JSON.stringify(node.text)}` : "";
+			lines.push(`${indent}${idPart}<${node.tag}${attrs}>${text}`);
+			if (node.children?.length) walk(node.children, depth + 1);
+		}
+	};
+	walk(nodes, 0);
+	return lines;
+}
+
 // ============================================================================
 // Binary runner + working directory
 // ============================================================================
@@ -464,4 +485,132 @@ export async function reconstructDocument(
 	} finally {
 		rmSync(patchPath, { force: true });
 	}
+}
+
+// ============================================================================
+// Discovery commands (scan / grep / read) — the token-sensitive loop
+// ============================================================================
+//
+// Unlike extract/reconstruct (which write files and the caller reads back),
+// scan/grep/read print a single pretty-JSON object to stdout and never touch
+// the extract cache: they are read-only projections used to navigate a document
+// cheaply before (optionally) editing it. The shapes below are locked against
+// the filetools `ScanView` / `GrepView` / `ReadView` serializers.
+
+/** One block in a `scan` manifest: structure + a short preview, no full content. */
+export interface BlockManifest {
+	id: string;
+	block_type: string;
+	preview: string;
+	content_hash: string;
+	parent_id?: string | null;
+	token_estimate: number;
+	section_name: string;
+	section_number: number;
+}
+
+/** `filetools scan` output: a paginated manifest of block previews. */
+export interface ScanView {
+	file_type: string;
+	block_count: number;
+	total_tokens: number;
+	offset: number;
+	returned: number;
+	total: number;
+	blocks: BlockManifest[];
+}
+
+/** One `grep` hit: the block id, the matching line number, and a snippet. */
+export interface GrepMatch {
+	block_id: string;
+	line: number;
+	snippet: string;
+	writable: boolean;
+}
+
+/** `filetools grep` output: literal-substring matches across blocks. */
+export interface GrepView {
+	pattern: string;
+	returned: number;
+	matches: GrepMatch[];
+}
+
+/** `filetools read` output: hydrated nodes for the requested blocks. */
+export interface ReadView {
+	offset: number;
+	returned: number;
+	total: number;
+	nodes: DocNode[];
+}
+
+/**
+ * Run a stdout-oriented filetools subcommand (scan/grep/read) and parse its
+ * single pretty-JSON object. These do not write files or populate the extract
+ * cache, so they are safe to interleave with a pending DocEdit/DocWrite.
+ */
+async function runFiletoolsJson<T>(
+	subcommand: "scan" | "grep" | "read",
+	args: string[],
+	cwd: string,
+	signal: AbortSignal | undefined,
+	timeoutSecs: number,
+): Promise<T> {
+	const binaryPath = await resolveBinary();
+	if (signal?.aborted) throw new Error("Operation aborted");
+	const spawnTimeoutMs = (timeoutSecs + 5) * 1000;
+	const result = await execCommand(binaryPath, [subcommand, ...args], cwd, { signal, timeout: spawnTimeoutMs });
+	if (signal?.aborted) throw new Error("Operation aborted");
+	if (result.killed) throw new Error(`filetools ${subcommand} timed out after ${timeoutSecs}s`);
+	if (result.code !== 0) {
+		const stderr = result.stderr.trim();
+		throw new Error(stderr || `filetools ${subcommand} exited with code ${result.code}`);
+	}
+	const stdout = result.stdout.trim();
+	if (!stdout) throw new Error(`filetools ${subcommand} produced no output`);
+	try {
+		return JSON.parse(stdout) as T;
+	} catch {
+		throw new Error(`filetools ${subcommand} produced malformed JSON output`);
+	}
+}
+
+/** Scan a document into a paginated manifest of block previews (no hydration). */
+export async function scanDocument(
+	absolutePath: string,
+	cwd: string,
+	signal: AbortSignal | undefined,
+	options?: { offset?: number; limit?: number; timeoutSecs?: number },
+): Promise<ScanView> {
+	const args = ["--input", absolutePath];
+	if (options?.offset !== undefined) args.push("--offset", String(options.offset));
+	if (options?.limit !== undefined) args.push("--limit", String(options.limit));
+	return runFiletoolsJson<ScanView>("scan", args, cwd, signal, options?.timeoutSecs ?? FILETOOLS_DEFAULT_TIMEOUT_SECS);
+}
+
+/** Locate blocks containing `pattern` (literal substring) without hydrating the doc. */
+export async function grepDocument(
+	absolutePath: string,
+	pattern: string,
+	cwd: string,
+	signal: AbortSignal | undefined,
+	options?: { ignoreCase?: boolean; limit?: number; timeoutSecs?: number },
+): Promise<GrepView> {
+	const args = ["--input", absolutePath, "--pattern", pattern];
+	if (options?.ignoreCase) args.push("--ignore-case");
+	if (options?.limit !== undefined) args.push("--limit", String(options.limit));
+	return runFiletoolsJson<GrepView>("grep", args, cwd, signal, options?.timeoutSecs ?? FILETOOLS_DEFAULT_TIMEOUT_SECS);
+}
+
+/** Hydrate specific blocks by id (or a paginated slice when no ids are given). */
+export async function readDocumentBlocks(
+	absolutePath: string,
+	cwd: string,
+	signal: AbortSignal | undefined,
+	options?: { ids?: string[]; offset?: number; limit?: number; timeoutSecs?: number },
+): Promise<ReadView> {
+	const args = ["--input", absolutePath];
+	for (const id of options?.ids ?? []) args.push("--id", id);
+	if (options?.offset !== undefined) args.push("--offset", String(options.offset));
+	if (options?.limit !== undefined) args.push("--limit", String(options.limit));
+	return runFiletoolsJson<ReadView>("read", args, cwd, signal, options?.timeoutSecs ?? FILETOOLS_DEFAULT_TIMEOUT_SECS);
 }

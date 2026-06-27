@@ -80,7 +80,10 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 				.sort(),
 		).toEqual([
 			"DocEdit",
+			"DocGrep",
+			"DocPeek",
 			"DocRead",
+			"DocScan",
 			"DocWrite",
 			"bash",
 			"dynamic_tool",

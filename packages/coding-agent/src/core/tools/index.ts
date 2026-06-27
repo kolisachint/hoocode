@@ -17,12 +17,33 @@ export {
 	type DocEditToolOptions,
 } from "./docedit.js";
 export {
+	createDocGrepTool,
+	createDocGrepToolDefinition,
+	type DocGrepToolDetails,
+	type DocGrepToolInput,
+	type DocGrepToolOptions,
+} from "./docgrep.js";
+export {
+	createDocPeekTool,
+	createDocPeekToolDefinition,
+	type DocPeekToolDetails,
+	type DocPeekToolInput,
+	type DocPeekToolOptions,
+} from "./docpeek.js";
+export {
 	createDocReadTool,
 	createDocReadToolDefinition,
 	type DocReadToolDetails,
 	type DocReadToolInput,
 	type DocReadToolOptions,
 } from "./docread.js";
+export {
+	createDocScanTool,
+	createDocScanToolDefinition,
+	type DocScanToolDetails,
+	type DocScanToolInput,
+	type DocScanToolOptions,
+} from "./docscan.js";
 export {
 	createDocWriteTool,
 	createDocWriteToolDefinition,
@@ -125,7 +146,10 @@ import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.js";
 import { createDocEditTool, createDocEditToolDefinition, type DocEditToolOptions } from "./docedit.js";
+import { createDocGrepTool, createDocGrepToolDefinition, type DocGrepToolOptions } from "./docgrep.js";
+import { createDocPeekTool, createDocPeekToolDefinition, type DocPeekToolOptions } from "./docpeek.js";
 import { createDocReadTool, createDocReadToolDefinition, type DocReadToolOptions } from "./docread.js";
+import { createDocScanTool, createDocScanToolDefinition, type DocScanToolOptions } from "./docscan.js";
 import { createDocWriteTool, createDocWriteToolDefinition, type DocWriteToolOptions } from "./docwrite.js";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.js";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.js";
@@ -152,7 +176,10 @@ export type ToolName =
 	| "websearch"
 	| "DocRead"
 	| "DocEdit"
-	| "DocWrite";
+	| "DocWrite"
+	| "DocScan"
+	| "DocGrep"
+	| "DocPeek";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -167,6 +194,9 @@ export const allToolNames: Set<ToolName> = new Set([
 	"DocRead",
 	"DocEdit",
 	"DocWrite",
+	"DocScan",
+	"DocGrep",
+	"DocPeek",
 ]);
 
 export interface ToolsOptions {
@@ -183,6 +213,9 @@ export interface ToolsOptions {
 	DocRead?: DocReadToolOptions;
 	DocEdit?: DocEditToolOptions;
 	DocWrite?: DocWriteToolOptions;
+	DocScan?: DocScanToolOptions;
+	DocGrep?: DocGrepToolOptions;
+	DocPeek?: DocPeekToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -213,6 +246,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createDocEditToolDefinition(cwd, options?.DocEdit);
 		case "DocWrite":
 			return createDocWriteToolDefinition(cwd, options?.DocWrite);
+		case "DocScan":
+			return createDocScanToolDefinition(cwd, options?.DocScan);
+		case "DocGrep":
+			return createDocGrepToolDefinition(cwd, options?.DocGrep);
+		case "DocPeek":
+			return createDocPeekToolDefinition(cwd, options?.DocPeek);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -246,6 +285,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createDocEditTool(cwd, options?.DocEdit);
 		case "DocWrite":
 			return createDocWriteTool(cwd, options?.DocWrite);
+		case "DocScan":
+			return createDocScanTool(cwd, options?.DocScan);
+		case "DocGrep":
+			return createDocGrepTool(cwd, options?.DocGrep);
+		case "DocPeek":
+			return createDocPeekTool(cwd, options?.DocPeek);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -289,6 +334,9 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		DocRead: createDocReadToolDefinition(cwd, options?.DocRead),
 		DocEdit: createDocEditToolDefinition(cwd, options?.DocEdit),
 		DocWrite: createDocWriteToolDefinition(cwd, options?.DocWrite),
+		DocScan: createDocScanToolDefinition(cwd, options?.DocScan),
+		DocGrep: createDocGrepToolDefinition(cwd, options?.DocGrep),
+		DocPeek: createDocPeekToolDefinition(cwd, options?.DocPeek),
 	};
 }
 
@@ -330,5 +378,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		DocRead: createDocReadTool(cwd, options?.DocRead),
 		DocEdit: createDocEditTool(cwd, options?.DocEdit),
 		DocWrite: createDocWriteTool(cwd, options?.DocWrite),
+		DocScan: createDocScanTool(cwd, options?.DocScan),
+		DocGrep: createDocGrepTool(cwd, options?.DocGrep),
+		DocPeek: createDocPeekTool(cwd, options?.DocPeek),
 	};
 }

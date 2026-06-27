@@ -51,6 +51,9 @@ export const HOOCODE_TOOL_NAMES: readonly string[] = [
 	"DocRead",
 	"DocEdit",
 	"DocWrite",
+	"DocScan",
+	"DocGrep",
+	"DocPeek",
 ];
 
 /**

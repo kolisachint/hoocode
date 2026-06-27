@@ -9,6 +9,7 @@ import {
 	type DocNode,
 	type Envelope,
 	extractDocument,
+	renderDocNodeLines,
 	truncateRenderToTokenBudget,
 } from "./filetools-shared.js";
 import { resolveReadPath } from "./path-utils.js";
@@ -62,19 +63,7 @@ export function renderEnvelopeText(envelope: Envelope, readonly: boolean | undef
 	const header =
 		`document ${envelope.source.path} [${envelope.source.type}, ${envelope.fidelity}, ` +
 		`${envelope.writable ? "writable" : "read-only"}]`;
-	const lines: string[] = [header, ""];
-
-	const walk = (nodes: DocNode[], depth: number): void => {
-		for (const node of nodes) {
-			const indent = "  ".repeat(depth);
-			const idPart = node.id ? `#${node.id} ` : "";
-			const attrs = node.attrs?.length ? ` ${node.attrs.map((a) => `${a.name}="${a.value}"`).join(" ")}` : "";
-			const text = node.text !== undefined ? ` :: ${JSON.stringify(node.text)}` : "";
-			lines.push(`${indent}${idPart}<${node.tag}${attrs}>${text}`);
-			if (node.children?.length) walk(node.children, depth + 1);
-		}
-	};
-	walk(envelope.structure, 0);
+	const lines: string[] = [header, "", ...renderDocNodeLines(envelope.structure)];
 
 	const { text, droppedLines } = truncateRenderToTokenBudget(lines);
 	if (droppedLines === 0) return text;
@@ -128,7 +117,8 @@ export function createDocReadToolDefinition(
 		promptSnippet: "Extract a structured/binary document into editable, id-addressed JSON",
 		promptGuidelines: [
 			"Use DocRead to open structured/binary documents (XML, drawio, docx/xlsx/pptx, PDF) instead of read; it returns id-addressed nodes you can patch with DocEdit/DocWrite. Never fall back to ad-hoc scripts (python/openpyxl, docx, PyPDF2, unzip, sed) to parse or edit these formats — that loses the lossless id-map and corrupts the file.",
-			"DocEdit/DocWrite require a prior DocRead of the same file (the id-map is established by the extract).",
+			"Flow: scan first, edit second. To understand a document, start with DocRead readonly:true — an analysis-only projection that strips node ids and is much cheaper in tokens. Only do a full (writable) DocRead when you actually intend to edit, since that view carries the whole id-map and is token-heavy.",
+			"Read once, then edit. A writable DocRead establishes the id-map; DocEdit/DocWrite re-extract on their own, so do not re-run DocRead between edits. If a patch targets stale ids the edit fails and returns the current structure with fresh ids to re-issue against.",
 		],
 		parameters: docReadSchema,
 		async execute(_toolCallId, { path, readonly }: DocReadToolInput, signal?: AbortSignal) {

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added
+
+- Document discovery tools `DocScan`, `DocGrep`, and `DocPeek` (off by default;
+  enabled with `--enable-filetools` alongside `DocRead`/`DocEdit`/`DocWrite`).
+  They wire up the `filetools` binary's token-sensitive loop so large
+  structured/binary documents can be navigated without a full `DocRead`:
+  `DocScan` returns a paginated manifest of block previews (structural-path
+  ids), `DocGrep` locates blocks by literal text and returns the editable `el_`
+  node ids for a direct `DocEdit`, and `DocPeek` hydrates specific blocks by
+  their `DocScan` path id (or pages through all with offset/limit). All three
+  are read-only and print JSON the agent renders in the same id-addressed
+  dialect as `DocRead`. Verified working for XML, docx, and PDF; for xlsx the
+  loop surfaces sheet structure only (cell values still go through
+  `DocRead`/`DocEdit`). A token-cost benchmark (`test/filetools-token-cost.test.ts`)
+  measures the loop at ~4× cheaper than a full `DocRead` on a large document.
+
+### Changed
+
+- Clarified the recommended ordering for the document tools in their prompt
+  guidance: scan first with `DocRead readonly:true` (cheap, analysis-only), do a
+  full writable `DocRead` only when about to edit (it carries the id-map and is
+  token-heavy), then `DocEdit`/`DocWrite` with minimal patches — and do not
+  re-run `DocRead` between edits, since the edit tools re-extract on their own.
+  Documented the flow in `docs/doc-tools-flow.md`.
+
 ## [0.4.92] - 2026-06-26
 
 ### Changed

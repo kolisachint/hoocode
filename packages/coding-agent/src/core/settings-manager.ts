@@ -122,7 +122,7 @@ export interface Settings {
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
-	enableFileTools?: boolean; // default: false - enable the DocRead + DocEdit + DocWrite document tools (filetools binary)
+	enableFileTools?: boolean; // default: false - enable the document tools: DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)

@@ -400,9 +400,10 @@ function buildSessionOptions(
 	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
 		options.enableWebTools = true;
 	}
-	// Document tools (DocRead + DocEdit + DocWrite): opt-in via --enable-filetools
-	// flag or the enableFileTools setting. Registered as base tools but inactive by
-	// default; this adds them to the default active set.
+	// Document tools (DocRead/DocEdit/DocWrite + the DocScan/DocGrep/DocPeek
+	// discovery loop): opt-in via --enable-filetools flag or the enableFileTools
+	// setting. Registered as base tools but inactive by default; this adds them to
+	// the default active set.
 	if (parsed.enableFileTools ?? settingsManager.getEnableFileTools()) {
 		options.enableFileTools = true;
 		// DocRead/DocEdit/DocWrite drive a lossless id-based extract -> patch ->
