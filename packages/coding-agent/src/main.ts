@@ -400,6 +400,12 @@ function buildSessionOptions(
 	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
 		options.enableWebTools = true;
 	}
+	// Browser tools (browser_flow + browser_resume): opt-in via --enable-browsertools
+	// flag or the enableBrowserTools setting. Registered as base tools but inactive by
+	// default; this adds them to the default active set.
+	if (parsed.enableBrowserTools ?? settingsManager.getEnableBrowserTools()) {
+		options.enableBrowserTools = true;
+	}
 	// Document tools (DocRead/DocEdit/DocWrite + the DocScan/DocGrep/DocPeek
 	// discovery loop): opt-in via --enable-filetools flag or the enableFileTools
 	// setting. Registered as base tools but inactive by default; this adds them to
