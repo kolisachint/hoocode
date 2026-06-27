@@ -113,7 +113,7 @@ export function createDocPeekToolDefinition(
 			"Use DocPeek to read just the blocks you need (by structural-path id from DocScan, e.g. node[title:0]) instead of a full DocRead — it is much cheaper in tokens. Omit ids and use offset/limit to page through a large document.",
 			"Pass the EXACT ids DocScan returned; DocPeek does not accept invented sub-ranges (e.g. rows[0-2] when DocScan emitted rows[0-99]).",
 			"DocPeek takes DocScan's path ids, NOT DocGrep's el_ node ids. The nodes it returns carry the editable el_ #ids — patch those with DocEdit/DocWrite (which auto-extract). If you already have an el_ id from DocGrep, go straight to DocEdit; you do not need DocPeek.",
-			"Spreadsheets: DocPeek surfaces xlsx sheet structure but does not hydrate cell values (the row-range blocks come back empty) — use DocRead to read xlsx cell contents.",
+			"Works across all supported formats including spreadsheet cells (hydrating a sheet's rows[a-b] block returns the cell values) and slide text (pptx).",
 		],
 		parameters: docPeekSchema,
 		async execute(_toolCallId, { path, id, offset, limit }: DocPeekToolInput, signal?: AbortSignal) {

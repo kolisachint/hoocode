@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The document discovery loop (`DocScan`/`DocGrep`/`DocPeek`) now reaches cell and
+  text content for **all** supported formats, including xlsx cell values and pptx
+  slide text. This picks up the upstream `filetools` `v0.1.7` fix ("reach full
+  cell/text content via scan/grep/read for all formats"), which closes the
+  xlsx-only gap tracked in [#78](https://github.com/kolisachint/hoocode/issues/78)
+  where `DocGrep`/`DocPeek` previously surfaced sheet structure only. The
+  `DocGrep`/`DocPeek` prompt guidelines that steered spreadsheet cell work to
+  `DocRead`/`DocEdit` are dropped, and the coverage matrix in
+  `docs/doc-tools-flow.md` / `docs/doc-tools-scoping-design.md` is updated
+  (xlsx and pptx now ✅ across the loop). Re-verified against the v0.1.7 binary on
+  hand-built xlsx and pptx fixtures. `filetools` is resolved as the latest release,
+  so no version pin change is needed.
+
 ## [0.4.93] - 2026-06-27
 
 ### Added
