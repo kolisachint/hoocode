@@ -75,17 +75,47 @@ There are two addressing schemes, and the design hinges on how they connect:
 
 The filetools docs say a `grep` `block_id` "feeds straight back into `read` or a
 **patch**," i.e. the two layers share an addressing space. **But** `reconstruct`
-still requires the `extract` envelope + sidecar to be present
-(`filetools-shared.ts:433-467`). So the likely reality — **to verify during
-implementation** — is:
+mandates a pre-built envelope + sidecar idmap. Verified against the Rust source
+(`src/bin/filetools.rs`):
 
-- `scan`/`grep`/`read` are sufficient to *find and read* a portion cheaply.
-- A full `extract` (our current `DocRead`) is still required to *edit*, because
-  reconstruct needs the sidecar id-map.
+```rust
+Reconstruct {
+    #[arg(long)] envelope: PathBuf,   // required (PathBuf, not Option)
+    #[arg(long)] patch:    PathBuf,
+    #[arg(long)] out:      PathBuf,
+    #[arg(long)] original: Option<PathBuf>,
+}
+// ... write(&env, &idmap, &original, &patch)
+```
 
-If block ids turn out to be directly patchable without a prior `extract`, that's
-a strictly better path and would let us drop the heavy `extract` from the edit
-flow too — but we should not assume it.
+So `reconstruct` **cannot** run from `--original` alone and does **not** extract
+internally — an `extract` envelope + `.idmap.json` sidecar must already exist.
+The conclusion:
+
+- `scan`/`grep`/`read` find and read a portion cheaply and yield block ids.
+- An `extract` is still mandatory in the *pipeline* before reconstruct — but it
+  does **not** have to be an agent-issued `DocRead` (see next section).
+
+## The edit path needs no `DocRead` (auto-extract)
+
+The agent never has to call `DocRead` to edit. `DocEdit`/`DocWrite` already
+auto-extract: `reconstructDocument` → `ensureExtractRecord`
+(`filetools-shared.ts:409-467`) runs `filetools extract` for you whenever the
+cache is missing or the file changed on disk (shipped v0.4.92). The mandatory
+extract happens in the **TS wrapper**, not inside Rust `reconstruct`.
+
+So in the **target** design (once `scan`/`grep`/`read` are wired): the agent
+gets ids from discovery, then calls `DocEdit`/`DocWrite` directly — the wrapper
+extracts under the hood. `DocRead` (full `extract`) drops out of the agent's
+flow entirely; its only remaining roles are (a) the internal auto-extract the
+wrapper performs, and (b) a fallback when you want the full editable tree
+explicitly.
+
+Caveat to confirm during implementation: a `grep`/`read` block id must be a
+valid patch target *against the auto-extracted envelope's id space*. The docs
+assert it is ("feeds straight back into a patch"); the TS-side id validation in
+`reconstructDocument` (`findMissingPatchIds`) must be checked against block-path
+ids so it doesn't reject them as "stale."
 
 ## Proposed hoocode shape
 
@@ -111,7 +141,8 @@ do immediately before `DocEdit`/`DocWrite`.
 DocScan            → outline, cheap                 (offset/limit to page)
   └─ DocGrep       → find blocks by text            (block_ids + snippets)
        └─ DocRead-by-id → hydrate just those blocks (no full dump)
-            └─ (only if editing) full DocRead → DocEdit / DocWrite
+            └─ DocEdit / DocWrite directly          (wrapper auto-extracts;
+                                                      no DocRead step needed)
 ```
 
 This supersedes the "`DocRead readonly:true` glimpse" advice in
@@ -153,9 +184,12 @@ doc when this lands.
 
 ## Open questions to resolve before implementing
 
-1. Can a `grep`/`read` `block_id` be used **directly** as a `reconstruct` patch
-   target without a prior `extract`? (Docs hint yes; reconstruct's sidecar
-   requirement hints no. Verify.)
+1. ~~Can a `grep`/`read` `block_id` be patched without a prior `extract`?~~
+   **Resolved:** `reconstruct` mandates a pre-built envelope+sidecar (verified in
+   `src/bin/filetools.rs`), so an `extract` is always required — but the TS
+   wrapper performs it automatically, so it is not an agent step. Remaining
+   sub-question: confirm a block-path id validates against the auto-extracted
+   envelope's id space (`findMissingPatchIds`) so it isn't rejected as stale.
 2. Partial-read tool: fold `id` into `DocRead`, or a separate tool? (Leaning
    separate.)
 3. Do `scan`/`grep`/`read` support PDF and all OOXML types, or a subset? Confirm
