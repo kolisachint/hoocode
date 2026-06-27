@@ -97,6 +97,7 @@ export function createDocGrepToolDefinition(
 			"Use DocGrep to find where something is in a large structured/binary document instead of reading it all: it returns editable el_ node #ids + snippets for a literal substring match. Patch those el_ #ids straight with DocEdit/DocWrite.",
 			"DocGrep's el_ #ids are the edit id-space; they are NOT DocPeek's structural-path ids. To read more context around a match, DocScan/DocPeek by structural path instead.",
 			"pattern is a literal substring (not a regex); pass ignoreCase for case-insensitive matching.",
+			"Spreadsheets: DocGrep matches document text (xml/drawio/docx/pdf) but NOT xlsx cell values — to find or edit spreadsheet cell contents, use DocRead/DocEdit.",
 		],
 		parameters: docGrepSchema,
 		async execute(_toolCallId, { path, pattern, ignoreCase, limit }: DocGrepToolInput, signal?: AbortSignal) {

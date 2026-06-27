@@ -13,7 +13,10 @@
   node ids for a direct `DocEdit`, and `DocPeek` hydrates specific blocks by
   their `DocScan` path id (or pages through all with offset/limit). All three
   are read-only and print JSON the agent renders in the same id-addressed
-  dialect as `DocRead`.
+  dialect as `DocRead`. Verified working for XML, docx, and PDF; for xlsx the
+  loop surfaces sheet structure only (cell values still go through
+  `DocRead`/`DocEdit`). A token-cost benchmark (`test/filetools-token-cost.test.ts`)
+  measures the loop at ~4× cheaper than a full `DocRead` on a large document.
 
 ### Changed
 

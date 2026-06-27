@@ -81,6 +81,28 @@ tree in one view, or `DocRead readonly:true` for a small analysis-only projectio
 loop — a full `DocRead` truncates at a token budget and cannot reach past it,
 whereas `DocScan`/`DocPeek` can page to any block.
 
+## Format coverage
+
+| Format | DocScan | DocGrep | DocPeek | DocRead / DocEdit |
+|--------|:------:|:------:|:------:|:------:|
+| XML / drawio | ✅ | ✅ | ✅ | ✅ |
+| docx | ✅ | ✅ | ✅ | ✅ |
+| pdf | ✅ | ✅ | ✅ | ✅ |
+| **xlsx** | structure only | ❌ | ⚠️ sheet only | ✅ (cell text) |
+
+**Spreadsheets:** `DocScan` shows sheet/row structure, but `DocGrep` and
+`DocPeek` do **not** reach xlsx cell values in the current `filetools` version —
+use `DocRead`/`DocEdit` to read or edit spreadsheet cells.
+
+## Why the loop saves tokens
+
+Measured on an ~80-section document large enough to truncate a full `DocRead`
+(`test/filetools-token-cost.test.ts`): full `DocRead` ≈ **9,927** tokens (and
+truncates before the late content), versus the **scan → grep → peek loop ≈
+2,268** (~**4.4× cheaper**). `DocGrep` alone is ~**43** tokens — the cheapest
+path from "find" to "edit." Beyond cost, the loop reaches blocks a full
+`DocRead` truncates away. Savings grow with document size.
+
 ## Never fall back to ad-hoc scripts
 
 These tools are the canonical way to read and edit these formats. Do **not** use
