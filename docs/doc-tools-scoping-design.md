@@ -1,6 +1,10 @@
 # Design Note: Scoped / partial DocRead (scan · grep · read)
 
-**Status:** Proposal (design only — no code yet)
+**Status:** Implemented as `DocScan` / `DocGrep` / `DocPeek` (see
+`packages/coding-agent/src/core/tools/docscan.ts`, `docgrep.ts`, `docpeek.ts`
+and `docs/doc-tools-flow.md`). This note is kept as the design record; the
+"id layers" finding below was confirmed against the real binary during
+implementation.
 **Motivation:** A full `DocRead` is token-heavy. It always extracts the *whole*
 document and renders the entire id-addressed tree, capped only by dumb
 head-truncation (`DOCREAD_MAX_RENDER_TOKENS`, `filetools-shared.ts:32-40`). You
@@ -64,19 +68,29 @@ ranges, e.g. `paragraph[3]`, `table[0]`, `sheet[0].rows[0-99]`. Outputs hydrated
 block content as JSON to **stdout**. Maps to the user's **"certain portion only"
 / node** idea.
 
-## The two id layers (the crux)
+## The id schemes (the crux) — verified against the real binary
 
-There are two addressing schemes, and the design hinges on how they connect:
+There are **two** id shapes, and which command emits/accepts which is the whole
+ballgame. Confirmed by running the binary on `<doc><title>Hello</title>…</doc>`:
 
-| Layer | Produced by | Id shape | Purpose |
-|-------|-------------|----------|---------|
-| Discovery | `scan` / `grep` / `read` | block paths — `paragraph[3]`, `sheet[0].rows[0-99]` | cheap, read-only navigation |
-| Edit | `extract` → `reconstruct` | opaque `#id` envelope + sidecar id-map | lossless patching |
+| Command | Emits / accepts | Id shape | Connects to |
+|---------|-----------------|----------|-------------|
+| `scan` | emits | structural path — `node[title:0]` (the `el_` id is in `content_hash`) | `read`/`DocPeek` |
+| `grep` | emits `block_id` | opaque `el_…` — **the edit id space** | `reconstruct`/`DocEdit` |
+| `read` | accepts `--id` | structural path (`node[title:0]`); **rejects `el_` ids → 0 results** | from `scan` |
+| `extract`→`reconstruct` | patch targets | opaque `el_…` `#id` + sidecar id-map | from `grep` or a hydrated `read`/`DocRead` |
 
-The filetools docs say a `grep` `block_id` "feeds straight back into `read` or a
-**patch**," i.e. the two layers share an addressing space. **But** `reconstruct`
-mandates a pre-built envelope + sidecar idmap. Verified against the Rust source
-(`src/bin/filetools.rs`):
+So the connective tissue is **not** a single shared id space:
+
+- **`DocScan` path id → `DocPeek`** hydrates the block; the hydrated nodes then
+  carry the **`el_` ids → `DocEdit`**.
+- **`DocGrep` `el_` id → `DocEdit`** directly (the fast path from "find" to
+  "edit"). A `DocGrep` id will **not** work in `DocPeek`.
+
+This is reflected in the three tools' `promptGuidelines` so the agent routes ids
+correctly. The earlier worry — that `reconstruct` might self-extract — is moot:
+it mandates a pre-built envelope + sidecar idmap, verified against the Rust
+source (`src/bin/filetools.rs`):
 
 ```rust
 Reconstruct {
@@ -182,17 +196,21 @@ doc when this lands.
 - **Shape:** three read-only discovery tools; do not disturb the
   extract→patch→reconstruct edit path.
 
-## Open questions to resolve before implementing
+## Open questions — resolved during implementation
 
 1. ~~Can a `grep`/`read` `block_id` be patched without a prior `extract`?~~
-   **Resolved:** `reconstruct` mandates a pre-built envelope+sidecar (verified in
-   `src/bin/filetools.rs`), so an `extract` is always required — but the TS
-   wrapper performs it automatically, so it is not an agent step. Remaining
-   sub-question: confirm a block-path id validates against the auto-extracted
-   envelope's id space (`findMissingPatchIds`) so it isn't rejected as stale.
-2. Partial-read tool: fold `id` into `DocRead`, or a separate tool? (Leaning
-   separate.)
-3. Do `scan`/`grep`/`read` support PDF and all OOXML types, or a subset? Confirm
-   per-handler coverage so guidance doesn't promise unsupported formats.
-4. Exact stdout JSON schemas for `scan` and `read` (the note has `grep`'s; `scan`
-   and `read` shapes need to be read from the Rust source / examples).
+   **Resolved.** `reconstruct` mandates a pre-built envelope+sidecar, so an
+   `extract` is always required — but the TS wrapper performs it automatically
+   (`ensureExtractRecord`), so it is not an agent step. And the id schemes split
+   (see above): `DocGrep` already returns the editable `el_` `#ids`, so a grep
+   hit patches via `DocEdit` directly; `DocScan` path ids do not, so the path is
+   `DocScan → DocPeek → el_ id → DocEdit`.
+2. ~~Partial-read tool: fold `id` into `DocRead`, or separate?~~ **Resolved:**
+   separate tool (`DocPeek`), to avoid overloading `DocRead`'s extract/cache
+   semantics with a second, non-caching backend.
+3. **Still open:** do `scan`/`grep`/`read` cover PDF and all OOXML types, or a
+   subset? The tools advertise the full set; confirm per-handler coverage in the
+   binary and tighten guidance if any format is unsupported.
+4. ~~Exact stdout JSON schemas for `scan` and `read`?~~ **Resolved:** captured as
+   `ScanView` / `GrepView` / `ReadView` in `filetools-shared.ts` and exercised by
+   `test/filetools.test.ts` against the real binary.

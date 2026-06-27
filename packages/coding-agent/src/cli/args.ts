@@ -45,7 +45,7 @@ export interface Args {
 	todoWrite?: boolean;
 	/** Enable the webfetch + websearch tools (off by default). */
 	enableWebTools?: boolean;
-	/** Enable the DocRead + DocEdit + DocWrite document tools (off by default). */
+	/** Enable the document tools — DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (off by default). */
 	enableFileTools?: boolean;
 	/** Path to an explicit PEM CA bundle to trust additively for hoocode's own TLS traffic. */
 	caCert?: string;
@@ -323,8 +323,10 @@ ${chalk.bold("Options:")}
   --enable-webtools              Enable the webfetch + websearch tools (network access, off by default)
                                   Can also be enabled via the "enableWebTools" setting
                                   Block hosts with a .webtoolsignore file (gitignore syntax)
-  --enable-filetools             Enable the DocRead + DocEdit + DocWrite document tools (off by default)
-                                  Losslessly extract/edit XML, drawio, docx/xlsx/pptx, PDF via the filetools binary
+  --enable-filetools             Enable the document tools (off by default)
+                                  DocRead/DocEdit/DocWrite (extract + lossless id-based edit) and
+                                  DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for
+                                  XML, drawio, docx/xlsx/pptx, PDF via the filetools binary
                                   Can also be enabled via the "enableFileTools" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)

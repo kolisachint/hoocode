@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- Document discovery tools `DocScan`, `DocGrep`, and `DocPeek` (off by default;
+  enabled with `--enable-filetools` alongside `DocRead`/`DocEdit`/`DocWrite`).
+  They wire up the `filetools` binary's token-sensitive loop so large
+  structured/binary documents can be navigated without a full `DocRead`:
+  `DocScan` returns a paginated manifest of block previews (structural-path
+  ids), `DocGrep` locates blocks by literal text and returns the editable `el_`
+  node ids for a direct `DocEdit`, and `DocPeek` hydrates specific blocks by
+  their `DocScan` path id (or pages through all with offset/limit). All three
+  are read-only and print JSON the agent renders in the same id-addressed
+  dialect as `DocRead`.
+
 ### Changed
 
 - Clarified the recommended ordering for the document tools in their prompt

@@ -9,6 +9,7 @@ import {
 	type DocNode,
 	type Envelope,
 	extractDocument,
+	renderDocNodeLines,
 	truncateRenderToTokenBudget,
 } from "./filetools-shared.js";
 import { resolveReadPath } from "./path-utils.js";
@@ -62,19 +63,7 @@ export function renderEnvelopeText(envelope: Envelope, readonly: boolean | undef
 	const header =
 		`document ${envelope.source.path} [${envelope.source.type}, ${envelope.fidelity}, ` +
 		`${envelope.writable ? "writable" : "read-only"}]`;
-	const lines: string[] = [header, ""];
-
-	const walk = (nodes: DocNode[], depth: number): void => {
-		for (const node of nodes) {
-			const indent = "  ".repeat(depth);
-			const idPart = node.id ? `#${node.id} ` : "";
-			const attrs = node.attrs?.length ? ` ${node.attrs.map((a) => `${a.name}="${a.value}"`).join(" ")}` : "";
-			const text = node.text !== undefined ? ` :: ${JSON.stringify(node.text)}` : "";
-			lines.push(`${indent}${idPart}<${node.tag}${attrs}>${text}`);
-			if (node.children?.length) walk(node.children, depth + 1);
-		}
-	};
-	walk(envelope.structure, 0);
+	const lines: string[] = [header, "", ...renderDocNodeLines(envelope.structure)];
 
 	const { text, droppedLines } = truncateRenderToTokenBudget(lines);
 	if (droppedLines === 0) return text;
