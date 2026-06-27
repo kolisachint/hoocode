@@ -145,14 +145,21 @@ env). Results:
 | **xlsx (OOXML calc)** | ✅ structure only | ❌ cell values | ⚠️ `sheet[n]` only | ✅ (full cell text) |
 | pptx | not independently tested (same OOXML handler family as docx) | | | |
 
-**xlsx is the gap.** `DocScan` reports sheet structure and a row-range outline
-(`sheet[0].rows[0-99]`), and `DocRead`/`DocEdit` see and edit all cell text
-(thousands of nodes). But in this binary version the discovery loop does **not**
-reach cell content: `DocGrep` matched only the sheet name (not cell values), and
-`DocPeek` of the row-range blocks returned zero rows (only `sheet[0]` hydrates).
-Confirmed on both inline-string and shared-strings fixtures. So for spreadsheet
-**cell** work, fall back to `DocRead`/`DocEdit`. This is reflected in the
-`DocGrep`/`DocPeek` prompt guidelines.
+**xlsx is the gap, and it's handler-specific (not a fixture artifact).**
+`DocScan` reports sheet structure and a row-range outline (`sheet[0].rows[0-99]`),
+and `DocRead`/`DocEdit` see and edit all cell text (thousands of nodes). But in
+this binary version the discovery loop does **not** reach xlsx cell content:
+`DocGrep` matched only the sheet name (not cell values), and `DocPeek` of the
+row-range blocks returned zero rows (only `sheet[0]` hydrates). Confirmed on both
+inline-string and shared-strings fixtures, and isolated to the OOXML calc
+handler by contrast with **CSV** — which uses the *same* `rows[0-99]` addressing
+and there `DocGrep` *does* match cell text and `DocPeek` of the exact row block
+*does* hydrate. So for spreadsheet **cell** work, fall back to `DocRead`/`DocEdit`
+(reflected in the `DocGrep`/`DocPeek` prompt guidelines).
+
+**Usage rule confirmed: `DocPeek` needs the EXACT id `DocScan` emits.** A
+hand-built sub-range (`rows[0-2]`) returns nothing; only the exact `rows[0-99]`
+block hydrates. This is now stated in `DocPeek`'s schema + guidelines.
 
 ## Verified: token cost (measured, not estimated)
 

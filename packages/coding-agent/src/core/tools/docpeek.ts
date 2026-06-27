@@ -21,7 +21,7 @@ const docPeekSchema = Type.Object({
 	id: Type.Optional(
 		Type.Array(Type.String(), {
 			description:
-				"Structural-path block id(s) to hydrate, from a prior DocScan (e.g. 'node[title:0]', 'paragraph[3]', 'sheet[0].rows[0-99]'). NOTE: these are DocScan's path ids, not DocGrep's el_ node ids. Omit to read a paginated slice of all blocks.",
+				"Block id(s) to hydrate — use the EXACT ids returned by a prior DocScan (e.g. 'node[title:0]', 'paragraph[3]', 'page[1]'); do NOT hand-construct sub-ranges (an invented 'rows[0-2]' returns nothing — pass the exact 'rows[0-99]' DocScan emitted). These are DocScan's path ids, not DocGrep's el_ node ids. Omit to read a paginated slice of all blocks.",
 		}),
 	),
 	offset: Type.Optional(Type.Number({ description: "Pagination start when no ids are given. Default 0." })),
@@ -111,6 +111,7 @@ export function createDocPeekToolDefinition(
 		promptSnippet: "Read only specific blocks of a structured/binary document by id",
 		promptGuidelines: [
 			"Use DocPeek to read just the blocks you need (by structural-path id from DocScan, e.g. node[title:0]) instead of a full DocRead — it is much cheaper in tokens. Omit ids and use offset/limit to page through a large document.",
+			"Pass the EXACT ids DocScan returned; DocPeek does not accept invented sub-ranges (e.g. rows[0-2] when DocScan emitted rows[0-99]).",
 			"DocPeek takes DocScan's path ids, NOT DocGrep's el_ node ids. The nodes it returns carry the editable el_ #ids — patch those with DocEdit/DocWrite (which auto-extract). If you already have an el_ id from DocGrep, go straight to DocEdit; you do not need DocPeek.",
 			"Spreadsheets: DocPeek surfaces xlsx sheet structure but does not hydrate cell values (the row-range blocks come back empty) — use DocRead to read xlsx cell contents.",
 		],
