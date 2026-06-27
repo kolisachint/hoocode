@@ -78,6 +78,13 @@ export interface CreateAgentSessionOptions {
 	 */
 	enableWebTools?: boolean;
 	/**
+	 * Enable the built-in `browser_flow` + `browser_resume` tools, which drive the
+	 * `browsertools` deterministic browser engine (parent-in-the-loop). Defined but
+	 * inactive by default. Ignored when an explicit `tools` allowlist is provided
+	 * (list them there instead).
+	 */
+	enableBrowserTools?: boolean;
+	/**
 	 * Enable the built-in document tools — `DocRead`/`DocEdit`/`DocWrite` (extract
 	 * and lossless id-based editing) plus `DocScan`/`DocGrep`/`DocPeek` (the
 	 * token-sensitive discovery loop: outline, search, partial read). Defined but
@@ -298,6 +305,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// fully, so callers must list them there to enable in that mode.
 	const optInActiveToolNames: ToolName[] = [
 		...(options.enableWebTools ? ["webfetch", "websearch"] : []),
+		...(options.enableBrowserTools ? ["browser_flow", "browser_resume"] : []),
 		...(options.enableFileTools ? ["DocRead", "DocEdit", "DocWrite", "DocScan", "DocGrep", "DocPeek"] : []),
 	] as ToolName[];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);

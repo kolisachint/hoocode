@@ -56,6 +56,7 @@ export interface CreateAgentSessionFromServicesOptions {
 	noTools?: CreateAgentSessionOptions["noTools"];
 	customTools?: ToolDefinition[];
 	enableWebTools?: boolean;
+	enableBrowserTools?: boolean;
 	enableFileTools?: boolean;
 }
 
@@ -197,6 +198,7 @@ export async function createAgentSessionFromServices(
 		customTools: options.customTools,
 		sessionStartEvent: options.sessionStartEvent,
 		enableWebTools: options.enableWebTools,
+		enableBrowserTools: options.enableBrowserTools,
 		enableFileTools: options.enableFileTools,
 	});
 }

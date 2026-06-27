@@ -122,6 +122,7 @@ export interface Settings {
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
+	enableBrowserTools?: boolean; // default: false - enable the browser_flow + browser_resume tools (browsertools engine)
 	enableFileTools?: boolean; // default: false - enable the document tools: DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -988,6 +989,16 @@ export class SettingsManager {
 	setEnableWebTools(enabled: boolean): void {
 		this.globalSettings.enableWebTools = enabled;
 		this.markModified("enableWebTools");
+		this.save();
+	}
+
+	getEnableBrowserTools(): boolean {
+		return this.settings.enableBrowserTools ?? DEFAULT_SETTINGS.enableBrowserTools!;
+	}
+
+	setEnableBrowserTools(enabled: boolean): void {
+		this.globalSettings.enableBrowserTools = enabled;
+		this.markModified("enableBrowserTools");
 		this.save();
 	}
 

@@ -30,7 +30,7 @@ function isOfflineModeEnabled(): boolean {
 }
 
 /** Tools whose binaries hoocode can resolve from PATH or download on demand. */
-export type ManagedTool = "fd" | "rg" | "webtools" | "filetools";
+export type ManagedTool = "fd" | "rg" | "webtools" | "filetools" | "browsertools";
 
 interface ToolConfig {
 	name: string;
@@ -99,6 +99,27 @@ const TOOLS: Record<string, ToolConfig> = {
 				return `webtools-${archStr}-unknown-linux-gnu.tar.gz`;
 			} else if (plat === "win32") {
 				return `webtools-${archStr}-pc-windows-msvc.zip`;
+			}
+			return null;
+		},
+	},
+	browsertools: {
+		name: "browsertools",
+		repo: "kolisachint/browsertools",
+		binaryName: "browsertools",
+		tagPrefix: "v",
+		// Release archives follow Rust target triples: browsertools-<arch>-<target>.<ext>
+		// (release.yml builds gnu + musl for linux; we prefer the gnu variant to match
+		// webtools/filetools). A missing platform asset 404s and ensureTool degrades
+		// gracefully (returns undefined; the browser tools then surface an error).
+		getAssetName: (_version, plat, architecture) => {
+			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
+			if (plat === "darwin") {
+				return `browsertools-${archStr}-apple-darwin.tar.gz`;
+			} else if (plat === "linux") {
+				return `browsertools-${archStr}-unknown-linux-gnu.tar.gz`;
+			} else if (plat === "win32") {
+				return `browsertools-${archStr}-pc-windows-msvc.zip`;
 			}
 			return null;
 		},
@@ -399,6 +420,7 @@ const TERMUX_PACKAGES: Record<string, string> = {
 	rg: "ripgrep",
 	webtools: "webtools",
 	filetools: "filetools",
+	browsertools: "browsertools",
 };
 
 // Ensure a tool is available, downloading if necessary

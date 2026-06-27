@@ -121,6 +121,20 @@ export {
 	truncateTail,
 } from "./truncate.js";
 export {
+	advanceFlow,
+	type BrowserFlowDetails,
+	type BrowserFlowInput,
+	type BrowserFlowToolOptions,
+	createBrowserFlowTool,
+	createBrowserFlowToolDefinition,
+} from "./browser-flow.js";
+export {
+	type BrowserResumeInput,
+	type BrowserResumeToolOptions,
+	createBrowserResumeTool,
+	createBrowserResumeToolDefinition,
+} from "./browser-resume.js";
+export {
 	createWebFetchTool,
 	createWebFetchToolDefinition,
 	type WebFetchToolDetails,
@@ -157,6 +171,12 @@ import { createGlobTool, createGlobToolDefinition, type GlobToolOptions } from "
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.js";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.js";
+import { type BrowserFlowToolOptions, createBrowserFlowTool, createBrowserFlowToolDefinition } from "./browser-flow.js";
+import {
+	type BrowserResumeToolOptions,
+	createBrowserResumeTool,
+	createBrowserResumeToolDefinition,
+} from "./browser-resume.js";
 import { createWebFetchTool, createWebFetchToolDefinition, type WebFetchToolOptions } from "./webfetch.js";
 import { createWebSearchTool, createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.js";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.js";
@@ -174,6 +194,8 @@ export type ToolName =
 	| "ls"
 	| "webfetch"
 	| "websearch"
+	| "browser_flow"
+	| "browser_resume"
 	| "DocRead"
 	| "DocEdit"
 	| "DocWrite"
@@ -191,6 +213,8 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ls",
 	"webfetch",
 	"websearch",
+	"browser_flow",
+	"browser_resume",
 	"DocRead",
 	"DocEdit",
 	"DocWrite",
@@ -210,6 +234,8 @@ export interface ToolsOptions {
 	ls?: LsToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
+	browser_flow?: BrowserFlowToolOptions;
+	browser_resume?: BrowserResumeToolOptions;
 	DocRead?: DocReadToolOptions;
 	DocEdit?: DocEditToolOptions;
 	DocWrite?: DocWriteToolOptions;
@@ -240,6 +266,10 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createWebFetchToolDefinition(cwd, options?.webfetch);
 		case "websearch":
 			return createWebSearchToolDefinition(cwd, options?.websearch);
+		case "browser_flow":
+			return createBrowserFlowToolDefinition(cwd, options?.browser_flow);
+		case "browser_resume":
+			return createBrowserResumeToolDefinition(cwd, options?.browser_resume);
 		case "DocRead":
 			return createDocReadToolDefinition(cwd, options?.DocRead);
 		case "DocEdit":
@@ -279,6 +309,10 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createWebFetchTool(cwd, options?.webfetch);
 		case "websearch":
 			return createWebSearchTool(cwd, options?.websearch);
+		case "browser_flow":
+			return createBrowserFlowTool(cwd, options?.browser_flow);
+		case "browser_resume":
+			return createBrowserResumeTool(cwd, options?.browser_resume);
 		case "DocRead":
 			return createDocReadTool(cwd, options?.DocRead);
 		case "DocEdit":
@@ -331,6 +365,8 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ls: createLsToolDefinition(cwd, options?.ls),
 		webfetch: createWebFetchToolDefinition(cwd, options?.webfetch),
 		websearch: createWebSearchToolDefinition(cwd, options?.websearch),
+		browser_flow: createBrowserFlowToolDefinition(cwd, options?.browser_flow),
+		browser_resume: createBrowserResumeToolDefinition(cwd, options?.browser_resume),
 		DocRead: createDocReadToolDefinition(cwd, options?.DocRead),
 		DocEdit: createDocEditToolDefinition(cwd, options?.DocEdit),
 		DocWrite: createDocWriteToolDefinition(cwd, options?.DocWrite),
@@ -375,6 +411,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ls: createLsTool(cwd, options?.ls),
 		webfetch: createWebFetchTool(cwd, options?.webfetch),
 		websearch: createWebSearchTool(cwd, options?.websearch),
+		browser_flow: createBrowserFlowTool(cwd, options?.browser_flow),
+		browser_resume: createBrowserResumeTool(cwd, options?.browser_resume),
 		DocRead: createDocReadTool(cwd, options?.DocRead),
 		DocEdit: createDocEditTool(cwd, options?.DocEdit),
 		DocWrite: createDocWriteTool(cwd, options?.DocWrite),

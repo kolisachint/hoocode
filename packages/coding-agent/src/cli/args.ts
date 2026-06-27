@@ -45,6 +45,8 @@ export interface Args {
 	todoWrite?: boolean;
 	/** Enable the webfetch + websearch tools (off by default). */
 	enableWebTools?: boolean;
+	/** Enable the browser_flow + browser_resume tools (browsertools engine, off by default). */
+	enableBrowserTools?: boolean;
 	/** Enable the document tools — DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (off by default). */
 	enableFileTools?: boolean;
 	/** Path to an explicit PEM CA bundle to trust additively for hoocode's own TLS traffic. */
@@ -155,6 +157,8 @@ export function parseArgs(args: string[]): Args {
 			result.todoWrite = true;
 		} else if (arg === "--enable-webtools") {
 			result.enableWebTools = true;
+		} else if (arg === "--enable-browsertools") {
+			result.enableBrowserTools = true;
 		} else if (arg === "--enable-filetools") {
 			result.enableFileTools = true;
 		} else if (arg === "--ca-cert" && i + 1 < args.length) {
@@ -323,6 +327,10 @@ ${chalk.bold("Options:")}
   --enable-webtools              Enable the webfetch + websearch tools (network access, off by default)
                                   Can also be enabled via the "enableWebTools" setting
                                   Block hosts with a .webtoolsignore file (gitignore syntax)
+  --enable-browsertools          Enable the browser_flow + browser_resume tools (off by default)
+                                  Deterministic browser automation via the browsertools engine,
+                                  pausing for LLM decisions (NeedsParent) mid-flow
+                                  Can also be enabled via the "enableBrowserTools" setting
   --enable-filetools             Enable the document tools (off by default)
                                   DocRead/DocEdit/DocWrite (extract + lossless id-based edit) and
                                   DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for

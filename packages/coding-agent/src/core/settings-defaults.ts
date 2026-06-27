@@ -32,6 +32,7 @@ export const DEFAULT_SETTINGS = {
 	nestedSubagentConcurrency: 2,
 	enableTodoWrite: true,
 	enableWebTools: false,
+	enableBrowserTools: false,
 	enableFileTools: false,
 	terminal: {
 		showImages: true,
