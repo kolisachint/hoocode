@@ -87,12 +87,15 @@ whereas `DocScan`/`DocPeek` can page to any block.
 |--------|:------:|:------:|:------:|:------:|
 | XML / drawio | ✅ | ✅ | ✅ | ✅ |
 | docx | ✅ | ✅ | ✅ | ✅ |
+| xlsx | ✅ | ✅ | ✅ | ✅ |
+| pptx | ✅ | ✅ | ✅ | ✅ |
 | pdf | ✅ | ✅ | ✅ | ✅ |
-| **xlsx** | structure only | ❌ | ⚠️ sheet only | ✅ (cell text) |
 
-**Spreadsheets:** `DocScan` shows sheet/row structure, but `DocGrep` and
-`DocPeek` do **not** reach xlsx cell values in the current `filetools` version —
-use `DocRead`/`DocEdit` to read or edit spreadsheet cells.
+The full discovery loop reaches cell/text content for **every** supported format.
+`filetools` ≥ `v0.1.7` closed the earlier xlsx gap (previously `DocGrep`/`DocPeek`
+saw sheet structure only): `DocGrep` now matches spreadsheet cell values and
+`DocPeek` hydrates a sheet's `rows[a-b]` block into the cell text, the same as for
+the document formats.
 
 ## Why the loop saves tokens
 

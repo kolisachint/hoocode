@@ -142,20 +142,31 @@ env). Results:
 | XML / drawio | ✅ | ✅ | ✅ (path ids) | ✅ |
 | docx (OOXML word) | ✅ | ✅ (`el_` ids) | ✅ (`paragraph[n]`) | ✅ |
 | pdf | ✅ | ✅ (`page[n]`, `pdf_*`) | ✅ (`page[n]`) | ✅ |
-| **xlsx (OOXML calc)** | ✅ structure only | ❌ cell values | ⚠️ `sheet[n]` only | ✅ (full cell text) |
-| pptx | not independently tested (same OOXML handler family as docx) | | | |
+| xlsx (OOXML calc) | ✅ | ✅ (cell values) | ✅ (`sheet[n].rows[a-b]`) | ✅ |
+| pptx (OOXML slides) | ✅ | ✅ (`slide[n]`) | ✅ (`slide[n]`) | ✅ |
 
-**xlsx is the gap, and it's handler-specific (not a fixture artifact).**
-`DocScan` reports sheet structure and a row-range outline (`sheet[0].rows[0-99]`),
-and `DocRead`/`DocEdit` see and edit all cell text (thousands of nodes). But in
-this binary version the discovery loop does **not** reach xlsx cell content:
-`DocGrep` matched only the sheet name (not cell values), and `DocPeek` of the
-row-range blocks returned zero rows (only `sheet[0]` hydrates). Confirmed on both
-inline-string and shared-strings fixtures, and isolated to the OOXML calc
-handler by contrast with **CSV** — which uses the *same* `rows[0-99]` addressing
-and there `DocGrep` *does* match cell text and `DocPeek` of the exact row block
-*does* hydrate. So for spreadsheet **cell** work, fall back to `DocRead`/`DocEdit`
-(reflected in the `DocGrep`/`DocPeek` prompt guidelines).
+**The xlsx gap is closed as of `filetools` `v0.1.7`** ("reach full cell/text
+content via scan/grep/read for all formats", upstream PR
+[#11](https://github.com/kolisachint/filetools/pull/11)). The full loop now
+reaches cell/text content for every supported format. Re-verified against the
+v0.1.7 binary on hand-built OOXML fixtures: for **xlsx**, `DocScan` previews now
+include cell text (`Rows 0-1: Item, MAGICVALUE`), `DocGrep` matches cell values
+(returning the `sheet[n].rows[a-b]` block), and `DocPeek` of that exact row block
+hydrates the cells with their text and editable ids — matching the CSV handler it
+used to lag. **pptx** is likewise verified end-to-end (`DocGrep` matches slide
+text, `DocPeek` hydrates `slide[n]`). The earlier finding below records the
+pre-v0.1.7 behaviour for history.
+
+> **Historical (pre-v0.1.7): xlsx was the gap, handler-specific (not a fixture
+> artifact).** `DocScan` reported sheet structure and a row-range outline
+> (`sheet[0].rows[0-99]`), and `DocRead`/`DocEdit` saw and edited all cell text,
+> but the discovery loop did **not** reach xlsx cell content: `DocGrep` matched
+> only the sheet name, and `DocPeek` of the row-range blocks returned zero rows
+> (only `sheet[0]` hydrated). Confirmed then on both inline-string and
+> shared-strings fixtures, and isolated to the OOXML calc handler by contrast
+> with **CSV** (same `rows[0-99]` addressing, where the loop already worked). The
+> `DocGrep`/`DocPeek` guidelines that steered spreadsheet cell work to
+> `DocRead`/`DocEdit` have been dropped now that the loop reaches cells.
 
 **Usage rule confirmed: `DocPeek` needs the EXACT id `DocScan` emits.** A
 hand-built sub-range (`rows[0-2]`) returns nothing; only the exact `rows[0-99]`
@@ -258,12 +269,12 @@ doc when this lands.
    separate tool (`DocPeek`), to avoid overloading `DocRead`'s extract/cache
    semantics with a second, non-caching backend.
 3. ~~Do `scan`/`grep`/`read` cover PDF and all OOXML types?~~ **Resolved (see
-   "Verified: format coverage").** XML/docx/pdf: full loop works. **xlsx: scan
-   only** — `DocGrep`/`DocPeek` do not reach cell values, so cell work falls back
-   to `DocRead`/`DocEdit` (now stated in the tools' guidelines). pptx: not
-   independently tested (same OOXML handler family as docx). Worth re-checking
-   xlsx against a future filetools release and on a LibreOffice/Excel-produced
-   workbook.
+   "Verified: format coverage").** XML/docx/pdf/xlsx/pptx: the full loop works.
+   The earlier xlsx gap (discovery loop saw sheet structure only) was an upstream
+   `filetools` bug, fixed in `v0.1.7` ("reach full cell/text content via
+   scan/grep/read for all formats"). Re-verified against the v0.1.7 binary on
+   hand-built OOXML fixtures for both xlsx (cell values) and pptx (slide text);
+   the `DocGrep`/`DocPeek` xlsx caveat guidelines were dropped accordingly.
 4. ~~Exact stdout JSON schemas for `scan` and `read`?~~ **Resolved:** captured as
    `ScanView` / `GrepView` / `ReadView` in `filetools-shared.ts` and exercised by
    `test/filetools.test.ts` against the real binary.
