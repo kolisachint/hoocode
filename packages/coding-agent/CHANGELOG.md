@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `browser_flow`/`browser_resume` now render a `NeedsParent` suspension as a compact,
+  readable block (request kind, goal/expected_state/fields, page title/url, named
+  controls with stable selectors, and a one-line headings summary) instead of
+  pretty-printing the entire `ParentRequest` JSON. On busy pages the raw observation
+  dump was thousands of mostly-empty entries straight into the model context; the
+  screenshot already conveys the page, so only the actionable text layer is kept,
+  cutting the per-suspension output by an order of magnitude.
+
 ## [0.4.99] - 2026-06-28
 
 ### Fixed
