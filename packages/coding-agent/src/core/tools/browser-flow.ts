@@ -118,6 +118,102 @@ function parentResponseHint(kind: ParentRequest["request"]): string {
 	}
 }
 
+/** A control fact from the browsertools observation (mirrors observe.rs InputFact). */
+interface ObservationInput {
+	kind?: string;
+	accessible_name?: string;
+	selector_hint?: string;
+}
+
+/** A landmark fact from the browsertools observation (mirrors observe.rs Landmark). */
+interface ObservationLandmark {
+	role?: string;
+	name?: string;
+}
+
+/** The HTML-derived observation the engine attaches to decide/classify requests. */
+interface Observation {
+	url?: string;
+	title?: string;
+	inputs?: ObservationInput[];
+	landmarks?: ObservationLandmark[];
+	text_blocks?: string[];
+	has_error_region?: boolean;
+}
+
+/** Truncate a string to `max` chars with an ellipsis, for compact rendering. */
+function clip(s: string, max = 80): string {
+	const t = s.trim();
+	return t.length > max ? `${t.slice(0, max - 1)}\u2026` : t;
+}
+
+/** Render one observation control as a single compact line. */
+function renderControl(i: ObservationInput): string {
+	const sel = i.selector_hint && i.selector_hint !== "button" ? i.selector_hint : undefined;
+	const name = i.accessible_name ? `"${clip(i.accessible_name, 60)}"` : undefined;
+	const parts = [i.kind, name, sel].filter(Boolean);
+	return `  - ${parts.join(" ")}`;
+}
+
+/**
+ * Summarize a verbose `decide_next_action`/`classify_state` observation into a
+ * compact, readable block instead of dumping the raw JSON (which on busy pages is
+ * thousands of mostly-empty entries straight into the model context). The
+ * screenshot already conveys the page; this is just the actionable text layer:
+ * url/title, named controls, salient headings. Returns undefined when there is no
+ * observation to summarize.
+ */
+function summarizeObservation(observation: Observation | undefined): string | undefined {
+	if (!observation || typeof observation !== "object") return undefined;
+	const lines: string[] = [];
+	if (observation.title) lines.push(`page: ${clip(observation.title, 100)}`);
+	if (observation.url) lines.push(`url: ${clip(observation.url, 120)}`);
+	if (observation.has_error_region) lines.push("note: page has an error/alert region");
+
+	const controls = (observation.inputs ?? []).filter((i) => i.kind !== "_more");
+	if (controls.length) {
+		lines.push(`controls (${controls.length}):`);
+		for (const c of controls.slice(0, 25)) lines.push(renderControl(c));
+		if (controls.length > 25) lines.push(`  - …+${controls.length - 25} more`);
+	}
+
+	const text = (observation.text_blocks ?? []).filter((t) => t?.trim());
+	if (text.length) {
+		lines.push(
+			`headings: ${text
+				.slice(0, 12)
+				.map((t) => clip(t, 50))
+				.join(" · ")}`,
+		);
+	}
+	return lines.length ? lines.join("\n") : undefined;
+}
+
+/**
+ * Build the compact, model-facing text for a `NeedsParent` suspension. Renders
+ * only the fields that matter per request kind (goal, expected_state, fields,
+ * description) plus a summarized observation, rather than pretty-printing the
+ * entire request — which is the dominant token sink for browser flows.
+ */
+function formatParentRequest(request: ParentRequest): string {
+	const kind = request.request;
+	const lines: string[] = [`request: ${kind}`];
+	const r = request as ParentRequest & {
+		goal?: string;
+		expected_state?: string;
+		description?: string;
+		fields?: string[];
+		observation?: Observation;
+	};
+	if (r.goal) lines.push(`goal: ${r.goal}`);
+	if (r.expected_state) lines.push(`expected_state: ${r.expected_state}`);
+	if (r.description) lines.push(`element: ${r.description}`);
+	if (Array.isArray(r.fields) && r.fields.length) lines.push(`fields: ${r.fields.join(", ")}`);
+	const summary = summarizeObservation(r.observation);
+	if (summary) lines.push(summary);
+	return lines.join("\n");
+}
+
 /** Compact, model-facing reminder of the inline-flow action schema, appended to
  *  an `invalid inline flow` error so the model can self-correct in one turn
  *  instead of guessing field shapes across several rounds. */
@@ -244,7 +340,7 @@ export async function advanceFlow(
 
 		const text =
 			`Flow suspended — parent decision required (NeedsParent).\n` +
-			`request: ${JSON.stringify(request, null, 2)}\n` +
+			`${formatParentRequest(request)}\n` +
 			`resume token: ${token}\n` +
 			`${parentResponseHint(request.request)}\n` +
 			(image ? "A screenshot of the current page is attached." : "(no screenshot available)");

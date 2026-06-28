@@ -67,6 +67,22 @@ function step(id, response) {
     if (round === 1) return respond(id, { outcome: "needs_parent", token: "tok-2", request: { request: "verify_visual", screenshot_ref: "shot-2", expected_state: "logged_in" } });
     return respond(id, { outcome: "complete", result: { evidence: { ok: true }, answered: response } });
   }
+  if (scenario === "decide_observation") {
+    if (round === 0) return respond(id, { outcome: "needs_parent", token: "tok-1", request: {
+      request: "decide_next_action", screenshot_ref: "shot-1", goal: "find the search box",
+      observation: {
+        url: "https://example.com/search", title: "Example Search", has_error_region: false,
+        inputs: [
+          { kind: "text", accessible_name: "Search query", selector_hint: "#q" },
+          { kind: "button", accessible_name: "", selector_hint: "button" },
+          { kind: "_more", accessible_name: "+200 more controls (omitted)", selector_hint: "" }
+        ],
+        landmarks: [{ role: "main", name: "" }],
+        text_blocks: ["Results", "Results", "Filters"]
+      }
+    } });
+    return respond(id, { outcome: "complete", result: { evidence: { ok: true }, answered: response } });
+  }
   respondErr(id, "unknown scenario " + scenario);
 }
 `;
@@ -168,6 +184,27 @@ describe("browser tools", () => {
 		const r3 = await resume.execute("c4r2", { token: r2.token!, response: { response: "verified", passed: true } });
 		expect((r3.details as BrowserFlowDetails).status).toBe("complete");
 		expect(pausedSessionCount()).toBe(0);
+	});
+
+	it("renders a decide request compactly (goal + named controls, no raw observation dump)", async () => {
+		const flow = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const result = await flow.execute("cdo", { flow_path: "x.flow.json", vars: { scenario: "decide_observation" } });
+		const text = textOf(result);
+		// Compact, readable fields are present.
+		expect(text).toContain("request: decide_next_action");
+		expect(text).toContain("goal: find the search box");
+		expect(text).toContain("page: Example Search");
+		expect(text).toContain('text "Search query" #q');
+		// The synthetic overflow marker (kind "_more") is filtered out of the
+		// controls list rather than echoed as a raw control row.
+		expect(text).not.toContain("_more");
+		// Headings render on one compact line.
+		expect(text).toContain("headings:");
+		expect(text).toContain("Filters");
+		// The whole observation is NOT dumped as pretty JSON.
+		expect(text).not.toContain('"screenshot_ref"');
+		expect(text).not.toContain('"observation"');
+		expect(pausedSessionCount()).toBe(1);
 	});
 
 	it("enriches an invalid-inline-flow error with the action schema hint", async () => {
