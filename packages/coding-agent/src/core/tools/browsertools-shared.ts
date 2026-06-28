@@ -1,5 +1,5 @@
 /**
- * Shared plumbing for the `browser_flow` and `browser_resume` tools.
+ * Shared plumbing for the `browser_run` and `browser_continue` tools.
  *
  * Unlike `webtools` (one-shot fetch/search subprocesses), `browsertools` drives
  * a *stateful* parent-in-the-loop protocol: a single long-lived `browsertools
@@ -10,8 +10,8 @@
  * (often by looking at a screenshot) and calls `flow_resume(token, response)` to
  * continue. See https://github.com/kolisachint/browsertools (contract.rs).
  *
- * Because that single serve process must survive *between* the `browser_flow`
- * call that starts the flow and the `browser_resume` call that answers a
+ * Because that single serve process must survive *between* the `browser_run`
+ * call that starts the flow and the `browser_continue` call that answers a
  * `NeedsParent`, this module owns a process-wide {@link sessionRegistry} keyed by
  * `ResumeToken`. Each paused session keeps its serve client alive and is reaped
  * after an idle timeout so an abandoned flow never leaks a Chromium forever.
@@ -168,6 +168,10 @@ interface PendingRequest {
  * tools drive it sequentially.
  */
 export class BrowsertoolsServeClient {
+	/** URL of the live viewer once `live_view_start` has been issued for this
+	 *  serve process, cached so a reused (reclaimed-idle) client does not start a
+	 *  second viewer or auto-open another OS tab on the next browser_run call. */
+	liveViewUrl?: string;
 	private readonly proc: ChildProcess;
 	private readonly pending = new Map<number, PendingRequest>();
 	private readonly requestTimeoutMs: number;
@@ -403,11 +407,11 @@ export function pausedSessionCount(): number {
 }
 
 // ============================================================================
-// Shared idle client (one per session, reused across browser_flow calls)
+// Shared idle client (one per session, reused across browser_run calls)
 // ============================================================================
 
 /** Configuration preserved from the original flow call so the idle client can
- *  be matched and reused by a subsequent browser_flow with the same settings. */
+ *  be matched and reused by a subsequent browser_run with the same settings. */
 export interface BrowserClientConfig {
 	headful: boolean;
 	browserPath?: string;
@@ -446,7 +450,7 @@ export function takeIdleClient(
 }
 
 /**
- * Park a completed/failed flow's client as idle so the next browser_flow call
+ * Park a completed/failed flow's client as idle so the next browser_run call
  * can reuse the same Chromium process and live-view port.
  */
 export function parkIdleClient(

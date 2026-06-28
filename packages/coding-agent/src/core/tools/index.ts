@@ -10,19 +10,19 @@ export {
 	createLocalBashOperations,
 } from "./bash.js";
 export {
-	advanceFlow,
-	type BrowserFlowDetails,
-	type BrowserFlowInput,
-	type BrowserFlowToolOptions,
-	createBrowserFlowTool,
-	createBrowserFlowToolDefinition,
-} from "./browser-flow.js";
+	type BrowserContinueInput,
+	type BrowserContinueToolOptions,
+	createBrowserContinueTool,
+	createBrowserContinueToolDefinition,
+} from "./browser-continue.js";
 export {
-	type BrowserResumeInput,
-	type BrowserResumeToolOptions,
-	createBrowserResumeTool,
-	createBrowserResumeToolDefinition,
-} from "./browser-resume.js";
+	advanceFlow,
+	type BrowserRunDetails,
+	type BrowserRunInput,
+	type BrowserRunToolOptions,
+	createBrowserRunTool,
+	createBrowserRunToolDefinition,
+} from "./browser-run.js";
 export {
 	createDocEditTool,
 	createDocEditToolDefinition,
@@ -159,12 +159,12 @@ export {
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.js";
-import { type BrowserFlowToolOptions, createBrowserFlowTool, createBrowserFlowToolDefinition } from "./browser-flow.js";
 import {
-	type BrowserResumeToolOptions,
-	createBrowserResumeTool,
-	createBrowserResumeToolDefinition,
-} from "./browser-resume.js";
+	type BrowserContinueToolOptions,
+	createBrowserContinueTool,
+	createBrowserContinueToolDefinition,
+} from "./browser-continue.js";
+import { type BrowserRunToolOptions, createBrowserRunTool, createBrowserRunToolDefinition } from "./browser-run.js";
 import { createDocEditTool, createDocEditToolDefinition, type DocEditToolOptions } from "./docedit.js";
 import { createDocGrepTool, createDocGrepToolDefinition, type DocGrepToolOptions } from "./docgrep.js";
 import { createDocPeekTool, createDocPeekToolDefinition, type DocPeekToolOptions } from "./docpeek.js";
@@ -194,8 +194,8 @@ export type ToolName =
 	| "ls"
 	| "webfetch"
 	| "websearch"
-	| "browser_flow"
-	| "browser_resume"
+	| "browser_run"
+	| "browser_continue"
 	| "DocRead"
 	| "DocEdit"
 	| "DocWrite"
@@ -213,8 +213,8 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ls",
 	"webfetch",
 	"websearch",
-	"browser_flow",
-	"browser_resume",
+	"browser_run",
+	"browser_continue",
 	"DocRead",
 	"DocEdit",
 	"DocWrite",
@@ -234,8 +234,8 @@ export interface ToolsOptions {
 	ls?: LsToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
-	browser_flow?: BrowserFlowToolOptions;
-	browser_resume?: BrowserResumeToolOptions;
+	browser_run?: BrowserRunToolOptions;
+	browser_continue?: BrowserContinueToolOptions;
 	DocRead?: DocReadToolOptions;
 	DocEdit?: DocEditToolOptions;
 	DocWrite?: DocWriteToolOptions;
@@ -266,10 +266,10 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createWebFetchToolDefinition(cwd, options?.webfetch);
 		case "websearch":
 			return createWebSearchToolDefinition(cwd, options?.websearch);
-		case "browser_flow":
-			return createBrowserFlowToolDefinition(cwd, options?.browser_flow);
-		case "browser_resume":
-			return createBrowserResumeToolDefinition(cwd, options?.browser_resume);
+		case "browser_run":
+			return createBrowserRunToolDefinition(cwd, options?.browser_run);
+		case "browser_continue":
+			return createBrowserContinueToolDefinition(cwd, options?.browser_continue);
 		case "DocRead":
 			return createDocReadToolDefinition(cwd, options?.DocRead);
 		case "DocEdit":
@@ -309,10 +309,10 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createWebFetchTool(cwd, options?.webfetch);
 		case "websearch":
 			return createWebSearchTool(cwd, options?.websearch);
-		case "browser_flow":
-			return createBrowserFlowTool(cwd, options?.browser_flow);
-		case "browser_resume":
-			return createBrowserResumeTool(cwd, options?.browser_resume);
+		case "browser_run":
+			return createBrowserRunTool(cwd, options?.browser_run);
+		case "browser_continue":
+			return createBrowserContinueTool(cwd, options?.browser_continue);
 		case "DocRead":
 			return createDocReadTool(cwd, options?.DocRead);
 		case "DocEdit":
@@ -365,8 +365,8 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		ls: createLsToolDefinition(cwd, options?.ls),
 		webfetch: createWebFetchToolDefinition(cwd, options?.webfetch),
 		websearch: createWebSearchToolDefinition(cwd, options?.websearch),
-		browser_flow: createBrowserFlowToolDefinition(cwd, options?.browser_flow),
-		browser_resume: createBrowserResumeToolDefinition(cwd, options?.browser_resume),
+		browser_run: createBrowserRunToolDefinition(cwd, options?.browser_run),
+		browser_continue: createBrowserContinueToolDefinition(cwd, options?.browser_continue),
 		DocRead: createDocReadToolDefinition(cwd, options?.DocRead),
 		DocEdit: createDocEditToolDefinition(cwd, options?.DocEdit),
 		DocWrite: createDocWriteToolDefinition(cwd, options?.DocWrite),
@@ -411,8 +411,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ls: createLsTool(cwd, options?.ls),
 		webfetch: createWebFetchTool(cwd, options?.webfetch),
 		websearch: createWebSearchTool(cwd, options?.websearch),
-		browser_flow: createBrowserFlowTool(cwd, options?.browser_flow),
-		browser_resume: createBrowserResumeTool(cwd, options?.browser_resume),
+		browser_run: createBrowserRunTool(cwd, options?.browser_run),
+		browser_continue: createBrowserContinueTool(cwd, options?.browser_continue),
 		DocRead: createDocReadTool(cwd, options?.DocRead),
 		DocEdit: createDocEditTool(cwd, options?.DocEdit),
 		DocWrite: createDocWriteTool(cwd, options?.DocWrite),

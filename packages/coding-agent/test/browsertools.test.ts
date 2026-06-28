@@ -2,8 +2,8 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { type BrowserFlowDetails, createBrowserFlowTool } from "../src/core/tools/browser-flow.js";
-import { createBrowserResumeTool } from "../src/core/tools/browser-resume.js";
+import { createBrowserContinueTool } from "../src/core/tools/browser-continue.js";
+import { type BrowserRunDetails, createBrowserRunTool } from "../src/core/tools/browser-run.js";
 import { disposeAllSessions, idleClientCount, pausedSessionCount } from "../src/core/tools/browsertools-shared.js";
 
 // A fake `browsertools` binary implementing the `serve` JSON-RPC protocol from
@@ -120,18 +120,18 @@ describe("browser tools", () => {
 	});
 
 	it("runs a flow to completion with no parent decision", async () => {
-		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 		const result = await tool.execute("c1", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
-		const details = result.details as BrowserFlowDetails;
+		const details = result.details as BrowserRunDetails;
 		expect(details.status).toBe("complete");
 		expect(textOf(result)).toContain("Flow complete");
 		expect(pausedSessionCount()).toBe(0);
 	});
 
 	it("suspends with a NeedsParent request, returns the screenshot, and parks the session", async () => {
-		const flow = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const flow = createBrowserRunTool(cwd, { binaryPath: binPath });
 		const result = await flow.execute("c2", { flow_path: "x.flow.json", vars: { scenario: "one_round" } });
-		const details = result.details as BrowserFlowDetails;
+		const details = result.details as BrowserRunDetails;
 
 		expect(details.status).toBe("needs_parent");
 		expect(details.token).toBe("tok-1");
@@ -146,18 +146,18 @@ describe("browser tools", () => {
 	});
 
 	it("resumes a parked flow with a ParentResponse and completes", async () => {
-		const flow = createBrowserFlowTool(cwd, { binaryPath: binPath });
-		const resume = createBrowserResumeTool(cwd, { binaryPath: binPath });
+		const flow = createBrowserRunTool(cwd, { binaryPath: binPath });
+		const resume = createBrowserContinueTool(cwd, { binaryPath: binPath });
 
 		const started = (await flow.execute("c3", { flow_path: "x.flow.json", vars: { scenario: "one_round" } }))
-			.details as BrowserFlowDetails;
+			.details as BrowserRunDetails;
 		expect(started.token).toBe("tok-1");
 
 		const resumed = await resume.execute("c3r", {
 			token: started.token!,
 			response: { response: "state", state: "logged_in" },
 		});
-		const details = resumed.details as BrowserFlowDetails;
+		const details = resumed.details as BrowserRunDetails;
 		expect(details.status).toBe("complete");
 		// The parent response was forwarded over flow_resume and echoed back.
 		expect(textOf(resumed)).toContain("logged_in");
@@ -165,16 +165,16 @@ describe("browser tools", () => {
 	});
 
 	it("handles multiple NeedsParent rounds, re-keying the session on each new token", async () => {
-		const flow = createBrowserFlowTool(cwd, { binaryPath: binPath });
-		const resume = createBrowserResumeTool(cwd, { binaryPath: binPath });
+		const flow = createBrowserRunTool(cwd, { binaryPath: binPath });
+		const resume = createBrowserContinueTool(cwd, { binaryPath: binPath });
 
 		const r1 = (await flow.execute("c4", { flow_path: "x.flow.json", vars: { scenario: "two_rounds" } }))
-			.details as BrowserFlowDetails;
+			.details as BrowserRunDetails;
 		expect(r1.token).toBe("tok-1");
 		expect(pausedSessionCount()).toBe(1);
 
 		const r2 = (await resume.execute("c4r1", { token: r1.token!, response: { response: "state", state: "form" } }))
-			.details as BrowserFlowDetails;
+			.details as BrowserRunDetails;
 		expect(r2.status).toBe("needs_parent");
 		expect(r2.token).toBe("tok-2");
 		expect(r2.requestKind).toBe("verify_visual");
@@ -182,12 +182,12 @@ describe("browser tools", () => {
 		expect(pausedSessionCount()).toBe(1);
 
 		const r3 = await resume.execute("c4r2", { token: r2.token!, response: { response: "verified", passed: true } });
-		expect((r3.details as BrowserFlowDetails).status).toBe("complete");
+		expect((r3.details as BrowserRunDetails).status).toBe("complete");
 		expect(pausedSessionCount()).toBe(0);
 	});
 
 	it("renders a decide request compactly (goal + named controls, no raw observation dump)", async () => {
-		const flow = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const flow = createBrowserRunTool(cwd, { binaryPath: binPath });
 		const result = await flow.execute("cdo", { flow_path: "x.flow.json", vars: { scenario: "decide_observation" } });
 		const text = textOf(result);
 		// Compact, readable fields are present.
@@ -208,7 +208,7 @@ describe("browser tools", () => {
 	});
 
 	it("enriches an invalid-inline-flow error with the action schema hint", async () => {
-		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 		let caught: unknown;
 		try {
 			await tool.execute("cif", { flow: { id: "x" }, vars: { scenario: "invalid_flow" } });
@@ -226,7 +226,7 @@ describe("browser tools", () => {
 	});
 
 	it("throws a clear error when a flow fails", async () => {
-		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 		await expect(tool.execute("c5", { flow_path: "x.flow.json", vars: { scenario: "fail" } })).rejects.toThrow(
 			/flow failed at step "s1".*boom.*selector_not_found/s,
 		);
@@ -234,14 +234,14 @@ describe("browser tools", () => {
 	});
 
 	it("rejects resume for an unknown/expired token", async () => {
-		const resume = createBrowserResumeTool(cwd, { binaryPath: binPath });
+		const resume = createBrowserContinueTool(cwd, { binaryPath: binPath });
 		await expect(
 			resume.execute("c6", { token: "nope", response: { response: "state", state: "x" } }),
 		).rejects.toThrow(/No paused browser flow/);
 	});
 
 	it("requires either flow_path or flow", async () => {
-		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 		await expect(tool.execute("c7", {})).rejects.toThrow(/requires either `flow_path` or `flow`/);
 	});
 
@@ -250,7 +250,7 @@ describe("browser tools", () => {
 		const prev = process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
 		process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = "1";
 		try {
-			const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+			const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 			const result = await tool.execute("clv", {
 				flow_path: "x.flow.json",
 				vars: { scenario: "complete" },
@@ -269,7 +269,7 @@ describe("browser tools", () => {
 		const prev = process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
 		process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = "1";
 		try {
-			const tool = createBrowserFlowTool(cwd, { binaryPath: binPath, liveView: true });
+			const tool = createBrowserRunTool(cwd, { binaryPath: binPath, liveView: true });
 			const result = await tool.execute("clv2", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
 			expect(textOf(result)).toContain("Live view available at:");
 		} finally {
@@ -279,21 +279,55 @@ describe("browser tools", () => {
 	});
 
 	it("reuses the idle client for a subsequent flow with the same options", async () => {
-		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 
 		// First flow: completes and parks the client as idle.
 		const r1 = await tool.execute("reuse-1", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
-		expect((r1.details as BrowserFlowDetails).status).toBe("complete");
+		expect((r1.details as BrowserRunDetails).status).toBe("complete");
 		expect(idleClientCount()).toBe(1);
 
 		// Second flow: reuses the idle client (same binaryPath, same headful).
 		const r2 = await tool.execute("reuse-2", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
-		expect((r2.details as BrowserFlowDetails).status).toBe("complete");
+		expect((r2.details as BrowserRunDetails).status).toBe("complete");
 		expect(idleClientCount()).toBe(1);
 	});
 
+	it("does not restart the live viewer (or reopen a tab) on a reused client", async () => {
+		// Suppress the actual browser-open so the test never spawns `open`/`xdg-open`.
+		const prev = process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
+		process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = "1";
+		try {
+			const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
+
+			// First flow with live_view: starts the viewer and parks the client idle.
+			const r1 = await tool.execute("lv-reuse-1", {
+				flow_path: "x.flow.json",
+				vars: { scenario: "complete" },
+				live_view: true,
+			});
+			expect(textOf(r1)).toContain("Live view available at: http://127.0.0.1:65535/");
+			expect(idleClientCount()).toBe(1);
+
+			// Second flow reuses that client. The viewer is already running on the
+			// same port, so it must NOT start a new one or open another OS tab; it
+			// reports the existing URL instead.
+			const r2 = await tool.execute("lv-reuse-2", {
+				flow_path: "x.flow.json",
+				vars: { scenario: "complete" },
+				live_view: true,
+			});
+			const t2 = textOf(r2);
+			expect(t2).toContain("Live view already open at: http://127.0.0.1:65535/");
+			expect(t2).not.toContain("Live view available at:");
+			expect(t2).not.toContain("opened in your browser");
+		} finally {
+			if (prev === undefined) delete process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
+			else process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = prev;
+		}
+	});
+
 	it("disposes the idle client when headful option changes", async () => {
-		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 
 		// First flow: headful=false (default).
 		await tool.execute("chg-1", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
@@ -305,17 +339,17 @@ describe("browser tools", () => {
 	});
 
 	it("does not start the live viewer by default", async () => {
-		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const tool = createBrowserRunTool(cwd, { binaryPath: binPath });
 		const result = await tool.execute("clv3", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
 		expect(textOf(result)).not.toContain("Live view");
 	});
 
 	it("enforces the NeedsParent round cap", async () => {
-		const flow = createBrowserFlowTool(cwd, { binaryPath: binPath, maxParentRounds: 1 });
-		const resume = createBrowserResumeTool(cwd, { binaryPath: binPath, maxParentRounds: 1 });
+		const flow = createBrowserRunTool(cwd, { binaryPath: binPath, maxParentRounds: 1 });
+		const resume = createBrowserContinueTool(cwd, { binaryPath: binPath, maxParentRounds: 1 });
 
 		const r1 = (await flow.execute("c8", { flow_path: "x.flow.json", vars: { scenario: "two_rounds" } }))
-			.details as BrowserFlowDetails;
+			.details as BrowserRunDetails;
 		expect(r1.token).toBe("tok-1");
 
 		await expect(
@@ -325,16 +359,16 @@ describe("browser tools", () => {
 	});
 
 	it("reaps an idle parked session after the idle timeout", async () => {
-		const flow = createBrowserFlowTool(cwd, { binaryPath: binPath, idleTimeoutMs: 50 });
+		const flow = createBrowserRunTool(cwd, { binaryPath: binPath, idleTimeoutMs: 50 });
 		const started = (await flow.execute("c9", { flow_path: "x.flow.json", vars: { scenario: "one_round" } }))
-			.details as BrowserFlowDetails;
+			.details as BrowserRunDetails;
 		expect(started.token).toBe("tok-1");
 		expect(pausedSessionCount()).toBe(1);
 
 		await new Promise((r) => setTimeout(r, 200));
 		expect(pausedSessionCount()).toBe(0);
 
-		const resume = createBrowserResumeTool(cwd, { binaryPath: binPath });
+		const resume = createBrowserContinueTool(cwd, { binaryPath: binPath });
 		await expect(
 			resume.execute("c9r", { token: started.token!, response: { response: "state", state: "x" } }),
 		).rejects.toThrow(/No paused browser flow/);

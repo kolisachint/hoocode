@@ -1,6 +1,6 @@
 # Browser Flow Discovery Example
 
-This example demonstrates how to use `browser_flow` with `decide` steps for
+This example demonstrates how to use `browser_run` with `decide` steps for
 exploratory/discovery scenarios.
 
 ## How It Works
@@ -58,13 +58,13 @@ The LLM then responds with:
 hoocode --enable-browsertools
 
 # In the session:
-browser_flow(
+browser_run(
   flow_path: "examples/discover-flow.json",
   vars: { "url": "https://example.com" }
 )
 
-# When it suspends, use browser_resume to continue
-browser_resume(
+# When it suspends, use browser_continue to continue
+browser_continue(
   token: "<token from suspension>",
   response: { "response": "next_action", "action": { "action": "click", "selector": "..." } }
 )
