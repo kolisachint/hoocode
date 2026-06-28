@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `--enable-browsertools` (and the `enableBrowserTools` setting) had no effect:
+  the flag was parsed and stored but never forwarded into session creation in
+  `main.ts`, so the `browser_flow`/`browser_resume` tools were never added to the
+  active tool set. Wired `enableBrowserTools` through the
+  `createAgentSessionFromServices` call alongside `enableWebTools`/`enableFileTools`.
+- The `grep` tool now hints at the `literal: true` option when ripgrep rejects the
+  pattern with a regex parse error, instead of surfacing only the raw ripgrep error.
+
 ## [0.4.95] - 2026-06-27
 
 ## [0.4.94] - 2026-06-27
