@@ -94,6 +94,12 @@ export interface BrowsertoolsToolOptions {
 	requestTimeoutMs?: number;
 	/** Extra args appended after `serve` (mainly for tests). */
 	serveArgs?: string[];
+	/** Launch a real on-screen Chromium window instead of headless (sets
+	 *  `BROWSERTOOLS_HEADFUL=1` on the serve process). */
+	headful?: boolean;
+	/** Default the streamed live viewer on for every flow (the per-call `live_view`
+	 *  param still overrides). Set by the --enable-browser-live-preview flag. */
+	liveView?: boolean;
 }
 
 function envNumber(name: string): number | undefined {
@@ -110,10 +116,14 @@ export function resolveBrowsertoolsOptions(options?: BrowsertoolsToolOptions): R
 	binaryPath?: string;
 	browserPath?: string;
 	serveArgs: string[];
+	headful: boolean;
+	liveView: boolean;
 } {
 	return {
 		binaryPath: options?.binaryPath,
 		browserPath: options?.browserPath ?? (process.env.HOOCODE_BROWSERTOOLS_BROWSER_PATH?.trim() || undefined),
+		headful: options?.headful ?? false,
+		liveView: options?.liveView ?? false,
 		idleTimeoutMs:
 			options?.idleTimeoutMs ?? envNumber("HOOCODE_BROWSERTOOLS_IDLE_MS") ?? BROWSERTOOLS_DEFAULT_IDLE_MS,
 		maxParentRounds:
@@ -169,7 +179,13 @@ export class BrowsertoolsServeClient {
 
 	constructor(
 		binaryPath: string,
-		opts: { cwd?: string; browserPath?: string; serveArgs: string[]; requestTimeoutMs: number },
+		opts: {
+			cwd?: string;
+			browserPath?: string;
+			serveArgs: string[];
+			requestTimeoutMs: number;
+			headful?: boolean;
+		},
 	) {
 		this.requestTimeoutMs = opts.requestTimeoutMs;
 		// The exact CLI flag for the browser path is not part of the locked RPC
@@ -181,6 +197,11 @@ export class BrowsertoolsServeClient {
 		if (opts.browserPath) {
 			env.BROWSERTOOLS_BROWSER_PATH = opts.browserPath;
 			env.CHROME_PATH = opts.browserPath;
+		}
+		// Opt into a real on-screen Chromium window. The serve process reads this
+		// in `Driver::launch`; harmless if an older binary ignores it.
+		if (opts.headful) {
+			env.BROWSERTOOLS_HEADFUL = "1";
 		}
 		// Run the serve process in the project cwd so relative flow paths and the
 		// evidence store resolve the same way the user expects.

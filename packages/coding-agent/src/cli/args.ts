@@ -47,6 +47,8 @@ export interface Args {
 	enableWebTools?: boolean;
 	/** Enable the browser_flow + browser_resume tools (browsertools engine, off by default). */
 	enableBrowserTools?: boolean;
+	/** Default the streamed live viewer on for browser_flow runs and auto-open it (off by default). */
+	enableBrowserLivePreview?: boolean;
 	/** Enable the document tools — DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (off by default). */
 	enableFileTools?: boolean;
 	/** Path to an explicit PEM CA bundle to trust additively for hoocode's own TLS traffic. */
@@ -159,6 +161,8 @@ export function parseArgs(args: string[]): Args {
 			result.enableWebTools = true;
 		} else if (arg === "--enable-browsertools") {
 			result.enableBrowserTools = true;
+		} else if (arg === "--enable-browser-live-preview") {
+			result.enableBrowserLivePreview = true;
 		} else if (arg === "--enable-filetools") {
 			result.enableFileTools = true;
 		} else if (arg === "--ca-cert" && i + 1 < args.length) {
@@ -331,6 +335,10 @@ ${chalk.bold("Options:")}
                                   Deterministic browser automation via the browsertools engine,
                                   pausing for LLM decisions (NeedsParent) mid-flow
                                   Can also be enabled via the "enableBrowserTools" setting
+  --enable-browser-live-preview  Default the live viewer on for browser_flow runs and auto-open it
+                                  Streams the page + the agent's tool-call log over a local WebSocket
+                                  Set HOOCODE_BROWSERTOOLS_NO_OPEN=1 to print the URL without opening
+                                  Can also be enabled via the "enableBrowserLivePreview" setting
   --enable-filetools             Enable the document tools (off by default)
                                   DocRead/DocEdit/DocWrite (extract + lossless id-based edit) and
                                   DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for

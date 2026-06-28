@@ -168,6 +168,16 @@ export function getToolPath(tool: ManagedTool): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 
+	// Explicit binary override (per-tool env var, e.g. HOOCODE_BROWSERTOOLS_BINARY).
+	// Lets a developer point at a locally built binary that predates a release,
+	// bypassing the tools-dir/PATH resolution and download. Authoritative when set
+	// and the path exists.
+	const overrideEnv = `HOOCODE_${tool.toUpperCase()}_BINARY`;
+	const override = process.env[overrideEnv]?.trim();
+	if (override && existsSync(override)) {
+		return override;
+	}
+
 	// Reuse a previously resolved path. A bare command name resolves via PATH;
 	// an absolute path must still exist (revalidate cheaply with existsSync).
 	const cached = resolvedToolPathCache.get(tool);

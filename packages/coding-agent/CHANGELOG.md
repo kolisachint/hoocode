@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- `--enable-browser-live-preview` flag (and the `enableBrowserLivePreview` setting)
+  defaults the streamed live viewer on for `browser_flow` runs and auto-opens it in
+  your default browser. The viewer streams the page plus the agent's tool-call log
+  over a local WebSocket. Set `HOOCODE_BROWSERTOOLS_NO_OPEN=1` to print the URL
+  without opening (CI/SSH). Per-call `live_view`/`headful` params on `browser_flow`
+  override the default; `headful` launches a real on-screen Chromium window
+  (requires `BROWSERTOOLS_HEADFUL` support in the browsertools binary).
+- `HOOCODE_BROWSERTOOLS_BINARY` env override points tool resolution at a locally
+  built `browsertools` binary, bypassing the tools-dir/PATH download (useful for
+  testing unreleased binary changes). Generalized as `HOOCODE_<TOOL>_BINARY`.
+
 ## [0.4.96] - 2026-06-28
 
 ### Fixed
