@@ -35,7 +35,16 @@ const browserFlowSchema = Type.Object({
 	),
 	flow: Type.Optional(
 		Type.Record(Type.String(), Type.Unknown(), {
-			description: "Inline flow definition object (alternative to `flow_path`).",
+			description:
+				"Inline flow definition object (alternative to `flow_path`). " +
+				"Required fields: id (string), name (string), version (number), start_url (string), " +
+				"steps (array of Step objects). Each step has: id (string), action (Action object). " +
+				"Available actions: { action: 'navigate', url: string }, { action: 'click', selector: string }, " +
+				"{ action: 'fill', selector: string, value_tpl: string }, { action: 'wait_settle' }, " +
+				"{ action: 'checkpoint', asserts: [...] }, { action: 'decide', goal: string }. " +
+				"Example: { id: 'nav', name: 'Navigate', version: 1, start_url: 'https://example.com', " +
+				"steps: [{ id: 's1', action: { action: 'navigate', url: 'https://example.com' } }, " +
+				"{ id: 's2', action: { action: 'wait_settle' } }] }",
 		}),
 	),
 	vars: Type.Optional(
@@ -209,7 +218,29 @@ export function createBrowserFlowToolDefinition(
 			"decision mid-replay (classify a page state, verify a visual, extract a value, decide the next " +
 			"action, or re-identify a drifted element) it suspends and returns a typed request plus a " +
 			"screenshot; answer it with the browser_resume tool using the returned token. Off by default; " +
-			"enabled with --enable-browsertools.",
+			"enabled with --enable-browsertools.\n\n" +
+			"AGENTIC LOOP (preferred for exploration): for any task where you must read or navigate based on " +
+			"page content, build the flow from `decide`/`extract_semantic`/`classify`/`verify_visual` steps. " +
+			"Each such step SUSPENDS and hands you a screenshot of the current page. Read the screenshot, then " +
+			"call browser_resume with the next action, and keep looping until the outcome is `complete`. Do " +
+			"NOT fall back to webfetch/curl to read page content you could read from the screenshot — that " +
+			"bypasses the live session and breaks on auth-gated or JS-rendered pages. A flow ENDS as soon as " +
+			"its last step runs, so chain several `decide` steps (interleaved with `wait_settle`) when you " +
+			"need a multi-step journey (search -> open result -> scroll -> extract).\n\n" +
+			"RESUME RESPONSE SHAPES (browser_resume `response` field): decide_next_action -> " +
+			'{ response: "next_action", action: <Action> }; classify_state -> { response: "state", state: "<label>" }; ' +
+			'verify_visual -> { response: "verified", passed: true|false }; extract_semantic -> ' +
+			'{ response: "extracted", fields: { <field>: <value> } }; reidentify_element -> ' +
+			'{ response: "element", selector: "<css>" }.\n\n' +
+			"ACTION (for next_action) is the same shape as a flow step's action: { action: 'navigate', url }, " +
+			"{ action: 'click', selector, fallbacks?: string[] }, { action: 'fill', selector, value_tpl }, " +
+			"{ action: 'select', selector, value_tpl }, { action: 'wait_settle' }. Prefer stable CSS/id " +
+			"selectors, and ALWAYS pass a `fallbacks` array of alternate selectors for click/fill, because " +
+			"the primary selector often drifts (e.g. click '.suggestion-link' with fallbacks " +
+			"['a.mw-searchSuggest-link', '#typeahead-suggestions a']).\n\n" +
+			"VISIBILITY: pass headful:true to launch a real on-screen browser window the user can watch; " +
+			"live_view:true additionally streams a mirror + tool-call log to a local URL (set live_view:false " +
+			"to suppress the mirror when the instance defaults it on).",
 		promptSnippet: "Run a deterministic browser flow, pausing for LLM decisions when needed",
 		parameters: browserFlowSchema,
 		async execute(_toolCallId, params: BrowserFlowInput, signal) {

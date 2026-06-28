@@ -46,8 +46,14 @@ export function createBrowserResumeToolDefinition(
 		description:
 			"Resume a browser flow that suspended with a NeedsParent request. Pass the token from the " +
 			"browser_flow result and a ParentResponse object answering the request. The flow continues " +
-			"deterministically and either completes, fails, or suspends again with a new token. Off by " +
-			"default; enabled with --enable-browsertools.",
+			"deterministically and either completes, fails, or suspends again with a new token — in which " +
+			"case read the new screenshot and call browser_resume again, looping until the outcome is " +
+			"`complete`. Do not abandon the loop to read the page with webfetch. ParentResponse by request " +
+			'kind: decide_next_action -> { response: "next_action", action: <Action e.g. {action:"click", ' +
+			'selector, fallbacks?}> }; classify_state -> { response: "state", state }; verify_visual -> ' +
+			'{ response: "verified", passed }; extract_semantic -> { response: "extracted", fields }; ' +
+			'reidentify_element -> { response: "element", selector }. Off by default; enabled with ' +
+			"--enable-browsertools.",
 		parameters: browserResumeSchema,
 		async execute(_toolCallId, params: BrowserResumeInput, signal) {
 			if (signal?.aborted) throw new Error("Operation aborted");

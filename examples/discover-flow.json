@@ -1,0 +1,34 @@
+{
+  "id": "discover_example",
+  "name": "Discover: explore a page and extract info",
+  "version": 1,
+  "start_url": "{{url}}",
+  "vars": [
+    { "key": "url", "required": true, "example": "https://example.com" }
+  ],
+  "steps": [
+    { "id": "s01", "action": { "action": "navigate", "url": "{{url}}" }, "on_fail": "halt" },
+    { "id": "s02", "action": { "action": "wait_settle" }, "on_fail": "halt" },
+    {
+      "id": "s03",
+      "action": {
+        "action": "decide",
+        "goal": "Identify the main content of this page. What is this website about? Find the most important link or section to explore next."
+      },
+      "on_fail": "halt"
+    },
+    { "id": "s04", "action": { "action": "wait_settle" }, "on_fail": "halt" },
+    {
+      "id": "s05",
+      "action": {
+        "action": "decide",
+        "goal": "Extract the key information from this page. What are the main topics, links, or content available?"
+      },
+      "on_fail": "halt"
+    }
+  ],
+  "outputs": [
+    { "key": "url", "source": { "from": "url" } },
+    { "key": "title", "source": { "from": "text", "selector": "h1, title" } }
+  ]
+}
