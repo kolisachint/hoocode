@@ -45,9 +45,9 @@ export interface Args {
 	todoWrite?: boolean;
 	/** Enable the webfetch + websearch tools (off by default). */
 	enableWebTools?: boolean;
-	/** Enable the browser_flow + browser_resume tools (browsertools engine, off by default). */
+	/** Enable the browser_run + browser_continue tools (browsertools engine, off by default). */
 	enableBrowserTools?: boolean;
-	/** Default the streamed live viewer on for browser_flow runs and auto-open it (off by default). */
+	/** Default the streamed live viewer on for browser_run runs and auto-open it (off by default). */
 	enableBrowserLivePreview?: boolean;
 	/** Enable the document tools — DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (off by default). */
 	enableFileTools?: boolean;
@@ -331,11 +331,11 @@ ${chalk.bold("Options:")}
   --enable-webtools              Enable the webfetch + websearch tools (network access, off by default)
                                   Can also be enabled via the "enableWebTools" setting
                                   Block hosts with a .webtoolsignore file (gitignore syntax)
-  --enable-browsertools          Enable the browser_flow + browser_resume tools (off by default)
+  --enable-browsertools          Enable the browser_run + browser_continue tools (off by default)
                                   Deterministic browser automation via the browsertools engine,
                                   pausing for LLM decisions (NeedsParent) mid-flow
                                   Can also be enabled via the "enableBrowserTools" setting
-  --enable-browser-live-preview  Default the live viewer on for browser_flow runs and auto-open it
+  --enable-browser-live-preview  Default the live viewer on for browser_run runs and auto-open it
                                   Streams the page + the agent's tool-call log over a local WebSocket
                                   Set HOOCODE_BROWSERTOOLS_NO_OPEN=1 to print the URL without opening
                                   Can also be enabled via the "enableBrowserLivePreview" setting

@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { type BrowserFlowDetails, createBrowserFlowTool } from "../src/core/tools/browser-flow.js";
-import { createBrowserResumeTool } from "../src/core/tools/browser-resume.js";
+import { createBrowserContinueTool } from "../src/core/tools/browser-continue.js";
+import { type BrowserRunDetails, createBrowserRunTool } from "../src/core/tools/browser-run.js";
 import { disposeAllSessions } from "../src/core/tools/browsertools-shared.js";
 
 // Opt-in end-to-end test against the REAL browsertools binary driving a real
@@ -106,21 +106,21 @@ describe.skipIf(!runE2E)("browser tools (e2e, real binary)", () => {
 	});
 
 	it("runs a real deterministic flow to completion and writes evidence", async () => {
-		const tool = createBrowserFlowTool(dir, {
+		const tool = createBrowserRunTool(dir, {
 			binaryPath: BIN,
 			browserPath: CHROME,
 			requestTimeoutMs: 60_000,
 		});
 		const result = await tool.execute("e2e-1", { flow_path: flowPath, store: join(dir, "store") });
-		const details = result.details as BrowserFlowDetails;
+		const details = result.details as BrowserRunDetails;
 		console.log("[e2e] flow result:", JSON.stringify(details.result));
 		expect(details.status).toBe("complete");
 		expect(result.content.some((c) => c.type === "text" && /Flow complete/.test(c.text ?? ""))).toBe(true);
 	}, 90_000);
 
 	it("suspends on a real Tier-2 classify step and resumes to completion", async () => {
-		const flowTool = createBrowserFlowTool(dir, { binaryPath: BIN, browserPath: CHROME, requestTimeoutMs: 60_000 });
-		const resumeTool = createBrowserResumeTool(dir, {
+		const flowTool = createBrowserRunTool(dir, { binaryPath: BIN, browserPath: CHROME, requestTimeoutMs: 60_000 });
+		const resumeTool = createBrowserContinueTool(dir, {
 			binaryPath: BIN,
 			browserPath: CHROME,
 			requestTimeoutMs: 60_000,
@@ -128,7 +128,7 @@ describe.skipIf(!runE2E)("browser tools (e2e, real binary)", () => {
 
 		// flow_start suspends with a NeedsParent(classify_state) request.
 		const started = await flowTool.execute("e2e-t2", { flow_path: tier2FlowPath, store: join(dir, "store2") });
-		const startDetails = started.details as BrowserFlowDetails;
+		const startDetails = started.details as BrowserRunDetails;
 		expect(startDetails.status).toBe("needs_parent");
 		expect(startDetails.requestKind).toBe("classify_state");
 		expect(typeof startDetails.token).toBe("string");
@@ -142,7 +142,7 @@ describe.skipIf(!runE2E)("browser tools (e2e, real binary)", () => {
 			token: startDetails.token!,
 			response: { response: "state", state: "home_page" },
 		});
-		const resumeDetails = resumed.details as BrowserFlowDetails;
+		const resumeDetails = resumed.details as BrowserRunDetails;
 		console.log("[e2e] tier2 resume result:", JSON.stringify(resumeDetails.result));
 		expect(resumeDetails.status).toBe("complete");
 	}, 90_000);

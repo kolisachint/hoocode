@@ -400,13 +400,13 @@ function buildSessionOptions(
 	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
 		options.enableWebTools = true;
 	}
-	// Browser tools (browser_flow + browser_resume): opt-in via --enable-browsertools
+	// Browser tools (browser_run + browser_continue): opt-in via --enable-browsertools
 	// flag or the enableBrowserTools setting. Registered as base tools but inactive by
 	// default; this adds them to the default active set.
 	if (parsed.enableBrowserTools ?? settingsManager.getEnableBrowserTools()) {
 		options.enableBrowserTools = true;
 	}
-	// Live preview for browser_flow: defaults the streamed viewer on and auto-opens
+	// Live preview for browser_run: defaults the streamed viewer on and auto-opens
 	// it. Applied as a runtime settings override so the session's tool factory reads
 	// it via the shared settingsManager (no extra option plumbing).
 	if (parsed.enableBrowserLivePreview) {

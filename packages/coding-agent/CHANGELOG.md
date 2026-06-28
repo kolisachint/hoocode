@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- Renamed the browser automation tools for a clearer, parallel start/continue
+  pair: `browser_flow` -> `browser_run` and `browser_resume` -> `browser_continue`.
+  The old tool names are removed (no aliases); update any flows, scripts, or
+  `tools` allowlists that referenced them. The `--enable-browsertools` flag and
+  the underlying browsertools serve RPC (`flow_start`/`flow_resume`) are
+  unchanged.
+
+### Fixed
+
+- `browser_run` no longer starts a second live viewer or auto-opens another OS
+  browser tab when it reuses the parked-idle serve client across calls. The
+  live-view URL is cached on the serve client; a reused client reports
+  "Live view already open at: <url>" instead of re-issuing `live_view_start`.
+
 ## [0.4.100] - 2026-06-28
 
 ### Changed

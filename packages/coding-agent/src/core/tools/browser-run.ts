@@ -1,5 +1,5 @@
 /**
- * `browser_flow` tool: start a deterministic browsertools flow.
+ * `browser_run` tool: start a deterministic browsertools flow.
  *
  * Spawns a `browsertools serve` process and issues `flow_start`. If the flow
  * runs to completion deterministically it returns the evidence inline. If replay
@@ -7,7 +7,7 @@
  * `Outcome::NeedsParent`: this tool fetches the suspension screenshot, parks the
  * live session under its `ResumeToken`, and returns the typed `ParentRequest`
  * (plus the screenshot as an image) to the agent. The agent reasons and answers
- * with the companion `browser_resume` tool. See {@link browsertools-shared}.
+ * with the companion `browser_continue` tool. See {@link browsertools-shared}.
  */
 
 import { exec } from "node:child_process";
@@ -32,7 +32,7 @@ import {
 } from "./browsertools-shared.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
-const browserFlowSchema = Type.Object({
+const browserRunSchema = Type.Object({
 	flow_path: Type.Optional(
 		Type.String({ description: "Path to the .flow.json file to execute. Provide this or `flow`." }),
 	),
@@ -85,10 +85,10 @@ const browserFlowSchema = Type.Object({
 	),
 });
 
-export type BrowserFlowInput = Static<typeof browserFlowSchema>;
+export type BrowserRunInput = Static<typeof browserRunSchema>;
 
 /** Structured details surfaced alongside the model-facing content. */
-export interface BrowserFlowDetails {
+export interface BrowserRunDetails {
 	status: "complete" | "needs_parent";
 	/** Present when status is "needs_parent": resume with this token. */
 	token?: ResumeToken;
@@ -98,23 +98,23 @@ export interface BrowserFlowDetails {
 	result?: unknown;
 }
 
-export interface BrowserFlowToolOptions extends BrowsertoolsToolOptions {}
+export interface BrowserRunToolOptions extends BrowsertoolsToolOptions {}
 
 /** ParentResponse shape hint per ParentRequest kind (mirrors contract.rs). */
 function parentResponseHint(kind: ParentRequest["request"]): string {
 	switch (kind) {
 		case "classify_state":
-			return 'Reply with browser_resume response: { "response": "state", "state": "<your label>" }';
+			return 'Reply with browser_continue response: { "response": "state", "state": "<your label>" }';
 		case "verify_visual":
-			return 'Reply with browser_resume response: { "response": "verified", "passed": true | false }';
+			return 'Reply with browser_continue response: { "response": "verified", "passed": true | false }';
 		case "extract_semantic":
-			return 'Reply with browser_resume response: { "response": "extracted", "fields": { "<field>": "<value>", ... } }';
+			return 'Reply with browser_continue response: { "response": "extracted", "fields": { "<field>": "<value>", ... } }';
 		case "decide_next_action":
-			return 'Reply with browser_resume response: { "response": "next_action", "action": <action object> }';
+			return 'Reply with browser_continue response: { "response": "next_action", "action": <action object> }';
 		case "reidentify_element":
-			return 'Reply with browser_resume response: { "response": "element", "selector": "<css selector>" }';
+			return 'Reply with browser_continue response: { "response": "element", "selector": "<css selector>" }';
 		default:
-			return "Reply with browser_resume providing the appropriate ParentResponse object.";
+			return "Reply with browser_continue providing the appropriate ParentResponse object.";
 	}
 }
 
@@ -255,11 +255,20 @@ function openInBrowser(url: string): boolean {
 
 /** Start the streamed live viewer and auto-open it. Best-effort: a failure here
  *  must not abort the flow, so it degrades to returning undefined. Returns a
- *  human-readable status line to prepend to the tool result, or undefined. */
+ *  human-readable status line to prepend to the tool result, or undefined.
+ *
+ *  When the serve client is reused across browser_run calls (the
+ *  reclaimed-idle path), the viewer is already running on the same port, so we
+ *  skip re-issuing `live_view_start` and skip auto-opening a second OS tab —
+ *  the user keeps the one tab they already have. */
 async function startLiveView(client: BrowsertoolsServeClient): Promise<string | undefined> {
+	if (client.liveViewUrl) {
+		return `Live view already open at: ${client.liveViewUrl}`;
+	}
 	try {
 		const result = await client.request<{ url?: string; error?: string }>("live_view_start", {});
 		if (!result?.url) return undefined;
+		client.liveViewUrl = result.url;
 		const opened = openInBrowser(result.url);
 		return opened ? `Live view opened in your browser: ${result.url}` : `Live view available at: ${result.url}`;
 	} catch {
@@ -295,7 +304,7 @@ export async function advanceFlow(
 	rounds: number,
 	opts: ReturnType<typeof resolveBrowsertoolsOptions>,
 	browserConfig?: BrowserClientConfig,
-): Promise<AgentToolResult<BrowserFlowDetails>> {
+): Promise<AgentToolResult<BrowserRunDetails>> {
 	if (outcome.outcome === "complete") {
 		if (browserConfig) {
 			parkIdleClient(client, browserConfig.headful, browserConfig.browserPath, browserConfig.idleTimeoutMs);
@@ -356,30 +365,30 @@ export async function advanceFlow(
 	throw new Error(`browsertools returned an unrecognized flow outcome: ${JSON.stringify(outcome)}`);
 }
 
-export function createBrowserFlowToolDefinition(
+export function createBrowserRunToolDefinition(
 	cwd: string,
-	options?: BrowserFlowToolOptions,
-): ToolDefinition<typeof browserFlowSchema, BrowserFlowDetails> {
+	options?: BrowserRunToolOptions,
+): ToolDefinition<typeof browserRunSchema, BrowserRunDetails> {
 	const opts = resolveBrowsertoolsOptions(options);
 	return defineTool({
-		name: "browser_flow",
+		name: "browser_run",
 		label: "browser flow",
 		description:
 			"Start a deterministic browser flow (browsertools). Runs a saved .flow.json (or inline flow) " +
 			"against a headless browser and returns the evidence on completion. If the flow needs an LLM " +
 			"decision mid-replay (classify a page state, verify a visual, extract a value, decide the next " +
 			"action, or re-identify a drifted element) it suspends and returns a typed request plus a " +
-			"screenshot; answer it with the browser_resume tool using the returned token. Off by default; " +
+			"screenshot; answer it with the browser_continue tool using the returned token. Off by default; " +
 			"enabled with --enable-browsertools.\n\n" +
 			"AGENTIC LOOP (preferred for exploration): for any task where you must read or navigate based on " +
 			"page content, build the flow from `decide`/`extract_semantic`/`classify`/`verify_visual` steps. " +
 			"Each such step SUSPENDS and hands you a screenshot of the current page. Read the screenshot, then " +
-			"call browser_resume with the next action, and keep looping until the outcome is `complete`. Do " +
+			"call browser_continue with the next action, and keep looping until the outcome is `complete`. Do " +
 			"NOT fall back to webfetch/curl to read page content you could read from the screenshot — that " +
 			"bypasses the live session and breaks on auth-gated or JS-rendered pages. A flow ENDS as soon as " +
 			"its last step runs, so chain several `decide` steps (interleaved with `wait_settle`) when you " +
 			"need a multi-step journey (search -> open result -> scroll -> extract).\n\n" +
-			"RESUME RESPONSE SHAPES (browser_resume `response` field): decide_next_action -> " +
+			"RESUME RESPONSE SHAPES (browser_continue `response` field): decide_next_action -> " +
 			'{ response: "next_action", action: <Action> }; classify_state -> { response: "state", state: "<label>" }; ' +
 			'verify_visual -> { response: "verified", passed: true|false }; extract_semantic -> ' +
 			'{ response: "extracted", fields: { <field>: <value> } }; reidentify_element -> ' +
@@ -394,11 +403,11 @@ export function createBrowserFlowToolDefinition(
 			"live_view:true additionally streams a mirror + tool-call log to a local URL (set live_view:false " +
 			"to suppress the mirror when the instance defaults it on).",
 		promptSnippet: "Run a deterministic browser flow, pausing for LLM decisions when needed",
-		parameters: browserFlowSchema,
-		async execute(_toolCallId, params: BrowserFlowInput, signal) {
+		parameters: browserRunSchema,
+		async execute(_toolCallId, params: BrowserRunInput, signal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 			if (!params.flow_path && !params.flow) {
-				throw new Error("browser_flow requires either `flow_path` or `flow`");
+				throw new Error("browser_run requires either `flow_path` or `flow`");
 			}
 
 			const binaryPath = await resolveBrowsertoolsBinary(options);
@@ -458,9 +467,6 @@ export function createBrowserFlowToolDefinition(
 	});
 }
 
-export function createBrowserFlowTool(
-	cwd: string,
-	options?: BrowserFlowToolOptions,
-): AgentTool<typeof browserFlowSchema> {
-	return wrapToolDefinition(createBrowserFlowToolDefinition(cwd, options));
+export function createBrowserRunTool(cwd: string, options?: BrowserRunToolOptions): AgentTool<typeof browserRunSchema> {
+	return wrapToolDefinition(createBrowserRunToolDefinition(cwd, options));
 }

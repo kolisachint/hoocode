@@ -1,9 +1,9 @@
 /**
- * `browser_resume` tool: answer a `NeedsParent` suspension from `browser_flow`.
+ * `browser_continue` tool: answer a `NeedsParent` suspension from `browser_run`.
  *
  * Looks up the paused serve session by its `ResumeToken`, issues `flow_resume`
  * with the parent's decision (a `ParentResponse` object), and maps the next
- * outcome the same way `browser_flow` does — completing, failing, or suspending
+ * outcome the same way `browser_run` does — completing, failing, or suspending
  * again with a fresh token. The live serve process (and its browser state) is
  * reused across rounds. See {@link browsertools-shared}.
  */
@@ -11,7 +11,7 @@
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { type Static, Type } from "typebox";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
-import { advanceFlow, type BrowserFlowDetails } from "./browser-flow.js";
+import { advanceFlow, type BrowserRunDetails } from "./browser-run.js";
 import {
 	type BrowserClientConfig,
 	type BrowsertoolsToolOptions,
@@ -21,8 +21,8 @@ import {
 } from "./browsertools-shared.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
-const browserResumeSchema = Type.Object({
-	token: Type.String({ description: "The resume token returned by a browser_flow NeedsParent result." }),
+const browserContinueSchema = Type.Object({
+	token: Type.String({ description: "The resume token returned by a browser_run NeedsParent result." }),
 	response: Type.Record(Type.String(), Type.Unknown(), {
 		description:
 			"The ParentResponse object answering the request, e.g. " +
@@ -30,40 +30,40 @@ const browserResumeSchema = Type.Object({
 	}),
 });
 
-export type BrowserResumeInput = Static<typeof browserResumeSchema>;
+export type BrowserContinueInput = Static<typeof browserContinueSchema>;
 
-export interface BrowserResumeToolOptions extends BrowsertoolsToolOptions {}
+export interface BrowserContinueToolOptions extends BrowsertoolsToolOptions {}
 
-export function createBrowserResumeToolDefinition(
-	// cwd is part of the factory signature for parity with other tools, but resume
-	// reuses the serve process parked by browser_flow, so it is not needed here.
+export function createBrowserContinueToolDefinition(
+	// cwd is part of the factory signature for parity with other tools, but continue
+	// reuses the serve process parked by browser_run, so it is not needed here.
 	_cwd: string,
-	options?: BrowserResumeToolOptions,
-): ToolDefinition<typeof browserResumeSchema, BrowserFlowDetails> {
+	options?: BrowserContinueToolOptions,
+): ToolDefinition<typeof browserContinueSchema, BrowserRunDetails> {
 	const opts = resolveBrowsertoolsOptions(options);
 	return defineTool({
-		name: "browser_resume",
-		label: "browser resume",
+		name: "browser_continue",
+		label: "browser continue",
 		description:
-			"Resume a browser flow that suspended with a NeedsParent request. Pass the token from the " +
-			"browser_flow result and a ParentResponse object answering the request. The flow continues " +
+			"Continue a browser flow that suspended with a NeedsParent request. Pass the token from the " +
+			"browser_run result and a ParentResponse object answering the request. The flow continues " +
 			"deterministically and either completes, fails, or suspends again with a new token — in which " +
-			"case read the new screenshot and call browser_resume again, looping until the outcome is " +
+			"case read the new screenshot and call browser_continue again, looping until the outcome is " +
 			"`complete`. Do not abandon the loop to read the page with webfetch. ParentResponse by request " +
 			'kind: decide_next_action -> { response: "next_action", action: <Action e.g. {action:"click", ' +
 			'selector, fallbacks?}> }; classify_state -> { response: "state", state }; verify_visual -> ' +
 			'{ response: "verified", passed }; extract_semantic -> { response: "extracted", fields }; ' +
 			'reidentify_element -> { response: "element", selector }. Off by default; enabled with ' +
 			"--enable-browsertools.",
-		parameters: browserResumeSchema,
-		async execute(_toolCallId, params: BrowserResumeInput, signal) {
+		parameters: browserContinueSchema,
+		async execute(_toolCallId, params: BrowserContinueInput, signal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
 			const session = takeSession(params.token);
 			if (!session) {
 				throw new Error(
 					`No paused browser flow for token "${params.token}" — it may have completed, expired (idle ` +
-						`timeout), or never existed. Start a new flow with browser_flow.`,
+						`timeout), or never existed. Start a new flow with browser_run.`,
 				);
 			}
 
@@ -80,7 +80,7 @@ export function createBrowserResumeToolDefinition(
 					throw new Error("Operation aborted");
 				}
 				// Preserve the original browser config so the idle client can be reused
-				// by a subsequent browser_flow with the same headful/browserPath settings.
+				// by a subsequent browser_run with the same headful/browserPath settings.
 				const browserConfig: BrowserClientConfig = {
 					headful: session.headful,
 					browserPath: session.browserPath,
@@ -98,9 +98,9 @@ export function createBrowserResumeToolDefinition(
 	});
 }
 
-export function createBrowserResumeTool(
+export function createBrowserContinueTool(
 	cwd: string,
-	options?: BrowserResumeToolOptions,
-): AgentTool<typeof browserResumeSchema> {
-	return wrapToolDefinition(createBrowserResumeToolDefinition(cwd, options));
+	options?: BrowserContinueToolOptions,
+): AgentTool<typeof browserContinueSchema> {
+	return wrapToolDefinition(createBrowserContinueToolDefinition(cwd, options));
 }
