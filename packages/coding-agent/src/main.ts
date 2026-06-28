@@ -739,6 +739,7 @@ export async function main(args: string[], options?: MainOptions) {
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
 			enableWebTools: sessionOptions.enableWebTools,
+			enableBrowserTools: sessionOptions.enableBrowserTools,
 			enableFileTools: sessionOptions.enableFileTools,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;

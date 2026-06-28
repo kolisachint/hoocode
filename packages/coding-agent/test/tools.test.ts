@@ -790,6 +790,31 @@ describe("Coding Agent Tools", () => {
 			expect(getTextOutput(result)).toContain("No matches found");
 			expect(existsSync(marker)).toBe(false);
 		});
+
+		it("should hint at the literal option when the pattern is an invalid regex", async () => {
+			const testFile = join(testDir, "regex.txt");
+			writeFileSync(testFile, "a { options b\n");
+
+			await expect(
+				grepTool.execute("test-call-grep-bad-regex", {
+					pattern: "a|b|{ options",
+					path: testFile,
+				}),
+			).rejects.toThrow(/literal: true/);
+		});
+
+		it("should match an invalid-regex pattern when literal is set", async () => {
+			const testFile = join(testDir, "regex-literal.txt");
+			writeFileSync(testFile, "prefix { options suffix\n");
+
+			const result = await grepTool.execute("test-call-grep-literal", {
+				pattern: "{ options",
+				path: testFile,
+				literal: true,
+			});
+
+			expect(getTextOutput(result)).toContain("1: prefix { options suffix");
+		});
 	});
 
 	describe("find tool", () => {

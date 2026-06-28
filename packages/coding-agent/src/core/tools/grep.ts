@@ -308,7 +308,13 @@ export function createGrepToolDefinition(
 								return;
 							}
 							if (!killedDueToLimit && code !== 0 && code !== 1) {
-								const errorMsg = stderr.trim() || `ripgrep exited with code ${code}`;
+								const trimmedStderr = stderr.trim();
+								let errorMsg = trimmedStderr || `ripgrep exited with code ${code}`;
+								// A regex parse error means the pattern is not a valid regex. Point the
+								// caller at the `literal` option so they can search the text verbatim.
+								if (!literal && /regex parse error/i.test(trimmedStderr)) {
+									errorMsg += `\n\nThe pattern is not a valid regex. To search for it as plain text, pass literal: true (or escape the regex metacharacters).`;
+								}
 								settle(() => reject(new Error(errorMsg)));
 								return;
 							}
