@@ -17,15 +17,18 @@ import { type Static, Type } from "typebox";
 import type { AgentToolResult } from "../extensions/types.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
 import {
+	type BrowserClientConfig,
 	BrowsertoolsServeClient,
 	type BrowsertoolsToolOptions,
 	type FlowOutcome,
 	type GetResourceResult,
 	type ParentRequest,
+	parkIdleClient,
 	parkSession,
 	type ResumeToken,
 	resolveBrowsertoolsBinary,
 	resolveBrowsertoolsOptions,
+	takeIdleClient,
 } from "./browsertools-shared.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
@@ -36,15 +39,27 @@ const browserFlowSchema = Type.Object({
 	flow: Type.Optional(
 		Type.Record(Type.String(), Type.Unknown(), {
 			description:
-				"Inline flow definition object (alternative to `flow_path`). " +
-				"Required fields: id (string), name (string), version (number), start_url (string), " +
-				"steps (array of Step objects). Each step has: id (string), action (Action object). " +
-				"Available actions: { action: 'navigate', url: string }, { action: 'click', selector: string }, " +
-				"{ action: 'fill', selector: string, value_tpl: string }, { action: 'wait_settle' }, " +
-				"{ action: 'checkpoint', asserts: [...] }, { action: 'decide', goal: string }. " +
-				"Example: { id: 'nav', name: 'Navigate', version: 1, start_url: 'https://example.com', " +
-				"steps: [{ id: 's1', action: { action: 'navigate', url: 'https://example.com' } }, " +
-				"{ id: 's2', action: { action: 'wait_settle' } }] }",
+				"Inline flow definition object (alternative to `flow_path`). Shape: " +
+				"{ id: string, name: string, version: number, start_url: string, steps: Step[] }. " +
+				"Each Step is { id: string, action: Action }. Action is a tagged object keyed by " +
+				"`action`; the exact fields per variant (do NOT add extras like `goal` to the wrong " +
+				"variant): " +
+				'{ action: "navigate", url: string } | ' +
+				'{ action: "click", selector: string, fallbacks?: string[] } | ' +
+				'{ action: "fill", selector: string, value_tpl: string } | ' +
+				'{ action: "select", selector: string, value_tpl: string } | ' +
+				'{ action: "wait_settle" } | ' +
+				'{ action: "checkpoint", asserts: Invariant[] } | ' +
+				'{ action: "decide", goal: string } | ' +
+				'{ action: "classify" } | ' +
+				'{ action: "verify_visual", expected_state: string } | ' +
+				'{ action: "extract_semantic", fields: string[] }. ' +
+				"IMPORTANT: `extract_semantic.fields` MUST be an array of field-name strings " +
+				'(e.g. ["person", "movie_count"]), never an object/map, and `extract_semantic` takes ' +
+				"no `goal` (only `decide` does). Invariant (for checkpoint asserts) is one of: " +
+				'{ kind: "element_present", selector: string } | ' +
+				'{ kind: "text_present", selector?: string, substr: string } | ' +
+				'{ kind: "url_matches", pattern: string }.',
 		}),
 	),
 	vars: Type.Optional(
@@ -103,6 +118,31 @@ function parentResponseHint(kind: ParentRequest["request"]): string {
 	}
 }
 
+/** Compact, model-facing reminder of the inline-flow action schema, appended to
+ *  an `invalid inline flow` error so the model can self-correct in one turn
+ *  instead of guessing field shapes across several rounds. */
+const FLOW_SCHEMA_HINT =
+	"Inline flow shape: { id, name, version, start_url, steps: [{ id, action }] }. " +
+	"Action variants (use EXACTLY these fields): " +
+	'{ action: "navigate", url } | { action: "click", selector, fallbacks? } | ' +
+	'{ action: "fill", selector, value_tpl } | { action: "select", selector, value_tpl } | ' +
+	'{ action: "wait_settle" } | { action: "checkpoint", asserts } | ' +
+	'{ action: "decide", goal } | { action: "classify" } | ' +
+	'{ action: "verify_visual", expected_state } | { action: "extract_semantic", fields }. ' +
+	'`extract_semantic.fields` MUST be a string array like ["person","count"] (not an object), ' +
+	"and it takes no `goal` — only `decide` does.";
+
+/** If an error is a browsertools inline-flow validation failure, append the
+ *  schema hint so the model fixes the flow on the next call. Other errors pass
+ *  through unchanged. */
+function enrichFlowError(error: unknown): unknown {
+	const message = error instanceof Error ? error.message : String(error);
+	if (message.includes("invalid inline flow") && !message.includes("Action variants")) {
+		return new Error(`${message}\n\n${FLOW_SCHEMA_HINT}`);
+	}
+	return error;
+}
+
 /** Best-effort: open a URL in the OS default browser. Never throws. Suppressed by
  *  HOOCODE_BROWSERTOOLS_NO_OPEN (the URL is still surfaced to the agent). */
 function openInBrowser(url: string): boolean {
@@ -158,9 +198,14 @@ export async function advanceFlow(
 	outcome: FlowOutcome,
 	rounds: number,
 	opts: ReturnType<typeof resolveBrowsertoolsOptions>,
+	browserConfig?: BrowserClientConfig,
 ): Promise<AgentToolResult<BrowserFlowDetails>> {
 	if (outcome.outcome === "complete") {
-		client.dispose();
+		if (browserConfig) {
+			parkIdleClient(client, browserConfig.headful, browserConfig.browserPath, browserConfig.idleTimeoutMs);
+		} else {
+			client.dispose();
+		}
 		const result = outcome.result;
 		return {
 			content: [{ type: "text", text: `Flow complete.\n${JSON.stringify(result ?? {}, null, 2)}` }],
@@ -169,7 +214,11 @@ export async function advanceFlow(
 	}
 
 	if (outcome.outcome === "failed") {
-		client.dispose();
+		if (browserConfig) {
+			parkIdleClient(client, browserConfig.headful, browserConfig.browserPath, browserConfig.idleTimeoutMs);
+		} else {
+			client.dispose();
+		}
 		const where = outcome.step_id ? ` at step "${outcome.step_id}"` : "";
 		const kind = outcome.kind ? ` (${outcome.kind})` : "";
 		throw new Error(`browsertools flow failed${where}: ${outcome.detail ?? "unknown error"}${kind}`);
@@ -184,7 +233,14 @@ export async function advanceFlow(
 		}
 		const { request, token } = outcome;
 		const image = await fetchScreenshot(client, request);
-		parkSession(token, client, rounds, opts.idleTimeoutMs);
+		parkSession(
+			token,
+			client,
+			rounds,
+			browserConfig?.idleTimeoutMs ?? opts.idleTimeoutMs,
+			browserConfig?.headful ?? false,
+			browserConfig?.browserPath,
+		);
 
 		const text =
 			`Flow suspended — parent decision required (NeedsParent).\n` +
@@ -250,13 +306,19 @@ export function createBrowserFlowToolDefinition(
 			}
 
 			const binaryPath = await resolveBrowsertoolsBinary(options);
-			const client = new BrowsertoolsServeClient(binaryPath, {
-				cwd,
-				browserPath: opts.browserPath,
-				serveArgs: opts.serveArgs,
-				requestTimeoutMs: opts.requestTimeoutMs,
-				headful: params.headful ?? opts.headful,
-			});
+			const headful = params.headful ?? opts.headful;
+			// Reuse the shared idle client if browser config matches, otherwise create a new
+			// one. This keeps a single Chromium process and live-view port across calls.
+			let client = takeIdleClient(headful, opts.browserPath, opts.idleTimeoutMs);
+			if (!client) {
+				client = new BrowsertoolsServeClient(binaryPath, {
+					cwd,
+					browserPath: opts.browserPath,
+					serveArgs: opts.serveArgs,
+					requestTimeoutMs: opts.requestTimeoutMs,
+					headful,
+				});
+			}
 
 			// If the call is aborted before we hand the client to the registry, make
 			// sure the serve process is torn down.
@@ -280,14 +342,19 @@ export function createBrowserFlowToolDefinition(
 					client.dispose();
 					throw new Error("Operation aborted");
 				}
-				const result = await advanceFlow(client, outcome, 1, opts);
+				const browserConfig: BrowserClientConfig = {
+					headful,
+					browserPath: opts.browserPath,
+					idleTimeoutMs: opts.idleTimeoutMs,
+				};
+				const result = await advanceFlow(client, outcome, 1, opts, browserConfig);
 				if (liveViewStatus) {
 					result.content.unshift({ type: "text", text: liveViewStatus });
 				}
 				return result;
 			} catch (error) {
 				client.dispose();
-				throw error;
+				throw enrichFlowError(error);
 			} finally {
 				signal?.removeEventListener("abort", onAbort);
 			}

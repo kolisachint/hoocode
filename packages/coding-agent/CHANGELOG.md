@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `browser_flow` now reuses a single `browsertools serve` process (one Chromium
+  instance and one live-view port) across successive `browser_flow`/`browser_resume`
+  calls instead of spawning a new process, browser window, and live-view port on
+  every call. The serve client is parked as idle on flow completion and reclaimed
+  by the next call when the browser config (headful/browserPath) matches; it is
+  disposed on config change, idle timeout, or session shutdown.
+- `browser_flow` inline-flow validation: the `flow` parameter now documents the
+  full flow/action schema (including that `extract_semantic.fields` must be a
+  string array, not a map, and takes no `goal`), and `invalid inline flow` errors
+  from the binary are enriched with the action-schema hint so the model corrects a
+  malformed flow in one turn instead of guessing across several rounds.
+
 ## [0.4.98] - 2026-06-28
 
 ### Changed

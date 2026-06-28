@@ -4,7 +4,7 @@ import { join } from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { type BrowserFlowDetails, createBrowserFlowTool } from "../src/core/tools/browser-flow.js";
 import { createBrowserResumeTool } from "../src/core/tools/browser-resume.js";
-import { disposeAllSessions, pausedSessionCount } from "../src/core/tools/browsertools-shared.js";
+import { disposeAllSessions, idleClientCount, pausedSessionCount } from "../src/core/tools/browsertools-shared.js";
 
 // A fake `browsertools` binary implementing the `serve` JSON-RPC protocol from
 // the real engine (src/serve.rs): newline-delimited {id, method, params} on
@@ -34,6 +34,10 @@ function handle(req) {
   if (method === "flow_start") {
     scenario = (params && params.vars && params.vars.scenario) || "complete";
     round = 0;
+    // Mimic the real binary rejecting a malformed inline flow at flow_start.
+    if (scenario === "invalid_flow") {
+      return respondErr(id, "invalid inline flow: missing field \`fields\`");
+    }
     return step(id);
   }
   if (method === "flow_resume") {
@@ -96,6 +100,7 @@ describe("browser tools", () => {
 		// across tests.
 		disposeAllSessions();
 		expect(pausedSessionCount()).toBe(0);
+		expect(idleClientCount()).toBe(0);
 	});
 
 	it("runs a flow to completion with no parent decision", async () => {
@@ -165,6 +170,24 @@ describe("browser tools", () => {
 		expect(pausedSessionCount()).toBe(0);
 	});
 
+	it("enriches an invalid-inline-flow error with the action schema hint", async () => {
+		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		let caught: unknown;
+		try {
+			await tool.execute("cif", { flow: { id: "x" }, vars: { scenario: "invalid_flow" } });
+		} catch (e) {
+			caught = e;
+		}
+		const message = caught instanceof Error ? caught.message : String(caught);
+		// Original binary error is preserved...
+		expect(message).toContain("invalid inline flow: missing field");
+		// ...and the schema hint is appended so the model can self-correct.
+		expect(message).toContain("Action variants");
+		expect(message).toContain("extract_semantic");
+		expect(message).toContain("MUST be a string array");
+		expect(pausedSessionCount()).toBe(0);
+	});
+
 	it("throws a clear error when a flow fails", async () => {
 		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
 		await expect(tool.execute("c5", { flow_path: "x.flow.json", vars: { scenario: "fail" } })).rejects.toThrow(
@@ -216,6 +239,32 @@ describe("browser tools", () => {
 			if (prev === undefined) delete process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
 			else process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = prev;
 		}
+	});
+
+	it("reuses the idle client for a subsequent flow with the same options", async () => {
+		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+
+		// First flow: completes and parks the client as idle.
+		const r1 = await tool.execute("reuse-1", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
+		expect((r1.details as BrowserFlowDetails).status).toBe("complete");
+		expect(idleClientCount()).toBe(1);
+
+		// Second flow: reuses the idle client (same binaryPath, same headful).
+		const r2 = await tool.execute("reuse-2", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
+		expect((r2.details as BrowserFlowDetails).status).toBe("complete");
+		expect(idleClientCount()).toBe(1);
+	});
+
+	it("disposes the idle client when headful option changes", async () => {
+		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+
+		// First flow: headful=false (default).
+		await tool.execute("chg-1", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
+		expect(idleClientCount()).toBe(1);
+
+		// Second flow: headful=true → disposes old idle client and creates new.
+		await tool.execute("chg-2", { flow_path: "x.flow.json", vars: { scenario: "complete" }, headful: true });
+		expect(idleClientCount()).toBe(1);
 	});
 
 	it("does not start the live viewer by default", async () => {

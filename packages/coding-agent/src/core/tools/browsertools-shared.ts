@@ -338,6 +338,10 @@ interface PausedSession {
 	rounds: number;
 	idleTimer: ReturnType<typeof setTimeout>;
 	idleTimeoutMs: number;
+	/** Whether the browser was launched in headful mode for this session. */
+	headful: boolean;
+	/** Explicit browser path used for this session, if any. */
+	browserPath?: string;
 }
 
 const sessionRegistry = new Map<ResumeToken, PausedSession>();
@@ -351,6 +355,8 @@ export function parkSession(
 	client: BrowsertoolsServeClient,
 	rounds: number,
 	idleTimeoutMs: number,
+	headful = false,
+	browserPath?: string,
 ): void {
 	const existing = sessionRegistry.get(token);
 	if (existing && existing.client !== client) {
@@ -365,7 +371,7 @@ export function parkSession(
 		}
 	}, idleTimeoutMs);
 	idleTimer.unref?.();
-	sessionRegistry.set(token, { client, rounds, idleTimer, idleTimeoutMs });
+	sessionRegistry.set(token, { client, rounds, idleTimer, idleTimeoutMs, headful, browserPath });
 }
 
 /**
@@ -388,9 +394,91 @@ export function disposeAllSessions(): void {
 		session.client.dispose();
 	}
 	sessionRegistry.clear();
+	disposeIdleClient();
 }
 
 /** Number of currently parked sessions (for tests/diagnostics). */
 export function pausedSessionCount(): number {
 	return sessionRegistry.size;
+}
+
+// ============================================================================
+// Shared idle client (one per session, reused across browser_flow calls)
+// ============================================================================
+
+/** Configuration preserved from the original flow call so the idle client can
+ *  be matched and reused by a subsequent browser_flow with the same settings. */
+export interface BrowserClientConfig {
+	headful: boolean;
+	browserPath?: string;
+	idleTimeoutMs: number;
+}
+
+interface IdleClientEntry {
+	client: BrowsertoolsServeClient;
+	headful: boolean;
+	browserPath?: string;
+	idleTimer: ReturnType<typeof setTimeout>;
+}
+
+let sharedIdleClient: IdleClientEntry | null = null;
+
+/**
+ * Try to reclaim the shared idle client if its browser config matches.
+ * Returns the live client (and clears the slot) on match, or null.
+ */
+export function takeIdleClient(
+	headful: boolean,
+	browserPath?: string,
+	_idleTimeoutMs: number = BROWSERTOOLS_DEFAULT_IDLE_MS,
+): BrowsertoolsServeClient | null {
+	if (!sharedIdleClient) return null;
+	clearTimeout(sharedIdleClient.idleTimer);
+	if (sharedIdleClient.headful === headful && sharedIdleClient.browserPath === browserPath) {
+		const client = sharedIdleClient.client;
+		sharedIdleClient = null;
+		return client;
+	}
+	// Config changed — dispose the stale idle client.
+	sharedIdleClient.client.dispose();
+	sharedIdleClient = null;
+	return null;
+}
+
+/**
+ * Park a completed/failed flow's client as idle so the next browser_flow call
+ * can reuse the same Chromium process and live-view port.
+ */
+export function parkIdleClient(
+	client: BrowsertoolsServeClient,
+	headful: boolean,
+	browserPath?: string,
+	idleTimeoutMs: number = BROWSERTOOLS_DEFAULT_IDLE_MS,
+): void {
+	if (sharedIdleClient) {
+		clearTimeout(sharedIdleClient.idleTimer);
+		sharedIdleClient.client.dispose();
+	}
+	const idleTimer = setTimeout(() => {
+		if (sharedIdleClient?.client === client) {
+			client.dispose();
+			sharedIdleClient = null;
+		}
+	}, idleTimeoutMs);
+	idleTimer.unref?.();
+	sharedIdleClient = { client, headful, browserPath, idleTimer };
+}
+
+/** Dispose the shared idle client. Called on session shutdown. */
+export function disposeIdleClient(): void {
+	if (sharedIdleClient) {
+		clearTimeout(sharedIdleClient.idleTimer);
+		sharedIdleClient.client.dispose();
+		sharedIdleClient = null;
+	}
+}
+
+/** Number of currently idle shared clients (0 or 1, for tests/diagnostics). */
+export function idleClientCount(): number {
+	return sharedIdleClient ? 1 : 0;
 }

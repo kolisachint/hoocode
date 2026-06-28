@@ -13,6 +13,7 @@ import { type Static, Type } from "typebox";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
 import { advanceFlow, type BrowserFlowDetails } from "./browser-flow.js";
 import {
+	type BrowserClientConfig,
 	type BrowsertoolsToolOptions,
 	type FlowOutcome,
 	resolveBrowsertoolsOptions,
@@ -78,8 +79,15 @@ export function createBrowserResumeToolDefinition(
 					client.dispose();
 					throw new Error("Operation aborted");
 				}
+				// Preserve the original browser config so the idle client can be reused
+				// by a subsequent browser_flow with the same headful/browserPath settings.
+				const browserConfig: BrowserClientConfig = {
+					headful: session.headful,
+					browserPath: session.browserPath,
+					idleTimeoutMs: opts.idleTimeoutMs,
+				};
 				// Count this resume as one more NeedsParent round if it suspends again.
-				return await advanceFlow(client, outcome, session.rounds + 1, opts);
+				return await advanceFlow(client, outcome, session.rounds + 1, opts, browserConfig);
 			} catch (error) {
 				client.dispose();
 				throw error;
