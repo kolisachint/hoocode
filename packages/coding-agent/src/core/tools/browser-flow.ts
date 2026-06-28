@@ -10,6 +10,7 @@
  * with the companion `browser_resume` tool. See {@link browsertools-shared}.
  */
 
+import { exec } from "node:child_process";
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ImageContent, TextContent } from "@kolisachint/hoocode-ai";
 import { type Static, Type } from "typebox";
@@ -43,6 +44,21 @@ const browserFlowSchema = Type.Object({
 		}),
 	),
 	store: Type.Optional(Type.String({ description: "Path to the evidence store directory for this run." })),
+	live_view: Type.Optional(
+		Type.Boolean({
+			description:
+				"Start a live viewer that streams the page and the agent's tool-call log over a local " +
+				"WebSocket, and auto-open it in your default browser. Set HOOCODE_BROWSERTOOLS_NO_OPEN=1 to " +
+				"print the URL without opening. Best for flows that suspend or run long.",
+		}),
+	),
+	headful: Type.Optional(
+		Type.Boolean({
+			description:
+				"Launch a real on-screen Chromium window instead of a headless browser. Requires a desktop " +
+				"display; unlike live_view it does not show the tool-call log.",
+		}),
+	),
 });
 
 export type BrowserFlowInput = Static<typeof browserFlowSchema>;
@@ -75,6 +91,34 @@ function parentResponseHint(kind: ParentRequest["request"]): string {
 			return 'Reply with browser_resume response: { "response": "element", "selector": "<css selector>" }';
 		default:
 			return "Reply with browser_resume providing the appropriate ParentResponse object.";
+	}
+}
+
+/** Best-effort: open a URL in the OS default browser. Never throws. Suppressed by
+ *  HOOCODE_BROWSERTOOLS_NO_OPEN (the URL is still surfaced to the agent). */
+function openInBrowser(url: string): boolean {
+	const suppress = process.env.HOOCODE_BROWSERTOOLS_NO_OPEN?.trim();
+	if (suppress === "1" || suppress?.toLowerCase() === "true") return false;
+	const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+	try {
+		exec(`${openCmd} "${url}"`);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/** Start the streamed live viewer and auto-open it. Best-effort: a failure here
+ *  must not abort the flow, so it degrades to returning undefined. Returns a
+ *  human-readable status line to prepend to the tool result, or undefined. */
+async function startLiveView(client: BrowsertoolsServeClient): Promise<string | undefined> {
+	try {
+		const result = await client.request<{ url?: string; error?: string }>("live_view_start", {});
+		if (!result?.url) return undefined;
+		const opened = openInBrowser(result.url);
+		return opened ? `Live view opened in your browser: ${result.url}` : `Live view available at: ${result.url}`;
+	} catch {
+		return undefined;
 	}
 }
 
@@ -180,6 +224,7 @@ export function createBrowserFlowToolDefinition(
 				browserPath: opts.browserPath,
 				serveArgs: opts.serveArgs,
 				requestTimeoutMs: opts.requestTimeoutMs,
+				headful: params.headful ?? opts.headful,
 			});
 
 			// If the call is aborted before we hand the client to the registry, make
@@ -193,12 +238,22 @@ export function createBrowserFlowToolDefinition(
 				if (params.vars) startParams.vars = params.vars;
 				if (params.store) startParams.store = params.store;
 
+				// Bring up the live viewer before the flow runs so the page render and
+				// tool-call log are visible from the first step. The per-call param wins
+				// over the instance default (--enable-browser-live-preview).
+				const liveViewEnabled = params.live_view ?? opts.liveView;
+				const liveViewStatus = liveViewEnabled ? await startLiveView(client) : undefined;
+
 				const outcome = await client.request<FlowOutcome>("flow_start", startParams);
 				if (signal?.aborted) {
 					client.dispose();
 					throw new Error("Operation aborted");
 				}
-				return await advanceFlow(client, outcome, 1, opts);
+				const result = await advanceFlow(client, outcome, 1, opts);
+				if (liveViewStatus) {
+					result.content.unshift({ type: "text", text: liveViewStatus });
+				}
+				return result;
 			} catch (error) {
 				client.dispose();
 				throw error;

@@ -123,6 +123,7 @@ export interface Settings {
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
 	enableBrowserTools?: boolean; // default: false - enable the browser_flow + browser_resume tools (browsertools engine)
+	enableBrowserLivePreview?: boolean; // default: false - default the live viewer on for browser_flow runs and auto-open it
 	enableFileTools?: boolean; // default: false - enable the document tools: DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary)
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
@@ -999,6 +1000,16 @@ export class SettingsManager {
 	setEnableBrowserTools(enabled: boolean): void {
 		this.globalSettings.enableBrowserTools = enabled;
 		this.markModified("enableBrowserTools");
+		this.save();
+	}
+
+	getEnableBrowserLivePreview(): boolean {
+		return this.settings.enableBrowserLivePreview ?? DEFAULT_SETTINGS.enableBrowserLivePreview!;
+	}
+
+	setEnableBrowserLivePreview(enabled: boolean): void {
+		this.globalSettings.enableBrowserLivePreview = enabled;
+		this.markModified("enableBrowserLivePreview");
 		this.save();
 	}
 

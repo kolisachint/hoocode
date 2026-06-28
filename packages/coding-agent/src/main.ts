@@ -406,6 +406,12 @@ function buildSessionOptions(
 	if (parsed.enableBrowserTools ?? settingsManager.getEnableBrowserTools()) {
 		options.enableBrowserTools = true;
 	}
+	// Live preview for browser_flow: defaults the streamed viewer on and auto-opens
+	// it. Applied as a runtime settings override so the session's tool factory reads
+	// it via the shared settingsManager (no extra option plumbing).
+	if (parsed.enableBrowserLivePreview) {
+		settingsManager.applyOverrides({ enableBrowserLivePreview: true });
+	}
 	// Document tools (DocRead/DocEdit/DocWrite + the DocScan/DocGrep/DocPeek
 	// discovery loop): opt-in via --enable-filetools flag or the enableFileTools
 	// setting. Registered as base tools but inactive by default; this adds them to

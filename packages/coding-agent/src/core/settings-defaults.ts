@@ -33,6 +33,7 @@ export const DEFAULT_SETTINGS = {
 	enableTodoWrite: true,
 	enableWebTools: false,
 	enableBrowserTools: false,
+	enableBrowserLivePreview: false,
 	enableFileTools: false,
 	terminal: {
 		showImages: true,

@@ -43,6 +43,11 @@ function handle(req) {
   if (method === "get_resource") {
     return respond(id, { ref: params.ref, mime: "image/png", len: 8, png_base64: "iVBORw0KGgo=" });
   }
+  if (method === "live_view_start") {
+    // Record that the viewer was started and whether headful was requested via env,
+    // so the test can assert on the protocol without a real browser.
+    return respond(id, { url: "http://127.0.0.1:65535/", transport: "websocket", headful: process.env.BROWSERTOOLS_HEADFUL || "" });
+  }
   if (method === "shutdown") { respond(id, { ok: true }); process.exit(0); return; }
   respondErr(id, "unknown method " + method);
 }
@@ -178,6 +183,45 @@ describe("browser tools", () => {
 	it("requires either flow_path or flow", async () => {
 		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
 		await expect(tool.execute("c7", {})).rejects.toThrow(/requires either `flow_path` or `flow`/);
+	});
+
+	it("starts the live viewer and surfaces its URL when live_view is set", async () => {
+		// Suppress the actual browser-open so the test never spawns `open`/`xdg-open`.
+		const prev = process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
+		process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = "1";
+		try {
+			const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+			const result = await tool.execute("clv", {
+				flow_path: "x.flow.json",
+				vars: { scenario: "complete" },
+				live_view: true,
+			});
+			const text = textOf(result);
+			expect(text).toContain("Live view available at: http://127.0.0.1:65535/");
+			expect(text).toContain("Flow complete");
+		} finally {
+			if (prev === undefined) delete process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
+			else process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = prev;
+		}
+	});
+
+	it("defaults the live viewer on via the liveView instance option", async () => {
+		const prev = process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
+		process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = "1";
+		try {
+			const tool = createBrowserFlowTool(cwd, { binaryPath: binPath, liveView: true });
+			const result = await tool.execute("clv2", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
+			expect(textOf(result)).toContain("Live view available at:");
+		} finally {
+			if (prev === undefined) delete process.env.HOOCODE_BROWSERTOOLS_NO_OPEN;
+			else process.env.HOOCODE_BROWSERTOOLS_NO_OPEN = prev;
+		}
+	});
+
+	it("does not start the live viewer by default", async () => {
+		const tool = createBrowserFlowTool(cwd, { binaryPath: binPath });
+		const result = await tool.execute("clv3", { flow_path: "x.flow.json", vars: { scenario: "complete" } });
+		expect(textOf(result)).not.toContain("Live view");
 	});
 
 	it("enforces the NeedsParent round cap", async () => {
