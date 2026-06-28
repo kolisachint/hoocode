@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Expanded the `browser_flow` and `browser_resume` tool descriptions to document the
+  agentic screenshot loop: build flows from `decide`/`extract_semantic` steps that
+  suspend with a screenshot, answer with `browser_resume`, and keep looping until the
+  outcome is `complete` rather than falling back to `webfetch` to read page content.
+  Added the per-kind `ParentResponse` shapes, the `next_action` Action schema, and
+  guidance to always pass a `fallbacks` selector array for click/fill.
+
 ## [0.4.97] - 2026-06-28
 
 ### Added
