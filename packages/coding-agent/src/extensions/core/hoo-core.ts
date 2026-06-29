@@ -1558,6 +1558,106 @@ export function setupThinkingEscalation(pi: ExtensionAPI): void {
 }
 
 // ============================================================================
+// /loop — recurring prompt runner
+// ============================================================================
+
+interface ActiveLoop {
+	timer: ReturnType<typeof setInterval>;
+	prompt: string;
+	intervalMs: number;
+}
+
+/** Parse a leading interval token like "30s", "5m", "2h". Returns ms or null. */
+function parseInterval(token: string): number | null {
+	const m = /^(\d+)(s|m|h)$/.exec(token.trim());
+	if (!m) return null;
+	const n = Number(m[1]);
+	const unit = m[2];
+	return unit === "s" ? n * 1000 : unit === "m" ? n * 60_000 : n * 3_600_000;
+}
+
+function formatInterval(ms: number): string {
+	if (ms % 3_600_000 === 0) return `${ms / 3_600_000}h`;
+	if (ms % 60_000 === 0) return `${ms / 60_000}m`;
+	return `${Math.round(ms / 1000)}s`;
+}
+
+const DEFAULT_LOOP_INTERVAL_MS = 10 * 60_000;
+
+/**
+ * `/loop` runs a prompt on a recurring interval until stopped. Minimum scope:
+ * re-submits a prompt as a user message each tick. Autonomous turn-continuation
+ * (max-turns / budget policy) is deferred — see docs/loop-and-plugin-system.md.
+ */
+export function setupLoop(pi: ExtensionAPI): void {
+	let active: ActiveLoop | null = null;
+
+	const stop = () => {
+		if (active) {
+			clearInterval(active.timer);
+			active = null;
+		}
+	};
+
+	pi.on("session_shutdown", () => stop());
+
+	pi.registerCommand("loop", {
+		description:
+			"Run a prompt on a recurring interval. Usage: /loop [30s|5m|1h] <prompt> | /loop stop | /loop status",
+		getArgumentCompletions: (prefix: string) =>
+			["stop", "status"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
+		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			const trimmed = args.trim();
+
+			if (!trimmed || trimmed === "status") {
+				ctx.ui.notify(
+					active
+						? `Loop active: every ${formatInterval(active.intervalMs)} — "${active.prompt}"`
+						: "No active loop.",
+					"info",
+				);
+				return;
+			}
+
+			if (trimmed === "stop") {
+				if (!active) {
+					ctx.ui.notify("No active loop to stop.", "info");
+					return;
+				}
+				stop();
+				ctx.ui.notify("Loop stopped.", "info");
+				return;
+			}
+
+			// Optional leading interval token, then the prompt.
+			const [first, ...rest] = trimmed.split(/\s+/);
+			const parsed = parseInterval(first);
+			const intervalMs = parsed ?? DEFAULT_LOOP_INTERVAL_MS;
+			const prompt = (parsed ? rest.join(" ") : trimmed).trim();
+
+			if (!prompt) {
+				ctx.ui.notify("Nothing to loop. Usage: /loop [30s|5m|1h] <prompt>", "warning");
+				return;
+			}
+
+			stop();
+			const timer = setInterval(() => {
+				pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+			}, intervalMs);
+			timer.unref?.();
+			active = { timer, prompt, intervalMs };
+
+			// Fire once immediately so the loop starts without waiting a full interval.
+			pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+			ctx.ui.notify(
+				`Loop started: every ${formatInterval(intervalMs)} — "${prompt}". Stop with /loop stop.`,
+				"info",
+			);
+		},
+	});
+}
+
+// ============================================================================
 // Extension entry point
 // ============================================================================
 
@@ -1568,6 +1668,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupScaffold(pi);
 	setupAskOptions(pi);
 	setupThinkingEscalation(pi);
+	setupLoop(pi);
 }
 
 hooCore.displayName = "hoo-core";

@@ -28,6 +28,7 @@ import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
+import { buildPluginFactory, discoverPlugins } from "./plugins/index.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -635,5 +636,31 @@ export async function discoverAndLoadExtensions(
 		addPaths([resolved]);
 	}
 
-	return loadExtensions(allPaths, cwd, eventBus);
+	const resolvedEventBus = eventBus ?? createEventBus();
+	const result = await loadExtensions(allPaths, cwd, resolvedEventBus);
+
+	// Plugins: directories under plugins/ with a recognized manifest. Each becomes
+	// a synthetic extension factory loaded into the same runtime/event bus.
+	const pluginDirs = [path.join(cwd, CONFIG_DIR_NAME, "plugins"), path.join(agentDir, "plugins")];
+	for (const plugin of discoverPlugins(pluginDirs)) {
+		try {
+			const factory = buildPluginFactory(plugin);
+			const extension = await loadExtensionFromFactory(
+				factory,
+				cwd,
+				resolvedEventBus,
+				result.runtime,
+				`<plugin:${plugin.id}>`,
+				`plugin:${plugin.id}`,
+			);
+			result.extensions.push(extension);
+		} catch (err) {
+			result.errors.push({
+				path: plugin.manifestPath,
+				error: `Failed to load plugin "${plugin.id}": ${err instanceof Error ? err.message : String(err)}`,
+			});
+		}
+	}
+
+	return result;
 }
