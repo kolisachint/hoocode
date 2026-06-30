@@ -28,44 +28,47 @@ The loop continues while `toolUse`. Claude, OpenAI, Google all feed the same loo
 nothing in the loop is Claude-aware. **Keep it that way:** loop logic must read only
 the normalized `StopReason` + turn state, never raw provider payloads.
 
-### 1.2 Shipped: `/loop` recurring runner (minimum scope)
+### 1.2 Shipped: cron scheduler + `/loop` + Cron* tools
 
-Registered in `hoo-core.ts` (`setupLoop`). Re-submits a prompt on an interval.
+The loop is backed by a real cron scheduler (`core/scheduler.ts`, `TaskScheduler`),
+modeled on the harness `CronCreate`/`CronList`/`CronDelete` tools: 5-field cron in
+local time, recurring vs one-shot, durable persistence to
+`.hoocode/scheduled_tasks.json`, and **idle-gated** firing (a due task never
+interrupts an in-flight turn; it fires on a later tick within the same minute).
+Set up in `hoo-core.ts` (`setupLoop`).
+
+**Agent-callable tools** (the model can schedule its own follow-ups):
+
+- `CronCreate({ cron, prompt, recurring? })`, `CronList()`, `CronDelete({ id })`.
+
+**`/loop` command** (the user can too):
 
 ```
-/loop <30s|5m|1h> <prompt>   start a recurring run (default interval: 10m)
-/loop <prompt>               start with the default interval
-/loop status                 show the active loop
-/loop stop                   stop the active loop
+/loop "<cron>" <prompt>        schedule recurring (5-field cron, local time)
+/loop <5m|2h|1d> <prompt>      schedule recurring at a simple interval
+/loop once "<cron>" <prompt>   schedule a one-shot
+/loop list | /loop delete <id> | /loop stop
+/loop auto [--max-turns N] <task>   autonomous continuation (see 1.3)
 ```
 
-- The first tick fires immediately; subsequent ticks fire every interval via
-  `setInterval`, delivering the prompt with `pi.sendUserMessage(..., { deliverAs: "followUp" })`
-  so it queues correctly while the agent is mid-turn.
-- A single active loop per session (starting a new one replaces it). Cleared on
-  `session_shutdown`.
+The scheduler is created on `session_start` (bound to `sendUserMessage` +
+`ctx.isIdle`), ticks every 30s, and is cleared on `session_shutdown`. Sub-minute
+intervals are not expressible in cron (1-minute granularity); use `1m` minimum.
 
-### 1.3 Deferred: autonomous continuation policy (the "loop controller")
+### 1.3 Shipped: autonomous continuation (`/loop auto`)
 
-Lift the hard-wired "continue while `toolUse`" rule into an explicit, overridable
-policy on the harness:
+`/loop auto [--max-turns N] <task>` keeps the agent iterating instead of yielding:
+the task is kicked off as a user message, and on each `agent_end` the loop
+re-prompts ("continue…") until the model emits the `LOOP_DONE` token or the
+turn budget (default 10) is exhausted. It yields if the user is steering
+(`ctx.hasPendingMessages()`), and `/loop stop` cancels it.
 
-```ts
-interface LoopPolicy {
-  shouldContinue(turnState): boolean;   // default: stopReason === "toolUse"
-  maxTurns?: number;
-  maxWallClockMs?: number;
-  maxCost?: number;
-  maxTokens?: number;
-  onExhausted?: "stop" | "ask";
-}
-```
-
-This enables a second `/loop` flavor — `/loop --max-turns 20 <task>` — that keeps the
-agent iterating autonomously (instead of yielding to the user) until a stop condition.
-It belongs in `packages/agent` (the harness), exposed to extensions as loop hooks.
-Deferred because the recurring runner covers the immediate need and the policy is a
-larger, harness-level change.
+Implemented at the **extension layer** (an `agent_end` re-prompt with a turn
+budget) rather than as a harness-level `LoopPolicy`. A deeper controller in
+`packages/agent` — a `shouldContinue(turnState)` predicate plus wall-clock/cost
+budgets reading the normalized `StopReason` — remains a possible future
+refinement, but the extension-level loop covers the autonomous-iteration need
+without modifying the core turn loop.
 
 ---
 
@@ -203,13 +206,33 @@ Example:
 }
 ```
 
-### 2.6 Deferred: distribution / marketplace
+### 2.6 Shipped: marketplaces (install from a git index)
 
-True Claude Code parity includes marketplaces (git-repo registries + install/update).
-hoocode currently requires manual placement in a `plugins/` folder. A marketplace layer
-(`marketplace.json` listing plugins, an install command, version/dependency resolution)
-is a phase-2 effort. The identity metadata captured in 2.3 (`id`/`version`) is the data a
-registry would key on.
+A **marketplace** is a git repo (or local dir) with an index manifest listing
+installable plugins. Two formats are supported (Claude wins when both present):
+
+- Claude: `.claude-plugin/marketplace.json`
+- Copilot-style git index: `.github/marketplace.json`
+
+Both use `{ name?, owner?, plugins: [{ name, source, description? }] }`. A plugin
+`source` is a path relative to the marketplace root, a git URL, or `npm:<spec>`.
+
+Parsing/resolution lives in `core/extensions/plugins/marketplace.ts`
+(`parseMarketplaceDir`, `resolvePluginSource`, and a persisted registry at
+`.hoocode/marketplaces.json`). Commands (`setupMarketplace` in `hoo-core.ts`):
+
+```
+/plugin marketplace add <git-url|path>   clone/read + register a marketplace
+/plugin marketplace list
+/plugin list                             available plugins across marketplaces
+/plugin install <name>                   clone/copy into .hoocode/plugins/<name>, then reload
+/plugin remove <name>                    remove + reload
+```
+
+Install copies a local plugin or `git clone`s a git source into the `plugins/`
+folder and reloads, so the plugin loads through the same loader as any other
+plugin. `npm:` sources are recognized but not yet installed (deferred).
+Version/dependency resolution and update/pin are future work.
 
 ---
 
@@ -223,6 +246,8 @@ registry would key on.
 | `src/core/extensions/loader.ts` | `loadPlugins` / `defaultPluginDirs`; plugin loading in `discoverAndLoadExtensions` |
 | `src/core/resource-loader.ts` | loads plugins in `reload()` (the app path); routes agent/command paths |
 | `src/core/extension-mcp-servers.ts` | process-global registry of extension/plugin MCP servers |
+| `src/core/scheduler.ts` | cron matcher + `TaskScheduler` (durable, idle-gated) |
+| `src/core/extensions/plugins/marketplace.ts` | marketplace manifest parsing, source resolution, registry |
 | `src/core/extensions/runner.ts` | `resources_discover` aggregates `agentPaths` / `slashCommandPaths` |
-| `src/extensions/core/hoo-core.ts` | `setupLoop` (`/loop` command); `setupMcpLoader` consumes the MCP registry |
-| `test/plugins.test.ts` | manifest/discovery/factory/MCP/integration tests |
+| `src/extensions/core/hoo-core.ts` | `setupLoop` (scheduler + Cron* tools + `/loop` + auto); `setupMarketplace` (`/plugin`); `setupMcpLoader` consumes the MCP registry |
+| `test/plugins.test.ts` `test/scheduler.test.ts` `test/marketplace.test.ts` | manifest/discovery/MCP, cron scheduler, and marketplace tests |
