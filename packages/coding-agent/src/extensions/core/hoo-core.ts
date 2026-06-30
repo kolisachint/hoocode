@@ -25,6 +25,7 @@ import type { ThinkingLevel } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
+import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type {
 	AgentStartEvent,
 	AgentToolResult,
@@ -744,6 +745,18 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 				}
 
 				// Skip if already loaded from standard config
+				if (seenNames.has(serverConfig.name)) continue;
+				seenNames.add(serverConfig.name);
+				allServerConfigs.push(serverConfig);
+			}
+		}
+
+		// 2b. Load from plugins/extensions that registered MCP servers during load.
+		for (const entry of getExtensionMcpServers()) {
+			for (const serverConfig of parseStandardMcpConfig(
+				{ mcpServers: entry.mcpServers },
+				`plugin:${entry.source}`,
+			)) {
 				if (seenNames.has(serverConfig.name)) continue;
 				seenNames.add(serverConfig.name);
 				allServerConfigs.push(serverConfig);

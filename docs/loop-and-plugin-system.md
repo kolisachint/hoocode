@@ -92,11 +92,20 @@ When both are present, **native wins (no merge)**.
 plugins/manifest.ts      parse either format → NormalizedPlugin
 plugins/hooks-bridge.ts  NormalizedPlugin.hooks → ExtensionAPI handlers (shell protocol)
 plugins/index.ts         discoverPlugins() + buildPluginFactory() → ExtensionFactory
-loader.ts                discoverAndLoadExtensions() loads each factory into the runtime
+loader.ts                loadPlugins() loads each factory into a runtime/event bus
 ```
 
 A plugin becomes a synthetic `ExtensionFactory`, so it rides the **existing** extension
 loader/runner — plugins are "extensions assembled from a manifest instead of code."
+
+`loadPlugins()` is invoked from **both** extension-loading entry points so plugins
+load regardless of how the app was started:
+
+- `ResourceLoader.reload()` — the path the interactive/print app uses.
+- `discoverAndLoadExtensions()` — the standalone/SDK path.
+
+Both load into the same runtime as ordinary extensions, after the regular
+extensions and inline factories.
 
 ### 2.3 Capability mapping
 
@@ -109,7 +118,7 @@ loader/runner — plugins are "extensions assembled from a manifest instead of c
 | `agents/` | `resources_discover` → `agentPaths` (the `.agents/agents` subagent surface) | ✅ shipped |
 | `providers` (native only) | `registerProvider` | ✅ shipped |
 | `hooks` / `hooks/hooks.json` | shell-protocol bridge | ✅ shipped (events below) |
-| `mcpServers` / `.mcp.json` | MCP server connect | ⏳ parsed, wiring deferred¹ |
+| `mcpServers` / `.mcp.json` | MCP server connect | ✅ shipped (registry below) |
 
 The `resources_discover` event contract was extended with `slashCommandPaths` and
 `agentPaths` (mirroring the existing `skillPaths`/`promptPaths`/`themePaths` fields)
@@ -118,11 +127,14 @@ native `.agents/commands` (slash commands) and `.agents/agents` (subagents). Age
 directories are expanded to their `.md` files for the agent registry's manifest-path
 source; slash commands share the `/name` namespace with prompt templates.
 
-¹ MCP loading today is file-based (`setupMcpLoader` reads standard `mcp.json`
-locations). There is no ExtensionAPI to inject server configs at load time. Options
-for wiring: (a) add `pi.registerMcpServer(...)`, or (b) have the plugin loader merge
-plugin `mcpServers` into the set `setupMcpLoader` consumes. Until then, plugin
-`mcpServers` are parsed into `NormalizedPlugin.mcpServers` but not connected.
+**MCP wiring.** MCP connection happens in hoo-core's `setupMcpLoader` on
+`session_start`, reading from fixed file locations. Plugins bridge to it via a
+process-global registry (`core/extension-mcp-servers.ts`, mirroring
+`agent-manifest-paths.ts`): the plugin factory registers its `mcpServers` during
+load, and `setupMcpLoader` reads them (deduping by name) when connecting.
+`loadPlugins` clears the registry before each (re)load so reloads rebuild the set
+cleanly. `${CLAUDE_PLUGIN_ROOT}` / `${AGENTS_PLUGIN_ROOT}` in commands, args, and env
+values are substituted with the plugin root.
 
 ### 2.4 Hooks bridge (true parity)
 
@@ -207,7 +219,10 @@ registry would key on.
 |---|---|
 | `src/core/extensions/plugins/manifest.ts` | manifest types + parse/normalize both formats |
 | `src/core/extensions/plugins/hooks-bridge.ts` | shell-protocol hooks bridge |
-| `src/core/extensions/plugins/index.ts` | discovery + synthetic factory builder |
-| `src/core/extensions/loader.ts` | wires plugin discovery into `discoverAndLoadExtensions` |
-| `src/extensions/core/hoo-core.ts` | `setupLoop` — the `/loop` command |
-| `test/plugins.test.ts` | manifest/discovery/factory/integration tests |
+| `src/core/extensions/plugins/index.ts` | discovery + synthetic factory builder (incl. MCP registration) |
+| `src/core/extensions/loader.ts` | `loadPlugins` / `defaultPluginDirs`; plugin loading in `discoverAndLoadExtensions` |
+| `src/core/resource-loader.ts` | loads plugins in `reload()` (the app path); routes agent/command paths |
+| `src/core/extension-mcp-servers.ts` | process-global registry of extension/plugin MCP servers |
+| `src/core/extensions/runner.ts` | `resources_discover` aggregates `agentPaths` / `slashCommandPaths` |
+| `src/extensions/core/hoo-core.ts` | `setupLoop` (`/loop` command); `setupMcpLoader` consumes the MCP registry |
+| `test/plugins.test.ts` | manifest/discovery/factory/MCP/integration tests |

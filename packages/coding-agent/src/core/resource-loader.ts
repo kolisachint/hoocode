@@ -11,7 +11,13 @@ export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 import { canonicalizePath, collectAgentsAncestorDirs, isLocalPath } from "../utils/paths.js";
 import { setAgentManifestPaths } from "./agent-manifest-paths.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
-import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
+import {
+	createExtensionRuntime,
+	defaultPluginDirs,
+	loadExtensionFromFactory,
+	loadExtensions,
+	loadPlugins,
+} from "./extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
 import { DefaultPackageManager, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
@@ -509,6 +515,17 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
 		extensionsResult.extensions.push(...inlineExtensions.extensions);
 		extensionsResult.errors.push(...inlineExtensions.errors);
+
+		// Plugins: directories under plugins/ with a recognized manifest, loaded into
+		// the same runtime so they participate like any other extension.
+		const pluginResult = await loadPlugins(
+			defaultPluginDirs(this.cwd, this.agentDir),
+			this.cwd,
+			this.eventBus,
+			extensionsResult.runtime,
+		);
+		extensionsResult.extensions.push(...pluginResult.extensions);
+		extensionsResult.errors.push(...pluginResult.errors);
 
 		// Detect extension conflicts (tools, commands, flags with same names from different extensions)
 		// Keep all extensions loaded. Conflicts are reported as diagnostics, and precedence is handled by load order.

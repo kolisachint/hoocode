@@ -18,9 +18,37 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { type ExtensionMcpServerConfig, registerExtensionMcpServers } from "../../extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionFactory } from "../types.js";
 import { installPluginHooks } from "./hooks-bridge.js";
 import { type NormalizedPlugin, parsePluginDir } from "./manifest.js";
+
+/** Substitute ${CLAUDE_PLUGIN_ROOT} / ${AGENTS_PLUGIN_ROOT} with the plugin root in a string. */
+function substituteRoot(value: string, root: string): string {
+	return value.replace(/\$\{(?:CLAUDE|AGENTS)_PLUGIN_ROOT\}/g, root);
+}
+
+/** Coerce parsed mcpServers into the standard config shape, substituting root vars. */
+function resolveMcpServers(
+	mcpServers: Record<string, unknown>,
+	root: string,
+): Record<string, ExtensionMcpServerConfig> {
+	const out: Record<string, ExtensionMcpServerConfig> = {};
+	for (const [name, raw] of Object.entries(mcpServers)) {
+		if (!raw || typeof raw !== "object") continue;
+		const cfg = raw as ExtensionMcpServerConfig;
+		if (typeof cfg.command !== "string") continue;
+		out[name] = {
+			command: substituteRoot(cfg.command, root),
+			args: cfg.args?.map((a) => substituteRoot(String(a), root)),
+			env: cfg.env
+				? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, substituteRoot(String(v), root)]))
+				: undefined,
+			background: cfg.background,
+		};
+	}
+	return out;
+}
 
 export type { NormalizedPlugin } from "./manifest.js";
 export { parsePluginDir } from "./manifest.js";
@@ -79,6 +107,11 @@ export function buildPluginFactory(plugin: NormalizedPlugin): ExtensionFactory {
 			installPluginHooks(pi, plugin.hooks, plugin.root, () => {
 				// Non-blocking hook failures are intentionally quiet (Claude Code parity).
 			});
+		}
+
+		// MCP servers: register for hoo-core's setupMcpLoader to connect on session_start.
+		if (plugin.mcpServers) {
+			registerExtensionMcpServers(plugin.id, resolveMcpServers(plugin.mcpServers, plugin.root));
 		}
 	};
 

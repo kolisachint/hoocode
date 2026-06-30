@@ -2,7 +2,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { discoverAndLoadExtensions } from "../src/core/extensions/loader.js";
+import { createEventBus } from "../src/core/event-bus.js";
+import { clearExtensionMcpServers, getExtensionMcpServers } from "../src/core/extension-mcp-servers.js";
+import { createExtensionRuntime, discoverAndLoadExtensions, loadPlugins } from "../src/core/extensions/loader.js";
 import { buildPluginFactory, discoverPlugins, parsePluginDir } from "../src/core/extensions/plugins/index.js";
 
 function writeJson(file: string, data: unknown): void {
@@ -148,5 +150,65 @@ describe("plugin discovery integration", () => {
 		expect(result.errors).toHaveLength(0);
 		const plugin = result.extensions.find((e) => e.displayName === "plugin:hello");
 		expect(plugin).toBeDefined();
+	});
+});
+
+describe("plugin MCP servers", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-plugin-mcp-"));
+		clearExtensionMcpServers();
+	});
+
+	afterEach(() => {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+		clearExtensionMcpServers();
+	});
+
+	it("registers plugin mcpServers into the registry with root substitution", async () => {
+		const root = path.join(tempDir, "plugins", "mcp-plugin");
+		writeJson(path.join(root, ".agents-plugin", "plugin.json"), {
+			name: "mcp-plugin",
+			mcpServers: {
+				// biome-ignore lint/suspicious/noTemplateCurlyInString: literal placeholders substituted at load time
+				demo: { command: "${CLAUDE_PLUGIN_ROOT}/bin/server", args: ["--root", "${AGENTS_PLUGIN_ROOT}"] },
+			},
+		});
+
+		const result = await loadPlugins(
+			[path.join(tempDir, "plugins")],
+			tempDir,
+			createEventBus(),
+			createExtensionRuntime(),
+		);
+
+		expect(result.errors).toHaveLength(0);
+		const entries = getExtensionMcpServers();
+		expect(entries).toHaveLength(1);
+		expect(entries[0].source).toBe("mcp-plugin");
+		expect(entries[0].mcpServers.demo.command).toBe(path.join(root, "bin", "server"));
+		expect(entries[0].mcpServers.demo.args).toEqual(["--root", root]);
+	});
+
+	it("clears prior registrations on each load (no accumulation across reloads)", async () => {
+		writeJson(path.join(tempDir, "plugins", "p", ".agents-plugin", "plugin.json"), {
+			name: "p",
+			mcpServers: { demo: { command: "server" } },
+		});
+
+		await loadPlugins([path.join(tempDir, "plugins")], tempDir, createEventBus(), createExtensionRuntime());
+		await loadPlugins([path.join(tempDir, "plugins")], tempDir, createEventBus(), createExtensionRuntime());
+
+		expect(getExtensionMcpServers()).toHaveLength(1);
+	});
+
+	it("reads mcpServers from a .mcp.json file when not inline", async () => {
+		const root = path.join(tempDir, "plugins", "filey");
+		writeJson(path.join(root, ".claude-plugin", "plugin.json"), { name: "filey" });
+		writeJson(path.join(root, ".mcp.json"), { mcpServers: { fs: { command: "fs-server" } } });
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.mcpServers).toMatchObject({ fs: { command: "fs-server" } });
 	});
 });
