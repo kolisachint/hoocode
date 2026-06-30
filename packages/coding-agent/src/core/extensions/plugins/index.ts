@@ -8,11 +8,12 @@
  * so plugins are just extensions assembled from a manifest instead of code.
  *
  * Capability wiring (minimum):
- *  - skills / commands / themes → `resources_discover` resource paths
- *  - agents                     → `addModeSearchPath` (best-effort; see design doc)
- *  - providers (native only)    → `registerProvider`
- *  - hooks                      → shell-protocol bridge (see hooks-bridge.ts)
- *  - mcpServers                 → parsed; wiring deferred (see design doc)
+ *  - skills / themes         → `resources_discover` skill/theme paths
+ *  - commands                → `resources_discover` slash-command paths (`.agents/commands`)
+ *  - agents                  → `resources_discover` agent paths (`.agents/agents` subagents)
+ *  - providers (native only) → `registerProvider`
+ *  - hooks                   → shell-protocol bridge (see hooks-bridge.ts)
+ *  - mcpServers              → parsed; wiring deferred (see design doc)
  */
 
 import * as fs from "node:fs";
@@ -56,18 +57,16 @@ export function discoverPlugins(pluginDirs: string[]): NormalizedPlugin[] {
 /** Build a synthetic extension factory that wires one normalized plugin. */
 export function buildPluginFactory(plugin: NormalizedPlugin): ExtensionFactory {
 	const factory: ExtensionFactory = (pi: ExtensionAPI) => {
-		// Resources: contribute the plugin's skill/command/theme directories.
-		if (plugin.skillsDir || plugin.commandsDir || plugin.themesDir) {
+		// Resources: contribute the plugin's capability directories. Commands map to
+		// the slash-command surface (`.agents/commands`) and agents to subagent
+		// definitions (`.agents/agents`), matching hoocode's native conventions.
+		if (plugin.skillsDir || plugin.commandsDir || plugin.themesDir || plugin.agentsDir) {
 			pi.on("resources_discover", () => ({
 				skillPaths: plugin.skillsDir ? [plugin.skillsDir] : undefined,
-				promptPaths: plugin.commandsDir ? [plugin.commandsDir] : undefined,
 				themePaths: plugin.themesDir ? [plugin.themesDir] : undefined,
+				slashCommandPaths: plugin.commandsDir ? [plugin.commandsDir] : undefined,
+				agentPaths: plugin.agentsDir ? [plugin.agentsDir] : undefined,
 			}));
-		}
-
-		// Agents → mode search path (best-effort; structure transform is a follow-up).
-		if (plugin.agentsDir) {
-			pi.addModeSearchPath(plugin.agentsDir);
 		}
 
 		// Providers (native plugins only).

@@ -2072,12 +2072,16 @@ export class AgentSession {
 			return;
 		}
 
-		const { skillPaths, promptPaths, themePaths } = await this._extensionRunner.emitResourcesDiscover(
-			this._cwd,
-			reason,
-		);
+		const { skillPaths, promptPaths, themePaths, slashCommandPaths, agentPaths } =
+			await this._extensionRunner.emitResourcesDiscover(this._cwd, reason);
 
-		if (skillPaths.length === 0 && promptPaths.length === 0 && themePaths.length === 0) {
+		if (
+			skillPaths.length === 0 &&
+			promptPaths.length === 0 &&
+			themePaths.length === 0 &&
+			slashCommandPaths.length === 0 &&
+			agentPaths.length === 0
+		) {
 			return;
 		}
 
@@ -2085,6 +2089,8 @@ export class AgentSession {
 			skillPaths: this.buildExtensionResourcePaths(skillPaths),
 			promptPaths: this.buildExtensionResourcePaths(promptPaths),
 			themePaths: this.buildExtensionResourcePaths(themePaths),
+			slashCommandPaths: this.buildExtensionResourcePaths(slashCommandPaths),
+			agentPaths: this.buildExtensionResourcePaths(agentPaths),
 		};
 
 		this._resourceLoader.extendResources(extensionPaths);

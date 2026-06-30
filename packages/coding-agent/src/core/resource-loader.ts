@@ -25,6 +25,8 @@ export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
 	promptPaths?: Array<{ path: string; metadata: PathMetadata }>;
 	themePaths?: Array<{ path: string; metadata: PathMetadata }>;
+	slashCommandPaths?: Array<{ path: string; metadata: PathMetadata }>;
+	agentPaths?: Array<{ path: string; metadata: PathMetadata }>;
 }
 
 export interface ResourceLoader {
@@ -378,6 +380,51 @@ export class DefaultResourceLoader implements ResourceLoader {
 			);
 			this.updateThemesFromPaths(this.lastThemePaths);
 		}
+
+		// Slash commands share the `/name` namespace with prompt templates but use the
+		// dedicated slash-command surface (mirrors `.agents/commands`).
+		const slashCommandPaths = this.normalizeExtensionPaths(paths.slashCommandPaths ?? []);
+		for (const entry of slashCommandPaths) {
+			this.extensionPromptSourceInfos.set(entry.path, createSourceInfo(entry.path, entry.metadata));
+		}
+		if (slashCommandPaths.length > 0) {
+			this.lastSlashCommandPaths = this.mergePaths(
+				this.lastSlashCommandPaths,
+				slashCommandPaths.map((entry) => entry.path),
+			);
+			this.updatePromptsFromPaths(this.lastPromptPaths, this.lastSlashCommandPaths);
+		}
+
+		// Subagent definitions (mirrors `.agents/agents`). Directories are expanded to
+		// their `.md` files because the agent registry's manifest-path source loads files.
+		const agentPaths = this.normalizeExtensionPaths(paths.agentPaths ?? []);
+		if (agentPaths.length > 0) {
+			this.lastAgentPaths = this.mergePaths(
+				this.lastAgentPaths,
+				this.expandAgentFiles(agentPaths.map((entry) => entry.path)),
+			);
+			setAgentManifestPaths(this.lastAgentPaths);
+		}
+	}
+
+	/** Expand agent directories to their `.md` files; pass through file paths unchanged. */
+	private expandAgentFiles(paths: string[]): string[] {
+		const files: string[] = [];
+		for (const p of paths) {
+			try {
+				if (!existsSync(p)) continue;
+				if (statSync(p).isDirectory()) {
+					for (const f of readdirSync(p)) {
+						if (f.endsWith(".md")) files.push(join(p, f));
+					}
+				} else {
+					files.push(p);
+				}
+			} catch {
+				// ignore unreadable paths
+			}
+		}
+		return files;
 	}
 
 	async reload(): Promise<void> {

@@ -85,7 +85,7 @@ describe("plugin manifests", () => {
 });
 
 describe("plugin factory wiring", () => {
-	it("registers resources, providers, mode paths and hooks via the ExtensionAPI", () => {
+	it("registers resources, providers and hooks via the ExtensionAPI", () => {
 		const plugin = {
 			id: "p",
 			root: "/tmp/p",
@@ -100,11 +100,13 @@ describe("plugin factory wiring", () => {
 
 		const events: string[] = [];
 		const providers: string[] = [];
-		const modePaths: string[] = [];
+		const discovered: Record<string, unknown>[] = [];
 		const pi = {
-			on: (event: string) => events.push(event),
+			on: (event: string, handler: () => Record<string, unknown>) => {
+				events.push(event);
+				if (event === "resources_discover") discovered.push(handler());
+			},
 			registerProvider: (name: string) => providers.push(name),
-			addModeSearchPath: (p: string) => modePaths.push(p),
 		} as unknown as Parameters<ReturnType<typeof buildPluginFactory>>[0];
 
 		const factory = buildPluginFactory(plugin);
@@ -114,7 +116,12 @@ describe("plugin factory wiring", () => {
 		expect(events).toContain("resources_discover");
 		expect(events).toContain("tool_call"); // PreToolUse hook
 		expect(providers).toEqual(["prov"]);
-		expect(modePaths).toEqual(["/tmp/p/agents"]);
+		// Commands → slash-command surface, agents → subagent surface.
+		expect(discovered[0]).toMatchObject({
+			skillPaths: ["/tmp/p/skills"],
+			slashCommandPaths: ["/tmp/p/commands"],
+			agentPaths: ["/tmp/p/agents"],
+		});
 	});
 });
 

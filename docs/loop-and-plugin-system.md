@@ -104,22 +104,21 @@ loader/runner — plugins are "extensions assembled from a manifest instead of c
 |---|---|---|
 | `name` / `version` / `description` / `author` | plugin identity metadata | ✅ shipped |
 | `skills/` | `resources_discover` → `skillPaths` | ✅ shipped |
-| `commands/` | `resources_discover` → `promptPaths` | ✅ shipped (best-effort¹) |
+| `commands/` | `resources_discover` → `slashCommandPaths` (the `.agents/commands` surface) | ✅ shipped |
 | `themes/` | `resources_discover` → `themePaths` | ✅ shipped |
-| `agents/` | `addModeSearchPath` | ⚠️ best-effort² |
+| `agents/` | `resources_discover` → `agentPaths` (the `.agents/agents` subagent surface) | ✅ shipped |
 | `providers` (native only) | `registerProvider` | ✅ shipped |
 | `hooks` / `hooks/hooks.json` | shell-protocol bridge | ✅ shipped (events below) |
-| `mcpServers` / `.mcp.json` | MCP server connect | ⏳ parsed, wiring deferred³ |
+| `mcpServers` / `.mcp.json` | MCP server connect | ⏳ parsed, wiring deferred¹ |
 
-¹ Claude command `.md` files use frontmatter (`description`, `allowed-tools`,
-`argument-hint`). hoocode prompt templates are broadly compatible markdown; a
-format transform for full fidelity is a follow-up.
+The `resources_discover` event contract was extended with `slashCommandPaths` and
+`agentPaths` (mirroring the existing `skillPaths`/`promptPaths`/`themePaths` fields)
+so plugin `commands/` and `agents/` flow into the same loaders that handle hoocode's
+native `.agents/commands` (slash commands) and `.agents/agents` (subagents). Agent
+directories are expanded to their `.md` files for the agent registry's manifest-path
+source; slash commands share the `/name` namespace with prompt templates.
 
-² hoocode mode lookup expects `{dir}/{modeName}/system.md`, while Claude `agents/`
-are flat `*.md` with frontmatter. The path is registered but the structure differs —
-a transform (agents `*.md` → mode dirs) is needed for real loading.
-
-³ MCP loading today is file-based (`setupMcpLoader` reads standard `mcp.json`
+¹ MCP loading today is file-based (`setupMcpLoader` reads standard `mcp.json`
 locations). There is no ExtensionAPI to inject server configs at load time. Options
 for wiring: (a) add `pi.registerMcpServer(...)`, or (b) have the plugin loader merge
 plugin `mcpServers` into the set `setupMcpLoader` consumes. Until then, plugin
