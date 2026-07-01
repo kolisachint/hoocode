@@ -46,7 +46,15 @@ import {
 	TUI,
 } from "@kolisachint/hoocode-tui";
 import { spawn, spawnSync } from "child_process";
-import { APP_NAME, APP_TITLE, getAgentDir, getAuthPath, getDocsPath, VERSION } from "../../config.js";
+import {
+	APP_NAME,
+	APP_TITLE,
+	getAgentDir,
+	getAuthPath,
+	getDocsPath,
+	resolveVoicetoolsBin,
+	VERSION,
+} from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
@@ -128,6 +136,7 @@ import {
 	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
+import { startVoiceTranscribe, type VoiceSession } from "./voice-transcribe.js";
 
 /** Interface for components that can be expanded/collapsed */
 interface Expandable {
@@ -229,6 +238,7 @@ export class InteractiveMode {
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
+	private voiceSession: VoiceSession | undefined;
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
@@ -2592,6 +2602,7 @@ export class InteractiveMode {
 		});
 		this.defaultEditor.onAction("app.team.focus", () => this.enterTeamFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
+		this.defaultEditor.onAction("app.input.voiceTranscribe", () => this.toggleVoiceTranscribe());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.commandExecutor.handleClear());
@@ -3359,6 +3370,43 @@ export class InteractiveMode {
 	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
+	/**
+	 * Toggle voice-to-text capture. First press spawns `voicetools`, streams
+	 * decoded segments into the editor via bracketed paste, and reports state
+	 * through the status line. Pressing the shortcut again stops early.
+	 */
+	private toggleVoiceTranscribe(): void {
+		if (this.voiceSession?.running) {
+			this.voiceSession.stop();
+			this.voiceSession = undefined;
+			this.showStatus("Voice input cancelled");
+			return;
+		}
+
+		const statusLabels: Record<string, string> = {
+			recording: "Recording... speak now (press again to cancel)",
+			transcribing: "Transcribing...",
+			done: "Voice input done",
+		};
+
+		this.voiceSession = startVoiceTranscribe(resolveVoicetoolsBin(), {
+			onStatus: (status) => {
+				this.showStatus(statusLabels[status] ?? status);
+				if (status === "done") {
+					this.voiceSession = undefined;
+				}
+			},
+			onSegment: (text) => {
+				// Inject via bracketed paste so the editor treats it as pasted text.
+				this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
+			},
+			onError: (message) => {
+				this.voiceSession = undefined;
+				this.showError(`Voice input failed: ${message}`);
+			},
+		});
+	}
+
 	private showStatus(message: string): void {
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
@@ -5332,6 +5380,10 @@ export class InteractiveMode {
 
 	stop(): void {
 		this.unregisterSignalHandlers();
+		if (this.voiceSession?.running) {
+			this.voiceSession.stop();
+			this.voiceSession = undefined;
+		}
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}
