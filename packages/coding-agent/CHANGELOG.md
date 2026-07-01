@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Voice-to-text (`ctrl+r`) now allows a longer thinking pause before a capture
+  auto-stops. The trailing-silence window is raised from 600ms to 3s and is now
+  passed through to `voicetools serve` via `--silence-ms`, so the real cutoff
+  matches the on-screen countdown (previously the hoocode-side value only drove
+  the cosmetic countdown while the binary used its own 600ms default).
+- Voice daemon idle shutdown: after 60s with no capture, the warm `voicetools
+  serve` process exits automatically, releasing the ~900 MB resident ASR model
+  from memory. The next `ctrl+r` pays a cold-start respawn cost. Controlled
+  by `VOICE_IDLE_TIMEOUT_MS` (default 60,000; 0 disables).
+
 ## [0.4.105] - 2026-07-01
 
 ### Added
