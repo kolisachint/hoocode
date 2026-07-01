@@ -2,7 +2,12 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { startVoiceTranscribe, type VoiceStatus } from "../src/modes/interactive/voice-transcribe.js";
+import {
+	startVoiceTranscribe,
+	VoiceDaemon,
+	type VoiceDaemonHandlers,
+	type VoiceStatus,
+} from "../src/modes/interactive/voice-transcribe.js";
 
 /**
  * Write a fake `voicetools` executable (a Node script) that emits the given
@@ -109,5 +114,240 @@ describe("voice-transcribe", () => {
 		const result = await run(wrapper);
 		expect(result.errors.length).toBe(1);
 		expect(result.errors[0]).toContain("code 3");
+	});
+});
+
+/** Write a fake `voicetools` wrapper that execs a Node script for `serve`. */
+function writeFakeWrapper(dir: string, script: string): string {
+	const wrapper = join(dir, "voicetools");
+	writeFileSync(wrapper, `#!/bin/sh\nexec node ${JSON.stringify(script)} "$@"\n`);
+	chmodSync(wrapper, 0o755);
+	return wrapper;
+}
+
+interface DaemonCollected {
+	ready: number;
+	segments: string[];
+	partials: string[];
+	finals: string[];
+	statuses: VoiceStatus[];
+	levels: number[];
+	phases: string[];
+	errors: string[];
+	crashes: string[];
+}
+
+function emptyCollected(): DaemonCollected {
+	return {
+		ready: 0,
+		segments: [],
+		partials: [],
+		finals: [],
+		statuses: [],
+		levels: [],
+		phases: [],
+		errors: [],
+		crashes: [],
+	};
+}
+
+function collectingHandlers(collected: DaemonCollected): VoiceDaemonHandlers {
+	return {
+		onReady: () => {
+			collected.ready += 1;
+		},
+		onSegment: (t) => collected.segments.push(t),
+		onPartial: (t) => collected.partials.push(t),
+		onFinal: (t) => collected.finals.push(t),
+		onStatus: (s) => collected.statuses.push(s),
+		onLevel: (rms) => collected.levels.push(rms),
+		onPhase: (p) => collected.phases.push(p),
+		onError: (e) => collected.errors.push(e),
+		onCrash: (m) => collected.crashes.push(m),
+	};
+}
+
+describe("VoiceDaemon", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "voice-daemon-"));
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("resolves reason: unsupported when the binary doesn't support `serve` (probe fallback)", async () => {
+		// Old binaries reject the unrecognized `serve` subcommand and exit
+		// immediately without ever printing READY or any stdout line at all.
+		const script = join(dir, "old.mjs");
+		writeFileSync(script, "#!/usr/bin/env node\nprocess.exit(2);\n");
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(result).toEqual({ ok: false, reason: "unsupported" });
+		expect(collected.ready).toBe(0);
+		expect(collected.errors).toEqual([]);
+	});
+
+	// Reproduces a real behavior observed from the actual voicetools binary:
+	// `voicetools serve` with no model installed prints an ERROR line and
+	// exits 1, without ever printing READY. This must NOT be misread as an
+	// "unsupported binary" (which would silently retry with `transcribe` and
+	// just hit the same error with a worse message) — it's a real, actionable
+	// error the user needs to see.
+	it("resolves reason: error (not unsupported) for a genuine pre-READY ERROR line", async () => {
+		const script = join(dir, "no-model.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+process.stdout.write("ERROR no model found for 'parakeet-v3' \\u2014 run: voicetools setup --model parakeet-v3\\n");
+process.exit(1);
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(result).toEqual({ ok: false, reason: "error" });
+		expect(collected.errors).toEqual([
+			"no model found for 'parakeet-v3' — run: voicetools setup --model parakeet-v3",
+		]);
+	});
+
+	it("loads once, then streams LEVEL/PHASE/SEGMENT/DONE for a capture", async () => {
+		// A minimal fake daemon: prints READY immediately, then on receiving
+		// START streams a listening -> silence -> segment -> done sequence.
+		const script = join(dir, "serve.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+process.stdout.write("READY\\n");
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+	if (line === "START") {
+		process.stdout.write("STATUS listening\\n");
+		process.stdout.write("LEVEL 0.05\\n");
+		process.stdout.write("PHASE silence\\n");
+		process.stdout.write("LEVEL 0.001\\n");
+		process.stdout.write("SEGMENT hello world\\n");
+		process.stdout.write("DONE\\n");
+	} else if (line === "SHUTDOWN") {
+		process.exit(0);
+	}
+});
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const doneSeen = new Promise<void>((resolve) => {
+			const handlers = collectingHandlers(collected);
+			handlers.onStatus = (s) => {
+				collected.statuses.push(s);
+				if (s === "done") resolve();
+			};
+			void (async () => {
+				const result = await VoiceDaemon.spawn(wrapper, handlers);
+				expect(result.ok).toBe(true);
+				if (result.ok) result.daemon.startCapture();
+			})();
+		});
+
+		await doneSeen;
+		expect(collected.ready).toBe(1);
+		expect(collected.statuses).toEqual(["listening", "done"]);
+		expect(collected.levels).toEqual([0.05, 0.001]);
+		expect(collected.phases).toEqual(["silence"]);
+		expect(collected.segments).toEqual(["hello world"]);
+	});
+
+	// Mirrors the real v0.1.4 serve streaming protocol: repeated PARTIAL lines
+	// carrying the FULL growing hypothesis (each supersedes the previous, never
+	// committed), then a single FINAL with the complete text, then DONE.
+	it("streams PARTIAL (growing) then a single FINAL for a v0.1.4 capture", async () => {
+		const script = join(dir, "serve-stream.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+process.stdout.write("READY\\n");
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+	if (line === "START") {
+		process.stdout.write("STATUS listening\\n");
+		process.stdout.write("LEVEL 0.12\\n");
+		process.stdout.write("PARTIAL and so\\n");
+		process.stdout.write("PARTIAL and so my fellow\\n");
+		process.stdout.write("PARTIAL and so my fellow americans\\n");
+		process.stdout.write("PHASE silence\\n");
+		process.stdout.write("STATUS transcribing\\n");
+		process.stdout.write("FINAL And so, my fellow Americans.\\n");
+		process.stdout.write("DONE\\n");
+	} else if (line === "SHUTDOWN") {
+		process.exit(0);
+	}
+});
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const doneSeen = new Promise<void>((resolve) => {
+			const handlers = collectingHandlers(collected);
+			handlers.onStatus = (s) => {
+				collected.statuses.push(s);
+				if (s === "done") resolve();
+			};
+			void (async () => {
+				const result = await VoiceDaemon.spawn(wrapper, handlers);
+				expect(result.ok).toBe(true);
+				if (result.ok) result.daemon.startCapture();
+			})();
+		});
+
+		await doneSeen;
+		expect(collected.statuses).toEqual(["listening", "transcribing", "done"]);
+		// Each PARTIAL is the full text-so-far, not a per-word delta.
+		expect(collected.partials).toEqual(["and so", "and so my fellow", "and so my fellow americans"]);
+		// Exactly one FINAL, carrying the complete committed utterance.
+		expect(collected.finals).toEqual(["And so, my fellow Americans."]);
+		// Streaming mode does not use SEGMENT.
+		expect(collected.segments).toEqual([]);
+		expect(collected.phases).toEqual(["silence"]);
+	});
+
+	it("reports onCrash when the daemon exits unexpectedly after READY", async () => {
+		const script = join(dir, "crashy.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+process.stdout.write("READY\\n");
+setTimeout(() => process.exit(1), 20);
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(result.ok).toBe(true);
+
+		await new Promise<void>((resolve) => {
+			const check = setInterval(() => {
+				if (collected.crashes.length > 0) {
+					clearInterval(check);
+					resolve();
+				}
+			}, 10);
+		});
+		expect(collected.crashes[0]).toContain("code 1");
 	});
 });
