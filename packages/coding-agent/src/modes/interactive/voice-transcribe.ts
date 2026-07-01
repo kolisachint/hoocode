@@ -271,7 +271,7 @@ export class VoiceDaemon {
 		}
 	}
 
-	/** Begin a capture: opens the mic, streams SEGMENTs, ends with DONE. */
+	/** Begin a capture: opens the mic, streams PARTIAL/FINAL (or SEGMENT), ends with DONE. */
 	startCapture(): void {
 		if (this.closed) return;
 		this.proc.stdin?.write("START\n");
