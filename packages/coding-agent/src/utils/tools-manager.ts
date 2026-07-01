@@ -30,7 +30,7 @@ function isOfflineModeEnabled(): boolean {
 }
 
 /** Tools whose binaries hoocode can resolve from PATH or download on demand. */
-export type ManagedTool = "fd" | "rg" | "webtools" | "filetools" | "browsertools";
+export type ManagedTool = "fd" | "rg" | "webtools" | "filetools" | "browsertools" | "voicetools";
 
 interface ToolConfig {
 	name: string;
@@ -120,6 +120,26 @@ const TOOLS: Record<string, ToolConfig> = {
 				return `browsertools-${archStr}-unknown-linux-gnu.tar.gz`;
 			} else if (plat === "win32") {
 				return `browsertools-${archStr}-pc-windows-msvc.zip`;
+			}
+			return null;
+		},
+	},
+	voicetools: {
+		name: "voicetools",
+		repo: "kolisachint/voicetools",
+		binaryName: "voicetools",
+		tagPrefix: "v",
+		// Release archives follow Rust target triples: voicetools-<arch>-<target>.<ext>.
+		// A missing platform asset 404s and ensureTool degrades gracefully (returns
+		// undefined; the voice-transcribe caller then surfaces an error message).
+		getAssetName: (_version, plat, architecture) => {
+			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
+			if (plat === "darwin") {
+				return `voicetools-${archStr}-apple-darwin.tar.gz`;
+			} else if (plat === "linux") {
+				return `voicetools-${archStr}-unknown-linux-gnu.tar.gz`;
+			} else if (plat === "win32") {
+				return `voicetools-${archStr}-pc-windows-msvc.zip`;
 			}
 			return null;
 		},
@@ -431,6 +451,7 @@ const TERMUX_PACKAGES: Record<string, string> = {
 	webtools: "webtools",
 	filetools: "filetools",
 	browsertools: "browsertools",
+	voicetools: "voicetools",
 };
 
 // Ensure a tool is available, downloading if necessary

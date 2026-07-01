@@ -190,7 +190,7 @@ function migrateToolsToBin(): void {
 
 	if (!existsSync(toolsDir)) return;
 
-	const binaries = ["fd", "rg", "webtools", "fd.exe", "rg.exe"];
+	const binaries = ["fd", "rg", "webtools", "voicetools", "fd.exe", "rg.exe"];
 	let movedAny = false;
 
 	for (const bin of binaries) {
@@ -247,6 +247,7 @@ function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] 
 					lower !== "fd" &&
 					lower !== "rg" &&
 					lower !== "webtools" &&
+					lower !== "voicetools" &&
 					lower !== "fd.exe" &&
 					lower !== "rg.exe" &&
 					!e.startsWith(".") // Ignore .DS_Store and other hidden files

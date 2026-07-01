@@ -540,19 +540,6 @@ export function getBinDir(): string {
 	return join(getAgentDir(), "bin");
 }
 
-/**
- * Resolve the `voicetools` binary used for voice-to-text.
- * Precedence: explicit VOICETOOLS_BIN env var, then a user-installed binary in
- * the managed bin dir (~/.hoocode/bin/voicetools), then bare `voicetools` on PATH.
- */
-export function resolveVoicetoolsBin(): string {
-	if (process.env.VOICETOOLS_BIN) return process.env.VOICETOOLS_BIN;
-	const binName = process.platform === "win32" ? "voicetools.exe" : "voicetools";
-	const bundled = join(getBinDir(), binName);
-	if (existsSync(bundled)) return bundled;
-	return "voicetools";
-}
-
 /** Get path to prompt templates directory */
 export function getPromptsDir(): string {
 	return join(getAgentDir(), "prompts");
