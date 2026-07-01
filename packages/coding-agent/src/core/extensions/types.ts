@@ -549,6 +549,10 @@ export interface ResourcesDiscoverResult {
 	skillPaths?: string[];
 	promptPaths?: string[];
 	themePaths?: string[];
+	/** Slash-command directories or `.md` files (the `.agents/commands` surface). */
+	slashCommandPaths?: string[];
+	/** Subagent definition directories or `.md` files (the `.agents/agents` surface). */
+	agentPaths?: string[];
 }
 
 // ============================================================================

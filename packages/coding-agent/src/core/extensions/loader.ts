@@ -27,7 +27,9 @@ import * as _bundledPiCodingAgent from "../../index.js";
 import { createEventBus, type EventBus } from "../event-bus.js";
 import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
+import { clearExtensionMcpServers } from "../extension-mcp-servers.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
+import { buildPluginFactory, discoverPlugins } from "./plugins/index.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -635,5 +637,56 @@ export async function discoverAndLoadExtensions(
 		addPaths([resolved]);
 	}
 
-	return loadExtensions(allPaths, cwd, eventBus);
+	const resolvedEventBus = eventBus ?? createEventBus();
+	const result = await loadExtensions(allPaths, cwd, resolvedEventBus);
+
+	// Plugins: directories under plugins/ with a recognized manifest.
+	const pluginDirs = defaultPluginDirs(cwd, agentDir);
+	const pluginResult = await loadPlugins(pluginDirs, cwd, resolvedEventBus, result.runtime);
+	result.extensions.push(...pluginResult.extensions);
+	result.errors.push(...pluginResult.errors);
+
+	return result;
+}
+
+/** Standard plugin discovery directories: project-local then global. */
+export function defaultPluginDirs(cwd: string, agentDir: string = getAgentDir()): string[] {
+	return [path.join(cwd, CONFIG_DIR_NAME, "plugins"), path.join(agentDir, "plugins")];
+}
+
+/**
+ * Discover plugins under `pluginDirs` and load each as a synthetic extension into
+ * the given runtime/event bus. Clears the extension MCP registry first so reloads
+ * rebuild the set cleanly.
+ */
+export async function loadPlugins(
+	pluginDirs: string[],
+	cwd: string,
+	eventBus: EventBus,
+	runtime: ExtensionRuntime,
+): Promise<{ extensions: Extension[]; errors: Array<{ path: string; error: string }> }> {
+	clearExtensionMcpServers();
+	const extensions: Extension[] = [];
+	const errors: Array<{ path: string; error: string }> = [];
+
+	for (const plugin of discoverPlugins(pluginDirs)) {
+		try {
+			const extension = await loadExtensionFromFactory(
+				buildPluginFactory(plugin),
+				cwd,
+				eventBus,
+				runtime,
+				`<plugin:${plugin.id}>`,
+				`plugin:${plugin.id}`,
+			);
+			extensions.push(extension);
+		} catch (err) {
+			errors.push({
+				path: plugin.manifestPath,
+				error: `Failed to load plugin "${plugin.id}": ${err instanceof Error ? err.message : String(err)}`,
+			});
+		}
+	}
+
+	return { extensions, errors };
 }

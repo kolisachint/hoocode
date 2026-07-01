@@ -11,7 +11,13 @@ export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 import { canonicalizePath, collectAgentsAncestorDirs, isLocalPath } from "../utils/paths.js";
 import { setAgentManifestPaths } from "./agent-manifest-paths.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
-import { createExtensionRuntime, loadExtensionFromFactory, loadExtensions } from "./extensions/loader.js";
+import {
+	createExtensionRuntime,
+	defaultPluginDirs,
+	loadExtensionFromFactory,
+	loadExtensions,
+	loadPlugins,
+} from "./extensions/loader.js";
 import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "./extensions/types.js";
 import { DefaultPackageManager, type PathMetadata } from "./package-manager.js";
 import type { PromptTemplate } from "./prompt-templates.js";
@@ -25,6 +31,8 @@ export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
 	promptPaths?: Array<{ path: string; metadata: PathMetadata }>;
 	themePaths?: Array<{ path: string; metadata: PathMetadata }>;
+	slashCommandPaths?: Array<{ path: string; metadata: PathMetadata }>;
+	agentPaths?: Array<{ path: string; metadata: PathMetadata }>;
 }
 
 export interface ResourceLoader {
@@ -378,6 +386,51 @@ export class DefaultResourceLoader implements ResourceLoader {
 			);
 			this.updateThemesFromPaths(this.lastThemePaths);
 		}
+
+		// Slash commands share the `/name` namespace with prompt templates but use the
+		// dedicated slash-command surface (mirrors `.agents/commands`).
+		const slashCommandPaths = this.normalizeExtensionPaths(paths.slashCommandPaths ?? []);
+		for (const entry of slashCommandPaths) {
+			this.extensionPromptSourceInfos.set(entry.path, createSourceInfo(entry.path, entry.metadata));
+		}
+		if (slashCommandPaths.length > 0) {
+			this.lastSlashCommandPaths = this.mergePaths(
+				this.lastSlashCommandPaths,
+				slashCommandPaths.map((entry) => entry.path),
+			);
+			this.updatePromptsFromPaths(this.lastPromptPaths, this.lastSlashCommandPaths);
+		}
+
+		// Subagent definitions (mirrors `.agents/agents`). Directories are expanded to
+		// their `.md` files because the agent registry's manifest-path source loads files.
+		const agentPaths = this.normalizeExtensionPaths(paths.agentPaths ?? []);
+		if (agentPaths.length > 0) {
+			this.lastAgentPaths = this.mergePaths(
+				this.lastAgentPaths,
+				this.expandAgentFiles(agentPaths.map((entry) => entry.path)),
+			);
+			setAgentManifestPaths(this.lastAgentPaths);
+		}
+	}
+
+	/** Expand agent directories to their `.md` files; pass through file paths unchanged. */
+	private expandAgentFiles(paths: string[]): string[] {
+		const files: string[] = [];
+		for (const p of paths) {
+			try {
+				if (!existsSync(p)) continue;
+				if (statSync(p).isDirectory()) {
+					for (const f of readdirSync(p)) {
+						if (f.endsWith(".md")) files.push(join(p, f));
+					}
+				} else {
+					files.push(p);
+				}
+			} catch {
+				// ignore unreadable paths
+			}
+		}
+		return files;
 	}
 
 	async reload(): Promise<void> {
@@ -462,6 +515,17 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const inlineExtensions = await this.loadExtensionFactories(extensionsResult.runtime);
 		extensionsResult.extensions.push(...inlineExtensions.extensions);
 		extensionsResult.errors.push(...inlineExtensions.errors);
+
+		// Plugins: directories under plugins/ with a recognized manifest, loaded into
+		// the same runtime so they participate like any other extension.
+		const pluginResult = await loadPlugins(
+			defaultPluginDirs(this.cwd, this.agentDir),
+			this.cwd,
+			this.eventBus,
+			extensionsResult.runtime,
+		);
+		extensionsResult.extensions.push(...pluginResult.extensions);
+		extensionsResult.errors.push(...pluginResult.errors);
 
 		// Detect extension conflicts (tools, commands, flags with same names from different extensions)
 		// Keep all extensions loaded. Conflicts are reported as diagnostics, and precedence is handled by load order.
