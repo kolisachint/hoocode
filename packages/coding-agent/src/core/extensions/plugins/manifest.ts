@@ -67,7 +67,7 @@ export interface NormalizedPlugin {
 	themesDir?: string;
 	/** Parsed hooks (from `hooks/hooks.json` or inline `hooks`). */
 	hooks?: PluginHooksConfig;
-	/** Parsed MCP servers (from `.mcp.json` or inline `mcpServers`). Wiring deferred. */
+	/** Parsed MCP servers (from `.mcp.json` or inline `mcpServers`); connected via the MCP registry. */
 	mcpServers?: Record<string, unknown>;
 	/** Native-only: providers to register. */
 	providers?: PluginProvider[];
