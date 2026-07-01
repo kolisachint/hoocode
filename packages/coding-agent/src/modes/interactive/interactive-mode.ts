@@ -46,15 +46,7 @@ import {
 	TUI,
 } from "@kolisachint/hoocode-tui";
 import { spawn, spawnSync } from "child_process";
-import {
-	APP_NAME,
-	APP_TITLE,
-	getAgentDir,
-	getAuthPath,
-	getDocsPath,
-	resolveVoicetoolsBin,
-	VERSION,
-} from "../../config.js";
+import { APP_NAME, APP_TITLE, getAgentDir, getAuthPath, getDocsPath, VERSION } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
@@ -239,6 +231,8 @@ export class InteractiveMode {
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
 	private voiceSession: VoiceSession | undefined;
+	/** True while the voicetools binary is being resolved/downloaded before a session starts. */
+	private voiceStarting = false;
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
@@ -3376,9 +3370,10 @@ export class InteractiveMode {
 	 * through the status line. Pressing the shortcut again stops early.
 	 */
 	private toggleVoiceTranscribe(): void {
-		if (this.voiceSession?.running) {
-			this.voiceSession.stop();
+		if (this.voiceSession?.running || this.voiceStarting) {
+			this.voiceSession?.stop();
 			this.voiceSession = undefined;
+			this.voiceStarting = false;
 			this.showStatus("Voice input cancelled");
 			return;
 		}
@@ -3389,22 +3384,56 @@ export class InteractiveMode {
 			done: "Voice input done",
 		};
 
-		this.voiceSession = startVoiceTranscribe(resolveVoicetoolsBin(), {
-			onStatus: (status) => {
-				this.showStatus(statusLabels[status] ?? status);
-				if (status === "done") {
-					this.voiceSession = undefined;
+		// Resolve the binary the same way as the other managed tools (webtools etc.):
+		// an explicit VOICETOOLS_BIN wins, otherwise resolve from bin/PATH and download
+		// from the published release on demand. This runs async, so guard re-entry with
+		// `voiceStarting` and let a second press before it resolves cancel the start.
+		this.voiceStarting = true;
+		this.showStatus("Preparing voice input...");
+		void this.resolveVoiceBin()
+			.then((bin) => {
+				// A second key press while resolving cleared the flag: honour the cancel.
+				if (!this.voiceStarting) return;
+				this.voiceStarting = false;
+				if (!bin) {
+					this.showError(
+						"Voice input failed: voicetools binary unavailable and could not be downloaded. " +
+							"Install it, set VOICETOOLS_BIN, or ensure a published release exists for this platform.",
+					);
+					return;
 				}
-			},
-			onSegment: (text) => {
-				// Inject via bracketed paste so the editor treats it as pasted text.
-				this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
-			},
-			onError: (message) => {
-				this.voiceSession = undefined;
-				this.showError(`Voice input failed: ${message}`);
-			},
-		});
+				this.voiceSession = startVoiceTranscribe(bin, {
+					onStatus: (status) => {
+						this.showStatus(statusLabels[status] ?? status);
+						if (status === "done") {
+							this.voiceSession = undefined;
+						}
+					},
+					onSegment: (text) => {
+						// Inject via bracketed paste so the editor treats it as pasted text.
+						this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
+					},
+					onError: (message) => {
+						this.voiceSession = undefined;
+						this.showError(`Voice input failed: ${message}`);
+					},
+				});
+			})
+			.catch((err: unknown) => {
+				this.voiceStarting = false;
+				this.showError(`Voice input failed: ${err instanceof Error ? err.message : String(err)}`);
+			});
+	}
+
+	/**
+	 * Resolve the `voicetools` binary path. Prefers an explicit VOICETOOLS_BIN
+	 * override, otherwise resolves via the managed tools manager (bin dir / PATH /
+	 * download from the published release). Returns undefined when unavailable.
+	 */
+	private async resolveVoiceBin(): Promise<string | undefined> {
+		const override = process.env.VOICETOOLS_BIN?.trim();
+		if (override) return override;
+		return ensureTool("voicetools", true);
 	}
 
 	private showStatus(message: string): void {
@@ -5384,6 +5413,7 @@ export class InteractiveMode {
 			this.voiceSession.stop();
 			this.voiceSession = undefined;
 		}
+		this.voiceStarting = false;
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}

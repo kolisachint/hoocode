@@ -96,6 +96,8 @@ describe("voice-transcribe", () => {
 	it("reports an error when the binary cannot be spawned", async () => {
 		const result = await run(join(dir, "does-not-exist"));
 		expect(result.errors.length).toBe(1);
+		expect(result.errors[0]).toContain("voicetools binary not found");
+		expect(result.errors[0]).toContain("VOICETOOLS_BIN");
 	});
 
 	it("reports non-zero exit without an explicit ERROR line", async () => {

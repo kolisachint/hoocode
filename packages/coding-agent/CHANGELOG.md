@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Voice-to-text (`ctrl+r`) no longer fails with `spawn voicetools ENOENT` when
+  the binary is not preinstalled. `voicetools` is now a managed tool that is
+  auto-downloaded from the `kolisachint/voicetools` GitHub release on demand
+  (like `webtools`/`filetools`), resolving from `VOICETOOLS_BIN`, then
+  `~/.hoocode/bin/voicetools`, then `PATH`, then download. A missing platform
+  asset degrades to a clear error message instead of a raw spawn failure.
+
 ## [0.4.103] - 2026-07-01
 
 ### Added

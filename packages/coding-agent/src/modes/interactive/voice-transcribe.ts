@@ -36,6 +36,14 @@ export interface VoiceSession {
 	readonly running: boolean;
 }
 
+/** Build a friendly message for a spawn failure, calling out a missing binary. */
+function describeSpawnError(err: unknown, bin: string): string {
+	if (err && typeof err === "object" && (err as NodeJS.ErrnoException).code === "ENOENT") {
+		return `voicetools binary not found (tried "${bin}"). Install it or set VOICETOOLS_BIN to its path.`;
+	}
+	return err instanceof Error ? err.message : String(err);
+}
+
 export function startVoiceTranscribe(bin: string, handlers: VoiceTranscribeHandlers): VoiceSession {
 	let proc: ChildProcess;
 	try {
@@ -43,7 +51,7 @@ export function startVoiceTranscribe(bin: string, handlers: VoiceTranscribeHandl
 			stdio: ["ignore", "pipe", "ignore"],
 		});
 	} catch (err) {
-		handlers.onError(err instanceof Error ? err.message : String(err));
+		handlers.onError(describeSpawnError(err, bin));
 		return { stop: () => {}, running: false };
 	}
 
@@ -81,7 +89,7 @@ export function startVoiceTranscribe(bin: string, handlers: VoiceTranscribeHandl
 	proc.on("error", (err) => {
 		if (stopped || finished) return;
 		finish();
-		handlers.onError(err.message);
+		handlers.onError(describeSpawnError(err, bin));
 	});
 
 	proc.on("close", (code) => {
