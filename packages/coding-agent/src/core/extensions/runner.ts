@@ -72,6 +72,7 @@ const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
 	"app.thinking.toggle",
 	"app.editor.external",
 	"app.message.followUp",
+	"app.input.voiceTranscribe",
 	"tui.input.submit",
 	"tui.select.confirm",
 	"tui.select.cancel",

@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Voice-to-text input: press `ctrl+r` in the editor to record from the mic and
+  stream transcribed text into the input via the external `voicetools` binary.
+  Press again to cancel. The binary is resolved from `VOICETOOLS_BIN`, then
+  `~/.hoocode/bin/voicetools`, then `PATH`.
+
 ## [0.4.102] - 2026-07-01
 
 ## [0.4.101] - 2026-06-28
