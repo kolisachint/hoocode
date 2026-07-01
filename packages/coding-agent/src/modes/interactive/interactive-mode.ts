@@ -3489,14 +3489,25 @@ export class InteractiveMode {
 			});
 	}
 
-	/** Build the (stable, reused-across-captures) handlers for the daemon. */
+	/**
+	 * Build the (stable, reused-across-captures) handlers for the daemon.
+	 *
+	 * `onSegment`/`onStatus`/`onLevel`/`onPhase` all bail out once `voiceActive`
+	 * is false: CANCEL is a soft request (unlike the legacy path's `proc.kill()`,
+	 * it doesn't sever the pipe), so the daemon can still have a trailing
+	 * SEGMENT/DONE for the just-cancelled capture in flight when the user
+	 * presses cancel. Without this guard that stale text would land in the
+	 * editor after the status line already showed cancelled.
+	 */
 	private buildVoiceDaemonHandlers(): VoiceDaemonHandlers {
 		return {
 			onSegment: (text) => {
+				if (!this.voiceActive) return;
 				// Inject via bracketed paste so the editor treats it as pasted text.
 				this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
 			},
 			onStatus: (status) => {
+				if (!this.voiceActive) return;
 				if (status === "done") {
 					this.voiceActive = false;
 					this.resetVoiceUI();
@@ -3506,6 +3517,7 @@ export class InteractiveMode {
 				this.updateVoiceStatusLine();
 			},
 			onLevel: (rms) => {
+				if (!this.voiceActive) return;
 				this.voiceLevel = rms;
 				if (this.voicePhase === "silence" && rms > VOICE_RESUME_RMS_THRESHOLD) {
 					// Speech resumed before the binary re-emitted a status: snap back.
@@ -3515,6 +3527,7 @@ export class InteractiveMode {
 				this.updateVoiceStatusLine();
 			},
 			onPhase: (phase) => {
+				if (!this.voiceActive) return;
 				if (phase === "silence") {
 					this.startVoiceSilenceCountdown();
 				}
