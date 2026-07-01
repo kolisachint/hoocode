@@ -124,16 +124,23 @@ export function startVoiceTranscribe(bin: string, handlers: VoiceTranscribeHandl
 
 /**
  * Handlers for a persistent `voicetools serve` daemon. Extends the base
- * transcribe handlers with the daemon-only events: `onReady` fires once after
- * models finish loading, `onLevel`/`onPhase` drive a live UI meter and the
- * trailing-silence indicator, and `onCrash` fires if the process dies after
- * having been ready (the caller should drop the reference and respawn lazily
- * on the next push-to-talk).
+ * transcribe handlers with the daemon-only events:
+ *  - `onReady`   fires once after models finish loading.
+ *  - `onLevel`   per-audio-chunk RMS, for a live meter/waveform.
+ *  - `onPhase`   phase markers (e.g. `"silence"` when trailing silence begins).
+ *  - `onPartial` interim transcript while the user speaks — the FULL growing
+ *                hypothesis each time (supersedes the previous), never committed.
+ *  - `onFinal`   the complete committed transcript for the utterance, emitted
+ *                once before DONE — this is the text to inject into the editor.
+ *  - `onCrash`   the process died after having been ready (caller should drop
+ *                the reference and respawn lazily on the next push-to-talk).
  */
 export interface VoiceDaemonHandlers extends VoiceTranscribeHandlers {
 	onReady?: () => void;
 	onLevel?: (rms: number) => void;
 	onPhase?: (phase: string) => void;
+	onPartial?: (text: string) => void;
+	onFinal?: (text: string) => void;
 	onCrash?: (message: string) => void;
 }
 
@@ -246,6 +253,10 @@ export class VoiceDaemon {
 	private handleLine(line: string): void {
 		if (line.startsWith("STATUS ")) {
 			this.handlers.onStatus(line.slice(7).trim());
+		} else if (line.startsWith("PARTIAL ")) {
+			this.handlers.onPartial?.(line.slice(8));
+		} else if (line.startsWith("FINAL ")) {
+			this.handlers.onFinal?.(line.slice(6));
 		} else if (line.startsWith("SEGMENT ")) {
 			this.handlers.onSegment(line.slice(8));
 		} else if (line.startsWith("LEVEL ")) {

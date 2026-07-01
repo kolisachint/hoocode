@@ -128,11 +128,27 @@ function writeFakeWrapper(dir: string, script: string): string {
 interface DaemonCollected {
 	ready: number;
 	segments: string[];
+	partials: string[];
+	finals: string[];
 	statuses: VoiceStatus[];
 	levels: number[];
 	phases: string[];
 	errors: string[];
 	crashes: string[];
+}
+
+function emptyCollected(): DaemonCollected {
+	return {
+		ready: 0,
+		segments: [],
+		partials: [],
+		finals: [],
+		statuses: [],
+		levels: [],
+		phases: [],
+		errors: [],
+		crashes: [],
+	};
 }
 
 function collectingHandlers(collected: DaemonCollected): VoiceDaemonHandlers {
@@ -141,6 +157,8 @@ function collectingHandlers(collected: DaemonCollected): VoiceDaemonHandlers {
 			collected.ready += 1;
 		},
 		onSegment: (t) => collected.segments.push(t),
+		onPartial: (t) => collected.partials.push(t),
+		onFinal: (t) => collected.finals.push(t),
 		onStatus: (s) => collected.statuses.push(s),
 		onLevel: (rms) => collected.levels.push(rms),
 		onPhase: (p) => collected.phases.push(p),
@@ -168,15 +186,7 @@ describe("VoiceDaemon", () => {
 		chmodSync(script, 0o755);
 		const wrapper = writeFakeWrapper(dir, script);
 
-		const collected: DaemonCollected = {
-			ready: 0,
-			segments: [],
-			statuses: [],
-			levels: [],
-			phases: [],
-			errors: [],
-			crashes: [],
-		};
+		const collected: DaemonCollected = emptyCollected();
 		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
 		expect(result).toEqual({ ok: false, reason: "unsupported" });
 		expect(collected.ready).toBe(0);
@@ -201,15 +211,7 @@ process.exit(1);
 		chmodSync(script, 0o755);
 		const wrapper = writeFakeWrapper(dir, script);
 
-		const collected: DaemonCollected = {
-			ready: 0,
-			segments: [],
-			statuses: [],
-			levels: [],
-			phases: [],
-			errors: [],
-			crashes: [],
-		};
+		const collected: DaemonCollected = emptyCollected();
 		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
 		expect(result).toEqual({ ok: false, reason: "error" });
 		expect(collected.errors).toEqual([
@@ -244,15 +246,7 @@ rl.on("line", (line) => {
 		chmodSync(script, 0o755);
 		const wrapper = writeFakeWrapper(dir, script);
 
-		const collected: DaemonCollected = {
-			ready: 0,
-			segments: [],
-			statuses: [],
-			levels: [],
-			phases: [],
-			errors: [],
-			crashes: [],
-		};
+		const collected: DaemonCollected = emptyCollected();
 		const doneSeen = new Promise<void>((resolve) => {
 			const handlers = collectingHandlers(collected);
 			handlers.onStatus = (s) => {
@@ -274,6 +268,62 @@ rl.on("line", (line) => {
 		expect(collected.segments).toEqual(["hello world"]);
 	});
 
+	// Mirrors the real v0.1.4 serve streaming protocol: repeated PARTIAL lines
+	// carrying the FULL growing hypothesis (each supersedes the previous, never
+	// committed), then a single FINAL with the complete text, then DONE.
+	it("streams PARTIAL (growing) then a single FINAL for a v0.1.4 capture", async () => {
+		const script = join(dir, "serve-stream.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+process.stdout.write("READY\\n");
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+	if (line === "START") {
+		process.stdout.write("STATUS listening\\n");
+		process.stdout.write("LEVEL 0.12\\n");
+		process.stdout.write("PARTIAL and so\\n");
+		process.stdout.write("PARTIAL and so my fellow\\n");
+		process.stdout.write("PARTIAL and so my fellow americans\\n");
+		process.stdout.write("PHASE silence\\n");
+		process.stdout.write("STATUS transcribing\\n");
+		process.stdout.write("FINAL And so, my fellow Americans.\\n");
+		process.stdout.write("DONE\\n");
+	} else if (line === "SHUTDOWN") {
+		process.exit(0);
+	}
+});
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const doneSeen = new Promise<void>((resolve) => {
+			const handlers = collectingHandlers(collected);
+			handlers.onStatus = (s) => {
+				collected.statuses.push(s);
+				if (s === "done") resolve();
+			};
+			void (async () => {
+				const result = await VoiceDaemon.spawn(wrapper, handlers);
+				expect(result.ok).toBe(true);
+				if (result.ok) result.daemon.startCapture();
+			})();
+		});
+
+		await doneSeen;
+		expect(collected.statuses).toEqual(["listening", "transcribing", "done"]);
+		// Each PARTIAL is the full text-so-far, not a per-word delta.
+		expect(collected.partials).toEqual(["and so", "and so my fellow", "and so my fellow americans"]);
+		// Exactly one FINAL, carrying the complete committed utterance.
+		expect(collected.finals).toEqual(["And so, my fellow Americans."]);
+		// Streaming mode does not use SEGMENT.
+		expect(collected.segments).toEqual([]);
+		expect(collected.phases).toEqual(["silence"]);
+	});
+
 	it("reports onCrash when the daemon exits unexpectedly after READY", async () => {
 		const script = join(dir, "crashy.mjs");
 		writeFileSync(
@@ -286,15 +336,7 @@ setTimeout(() => process.exit(1), 20);
 		chmodSync(script, 0o755);
 		const wrapper = writeFakeWrapper(dir, script);
 
-		const collected: DaemonCollected = {
-			ready: 0,
-			segments: [],
-			statuses: [],
-			levels: [],
-			phases: [],
-			errors: [],
-			crashes: [],
-		};
+		const collected: DaemonCollected = emptyCollected();
 		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
 		expect(result.ok).toBe(true);
 

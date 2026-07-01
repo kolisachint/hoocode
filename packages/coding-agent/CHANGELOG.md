@@ -7,11 +7,16 @@
 - Voice-to-text (`ctrl+r`) now uses `voicetools serve` when available: the
   first press loads the model once and keeps it warm for the rest of the
   session, so later presses skip the cold start and jump straight into
-  listening. The status line is now compact and collapses on completion,
-  shows a live level meter while listening and a shrinking countdown during
-  trailing silence, and moves the cancel hint into a dim key hint. Binaries
-  that don't support `serve` fall back to the previous per-press
-  `transcribe` behavior automatically.
+  listening. Binaries that don't support `serve` fall back to the previous
+  per-press `transcribe` behavior automatically.
+- Live voice-input panel with words-as-you-speak. With a streaming
+  `voicetools serve` (v0.1.4+), the multi-line panel shows the transcript
+  growing word by word as you talk (`PARTIAL`), alongside a mic glyph, an
+  elapsed timer, a scrolling waveform driven by `LEVEL` events, and a
+  shrinking "cutting off in Ns" countdown when trailing silence begins. The
+  finished utterance (`FINAL`) is committed to the editor in one piece and
+  the panel collapses. Older non-streaming binaries just show a spinner for
+  the batch phases; the committed text still lands the same way.
 
 ## [0.4.104] - 2026-07-01
 

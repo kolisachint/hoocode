@@ -112,6 +112,7 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { VoicePanel } from "./components/voice-panel.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -171,13 +172,9 @@ function isDeadTerminalError(error: unknown): boolean {
 }
 
 // Mirrors voicetools' own default trailing-silence window (see `--silence-ms` /
-// VOICE_SILENCE_MS upstream). Only used to drive the cosmetic countdown; the
-// actual cutoff decision is made by the binary, not this timer.
+// VOICE_SILENCE_MS upstream). Only used to drive the cosmetic countdown in the
+// panel; the actual cutoff decision is made by the binary, not this timer.
 const VOICE_SILENCE_MS = 600;
-const VOICE_SILENCE_TICK_MS = 100;
-// Heuristic: LEVEL above this during the trailing-silence phase means speech
-// resumed before the binary re-emits a status, so snap the UI back to Listening.
-const VOICE_RESUME_RMS_THRESHOLD = 0.02;
 const VOICE_UNAVAILABLE_MESSAGE =
 	"Voice input failed: voicetools binary unavailable and could not be downloaded. " +
 	"Install it, set VOICETOOLS_BIN, or ensure a published release exists for this platform.";
@@ -253,12 +250,8 @@ export class InteractiveMode {
 	private voiceStarting = false;
 	/** True while a capture (daemon or legacy) is in flight. */
 	private voiceActive = false;
-	private voiceStatusText: Text | undefined;
-	private voiceLoader: Loader | undefined;
-	private voiceLevel = 0;
-	private voicePhase: string | undefined;
-	private voiceSilenceInterval: ReturnType<typeof setInterval> | undefined;
-	private voiceSilenceRemainingMs = 0;
+	/** The live multi-line status panel for the current capture (undefined when idle). */
+	private voicePanel: VoicePanel | undefined;
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
@@ -3501,19 +3494,31 @@ export class InteractiveMode {
 	/**
 	 * Build the (stable, reused-across-captures) handlers for the daemon.
 	 *
-	 * `onSegment`/`onStatus`/`onLevel`/`onPhase` all bail out once `voiceActive`
-	 * is false: CANCEL is a soft request (unlike the legacy path's `proc.kill()`,
-	 * it doesn't sever the pipe), so the daemon can still have a trailing
-	 * SEGMENT/DONE for the just-cancelled capture in flight when the user
-	 * presses cancel. Without this guard that stale text would land in the
-	 * editor after the status line already showed cancelled.
+	 * Every handler bails out once `voiceActive` is false: CANCEL is a soft
+	 * request (unlike the legacy path's `proc.kill()`, it doesn't sever the
+	 * pipe), so the daemon can still have a trailing PARTIAL/FINAL/DONE for the
+	 * just-cancelled capture in flight when the user presses cancel. Without
+	 * this guard that stale text would land in the editor after the panel had
+	 * already collapsed.
+	 *
+	 * v0.1.4 serve streams `PARTIAL <full growing hypothesis>` (live preview,
+	 * never committed) and ends with a single `FINAL <complete text>` (the one
+	 * commit to the editor). `SEGMENT` is still handled for the legacy
+	 * transcribe path and any binary that streams committed chunks directly.
 	 */
 	private buildVoiceDaemonHandlers(): VoiceDaemonHandlers {
 		return {
 			onSegment: (text) => {
 				if (!this.voiceActive) return;
-				// Inject via bracketed paste so the editor treats it as pasted text.
-				this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
+				this.commitVoiceText(text);
+			},
+			onPartial: (text) => {
+				if (!this.voiceActive) return;
+				this.voicePanel?.setPartial(text);
+			},
+			onFinal: (text) => {
+				if (!this.voiceActive) return;
+				this.commitVoiceText(text);
 			},
 			onStatus: (status) => {
 				if (!this.voiceActive) return;
@@ -3522,23 +3527,22 @@ export class InteractiveMode {
 					this.resetVoiceUI();
 					return;
 				}
-				this.voicePhase = status;
-				this.updateVoiceStatusLine();
+				if (status === "transcribing") {
+					this.voicePanel?.setTranscribing();
+				} else if (status === "listening") {
+					this.voicePanel?.startListening();
+				}
 			},
 			onLevel: (rms) => {
 				if (!this.voiceActive) return;
-				this.voiceLevel = rms;
-				if (this.voicePhase === "silence" && rms > VOICE_RESUME_RMS_THRESHOLD) {
-					// Speech resumed before the binary re-emitted a status: snap back.
-					this.voicePhase = "listening";
-					this.stopVoiceSilenceCountdown();
-				}
-				this.updateVoiceStatusLine();
+				this.voicePanel?.pushLevel(rms);
 			},
 			onPhase: (phase) => {
 				if (!this.voiceActive) return;
 				if (phase === "silence") {
-					this.startVoiceSilenceCountdown();
+					this.voicePanel?.beginSilence(VOICE_SILENCE_MS);
+				} else {
+					this.voicePanel?.endSilence();
 				}
 			},
 			onError: (message) => {
@@ -3555,16 +3559,22 @@ export class InteractiveMode {
 		};
 	}
 
+	/** Inject decoded text into the editor via bracketed paste (with a trailing space). */
+	private commitVoiceText(text: string): void {
+		this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
+	}
+
 	private beginDaemonVoiceCapture(): void {
 		if (!this.voiceDaemon?.isReady) return;
 		this.voiceActive = true;
-		this.showVoiceListening();
+		this.showVoicePanel().startListening();
 		this.voiceDaemon.startCapture();
 	}
 
 	private beginLegacyVoiceCapture(bin: string): void {
 		this.voiceActive = true;
-		this.showVoiceListening();
+		const panel = this.showVoicePanel();
+		panel.startListening();
 		this.voiceSession = startVoiceTranscribe(bin, {
 			onStatus: (status) => {
 				if (status === "done") {
@@ -3573,11 +3583,12 @@ export class InteractiveMode {
 					this.resetVoiceUI();
 					return;
 				}
-				this.voicePhase = status;
-				this.updateVoiceStatusLine();
+				// Old binaries emit no LEVEL/PARTIAL, so the panel shows a spinner
+				// for the batch phases; committed words still stream into the editor.
+				if (status === "transcribing") panel.setTranscribing();
 			},
 			onSegment: (text) => {
-				this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
+				this.commitVoiceText(text);
 			},
 			onError: (message) => {
 				this.voiceActive = false;
@@ -3598,89 +3609,27 @@ export class InteractiveMode {
 		return ensureTool("voicetools", true);
 	}
 
-	private buildVoiceLevelMeter(rms: number): string {
-		const bars = 10;
-		const clamped = Math.max(0, Math.min(1, rms * 6));
-		const filled = Math.round(clamped * bars);
-		return theme.fg("accent", "▮".repeat(filled)) + theme.fg("dim", "▯".repeat(bars - filled));
+	/** Create (or reuse) the voice panel and mount it in the status container. */
+	private showVoicePanel(): VoicePanel {
+		if (!this.voicePanel) {
+			this.statusContainer.clear();
+			this.voicePanel = new VoicePanel(this.ui, keyHint("app.input.voiceTranscribe", "cancel"));
+			this.statusContainer.addChild(this.voicePanel);
+		}
+		this.ui.requestRender();
+		return this.voicePanel;
 	}
 
 	private showVoiceWarming(message: string): void {
-		this.stopVoiceSilenceCountdown();
-		this.statusContainer.clear();
-		this.voiceStatusText = undefined;
-		this.voiceLoader = new Loader(
-			this.ui,
-			(spinner) => theme.fg("accent", spinner),
-			(text) => theme.fg("muted", text),
-			message,
-		);
-		this.statusContainer.addChild(this.voiceLoader);
-		this.ui.requestRender();
+		this.showVoicePanel().setWarming(message);
 	}
 
-	private showVoiceListening(): void {
-		this.stopVoiceSilenceCountdown();
-		if (this.voiceLoader) {
-			this.voiceLoader.stop();
-			this.voiceLoader = undefined;
-		}
-		this.statusContainer.clear();
-		this.voiceLevel = 0;
-		this.voicePhase = "listening";
-		this.voiceStatusText = new Text("", 1, 0);
-		this.statusContainer.addChild(this.voiceStatusText);
-		this.updateVoiceStatusLine();
-	}
-
-	/** Renders the compact single-line status: icon + level meter or a trailing-silence countdown, plus a dim cancel key hint. */
-	private updateVoiceStatusLine(): void {
-		if (!this.voiceStatusText) return;
-		const cancelHint = keyHint("app.input.voiceTranscribe", "cancel");
-		let left: string;
-		if (this.voicePhase === "silence") {
-			const seconds = (this.voiceSilenceRemainingMs / 1000).toFixed(1);
-			left = `${theme.fg("error", "\u{1F534}")} Listening ${this.buildVoiceLevelMeter(this.voiceLevel)} ${theme.fg("muted", `silence ${seconds}s`)}`;
-		} else if (this.voicePhase === "transcribing") {
-			left = theme.fg("accent", "Transcribing...");
-		} else {
-			left = `${theme.fg("error", "\u{1F534}")} Listening ${this.buildVoiceLevelMeter(this.voiceLevel)}`;
-		}
-		this.voiceStatusText.setText(`${left}  ${cancelHint}`);
-		this.ui.requestRender();
-	}
-
-	private startVoiceSilenceCountdown(): void {
-		this.voicePhase = "silence";
-		this.voiceSilenceRemainingMs = VOICE_SILENCE_MS;
-		this.stopVoiceSilenceCountdown();
-		this.updateVoiceStatusLine();
-		this.voiceSilenceInterval = setInterval(() => {
-			this.voiceSilenceRemainingMs = Math.max(0, this.voiceSilenceRemainingMs - VOICE_SILENCE_TICK_MS);
-			this.updateVoiceStatusLine();
-			if (this.voiceSilenceRemainingMs <= 0) {
-				this.stopVoiceSilenceCountdown();
-			}
-		}, VOICE_SILENCE_TICK_MS);
-	}
-
-	private stopVoiceSilenceCountdown(): void {
-		if (this.voiceSilenceInterval) {
-			clearInterval(this.voiceSilenceInterval);
-			this.voiceSilenceInterval = undefined;
-		}
-	}
-
-	/** Collapses the compact voice status line back to nothing (idle). */
+	/** Collapse the voice panel back to nothing (idle) and stop its animation. */
 	private resetVoiceUI(): void {
-		this.stopVoiceSilenceCountdown();
-		if (this.voiceLoader) {
-			this.voiceLoader.stop();
-			this.voiceLoader = undefined;
+		if (this.voicePanel) {
+			this.voicePanel.dispose();
+			this.voicePanel = undefined;
 		}
-		this.voiceStatusText = undefined;
-		this.voicePhase = undefined;
-		this.voiceLevel = 0;
 		this.statusContainer.clear();
 		this.ui.requestRender();
 	}
@@ -5664,7 +5613,10 @@ export class InteractiveMode {
 		}
 		this.voiceDaemon?.shutdown();
 		this.voiceDaemon = undefined;
-		this.stopVoiceSilenceCountdown();
+		if (this.voicePanel) {
+			this.voicePanel.dispose();
+			this.voicePanel = undefined;
+		}
 		this.voiceActive = false;
 		this.voiceStarting = false;
 		if (this.settingsManager.getShowTerminalProgress()) {
