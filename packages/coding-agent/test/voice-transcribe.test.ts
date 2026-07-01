@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -135,6 +135,7 @@ interface DaemonCollected {
 	phases: string[];
 	errors: string[];
 	crashes: string[];
+	idle: number;
 }
 
 function emptyCollected(): DaemonCollected {
@@ -148,6 +149,7 @@ function emptyCollected(): DaemonCollected {
 		phases: [],
 		errors: [],
 		crashes: [],
+		idle: 0,
 	};
 }
 
@@ -164,6 +166,9 @@ function collectingHandlers(collected: DaemonCollected): VoiceDaemonHandlers {
 		onPhase: (p) => collected.phases.push(p),
 		onError: (e) => collected.errors.push(e),
 		onCrash: (m) => collected.crashes.push(m),
+		onIdle: () => {
+			collected.idle += 1;
+		},
 	};
 }
 
@@ -322,6 +327,137 @@ rl.on("line", (line) => {
 		// Streaming mode does not use SEGMENT.
 		expect(collected.segments).toEqual([]);
 		expect(collected.phases).toEqual(["silence"]);
+	});
+
+	it("forwards silenceMs to the binary as --silence-ms", async () => {
+		const argsPath = join(dir, "args.json");
+		const script = join(dir, "args-echo.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(argsPath)}, JSON.stringify(process.argv.slice(2)));
+process.stdout.write("READY\\n");
+setTimeout(() => process.exit(0), 20);
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected), { silenceMs: 3000 });
+		expect(result.ok).toBe(true);
+		if (result.ok) result.daemon.shutdown();
+
+		const args = JSON.parse(readFileSync(argsPath, "utf8")) as string[];
+		expect(args).toEqual(["serve", "--silence-ms", "3000"]);
+	});
+
+	it("fires onIdle after idleTimeoutMs when no new capture starts", async () => {
+		// Fake daemon: prints READY, then immediately responds to START with STATUS+DONE.
+		const script = join(dir, "idle-test.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+process.stdout.write("READY\\n");
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+	if (line === "START") {
+		process.stdout.write("STATUS listening\\n");
+		process.stdout.write("DONE\\n");
+	} else if (line === "SHUTDOWN") {
+		process.exit(0);
+	}
+});
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected), { idleTimeoutMs: 100 });
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		result.daemon.startCapture();
+		// Wait for the capture to complete (DONE) + idle timer to fire
+		await new Promise((r) => setTimeout(r, 200));
+
+		expect(collected.statuses).toContain("listening");
+		expect(collected.idle).toBe(1);
+	});
+
+	it("does not fire onIdle when a new capture starts before the timeout", async () => {
+		const script = join(dir, "idle-cancel.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+process.stdout.write("READY\\n");
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+	if (line === "START") {
+		process.stdout.write("STATUS listening\\n");
+		process.stdout.write("DONE\\n");
+	} else if (line === "SHUTDOWN") {
+		process.exit(0);
+	}
+});
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected), { idleTimeoutMs: 200 });
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		// First capture — starts the idle timer
+		result.daemon.startCapture();
+		await new Promise((r) => setTimeout(r, 50));
+		// Second capture before idle fires — should reset the timer
+		result.daemon.startCapture();
+		await new Promise((r) => setTimeout(r, 150));
+
+		// onIdle should NOT have fired yet (timer was reset)
+		expect(collected.idle).toBe(0);
+
+		result.daemon.shutdown();
+	});
+
+	it("does not fire onIdle when idleTimeoutMs is 0 (disabled)", async () => {
+		const script = join(dir, "idle-disabled.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+process.stdout.write("READY\\n");
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+	if (line === "START") {
+		process.stdout.write("STATUS listening\\n");
+		process.stdout.write("DONE\\n");
+	} else if (line === "SHUTDOWN") {
+		process.exit(0);
+	}
+});
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = emptyCollected();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected), { idleTimeoutMs: 0 });
+		expect(result.ok).toBe(true);
+		if (!result.ok) return;
+
+		result.daemon.startCapture();
+		await new Promise((r) => setTimeout(r, 150));
+
+		expect(collected.idle).toBe(0);
+		result.daemon.shutdown();
 	});
 
 	it("reports onCrash when the daemon exits unexpectedly after READY", async () => {

@@ -171,10 +171,16 @@ function isDeadTerminalError(error: unknown): boolean {
 	return code !== undefined && DEAD_TERMINAL_ERROR_CODES.has(code);
 }
 
-// Mirrors voicetools' own default trailing-silence window (see `--silence-ms` /
-// VOICE_SILENCE_MS upstream). Only used to drive the cosmetic countdown in the
-// panel; the actual cutoff decision is made by the binary, not this timer.
-const VOICE_SILENCE_MS = 600;
+// Trailing-silence window: how long a pause while speaking lasts before the
+// capture auto-stops. Passed to `voicetools serve` via `--silence-ms` (see
+// VoiceDaemon.spawn) so the binary's real cutoff matches the on-screen
+// countdown this same value drives. Kept generous so a thinking pause mid-
+// sentence doesn't cut the user off (the binary's own default is 600ms).
+const VOICE_SILENCE_MS = 3000;
+/** How long to keep the warm voice model in memory after the last capture
+ * completes. The daemon auto-shuts down after this window, releasing the
+ * ~900 MB resident model; the next ctrl+r pays a cold-start respawn cost. */
+const VOICE_IDLE_TIMEOUT_MS = 60_000;
 const VOICE_UNAVAILABLE_MESSAGE =
 	"Voice input failed: voicetools binary unavailable and could not be downloaded. " +
 	"Install it, set VOICETOOLS_BIN, or ensure a published release exists for this platform.";
@@ -3459,7 +3465,10 @@ export class InteractiveMode {
 					this.showError(VOICE_UNAVAILABLE_MESSAGE);
 					return;
 				}
-				const result = await VoiceDaemon.spawn(bin, this.buildVoiceDaemonHandlers());
+				const result = await VoiceDaemon.spawn(bin, this.buildVoiceDaemonHandlers(), {
+					silenceMs: VOICE_SILENCE_MS,
+					idleTimeoutMs: VOICE_IDLE_TIMEOUT_MS,
+				});
 				if (!result.ok) {
 					if (result.reason === "unsupported") {
 						this.voiceDaemonUnsupported = true;
@@ -3555,6 +3564,12 @@ export class InteractiveMode {
 				this.voiceDaemon = undefined;
 				this.resetVoiceUI();
 				this.showError(`Voice input daemon crashed: ${message}. It will restart on next use.`);
+			},
+			onIdle: () => {
+				// Daemon auto-shut down after idle timeout: drop the reference so the
+				// next ctrl+r respawns (cold start). No user-facing message — this is
+				// an expected memory-reclamation event, not an error.
+				this.voiceDaemon = undefined;
 			},
 		};
 	}

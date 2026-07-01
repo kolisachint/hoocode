@@ -142,6 +142,8 @@ export interface VoiceDaemonHandlers extends VoiceTranscribeHandlers {
 	onPartial?: (text: string) => void;
 	onFinal?: (text: string) => void;
 	onCrash?: (message: string) => void;
+	/** Fired when the daemon has been idle (no capture) for `idleTimeoutMs`. */
+	onIdle?: () => void;
 }
 
 /**
@@ -156,6 +158,16 @@ export interface VoiceDaemonHandlers extends VoiceTranscribeHandlers {
  */
 export type VoiceDaemonSpawnResult = { ok: true; daemon: VoiceDaemon } | { ok: false; reason: "unsupported" | "error" };
 
+/** Tunables passed to `voicetools serve` on spawn. Omitted fields use the binary's defaults. */
+export interface VoiceDaemonOptions {
+	/** Trailing-silence timeout, in ms, before the binary auto-stops a capture (`--silence-ms`). */
+	silenceMs?: number;
+	/** Idle timeout, in ms. After a capture completes, the daemon auto-shuts down
+	 * if no new capture starts within this window, releasing the warm model from
+	 * memory. `0` disables idle shutdown (daemon stays warm forever). */
+	idleTimeoutMs?: number;
+}
+
 /**
  * A persistent `voicetools serve` process: models are loaded once and stay
  * warm across captures. Only one capture runs at a time; call `startCapture`
@@ -164,21 +176,34 @@ export type VoiceDaemonSpawnResult = { ok: true; daemon: VoiceDaemon } | { ok: f
  */
 export class VoiceDaemon {
 	private closed = false;
+	private idleTimer: ReturnType<typeof setTimeout> | undefined;
+	private readonly idleTimeoutMs: number;
 
 	private constructor(
 		private readonly proc: ChildProcess,
 		private readonly handlers: VoiceDaemonHandlers,
-	) {}
+		idleTimeoutMs: number,
+	) {
+		this.idleTimeoutMs = idleTimeoutMs;
+	}
 
 	get isReady(): boolean {
 		return !this.closed;
 	}
 
-	static spawn(bin: string, handlers: VoiceDaemonHandlers): Promise<VoiceDaemonSpawnResult> {
+	static spawn(
+		bin: string,
+		handlers: VoiceDaemonHandlers,
+		options?: VoiceDaemonOptions,
+	): Promise<VoiceDaemonSpawnResult> {
 		return new Promise((resolve) => {
+			const args = ["serve"];
+			if (options?.silenceMs !== undefined) {
+				args.push("--silence-ms", String(Math.max(0, Math.round(options.silenceMs))));
+			}
 			let proc: ChildProcess;
 			try {
-				proc = spawn(bin, ["serve"], { stdio: ["pipe", "pipe", "ignore"] });
+				proc = spawn(bin, args, { stdio: ["pipe", "pipe", "ignore"] });
 			} catch (err) {
 				handlers.onError(describeSpawnError(err, bin));
 				resolve({ ok: false, reason: "error" });
@@ -212,7 +237,7 @@ export class VoiceDaemon {
 				if (settled) return;
 				if (line === "READY") {
 					settled = true;
-					daemon = new VoiceDaemon(proc, handlers);
+					daemon = new VoiceDaemon(proc, handlers, options?.idleTimeoutMs ?? 0);
 					handlers.onReady?.();
 					resolve({ ok: true, daemon });
 					return;
@@ -250,6 +275,23 @@ export class VoiceDaemon {
 		});
 	}
 
+	private startIdleTimer(): void {
+		this.stopIdleTimer();
+		if (this.idleTimeoutMs <= 0 || this.closed) return;
+		this.idleTimer = setTimeout(() => {
+			this.idleTimer = undefined;
+			if (this.closed) return;
+			this.handlers.onIdle?.();
+		}, this.idleTimeoutMs);
+	}
+
+	private stopIdleTimer(): void {
+		if (this.idleTimer) {
+			clearTimeout(this.idleTimer);
+			this.idleTimer = undefined;
+		}
+	}
+
 	private handleLine(line: string): void {
 		if (line.startsWith("STATUS ")) {
 			this.handlers.onStatus(line.slice(7).trim());
@@ -266,6 +308,7 @@ export class VoiceDaemon {
 			this.handlers.onPhase?.(line.slice(6).trim());
 		} else if (line === "DONE") {
 			this.handlers.onStatus("done");
+			this.startIdleTimer();
 		} else if (line.startsWith("ERROR ")) {
 			this.handlers.onError(line.slice(6).trim());
 		}
@@ -274,6 +317,7 @@ export class VoiceDaemon {
 	/** Begin a capture: opens the mic, streams PARTIAL/FINAL (or SEGMENT), ends with DONE. */
 	startCapture(): void {
 		if (this.closed) return;
+		this.stopIdleTimer();
 		this.proc.stdin?.write("START\n");
 	}
 
@@ -287,6 +331,7 @@ export class VoiceDaemon {
 	shutdown(): void {
 		if (this.closed) return;
 		this.closed = true;
+		this.stopIdleTimer();
 		try {
 			this.proc.stdin?.write("SHUTDOWN\n");
 		} catch {
