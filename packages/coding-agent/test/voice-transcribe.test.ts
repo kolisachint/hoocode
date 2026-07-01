@@ -2,7 +2,12 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { startVoiceTranscribe, type VoiceStatus } from "../src/modes/interactive/voice-transcribe.js";
+import {
+	startVoiceTranscribe,
+	VoiceDaemon,
+	type VoiceDaemonHandlers,
+	type VoiceStatus,
+} from "../src/modes/interactive/voice-transcribe.js";
 
 /**
  * Write a fake `voicetools` executable (a Node script) that emits the given
@@ -109,5 +114,163 @@ describe("voice-transcribe", () => {
 		const result = await run(wrapper);
 		expect(result.errors.length).toBe(1);
 		expect(result.errors[0]).toContain("code 3");
+	});
+});
+
+/** Write a fake `voicetools` wrapper that execs a Node script for `serve`. */
+function writeFakeWrapper(dir: string, script: string): string {
+	const wrapper = join(dir, "voicetools");
+	writeFileSync(wrapper, `#!/bin/sh\nexec node ${JSON.stringify(script)} "$@"\n`);
+	chmodSync(wrapper, 0o755);
+	return wrapper;
+}
+
+interface DaemonCollected {
+	ready: number;
+	segments: string[];
+	statuses: VoiceStatus[];
+	levels: number[];
+	phases: string[];
+	errors: string[];
+	crashes: string[];
+}
+
+function collectingHandlers(collected: DaemonCollected): VoiceDaemonHandlers {
+	return {
+		onReady: () => {
+			collected.ready += 1;
+		},
+		onSegment: (t) => collected.segments.push(t),
+		onStatus: (s) => collected.statuses.push(s),
+		onLevel: (rms) => collected.levels.push(rms),
+		onPhase: (p) => collected.phases.push(p),
+		onError: (e) => collected.errors.push(e),
+		onCrash: (m) => collected.crashes.push(m),
+	};
+}
+
+describe("VoiceDaemon", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "voice-daemon-"));
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("resolves undefined when the binary doesn't support `serve` (probe fallback)", async () => {
+		// Old binaries reject the unrecognized `serve` subcommand and exit
+		// immediately without ever printing READY.
+		const script = join(dir, "old.mjs");
+		writeFileSync(script, "#!/usr/bin/env node\nprocess.exit(2);\n");
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = {
+			ready: 0,
+			segments: [],
+			statuses: [],
+			levels: [],
+			phases: [],
+			errors: [],
+			crashes: [],
+		};
+		const daemon = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(daemon).toBeUndefined();
+		expect(collected.ready).toBe(0);
+	});
+
+	it("loads once, then streams LEVEL/PHASE/SEGMENT/DONE for a capture", async () => {
+		// A minimal fake daemon: prints READY immediately, then on receiving
+		// START streams a listening -> silence -> segment -> done sequence.
+		const script = join(dir, "serve.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+import { createInterface } from "node:readline";
+process.stdout.write("READY\\n");
+const rl = createInterface({ input: process.stdin });
+rl.on("line", (line) => {
+	if (line === "START") {
+		process.stdout.write("STATUS listening\\n");
+		process.stdout.write("LEVEL 0.05\\n");
+		process.stdout.write("PHASE silence\\n");
+		process.stdout.write("LEVEL 0.001\\n");
+		process.stdout.write("SEGMENT hello world\\n");
+		process.stdout.write("DONE\\n");
+	} else if (line === "SHUTDOWN") {
+		process.exit(0);
+	}
+});
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = {
+			ready: 0,
+			segments: [],
+			statuses: [],
+			levels: [],
+			phases: [],
+			errors: [],
+			crashes: [],
+		};
+		const doneSeen = new Promise<void>((resolve) => {
+			const handlers = collectingHandlers(collected);
+			handlers.onStatus = (s) => {
+				collected.statuses.push(s);
+				if (s === "done") resolve();
+			};
+			void (async () => {
+				const daemon = await VoiceDaemon.spawn(wrapper, handlers);
+				expect(daemon).toBeDefined();
+				daemon?.startCapture();
+			})();
+		});
+
+		await doneSeen;
+		expect(collected.ready).toBe(1);
+		expect(collected.statuses).toEqual(["listening", "done"]);
+		expect(collected.levels).toEqual([0.05, 0.001]);
+		expect(collected.phases).toEqual(["silence"]);
+		expect(collected.segments).toEqual(["hello world"]);
+	});
+
+	it("reports onCrash when the daemon exits unexpectedly after READY", async () => {
+		const script = join(dir, "crashy.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+process.stdout.write("READY\\n");
+setTimeout(() => process.exit(1), 20);
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = {
+			ready: 0,
+			segments: [],
+			statuses: [],
+			levels: [],
+			phases: [],
+			errors: [],
+			crashes: [],
+		};
+		const daemon = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(daemon).toBeDefined();
+
+		await new Promise<void>((resolve) => {
+			const check = setInterval(() => {
+				if (collected.crashes.length > 0) {
+					clearInterval(check);
+					resolve();
+				}
+			}, 10);
+		});
+		expect(collected.crashes[0]).toContain("code 1");
 	});
 });
