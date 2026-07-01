@@ -138,12 +138,22 @@ export interface VoiceDaemonHandlers extends VoiceTranscribeHandlers {
 }
 
 /**
+ * Outcome of {@link VoiceDaemon.spawn}. `reason: "unsupported"` means the
+ * process exited before READY with no ERROR line at all — the signature of
+ * an old binary rejecting the unrecognized `serve` subcommand — and the
+ * caller should silently fall back to `startVoiceTranscribe`. `reason:
+ * "error"` means a genuine ERROR line (or OS-level spawn failure) was seen;
+ * `handlers.onError` has already been called with it, and the caller should
+ * surface that (not retry with the legacy path, which would just hit the
+ * same failure) while leaving daemon mode available to retry next press.
+ */
+export type VoiceDaemonSpawnResult = { ok: true; daemon: VoiceDaemon } | { ok: false; reason: "unsupported" | "error" };
+
+/**
  * A persistent `voicetools serve` process: models are loaded once and stay
  * warm across captures. Only one capture runs at a time; call `startCapture`
  * to open the mic and `cancel` to stop early. `spawn` doubles as the support
- * probe for old binaries: if the process exits/errors before emitting READY
- * (e.g. an unrecognized `serve` subcommand), it resolves to `undefined` so
- * the caller can fall back to `startVoiceTranscribe`.
+ * probe for old binaries (see {@link VoiceDaemonSpawnResult}).
  */
 export class VoiceDaemon {
 	private closed = false;
@@ -157,33 +167,34 @@ export class VoiceDaemon {
 		return !this.closed;
 	}
 
-	static spawn(bin: string, handlers: VoiceDaemonHandlers): Promise<VoiceDaemon | undefined> {
+	static spawn(bin: string, handlers: VoiceDaemonHandlers): Promise<VoiceDaemonSpawnResult> {
 		return new Promise((resolve) => {
 			let proc: ChildProcess;
 			try {
 				proc = spawn(bin, ["serve"], { stdio: ["pipe", "pipe", "ignore"] });
 			} catch (err) {
 				handlers.onError(describeSpawnError(err, bin));
-				resolve(undefined);
+				resolve({ ok: false, reason: "error" });
 				return;
 			}
 
 			if (!proc.stdout || !proc.stdin) {
 				proc.kill();
 				handlers.onError("failed to open voicetools serve stdio");
-				resolve(undefined);
+				resolve({ ok: false, reason: "error" });
 				return;
 			}
 
 			let settled = false;
 			let daemon: VoiceDaemon | undefined;
+			let sawPreReadyError = false;
 			const rl = createInterface({ input: proc.stdout });
 
-			const settleUnsupported = (): void => {
+			const fail = (reason: "unsupported" | "error"): void => {
 				if (settled) return;
 				settled = true;
 				rl.close();
-				resolve(undefined);
+				resolve({ ok: false, reason });
 			};
 
 			rl.on("line", (line) => {
@@ -191,11 +202,19 @@ export class VoiceDaemon {
 					daemon.handleLine(line);
 					return;
 				}
-				if (!settled && line === "READY") {
+				if (settled) return;
+				if (line === "READY") {
 					settled = true;
 					daemon = new VoiceDaemon(proc, handlers);
 					handlers.onReady?.();
-					resolve(daemon);
+					resolve({ ok: true, daemon });
+					return;
+				}
+				if (line.startsWith("ERROR ")) {
+					// Loading can fail before READY (e.g. no model installed yet).
+					// Surface it now; the process still exits right after.
+					sawPreReadyError = true;
+					handlers.onError(line.slice(6).trim());
 				}
 			});
 
@@ -207,7 +226,8 @@ export class VoiceDaemon {
 					}
 					return;
 				}
-				settleUnsupported();
+				if (!sawPreReadyError) handlers.onError(describeSpawnError(err, bin));
+				fail("error");
 			});
 
 			proc.on("close", (code) => {
@@ -218,7 +238,7 @@ export class VoiceDaemon {
 					}
 					return;
 				}
-				settleUnsupported();
+				fail(sawPreReadyError ? "error" : "unsupported");
 			});
 		});
 	}

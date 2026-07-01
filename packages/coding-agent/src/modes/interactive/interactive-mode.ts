@@ -3450,8 +3450,12 @@ export class InteractiveMode {
 
 		// No daemon yet: resolve the binary, then probe for `serve` support by
 		// spawning it. `VoiceDaemon.spawn` doubles as the probe: it resolves to a
-		// live daemon once READY arrives, or to undefined if the process exits
-		// first (an old binary rejecting the unrecognized `serve` subcommand).
+		// live daemon once READY arrives, to "unsupported" if the process exits
+		// with no output at all (an old binary rejecting the unrecognized `serve`
+		// subcommand), or to "error" if it printed a real ERROR first (e.g. no
+		// model installed yet) — already surfaced via onError, so that case skips
+		// the legacy fallback (it would just hit the same error) but leaves
+		// daemon mode available to retry on the next press.
 		this.voiceStarting = true;
 		this.showVoiceWarming("Warming up voice input...");
 		void this.resolveVoiceBin()
@@ -3462,18 +3466,23 @@ export class InteractiveMode {
 					this.showError(VOICE_UNAVAILABLE_MESSAGE);
 					return;
 				}
-				const daemon = await VoiceDaemon.spawn(bin, this.buildVoiceDaemonHandlers());
-				if (!daemon) {
-					this.voiceDaemonUnsupported = true;
-					if (!this.voiceStarting) {
-						this.resetVoiceUI();
+				const result = await VoiceDaemon.spawn(bin, this.buildVoiceDaemonHandlers());
+				if (!result.ok) {
+					if (result.reason === "unsupported") {
+						this.voiceDaemonUnsupported = true;
+						if (!this.voiceStarting) {
+							this.resetVoiceUI();
+							return;
+						}
+						this.voiceStarting = false;
+						this.beginLegacyVoiceCapture(bin);
 						return;
 					}
 					this.voiceStarting = false;
-					this.beginLegacyVoiceCapture(bin);
+					this.resetVoiceUI();
 					return;
 				}
-				this.voiceDaemon = daemon;
+				this.voiceDaemon = result.daemon;
 				if (!this.voiceStarting) {
 					// Cancelled while warming up: keep the loaded daemon warm for next time.
 					this.resetVoiceUI();

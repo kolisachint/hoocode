@@ -160,9 +160,9 @@ describe("VoiceDaemon", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("resolves undefined when the binary doesn't support `serve` (probe fallback)", async () => {
+	it("resolves reason: unsupported when the binary doesn't support `serve` (probe fallback)", async () => {
 		// Old binaries reject the unrecognized `serve` subcommand and exit
-		// immediately without ever printing READY.
+		// immediately without ever printing READY or any stdout line at all.
 		const script = join(dir, "old.mjs");
 		writeFileSync(script, "#!/usr/bin/env node\nprocess.exit(2);\n");
 		chmodSync(script, 0o755);
@@ -177,9 +177,44 @@ describe("VoiceDaemon", () => {
 			errors: [],
 			crashes: [],
 		};
-		const daemon = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
-		expect(daemon).toBeUndefined();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(result).toEqual({ ok: false, reason: "unsupported" });
 		expect(collected.ready).toBe(0);
+		expect(collected.errors).toEqual([]);
+	});
+
+	// Reproduces a real behavior observed from the actual voicetools binary:
+	// `voicetools serve` with no model installed prints an ERROR line and
+	// exits 1, without ever printing READY. This must NOT be misread as an
+	// "unsupported binary" (which would silently retry with `transcribe` and
+	// just hit the same error with a worse message) — it's a real, actionable
+	// error the user needs to see.
+	it("resolves reason: error (not unsupported) for a genuine pre-READY ERROR line", async () => {
+		const script = join(dir, "no-model.mjs");
+		writeFileSync(
+			script,
+			`#!/usr/bin/env node
+process.stdout.write("ERROR no model found for 'parakeet-v3' \\u2014 run: voicetools setup --model parakeet-v3\\n");
+process.exit(1);
+`,
+		);
+		chmodSync(script, 0o755);
+		const wrapper = writeFakeWrapper(dir, script);
+
+		const collected: DaemonCollected = {
+			ready: 0,
+			segments: [],
+			statuses: [],
+			levels: [],
+			phases: [],
+			errors: [],
+			crashes: [],
+		};
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(result).toEqual({ ok: false, reason: "error" });
+		expect(collected.errors).toEqual([
+			"no model found for 'parakeet-v3' — run: voicetools setup --model parakeet-v3",
+		]);
 	});
 
 	it("loads once, then streams LEVEL/PHASE/SEGMENT/DONE for a capture", async () => {
@@ -225,9 +260,9 @@ rl.on("line", (line) => {
 				if (s === "done") resolve();
 			};
 			void (async () => {
-				const daemon = await VoiceDaemon.spawn(wrapper, handlers);
-				expect(daemon).toBeDefined();
-				daemon?.startCapture();
+				const result = await VoiceDaemon.spawn(wrapper, handlers);
+				expect(result.ok).toBe(true);
+				if (result.ok) result.daemon.startCapture();
 			})();
 		});
 
@@ -260,8 +295,8 @@ setTimeout(() => process.exit(1), 20);
 			errors: [],
 			crashes: [],
 		};
-		const daemon = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
-		expect(daemon).toBeDefined();
+		const result = await VoiceDaemon.spawn(wrapper, collectingHandlers(collected));
+		expect(result.ok).toBe(true);
 
 		await new Promise<void>((resolve) => {
 			const check = setInterval(() => {
