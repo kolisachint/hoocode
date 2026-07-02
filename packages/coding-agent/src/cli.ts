@@ -12,7 +12,6 @@ import { configureGlobalTLS } from "./utils/tls-ca.js";
 
 process.title = APP_NAME;
 process.env.HOOCODE_CODING_AGENT = "true";
-process.env.PI_CODING_AGENT = "true";
 process.emitWarning = (() => {}) as typeof process.emitWarning;
 
 // App-level TLS CA trust: install any custom/system CA additively on the global

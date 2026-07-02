@@ -459,16 +459,16 @@ ${chalk.bold("Environment Variables:")}
   AWS_REGION                       - AWS region for Amazon Bedrock (e.g., us-east-1)
   ${ENV_AGENT_DIR.padEnd(32)} - Config directory (default: ~/${CONFIG_DIR_NAME}/agent)
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
-  HOOCODE_PACKAGE_DIR              - Override package directory (for Nix/Guix store paths). Legacy: PI_PACKAGE_DIR
-  HOOCODE_OFFLINE                  - Disable startup network operations when set to 1/true/yes. Legacy: PI_OFFLINE
+  HOOCODE_PACKAGE_DIR              - Override package directory (for Nix/Guix store paths).
+  HOOCODE_OFFLINE                  - Disable startup network operations when set to 1/true/yes.
   HOOCODE_CA_CERT                  - Path to an extra PEM CA bundle to trust for hoocode's own TLS traffic
                                      (additive; verification stays on). Precedence: --ca-cert > this > NODE_EXTRA_CA_CERTS
   HOOCODE_USE_SYSTEM_CA            - Also trust the OS/system CA store when set to 1/true/yes (same as --use-system-ca)
   NODE_EXTRA_CA_CERTS              - Standard Node path to an extra PEM CA bundle (used as the lowest-precedence CA source)
   HOOCODE_WEBTOOLS_CA_CERT         - Path to a PEM CA bundle forwarded to the webtools binary (webfetch/websearch) as --ca-cert
   HOOCODE_WEBTOOLS_INSECURE        - Forward --insecure to the webtools binary (disables its TLS verification) when set to 1/true/yes
-  HOOCODE_TELEMETRY                - Override install telemetry when set to 1/true/yes or 0/false/no. Legacy: PI_TELEMETRY
-  HOOCODE_SHARE_VIEWER_URL         - Base URL for /share command (default: https://pi.dev/session/). Legacy: PI_SHARE_VIEWER_URL
+  HOOCODE_TELEMETRY                - Override install telemetry when set to 1/true/yes or 0/false/no.
+  HOOCODE_SHARE_VIEWER_URL         - Base URL for /share command (default: https://pi.dev/session/).
 
 ${chalk.bold("Built-in Tool Names:")}
   read   - Read file contents

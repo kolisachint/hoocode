@@ -10,7 +10,7 @@ import type { SettingsManager } from "../../core/settings-manager.js";
 import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 
 export async function checkForPackageUpdates(cwd: string, settingsManager: SettingsManager): Promise<string[]> {
-	if (process.env.HOOCODE_OFFLINE ?? process.env.PI_OFFLINE) {
+	if (process.env.HOOCODE_OFFLINE) {
 		return [];
 	}
 

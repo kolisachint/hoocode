@@ -10,14 +10,14 @@ import type { CacheRetention } from "../types.js";
  * to "long" is safe.
  *
  * Opt out with HOOCODE_CACHE_RETENTION=short (5-min ephemeral) or =none
- * (disable caching). The legacy PI_CACHE_RETENTION env var is honored too.
+ * (disable caching).
  */
 export function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
 	if (cacheRetention) {
 		return cacheRetention;
 	}
 	if (typeof process !== "undefined") {
-		const env = process.env.HOOCODE_CACHE_RETENTION ?? process.env.PI_CACHE_RETENTION;
+		const env = process.env.HOOCODE_CACHE_RETENTION;
 		if (env === "short" || env === "long" || env === "none") {
 			return env;
 		}

@@ -253,8 +253,8 @@ export class TUI extends Container {
 	private static readonly MIN_RENDER_INTERVAL_MS = 16;
 	private cursorRow = 0; // Logical cursor row (end of rendered content)
 	private hardwareCursorRow = 0; // Actual terminal cursor row (may differ due to IME positioning)
-	private showHardwareCursor = (process.env.HOOCODE_HARDWARE_CURSOR ?? process.env.PI_HARDWARE_CURSOR) === "1";
-	private clearOnShrink = (process.env.HOOCODE_CLEAR_ON_SHRINK ?? process.env.PI_CLEAR_ON_SHRINK) === "1"; // Clear empty rows when content shrinks (default: off)
+	private showHardwareCursor = process.env.HOOCODE_HARDWARE_CURSOR === "1";
+	private clearOnShrink = process.env.HOOCODE_CLEAR_ON_SHRINK === "1"; // Clear empty rows when content shrinks (default: off)
 	private maxLinesRendered = 0; // Track terminal's working area (max lines ever rendered)
 	private previousViewportTop = 0; // Track previous viewport top for resize-aware cursor moves
 	private fullRedrawCount = 0;
@@ -1010,7 +1010,7 @@ export class TUI extends Container {
 			this.previousHeight = height;
 		};
 
-		const debugRedraw = (process.env.HOOCODE_DEBUG_REDRAW ?? process.env.PI_DEBUG_REDRAW) === "1";
+		const debugRedraw = process.env.HOOCODE_DEBUG_REDRAW === "1";
 		const logRedraw = (reason: string): void => {
 			if (!debugRedraw) return;
 			const agentDir = process.env.HOOCODE_CODING_AGENT_DIR ?? path.join(os.homedir(), ".hoocode", "agent");
@@ -1231,7 +1231,7 @@ export class TUI extends Container {
 
 		buffer += "\x1b[?2026l"; // End synchronized output
 
-		if ((process.env.HOOCODE_TUI_DEBUG ?? process.env.PI_TUI_DEBUG) === "1") {
+		if (process.env.HOOCODE_TUI_DEBUG === "1") {
 			const debugDir = "/tmp/tui";
 			fs.mkdirSync(debugDir, { recursive: true });
 			const debugPath = path.join(debugDir, `render-${Date.now()}-${Math.random().toString(36).slice(2)}.log`);
