@@ -7,7 +7,7 @@ import {
 	VoiceDaemon,
 	type VoiceDaemonHandlers,
 	type VoiceStatus,
-} from "../src/modes/interactive/voice-transcribe.js";
+} from "../src/modes/interactive/voice/voice-transcribe.js";
 
 /**
  * Write a fake `voicetools` executable (a Node script) that emits the given

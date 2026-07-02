@@ -1,3 +1,4 @@
+// Core coding tools.
 export {
 	type BashOperations,
 	type BashSpawnContext,
@@ -9,62 +10,9 @@ export {
 	createBashToolDefinition,
 	createLocalBashOperations,
 } from "./bash.js";
-export {
-	type BrowserContinueInput,
-	type BrowserContinueToolOptions,
-	createBrowserContinueTool,
-	createBrowserContinueToolDefinition,
-} from "./browser-continue.js";
-export {
-	advanceFlow,
-	type BrowserRunDetails,
-	type BrowserRunInput,
-	type BrowserRunToolOptions,
-	createBrowserRunTool,
-	createBrowserRunToolDefinition,
-} from "./browser-run.js";
-export {
-	createDocEditTool,
-	createDocEditToolDefinition,
-	type DocEditToolDetails,
-	type DocEditToolInput,
-	type DocEditToolOptions,
-} from "./docedit.js";
-export {
-	createDocGrepTool,
-	createDocGrepToolDefinition,
-	type DocGrepToolDetails,
-	type DocGrepToolInput,
-	type DocGrepToolOptions,
-} from "./docgrep.js";
-export {
-	createDocPeekTool,
-	createDocPeekToolDefinition,
-	type DocPeekToolDetails,
-	type DocPeekToolInput,
-	type DocPeekToolOptions,
-} from "./docpeek.js";
-export {
-	createDocReadTool,
-	createDocReadToolDefinition,
-	type DocReadToolDetails,
-	type DocReadToolInput,
-	type DocReadToolOptions,
-} from "./docread.js";
-export {
-	createDocScanTool,
-	createDocScanToolDefinition,
-	type DocScanToolDetails,
-	type DocScanToolInput,
-	type DocScanToolOptions,
-} from "./docscan.js";
-export {
-	createDocWriteTool,
-	createDocWriteToolDefinition,
-	type DocWriteToolDetails,
-	type DocWriteToolInput,
-	type DocWriteToolOptions,
-} from "./docwrite.js";
+// Optional feature tools, grouped by feature (off by default or enabled per session).
+export * from "./browser/index.js";
+export * from "./doc/index.js";
 export {
 	createEditTool,
 	createEditToolDefinition,
@@ -158,70 +106,40 @@ export {
 
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
-import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.js";
+import { type BashToolOptions, createBashToolDefinition } from "./bash.js";
 import {
 	type BrowserContinueToolOptions,
-	createBrowserContinueTool,
+	type BrowserRunToolOptions,
 	createBrowserContinueToolDefinition,
-} from "./browser-continue.js";
-import { type BrowserRunToolOptions, createBrowserRunTool, createBrowserRunToolDefinition } from "./browser-run.js";
-import { createDocEditTool, createDocEditToolDefinition, type DocEditToolOptions } from "./docedit.js";
-import { createDocGrepTool, createDocGrepToolDefinition, type DocGrepToolOptions } from "./docgrep.js";
-import { createDocPeekTool, createDocPeekToolDefinition, type DocPeekToolOptions } from "./docpeek.js";
-import { createDocReadTool, createDocReadToolDefinition, type DocReadToolOptions } from "./docread.js";
-import { createDocScanTool, createDocScanToolDefinition, type DocScanToolOptions } from "./docscan.js";
-import { createDocWriteTool, createDocWriteToolDefinition, type DocWriteToolOptions } from "./docwrite.js";
-import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.js";
-import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.js";
-import { createGlobTool, createGlobToolDefinition, type GlobToolOptions } from "./glob.js";
-import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
-import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.js";
-import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.js";
-import { createWebFetchTool, createWebFetchToolDefinition, type WebFetchToolOptions } from "./webfetch.js";
-import { createWebSearchTool, createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.js";
-import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.js";
+	createBrowserRunToolDefinition,
+} from "./browser/index.js";
+import {
+	createDocEditToolDefinition,
+	createDocGrepToolDefinition,
+	createDocPeekToolDefinition,
+	createDocReadToolDefinition,
+	createDocScanToolDefinition,
+	createDocWriteToolDefinition,
+	type DocEditToolOptions,
+	type DocGrepToolOptions,
+	type DocPeekToolOptions,
+	type DocReadToolOptions,
+	type DocScanToolOptions,
+	type DocWriteToolOptions,
+} from "./doc/index.js";
+import { createEditToolDefinition, type EditToolOptions } from "./edit.js";
+import { createFindToolDefinition, type FindToolOptions } from "./find.js";
+import { createGlobToolDefinition, type GlobToolOptions } from "./glob.js";
+import { createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
+import { createLsToolDefinition, type LsToolOptions } from "./ls.js";
+import { createReadToolDefinition, type ReadToolOptions } from "./read.js";
+import { wrapToolDefinition } from "./tool-definition-wrapper.js";
+import { createWebFetchToolDefinition, type WebFetchToolOptions } from "./webfetch.js";
+import { createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.js";
+import { createWriteToolDefinition, type WriteToolOptions } from "./write.js";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName =
-	| "read"
-	| "bash"
-	| "edit"
-	| "write"
-	| "grep"
-	| "find"
-	| "glob"
-	| "ls"
-	| "webfetch"
-	| "websearch"
-	| "browser_run"
-	| "browser_continue"
-	| "DocRead"
-	| "DocEdit"
-	| "DocWrite"
-	| "DocScan"
-	| "DocGrep"
-	| "DocPeek";
-export const allToolNames: Set<ToolName> = new Set([
-	"read",
-	"bash",
-	"edit",
-	"write",
-	"grep",
-	"find",
-	"glob",
-	"ls",
-	"webfetch",
-	"websearch",
-	"browser_run",
-	"browser_continue",
-	"DocRead",
-	"DocEdit",
-	"DocWrite",
-	"DocScan",
-	"DocGrep",
-	"DocPeek",
-]);
 
 export interface ToolsOptions {
 	read?: ReadToolOptions;
@@ -244,180 +162,77 @@ export interface ToolsOptions {
 	DocPeek?: DocPeekToolOptions;
 }
 
+/**
+ * Single source of truth for built-in tools: name → definition factory.
+ * Everything else (name unions, option lookups, bundle helpers) derives
+ * from this table, so adding or removing a tool touches exactly one entry
+ * (plus its `ToolsOptions` key).
+ */
+const TOOL_FACTORIES = {
+	read: createReadToolDefinition,
+	bash: createBashToolDefinition,
+	edit: createEditToolDefinition,
+	write: createWriteToolDefinition,
+	grep: createGrepToolDefinition,
+	find: createFindToolDefinition,
+	glob: createGlobToolDefinition,
+	ls: createLsToolDefinition,
+	webfetch: createWebFetchToolDefinition,
+	websearch: createWebSearchToolDefinition,
+	browser_run: createBrowserRunToolDefinition,
+	browser_continue: createBrowserContinueToolDefinition,
+	DocRead: createDocReadToolDefinition,
+	DocEdit: createDocEditToolDefinition,
+	DocWrite: createDocWriteToolDefinition,
+	DocScan: createDocScanToolDefinition,
+	DocGrep: createDocGrepToolDefinition,
+	DocPeek: createDocPeekToolDefinition,
+} satisfies { [K in keyof ToolsOptions]-?: (cwd: string, options?: ToolsOptions[K]) => ToolDef };
+
+export type ToolName = keyof typeof TOOL_FACTORIES;
+
+export const allToolNames: Set<ToolName> = new Set(Object.keys(TOOL_FACTORIES) as ToolName[]);
+
+/** The default coding bundle (read/write + shell). */
+const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "glob", "ls"];
+
+/** Read-only exploration bundle. */
+const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "grep", "find", "glob", "ls"];
+
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
-	switch (toolName) {
-		case "read":
-			return createReadToolDefinition(cwd, options?.read);
-		case "bash":
-			return createBashToolDefinition(cwd, options?.bash);
-		case "edit":
-			return createEditToolDefinition(cwd, options?.edit);
-		case "write":
-			return createWriteToolDefinition(cwd, options?.write);
-		case "grep":
-			return createGrepToolDefinition(cwd, options?.grep);
-		case "find":
-			return createFindToolDefinition(cwd, options?.find);
-		case "glob":
-			return createGlobToolDefinition(cwd, options?.glob);
-		case "ls":
-			return createLsToolDefinition(cwd, options?.ls);
-		case "webfetch":
-			return createWebFetchToolDefinition(cwd, options?.webfetch);
-		case "websearch":
-			return createWebSearchToolDefinition(cwd, options?.websearch);
-		case "browser_run":
-			return createBrowserRunToolDefinition(cwd, options?.browser_run);
-		case "browser_continue":
-			return createBrowserContinueToolDefinition(cwd, options?.browser_continue);
-		case "DocRead":
-			return createDocReadToolDefinition(cwd, options?.DocRead);
-		case "DocEdit":
-			return createDocEditToolDefinition(cwd, options?.DocEdit);
-		case "DocWrite":
-			return createDocWriteToolDefinition(cwd, options?.DocWrite);
-		case "DocScan":
-			return createDocScanToolDefinition(cwd, options?.DocScan);
-		case "DocGrep":
-			return createDocGrepToolDefinition(cwd, options?.DocGrep);
-		case "DocPeek":
-			return createDocPeekToolDefinition(cwd, options?.DocPeek);
-		default:
-			throw new Error(`Unknown tool name: ${toolName}`);
+	const factory = TOOL_FACTORIES[toolName] as (cwd: string, options?: ToolsOptions[ToolName]) => ToolDef;
+	if (!factory) {
+		throw new Error(`Unknown tool name: ${toolName}`);
 	}
+	return factory(cwd, options?.[toolName]);
 }
 
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
-	switch (toolName) {
-		case "read":
-			return createReadTool(cwd, options?.read);
-		case "bash":
-			return createBashTool(cwd, options?.bash);
-		case "edit":
-			return createEditTool(cwd, options?.edit);
-		case "write":
-			return createWriteTool(cwd, options?.write);
-		case "grep":
-			return createGrepTool(cwd, options?.grep);
-		case "find":
-			return createFindTool(cwd, options?.find);
-		case "glob":
-			return createGlobTool(cwd, options?.glob);
-		case "ls":
-			return createLsTool(cwd, options?.ls);
-		case "webfetch":
-			return createWebFetchTool(cwd, options?.webfetch);
-		case "websearch":
-			return createWebSearchTool(cwd, options?.websearch);
-		case "browser_run":
-			return createBrowserRunTool(cwd, options?.browser_run);
-		case "browser_continue":
-			return createBrowserContinueTool(cwd, options?.browser_continue);
-		case "DocRead":
-			return createDocReadTool(cwd, options?.DocRead);
-		case "DocEdit":
-			return createDocEditTool(cwd, options?.DocEdit);
-		case "DocWrite":
-			return createDocWriteTool(cwd, options?.DocWrite);
-		case "DocScan":
-			return createDocScanTool(cwd, options?.DocScan);
-		case "DocGrep":
-			return createDocGrepTool(cwd, options?.DocGrep);
-		case "DocPeek":
-			return createDocPeekTool(cwd, options?.DocPeek);
-		default:
-			throw new Error(`Unknown tool name: ${toolName}`);
-	}
+	return wrapToolDefinition(createToolDefinition(toolName, cwd, options)) as Tool;
 }
 
 export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-	return [
-		createReadToolDefinition(cwd, options?.read),
-		createBashToolDefinition(cwd, options?.bash),
-		createEditToolDefinition(cwd, options?.edit),
-		createWriteToolDefinition(cwd, options?.write),
-		createGrepToolDefinition(cwd, options?.grep),
-		createFindToolDefinition(cwd, options?.find),
-		createGlobToolDefinition(cwd, options?.glob),
-		createLsToolDefinition(cwd, options?.ls),
-	];
+	return CODING_TOOL_NAMES.map((name) => createToolDefinition(name, cwd, options));
 }
 
 export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-	return [
-		createReadToolDefinition(cwd, options?.read),
-		createGrepToolDefinition(cwd, options?.grep),
-		createFindToolDefinition(cwd, options?.find),
-		createGlobToolDefinition(cwd, options?.glob),
-		createLsToolDefinition(cwd, options?.ls),
-	];
+	return READ_ONLY_TOOL_NAMES.map((name) => createToolDefinition(name, cwd, options));
 }
 
 export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
-	return {
-		read: createReadToolDefinition(cwd, options?.read),
-		bash: createBashToolDefinition(cwd, options?.bash),
-		edit: createEditToolDefinition(cwd, options?.edit),
-		write: createWriteToolDefinition(cwd, options?.write),
-		grep: createGrepToolDefinition(cwd, options?.grep),
-		find: createFindToolDefinition(cwd, options?.find),
-		glob: createGlobToolDefinition(cwd, options?.glob),
-		ls: createLsToolDefinition(cwd, options?.ls),
-		webfetch: createWebFetchToolDefinition(cwd, options?.webfetch),
-		websearch: createWebSearchToolDefinition(cwd, options?.websearch),
-		browser_run: createBrowserRunToolDefinition(cwd, options?.browser_run),
-		browser_continue: createBrowserContinueToolDefinition(cwd, options?.browser_continue),
-		DocRead: createDocReadToolDefinition(cwd, options?.DocRead),
-		DocEdit: createDocEditToolDefinition(cwd, options?.DocEdit),
-		DocWrite: createDocWriteToolDefinition(cwd, options?.DocWrite),
-		DocScan: createDocScanToolDefinition(cwd, options?.DocScan),
-		DocGrep: createDocGrepToolDefinition(cwd, options?.DocGrep),
-		DocPeek: createDocPeekToolDefinition(cwd, options?.DocPeek),
-	};
+	const entries = [...allToolNames].map((name) => [name, createToolDefinition(name, cwd, options)] as const);
+	return Object.fromEntries(entries) as Record<ToolName, ToolDef>;
 }
 
 export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
-	return [
-		createReadTool(cwd, options?.read),
-		createBashTool(cwd, options?.bash),
-		createEditTool(cwd, options?.edit),
-		createWriteTool(cwd, options?.write),
-		createGrepTool(cwd, options?.grep),
-		createFindTool(cwd, options?.find),
-		createGlobTool(cwd, options?.glob),
-		createLsTool(cwd, options?.ls),
-	];
+	return CODING_TOOL_NAMES.map((name) => createTool(name, cwd, options));
 }
 
 export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[] {
-	return [
-		createReadTool(cwd, options?.read),
-		createGrepTool(cwd, options?.grep),
-		createFindTool(cwd, options?.find),
-		createGlobTool(cwd, options?.glob),
-		createLsTool(cwd, options?.ls),
-	];
+	return READ_ONLY_TOOL_NAMES.map((name) => createTool(name, cwd, options));
 }
 
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
-	return {
-		read: createReadTool(cwd, options?.read),
-		bash: createBashTool(cwd, options?.bash),
-		edit: createEditTool(cwd, options?.edit),
-		write: createWriteTool(cwd, options?.write),
-		grep: createGrepTool(cwd, options?.grep),
-		find: createFindTool(cwd, options?.find),
-		glob: createGlobTool(cwd, options?.glob),
-		ls: createLsTool(cwd, options?.ls),
-		webfetch: createWebFetchTool(cwd, options?.webfetch),
-		websearch: createWebSearchTool(cwd, options?.websearch),
-		browser_run: createBrowserRunTool(cwd, options?.browser_run),
-		browser_continue: createBrowserContinueTool(cwd, options?.browser_continue),
-		DocRead: createDocReadTool(cwd, options?.DocRead),
-		DocEdit: createDocEditTool(cwd, options?.DocEdit),
-		DocWrite: createDocWriteTool(cwd, options?.DocWrite),
-		DocScan: createDocScanTool(cwd, options?.DocScan),
-		DocGrep: createDocGrepTool(cwd, options?.DocGrep),
-		DocPeek: createDocPeekTool(cwd, options?.DocPeek),
-	};
+	const entries = [...allToolNames].map((name) => [name, createTool(name, cwd, options)] as const);
+	return Object.fromEntries(entries) as Record<ToolName, Tool>;
 }

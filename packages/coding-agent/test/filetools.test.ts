@@ -2,12 +2,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createDocEditTool } from "../src/core/tools/docedit.js";
-import { createDocGrepTool, renderGrepView } from "../src/core/tools/docgrep.js";
-import { createDocPeekTool, renderReadView } from "../src/core/tools/docpeek.js";
-import { createDocReadTool, renderEnvelopeText } from "../src/core/tools/docread.js";
-import { createDocScanTool, renderScanView } from "../src/core/tools/docscan.js";
-import { createDocWriteTool } from "../src/core/tools/docwrite.js";
+import { createDocEditTool } from "../src/core/tools/doc/docedit.js";
+import { createDocGrepTool, renderGrepView } from "../src/core/tools/doc/docgrep.js";
+import { createDocPeekTool, renderReadView } from "../src/core/tools/doc/docpeek.js";
+import { createDocReadTool, renderEnvelopeText } from "../src/core/tools/doc/docread.js";
+import { createDocScanTool, renderScanView } from "../src/core/tools/doc/docscan.js";
+import { createDocWriteTool } from "../src/core/tools/doc/docwrite.js";
 import type { Envelope, GrepView, ReadView, ScanView } from "../src/core/tools/filetools-shared.js";
 import {
 	DOCREAD_MAX_RENDER_TOKENS,

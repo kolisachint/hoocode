@@ -3,14 +3,14 @@ import { dirname } from "node:path";
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { Container, Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
-import { theme as appTheme } from "../../modes/interactive/theme/theme.js";
-import type { ToolDefinition } from "../extensions/types.js";
+import { theme as appTheme } from "../../../modes/interactive/theme/theme.js";
+import type { ToolDefinition } from "../../extensions/types.js";
+import { withFileMutationQueue } from "../file-mutation-queue.js";
+import { patchOpsSchema, reconstructDocument, StalePatchError, toPatch } from "../filetools-shared.js";
+import { resolveReadPath, resolveToCwd } from "../path-utils.js";
+import { invalidArgText, shortenPath, str } from "../render-utils.js";
+import { wrapToolDefinition } from "../tool-definition-wrapper.js";
 import { renderEnvelopeText } from "./docread.js";
-import { withFileMutationQueue } from "./file-mutation-queue.js";
-import { patchOpsSchema, reconstructDocument, StalePatchError, toPatch } from "./filetools-shared.js";
-import { resolveReadPath, resolveToCwd } from "./path-utils.js";
-import { invalidArgText, shortenPath, str } from "./render-utils.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
 const docWriteSchema = Type.Object({
 	path: Type.String({

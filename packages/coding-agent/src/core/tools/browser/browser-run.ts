@@ -14,8 +14,9 @@ import { exec } from "node:child_process";
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ImageContent, TextContent } from "@kolisachint/hoocode-ai";
 import { type Static, Type } from "typebox";
-import type { AgentToolResult } from "../extensions/types.js";
-import { defineTool, type ToolDefinition } from "../extensions/types.js";
+import type { AgentToolResult } from "../../extensions/types.js";
+import { defineTool, type ToolDefinition } from "../../extensions/types.js";
+import { wrapToolDefinition } from "../tool-definition-wrapper.js";
 import {
 	type BrowserClientConfig,
 	BrowsertoolsServeClient,
@@ -30,7 +31,6 @@ import {
 	resolveBrowsertoolsOptions,
 	takeIdleClient,
 } from "./browsertools-shared.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
 const browserRunSchema = Type.Object({
 	flow_path: Type.Optional(

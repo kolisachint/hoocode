@@ -1,9 +1,9 @@
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
-import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
-import { theme as appTheme } from "../../modes/interactive/theme/theme.js";
-import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import { keyHint } from "../../../modes/interactive/components/keybinding-hints.js";
+import { theme as appTheme } from "../../../modes/interactive/theme/theme.js";
+import type { ToolDefinition, ToolRenderResultOptions } from "../../extensions/types.js";
 import {
 	DOCREAD_MAX_RENDER_TOKENS,
 	type DocNode,
@@ -11,10 +11,10 @@ import {
 	extractDocument,
 	renderDocNodeLines,
 	truncateRenderToTokenBudget,
-} from "./filetools-shared.js";
-import { resolveReadPath } from "./path-utils.js";
-import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
+} from "../filetools-shared.js";
+import { resolveReadPath } from "../path-utils.js";
+import { getTextOutput, invalidArgText, shortenPath, str } from "../render-utils.js";
+import { wrapToolDefinition } from "../tool-definition-wrapper.js";
 
 const docReadSchema = Type.Object({
 	path: Type.String({

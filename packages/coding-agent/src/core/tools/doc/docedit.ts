@@ -4,11 +4,10 @@ import { basename, join } from "node:path";
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { Container, Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
-import { APP_NAME } from "../../config.js";
-import { theme as appTheme } from "../../modes/interactive/theme/theme.js";
-import type { ToolDefinition } from "../extensions/types.js";
-import { renderEnvelopeText } from "./docread.js";
-import { withFileMutationQueue } from "./file-mutation-queue.js";
+import { APP_NAME } from "../../../config.js";
+import { theme as appTheme } from "../../../modes/interactive/theme/theme.js";
+import type { ToolDefinition } from "../../extensions/types.js";
+import { withFileMutationQueue } from "../file-mutation-queue.js";
 import {
 	type DocNode,
 	ensureExtractRecord,
@@ -20,10 +19,11 @@ import {
 	reconstructDocument,
 	StalePatchError,
 	toPatch,
-} from "./filetools-shared.js";
-import { resolveReadPath } from "./path-utils.js";
-import { invalidArgText, shortenPath, str } from "./render-utils.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
+} from "../filetools-shared.js";
+import { resolveReadPath } from "../path-utils.js";
+import { invalidArgText, shortenPath, str } from "../render-utils.js";
+import { wrapToolDefinition } from "../tool-definition-wrapper.js";
+import { renderEnvelopeText } from "./docread.js";
 
 const docEditSchema = Type.Object({
 	path: Type.String({

@@ -112,7 +112,6 @@ import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { VoicePanel } from "./components/voice-panel.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -129,7 +128,13 @@ import {
 	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
-import { startVoiceTranscribe, VoiceDaemon, type VoiceDaemonHandlers, type VoiceSession } from "./voice-transcribe.js";
+import { VoicePanel } from "./voice/voice-panel.js";
+import {
+	startVoiceTranscribe,
+	VoiceDaemon,
+	type VoiceDaemonHandlers,
+	type VoiceSession,
+} from "./voice/voice-transcribe.js";
 
 /** Interface for components that can be expanded/collapsed */
 interface Expandable {

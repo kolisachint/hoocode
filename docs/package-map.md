@@ -85,7 +85,10 @@ The shipped CLI. Largest package.
 - `src/core/` - the engine:
   - `agent-session.ts`, `sdk.ts` - wiring the agent loop into a session.
   - `tools/` - built-in tools (`read`, `bash`, `edit`, `write`, `subagent.ts` = the `Task`
-    tool, etc.).
+    tool, etc.). `tools/index.ts` holds the single `TOOL_FACTORIES` registry table that
+    everything (name union, option lookups, bundles) derives from. Optional feature tools
+    live in subdirectories: `tools/browser/` (browser_run/browser_continue) and
+    `tools/doc/` (DocRead/DocEdit/…).
   - `subagent-pool.ts` - spawns subagents as child processes (concurrency, retries,
     inherited-model fallback).
   - `agent-registry.ts` - loads agent definitions; built-ins come from
@@ -96,6 +99,8 @@ The shipped CLI. Largest package.
     `@kolisachint/hoocode-agent-core` (see packages/agent above);
     `session-manager.ts` re-exports the entry types under their historical names.
 - `src/modes/` - run modes: `interactive/` (the TUI app), `print-mode.ts`, `rpc/`.
+  Voice input (panel + `voicetools` transcription) is grouped under
+  `interactive/voice/`.
 - `templates/agents/*.md` - built-in subagent definitions (frontmatter + prompt). Edit
   these, then regenerate the embedded copy (see npm-packages.md).
 
