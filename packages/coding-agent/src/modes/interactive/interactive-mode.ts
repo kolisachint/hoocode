@@ -130,13 +130,7 @@ import {
 	Theme,
 	theme,
 } from "./theme/theme.js";
-import { VoicePanel } from "./voice/voice-panel.js";
-import {
-	startVoiceTranscribe,
-	VoiceDaemon,
-	type VoiceDaemonHandlers,
-	type VoiceSession,
-} from "./voice/voice-transcribe.js";
+import { VoiceController } from "./voice/voice-controller.js";
 
 /** Interface for components that can be expanded/collapsed */
 
@@ -154,20 +148,6 @@ function isDeadTerminalError(error: unknown): boolean {
 	const code = (error as NodeJS.ErrnoException).code;
 	return code !== undefined && DEAD_TERMINAL_ERROR_CODES.has(code);
 }
-
-// Trailing-silence window: how long a pause while speaking lasts before the
-// capture auto-stops. Passed to `voicetools serve` via `--silence-ms` (see
-// VoiceDaemon.spawn) so the binary's real cutoff matches the on-screen
-// countdown this same value drives. Kept generous so a thinking pause mid-
-// sentence doesn't cut the user off (the binary's own default is 600ms).
-const VOICE_SILENCE_MS = 3000;
-/** How long to keep the warm voice model in memory after the last capture
- * completes. The daemon auto-shuts down after this window, releasing the
- * ~900 MB resident model; the next ctrl+r pays a cold-start respawn cost. */
-const VOICE_IDLE_TIMEOUT_MS = 60_000;
-const VOICE_UNAVAILABLE_MESSAGE =
-	"Voice input failed: voicetools binary unavailable and could not be downloaded. " +
-	"Install it, set VOICETOOLS_BIN, or ensure a published release exists for this platform.";
 
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
 	"Anthropic subscription auth: billed per token as extra usage, not plan limits.";
@@ -229,19 +209,7 @@ export class InteractiveMode {
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
-	private voiceSession: VoiceSession | undefined;
-	// Persistent `voicetools serve` process, once probed successfully. Stays alive
-	// (and warm) across captures for the life of the interactive session.
-	private voiceDaemon: VoiceDaemon | undefined;
-	// Sticky for the session: set once `serve` is confirmed unsupported (old binary)
-	// so later presses skip straight to the per-press `transcribe` fallback.
-	private voiceDaemonUnsupported = false;
-	/** True while the voicetools binary is being resolved/downloaded before a session starts. */
-	private voiceStarting = false;
-	/** True while a capture (daemon or legacy) is in flight. */
-	private voiceActive = false;
-	/** The live multi-line status panel for the current capture (undefined when idle). */
-	private voicePanel: VoicePanel | undefined;
+	private voice: VoiceController;
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
@@ -474,6 +442,12 @@ export class InteractiveMode {
 			showWarning: (message) => this.showWarning(message),
 			showAskOptions: (questions, opts) => this.showAskOptions(questions, opts),
 			isAskOptionsOpen: () => this.askOptions !== undefined,
+		});
+		this.voice = new VoiceController({
+			ui: this.ui,
+			statusContainer: this.statusContainer,
+			sendEditorInput: (data) => this.editor.handleInput(data),
+			showError: (message) => this.showError(message),
 		});
 		this.taskPanel.onNudge = (role) => this.teamFocus.showNudgeInput(role);
 		this.taskPanel.onAttach = (role) => this.teamFocus.showAttach(role);
@@ -1911,7 +1885,7 @@ export class InteractiveMode {
 		});
 		this.defaultEditor.onAction("app.team.focus", () => this.teamFocus.enterFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
-		this.defaultEditor.onAction("app.input.voiceTranscribe", () => this.toggleVoiceTranscribe());
+		this.defaultEditor.onAction("app.input.voiceTranscribe", () => this.voice.toggle());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.commandExecutor.handleClear());
@@ -2572,265 +2546,6 @@ export class InteractiveMode {
 	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
-	/**
-	 * Toggle voice-to-text capture.
-	 *
-	 * Prefers a persistent `voicetools serve` daemon: the first press probes for
-	 * support and (if found) loads models once, showing a "warming up" spinner;
-	 * every later press reuses the already-warm daemon and jumps straight to
-	 * Listening. Binaries without `serve` support fall back to spawning
-	 * `voicetools transcribe` per press, same as before. Pressing the shortcut
-	 * again while listening (or while still warming up) cancels.
-	 */
-	private toggleVoiceTranscribe(): void {
-		if (this.voiceActive) {
-			if (this.voiceDaemon?.isReady) {
-				this.voiceDaemon.cancel();
-			} else {
-				this.voiceSession?.stop();
-			}
-			this.voiceSession = undefined;
-			this.voiceActive = false;
-			this.resetVoiceUI();
-			return;
-		}
-
-		if (this.voiceStarting) {
-			// A second press while resolving/warming up: honour the cancel. Any
-			// daemon that finishes loading afterwards is kept warm for next time.
-			this.voiceStarting = false;
-			this.resetVoiceUI();
-			return;
-		}
-
-		if (this.voiceDaemonUnsupported) {
-			this.voiceStarting = true;
-			this.showVoiceWarming("Starting voice input...");
-			void this.resolveVoiceBin()
-				.then((bin) => {
-					if (!this.voiceStarting) return;
-					this.voiceStarting = false;
-					if (!bin) {
-						this.resetVoiceUI();
-						this.showError(VOICE_UNAVAILABLE_MESSAGE);
-						return;
-					}
-					this.beginLegacyVoiceCapture(bin);
-				})
-				.catch((err: unknown) => {
-					this.voiceStarting = false;
-					this.resetVoiceUI();
-					this.showError(`Voice input failed: ${err instanceof Error ? err.message : String(err)}`);
-				});
-			return;
-		}
-
-		if (this.voiceDaemon?.isReady) {
-			this.beginDaemonVoiceCapture();
-			return;
-		}
-
-		// No daemon yet: resolve the binary, then probe for `serve` support by
-		// spawning it. `VoiceDaemon.spawn` doubles as the probe: it resolves to a
-		// live daemon once READY arrives, to "unsupported" if the process exits
-		// with no output at all (an old binary rejecting the unrecognized `serve`
-		// subcommand), or to "error" if it printed a real ERROR first (e.g. no
-		// model installed yet) — already surfaced via onError, so that case skips
-		// the legacy fallback (it would just hit the same error) but leaves
-		// daemon mode available to retry on the next press.
-		this.voiceStarting = true;
-		this.showVoiceWarming("Warming up voice input...");
-		void this.resolveVoiceBin()
-			.then(async (bin) => {
-				if (!bin) {
-					this.voiceStarting = false;
-					this.resetVoiceUI();
-					this.showError(VOICE_UNAVAILABLE_MESSAGE);
-					return;
-				}
-				const result = await VoiceDaemon.spawn(bin, this.buildVoiceDaemonHandlers(), {
-					silenceMs: VOICE_SILENCE_MS,
-					idleTimeoutMs: VOICE_IDLE_TIMEOUT_MS,
-				});
-				if (!result.ok) {
-					if (result.reason === "unsupported") {
-						this.voiceDaemonUnsupported = true;
-						if (!this.voiceStarting) {
-							this.resetVoiceUI();
-							return;
-						}
-						this.voiceStarting = false;
-						this.beginLegacyVoiceCapture(bin);
-						return;
-					}
-					this.voiceStarting = false;
-					this.resetVoiceUI();
-					return;
-				}
-				this.voiceDaemon = result.daemon;
-				if (!this.voiceStarting) {
-					// Cancelled while warming up: keep the loaded daemon warm for next time.
-					this.resetVoiceUI();
-					return;
-				}
-				this.voiceStarting = false;
-				this.beginDaemonVoiceCapture();
-			})
-			.catch((err: unknown) => {
-				this.voiceStarting = false;
-				this.resetVoiceUI();
-				this.showError(`Voice input failed: ${err instanceof Error ? err.message : String(err)}`);
-			});
-	}
-
-	/**
-	 * Build the (stable, reused-across-captures) handlers for the daemon.
-	 *
-	 * Every handler bails out once `voiceActive` is false: CANCEL is a soft
-	 * request (unlike the legacy path's `proc.kill()`, it doesn't sever the
-	 * pipe), so the daemon can still have a trailing PARTIAL/FINAL/DONE for the
-	 * just-cancelled capture in flight when the user presses cancel. Without
-	 * this guard that stale text would land in the editor after the panel had
-	 * already collapsed.
-	 *
-	 * v0.1.4 serve streams `PARTIAL <full growing hypothesis>` (live preview,
-	 * never committed) and ends with a single `FINAL <complete text>` (the one
-	 * commit to the editor). `SEGMENT` is still handled for the legacy
-	 * transcribe path and any binary that streams committed chunks directly.
-	 */
-	private buildVoiceDaemonHandlers(): VoiceDaemonHandlers {
-		return {
-			onSegment: (text) => {
-				if (!this.voiceActive) return;
-				this.commitVoiceText(text);
-			},
-			onPartial: (text) => {
-				if (!this.voiceActive) return;
-				this.voicePanel?.setPartial(text);
-			},
-			onFinal: (text) => {
-				if (!this.voiceActive) return;
-				this.commitVoiceText(text);
-			},
-			onStatus: (status) => {
-				if (!this.voiceActive) return;
-				if (status === "done") {
-					this.voiceActive = false;
-					this.resetVoiceUI();
-					return;
-				}
-				if (status === "transcribing") {
-					this.voicePanel?.setTranscribing();
-				} else if (status === "listening") {
-					this.voicePanel?.startListening();
-				}
-			},
-			onLevel: (rms) => {
-				if (!this.voiceActive) return;
-				this.voicePanel?.pushLevel(rms);
-			},
-			onPhase: (phase) => {
-				if (!this.voiceActive) return;
-				if (phase === "silence") {
-					this.voicePanel?.beginSilence(VOICE_SILENCE_MS);
-				} else {
-					this.voicePanel?.endSilence();
-				}
-			},
-			onError: (message) => {
-				this.voiceActive = false;
-				this.resetVoiceUI();
-				this.showError(`Voice input failed: ${message}`);
-			},
-			onCrash: (message) => {
-				this.voiceActive = false;
-				this.voiceDaemon = undefined;
-				this.resetVoiceUI();
-				this.showError(`Voice input daemon crashed: ${message}. It will restart on next use.`);
-			},
-			onIdle: () => {
-				// Daemon auto-shut down after idle timeout: drop the reference so the
-				// next ctrl+r respawns (cold start). No user-facing message — this is
-				// an expected memory-reclamation event, not an error.
-				this.voiceDaemon = undefined;
-			},
-		};
-	}
-
-	/** Inject decoded text into the editor via bracketed paste (with a trailing space). */
-	private commitVoiceText(text: string): void {
-		this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
-	}
-
-	private beginDaemonVoiceCapture(): void {
-		if (!this.voiceDaemon?.isReady) return;
-		this.voiceActive = true;
-		this.showVoicePanel().startListening();
-		this.voiceDaemon.startCapture();
-	}
-
-	private beginLegacyVoiceCapture(bin: string): void {
-		this.voiceActive = true;
-		const panel = this.showVoicePanel();
-		panel.startListening();
-		this.voiceSession = startVoiceTranscribe(bin, {
-			onStatus: (status) => {
-				if (status === "done") {
-					this.voiceActive = false;
-					this.voiceSession = undefined;
-					this.resetVoiceUI();
-					return;
-				}
-				// Old binaries emit no LEVEL/PARTIAL, so the panel shows a spinner
-				// for the batch phases; committed words still stream into the editor.
-				if (status === "transcribing") panel.setTranscribing();
-			},
-			onSegment: (text) => {
-				this.commitVoiceText(text);
-			},
-			onError: (message) => {
-				this.voiceActive = false;
-				this.voiceSession = undefined;
-				this.resetVoiceUI();
-				this.showError(`Voice input failed: ${message}`);
-			},
-		});
-	}
-
-	/** Resolve the `voicetools` binary path. Prefers an explicit VOICETOOLS_BIN
-	 * override, otherwise resolves via the managed tools manager (bin dir / PATH /
-	 * download from the published release). Returns undefined when unavailable.
-	 */
-	private async resolveVoiceBin(): Promise<string | undefined> {
-		const override = process.env.VOICETOOLS_BIN?.trim();
-		if (override) return override;
-		return ensureTool("voicetools", true);
-	}
-
-	/** Create (or reuse) the voice panel and mount it in the status container. */
-	private showVoicePanel(): VoicePanel {
-		if (!this.voicePanel) {
-			this.statusContainer.clear();
-			this.voicePanel = new VoicePanel(this.ui, keyHint("app.input.voiceTranscribe", "cancel"));
-			this.statusContainer.addChild(this.voicePanel);
-		}
-		this.ui.requestRender();
-		return this.voicePanel;
-	}
-
-	private showVoiceWarming(message: string): void {
-		this.showVoicePanel().setWarming(message);
-	}
-
-	/** Collapse the voice panel back to nothing (idle) and stop its animation. */
-	private resetVoiceUI(): void {
-		if (this.voicePanel) {
-			this.voicePanel.dispose();
-			this.voicePanel = undefined;
-		}
-		this.statusContainer.clear();
-		this.ui.requestRender();
-	}
 
 	private showStatus(message: string): void {
 		const children = this.chatContainer.children;
@@ -4805,18 +4520,7 @@ export class InteractiveMode {
 
 	stop(): void {
 		this.unregisterSignalHandlers();
-		if (this.voiceSession?.running) {
-			this.voiceSession.stop();
-			this.voiceSession = undefined;
-		}
-		this.voiceDaemon?.shutdown();
-		this.voiceDaemon = undefined;
-		if (this.voicePanel) {
-			this.voicePanel.dispose();
-			this.voicePanel = undefined;
-		}
-		this.voiceActive = false;
-		this.voiceStarting = false;
+		this.voice.dispose();
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}
