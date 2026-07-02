@@ -85,7 +85,7 @@ describe("InteractiveMode.setToolsExpanded", () => {
 		const chatChild = { setExpanded: vi.fn() };
 		const fakeThis: any = {
 			toolOutputExpanded: false,
-			customHeader: undefined,
+			chrome: { customHeader: undefined },
 			builtInHeader: header,
 			chatContainer: { children: [chatChild] },
 			ui: { requestRender: vi.fn() },
