@@ -59,7 +59,7 @@ Registered **lowest precedence first**; later sources override earlier ones by n
 
 ## MCP servers
 
-Source: `packages/coding-agent/src/extensions/core/hoo-core.ts` (`setupMcpLoader`).
+Source: `packages/coding-agent/src/extensions/core/mcp-loader.ts` (`setupMcpLoader`).
 
 **First-wins by server name**, in this order:
 

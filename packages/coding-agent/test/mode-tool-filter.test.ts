@@ -10,13 +10,8 @@ vi.hoisted(() => {
 	process.env.HOOCODE_CODING_AGENT_DIR = `${require("node:os").tmpdir()}/hoocode-test-isolated-${process.pid}/agent`;
 });
 
-import {
-	buildApproveMessage,
-	buildSystemPrompt,
-	type HooConfig,
-	mergeConfigs,
-	parsePlanSections,
-} from "../src/extensions/core/hoo-core.js";
+import { type HooConfig, mergeConfigs } from "../src/extensions/core/config.js";
+import { buildApproveMessage, buildSystemPrompt, parsePlanSections } from "../src/extensions/core/modes.js";
 
 describe("mergeConfigs", () => {
 	describe("mode enabled_tools", () => {

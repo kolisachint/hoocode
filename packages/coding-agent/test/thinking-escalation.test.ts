@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { ThinkingLevel } from "@kolisachint/hoocode-agent-core";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import type { ExtensionAPI, ExtensionContext } from "../src/core/extensions/types.js";
-import { setupThinkingEscalation } from "../src/extensions/core/hoo-core.js";
+import { setupThinkingEscalation } from "../src/extensions/core/thinking-escalation.js";
 
 /**
  * Drives setupThinkingEscalation with a mock ExtensionAPI so we can fire

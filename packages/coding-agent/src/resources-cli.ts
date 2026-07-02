@@ -57,7 +57,7 @@ interface DiscoveredMcpServer {
 
 /**
  * Read-only replica of the MCP discovery surfaces in
- * `extensions/core/hoo-core.ts` (setupMcpLoader). First-wins by name across all
+ * `extensions/core/mcp-loader.ts` (setupMcpLoader). First-wins by name across all
  * sources. Kept in sync with that loader; it is the source of truth.
  */
 function discoverMcpServers(cwd: string): DiscoveredMcpServer[] {
