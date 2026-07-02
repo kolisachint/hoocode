@@ -60,6 +60,14 @@ Rendered in order as the conversation scrolls:
 - `../team-focus.ts` (`TeamFocusController`) - the `--team` feature: role roster focus,
   the nudge input, the attach side panel, and approval gates. Extracted from
   `interactive-mode.ts` behind a narrow `TeamFocusDeps` interface.
+- `../extension-dialogs.ts` (`ExtensionDialogs`) - the selector / options pane /
+  confirm / input / editor / custom-component dialogs behind the ExtensionUIContext.
+- `../extension-chrome.ts` (`ExtensionChrome`) - extension widget slots and custom
+  footer/header overrides.
+- `../voice/voice-controller.ts` (`VoiceController`) - voice-to-text capture
+  (daemon + legacy paths) and the voice panel lifecycle.
+- `../resource-display.ts` - the startup/reload resource listing and diagnostics
+  formatting. `../startup-checks.ts` - update/tmux/changelog startup probes.
 - `task-panel.ts` - the task ledger shown above the prompt (status icons, usage
   stamps, and the warning cue). Owns `formatTaskLine`. Has three views cycled with
   `app.tasks.cycleView` (ctrl+n; the cycle and the header switcher skip lenses
