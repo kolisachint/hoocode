@@ -5,7 +5,7 @@
  * a summary of the branch being left so context isn't lost.
  */
 
-import type { ImageContent, Model, TextContent } from "@kolisachint/hoocode-ai";
+import type { Model } from "@kolisachint/hoocode-ai";
 import { completeSimple } from "@kolisachint/hoocode-ai";
 import type { AgentMessage } from "../../types.js";
 import {
@@ -14,7 +14,7 @@ import {
 	createCompactionSummaryMessage,
 	createCustomMessage,
 } from "../messages.js";
-import type { Session, SessionTreeEntry } from "../types.js";
+import type { SessionTreeEntry } from "../types.js";
 import { estimateTokens } from "./compaction.js";
 import {
 	computeFileLists,
@@ -84,6 +84,15 @@ export interface GenerateBranchSummaryOptions {
 // ============================================================================
 
 /**
+ * Minimal read access needed to collect branch entries. Satisfied by both the
+ * harness `Session` (async) and synchronous session managers.
+ */
+export interface BranchEntrySource {
+	getBranch(id: string): SessionTreeEntry[] | Promise<SessionTreeEntry[]>;
+	getEntry(id: string): SessionTreeEntry | undefined | null | Promise<SessionTreeEntry | undefined | null>;
+}
+
+/**
  * Collect entries that should be summarized when navigating from one position to another.
  *
  * Walks from oldLeafId back to the common ancestor with targetId, collecting entries
@@ -96,7 +105,7 @@ export interface GenerateBranchSummaryOptions {
  * @returns Entries to summarize and the common ancestor
  */
 export async function collectEntriesForBranchSummary(
-	session: Session,
+	session: BranchEntrySource,
 	oldLeafId: string | null,
 	targetId: string,
 ): Promise<CollectEntriesResult> {
@@ -125,7 +134,7 @@ export async function collectEntriesForBranchSummary(
 	while (current && current !== commonAncestorId) {
 		const entry = await session.getEntry(current);
 		if (!entry) break;
-		entries.push(entry as SessionTreeEntry);
+		entries.push(entry);
 		current = entry.parentId;
 	}
 
@@ -148,22 +157,16 @@ function getMessageFromEntry(entry: SessionTreeEntry): AgentMessage | undefined 
 		case "message":
 			// Skip tool results - context is in assistant's tool call
 			if (entry.message.role === "toolResult") return undefined;
-			return entry.message as AgentMessage;
+			return entry.message;
 
 		case "custom_message":
-			return createCustomMessage(
-				entry.customType,
-				entry.content as string | (TextContent | ImageContent)[],
-				entry.display,
-				entry.details,
-				entry.timestamp,
-			);
+			return createCustomMessage(entry.customType, entry.content, entry.display, entry.details, entry.timestamp);
 
 		case "branch_summary":
 			return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
 
 		case "compaction":
-			return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
+			return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp, entry.tokensAfter);
 
 		// These don't contribute to conversation content
 		case "thinking_level_change":

@@ -22,6 +22,7 @@ import { homedir } from "node:os";
 import { join, relative } from "node:path";
 import { createInterface } from "node:readline";
 import type { ThinkingLevel } from "@kolisachint/hoocode-agent-core";
+import { summarizeArgs } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
@@ -49,7 +50,6 @@ import type {
 	TurnEndEvent,
 } from "../../core/extensions/types.js";
 import { defineTool, isToolCallEventType } from "../../core/extensions/types.js";
-import { summarizeArgs } from "../../core/messages.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
 import { TaskScheduler } from "../../core/scheduler.js";
 import { subagentSkipMcp } from "../../core/subagent-depth.js";

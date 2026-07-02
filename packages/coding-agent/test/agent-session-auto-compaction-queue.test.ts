@@ -11,7 +11,8 @@ import { SessionManager } from "../src/core/session-manager.js";
 import { SettingsManager } from "../src/core/settings-manager.js";
 import { createTestResourceLoader } from "./utilities.js";
 
-vi.mock("../src/core/compaction/index.js", () => ({
+vi.mock("@kolisachint/hoocode-agent-core", async (importOriginal) => ({
+	...(await importOriginal<typeof import("@kolisachint/hoocode-agent-core")>()),
 	calculateContextTokens: (usage: {
 		input: number;
 		output: number;

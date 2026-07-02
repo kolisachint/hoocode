@@ -1,9 +1,4 @@
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
-import type { AssistantMessage, Usage } from "@kolisachint/hoocode-ai";
-import { getModel } from "@kolisachint/hoocode-ai";
-import { readFileSync } from "fs";
-import { join } from "path";
-import { beforeEach, describe, expect, it } from "vitest";
 import {
 	type CompactionSettings,
 	calculateContextTokens,
@@ -14,7 +9,12 @@ import {
 	getLastAssistantUsage,
 	prepareCompaction,
 	shouldCompact,
-} from "../src/core/compaction/index.js";
+} from "@kolisachint/hoocode-agent-core";
+import type { AssistantMessage, Usage } from "@kolisachint/hoocode-ai";
+import { getModel } from "@kolisachint/hoocode-ai";
+import { readFileSync } from "fs";
+import { join } from "path";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
 	buildSessionContext,
 	type CompactionEntry,

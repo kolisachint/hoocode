@@ -5,11 +5,10 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import type { AgentEvent, AgentMessage, ThinkingLevel } from "@kolisachint/hoocode-agent-core";
+import type { AgentEvent, AgentMessage, CompactionResult, ThinkingLevel } from "@kolisachint/hoocode-agent-core";
 import type { ImageContent } from "@kolisachint/hoocode-ai";
 import type { SessionStats } from "../../core/agent-session.js";
 import type { BashResult } from "../../core/bash-executor.js";
-import type { CompactionResult } from "../../core/compaction/index.js";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.js";
 import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.js";
 

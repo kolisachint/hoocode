@@ -1,5 +1,12 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@kolisachint/hoocode-agent-core";
+import {
+	Agent,
+	type AgentMessage,
+	convertToLlm,
+	createBackgroundPlaceholderText,
+	createBackgroundTaskMessage,
+	type ThinkingLevel,
+} from "@kolisachint/hoocode-agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@kolisachint/hoocode-ai";
 import { getAgentDir } from "../config.js";
 import { AgentSession } from "./agent-session.js";
@@ -7,7 +14,6 @@ import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.js";
-import { convertToLlm, createBackgroundPlaceholderText, createBackgroundTaskMessage } from "./messages.js";
 import { ModelRegistry } from "./model-registry.js";
 import { findInitialModel } from "./model-resolver.js";
 import type { ResourceLoader } from "./resource-loader.js";

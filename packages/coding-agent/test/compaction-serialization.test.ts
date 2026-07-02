@@ -1,6 +1,6 @@
+import { serializeConversation } from "@kolisachint/hoocode-agent-core";
 import type { Message } from "@kolisachint/hoocode-ai";
 import { describe, expect, it } from "vitest";
-import { serializeConversation } from "../src/core/compaction/utils.js";
 
 describe("serializeConversation", () => {
 	it("should truncate long tool results", () => {

@@ -1,11 +1,11 @@
 import type { BackgroundToolResult } from "@kolisachint/hoocode-agent-core";
-import { describe, expect, it } from "vitest";
 import {
 	BACKGROUND_TASK_CUSTOM_TYPE,
 	createBackgroundPlaceholderText,
 	createBackgroundTaskMessage,
 	describeBackgroundTool,
-} from "../src/core/messages.js";
+} from "@kolisachint/hoocode-agent-core";
+import { describe, expect, it } from "vitest";
 
 /** Build a minimal finished-tool result for createBackgroundTaskMessage. */
 function bgResult(name: string, args: Record<string, unknown>, text: string, isError = false): BackgroundToolResult {

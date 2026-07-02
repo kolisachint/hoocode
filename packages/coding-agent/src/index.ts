@@ -1,5 +1,29 @@
 // Core session management
 
+// Compaction
+export {
+	type BranchPreparation,
+	type BranchSummaryResult,
+	type CollectEntriesResult,
+	type CompactionResult,
+	type CutPointResult,
+	calculateContextTokens,
+	collectEntriesForBranchSummary,
+	compact,
+	convertToLlm,
+	DEFAULT_COMPACTION_SETTINGS,
+	estimateTokens,
+	type FileOperations,
+	findCutPoint,
+	findTurnStartIndex,
+	type GenerateBranchSummaryOptions,
+	generateBranchSummary,
+	generateSummary,
+	getLastAssistantUsage,
+	prepareBranchEntries,
+	serializeConversation,
+	shouldCompact,
+} from "@kolisachint/hoocode-agent-core";
 // Config paths
 export { getAgentDir, VERSION } from "./config.js";
 // Agent/subagent definitions and prompt formatting for delegation.
@@ -37,29 +61,6 @@ export {
 	InMemoryAuthStorageBackend,
 	type OAuthCredential,
 } from "./core/auth-storage.js";
-// Compaction
-export {
-	type BranchPreparation,
-	type BranchSummaryResult,
-	type CollectEntriesResult,
-	type CompactionResult,
-	type CutPointResult,
-	calculateContextTokens,
-	collectEntriesForBranchSummary,
-	compact,
-	DEFAULT_COMPACTION_SETTINGS,
-	estimateTokens,
-	type FileOperations,
-	findCutPoint,
-	findTurnStartIndex,
-	type GenerateBranchSummaryOptions,
-	generateBranchSummary,
-	generateSummary,
-	getLastAssistantUsage,
-	prepareBranchEntries,
-	serializeConversation,
-	shouldCompact,
-} from "./core/compaction/index.js";
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.js";
 // Extension system
 export type {
@@ -160,7 +161,6 @@ export {
 } from "./core/extensions/index.js";
 // Footer data provider (git branch + extension statuses - data not otherwise available to extensions)
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.js";
-export { convertToLlm } from "./core/messages.js";
 // Built-in mode prompts (ask / plan / build / debug) and the default mode.
 export { DEFAULT_MODE, DEFAULT_MODE_PROMPTS } from "./core/mode-prompts.js";
 export { ModelRegistry } from "./core/model-registry.js";

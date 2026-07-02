@@ -379,9 +379,13 @@ export class AgentHarness<
 		}
 	}
 
-	async compact(
-		customInstructions?: string,
-	): Promise<{ summary: string; firstKeptEntryId: string; tokensBefore: number; details?: unknown }> {
+	async compact(customInstructions?: string): Promise<{
+		summary: string;
+		firstKeptEntryId: string;
+		tokensBefore: number;
+		tokensAfter?: number;
+		details?: unknown;
+	}> {
 		if (this.phase !== "idle") throw new Error("compact() requires idle harness");
 		this.phase = "compaction";
 		const model = this.model;
@@ -420,6 +424,7 @@ export class AgentHarness<
 			result.tokensBefore,
 			result.details,
 			provided !== undefined,
+			result.tokensAfter,
 		);
 		const entry = await this.session.getEntry(entryId);
 		if (entry?.type === "compaction") {

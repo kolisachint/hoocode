@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
+import { generateSummary } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage, Model } from "@kolisachint/hoocode-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateSummary } from "../src/core/compaction/index.js";
 
 const { completeSimpleMock } = vi.hoisted(() => ({
 	completeSimpleMock: vi.fn(),

@@ -21,7 +21,20 @@ import type {
 	AgentMessage,
 	AgentState,
 	AgentTool,
+	BashExecutionMessage,
+	CompactionPreparation,
+	CompactionResult,
+	CustomMessage,
 	ThinkingLevel,
+} from "@kolisachint/hoocode-agent-core";
+import {
+	calculateContextTokens,
+	collectEntriesForBranchSummary,
+	compact,
+	estimateContextTokens,
+	generateBranchSummary,
+	prepareCompaction,
+	shouldCompact,
 } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@kolisachint/hoocode-ai";
 import {
@@ -38,17 +51,6 @@ import { sleep } from "../utils/sleep.js";
 import { loadAgentRegistry } from "./agent-registry.js";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.js";
-import {
-	type CompactionPreparation,
-	type CompactionResult,
-	calculateContextTokens,
-	collectEntriesForBranchSummary,
-	compact,
-	estimateContextTokens,
-	generateBranchSummary,
-	prepareCompaction,
-	shouldCompact,
-} from "./compaction/index.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
@@ -78,7 +80,6 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
-import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate, tryExpandPromptTemplate } from "./prompt-templates.js";
 import { clearProviderExhaustion, isProviderQuotaError, markProviderExhausted } from "./provider-health.js";
@@ -2728,7 +2729,7 @@ export class AgentSession {
 		}
 
 		// Collect entries to summarize (from old leaf to common ancestor)
-		const { entries: entriesToSummarize, commonAncestorId } = collectEntriesForBranchSummary(
+		const { entries: entriesToSummarize, commonAncestorId } = await collectEntriesForBranchSummary(
 			this.sessionManager,
 			oldLeafId,
 			targetId,

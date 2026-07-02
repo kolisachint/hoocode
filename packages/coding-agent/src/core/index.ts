@@ -2,6 +2,7 @@
  * Core modules shared between all run modes.
  */
 
+export type { CompactionResult } from "@kolisachint/hoocode-agent-core";
 export {
 	AgentSession,
 	type AgentSessionConfig,
@@ -26,7 +27,6 @@ export {
 	createAgentSessionServices,
 } from "./agent-session-services.js";
 export { type BashExecutorOptions, type BashResult, executeBashWithOperations } from "./bash-executor.js";
-export type { CompactionResult } from "./compaction/index.js";
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.js";
 // Extensions system
 export {
