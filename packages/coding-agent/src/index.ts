@@ -346,7 +346,6 @@ export {
 } from "./modes/index.js";
 // UI components for extensions
 export {
-	ArminComponent,
 	AssistantMessageComponent,
 	BashExecutionComponent,
 	BorderedLoader,

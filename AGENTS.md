@@ -124,7 +124,7 @@ To test hoocode's TUI in a controlled terminal environment:
 tmux new-session -d -s hoocode-test -x 80 -y 24
 
 # Start hoocode from source
-tmux send-keys -t hoocode-test "cd /Users/badlogic/workspaces/pi-mono && ./hoocode-test.sh" Enter
+tmux send-keys -t hoocode-test "cd <repo-root> && ./hoocode-test.sh" Enter
 
 # Wait for startup, then capture output
 sleep 3 && tmux capture-pane -t hoocode-test -p

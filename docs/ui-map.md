@@ -94,7 +94,6 @@ Pickers presented over the main view:
 
 - `visual-truncate.ts` - app-level truncation helper.
 - `index.ts` - barrel exports for the components.
-- `armin.ts`, `daxnuts.ts` - easter eggs.
 
 ## Common "where is X" answers
 

@@ -88,7 +88,6 @@ import { CompactionSummaryMessageComponent } from "./components/compaction-summa
 import { CountdownTimer } from "./components/countdown-timer.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
-import { DaxnutsComponent } from "./components/daxnuts.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { ExtensionEditorComponent } from "./components/extension-editor.js";
 import { ExtensionInputComponent } from "./components/extension-input.js";
@@ -370,7 +369,6 @@ export class InteractiveMode {
 				stopLoadingAnimation: () => self.stopLoadingAnimation(),
 				findExactModelMatch: (searchTerm) => self.findExactModelMatch(searchTerm),
 				maybeWarnAboutAnthropicSubscriptionAuth: (model) => self.maybeWarnAboutAnthropicSubscriptionAuth(model),
-				checkDaxnutsEasterEgg: (model) => self.checkDaxnutsEasterEgg(model),
 				showModelSelector: (searchTerm) => self.showModelSelector(searchTerm),
 				showExtensionConfirm: (title, message) => self.showExtensionConfirm(title, message),
 				promptForMissingSessionCwd: (error) => self.promptForMissingSessionCwd(error),
@@ -2082,12 +2080,6 @@ export class InteractiveMode {
 						clearEditor();
 					},
 				},
-				"/arminsayshi": {
-					run: () => {
-						this.commandExecutor.handleArminSaysHi();
-						clearEditor();
-					},
-				},
 				"/resume": {
 					run: () => {
 						this.showSessionSelector();
@@ -3568,7 +3560,6 @@ export class InteractiveMode {
 						done();
 						this.showStatus(`Model: ${model.id}`);
 						void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
-						this.checkDaxnutsEasterEgg(model);
 					} catch (error) {
 						done();
 						this.showError(error instanceof Error ? error.message : String(error));
@@ -4104,7 +4095,6 @@ export class InteractiveMode {
 		if (selectedModel) {
 			this.showStatus(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
 			void this.maybeWarnAboutAnthropicSubscriptionAuth(selectedModel);
-			this.checkDaxnutsEasterEgg(selectedModel);
 		} else {
 			this.showStatus(`${actionLabel}. Credentials saved to ${getAuthPath()}`);
 			if (selectionError) {
@@ -4399,18 +4389,6 @@ export class InteractiveMode {
 	 */
 	private getAppKeyDisplay(action: AppKeybinding): string {
 		return keyDisplayText(action);
-	}
-
-	private handleDaxnuts(): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DaxnutsComponent(this.ui));
-		this.ui.requestRender();
-	}
-
-	private checkDaxnutsEasterEgg(model: { provider: string; id: string }): void {
-		if (model.provider === "opencode" && model.id.toLowerCase().includes("kimi-k2.5")) {
-			this.handleDaxnuts();
-		}
 	}
 
 	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
