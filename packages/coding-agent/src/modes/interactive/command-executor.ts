@@ -23,7 +23,6 @@ import { getSubagentPool } from "../../core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../core/subagent-result.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
 import { copyToClipboard } from "../../utils/clipboard.js";
-import { ArminComponent } from "./components/armin.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import type { FooterComponent } from "./components/footer.js";
@@ -56,7 +55,6 @@ export interface CommandContext {
 	// Auth/model helpers
 	findExactModelMatch: (searchTerm: string) => Promise<Model<any> | undefined>;
 	maybeWarnAboutAnthropicSubscriptionAuth: (model?: Model<any>) => Promise<void>;
-	checkDaxnutsEasterEgg: (model: { provider: string; id: string }) => void;
 
 	// Dialog callbacks
 	showModelSelector: (searchTerm?: string) => void;
@@ -88,7 +86,6 @@ export class CommandExecutor {
 				this.ctx.updateEditorBorderColor();
 				this.ctx.showStatus(`Model: ${model.id}`);
 				void this.ctx.maybeWarnAboutAnthropicSubscriptionAuth(model);
-				this.ctx.checkDaxnutsEasterEgg(model);
 			} catch (error) {
 				this.ctx.showError(error instanceof Error ? error.message : String(error));
 			}
@@ -628,12 +625,6 @@ export class CommandExecutor {
 		this.ctx.chatContainer.addChild(
 			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
 		);
-		this.ctx.ui.requestRender();
-	}
-
-	handleArminSaysHi(): void {
-		this.ctx.chatContainer.addChild(new Spacer(1));
-		this.ctx.chatContainer.addChild(new ArminComponent(this.ctx.ui));
 		this.ctx.ui.requestRender();
 	}
 }

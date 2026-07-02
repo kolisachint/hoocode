@@ -94,7 +94,7 @@ function getMessageFromEntry(entry: SessionTreeEntry): AgentMessage | undefined 
 		return createBranchSummaryMessage(entry.summary, entry.fromId, entry.timestamp);
 	}
 	if (entry.type === "compaction") {
-		return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp);
+		return createCompactionSummaryMessage(entry.summary, entry.tokensBefore, entry.timestamp, entry.tokensAfter);
 	}
 	return undefined;
 }
@@ -111,6 +111,11 @@ export interface CompactionResult<T = unknown> {
 	summary: string;
 	firstKeptEntryId: string;
 	tokensBefore: number;
+	/**
+	 * Estimated context tokens after compaction (summary + kept messages).
+	 * Always set by compact(); may be absent on extension-provided results.
+	 */
+	tokensAfter?: number;
 	/** Extension-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
 	details?: T;
 }
@@ -593,6 +598,13 @@ export async function generateSummary(
 		.map((c) => c.text)
 		.join("\n");
 
+	// A non-error response with no usable text would otherwise produce an empty
+	// summary and silently discard the history being compacted. Fail instead so
+	// the caller surfaces it and the conversation is left intact.
+	if (textContent.trim() === "") {
+		throw new Error("Summarization produced an empty summary");
+	}
+
 	return textContent;
 }
 
@@ -797,10 +809,19 @@ export async function compact(
 		throw new Error("First kept entry has no UUID - session may need migration");
 	}
 
+	// Estimate post-compaction context size: subtract discarded message tokens,
+	// add the new compaction-summary tokens (matches estimateTokens' chars/4 heuristic).
+	let discardedTokens = 0;
+	for (const msg of messagesToSummarize) discardedTokens += estimateTokens(msg);
+	for (const msg of turnPrefixMessages) discardedTokens += estimateTokens(msg);
+	const summaryTokens = Math.ceil(summary.length / 4);
+	const tokensAfter = Math.max(0, tokensBefore - discardedTokens + summaryTokens);
+
 	return {
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
+		tokensAfter,
 		details: { readFiles, modifiedFiles } as CompactionDetails,
 	};
 }
@@ -841,8 +862,14 @@ async function generateTurnPrefixSummary(
 		throw new Error(`Turn prefix summarization failed: ${response.errorMessage || "Unknown error"}`);
 	}
 
-	return response.content
+	const textContent = response.content
 		.filter((c): c is { type: "text"; text: string } => c.type === "text")
 		.map((c) => c.text)
 		.join("\n");
+
+	if (textContent.trim() === "") {
+		throw new Error("Turn prefix summarization produced an empty summary");
+	}
+
+	return textContent;
 }

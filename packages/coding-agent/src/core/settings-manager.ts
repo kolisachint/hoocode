@@ -1066,7 +1066,7 @@ export class SettingsManager {
 		if (this.settings.terminal?.clearOnShrink !== undefined) {
 			return this.settings.terminal.clearOnShrink;
 		}
-		return (process.env.HOOCODE_CLEAR_ON_SHRINK ?? process.env.PI_CLEAR_ON_SHRINK) === "1";
+		return process.env.HOOCODE_CLEAR_ON_SHRINK === "1";
 	}
 
 	setClearOnShrink(enabled: boolean): void {
@@ -1150,10 +1150,7 @@ export class SettingsManager {
 	}
 
 	getShowHardwareCursor(): boolean {
-		return (
-			this.settings.showHardwareCursor ??
-			(process.env.HOOCODE_HARDWARE_CURSOR ?? process.env.PI_HARDWARE_CURSOR) === "1"
-		);
+		return this.settings.showHardwareCursor ?? process.env.HOOCODE_HARDWARE_CURSOR === "1";
 	}
 
 	setShowHardwareCursor(enabled: boolean): void {

@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { VoicePanel } from "../src/modes/interactive/components/voice-panel.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { VoicePanel } from "../src/modes/interactive/voice/voice-panel.js";
 
 beforeAll(() => {
 	initTheme("dark");

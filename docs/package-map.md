@@ -53,7 +53,18 @@ The reusable agent loop, independent of any specific UI or provider.
 - `src/agent-loop.ts` - the turn loop, tool dispatch, and the background-tool mechanism
   (non-blocking tools whose results are injected later).
 - `src/types.ts` - shared types (`AgentTool`, `BackgroundToolResult`, message types).
-- `src/harness/` - test harness utilities. `src/proxy.ts` - transport proxy.
+- `src/harness/` - the embeddable agent harness (used by external consumers such as
+  hooteams) and the **canonical home of logic shared with the CLI**:
+  - `compaction/` - context compaction and branch summarization (coding-agent imports
+    these; there is no separate copy).
+  - `messages.ts` - custom message types (`bashExecution`, `custom`, summaries) and
+    `convertToLlm`; session entry types live in `harness/types.ts`.
+  - `utils/output-compression.ts` - lossless tool-output compression (used by the CLI's
+    bash/grep/read tools and compaction).
+  - `session/`, `skills.ts`, `system-prompt.ts`, `prompt-templates.ts` - harness-side
+    session storage and resources. These are `ExecutionEnv`-abstracted designs, distinct
+    from coding-agent's fs-based `core/` equivalents (not diverged copies).
+- `src/proxy.ts` - transport proxy.
 
 ## packages/tui
 
@@ -74,15 +85,22 @@ The shipped CLI. Largest package.
 - `src/core/` - the engine:
   - `agent-session.ts`, `sdk.ts` - wiring the agent loop into a session.
   - `tools/` - built-in tools (`read`, `bash`, `edit`, `write`, `subagent.ts` = the `Task`
-    tool, etc.).
+    tool, etc.). `tools/index.ts` holds the single `TOOL_FACTORIES` registry table that
+    everything (name union, option lookups, bundles) derives from. Optional feature tools
+    live in subdirectories: `tools/browser/` (browser_run/browser_continue) and
+    `tools/doc/` (DocRead/DocEdit/…).
   - `subagent-pool.ts` - spawns subagents as child processes (concurrency, retries,
     inherited-model fallback).
   - `agent-registry.ts` - loads agent definitions; built-ins come from
     `init-templates.generated.ts` (embedded from `templates/agents/*.md`).
   - `task-store.ts` - in-memory task list shown in the task panel.
-  - `compaction/`, `export-html/`, `extensions/` - context compaction, HTML export, the
-    extension system.
+  - `export-html/`, `extensions/` - HTML export and the extension system. Context
+    compaction, custom message types, and session entry types come from
+    `@kolisachint/hoocode-agent-core` (see packages/agent above);
+    `session-manager.ts` re-exports the entry types under their historical names.
 - `src/modes/` - run modes: `interactive/` (the TUI app), `print-mode.ts`, `rpc/`.
+  Voice input (panel + `voicetools` transcription) is grouped under
+  `interactive/voice/`.
 - `templates/agents/*.md` - built-in subagent definitions (frontmatter + prompt). Edit
   these, then regenerate the embedded copy (see npm-packages.md).
 

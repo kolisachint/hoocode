@@ -1,5 +1,5 @@
+import type { CompactionSummaryMessage } from "@kolisachint/hoocode-agent-core";
 import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
-import type { CompactionSummaryMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 

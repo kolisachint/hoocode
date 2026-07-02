@@ -1,8 +1,8 @@
+import type { CustomMessage } from "@kolisachint/hoocode-agent-core";
 import type { TextContent } from "@kolisachint/hoocode-ai";
 import type { Component } from "@kolisachint/hoocode-tui";
 import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
 import type { MessageRenderer } from "../../../core/extensions/types.js";
-import type { CustomMessage } from "../../../core/messages.js";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 /**

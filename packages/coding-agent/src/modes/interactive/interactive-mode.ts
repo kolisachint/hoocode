@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
+import { createCompactionSummaryMessage } from "@kolisachint/hoocode-agent-core";
 import {
 	type AssistantMessage,
 	getProviders,
@@ -23,8 +24,6 @@ import type {
 	EditorComponent,
 	KeyId,
 	MarkdownTheme,
-	OverlayHandle,
-	OverlayOptions,
 	SlashCommand,
 } from "@kolisachint/hoocode-tui";
 import {
@@ -45,26 +44,21 @@ import {
 	TruncatedText,
 	TUI,
 } from "@kolisachint/hoocode-tui";
-import { spawn, spawnSync } from "child_process";
-import { APP_NAME, APP_TITLE, getAgentDir, getAuthPath, getDocsPath, VERSION } from "../../config.js";
+import { spawnSync } from "child_process";
+import { APP_NAME, APP_TITLE, getAuthPath, getDocsPath, VERSION } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
-	AskQuestion,
 	AutocompleteProviderFactory,
 	EditorFactory,
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionRunner,
 	ExtensionUIContext,
-	ExtensionUIDialogOptions,
-	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
-import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
+import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
-import { createCompactionSummaryMessage } from "../../core/messages.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
-import { DefaultPackageManager } from "../../core/package-manager.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
@@ -72,19 +66,15 @@ import { type SessionContext, SessionManager } from "../../core/session-manager.
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
 import { taskStore } from "../../core/task-store.js";
-import { type TeamApproval, TeamApprovalCoordinator } from "../../core/team-approvals.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
-import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
-import { getCwdRelativePath } from "../../utils/paths.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { type CommandContext, CommandExecutor } from "./command-executor.js";
-import { AskOptionsComponent } from "./components/ask-options.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
@@ -92,10 +82,7 @@ import { CompactionSummaryMessageComponent } from "./components/compaction-summa
 import { CountdownTimer } from "./components/countdown-timer.js";
 import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
-import { DaxnutsComponent } from "./components/daxnuts.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
-import { ExtensionEditorComponent } from "./components/extension-editor.js";
-import { ExtensionInputComponent } from "./components/extension-input.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { FooterComponent } from "./components/footer.js";
 import { keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
@@ -107,12 +94,20 @@ import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { TaskPanelComponent } from "./components/task-panel.js";
-import { TeamAttachPanelComponent } from "./components/team-attach-panel.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
-import { VoicePanel } from "./components/voice-panel.js";
+import { ExtensionChrome } from "./extension-chrome.js";
+import { ExtensionDialogs } from "./extension-dialogs.js";
+import {
+	ExpandableText,
+	formatDisplayPath,
+	isExpandable,
+	showLoadedResources as renderLoadedResources,
+} from "./resource-display.js";
+import { checkForPackageUpdates, checkTmuxKeyboardSetup, getChangelogForDisplay } from "./startup-checks.js";
+import { TeamFocusController } from "./team-focus.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -126,35 +121,11 @@ import {
 	setThemeInstance,
 	stopThemeWatcher,
 	Theme,
-	type ThemeColor,
 	theme,
 } from "./theme/theme.js";
-import { startVoiceTranscribe, VoiceDaemon, type VoiceDaemonHandlers, type VoiceSession } from "./voice-transcribe.js";
+import { VoiceController } from "./voice/voice-controller.js";
 
 /** Interface for components that can be expanded/collapsed */
-interface Expandable {
-	setExpanded(expanded: boolean): void;
-}
-
-function isExpandable(obj: unknown): obj is Expandable {
-	return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
-}
-
-class ExpandableText extends Text implements Expandable {
-	constructor(
-		private readonly getCollapsedText: () => string,
-		private readonly getExpandedText: () => string,
-		expanded = false,
-		paddingX = 0,
-		paddingY = 0,
-	) {
-		super(expanded ? getExpandedText() : getCollapsedText(), paddingX, paddingY);
-	}
-
-	setExpanded(expanded: boolean): void {
-		this.setText(expanded ? this.getExpandedText() : this.getCollapsedText());
-	}
-}
 
 type CompactionQueuedMessage = {
 	text: string;
@@ -170,20 +141,6 @@ function isDeadTerminalError(error: unknown): boolean {
 	const code = (error as NodeJS.ErrnoException).code;
 	return code !== undefined && DEAD_TERMINAL_ERROR_CODES.has(code);
 }
-
-// Trailing-silence window: how long a pause while speaking lasts before the
-// capture auto-stops. Passed to `voicetools serve` via `--silence-ms` (see
-// VoiceDaemon.spawn) so the binary's real cutoff matches the on-screen
-// countdown this same value drives. Kept generous so a thinking pause mid-
-// sentence doesn't cut the user off (the binary's own default is 600ms).
-const VOICE_SILENCE_MS = 3000;
-/** How long to keep the warm voice model in memory after the last capture
- * completes. The daemon auto-shuts down after this window, releasing the
- * ~900 MB resident model; the next ctrl+r pays a cold-start respawn cost. */
-const VOICE_IDLE_TIMEOUT_MS = 60_000;
-const VOICE_UNAVAILABLE_MESSAGE =
-	"Voice input failed: voicetools binary unavailable and could not be downloaded. " +
-	"Install it, set VOICETOOLS_BIN, or ensure a published release exists for this platform.";
 
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
 	"Anthropic subscription auth: billed per token as extra usage, not plan limits.";
@@ -245,19 +202,7 @@ export class InteractiveMode {
 	private defaultEditor: CustomEditor;
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
-	private voiceSession: VoiceSession | undefined;
-	// Persistent `voicetools serve` process, once probed successfully. Stays alive
-	// (and warm) across captures for the life of the interactive session.
-	private voiceDaemon: VoiceDaemon | undefined;
-	// Sticky for the session: set once `serve` is confirmed unsupported (old binary)
-	// so later presses skip straight to the per-press `transcribe` fallback.
-	private voiceDaemonUnsupported = false;
-	/** True while the voicetools binary is being resolved/downloaded before a session starts. */
-	private voiceStarting = false;
-	/** True while a capture (daemon or legacy) is in flight. */
-	private voiceActive = false;
-	/** The live multi-line status panel for the current capture (undefined when idle). */
-	private voicePanel: VoicePanel | undefined;
+	private voice: VoiceController;
 	private autocompleteProvider: AutocompleteProvider | undefined;
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
@@ -334,15 +279,11 @@ export class InteractiveMode {
 	private shutdownRequested = false;
 
 	// Extension UI state
-	private extensionSelector: ExtensionSelectorComponent | undefined = undefined;
-	private extensionInput: ExtensionInputComponent | undefined = undefined;
-	private askOptions: AskOptionsComponent | undefined = undefined;
-	private extensionEditor: ExtensionEditorComponent | undefined = undefined;
+	private dialogs: ExtensionDialogs;
 	private extensionTerminalInputUnsubscribers = new Set<() => void>();
 
 	// Extension widgets (components rendered above/below the editor)
-	private extensionWidgetsAbove = new Map<string, Component & { dispose?(): void }>();
-	private extensionWidgetsBelow = new Map<string, Component & { dispose?(): void }>();
+	private chrome!: ExtensionChrome;
 	private widgetContainerAbove!: Container;
 	private widgetContainerBelow!: Container;
 
@@ -350,21 +291,13 @@ export class InteractiveMode {
 	private taskPanel: TaskPanelComponent;
 
 	// hooteams team client (--team): steering + attach share its single SSE stream
-	private teamClient: TeamViewConnection | undefined = undefined;
-	private teamAttachPanel: TeamAttachPanelComponent | undefined = undefined;
-	private teamAttachHandle: OverlayHandle | undefined = undefined;
-
-	// Custom footer from extension (undefined = use built-in footer)
-	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
+	private teamFocus: TeamFocusController;
 
 	// Header container that holds the built-in or custom header
 	private headerContainer: Container;
 
 	// Built-in header (logo + keybinding hints + changelog)
 	private builtInHeader: Component | undefined = undefined;
-
-	// Custom header from extension (undefined = use built-in header)
-	private customHeader: (Component & { dispose?(): void }) | undefined = undefined;
 
 	// Convenience accessors
 	private get session(): AgentSession {
@@ -420,9 +353,8 @@ export class InteractiveMode {
 				stopLoadingAnimation: () => self.stopLoadingAnimation(),
 				findExactModelMatch: (searchTerm) => self.findExactModelMatch(searchTerm),
 				maybeWarnAboutAnthropicSubscriptionAuth: (model) => self.maybeWarnAboutAnthropicSubscriptionAuth(model),
-				checkDaxnutsEasterEgg: (model) => self.checkDaxnutsEasterEgg(model),
 				showModelSelector: (searchTerm) => self.showModelSelector(searchTerm),
-				showExtensionConfirm: (title, message) => self.showExtensionConfirm(title, message),
+				showExtensionConfirm: (title, message) => self.dialogs.confirm(title, message),
 				promptForMissingSessionCwd: (error) => self.promptForMissingSessionCwd(error),
 				handleFatalRuntimeError: (prefix, error) => self.handleFatalRuntimeError(prefix, error),
 			};
@@ -482,10 +414,42 @@ export class InteractiveMode {
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
+		this.chrome = new ExtensionChrome({
+			ui: this.ui,
+			widgetContainerAbove: this.widgetContainerAbove,
+			widgetContainerBelow: this.widgetContainerBelow,
+			headerContainer: this.headerContainer,
+			footer: this.footer,
+			footerDataProvider: this.footerDataProvider,
+			getBuiltInHeader: () => this.builtInHeader,
+			isToolOutputExpanded: () => this.toolOutputExpanded,
+		});
 		this.taskPanel = new TaskPanelComponent(this.ui);
-		this.taskPanel.onNudge = (role) => this.showTeamNudgeInput(role);
-		this.taskPanel.onAttach = (role) => this.showTeamAttach(role);
-		this.taskPanel.onExitFocus = () => this.exitTeamFocus();
+		this.dialogs = new ExtensionDialogs({
+			ui: this.ui,
+			editorContainer: this.editorContainer,
+			keybindings: this.keybindings,
+			getEditor: () => this.editor,
+		});
+		this.teamFocus = new TeamFocusController({
+			ui: this.ui,
+			taskPanel: this.taskPanel,
+			editorContainer: this.editorContainer,
+			getEditor: () => this.editor as Component,
+			showStatus: (message) => this.showStatus(message),
+			showWarning: (message) => this.showWarning(message),
+			showAskOptions: (questions, opts) => this.dialogs.showAskOptions(questions, opts),
+			isAskOptionsOpen: () => this.dialogs.isAskOptionsOpen(),
+		});
+		this.voice = new VoiceController({
+			ui: this.ui,
+			statusContainer: this.statusContainer,
+			sendEditorInput: (data) => this.editor.handleInput(data),
+			showError: (message) => this.showError(message),
+		});
+		this.taskPanel.onNudge = (role) => this.teamFocus.showNudgeInput(role);
+		this.taskPanel.onAttach = (role) => this.teamFocus.showAttach(role);
+		this.taskPanel.onExitFocus = () => this.teamFocus.exitFocus();
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -669,7 +633,10 @@ export class InteractiveMode {
 		this.registerSignalHandlers();
 
 		// Load changelog (only show new entries, skip for resumed sessions)
-		this.changelogMarkdown = this.getChangelogForDisplay();
+		this.changelogMarkdown = getChangelogForDisplay({
+			hasMessages: this.session.state.messages.length > 0,
+			settingsManager: this.settingsManager,
+		});
 
 		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
 		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
@@ -687,7 +654,7 @@ export class InteractiveMode {
 					? buildCompactWordmark({
 							appName: APP_NAME,
 							version: this.version,
-							cwd: this.formatDisplayPath(this.sessionManager.getCwd()),
+							cwd: formatDisplayPath(this.sessionManager.getCwd()),
 							accent: (text) => theme.fg("accent", text),
 							dim: (text) => theme.fg("dim", text),
 							muted: (text) => theme.fg("muted", text),
@@ -712,7 +679,7 @@ export class InteractiveMode {
 				hint("app.tools.expand", "to expand tools"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.tasks.cycleView", "to cycle task panel view"),
-				...(this.teamClient ? [hint("app.team.focus", "to focus team roster")] : []),
+				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
 				rawKeyHint("!", "to run bash"),
@@ -745,7 +712,7 @@ export class InteractiveMode {
 		this.ui.addChild(this.chatContainer);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
-		this.renderWidgets(); // Initialize with default spacer
+		this.chrome.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
 		this.ui.addChild(this.taskPanel);
 		this.ui.addChild(this.editorContainer);
@@ -815,14 +782,14 @@ export class InteractiveMode {
 		});
 
 		// Start package update check asynchronously
-		this.checkForPackageUpdates().then((updates) => {
+		checkForPackageUpdates(this.sessionManager.getCwd(), this.settingsManager).then((updates) => {
 			if (updates.length > 0) {
 				this.showPackageUpdateNotification(updates);
 			}
 		});
 
 		// Check tmux keyboard setup asynchronously
-		this.checkTmuxKeyboardSetup().then((warning) => {
+		checkTmuxKeyboardSetup().then((warning) => {
 			if (warning) {
 				this.showWarning(warning);
 			}
@@ -879,112 +846,6 @@ export class InteractiveMode {
 		}
 	}
 
-	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.HOOCODE_OFFLINE ?? process.env.PI_OFFLINE) {
-			return [];
-		}
-
-		try {
-			const packageManager = new DefaultPackageManager({
-				cwd: this.sessionManager.getCwd(),
-				agentDir: getAgentDir(),
-				settingsManager: this.settingsManager,
-			});
-			const updates = await packageManager.checkForAvailableUpdates();
-			return updates.map((update) => update.displayName);
-		} catch {
-			return [];
-		}
-	}
-
-	private async checkTmuxKeyboardSetup(): Promise<string | undefined> {
-		if (!process.env.TMUX) return undefined;
-
-		const runTmuxShow = (option: string): Promise<string | undefined> => {
-			return new Promise((resolve) => {
-				const proc = spawn("tmux", ["show", "-gv", option], {
-					stdio: ["ignore", "pipe", "ignore"],
-				});
-				let stdout = "";
-				const timer = setTimeout(() => {
-					proc.kill();
-					resolve(undefined);
-				}, 2000);
-
-				proc.stdout?.on("data", (data) => {
-					stdout += data.toString();
-				});
-				proc.on("error", () => {
-					clearTimeout(timer);
-					resolve(undefined);
-				});
-				proc.on("close", (code) => {
-					clearTimeout(timer);
-					resolve(code === 0 ? stdout.trim() : undefined);
-				});
-			});
-		};
-
-		const [extendedKeys, extendedKeysFormat] = await Promise.all([
-			runTmuxShow("extended-keys"),
-			runTmuxShow("extended-keys-format"),
-		]);
-
-		// If we couldn't query tmux (timeout, sandbox, etc.), don't warn
-		if (extendedKeys === undefined) return undefined;
-
-		if (extendedKeys !== "on" && extendedKeys !== "always") {
-			return "tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.";
-		}
-
-		if (extendedKeysFormat === "xterm") {
-			return `tmux extended-keys-format is xterm. ${APP_NAME} works best with csi-u. Add \`set -g extended-keys-format csi-u\` to ~/.tmux.conf and restart tmux.`;
-		}
-
-		return undefined;
-	}
-
-	/**
-	 * Get changelog entries to display on startup.
-	 * Only shows new entries since last seen version, skips for resumed sessions.
-	 */
-	private getChangelogForDisplay(): string | undefined {
-		// Skip changelog for resumed/continued sessions (already have messages)
-		if (this.session.state.messages.length > 0) {
-			return undefined;
-		}
-
-		const lastVersion = this.settingsManager.getLastChangelogVersion();
-		const changelogPath = getChangelogPath();
-		const entries = parseChangelog(changelogPath);
-
-		if (!lastVersion) {
-			// Fresh install - record the latest entry's version (not VERSION, which may
-			// overshoot the latest entry and silently swallow it once it appears).
-			// Fall back to VERSION only if no entries exist yet.
-			const seedVersion =
-				entries.length > 0 ? `${entries[0].major}.${entries[0].minor}.${entries[0].patch}` : VERSION;
-			this.settingsManager.setLastChangelogVersion(seedVersion);
-			this.reportInstallTelemetry(seedVersion);
-			return undefined;
-		}
-
-		const newEntries = getNewEntries(entries, lastVersion);
-		if (newEntries.length > 0) {
-			const latest = newEntries[0];
-			const latestVersion = `${latest.major}.${latest.minor}.${latest.patch}`;
-			this.settingsManager.setLastChangelogVersion(latestVersion);
-			this.reportInstallTelemetry(latestVersion);
-			return newEntries.map((e) => e.content).join("\n\n");
-		}
-
-		return undefined;
-	}
-
-	private reportInstallTelemetry(_version: string): void {
-		// Disabled in HooCode fork: this is forked from pi (upstream pi.dev install-telemetry endpoint is not run by this fork).
-	}
-
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
 		return {
 			...getMarkdownTheme(),
@@ -996,631 +857,32 @@ export class InteractiveMode {
 	// Extension System
 	// =========================================================================
 
-	private formatDisplayPath(p: string): string {
-		const home = os.homedir();
-		let result = p;
-
-		// Replace home directory with ~
-		if (result.startsWith(home)) {
-			result = `~${result.slice(home.length)}`;
-		}
-
-		return result;
-	}
-
-	private formatExtensionDisplayPath(path: string): string {
-		let result = this.formatDisplayPath(path);
-		result = result.replace(/\/index\.ts$/, "").replace(/\/index\.js$/, "");
-		return result;
-	}
-
-	private formatContextPath(p: string): string {
-		const cwd = path.resolve(this.sessionManager.getCwd());
-		const absolutePath = path.isAbsolute(p) ? path.resolve(p) : path.resolve(cwd, p);
-		const relativePath = getCwdRelativePath(absolutePath, cwd);
-		if (relativePath !== undefined) {
-			return relativePath;
-		}
-
-		return this.formatDisplayPath(absolutePath);
-	}
-
 	private getStartupExpansionState(): boolean {
 		return this.options.verbose || this.toolOutputExpanded;
 	}
 
-	/**
-	 * Get a short path relative to the package root for display.
-	 */
-	private getShortPath(fullPath: string, sourceInfo?: SourceInfo): string {
-		const baseDir = sourceInfo?.baseDir;
-		if (baseDir && this.isPackageSource(sourceInfo)) {
-			const relativePath = path.relative(path.resolve(baseDir), path.resolve(fullPath));
-			if (
-				relativePath &&
-				relativePath !== "." &&
-				!relativePath.startsWith("..") &&
-				!relativePath.startsWith(`..${path.sep}`) &&
-				!path.isAbsolute(relativePath)
-			) {
-				return relativePath.replace(/\\/g, "/");
-			}
-		}
-
-		const source = sourceInfo?.source ?? "";
-		const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
-		if (npmMatch && source.startsWith("npm:")) {
-			return npmMatch[2];
-		}
-
-		const gitMatch = fullPath.match(/git\/[^/]+\/[^/]+\/(.*)/);
-		if (gitMatch && source.startsWith("git:")) {
-			return gitMatch[1];
-		}
-
-		return this.formatDisplayPath(fullPath);
-	}
-
-	private getCompactPathLabel(resourcePath: string, sourceInfo?: SourceInfo): string {
-		const shortPath = this.getShortPath(resourcePath, sourceInfo);
-		const normalizedPath = shortPath.replace(/\\/g, "/");
-		const segments = normalizedPath.split("/").filter((segment) => segment.length > 0 && segment !== "~");
-		if (segments.length > 0) {
-			return segments[segments.length - 1]!;
-		}
-		return shortPath;
-	}
-
-	private getCompactPackageSourceLabel(sourceInfo?: SourceInfo): string {
-		const source = sourceInfo?.source ?? "";
-		if (source.startsWith("npm:")) {
-			return source.slice("npm:".length) || source;
-		}
-
-		const gitSource = parseGitUrl(source);
-		if (gitSource) {
-			return gitSource.path || source;
-		}
-
-		return source;
-	}
-
-	private getCompactExtensionLabel(resourcePath: string, sourceInfo?: SourceInfo): string {
-		if (!this.isPackageSource(sourceInfo)) {
-			return this.getCompactPathLabel(resourcePath, sourceInfo);
-		}
-
-		const sourceLabel = this.getCompactPackageSourceLabel(sourceInfo);
-		if (!sourceLabel) {
-			return this.getCompactPathLabel(resourcePath, sourceInfo);
-		}
-
-		const shortPath = this.getShortPath(resourcePath, sourceInfo).replace(/\\/g, "/");
-		const packagePath = shortPath.startsWith("extensions/") ? shortPath.slice("extensions/".length) : shortPath;
-		const parsedPath = path.posix.parse(packagePath);
-
-		if (parsedPath.name === "index") {
-			return !parsedPath.dir || parsedPath.dir === "." ? sourceLabel : `${sourceLabel}:${parsedPath.dir}`;
-		}
-
-		return `${sourceLabel}:${packagePath}`;
-	}
-
-	private getCompactDisplayPathSegments(resourcePath: string): string[] {
-		return this.formatDisplayPath(resourcePath)
-			.replace(/\\/g, "/")
-			.split("/")
-			.filter((segment) => segment.length > 0 && segment !== "~");
-	}
-
-	private getCompactNonPackageExtensionLabel(
-		resourcePath: string,
-		index: number,
-		allPaths: Array<{ path: string; segments: string[] }>,
-	): string {
-		const segments = allPaths[index]?.segments;
-		if (!segments || segments.length === 0) {
-			return this.getCompactPathLabel(resourcePath);
-		}
-
-		for (let segmentCount = 1; segmentCount <= segments.length; segmentCount += 1) {
-			const candidate = segments.slice(-segmentCount).join("/");
-			const isUnique = allPaths.every((item, itemIndex) => {
-				if (itemIndex === index) {
-					return true;
-				}
-				return item.segments.slice(-segmentCount).join("/") !== candidate;
-			});
-
-			if (isUnique) {
-				return candidate;
-			}
-		}
-
-		return segments.join("/");
-	}
-
-	private getCompactExtensionLabels(
-		extensions: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>,
-	): string[] {
-		const nonPackageExtensions = extensions
-			.map((extension) => {
-				const segments = this.getCompactDisplayPathSegments(extension.path);
-				const lastSegment = segments[segments.length - 1];
-				if (segments.length > 1 && (lastSegment === "index.ts" || lastSegment === "index.js")) {
-					segments.pop();
-				}
-				return {
-					path: extension.path,
-					sourceInfo: extension.sourceInfo,
-					segments,
-				};
-			})
-			.filter((extension) => !this.isPackageSource(extension.sourceInfo));
-
-		return extensions.map((extension) => {
-			if (extension.displayName) {
-				return extension.displayName;
-			}
-
-			if (this.isPackageSource(extension.sourceInfo)) {
-				return this.getCompactExtensionLabel(extension.path, extension.sourceInfo);
-			}
-
-			const nonPackageIndex = nonPackageExtensions.findIndex((item) => item.path === extension.path);
-			if (nonPackageIndex === -1) {
-				return this.getCompactPathLabel(extension.path, extension.sourceInfo);
-			}
-
-			return this.getCompactNonPackageExtensionLabel(extension.path, nonPackageIndex, nonPackageExtensions);
-		});
-	}
-
-	private getDisplaySourceInfo(sourceInfo?: SourceInfo): {
-		label: string;
-		scopeLabel?: string;
-		color: "accent" | "muted";
-	} {
-		const source = sourceInfo?.source ?? "local";
-		const scope = sourceInfo?.scope ?? "project";
-		if (source === "local") {
-			if (scope === "user") {
-				return { label: "user", color: "muted" };
-			}
-			if (scope === "project") {
-				return { label: "project", color: "muted" };
-			}
-			if (scope === "temporary") {
-				return { label: "path", scopeLabel: "temp", color: "muted" };
-			}
-			return { label: "path", color: "muted" };
-		}
-
-		if (source === "cli") {
-			return { label: "path", scopeLabel: scope === "temporary" ? "temp" : undefined, color: "muted" };
-		}
-
-		const scopeLabel =
-			scope === "user" ? "user" : scope === "project" ? "project" : scope === "temporary" ? "temp" : undefined;
-		return { label: source, scopeLabel, color: "accent" };
-	}
-
-	private getScopeGroup(sourceInfo?: SourceInfo): "user" | "project" | "path" {
-		const source = sourceInfo?.source ?? "local";
-		const scope = sourceInfo?.scope ?? "project";
-		if (source === "cli" || scope === "temporary") return "path";
-		if (scope === "user") return "user";
-		if (scope === "project") return "project";
-		return "path";
-	}
-
-	private isPackageSource(sourceInfo?: SourceInfo): boolean {
-		const source = sourceInfo?.source ?? "";
-		return source.startsWith("npm:") || source.startsWith("git:");
-	}
-
-	private buildScopeGroups(items: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>): Array<{
-		scope: "user" | "project" | "path";
-		paths: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>;
-		packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>>;
-	}> {
-		const groups: Record<
-			"user" | "project" | "path",
-			{
-				scope: "user" | "project" | "path";
-				paths: Array<{ path: string; sourceInfo?: SourceInfo }>;
-				packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo }>>;
-			}
-		> = {
-			user: { scope: "user", paths: [], packages: new Map() },
-			project: { scope: "project", paths: [], packages: new Map() },
-			path: { scope: "path", paths: [], packages: new Map() },
-		};
-
-		for (const item of items) {
-			const groupKey = this.getScopeGroup(item.sourceInfo);
-			const group = groups[groupKey];
-			const source = item.sourceInfo?.source ?? "local";
-
-			if (this.isPackageSource(item.sourceInfo)) {
-				const list = group.packages.get(source) ?? [];
-				list.push(item);
-				group.packages.set(source, list);
-			} else {
-				group.paths.push(item);
-			}
-		}
-
-		return [groups.project, groups.user, groups.path].filter(
-			(group) => group.paths.length > 0 || group.packages.size > 0,
-		);
-	}
-
-	private formatScopeGroups(
-		groups: Array<{
-			scope: "user" | "project" | "path";
-			paths: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>;
-			packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>>;
-		}>,
-		options: {
-			formatPath: (item: { path: string; sourceInfo?: SourceInfo; displayName?: string }) => string;
-			formatPackagePath: (
-				item: { path: string; sourceInfo?: SourceInfo; displayName?: string },
-				source: string,
-			) => string;
-		},
-	): string {
-		const lines: string[] = [];
-
-		for (const group of groups) {
-			lines.push(`  ${theme.fg("accent", group.scope)}`);
-
-			const sortedPaths = [...group.paths].sort((a, b) => a.path.localeCompare(b.path));
-			for (const item of sortedPaths) {
-				lines.push(theme.fg("dim", `    ${options.formatPath(item)}`));
-			}
-
-			const sortedPackages = Array.from(group.packages.entries()).sort(([a], [b]) => a.localeCompare(b));
-			for (const [source, items] of sortedPackages) {
-				lines.push(`    ${theme.fg("mdLink", source)}`);
-				const sortedPackagePaths = [...items].sort((a, b) => a.path.localeCompare(b.path));
-				for (const item of sortedPackagePaths) {
-					lines.push(theme.fg("dim", `      ${options.formatPackagePath(item, source)}`));
-				}
-			}
-		}
-
-		return lines.join("\n");
-	}
-
-	private findSourceInfoForPath(p: string, sourceInfos: Map<string, SourceInfo>): SourceInfo | undefined {
-		const exact = sourceInfos.get(p);
-		if (exact) return exact;
-
-		let current = p;
-		while (current.includes("/")) {
-			current = current.substring(0, current.lastIndexOf("/"));
-			const parent = sourceInfos.get(current);
-			if (parent) return parent;
-		}
-
-		return undefined;
-	}
-
-	private formatPathWithSource(p: string, sourceInfo?: SourceInfo): string {
-		if (sourceInfo) {
-			const shortPath = this.getShortPath(p, sourceInfo);
-			const { label, scopeLabel } = this.getDisplaySourceInfo(sourceInfo);
-			const labelText = scopeLabel ? `${label} (${scopeLabel})` : label;
-			return `${labelText} ${shortPath}`;
-		}
-		return this.formatDisplayPath(p);
-	}
-
-	private formatDiagnostics(diagnostics: readonly ResourceDiagnostic[], sourceInfos: Map<string, SourceInfo>): string {
-		const lines: string[] = [];
-
-		// Group collision diagnostics by name
-		const collisions = new Map<string, ResourceDiagnostic[]>();
-		const otherDiagnostics: ResourceDiagnostic[] = [];
-
-		for (const d of diagnostics) {
-			if (d.type === "collision" && d.collision) {
-				const list = collisions.get(d.collision.name) ?? [];
-				list.push(d);
-				collisions.set(d.collision.name, list);
-			} else {
-				otherDiagnostics.push(d);
-			}
-		}
-
-		// Format collision diagnostics grouped by name
-		for (const [name, collisionList] of collisions) {
-			const first = collisionList[0]?.collision;
-			if (!first) continue;
-			lines.push(theme.fg("warning", `  "${name}" collision:`));
-			lines.push(
-				theme.fg(
-					"dim",
-					`    ${theme.fg("success", "✓")} ${this.formatPathWithSource(first.winnerPath, this.findSourceInfoForPath(first.winnerPath, sourceInfos))}`,
-				),
-			);
-			for (const d of collisionList) {
-				if (d.collision) {
-					lines.push(
-						theme.fg(
-							"dim",
-							`    ${theme.fg("warning", "✗")} ${this.formatPathWithSource(d.collision.loserPath, this.findSourceInfoForPath(d.collision.loserPath, sourceInfos))} (skipped)`,
-						),
-					);
-				}
-			}
-		}
-
-		for (const d of otherDiagnostics) {
-			if (d.path) {
-				const formattedPath = this.formatPathWithSource(d.path, this.findSourceInfoForPath(d.path, sourceInfos));
-				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${formattedPath}`));
-				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `    ${d.message}`));
-			} else {
-				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${d.message}`));
-			}
-		}
-
-		return lines.join("\n");
-	}
-
+	/** Render the startup/reload resource listing (see resource-display.ts). */
 	private showLoadedResources(options?: {
 		extensions?: Array<{ path: string; sourceInfo?: SourceInfo }>;
 		force?: boolean;
 		showDiagnosticsWhenQuiet?: boolean;
 	}): void {
-		const showListing = options?.force || this.options.verbose || !this.settingsManager.getQuietStartup();
-		const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
-		if (!showListing && !showDiagnostics) {
-			return;
-		}
-
-		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") => theme.fg(color, `[${name}]`);
-		const formatCompactList = (items: string[], options?: { sort?: boolean }): string => {
-			const labels = items.map((item) => item.trim()).filter((item) => item.length > 0);
-			if (options?.sort !== false) {
-				labels.sort((a, b) => a.localeCompare(b));
-			}
-			return theme.fg("dim", `  ${labels.join(", ")}`);
-		};
-		const addLoadedSection = (
-			name: string,
-			collapsedBody: string,
-			expandedBody = collapsedBody,
-			color: ThemeColor = "mdHeading",
-		): void => {
-			const section = new ExpandableText(
-				() => `${sectionHeader(name, color)}\n${collapsedBody}`,
-				() => `${sectionHeader(name, color)}\n${expandedBody}`,
-				this.getStartupExpansionState(),
-				0,
-				0,
-			);
-			this.chatContainer.addChild(section);
-			this.chatContainer.addChild(new Spacer(1));
-		};
-
-		const skillsResult = this.session.resourceLoader.getSkills();
-		const promptsResult = this.session.resourceLoader.getPrompts();
-		const themesResult = this.session.resourceLoader.getThemes();
-		const extensions =
-			options?.extensions ??
-			this.session.resourceLoader
-				.getExtensions()
-				.extensions.filter((extension) => !extension.internal)
-				.map((extension) => ({
-					path: extension.path,
-					sourceInfo: extension.sourceInfo,
-					displayName: extension.displayName,
-				}));
-		const sourceInfos = new Map<string, SourceInfo>();
-		for (const extension of extensions) {
-			if (extension.sourceInfo) {
-				sourceInfos.set(extension.path, extension.sourceInfo);
-			}
-		}
-		for (const skill of skillsResult.skills) {
-			if (skill.sourceInfo) {
-				sourceInfos.set(skill.filePath, skill.sourceInfo);
-			}
-		}
-		for (const prompt of promptsResult.prompts) {
-			if (prompt.sourceInfo) {
-				sourceInfos.set(prompt.filePath, prompt.sourceInfo);
-			}
-		}
-		for (const loadedTheme of themesResult.themes) {
-			if (loadedTheme.sourcePath && loadedTheme.sourceInfo) {
-				sourceInfos.set(loadedTheme.sourcePath, loadedTheme.sourceInfo);
-			}
-		}
-
-		if (showListing) {
-			this.chatContainer.addChild(new Spacer(1));
-
-			const { agentsFiles: contextFiles, warnings: contextWarnings } = this.session.resourceLoader.getAgentsFiles();
-			const skills = skillsResult.skills;
-			const templates = this.session.promptTemplates;
-			const loadedThemes = themesResult.themes;
-			const customThemes = loadedThemes.filter((t) => t.sourcePath);
-
-			const totalItems =
-				contextFiles.length + skills.length + templates.length + extensions.length + customThemes.length;
-
-			// Meta items: active mode and subagent system prompt (always shown)
-			const metaItems: string[] = [];
-			const rawMode = this.footerDataProvider.getActiveMode().replace(" + subagent", "");
-			metaItems.push(`mode/${rawMode}`);
-			if (this.footerDataProvider.getSubagentEnabled()) {
-				metaItems.push("subagent_system_prompt");
-			}
-
-			if (totalItems > 0 && totalItems <= 5) {
-				const allCompactItems: string[] = [...metaItems];
-				if (contextFiles.length > 0) {
-					allCompactItems.push(...contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)));
-				}
-				if (skills.length > 0) {
-					allCompactItems.push(...skills.map((skill) => skill.name));
-				}
-				if (templates.length > 0) {
-					allCompactItems.push(...templates.map((template) => `/${template.name}`));
-				}
-				if (extensions.length > 0) {
-					allCompactItems.push(...this.getCompactExtensionLabels(extensions));
-				}
-				if (customThemes.length > 0) {
-					allCompactItems.push(
-						...customThemes.map(
-							(loadedTheme) =>
-								loadedTheme.name ?? this.getCompactPathLabel(loadedTheme.sourcePath!, loadedTheme.sourceInfo),
-						),
-					);
-				}
-				this.chatContainer.addChild(
-					new Text(`${theme.fg("mdHeading", "[Resources]")} ${theme.fg("dim", allCompactItems.join(", "))}`, 0, 0),
-				);
-			} else if (totalItems === 0) {
-				this.chatContainer.addChild(
-					new Text(`${theme.fg("mdHeading", "[Resources]")} ${theme.fg("dim", metaItems.join(", "))}`, 0, 0),
-				);
-			} else {
-				addLoadedSection("Resources", formatCompactList(metaItems), formatCompactList(metaItems));
-				if (contextFiles.length > 0) {
-					this.chatContainer.addChild(new Spacer(1));
-					const contextList = contextFiles
-						.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
-						.join("\n");
-					const contextCompactList = formatCompactList(
-						contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)),
-						{ sort: false },
-					);
-					addLoadedSection("Context", contextCompactList, contextList);
-				}
-
-				if (skills.length > 0) {
-					const groups = this.buildScopeGroups(
-						skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
-					);
-					const skillList = this.formatScopeGroups(groups, {
-						formatPath: (item) => this.formatDisplayPath(item.path),
-						formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
-					});
-					const skillCompactList = formatCompactList(skills.map((skill) => skill.name));
-					addLoadedSection("Skills", skillCompactList, skillList);
-				}
-
-				if (templates.length > 0) {
-					const groups = this.buildScopeGroups(
-						templates.map((template) => ({ path: template.filePath, sourceInfo: template.sourceInfo })),
-					);
-					const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
-					const templateList = this.formatScopeGroups(groups, {
-						formatPath: (item) => {
-							const template = templateByPath.get(item.path);
-							return template ? `/${template.name}` : this.formatDisplayPath(item.path);
-						},
-						formatPackagePath: (item) => {
-							const template = templateByPath.get(item.path);
-							return template ? `/${template.name}` : this.formatDisplayPath(item.path);
-						},
-					});
-					const promptCompactList = formatCompactList(templates.map((template) => `/${template.name}`));
-					addLoadedSection("Prompts", promptCompactList, templateList);
-				}
-
-				if (extensions.length > 0) {
-					const groups = this.buildScopeGroups(extensions);
-					const extList = this.formatScopeGroups(groups, {
-						formatPath: (item) => item.displayName ?? this.formatExtensionDisplayPath(item.path),
-						formatPackagePath: (item) =>
-							item.displayName ?? this.formatExtensionDisplayPath(this.getShortPath(item.path, item.sourceInfo)),
-					});
-					const extensionCompactList = formatCompactList(this.getCompactExtensionLabels(extensions));
-					addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
-				}
-
-				if (customThemes.length > 0) {
-					const groups = this.buildScopeGroups(
-						customThemes.map((loadedTheme) => ({
-							path: loadedTheme.sourcePath!,
-							sourceInfo: loadedTheme.sourceInfo,
-						})),
-					);
-					const themeList = this.formatScopeGroups(groups, {
-						formatPath: (item) => this.formatDisplayPath(item.path),
-						formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
-					});
-					const themeCompactList = formatCompactList(
-						customThemes.map(
-							(loadedTheme) =>
-								loadedTheme.name ?? this.getCompactPathLabel(loadedTheme.sourcePath!, loadedTheme.sourceInfo),
-						),
-					);
-					addLoadedSection("Themes", themeCompactList, themeList);
-				}
-			}
-
-			if (contextWarnings.length > 0) {
-				for (const warning of contextWarnings) {
-					this.chatContainer.addChild(new Text(theme.fg("warning", warning), 0, 0));
-				}
-			}
-		}
-
-		if (showDiagnostics) {
-			const skillDiagnostics = skillsResult.diagnostics;
-			if (skillDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(skillDiagnostics, sourceInfos);
-				this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Skill conflicts]")}\n${warningLines}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
-
-			const promptDiagnostics = promptsResult.diagnostics;
-			if (promptDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(promptDiagnostics, sourceInfos);
-				this.chatContainer.addChild(
-					new Text(`${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines}`, 0, 0),
-				);
-				this.chatContainer.addChild(new Spacer(1));
-			}
-
-			const extensionDiagnostics: ResourceDiagnostic[] = [];
-			const extensionErrors = this.session.resourceLoader.getExtensions().errors;
-			if (extensionErrors.length > 0) {
-				for (const error of extensionErrors) {
-					extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
-				}
-			}
-
-			const commandDiagnostics = this.session.extensionRunner.getCommandDiagnostics();
-			extensionDiagnostics.push(...commandDiagnostics);
-			extensionDiagnostics.push(...this.getBuiltInCommandConflictDiagnostics(this.session.extensionRunner));
-
-			const shortcutDiagnostics = this.session.extensionRunner.getShortcutDiagnostics();
-			extensionDiagnostics.push(...shortcutDiagnostics);
-
-			if (extensionDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(extensionDiagnostics, sourceInfos);
-				this.chatContainer.addChild(
-					new Text(`${theme.fg("warning", "[Extension issues]")}\n${warningLines}`, 0, 0),
-				);
-				this.chatContainer.addChild(new Spacer(1));
-			}
-
-			const themeDiagnostics = themesResult.diagnostics;
-			if (themeDiagnostics.length > 0) {
-				const warningLines = this.formatDiagnostics(themeDiagnostics, sourceInfos);
-				this.chatContainer.addChild(new Text(`${theme.fg("warning", "[Theme conflicts]")}\n${warningLines}`, 0, 0));
-				this.chatContainer.addChild(new Spacer(1));
-			}
-		}
+		renderLoadedResources(
+			{
+				chatContainer: this.chatContainer,
+				getCwd: () => this.sessionManager.getCwd(),
+				getResourceLoader: () => this.session.resourceLoader,
+				getPromptTemplates: () => this.session.promptTemplates,
+				getExtensionRunner: () => this.session.extensionRunner,
+				getActiveMode: () => this.footerDataProvider.getActiveMode(),
+				getSubagentEnabled: () => this.footerDataProvider.getSubagentEnabled(),
+				quietStartup: () => this.settingsManager.getQuietStartup(),
+				verbose: this.options.verbose ?? false,
+				isExpanded: () => this.getStartupExpansionState(),
+				getBuiltInCommandConflictDiagnostics: (runner) => this.getBuiltInCommandConflictDiagnostics(runner),
+			},
+			options,
+		);
 	}
 
 	/**
@@ -1879,81 +1141,11 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	/**
-	 * Set an extension widget (string array or custom component).
-	 */
-	private setExtensionWidget(
-		key: string,
-		content: string[] | ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined,
-		options?: ExtensionWidgetOptions,
-	): void {
-		const placement = options?.placement ?? "aboveEditor";
-		const removeExisting = (map: Map<string, Component & { dispose?(): void }>) => {
-			const existing = map.get(key);
-			if (existing?.dispose) existing.dispose();
-			map.delete(key);
-		};
-
-		removeExisting(this.extensionWidgetsAbove);
-		removeExisting(this.extensionWidgetsBelow);
-
-		if (content === undefined) {
-			this.renderWidgets();
-			return;
-		}
-
-		let component: Component & { dispose?(): void };
-
-		if (Array.isArray(content)) {
-			// Wrap string array in a Container with Text components
-			const container = new Container();
-			for (const line of content.slice(0, InteractiveMode.MAX_WIDGET_LINES)) {
-				container.addChild(new Text(line, 1, 0));
-			}
-			if (content.length > InteractiveMode.MAX_WIDGET_LINES) {
-				container.addChild(new Text(theme.fg("muted", "... (widget truncated)"), 1, 0));
-			}
-			component = container;
-		} else {
-			// Factory function - create component
-			component = content(this.ui, theme);
-		}
-
-		const targetMap = placement === "belowEditor" ? this.extensionWidgetsBelow : this.extensionWidgetsAbove;
-		targetMap.set(key, component);
-		this.renderWidgets();
-	}
-
-	private clearExtensionWidgets(): void {
-		for (const widget of this.extensionWidgetsAbove.values()) {
-			widget.dispose?.();
-		}
-		for (const widget of this.extensionWidgetsBelow.values()) {
-			widget.dispose?.();
-		}
-		this.extensionWidgetsAbove.clear();
-		this.extensionWidgetsBelow.clear();
-		this.renderWidgets();
-	}
-
 	private resetExtensionUI(): void {
-		if (this.extensionSelector) {
-			this.hideExtensionSelector();
-		}
-		if (this.extensionInput) {
-			this.hideExtensionInput();
-		}
-		if (this.askOptions) {
-			this.hideAskOptions();
-		}
-		if (this.extensionEditor) {
-			this.hideExtensionEditor();
-		}
+		this.dialogs.reset();
 		this.ui.hideOverlay();
 		this.clearExtensionTerminalInputListeners();
-		this.setExtensionFooter(undefined);
-		this.setExtensionHeader(undefined);
-		this.clearExtensionWidgets();
+		this.chrome.reset();
 		this.footerDataProvider.clearExtensionStatuses();
 		this.footer.invalidate();
 		this.autocompleteProviderWrappers = [];
@@ -1968,119 +1160,6 @@ export class InteractiveMode {
 			this.loadingAnimation.setMessage(`${this.defaultWorkingMessage} (${keyText("app.interrupt")} to interrupt)`);
 		}
 		this.setHiddenThinkingLabel();
-	}
-
-	// Maximum total widget lines to prevent viewport overflow
-	private static readonly MAX_WIDGET_LINES = 10;
-
-	/**
-	 * Render all extension widgets to the widget container.
-	 */
-	private renderWidgets(): void {
-		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
-		this.renderWidgetContainer(this.widgetContainerAbove, this.extensionWidgetsAbove, true, true);
-		this.renderWidgetContainer(this.widgetContainerBelow, this.extensionWidgetsBelow, false, false);
-		this.ui.requestRender();
-	}
-
-	private renderWidgetContainer(
-		container: Container,
-		widgets: Map<string, Component & { dispose?(): void }>,
-		spacerWhenEmpty: boolean,
-		leadingSpacer: boolean,
-	): void {
-		container.clear();
-
-		if (widgets.size === 0) {
-			if (spacerWhenEmpty) {
-				container.addChild(new Spacer(1));
-			}
-			return;
-		}
-
-		if (leadingSpacer) {
-			container.addChild(new Spacer(1));
-		}
-		for (const component of widgets.values()) {
-			container.addChild(component);
-		}
-	}
-
-	/**
-	 * Set a custom footer component, or restore the built-in footer.
-	 */
-	private setExtensionFooter(
-		factory:
-			| ((tui: TUI, thm: Theme, footerData: ReadonlyFooterDataProvider) => Component & { dispose?(): void })
-			| undefined,
-	): void {
-		// Dispose existing custom footer
-		if (this.customFooter?.dispose) {
-			this.customFooter.dispose();
-		}
-
-		// Remove current footer from UI
-		if (this.customFooter) {
-			this.ui.removeChild(this.customFooter);
-		} else {
-			this.ui.removeChild(this.footer);
-		}
-
-		if (factory) {
-			// Create and add custom footer, passing the data provider
-			this.customFooter = factory(this.ui, theme, this.footerDataProvider);
-			this.ui.addChild(this.customFooter);
-		} else {
-			// Restore built-in footer
-			this.customFooter = undefined;
-			this.ui.addChild(this.footer);
-		}
-
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Set a custom header component, or restore the built-in header.
-	 */
-	private setExtensionHeader(factory: ((tui: TUI, thm: Theme) => Component & { dispose?(): void }) | undefined): void {
-		// Header may not be initialized yet if called during early initialization
-		if (!this.builtInHeader) {
-			return;
-		}
-
-		// Dispose existing custom header
-		if (this.customHeader?.dispose) {
-			this.customHeader.dispose();
-		}
-
-		// Find the index of the current header in the header container
-		const currentHeader = this.customHeader || this.builtInHeader;
-		const index = this.headerContainer.children.indexOf(currentHeader);
-
-		if (factory) {
-			// Create and add custom header
-			this.customHeader = factory(this.ui, theme);
-			if (isExpandable(this.customHeader)) {
-				this.customHeader.setExpanded(this.toolOutputExpanded);
-			}
-			if (index !== -1) {
-				this.headerContainer.children[index] = this.customHeader;
-			} else {
-				// If not found (e.g. builtInHeader was never added), add at the top
-				this.headerContainer.children.unshift(this.customHeader);
-			}
-		} else {
-			// Restore built-in header
-			this.customHeader = undefined;
-			if (isExpandable(this.builtInHeader)) {
-				this.builtInHeader.setExpanded(this.toolOutputExpanded);
-			}
-			if (index !== -1) {
-				this.headerContainer.children[index] = this.builtInHeader;
-			}
-		}
-
-		this.ui.requestRender();
 	}
 
 	private addExtensionTerminalInputListener(
@@ -2106,10 +1185,10 @@ export class InteractiveMode {
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
 		return {
-			select: (title, options, opts) => this.showExtensionSelector(title, options, opts),
-			confirm: (title, message, opts) => this.showExtensionConfirm(title, message, opts),
-			input: (title, placeholder, opts) => this.showExtensionInput(title, placeholder, opts),
-			askOptions: (questions, opts) => this.showAskOptions(questions, opts),
+			select: (title, options, opts) => this.dialogs.showSelector(title, options, opts),
+			confirm: (title, message, opts) => this.dialogs.confirm(title, message, opts),
+			input: (title, placeholder, opts) => this.dialogs.showInput(title, placeholder, opts),
+			askOptions: (questions, opts) => this.dialogs.showAskOptions(questions, opts),
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
@@ -2127,15 +1206,15 @@ export class InteractiveMode {
 			setWorkingVisible: (visible) => this.setWorkingVisible(visible),
 			setWorkingIndicator: (options) => this.setWorkingIndicator(options),
 			setHiddenThinkingLabel: (label) => this.setHiddenThinkingLabel(label),
-			setWidget: (key, content, options) => this.setExtensionWidget(key, content, options),
-			setFooter: (factory) => this.setExtensionFooter(factory),
-			setHeader: (factory) => this.setExtensionHeader(factory),
+			setWidget: (key, content, options) => this.chrome.setWidget(key, content, options),
+			setFooter: (factory) => this.chrome.setFooter(factory),
+			setHeader: (factory) => this.chrome.setHeader(factory),
 			setTitle: (title) => this.ui.terminal.setTitle(title),
-			custom: (factory, options) => this.showExtensionCustom(factory, options),
+			custom: (factory, options) => this.dialogs.showCustom(factory, options),
 			pasteToEditor: (text) => this.editor.handleInput(`\x1b[200~${text}\x1b[201~`),
 			setEditorText: (text) => this.editor.setText(text),
 			getEditorText: () => this.editor.getExpandedText?.() ?? this.editor.getText(),
-			editor: (title, prefill) => this.showExtensionEditor(title, prefill),
+			editor: (title, prefill) => this.dialogs.showEditor(title, prefill),
 			addAutocompleteProvider: (factory) => {
 				this.autocompleteProviderWrappers.push(factory);
 				this.setupAutocompleteProvider();
@@ -2167,222 +1246,9 @@ export class InteractiveMode {
 		};
 	}
 
-	/**
-	 * Show a selector for extensions.
-	 */
-	private showExtensionSelector(
-		title: string,
-		options: string[],
-		opts?: ExtensionUIDialogOptions,
-	): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const onAbort = () => {
-				this.hideExtensionSelector();
-				resolve(undefined);
-			};
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-			this.extensionSelector = new ExtensionSelectorComponent(
-				title,
-				options,
-				(option) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionSelector();
-					resolve(option);
-				},
-				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionSelector();
-					resolve(undefined);
-				},
-				{ tui: this.ui, timeout: opts?.timeout },
-			);
-
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionSelector);
-			this.ui.setFocus(this.extensionSelector);
-			this.ui.requestRender();
-		});
-	}
-
-	/**
-	 * Hide the extension selector.
-	 */
-	private hideExtensionSelector(): void {
-		this.extensionSelector?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionSelector = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Show the options pane — the agent asking the user one or more questions.
-	 * Resolves with one answer per question, or undefined if skipped/aborted.
-	 */
-	private showAskOptions(questions: AskQuestion[], opts?: ExtensionUIDialogOptions): Promise<string[] | undefined> {
-		return new Promise((resolve) => {
-			if (!questions.length || opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const onAbort = () => {
-				this.hideAskOptions();
-				resolve(undefined);
-			};
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-			this.askOptions = new AskOptionsComponent(
-				questions,
-				(answers) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideAskOptions();
-					resolve(answers);
-				},
-				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideAskOptions();
-					resolve(undefined);
-				},
-			);
-
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.askOptions);
-			this.ui.setFocus(this.askOptions);
-			this.ui.requestRender();
-		});
-	}
-
-	/**
-	 * Hide the options pane and restore the editor.
-	 */
-	private hideAskOptions(): void {
-		if (!this.askOptions) return;
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.askOptions = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Show a confirmation dialog for extensions.
-	 */
-	private async showExtensionConfirm(
-		title: string,
-		message: string,
-		opts?: ExtensionUIDialogOptions,
-	): Promise<boolean> {
-		const result = await this.showExtensionSelector(`${title}\n${message}`, ["Yes", "No"], opts);
-		return result === "Yes";
-	}
-
 	private async promptForMissingSessionCwd(error: MissingSessionCwdError): Promise<string | undefined> {
-		const confirmed = await this.showExtensionConfirm(
-			"Session cwd not found",
-			formatMissingSessionCwdPrompt(error.issue),
-		);
+		const confirmed = await this.dialogs.confirm("Session cwd not found", formatMissingSessionCwdPrompt(error.issue));
 		return confirmed ? error.issue.fallbackCwd : undefined;
-	}
-
-	/**
-	 * Show a text input for extensions.
-	 */
-	private showExtensionInput(
-		title: string,
-		placeholder?: string,
-		opts?: ExtensionUIDialogOptions,
-	): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			if (opts?.signal?.aborted) {
-				resolve(undefined);
-				return;
-			}
-
-			const onAbort = () => {
-				this.hideExtensionInput();
-				resolve(undefined);
-			};
-			opts?.signal?.addEventListener("abort", onAbort, { once: true });
-
-			this.extensionInput = new ExtensionInputComponent(
-				title,
-				placeholder,
-				(value) => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionInput();
-					resolve(value);
-				},
-				() => {
-					opts?.signal?.removeEventListener("abort", onAbort);
-					this.hideExtensionInput();
-					resolve(undefined);
-				},
-				{ tui: this.ui, timeout: opts?.timeout },
-			);
-
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionInput);
-			this.ui.setFocus(this.extensionInput);
-			this.ui.requestRender();
-		});
-	}
-
-	/**
-	 * Hide the extension input.
-	 */
-	private hideExtensionInput(): void {
-		this.extensionInput?.dispose();
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionInput = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Show a multi-line editor for extensions (with Ctrl+G support).
-	 */
-	private showExtensionEditor(title: string, prefill?: string): Promise<string | undefined> {
-		return new Promise((resolve) => {
-			this.extensionEditor = new ExtensionEditorComponent(
-				this.ui,
-				this.keybindings,
-				title,
-				prefill,
-				(value) => {
-					this.hideExtensionEditor();
-					resolve(value);
-				},
-				() => {
-					this.hideExtensionEditor();
-					resolve(undefined);
-				},
-			);
-
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.extensionEditor);
-			this.ui.setFocus(this.extensionEditor);
-			this.ui.requestRender();
-		});
-	}
-
-	/**
-	 * Hide the extension editor.
-	 */
-	private hideExtensionEditor(): void {
-		this.editorContainer.clear();
-		this.editorContainer.addChild(this.editor);
-		this.extensionEditor = undefined;
-		this.ui.setFocus(this.editor);
-		this.ui.requestRender();
 	}
 
 	/**
@@ -2468,85 +1334,6 @@ export class InteractiveMode {
 		}
 	}
 
-	/** Show a custom component with keyboard focus. Overlay mode renders on top of existing content. */
-	private async showExtensionCustom<T>(
-		factory: (
-			tui: TUI,
-			theme: Theme,
-			keybindings: KeybindingsManager,
-			done: (result: T) => void,
-		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
-		options?: {
-			overlay?: boolean;
-			overlayOptions?: OverlayOptions | (() => OverlayOptions);
-			onHandle?: (handle: OverlayHandle) => void;
-		},
-	): Promise<T> {
-		const savedText = this.editor.getText();
-		const isOverlay = options?.overlay ?? false;
-
-		const restoreEditor = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor);
-			this.editor.setText(savedText);
-			this.ui.setFocus(this.editor);
-			this.ui.requestRender();
-		};
-
-		return new Promise((resolve, reject) => {
-			let component: Component & { dispose?(): void };
-			let closed = false;
-
-			const close = (result: T) => {
-				if (closed) return;
-				closed = true;
-				if (isOverlay) this.ui.hideOverlay();
-				else restoreEditor();
-				// Note: both branches above already call requestRender
-				resolve(result);
-				try {
-					component?.dispose?.();
-				} catch {
-					/* ignore dispose errors */
-				}
-			};
-
-			Promise.resolve(factory(this.ui, theme, this.keybindings, close))
-				.then((c) => {
-					if (closed) return;
-					component = c;
-					if (isOverlay) {
-						// Resolve overlay options - can be static or dynamic function
-						const resolveOptions = (): OverlayOptions | undefined => {
-							if (options?.overlayOptions) {
-								const opts =
-									typeof options.overlayOptions === "function"
-										? options.overlayOptions()
-										: options.overlayOptions;
-								return opts;
-							}
-							// Fallback: use component's width property if available
-							const w = (component as { width?: number }).width;
-							return w ? { width: w } : undefined;
-						};
-						const handle = this.ui.showOverlay(component, resolveOptions());
-						// Expose handle to caller for visibility control
-						options?.onHandle?.(handle);
-					} else {
-						this.editorContainer.clear();
-						this.editorContainer.addChild(component);
-						this.ui.setFocus(component);
-						this.ui.requestRender();
-					}
-				})
-				.catch((err) => {
-					if (closed) return;
-					if (!isOverlay) restoreEditor();
-					reject(err);
-				});
-		});
-	}
-
 	/**
 	 * Show an extension error in the UI.
 	 */
@@ -2619,9 +1406,9 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.tasks.cycleView", () => {
 			this.taskPanel.cycleView();
 		});
-		this.defaultEditor.onAction("app.team.focus", () => this.enterTeamFocus());
+		this.defaultEditor.onAction("app.team.focus", () => this.teamFocus.enterFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
-		this.defaultEditor.onAction("app.input.voiceTranscribe", () => this.toggleVoiceTranscribe());
+		this.defaultEditor.onAction("app.input.voiceTranscribe", () => this.voice.toggle());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
 		this.defaultEditor.onAction("app.session.new", () => this.commandExecutor.handleClear());
@@ -2672,300 +1459,187 @@ export class InteractiveMode {
 
 	/**
 	 * Wire a hooteams connection into the TUI. Called by main.ts when `--team`
-	 * is set, before run(). Enables team focus (app.team.focus), nudging (n),
-	 * the attach side panel (a) on the task panel's teams view, and approval
-	 * gates: task_paused events (and gates already pending on the server)
-	 * surface inline in the attach panel when it shows the paused role,
-	 * otherwise in the options pane; the answer goes back over
-	 * POST /tasks/:id/resume.
+	 * is set, before run(). See TeamFocusController for the feature itself.
 	 */
 	attachTeamClient(client: TeamViewConnection): void {
-		this.teamClient = client;
-		const approvals = new TeamApprovalCoordinator({
-			present: (approval, signal) => this.presentTeamApproval(approval, signal),
-			resume: (taskId, option) => client.resume(taskId, option),
-			info: (message) => this.showStatus(message),
-			warn: (message) => this.showWarning(message),
-		});
-		client.subscribe((event) => approvals.handleEvent(event));
-		// Gates that opened before we attached don't replay as task_paused.
-		void client.pendingApprovals().then(
-			(pending) => {
-				for (const gate of pending) approvals.enqueuePending(gate);
-			},
-			() => {
-				// Best-effort like the rest of the bridge; live gates still arrive via SSE.
-			},
-		);
+		this.teamFocus.attachClient(client);
 	}
 
 	/**
-	 * Show one team approval gate and resolve with the chosen (or free-form)
-	 * answer, undefined when skipped. When the attach side panel is open on the
-	 * role that paused, the gate renders inline in the panel — right where its
-	 * stream stopped; otherwise it goes to the options pane, waiting politely
-	 * while another ask is on screen. Either way the signal (gate answered
-	 * elsewhere) dismisses the prompt.
+	 * Built-in slash commands dispatched by the editor submit handler.
+	 * `withArgs` commands also match "/name <args>" and receive the full text.
+	 * Each handler keeps its own editor-clearing order (before vs after the
+	 * await) — some commands must show their UI before the prompt is wiped.
 	 */
-	private async presentTeamApproval(approval: TeamApproval, signal: AbortSignal): Promise<string | undefined> {
-		const panel = this.teamAttachPanel;
-		if (panel && approval.role === panel.role) {
-			this.teamAttachHandle?.focus();
-			const answer = await panel.presentApproval(approval, signal);
-			// Detaching mid-gate settles as skipped — fall through to the options
-			// pane so the question isn't silently lost. A skip with the panel
-			// still open is a real skip.
-			if (answer !== undefined || signal.aborted || this.teamAttachPanel === panel) return answer;
-		}
-		while (this.askOptions && !signal.aborted) {
-			await new Promise((resolve) => setTimeout(resolve, 200));
-		}
-		if (signal.aborted) return undefined;
-		const answers = await this.showAskOptions(
-			[
-				{
-					question: approval.question,
-					short: approval.taskId,
-					detail: `team task "${approval.taskId}"${approval.role ? ` (${approval.role})` : ""} is paused until answered`,
-					options: approval.options.map((label) => ({ label })),
-					allowCustom: true,
+	private createBuiltInSlashCommands(): Map<string, { withArgs?: boolean; run(text: string): Promise<void> | void }> {
+		const clearEditor = () => this.editor.setText("");
+		return new Map(
+			Object.entries({
+				"/settings": {
+					run: () => {
+						this.showSettingsSelector();
+						clearEditor();
+					},
 				},
-			],
-			{ signal },
+				"/scoped-models": {
+					run: async () => {
+						clearEditor();
+						await this.showModelsSelector();
+					},
+				},
+				"/model": {
+					withArgs: true,
+					run: async (text: string) => {
+						const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
+						clearEditor();
+						await this.commandExecutor.handleModel(searchTerm);
+					},
+				},
+				"/export": {
+					withArgs: true,
+					run: async (text: string) => {
+						await this.commandExecutor.handleExport(text);
+						clearEditor();
+					},
+				},
+				"/import": {
+					withArgs: true,
+					run: async (text: string) => {
+						await this.commandExecutor.handleImport(text);
+						clearEditor();
+					},
+				},
+				"/share": {
+					run: async () => {
+						await this.commandExecutor.handleShare();
+						clearEditor();
+					},
+				},
+				"/copy": {
+					run: async () => {
+						await this.commandExecutor.handleCopy();
+						clearEditor();
+					},
+				},
+				"/name": {
+					withArgs: true,
+					run: (text: string) => {
+						this.commandExecutor.handleName(text);
+						clearEditor();
+					},
+				},
+				"/session": {
+					run: () => {
+						this.commandExecutor.handleSession();
+						clearEditor();
+					},
+				},
+				"/changelog": {
+					run: () => {
+						this.commandExecutor.handleChangelog();
+						clearEditor();
+					},
+				},
+				"/hotkeys": {
+					run: () => {
+						this.commandExecutor.handleHotkeys();
+						clearEditor();
+					},
+				},
+				"/fork": {
+					run: () => {
+						this.showUserMessageSelector();
+						clearEditor();
+					},
+				},
+				"/clone": {
+					run: async () => {
+						clearEditor();
+						await this.commandExecutor.handleClone();
+					},
+				},
+				"/tree": {
+					run: () => {
+						this.showTreeSelector();
+						clearEditor();
+					},
+				},
+				"/login": {
+					run: () => {
+						this.showOAuthSelector("login");
+						clearEditor();
+					},
+				},
+				"/logout": {
+					run: () => {
+						this.showOAuthSelector("logout");
+						clearEditor();
+					},
+				},
+				"/new": {
+					run: async () => {
+						clearEditor();
+						await this.commandExecutor.handleClear();
+					},
+				},
+				"/compact": {
+					withArgs: true,
+					run: async (text: string) => {
+						const prefix = "/compact ";
+						const customInstructions = text.startsWith(prefix)
+							? text.slice(prefix.length).trim() || undefined
+							: undefined;
+						clearEditor();
+						await this.handleCompactCommand(customInstructions);
+					},
+				},
+				"/reload": {
+					run: async () => {
+						clearEditor();
+						await this.handleReloadCommand();
+					},
+				},
+				"/debug": {
+					run: () => {
+						this.commandExecutor.handleDebug();
+						clearEditor();
+					},
+				},
+				"/resume": {
+					run: () => {
+						this.showSessionSelector();
+						clearEditor();
+					},
+				},
+				"/quit": {
+					run: async () => {
+						clearEditor();
+						await this.shutdown();
+					},
+				},
+				"/subagent": {
+					withArgs: true,
+					run: async (text: string) => {
+						clearEditor();
+						await this.commandExecutor.handleSubagent(text);
+					},
+				},
+			}),
 		);
-		return answers?.[0];
-	}
-
-	/** Move keyboard focus to the task panel's team roster. */
-	private enterTeamFocus(): void {
-		if (!this.teamClient) {
-			this.showStatus("No team connected. Start with --team <url> to mirror a hooteams server.");
-			return;
-		}
-		if (!taskStore.agents().some((a) => a.kind === "role")) {
-			this.showStatus("Team roster is empty — waiting for roles from the team server.");
-			return;
-		}
-		this.taskPanel.setView("teams");
-		this.ui.setFocus(this.taskPanel);
-		this.ui.requestRender();
-	}
-
-	/** Leave team focus: detach any side panel and return focus to the editor. */
-	private exitTeamFocus(): void {
-		this.closeTeamAttach();
-		this.ui.setFocus(this.editor as Component);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Inline nudge editor for a role (n in team focus or while attached).
-	 * Swaps the prompt editor for a one-line input; submit fires POST /steer in
-	 * the background (the REPL and team focus are never blocked on the network).
-	 */
-	private showTeamNudgeInput(role: string): void {
-		const client = this.teamClient;
-		if (!client) return;
-
-		const restoreFocus = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor as Component);
-			// Return focus where the nudge came from: the attach panel if one is
-			// open, otherwise the team roster.
-			if (this.teamAttachHandle) this.teamAttachHandle.focus();
-			else this.ui.setFocus(this.taskPanel);
-			this.ui.requestRender();
-		};
-
-		const input = new ExtensionInputComponent(
-			`Nudge ${role}`,
-			undefined,
-			(value) => {
-				input.dispose();
-				restoreFocus();
-				const message = value.trim();
-				if (!message) return;
-				void client.steer(role, message).then(
-					() => this.showStatus(`Nudged ${role}`),
-					(error) => this.showWarning(`Failed to nudge ${role}: ${String(error)}`),
-				);
-			},
-			() => {
-				input.dispose();
-				restoreFocus();
-			},
-			{ tui: this.ui },
-		);
-
-		this.editorContainer.clear();
-		this.editorContainer.addChild(input);
-		this.ui.setFocus(input);
-		this.ui.requestRender();
-	}
-
-	/** Open the attach side panel for a role (a in team focus). */
-	private showTeamAttach(role: string): void {
-		const client = this.teamClient;
-		if (!client) return;
-		// One attached role at a time: re-attaching swaps the panel.
-		this.closeTeamAttach();
-		const panel = new TeamAttachPanelComponent(
-			role,
-			client,
-			{
-				onDetach: () => this.closeTeamAttach(),
-				onNudge: (attachedRole) => this.showTeamNudgeInput(attachedRole),
-			},
-			this.ui,
-		);
-		this.teamAttachPanel = panel;
-		// preFocus is the task panel (attach is triggered from team focus), so
-		// hiding the overlay drops the user back on the role roster.
-		this.teamAttachHandle = this.ui.showOverlay(panel, {
-			anchor: "top-right",
-			width: "45%",
-			minWidth: 36,
-			margin: { top: 1, right: 1 },
-		});
-	}
-
-	/** Detach the side panel; the role keeps running. Safe to call when closed. */
-	private closeTeamAttach(): void {
-		this.teamAttachPanel?.dispose();
-		this.teamAttachHandle?.hide();
-		this.teamAttachPanel = undefined;
-		this.teamAttachHandle = undefined;
 	}
 
 	private setupEditorSubmitHandler(): void {
+		const slashCommands = this.createBuiltInSlashCommands();
 		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
 
-			// Handle commands
-			if (text === "/settings") {
-				this.showSettingsSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/scoped-models") {
-				this.editor.setText("");
-				await this.showModelsSelector();
-				return;
-			}
-			if (text === "/model" || text.startsWith("/model ")) {
-				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.commandExecutor.handleModel(searchTerm);
-				return;
-			}
-			if (text === "/export" || text.startsWith("/export ")) {
-				await this.commandExecutor.handleExport(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/import" || text.startsWith("/import ")) {
-				await this.commandExecutor.handleImport(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/share") {
-				await this.commandExecutor.handleShare();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/copy") {
-				await this.commandExecutor.handleCopy();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/name" || text.startsWith("/name ")) {
-				this.commandExecutor.handleName(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/session") {
-				this.commandExecutor.handleSession();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/changelog") {
-				this.commandExecutor.handleChangelog();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/hotkeys") {
-				this.commandExecutor.handleHotkeys();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/fork") {
-				this.showUserMessageSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/clone") {
-				this.editor.setText("");
-				await this.commandExecutor.handleClone();
-				return;
-			}
-			if (text === "/tree") {
-				this.showTreeSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/login") {
-				this.showOAuthSelector("login");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/logout") {
-				this.showOAuthSelector("logout");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/new") {
-				this.editor.setText("");
-				await this.commandExecutor.handleClear();
-				return;
-			}
-			if (text === "/compact" || text.startsWith("/compact ")) {
-				const prefix = "/compact ";
-				const customInstructions = text.startsWith(prefix)
-					? text.slice(prefix.length).trim() || undefined
-					: undefined;
-				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
-				return;
-			}
-			if (text === "/reload") {
-				this.editor.setText("");
-				await this.handleReloadCommand();
-				return;
-			}
-			if (text === "/debug") {
-				this.commandExecutor.handleDebug();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/arminsayshi") {
-				this.commandExecutor.handleArminSaysHi();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/resume") {
-				this.showSessionSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/quit") {
-				this.editor.setText("");
-				await this.shutdown();
-				return;
-			}
-			if (text === "/subagent" || text.startsWith("/subagent ")) {
-				this.editor.setText("");
-				await this.commandExecutor.handleSubagent(text);
+			// Handle built-in slash commands
+			const spaceIdx = text.indexOf(" ");
+			const commandName = spaceIdx === -1 ? text : text.slice(0, spaceIdx);
+			const command = slashCommands.get(commandName);
+			if (command && (spaceIdx === -1 || command.withArgs)) {
+				await command.run(text);
 				return;
 			}
 
@@ -3389,265 +2063,6 @@ export class InteractiveMode {
 	 * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
-	/**
-	 * Toggle voice-to-text capture.
-	 *
-	 * Prefers a persistent `voicetools serve` daemon: the first press probes for
-	 * support and (if found) loads models once, showing a "warming up" spinner;
-	 * every later press reuses the already-warm daemon and jumps straight to
-	 * Listening. Binaries without `serve` support fall back to spawning
-	 * `voicetools transcribe` per press, same as before. Pressing the shortcut
-	 * again while listening (or while still warming up) cancels.
-	 */
-	private toggleVoiceTranscribe(): void {
-		if (this.voiceActive) {
-			if (this.voiceDaemon?.isReady) {
-				this.voiceDaemon.cancel();
-			} else {
-				this.voiceSession?.stop();
-			}
-			this.voiceSession = undefined;
-			this.voiceActive = false;
-			this.resetVoiceUI();
-			return;
-		}
-
-		if (this.voiceStarting) {
-			// A second press while resolving/warming up: honour the cancel. Any
-			// daemon that finishes loading afterwards is kept warm for next time.
-			this.voiceStarting = false;
-			this.resetVoiceUI();
-			return;
-		}
-
-		if (this.voiceDaemonUnsupported) {
-			this.voiceStarting = true;
-			this.showVoiceWarming("Starting voice input...");
-			void this.resolveVoiceBin()
-				.then((bin) => {
-					if (!this.voiceStarting) return;
-					this.voiceStarting = false;
-					if (!bin) {
-						this.resetVoiceUI();
-						this.showError(VOICE_UNAVAILABLE_MESSAGE);
-						return;
-					}
-					this.beginLegacyVoiceCapture(bin);
-				})
-				.catch((err: unknown) => {
-					this.voiceStarting = false;
-					this.resetVoiceUI();
-					this.showError(`Voice input failed: ${err instanceof Error ? err.message : String(err)}`);
-				});
-			return;
-		}
-
-		if (this.voiceDaemon?.isReady) {
-			this.beginDaemonVoiceCapture();
-			return;
-		}
-
-		// No daemon yet: resolve the binary, then probe for `serve` support by
-		// spawning it. `VoiceDaemon.spawn` doubles as the probe: it resolves to a
-		// live daemon once READY arrives, to "unsupported" if the process exits
-		// with no output at all (an old binary rejecting the unrecognized `serve`
-		// subcommand), or to "error" if it printed a real ERROR first (e.g. no
-		// model installed yet) — already surfaced via onError, so that case skips
-		// the legacy fallback (it would just hit the same error) but leaves
-		// daemon mode available to retry on the next press.
-		this.voiceStarting = true;
-		this.showVoiceWarming("Warming up voice input...");
-		void this.resolveVoiceBin()
-			.then(async (bin) => {
-				if (!bin) {
-					this.voiceStarting = false;
-					this.resetVoiceUI();
-					this.showError(VOICE_UNAVAILABLE_MESSAGE);
-					return;
-				}
-				const result = await VoiceDaemon.spawn(bin, this.buildVoiceDaemonHandlers(), {
-					silenceMs: VOICE_SILENCE_MS,
-					idleTimeoutMs: VOICE_IDLE_TIMEOUT_MS,
-				});
-				if (!result.ok) {
-					if (result.reason === "unsupported") {
-						this.voiceDaemonUnsupported = true;
-						if (!this.voiceStarting) {
-							this.resetVoiceUI();
-							return;
-						}
-						this.voiceStarting = false;
-						this.beginLegacyVoiceCapture(bin);
-						return;
-					}
-					this.voiceStarting = false;
-					this.resetVoiceUI();
-					return;
-				}
-				this.voiceDaemon = result.daemon;
-				if (!this.voiceStarting) {
-					// Cancelled while warming up: keep the loaded daemon warm for next time.
-					this.resetVoiceUI();
-					return;
-				}
-				this.voiceStarting = false;
-				this.beginDaemonVoiceCapture();
-			})
-			.catch((err: unknown) => {
-				this.voiceStarting = false;
-				this.resetVoiceUI();
-				this.showError(`Voice input failed: ${err instanceof Error ? err.message : String(err)}`);
-			});
-	}
-
-	/**
-	 * Build the (stable, reused-across-captures) handlers for the daemon.
-	 *
-	 * Every handler bails out once `voiceActive` is false: CANCEL is a soft
-	 * request (unlike the legacy path's `proc.kill()`, it doesn't sever the
-	 * pipe), so the daemon can still have a trailing PARTIAL/FINAL/DONE for the
-	 * just-cancelled capture in flight when the user presses cancel. Without
-	 * this guard that stale text would land in the editor after the panel had
-	 * already collapsed.
-	 *
-	 * v0.1.4 serve streams `PARTIAL <full growing hypothesis>` (live preview,
-	 * never committed) and ends with a single `FINAL <complete text>` (the one
-	 * commit to the editor). `SEGMENT` is still handled for the legacy
-	 * transcribe path and any binary that streams committed chunks directly.
-	 */
-	private buildVoiceDaemonHandlers(): VoiceDaemonHandlers {
-		return {
-			onSegment: (text) => {
-				if (!this.voiceActive) return;
-				this.commitVoiceText(text);
-			},
-			onPartial: (text) => {
-				if (!this.voiceActive) return;
-				this.voicePanel?.setPartial(text);
-			},
-			onFinal: (text) => {
-				if (!this.voiceActive) return;
-				this.commitVoiceText(text);
-			},
-			onStatus: (status) => {
-				if (!this.voiceActive) return;
-				if (status === "done") {
-					this.voiceActive = false;
-					this.resetVoiceUI();
-					return;
-				}
-				if (status === "transcribing") {
-					this.voicePanel?.setTranscribing();
-				} else if (status === "listening") {
-					this.voicePanel?.startListening();
-				}
-			},
-			onLevel: (rms) => {
-				if (!this.voiceActive) return;
-				this.voicePanel?.pushLevel(rms);
-			},
-			onPhase: (phase) => {
-				if (!this.voiceActive) return;
-				if (phase === "silence") {
-					this.voicePanel?.beginSilence(VOICE_SILENCE_MS);
-				} else {
-					this.voicePanel?.endSilence();
-				}
-			},
-			onError: (message) => {
-				this.voiceActive = false;
-				this.resetVoiceUI();
-				this.showError(`Voice input failed: ${message}`);
-			},
-			onCrash: (message) => {
-				this.voiceActive = false;
-				this.voiceDaemon = undefined;
-				this.resetVoiceUI();
-				this.showError(`Voice input daemon crashed: ${message}. It will restart on next use.`);
-			},
-			onIdle: () => {
-				// Daemon auto-shut down after idle timeout: drop the reference so the
-				// next ctrl+r respawns (cold start). No user-facing message — this is
-				// an expected memory-reclamation event, not an error.
-				this.voiceDaemon = undefined;
-			},
-		};
-	}
-
-	/** Inject decoded text into the editor via bracketed paste (with a trailing space). */
-	private commitVoiceText(text: string): void {
-		this.editor.handleInput(`\x1b[200~${text} \x1b[201~`);
-	}
-
-	private beginDaemonVoiceCapture(): void {
-		if (!this.voiceDaemon?.isReady) return;
-		this.voiceActive = true;
-		this.showVoicePanel().startListening();
-		this.voiceDaemon.startCapture();
-	}
-
-	private beginLegacyVoiceCapture(bin: string): void {
-		this.voiceActive = true;
-		const panel = this.showVoicePanel();
-		panel.startListening();
-		this.voiceSession = startVoiceTranscribe(bin, {
-			onStatus: (status) => {
-				if (status === "done") {
-					this.voiceActive = false;
-					this.voiceSession = undefined;
-					this.resetVoiceUI();
-					return;
-				}
-				// Old binaries emit no LEVEL/PARTIAL, so the panel shows a spinner
-				// for the batch phases; committed words still stream into the editor.
-				if (status === "transcribing") panel.setTranscribing();
-			},
-			onSegment: (text) => {
-				this.commitVoiceText(text);
-			},
-			onError: (message) => {
-				this.voiceActive = false;
-				this.voiceSession = undefined;
-				this.resetVoiceUI();
-				this.showError(`Voice input failed: ${message}`);
-			},
-		});
-	}
-
-	/** Resolve the `voicetools` binary path. Prefers an explicit VOICETOOLS_BIN
-	 * override, otherwise resolves via the managed tools manager (bin dir / PATH /
-	 * download from the published release). Returns undefined when unavailable.
-	 */
-	private async resolveVoiceBin(): Promise<string | undefined> {
-		const override = process.env.VOICETOOLS_BIN?.trim();
-		if (override) return override;
-		return ensureTool("voicetools", true);
-	}
-
-	/** Create (or reuse) the voice panel and mount it in the status container. */
-	private showVoicePanel(): VoicePanel {
-		if (!this.voicePanel) {
-			this.statusContainer.clear();
-			this.voicePanel = new VoicePanel(this.ui, keyHint("app.input.voiceTranscribe", "cancel"));
-			this.statusContainer.addChild(this.voicePanel);
-		}
-		this.ui.requestRender();
-		return this.voicePanel;
-	}
-
-	private showVoiceWarming(message: string): void {
-		this.showVoicePanel().setWarming(message);
-	}
-
-	/** Collapse the voice panel back to nothing (idle) and stop its animation. */
-	private resetVoiceUI(): void {
-		if (this.voicePanel) {
-			this.voicePanel.dispose();
-			this.voicePanel = undefined;
-		}
-		this.statusContainer.clear();
-		this.ui.requestRender();
-	}
 
 	private showStatus(message: string): void {
 		const children = this.chatContainer.children;
@@ -3905,7 +2320,7 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		this.taskStoreUnsubscribe?.();
-		this.closeTeamAttach();
+		this.teamFocus.closeAttach();
 		this.taskPanel.dispose();
 		this.stop();
 		await this.runtimeHost.dispose();
@@ -4103,7 +2518,7 @@ export class InteractiveMode {
 
 	private setToolsExpanded(expanded: boolean): void {
 		this.toolOutputExpanded = expanded;
-		const activeHeader = this.customHeader ?? this.builtInHeader;
+		const activeHeader = this.chrome.customHeader ?? this.builtInHeader;
 		if (isExpandable(activeHeader)) {
 			activeHeader.setExpanded(expanded);
 		}
@@ -4670,7 +3085,6 @@ export class InteractiveMode {
 						done();
 						this.showStatus(`Model: ${model.id}`);
 						void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
-						this.checkDaxnutsEasterEgg(model);
 					} catch (error) {
 						done();
 						this.showError(error instanceof Error ? error.message : String(error));
@@ -4837,7 +3251,7 @@ export class InteractiveMode {
 					// Check if we should skip the prompt (user preference to always default to no summary)
 					if (!this.settingsManager.getBranchSummarySkipPrompt()) {
 						while (true) {
-							const summaryChoice = await this.showExtensionSelector("Summarize branch?", [
+							const summaryChoice = await this.dialogs.showSelector("Summarize branch?", [
 								"No summary",
 								"Summarize",
 								"Summarize with custom prompt",
@@ -4852,7 +3266,7 @@ export class InteractiveMode {
 							wantsSummary = summaryChoice !== "No summary";
 
 							if (summaryChoice === "Summarize with custom prompt") {
-								customInstructions = await this.showExtensionEditor("Custom summarization instructions");
+								customInstructions = await this.dialogs.showEditor("Custom summarization instructions");
 								if (customInstructions === undefined) {
 									// User cancelled - loop back to summary selector
 									continue;
@@ -5206,7 +3620,6 @@ export class InteractiveMode {
 		if (selectedModel) {
 			this.showStatus(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
 			void this.maybeWarnAboutAnthropicSubscriptionAuth(selectedModel);
-			this.checkDaxnutsEasterEgg(selectedModel);
 		} else {
 			this.showStatus(`${actionLabel}. Credentials saved to ${getAuthPath()}`);
 			if (selectionError) {
@@ -5455,7 +3868,7 @@ export class InteractiveMode {
 		try {
 			await this.session.reload();
 			this.keybindings.reload();
-			const activeHeader = this.customHeader ?? this.builtInHeader;
+			const activeHeader = this.chrome.customHeader ?? this.builtInHeader;
 			if (isExpandable(activeHeader)) {
 				activeHeader.setExpanded(this.toolOutputExpanded);
 			}
@@ -5501,18 +3914,6 @@ export class InteractiveMode {
 	 */
 	private getAppKeyDisplay(action: AppKeybinding): string {
 		return keyDisplayText(action);
-	}
-
-	private handleDaxnuts(): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new DaxnutsComponent(this.ui));
-		this.ui.requestRender();
-	}
-
-	private checkDaxnutsEasterEgg(model: { provider: string; id: string }): void {
-		if (model.provider === "opencode" && model.id.toLowerCase().includes("kimi-k2.5")) {
-			this.handleDaxnuts();
-		}
 	}
 
 	private async handleBashCommand(command: string, excludeFromContext = false): Promise<void> {
@@ -5622,18 +4023,7 @@ export class InteractiveMode {
 
 	stop(): void {
 		this.unregisterSignalHandlers();
-		if (this.voiceSession?.running) {
-			this.voiceSession.stop();
-			this.voiceSession = undefined;
-		}
-		this.voiceDaemon?.shutdown();
-		this.voiceDaemon = undefined;
-		if (this.voicePanel) {
-			this.voicePanel.dispose();
-			this.voicePanel = undefined;
-		}
-		this.voiceActive = false;
-		this.voiceStarting = false;
+		this.voice.dispose();
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}

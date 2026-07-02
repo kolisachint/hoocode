@@ -10,7 +10,8 @@
 
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { type Static, Type } from "typebox";
-import { defineTool, type ToolDefinition } from "../extensions/types.js";
+import { defineTool, type ToolDefinition } from "../../extensions/types.js";
+import { wrapToolDefinition } from "../tool-definition-wrapper.js";
 import { advanceFlow, type BrowserRunDetails } from "./browser-run.js";
 import {
 	type BrowserClientConfig,
@@ -19,7 +20,6 @@ import {
 	resolveBrowsertoolsOptions,
 	takeSession,
 } from "./browsertools-shared.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
 const browserContinueSchema = Type.Object({
 	token: Type.String({ description: "The resume token returned by a browser_run NeedsParent result." }),

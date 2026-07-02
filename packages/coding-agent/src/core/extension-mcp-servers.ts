@@ -2,7 +2,7 @@
  * Process-global registry of MCP servers contributed by extensions/plugins.
  *
  * Plugins declare `mcpServers` in their manifest (or a `.mcp.json`), but MCP
- * connection happens in hoo-core's `setupMcpLoader` on `session_start`, which
+ * connection happens in the hoo-core `mcp-loader` module's `setupMcpLoader` on `session_start`, which
  * reads from fixed file locations. This registry bridges the two: plugin
  * factories register their servers here during load, and `setupMcpLoader` reads
  * them when connecting. Mirrors the module-global approach of

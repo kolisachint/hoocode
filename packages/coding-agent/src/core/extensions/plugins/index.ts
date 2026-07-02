@@ -109,7 +109,7 @@ export function buildPluginFactory(plugin: NormalizedPlugin): ExtensionFactory {
 			});
 		}
 
-		// MCP servers: register for hoo-core's setupMcpLoader to connect on session_start.
+		// MCP servers: register for the hoo-core mcp-loader to connect on session_start.
 		if (plugin.mcpServers) {
 			registerExtensionMcpServers(plugin.id, resolveMcpServers(plugin.mcpServers, plugin.root));
 		}

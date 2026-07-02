@@ -2,10 +2,10 @@ import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createDocGrepTool } from "../src/core/tools/docgrep.js";
-import { createDocPeekTool } from "../src/core/tools/docpeek.js";
-import { createDocReadTool } from "../src/core/tools/docread.js";
-import { createDocScanTool } from "../src/core/tools/docscan.js";
+import { createDocGrepTool } from "../src/core/tools/doc/docgrep.js";
+import { createDocPeekTool } from "../src/core/tools/doc/docpeek.js";
+import { createDocReadTool } from "../src/core/tools/doc/docread.js";
+import { createDocScanTool } from "../src/core/tools/doc/docscan.js";
 import { estimateTextTokens } from "../src/core/tools/filetools-shared.js";
 
 // ---------------------------------------------------------------------------

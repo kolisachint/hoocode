@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createBrowserContinueTool } from "../src/core/tools/browser-continue.js";
-import { type BrowserRunDetails, createBrowserRunTool } from "../src/core/tools/browser-run.js";
-import { disposeAllSessions } from "../src/core/tools/browsertools-shared.js";
+import { createBrowserContinueTool } from "../src/core/tools/browser/browser-continue.js";
+import { type BrowserRunDetails, createBrowserRunTool } from "../src/core/tools/browser/browser-run.js";
+import { disposeAllSessions } from "../src/core/tools/browser/browsertools-shared.js";
 
 // Opt-in end-to-end test against the REAL browsertools binary driving a real
 // headless Chromium. Skipped unless both are provided:

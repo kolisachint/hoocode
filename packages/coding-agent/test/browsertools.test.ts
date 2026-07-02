@@ -2,9 +2,13 @@ import { chmodSync, mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { createBrowserContinueTool } from "../src/core/tools/browser-continue.js";
-import { type BrowserRunDetails, createBrowserRunTool } from "../src/core/tools/browser-run.js";
-import { disposeAllSessions, idleClientCount, pausedSessionCount } from "../src/core/tools/browsertools-shared.js";
+import { createBrowserContinueTool } from "../src/core/tools/browser/browser-continue.js";
+import { type BrowserRunDetails, createBrowserRunTool } from "../src/core/tools/browser/browser-run.js";
+import {
+	disposeAllSessions,
+	idleClientCount,
+	pausedSessionCount,
+} from "../src/core/tools/browser/browsertools-shared.js";
 
 // A fake `browsertools` binary implementing the `serve` JSON-RPC protocol from
 // the real engine (src/serve.rs): newline-delimited {id, method, params} on

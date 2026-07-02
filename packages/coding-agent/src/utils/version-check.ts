@@ -56,8 +56,8 @@ function versionChecksDisabled(): boolean {
 	return Boolean(
 		process.env.HOOCODE_SKIP_VERSION_CHECK ||
 			process.env.HOOCODE_OFFLINE ||
-			(process.env.HOOCODE_SKIP_VERSION_CHECK ?? process.env.PI_SKIP_VERSION_CHECK) ||
-			(process.env.HOOCODE_OFFLINE ?? process.env.PI_OFFLINE),
+			process.env.HOOCODE_SKIP_VERSION_CHECK ||
+			process.env.HOOCODE_OFFLINE,
 	);
 }
 

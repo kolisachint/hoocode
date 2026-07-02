@@ -7,6 +7,7 @@ import {
 	type Usage,
 } from "@kolisachint/hoocode-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import type { CompactionSettings } from "../../src/harness/compaction/compaction.js";
 import {
 	calculateContextTokens,
 	compact,
@@ -21,7 +22,6 @@ import {
 import { buildSessionContext } from "../../src/harness/session/session.js";
 import type {
 	CompactionEntry,
-	CompactionSettings,
 	MessageEntry,
 	ModelChangeEntry,
 	SessionTreeEntry,

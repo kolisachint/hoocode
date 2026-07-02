@@ -6,7 +6,7 @@
  * user has not supplied a `modes/{name}/system.md` override.
  *
  * Extracted into a standalone module (instead of living inside the internal
- * `hoo-core` extension) so downstream apps embedding hoocode can import,
+ * `hoo-core` extension's `modes` module) so downstream apps embedding hoocode can import,
  * inspect, and extend the shipped prompts without copy-pasting them.
  */
 

@@ -24,7 +24,7 @@
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
-import { ensureTool } from "../../utils/tools-manager.js";
+import { ensureTool } from "../../../utils/tools-manager.js";
 
 // ============================================================================
 // Contract types (locked against browsertools `src/contract.rs`)
