@@ -2690,135 +2690,187 @@ export class InteractiveMode {
 		this.teamFocus.attachClient(client);
 	}
 
+	/**
+	 * Built-in slash commands dispatched by the editor submit handler.
+	 * `withArgs` commands also match "/name <args>" and receive the full text.
+	 * Each handler keeps its own editor-clearing order (before vs after the
+	 * await) — some commands must show their UI before the prompt is wiped.
+	 */
+	private createBuiltInSlashCommands(): Map<string, { withArgs?: boolean; run(text: string): Promise<void> | void }> {
+		const clearEditor = () => this.editor.setText("");
+		return new Map(
+			Object.entries({
+				"/settings": {
+					run: () => {
+						this.showSettingsSelector();
+						clearEditor();
+					},
+				},
+				"/scoped-models": {
+					run: async () => {
+						clearEditor();
+						await this.showModelsSelector();
+					},
+				},
+				"/model": {
+					withArgs: true,
+					run: async (text: string) => {
+						const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
+						clearEditor();
+						await this.commandExecutor.handleModel(searchTerm);
+					},
+				},
+				"/export": {
+					withArgs: true,
+					run: async (text: string) => {
+						await this.commandExecutor.handleExport(text);
+						clearEditor();
+					},
+				},
+				"/import": {
+					withArgs: true,
+					run: async (text: string) => {
+						await this.commandExecutor.handleImport(text);
+						clearEditor();
+					},
+				},
+				"/share": {
+					run: async () => {
+						await this.commandExecutor.handleShare();
+						clearEditor();
+					},
+				},
+				"/copy": {
+					run: async () => {
+						await this.commandExecutor.handleCopy();
+						clearEditor();
+					},
+				},
+				"/name": {
+					withArgs: true,
+					run: (text: string) => {
+						this.commandExecutor.handleName(text);
+						clearEditor();
+					},
+				},
+				"/session": {
+					run: () => {
+						this.commandExecutor.handleSession();
+						clearEditor();
+					},
+				},
+				"/changelog": {
+					run: () => {
+						this.commandExecutor.handleChangelog();
+						clearEditor();
+					},
+				},
+				"/hotkeys": {
+					run: () => {
+						this.commandExecutor.handleHotkeys();
+						clearEditor();
+					},
+				},
+				"/fork": {
+					run: () => {
+						this.showUserMessageSelector();
+						clearEditor();
+					},
+				},
+				"/clone": {
+					run: async () => {
+						clearEditor();
+						await this.commandExecutor.handleClone();
+					},
+				},
+				"/tree": {
+					run: () => {
+						this.showTreeSelector();
+						clearEditor();
+					},
+				},
+				"/login": {
+					run: () => {
+						this.showOAuthSelector("login");
+						clearEditor();
+					},
+				},
+				"/logout": {
+					run: () => {
+						this.showOAuthSelector("logout");
+						clearEditor();
+					},
+				},
+				"/new": {
+					run: async () => {
+						clearEditor();
+						await this.commandExecutor.handleClear();
+					},
+				},
+				"/compact": {
+					withArgs: true,
+					run: async (text: string) => {
+						const prefix = "/compact ";
+						const customInstructions = text.startsWith(prefix)
+							? text.slice(prefix.length).trim() || undefined
+							: undefined;
+						clearEditor();
+						await this.handleCompactCommand(customInstructions);
+					},
+				},
+				"/reload": {
+					run: async () => {
+						clearEditor();
+						await this.handleReloadCommand();
+					},
+				},
+				"/debug": {
+					run: () => {
+						this.commandExecutor.handleDebug();
+						clearEditor();
+					},
+				},
+				"/arminsayshi": {
+					run: () => {
+						this.commandExecutor.handleArminSaysHi();
+						clearEditor();
+					},
+				},
+				"/resume": {
+					run: () => {
+						this.showSessionSelector();
+						clearEditor();
+					},
+				},
+				"/quit": {
+					run: async () => {
+						clearEditor();
+						await this.shutdown();
+					},
+				},
+				"/subagent": {
+					withArgs: true,
+					run: async (text: string) => {
+						clearEditor();
+						await this.commandExecutor.handleSubagent(text);
+					},
+				},
+			}),
+		);
+	}
+
 	private setupEditorSubmitHandler(): void {
+		const slashCommands = this.createBuiltInSlashCommands();
 		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
 
-			// Handle commands
-			if (text === "/settings") {
-				this.showSettingsSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/scoped-models") {
-				this.editor.setText("");
-				await this.showModelsSelector();
-				return;
-			}
-			if (text === "/model" || text.startsWith("/model ")) {
-				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.commandExecutor.handleModel(searchTerm);
-				return;
-			}
-			if (text === "/export" || text.startsWith("/export ")) {
-				await this.commandExecutor.handleExport(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/import" || text.startsWith("/import ")) {
-				await this.commandExecutor.handleImport(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/share") {
-				await this.commandExecutor.handleShare();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/copy") {
-				await this.commandExecutor.handleCopy();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/name" || text.startsWith("/name ")) {
-				this.commandExecutor.handleName(text);
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/session") {
-				this.commandExecutor.handleSession();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/changelog") {
-				this.commandExecutor.handleChangelog();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/hotkeys") {
-				this.commandExecutor.handleHotkeys();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/fork") {
-				this.showUserMessageSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/clone") {
-				this.editor.setText("");
-				await this.commandExecutor.handleClone();
-				return;
-			}
-			if (text === "/tree") {
-				this.showTreeSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/login") {
-				this.showOAuthSelector("login");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/logout") {
-				this.showOAuthSelector("logout");
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/new") {
-				this.editor.setText("");
-				await this.commandExecutor.handleClear();
-				return;
-			}
-			if (text === "/compact" || text.startsWith("/compact ")) {
-				const prefix = "/compact ";
-				const customInstructions = text.startsWith(prefix)
-					? text.slice(prefix.length).trim() || undefined
-					: undefined;
-				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
-				return;
-			}
-			if (text === "/reload") {
-				this.editor.setText("");
-				await this.handleReloadCommand();
-				return;
-			}
-			if (text === "/debug") {
-				this.commandExecutor.handleDebug();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/arminsayshi") {
-				this.commandExecutor.handleArminSaysHi();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/resume") {
-				this.showSessionSelector();
-				this.editor.setText("");
-				return;
-			}
-			if (text === "/quit") {
-				this.editor.setText("");
-				await this.shutdown();
-				return;
-			}
-			if (text === "/subagent" || text.startsWith("/subagent ")) {
-				this.editor.setText("");
-				await this.commandExecutor.handleSubagent(text);
+			// Handle built-in slash commands
+			const spaceIdx = text.indexOf(" ");
+			const commandName = spaceIdx === -1 ? text : text.slice(0, spaceIdx);
+			const command = slashCommands.get(commandName);
+			if (command && (spaceIdx === -1 || command.withArgs)) {
+				await command.run(text);
 				return;
 			}
 

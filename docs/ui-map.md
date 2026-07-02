@@ -57,6 +57,9 @@ Rendered in order as the conversation scrolls:
 
 ### Status / chrome
 
+- `../team-focus.ts` (`TeamFocusController`) - the `--team` feature: role roster focus,
+  the nudge input, the attach side panel, and approval gates. Extracted from
+  `interactive-mode.ts` behind a narrow `TeamFocusDeps` interface.
 - `task-panel.ts` - the task ledger shown above the prompt (status icons, usage
   stamps, and the warning cue). Owns `formatTaskLine`. Has three views cycled with
   `app.tasks.cycleView` (ctrl+n; the cycle and the header switcher skip lenses
