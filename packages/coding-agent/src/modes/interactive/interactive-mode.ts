@@ -72,7 +72,6 @@ import { type SessionContext, SessionManager } from "../../core/session-manager.
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
 import { taskStore } from "../../core/task-store.js";
-import { type TeamApproval, TeamApprovalCoordinator } from "../../core/team-approvals.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
@@ -107,11 +106,11 @@ import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { TaskPanelComponent } from "./components/task-panel.js";
-import { TeamAttachPanelComponent } from "./components/team-attach-panel.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.js";
+import { TeamFocusController } from "./team-focus.js";
 import {
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
@@ -355,9 +354,7 @@ export class InteractiveMode {
 	private taskPanel: TaskPanelComponent;
 
 	// hooteams team client (--team): steering + attach share its single SSE stream
-	private teamClient: TeamViewConnection | undefined = undefined;
-	private teamAttachPanel: TeamAttachPanelComponent | undefined = undefined;
-	private teamAttachHandle: OverlayHandle | undefined = undefined;
+	private teamFocus: TeamFocusController;
 
 	// Custom footer from extension (undefined = use built-in footer)
 	private customFooter: (Component & { dispose?(): void }) | undefined = undefined;
@@ -488,9 +485,19 @@ export class InteractiveMode {
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
 		this.taskPanel = new TaskPanelComponent(this.ui);
-		this.taskPanel.onNudge = (role) => this.showTeamNudgeInput(role);
-		this.taskPanel.onAttach = (role) => this.showTeamAttach(role);
-		this.taskPanel.onExitFocus = () => this.exitTeamFocus();
+		this.teamFocus = new TeamFocusController({
+			ui: this.ui,
+			taskPanel: this.taskPanel,
+			editorContainer: this.editorContainer,
+			getEditor: () => this.editor as Component,
+			showStatus: (message) => this.showStatus(message),
+			showWarning: (message) => this.showWarning(message),
+			showAskOptions: (questions, opts) => this.showAskOptions(questions, opts),
+			isAskOptionsOpen: () => this.askOptions !== undefined,
+		});
+		this.taskPanel.onNudge = (role) => this.teamFocus.showNudgeInput(role);
+		this.taskPanel.onAttach = (role) => this.teamFocus.showAttach(role);
+		this.taskPanel.onExitFocus = () => this.teamFocus.exitFocus();
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -717,7 +724,7 @@ export class InteractiveMode {
 				hint("app.tools.expand", "to expand tools"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.tasks.cycleView", "to cycle task panel view"),
-				...(this.teamClient ? [hint("app.team.focus", "to focus team roster")] : []),
+				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
 				rawKeyHint("!", "to run bash"),
@@ -2624,7 +2631,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.tasks.cycleView", () => {
 			this.taskPanel.cycleView();
 		});
-		this.defaultEditor.onAction("app.team.focus", () => this.enterTeamFocus());
+		this.defaultEditor.onAction("app.team.focus", () => this.teamFocus.enterFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
 		this.defaultEditor.onAction("app.input.voiceTranscribe", () => this.toggleVoiceTranscribe());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
@@ -2677,169 +2684,10 @@ export class InteractiveMode {
 
 	/**
 	 * Wire a hooteams connection into the TUI. Called by main.ts when `--team`
-	 * is set, before run(). Enables team focus (app.team.focus), nudging (n),
-	 * the attach side panel (a) on the task panel's teams view, and approval
-	 * gates: task_paused events (and gates already pending on the server)
-	 * surface inline in the attach panel when it shows the paused role,
-	 * otherwise in the options pane; the answer goes back over
-	 * POST /tasks/:id/resume.
+	 * is set, before run(). See TeamFocusController for the feature itself.
 	 */
 	attachTeamClient(client: TeamViewConnection): void {
-		this.teamClient = client;
-		const approvals = new TeamApprovalCoordinator({
-			present: (approval, signal) => this.presentTeamApproval(approval, signal),
-			resume: (taskId, option) => client.resume(taskId, option),
-			info: (message) => this.showStatus(message),
-			warn: (message) => this.showWarning(message),
-		});
-		client.subscribe((event) => approvals.handleEvent(event));
-		// Gates that opened before we attached don't replay as task_paused.
-		void client.pendingApprovals().then(
-			(pending) => {
-				for (const gate of pending) approvals.enqueuePending(gate);
-			},
-			() => {
-				// Best-effort like the rest of the bridge; live gates still arrive via SSE.
-			},
-		);
-	}
-
-	/**
-	 * Show one team approval gate and resolve with the chosen (or free-form)
-	 * answer, undefined when skipped. When the attach side panel is open on the
-	 * role that paused, the gate renders inline in the panel — right where its
-	 * stream stopped; otherwise it goes to the options pane, waiting politely
-	 * while another ask is on screen. Either way the signal (gate answered
-	 * elsewhere) dismisses the prompt.
-	 */
-	private async presentTeamApproval(approval: TeamApproval, signal: AbortSignal): Promise<string | undefined> {
-		const panel = this.teamAttachPanel;
-		if (panel && approval.role === panel.role) {
-			this.teamAttachHandle?.focus();
-			const answer = await panel.presentApproval(approval, signal);
-			// Detaching mid-gate settles as skipped — fall through to the options
-			// pane so the question isn't silently lost. A skip with the panel
-			// still open is a real skip.
-			if (answer !== undefined || signal.aborted || this.teamAttachPanel === panel) return answer;
-		}
-		while (this.askOptions && !signal.aborted) {
-			await new Promise((resolve) => setTimeout(resolve, 200));
-		}
-		if (signal.aborted) return undefined;
-		const answers = await this.showAskOptions(
-			[
-				{
-					question: approval.question,
-					short: approval.taskId,
-					detail: `team task "${approval.taskId}"${approval.role ? ` (${approval.role})` : ""} is paused until answered`,
-					options: approval.options.map((label) => ({ label })),
-					allowCustom: true,
-				},
-			],
-			{ signal },
-		);
-		return answers?.[0];
-	}
-
-	/** Move keyboard focus to the task panel's team roster. */
-	private enterTeamFocus(): void {
-		if (!this.teamClient) {
-			this.showStatus("No team connected. Start with --team <url> to mirror a hooteams server.");
-			return;
-		}
-		if (!taskStore.agents().some((a) => a.kind === "role")) {
-			this.showStatus("Team roster is empty — waiting for roles from the team server.");
-			return;
-		}
-		this.taskPanel.setView("teams");
-		this.ui.setFocus(this.taskPanel);
-		this.ui.requestRender();
-	}
-
-	/** Leave team focus: detach any side panel and return focus to the editor. */
-	private exitTeamFocus(): void {
-		this.closeTeamAttach();
-		this.ui.setFocus(this.editor as Component);
-		this.ui.requestRender();
-	}
-
-	/**
-	 * Inline nudge editor for a role (n in team focus or while attached).
-	 * Swaps the prompt editor for a one-line input; submit fires POST /steer in
-	 * the background (the REPL and team focus are never blocked on the network).
-	 */
-	private showTeamNudgeInput(role: string): void {
-		const client = this.teamClient;
-		if (!client) return;
-
-		const restoreFocus = () => {
-			this.editorContainer.clear();
-			this.editorContainer.addChild(this.editor as Component);
-			// Return focus where the nudge came from: the attach panel if one is
-			// open, otherwise the team roster.
-			if (this.teamAttachHandle) this.teamAttachHandle.focus();
-			else this.ui.setFocus(this.taskPanel);
-			this.ui.requestRender();
-		};
-
-		const input = new ExtensionInputComponent(
-			`Nudge ${role}`,
-			undefined,
-			(value) => {
-				input.dispose();
-				restoreFocus();
-				const message = value.trim();
-				if (!message) return;
-				void client.steer(role, message).then(
-					() => this.showStatus(`Nudged ${role}`),
-					(error) => this.showWarning(`Failed to nudge ${role}: ${String(error)}`),
-				);
-			},
-			() => {
-				input.dispose();
-				restoreFocus();
-			},
-			{ tui: this.ui },
-		);
-
-		this.editorContainer.clear();
-		this.editorContainer.addChild(input);
-		this.ui.setFocus(input);
-		this.ui.requestRender();
-	}
-
-	/** Open the attach side panel for a role (a in team focus). */
-	private showTeamAttach(role: string): void {
-		const client = this.teamClient;
-		if (!client) return;
-		// One attached role at a time: re-attaching swaps the panel.
-		this.closeTeamAttach();
-		const panel = new TeamAttachPanelComponent(
-			role,
-			client,
-			{
-				onDetach: () => this.closeTeamAttach(),
-				onNudge: (attachedRole) => this.showTeamNudgeInput(attachedRole),
-			},
-			this.ui,
-		);
-		this.teamAttachPanel = panel;
-		// preFocus is the task panel (attach is triggered from team focus), so
-		// hiding the overlay drops the user back on the role roster.
-		this.teamAttachHandle = this.ui.showOverlay(panel, {
-			anchor: "top-right",
-			width: "45%",
-			minWidth: 36,
-			margin: { top: 1, right: 1 },
-		});
-	}
-
-	/** Detach the side panel; the role keeps running. Safe to call when closed. */
-	private closeTeamAttach(): void {
-		this.teamAttachPanel?.dispose();
-		this.teamAttachHandle?.hide();
-		this.teamAttachPanel = undefined;
-		this.teamAttachHandle = undefined;
+		this.teamFocus.attachClient(client);
 	}
 
 	private setupEditorSubmitHandler(): void {
@@ -3910,7 +3758,7 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		this.taskStoreUnsubscribe?.();
-		this.closeTeamAttach();
+		this.teamFocus.closeAttach();
 		this.taskPanel.dispose();
 		this.stop();
 		await this.runtimeHost.dispose();
