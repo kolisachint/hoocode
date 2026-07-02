@@ -4,12 +4,6 @@ import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import {
-	CLOUDFLARE_AI_GATEWAY_ANTHROPIC_BASE_URL,
-	CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL,
-	CLOUDFLARE_AI_GATEWAY_OPENAI_BASE_URL,
-	CLOUDFLARE_WORKERS_AI_BASE_URL,
-} from "../src/providers/cloudflare.js";
-import {
 	Api,
 	type AnthropicMessagesCompat,
 	KnownProvider,
@@ -251,12 +245,6 @@ function getAnthropicMessagesCompat(provider: string, modelId: string): Anthropi
 		: undefined;
 }
 
-function getBedrockBaseUrl(modelId: string): string {
-	return modelId.startsWith("eu.")
-		? "https://bedrock-runtime.eu-central-1.amazonaws.com"
-		: "https://bedrock-runtime.us-east-1.amazonaws.com";
-}
-
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
@@ -380,44 +368,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 		const data = await response.json();
 
 		const models: Model<any>[] = [];
-
-		// Process Amazon Bedrock models
-		if (data["amazon-bedrock"]?.models) {
-			for (const [modelId, model] of Object.entries(data["amazon-bedrock"].models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-
-				let id = modelId;
-
-				if (id.startsWith("ai21.jamba")) {
-					// These models doesn't support tool use in streaming mode
-					continue;
-				}
-
-				if (id.startsWith("mistral.mistral-7b-instruct-v0")) {
-					// These models doesn't support system messages
-					continue;
-				}
-
-				models.push({
-					id,
-					name: m.name || id,
-					api: "bedrock-converse-stream" as const,
-					provider: "amazon-bedrock" as const,
-					baseUrl: getBedrockBaseUrl(id),
-					reasoning: m.reasoning === true,
-					input: (m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"]) as ("text" | "image")[],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
-			}
-		}
 
 		// Process Anthropic models
 		if (data.anthropic?.models) {
@@ -575,88 +525,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process Cloudflare Workers AI models
-		if (data["cloudflare-workers-ai"]?.models) {
-			for (const [modelId, model] of Object.entries(data["cloudflare-workers-ai"].models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-
-				models.push({
-					id: modelId,
-					name: m.name || modelId,
-					api: "openai-completions",
-					provider: "cloudflare-workers-ai",
-					baseUrl: CLOUDFLARE_WORKERS_AI_BASE_URL,
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-					compat: { sendSessionAffinityHeaders: true },
-				});
-			}
-		}
-
-		// Process Cloudflare AI Gateway models
-		if (data["cloudflare-ai-gateway"]?.models) {
-			for (const [prefixedId, model] of Object.entries(data["cloudflare-ai-gateway"].models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-
-				const slashIdx = prefixedId.indexOf("/");
-				if (slashIdx === -1) continue;
-				const upstream = prefixedId.slice(0, slashIdx);
-				const nativeId = prefixedId.slice(slashIdx + 1);
-
-				let api: "anthropic-messages" | "openai-completions" | "openai-responses";
-				let baseUrl: string;
-				let id: string;
-				if (upstream === "openai") {
-					api = "openai-responses";
-					baseUrl = CLOUDFLARE_AI_GATEWAY_OPENAI_BASE_URL;
-					id = nativeId;
-				} else if (upstream === "anthropic") {
-					api = "anthropic-messages";
-					baseUrl = CLOUDFLARE_AI_GATEWAY_ANTHROPIC_BASE_URL;
-					id = nativeId;
-				} else if (upstream === "workers-ai") {
-					api = "openai-completions";
-					baseUrl = CLOUDFLARE_AI_GATEWAY_COMPAT_BASE_URL;
-					id = prefixedId;
-				} else {
-					continue;
-				}
-
-				// workers-ai/* through the gateway forwards x-session-affinity to
-				// the underlying Workers AI runtime for prefix-cache routing.
-				const compat = upstream === "workers-ai" ? { sendSessionAffinityHeaders: true } : undefined;
-
-				models.push({
-					id,
-					name: m.name || id,
-					api,
-					provider: "cloudflare-ai-gateway",
-					baseUrl,
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-					...(compat ? { compat } : {}),
-				});
-			}
-		}
-
 		// Process xAi models
 		if (data.xai?.models) {
 			for (const [modelId, model] of Object.entries(data.xai.models)) {
@@ -708,32 +576,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 						supportsDeveloperRole: false,
 						thinkingFormat: "zai",
 						...(!ZAI_TOOL_STREAM_UNSUPPORTED_MODELS.has(modelId) ? { zaiToolStream: true } : {}),
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
-			}
-		}
-
-		// Process Mistral models
-		if (data.mistral?.models) {
-			for (const [modelId, model] of Object.entries(data.mistral.models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-
-				models.push({
-					id: modelId,
-					name: m.name || modelId,
-					api: "mistral-conversations",
-					provider: "mistral",
-					baseUrl: "https://api.mistral.ai",
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
 					},
 					contextWindow: m.limit?.context || 4096,
 					maxTokens: m.limit?.output || 4096,
@@ -1152,10 +994,6 @@ async function generateModels() {
 
 	// Temporary overrides until upstream model metadata is corrected.
 	for (const candidate of allModels) {
-		if (candidate.provider === "amazon-bedrock" && candidate.id.includes("anthropic.claude-opus-4-6-v1")) {
-			candidate.cost.cacheRead = 0.5;
-			candidate.cost.cacheWrite = 6.25;
-		}
 		if (
 			(candidate.provider === "anthropic" ||
 				candidate.provider === "opencode" ||
@@ -1199,27 +1037,6 @@ async function generateModels() {
 
 	}
 
-
-	// Add missing EU Opus 4.6 profile
-	if (!allModels.some((m) => m.provider === "amazon-bedrock" && m.id === "eu.anthropic.claude-opus-4-6-v1")) {
-		allModels.push({
-			id: "eu.anthropic.claude-opus-4-6-v1",
-			name: "Claude Opus 4.6 (EU)",
-			api: "bedrock-converse-stream",
-			provider: "amazon-bedrock",
-			baseUrl: getBedrockBaseUrl("eu.anthropic.claude-opus-4-6-v1"),
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 5,
-				output: 25,
-				cacheRead: 0.5,
-				cacheWrite: 6.25,
-			},
-			contextWindow: 200000,
-			maxTokens: 128000,
-		});
-	}
 
 	// Add missing Claude Opus 4.6
 	if (!allModels.some(m => m.provider === "anthropic" && m.id === "claude-opus-4-6")) {
@@ -1665,27 +1482,6 @@ async function generateModels() {
 			},
 			contextWindow: 32768,
 			maxTokens: 8192,
-		});
-	}
-
-	// Add missing Mistral Medium 3.5 model until models.dev includes it
-	if (!allModels.some(m => m.provider === "mistral" && m.id === "mistral-medium-3.5")) {
-		allModels.push({
-			id: "mistral-medium-3.5",
-			name: "Mistral Medium 3.5",
-			api: "mistral-conversations",
-			provider: "mistral",
-			baseUrl: "https://api.mistral.ai",
-			reasoning: true,
-			input: ["text", "image"],
-			cost: {
-				input: 1.5,
-				output: 7.5,
-				cacheRead: 0,
-				cacheWrite: 0,
-			},
-			contextWindow: 262144, // 256k tokens
-			maxTokens: 262144,
 		});
 	}
 
