@@ -46,8 +46,8 @@ import {
 	TruncatedText,
 	TUI,
 } from "@kolisachint/hoocode-tui";
-import { spawn, spawnSync } from "child_process";
-import { APP_NAME, APP_TITLE, getAgentDir, getAuthPath, getDocsPath, VERSION } from "../../config.js";
+import { spawnSync } from "child_process";
+import { APP_NAME, APP_TITLE, getAuthPath, getDocsPath, VERSION } from "../../config.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
@@ -64,7 +64,6 @@ import type {
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
-import { DefaultPackageManager } from "../../core/package-manager.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
@@ -75,7 +74,6 @@ import { taskStore } from "../../core/task-store.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
-import { getChangelogPath, getNewEntries, parseChangelog } from "../../utils/changelog.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
@@ -115,6 +113,7 @@ import {
 	isExpandable,
 	showLoadedResources as renderLoadedResources,
 } from "./resource-display.js";
+import { checkForPackageUpdates, checkTmuxKeyboardSetup, getChangelogForDisplay } from "./startup-checks.js";
 import { TeamFocusController } from "./team-focus.js";
 import {
 	getAvailableThemes,
@@ -662,7 +661,10 @@ export class InteractiveMode {
 		this.registerSignalHandlers();
 
 		// Load changelog (only show new entries, skip for resumed sessions)
-		this.changelogMarkdown = this.getChangelogForDisplay();
+		this.changelogMarkdown = getChangelogForDisplay({
+			hasMessages: this.session.state.messages.length > 0,
+			settingsManager: this.settingsManager,
+		});
 
 		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
 		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
@@ -808,14 +810,14 @@ export class InteractiveMode {
 		});
 
 		// Start package update check asynchronously
-		this.checkForPackageUpdates().then((updates) => {
+		checkForPackageUpdates(this.sessionManager.getCwd(), this.settingsManager).then((updates) => {
 			if (updates.length > 0) {
 				this.showPackageUpdateNotification(updates);
 			}
 		});
 
 		// Check tmux keyboard setup asynchronously
-		this.checkTmuxKeyboardSetup().then((warning) => {
+		checkTmuxKeyboardSetup().then((warning) => {
 			if (warning) {
 				this.showWarning(warning);
 			}
@@ -870,112 +872,6 @@ export class InteractiveMode {
 				this.showError(errorMessage);
 			}
 		}
-	}
-
-	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.HOOCODE_OFFLINE ?? process.env.PI_OFFLINE) {
-			return [];
-		}
-
-		try {
-			const packageManager = new DefaultPackageManager({
-				cwd: this.sessionManager.getCwd(),
-				agentDir: getAgentDir(),
-				settingsManager: this.settingsManager,
-			});
-			const updates = await packageManager.checkForAvailableUpdates();
-			return updates.map((update) => update.displayName);
-		} catch {
-			return [];
-		}
-	}
-
-	private async checkTmuxKeyboardSetup(): Promise<string | undefined> {
-		if (!process.env.TMUX) return undefined;
-
-		const runTmuxShow = (option: string): Promise<string | undefined> => {
-			return new Promise((resolve) => {
-				const proc = spawn("tmux", ["show", "-gv", option], {
-					stdio: ["ignore", "pipe", "ignore"],
-				});
-				let stdout = "";
-				const timer = setTimeout(() => {
-					proc.kill();
-					resolve(undefined);
-				}, 2000);
-
-				proc.stdout?.on("data", (data) => {
-					stdout += data.toString();
-				});
-				proc.on("error", () => {
-					clearTimeout(timer);
-					resolve(undefined);
-				});
-				proc.on("close", (code) => {
-					clearTimeout(timer);
-					resolve(code === 0 ? stdout.trim() : undefined);
-				});
-			});
-		};
-
-		const [extendedKeys, extendedKeysFormat] = await Promise.all([
-			runTmuxShow("extended-keys"),
-			runTmuxShow("extended-keys-format"),
-		]);
-
-		// If we couldn't query tmux (timeout, sandbox, etc.), don't warn
-		if (extendedKeys === undefined) return undefined;
-
-		if (extendedKeys !== "on" && extendedKeys !== "always") {
-			return "tmux extended-keys is off. Modified Enter keys may not work. Add `set -g extended-keys on` to ~/.tmux.conf and restart tmux.";
-		}
-
-		if (extendedKeysFormat === "xterm") {
-			return `tmux extended-keys-format is xterm. ${APP_NAME} works best with csi-u. Add \`set -g extended-keys-format csi-u\` to ~/.tmux.conf and restart tmux.`;
-		}
-
-		return undefined;
-	}
-
-	/**
-	 * Get changelog entries to display on startup.
-	 * Only shows new entries since last seen version, skips for resumed sessions.
-	 */
-	private getChangelogForDisplay(): string | undefined {
-		// Skip changelog for resumed/continued sessions (already have messages)
-		if (this.session.state.messages.length > 0) {
-			return undefined;
-		}
-
-		const lastVersion = this.settingsManager.getLastChangelogVersion();
-		const changelogPath = getChangelogPath();
-		const entries = parseChangelog(changelogPath);
-
-		if (!lastVersion) {
-			// Fresh install - record the latest entry's version (not VERSION, which may
-			// overshoot the latest entry and silently swallow it once it appears).
-			// Fall back to VERSION only if no entries exist yet.
-			const seedVersion =
-				entries.length > 0 ? `${entries[0].major}.${entries[0].minor}.${entries[0].patch}` : VERSION;
-			this.settingsManager.setLastChangelogVersion(seedVersion);
-			this.reportInstallTelemetry(seedVersion);
-			return undefined;
-		}
-
-		const newEntries = getNewEntries(entries, lastVersion);
-		if (newEntries.length > 0) {
-			const latest = newEntries[0];
-			const latestVersion = `${latest.major}.${latest.minor}.${latest.patch}`;
-			this.settingsManager.setLastChangelogVersion(latestVersion);
-			this.reportInstallTelemetry(latestVersion);
-			return newEntries.map((e) => e.content).join("\n\n");
-		}
-
-		return undefined;
-	}
-
-	private reportInstallTelemetry(_version: string): void {
-		// Disabled in HooCode fork: this is forked from pi (upstream pi.dev install-telemetry endpoint is not run by this fork).
 	}
 
 	private getMarkdownThemeWithSettings(): MarkdownTheme {
