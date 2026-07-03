@@ -114,7 +114,7 @@ export function hasAuthForProvider(provider: string): boolean {
 }
 
 /** Path to the real hoocode agent config directory */
-export const PI_AGENT_DIR = join(homedir(), ".hoocode", "agent");
+export const HOOCODE_AGENT_DIR = join(homedir(), ".hoocode", "agent");
 
 /**
  * Get an AuthStorage instance backed by ~/.hoocode/agent/auth.json

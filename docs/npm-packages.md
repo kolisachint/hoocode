@@ -5,32 +5,29 @@ read before running install/build/typecheck so you don't hit the traps below.
 
 ## Install
 
-- Tooling is **npm** based: root scripts call `npm run ...`, `engines` requires
-  `node >=20` and `npm >=10`, and `package-lock.json` is committed.
-- A `bun.lock` and `bunfig.toml` also exist, so bun can be used, but the two lockfiles can
-  drift. Prefer npm for installs unless you are deliberately maintaining the bun side.
+- Tooling is **bun** based: `packageManager` is `bun@1.3.13`, `engines` requires
+  `node >=20`, and `bun.lock` is the single committed lockfile (`package-lock.json`
+  has been removed). See [bun-migration.md](./bun-migration.md) for the completed
+  npm -> bun migration.
+- `bunfig.toml` pins the npm-compatible **hoisted** linker, so plain `bun install`
+  produces a flat `node_modules` the toolchain relies on. npm is invoked only for
+  `npm publish` during releases.
 
 Install with:
 
 ```bash
-npm install      # or: npm ci   (clean, lockfile-exact)
+bun install                    # rebuilds node_modules from bun.lock (hoisted linker)
+bun install --frozen-lockfile  # CI-exact; fails fast if bun.lock drifts
 ```
 
-### Trap: do not casually run `bun install`
+### Never use the isolated linker
 
-Running `bun install` can migrate the `node_modules` layout: it moves the existing hoisted
-tree aside to `node_modules/.old_modules-<hash>/` and creates a new partial tree. Because
-the workspace `@kolisachint/*` entries are **relative symlinks** (`../../packages/...`),
-once the real tree is nested a level deeper those symlinks no longer resolve and every
-cross-package import breaks (tests, typecheck, and the CLI).
-
-If this happens, recover without deleting anything:
-
-```bash
-mv node_modules node_modules.bun-broken
-mv node_modules.bun-broken/.old_modules-<hash> node_modules
-# verify, then later: rm -rf node_modules.bun-broken
-```
+Do not run `bun install --linker=isolated`. The isolated linker builds a symlink store
+under `node_modules/.bun/` that the workspace's relative `@kolisachint/*` symlinks and the
+nested-dep layout cannot use, which breaks every cross-package import (tests, typecheck, and
+the CLI). The hoisted linker is pinned in `bunfig.toml`, so a plain `bun install` is safe;
+only an explicit `--linker=isolated` reintroduces the breakage. Recover a corrupted tree
+with `bun install` (hoisted) then `bun run check`.
 
 ## Build
 
@@ -47,7 +44,7 @@ tui -> ai -> agent -> coding-agent
 Commands:
 
 ```bash
-npm run build                              # builds all four in the correct order
+bun run build                              # builds all four in the correct order
 cd packages/agent && npx tsgo -p tsconfig.build.json   # build a single package
 ```
 
@@ -58,7 +55,7 @@ cd packages/agent && npx tsgo -p tsconfig.build.json   # build a single package
 There are two different ways imports resolve, and they behave differently with respect to
 stale `dist/`:
 
-1. **Root typecheck (`npm run check` at repo root).** The root `tsconfig.json` maps every
+1. **Root typecheck (`bun run check` at repo root).** The root `tsconfig.json` maps every
    `@kolisachint/*` import to that package's `src/` via `paths`. So a root typecheck reads
    **source**, not `dist`, and is immune to stale builds. This is the canonical way to
    typecheck the whole repo.
@@ -72,7 +69,7 @@ stale `dist/`:
 
 Implications:
 
-- To verify types, run `npm run check` (or `tsgo --noEmit`) **from the repo root**. Do not
+- To verify types, run `bun run check` (or `tsgo --noEmit`) **from the repo root**. Do not
   rely on a single package's `tsconfig.build.json` for cross-package typechecking - it will
   report stale-`dist` errors that the root check does not.
 - To run the CLI or anything that imports built output, the dependency `dist/` must be
@@ -83,12 +80,12 @@ Implications:
 
 Symptom: per-package typecheck or the running CLI reports missing exports/types that
 clearly exist in `src/`. Cause: the dependency's `dist/` predates the source change. Fix:
-rebuild the dependency in dependency order (or `npm run build`). The root `npm run check`
+rebuild the dependency in dependency order (or `bun run build`). The root `bun run check`
 will not show this because it reads `src`.
 
 ## Generated files - regenerate, don't hand-edit
 
-- Models: `cd packages/ai && npm run` the generate step (driven by
+- Models: `cd packages/ai && bun run` the generate step (driven by
   `scripts/generate-models.ts`). Never edit `src/models.generated.ts` directly.
 - Embedded agent/init templates: after editing `packages/coding-agent/templates/agents/*.md`
   (or other templates), regenerate the embedded copy:
@@ -109,7 +106,7 @@ cd packages/<pkg>
 npx tsx ../../node_modules/vitest/dist/cli.js --run test/<file>.test.ts
 ```
 
-Do not run the repo-wide `npm test`. For `packages/coding-agent/test/suite/`, use the
+Do not run the repo-wide `bun run test`. For `packages/coding-agent/test/suite/`, use the
 faux provider and the suite harness - never real provider APIs or keys.
 
 ## Checks before committing
@@ -117,19 +114,19 @@ faux provider and the suite harness - never real provider APIs or keys.
 After code changes, run from the repo root:
 
 ```bash
-npm run check     # biome (lint/format) + tsgo typecheck (src-based) + browser smoke
+bun run check     # biome (lint/format) + tsgo typecheck (src-based) + browser smoke
 ```
 
-Fix all errors and warnings. `npm run check` does not run tests; run affected test files
+Fix all errors and warnings. `bun run check` does not run tests; run affected test files
 separately.
 
 ## Quick reference
 
 | Goal | Command (cwd) |
 | --- | --- |
-| Install | `npm install` (root) |
-| Typecheck everything | `npm run check` (root) |
-| Build everything | `npm run build` (root) |
+| Install | `bun install` (root) |
+| Typecheck everything | `bun run check` (root) |
+| Build everything | `bun run build` (root) |
 | Build one package | `npx tsgo -p tsconfig.build.json` (package) |
 | Regenerate embedded templates | `node scripts/embed-templates.mjs` (coding-agent) |
 | Run a test file | `npx tsx ../../node_modules/vitest/dist/cli.js --run test/x.test.ts` (package) |

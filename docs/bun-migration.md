@@ -127,22 +127,10 @@ Phase 4 update: the bun jobs are now gating (`continue-on-error` removed) and th
 npm CI jobs were deleted. Release workflows (`release.yml`, `merge-release.yml`)
 install via `bun install --frozen-lockfile` and keep npm only for `npm publish`.
 
-## Driving the migration
+## Migration complete
 
-Run `/bun-migration` (defined in `.hoocode/commands/bun-migration.md`) to execute
-the next phase safely:
-
-- `/bun-migration status` - report the current phase and next step, no changes.
-- `/bun-migration next` (or no argument) - execute the next unchecked phase,
-  verify with `npm run check`, and update this file. One phase per run.
-- `/bun-migration phase <n>` - run a specific phase if its prerequisites are met.
-
-Phase 4 (dropping npm) always stops for explicit user sign-off.
-
-## Continuing between sessions
-
-1. Read this file and check the unchecked phase boxes above.
-2. Make one small, reversible step toward the next phase.
-3. Verify with `npm run check` (and, when relevant, the bun equivalent).
-4. Update the checkboxes and "Known issues" here. Do not advance phases past what
-   the user has approved.
+All phases are done; there are no further phases to drive. bun is the toolchain,
+`bun.lock` is the single authoritative lockfile, and the phased `/bun-migration`
+driver command has been retired. The "Rules (post-migration)" section above is the
+standing guidance; follow it when touching install/build tooling or bumping the bun
+version.
