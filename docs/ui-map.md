@@ -64,6 +64,28 @@ Rendered in order as the conversation scrolls:
   confirm / input / editor / custom-component dialogs behind the ExtensionUIContext.
 - `../extension-chrome.ts` (`ExtensionChrome`) - extension widget slots and custom
   footer/header overrides.
+- `../bash-execution-controller.ts` (`BashExecutionController`) - the `!cmd` prompt mode:
+  runs a bash command through the session (extensions can intercept via the `user_bash`
+  event), renders a `BashExecutionComponent`, and streams output into it. Commands started
+  while the agent is streaming park in the pending area and move into the transcript when
+  the turn ends. Extracted from `interactive-mode.ts` behind a narrow
+  `BashExecutionControllerDeps` interface. (Editor bash-mode toggling stays in
+  `interactive-mode.ts`.)
+- `../message-queue-controller.ts` (`MessageQueueController`) - message queueing: the
+  compaction queue (messages typed while a compaction runs) and the pending-messages
+  display above the editor. The session owns the live steering / follow-up queues; this
+  controller merges them for display, restores everything to the editor on demand, and
+  flushes the compaction queue once compaction finishes. Extracted from
+  `interactive-mode.ts` behind a narrow `MessageQueueControllerDeps` interface.
+- `../model-controller.ts` (`ModelController`) - model selection: the `/model` single
+  picker, the `/models` scoped-models (enable set) picker, model cycling (the cycle
+  keys), exact-match lookup for slash-command arguments, the footer's available-provider
+  count, and the Anthropic subscription-auth warning. Extracted from `interactive-mode.ts`
+  behind a narrow `ModelControllerDeps` interface.
+- `../login-controller.ts` (`LoginController`) - the `/login` and `/logout` flows:
+  provider auth-type selector, OAuth and API-key login dialogs, the Bedrock setup
+  notice, and post-login default-model selection. Extracted from `interactive-mode.ts`
+  behind a narrow `LoginControllerDeps` interface; `showOAuthSelector` is the entry point.
 - `../voice/voice-controller.ts` (`VoiceController`) - voice-to-text capture
   (daemon + legacy paths) and the voice panel lifecycle.
 - `../resource-display.ts` - the startup/reload resource listing and diagnostics

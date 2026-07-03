@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
+import { ModelController } from "../src/modes/interactive/model-controller.js";
 
 function createSettingsManager(warnings: { anthropicExtraUsage?: boolean } = {}) {
 	return {
@@ -7,100 +7,106 @@ function createSettingsManager(warnings: { anthropicExtraUsage?: boolean } = {})
 	};
 }
 
-describe("InteractiveMode.maybeWarnAboutAnthropicSubscriptionAuth", () => {
+// Drives the private method through `.call` on a fake `this`. The real
+// controller resolves `this.session` via a prototype getter (returning
+// `this.deps.session`); the fake supplies `session` as an own property, which
+// the method reads the same way, plus `deps.showWarning` for the warning sink.
+function warn(controller: any, model: unknown): Promise<void> {
+	return (ModelController as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(controller, model);
+}
+
+describe("ModelController.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 	test("warns once when Anthropic subscription auth is detected", async () => {
-		const fakeThis: any = {
-			anthropicSubscriptionWarningShown: false,
+		const session = {
 			settingsManager: createSettingsManager(),
-			session: {
-				modelRegistry: {
-					authStorage: {
-						get: vi.fn().mockReturnValue(undefined),
-					},
-					getApiKeyForProvider: vi.fn().mockResolvedValue("sk-ant-oat01-test"),
+			modelRegistry: {
+				authStorage: {
+					get: vi.fn().mockReturnValue(undefined),
 				},
+				getApiKeyForProvider: vi.fn().mockResolvedValue("sk-ant-oat01-test"),
 			},
-			showWarning: vi.fn(),
+		};
+		const showWarning = vi.fn();
+		const controller: any = {
+			anthropicSubscriptionWarningShown: false,
+			session,
+			deps: { showWarning },
 		};
 
-		await (InteractiveMode as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
-			provider: "anthropic",
-		});
-		await (InteractiveMode as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
-			provider: "anthropic",
-		});
+		await warn(controller, { provider: "anthropic" });
+		await warn(controller, { provider: "anthropic" });
 
-		expect(fakeThis.showWarning).toHaveBeenCalledTimes(1);
-		expect(fakeThis.session.modelRegistry.getApiKeyForProvider).toHaveBeenCalledTimes(1);
+		expect(showWarning).toHaveBeenCalledTimes(1);
+		expect(session.modelRegistry.getApiKeyForProvider).toHaveBeenCalledTimes(1);
 	});
 
 	test("warns when Anthropic OAuth is stored even if token refresh lookup would fail", async () => {
-		const fakeThis: any = {
-			anthropicSubscriptionWarningShown: false,
+		const session = {
 			settingsManager: createSettingsManager(),
-			session: {
-				modelRegistry: {
-					authStorage: {
-						get: vi.fn().mockReturnValue({ type: "oauth" }),
-					},
-					getApiKeyForProvider: vi.fn().mockResolvedValue(undefined),
+			modelRegistry: {
+				authStorage: {
+					get: vi.fn().mockReturnValue({ type: "oauth" }),
 				},
+				getApiKeyForProvider: vi.fn().mockResolvedValue(undefined),
 			},
-			showWarning: vi.fn(),
+		};
+		const showWarning = vi.fn();
+		const controller: any = {
+			anthropicSubscriptionWarningShown: false,
+			session,
+			deps: { showWarning },
 		};
 
-		await (InteractiveMode as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
-			provider: "anthropic",
-		});
+		await warn(controller, { provider: "anthropic" });
 
-		expect(fakeThis.showWarning).toHaveBeenCalledTimes(1);
-		expect(fakeThis.session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
+		expect(showWarning).toHaveBeenCalledTimes(1);
+		expect(session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
 	});
 
 	test("does not warn for non-Anthropic models", async () => {
-		const fakeThis: any = {
-			anthropicSubscriptionWarningShown: false,
+		const session = {
 			settingsManager: createSettingsManager(),
-			session: {
-				modelRegistry: {
-					authStorage: {
-						get: vi.fn(),
-					},
-					getApiKeyForProvider: vi.fn(),
+			modelRegistry: {
+				authStorage: {
+					get: vi.fn(),
 				},
+				getApiKeyForProvider: vi.fn(),
 			},
-			showWarning: vi.fn(),
+		};
+		const showWarning = vi.fn();
+		const controller: any = {
+			anthropicSubscriptionWarningShown: false,
+			session,
+			deps: { showWarning },
 		};
 
-		await (InteractiveMode as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
-			provider: "openai",
-		});
+		await warn(controller, { provider: "openai" });
 
-		expect(fakeThis.showWarning).not.toHaveBeenCalled();
-		expect(fakeThis.session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
+		expect(showWarning).not.toHaveBeenCalled();
+		expect(session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
 	});
 
 	test("does not warn when Anthropic extra usage warning is disabled", async () => {
-		const fakeThis: any = {
-			anthropicSubscriptionWarningShown: false,
+		const session = {
 			settingsManager: createSettingsManager({ anthropicExtraUsage: false }),
-			session: {
-				modelRegistry: {
-					authStorage: {
-						get: vi.fn(),
-					},
-					getApiKeyForProvider: vi.fn(),
+			modelRegistry: {
+				authStorage: {
+					get: vi.fn(),
 				},
+				getApiKeyForProvider: vi.fn(),
 			},
-			showWarning: vi.fn(),
+		};
+		const showWarning = vi.fn();
+		const controller: any = {
+			anthropicSubscriptionWarningShown: false,
+			session,
+			deps: { showWarning },
 		};
 
-		await (InteractiveMode as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
-			provider: "anthropic",
-		});
+		await warn(controller, { provider: "anthropic" });
 
-		expect(fakeThis.showWarning).not.toHaveBeenCalled();
-		expect(fakeThis.session.modelRegistry.authStorage.get).not.toHaveBeenCalled();
-		expect(fakeThis.session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
+		expect(showWarning).not.toHaveBeenCalled();
+		expect(session.modelRegistry.authStorage.get).not.toHaveBeenCalled();
+		expect(session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
 	});
 });

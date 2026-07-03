@@ -15,7 +15,7 @@ describe("InteractiveMode compaction events", () => {
 			addMessageToChat: vi.fn(),
 			showError: vi.fn(),
 			showStatus: vi.fn(),
-			flushCompactionQueue: vi.fn().mockResolvedValue(undefined),
+			messageQueue: { flushCompactionQueue: vi.fn().mockResolvedValue(undefined) },
 			settingsManager: { getShowTerminalProgress: () => false },
 			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
 		};
@@ -53,6 +53,6 @@ describe("InteractiveMode compaction events", () => {
 				summary: "summary",
 			}),
 		);
-		expect(fakeThis.flushCompactionQueue).toHaveBeenCalledWith({ willRetry: false });
+		expect(fakeThis.messageQueue.flushCompactionQueue).toHaveBeenCalledWith({ willRetry: false });
 	});
 });
