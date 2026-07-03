@@ -64,6 +64,13 @@ Rendered in order as the conversation scrolls:
   confirm / input / editor / custom-component dialogs behind the ExtensionUIContext.
 - `../extension-chrome.ts` (`ExtensionChrome`) - extension widget slots and custom
   footer/header overrides.
+- `../bash-execution-controller.ts` (`BashExecutionController`) - the `!cmd` prompt mode:
+  runs a bash command through the session (extensions can intercept via the `user_bash`
+  event), renders a `BashExecutionComponent`, and streams output into it. Commands started
+  while the agent is streaming park in the pending area and move into the transcript when
+  the turn ends. Extracted from `interactive-mode.ts` behind a narrow
+  `BashExecutionControllerDeps` interface. (Editor bash-mode toggling stays in
+  `interactive-mode.ts`.)
 - `../message-queue-controller.ts` (`MessageQueueController`) - message queueing: the
   compaction queue (messages typed while a compaction runs) and the pending-messages
   display above the editor. The session owns the live steering / follow-up queues; this
