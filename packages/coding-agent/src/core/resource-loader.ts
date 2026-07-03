@@ -1,15 +1,16 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve, sep } from "node:path";
-import chalk from "chalk";
+import { join, resolve, sep } from "node:path";
 import { CONFIG_DIR_NAME } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
+export { loadProjectContextFiles } from "./context-files.js";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 
 import { canonicalizePath, collectAgentsAncestorDirs, isLocalPath } from "../utils/paths.js";
 import { setAgentManifestPaths } from "./agent-manifest-paths.js";
+import { loadProjectContextFiles, resolvePromptInput } from "./context-files.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import {
 	createExtensionRuntime,
@@ -57,100 +58,6 @@ export interface ResourceLoader {
 	addAppendSystemPrompt(text: string): void;
 	extendResources(paths: ResourceExtensionPaths): void;
 	reload(): Promise<void>;
-}
-
-function resolvePromptInput(input: string | undefined, description: string): string | undefined {
-	if (!input) {
-		return undefined;
-	}
-
-	if (existsSync(input)) {
-		try {
-			return readFileSync(input, "utf-8");
-		} catch (error) {
-			console.error(chalk.yellow(`Warning: Could not read ${description} file ${input}: ${error}`));
-			return input;
-		}
-	}
-
-	return input;
-}
-
-// Context files (AGENTS.md / CLAUDE.md) are injected into the system prompt on
-// every turn, so their size has a recurring cost on every provider. Warn the
-// user past a soft limit (~2k tokens) and truncate at a hard limit (~10k tokens)
-// so a pasted spec can't silently bloat every request forever.
-const CONTEXT_FILE_WARN_BYTES = 8 * 1024;
-const CONTEXT_FILE_MAX_BYTES = 40 * 1024;
-function loadContextFileFromDir(dir: string): { file: { path: string; content: string } | null; warnings: string[] } {
-	const warnings: string[] = [];
-	const candidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
-	for (const filename of candidates) {
-		const filePath = join(dir, filename);
-		if (existsSync(filePath)) {
-			try {
-				let content = readFileSync(filePath, "utf-8");
-				const bytes = Buffer.byteLength(content, "utf-8");
-				if (bytes > CONTEXT_FILE_MAX_BYTES) {
-					content =
-						content.slice(0, CONTEXT_FILE_MAX_BYTES) +
-						`\n\n[truncated: file exceeded ${CONTEXT_FILE_MAX_BYTES} bytes (~10k tokens); keep context files brief — large specs belong in linked files, not in the system prompt]`;
-					warnings.push(`${basename(filePath)} ${bytes} bytes, truncated.`);
-				} else if (bytes > CONTEXT_FILE_WARN_BYTES) {
-					warnings.push(
-						`${basename(filePath)} ~${Math.round(bytes / 4)} tokens, injected every turn — consider trimming.`,
-					);
-				}
-				return { file: { path: filePath, content }, warnings };
-			} catch (error) {
-				warnings.push(`Could not read ${filePath}: ${error}`);
-			}
-		}
-	}
-	return { file: null, warnings };
-}
-
-export function loadProjectContextFiles(options: { cwd: string; agentDir: string }): {
-	agentsFiles: Array<{ path: string; content: string }>;
-	warnings: string[];
-} {
-	const resolvedCwd = options.cwd;
-	const resolvedAgentDir = options.agentDir;
-
-	const contextFiles: Array<{ path: string; content: string }> = [];
-	const warnings: string[] = [];
-	const seenPaths = new Set<string>();
-
-	const globalResult = loadContextFileFromDir(resolvedAgentDir);
-	if (globalResult.file) {
-		contextFiles.push(globalResult.file);
-		seenPaths.add(globalResult.file.path);
-	}
-	warnings.push(...globalResult.warnings);
-
-	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
-
-	let currentDir = resolvedCwd;
-	const root = resolve("/");
-
-	while (true) {
-		const result = loadContextFileFromDir(currentDir);
-		if (result.file && !seenPaths.has(result.file.path)) {
-			ancestorContextFiles.unshift(result.file);
-			seenPaths.add(result.file.path);
-		}
-		warnings.push(...result.warnings);
-
-		if (currentDir === root) break;
-
-		const parentDir = resolve(currentDir, "..");
-		if (parentDir === currentDir) break;
-		currentDir = parentDir;
-	}
-
-	contextFiles.push(...ancestorContextFiles);
-
-	return { agentsFiles: contextFiles, warnings };
 }
 
 export interface DefaultResourceLoaderOptions {
