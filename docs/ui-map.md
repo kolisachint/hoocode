@@ -64,6 +64,12 @@ Rendered in order as the conversation scrolls:
   confirm / input / editor / custom-component dialogs behind the ExtensionUIContext.
 - `../extension-chrome.ts` (`ExtensionChrome`) - extension widget slots and custom
   footer/header overrides.
+- `../message-queue-controller.ts` (`MessageQueueController`) - message queueing: the
+  compaction queue (messages typed while a compaction runs) and the pending-messages
+  display above the editor. The session owns the live steering / follow-up queues; this
+  controller merges them for display, restores everything to the editor on demand, and
+  flushes the compaction queue once compaction finishes. Extracted from
+  `interactive-mode.ts` behind a narrow `MessageQueueControllerDeps` interface.
 - `../model-controller.ts` (`ModelController`) - model selection: the `/model` single
   picker, the `/models` scoped-models (enable set) picker, model cycling (the cycle
   keys), exact-match lookup for slash-command arguments, the footer's available-provider
