@@ -83,7 +83,17 @@ The shipped CLI. Largest package.
 - `src/cli/` - arg parsing, model/session pickers, file processing.
 - `src/config.ts` - config + paths (`~/.hoocode/...`, dispatch dirs).
 - `src/core/` - the engine:
-  - `agent-session.ts`, `sdk.ts` - wiring the agent loop into a session.
+  - `agent-session.ts`, `sdk.ts` - wiring the agent loop into a session. `AgentSession`
+    delegates cohesive concerns to sibling `agent-session-*` modules: `-retry`
+    (`AutoRetryController`), `-compaction` (`CompactionController`), `-tree-navigation`
+    (`TreeNavigationController`), `-stats` (session stats / context usage / JSONL export),
+    and `-skills` (skill-block parse + `/skill:` expansion).
+  - `package-manager.ts` + `package-resource-discovery.ts` - installed-package resolution
+    and the pure file-discovery / glob-and-ignore pattern engine it composes.
+  - `settings-manager.ts` + `settings-types.ts` + `settings-storage.ts` - load/merge/persist
+    logic, the `Settings` schema, and the file-lock / in-memory storage backends.
+  - `resource-loader.ts` + `context-files.ts` - resource discovery plus AGENTS.md/CLAUDE.md
+    context-file loading and system-prompt input resolution.
   - `tools/` - built-in tools (`read`, `bash`, `edit`, `write`, `subagent.ts` = the `Task`
     tool, etc.). `tools/index.ts` holds the single `TOOL_FACTORIES` registry table that
     everything (name union, option lookups, bundles) derives from. Optional feature tools
