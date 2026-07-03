@@ -64,6 +64,11 @@ Rendered in order as the conversation scrolls:
   confirm / input / editor / custom-component dialogs behind the ExtensionUIContext.
 - `../extension-chrome.ts` (`ExtensionChrome`) - extension widget slots and custom
   footer/header overrides.
+- `../model-controller.ts` (`ModelController`) - model selection: the `/model` single
+  picker, the `/models` scoped-models (enable set) picker, model cycling (the cycle
+  keys), exact-match lookup for slash-command arguments, the footer's available-provider
+  count, and the Anthropic subscription-auth warning. Extracted from `interactive-mode.ts`
+  behind a narrow `ModelControllerDeps` interface.
 - `../login-controller.ts` (`LoginController`) - the `/login` and `/logout` flows:
   provider auth-type selector, OAuth and API-key login dialogs, the Bedrock setup
   notice, and post-login default-model selection. Extracted from `interactive-mode.ts`

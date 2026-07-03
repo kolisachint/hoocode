@@ -9,7 +9,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import { createCompactionSummaryMessage } from "@kolisachint/hoocode-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model } from "@kolisachint/hoocode-ai";
+import type { AssistantMessage, ImageContent, Message } from "@kolisachint/hoocode-ai";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -50,7 +50,6 @@ import type {
 } from "../../core/extensions/index.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
-import { findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
@@ -76,8 +75,6 @@ import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
 import { keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
-import { ModelSelectorComponent } from "./components/model-selector.js";
-import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
@@ -89,6 +86,7 @@ import { UserMessageSelectorComponent } from "./components/user-message-selector
 import { ExtensionChrome } from "./extension-chrome.js";
 import { ExtensionDialogs } from "./extension-dialogs.js";
 import { LoginController } from "./login-controller.js";
+import { ModelController } from "./model-controller.js";
 import {
 	ExpandableText,
 	formatDisplayPath,
@@ -129,13 +127,6 @@ function isDeadTerminalError(error: unknown): boolean {
 	}
 	const code = (error as NodeJS.ErrnoException).code;
 	return code !== undefined && DEAD_TERMINAL_ERROR_CODES.has(code);
-}
-
-const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
-	"Anthropic subscription auth: billed per token as extra usage, not plan limits.";
-
-function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
-	return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
 }
 
 /**
@@ -189,7 +180,6 @@ export class InteractiveMode {
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
-	private anthropicSubscriptionWarningShown = false;
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
@@ -256,6 +246,9 @@ export class InteractiveMode {
 	// hooteams team client (--team): steering + attach share its single SSE stream
 	private teamFocus: TeamFocusController;
 
+	// Model selection (/model, /models, cycle keys)
+	private modelController: ModelController;
+
 	// Auth / login flows (/login, /logout)
 	private loginController: LoginController;
 
@@ -317,9 +310,10 @@ export class InteractiveMode {
 				rebuildChatFromMessages: () => self.rebuildChatFromMessages(),
 				getMarkdownThemeWithSettings: () => self.getMarkdownThemeWithSettings(),
 				stopLoadingAnimation: () => self.stopLoadingAnimation(),
-				findExactModelMatch: (searchTerm) => self.findExactModelMatch(searchTerm),
-				maybeWarnAboutAnthropicSubscriptionAuth: (model) => self.maybeWarnAboutAnthropicSubscriptionAuth(model),
-				showModelSelector: (searchTerm) => self.showModelSelector(searchTerm),
+				findExactModelMatch: (searchTerm) => self.modelController.findExactModelMatch(searchTerm),
+				maybeWarnAboutAnthropicSubscriptionAuth: (model) =>
+					self.modelController.maybeWarnAboutAnthropicSubscriptionAuth(model),
+				showModelSelector: (searchTerm) => self.modelController.showModelSelector(searchTerm),
 				showExtensionConfirm: (title, message) => self.dialogs.confirm(title, message),
 				promptForMissingSessionCwd: (error) => self.promptForMissingSessionCwd(error),
 				handleFatalRuntimeError: (prefix, error) => self.handleFatalRuntimeError(prefix, error),
@@ -414,6 +408,19 @@ export class InteractiveMode {
 			showError: (message) => this.showError(message),
 		});
 		const self = this;
+		this.modelController = new ModelController({
+			ui: this.ui,
+			get session() {
+				return self.session;
+			},
+			showSelector: (create) => this.showSelector(create),
+			showStatus: (message) => this.showStatus(message),
+			showError: (message) => this.showError(message),
+			showWarning: (message) => this.showWarning(message),
+			updateEditorBorderColor: () => this.updateEditorBorderColor(),
+			invalidateFooter: () => this.footer.invalidate(),
+			setAvailableProviderCount: (count) => this.footerDataProvider.setAvailableProviderCount(count),
+		});
 		this.loginController = new LoginController({
 			ui: this.ui,
 			get session() {
@@ -424,10 +431,11 @@ export class InteractiveMode {
 			showSelector: (create) => this.showSelector(create),
 			showStatus: (message) => this.showStatus(message),
 			showError: (message) => this.showError(message),
-			updateAvailableProviderCount: () => this.updateAvailableProviderCount(),
+			updateAvailableProviderCount: () => this.modelController.updateAvailableProviderCount(),
 			updateEditorBorderColor: () => this.updateEditorBorderColor(),
 			invalidateFooter: () => this.footer.invalidate(),
-			maybeWarnAboutAnthropicSubscriptionAuth: (model) => this.maybeWarnAboutAnthropicSubscriptionAuth(model),
+			maybeWarnAboutAnthropicSubscriptionAuth: (model) =>
+				this.modelController.maybeWarnAboutAnthropicSubscriptionAuth(model),
 		});
 		this.taskPanel.onNudge = (role) => this.teamFocus.showNudgeInput(role);
 		this.taskPanel.onAttach = (role) => this.teamFocus.showAttach(role);
@@ -733,7 +741,7 @@ export class InteractiveMode {
 		});
 
 		// Initialize available provider count for footer display
-		await this.updateAvailableProviderCount();
+		await this.modelController.updateAvailableProviderCount();
 	}
 
 	/**
@@ -793,7 +801,7 @@ export class InteractiveMode {
 			this.showWarning(modelFallbackMessage);
 		}
 
-		void this.maybeWarnAboutAnthropicSubscriptionAuth();
+		void this.modelController.maybeWarnAboutAnthropicSubscriptionAuth();
 
 		// Process initial messages
 		if (initialMessage) {
@@ -976,7 +984,7 @@ export class InteractiveMode {
 		this.applyRuntimeSettings();
 		await this.bindCurrentSessionExtensions();
 		this.subscribeToAgent();
-		await this.updateAvailableProviderCount();
+		await this.modelController.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
 	}
@@ -1377,12 +1385,12 @@ export class InteractiveMode {
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
 		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
-		this.defaultEditor.onAction("app.model.cycleForward", () => this.cycleModel("forward"));
-		this.defaultEditor.onAction("app.model.cycleBackward", () => this.cycleModel("backward"));
+		this.defaultEditor.onAction("app.model.cycleForward", () => this.modelController.cycleModel("forward"));
+		this.defaultEditor.onAction("app.model.cycleBackward", () => this.modelController.cycleModel("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.commandExecutor.handleDebug();
-		this.defaultEditor.onAction("app.model.select", () => this.showModelSelector());
+		this.defaultEditor.onAction("app.model.select", () => this.modelController.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.tasks.cycleView", () => {
@@ -1466,7 +1474,7 @@ export class InteractiveMode {
 				"/scoped-models": {
 					run: async () => {
 						clearEditor();
-						await this.showModelsSelector();
+						await this.modelController.showModelsSelector();
 					},
 				},
 				"/model": {
@@ -2475,25 +2483,6 @@ export class InteractiveMode {
 		}
 	}
 
-	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
-		try {
-			const result = await this.session.cycleModel(direction);
-			if (result === undefined) {
-				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
-				this.showStatus(msg);
-			} else {
-				this.footer.invalidate();
-				this.updateEditorBorderColor();
-				const thinkingStr =
-					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
-				this.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
-				void this.maybeWarnAboutAnthropicSubscriptionAuth(result.model);
-			}
-		} catch (error) {
-			this.showError(error instanceof Error ? error.message : String(error));
-		}
-	}
-
 	private toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
 	}
@@ -2991,171 +2980,6 @@ export class InteractiveMode {
 				},
 			);
 			return { component: selector, focus: selector.getSettingsList() };
-		});
-	}
-
-	private async findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined> {
-		const models = await this.getModelCandidates();
-		return findExactModelReferenceMatch(searchTerm, models);
-	}
-
-	private async getModelCandidates(): Promise<Model<any>[]> {
-		if (this.session.scopedModels.length > 0) {
-			return this.session.scopedModels.map((scoped) => scoped.model);
-		}
-
-		this.session.modelRegistry.refresh();
-		try {
-			return await this.session.modelRegistry.getAvailable();
-		} catch {
-			return [];
-		}
-	}
-
-	/** Update the footer's available provider count from current model candidates */
-	private async updateAvailableProviderCount(): Promise<void> {
-		const models = await this.getModelCandidates();
-		const uniqueProviders = new Set(models.map((m) => m.provider));
-		this.footerDataProvider.setAvailableProviderCount(uniqueProviders.size);
-	}
-
-	private async maybeWarnAboutAnthropicSubscriptionAuth(
-		model: Model<any> | undefined = this.session.model,
-	): Promise<void> {
-		if (this.settingsManager.getWarnings().anthropicExtraUsage === false) {
-			return;
-		}
-		if (this.anthropicSubscriptionWarningShown) {
-			return;
-		}
-		if (!model || model.provider !== "anthropic") {
-			return;
-		}
-
-		const storedCredential = this.session.modelRegistry.authStorage.get("anthropic");
-		if (storedCredential?.type === "oauth") {
-			this.anthropicSubscriptionWarningShown = true;
-			this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
-			return;
-		}
-
-		try {
-			const apiKey = await this.session.modelRegistry.getApiKeyForProvider(model.provider);
-			if (!isAnthropicSubscriptionAuthKey(apiKey)) {
-				return;
-			}
-			this.anthropicSubscriptionWarningShown = true;
-			this.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
-		} catch {
-			// Ignore auth lookup failures for warning-only checks.
-		}
-	}
-
-	private showModelSelector(initialSearchInput?: string): void {
-		this.showSelector((done) => {
-			const selector = new ModelSelectorComponent(
-				this.ui,
-				this.session.model,
-				this.settingsManager,
-				this.session.modelRegistry,
-				this.session.scopedModels,
-				async (model) => {
-					try {
-						await this.session.setModel(model);
-						this.footer.invalidate();
-						this.updateEditorBorderColor();
-						done();
-						this.showStatus(`Model: ${model.id}`);
-						void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
-					} catch (error) {
-						done();
-						this.showError(error instanceof Error ? error.message : String(error));
-					}
-				},
-				() => {
-					done();
-					this.ui.requestRender();
-				},
-				initialSearchInput,
-			);
-			return { component: selector, focus: selector };
-		});
-	}
-
-	private async showModelsSelector(): Promise<void> {
-		// Get all available models
-		this.session.modelRegistry.refresh();
-		const allModels = this.session.modelRegistry.getAvailable();
-
-		if (allModels.length === 0) {
-			this.showStatus("No models available");
-			return;
-		}
-
-		// Check if session has scoped models (from previous session-only changes or CLI --models)
-		const sessionScopedModels = this.session.scopedModels;
-		const hasSessionScope = sessionScopedModels.length > 0;
-
-		// Build enabled model IDs from session state or settings
-		let currentEnabledIds: string[] | null = null;
-
-		if (hasSessionScope) {
-			// Use current session's scoped models
-			currentEnabledIds = sessionScopedModels.map((scoped) => `${scoped.model.provider}/${scoped.model.id}`);
-		} else {
-			// Fall back to settings
-			const patterns = this.settingsManager.getEnabledModels();
-			if (patterns !== undefined && patterns.length > 0) {
-				const scopedModels = await resolveModelScope(patterns, this.session.modelRegistry);
-				currentEnabledIds = scopedModels.map((scoped) => `${scoped.model.provider}/${scoped.model.id}`);
-			}
-		}
-
-		// Helper to update session's scoped models (session-only, no persist)
-		const updateSessionModels = async (enabledIds: string[] | null) => {
-			currentEnabledIds = enabledIds === null ? null : [...enabledIds];
-			if (enabledIds && enabledIds.length > 0 && enabledIds.length < allModels.length) {
-				const newScopedModels = await resolveModelScope(enabledIds, this.session.modelRegistry);
-				this.session.setScopedModels(
-					newScopedModels.map((sm) => ({
-						model: sm.model,
-						thinkingLevel: sm.thinkingLevel,
-					})),
-				);
-			} else {
-				// All enabled or none enabled = no filter
-				this.session.setScopedModels([]);
-			}
-			await this.updateAvailableProviderCount();
-			this.ui.requestRender();
-		};
-
-		this.showSelector((done) => {
-			const selector = new ScopedModelsSelectorComponent(
-				{
-					allModels,
-					enabledModelIds: currentEnabledIds,
-				},
-				{
-					onChange: async (enabledIds) => {
-						await updateSessionModels(enabledIds);
-					},
-					onPersist: (enabledIds) => {
-						// Persist to settings
-						const newPatterns =
-							enabledIds === null || enabledIds.length === allModels.length
-								? undefined // All enabled = clear filter
-								: enabledIds;
-						this.settingsManager.setEnabledModels(newPatterns ? [...newPatterns] : undefined);
-						this.showStatus("Model selection saved to settings");
-					},
-					onCancel: () => {
-						done();
-						this.ui.requestRender();
-					},
-				},
-			);
-			return { component: selector, focus: selector };
 		});
 	}
 
