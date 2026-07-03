@@ -433,7 +433,7 @@ export function getTemplatesDir(): string {
 }
 
 // =============================================================================
-// App Config (from package.json hoocodeConfig — accepts legacy piConfig)
+// App Config (from package.json hoocodeConfig)
 // =============================================================================
 
 interface AppConfigBlock {
@@ -445,12 +445,11 @@ interface PackageJson {
 	name?: string;
 	version?: string;
 	hoocodeConfig?: AppConfigBlock;
-	piConfig?: AppConfigBlock;
 }
 
 const pkg = JSON.parse(readFileSync(getPackageJsonPath(), "utf-8")) as PackageJson;
 
-const appConfig: AppConfigBlock = pkg.hoocodeConfig ?? pkg.piConfig ?? {};
+const appConfig: AppConfigBlock = pkg.hoocodeConfig ?? {};
 const appConfigName: string | undefined = appConfig.name;
 export const PACKAGE_NAME: string = pkg.name || "@kolisachint/hoocode-agent";
 export const APP_NAME: string = appConfigName || "hoocode";

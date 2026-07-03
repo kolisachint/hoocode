@@ -7,7 +7,7 @@ Before searching, check these maps:
 - `docs/package-map.md` - packages, dependency graph, build order, and a "where is X" index
 - `docs/npm-packages.md` - install/build/test mechanics, the src-vs-dist resolution split, and common traps
 - `docs/ui-map.md` - tui library and interactive-mode components grouped by purpose
-- `docs/bun-migration.md` - npm -> bun migration plan, phases, and coexistence rules
+- `docs/bun-migration.md` - record of the completed npm -> bun migration and the post-migration rules
 - `docs/agent-spec-tree-map.md` - on-disk agent-spec surfaces, their standard status, and what hoocode scans/supports
 
 ## Recent Changes
@@ -15,7 +15,7 @@ Before searching, check these maps:
 - **Provider trim (step 1 of 2 done)**: `packages/ai/scripts/generate-models.ts` no
   longer emits `amazon-bedrock`, `mistral`, `cloudflare-workers-ai`, or
   `cloudflare-ai-gateway` models. Step 2 (needs network access to models.dev):
-  1. `cd packages/ai && npm run generate-models` (purges those entries from
+  1. `cd packages/ai && bun run generate-models` (purges those entries from
      `models.generated.ts`)
   2. Delete the now-unreferenced implementations: `src/providers/mistral.ts`,
      `src/providers/cloudflare.ts`, `src/providers/amazon-bedrock.ts`,
@@ -26,7 +26,7 @@ Before searching, check these maps:
      `src/env-api-keys.ts`, the cloudflare branches in `anthropic.ts` /
      `openai-completions.ts` / `openai-responses.ts`, and
      `packages/coding-agent/src/bun/register-bedrock.ts`.
-  3. `npm run check` from the repo root, then run the ai + coding-agent suites.
+  3. `bun run check` from the repo root, then run the ai + coding-agent suites.
 - **MCP Standard Config Support**: Now reads standard `mcp.json` format from:
   - `~/.agents/mcp.json` (user-level)
   - `.agents/mcp.json` (project-level)
@@ -55,14 +55,15 @@ Before searching, check these maps:
 
 ## Commands
 
-- After code changes (not documentation changes): `npm run check` (get full output, no tail). Fix all errors, warnings, and infos before committing.
-- Note: `npm run check` does not run tests.
-- NEVER run: `npm run dev`, `npm run build`, `npm test`
-- Package manager: npm is the supported default; a gradual npm -> bun migration is
-  underway (dual-track). `bunfig.toml` pins `linker = "hoisted"` so `bun install`
-  stays npm-compatible. Never use bun's isolated linker. After any `bun install`,
-  run `npm run check`; recover a broken tree with `npm install`. See
-  `docs/bun-migration.md` before changing install/build tooling.
+- After code changes (not documentation changes): `bun run check` (get full output, no tail). Fix all errors, warnings, and infos before committing.
+- Note: `bun run check` does not run tests.
+- NEVER run: `bun run dev`, `bun run build`, `bun test`
+- Package manager: bun is the toolchain (`packageManager: bun@1.3.13`). `bun.lock`
+  is the single authoritative lockfile. `bunfig.toml` pins `linker = "hoisted"`,
+  so plain `bun install` yields an npm-compatible flat tree; never use bun's
+  isolated linker. After any `bun install`, run `bun run check`; recover a broken
+  tree with `bun install`. npm is used only for `npm publish` during releases.
+  See `docs/bun-migration.md` for the completed migration.
 - Only run specific tests if user instructs: `npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`
 - Run tests from the package root, not the repo root.
 - If you create or modify a test file, you MUST run that test file and iterate until it passes.
@@ -112,7 +113,6 @@ When closing issues via commit:
 - `/pr [patch|minor|major]` - opens a PR on a feature branch. With a bump it labels the PR `npm:<bump>` so the merge-release workflow publishes on merge; without one it only opens a PR (no publish). Defined in `.agents/commands/pr.md`.
 - `/push [patch|minor|major]` - pushes your session's changes straight to `origin/main` (stage only your files, commit, rebase, fast-forward push). Without a bump it publishes nothing; with `patch|minor|major` it runs the release to publish. Defined in `.agents/commands/push.md`.
 - Both stage only the files you changed (never `git add -A/.`) and never force push, reset, checkout, clean, or stash.
-- `/bun-migration [status|next|phase <n>]` - drives the npm -> bun migration one safe, reversible phase at a time per `docs/bun-migration.md`. Defined in `.agents/commands/bun-migration.md`.
 - Slash-command definitions live in `.agents/commands/` (also read from `.hoocode/commands/`, `.claude/commands/`, and the user-level equivalents). Scaffold a new one with `/new-command <name>`.
 
 ## Testing hoocode Interactive Mode with tmux
