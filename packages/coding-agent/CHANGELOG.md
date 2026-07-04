@@ -10,6 +10,9 @@
   `.agents/plugins/<name>`, the added-marketplace registry lives at
   `.agents/marketplaces.json` (falling back to the legacy `.hoocode/` path), and
   `/plugin remove` deletes from both. `.hoocode/plugins/` stays discovered.
+- `/loop` scheduled tasks now persist to `.agents/scheduled_tasks.json`; a legacy
+  `.hoocode/scheduled_tasks.json` is read once and migrates forward on the next
+  persist.
 
 ### Added
 

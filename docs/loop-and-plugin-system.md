@@ -33,9 +33,11 @@ the normalized `StopReason` + turn state, never raw provider payloads.
 The loop is backed by a real cron scheduler (`core/scheduler.ts`, `TaskScheduler`),
 modeled on the harness `CronCreate`/`CronList`/`CronDelete` tools: 5-field cron in
 local time, recurring vs one-shot, durable persistence to
-`.hoocode/scheduled_tasks.json`, and **idle-gated** firing (a due task never
-interrupts an in-flight turn; it fires on a later tick within the same minute).
-Set up in `hoo-core.ts` (`setupLoop`).
+`.agents/scheduled_tasks.json` (the primary, cross-vendor home; a legacy
+`.hoocode/scheduled_tasks.json` is read once and migrates forward on the next
+persist), and **idle-gated** firing (a due task never interrupts an in-flight
+turn; it fires on a later tick within the same minute). Set up in `hoo-core.ts`
+(`setupLoop`).
 
 **Agent-callable tools** (the model can schedule its own follow-ups):
 

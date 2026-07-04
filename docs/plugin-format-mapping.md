@@ -28,8 +28,8 @@ Two homes, two jobs:
 
 | Home | Role | Examples |
 |---|---|---|
-| **`.agents/`** | Authored, shareable, **cross-vendor** resources — read first, created by default | `skills/`, `commands/`, `agents/`, `mcp.json`, **`plugins/`**, **`marketplaces.json`** |
-| **`.hoocode/`** | hoocode-**private runtime state** & config — not meant to be portable | `sessions/`, `dispatch/`, `scheduled_tasks.json`, `settings.json`, `mcp-servers/`, `marketplace-cache/` |
+| **`.agents/`** | Authored, shareable, **cross-vendor** resources plus user-meaningful state — read first, created by default | `skills/`, `commands/`, `agents/`, `mcp.json`, **`plugins/`**, **`marketplaces.json`**, **`scheduled_tasks.json`** (`/loop`) |
+| **`.hoocode/`** | hoocode-**private runtime state** & config — not meant to be portable | `sessions/`, `dispatch/`, `settings.json`, `mcp-servers/` |
 
 `.claude/`, `.claude-plugin/`, and `.github/` are **compatibility inputs**: hoocode
 reads plugins/marketplaces written in those formats, but installs and new files
@@ -175,7 +175,7 @@ my-marketplace/
 | Installed plugin | `.agents/plugins/<name>/` | reads `.hoocode/plugins/<name>/`; `remove` deletes both |
 | Added-marketplace registry | `.agents/marketplaces.json` | reads `.hoocode/marketplaces.json` if `.agents` one is absent |
 | Marketplace clone cache | `.agents/marketplace-cache/` | — |
-| Scheduled `/loop` tasks (runtime state) | `.hoocode/scheduled_tasks.json` | — (private runtime state, stays in `.hoocode/`) |
+| Scheduled `/loop` tasks | `.agents/scheduled_tasks.json` | reads `.hoocode/scheduled_tasks.json` once, then migrates forward on next persist |
 
 ### 4.4 How they are loaded
 
@@ -234,6 +234,7 @@ live in the session — **loaded means ready to use**, no extra step.
 - **GitHub/Copilot = marketplace, not manifest.** To publish via GitHub, ship a
   `.github/marketplace.json` index whose entries point at plugin dirs / git URLs;
   don't expect a `.github/plugin.json` to be recognized.
-- **Runtime state stays in `.hoocode/`.** Don't put sessions, dispatch state, or
-  scheduled tasks under `.agents/` — that directory is for authored, portable
-  resources.
+- **User-meaningful state lives in `.agents/`; private runtime state stays in
+  `.hoocode/`.** Plugins, marketplaces, and `/loop` scheduled tasks are
+  `.agents/` (portable, user-visible). Sessions and dispatch state remain
+  `.hoocode/` (private, machine-local).

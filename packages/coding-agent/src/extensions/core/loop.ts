@@ -71,7 +71,10 @@ export function setupLoop(pi: ExtensionAPI): void {
 			}
 		};
 		scheduler = new TaskScheduler({
-			storePath: join(ctx.cwd, ".hoocode", "scheduled_tasks.json"),
+			// `.agents/` is the primary, cross-vendor home; the legacy `.hoocode/`
+			// store is read once and migrates forward on the next persist.
+			storePath: join(ctx.cwd, ".agents", "scheduled_tasks.json"),
+			legacyStorePath: join(ctx.cwd, ".hoocode", "scheduled_tasks.json"),
 			fire: (prompt) => pi.sendUserMessage(prompt, { deliverAs: "followUp" }),
 			isIdle,
 		});

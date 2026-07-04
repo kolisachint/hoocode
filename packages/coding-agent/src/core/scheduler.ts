@@ -84,8 +84,13 @@ function newId(): string {
 }
 
 export interface TaskSchedulerOptions {
-	/** Path to the durable JSON store. */
+	/** Path to the durable JSON store (written on every mutation). */
 	storePath: string;
+	/**
+	 * Legacy store path read only when {@link storePath} does not yet exist, so
+	 * tasks scheduled under an older location migrate forward on first persist.
+	 */
+	legacyStorePath?: string;
 	/** Submit a due task's prompt (e.g. via sendUserMessage). */
 	fire: (prompt: string) => void;
 	/** Whether the agent is idle; tasks only fire when true. Defaults to always-idle. */
@@ -98,18 +103,25 @@ export class TaskScheduler {
 	private tasks: ScheduledTask[] = [];
 	private timer: ReturnType<typeof setInterval> | undefined;
 	private readonly opts: Required<Pick<TaskSchedulerOptions, "storePath" | "fire">> &
-		Pick<TaskSchedulerOptions, "isIdle" | "intervalMs">;
+		Pick<TaskSchedulerOptions, "isIdle" | "intervalMs" | "legacyStorePath">;
 
 	constructor(opts: TaskSchedulerOptions) {
 		this.opts = opts;
 		this.load();
 	}
 
-	/** Load persisted tasks from disk (best-effort). */
+	/** Load persisted tasks from disk (best-effort). Falls back to the legacy
+	 *  store path when the primary one does not exist yet. */
 	load(): void {
+		const source =
+			existsSync(this.opts.storePath) || !this.opts.legacyStorePath
+				? this.opts.storePath
+				: existsSync(this.opts.legacyStorePath)
+					? this.opts.legacyStorePath
+					: this.opts.storePath;
 		try {
-			if (existsSync(this.opts.storePath)) {
-				const parsed = JSON.parse(readFileSync(this.opts.storePath, "utf8")) as { tasks?: ScheduledTask[] };
+			if (existsSync(source)) {
+				const parsed = JSON.parse(readFileSync(source, "utf8")) as { tasks?: ScheduledTask[] };
 				this.tasks = Array.isArray(parsed.tasks) ? parsed.tasks : [];
 			}
 		} catch {
