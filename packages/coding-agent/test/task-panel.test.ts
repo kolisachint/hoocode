@@ -760,26 +760,31 @@ describe("task store", () => {
 		warn.mockRestore();
 	});
 
-	test("reset preserves agents with non-zero stats", () => {
+	test("reset preserves role agents with non-zero stats but drops settled subagent runs", () => {
 		// Create a task so reset() actually runs (not early-return path).
 		const dummy = taskStore.create("dummy");
 		taskStore.update(dummy.id, { status: "done" });
-		taskStore.upsertAgent({ id: "stats-agent", name: "stats-agent", kind: "subagent" });
-		taskStore.addAgentStats("stats-agent", { input: 100, output: 50, cost: 0.001 });
+		// Role agents carry cross-turn team cost accounting — preserved with stats.
+		taskStore.upsertAgent({ id: "team:planner", name: "planner", kind: "role" });
+		taskStore.addAgentStats("team:planner", { input: 100, output: 50, cost: 0.001 });
+		// Subagent rows are per-run; a settled run must not outlive its task even
+		// with stats, or the roster would grow without bound across turns.
+		taskStore.upsertAgent({ id: "run-1", name: "explore#1", kind: "subagent", state: "done" });
+		taskStore.addAgentStats("run-1", { input: 200, output: 20, cost: 0.002 });
 
 		taskStore.reset();
-		// stats-agent has non-zero stats — must survive reset.
-		expect(taskStore.agents().some((a) => a.id === "stats-agent")).toBe(true);
+		expect(taskStore.agents().some((a) => a.id === "team:planner")).toBe(true);
+		expect(taskStore.agents().some((a) => a.id === "run-1")).toBe(false);
 
-		// Register a zero-stats agent; create + finish a dummy to force reset to run
-		// (nextId is 1 after the previous reset, so a new task makes it 2).
-		taskStore.upsertAgent({ id: "zero-agent", name: "zero-agent", kind: "subagent" });
+		// Register a zero-stats role agent; create + finish a dummy to force reset
+		// to run (nextId is 1 after the previous reset, so a new task makes it 2).
+		taskStore.upsertAgent({ id: "team:zero", name: "zero", kind: "role" });
 		const dummy2 = taskStore.create("dummy2");
 		taskStore.update(dummy2.id, { status: "done" });
 		taskStore.reset();
 		// Zero-stats agent is dropped.
-		expect(taskStore.agents().some((a) => a.id === "zero-agent")).toBe(false);
-		// Stats-agent still preserved.
-		expect(taskStore.agents().some((a) => a.id === "stats-agent")).toBe(true);
+		expect(taskStore.agents().some((a) => a.id === "team:zero")).toBe(false);
+		// Stats-carrying role agent still preserved.
+		expect(taskStore.agents().some((a) => a.id === "team:planner")).toBe(true);
 	});
 });

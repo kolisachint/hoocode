@@ -75,7 +75,25 @@ export class TokenBudget extends EventEmitter {
 		this.exceededThreshold = this.limit;
 	}
 
-	/** Process a chunk of stdout data from the subagent. */
+	/**
+	 * Process one complete JSONL line from the subagent's stdout. Use this when
+	 * an upstream reader already handles framing (UTF-8-safe reassembly of chunks
+	 * split mid-line or mid-character) — the pool feeds this from its single
+	 * attachJsonlLineReader so the stream is parsed exactly once.
+	 */
+	processLine(line: string): void {
+		const trimmed = line.trim();
+		if (trimmed) {
+			this.parseLine(trimmed);
+		}
+	}
+
+	/**
+	 * Process a raw chunk of stdout data from the subagent, buffering until
+	 * newlines. Prefer processLine() when a UTF-8-safe line reader is available:
+	 * chunk boundaries here can split multi-byte characters, which corrupts the
+	 * line they fall in.
+	 */
 	processStdout(chunk: string): void {
 		this.stdoutBuffer += chunk;
 

@@ -23,6 +23,8 @@ export interface AppKeybindings {
 	"app.thinking.toggle": true;
 	"app.tasks.cycleView": true;
 	"app.team.focus": true;
+	"app.team.nudge": true;
+	"app.team.attach": true;
 	"app.session.toggleNamedFilter": true;
 	"app.editor.external": true;
 	"app.message.followUp": true;
@@ -108,6 +110,16 @@ export const KEYBINDINGS = {
 		// same trap that moved app.tasks.cycleView off ctrl+shift+t.
 		defaultKeys: "alt+n",
 		description: "Focus the team roster (navigate roles, n nudge, a attach)",
+	},
+	"app.team.nudge": {
+		// Plain letters are safe here: these fire only while the task panel holds
+		// focus (team-focus mode), never while typing in the editor.
+		defaultKeys: "n",
+		description: "Nudge the selected team role (team focus mode)",
+	},
+	"app.team.attach": {
+		defaultKeys: "a",
+		description: "Attach to the selected team role (team focus mode)",
 	},
 	"app.editor.external": {
 		defaultKeys: "ctrl+g",

@@ -7,11 +7,11 @@
  * from the finished session so subagents never have to write it themselves.
  */
 
-import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage } from "@kolisachint/hoocode-ai";
 import { getDispatchTaskDir } from "../config.js";
+import { writeFileAtomicSync } from "../utils/atomic-file.js";
 import type { Task, TaskSource, TaskStatus } from "./task-store.js";
 
 export interface SubagentUsage {
@@ -208,8 +208,10 @@ export function buildSubagentResult(
 export function writeSubagentResult(cwd: string, taskId: string, result: SubagentResultFile): void {
 	const path = join(getDispatchTaskDir(cwd, taskId), "result.json");
 	try {
-		mkdirSync(dirname(path), { recursive: true });
-		writeFileSync(path, JSON.stringify(result, null, 2));
+		// Atomic (temp + same-dir rename): the parent may read this file the moment
+		// it appears, or SIGKILL the child mid-write — a torn result.json would be
+		// parsed as a verification failure and turn a genuine success into a failure.
+		writeFileAtomicSync(path, JSON.stringify(result, null, 2));
 	} catch {
 		// Audit file is best-effort; the parent treats a missing file as a failure.
 	}

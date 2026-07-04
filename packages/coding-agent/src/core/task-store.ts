@@ -124,6 +124,16 @@ class TaskStore {
 	private nextId = 1;
 	private readonly listeners = new Set<Listener>();
 	private batchDepth = 0;
+	private mutationCount = 0;
+
+	/**
+	 * Monotonic counter bumped on every mutation (including those inside a
+	 * batch). Lets renderers cache derived state and invalidate it cheaply by
+	 * comparing versions instead of deep-diffing tasks/agents.
+	 */
+	version(): number {
+		return this.mutationCount;
+	}
 
 	/**
 	 * Run a series of mutations without notifying listeners until the batch
@@ -171,7 +181,10 @@ class TaskStore {
 		if (patch.agent !== undefined) task.agent = patch.agent;
 		if (patch.parentTaskId !== undefined) task.parentTaskId = patch.parentTaskId;
 		if (patch.usage !== undefined) task.usage = patch.usage;
-		if (patch.note !== undefined) task.note = patch.note;
+		// `note` is clearable: passing `note: undefined` explicitly removes a stale
+		// ⚠ cue (e.g. a warning from a previous run of the same task row). Callers
+		// that don't mention `note` leave it untouched.
+		if ("note" in patch) task.note = patch.note;
 		task.updatedAt = Date.now();
 		this.emit();
 	}
@@ -265,17 +278,18 @@ class TaskStore {
 		const active = this.tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
 		if (active.length === this.tasks.length && this.nextId === 1) return;
 		this.tasks = active;
+		// Subagent rows are per-run (one roster entry per dispatch), so a settled
+		// run whose task was just dropped is dead weight — keeping it would grow
+		// the roster without bound across turns. Role/main agents with non-zero
+		// accumulated stats survive so cross-turn team cost accounting holds.
+		const hasStats = (a: TaskAgent) => a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0);
 		if (active.length === 0) {
 			this.nextId = 1;
-			// Keep agents with non-zero accumulated stats so cross-turn cost accounting
-			// survives; drop everyone else (fresh turn opens with a clean roster).
-			this.taskAgents = this.taskAgents.filter(
-				(a) => a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0),
-			);
+			this.taskAgents = this.taskAgents.filter((a) => a.kind !== "subagent" && hasStats(a));
 		} else {
 			const liveOwners = new Set(active.map(taskOwnerId));
 			this.taskAgents = this.taskAgents.filter(
-				(a) => liveOwners.has(a.id) || (a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0)),
+				(a) => liveOwners.has(a.id) || (a.kind !== "subagent" && hasStats(a)),
 			);
 		}
 		this.emit();
@@ -301,6 +315,7 @@ class TaskStore {
 	}
 
 	private emit(): void {
+		this.mutationCount++;
 		if (this.batchDepth > 0) return;
 		for (const listener of this.listeners) {
 			listener();

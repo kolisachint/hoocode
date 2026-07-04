@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, readdirSync, readFileSync, rmdirSync, statSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { getDispatchRoot } from "../config.js";
+import { killProcessTree } from "../utils/shell.js";
 
 const TIMEOUTS_MS: Record<string, number> = {
 	explore: 5 * 60 * 1000,
@@ -65,6 +66,12 @@ export class SubagentLifeguard extends EventEmitter {
 	 * load multiplier. Updated by the pool via setExternalLoad().
 	 */
 	private externalLoad = 0;
+	/**
+	 * Tasks already reaped (stalled/timeout kill sent) but whose `exit` has not
+	 * fired yet. The heartbeat check runs every 5s, so without this a stalled task
+	 * would re-emit "stalled" (and re-kill) on every tick until the process exits.
+	 */
+	private reaping = new Set<string>();
 	private disposed = false;
 	private readonly cwd: string;
 	private parentShutdownHandler?: () => void;
@@ -163,14 +170,13 @@ export class SubagentLifeguard extends EventEmitter {
 		this.timeouts.clear();
 
 		for (const monitored of this.processes.values()) {
-			if (!monitored.process.killed) {
-				monitored.process.kill("SIGKILL");
-			}
+			this.killTree(monitored);
 		}
 		this.processes.clear();
 		this.lastHeartbeat.clear();
 		this.startedAt.clear();
 		this.baseTimeoutMs.clear();
+		this.reaping.clear();
 		this.removeAllListeners();
 
 		if (this.parentShutdownHandler) {
@@ -191,6 +197,7 @@ export class SubagentLifeguard extends EventEmitter {
 
 		const threshold = HEARTBEAT_MISS_THRESHOLD_MS * this.loadMultiplier() + loopLag;
 		for (const [task_id] of this.processes) {
+			if (this.reaping.has(task_id)) continue;
 			const last = this.lastHeartbeat.get(task_id);
 			if (last === undefined) continue;
 			if (now - last > threshold) {
@@ -201,7 +208,8 @@ export class SubagentLifeguard extends EventEmitter {
 
 	private handleStalled(task_id: string): void {
 		const monitored = this.processes.get(task_id);
-		if (!monitored) return;
+		if (!monitored || this.reaping.has(task_id)) return;
+		this.reaping.add(task_id);
 
 		// Record why we reaped this child so a recurrence is diagnosable rather than
 		// just "stalled": how long since the last heartbeat, and the load factors
@@ -214,9 +222,7 @@ export class SubagentLifeguard extends EventEmitter {
 				`load_mult=${this.loadMultiplier().toFixed(2)} base_threshold_ms=${HEARTBEAT_MISS_THRESHOLD_MS}`,
 		);
 
-		if (!monitored.process.killed) {
-			monitored.process.kill("SIGKILL");
-		}
+		this.killTree(monitored);
 
 		this.emit("stalled", { task_id, pid: monitored.pid });
 		// Process exit handler will call untrack()
@@ -224,7 +230,7 @@ export class SubagentLifeguard extends EventEmitter {
 
 	private handleTimeout(task_id: string): void {
 		const monitored = this.processes.get(task_id);
-		if (!monitored) return;
+		if (!monitored || this.reaping.has(task_id)) return;
 
 		// Under load the wall-clock timer can fire while the subagent is still doing
 		// real work — its turns are just slow because the CPU is shared. Re-arm rather
@@ -247,13 +253,28 @@ export class SubagentLifeguard extends EventEmitter {
 			return;
 		}
 
-		if (!monitored.process.killed) {
-			monitored.process.kill("SIGKILL");
-		}
+		this.reaping.add(task_id);
+		this.killTree(monitored);
 
 		this.emit("timeout", { task_id, pid: monitored.pid });
 		this.timeouts.delete(task_id);
 		// Process exit handler will call untrack()
+	}
+
+	/**
+	 * Kill a monitored subagent and everything it spawned. The pool spawns
+	 * children detached on POSIX (each leads its own process group), so the
+	 * group/tree kill reaches nested grandchildren (the subagent's bash commands,
+	 * its own subagents) that a single-PID SIGKILL would orphan. A pid of 0 means
+	 * the spawn never produced a process — nothing to kill (and `kill(-0)` would
+	 * signal our own process group).
+	 */
+	private killTree(monitored: LifeguardProcess): void {
+		if (monitored.pid > 0) {
+			killProcessTree(monitored.pid);
+		} else if (!monitored.process.killed) {
+			monitored.process.kill("SIGKILL");
+		}
 	}
 
 	private untrack(task_id: string): void {
@@ -266,6 +287,7 @@ export class SubagentLifeguard extends EventEmitter {
 		this.lastHeartbeat.delete(task_id);
 		this.startedAt.delete(task_id);
 		this.baseTimeoutMs.delete(task_id);
+		this.reaping.delete(task_id);
 	}
 
 	private setupParentExitHandlers(): void {
@@ -277,19 +299,24 @@ export class SubagentLifeguard extends EventEmitter {
 	}
 
 	private gracefulShutdown(): void {
-		// SIGTERM all children
+		// SIGTERM each child's process group (POSIX; the pool spawns them detached
+		// as group leaders) so their own descendants get the graceful signal too.
 		for (const monitored of this.processes.values()) {
-			if (!monitored.process.killed) {
-				monitored.process.kill("SIGTERM");
+			try {
+				if (process.platform !== "win32" && monitored.pid > 0) {
+					process.kill(-monitored.pid, "SIGTERM");
+				} else if (!monitored.process.killed) {
+					monitored.process.kill("SIGTERM");
+				}
+			} catch {
+				// Already gone.
 			}
 		}
 
-		// SIGKILL after grace period
+		// Kill whole trees after the grace period
 		setTimeout(() => {
 			for (const monitored of this.processes.values()) {
-				if (!monitored.process.killed) {
-					monitored.process.kill("SIGKILL");
-				}
+				this.killTree(monitored);
 			}
 		}, PARENT_SHUTDOWN_GRACE_MS).unref();
 	}

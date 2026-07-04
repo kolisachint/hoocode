@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { getDispatchTaskDir } from "../config.js";
 import { attachJsonlLineReader } from "../modes/rpc/jsonl.js";
+import { writeFileAtomicSync } from "../utils/atomic-file.js";
 import { waitForChildProcess } from "../utils/child-process.js";
+import { killProcessTree } from "../utils/shell.js";
 import { MODEL_INHERIT } from "./agent-frontmatter.js";
 import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
@@ -145,6 +147,27 @@ export const FORWARDED_SUBAGENT_EVENTS: ReadonlySet<string> = new Set([
 	"tool_execution_start",
 	"tool_execution_end",
 ]);
+
+/**
+ * Cap on the captured stdout/stderr text kept per task (tail-truncated). The
+ * capture exists for diagnostics (failure reasons, output.json), so keeping the
+ * most recent tail is enough; without a cap a chatty child could grow the
+ * parent's memory without bound across a long swarm.
+ */
+export const MAX_CAPTURED_STREAM_CHARS = 256 * 1024;
+
+/**
+ * Cap on a single un-terminated JSONL line buffered from a child's stdout. The
+ * forwarded events are small; anything approaching this is a runaway writer,
+ * and the reader drops the line rather than buffering toward OOM.
+ */
+export const MAX_SUBAGENT_EVENT_LINE_CHARS = 8 * 1024 * 1024;
+
+/** Append a chunk to a capped capture buffer, keeping the most recent tail. */
+function appendTail(current: string, chunk: string, cap: number = MAX_CAPTURED_STREAM_CHARS): string {
+	const next = current + chunk;
+	return next.length > cap ? next.slice(next.length - cap) : next;
+}
 
 /** The action the pool should take for one JSONL line from a subagent's stdout. */
 export type SubagentStdoutLine =
@@ -515,8 +538,9 @@ export class SubagentPool extends EventEmitter {
 		};
 		const path = join(getDispatchTaskDir(this.cwd, task_id), "output.json");
 		try {
-			mkdirSync(dirname(path), { recursive: true });
-			writeFileSync(path, JSON.stringify(output, null, 2));
+			// Atomic like result.json: background pollers may read output.json while
+			// it is being (re)written.
+			writeFileAtomicSync(path, JSON.stringify(output, null, 2));
 		} catch {
 			// Best-effort persistence
 		}
@@ -540,7 +564,12 @@ export class SubagentPool extends EventEmitter {
 		this.disposed = true;
 
 		for (const slot of this.slots.values()) {
-			if (!slot.process.killed) {
+			// Kill the whole process group/tree, not just the direct child: a
+			// subagent's own children (bash commands, nested subagents) must not
+			// outlive the pool.
+			if (slot.pid > 0) {
+				killProcessTree(slot.pid);
+			} else if (!slot.process.killed) {
 				slot.process.kill("SIGTERM");
 			}
 		}
@@ -723,6 +752,11 @@ export class SubagentPool extends EventEmitter {
 				env: this.childSpawnEnv(task),
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
+				// POSIX: the child leads its own process group so a kill can reach its
+				// whole tree (see lifeguard/dispose). A single-PID SIGKILL orphans any
+				// grandchildren the subagent spawned (its own bash commands, nested
+				// subagents), which kept burning CPU after their parent was reaped.
+				detached: process.platform !== "win32",
 			});
 		} catch {
 			if (!isRetry) {
@@ -763,46 +797,55 @@ export class SubagentPool extends EventEmitter {
 		let detachStdoutReader: (() => void) | undefined;
 
 		proc.stdout?.on("data", (data: Buffer) => {
-			const chunk = data.toString();
-			stdout += chunk;
-			budget.processStdout(chunk);
-
-			// Any output proves the child is alive and working, so treat it as a
-			// heartbeat. The dedicated {"ping":true} line (parsed below via the JSONL
-			// reader) still matters for quiet phases (e.g. a long single model turn
-			// that emits nothing), but relying on it alone falsely reaps subagents
-			// that are busily streaming events while the parent's event loop is
-			// starved by concurrent load.
+			// Capture (tail-capped) for diagnostics, and treat any output as a
+			// heartbeat: a child busily streaming events is alive even when the
+			// parent's starved event loop hasn't parsed its {"ping":true} line yet.
+			// All *parsing* happens in the single JSONL reader below.
+			stdout = appendTail(stdout, data.toString());
 			this.lifeguard.recordHeartbeat(task.task_id);
 		});
 
-		// Parse the child's newline-delimited JSON event stream with UTF-8-safe,
-		// LF-only framing — multi-byte characters and large events split across pipe
-		// chunks are reassembled before parsing, which the raw handler above cannot do.
-		// Pings refresh the heartbeat; coarse lifecycle events are forwarded for live
-		// UI. Detached when the child exits (see cleanup below).
+		// The one parser on the child's stdout: UTF-8-safe, LF-only framing —
+		// multi-byte characters and large events split across pipe chunks are
+		// reassembled before parsing. Each complete line feeds the token budget
+		// (usage telemetry) and the ping/forward/drop classifier; previously the
+		// budget ran its own naive chunk-splitting parser on the same stream, which
+		// corrupted lines split mid-character. The line buffer is capped so a
+		// runaway writer cannot OOM the parent. Detached when the child exits (see
+		// cleanup below); the reader also self-detaches on stream error/close.
 		if (proc.stdout) {
-			detachStdoutReader = attachJsonlLineReader(proc.stdout, (line) => {
-				const action = classifySubagentLine(line);
-				if (action.kind === "heartbeat") {
-					this.lifeguard.recordHeartbeat(task.task_id);
-				} else if (action.kind === "progress") {
-					this.emit("task_progress", {
-						task_id: task.task_id,
-						agent_type: task.agent_type,
-						event: action.event,
-					});
-				}
-			});
+			detachStdoutReader = attachJsonlLineReader(
+				proc.stdout,
+				(line) => {
+					budget.processLine(line);
+					const action = classifySubagentLine(line);
+					if (action.kind === "heartbeat") {
+						this.lifeguard.recordHeartbeat(task.task_id);
+					} else if (action.kind === "progress") {
+						this.emit("task_progress", {
+							task_id: task.task_id,
+							agent_type: task.agent_type,
+							event: action.event,
+						});
+					}
+				},
+				{ maxBuffer: MAX_SUBAGENT_EVENT_LINE_CHARS },
+			);
 		}
 		proc.stderr?.on("data", (data: Buffer) => {
-			stderr += data.toString();
+			stderr = appendTail(stderr, data.toString());
 		});
+
+		// True when this attempt scheduled another run of the same task id (spawn
+		// retry or inherited-model fallback). The retry reuses the task's TokenBudget
+		// so usage accumulates across attempts; the .finally below must then leave
+		// the budget (and its listeners) alone instead of tearing it down under the
+		// retry's feet.
+		let retryScheduled = false;
 
 		waitForChildProcess(proc)
 			.then((code) => {
 				this.slots.delete(task.task_id);
-				detachStdoutReader?.();
 				budget.flush();
 
 				const killReason = this.killReasons.get(task.task_id);
@@ -914,6 +957,7 @@ export class SubagentPool extends EventEmitter {
 						`[DISPATCH] agent=${task.agent_type} task_id=${task.task_id} preferred model failed; retrying with inherited model`,
 					);
 					this.cleanupRetryArtifacts(task);
+					retryScheduled = true;
 					this.queue.unshift({ ...task, useInheritedModelFallback: true });
 					return;
 				}
@@ -933,6 +977,10 @@ export class SubagentPool extends EventEmitter {
 				const duration = Date.now() - slot.spawned_at;
 				const tokens_used = budget.getUsed();
 				if (!isRetry) {
+					// The retry (started synchronously here) looks the budget up from
+					// this.budgets and reuses it; flag it so the .finally below doesn't
+					// strip the budget's listeners or delete the entry the retry now owns.
+					retryScheduled = true;
 					this.startTask(task, true);
 					return;
 				}
@@ -958,8 +1006,18 @@ export class SubagentPool extends EventEmitter {
 				this.resolveWaiter(task.task_id, result);
 			})
 			.finally(() => {
-				budget.removeAllListeners();
-				this.budgets.delete(task.task_id);
+				// Runs on success AND failure: the stdout reader used to be detached only
+				// on the success path, leaking listeners (and their buffers) whenever a
+				// child failed or the wait rejected.
+				detachStdoutReader?.();
+				proc.stdout?.removeAllListeners("data");
+				proc.stderr?.removeAllListeners("data");
+				proc.stdout?.destroy();
+				proc.stderr?.destroy();
+				if (!retryScheduled) {
+					budget.removeAllListeners();
+					this.budgets.delete(task.task_id);
+				}
 				this.pull();
 			});
 	}
