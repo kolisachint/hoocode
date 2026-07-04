@@ -238,6 +238,10 @@ describe("parseArgs", () => {
 			const result = parseArgs([]);
 			expect(result.subagent).toBeUndefined();
 		});
+		test("parses --no-subagents flag as false", () => {
+			expect(parseArgs(["--no-subagents"]).subagent).toBe(false);
+			expect(parseArgs(["--disable-subagents"]).subagent).toBe(false);
+		});
 	});
 
 	describe("--disallowed-tools flag", () => {

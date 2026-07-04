@@ -118,7 +118,7 @@ export interface Settings {
 	slashCommands?: string[]; // Array of local slash-command paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
-	enableSubagent?: boolean; // default: false - enable the subagent tool (delegate tasks to isolated agent loops)
+	enableSubagent?: boolean; // default: true - enable the subagent tool (delegate tasks to isolated agent loops); set false to disable
 	warmSubagents?: boolean; // default: false - dispatch eligible subagents on reused warm RPC workers (experimental)
 	maxSubagentDepth?: number; // default: 1 - tree-wide subagent nesting cap (1 = subagents cannot spawn subagents)
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1

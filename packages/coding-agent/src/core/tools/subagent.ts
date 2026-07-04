@@ -7,8 +7,11 @@
  * fresh, isolated child process (SubagentPool) and only its final answer is
  * returned to the parent.
  *
- * It is an optional, opt-in tool (enabled via --enable-subagents or the
- * `enableSubagent` setting); see buildSessionOptions in main.ts.
+ * Enabled by default (the `enableSubagent` setting defaults to true); disable
+ * with `enableSubagent: false`. The `--enable-subagents` flag still force-enables
+ * it. Only the root process gets the Task tool — nested subagents are bounded by
+ * the tree-wide depth cap (maxSubagentDepth, default 1). See buildSessionOptions
+ * in main.ts.
  */
 
 import { Text } from "@kolisachint/hoocode-tui";

@@ -4,6 +4,12 @@
 
 ### Changed
 
+- The subagent tool is now **enabled by default** (`enableSubagent` defaults to
+  `true`), so the root session gets the `Task` and `TaskOutput` tools without
+  `--enable-subagents`. Nesting is still bounded by `maxSubagentDepth` (default 1),
+  so spawned subagents cannot themselves spawn. Disable per session with the new
+  `--no-subagents` flag or set `enableSubagent: false`.
+
 - Plugin loading now prefers the cross-vendor `.agents/` surface first: plugins
   are discovered from `.agents/plugins/` ahead of `.hoocode/plugins/` (project
   before global, first-wins by id), `/plugin install` writes to

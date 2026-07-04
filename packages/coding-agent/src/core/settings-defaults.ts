@@ -26,7 +26,7 @@ export const DEFAULT_SETTINGS = {
 	collapseChangelog: false,
 	enableInstallTelemetry: true,
 	enableSkillCommands: true,
-	enableSubagent: false,
+	enableSubagent: true,
 	warmSubagents: false,
 	maxSubagentDepth: 1,
 	nestedSubagentConcurrency: 2,
