@@ -1,10 +1,11 @@
 import type { Component, Focusable, TUI } from "@kolisachint/hoocode-tui";
 import { getKeybindings, matchesKey, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import { formatDurationSecs } from "../../../core/format-duration.js";
 import { KEYBINDINGS } from "../../../core/keybindings.js";
 import type { Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskStatus } from "../../../core/task-store.js";
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
-import { theme } from "../theme/theme.js";
+import { agentColorFor, theme } from "../theme/theme.js";
 
 const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	pending: "●",
@@ -131,16 +132,6 @@ function taskStatusColor(status: TaskStatus): "dim" | "warning" | "success" | "e
 	}
 }
 
-/** Format a duration in seconds into a compact, terminal-friendly string. */
-function formatDuration(secs: number): string {
-	const s = Math.max(0, secs);
-	if (s < 10) return `${s.toFixed(1)}s`;
-	if (s < 60) return `${Math.round(s)}s`;
-	const mins = Math.floor(s / 60);
-	const rem = Math.round(s % 60);
-	return `${mins}m${rem.toString().padStart(2, "0")}s`;
-}
-
 /**
  * Wall-clock time a task occupied. A settled task reads its create→final-update
  * span; a task still in progress is measured against the clock so its elapsed
@@ -150,6 +141,33 @@ function formatDuration(secs: number): string {
 function taskElapsedSecs(task: Task, now: number = Date.now()): number {
 	const end = task.status === "in_progress" ? now : task.updatedAt;
 	return Math.max(0, (end - task.createdAt) / 1000);
+}
+
+/**
+ * Wall-clock span of the whole visible batch: earliest creation → now (while
+ * anything is still running) or the latest settle time. NOT the sum of
+ * per-task spans — summing made the header clock tick at 2× with two
+ * concurrent subagents and 3× with three, a nonsense "double time" display.
+ * Per-run timers live on the individual rows.
+ */
+function turnElapsedSecs(tasks: readonly Task[], now: number = Date.now()): number {
+	if (tasks.length === 0) return 0;
+	let earliest = Number.POSITIVE_INFINITY;
+	let latestEnd = 0;
+	let anyRunning = false;
+	for (const task of tasks) {
+		earliest = Math.min(earliest, task.createdAt);
+		if (task.status === "in_progress") anyRunning = true;
+		else latestEnd = Math.max(latestEnd, task.updatedAt);
+	}
+	const end = anyRunning ? now : latestEnd;
+	return Math.max(0, (end - earliest) / 1000);
+}
+
+/** The agent-type key a roster entry colors by: "explore#2" → "explore". */
+function agentTypeOfName(name: string): string {
+	const idx = name.indexOf("#");
+	return idx > 0 ? name.slice(0, idx) : name;
 }
 
 /** Sum the token + cost usage reported by the tasks shown this turn. */
@@ -240,7 +258,7 @@ function formatHeader(
 	if (turn) {
 		const inTok = formatTokens(turn.input);
 		const outTok = formatTokens(turn.output);
-		const elapsed = formatDuration(totalSecs);
+		const elapsed = formatDurationSecs(totalSecs);
 		const showCost = turn.cost > 0;
 		const costStr = showCost ? `$${turn.cost.toFixed(3)}` : "";
 		turnPlain = `turn ↑${inTok} ↓${outTok} · ${elapsed}${showCost ? ` · ${costStr}` : ""}`;
@@ -318,7 +336,15 @@ function formatTaskLine(
 	const isMcp = task.source === "mcp";
 	const ownerKind = options.owner?.kind ?? (task.source === "subagent" ? "subagent" : "main");
 	const sourceGlyph = isMcp ? MCP_SOURCE_GLYPH : AGENT_GLYPH[ownerKind];
-	const styledSource = grouped ? "" : theme.fg("dim", sourceGlyph);
+	// Subagent rows carry their agent's identity color on the glyph (and tag
+	// below) — the same hue as the chat's `Agent [type]` line and TaskOutput —
+	// so a user can trace one agent across the whole TUI at a glance.
+	const agentTypeName = !isMcp && ownerKind === "subagent" ? (task.subagentMode ?? task.agent) : undefined;
+	const styledSource = grouped
+		? ""
+		: agentTypeName
+			? theme.fg(agentColorFor(agentTypeName), sourceGlyph)
+			: theme.fg("dim", sourceGlyph);
 
 	// Origin tag prefixed to the title, naming who runs the row: the subagent
 	// type ("[explore]"), the team role's name ("[planner]"), or the MCP server
@@ -327,12 +353,18 @@ function formatTaskLine(
 	// rows drop it — the group header carries the origin — except MCP rows,
 	// which group under main without being main's own work.
 	let tag = "";
+	let tagColor: ThemeColor = "accent";
 	if (isMcp) tag = `[${task.subagentMode ?? "MCP"}]`;
 	else if (!grouped) {
-		if (task.subagentMode) tag = `[${task.subagentMode}]`;
-		else if (ownerKind === "role" && options.owner) tag = `[${options.owner.name}]`;
+		if (task.subagentMode) {
+			tag = `[${task.subagentMode}]`;
+			tagColor = agentColorFor(task.subagentMode);
+		} else if (ownerKind === "role" && options.owner) {
+			tag = `[${options.owner.name}]`;
+			tagColor = agentColorFor(options.owner.name);
+		}
 	}
-	const styledTag = tag ? `${theme.fg("accent", tag)} ` : "";
+	const styledTag = tag ? `${theme.fg(tagColor, tag)} ` : "";
 	const title = task.title;
 	// The title carries the line. Done titles fade to muted
 	// (settled work), pending dim (not started), active goes bold, failed turns red.
@@ -373,10 +405,15 @@ function formatTaskLine(
 		// fed by the pool's task_progress events) so a delegated row reads "⋯ grep"
 		// rather than a static "running…" — the difference between looking busy and
 		// looking stuck. Falls back to "running…" between tools (activity cleared) or
-		// when no owner is resolved.
+		// when no owner is resolved. Each running row carries its own live timer —
+		// the per-run clock the header (a single wall-clock span) deliberately
+		// doesn't show. Ticks smoothly because active rows re-render per spinner
+		// frame anyway.
 		const liveActivity = options.owner?.activity;
-		rightPlain = liveActivity ? `⋯ ${liveActivity}` : "running…";
-		rightStyled = theme.fg("warning", rightPlain);
+		const runFor = formatDurationSecs(taskElapsedSecs(task));
+		rightPlain = `${liveActivity ? `⋯ ${liveActivity}` : "running…"} · ${runFor}`;
+		rightStyled =
+			theme.fg("warning", liveActivity ? `⋯ ${liveActivity}` : "running…") + theme.fg("dim", ` · ${runFor}`);
 	} else if (task.status === "pending") {
 		rightPlain = "queued";
 		rightStyled = theme.fg("dim", rightPlain);
@@ -479,6 +516,36 @@ function subagentLensRows(tasks: readonly Task[]): SubagentTreeRow[] {
 }
 
 /**
+ * The flat ("tasks") lens's rows in render order: the main agent's TodoWrite
+ * plan, with each subagent run nested (└─/├─) under the plan item it was
+ * dispatched for (`linkedTaskId`, recorded when exactly one item was
+ * in_progress). This is the visual tie between the plan and the agents
+ * executing it — previously a spawn was linked in spirit but invisible here,
+ * living only in the subagents lens. Runs with no link (or a dangling one —
+ * their todo was replaced) stay out of this lens; they remain visible in the
+ * subagents tree.
+ */
+function flatLensRows(tasks: readonly Task[]): SubagentTreeRow[] {
+	const linkedByTodo = new Map<number, Task[]>();
+	for (const task of tasks) {
+		if (task.linkedTaskId === undefined || task.source !== "subagent") continue;
+		const siblings = linkedByTodo.get(task.linkedTaskId);
+		if (siblings) siblings.push(task);
+		else linkedByTodo.set(task.linkedTaskId, [task]);
+	}
+	const rows: SubagentTreeRow[] = [];
+	for (const task of tasks) {
+		if (!isMainTask(task)) continue;
+		rows.push({ task, treePrefix: "" });
+		const linked = linkedByTodo.get(task.id) ?? [];
+		for (let i = 0; i < linked.length; i++) {
+			rows.push({ task: linked[i] as Task, treePrefix: i === linked.length - 1 ? "└─ " : "├─ " });
+		}
+	}
+	return rows;
+}
+
+/**
  * Scope the full task list to the tasks visible in the given lens. The header,
  * state stamp, and done/total count are derived from this subset so they match
  * exactly what the user sees in the current view.
@@ -490,7 +557,9 @@ function filterTasksForLens(
 ): readonly Task[] {
 	switch (view) {
 		case "flat":
-			return tasks.filter(isMainTask);
+			// Same walk the renderer uses (plan items + their linked runs), so the
+			// header's done/total always matches the visible rows.
+			return flatLensRows(tasks).map((row) => row.task);
 		case "subagents":
 			// Exactly the rows the tree renders (same walk), so the header's
 			// done/total always matches the visible rows.
@@ -559,10 +628,19 @@ function groupTasks(
 function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: number, selected = false): string {
 	// A focused role row swaps its ▸ for a filled ▶ in accent — the team-focus
 	// selection cursor (the owner-kind glyph mapping itself is unchanged).
+	// Spawned/team agents carry their identity color on the glyph and name
+	// (hashed from the agent type, "explore#2" → "explore"), matching the same
+	// agent's color in the chat and TaskOutput; main keeps the accent.
+	const identityColor: ThemeColor =
+		meta.kind === "main" ? AGENT_GLYPH_COLOR[meta.kind] : agentColorFor(agentTypeOfName(meta.name));
 	const glyph = selected
 		? theme.fg("accent", "▶")
-		: theme.fg(AGENT_GLYPH_COLOR[meta.kind], AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
-	const name = selected ? theme.bold(theme.fg("accent", meta.name)) : theme.bold(meta.name);
+		: theme.fg(identityColor, AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
+	const name = selected
+		? theme.bold(theme.fg("accent", meta.name))
+		: meta.kind === "main"
+			? theme.bold(meta.name)
+			: theme.bold(theme.fg(identityColor, meta.name));
 	// Roles read as a dim "· role" suffix for spawned/team agents; the main
 	// orchestrator's role sits brighter (muted), matching the design's .grp-role.
 	const role = meta.role
@@ -636,7 +714,10 @@ function teamFocusKeyLabel(id: TeamFocusKeybinding): string {
  *   ("[planner]", fed by `--team <url>`), or the MCP server ("[github]").
  * - Three views split by ownership (cycled via app.tasks.cycleView, shown as a
  *   `tasks · subagents · teams` switcher in the header):
- *     - flat ("tasks") — only the main agent's own TodoWrite plan;
+ *     - flat ("tasks") — the main agent's own TodoWrite plan, with each
+ *       dispatched subagent run nested under the plan item it was dispatched
+ *       for (linkedTaskId), so the plan and the agents executing it read as
+ *       one picture;
  *     - subagents — a recursive task tree over delegated work, where a subagent
  *       that spawned a subagent shows its nested tasks (roots are the dispatched
  *       subagents and direct MCP calls; children link via parentTaskId, merged
@@ -673,6 +754,7 @@ export class TaskPanelComponent implements Component, Focusable {
 	private lineMemo = new Map<string, string>();
 	private agentByIdMemo: Map<string, TaskAgent> | null = null;
 	private subagentRowsMemo: SubagentTreeRow[] | null = null;
+	private flatRowsMemo: SubagentTreeRow[] | null = null;
 
 	/** Drop all memoized render state when the store or width changed. */
 	private syncMemo(width: number): void {
@@ -683,6 +765,7 @@ export class TaskPanelComponent implements Component, Focusable {
 		this.lineMemo.clear();
 		this.agentByIdMemo = null;
 		this.subagentRowsMemo = null;
+		this.flatRowsMemo = null;
 	}
 
 	private agentById(agents: readonly TaskAgent[]): Map<string, TaskAgent> {
@@ -697,6 +780,13 @@ export class TaskPanelComponent implements Component, Focusable {
 			this.subagentRowsMemo = subagentLensRows(tasks);
 		}
 		return this.subagentRowsMemo;
+	}
+
+	private flatRows(tasks: readonly Task[]): SubagentTreeRow[] {
+		if (!this.flatRowsMemo) {
+			this.flatRowsMemo = flatLensRows(tasks);
+		}
+		return this.flatRowsMemo;
 	}
 
 	/**
@@ -867,17 +957,19 @@ export class TaskPanelComponent implements Component, Focusable {
 
 		// Scope all visual state to the tasks visible in the current lens so the
 		// animation, rail color, and header count match exactly what the user sees.
-		// The subagents lens derives from the memoized tree walk so filter and
-		// render share one computation (and one source of truth for the counts).
+		// The flat and subagents lenses derive from their memoized row walks so
+		// filter and render share one computation (one source of truth for counts).
 		const lensTasks =
 			view === "subagents"
 				? this.subagentRows(tasks).map((row) => row.task)
-				: filterTasksForLens(tasks, allAgents, view);
+				: view === "flat"
+					? this.flatRows(tasks).map((row) => row.task)
+					: filterTasksForLens(tasks, allAgents, view);
 		const hasActive = lensTasks.some((t) => t.status === "in_progress");
 		this.ensureAnimation(hasActive);
 
 		const state = panelState(lensTasks);
-		const totalSecs = lensTasks.reduce((sum, t) => sum + taskElapsedSecs(t), 0);
+		const totalSecs = turnElapsedSecs(lensTasks);
 		const railColor = STATE_PRESENTATION[state].color;
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
@@ -885,13 +977,13 @@ export class TaskPanelComponent implements Component, Focusable {
 		const lines: string[] = [gutter + formatHeader(lensTasks, inner, state, totalSecs, view, available)];
 
 		if (view === "flat") {
-			// Only the main agent's own TodoWrite plan — delegated (subagent/MCP) work
-			// belongs to the subagents lens. Resolve each row's owner from the roster
-			// so the glyph/tag reflect the owning agent's kind, not just the source.
+			// The main agent's TodoWrite plan, with each dispatched run nested under
+			// the plan item it executes (see flatLensRows). Resolve each row's owner
+			// from the roster so the glyph/tag reflect the owning agent's kind and a
+			// nested run shows its live activity + timer.
 			const agentById = this.agentById(allAgents);
-			for (const task of tasks) {
-				if (!isMainTask(task)) continue;
-				lines.push(gutter + this.taskLine(task, inner, { owner: agentById.get(taskOwnerId(task)) }));
+			for (const { task, treePrefix } of this.flatRows(tasks)) {
+				lines.push(gutter + this.taskLine(task, inner, { treePrefix, owner: agentById.get(taskOwnerId(task)) }));
 			}
 			return lines;
 		}

@@ -75,6 +75,17 @@ export interface Task {
 	 */
 	parentTaskId?: number;
 	/**
+	 * Id of the main-agent (TodoWrite) task this run is working on, set at
+	 * dispatch time when exactly one plan item is in_progress. Purely a display
+	 * link: the flat ("tasks") lens nests the run under its plan item so the
+	 * plan and the agents executing it read as one picture. Deliberately NOT
+	 * `parentTaskId` — that field drives the subagents tree and the
+	 * cross-process subtree merge, and overloading it would move runs between
+	 * lenses. A dangling link (the todo was removed/replaced) is simply not
+	 * rendered.
+	 */
+	linkedTaskId?: number;
+	/**
 	 * Short warning note surfaced as a ⚠ cue in the task pane (e.g. the subagent
 	 * fell back to the inherited model, or was skipped because the provider was
 	 * exhausted). Kept terse so it fits the row's right column.
@@ -97,10 +108,14 @@ export interface CreateTaskOptions {
 	subagentMode?: string;
 	agent?: string;
 	parentTaskId?: number;
+	linkedTaskId?: number;
 }
 
 export type TaskPatch = Partial<
-	Pick<Task, "title" | "status" | "source" | "subagentMode" | "agent" | "usage" | "note" | "parentTaskId">
+	Pick<
+		Task,
+		"title" | "status" | "source" | "subagentMode" | "agent" | "usage" | "note" | "parentTaskId" | "linkedTaskId"
+	>
 >;
 
 export type TaskAgentPatch = Partial<Omit<TaskAgent, "id">>;
@@ -160,6 +175,7 @@ class TaskStore {
 			subagentMode: options.subagentMode,
 			agent: options.agent,
 			parentTaskId: options.parentTaskId,
+			linkedTaskId: options.linkedTaskId,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -180,6 +196,7 @@ class TaskStore {
 		if (patch.subagentMode !== undefined) task.subagentMode = patch.subagentMode;
 		if (patch.agent !== undefined) task.agent = patch.agent;
 		if (patch.parentTaskId !== undefined) task.parentTaskId = patch.parentTaskId;
+		if (patch.linkedTaskId !== undefined) task.linkedTaskId = patch.linkedTaskId;
 		if (patch.usage !== undefined) task.usage = patch.usage;
 		// `note` is clearable: passing `note: undefined` explicitly removes a stale
 		// ⚠ cue (e.g. a warning from a previous run of the same task row). Callers

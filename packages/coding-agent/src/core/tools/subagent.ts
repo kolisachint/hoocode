@@ -13,10 +13,12 @@
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
+import { agentColorFor } from "../../modes/interactive/theme/theme.js";
 import { type AgentDefinition, TASK_TOOL_NAME } from "../agent-frontmatter.js";
 import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
+import { formatDurationSecs } from "../format-duration.js";
 import { getProviderExhaustion } from "../provider-health.js";
 import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
@@ -172,6 +174,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 					source: "subagent",
 					subagentMode: params.subagent_type,
 					agent: skippedRunId,
+					linkedTaskId: linkedTodoId(),
 				});
 				registerSubagentDispatch(skippedRunId, subagentInbox.nextLabel(params.subagent_type));
 				taskStore.update(skipped.id, { status: "failed", note: `${provider} exhausted` });
@@ -211,6 +214,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 					source: "subagent",
 					subagentMode: params.subagent_type,
 					agent: runId,
+					linkedTaskId: linkedTodoId(),
 				});
 				registerSubagentDispatch(runId, label);
 				taskStore.update(task.id, { status: "in_progress" });
@@ -256,6 +260,9 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				source: "subagent",
 				subagentMode: params.subagent_type,
 				agent: poolTaskId,
+				// Tie this run to the plan item it executes (the single in_progress
+				// TodoWrite task, when unambiguous) so the panel can nest it there.
+				linkedTaskId: linkedTodoId(),
 			});
 			registerSubagentDispatch(poolTaskId, label);
 			taskStore.update(task.id, { status: "in_progress" });
@@ -417,7 +424,10 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 
 		renderCall(args, theme) {
 			const type = args.subagent_type ?? "agent";
-			const text = theme.fg("toolTitle", theme.bold("Agent ")) + theme.fg("accent", `[${type}]`);
+			// The [type] tag carries the agent's identity color — the same hue this
+			// agent has in the task panel and TaskOutput — so a transcript full of
+			// concurrent dispatches is scannable by color.
+			const text = theme.fg("toolTitle", theme.bold("Agent ")) + theme.fg(agentColorFor(type), `[${type}]`);
 			return new Text(text, 0, 0);
 		},
 	});
@@ -446,6 +456,26 @@ export function resolveForkSessionFile(
 /** Pre-allocated pool task id for a dispatch (matches the pool's own format). */
 function newDispatchTaskId(): string {
 	return `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * The TodoWrite plan item this dispatch is (most plausibly) working on: the
+ * single in_progress main-agent task. TodoWrite discipline keeps exactly one
+ * item in_progress, so when that holds the link is unambiguous; with zero or
+ * several in_progress items no link is recorded rather than guessing. Used to
+ * nest the run under its plan item in the task panel's flat lens.
+ */
+function linkedTodoId(): number | undefined {
+	const inProgress = taskStore
+		.list()
+		.filter(
+			(t) =>
+				t.source === undefined &&
+				t.agent === undefined &&
+				t.parentTaskId === undefined &&
+				t.status === "in_progress",
+		);
+	return inProgress.length === 1 ? inProgress[0]?.id : undefined;
 }
 
 /**
@@ -639,10 +669,13 @@ type TaskOutputParams = Static<typeof taskOutputParams>;
 
 const TASK_OUTPUT_DEFAULT_TIMEOUT_MS = 120_000;
 
-/** Whole seconds a record has run (so far, or until it settled). */
+/**
+ * Elapsed time a record has run (so far, or until it settled), in the same
+ * format the task panel uses so the two surfaces always agree.
+ */
 function recordElapsed(rec: InboxRecord): string {
 	const end = rec.endedAt ?? Date.now();
-	return `${Math.max(0, Math.round((end - rec.startedAt) / 1000))}s`;
+	return formatDurationSecs((end - rec.startedAt) / 1000);
 }
 
 /** A compact roster of every known background subagent — status + activity, no bodies. */
@@ -775,9 +808,49 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 
 		renderCall(args, theme) {
 			const target = args.list ? "list" : String(args.task_id ?? "");
+			// A friendly label ("explore#1") gets its agent's identity color so the
+			// pull visually pairs with the dispatch that produced it; raw ids and
+			// "list" stay dim.
+			const hashIdx = target.indexOf("#");
+			const styledTarget =
+				hashIdx > 0 ? theme.fg(agentColorFor(target.slice(0, hashIdx)), target) : theme.fg("dim", target);
 			const text =
-				theme.fg("toolTitle", theme.bold("TaskOutput ")) + theme.fg("dim", args.wait ? `${target} (wait)` : target);
+				theme.fg("toolTitle", theme.bold("TaskOutput ")) +
+				styledTarget +
+				(args.wait ? theme.fg("dim", " (wait)") : "");
 			return new Text(text, 0, 0);
+		},
+
+		renderResult(result, _options, theme) {
+			// Display-only colorization of the roster/status lines (the text sent to
+			// the model stays plain). Lines that aren't roster rows — collected
+			// bodies, status sentences — render exactly like the default fallback.
+			const text = result.content
+				.map((c) => (c.type === "text" ? c.text : ""))
+				.filter(Boolean)
+				.join("\n");
+			if (!text) return new Text("", 0, 0);
+			const rosterLine = /^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout)(.*)$/;
+			const styled = text
+				.split("\n")
+				.map((line) => {
+					const match = rosterLine.exec(line);
+					if (!match) return theme.fg("toolOutput", line);
+					const [, label, status, rest] = match as unknown as [string, string, string, string];
+					const hashIdx = label.indexOf("#");
+					const labelColor = hashIdx > 0 ? agentColorFor(label.slice(0, hashIdx)) : "accent";
+					const statusColor =
+						status === "running"
+							? "warning"
+							: status.startsWith("done")
+								? "success"
+								: status === "collected"
+									? "muted"
+									: "error";
+					return `- ${theme.fg(labelColor, label)}  ${theme.fg(statusColor, status)}${theme.fg("dim", rest)}`;
+				})
+				.join("\n");
+			return new Text(styled, 0, 0);
 		},
 	});
 }

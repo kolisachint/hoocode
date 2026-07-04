@@ -74,7 +74,14 @@
 		"thinkingHigh": "#875f87",
 		"thinkingXhigh": "#8b008b",
 
-		"bashMode": "green"
+		"bashMode": "green",
+
+		"agent1": "#0b7285",
+		"agent2": "#9c36b5",
+		"agent3": "#d9480f",
+		"agent4": "#c2255c",
+		"agent5": "#087f5b",
+		"agent6": "#3b5bdb"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

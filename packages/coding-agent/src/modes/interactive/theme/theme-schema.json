@@ -3,7 +3,10 @@
 	"title": "Pi Coding Agent Theme",
 	"description": "Theme schema for Pi coding agent",
 	"type": "object",
-	"required": ["name", "colors"],
+	"required": [
+		"name",
+		"colors"
+	],
 	"properties": {
 		"$schema": {
 			"type": "string",
@@ -291,6 +294,30 @@
 				"bashMode": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Editor border color in bash mode"
+				},
+				"agent1": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Agent identity palette slot 1 (optional; subagent types hash into agent1-agent6, falls back to accent)"
+				},
+				"agent2": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Agent identity palette slot 2 (optional; subagent types hash into agent1-agent6, falls back to accent)"
+				},
+				"agent3": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Agent identity palette slot 3 (optional; subagent types hash into agent1-agent6, falls back to accent)"
+				},
+				"agent4": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Agent identity palette slot 4 (optional; subagent types hash into agent1-agent6, falls back to accent)"
+				},
+				"agent5": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Agent identity palette slot 5 (optional; subagent types hash into agent1-agent6, falls back to accent)"
+				},
+				"agent6": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Agent identity palette slot 6 (optional; subagent types hash into agent1-agent6, falls back to accent)"
 				}
 			},
 			"additionalProperties": false
