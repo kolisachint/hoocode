@@ -174,12 +174,15 @@ describe("buildTaskMainPrompt", () => {
 		expect(prompt).toContain("mark the plan item in_progress BEFORE dispatching");
 	});
 
-	test("emits the full background/barrier guidance when background agents exist (built-in explore/plan)", () => {
+	test("emits the (tightened) background/barrier guidance when background agents exist (built-in explore/plan)", () => {
 		// The built-in explore/plan agents are background:true, so a default cwd
-		// resolves hasBackgroundAgents=true and the detailed block is included.
+		// resolves hasBackgroundAgents=true and the background block is included —
+		// now compressed to two bullets that still carry the key API + barrier rule.
 		const prompt = buildTaskMainPrompt();
-		expect(prompt).toContain("DO NOT stop and wait");
+		expect(prompt).toContain("don't idle");
 		expect(prompt).toContain("TaskOutput(wait: true)");
+		// The old verbose phrasing is gone (tokens trimmed even in the default case).
+		expect(prompt).not.toContain("DO NOT stop and wait");
 	});
 
 	test("no longer duplicates the tool description's WHEN TO USE block", () => {

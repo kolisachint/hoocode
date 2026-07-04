@@ -12,11 +12,13 @@
   spawned subagent may itself delegate one more level (depth-2 grandchildren
   still cannot). Was 1 (no nesting). Override with `--max-subagent-depth` or the
   setting.
-- Trimmed always-on subagent prompt tokens: the `Task` tool description is cut to
-  mechanics (the when-to-use / when-not guidance lived there **and** in the
-  system-prompt block — now only the system-prompt block carries it), and the
-  heavy background/barrier guidance in that block is emitted only when the project
-  has background-capable agents (a concise one-liner otherwise).
+- Trimmed always-on subagent prompt tokens (~370–420 fewer per turn in a default
+  setup): the `Task` tool description is cut to mechanics (the when-to-use /
+  when-not guidance lived there **and** in the system-prompt block — now only the
+  block carries it, ~150–200 tok), and the background/barrier guidance in that
+  block is compressed from three verbose bullets to two tight ones (~220 tok),
+  collapsing to a single concise line when the project has no background-capable
+  agents.
 
 - Plugin loading now prefers the cross-vendor `.agents/` surface first: plugins
   are discovered from `.agents/plugins/` ahead of `.hoocode/plugins/` (project
