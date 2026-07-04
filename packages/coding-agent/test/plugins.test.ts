@@ -4,7 +4,12 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createEventBus } from "../src/core/event-bus.js";
 import { clearExtensionMcpServers, getExtensionMcpServers } from "../src/core/extension-mcp-servers.js";
-import { createExtensionRuntime, discoverAndLoadExtensions, loadPlugins } from "../src/core/extensions/loader.js";
+import {
+	createExtensionRuntime,
+	defaultPluginDirs,
+	discoverAndLoadExtensions,
+	loadPlugins,
+} from "../src/core/extensions/loader.js";
 import { buildPluginFactory, discoverPlugins, parsePluginDir } from "../src/core/extensions/plugins/index.js";
 
 function writeJson(file: string, data: unknown): void {
@@ -83,6 +88,47 @@ describe("plugin manifests", () => {
 		const found = discoverPlugins([path.join(tempDir, "a"), path.join(tempDir, "b")]);
 		expect(found).toHaveLength(1);
 		expect(found[0].id).toBe("shared");
+	});
+});
+
+describe("plugin directory precedence (.agents first)", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-plugin-dirs-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("lists project .agents/plugins ahead of .hoocode/plugins, project before global", () => {
+		const cwd = path.join(tempDir, "proj");
+		const agentDir = path.join(tempDir, "home", ".hoocode");
+		const dirs = defaultPluginDirs(cwd, agentDir);
+		expect(dirs).toEqual([
+			path.join(cwd, ".agents", "plugins"),
+			path.join(cwd, ".hoocode", "plugins"),
+			path.join(tempDir, "home", ".agents", "plugins"),
+			path.join(agentDir, "plugins"),
+		]);
+	});
+
+	it("a plugin under .agents/plugins wins over a same-id one under .hoocode/plugins", () => {
+		const cwd = path.join(tempDir, "proj");
+		const agentDir = path.join(tempDir, "home", ".hoocode");
+		writeJson(path.join(cwd, ".agents", "plugins", "dup", ".agents-plugin", "plugin.json"), {
+			name: "dup",
+			version: "agents",
+		});
+		writeJson(path.join(cwd, ".hoocode", "plugins", "dup", ".claude-plugin", "plugin.json"), {
+			name: "dup",
+			version: "hoocode",
+		});
+		const found = discoverPlugins(defaultPluginDirs(cwd, agentDir));
+		expect(found).toHaveLength(1);
+		expect(found[0].version).toBe("agents");
+		expect(found[0].format).toBe("agents");
 	});
 });
 

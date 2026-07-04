@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The subagent tool is now **enabled by default** (`enableSubagent` defaults to
+  `true`), so the root session gets the `Task` and `TaskOutput` tools without
+  `--enable-subagents`. Disable per session with the new `--no-subagents` flag or
+  set `enableSubagent: false`.
+- Default subagent nesting depth raised to **2** (`maxSubagentDepth`), so a
+  spawned subagent may itself delegate one more level (depth-2 grandchildren
+  still cannot). Was 1 (no nesting). Override with `--max-subagent-depth` or the
+  setting.
+- Trimmed always-on subagent prompt tokens (~370–420 fewer per turn in a default
+  setup): the `Task` tool description is cut to mechanics (the when-to-use /
+  when-not guidance lived there **and** in the system-prompt block — now only the
+  block carries it, ~150–200 tok), and the background/barrier guidance in that
+  block is compressed from three verbose bullets to two tight ones (~220 tok),
+  collapsing to a single concise line when the project has no background-capable
+  agents.
+
+- Plugin loading now prefers the cross-vendor `.agents/` surface first: plugins
+  are discovered from `.agents/plugins/` ahead of `.hoocode/plugins/` (project
+  before global, first-wins by id), `/plugin install` writes to
+  `.agents/plugins/<name>`, the added-marketplace registry lives at
+  `.agents/marketplaces.json` (falling back to the legacy `.hoocode/` path), and
+  `/plugin remove` deletes from both. `.hoocode/plugins/` stays discovered.
+- `/loop` scheduled tasks now persist to `.agents/scheduled_tasks.json`; a legacy
+  `.hoocode/scheduled_tasks.json` is read once and migrates forward on the next
+  persist.
+
+### Added
+
+- Native `.agents-plugin/marketplace.json` marketplace index format (preferred
+  over Claude `.claude-plugin/` and GitHub `.github/marketplace.json`).
+- `docs/plugin-format-mapping.md`: reference mapping of the native, Claude, and
+  GitHub/Copilot plugin & marketplace formats, plus the `.agents/`-first
+  packaging/install/storage/loading rules.
+- Optional `supportPlatform` field on marketplace manifests (top-level and per
+  plugin entry). When a repo carries conflicting index formats (e.g. both
+  `.github/marketplace.json` and `.claude-plugin/marketplace.json`), the parse
+  result now records every platform present in `NormalizedMarketplace.supportPlatform`
+  instead of silently dropping the others; precedence still selects one `format`.
+  The field is optional and informational — omitting it changes nothing. Tokens
+  are `agents` | `claude` | `github` (aliases `copilot`/`gh` → `github`,
+  `native` → `agents`); `/plugin marketplace list` surfaces multi-platform repos.
+
 ## [0.4.111] - 2026-07-04
 
 ### Added

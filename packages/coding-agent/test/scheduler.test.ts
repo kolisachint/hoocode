@@ -78,6 +78,34 @@ describe("TaskScheduler", () => {
 		expect(fired).toHaveLength(1);
 	});
 
+	it("reads the legacy store when the primary one is absent, then migrates forward", () => {
+		const legacyStorePath = path.join(tempDir, "legacy_tasks.json");
+		fs.writeFileSync(
+			legacyStorePath,
+			JSON.stringify({
+				tasks: [{ id: "old", cron: "*/5 * * * *", prompt: "legacy", recurring: true, createdAt: 1 }],
+			}),
+		);
+
+		// Primary absent → falls back to the legacy store.
+		const s = new TaskScheduler({ storePath, legacyStorePath, fire: () => {} });
+		expect(s.list().map((t) => t.prompt)).toEqual(["legacy"]);
+		expect(fs.existsSync(storePath)).toBe(false);
+
+		// First mutation persists to the primary path (migration forward).
+		s.create({ cron: "0 9 * * *", prompt: "new" });
+		expect(fs.existsSync(storePath)).toBe(true);
+
+		// A fresh scheduler now prefers the primary store and ignores the legacy one.
+		const reloaded = new TaskScheduler({ storePath, legacyStorePath, fire: () => {} });
+		expect(
+			reloaded
+				.list()
+				.map((t) => t.prompt)
+				.sort(),
+		).toEqual(["legacy", "new"]);
+	});
+
 	it("deletes one-shot tasks after firing", () => {
 		const fired: string[] = [];
 		const s = new TaskScheduler({ storePath, fire: (p) => fired.push(p) });

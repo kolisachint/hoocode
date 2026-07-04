@@ -33,9 +33,11 @@ the normalized `StopReason` + turn state, never raw provider payloads.
 The loop is backed by a real cron scheduler (`core/scheduler.ts`, `TaskScheduler`),
 modeled on the harness `CronCreate`/`CronList`/`CronDelete` tools: 5-field cron in
 local time, recurring vs one-shot, durable persistence to
-`.hoocode/scheduled_tasks.json`, and **idle-gated** firing (a due task never
-interrupts an in-flight turn; it fires on a later tick within the same minute).
-Set up in `hoo-core.ts` (`setupLoop`).
+`.agents/scheduled_tasks.json` (the primary, cross-vendor home; a legacy
+`.hoocode/scheduled_tasks.json` is read once and migrates forward on the next
+persist), and **idle-gated** firing (a due task never interrupts an in-flight
+turn; it fires on a later tick within the same minute). Set up in `hoo-core.ts`
+(`setupLoop`).
 
 **Agent-callable tools** (the model can schedule its own follow-ups):
 
@@ -77,10 +79,17 @@ without modifying the core turn loop.
 ### 2.1 What a plugin is
 
 A directory that bundles agent capabilities behind a manifest. Discovered under
-`plugins/` folders:
+`plugins/` folders, **highest precedence first** (`discoverPlugins` is first-wins
+by id, so `.agents/` wins over `.hoocode/` and project wins over global):
 
-- project: `<cwd>/.hoocode/plugins/`
-- global: `<agentDir>/plugins/`
+1. project `<cwd>/.agents/plugins/` — primary, cross-vendor home
+2. project `<cwd>/.hoocode/plugins/` — legacy/fallback
+3. global `~/.agents/plugins/` — primary, cross-vendor home
+4. global `<agentDir>/plugins/` (i.e. `~/.hoocode/plugins/`) — legacy/fallback
+
+See `defaultPluginDirs()` in `loader.ts`. `.agents/` is preferred everywhere per
+the "`.agents/` first" policy (mapping doc: `plugin-format-mapping.md`); `.hoocode/`
+stays supported so hand-placed plugins keep loading.
 
 A directory is a plugin if it contains **either**:
 
@@ -209,12 +218,14 @@ Example:
 ### 2.6 Shipped: marketplaces (install from a git index)
 
 A **marketplace** is a git repo (or local dir) with an index manifest listing
-installable plugins. Two formats are supported (Claude wins when both present):
+installable plugins. Three formats are supported (native wins, then Claude, then
+Copilot when more than one is present):
 
+- Native: `.agents-plugin/marketplace.json` (preferred; the `.agents` surface)
 - Claude: `.claude-plugin/marketplace.json`
 - Copilot-style git index: `.github/marketplace.json`
 
-Both use `{ name?, owner?, plugins: [{ name, source, description? }] }`. A plugin
+All three use `{ name?, owner?, plugins: [{ name, source, description? }] }`. A plugin
 `source` is a path relative to the marketplace root, a git URL, or `npm:<spec>`.
 
 Parsing/resolution lives in `core/extensions/plugins/marketplace.ts`
@@ -229,10 +240,15 @@ Parsing/resolution lives in `core/extensions/plugins/marketplace.ts`
 /plugin remove <name>                    remove + reload
 ```
 
-Install copies a local plugin or `git clone`s a git source into the `plugins/`
-folder and reloads, so the plugin loads through the same loader as any other
-plugin. `npm:` sources are recognized but not yet installed (deferred).
-Version/dependency resolution and update/pin are future work.
+Install copies a local plugin or `git clone`s a git source into
+`.agents/plugins/<name>` (the primary, cross-vendor home) and reloads, so the
+plugin loads through the same loader as any other plugin. The added-marketplace
+registry lives at `.agents/marketplaces.json` (falling back to the legacy
+`.hoocode/marketplaces.json` when the `.agents` one is absent), and clones are
+cached under `.agents/marketplace-cache/`. `remove` deletes from `.agents/plugins/`
+first and the legacy `.hoocode/plugins/` second. `npm:` sources are recognized but
+not yet installed (deferred). Version/dependency resolution and update/pin are
+future work.
 
 ---
 
@@ -251,3 +267,4 @@ Version/dependency resolution and update/pin are future work.
 | `src/core/extensions/runner.ts` | `resources_discover` aggregates `agentPaths` / `slashCommandPaths` |
 | `src/extensions/core/hoo-core.ts` | `setupLoop` (scheduler + Cron* tools + `/loop` + auto); `setupMarketplace` (`/plugin`); `setupMcpLoader` consumes the MCP registry |
 | `test/plugins.test.ts` `test/scheduler.test.ts` `test/marketplace.test.ts` | manifest/discovery/MCP, cron scheduler, and marketplace tests |
+| `docs/plugin-format-mapping.md` | Claude ↔ GitHub ↔ native format mapping + `.agents/`-first storage/loading rules |

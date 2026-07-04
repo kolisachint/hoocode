@@ -2,31 +2,85 @@
  * Plugin marketplaces — install plugins from a curated index hosted in a git repo
  * (or a local directory).
  *
- * A marketplace is a directory containing an index manifest in one of two formats:
+ * A marketplace is a directory containing an index manifest in one of three formats:
+ *  - Native:  `.agents-plugin/marketplace.json`  (preferred; the `.agents` surface)
  *  - Claude:  `.claude-plugin/marketplace.json`
  *  - Copilot: `.github/marketplace.json`  (Copilot-style git index)
  *
- * Both use the same shape: `{ name?, owner?, plugins: [{ name, source, description? }] }`.
+ * All three use the same shape: `{ name?, owner?, plugins: [{ name, source, description? }] }`.
  * A plugin `source` is either a path relative to the marketplace root (a plugin
  * directory inside the repo), a git URL, or an `npm:<spec>` reference.
+ *
+ * When more than one is present the native `.agents-plugin` format wins, then
+ * Claude, then Copilot (no merge) — matching the "`.agents/` first" policy used
+ * across hoocode's resource surfaces.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+export const AGENTS_MARKETPLACE_FILE = path.join(".agents-plugin", "marketplace.json");
 export const CLAUDE_MARKETPLACE_FILE = path.join(".claude-plugin", "marketplace.json");
 export const COPILOT_MARKETPLACE_FILE = path.join(".github", "marketplace.json");
+
+/**
+ * Canonical platform token used by the optional `supportPlatform` field. The
+ * `.github/marketplace.json` (Copilot-style) format is surfaced as `"github"` —
+ * friendlier than the internal `format: "copilot"` and matching where the file
+ * lives. Authored aliases (`copilot`, `gh`) normalize to `github`.
+ */
+export type MarketplacePlatform = "agents" | "claude" | "github";
+
+/** Map an internal marketplace `format` to its public platform token. */
+function formatToPlatform(format: NormalizedMarketplace["format"]): MarketplacePlatform {
+	return format === "copilot" ? "github" : format;
+}
+
+/** Normalize an authored `supportPlatform` (string | string[]) to canonical tokens. */
+export function normalizePlatforms(value: unknown): MarketplacePlatform[] {
+	const raw = Array.isArray(value) ? value : value == null ? [] : [value];
+	const out: MarketplacePlatform[] = [];
+	for (const v of raw) {
+		if (typeof v !== "string") continue;
+		const t = v.trim().toLowerCase();
+		const canonical: MarketplacePlatform | undefined =
+			t === "agents" || t === "native"
+				? "agents"
+				: t === "claude"
+					? "claude"
+					: t === "github" || t === "copilot" || t === "gh"
+						? "github"
+						: undefined;
+		if (canonical && !out.includes(canonical)) out.push(canonical);
+	}
+	return out;
+}
 
 export interface MarketplacePluginEntry {
 	name: string;
 	/** Relative path, git URL, or `npm:<spec>`. */
 	source: string;
 	description?: string;
+	/**
+	 * Optional platform(s) this entry targets. Only set when authored on the
+	 * entry; absent means "no per-entry restriction" (the marketplace's
+	 * platforms apply). Purely informational today — nothing filters on it.
+	 */
+	supportPlatform?: MarketplacePlatform[];
 }
 
 export interface NormalizedMarketplace {
 	name: string;
-	format: "claude" | "copilot";
+	/** Precedence winner when several index files conflict (agents > claude > copilot). */
+	format: "agents" | "claude" | "copilot";
+	/**
+	 * Every platform this marketplace directory offers, so a conflict between
+	 * multiple index files (e.g. both `.github/` and `.claude-plugin/`) is
+	 * recorded rather than hidden. Always includes the resolved `format`'s
+	 * platform; also folds in any authored top-level `supportPlatform`. Never
+	 * empty.
+	 */
+	supportPlatform: MarketplacePlatform[];
 	/** Absolute path to the marketplace directory. */
 	root: string;
 	manifestPath: string;
@@ -36,7 +90,9 @@ export interface NormalizedMarketplace {
 interface RawMarketplace {
 	name?: string;
 	owner?: string;
-	plugins?: Array<{ name?: string; source?: string; description?: string }>;
+	/** Optional authored platform hint (string | string[]); folded into supportPlatform. */
+	supportPlatform?: unknown;
+	plugins?: Array<{ name?: string; source?: string; description?: string; supportPlatform?: unknown }>;
 }
 
 /** A resolved, installable plugin source. */
@@ -54,24 +110,25 @@ function readJson<T>(file: string): T | null {
 }
 
 /**
- * Parse a marketplace directory. Claude format wins when both files are present.
- * Returns null if neither manifest exists or it is invalid.
+ * Parse a marketplace directory. Native `.agents-plugin` wins, then Claude, then
+ * Copilot when more than one file is present. Returns null if no manifest exists
+ * or it is invalid.
  */
 export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
+	const agentsPath = path.join(dir, AGENTS_MARKETPLACE_FILE);
 	const claudePath = path.join(dir, CLAUDE_MARKETPLACE_FILE);
 	const copilotPath = path.join(dir, COPILOT_MARKETPLACE_FILE);
 
-	let manifestPath: string;
-	let format: NormalizedMarketplace["format"];
-	if (fs.existsSync(claudePath)) {
-		manifestPath = claudePath;
-		format = "claude";
-	} else if (fs.existsSync(copilotPath)) {
-		manifestPath = copilotPath;
-		format = "copilot";
-	} else {
-		return null;
-	}
+	// Record every index format present so a conflict (more than one file) is
+	// visible via supportPlatform, not silently dropped.
+	const present: Array<{ format: NormalizedMarketplace["format"]; path: string }> = [];
+	if (fs.existsSync(agentsPath)) present.push({ format: "agents", path: agentsPath });
+	if (fs.existsSync(claudePath)) present.push({ format: "claude", path: claudePath });
+	if (fs.existsSync(copilotPath)) present.push({ format: "copilot", path: copilotPath });
+	if (present.length === 0) return null;
+
+	// Precedence winner (present is built in agents > claude > copilot order).
+	const { format, path: manifestPath } = present[0];
 
 	const raw = readJson<RawMarketplace>(manifestPath);
 	if (!raw) return null;
@@ -79,13 +136,27 @@ export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
 	const plugins: MarketplacePluginEntry[] = [];
 	for (const entry of raw.plugins ?? []) {
 		if (entry?.name && entry.source) {
-			plugins.push({ name: entry.name, source: entry.source, description: entry.description });
+			const entryPlatforms = normalizePlatforms(entry.supportPlatform);
+			plugins.push({
+				name: entry.name,
+				source: entry.source,
+				description: entry.description,
+				...(entryPlatforms.length > 0 ? { supportPlatform: entryPlatforms } : {}),
+			});
 		}
+	}
+
+	// supportPlatform = platforms of all present index files, plus any authored
+	// top-level hint, deduped. Always non-empty (at least the resolved format).
+	const supportPlatform: MarketplacePlatform[] = [];
+	for (const p of [...present.map((e) => formatToPlatform(e.format)), ...normalizePlatforms(raw.supportPlatform)]) {
+		if (!supportPlatform.includes(p)) supportPlatform.push(p);
 	}
 
 	return {
 		name: (raw.name ?? path.basename(dir)).trim() || path.basename(dir),
 		format,
+		supportPlatform,
 		root: dir,
 		manifestPath,
 		plugins,

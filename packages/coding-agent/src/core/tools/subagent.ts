@@ -7,8 +7,11 @@
  * fresh, isolated child process (SubagentPool) and only its final answer is
  * returned to the parent.
  *
- * It is an optional, opt-in tool (enabled via --enable-subagents or the
- * `enableSubagent` setting); see buildSessionOptions in main.ts.
+ * Enabled by default (the `enableSubagent` setting defaults to true); disable
+ * with `enableSubagent: false`. The `--enable-subagents` flag still force-enables
+ * it. Nesting is bounded by the tree-wide depth cap (maxSubagentDepth, default 2:
+ * a spawned subagent may itself delegate one more level, and depth-2 grandchildren
+ * cannot). See buildSessionOptions in main.ts.
  */
 
 import { Text } from "@kolisachint/hoocode-tui";
@@ -41,7 +44,23 @@ export { summarizeAgentDescription } from "../agent-registry.js";
  *  `<available_agents>` block the system prompt emits whenever the Task tool is
  *  active (see agent-session `_rebuildSystemPrompt`); this appendix references
  *  that list rather than re-rendering the roster and paying for it twice. */
-export function buildTaskMainPrompt(): string {
+/**
+ * Build the main-session subagent instructions appended to the system prompt.
+ *
+ * The detailed background/barrier guidance (the three heaviest bullets) is only
+ * emitted when the project actually has background-capable agents; otherwise a
+ * single concise line covers the per-call `background: true` escape hatch. This
+ * keeps the always-on cost down for the common case where nothing runs in the
+ * background. `cwd` is used only to detect those agents.
+ */
+export function buildTaskMainPrompt(cwd: string = process.cwd()): string {
+	const hasBackgroundAgents = collectBackgroundAgentNames(cwd).size > 0;
+
+	const backgroundGuidance = hasBackgroundAgents
+		? `- Background agents run non-blocking (or force per call with \`background: true\`): you get a short "explore#1 finished" notification and pull the full result with \`TaskOutput\` (e.g. \`TaskOutput("explore#1")\`); \`TaskOutput(list: true)\` shows what's running.
+- After dispatching, don't idle — keep doing independent work (read/edit unrelated files, draft, dispatch more); barrier with \`TaskOutput(wait: true)\` (a named task, or all outstanding when no id) only when you genuinely can't proceed.`
+		: `- You can force any task to run in the background with \`background: true\` (non-blocking): keep working, then pull its result with \`TaskOutput\` (e.g. \`TaskOutput("explore#1")\`) or block on it with \`TaskOutput(wait: true)\`.`;
+
 	return `You have access to the **Task** tool. Use it to delegate self-contained tasks to specialized subagents that run in their own isolated context and return only their final answer. Pick an agent by name from the <available_agents> list in this prompt and pass it as \`subagent_type\`.
 
 When to delegate:
@@ -58,9 +77,7 @@ Guidelines:
 - Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
 - The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
 - Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
-- Some agents run in the background (non-blocking); force it per call with \`background: true\` (or \`background: false\` to wait inline). A background Task does not block your turn and does not return its answer inline: you get a short notification ("explore#1 finished") and the full result is held for you to pull with \`TaskOutput\`. Keep working in the meantime.
-- After dispatching background work, DO NOT stop and wait — that wastes the parallelism and looks stuck. Immediately continue with the next useful thing: read or edit an independent file, draft the parts of your answer that don't depend on the pending result, or dispatch more independent subtasks. Only barrier (with \`TaskOutput(wait: true)\`) when you genuinely cannot proceed without the result. Prefer background dispatch for any self-contained or parallelizable work so your turn never blocks on a subagent.
-- Use **TaskOutput** to manage background subagents: \`TaskOutput(list: true)\` shows every running/finished subagent and what each is doing; \`TaskOutput("explore#1")\` reads a finished subagent's full result (or reports its status if still running); \`TaskOutput(wait: true)\` blocks until a named task — or, with no task_id, ALL outstanding subagents — finish. Dispatch a batch in one turn, then barrier on them with \`TaskOutput(wait: true)\` only once you've exhausted the work you can do without them.
+${backgroundGuidance}
 - When working through a TodoWrite plan, mark the plan item in_progress BEFORE dispatching subagents for it: each dispatch is attributed to the current in_progress item in the user's task panel, so dispatching first (or with several items in_progress) leaves the run unattributed.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
@@ -148,14 +165,13 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			if (typeof override === "boolean") return override;
 			return backgroundAgents.has(String(toolCall.arguments?.subagent_type ?? ""));
 		},
-		// Kept lean: the available agents are listed in the system prompt, and the
-		// `complexity`/`background` semantics live in their parameter descriptions —
-		// repeating them here would re-spend those tokens on every turn.
-		description: [
+		// Kept to mechanics only: the when-to-use / when-not-to guidance lives once in
+		// the system-prompt block (buildTaskMainPrompt), the available agents are
+		// listed there too, and the `complexity`/`background`/`resume_task_id`
+		// semantics live in their parameter descriptions. Repeating any of that here
+		// would re-spend those tokens on every turn.
+		description:
 			"Delegate a focused task to a specialized subagent that runs in a fresh, isolated context (it cannot see this conversation). Choose one of the available agents (listed in the system prompt) via `subagent_type` and pass everything it needs via `prompt`; the subagent returns only its final answer.",
-			"WHEN TO USE: (1) self-contained work where you only need the final result; (2) parallel investigation/edits without losing your reasoning chain; (3) a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug, write docs); (4) a long command or test suite you want to run without blocking your reasoning.",
-			"Do NOT use for tasks needing tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about. Delegate proactively for self-contained or parallelizable work; handle only trivial single-step or tightly interactive work inline.",
-		].join("\n"),
 		promptSnippet: "delegate a self-contained task to a specialized subagent (choose via subagent_type)",
 		parameters: taskParams,
 
