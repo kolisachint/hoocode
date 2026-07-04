@@ -13,10 +13,12 @@
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
+import { agentColorFor } from "../../modes/interactive/theme/theme.js";
 import { type AgentDefinition, TASK_TOOL_NAME } from "../agent-frontmatter.js";
 import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
+import { formatDurationSecs } from "../format-duration.js";
 import { getProviderExhaustion } from "../provider-health.js";
 import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
@@ -59,6 +61,7 @@ Guidelines:
 - Some agents run in the background (non-blocking); force it per call with \`background: true\` (or \`background: false\` to wait inline). A background Task does not block your turn and does not return its answer inline: you get a short notification ("explore#1 finished") and the full result is held for you to pull with \`TaskOutput\`. Keep working in the meantime.
 - After dispatching background work, DO NOT stop and wait — that wastes the parallelism and looks stuck. Immediately continue with the next useful thing: read or edit an independent file, draft the parts of your answer that don't depend on the pending result, or dispatch more independent subtasks. Only barrier (with \`TaskOutput(wait: true)\`) when you genuinely cannot proceed without the result. Prefer background dispatch for any self-contained or parallelizable work so your turn never blocks on a subagent.
 - Use **TaskOutput** to manage background subagents: \`TaskOutput(list: true)\` shows every running/finished subagent and what each is doing; \`TaskOutput("explore#1")\` reads a finished subagent's full result (or reports its status if still running); \`TaskOutput(wait: true)\` blocks until a named task — or, with no task_id, ALL outstanding subagents — finish. Dispatch a batch in one turn, then barrier on them with \`TaskOutput(wait: true)\` only once you've exhausted the work you can do without them.
+- When working through a TodoWrite plan, mark the plan item in_progress BEFORE dispatching subagents for it: each dispatch is attributed to the current in_progress item in the user's task panel, so dispatching first (or with several items in_progress) leaves the run unattributed.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
 
@@ -109,7 +112,7 @@ export interface TaskToolDetails {
 export interface TaskOutputDetails {
 	/** The handle queried, when a specific task was named. */
 	task_id?: string;
-	/** running | done | collected | failed | stalled | timeout | list | empty | unknown */
+	/** running | done | collected | failed | stalled | timeout | cancelled | list | empty | unknown */
 	status: string;
 	ok: boolean;
 	/** Number of subagents still running, included on roster/list responses. */
@@ -156,8 +159,27 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 		promptSnippet: "delegate a self-contained task to a specialized subagent (choose via subagent_type)",
 		parameters: taskParams,
 
-		async execute(_toolCallId, params: TaskParams, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params: TaskParams, signal, _onUpdate, ctx) {
 			const pool = getSubagentPool(ctx.cwd);
+
+			// User-initiated cancel (Esc/abort): kill the dispatched run's whole
+			// process tree and let the dispatch settle with status "cancelled" —
+			// distinct from "failed" everywhere it surfaces (panel, inbox, result).
+			// Cold dispatches only: a warm worker has no cancel surface (it is
+			// reused), so warm runs still complete server-side and are discarded.
+			const cancelOnAbort = async (poolRunId: string, run: () => Promise<TaskResult>): Promise<TaskResult> => {
+				if (!signal) return run();
+				const onAbort = () => {
+					pool.cancel?.(poolRunId);
+				};
+				if (signal.aborted) onAbort();
+				signal.addEventListener("abort", onAbort, { once: true });
+				try {
+					return await run();
+				} finally {
+					signal.removeEventListener("abort", onAbort);
+				}
+			};
 
 			// Pre-flight: if the inherited provider recently exhausted its quota (the
 			// parent's own turn failed with a usage/rate-limit error that did not
@@ -167,12 +189,16 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			const provider = ctx.model?.provider;
 			const exhaustion = provider ? getProviderExhaustion(provider) : undefined;
 			if (exhaustion) {
+				const skippedRunId = newDispatchTaskId();
 				const skipped = taskStore.create(params.description?.trim() || summarize(params.prompt), {
 					source: "subagent",
 					subagentMode: params.subagent_type,
-					agent: params.subagent_type,
+					agent: skippedRunId,
+					linkedTaskId: linkedTodoId(),
 				});
+				registerSubagentDispatch(skippedRunId, subagentInbox.nextLabel(params.subagent_type));
 				taskStore.update(skipped.id, { status: "failed", note: `${provider} exhausted` });
+				taskStore.patchAgent(skippedRunId, { state: "failed" });
 				return {
 					content: [
 						{
@@ -202,22 +228,28 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			const resumeId = params.resume_task_id?.trim();
 			if (resumeId) {
 				const summary = params.description?.trim() || summarize(params.prompt);
+				const runId = newDispatchTaskId();
+				const label = subagentInbox.nextLabel(params.subagent_type);
 				const task = taskStore.create(summary, {
 					source: "subagent",
 					subagentMode: params.subagent_type,
-					agent: params.subagent_type,
+					agent: runId,
+					linkedTaskId: linkedTodoId(),
 				});
-				registerSubagentDispatch(params.subagent_type);
+				registerSubagentDispatch(runId, label);
 				taskStore.update(task.id, { status: "in_progress" });
 				try {
-					const dispatchResult = await pool.resume(resumeId, params.prompt, {
-						model: ctx.model?.id,
-						provider: ctx.model?.provider,
-					});
+					const dispatchResult = await cancelOnAbort(runId, () =>
+						pool.resume(resumeId, params.prompt, {
+							model: ctx.model?.id,
+							provider: ctx.model?.provider,
+							taskId: runId,
+						}),
+					);
 					// The session lives under the original task id; keep it as the resume handle.
-					return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, resumeId);
+					return finalizeDispatchResult(dispatchResult, params.subagent_type, runId, task.id, resumeId);
 				} catch (error) {
-					taskStore.update(task.id, { status: "failed" });
+					markDispatchFailed(task.id, runId);
 					throw error;
 				}
 			}
@@ -237,12 +269,23 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			}
 
 			const summary = params.description?.trim() || summarize(params.prompt);
+			// One roster row per dispatch, keyed by the (pre-allocated) pool task id.
+			// Keying by agent TYPE made concurrent same-type runs share a single row:
+			// their activity, state, and stats collided last-writer-wins. The inbox
+			// already keys by task id; this aligns the panel to the same model. The
+			// pool's task_progress events carry the task id, so patching by this id
+			// routes live activity to the right row.
+			const poolTaskId = newDispatchTaskId();
+			const label = subagentInbox.nextLabel(params.subagent_type);
 			const task = taskStore.create(summary, {
 				source: "subagent",
 				subagentMode: params.subagent_type,
-				agent: params.subagent_type,
+				agent: poolTaskId,
+				// Tie this run to the plan item it executes (the single in_progress
+				// TodoWrite task, when unambiguous) so the panel can nest it there.
+				linkedTaskId: linkedTodoId(),
 			});
-			registerSubagentDispatch(params.subagent_type);
+			registerSubagentDispatch(poolTaskId, label);
 			taskStore.update(task.id, { status: "in_progress" });
 			// Fork agents inherit the parent's conversation via a forked session.
 			const forkSessionFile = def.fork
@@ -262,11 +305,9 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			const isBackground = params.background ?? backgroundAgents.has(params.subagent_type);
 
 			if (isBackground) {
-				// Notify-and-pull: register the dispatch in the inbox under a pre-allocated
-				// id, await it, retain the body in the inbox, and return a compact
-				// notification (not the body). The model pulls the body with TaskOutput.
-				const poolTaskId = `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-				const label = subagentInbox.nextLabel(params.subagent_type);
+				// Notify-and-pull: register the dispatch in the inbox under the
+				// pre-allocated id, await it, retain the body in the inbox, and return a
+				// compact notification (not the body). The model pulls it with TaskOutput.
 				subagentInbox.observe(pool);
 				subagentInbox.start(poolTaskId, label, params.subagent_type);
 
@@ -285,14 +326,21 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 									model: dispatchModel,
 									provider: ctx.model?.provider,
 								},
-								(activity) => taskStore.patchAgent(params.subagent_type, { activity }),
+								(activity) => taskStore.patchAgent(poolTaskId, { activity }),
 							);
 							const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);
 							subagentInbox.finish(poolTaskId, dispatchResult);
-							return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, poolTaskId, {
-								taskId: poolTaskId,
-								label,
-							});
+							return finalizeDispatchResult(
+								dispatchResult,
+								params.subagent_type,
+								poolTaskId,
+								task.id,
+								poolTaskId,
+								{
+									taskId: poolTaskId,
+									label,
+								},
+							);
 						} catch (error) {
 							if (!(error instanceof WarmWorkerError)) throw error;
 							console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
@@ -301,22 +349,24 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				}
 
 				try {
-					const dispatchResult = await pool.dispatch(params.prompt, {
-						forceAgent: params.subagent_type,
-						context: "",
-						model: dispatchModel,
-						provider: ctx.model?.provider,
-						sessionFile: forkSessionFile,
-						taskId: poolTaskId,
-					});
+					const dispatchResult = await cancelOnAbort(poolTaskId, () =>
+						pool.dispatch(params.prompt, {
+							forceAgent: params.subagent_type,
+							context: "",
+							model: dispatchModel,
+							provider: ctx.model?.provider,
+							sessionFile: forkSessionFile,
+							taskId: poolTaskId,
+						}),
+					);
 					subagentInbox.finish(poolTaskId, dispatchResult);
-					return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, poolTaskId, {
+					return finalizeDispatchResult(dispatchResult, params.subagent_type, poolTaskId, task.id, poolTaskId, {
 						taskId: poolTaskId,
 						label,
 					});
 				} catch (error) {
 					const reason = error instanceof Error ? error.message : String(error);
-					taskStore.update(task.id, { status: "failed" });
+					markDispatchFailed(task.id, poolTaskId);
 					subagentInbox.fail(poolTaskId, reason);
 					// A background dispatch reports failure as a compact notification, not a
 					// thrown tool error — the call was already answered by a placeholder.
@@ -353,15 +403,16 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 							},
 							// Mirror the cold pool's live progress on the task panel roster so a
 							// warm dispatch reads as busy (⋯ grep), not stuck.
-							(activity) => taskStore.patchAgent(params.subagent_type, { activity }),
+							(activity) => taskStore.patchAgent(poolTaskId, { activity }),
 						);
 						const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);
-						return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, undefined);
+						return finalizeDispatchResult(dispatchResult, params.subagent_type, poolTaskId, task.id, undefined);
 					} catch (error) {
 						// A genuine infra failure (worker crash/timeout) retries cold; any other
 						// error is a real dispatch failure and propagates.
 						if (!(error instanceof WarmWorkerError)) {
 							taskStore.update(task.id, { status: "failed" });
+							taskStore.patchAgent(poolTaskId, { state: "failed", activity: "" });
 							throw error;
 						}
 						console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
@@ -371,23 +422,35 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 
 			// Foreground: block the turn and return the subagent's full answer inline.
 			try {
-				const dispatchResult = await pool.dispatch(params.prompt, {
-					forceAgent: params.subagent_type,
-					context: "",
-					model: dispatchModel,
-					provider: ctx.model?.provider,
-					sessionFile: forkSessionFile,
-				});
-				return finalizeDispatchResult(dispatchResult, params.subagent_type, task.id, dispatchResult.task_id);
+				const dispatchResult = await cancelOnAbort(poolTaskId, () =>
+					pool.dispatch(params.prompt, {
+						forceAgent: params.subagent_type,
+						context: "",
+						model: dispatchModel,
+						provider: ctx.model?.provider,
+						sessionFile: forkSessionFile,
+						taskId: poolTaskId,
+					}),
+				);
+				return finalizeDispatchResult(
+					dispatchResult,
+					params.subagent_type,
+					poolTaskId,
+					task.id,
+					dispatchResult.task_id,
+				);
 			} catch (error) {
-				taskStore.update(task.id, { status: "failed" });
+				markDispatchFailed(task.id, poolTaskId);
 				throw error;
 			}
 		},
 
 		renderCall(args, theme) {
 			const type = args.subagent_type ?? "agent";
-			const text = theme.fg("toolTitle", theme.bold("Agent ")) + theme.fg("accent", `[${type}]`);
+			// The [type] tag carries the agent's identity color — the same hue this
+			// agent has in the task panel and TaskOutput — so a transcript full of
+			// concurrent dispatches is scannable by color.
+			const text = theme.fg("toolTitle", theme.bold("Agent ")) + theme.fg(agentColorFor(type), `[${type}]`);
 			return new Text(text, 0, 0);
 		},
 	});
@@ -413,13 +476,52 @@ export function resolveForkSessionFile(
 	}
 }
 
+/** Pre-allocated pool task id for a dispatch (matches the pool's own format). */
+function newDispatchTaskId(): string {
+	return `dispatch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 /**
- * Register the dispatched agent in the task store's roster so the task pane's
- * grouped views (subagents/teams) can draw a group header for it. Upsert keeps
- * accumulated stats across re-dispatches of the same agent type.
+ * The TodoWrite plan item this dispatch is (most plausibly) working on: the
+ * single in_progress main-agent task. TodoWrite discipline keeps exactly one
+ * item in_progress, so when that holds the link is unambiguous; with zero or
+ * several in_progress items no link is recorded rather than guessing. Used to
+ * nest the run under its plan item in the task panel's flat lens.
  */
-function registerSubagentDispatch(type: string): void {
-	taskStore.upsertAgent({ id: type, name: type, role: "subagent", kind: "subagent", state: "running" });
+function linkedTodoId(): number | undefined {
+	const inProgress = taskStore
+		.list()
+		.filter(
+			(t) =>
+				t.source === undefined &&
+				t.agent === undefined &&
+				t.parentTaskId === undefined &&
+				t.status === "in_progress",
+		);
+	return inProgress.length === 1 ? inProgress[0]?.id : undefined;
+}
+
+/**
+ * Register this dispatch in the task store's roster, keyed by its run id (the
+ * pool task id) so concurrent runs of the same agent type each get their own
+ * row, state, activity, and stats. The friendly label ("explore#1") names the
+ * row the same way the inbox names background tasks.
+ */
+function registerSubagentDispatch(runId: string, label: string): void {
+	taskStore.upsertAgent({ id: runId, name: label, role: "subagent", kind: "subagent", state: "running" });
+}
+
+/**
+ * Catch-path bookkeeping: mark the dispatch failed unless it already settled.
+ * finalizeDispatchResult records a terminal status (failed/cancelled) *before*
+ * throwing, so a blanket "failed" here would clobber a cancellation with a
+ * failure the moment the thrown error passed through.
+ */
+function markDispatchFailed(taskStoreId: number, runId: string): void {
+	const current = taskStore.list().find((t) => t.id === taskStoreId);
+	if (current && current.status !== "pending" && current.status !== "in_progress") return;
+	taskStore.update(taskStoreId, { status: "failed" });
+	taskStore.patchAgent(runId, { state: "failed", activity: "" });
 }
 
 /** Names of agents configured to run in the background (non-blocking). */
@@ -494,6 +596,7 @@ function warmResultToTaskResult(warm: WarmRunResult, agentType: string, taskStor
 function finalizeDispatchResult(
 	dispatchResult: TaskResult,
 	subagentType: string,
+	runAgentId: string,
 	taskStoreId: number,
 	resumeHandle: string | undefined,
 	background?: { taskId: string; label: string },
@@ -506,20 +609,23 @@ function finalizeDispatchResult(
 	// delegation (depth >= 2) is visible in the subagents lens's task tree.
 	mergeChildTaskTree(resultData?.task_tree, taskStoreId);
 
-	// Roll the agent's per-run usage into its roster stats so the grouped views'
-	// header carries the agent's own token/cost totals.
+	// Roll this run's usage into its own roster row (rows are per-dispatch).
 	if (usage) {
-		taskStore.addAgentStats(subagentType, { input: usage.input, output: usage.output, cost: usage.cost });
+		taskStore.addAgentStats(runAgentId, { input: usage.input, output: usage.output, cost: usage.cost });
 	}
 
 	if (!result || !result.ok) {
+		// A user-initiated cancel is not a failure: it gets its own terminal
+		// status so the panel shows ⊘ cancelled (dim) instead of ✗ failed (red).
+		const cancelled = result?.status === "cancelled";
 		const failNote = result?.usedInheritedModelFallback ? "inherited-model retry failed" : undefined;
-		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
-		taskStore.patchAgent(subagentType, { state: "failed" });
+		taskStore.update(taskStoreId, { status: cancelled ? "cancelled" : "failed", usage, note: failNote });
+		taskStore.patchAgent(runAgentId, { state: cancelled ? "cancelled" : "failed", activity: "" });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
 		if (background) {
+			const verdict = cancelled ? "cancelled ⊘" : "failed ✗";
 			return {
-				content: [{ type: "text", text: `${background.label} failed ✗ — ${reason}` }],
+				content: [{ type: "text", text: `${background.label} ${verdict} — ${reason}` }],
 				details: {
 					subagent_type: subagentType,
 					ok: false,
@@ -530,21 +636,21 @@ function finalizeDispatchResult(
 				},
 			};
 		}
+		if (cancelled) {
+			throw new Error(`Subagent (${subagentType}) cancelled by user.`);
+		}
 		const stderr = result?.stderr?.trim();
 		throw new Error(`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`);
 	}
 
 	// Leave the task in the store with its final status; it stays visible in the
 	// task panel until the next user message arrives. Surface a ⚠ cue when the run
-	// fell back to the inherited model rather than emitting a chat message.
+	// fell back to the inherited model rather than emitting a chat message — and
+	// clear any stale note otherwise (note is clearable via an explicit undefined).
 	const fallbackNote = dispatchResult.result?.usedInheritedModelFallback ? "ran on inherited model" : undefined;
 	taskStore.update(taskStoreId, { status: "done", usage, note: fallbackNote });
-	// Parallel dispatches share one roster entry per agent type: stay `running`
-	// while a sibling task is still live, settle to `done` otherwise.
-	const siblingLive = taskStore
-		.list()
-		.some((t) => t.agent === subagentType && (t.status === "in_progress" || t.status === "pending"));
-	taskStore.patchAgent(subagentType, { state: siblingLive ? "running" : "done" });
+	// Rows are per-run, so this run settles to done regardless of siblings.
+	taskStore.patchAgent(runAgentId, { state: "done", activity: "" });
 	let answer = resultData?.summary || "(subagent returned no output)";
 	// Partial results are resumable; surface the handle so the parent can continue.
 	if (result.status === "partial" && resumeHandle) {
@@ -588,7 +694,7 @@ const taskOutputParams = Type.Object({
 	list: Type.Optional(
 		Type.Boolean({
 			description:
-				"List all background subagents with their status (running/done/failed) and current activity. No result bodies are returned.",
+				"List all background subagents with their status (running/done/failed/cancelled) and current activity. No result bodies are returned.",
 		}),
 	),
 	wait: Type.Optional(
@@ -606,10 +712,13 @@ type TaskOutputParams = Static<typeof taskOutputParams>;
 
 const TASK_OUTPUT_DEFAULT_TIMEOUT_MS = 120_000;
 
-/** Whole seconds a record has run (so far, or until it settled). */
+/**
+ * Elapsed time a record has run (so far, or until it settled), in the same
+ * format the task panel uses so the two surfaces always agree.
+ */
 function recordElapsed(rec: InboxRecord): string {
 	const end = rec.endedAt ?? Date.now();
-	return `${Math.max(0, Math.round((end - rec.startedAt) / 1000))}s`;
+	return formatDurationSecs((end - rec.startedAt) / 1000);
 }
 
 /** A compact roster of every known background subagent — status + activity, no bodies. */
@@ -631,6 +740,8 @@ function formatTaskRoster(): { content: Array<{ type: "text"; text: string }>; d
 				return `- ${r.label}  done (uncollected)  ${when} — ${r.summaryLine ?? ""}`;
 			case "collected":
 				return `- ${r.label}  collected  ${when} — ${r.summaryLine ?? ""}`;
+			case "cancelled":
+				return `- ${r.label}  cancelled ⊘  — ${r.error ?? "cancelled by user"}`;
 			default:
 				return `- ${r.label}  ${r.lifecycle} ✗  — ${r.error ?? "unknown error"}`;
 		}
@@ -731,10 +842,14 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 				};
 			}
 
-			// failed / stalled / timeout
+			// failed / stalled / timeout / cancelled
+			const glyph = rec.lifecycle === "cancelled" ? "⊘" : "✗";
 			return {
 				content: [
-					{ type: "text" as const, text: `${rec.label} ${rec.lifecycle} ✗ — ${rec.error ?? "unknown error"}.` },
+					{
+						type: "text" as const,
+						text: `${rec.label} ${rec.lifecycle} ${glyph} — ${rec.error ?? "unknown error"}.`,
+					},
 				],
 				details: { task_id: handle, status: rec.lifecycle, ok: false },
 			};
@@ -742,9 +857,50 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 
 		renderCall(args, theme) {
 			const target = args.list ? "list" : String(args.task_id ?? "");
+			// A friendly label ("explore#1") gets its agent's identity color so the
+			// pull visually pairs with the dispatch that produced it; raw ids and
+			// "list" stay dim.
+			const hashIdx = target.indexOf("#");
+			const styledTarget =
+				hashIdx > 0 ? theme.fg(agentColorFor(target.slice(0, hashIdx)), target) : theme.fg("dim", target);
 			const text =
-				theme.fg("toolTitle", theme.bold("TaskOutput ")) + theme.fg("dim", args.wait ? `${target} (wait)` : target);
+				theme.fg("toolTitle", theme.bold("TaskOutput ")) +
+				styledTarget +
+				(args.wait ? theme.fg("dim", " (wait)") : "");
 			return new Text(text, 0, 0);
+		},
+
+		renderResult(result, _options, theme) {
+			// Display-only colorization of the roster/status lines (the text sent to
+			// the model stays plain). Lines that aren't roster rows — collected
+			// bodies, status sentences — render exactly like the default fallback.
+			const text = result.content
+				.map((c) => (c.type === "text" ? c.text : ""))
+				.filter(Boolean)
+				.join("\n");
+			if (!text) return new Text("", 0, 0);
+			const rosterLine =
+				/^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout|cancelled)(.*)$/;
+			const styled = text
+				.split("\n")
+				.map((line) => {
+					const match = rosterLine.exec(line);
+					if (!match) return theme.fg("toolOutput", line);
+					const [, label, status, rest] = match as unknown as [string, string, string, string];
+					const hashIdx = label.indexOf("#");
+					const labelColor = hashIdx > 0 ? agentColorFor(label.slice(0, hashIdx)) : "accent";
+					const statusColor =
+						status === "running"
+							? "warning"
+							: status.startsWith("done")
+								? "success"
+								: status === "collected" || status === "cancelled"
+									? "muted"
+									: "error";
+					return `- ${theme.fg(labelColor, label)}  ${theme.fg(statusColor, status)}${theme.fg("dim", rest)}`;
+				})
+				.join("\n");
+			return new Text(styled, 0, 0);
 		},
 	});
 }

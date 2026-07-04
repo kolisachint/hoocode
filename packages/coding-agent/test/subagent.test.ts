@@ -165,4 +165,12 @@ describe("buildTaskMainPrompt", () => {
 		expect(prompt).toContain("Delegate proactively");
 		expect(prompt).not.toContain("Default to handling small, quick, or single-file work inline");
 	});
+
+	test("tells the agent to mark the plan item in_progress before dispatching", () => {
+		// Dispatches are attributed to the single in_progress TodoWrite item
+		// (linkedTaskId); the prompt must teach the ordering that makes the link
+		// land instead of leaving it to chance.
+		const prompt = buildTaskMainPrompt();
+		expect(prompt).toContain("mark the plan item in_progress BEFORE dispatching");
+	});
 });

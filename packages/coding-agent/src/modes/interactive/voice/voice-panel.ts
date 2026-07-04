@@ -196,8 +196,11 @@ export class VoicePanel implements Component {
 			return lines;
 		}
 
-		// listening / silence
-		const mic = theme.fg("error", "🎙");
+		// listening / silence. VS16 (U+FE0F) makes the mic officially
+		// emoji-presentation: terminals render bare U+1F399 double-width anyway,
+		// but without the selector the width math counted one cell (drift); with
+		// it, measurement and rendering agree on two.
+		const mic = theme.fg("error", "🎙️");
 		let header = `${mic}  ${theme.fg("accent", "Listening")} ${theme.fg("dim", `· ${this.elapsedLabel()}`)}`;
 		if (this.phase === "silence") {
 			const remaining = (this.silenceRemainingMs / 1000).toFixed(1);

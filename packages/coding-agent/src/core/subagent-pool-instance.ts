@@ -56,23 +56,29 @@ export function getSubagentPool(cwd: string): SubagentPool {
 /**
  * Surface live subagent progress on the task panel's agent roster row. The pool
  * forwards only coarse lifecycle events; we map the currently-executing tool onto
- * the agent's `activity` and clear it between tools and on completion. This touches
- * only the roster row (keyed by agent type, a no-op if no such row exists), never
- * task nodes — so it cannot collide with the end-of-run task-tree merge. Render
- * coalescing is handled by the TUI's `requestRender`, so per-event patches are fine.
+ * the run's `activity` and clear it between tools and on completion. Roster rows
+ * are keyed per run by the pool task id (see registerSubagentDispatch), so
+ * concurrent same-type subagents update their own rows; patching an unknown id
+ * is a no-op. This touches only the roster row, never task nodes — so it cannot
+ * collide with the end-of-run task-tree merge. Render coalescing is handled by
+ * the TUI's `requestRender`, so per-event patches are fine.
  */
 function wireProgressToTaskStore(p: SubagentPool): void {
-	p.on("task_progress", (data: { agent_type: string; event: { type?: string; toolName?: string } }) => {
-		const { agent_type, event } = data;
+	p.on("task_progress", (data: { task_id: string; event: { type?: string; toolName?: string } }) => {
+		const { task_id, event } = data;
 		if (event.type === "tool_execution_start") {
-			taskStore.patchAgent(agent_type, { activity: typeof event.toolName === "string" ? event.toolName : "" });
-		} else if (event.type === "tool_execution_end" || event.type === "turn_end") {
-			taskStore.patchAgent(agent_type, { activity: "" });
+			taskStore.patchAgent(task_id, { activity: typeof event.toolName === "string" ? event.toolName : "" });
+		} else if (event.type === "turn_end") {
+			// Between turns the subagent is reasoning, not idle — mirror the inbox's
+			// "thinking" so the panel and TaskOutput agree on what the run is doing.
+			taskStore.patchAgent(task_id, { activity: "thinking" });
+		} else if (event.type === "tool_execution_end") {
+			taskStore.patchAgent(task_id, { activity: "" });
 		}
 	});
-	for (const terminal of ["task_done", "task_failed", "task_stalled", "task_timeout"] as const) {
-		p.on(terminal, (data: { agent_type?: string }) => {
-			if (data.agent_type) taskStore.patchAgent(data.agent_type, { activity: "" });
+	for (const terminal of ["task_done", "task_failed", "task_stalled", "task_timeout", "task_cancelled"] as const) {
+		p.on(terminal, (data: { task_id?: string }) => {
+			if (data.task_id) taskStore.patchAgent(data.task_id, { activity: "" });
 		});
 	}
 }

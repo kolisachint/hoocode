@@ -2,7 +2,8 @@
  * Utilities for formatting keybinding hints in the UI.
  */
 
-import { getKeybindings, type Keybinding, type KeyId } from "@kolisachint/hoocode-tui";
+import { getKeybindings, type Keybinding, type KeyId, matchesKey } from "@kolisachint/hoocode-tui";
+import { type AppKeybinding, KEYBINDINGS } from "../../../core/keybindings.js";
 import { theme } from "../theme/theme.js";
 
 export interface KeyTextFormatOptions {
@@ -45,4 +46,30 @@ export function keyHint(keybinding: Keybinding, description: string): string {
 
 export function rawKeyHint(key: string, description: string): string {
 	return theme.fg("dim", formatKeyText(key)) + theme.fg("muted", ` ${description}`);
+}
+
+/** Default keys of an app-level binding, from its definition. */
+function appDefaultKeys(id: AppKeybinding): KeyId[] {
+	const defaults = KEYBINDINGS[id].defaultKeys;
+	return Array.isArray(defaults) ? defaults : [defaults];
+}
+
+/**
+ * Match input against an app-level keybinding. The global manager is the
+ * app-aware one in normal runs (user overrides apply); when it is the bare TUI
+ * default (tests, early boot) the app definition's default keys are used so
+ * the component never goes dead.
+ */
+export function matchesAppKey(data: string, id: AppKeybinding): boolean {
+	const keybindings = getKeybindings();
+	if (keybindings.getDefinition(id)) return keybindings.matches(data, id);
+	return appDefaultKeys(id).some((key) => matchesKey(data, key));
+}
+
+/** First configured key for an app-level binding, for hint lines. */
+export function appKeyLabel(id: AppKeybinding): string {
+	const keybindings = getKeybindings();
+	const keys = keybindings.getDefinition(id) ? keybindings.getKeys(id) : undefined;
+	if (keys && keys.length > 0) return keys[0] as string;
+	return (appDefaultKeys(id)[0] ?? "") as string;
 }

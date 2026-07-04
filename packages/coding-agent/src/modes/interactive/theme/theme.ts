@@ -83,6 +83,16 @@ const ThemeJsonSchema = Type.Object({
 		thinkingXhigh: ColorValueSchema,
 		// Bash Mode (1 color)
 		bashMode: ColorValueSchema,
+		// Agent identity palette (6 colors). OPTIONAL so existing custom themes
+		// keep validating: any missing entry falls back to `accent` (see
+		// createTheme). Subagent types hash into this palette so the same agent
+		// reads as the same color across the chat, task panel, and TaskOutput.
+		agent1: Type.Optional(ColorValueSchema),
+		agent2: Type.Optional(ColorValueSchema),
+		agent3: Type.Optional(ColorValueSchema),
+		agent4: Type.Optional(ColorValueSchema),
+		agent5: Type.Optional(ColorValueSchema),
+		agent6: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -142,7 +152,40 @@ export type ThemeColor =
 	| "thinkingMedium"
 	| "thinkingHigh"
 	| "thinkingXhigh"
-	| "bashMode";
+	| "bashMode"
+	| "agent1"
+	| "agent2"
+	| "agent3"
+	| "agent4"
+	| "agent5"
+	| "agent6";
+
+/** The agent identity palette, in hash order. */
+export const AGENT_COLOR_TOKENS = [
+	"agent1",
+	"agent2",
+	"agent3",
+	"agent4",
+	"agent5",
+	"agent6",
+] as const satisfies readonly ThemeColor[];
+
+/**
+ * Stable color token for an agent type ("explore", "plan", a custom agent…).
+ * The name hashes into the agent palette, so the same type renders in the same
+ * color everywhere it appears — chat tool line, task panel rows/roster, and
+ * TaskOutput — for the whole session and across sessions. Distinct types spread
+ * over 6 hues; collisions are possible but the `[name]`/`#N` labels stay the
+ * primary identifier, color is the at-a-glance cue.
+ */
+export function agentColorFor(agentType: string): ThemeColor {
+	// djb2: tiny, stable, good spread for short identifier-like strings.
+	let hash = 5381;
+	for (let i = 0; i < agentType.length; i++) {
+		hash = ((hash << 5) + hash + agentType.charCodeAt(i)) >>> 0;
+	}
+	return AGENT_COLOR_TOKENS[hash % AGENT_COLOR_TOKENS.length] as ThemeColor;
+}
 
 export type ThemeBg =
 	| "selectedBg"
@@ -361,6 +404,16 @@ export class Theme {
 		this.fgColors = new Map();
 		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
 			this.fgColors.set(key, fgAnsi(value, mode));
+		}
+		// Agent palette fallback for themes built before it existed (including
+		// Theme instances constructed directly by extensions): default to accent.
+		const accentAnsi = this.fgColors.get("accent");
+		if (accentAnsi !== undefined) {
+			for (const token of AGENT_COLOR_TOKENS) {
+				if (!this.fgColors.has(token)) {
+					this.fgColors.set(token, accentAnsi);
+				}
+			}
 		}
 		this.bgColors = new Map();
 		for (const [key, value] of Object.entries(bgColors) as [ThemeBg, string | number][]) {
@@ -608,6 +661,13 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 			bgColors[key as ThemeBg] = value;
 		} else {
 			fgColors[key as ThemeColor] = value;
+		}
+	}
+	// The agent palette is optional in theme JSON (older custom themes predate
+	// it); missing entries fall back to accent so theme.fg never throws.
+	for (const token of AGENT_COLOR_TOKENS) {
+		if (fgColors[token] === undefined) {
+			fgColors[token] = fgColors.accent;
 		}
 	}
 	return new Theme(fgColors, bgColors, colorMode, {

@@ -1,16 +1,34 @@
 import type { Component, Focusable, TUI } from "@kolisachint/hoocode-tui";
 import { getKeybindings, matchesKey, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import { formatDurationSecs } from "../../../core/format-duration.js";
 import type { Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskStatus } from "../../../core/task-store.js";
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
-import { theme } from "../theme/theme.js";
+import { agentColorFor, theme } from "../theme/theme.js";
+import { appKeyLabel, matchesAppKey, rawKeyHint } from "./keybinding-hints.js";
 
 const TASK_STATUS_ICON: Record<TaskStatus, string> = {
-	pending: "●",
+	// Hollow = not started, matching the hollow-means-lighter logic of ◇ and the
+	// selectors' ○/◉ convention; also keeps ● exclusive to the chat's tool
+	// status dot so the two never read as the same signal.
+	pending: "○",
 	in_progress: "◐",
 	done: "✓",
 	failed: "✗",
+	cancelled: "⊘",
 };
+
+/**
+ * U+26A0 with VS15 (text presentation). Bare ⚠ carries the Unicode Emoji
+ * property, and terminals with emoji font fallback render it as a double-width
+ * color glyph while the width math counts 1 cell — misaligning exactly the
+ * rows that carry a warning. VS15 forces single-cell text rendering and is
+ * itself zero-width, so visibleWidth stays correct.
+ */
+const WARNING_GLYPH = "⚠︎";
+
+/** U+25B6 with VS15 — same emoji-presentation hazard as WARNING_GLYPH. */
+const SELECTED_GLYPH = "▶︎";
 
 /**
  * Single-cell marker for MCP-sourced rows, which have no owning agent. Every
@@ -91,6 +109,8 @@ const AGENT_STATE_COLOR: Record<TaskAgentState, ThemeColor> = {
 	idle: "dim",
 	waiting: "mdLink",
 	failed: "error",
+	// User-initiated stop: settled and intentional, so muted rather than red.
+	cancelled: "dim",
 };
 
 /** Two-cell indent under a group header, with a faint vertical guide. */
@@ -126,23 +146,48 @@ function taskStatusColor(status: TaskStatus): "dim" | "warning" | "success" | "e
 		case "failed":
 			return "error";
 		default:
+			// pending and cancelled: quiet gray — a user-initiated cancel is not an
+			// error and must not paint the row (or the rail) red.
 			return "dim";
 	}
 }
 
-/** Format a duration in seconds into a compact, terminal-friendly string. */
-function formatDuration(secs: number): string {
-	const s = Math.max(0, secs);
-	if (s < 10) return `${s.toFixed(1)}s`;
-	if (s < 60) return `${Math.round(s)}s`;
-	const mins = Math.floor(s / 60);
-	const rem = Math.round(s % 60);
-	return `${mins}m${rem.toString().padStart(2, "0")}s`;
+/**
+ * Wall-clock time a task occupied. A settled task reads its create→final-update
+ * span; a task still in progress is measured against the clock so its elapsed
+ * time advances while it runs (updatedAt barely moves during a run, which used
+ * to freeze the display at ~0s until completion).
+ */
+function taskElapsedSecs(task: Task, now: number = Date.now()): number {
+	const end = task.status === "in_progress" ? now : task.updatedAt;
+	return Math.max(0, (end - task.createdAt) / 1000);
 }
 
-/** Wall-clock time a task occupied, derived from its create/update stamps. */
-function taskElapsedSecs(task: Task): number {
-	return Math.max(0, (task.updatedAt - task.createdAt) / 1000);
+/**
+ * Wall-clock span of the whole visible batch: earliest creation → now (while
+ * anything is still running) or the latest settle time. NOT the sum of
+ * per-task spans — summing made the header clock tick at 2× with two
+ * concurrent subagents and 3× with three, a nonsense "double time" display.
+ * Per-run timers live on the individual rows.
+ */
+function turnElapsedSecs(tasks: readonly Task[], now: number = Date.now()): number {
+	if (tasks.length === 0) return 0;
+	let earliest = Number.POSITIVE_INFINITY;
+	let latestEnd = 0;
+	let anyRunning = false;
+	for (const task of tasks) {
+		earliest = Math.min(earliest, task.createdAt);
+		if (task.status === "in_progress") anyRunning = true;
+		else latestEnd = Math.max(latestEnd, task.updatedAt);
+	}
+	const end = anyRunning ? now : latestEnd;
+	return Math.max(0, (end - earliest) / 1000);
+}
+
+/** The agent-type key a roster entry colors by: "explore#2" → "explore". */
+function agentTypeOfName(name: string): string {
+	const idx = name.indexOf("#");
+	return idx > 0 ? name.slice(0, idx) : name;
 }
 
 /** Sum the token + cost usage reported by the tasks shown this turn. */
@@ -233,7 +278,7 @@ function formatHeader(
 	if (turn) {
 		const inTok = formatTokens(turn.input);
 		const outTok = formatTokens(turn.output);
-		const elapsed = formatDuration(totalSecs);
+		const elapsed = formatDurationSecs(totalSecs);
 		const showCost = turn.cost > 0;
 		const costStr = showCost ? `$${turn.cost.toFixed(3)}` : "";
 		turnPlain = `turn ↑${inTok} ↓${outTok} · ${elapsed}${showCost ? ` · ${costStr}` : ""}`;
@@ -311,7 +356,15 @@ function formatTaskLine(
 	const isMcp = task.source === "mcp";
 	const ownerKind = options.owner?.kind ?? (task.source === "subagent" ? "subagent" : "main");
 	const sourceGlyph = isMcp ? MCP_SOURCE_GLYPH : AGENT_GLYPH[ownerKind];
-	const styledSource = grouped ? "" : theme.fg("dim", sourceGlyph);
+	// Subagent rows carry their agent's identity color on the glyph (and tag
+	// below) — the same hue as the chat's `Agent [type]` line and TaskOutput —
+	// so a user can trace one agent across the whole TUI at a glance.
+	const agentTypeName = !isMcp && ownerKind === "subagent" ? (task.subagentMode ?? task.agent) : undefined;
+	const styledSource = grouped
+		? ""
+		: agentTypeName
+			? theme.fg(agentColorFor(agentTypeName), sourceGlyph)
+			: theme.fg("dim", sourceGlyph);
 
 	// Origin tag prefixed to the title, naming who runs the row: the subagent
 	// type ("[explore]"), the team role's name ("[planner]"), or the MCP server
@@ -320,12 +373,18 @@ function formatTaskLine(
 	// rows drop it — the group header carries the origin — except MCP rows,
 	// which group under main without being main's own work.
 	let tag = "";
+	let tagColor: ThemeColor = "accent";
 	if (isMcp) tag = `[${task.subagentMode ?? "MCP"}]`;
 	else if (!grouped) {
-		if (task.subagentMode) tag = `[${task.subagentMode}]`;
-		else if (ownerKind === "role" && options.owner) tag = `[${options.owner.name}]`;
+		if (task.subagentMode) {
+			tag = `[${task.subagentMode}]`;
+			tagColor = agentColorFor(task.subagentMode);
+		} else if (ownerKind === "role" && options.owner) {
+			tag = `[${options.owner.name}]`;
+			tagColor = agentColorFor(options.owner.name);
+		}
 	}
-	const styledTag = tag ? `${theme.fg("accent", tag)} ` : "";
+	const styledTag = tag ? `${theme.fg(tagColor, tag)} ` : "";
 	const title = task.title;
 	// The title carries the line. Done titles fade to muted
 	// (settled work), pending dim (not started), active goes bold, failed turns red.
@@ -339,6 +398,9 @@ function formatTaskLine(
 			break;
 		case "failed":
 			styledTitle = theme.fg("error", title);
+			break;
+		case "cancelled":
+			styledTitle = theme.fg("dim", theme.strikethrough(title));
 			break;
 		case "in_progress":
 			styledTitle = theme.bold(title);
@@ -361,15 +423,23 @@ function formatTaskLine(
 			rightPlain = tokenText;
 			rightStyled = theme.fg("muted", tokenText);
 		}
+	} else if (task.status === "cancelled") {
+		rightPlain = "cancelled";
+		rightStyled = theme.fg("dim", rightPlain);
 	} else if (task.status === "in_progress") {
 		// Surface the owning agent's live activity (the tool it's currently running,
 		// fed by the pool's task_progress events) so a delegated row reads "⋯ grep"
 		// rather than a static "running…" — the difference between looking busy and
 		// looking stuck. Falls back to "running…" between tools (activity cleared) or
-		// when no owner is resolved.
+		// when no owner is resolved. Each running row carries its own live timer —
+		// the per-run clock the header (a single wall-clock span) deliberately
+		// doesn't show. Ticks smoothly because active rows re-render per spinner
+		// frame anyway.
 		const liveActivity = options.owner?.activity;
-		rightPlain = liveActivity ? `⋯ ${liveActivity}` : "running…";
-		rightStyled = theme.fg("warning", rightPlain);
+		const runFor = formatDurationSecs(taskElapsedSecs(task));
+		rightPlain = `${liveActivity ? `⋯ ${liveActivity}` : "running…"} · ${runFor}`;
+		rightStyled =
+			theme.fg("warning", liveActivity ? `⋯ ${liveActivity}` : "running…") + theme.fg("dim", ` · ${runFor}`);
 	} else if (task.status === "pending") {
 		rightPlain = "queued";
 		rightStyled = theme.fg("dim", rightPlain);
@@ -378,7 +448,7 @@ function formatTaskLine(
 	// A warning note (e.g. inherited-model fallback, exhaustion skip) takes over the
 	// right column as a ⚠ cue, replacing the usage/status stamp for that row.
 	if (task.note) {
-		rightPlain = `⚠ ${task.note}`;
+		rightPlain = `${WARNING_GLYPH} ${task.note}`;
 		rightStyled = theme.fg("warning", rightPlain);
 	}
 
@@ -424,6 +494,83 @@ function filterTasksForView(
 	};
 }
 
+/** One renderable row of the subagents lens: a task plus its tree connector. */
+interface SubagentTreeRow {
+	task: Task;
+	treePrefix: string;
+}
+
+/**
+ * The subagents lens's rows in render order: a depth-first walk of the
+ * delegated forest. Roots are parentless subagent/MCP tasks, plus orphans —
+ * children whose parent was dropped from the store (their `parentTaskId` no
+ * longer resolves), which used to be counted by the header but never rendered.
+ * A visited set guards against `parentTaskId` cycles, so a corrupt link can
+ * never hang the render loop. Both the lens filter (header counts) and the
+ * renderer consume this list, so count and rendering can never disagree.
+ */
+function subagentLensRows(tasks: readonly Task[]): SubagentTreeRow[] {
+	const ids = new Set<number>();
+	for (const task of tasks) ids.add(task.id);
+	const childrenByParent = new Map<number, Task[]>();
+	for (const task of tasks) {
+		if (task.parentTaskId === undefined) continue;
+		const siblings = childrenByParent.get(task.parentTaskId);
+		if (siblings) siblings.push(task);
+		else childrenByParent.set(task.parentTaskId, [task]);
+	}
+	const roots = tasks.filter(
+		(t) =>
+			(t.parentTaskId === undefined && (t.source === "subagent" || t.source === "mcp")) ||
+			(t.parentTaskId !== undefined && !ids.has(t.parentTaskId)),
+	);
+
+	const rows: SubagentTreeRow[] = [];
+	const visited = new Set<number>();
+	const walk = (task: Task, prefix: string, isLast: boolean, isRoot: boolean): void => {
+		if (visited.has(task.id)) return;
+		visited.add(task.id);
+		rows.push({ task, treePrefix: isRoot ? "" : `${prefix}${isLast ? "└─ " : "├─ "}` });
+		const kids = childrenByParent.get(task.id) ?? [];
+		const childPrefix = isRoot ? "" : `${prefix}${isLast ? "   " : "│  "}`;
+		for (let i = 0; i < kids.length; i++) {
+			walk(kids[i] as Task, childPrefix, i === kids.length - 1, false);
+		}
+	};
+	for (const root of roots) walk(root, "", true, true);
+	return rows;
+}
+
+/**
+ * The flat ("tasks") lens's rows in render order: the main agent's TodoWrite
+ * plan, with each subagent run nested (└─/├─) under the plan item it was
+ * dispatched for (`linkedTaskId`, recorded when exactly one item was
+ * in_progress). This is the visual tie between the plan and the agents
+ * executing it — previously a spawn was linked in spirit but invisible here,
+ * living only in the subagents lens. Runs with no link (or a dangling one —
+ * their todo was replaced) stay out of this lens; they remain visible in the
+ * subagents tree.
+ */
+function flatLensRows(tasks: readonly Task[]): SubagentTreeRow[] {
+	const linkedByTodo = new Map<number, Task[]>();
+	for (const task of tasks) {
+		if (task.linkedTaskId === undefined || task.source !== "subagent") continue;
+		const siblings = linkedByTodo.get(task.linkedTaskId);
+		if (siblings) siblings.push(task);
+		else linkedByTodo.set(task.linkedTaskId, [task]);
+	}
+	const rows: SubagentTreeRow[] = [];
+	for (const task of tasks) {
+		if (!isMainTask(task)) continue;
+		rows.push({ task, treePrefix: "" });
+		const linked = linkedByTodo.get(task.id) ?? [];
+		for (let i = 0; i < linked.length; i++) {
+			rows.push({ task: linked[i] as Task, treePrefix: i === linked.length - 1 ? "└─ " : "├─ " });
+		}
+	}
+	return rows;
+}
+
 /**
  * Scope the full task list to the tasks visible in the given lens. The header,
  * state stamp, and done/total count are derived from this subset so they match
@@ -436,9 +583,13 @@ function filterTasksForLens(
 ): readonly Task[] {
 	switch (view) {
 		case "flat":
-			return tasks.filter(isMainTask);
+			// Same walk the renderer uses (plan items + their linked runs), so the
+			// header's done/total always matches the visible rows.
+			return flatLensRows(tasks).map((row) => row.task);
 		case "subagents":
-			return tasks.filter((t) => t.source === "subagent" || t.source === "mcp" || t.parentTaskId !== undefined);
+			// Exactly the rows the tree renders (same walk), so the header's
+			// done/total always matches the visible rows.
+			return subagentLensRows(tasks).map((row) => row.task);
 		case "teams": {
 			const roleIds = new Set<string>();
 			for (const a of agents) {
@@ -475,13 +626,18 @@ function groupTasks(
 		else groups.set(owner, [task]);
 	}
 	const order: string[] = [];
-	if (groups.has("main")) order.push("main");
+	const ordered = new Set<string>();
+	const push = (id: string) => {
+		if (!ordered.has(id)) {
+			ordered.add(id);
+			order.push(id);
+		}
+	};
+	if (groups.has("main")) push("main");
 	for (const agent of agents) {
-		if (groups.has(agent.id) && !order.includes(agent.id)) order.push(agent.id);
+		if (groups.has(agent.id)) push(agent.id);
 	}
-	for (const id of groups.keys()) {
-		if (!order.includes(id)) order.push(id);
-	}
+	for (const id of groups.keys()) push(id);
 	return order.map((id) => ({
 		id,
 		meta: meta.get(id) ?? defaultAgentMeta(id),
@@ -498,10 +654,19 @@ function groupTasks(
 function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: number, selected = false): string {
 	// A focused role row swaps its ▸ for a filled ▶ in accent — the team-focus
 	// selection cursor (the owner-kind glyph mapping itself is unchanged).
+	// Spawned/team agents carry their identity color on the glyph and name
+	// (hashed from the agent type, "explore#2" → "explore"), matching the same
+	// agent's color in the chat and TaskOutput; main keeps the accent.
+	const identityColor: ThemeColor =
+		meta.kind === "main" ? AGENT_GLYPH_COLOR[meta.kind] : agentColorFor(agentTypeOfName(meta.name));
 	const glyph = selected
-		? theme.fg("accent", "▶")
-		: theme.fg(AGENT_GLYPH_COLOR[meta.kind], AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
-	const name = selected ? theme.bold(theme.fg("accent", meta.name)) : theme.bold(meta.name);
+		? theme.fg("accent", SELECTED_GLYPH)
+		: theme.fg(identityColor, AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
+	const name = selected
+		? theme.bold(theme.fg("accent", meta.name))
+		: meta.kind === "main"
+			? theme.bold(meta.name)
+			: theme.bold(theme.fg(identityColor, meta.name));
 	// Roles read as a dim "· role" suffix for spawned/team agents; the main
 	// orchestrator's role sits brighter (muted), matching the design's .grp-role.
 	const role = meta.role
@@ -550,7 +715,10 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   ("[planner]", fed by `--team <url>`), or the MCP server ("[github]").
  * - Three views split by ownership (cycled via app.tasks.cycleView, shown as a
  *   `tasks · subagents · teams` switcher in the header):
- *     - flat ("tasks") — only the main agent's own TodoWrite plan;
+ *     - flat ("tasks") — the main agent's own TodoWrite plan, with each
+ *       dispatched subagent run nested under the plan item it was dispatched
+ *       for (linkedTaskId), so the plan and the agents executing it read as
+ *       one picture;
  *     - subagents — a recursive task tree over delegated work, where a subagent
  *       that spawned a subagent shows its nested tasks (roots are the dispatched
  *       subagents and direct MCP calls; children link via parentTaskId, merged
@@ -576,6 +744,74 @@ export class TaskPanelComponent implements Component, Focusable {
 	private view: TaskPanelView = "flat";
 	private disposed = false;
 
+	// Render memoization. The spinner re-renders the whole pane every 80ms, but
+	// between store mutations only the in-progress rows actually change (spinner
+	// frame + live activity). Settled/pending row strings and derived structures
+	// (agentById, the subagents tree walk) are cached and invalidated by the
+	// store's mutation version + pane width, so a frame tick reuses them instead
+	// of rebuilding every string.
+	private memoVersion = -1;
+	private memoWidth = -1;
+	private lineMemo = new Map<string, string>();
+	private agentByIdMemo: Map<string, TaskAgent> | null = null;
+	private subagentRowsMemo: SubagentTreeRow[] | null = null;
+	private flatRowsMemo: SubagentTreeRow[] | null = null;
+
+	/** Drop all memoized render state when the store or width changed. */
+	private syncMemo(width: number): void {
+		const version = taskStore.version();
+		if (version === this.memoVersion && width === this.memoWidth) return;
+		this.memoVersion = version;
+		this.memoWidth = width;
+		this.lineMemo.clear();
+		this.agentByIdMemo = null;
+		this.subagentRowsMemo = null;
+		this.flatRowsMemo = null;
+	}
+
+	private agentById(agents: readonly TaskAgent[]): Map<string, TaskAgent> {
+		if (!this.agentByIdMemo) {
+			this.agentByIdMemo = new Map(agents.map((a) => [a.id, a]));
+		}
+		return this.agentByIdMemo;
+	}
+
+	private subagentRows(tasks: readonly Task[]): SubagentTreeRow[] {
+		if (!this.subagentRowsMemo) {
+			this.subagentRowsMemo = subagentLensRows(tasks);
+		}
+		return this.subagentRowsMemo;
+	}
+
+	private flatRows(tasks: readonly Task[]): SubagentTreeRow[] {
+		if (!this.flatRowsMemo) {
+			this.flatRowsMemo = flatLensRows(tasks);
+		}
+		return this.flatRowsMemo;
+	}
+
+	/**
+	 * formatTaskLine with caching for rows that don't animate. In-progress rows
+	 * depend on the spinner frame and the owner's live activity, so they render
+	 * fresh every frame; everything else is stable until the next store mutation
+	 * or width change (handled by syncMemo).
+	 */
+	private taskLine(
+		task: Task,
+		width: number,
+		options: { grouped?: boolean; owner?: TaskAgent; treePrefix?: string } = {},
+	): string {
+		if (task.status === "in_progress") {
+			return formatTaskLine(task, width, this.frame, options);
+		}
+		const key = `${task.id}:${options.grouped ? 1 : 0}:${options.treePrefix ?? ""}:${options.owner?.kind ?? ""}`;
+		const hit = this.lineMemo.get(key);
+		if (hit !== undefined) return hit;
+		const line = formatTaskLine(task, width, this.frame, options);
+		this.lineMemo.set(key, line);
+		return line;
+	}
+
 	// Team focus mode: when the TUI focuses the panel, role rows become a
 	// navigable list (↑/↓ select, n nudge, a attach, q/esc back). The selection
 	// is tracked by role name so a roster reorder doesn't move the cursor.
@@ -593,7 +829,8 @@ export class TaskPanelComponent implements Component, Focusable {
 	}
 
 	invalidate(): void {
-		// No cached rendering state.
+		// Force the next render to rebuild its memoized rows/structures.
+		this.memoVersion = -1;
 	}
 
 	private roleAgents(): TaskAgent[] {
@@ -623,10 +860,10 @@ export class TaskPanelComponent implements Component, Focusable {
 			this.selectedRole = roles[Math.max(0, index - 1)].name;
 		} else if (keybindings.matches(data, "tui.select.down")) {
 			this.selectedRole = roles[Math.min(roles.length - 1, index + 1)].name;
-		} else if (matchesKey(data, "n")) {
+		} else if (matchesAppKey(data, "app.team.nudge")) {
 			const role = this.focusedRole();
 			if (role) this.onNudge?.(role);
-		} else if (matchesKey(data, "a")) {
+		} else if (matchesAppKey(data, "app.team.attach")) {
 			const role = this.focusedRole();
 			if (role) this.onAttach?.(role);
 		} else if (matchesKey(data, "q") || keybindings.matches(data, "tui.select.cancel")) {
@@ -692,6 +929,7 @@ export class TaskPanelComponent implements Component, Focusable {
 	render(width: number): string[] {
 		if (this.disposed) return [];
 
+		this.syncMemo(width);
 		const tasks = taskStore.list();
 		const allAgents = taskStore.agents();
 
@@ -720,12 +958,19 @@ export class TaskPanelComponent implements Component, Focusable {
 
 		// Scope all visual state to the tasks visible in the current lens so the
 		// animation, rail color, and header count match exactly what the user sees.
-		const lensTasks = filterTasksForLens(tasks, allAgents, view);
+		// The flat and subagents lenses derive from their memoized row walks so
+		// filter and render share one computation (one source of truth for counts).
+		const lensTasks =
+			view === "subagents"
+				? this.subagentRows(tasks).map((row) => row.task)
+				: view === "flat"
+					? this.flatRows(tasks).map((row) => row.task)
+					: filterTasksForLens(tasks, allAgents, view);
 		const hasActive = lensTasks.some((t) => t.status === "in_progress");
 		this.ensureAnimation(hasActive);
 
 		const state = panelState(lensTasks);
-		const totalSecs = lensTasks.reduce((sum, t) => sum + taskElapsedSecs(t), 0);
+		const totalSecs = turnElapsedSecs(lensTasks);
 		const railColor = STATE_PRESENTATION[state].color;
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
@@ -733,13 +978,13 @@ export class TaskPanelComponent implements Component, Focusable {
 		const lines: string[] = [gutter + formatHeader(lensTasks, inner, state, totalSecs, view, available)];
 
 		if (view === "flat") {
-			// Only the main agent's own TodoWrite plan — delegated (subagent/MCP) work
-			// belongs to the subagents lens. Resolve each row's owner from the roster
-			// so the glyph/tag reflect the owning agent's kind, not just the source.
-			const agentById = new Map(allAgents.map((a) => [a.id, a]));
-			for (const task of tasks) {
-				if (!isMainTask(task)) continue;
-				lines.push(gutter + formatTaskLine(task, inner, this.frame, { owner: agentById.get(taskOwnerId(task)) }));
+			// The main agent's TodoWrite plan, with each dispatched run nested under
+			// the plan item it executes (see flatLensRows). Resolve each row's owner
+			// from the roster so the glyph/tag reflect the owning agent's kind and a
+			// nested run shows its live activity + timer.
+			const agentById = this.agentById(allAgents);
+			for (const { task, treePrefix } of this.flatRows(tasks)) {
+				lines.push(gutter + this.taskLine(task, inner, { treePrefix, owner: agentById.get(taskOwnerId(task)) }));
 			}
 			return lines;
 		}
@@ -750,37 +995,21 @@ export class TaskPanelComponent implements Component, Focusable {
 			// tasks they spawned in turn (linked by parentTaskId, merged across the
 			// process boundary), so a subagent that spawned a subagent is visible.
 			// Each task is its own node keeping its [subagentMode]/[server] tag; depth
-			// is drawn with └─/├─/│ connectors. With only top-level tasks the roots
-			// carry an empty prefix and read exactly like flat rows (no extra indent).
-			const childrenByParent = new Map<number, Task[]>();
-			for (const task of tasks) {
-				if (task.parentTaskId === undefined) continue;
-				const siblings = childrenByParent.get(task.parentTaskId);
-				if (siblings) siblings.push(task);
-				else childrenByParent.set(task.parentTaskId, [task]);
-			}
-			const roots = tasks.filter(
-				(t) => t.parentTaskId === undefined && (t.source === "subagent" || t.source === "mcp"),
-			);
-			// Resolve each row's owning agent so an in-progress row can show the agent's
-			// live tool activity (⋯ grep) instead of a static "running…".
-			const agentById = new Map(allAgents.map((a) => [a.id, a]));
-			const walk = (task: Task, prefix: string, isLast: boolean, isRoot: boolean): void => {
-				const connector = isRoot ? "" : `${prefix}${isLast ? "└─ " : "├─ "}`;
+			// is drawn with └─/├─/│ connectors (see subagentLensRows for orphan and
+			// cycle handling). With only top-level tasks the roots carry an empty
+			// prefix and read exactly like flat rows (no extra indent). Owners are
+			// resolved so an in-progress row shows the run's live tool activity
+			// (⋯ grep) instead of a static "running…".
+			const agentById = this.agentById(allAgents);
+			for (const { task, treePrefix } of this.subagentRows(tasks)) {
 				lines.push(
 					gutter +
-						formatTaskLine(task, inner, this.frame, {
-							treePrefix: connector,
+						this.taskLine(task, inner, {
+							treePrefix,
 							owner: agentById.get(taskOwnerId(task)),
 						}),
 				);
-				const kids = childrenByParent.get(task.id) ?? [];
-				const childPrefix = isRoot ? "" : `${prefix}${isLast ? "   " : "│  "}`;
-				for (let i = 0; i < kids.length; i++) {
-					walk(kids[i] as Task, childPrefix, i === kids.length - 1, false);
-				}
-			};
-			for (const root of roots) walk(root, "", true, true);
+			}
 			return lines;
 		}
 
@@ -801,7 +1030,7 @@ export class TaskPanelComponent implements Component, Focusable {
 			const selected = cursorRole !== undefined && group.meta.kind === "role" && group.meta.name === cursorRole;
 			lines.push(gutter + formatGroupHeader(group.meta, group.items, inner, selected));
 			for (const task of group.items) {
-				lines.push(gutter + formatTaskLine(task, inner, this.frame, { grouped: true }));
+				lines.push(gutter + this.taskLine(task, inner, { grouped: true }));
 			}
 			// Forward-handoff connector: emit "└──→ name" only for "→ name" arrows
 			// (not back-references "← name"), and only when the target exists in the
@@ -825,9 +1054,17 @@ export class TaskPanelComponent implements Component, Focusable {
 			}
 		}
 		if (this.focused) {
-			lines.push(
-				gutter + truncateToWidth(theme.fg("dim", "↑/↓ select · n nudge · a attach · q/esc back"), inner, "…"),
-			);
+			// House hint style (see keybinding-hints): dim key + muted description,
+			// muted · separators. Arrows and q/esc are literal by convention; the
+			// nudge/attach keys resolve from the live keybinding config.
+			const sep = theme.fg("muted", " · ");
+			const hint = [
+				rawKeyHint("↑/↓", "select"),
+				rawKeyHint(appKeyLabel("app.team.nudge"), "nudge"),
+				rawKeyHint(appKeyLabel("app.team.attach"), "attach"),
+				rawKeyHint("q/esc", "back"),
+			].join(sep);
+			lines.push(gutter + truncateToWidth(hint, inner, "…"));
 		}
 		return lines;
 	}

@@ -56,9 +56,11 @@ describe("task panel rendering", () => {
 		// In the flat view, the origin tag precedes the title (design: .mode tag).
 		expect(text).toContain("[explore]");
 		expect(text).toContain("[edit]");
-		// Active work shows the WORKING stamp (◐) and a pending dot (●).
+		// Active work shows the WORKING stamp (◐) and a hollow pending marker (○ —
+		// ● stays exclusive to the chat's tool status dot).
 		expect(text).toContain("◐");
-		expect(text).toContain("●");
+		expect(text).toContain("○");
+		expect(text).not.toContain("●");
 		// A pending task is tagged queued.
 		expect(text).toContain("queued");
 		// The active row reads running…; the owner glyph (◆ main) precedes each title.
@@ -215,12 +217,14 @@ describe("task panel rendering", () => {
 		const lines = renderPanel();
 		const noteRow = lines.find((l) => l.includes("Audit reconnect path"));
 		expect(noteRow).toBeDefined();
-		expect(noteRow).toContain("\u26a0 ran on inherited model");
+		// VS15 (\ufe0e) rides along so terminals render the cue as single-cell
+		// text, never a double-width emoji that would break the column math.
+		expect(noteRow).toContain("\u26a0\ufe0e ran on inherited model");
 		// The ⚠ cue takes over the right column, so the usage stamp is not shown.
 		expect(noteRow).not.toContain("4.5k");
 
 		const failRow = lines.find((l) => l.includes("Run suite"));
-		expect(failRow).toContain("\u26a0 anthropic exhausted");
+		expect(failRow).toContain("\u26a0\ufe0e anthropic exhausted");
 	});
 
 	test("long titles use the full left width regardless of task-id digit count", () => {
@@ -760,26 +764,31 @@ describe("task store", () => {
 		warn.mockRestore();
 	});
 
-	test("reset preserves agents with non-zero stats", () => {
+	test("reset preserves role agents with non-zero stats but drops settled subagent runs", () => {
 		// Create a task so reset() actually runs (not early-return path).
 		const dummy = taskStore.create("dummy");
 		taskStore.update(dummy.id, { status: "done" });
-		taskStore.upsertAgent({ id: "stats-agent", name: "stats-agent", kind: "subagent" });
-		taskStore.addAgentStats("stats-agent", { input: 100, output: 50, cost: 0.001 });
+		// Role agents carry cross-turn team cost accounting — preserved with stats.
+		taskStore.upsertAgent({ id: "team:planner", name: "planner", kind: "role" });
+		taskStore.addAgentStats("team:planner", { input: 100, output: 50, cost: 0.001 });
+		// Subagent rows are per-run; a settled run must not outlive its task even
+		// with stats, or the roster would grow without bound across turns.
+		taskStore.upsertAgent({ id: "run-1", name: "explore#1", kind: "subagent", state: "done" });
+		taskStore.addAgentStats("run-1", { input: 200, output: 20, cost: 0.002 });
 
 		taskStore.reset();
-		// stats-agent has non-zero stats — must survive reset.
-		expect(taskStore.agents().some((a) => a.id === "stats-agent")).toBe(true);
+		expect(taskStore.agents().some((a) => a.id === "team:planner")).toBe(true);
+		expect(taskStore.agents().some((a) => a.id === "run-1")).toBe(false);
 
-		// Register a zero-stats agent; create + finish a dummy to force reset to run
-		// (nextId is 1 after the previous reset, so a new task makes it 2).
-		taskStore.upsertAgent({ id: "zero-agent", name: "zero-agent", kind: "subagent" });
+		// Register a zero-stats role agent; create + finish a dummy to force reset
+		// to run (nextId is 1 after the previous reset, so a new task makes it 2).
+		taskStore.upsertAgent({ id: "team:zero", name: "zero", kind: "role" });
 		const dummy2 = taskStore.create("dummy2");
 		taskStore.update(dummy2.id, { status: "done" });
 		taskStore.reset();
 		// Zero-stats agent is dropped.
-		expect(taskStore.agents().some((a) => a.id === "zero-agent")).toBe(false);
-		// Stats-agent still preserved.
-		expect(taskStore.agents().some((a) => a.id === "stats-agent")).toBe(true);
+		expect(taskStore.agents().some((a) => a.id === "team:zero")).toBe(false);
+		// Stats-carrying role agent still preserved.
+		expect(taskStore.agents().some((a) => a.id === "team:planner")).toBe(true);
 	});
 });

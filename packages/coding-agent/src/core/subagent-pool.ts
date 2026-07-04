@@ -4,7 +4,9 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { dirname, join } from "node:path";
 import { getDispatchTaskDir } from "../config.js";
 import { attachJsonlLineReader } from "../modes/rpc/jsonl.js";
+import { writeFileAtomicSync } from "../utils/atomic-file.js";
 import { waitForChildProcess } from "../utils/child-process.js";
+import { killProcessTree } from "../utils/shell.js";
 import { MODEL_INHERIT } from "./agent-frontmatter.js";
 import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
@@ -66,7 +68,7 @@ export interface SubagentResult {
 	/** True when the task exceeded its token budget and was hard-stopped. */
 	budget_exceeded?: boolean;
 	/** Terminal status derived from how the task finished. */
-	status?: "complete" | "partial" | "failed" | "stalled" | "timeout";
+	status?: "complete" | "partial" | "failed" | "stalled" | "timeout" | "cancelled";
 	/** Parsed result.json content when available (e.g. on partial completion). */
 	result_data?: Record<string, unknown>;
 	/** True when this run used the inherited-model fallback (preferred model failed first). */
@@ -146,6 +148,27 @@ export const FORWARDED_SUBAGENT_EVENTS: ReadonlySet<string> = new Set([
 	"tool_execution_end",
 ]);
 
+/**
+ * Cap on the captured stdout/stderr text kept per task (tail-truncated). The
+ * capture exists for diagnostics (failure reasons, output.json), so keeping the
+ * most recent tail is enough; without a cap a chatty child could grow the
+ * parent's memory without bound across a long swarm.
+ */
+export const MAX_CAPTURED_STREAM_CHARS = 256 * 1024;
+
+/**
+ * Cap on a single un-terminated JSONL line buffered from a child's stdout. The
+ * forwarded events are small; anything approaching this is a runaway writer,
+ * and the reader drops the line rather than buffering toward OOM.
+ */
+export const MAX_SUBAGENT_EVENT_LINE_CHARS = 8 * 1024 * 1024;
+
+/** Append a chunk to a capped capture buffer, keeping the most recent tail. */
+function appendTail(current: string, chunk: string, cap: number = MAX_CAPTURED_STREAM_CHARS): string {
+	const next = current + chunk;
+	return next.length > cap ? next.slice(next.length - cap) : next;
+}
+
 /** The action the pool should take for one JSONL line from a subagent's stdout. */
 export type SubagentStdoutLine =
 	| { kind: "heartbeat" }
@@ -184,6 +207,7 @@ export function classifySubagentLine(line: string): SubagentStdoutLine {
  * - "task_stalled" – heartbeat missed past the load-scaled threshold (60s base,
  *                    widened under concurrency/event-loop lag), process SIGKILLed
  * - "task_timeout" – hard timeout exceeded, process was SIGKILLed
+ * - "task_cancelled" – user-initiated cancel (see cancel()); process tree killed
  * - "budget_warning" – token usage crossed 80% threshold (advisory)
  * - "budget_exceeded" – token usage crossed 100% threshold (advisory; never kills)
  * - "task_progress" – coarse lifecycle event (turn_end, tool start/end) parsed
@@ -209,10 +233,10 @@ export class SubagentPool extends EventEmitter {
 	private disposed = false;
 	/** Lazily-loaded agent registry (frontmatter definitions) for this pool's cwd. */
 	private registry?: AgentRegistry;
-	/** Tracks why a task was killed (stalled / timeout) before exit handler fires. */
-	private killReasons = new Map<string, "stalled" | "timeout">();
+	/** Tracks why a task was killed (stalled / timeout / user cancel) before exit handler fires. */
+	private killReasons = new Map<string, "stalled" | "timeout" | "cancelled">();
 	/** Persistent terminal status map, survives wait_for consumption. */
-	private taskStatus = new Map<string, "done" | "failed" | "stalled" | "timeout">();
+	private taskStatus = new Map<string, "done" | "failed" | "stalled" | "timeout" | "cancelled">();
 	/** Settings for model category resolution. */
 	private readonly settings?: Settings;
 
@@ -292,7 +316,9 @@ export class SubagentPool extends EventEmitter {
 	}
 
 	/** Current status of a task. */
-	get_status(task_id: string): "running" | "queued" | "done" | "failed" | "stalled" | "timeout" | "unknown" {
+	get_status(
+		task_id: string,
+	): "running" | "queued" | "done" | "failed" | "stalled" | "timeout" | "cancelled" | "unknown" {
 		if (this.slots.has(task_id)) return "running";
 		if (this.queue.some((t) => t.task_id === task_id)) return "queued";
 		const persisted = this.taskStatus.get(task_id);
@@ -301,10 +327,46 @@ export class SubagentPool extends EventEmitter {
 		if (result) {
 			if (result.status === "stalled") return "stalled";
 			if (result.status === "timeout") return "timeout";
+			if (result.status === "cancelled") return "cancelled";
 			if (result.ok) return "done";
 			return "failed";
 		}
 		return "unknown";
+	}
+
+	/**
+	 * Cancel a task on the user's behalf (Esc/abort mid-turn). A queued task is
+	 * removed and settles immediately; a running task's whole process tree is
+	 * killed and settles with status "cancelled" when its exit is observed
+	 * (unless it already wrote a valid result.json — completed work is honored).
+	 * Returns false for unknown/settled task ids.
+	 */
+	cancel(task_id: string): boolean {
+		const queued = this.queue.findIndex((t) => t.task_id === task_id);
+		if (queued !== -1) {
+			this.queue.splice(queued, 1);
+			const result: SubagentResult = {
+				task_id,
+				ok: false,
+				stdout: "",
+				stderr: "",
+				exit_code: null,
+				error: "cancelled before start",
+				status: "cancelled",
+			};
+			this.emit("task_cancelled", { task_id });
+			this.resolveWaiter(task_id, result);
+			return true;
+		}
+		const slot = this.slots.get(task_id);
+		if (!slot) return false;
+		this.killReasons.set(task_id, "cancelled");
+		if (slot.pid > 0) {
+			killProcessTree(slot.pid);
+		} else if (!slot.process.killed) {
+			slot.process.kill("SIGKILL");
+		}
+		return true;
 	}
 
 	/** Wait for a task to complete and return its result. */
@@ -515,8 +577,9 @@ export class SubagentPool extends EventEmitter {
 		};
 		const path = join(getDispatchTaskDir(this.cwd, task_id), "output.json");
 		try {
-			mkdirSync(dirname(path), { recursive: true });
-			writeFileSync(path, JSON.stringify(output, null, 2));
+			// Atomic like result.json: background pollers may read output.json while
+			// it is being (re)written.
+			writeFileAtomicSync(path, JSON.stringify(output, null, 2));
 		} catch {
 			// Best-effort persistence
 		}
@@ -540,7 +603,12 @@ export class SubagentPool extends EventEmitter {
 		this.disposed = true;
 
 		for (const slot of this.slots.values()) {
-			if (!slot.process.killed) {
+			// Kill the whole process group/tree, not just the direct child: a
+			// subagent's own children (bash commands, nested subagents) must not
+			// outlive the pool.
+			if (slot.pid > 0) {
+				killProcessTree(slot.pid);
+			} else if (!slot.process.killed) {
 				slot.process.kill("SIGTERM");
 			}
 		}
@@ -723,6 +791,11 @@ export class SubagentPool extends EventEmitter {
 				env: this.childSpawnEnv(task),
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
+				// POSIX: the child leads its own process group so a kill can reach its
+				// whole tree (see lifeguard/dispose). A single-PID SIGKILL orphans any
+				// grandchildren the subagent spawned (its own bash commands, nested
+				// subagents), which kept burning CPU after their parent was reaped.
+				detached: process.platform !== "win32",
 			});
 		} catch {
 			if (!isRetry) {
@@ -763,46 +836,55 @@ export class SubagentPool extends EventEmitter {
 		let detachStdoutReader: (() => void) | undefined;
 
 		proc.stdout?.on("data", (data: Buffer) => {
-			const chunk = data.toString();
-			stdout += chunk;
-			budget.processStdout(chunk);
-
-			// Any output proves the child is alive and working, so treat it as a
-			// heartbeat. The dedicated {"ping":true} line (parsed below via the JSONL
-			// reader) still matters for quiet phases (e.g. a long single model turn
-			// that emits nothing), but relying on it alone falsely reaps subagents
-			// that are busily streaming events while the parent's event loop is
-			// starved by concurrent load.
+			// Capture (tail-capped) for diagnostics, and treat any output as a
+			// heartbeat: a child busily streaming events is alive even when the
+			// parent's starved event loop hasn't parsed its {"ping":true} line yet.
+			// All *parsing* happens in the single JSONL reader below.
+			stdout = appendTail(stdout, data.toString());
 			this.lifeguard.recordHeartbeat(task.task_id);
 		});
 
-		// Parse the child's newline-delimited JSON event stream with UTF-8-safe,
-		// LF-only framing — multi-byte characters and large events split across pipe
-		// chunks are reassembled before parsing, which the raw handler above cannot do.
-		// Pings refresh the heartbeat; coarse lifecycle events are forwarded for live
-		// UI. Detached when the child exits (see cleanup below).
+		// The one parser on the child's stdout: UTF-8-safe, LF-only framing —
+		// multi-byte characters and large events split across pipe chunks are
+		// reassembled before parsing. Each complete line feeds the token budget
+		// (usage telemetry) and the ping/forward/drop classifier; previously the
+		// budget ran its own naive chunk-splitting parser on the same stream, which
+		// corrupted lines split mid-character. The line buffer is capped so a
+		// runaway writer cannot OOM the parent. Detached when the child exits (see
+		// cleanup below); the reader also self-detaches on stream error/close.
 		if (proc.stdout) {
-			detachStdoutReader = attachJsonlLineReader(proc.stdout, (line) => {
-				const action = classifySubagentLine(line);
-				if (action.kind === "heartbeat") {
-					this.lifeguard.recordHeartbeat(task.task_id);
-				} else if (action.kind === "progress") {
-					this.emit("task_progress", {
-						task_id: task.task_id,
-						agent_type: task.agent_type,
-						event: action.event,
-					});
-				}
-			});
+			detachStdoutReader = attachJsonlLineReader(
+				proc.stdout,
+				(line) => {
+					budget.processLine(line);
+					const action = classifySubagentLine(line);
+					if (action.kind === "heartbeat") {
+						this.lifeguard.recordHeartbeat(task.task_id);
+					} else if (action.kind === "progress") {
+						this.emit("task_progress", {
+							task_id: task.task_id,
+							agent_type: task.agent_type,
+							event: action.event,
+						});
+					}
+				},
+				{ maxBuffer: MAX_SUBAGENT_EVENT_LINE_CHARS },
+			);
 		}
 		proc.stderr?.on("data", (data: Buffer) => {
-			stderr += data.toString();
+			stderr = appendTail(stderr, data.toString());
 		});
+
+		// True when this attempt scheduled another run of the same task id (spawn
+		// retry or inherited-model fallback). The retry reuses the task's TokenBudget
+		// so usage accumulates across attempts; the .finally below must then leave
+		// the budget (and its listeners) alone instead of tearing it down under the
+		// retry's feet.
+		let retryScheduled = false;
 
 		waitForChildProcess(proc)
 			.then((code) => {
 				this.slots.delete(task.task_id);
-				detachStdoutReader?.();
 				budget.flush();
 
 				const killReason = this.killReasons.get(task.task_id);
@@ -831,8 +913,10 @@ export class SubagentPool extends EventEmitter {
 					}
 				}
 
-				// If killed by lifeguard before producing a valid result, honor the kill.
-				if ((killReason === "stalled" || killReason === "timeout") && !verification.valid) {
+				// If killed (lifeguard reap or user cancel) before producing a valid
+				// result, honor the kill; a child that already wrote a verified
+				// result.json completed its work and settles as a success below.
+				if (killReason !== undefined && !verification.valid) {
 					const result: SubagentResult = {
 						task_id: task.task_id,
 						ok: false,
@@ -914,6 +998,7 @@ export class SubagentPool extends EventEmitter {
 						`[DISPATCH] agent=${task.agent_type} task_id=${task.task_id} preferred model failed; retrying with inherited model`,
 					);
 					this.cleanupRetryArtifacts(task);
+					retryScheduled = true;
 					this.queue.unshift({ ...task, useInheritedModelFallback: true });
 					return;
 				}
@@ -933,6 +1018,10 @@ export class SubagentPool extends EventEmitter {
 				const duration = Date.now() - slot.spawned_at;
 				const tokens_used = budget.getUsed();
 				if (!isRetry) {
+					// The retry (started synchronously here) looks the budget up from
+					// this.budgets and reuses it; flag it so the .finally below doesn't
+					// strip the budget's listeners or delete the entry the retry now owns.
+					retryScheduled = true;
 					this.startTask(task, true);
 					return;
 				}
@@ -958,8 +1047,18 @@ export class SubagentPool extends EventEmitter {
 				this.resolveWaiter(task.task_id, result);
 			})
 			.finally(() => {
-				budget.removeAllListeners();
-				this.budgets.delete(task.task_id);
+				// Runs on success AND failure: the stdout reader used to be detached only
+				// on the success path, leaking listeners (and their buffers) whenever a
+				// child failed or the wait rejected.
+				detachStdoutReader?.();
+				proc.stdout?.removeAllListeners("data");
+				proc.stderr?.removeAllListeners("data");
+				proc.stdout?.destroy();
+				proc.stderr?.destroy();
+				if (!retryScheduled) {
+					budget.removeAllListeners();
+					this.budgets.delete(task.task_id);
+				}
 				this.pull();
 			});
 	}
@@ -1042,6 +1141,7 @@ export class SubagentPool extends EventEmitter {
 		// Persist terminal status for get_status() even after wait_for consumes the result
 		if (result.status === "stalled") this.taskStatus.set(task_id, "stalled");
 		else if (result.status === "timeout") this.taskStatus.set(task_id, "timeout");
+		else if (result.status === "cancelled") this.taskStatus.set(task_id, "cancelled");
 		else if (result.ok) this.taskStatus.set(task_id, "done");
 		else this.taskStatus.set(task_id, "failed");
 

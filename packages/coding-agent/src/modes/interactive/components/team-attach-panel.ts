@@ -26,6 +26,7 @@ import type { TeamApproval } from "../../../core/team-approvals.js";
 import type { TeamViewConnection, TeamViewEvent } from "../../../core/team-view.js";
 import { theme } from "../theme/theme.js";
 import { AskOptionsComponent } from "./ask-options.js";
+import { appKeyLabel, matchesAppKey, rawKeyHint } from "./keybinding-hints.js";
 
 /** Fixed-capacity FIFO over a circular array: push evicts the oldest entry. */
 export class RingBuffer<T> {
@@ -173,7 +174,7 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 			this.callbacks.onDetach();
 			return;
 		}
-		if (matchesKey(data, "n")) {
+		if (matchesAppKey(data, "app.team.nudge")) {
 			this.callbacks.onNudge(this.role);
 		}
 	}
@@ -268,14 +269,17 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 				break;
 			case "task_paused":
 				this.breakLine();
-				this.lines.push(theme.fg("warning", `⏸ awaiting approval: ${event.question ?? "?"}`));
+				// VS15 (U+FE0E) forces text presentation: bare ⏸/▶ carry the Unicode
+				// Emoji property and emoji-font fallback renders them double-width,
+				// breaking the width math that counts one cell.
+				this.lines.push(theme.fg("warning", `⏸︎ awaiting approval: ${event.question ?? "?"}`));
 				break;
 			case "task_resumed":
 				this.breakLine();
 				this.lines.push(
 					theme.fg(
 						"accent",
-						`▶ task ${event.taskId ?? "?"} resumed${event.chosenOption ? `: ${event.chosenOption}` : ""}`,
+						`▶︎ task ${event.taskId ?? "?"} resumed${event.chosenOption ? `: ${event.chosenOption}` : ""}`,
 					),
 				);
 				break;
@@ -303,8 +307,14 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 		const titlePlain = `◉ ${this.role} — attached`;
 		const title =
 			theme.fg("accent", "◉ ") + theme.bold(theme.fg("accent", this.role)) + theme.fg("muted", " — attached");
-		const hintsPlain = this.approval ? "" : "n nudge · q detach";
-		const hints = theme.fg("dim", hintsPlain);
+		// House hint style: dim key + muted description, muted · separator. The
+		// nudge key resolves from the live keybinding config (same binding the
+		// task panel's team focus uses); q stays a literal by convention.
+		const nudgeKey = appKeyLabel("app.team.nudge");
+		const hintsPlain = this.approval ? "" : `${nudgeKey} nudge · q detach`;
+		const hints = this.approval
+			? ""
+			: rawKeyHint(nudgeKey, "nudge") + theme.fg("muted", " · ") + rawKeyHint("q", "detach");
 		let header: string;
 		if (visibleWidth(titlePlain) + 2 + visibleWidth(hintsPlain) <= inner) {
 			header = title + " ".repeat(inner - visibleWidth(titlePlain) - visibleWidth(hintsPlain)) + hints;

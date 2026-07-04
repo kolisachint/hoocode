@@ -7,7 +7,12 @@
  * there is no cross-process boundary to cross.
  */
 
-export type TaskStatus = "pending" | "in_progress" | "done" | "failed";
+/**
+ * `cancelled` is a user-initiated stop (Esc/abort mid-run) — deliberately
+ * distinct from `failed` so the panel doesn't paint an intentional interrupt
+ * as an error.
+ */
+export type TaskStatus = "pending" | "in_progress" | "done" | "failed" | "cancelled";
 
 /**
  * What kind of background work owns a task, surfaced as a source glyph in the
@@ -24,7 +29,7 @@ export type TaskSource = "subagent" | "mcp";
 export type TaskAgentKind = "main" | "subagent" | "role";
 
 /** Lifecycle word shown as the agent's `[state]` tag in grouped views. */
-export type TaskAgentState = "active" | "running" | "done" | "queued" | "idle" | "waiting" | "failed";
+export type TaskAgentState = "active" | "running" | "done" | "queued" | "idle" | "waiting" | "failed" | "cancelled";
 
 /**
  * An agent that owns tasks, rendered as a group header in the pane's
@@ -75,11 +80,32 @@ export interface Task {
 	 */
 	parentTaskId?: number;
 	/**
+	 * Id of the main-agent (TodoWrite) task this run is working on, set at
+	 * dispatch time when exactly one plan item is in_progress. Purely a display
+	 * link: the flat ("tasks") lens nests the run under its plan item so the
+	 * plan and the agents executing it read as one picture. Deliberately NOT
+	 * `parentTaskId` — that field drives the subagents tree and the
+	 * cross-process subtree merge, and overloading it would move runs between
+	 * lenses. A dangling link (the todo was removed/replaced) is simply not
+	 * rendered.
+	 */
+	linkedTaskId?: number;
+	/**
 	 * Short warning note surfaced as a ⚠ cue in the task pane (e.g. the subagent
 	 * fell back to the inherited model, or was skipped because the provider was
 	 * exhausted). Kept terse so it fits the row's right column.
 	 */
 	note?: string;
+	/**
+	 * Canonical TodoWrite item content for main-plan tasks. `title` is the
+	 * *display* form and legitimately changes between `content` and `activeForm`
+	 * as the item's status moves, so it cannot identify an item across TodoWrite
+	 * calls. This field can: the tool reconciles incoming items against it by
+	 * identity first (position only as a fallback), keeping task ids — and the
+	 * subagent runs linked to them — attached to the same plan item when the
+	 * list is reordered or shrunk.
+	 */
+	todoContent?: string;
 	readonly createdAt: number;
 	updatedAt: number;
 	/** Token and cost usage attributed to this task (e.g. from a subagent session). */
@@ -97,10 +123,23 @@ export interface CreateTaskOptions {
 	subagentMode?: string;
 	agent?: string;
 	parentTaskId?: number;
+	linkedTaskId?: number;
 }
 
 export type TaskPatch = Partial<
-	Pick<Task, "title" | "status" | "source" | "subagentMode" | "agent" | "usage" | "note" | "parentTaskId">
+	Pick<
+		Task,
+		| "title"
+		| "status"
+		| "source"
+		| "subagentMode"
+		| "agent"
+		| "usage"
+		| "note"
+		| "parentTaskId"
+		| "linkedTaskId"
+		| "todoContent"
+	>
 >;
 
 export type TaskAgentPatch = Partial<Omit<TaskAgent, "id">>;
@@ -124,6 +163,16 @@ class TaskStore {
 	private nextId = 1;
 	private readonly listeners = new Set<Listener>();
 	private batchDepth = 0;
+	private mutationCount = 0;
+
+	/**
+	 * Monotonic counter bumped on every mutation (including those inside a
+	 * batch). Lets renderers cache derived state and invalidate it cheaply by
+	 * comparing versions instead of deep-diffing tasks/agents.
+	 */
+	version(): number {
+		return this.mutationCount;
+	}
 
 	/**
 	 * Run a series of mutations without notifying listeners until the batch
@@ -150,6 +199,7 @@ class TaskStore {
 			subagentMode: options.subagentMode,
 			agent: options.agent,
 			parentTaskId: options.parentTaskId,
+			linkedTaskId: options.linkedTaskId,
 			createdAt: now,
 			updatedAt: now,
 		};
@@ -170,8 +220,13 @@ class TaskStore {
 		if (patch.subagentMode !== undefined) task.subagentMode = patch.subagentMode;
 		if (patch.agent !== undefined) task.agent = patch.agent;
 		if (patch.parentTaskId !== undefined) task.parentTaskId = patch.parentTaskId;
+		if (patch.linkedTaskId !== undefined) task.linkedTaskId = patch.linkedTaskId;
+		if (patch.todoContent !== undefined) task.todoContent = patch.todoContent;
 		if (patch.usage !== undefined) task.usage = patch.usage;
-		if (patch.note !== undefined) task.note = patch.note;
+		// `note` is clearable: passing `note: undefined` explicitly removes a stale
+		// ⚠ cue (e.g. a warning from a previous run of the same task row). Callers
+		// that don't mention `note` leave it untouched.
+		if ("note" in patch) task.note = patch.note;
 		task.updatedAt = Date.now();
 		this.emit();
 	}
@@ -248,6 +303,29 @@ class TaskStore {
 	}
 
 	/**
+	 * Arrange the given tasks (by id) into the specified relative order, keeping
+	 * every other task fixed: the matched tasks permute among their existing
+	 * array slots. Lets TodoWrite render the plan in list order while ids stay
+	 * pinned to their items (its identity-based reconcile). Ignored unless every
+	 * id resolves to a task.
+	 */
+	arrange(ids: readonly number[]): void {
+		const byId = new Map(this.tasks.map((t) => [t.id, t]));
+		const ordered = ids.map((id) => byId.get(id)).filter((t): t is Task => t !== undefined);
+		if (ordered.length !== ids.length) return;
+		const idSet = new Set(ids);
+		const slots: number[] = [];
+		for (let i = 0; i < this.tasks.length; i++) {
+			if (idSet.has(this.tasks[i]!.id)) slots.push(i);
+		}
+		if (slots.length !== ordered.length) return;
+		for (let k = 0; k < slots.length; k++) {
+			this.tasks[slots[k]!] = ordered[k]!;
+		}
+		this.emit();
+	}
+
+	/**
 	 * Drop finished tasks and restart numbering from #1 once the pane is empty.
 	 *
 	 * Called when a new user message arrives: finished tasks from the previous turn
@@ -265,17 +343,18 @@ class TaskStore {
 		const active = this.tasks.filter((t) => t.status === "pending" || t.status === "in_progress");
 		if (active.length === this.tasks.length && this.nextId === 1) return;
 		this.tasks = active;
+		// Subagent rows are per-run (one roster entry per dispatch), so a settled
+		// run whose task was just dropped is dead weight — keeping it would grow
+		// the roster without bound across turns. Role/main agents with non-zero
+		// accumulated stats survive so cross-turn team cost accounting holds.
+		const hasStats = (a: TaskAgent) => a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0);
 		if (active.length === 0) {
 			this.nextId = 1;
-			// Keep agents with non-zero accumulated stats so cross-turn cost accounting
-			// survives; drop everyone else (fresh turn opens with a clean roster).
-			this.taskAgents = this.taskAgents.filter(
-				(a) => a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0),
-			);
+			this.taskAgents = this.taskAgents.filter((a) => a.kind !== "subagent" && hasStats(a));
 		} else {
 			const liveOwners = new Set(active.map(taskOwnerId));
 			this.taskAgents = this.taskAgents.filter(
-				(a) => liveOwners.has(a.id) || (a.stats && (a.stats.input > 0 || a.stats.output > 0 || a.stats.cost > 0)),
+				(a) => liveOwners.has(a.id) || (a.kind !== "subagent" && hasStats(a)),
 			);
 		}
 		this.emit();
@@ -301,6 +380,7 @@ class TaskStore {
 	}
 
 	private emit(): void {
+		this.mutationCount++;
 		if (this.batchDepth > 0) return;
 		for (const listener of this.listeners) {
 			listener();

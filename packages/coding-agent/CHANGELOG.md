@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+### Added
+
+- Agent identity colors: each subagent type hashes to a stable hue from six new
+  theme tokens (`agent1`-`agent6`, optional in custom themes with an `accent`
+  fallback), applied consistently to the chat's `Agent [type]` line, task-panel
+  row tags/glyphs and roster names, and TaskOutput's call line and roster.
+- The task panel's flat ("tasks") lens now nests each dispatched subagent run
+  under the TodoWrite item it was dispatched for (recorded when exactly one
+  item is in_progress), with tree connectors, live activity, and a per-run
+  timer — the plan and the agents executing it read as one picture.
+- Each running task row shows its own live elapsed timer next to its activity.
+- User-initiated cancellation now propagates to subagents: aborting a turn
+  kills the dispatched run's whole process tree, queued runs settle
+  immediately, and the run reports a distinct `cancelled` status (dim ⊘ in the
+  panel/TaskOutput) instead of a red failure.
+- Team-focus keys are configurable (`app.team.nudge`, `app.team.attach`;
+  defaults `n`/`a`), and the attached-panel's nudge key now honors the same
+  binding instead of a hardcoded `n`. Both panels' hint lines use the shared
+  dim-key/muted-description hint style and reflect the configured keys.
+
+### Changed
+
+- Task-panel roster rows are keyed per dispatch (pool task id, labeled
+  `explore#1`) instead of per agent type, so concurrent same-type subagents no
+  longer share one row with colliding state/activity/stats.
+- The panel header's elapsed is the wall-clock span of the visible batch, not
+  the sum of per-task spans (which ticked at 2x with two concurrent subagents).
+- The panel and TaskOutput share one duration format.
+- `turn_end` now reads "thinking" in the task panel, matching TaskOutput.
+- TodoWrite reconciles the incoming list against existing items by content
+  identity first (position only as a fallback), so reordering or shrinking the
+  plan keeps task ids — and the subagent runs linked to them — attached to the
+  same items; the panel still renders the plan in list order.
+
+### Fixed
+
+- Glyph rendering: the warning cue (⚠), team-focus cursor (▶), and
+  team-attach pause/resume markers (⏸/▶) now carry the text-presentation
+  selector (VS15) so terminals with emoji font fallback render them as
+  single-cell text instead of double-width emoji that misaligned their rows;
+  the voice panel's mic carries VS16 so its measured width matches the
+  two-cell emoji terminals draw. The task panel's pending marker is now a
+  hollow ○ (matching the selectors' ○/◉ convention), leaving ● exclusive to
+  the chat's tool status dot.
+- Concurrent subagents no longer trample each other's panel state; a stale
+  warning note (⚠) clears on the next state change; subagents-lens header
+  counts always match the rendered rows (orphaned children render as roots,
+  `parentTaskId` cycles cannot hang the walk); running tasks show advancing
+  elapsed time instead of freezing at ~0s.
+- Subagent reliability: children spawn detached and are killed by process
+  group/tree so grandchildren cannot be orphaned; the lifeguard emits one
+  stalled event per reap instead of one per tick; retries keep the cumulative
+  token budget and its listeners; stdout readers/streams are cleaned up on
+  failure paths too; `result.json`/`output.json` are written atomically so a
+  mid-write SIGKILL cannot turn a finished run into a torn-file failure; the
+  child's stdout is parsed by a single UTF-8-safe line reader with bounded
+  buffers (the token budget no longer runs a second chunk parser that could
+  split multi-byte characters).
+
 ## [0.4.110] - 2026-07-03
 
 ## [0.4.109] - 2026-07-03
