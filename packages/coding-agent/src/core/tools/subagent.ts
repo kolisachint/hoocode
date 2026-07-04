@@ -61,6 +61,7 @@ Guidelines:
 - Some agents run in the background (non-blocking); force it per call with \`background: true\` (or \`background: false\` to wait inline). A background Task does not block your turn and does not return its answer inline: you get a short notification ("explore#1 finished") and the full result is held for you to pull with \`TaskOutput\`. Keep working in the meantime.
 - After dispatching background work, DO NOT stop and wait — that wastes the parallelism and looks stuck. Immediately continue with the next useful thing: read or edit an independent file, draft the parts of your answer that don't depend on the pending result, or dispatch more independent subtasks. Only barrier (with \`TaskOutput(wait: true)\`) when you genuinely cannot proceed without the result. Prefer background dispatch for any self-contained or parallelizable work so your turn never blocks on a subagent.
 - Use **TaskOutput** to manage background subagents: \`TaskOutput(list: true)\` shows every running/finished subagent and what each is doing; \`TaskOutput("explore#1")\` reads a finished subagent's full result (or reports its status if still running); \`TaskOutput(wait: true)\` blocks until a named task — or, with no task_id, ALL outstanding subagents — finish. Dispatch a batch in one turn, then barrier on them with \`TaskOutput(wait: true)\` only once you've exhausted the work you can do without them.
+- When working through a TodoWrite plan, mark the plan item in_progress BEFORE dispatching subagents for it: each dispatch is attributed to the current in_progress item in the user's task panel, so dispatching first (or with several items in_progress) leaves the run unattributed.
 - To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
 }
 
@@ -111,7 +112,7 @@ export interface TaskToolDetails {
 export interface TaskOutputDetails {
 	/** The handle queried, when a specific task was named. */
 	task_id?: string;
-	/** running | done | collected | failed | stalled | timeout | list | empty | unknown */
+	/** running | done | collected | failed | stalled | timeout | cancelled | list | empty | unknown */
 	status: string;
 	ok: boolean;
 	/** Number of subagents still running, included on roster/list responses. */
@@ -693,7 +694,7 @@ const taskOutputParams = Type.Object({
 	list: Type.Optional(
 		Type.Boolean({
 			description:
-				"List all background subagents with their status (running/done/failed) and current activity. No result bodies are returned.",
+				"List all background subagents with their status (running/done/failed/cancelled) and current activity. No result bodies are returned.",
 		}),
 	),
 	wait: Type.Optional(
