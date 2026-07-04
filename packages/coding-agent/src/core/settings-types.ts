@@ -120,7 +120,7 @@ export interface Settings {
 	enableSkillCommands?: boolean; // default: true - register skills as /skill:name commands
 	enableSubagent?: boolean; // default: true - enable the subagent tool (delegate tasks to isolated agent loops); set false to disable
 	warmSubagents?: boolean; // default: false - dispatch eligible subagents on reused warm RPC workers (experimental)
-	maxSubagentDepth?: number; // default: 1 - tree-wide subagent nesting cap (1 = subagents cannot spawn subagents)
+	maxSubagentDepth?: number; // default: 2 - tree-wide subagent nesting cap (2 = a subagent may spawn one more level; 1 = no nesting)
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)

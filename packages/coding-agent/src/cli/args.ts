@@ -328,8 +328,8 @@ ${chalk.bold("Options:")}
                                  On by default (the "enableSubagent" setting defaults to true)
   --no-subagents                 Disable the subagent tool for this session (overrides the setting)
   --warm-subagents               Dispatch eligible subagents on reused warm RPC workers (experimental)
-  --max-subagent-depth <n>       Tree-wide subagent nesting cap (default 1 = no nesting). Overrides
-                                 the "maxSubagentDepth" setting
+  --max-subagent-depth <n>       Tree-wide subagent nesting cap (default 2 = one level of nesting;
+                                 1 = no nesting). Overrides the "maxSubagentDepth" setting
                                  Can also be enabled via the "enableSubagent" setting
   --enable-todowrite             Enable the TodoWrite tool (maintain a live todo list in the task panel)
                                   Can also be enabled via the "enableTodoWrite" setting

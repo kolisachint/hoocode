@@ -173,4 +173,20 @@ describe("buildTaskMainPrompt", () => {
 		const prompt = buildTaskMainPrompt();
 		expect(prompt).toContain("mark the plan item in_progress BEFORE dispatching");
 	});
+
+	test("emits the full background/barrier guidance when background agents exist (built-in explore/plan)", () => {
+		// The built-in explore/plan agents are background:true, so a default cwd
+		// resolves hasBackgroundAgents=true and the detailed block is included.
+		const prompt = buildTaskMainPrompt();
+		expect(prompt).toContain("DO NOT stop and wait");
+		expect(prompt).toContain("TaskOutput(wait: true)");
+	});
+
+	test("no longer duplicates the tool description's WHEN TO USE block", () => {
+		// The when-to-use / when-not lives once here; the Task tool description was
+		// trimmed to mechanics to stop double-charging the same guidance every turn.
+		const prompt = buildTaskMainPrompt();
+		expect(prompt).toContain("When to delegate:");
+		expect(prompt).not.toContain("WHEN TO USE:");
+	});
 });

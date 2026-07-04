@@ -6,9 +6,17 @@
 
 - The subagent tool is now **enabled by default** (`enableSubagent` defaults to
   `true`), so the root session gets the `Task` and `TaskOutput` tools without
-  `--enable-subagents`. Nesting is still bounded by `maxSubagentDepth` (default 1),
-  so spawned subagents cannot themselves spawn. Disable per session with the new
-  `--no-subagents` flag or set `enableSubagent: false`.
+  `--enable-subagents`. Disable per session with the new `--no-subagents` flag or
+  set `enableSubagent: false`.
+- Default subagent nesting depth raised to **2** (`maxSubagentDepth`), so a
+  spawned subagent may itself delegate one more level (depth-2 grandchildren
+  still cannot). Was 1 (no nesting). Override with `--max-subagent-depth` or the
+  setting.
+- Trimmed always-on subagent prompt tokens: the `Task` tool description is cut to
+  mechanics (the when-to-use / when-not guidance lived there **and** in the
+  system-prompt block — now only the system-prompt block carries it), and the
+  heavy background/barrier guidance in that block is emitted only when the project
+  has background-capable agents (a concise one-liner otherwise).
 
 - Plugin loading now prefers the cross-vendor `.agents/` surface first: plugins
   are discovered from `.agents/plugins/` ahead of `.hoocode/plugins/` (project

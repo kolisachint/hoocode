@@ -28,7 +28,7 @@ export const DEFAULT_SETTINGS = {
 	enableSkillCommands: true,
 	enableSubagent: true,
 	warmSubagents: false,
-	maxSubagentDepth: 1,
+	maxSubagentDepth: 2,
 	nestedSubagentConcurrency: 2,
 	enableTodoWrite: true,
 	enableWebTools: false,
