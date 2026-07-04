@@ -517,3 +517,108 @@ setTimeout(() => {}, 30000);
 		},
 	);
 });
+
+// ---------------------------------------------------------------------------
+// User-initiated cancellation
+// ---------------------------------------------------------------------------
+
+describe("subagent cancellation", () => {
+	/** Mock hoocode that just sleeps, so a cancel is the only way it settles. */
+	function createSleepingExecutable(dir: string): string {
+		const path = join(dir, "mock-sleep.js");
+		writeFileSync(path, "#!/usr/bin/env node\nsetTimeout(() => {}, 30000);\n");
+		chmodSync(path, 0o755);
+		return path;
+	}
+
+	it("cancel() on a running child settles it as cancelled (not failed/stalled)", async () => {
+		const cwd = makeTempDir();
+		const pool = new RealSubagentPool({ executable: createSleepingExecutable(cwd), maxConcurrency: 1, cwd });
+		cleanups.push(() => pool.dispose());
+		const cancelledEvents: string[] = [];
+		pool.on("task_cancelled", (d: { task_id: string }) => cancelledEvents.push(d.task_id));
+
+		pool.spawn({ task_id: "c1", agent_type: "explore", task: "work" });
+		await new Promise((r) => setTimeout(r, 80));
+		expect(pool.cancel("c1")).toBe(true);
+
+		const result = await pool.wait_for("c1");
+		expect(result.ok).toBe(false);
+		expect(result.status).toBe("cancelled");
+		expect(pool.get_status("c1")).toBe("cancelled");
+		expect(cancelledEvents).toEqual(["c1"]);
+		expect(pool.running_count()).toBe(0);
+	});
+
+	it("cancel() on a queued task settles it immediately without spawning", async () => {
+		const cwd = makeTempDir();
+		const pool = new RealSubagentPool({ executable: createSleepingExecutable(cwd), maxConcurrency: 1, cwd });
+		cleanups.push(() => pool.dispose());
+
+		pool.spawn({ task_id: "blocker", agent_type: "explore", task: "block" });
+		pool.spawn({ task_id: "queued", agent_type: "explore", task: "wait" });
+		expect(pool.queued_count()).toBe(1);
+
+		expect(pool.cancel("queued")).toBe(true);
+		expect(pool.queued_count()).toBe(0);
+		const result = await pool.wait_for("queued");
+		expect(result.status).toBe("cancelled");
+		expect(pool.get_status("queued")).toBe("cancelled");
+		// Unknown/settled ids report false rather than pretending to cancel.
+		expect(pool.cancel("queued")).toBe(false);
+		expect(pool.cancel("nope")).toBe(false);
+	});
+
+	it("Task tool abort marks the run cancelled across store, roster, and inbox", async () => {
+		// Fake pool whose dispatch hangs until cancel(id) settles it as cancelled —
+		// the same contract the real pool implements.
+		const pending = new Map<string, (r: TaskResult) => void>();
+		const fake = new EventEmitter() as EventEmitter & {
+			dispatch: (prompt: string, options: { taskId?: string }) => Promise<TaskResult>;
+			cancel: (id: string) => boolean;
+		};
+		fake.dispatch = (_p, options) =>
+			new Promise<TaskResult>((resolve) => {
+				pending.set(options.taskId ?? "t", resolve);
+			});
+		fake.cancel = (id: string) => {
+			const resolve = pending.get(id);
+			if (!resolve) return false;
+			resolve({
+				handled_inline: false,
+				task_id: id,
+				agent_type: "general-purpose",
+				result: {
+					task_id: id,
+					ok: false,
+					stdout: "",
+					stderr: "",
+					exit_code: null,
+					error: "cancelled",
+					status: "cancelled",
+				},
+			});
+			return true;
+		};
+		setSubagentPoolForTesting(fake as unknown as SubagentPool);
+
+		const controller = new AbortController();
+		const tool = createTaskToolDefinition();
+		// general-purpose runs foreground, so the abort must settle the await.
+		const call = tool.execute(
+			"c1",
+			{ description: "long job", prompt: "do the long job", subagent_type: "general-purpose" },
+			controller.signal,
+			undefined,
+			{ cwd: makeTempDir(), hasUI: true } as never,
+		);
+		await new Promise((r) => setImmediate(r));
+		controller.abort();
+
+		await expect(call).rejects.toThrow(/cancelled by user/);
+		const task = taskStore.list().find((t) => t.source === "subagent");
+		expect(task?.status).toBe("cancelled");
+		const row = taskStore.agents().find((a) => a.kind === "subagent");
+		expect(row?.state).toBe("cancelled");
+	});
+});

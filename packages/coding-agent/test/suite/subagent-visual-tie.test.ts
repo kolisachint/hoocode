@@ -23,6 +23,7 @@ import { setSubagentPoolForTesting } from "../../src/core/subagent-pool-instance
 import type { SubagentResultFile } from "../../src/core/subagent-result.js";
 import { taskStore } from "../../src/core/task-store.js";
 import { createTaskOutputToolDefinition, createTaskToolDefinition } from "../../src/core/tools/subagent.js";
+import { createTodoWriteToolDefinition } from "../../src/core/tools/todo.js";
 import { TaskPanelComponent } from "../../src/modes/interactive/components/task-panel.js";
 import { AGENT_COLOR_TOKENS, agentColorFor, initTheme, theme } from "../../src/modes/interactive/theme/theme.js";
 
@@ -311,5 +312,88 @@ describe("todo ↔ subagent linkage", () => {
 		const sa = panel.render(120).map(stripAnsi);
 		expect(sa.some((l) => l.includes("scan the repo"))).toBe(true);
 		panel.dispose();
+	});
+});
+
+// ---------------------------------------------------------------------------
+// TodoWrite identity reconcile (linked runs stay on their plan item)
+// ---------------------------------------------------------------------------
+
+describe("todo reconcile by identity", () => {
+	const todoTool = createTodoWriteToolDefinition();
+	const writeTodos = (
+		todos: Array<{ content: string; status: "pending" | "in_progress" | "completed"; activeForm?: string }>,
+	) => todoTool.execute("todo", { todos }, undefined, undefined, {} as never);
+	const planTitles = () =>
+		taskStore
+			.list()
+			.filter((t) => t.source === undefined && t.agent === undefined && t.parentTaskId === undefined)
+			.map((t) => t.title);
+
+	it("keeps a linked run on its plan item when the completed head is dropped", async () => {
+		await writeTodos([
+			{ content: "Set up parser", status: "completed" },
+			{ content: "Wire the parser", status: "in_progress" },
+		]);
+		const wireId = taskStore.list().find((t) => t.title === "Wire the parser")?.id as number;
+
+		setSubagentPoolForTesting(makeInstantPool());
+		const tool = createTaskToolDefinition();
+		await tool.execute(
+			"c1",
+			{ description: "scan repo", prompt: "scan the repo", subagent_type: "explore" },
+			undefined,
+			undefined,
+			{ cwd: makeTempDir(), hasUI: true } as never,
+		);
+		const run = taskStore.list().find((t) => t.source === "subagent");
+		expect(run?.linkedTaskId).toBe(wireId);
+
+		// The model replaces the list, dropping the completed head. The positional
+		// reconcile used to re-label slot 0 ("Set up parser") as "Wire the parser",
+		// leaving the run linked to a task that now meant a different item.
+		await writeTodos([{ content: "Wire the parser", status: "in_progress" }]);
+		expect(planTitles()).toEqual(["Wire the parser"]);
+		const wire = taskStore.list().find((t) => t.id === wireId);
+		expect(wire?.title).toBe("Wire the parser"); // same id, same item
+
+		const panel = new TaskPanelComponent();
+		panel.setView("flat");
+		const lines = panel.render(120).map(stripAnsi);
+		const todoIdx = lines.findIndex((l) => l.includes("Wire the parser"));
+		// The run row carries the dispatch *description* as its title.
+		const runIdx = lines.findIndex((l) => l.includes("scan repo"));
+		expect(todoIdx).toBeGreaterThan(0);
+		expect(runIdx).toBe(todoIdx + 1); // still nested under the right item
+		panel.dispose();
+	});
+
+	it("matches items across activeForm/content title flips", async () => {
+		await writeTodos([{ content: "Add tests", status: "in_progress", activeForm: "Adding tests" }]);
+		const id = taskStore.list()[0]?.id as number;
+		expect(taskStore.list()[0]?.title).toBe("Adding tests"); // activeForm while running
+
+		await writeTodos([{ content: "Add tests", status: "completed" }]);
+		const task = taskStore.list().find((t) => t.id === id);
+		expect(task?.title).toBe("Add tests"); // same id despite the title flip
+		expect(task?.status).toBe("done");
+	});
+
+	it("keeps ids on reorder and renders the plan in the new order", async () => {
+		await writeTodos([
+			{ content: "A", status: "pending" },
+			{ content: "B", status: "pending" },
+		]);
+		const [aId, bId] = taskStore.list().map((t) => t.id);
+
+		await writeTodos([
+			{ content: "B", status: "in_progress" },
+			{ content: "A", status: "pending" },
+		]);
+		const byTitle = new Map(taskStore.list().map((t) => [t.title, t.id]));
+		expect(byTitle.get("A")).toBe(aId);
+		expect(byTitle.get("B")).toBe(bId);
+		// Display order follows the new list order, not creation order.
+		expect(planTitles()).toEqual(["B", "A"]);
 	});
 });

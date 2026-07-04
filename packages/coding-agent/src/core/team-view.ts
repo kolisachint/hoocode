@@ -82,6 +82,8 @@ function taskStatusFromState(state: TaskAgentState): TaskStatus {
 			return "done";
 		case "failed":
 			return "failed";
+		case "cancelled":
+			return "cancelled";
 		case "idle":
 			// Idle is settled, not queued: a "pending" task here would survive every
 			// taskStore.reset() and pin the pane at "working" for the whole session.

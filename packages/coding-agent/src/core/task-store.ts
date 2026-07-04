@@ -7,7 +7,12 @@
  * there is no cross-process boundary to cross.
  */
 
-export type TaskStatus = "pending" | "in_progress" | "done" | "failed";
+/**
+ * `cancelled` is a user-initiated stop (Esc/abort mid-run) — deliberately
+ * distinct from `failed` so the panel doesn't paint an intentional interrupt
+ * as an error.
+ */
+export type TaskStatus = "pending" | "in_progress" | "done" | "failed" | "cancelled";
 
 /**
  * What kind of background work owns a task, surfaced as a source glyph in the
@@ -24,7 +29,7 @@ export type TaskSource = "subagent" | "mcp";
 export type TaskAgentKind = "main" | "subagent" | "role";
 
 /** Lifecycle word shown as the agent's `[state]` tag in grouped views. */
-export type TaskAgentState = "active" | "running" | "done" | "queued" | "idle" | "waiting" | "failed";
+export type TaskAgentState = "active" | "running" | "done" | "queued" | "idle" | "waiting" | "failed" | "cancelled";
 
 /**
  * An agent that owns tasks, rendered as a group header in the pane's
@@ -91,6 +96,16 @@ export interface Task {
 	 * exhausted). Kept terse so it fits the row's right column.
 	 */
 	note?: string;
+	/**
+	 * Canonical TodoWrite item content for main-plan tasks. `title` is the
+	 * *display* form and legitimately changes between `content` and `activeForm`
+	 * as the item's status moves, so it cannot identify an item across TodoWrite
+	 * calls. This field can: the tool reconciles incoming items against it by
+	 * identity first (position only as a fallback), keeping task ids — and the
+	 * subagent runs linked to them — attached to the same plan item when the
+	 * list is reordered or shrunk.
+	 */
+	todoContent?: string;
 	readonly createdAt: number;
 	updatedAt: number;
 	/** Token and cost usage attributed to this task (e.g. from a subagent session). */
@@ -114,7 +129,16 @@ export interface CreateTaskOptions {
 export type TaskPatch = Partial<
 	Pick<
 		Task,
-		"title" | "status" | "source" | "subagentMode" | "agent" | "usage" | "note" | "parentTaskId" | "linkedTaskId"
+		| "title"
+		| "status"
+		| "source"
+		| "subagentMode"
+		| "agent"
+		| "usage"
+		| "note"
+		| "parentTaskId"
+		| "linkedTaskId"
+		| "todoContent"
 	>
 >;
 
@@ -197,6 +221,7 @@ class TaskStore {
 		if (patch.agent !== undefined) task.agent = patch.agent;
 		if (patch.parentTaskId !== undefined) task.parentTaskId = patch.parentTaskId;
 		if (patch.linkedTaskId !== undefined) task.linkedTaskId = patch.linkedTaskId;
+		if (patch.todoContent !== undefined) task.todoContent = patch.todoContent;
 		if (patch.usage !== undefined) task.usage = patch.usage;
 		// `note` is clearable: passing `note: undefined` explicitly removes a stale
 		// ⚠ cue (e.g. a warning from a previous run of the same task row). Callers
@@ -274,6 +299,29 @@ class TaskStore {
 		const idx = this.tasks.findIndex((t) => t.id === id);
 		if (idx === -1) return;
 		this.tasks.splice(idx, 1);
+		this.emit();
+	}
+
+	/**
+	 * Arrange the given tasks (by id) into the specified relative order, keeping
+	 * every other task fixed: the matched tasks permute among their existing
+	 * array slots. Lets TodoWrite render the plan in list order while ids stay
+	 * pinned to their items (its identity-based reconcile). Ignored unless every
+	 * id resolves to a task.
+	 */
+	arrange(ids: readonly number[]): void {
+		const byId = new Map(this.tasks.map((t) => [t.id, t]));
+		const ordered = ids.map((id) => byId.get(id)).filter((t): t is Task => t !== undefined);
+		if (ordered.length !== ids.length) return;
+		const idSet = new Set(ids);
+		const slots: number[] = [];
+		for (let i = 0; i < this.tasks.length; i++) {
+			if (idSet.has(this.tasks[i]!.id)) slots.push(i);
+		}
+		if (slots.length !== ordered.length) return;
+		for (let k = 0; k < slots.length; k++) {
+			this.tasks[slots[k]!] = ordered[k]!;
+		}
 		this.emit();
 	}
 

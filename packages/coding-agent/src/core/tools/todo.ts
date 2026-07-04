@@ -74,6 +74,8 @@ const STATUS_GLYPH: Record<TaskStatus, string> = {
 	in_progress: "[~]",
 	done: "[x]",
 	failed: "[!]",
+	// TodoWrite never produces cancelled items; present for Record exhaustiveness.
+	cancelled: "[-]",
 };
 
 /** Title to display: the active-form while in progress, otherwise the content. */
@@ -120,24 +122,56 @@ export function createTodoWriteToolDefinition(): ToolDefinition {
 			const todos = params.todos ?? [];
 			const existing = mainTasks();
 
-			// Reconcile by position, batched so the panel renders once: update kept
-			// items, create new ones, remove the tail.
+			// Reconcile by item identity first, position second, batched so the panel
+			// renders once. Each task stores its item's canonical `content`
+			// (todoContent) — the display title flips between content and activeForm
+			// with status, so it can't identify an item. Matching by content keeps a
+			// task's id pinned to the same plan item when the list is reordered or
+			// shrunk; a purely positional reconcile re-labeled the surviving slots,
+			// which silently re-pointed the subagent runs linked to those ids
+			// (linkedTaskId) at the wrong plan items. Unmatched incoming items then
+			// consume the leftover slots in order (a rename keeps its id and its
+			// linked runs); any remaining leftovers were removed from the plan.
 			taskStore.batch(() => {
+				const content = (item: TodoWriteParams["todos"][number]) => item.content.trim();
+				const matchedExisting = new Set<number>();
+				const assigned = new Array<Task | undefined>(todos.length);
+				for (let i = 0; i < todos.length; i++) {
+					const idx = existing.findIndex(
+						(t, j) => !matchedExisting.has(j) && (t.todoContent ?? t.title) === content(todos[i]!),
+					);
+					if (idx !== -1) {
+						matchedExisting.add(idx);
+						assigned[i] = existing[idx];
+					}
+				}
+				const leftovers = existing.filter((_, j) => !matchedExisting.has(j));
+				let nextLeftover = 0;
+				for (let i = 0; i < todos.length; i++) {
+					if (!assigned[i]) assigned[i] = leftovers[nextLeftover++];
+				}
+
+				const finalIds: number[] = [];
 				for (let i = 0; i < todos.length; i++) {
 					const item = todos[i]!;
 					const status = toTaskStatus(item.status);
 					const title = displayTitle(item);
-					const current = existing[i];
+					const current = assigned[i];
 					if (current) {
-						taskStore.update(current.id, { title, status });
+						taskStore.update(current.id, { title, status, todoContent: content(item) });
+						finalIds.push(current.id);
 					} else {
 						const created = taskStore.create(title);
-						taskStore.update(created.id, { status });
+						taskStore.update(created.id, { status, todoContent: content(item) });
+						finalIds.push(created.id);
 					}
 				}
-				for (let i = todos.length; i < existing.length; i++) {
-					taskStore.remove(existing[i]!.id);
+				for (let j = nextLeftover; j < leftovers.length; j++) {
+					taskStore.remove(leftovers[j]!.id);
 				}
+				// Identity matching keeps ids, but the panel must still show the plan
+				// in the list's order — permute the plan tasks into it.
+				taskStore.arrange(finalIds);
 			});
 
 			const counts = todos.reduce(

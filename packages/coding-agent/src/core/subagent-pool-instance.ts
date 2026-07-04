@@ -76,7 +76,7 @@ function wireProgressToTaskStore(p: SubagentPool): void {
 			taskStore.patchAgent(task_id, { activity: "" });
 		}
 	});
-	for (const terminal of ["task_done", "task_failed", "task_stalled", "task_timeout"] as const) {
+	for (const terminal of ["task_done", "task_failed", "task_stalled", "task_timeout", "task_cancelled"] as const) {
 		p.on(terminal, (data: { task_id?: string }) => {
 			if (data.task_id) taskStore.patchAgent(data.task_id, { activity: "" });
 		});

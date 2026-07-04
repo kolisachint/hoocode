@@ -68,7 +68,7 @@ export interface SubagentResult {
 	/** True when the task exceeded its token budget and was hard-stopped. */
 	budget_exceeded?: boolean;
 	/** Terminal status derived from how the task finished. */
-	status?: "complete" | "partial" | "failed" | "stalled" | "timeout";
+	status?: "complete" | "partial" | "failed" | "stalled" | "timeout" | "cancelled";
 	/** Parsed result.json content when available (e.g. on partial completion). */
 	result_data?: Record<string, unknown>;
 	/** True when this run used the inherited-model fallback (preferred model failed first). */
@@ -207,6 +207,7 @@ export function classifySubagentLine(line: string): SubagentStdoutLine {
  * - "task_stalled" – heartbeat missed past the load-scaled threshold (60s base,
  *                    widened under concurrency/event-loop lag), process SIGKILLed
  * - "task_timeout" – hard timeout exceeded, process was SIGKILLed
+ * - "task_cancelled" – user-initiated cancel (see cancel()); process tree killed
  * - "budget_warning" – token usage crossed 80% threshold (advisory)
  * - "budget_exceeded" – token usage crossed 100% threshold (advisory; never kills)
  * - "task_progress" – coarse lifecycle event (turn_end, tool start/end) parsed
@@ -232,10 +233,10 @@ export class SubagentPool extends EventEmitter {
 	private disposed = false;
 	/** Lazily-loaded agent registry (frontmatter definitions) for this pool's cwd. */
 	private registry?: AgentRegistry;
-	/** Tracks why a task was killed (stalled / timeout) before exit handler fires. */
-	private killReasons = new Map<string, "stalled" | "timeout">();
+	/** Tracks why a task was killed (stalled / timeout / user cancel) before exit handler fires. */
+	private killReasons = new Map<string, "stalled" | "timeout" | "cancelled">();
 	/** Persistent terminal status map, survives wait_for consumption. */
-	private taskStatus = new Map<string, "done" | "failed" | "stalled" | "timeout">();
+	private taskStatus = new Map<string, "done" | "failed" | "stalled" | "timeout" | "cancelled">();
 	/** Settings for model category resolution. */
 	private readonly settings?: Settings;
 
@@ -315,7 +316,9 @@ export class SubagentPool extends EventEmitter {
 	}
 
 	/** Current status of a task. */
-	get_status(task_id: string): "running" | "queued" | "done" | "failed" | "stalled" | "timeout" | "unknown" {
+	get_status(
+		task_id: string,
+	): "running" | "queued" | "done" | "failed" | "stalled" | "timeout" | "cancelled" | "unknown" {
 		if (this.slots.has(task_id)) return "running";
 		if (this.queue.some((t) => t.task_id === task_id)) return "queued";
 		const persisted = this.taskStatus.get(task_id);
@@ -324,10 +327,46 @@ export class SubagentPool extends EventEmitter {
 		if (result) {
 			if (result.status === "stalled") return "stalled";
 			if (result.status === "timeout") return "timeout";
+			if (result.status === "cancelled") return "cancelled";
 			if (result.ok) return "done";
 			return "failed";
 		}
 		return "unknown";
+	}
+
+	/**
+	 * Cancel a task on the user's behalf (Esc/abort mid-turn). A queued task is
+	 * removed and settles immediately; a running task's whole process tree is
+	 * killed and settles with status "cancelled" when its exit is observed
+	 * (unless it already wrote a valid result.json — completed work is honored).
+	 * Returns false for unknown/settled task ids.
+	 */
+	cancel(task_id: string): boolean {
+		const queued = this.queue.findIndex((t) => t.task_id === task_id);
+		if (queued !== -1) {
+			this.queue.splice(queued, 1);
+			const result: SubagentResult = {
+				task_id,
+				ok: false,
+				stdout: "",
+				stderr: "",
+				exit_code: null,
+				error: "cancelled before start",
+				status: "cancelled",
+			};
+			this.emit("task_cancelled", { task_id });
+			this.resolveWaiter(task_id, result);
+			return true;
+		}
+		const slot = this.slots.get(task_id);
+		if (!slot) return false;
+		this.killReasons.set(task_id, "cancelled");
+		if (slot.pid > 0) {
+			killProcessTree(slot.pid);
+		} else if (!slot.process.killed) {
+			slot.process.kill("SIGKILL");
+		}
+		return true;
 	}
 
 	/** Wait for a task to complete and return its result. */
@@ -874,8 +913,10 @@ export class SubagentPool extends EventEmitter {
 					}
 				}
 
-				// If killed by lifeguard before producing a valid result, honor the kill.
-				if ((killReason === "stalled" || killReason === "timeout") && !verification.valid) {
+				// If killed (lifeguard reap or user cancel) before producing a valid
+				// result, honor the kill; a child that already wrote a verified
+				// result.json completed its work and settles as a success below.
+				if (killReason !== undefined && !verification.valid) {
 					const result: SubagentResult = {
 						task_id: task.task_id,
 						ok: false,
@@ -1100,6 +1141,7 @@ export class SubagentPool extends EventEmitter {
 		// Persist terminal status for get_status() even after wait_for consumes the result
 		if (result.status === "stalled") this.taskStatus.set(task_id, "stalled");
 		else if (result.status === "timeout") this.taskStatus.set(task_id, "timeout");
+		else if (result.status === "cancelled") this.taskStatus.set(task_id, "cancelled");
 		else if (result.ok) this.taskStatus.set(task_id, "done");
 		else this.taskStatus.set(task_id, "failed");
 

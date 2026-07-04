@@ -12,6 +12,7 @@ const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	in_progress: "◐",
 	done: "✓",
 	failed: "✗",
+	cancelled: "⊘",
 };
 
 /**
@@ -93,6 +94,8 @@ const AGENT_STATE_COLOR: Record<TaskAgentState, ThemeColor> = {
 	idle: "dim",
 	waiting: "mdLink",
 	failed: "error",
+	// User-initiated stop: settled and intentional, so muted rather than red.
+	cancelled: "dim",
 };
 
 /** Two-cell indent under a group header, with a faint vertical guide. */
@@ -128,6 +131,8 @@ function taskStatusColor(status: TaskStatus): "dim" | "warning" | "success" | "e
 		case "failed":
 			return "error";
 		default:
+			// pending and cancelled: quiet gray — a user-initiated cancel is not an
+			// error and must not paint the row (or the rail) red.
 			return "dim";
 	}
 }
@@ -379,6 +384,9 @@ function formatTaskLine(
 		case "failed":
 			styledTitle = theme.fg("error", title);
 			break;
+		case "cancelled":
+			styledTitle = theme.fg("dim", theme.strikethrough(title));
+			break;
 		case "in_progress":
 			styledTitle = theme.bold(title);
 			break;
@@ -400,6 +408,9 @@ function formatTaskLine(
 			rightPlain = tokenText;
 			rightStyled = theme.fg("muted", tokenText);
 		}
+	} else if (task.status === "cancelled") {
+		rightPlain = "cancelled";
+		rightStyled = theme.fg("dim", rightPlain);
 	} else if (task.status === "in_progress") {
 		// Surface the owning agent's live activity (the tool it's currently running,
 		// fed by the pool's task_progress events) so a delegated row reads "⋯ grep"

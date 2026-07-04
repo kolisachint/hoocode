@@ -158,8 +158,27 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 		promptSnippet: "delegate a self-contained task to a specialized subagent (choose via subagent_type)",
 		parameters: taskParams,
 
-		async execute(_toolCallId, params: TaskParams, _signal, _onUpdate, ctx) {
+		async execute(_toolCallId, params: TaskParams, signal, _onUpdate, ctx) {
 			const pool = getSubagentPool(ctx.cwd);
+
+			// User-initiated cancel (Esc/abort): kill the dispatched run's whole
+			// process tree and let the dispatch settle with status "cancelled" —
+			// distinct from "failed" everywhere it surfaces (panel, inbox, result).
+			// Cold dispatches only: a warm worker has no cancel surface (it is
+			// reused), so warm runs still complete server-side and are discarded.
+			const cancelOnAbort = async (poolRunId: string, run: () => Promise<TaskResult>): Promise<TaskResult> => {
+				if (!signal) return run();
+				const onAbort = () => {
+					pool.cancel?.(poolRunId);
+				};
+				if (signal.aborted) onAbort();
+				signal.addEventListener("abort", onAbort, { once: true });
+				try {
+					return await run();
+				} finally {
+					signal.removeEventListener("abort", onAbort);
+				}
+			};
 
 			// Pre-flight: if the inherited provider recently exhausted its quota (the
 			// parent's own turn failed with a usage/rate-limit error that did not
@@ -219,16 +238,17 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				registerSubagentDispatch(runId, label);
 				taskStore.update(task.id, { status: "in_progress" });
 				try {
-					const dispatchResult = await pool.resume(resumeId, params.prompt, {
-						model: ctx.model?.id,
-						provider: ctx.model?.provider,
-						taskId: runId,
-					});
+					const dispatchResult = await cancelOnAbort(runId, () =>
+						pool.resume(resumeId, params.prompt, {
+							model: ctx.model?.id,
+							provider: ctx.model?.provider,
+							taskId: runId,
+						}),
+					);
 					// The session lives under the original task id; keep it as the resume handle.
 					return finalizeDispatchResult(dispatchResult, params.subagent_type, runId, task.id, resumeId);
 				} catch (error) {
-					taskStore.update(task.id, { status: "failed" });
-					taskStore.patchAgent(runId, { state: "failed", activity: "" });
+					markDispatchFailed(task.id, runId);
 					throw error;
 				}
 			}
@@ -328,14 +348,16 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				}
 
 				try {
-					const dispatchResult = await pool.dispatch(params.prompt, {
-						forceAgent: params.subagent_type,
-						context: "",
-						model: dispatchModel,
-						provider: ctx.model?.provider,
-						sessionFile: forkSessionFile,
-						taskId: poolTaskId,
-					});
+					const dispatchResult = await cancelOnAbort(poolTaskId, () =>
+						pool.dispatch(params.prompt, {
+							forceAgent: params.subagent_type,
+							context: "",
+							model: dispatchModel,
+							provider: ctx.model?.provider,
+							sessionFile: forkSessionFile,
+							taskId: poolTaskId,
+						}),
+					);
 					subagentInbox.finish(poolTaskId, dispatchResult);
 					return finalizeDispatchResult(dispatchResult, params.subagent_type, poolTaskId, task.id, poolTaskId, {
 						taskId: poolTaskId,
@@ -343,8 +365,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 					});
 				} catch (error) {
 					const reason = error instanceof Error ? error.message : String(error);
-					taskStore.update(task.id, { status: "failed" });
-					taskStore.patchAgent(poolTaskId, { state: "failed", activity: "" });
+					markDispatchFailed(task.id, poolTaskId);
 					subagentInbox.fail(poolTaskId, reason);
 					// A background dispatch reports failure as a compact notification, not a
 					// thrown tool error — the call was already answered by a placeholder.
@@ -400,14 +421,16 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 
 			// Foreground: block the turn and return the subagent's full answer inline.
 			try {
-				const dispatchResult = await pool.dispatch(params.prompt, {
-					forceAgent: params.subagent_type,
-					context: "",
-					model: dispatchModel,
-					provider: ctx.model?.provider,
-					sessionFile: forkSessionFile,
-					taskId: poolTaskId,
-				});
+				const dispatchResult = await cancelOnAbort(poolTaskId, () =>
+					pool.dispatch(params.prompt, {
+						forceAgent: params.subagent_type,
+						context: "",
+						model: dispatchModel,
+						provider: ctx.model?.provider,
+						sessionFile: forkSessionFile,
+						taskId: poolTaskId,
+					}),
+				);
 				return finalizeDispatchResult(
 					dispatchResult,
 					params.subagent_type,
@@ -416,8 +439,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 					dispatchResult.task_id,
 				);
 			} catch (error) {
-				taskStore.update(task.id, { status: "failed" });
-				taskStore.patchAgent(poolTaskId, { state: "failed", activity: "" });
+				markDispatchFailed(task.id, poolTaskId);
 				throw error;
 			}
 		},
@@ -486,6 +508,19 @@ function linkedTodoId(): number | undefined {
  */
 function registerSubagentDispatch(runId: string, label: string): void {
 	taskStore.upsertAgent({ id: runId, name: label, role: "subagent", kind: "subagent", state: "running" });
+}
+
+/**
+ * Catch-path bookkeeping: mark the dispatch failed unless it already settled.
+ * finalizeDispatchResult records a terminal status (failed/cancelled) *before*
+ * throwing, so a blanket "failed" here would clobber a cancellation with a
+ * failure the moment the thrown error passed through.
+ */
+function markDispatchFailed(taskStoreId: number, runId: string): void {
+	const current = taskStore.list().find((t) => t.id === taskStoreId);
+	if (current && current.status !== "pending" && current.status !== "in_progress") return;
+	taskStore.update(taskStoreId, { status: "failed" });
+	taskStore.patchAgent(runId, { state: "failed", activity: "" });
 }
 
 /** Names of agents configured to run in the background (non-blocking). */
@@ -579,13 +614,17 @@ function finalizeDispatchResult(
 	}
 
 	if (!result || !result.ok) {
+		// A user-initiated cancel is not a failure: it gets its own terminal
+		// status so the panel shows ⊘ cancelled (dim) instead of ✗ failed (red).
+		const cancelled = result?.status === "cancelled";
 		const failNote = result?.usedInheritedModelFallback ? "inherited-model retry failed" : undefined;
-		taskStore.update(taskStoreId, { status: "failed", usage, note: failNote });
-		taskStore.patchAgent(runAgentId, { state: "failed", activity: "" });
+		taskStore.update(taskStoreId, { status: cancelled ? "cancelled" : "failed", usage, note: failNote });
+		taskStore.patchAgent(runAgentId, { state: cancelled ? "cancelled" : "failed", activity: "" });
 		const reason = result?.error ?? (result?.status ? `subagent ${result.status}` : "unknown error");
 		if (background) {
+			const verdict = cancelled ? "cancelled ⊘" : "failed ✗";
 			return {
-				content: [{ type: "text", text: `${background.label} failed ✗ — ${reason}` }],
+				content: [{ type: "text", text: `${background.label} ${verdict} — ${reason}` }],
 				details: {
 					subagent_type: subagentType,
 					ok: false,
@@ -595,6 +634,9 @@ function finalizeDispatchResult(
 					background: true,
 				},
 			};
+		}
+		if (cancelled) {
+			throw new Error(`Subagent (${subagentType}) cancelled by user.`);
 		}
 		const stderr = result?.stderr?.trim();
 		throw new Error(`Subagent (${subagentType}) failed: ${reason}${stderr ? `\nstderr: ${stderr.slice(-500)}` : ""}`);
@@ -697,6 +739,8 @@ function formatTaskRoster(): { content: Array<{ type: "text"; text: string }>; d
 				return `- ${r.label}  done (uncollected)  ${when} — ${r.summaryLine ?? ""}`;
 			case "collected":
 				return `- ${r.label}  collected  ${when} — ${r.summaryLine ?? ""}`;
+			case "cancelled":
+				return `- ${r.label}  cancelled ⊘  — ${r.error ?? "cancelled by user"}`;
 			default:
 				return `- ${r.label}  ${r.lifecycle} ✗  — ${r.error ?? "unknown error"}`;
 		}
@@ -797,10 +841,14 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 				};
 			}
 
-			// failed / stalled / timeout
+			// failed / stalled / timeout / cancelled
+			const glyph = rec.lifecycle === "cancelled" ? "⊘" : "✗";
 			return {
 				content: [
-					{ type: "text" as const, text: `${rec.label} ${rec.lifecycle} ✗ — ${rec.error ?? "unknown error"}.` },
+					{
+						type: "text" as const,
+						text: `${rec.label} ${rec.lifecycle} ${glyph} — ${rec.error ?? "unknown error"}.`,
+					},
 				],
 				details: { task_id: handle, status: rec.lifecycle, ok: false },
 			};
@@ -830,7 +878,8 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 				.filter(Boolean)
 				.join("\n");
 			if (!text) return new Text("", 0, 0);
-			const rosterLine = /^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout)(.*)$/;
+			const rosterLine =
+				/^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout|cancelled)(.*)$/;
 			const styled = text
 				.split("\n")
 				.map((line) => {
@@ -844,7 +893,7 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 							? "warning"
 							: status.startsWith("done")
 								? "success"
-								: status === "collected"
+								: status === "collected" || status === "cancelled"
 									? "muted"
 									: "error";
 					return `- ${theme.fg(labelColor, label)}  ${theme.fg(statusColor, status)}${theme.fg("dim", rest)}`;
