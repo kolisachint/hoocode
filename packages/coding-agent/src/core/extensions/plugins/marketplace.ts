@@ -2,18 +2,24 @@
  * Plugin marketplaces — install plugins from a curated index hosted in a git repo
  * (or a local directory).
  *
- * A marketplace is a directory containing an index manifest in one of two formats:
+ * A marketplace is a directory containing an index manifest in one of three formats:
+ *  - Native:  `.agents-plugin/marketplace.json`  (preferred; the `.agents` surface)
  *  - Claude:  `.claude-plugin/marketplace.json`
  *  - Copilot: `.github/marketplace.json`  (Copilot-style git index)
  *
- * Both use the same shape: `{ name?, owner?, plugins: [{ name, source, description? }] }`.
+ * All three use the same shape: `{ name?, owner?, plugins: [{ name, source, description? }] }`.
  * A plugin `source` is either a path relative to the marketplace root (a plugin
  * directory inside the repo), a git URL, or an `npm:<spec>` reference.
+ *
+ * When more than one is present the native `.agents-plugin` format wins, then
+ * Claude, then Copilot (no merge) — matching the "`.agents/` first" policy used
+ * across hoocode's resource surfaces.
  */
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
+export const AGENTS_MARKETPLACE_FILE = path.join(".agents-plugin", "marketplace.json");
 export const CLAUDE_MARKETPLACE_FILE = path.join(".claude-plugin", "marketplace.json");
 export const COPILOT_MARKETPLACE_FILE = path.join(".github", "marketplace.json");
 
@@ -26,7 +32,7 @@ export interface MarketplacePluginEntry {
 
 export interface NormalizedMarketplace {
 	name: string;
-	format: "claude" | "copilot";
+	format: "agents" | "claude" | "copilot";
 	/** Absolute path to the marketplace directory. */
 	root: string;
 	manifestPath: string;
@@ -54,16 +60,21 @@ function readJson<T>(file: string): T | null {
 }
 
 /**
- * Parse a marketplace directory. Claude format wins when both files are present.
- * Returns null if neither manifest exists or it is invalid.
+ * Parse a marketplace directory. Native `.agents-plugin` wins, then Claude, then
+ * Copilot when more than one file is present. Returns null if no manifest exists
+ * or it is invalid.
  */
 export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
+	const agentsPath = path.join(dir, AGENTS_MARKETPLACE_FILE);
 	const claudePath = path.join(dir, CLAUDE_MARKETPLACE_FILE);
 	const copilotPath = path.join(dir, COPILOT_MARKETPLACE_FILE);
 
 	let manifestPath: string;
 	let format: NormalizedMarketplace["format"];
-	if (fs.existsSync(claudePath)) {
+	if (fs.existsSync(agentsPath)) {
+		manifestPath = agentsPath;
+		format = "agents";
+	} else if (fs.existsSync(claudePath)) {
 		manifestPath = claudePath;
 		format = "claude";
 	} else if (fs.existsSync(copilotPath)) {

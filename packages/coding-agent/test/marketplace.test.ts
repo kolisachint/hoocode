@@ -25,6 +25,28 @@ describe("marketplace manifests", () => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	});
 
+	it("parses a native .agents-plugin marketplace manifest", () => {
+		const dir = path.join(tempDir, "agents-market");
+		writeJson(path.join(dir, ".agents-plugin", "marketplace.json"), {
+			name: "native",
+			owner: "me",
+			plugins: [{ name: "foo", source: "./plugins/foo", description: "Foo" }],
+		});
+		const market = parseMarketplaceDir(dir);
+		expect(market?.format).toBe("agents");
+		expect(market?.name).toBe("native");
+		expect(market?.plugins).toEqual([{ name: "foo", source: "./plugins/foo", description: "Foo" }]);
+	});
+
+	it("prefers the native .agents-plugin manifest over Claude and Copilot", () => {
+		const dir = path.join(tempDir, "triple");
+		writeJson(path.join(dir, ".agents-plugin", "marketplace.json"), { name: "from-agents", plugins: [] });
+		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), { name: "from-claude", plugins: [] });
+		writeJson(path.join(dir, ".github", "marketplace.json"), { name: "from-copilot", plugins: [] });
+		expect(parseMarketplaceDir(dir)?.name).toBe("from-agents");
+		expect(parseMarketplaceDir(dir)?.format).toBe("agents");
+	});
+
 	it("parses a Claude marketplace manifest", () => {
 		const dir = path.join(tempDir, "claude-market");
 		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), {

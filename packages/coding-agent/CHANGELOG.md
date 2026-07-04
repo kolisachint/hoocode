@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Plugin loading now prefers the cross-vendor `.agents/` surface first: plugins
+  are discovered from `.agents/plugins/` ahead of `.hoocode/plugins/` (project
+  before global, first-wins by id), `/plugin install` writes to
+  `.agents/plugins/<name>`, the added-marketplace registry lives at
+  `.agents/marketplaces.json` (falling back to the legacy `.hoocode/` path), and
+  `/plugin remove` deletes from both. `.hoocode/plugins/` stays discovered.
+
+### Added
+
+- Native `.agents-plugin/marketplace.json` marketplace index format (preferred
+  over Claude `.claude-plugin/` and GitHub `.github/marketplace.json`).
+- `docs/plugin-format-mapping.md`: reference mapping of the native, Claude, and
+  GitHub/Copilot plugin & marketplace formats, plus the `.agents/`-first
+  packaging/install/storage/loading rules.
+
 ## [0.4.111] - 2026-07-04
 
 ### Added

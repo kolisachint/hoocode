@@ -2,9 +2,11 @@
  * /plugin — marketplace add/list + plugin install/list/remove.
  *
  * `/plugin` installs plugins from marketplaces (a git repo or local dir with a
- * Claude `.claude-plugin/marketplace.json` or Copilot-style `.github/marketplace.json`
- * index). Installed plugins are placed in `.hoocode/plugins/<name>` and loaded by the
- * plugin loader after a reload.
+ * native `.agents-plugin/marketplace.json`, Claude `.claude-plugin/marketplace.json`,
+ * or Copilot-style `.github/marketplace.json` index). Installed plugins are placed in
+ * `.agents/plugins/<name>` (the primary, cross-vendor home) and loaded by the plugin
+ * loader after a reload. Plugins hand-placed under `.hoocode/plugins/` are still
+ * discovered and can be removed, but new installs go to `.agents/`.
  *
  *   /plugin marketplace add <git-url|path>
  *   /plugin marketplace list
@@ -32,12 +34,25 @@ function isGitSource(loc: string): boolean {
 }
 
 export function setupMarketplace(pi: ExtensionAPI): void {
-	const storePath = (cwd: string) => join(cwd, ".hoocode", "marketplaces.json");
-	const pluginsDir = (cwd: string) => join(cwd, ".hoocode", "plugins");
-	const cacheDir = (cwd: string) => join(cwd, ".hoocode", "marketplace-cache");
+	// `.agents/` is the primary, cross-vendor home for installed plugins and the
+	// added-marketplace registry, matching the "`.agents/` first" policy. Legacy
+	// `.hoocode/plugins/` is still discovered and honored by `remove`.
+	const storePath = (cwd: string) => join(cwd, ".agents", "marketplaces.json");
+	const legacyStorePath = (cwd: string) => join(cwd, ".hoocode", "marketplaces.json");
+	const pluginsDir = (cwd: string) => join(cwd, ".agents", "plugins");
+	const legacyPluginsDir = (cwd: string) => join(cwd, ".hoocode", "plugins");
+	const cacheDir = (cwd: string) => join(cwd, ".agents", "marketplace-cache");
+
+	// Read the registry from `.agents/` first, falling back to the legacy
+	// `.hoocode/` location so marketplaces added before the move stay visible.
+	const readStore = (cwd: string) => {
+		const primary = readMarketplaceStore(storePath(cwd));
+		if (primary.length > 0 || existsSync(storePath(cwd))) return primary;
+		return readMarketplaceStore(legacyStorePath(cwd));
+	};
 
 	const findPlugin = (cwd: string, name: string) => {
-		for (const record of readMarketplaceStore(storePath(cwd))) {
+		for (const record of readStore(cwd)) {
 			const market = parseMarketplaceDir(record.dir);
 			const entry = market?.plugins.find((p) => p.name === name);
 			if (market && entry) return { market, entry };
@@ -61,7 +76,7 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 				const sub = trimmed.slice("marketplace".length).trim();
 
 				if (sub === "list" || sub === "") {
-					const records = readMarketplaceStore(storePath(cwd));
+					const records = readStore(cwd);
 					if (records.length === 0) {
 						ctx.ui.notify("No marketplaces. Add one with /plugin marketplace add <git-url|path>.", "info");
 						return;
@@ -102,13 +117,13 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 					const market = parseMarketplaceDir(dir);
 					if (!market) {
 						ctx.ui.notify(
-							"No marketplace manifest found (.claude-plugin/ or .github/marketplace.json).",
+							"No marketplace manifest found (.agents-plugin/, .claude-plugin/, or .github/marketplace.json).",
 							"error",
 						);
 						return;
 					}
 
-					const records = readMarketplaceStore(storePath(cwd)).filter((r) => r.location !== loc);
+					const records = readStore(cwd).filter((r) => r.location !== loc);
 					records.push({ location: loc, dir });
 					writeMarketplaceStore(storePath(cwd), records);
 					ctx.ui.notify(`Added marketplace "${market.name}" (${market.plugins.length} plugin(s)).`, "info");
@@ -121,7 +136,7 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 
 			// ── list available plugins ──────────────────────────────────────────
 			if (trimmed === "list" || trimmed === "") {
-				const records = readMarketplaceStore(storePath(cwd));
+				const records = readStore(cwd);
 				const lines: string[] = [];
 				for (const record of records) {
 					const market = parseMarketplaceDir(record.dir);
@@ -175,12 +190,17 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 					ctx.ui.notify("Usage: /plugin remove <name>", "warning");
 					return;
 				}
-				const dest = join(pluginsDir(cwd), sanitizeForDir(name));
-				if (!existsSync(dest)) {
+				// Remove from `.agents/` first, then the legacy `.hoocode/` location.
+				const candidates = [
+					join(pluginsDir(cwd), sanitizeForDir(name)),
+					join(legacyPluginsDir(cwd), sanitizeForDir(name)),
+				];
+				const installed = candidates.filter((p) => existsSync(p));
+				if (installed.length === 0) {
 					ctx.ui.notify(`Plugin "${name}" is not installed.`, "info");
 					return;
 				}
-				rmSync(dest, { recursive: true, force: true });
+				for (const p of installed) rmSync(p, { recursive: true, force: true });
 				ctx.ui.notify(`Removed "${name}" — reloading…`, "info");
 				await ctx.reload();
 				return;

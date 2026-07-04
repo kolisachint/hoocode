@@ -649,9 +649,24 @@ export async function discoverAndLoadExtensions(
 	return result;
 }
 
-/** Standard plugin discovery directories: project-local then global. */
+/**
+ * Standard plugin discovery directories, highest precedence first.
+ *
+ * `.agents/plugins/` is the cross-vendor, primary home and is listed ahead of the
+ * `.hoocode/plugins/` fallback at each scope, so an `.agents`-installed plugin
+ * wins over a same-id `.hoocode` one (discoverPlugins is first-wins by id).
+ * Project scope beats global. The global `.agents` sibling lives next to the
+ * agent dir (`~/.agents` alongside `~/.hoocode`), so it stays parameterized on
+ * `agentDir` rather than hardcoding the home directory.
+ */
 export function defaultPluginDirs(cwd: string, agentDir: string = getAgentDir()): string[] {
-	return [path.join(cwd, CONFIG_DIR_NAME, "plugins"), path.join(agentDir, "plugins")];
+	const globalAgentsPlugins = path.join(path.dirname(agentDir), ".agents", "plugins");
+	return [
+		path.join(cwd, ".agents", "plugins"),
+		path.join(cwd, CONFIG_DIR_NAME, "plugins"),
+		globalAgentsPlugins,
+		path.join(agentDir, "plugins"),
+	];
 }
 
 /**
