@@ -83,7 +83,9 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 					}
 					const lines = records.map((r) => {
 						const market = parseMarketplaceDir(r.dir);
-						return `${market?.name ?? r.location} — ${market?.plugins.length ?? 0} plugin(s) [${r.location}]`;
+						const platforms =
+							market && market.supportPlatform.length > 1 ? ` · ${market.supportPlatform.join(", ")}` : "";
+						return `${market?.name ?? r.location} — ${market?.plugins.length ?? 0} plugin(s)${platforms} [${r.location}]`;
 					});
 					ctx.ui.notify(lines.join("\n"), "info");
 					return;

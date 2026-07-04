@@ -21,6 +21,14 @@
 - `docs/plugin-format-mapping.md`: reference mapping of the native, Claude, and
   GitHub/Copilot plugin & marketplace formats, plus the `.agents/`-first
   packaging/install/storage/loading rules.
+- Optional `supportPlatform` field on marketplace manifests (top-level and per
+  plugin entry). When a repo carries conflicting index formats (e.g. both
+  `.github/marketplace.json` and `.claude-plugin/marketplace.json`), the parse
+  result now records every platform present in `NormalizedMarketplace.supportPlatform`
+  instead of silently dropping the others; precedence still selects one `format`.
+  The field is optional and informational — omitting it changes nothing. Tokens
+  are `agents` | `claude` | `github` (aliases `copilot`/`gh` → `github`,
+  `native` → `agents`); `/plugin marketplace list` surfaces multi-platform repos.
 
 ## [0.4.111] - 2026-07-04
 

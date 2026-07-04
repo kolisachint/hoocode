@@ -111,14 +111,37 @@ the **same shape**:
 ```
 
 Precedence when more than one file is present in the same repo/dir:
-**`.agents-plugin` (native) → `.claude-plugin` (Claude) → `.github` (Copilot)**,
-no merge (`parseMarketplaceDir`).
+**`.agents-plugin` (native) → `.claude-plugin` (Claude) → `.github` (Copilot)**.
+The `format` field is the precedence **winner**; no plugin lists are merged.
 
-| Marketplace file | `format` | Origin | Notes |
-|---|---|---|---|
-| `.agents-plugin/marketplace.json` | `"agents"` | native | preferred; the `.agents` surface |
-| `.claude-plugin/marketplace.json` | `"claude"` | Claude Code | |
-| `.github/marketplace.json` | `"copilot"` | GitHub / Copilot-style git index | **index only — never a plugin manifest** |
+| Marketplace file | `format` | `supportPlatform` token | Origin | Notes |
+|---|---|---|---|---|
+| `.agents-plugin/marketplace.json` | `"agents"` | `agents` | native | preferred; the `.agents` surface |
+| `.claude-plugin/marketplace.json` | `"claude"` | `claude` | Claude Code | |
+| `.github/marketplace.json` | `"copilot"` | `github` | GitHub / Copilot-style git index | **index only — never a plugin manifest** |
+
+### `supportPlatform` — conflict is recorded, not hidden
+
+When a repo carries **more than one** index format (a "conflict"), precedence
+still picks a single `format` to read, but the parse result also exposes every
+platform present so nothing is silently dropped:
+
+- `NormalizedMarketplace.supportPlatform: MarketplacePlatform[]` — the platform
+  token of **every index file present**, plus any authored top-level hint, deduped
+  and never empty. Example: a repo with both `.github/marketplace.json` and
+  `.claude-plugin/marketplace.json` resolves to `format: "claude"` **and**
+  `supportPlatform: ["claude", "github"]`. `/plugin marketplace list` shows the
+  extra platforms when there is more than one.
+- **Optional authored field** `supportPlatform` (string or array) is accepted at
+  the **top level** of a manifest and **per plugin entry**
+  (`plugins: [{ …, supportPlatform }]`). It is folded into the normalized list;
+  aliases `copilot` / `gh` → `github`, `native` → `agents`. Unknown tokens are
+  dropped. **Omitting it changes nothing** — the field is purely additive and
+  informational today (no entry is filtered out by it).
+
+Platform tokens are `agents` | `claude` | `github`. Note the friendly `github`
+token maps to the internal `format: "copilot"` (the `.github/` file); the two
+names refer to the same thing.
 
 A plugin `source` inside any index is classified by `resolvePluginSource`:
 
@@ -221,6 +244,7 @@ live in the session — **loaded means ready to use**, no extra step.
 | 5 | Installs historically hardcoded `.hoocode/plugins/` | Installs now default to `.agents/plugins/`; `.hoocode/plugins/` still discovered + removable |
 | 6 | Providers / typed TS `extensions` are richer than Claude allows | Native-only fields; ignored on the Claude-compat path (`extensions` deferred) |
 | 7 | Some Claude hook events aren't mapped | `Notification` / `SubagentStop` / `PreCompact` / `hookSpecificOutput` deferred — see §2 |
+| 8 | A repo can carry conflicting index formats (e.g. `.github/` + `.claude-plugin/`) | Precedence still picks one `format`; the optional `supportPlatform` records **all** platforms present so the conflict is visible — see §3 |
 
 ---
 
