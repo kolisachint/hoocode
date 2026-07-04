@@ -1,11 +1,11 @@
 import type { Component, Focusable, TUI } from "@kolisachint/hoocode-tui";
 import { getKeybindings, matchesKey, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import { formatDurationSecs } from "../../../core/format-duration.js";
-import { KEYBINDINGS } from "../../../core/keybindings.js";
 import type { Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskStatus } from "../../../core/task-store.js";
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
 import { agentColorFor, theme } from "../theme/theme.js";
+import { appKeyLabel, matchesAppKey, rawKeyHint } from "./keybinding-hints.js";
 
 const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	// Hollow = not started, matching the hollow-means-lighter logic of ◇ and the
@@ -699,31 +699,6 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
 	return left + " ".repeat(pad) + rightStyled;
 }
 
-/** Team-focus actions the panel handles itself (configurable, not hardcoded keys). */
-type TeamFocusKeybinding = "app.team.nudge" | "app.team.attach";
-
-/**
- * Match input against a configurable team-focus keybinding. The global manager
- * is the app-level one in normal runs (user overrides apply); when it is the
- * bare TUI default (tests, early boot) the app definition's default keys are
- * used instead so the panel never goes dead.
- */
-function matchesTeamFocusKey(data: string, id: TeamFocusKeybinding): boolean {
-	const keybindings = getKeybindings();
-	if (keybindings.getDefinition(id)) return keybindings.matches(data, id);
-	const keys = KEYBINDINGS[id].defaultKeys;
-	return (Array.isArray(keys) ? keys : [keys]).some((key) => matchesKey(data, key));
-}
-
-/** First configured key for a team-focus binding, for the focus-mode hint line. */
-function teamFocusKeyLabel(id: TeamFocusKeybinding): string {
-	const keybindings = getKeybindings();
-	const keys = keybindings.getDefinition(id) ? keybindings.getKeys(id) : undefined;
-	if (keys && keys.length > 0) return keys[0] as string;
-	const defaults = KEYBINDINGS[id].defaultKeys;
-	return (Array.isArray(defaults) ? defaults[0] : defaults) as string;
-}
-
 /**
  * Task panel rendered just above the editor prompt.
  *
@@ -885,10 +860,10 @@ export class TaskPanelComponent implements Component, Focusable {
 			this.selectedRole = roles[Math.max(0, index - 1)].name;
 		} else if (keybindings.matches(data, "tui.select.down")) {
 			this.selectedRole = roles[Math.min(roles.length - 1, index + 1)].name;
-		} else if (matchesTeamFocusKey(data, "app.team.nudge")) {
+		} else if (matchesAppKey(data, "app.team.nudge")) {
 			const role = this.focusedRole();
 			if (role) this.onNudge?.(role);
-		} else if (matchesTeamFocusKey(data, "app.team.attach")) {
+		} else if (matchesAppKey(data, "app.team.attach")) {
 			const role = this.focusedRole();
 			if (role) this.onAttach?.(role);
 		} else if (matchesKey(data, "q") || keybindings.matches(data, "tui.select.cancel")) {
@@ -1079,16 +1054,17 @@ export class TaskPanelComponent implements Component, Focusable {
 			}
 		}
 		if (this.focused) {
-			const nudgeKey = teamFocusKeyLabel("app.team.nudge");
-			const attachKey = teamFocusKeyLabel("app.team.attach");
-			lines.push(
-				gutter +
-					truncateToWidth(
-						theme.fg("dim", `↑/↓ select · ${nudgeKey} nudge · ${attachKey} attach · q/esc back`),
-						inner,
-						"…",
-					),
-			);
+			// House hint style (see keybinding-hints): dim key + muted description,
+			// muted · separators. Arrows and q/esc are literal by convention; the
+			// nudge/attach keys resolve from the live keybinding config.
+			const sep = theme.fg("muted", " · ");
+			const hint = [
+				rawKeyHint("↑/↓", "select"),
+				rawKeyHint(appKeyLabel("app.team.nudge"), "nudge"),
+				rawKeyHint(appKeyLabel("app.team.attach"), "attach"),
+				rawKeyHint("q/esc", "back"),
+			].join(sep);
+			lines.push(gutter + truncateToWidth(hint, inner, "…"));
 		}
 		return lines;
 	}

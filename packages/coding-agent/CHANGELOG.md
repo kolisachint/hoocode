@@ -18,7 +18,9 @@
   immediately, and the run reports a distinct `cancelled` status (dim ⊘ in the
   panel/TaskOutput) instead of a red failure.
 - Team-focus keys are configurable (`app.team.nudge`, `app.team.attach`;
-  defaults `n`/`a`).
+  defaults `n`/`a`), and the attached-panel's nudge key now honors the same
+  binding instead of a hardcoded `n`. Both panels' hint lines use the shared
+  dim-key/muted-description hint style and reflect the configured keys.
 
 ### Changed
 
