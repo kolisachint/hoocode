@@ -240,7 +240,7 @@ describe("task panel audit fixes", () => {
 		const task = taskStore.create("retry-prone work", { source: "subagent", subagentMode: "explore" });
 		taskStore.update(task.id, { status: "in_progress", note: "ran on inherited model" });
 		panel.setView("subagents");
-		expect(stripAnsi(panel.render(120).join("\n"))).toContain("⚠ ran on inherited model");
+		expect(stripAnsi(panel.render(120).join("\n"))).toContain("⚠︎ ran on inherited model");
 
 		// The finishing update passes note: undefined (as finalizeDispatchResult
 		// does when there is no warning) — the sticky ⚠ cue must clear.

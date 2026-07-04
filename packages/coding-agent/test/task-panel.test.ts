@@ -56,9 +56,11 @@ describe("task panel rendering", () => {
 		// In the flat view, the origin tag precedes the title (design: .mode tag).
 		expect(text).toContain("[explore]");
 		expect(text).toContain("[edit]");
-		// Active work shows the WORKING stamp (◐) and a pending dot (●).
+		// Active work shows the WORKING stamp (◐) and a hollow pending marker (○ —
+		// ● stays exclusive to the chat's tool status dot).
 		expect(text).toContain("◐");
-		expect(text).toContain("●");
+		expect(text).toContain("○");
+		expect(text).not.toContain("●");
 		// A pending task is tagged queued.
 		expect(text).toContain("queued");
 		// The active row reads running…; the owner glyph (◆ main) precedes each title.
@@ -215,12 +217,14 @@ describe("task panel rendering", () => {
 		const lines = renderPanel();
 		const noteRow = lines.find((l) => l.includes("Audit reconnect path"));
 		expect(noteRow).toBeDefined();
-		expect(noteRow).toContain("\u26a0 ran on inherited model");
+		// VS15 (\ufe0e) rides along so terminals render the cue as single-cell
+		// text, never a double-width emoji that would break the column math.
+		expect(noteRow).toContain("\u26a0\ufe0e ran on inherited model");
 		// The ⚠ cue takes over the right column, so the usage stamp is not shown.
 		expect(noteRow).not.toContain("4.5k");
 
 		const failRow = lines.find((l) => l.includes("Run suite"));
-		expect(failRow).toContain("\u26a0 anthropic exhausted");
+		expect(failRow).toContain("\u26a0\ufe0e anthropic exhausted");
 	});
 
 	test("long titles use the full left width regardless of task-id digit count", () => {

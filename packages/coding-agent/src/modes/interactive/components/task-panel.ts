@@ -8,12 +8,27 @@ import type { ThemeColor } from "../theme/theme.js";
 import { agentColorFor, theme } from "../theme/theme.js";
 
 const TASK_STATUS_ICON: Record<TaskStatus, string> = {
-	pending: "●",
+	// Hollow = not started, matching the hollow-means-lighter logic of ◇ and the
+	// selectors' ○/◉ convention; also keeps ● exclusive to the chat's tool
+	// status dot so the two never read as the same signal.
+	pending: "○",
 	in_progress: "◐",
 	done: "✓",
 	failed: "✗",
 	cancelled: "⊘",
 };
+
+/**
+ * U+26A0 with VS15 (text presentation). Bare ⚠ carries the Unicode Emoji
+ * property, and terminals with emoji font fallback render it as a double-width
+ * color glyph while the width math counts 1 cell — misaligning exactly the
+ * rows that carry a warning. VS15 forces single-cell text rendering and is
+ * itself zero-width, so visibleWidth stays correct.
+ */
+const WARNING_GLYPH = "⚠︎";
+
+/** U+25B6 with VS15 — same emoji-presentation hazard as WARNING_GLYPH. */
+const SELECTED_GLYPH = "▶︎";
 
 /**
  * Single-cell marker for MCP-sourced rows, which have no owning agent. Every
@@ -433,7 +448,7 @@ function formatTaskLine(
 	// A warning note (e.g. inherited-model fallback, exhaustion skip) takes over the
 	// right column as a ⚠ cue, replacing the usage/status stamp for that row.
 	if (task.note) {
-		rightPlain = `⚠ ${task.note}`;
+		rightPlain = `${WARNING_GLYPH} ${task.note}`;
 		rightStyled = theme.fg("warning", rightPlain);
 	}
 
@@ -645,7 +660,7 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
 	const identityColor: ThemeColor =
 		meta.kind === "main" ? AGENT_GLYPH_COLOR[meta.kind] : agentColorFor(agentTypeOfName(meta.name));
 	const glyph = selected
-		? theme.fg("accent", "▶")
+		? theme.fg("accent", SELECTED_GLYPH)
 		: theme.fg(identityColor, AGENT_GLYPH[meta.kind] ?? AGENT_GLYPH.subagent);
 	const name = selected
 		? theme.bold(theme.fg("accent", meta.name))

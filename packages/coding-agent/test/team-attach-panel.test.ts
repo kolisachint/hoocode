@@ -145,8 +145,9 @@ describe("TeamAttachPanelComponent", () => {
 
 		const text = panel.render(80).map(stripAnsi).join("\n");
 		expect(text).toContain("◉ task t1 started");
-		expect(text).toContain("⏸ awaiting approval: Deploy to production?");
-		expect(text).toContain("▶ task t1 resumed: no");
+		// ⏸/▶ carry VS15 so terminals render them single-cell text, not emoji.
+		expect(text).toContain("⏸︎ awaiting approval: Deploy to production?");
+		expect(text).toContain("▶︎ task t1 resumed: no");
 		expect(text).toContain("✓ task t1 done");
 		expect(text).not.toContain("t2");
 		panel.dispose();

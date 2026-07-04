@@ -268,14 +268,17 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 				break;
 			case "task_paused":
 				this.breakLine();
-				this.lines.push(theme.fg("warning", `⏸ awaiting approval: ${event.question ?? "?"}`));
+				// VS15 (U+FE0E) forces text presentation: bare ⏸/▶ carry the Unicode
+				// Emoji property and emoji-font fallback renders them double-width,
+				// breaking the width math that counts one cell.
+				this.lines.push(theme.fg("warning", `⏸︎ awaiting approval: ${event.question ?? "?"}`));
 				break;
 			case "task_resumed":
 				this.breakLine();
 				this.lines.push(
 					theme.fg(
 						"accent",
-						`▶ task ${event.taskId ?? "?"} resumed${event.chosenOption ? `: ${event.chosenOption}` : ""}`,
+						`▶︎ task ${event.taskId ?? "?"} resumed${event.chosenOption ? `: ${event.chosenOption}` : ""}`,
 					),
 				);
 				break;

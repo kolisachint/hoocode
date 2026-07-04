@@ -36,6 +36,14 @@
 
 ### Fixed
 
+- Glyph rendering: the warning cue (⚠), team-focus cursor (▶), and
+  team-attach pause/resume markers (⏸/▶) now carry the text-presentation
+  selector (VS15) so terminals with emoji font fallback render them as
+  single-cell text instead of double-width emoji that misaligned their rows;
+  the voice panel's mic carries VS16 so its measured width matches the
+  two-cell emoji terminals draw. The task panel's pending marker is now a
+  hollow ○ (matching the selectors' ○/◉ convention), leaving ● exclusive to
+  the chat's tool status dot.
 - Concurrent subagents no longer trample each other's panel state; a stale
   warning note (⚠) clears on the next state change; subagents-lens header
   counts always match the rendered rows (orphaned children render as roots,
