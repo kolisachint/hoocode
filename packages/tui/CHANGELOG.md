@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **Differential rendering is now O(changed lines), not O(transcript).** The
+  per-line style reset is applied at write time instead of being baked onto the
+  cached line arrays, so unchanged lines stay reference-stable between frames and
+  the diff short-circuits on identity. Previously every frame reallocated a reset
+  string for every line of the whole transcript and then compared them all —
+  ~4 ms/frame of pure churn on a 500-message session (measured), for a change as
+  small as a spinner tick. The full-buffer kitty-image scan is likewise skipped
+  entirely until an image is actually drawn.
+
 ## [0.4.112] - 2026-07-04
 
 ## [0.4.111] - 2026-07-04

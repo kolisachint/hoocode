@@ -21,6 +21,7 @@ import {
 	SUBAGENT_SKIP_MCP_ENV,
 	toolAllowlistNeedsMcp,
 } from "./subagent-depth.js";
+import { SUBAGENT_PROGRESS_EVENTS } from "./subagent-events.js";
 import { TokenBudget } from "./token-budget.js";
 
 /**
@@ -137,16 +138,13 @@ export const DEFAULT_SUBAGENT_MAX_TURNS = 50;
 
 /**
  * AgentSession event `type`s forwarded from a subagent's json event stream as
- * `task_progress` events. Deliberately coarse: the child also emits per-delta
- * `message_update` / `tool_execution_update` events (a high-volume firehose) and
- * large `message_*` bodies, which are dropped here to keep the parent's event loop
- * and the task panel from thrashing under concurrent subagents.
+ * `task_progress` events. Deliberately coarse; the child now also filters its
+ * stdout to this set plus `message_end` at the source (see
+ * SUBAGENT_STDOUT_EVENT_TYPES), so the per-delta firehose no longer crosses the
+ * pipe. Re-exported from the shared module so the child emitter and this
+ * consumer stay in lockstep.
  */
-export const FORWARDED_SUBAGENT_EVENTS: ReadonlySet<string> = new Set([
-	"turn_end",
-	"tool_execution_start",
-	"tool_execution_end",
-]);
+export const FORWARDED_SUBAGENT_EVENTS = SUBAGENT_PROGRESS_EVENTS;
 
 /**
  * Cap on the captured stdout/stderr text kept per task (tail-truncated). The

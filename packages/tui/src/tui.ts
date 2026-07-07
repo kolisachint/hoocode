@@ -240,6 +240,12 @@ export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
 	private previousKittyImageIds = new Set<number>();
+	/** Flips true the first time an image line is emitted. While false no image
+	 * has ever been drawn, so there are no kitty ids on screen to track and the
+	 * per-frame full-buffer scan (collectKittyImageIds) is skipped entirely —
+	 * the common case for a pure-text session. */
+	private sawImageLine = false;
+	private static readonly EMPTY_KITTY_IDS: ReadonlySet<number> = new Set<number>();
 	private previousWidth = 0;
 	private previousHeight = 0;
 	private focusedComponent: Component | null = null;
@@ -818,18 +824,29 @@ export class TUI extends Container {
 
 	private static readonly SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
-	private applyLineResets(lines: string[]): string[] {
-		const reset = TUI.SEGMENT_RESET;
-		for (let i = 0; i < lines.length; i++) {
-			const line = lines[i];
-			if (!isImageLine(line)) {
-				lines[i] = normalizeTerminalOutput(line) + reset;
-			}
+	/**
+	 * Append the per-line style/hyperlink reset (and normalize Thai/Lao AM
+	 * vowels) at the moment a line is written to the terminal. This is
+	 * deliberately kept OFF the cached/diffed line arrays: leaf components cache
+	 * their lines without the reset, so leaving `newLines`/`previousLines`
+	 * un-reset keeps unchanged lines reference-stable frame to frame. The
+	 * differential compare then short-circuits on identity for every unchanged
+	 * line instead of allocating a fresh reset-appended string per line and
+	 * doing a full content compare across the whole transcript every frame.
+	 * Image lines carry no trailing style and are emitted verbatim.
+	 */
+	private emitLine(line: string): string {
+		if (isImageLine(line)) {
+			this.sawImageLine = true;
+			return line;
 		}
-		return lines;
+		return normalizeTerminalOutput(line) + TUI.SEGMENT_RESET;
 	}
 
 	private collectKittyImageIds(lines: string[]): Set<number> {
+		// No image has ever been drawn: nothing on screen carries a kitty id, so
+		// skip the full-buffer scan and the Set allocation.
+		if (!this.sawImageLine) return TUI.EMPTY_KITTY_IDS as Set<number>;
 		const ids = new Set<number>();
 		for (const line of lines) {
 			for (const id of extractKittyImageIds(line)) {
@@ -974,10 +991,10 @@ export class TUI extends Container {
 			newLines = this.compositeOverlays(newLines, width, height);
 		}
 
-		// Extract cursor position before applying line resets (marker must be found first)
+		// Extract cursor position before the marker could be obscured. The reset
+		// is applied per-line at write time (see emitLine), so newLines stays the
+		// un-reset, reference-stable output of the component tree from here on.
 		const cursorPos = this.extractCursorPosition(newLines, height);
-
-		newLines = this.applyLineResets(newLines);
 
 		// Helper to clear scrollback and viewport and render all new lines
 		const fullRender = (clear: boolean): void => {
@@ -989,7 +1006,7 @@ export class TUI extends Container {
 			}
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) buffer += "\r\n";
-				buffer += newLines[i];
+				buffer += this.emitLine(newLines[i]);
 			}
 			buffer += "\x1b[?2026l"; // End synchronized output
 			this.terminal.write(buffer);
@@ -1207,7 +1224,8 @@ export class TUI extends Container {
 				].join("\n");
 				throw new Error(errorMsg);
 			}
-			buffer += line;
+			if (isImage) this.sawImageLine = true;
+			buffer += isImage ? line : normalizeTerminalOutput(line) + TUI.SEGMENT_RESET;
 		}
 
 		// Track where cursor ended up after rendering

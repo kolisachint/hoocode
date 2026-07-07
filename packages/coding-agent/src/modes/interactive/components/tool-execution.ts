@@ -4,9 +4,11 @@ import {
 	Container,
 	getCapabilities,
 	Image,
+	isImageLine,
 	Spacer,
 	Text,
 	type TUI,
+	truncateToWidth,
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.js";
@@ -83,6 +85,20 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	// Once a finished tool block has scrolled far out of view the interactive mode
+	// freezes it (see freeze()): its already-rendered lines are captured and the
+	// heavy source payloads (full tool result, base64 image copies, per-renderer
+	// state, child component caches) are released. A frozen block is immutable and
+	// no longer reflows on resize — old off-screen scrollback keeps its wrapping,
+	// which self-heals on any full rebuild (theme toggle / session reload, both of
+	// which reconstruct components from the intact session data).
+	private frozen = false;
+	private frozenLines?: string[];
+	/** Width the frozen snapshot was captured at; a wider terminal is safe as-is,
+	 * a narrower one needs re-truncation to avoid the TUI's over-width crash guard. */
+	private frozenWidth = 0;
+	private frozenTruncated?: string[];
+	private frozenTruncatedWidth = -1;
 
 	constructor(
 		toolName: string,
@@ -236,6 +252,7 @@ export class ToolExecutionComponent extends Container {
 
 			const index = i;
 			convertToPng(img.data, img.mimeType).then((converted) => {
+				if (this.frozen) return;
 				if (converted) {
 					this.convertedImages.set(index, converted);
 					this.updateDisplay();
@@ -261,18 +278,69 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	override invalidate(): void {
+		// A frozen block has released the state updateDisplay would rebuild from;
+		// its captured snapshot is authoritative, so skip the rebuild entirely.
+		if (this.frozen) return;
 		super.invalidate();
 		this.updateDisplay();
+	}
+
+	/**
+	 * True when this block is a finished, visible tool result that still holds its
+	 * heavy source payloads — i.e. a candidate for freeze() once it scrolls out of
+	 * the live window. In-flight (partial) and already-frozen blocks are excluded.
+	 */
+	isFreezable(): boolean {
+		return !this.frozen && !this.isPartial && !this.hideComponent && !!this.result;
+	}
+
+	/** Mark this block for freezing; the snapshot is captured on the next render
+	 * (at the real render width) and the heavy state released then. */
+	freeze(): void {
+		if (this.isFreezable()) this.frozen = true;
+	}
+
+	private releaseHeavyState(): void {
+		this.result = undefined;
+		this.convertedImages.clear();
+		this.imageComponents = [];
+		this.imageSpacers = [];
+		this.rendererState = {};
+		this.callRendererComponent = undefined;
+		this.resultRendererComponent = undefined;
+		// Drop child components so their line caches (which embed base64 image
+		// payloads and full text output) become collectable.
+		this.clear();
 	}
 
 	override render(width: number): string[] {
 		if (this.hideComponent) {
 			return [];
 		}
-		return super.render(width);
+		if (this.frozenLines) {
+			// Captured snapshot. Wider (or equal) terminal: emit as-is. Narrower:
+			// re-truncate non-image lines to avoid the TUI's over-width crash guard,
+			// caching the result per width so it stays O(1) on unchanged frames.
+			if (width >= this.frozenWidth) return this.frozenLines;
+			if (this.frozenTruncatedWidth === width && this.frozenTruncated) return this.frozenTruncated;
+			this.frozenTruncated = this.frozenLines.map((line) =>
+				isImageLine(line) || visibleWidth(line) <= width ? line : truncateToWidth(line, width),
+			);
+			this.frozenTruncatedWidth = width;
+			return this.frozenTruncated;
+		}
+		const lines = super.render(width);
+		if (this.frozen) {
+			this.frozenLines = lines;
+			this.frozenWidth = width;
+			this.releaseHeavyState();
+		}
+		return lines;
 	}
 
 	private updateDisplay(): void {
+		// Frozen blocks are immutable snapshots with their source state released.
+		if (this.frozen) return;
 		let hasContent = false;
 		this.hideComponent = false;
 		if (this.hasRendererDefinition()) {

@@ -150,6 +150,11 @@ const STREAM_RENDER_THROTTLE_MS = 100;
 // Task-store mutations (subagent tool progress, usage ticks) arrive in bursts;
 // each render they trigger reassembles the whole component tree, so cap them.
 const TASK_RENDER_THROTTLE_MS = 50;
+// Finished tool blocks beyond this many (oldest first) are frozen to release
+// their retained output/image payloads (see ToolExecutionComponent.freeze).
+// Generous so nothing near the viewport is ever frozen; the cap bounds the
+// view layer's memory across a long session heavy on tool output.
+const LIVE_TOOL_WINDOW = 50;
 
 /**
  * Leading+trailing throttle: the first call runs immediately, calls landing
@@ -1066,6 +1071,26 @@ export class InteractiveMode {
 	}
 
 	/**
+	 * Bound the view layer's memory: freeze finished tool blocks once more than
+	 * LIVE_TOOL_WINDOW of them are live, releasing their retained tool output and
+	 * base64 image copies. Runs on tool completion (infrequent) and only ever
+	 * freezes blocks far above the viewport. The session data stays intact, so a
+	 * later full rebuild (theme toggle / reload) restores full fidelity.
+	 */
+	private trimTranscriptMemory(): void {
+		const freezable: ToolExecutionComponent[] = [];
+		for (const child of this.chatContainer.children) {
+			if (child instanceof ToolExecutionComponent && child.isFreezable()) {
+				freezable.push(child);
+			}
+		}
+		const excess = freezable.length - LIVE_TOOL_WINDOW;
+		for (let i = 0; i < excess; i++) {
+			freezable[i].freeze();
+		}
+	}
+
+	/**
 	 * Get a registered tool definition by name (for custom rendering).
 	 */
 	private getRegisteredToolDefinition(toolName: string) {
@@ -1941,6 +1966,7 @@ export class InteractiveMode {
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError });
 					this.pendingTools.delete(event.toolCallId);
+					this.trimTranscriptMemory();
 					this.ui.requestRender();
 				}
 				break;
