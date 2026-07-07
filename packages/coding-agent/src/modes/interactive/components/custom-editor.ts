@@ -1,6 +1,16 @@
 import { Editor, type EditorOptions, type EditorTheme, type TUI } from "@kolisachint/hoocode-tui";
 import type { AppKeybinding, KeybindingsManager } from "../../../core/keybindings.js";
 
+/** True when the input contains no control bytes (C0 range or DEL), i.e. it is
+ * ordinary typed/pasted text that no keybinding chord can encode to. */
+function isPlainText(data: string): boolean {
+	for (let i = 0; i < data.length; i++) {
+		const code = data.charCodeAt(i);
+		if (code < 32 || code === 127) return false;
+	}
+	return data.length > 0;
+}
+
 /**
  * Custom editor that handles app-level keybindings for coding-agent.
  */
@@ -30,6 +40,15 @@ export class CustomEditor extends Editor {
 	handleInput(data: string): void {
 		// Check extension-registered shortcuts first
 		if (this.onExtensionShortcut?.(data)) {
+			return;
+		}
+
+		// Plain printable input (typed characters, paste payloads) can never match
+		// an app keybinding — those all arrive as control characters or escape
+		// sequences. Hand the text straight to the editor so per-keystroke cost
+		// stays flat no matter how many app actions get registered.
+		if (isPlainText(data)) {
+			super.handleInput(data);
 			return;
 		}
 

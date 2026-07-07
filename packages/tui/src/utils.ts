@@ -33,8 +33,12 @@ const zeroWidthRegex = /^(?:\p{Default_Ignorable_Code_Point}|\p{Control}|\p{Mark
 const leadingNonPrintingRegex = /^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Mark}\p{Surrogate}]+/v;
 const rgiEmojiRegex = /^\p{RGI_Emoji}$/v;
 
-// Cache for non-ASCII strings
-const WIDTH_CACHE_SIZE = 512;
+// Cache for non-ASCII strings. Sized so a full screen of distinct styled lines
+// plus scrollback churn doesn't evict entries that recur every frame — an
+// uncached styled/emoji measurement costs ~15-25µs (ANSI strip + grapheme
+// segmentation) vs ~25ns cached, so thrash here is expensive. ~4096 entries of
+// (line, number) is well under a megabyte.
+const WIDTH_CACHE_SIZE = 4096;
 const widthCache = new Map<string, number>();
 
 function isPrintableAscii(str: string): boolean {

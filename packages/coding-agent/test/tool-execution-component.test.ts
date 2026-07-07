@@ -1,5 +1,5 @@
 import { join, resolve } from "node:path";
-import { Text, type TUI } from "@kolisachint/hoocode-tui";
+import { Text, type TUI, visibleWidth } from "@kolisachint/hoocode-tui";
 import stripAnsi from "strip-ansi";
 import { Type } from "typebox";
 import { beforeAll, describe, expect, test } from "vitest";
@@ -465,4 +465,79 @@ describe("ToolExecutionComponent parity", () => {
 			expect(collapsed.indexOf(":120-329")).toBeLessThan(collapsed.indexOf("to expand"));
 		});
 	}
+});
+
+describe("ToolExecutionComponent freeze (memory trimming)", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	function finishedComponent(id: string): ToolExecutionComponent {
+		const component = new ToolExecutionComponent(
+			"read",
+			id,
+			{ path: "README.md" },
+			{},
+			createReadToolDefinition(process.cwd()),
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult(
+			{ content: [{ type: "text", text: "hello world output" }], details: undefined, isError: false },
+			false,
+		);
+		return component;
+	}
+
+	test("a finished block is freezable; a partial one is not", () => {
+		const component = new ToolExecutionComponent(
+			"read",
+			"freeze-partial",
+			{ path: "README.md" },
+			{},
+			createReadToolDefinition(process.cwd()),
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult(
+			{ content: [{ type: "text", text: "partial" }], details: undefined, isError: false },
+			true,
+		);
+		expect(component.isFreezable()).toBe(false);
+		component.updateResult({ content: [{ type: "text", text: "final" }], details: undefined, isError: false }, false);
+		expect(component.isFreezable()).toBe(true);
+	});
+
+	test("freezing preserves the rendered output and makes the block immutable", () => {
+		const component = finishedComponent("freeze-preserve");
+		const before = component.render(120);
+		expect(stripAnsi(before.join("\n"))).toContain("README.md");
+		component.freeze();
+		const frozen = component.render(120);
+		expect(frozen).toEqual(before);
+		// No longer freezable once frozen, and further updates are ignored.
+		expect(component.isFreezable()).toBe(false);
+		component.updateResult(
+			{ content: [{ type: "text", text: "SHOULD NOT APPEAR" }], details: undefined, isError: false },
+			false,
+		);
+		component.invalidate();
+		const after = stripAnsi(component.render(120).join("\n"));
+		expect(after).not.toContain("SHOULD NOT APPEAR");
+		expect(after).toBe(stripAnsi(before.join("\n")));
+	});
+
+	test("a frozen block never emits a line wider than the terminal (crash-guard safety)", () => {
+		const component = finishedComponent("freeze-narrow");
+		// Capture the snapshot at a wide width, then render much narrower.
+		component.freeze();
+		const snapshot = stripAnsi(component.render(120).join("\n"));
+		for (const width of [80, 40, 20, 10]) {
+			for (const line of component.render(width)) {
+				expect(visibleWidth(line)).toBeLessThanOrEqual(width);
+			}
+		}
+		// Re-widening still returns the original snapshot intact.
+		expect(stripAnsi(component.render(120).join("\n"))).toBe(snapshot);
+	});
 });

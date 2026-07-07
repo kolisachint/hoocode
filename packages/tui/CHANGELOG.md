@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **Idle/animation frames are now O(1) regardless of transcript size.**
+  Containers memoize their flattened output by child reference, and the TUI
+  root keeps a persistent flat line buffer that is patched in place with an
+  exact dirty range — a spinner tick on a 500-message transcript now costs
+  ~0.01ms per frame (was ~30ms two releases ago) with zero heap churn. The
+  legacy full-flatten/full-diff path still runs when overlays are up or images
+  are on screen, and a seeded differential stress test asserts both paths
+  produce identical screens.
+- **Resize reflow no longer re-parses markdown.** `Markdown` caches its lexed
+  tokens by text (tokens don't depend on width) and rendered lines per width
+  (small FIFO), so resizing back to a recent width is a cache hit (~2ms for a
+  500-message transcript, was ~360ms) and a first resize only re-wraps (~4x
+  faster).
+- **Keystroke echo skips the animation coalescing window.** Input-driven
+  frames render immediately instead of waiting up to 16ms behind
+  spinner/streaming frames.
+- `visibleWidth` cache raised 512 → 4096 entries so styled/emoji-heavy
+  scrollback doesn't thrash it (uncached measurement is ~15-25µs vs ~25ns
+  cached).
+- **Differential rendering is now O(changed lines), not O(transcript).** The
+  per-line style reset is applied at write time instead of being baked onto the
+  cached line arrays, so unchanged lines stay reference-stable between frames and
+  the diff short-circuits on identity. Previously every frame reallocated a reset
+  string for every line of the whole transcript and then compared them all —
+  ~4 ms/frame of pure churn on a 500-message session (measured), for a change as
+  small as a spinner tick. The full-buffer kitty-image scan is likewise skipped
+  entirely until an image is actually drawn.
+
 ## [0.4.112] - 2026-07-04
 
 ## [0.4.111] - 2026-07-04

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Performance
+
+- **Streaming long messages no longer re-parses the whole text per tick.**
+  While streaming, assistant text and thinking blocks over 2KB are segmented
+  at stable markdown block boundaries (never inside fences, loose lists,
+  tables, or indented continuations; disabled entirely when link-reference
+  definitions are present), so each update re-lexes only the growing tail —
+  measured 34x faster over a 13KB streamed message. The final render collapses
+  back to one canonical Markdown, so any segmentation artifact is transient by
+  construction; equivalence tests assert segmented and single renders match.
+- **Subagent stdout no longer floods the parent event loop.** A spawned
+  subagent now filters its JSON stdout to the events the parent actually
+  consumes (progress + `message_end` usage), dropping the per-delta
+  `message_update` / `tool_execution_update` firehose at the source. Under
+  concurrent subagents this removes hundreds of main-thread `JSON.parse` calls
+  per second — a major cause of overall TUI lag while delegating. The top-level
+  `--json` stream is unchanged (still emits every event).
+- **Bounded transcript memory for long sessions.** Finished tool blocks that
+  scroll far out of view (beyond a live window) are frozen: their rendered lines
+  are kept while the heavy source payloads — full tool output, duplicate base64
+  image copies, per-renderer state, child component caches — are released. The
+  session data stays intact, so a theme toggle or reload restores full fidelity;
+  frozen blocks are re-truncated to the terminal width on render so a resize can
+  never overflow.
+
 ## [0.4.112] - 2026-07-04
 
 ### Changed

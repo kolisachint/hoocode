@@ -43,6 +43,7 @@ type RenderSessionContextThis = {
 	updateEditorBorderColor(): void;
 	getRegisteredToolDefinition(toolName: string): undefined;
 	addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void;
+	trimTranscriptMemory(): void;
 };
 
 type RenderSessionContext = (
@@ -73,6 +74,9 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 		addMessageToChat(message: AgentMessage) {
 			chatContainer.addChild(new Text(message.role, 0, 0));
 		},
+		trimTranscriptMemory: (
+			InteractiveMode.prototype as unknown as { trimTranscriptMemory: (this: RenderSessionContextThis) => void }
+		).trimTranscriptMemory,
 	};
 }
 

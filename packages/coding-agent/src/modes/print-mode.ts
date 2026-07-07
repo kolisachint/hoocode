@@ -9,6 +9,7 @@
 import type { AssistantMessage, ImageContent } from "@kolisachint/hoocode-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.js";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.js";
+import { SUBAGENT_STDOUT_EVENT_TYPES } from "../core/subagent-events.js";
 import { buildSubagentResult, buildTaskForest, writeSubagentResult } from "../core/subagent-result.js";
 import { taskStore } from "../core/task-store.js";
 import { killTrackedDetachedChildren } from "../utils/shell.js";
@@ -128,9 +129,13 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
 		unsubscribe?.();
 		unsubscribe = session.subscribe((event) => {
-			if (mode === "json") {
-				writeRawStdout(`${JSON.stringify(event)}\n`);
-			}
+			if (mode !== "json") return;
+			// A spawned subagent's parent only consumes progress events + message_end
+			// usage from this stream (see SUBAGENT_STDOUT_EVENT_TYPES); dropping the
+			// per-delta firehose at the source keeps it off the parent's UI event
+			// loop. A top-level `--json` consumer still receives the full stream.
+			if (isSubagent && !SUBAGENT_STDOUT_EVENT_TYPES.has(event.type)) return;
+			writeRawStdout(`${JSON.stringify(event)}\n`);
 		});
 	};
 
