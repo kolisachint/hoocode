@@ -199,36 +199,59 @@ export interface OverlayHandle {
  */
 export class Container implements Component {
 	children: Component[] = [];
+	// Flatten memo: children are always render()ed (side effects and their own
+	// caches must run), but when every child returns the same array reference as
+	// last time, the previously flattened array is returned as-is. Unchanged
+	// subtrees thus stay reference-stable all the way up, which lets the TUI
+	// root diff whole regions by identity instead of re-flattening the world.
+	private renderMemo?: { width: number; refs: string[][]; lines: string[] };
 
 	addChild(component: Component): void {
 		this.children.push(component);
+		this.renderMemo = undefined;
 	}
 
 	removeChild(component: Component): void {
 		const index = this.children.indexOf(component);
 		if (index !== -1) {
 			this.children.splice(index, 1);
+			this.renderMemo = undefined;
 		}
 	}
 
 	clear(): void {
 		this.children = [];
+		this.renderMemo = undefined;
 	}
 
 	invalidate(): void {
+		this.renderMemo = undefined;
 		for (const child of this.children) {
 			child.invalidate?.();
 		}
 	}
 
 	render(width: number): string[] {
+		const n = this.children.length;
+		const memo = this.renderMemo;
+		const refs: string[][] = new Array(n);
+		let unchanged = memo !== undefined && memo.width === width && memo.refs.length === n;
+		for (let i = 0; i < n; i++) {
+			refs[i] = this.children[i].render(width);
+			if (unchanged && refs[i] !== (memo as { refs: string[][] }).refs[i]) {
+				unchanged = false;
+			}
+		}
+		if (unchanged) {
+			return (memo as { lines: string[] }).lines;
+		}
 		const lines: string[] = [];
-		for (const child of this.children) {
-			const childLines = child.render(width);
+		for (const childLines of refs) {
 			for (const line of childLines) {
 				lines.push(line);
 			}
 		}
+		this.renderMemo = { width, refs, lines };
 		return lines;
 	}
 }
@@ -239,6 +262,21 @@ export class Container implements Component {
 export class TUI extends Container {
 	public terminal: Terminal;
 	private previousLines: string[] = [];
+	// Root flat-line cache (see the render() override): per-child line arrays,
+	// their offsets into the flat buffer, and the flat buffer itself. Active
+	// only when no overlays are up and no image has been drawn; otherwise the
+	// legacy full-flatten + full-diff path runs.
+	private flatCache?: { width: number; refs: string[][]; offsets: number[] };
+	private flatLines?: string[];
+	/** What the last render() call changed: "full" = unknown (legacy diff must
+	 * scan), null = nothing, otherwise the dirty row range + previous length. */
+	private lastPatch: { low: number; high: number; prevLength: number } | null | "full" = "full";
+	/** Cursor position extracted on the last frame; reused when the dirty range
+	 * shows the marker's row untouched (the marker was already stripped). */
+	private lastCursorPos: { row: number; col: number } | null | undefined = undefined;
+	/** Set by render() when this frame's patches invalidate lastCursorPos: the
+	 * marker's row was overwritten, or a patched-in line carries a marker. */
+	private cursorRowOverwritten = false;
 	private previousKittyImageIds = new Set<number>();
 	/** Flips true the first time an image line is emitted. While false no image
 	 * has ever been drawn, so there are no kitty ids on screen to track and the
@@ -599,7 +637,24 @@ export class TUI extends Container {
 			}
 			this.focusedComponent.handleInput(data);
 			this.requestRender();
+			// Keystroke echo should not queue behind the animation coalescing
+			// window: render the input's effect immediately instead of waiting out
+			// MIN_RENDER_INTERVAL_MS behind spinner/streaming frames.
+			this.expediteRender();
 		}
+	}
+
+	/** Run a requested render now, bypassing the coalescing delay. Used for
+	 * input-driven frames where echo latency matters more than batching. */
+	private expediteRender(): void {
+		if (this.stopped || !this.renderRequested) return;
+		if (this.renderTimer) {
+			clearTimeout(this.renderTimer);
+			this.renderTimer = undefined;
+		}
+		this.renderRequested = false;
+		this.lastRenderAt = performance.now();
+		this.doRender();
 	}
 
 	private consumeCellSizeResponse(data: string): boolean {
@@ -865,6 +920,9 @@ export class TUI extends Container {
 	}
 
 	private expandLastChangedForKittyImages(firstChanged: number, lastChanged: number): number {
+		// No image ever drawn: nothing to expand over, skip the scan (also,
+		// on patched frames previousLines is not the previous content).
+		if (!this.sawImageLine) return lastChanged;
 		let expandedLastChanged = lastChanged;
 		for (let i = firstChanged; i < this.previousLines.length; i++) {
 			if (extractKittyImageIds(this.previousLines[i]).length > 0) {
@@ -967,6 +1025,115 @@ export class TUI extends Container {
 		return null;
 	}
 
+	/**
+	 * Root flatten with patch tracking. Children stay memoized (Container), so
+	 * a frame where only one region changed patches that region into the
+	 * persistent flat buffer and reports the dirty row range via lastPatch —
+	 * doRender then skips the whole-transcript diff. Falls back to a fresh
+	 * flatten (lastPatch = "full") when overlays are up, an image has been
+	 * drawn (kitty bookkeeping needs true previous content), the width changed,
+	 * or the child list changed.
+	 */
+	override render(width: number): string[] {
+		const cacheAllowed = this.overlayStack.length === 0 && !this.sawImageLine;
+		const cache = this.flatCache;
+		if (!cacheAllowed || !cache || cache.width !== width || cache.refs.length !== this.children.length) {
+			const n = this.children.length;
+			const refs: string[][] = new Array(n);
+			const offsets: number[] = new Array(n);
+			const flat: string[] = [];
+			for (let i = 0; i < n; i++) {
+				refs[i] = this.children[i].render(width);
+				offsets[i] = flat.length;
+				for (const line of refs[i]) flat.push(line);
+			}
+			if (cacheAllowed) {
+				this.flatCache = { width, refs, offsets };
+				this.flatLines = flat;
+			} else {
+				this.flatCache = undefined;
+				this.flatLines = undefined;
+			}
+			this.lastPatch = "full";
+			return flat;
+		}
+
+		let flat = this.flatLines as string[];
+		const prevLength = flat.length;
+		let low = Infinity;
+		let high = -1;
+		let delta = 0;
+		// Cursor bookkeeping: the marker was stripped out of the persistent flat
+		// when last extracted, so the cached position stays valid until the row
+		// it lives on is overwritten by re-imported child content — and it
+		// shifts when content above it grows or shrinks.
+		let cp = this.lastCursorPos ?? null;
+		this.cursorRowOverwritten = false;
+		for (let i = 0; i < this.children.length; i++) {
+			const r = this.children[i].render(width);
+			const old = cache.refs[i];
+			if (r === old) continue;
+			const off = cache.offsets[i] + delta;
+			if (r.length === old.length) {
+				for (let k = 0; k < r.length; k++) {
+					if (old[k] !== r[k]) {
+						const row = off + k;
+						flat[row] = r[k];
+						if (row < low) low = row;
+						if (row > high) high = row;
+						// Overwrote the marker's row, or imported a line carrying a
+						// (possibly relocated) marker: position must be re-extracted.
+						if (cp && cp.row === row) this.cursorRowOverwritten = true;
+						if (r[k].includes(CURSOR_MARKER)) this.cursorRowOverwritten = true;
+					}
+				}
+			} else {
+				// Length changed: find the first differing line, then splice the
+				// child's new lines in. Everything from there down shifts rows, so
+				// the dirty range extends to the end (positional diff semantics).
+				let p = 0;
+				const minLen = Math.min(old.length, r.length);
+				while (p < minLen && old[p] === r[p]) p++;
+				flat = flat.slice(0, off + p).concat(r.slice(p), flat.slice(off + old.length));
+				if (off + p < low) low = off + p;
+				if (cp) {
+					if (cp.row >= off + old.length) {
+						// Below the replaced region: shifts with it.
+						cp = { row: cp.row + (r.length - old.length), col: cp.col };
+					} else if (cp.row >= off + p) {
+						// Inside the replaced region: fresh content, re-extract.
+						this.cursorRowOverwritten = true;
+					}
+				}
+				if (!this.cursorRowOverwritten) {
+					for (let k = p; k < r.length; k++) {
+						if (r[k].includes(CURSOR_MARKER)) {
+							this.cursorRowOverwritten = true;
+							break;
+						}
+					}
+				}
+				delta += r.length - old.length;
+			}
+			cache.refs[i] = r;
+		}
+		this.lastCursorPos = cp;
+		const spliced = flat !== this.flatLines;
+		if (spliced) {
+			let acc = 0;
+			for (let i = 0; i < cache.refs.length; i++) {
+				cache.offsets[i] = acc;
+				acc += cache.refs[i].length;
+			}
+			this.flatLines = flat;
+			// Rows below the first splice all shifted; positional diff semantics
+			// mean everything from there to the end must be treated as dirty.
+			high = Math.max(prevLength - 1, flat.length - 1);
+		}
+		this.lastPatch = low === Infinity && high === -1 ? null : { low: low === Infinity ? 0 : low, high, prevLength };
+		return flat;
+	}
+
 	private doRender(): void {
 		if (this.stopped) return;
 		const width = this.terminal.columns;
@@ -983,8 +1150,11 @@ export class TUI extends Container {
 			return targetScreenRow - currentScreenRow;
 		};
 
-		// Render all components to get new lines
+		// Render all components to get new lines. The root render() reports what
+		// it changed via lastPatch; consume it here (it is per-frame state).
 		let newLines = this.render(width);
+		const patch = this.lastPatch;
+		this.lastPatch = "full";
 
 		// Composite overlays into the rendered lines (before differential compare)
 		if (this.overlayStack.length > 0) {
@@ -994,7 +1164,24 @@ export class TUI extends Container {
 		// Extract cursor position before the marker could be obscured. The reset
 		// is applied per-line at write time (see emitLine), so newLines stays the
 		// un-reset, reference-stable output of the component tree from here on.
-		const cursorPos = this.extractCursorPosition(newLines, height);
+		// On patched frames the persistent flat buffer already had the marker
+		// stripped; the cached position (row-shifted by render()) stays valid
+		// unless its row was overwritten by re-imported child content, or a
+		// marker could have newly appeared in changed content.
+		let cursorPos: { row: number; col: number } | null;
+		if (patch !== "full" && this.lastCursorPos !== undefined) {
+			const cp = this.lastCursorPos;
+			if (cp !== null && !this.cursorRowOverwritten) {
+				cursorPos = cp;
+			} else if (patch === null) {
+				cursorPos = cp;
+			} else {
+				cursorPos = this.extractCursorPosition(newLines, height);
+			}
+		} else {
+			cursorPos = this.extractCursorPosition(newLines, height);
+		}
+		this.lastCursorPos = cursorPos;
 
 		// Helper to clear scrollback and viewport and render all new lines
 		const fullRender = (clear: boolean): void => {
@@ -1068,32 +1255,51 @@ export class TUI extends Container {
 			return;
 		}
 
-		// Find first and last changed lines
-		let firstChanged = -1;
-		let lastChanged = -1;
-		const maxLines = Math.max(newLines.length, this.previousLines.length);
-		for (let i = 0; i < maxLines; i++) {
-			const oldLine = i < this.previousLines.length ? this.previousLines[i] : "";
-			const newLine = i < newLines.length ? newLines[i] : "";
+		// Find first and last changed lines. When the root render() produced a
+		// patch report the dirty range is already known and the whole-buffer scan
+		// is skipped. On patched frames previousLines is the same in-place-updated
+		// array as newLines, so the previous length must come from the report.
+		let firstChanged: number;
+		let lastChanged: number;
+		let prevLineCount: number;
+		if (patch !== "full") {
+			if (patch === null) {
+				prevLineCount = newLines.length;
+				firstChanged = -1;
+				lastChanged = -1;
+			} else {
+				prevLineCount = patch.prevLength;
+				firstChanged = patch.low;
+				lastChanged = patch.high;
+			}
+		} else {
+			prevLineCount = this.previousLines.length;
+			firstChanged = -1;
+			lastChanged = -1;
+			const maxLines = Math.max(newLines.length, prevLineCount);
+			for (let i = 0; i < maxLines; i++) {
+				const oldLine = i < prevLineCount ? this.previousLines[i] : "";
+				const newLine = i < newLines.length ? newLines[i] : "";
 
-			if (oldLine !== newLine) {
-				if (firstChanged === -1) {
-					firstChanged = i;
+				if (oldLine !== newLine) {
+					if (firstChanged === -1) {
+						firstChanged = i;
+					}
+					lastChanged = i;
 				}
-				lastChanged = i;
 			}
 		}
-		const appendedLines = newLines.length > this.previousLines.length;
+		const appendedLines = newLines.length > prevLineCount;
 		if (appendedLines) {
 			if (firstChanged === -1) {
-				firstChanged = this.previousLines.length;
+				firstChanged = prevLineCount;
 			}
 			lastChanged = newLines.length - 1;
 		}
 		if (firstChanged !== -1) {
 			lastChanged = this.expandLastChangedForKittyImages(firstChanged, lastChanged);
 		}
-		const appendStart = appendedLines && firstChanged === this.previousLines.length && firstChanged > 0;
+		const appendStart = appendedLines && firstChanged === prevLineCount && firstChanged > 0;
 
 		// No changes - but still need to update hardware cursor position if it moved
 		if (firstChanged === -1) {
@@ -1105,7 +1311,7 @@ export class TUI extends Container {
 
 		// All changes are in deleted lines (nothing to render, just clear)
 		if (firstChanged >= newLines.length) {
-			if (this.previousLines.length > newLines.length) {
+			if (prevLineCount > newLines.length) {
 				let buffer = "\x1b[?2026h";
 				buffer += this.deleteChangedKittyImages(firstChanged, lastChanged);
 				// Move to end of new content (clamp to 0 for empty content)
@@ -1120,7 +1326,7 @@ export class TUI extends Container {
 				else if (lineDiff < 0) buffer += `\x1b[${-lineDiff}A`;
 				buffer += "\r";
 				// Clear extra lines without scrolling
-				const extraLines = this.previousLines.length - newLines.length;
+				const extraLines = prevLineCount - newLines.length;
 				if (extraLines > height) {
 					logRedraw(`extraLines > height (${extraLines} > ${height})`);
 					fullRender(true);
@@ -1232,15 +1438,15 @@ export class TUI extends Container {
 		let finalCursorRow = renderEnd;
 
 		// If we had more lines before, clear them and move cursor back
-		if (this.previousLines.length > newLines.length) {
+		if (prevLineCount > newLines.length) {
 			// Move to end of new content first if we stopped before it
 			if (renderEnd < newLines.length - 1) {
 				const moveDown = newLines.length - 1 - renderEnd;
 				buffer += `\x1b[${moveDown}B`;
 				finalCursorRow = newLines.length - 1;
 			}
-			const extraLines = this.previousLines.length - newLines.length;
-			for (let i = newLines.length; i < this.previousLines.length; i++) {
+			const extraLines = prevLineCount - newLines.length;
+			for (let i = newLines.length; i < prevLineCount; i++) {
 				buffer += "\r\n\x1b[2K";
 			}
 			// Move cursor back to end of new content

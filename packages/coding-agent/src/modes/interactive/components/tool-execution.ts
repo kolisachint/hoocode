@@ -33,6 +33,9 @@ class PrefixFirstLine implements Component {
 	private prefix: string;
 	private child: Component;
 	private indentWidth: number;
+	// Keyed on the child's returned array identity so an unchanged child keeps
+	// this wrapper reference-stable too (parents memoize flattening by ref).
+	private memo?: { src: string[]; width: number; out: string[] };
 
 	constructor(prefix: string, child: Component) {
 		this.prefix = prefix;
@@ -42,17 +45,21 @@ class PrefixFirstLine implements Component {
 
 	invalidate(): void {
 		this.child.invalidate?.();
+		this.memo = undefined;
 	}
 
 	render(width: number): string[] {
 		// Reserve room for the prefix so the child wraps within the remaining width.
 		const childWidth = Math.max(1, width - this.indentWidth);
 		const lines = this.child.render(childWidth);
-		if (lines.length === 0) {
-			return [this.prefix];
+		if (this.memo && this.memo.src === lines && this.memo.width === width) {
+			return this.memo.out;
 		}
 		const indent = " ".repeat(this.indentWidth);
-		return lines.map((line, i) => (i === 0 ? this.prefix + line : indent + line));
+		const out =
+			lines.length === 0 ? [this.prefix] : lines.map((line, i) => (i === 0 ? this.prefix + line : indent + line));
+		this.memo = { src: lines, width, out };
+		return out;
 	}
 }
 

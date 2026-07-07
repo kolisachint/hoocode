@@ -4,6 +4,14 @@
 
 ### Performance
 
+- **Streaming long messages no longer re-parses the whole text per tick.**
+  While streaming, assistant text and thinking blocks over 2KB are segmented
+  at stable markdown block boundaries (never inside fences, loose lists,
+  tables, or indented continuations; disabled entirely when link-reference
+  definitions are present), so each update re-lexes only the growing tail —
+  measured 34x faster over a 13KB streamed message. The final render collapses
+  back to one canonical Markdown, so any segmentation artifact is transient by
+  construction; equivalence tests assert segmented and single renders match.
 - **Subagent stdout no longer floods the parent event loop.** A spawned
   subagent now filters its JSON stdout to the events the parent actually
   consumes (progress + `message_end` usage), dropping the per-delta

@@ -22,14 +22,24 @@ export class UserMessageComponent extends Container {
 		this.addChild(this.contentBox);
 	}
 
+	/** OSC-zone wrap memo: Container.render returns the same array across
+	 * frames when nothing changed, so it must not be mutated — the wrapped
+	 * copy is cached keyed on the source array's identity. */
+	private zoneMemo?: { src: string[]; out: string[] };
+
 	override render(width: number): string[] {
 		const lines = super.render(width);
 		if (lines.length === 0) {
 			return lines;
 		}
 
-		lines[0] = OSC133_ZONE_START + lines[0];
-		lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
-		return lines;
+		if (this.zoneMemo?.src === lines) {
+			return this.zoneMemo.out;
+		}
+		const out = lines.slice();
+		out[0] = OSC133_ZONE_START + out[0];
+		out[out.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + out[out.length - 1];
+		this.zoneMemo = { src: lines, out };
+		return out;
 	}
 }

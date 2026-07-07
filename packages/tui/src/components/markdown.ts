@@ -83,10 +83,15 @@ export class Markdown implements Component {
 	private theme: MarkdownTheme;
 	private defaultStylePrefix?: string;
 
-	// Cache for rendered output
-	private cachedText?: string;
-	private cachedWidth?: number;
-	private cachedLines?: string[];
+	// Rendered-line cache, keyed per width so a terminal resize (or pane toggle)
+	// back to a recent width reuses the wrapped output instead of re-rendering.
+	// Small FIFO: transcripts bounce between a handful of widths at most.
+	private static readonly LINE_CACHE_WIDTHS = 3;
+	private lineCache = new Map<number, string[]>();
+	private lineCacheText?: string;
+	// Lexed tokens depend only on the text, not width or theme — cached
+	// separately so a resize reflow only re-wraps instead of re-parsing.
+	private cachedTokens?: { text: string; tokens: ReturnType<typeof markdownParser.lexer> };
 
 	constructor(
 		text: string,
@@ -108,15 +113,21 @@ export class Markdown implements Component {
 	}
 
 	invalidate(): void {
-		this.cachedText = undefined;
-		this.cachedWidth = undefined;
-		this.cachedLines = undefined;
+		// Drop rendered lines (they bake in theme + width) but keep the lexed
+		// tokens: they are a pure function of the text, and setText/render
+		// detect text changes by comparison.
+		this.lineCache.clear();
+		this.lineCacheText = undefined;
 	}
 
 	render(width: number): string[] {
 		// Check cache
-		if (this.cachedLines && this.cachedText === this.text && this.cachedWidth === width) {
-			return this.cachedLines;
+		if (this.lineCacheText === this.text) {
+			const cached = this.lineCache.get(width);
+			if (cached) return cached;
+		} else {
+			this.lineCache.clear();
+			this.lineCacheText = this.text;
 		}
 
 		// Calculate available width for content (subtract horizontal padding)
@@ -125,18 +136,19 @@ export class Markdown implements Component {
 		// Don't render anything if there's no actual text
 		if (!this.text || this.text.trim() === "") {
 			const result: string[] = [];
-			// Update cache
-			this.cachedText = this.text;
-			this.cachedWidth = width;
-			this.cachedLines = result;
+			this.storeLines(width, result);
 			return result;
 		}
 
-		// Replace tabs with 3 spaces for consistent rendering
-		const normalizedText = this.text.replace(/\t/g, "   ");
-
-		// Parse markdown to HTML-like tokens
-		const tokens = markdownParser.lexer(normalizedText);
+		// Parse markdown to HTML-like tokens (tabs normalized to 3 spaces first
+		// for consistent rendering). Reused across widths for the same text.
+		let tokens: ReturnType<typeof markdownParser.lexer>;
+		if (this.cachedTokens && this.cachedTokens.text === this.text) {
+			tokens = this.cachedTokens.tokens;
+		} else {
+			tokens = markdownParser.lexer(this.text.replace(/\t/g, "   "));
+			this.cachedTokens = { text: this.text, tokens };
+		}
 
 		// Convert tokens to styled terminal output
 		const renderedLines: string[] = [];
@@ -191,14 +203,19 @@ export class Markdown implements Component {
 		}
 
 		// Combine top padding, content, and bottom padding
-		const result = [...emptyLines, ...contentLines, ...emptyLines];
+		const combined = [...emptyLines, ...contentLines, ...emptyLines];
+		const result = combined.length > 0 ? combined : [""];
 
-		// Update cache
-		this.cachedText = this.text;
-		this.cachedWidth = width;
-		this.cachedLines = result;
+		this.storeLines(width, result);
+		return result;
+	}
 
-		return result.length > 0 ? result : [""];
+	private storeLines(width: number, lines: string[]): void {
+		if (this.lineCache.size >= Markdown.LINE_CACHE_WIDTHS) {
+			const oldest = this.lineCache.keys().next().value;
+			if (oldest !== undefined) this.lineCache.delete(oldest);
+		}
+		this.lineCache.set(width, lines);
 	}
 
 	/**

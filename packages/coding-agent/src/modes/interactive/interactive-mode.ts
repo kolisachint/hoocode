@@ -229,7 +229,9 @@ export class InteractiveMode {
 	 * updateContent on message_end flushes the final state regardless. */
 	private readonly scheduleStreamingRender = throttled(STREAM_RENDER_THROTTLE_MS, () => {
 		if (!this.streamingComponent || !this.streamingMessage) return;
-		this.streamingComponent.updateContent(this.streamingMessage);
+		// streaming=true: large blocks render segmented so only the tail chunk
+		// re-parses; message_end's direct updateContent renders the canonical form.
+		this.streamingComponent.updateContent(this.streamingMessage, true);
 		this.ui.requestRender();
 	});
 
