@@ -1,5 +1,7 @@
 # Changelog
 
+## [Unreleased]
+
 ## [0.4.113] - 2026-07-07
 
 ### Performance
