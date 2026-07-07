@@ -9,7 +9,9 @@ export interface LoaderIndicatorOptions {
 }
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const DEFAULT_INTERVAL_MS = 80;
+// Each frame requests a full TUI re-render, so the cadence is a direct tax on
+// long transcripts; 120ms stays visually smooth at two-thirds the render load.
+const DEFAULT_INTERVAL_MS = 120;
 
 /**
  * Loader component that updates with an optional spinning animation.

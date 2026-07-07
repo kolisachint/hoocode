@@ -18,13 +18,17 @@ import { startVoiceTranscribe, VoiceDaemon, type VoiceDaemonHandlers, type Voice
 // Trailing-silence window: how long a pause while speaking lasts before the
 // capture auto-stops. Passed to `voicetools serve` via `--silence-ms` (see
 // VoiceDaemon.spawn) so the binary's real cutoff matches the on-screen
-// countdown this same value drives. Kept generous so a thinking pause mid-
-// sentence doesn't cut the user off (the binary's own default is 600ms).
-const VOICE_SILENCE_MS = 3000;
+// countdown this same value drives. Every utterance pays this in full before
+// finalization can start, so keep it close to the binary's 600ms default —
+// a slightly longer window tolerates brief mid-sentence pauses without
+// taxing every dictation with seconds of dead air.
+const VOICE_SILENCE_MS = 800;
 /** How long to keep the warm voice model in memory after the last capture
  * completes. The daemon auto-shuts down after this window, releasing the
- * ~900 MB resident model; the next ctrl+r pays a cold-start respawn cost. */
-const VOICE_IDLE_TIMEOUT_MS = 60_000;
+ * ~900 MB resident model; the next ctrl+r pays a cold-start respawn cost.
+ * Kept long enough that normal pacing between dictations (reading a reply,
+ * typing) doesn't repeatedly hit the multi-second cold start. */
+const VOICE_IDLE_TIMEOUT_MS = 300_000;
 const VOICE_UNAVAILABLE_MESSAGE =
 	"Voice input failed: voicetools binary unavailable and could not be downloaded. " +
 	"Install it, set VOICETOOLS_BIN, or ensure a published release exists for this platform.";

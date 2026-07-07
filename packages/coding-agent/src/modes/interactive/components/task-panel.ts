@@ -39,9 +39,12 @@ const SELECTED_GLYPH = "▶︎";
  */
 const MCP_SOURCE_GLYPH = "⧉";
 
-/** Braille spinner frames + cadence, matched to the TUI Loader so the active row animates in step. */
+/** Braille spinner frames + cadence, matched to the TUI Loader so the active
+ * row animates in step. Every tick re-renders the whole component tree, so the
+ * cadence is a direct tax on long sessions — 120ms stays smooth while cutting
+ * a third of the render load the old 80ms cadence generated. */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_INTERVAL_MS = 80;
+const SPINNER_INTERVAL_MS = 120;
 
 /** A thin colored left rail groups the pane without a box, the way the design's `border-left` does. */
 const RAIL = "▎";

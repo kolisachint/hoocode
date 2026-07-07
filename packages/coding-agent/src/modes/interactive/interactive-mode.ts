@@ -143,6 +143,41 @@ export interface InteractiveModeOptions {
 	verbose?: boolean;
 }
 
+// How often the streaming assistant message re-parses its markdown. Deltas can
+// arrive far faster than this; every application re-lexes the growing tail
+// block, so applying per-delta made streaming cost O(message²).
+const STREAM_RENDER_THROTTLE_MS = 100;
+// Task-store mutations (subagent tool progress, usage ticks) arrive in bursts;
+// each render they trigger reassembles the whole component tree, so cap them.
+const TASK_RENDER_THROTTLE_MS = 50;
+
+/**
+ * Leading+trailing throttle: the first call runs immediately, calls landing
+ * inside the window coalesce into one trailing run with the latest state.
+ */
+function throttled(ms: number, fn: () => void): () => void {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	let pending = false;
+	const run = () => {
+		fn();
+		timer = setTimeout(() => {
+			timer = undefined;
+			if (pending) {
+				pending = false;
+				run();
+			}
+		}, ms);
+		timer.unref?.();
+	};
+	return () => {
+		if (timer) {
+			pending = true;
+			return;
+		}
+		run();
+	};
+}
+
 export class InteractiveMode {
 	private runtimeHost: AgentSessionRuntime;
 	private ui: TUI;
@@ -184,6 +219,14 @@ export class InteractiveMode {
 	// Streaming message tracking
 	private streamingComponent: AssistantMessageComponent | undefined = undefined;
 	private streamingMessage: AssistantMessage | undefined = undefined;
+	/** Throttled re-parse/re-render of the in-flight assistant message. The
+	 * guard makes a trailing run after message_end/agent_end a no-op; a direct
+	 * updateContent on message_end flushes the final state regardless. */
+	private readonly scheduleStreamingRender = throttled(STREAM_RENDER_THROTTLE_MS, () => {
+		if (!this.streamingComponent || !this.streamingMessage) return;
+		this.streamingComponent.updateContent(this.streamingMessage);
+		this.ui.requestRender();
+	});
 
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
@@ -746,10 +789,14 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		});
 
-		// Re-render the UI when the task list changes (task panel shows active tasks).
-		this.taskStoreUnsubscribe = taskStore.subscribe(() => {
-			this.ui.requestRender();
-		});
+		// Re-render the UI when the task list changes (task panel shows active
+		// tasks). Throttled: subagent progress mutates the store in bursts, and
+		// each resulting render reassembles the entire component tree.
+		this.taskStoreUnsubscribe = taskStore.subscribe(
+			throttled(TASK_RENDER_THROTTLE_MS, () => {
+				this.ui.requestRender();
+			}),
+		);
 
 		// Initialize available provider count for footer display
 		await this.modelController.updateAvailableProviderCount();
@@ -1785,7 +1832,7 @@ export class InteractiveMode {
 			case "message_update":
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
-					this.streamingComponent.updateContent(this.streamingMessage);
+					this.scheduleStreamingRender();
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {

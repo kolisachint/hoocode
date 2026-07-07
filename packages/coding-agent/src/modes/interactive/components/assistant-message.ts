@@ -1,5 +1,5 @@
 import type { AssistantMessage } from "@kolisachint/hoocode-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
+import { Container, type DefaultTextStyle, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -16,6 +16,12 @@ export class AssistantMessageComponent extends Container {
 	private hiddenThinkingLabel: string;
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
+	// Markdown children reused across streaming updates, keyed by content index +
+	// kind. Markdown caches its rendered lines by (text, width); recreating the
+	// instances on every streamed delta discarded those caches and re-parsed the
+	// entire message (thinking trace included) per frame. Reuse keeps finished
+	// blocks cached so only the block whose text actually changed re-parses.
+	private markdownCache = new Map<string, { md: Markdown; text: string }>();
 
 	constructor(
 		message?: AssistantMessage,
@@ -39,10 +45,30 @@ export class AssistantMessageComponent extends Container {
 	}
 
 	override invalidate(): void {
+		// Cached Markdown blocks may be detached right now (e.g. hidden thinking);
+		// drop their render caches too so a theme/width change can't resurface
+		// stale styling when they re-attach.
+		for (const { md } of this.markdownCache.values()) {
+			md.invalidate();
+		}
 		super.invalidate();
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
+	}
+
+	private reuseMarkdown(key: string, text: string, style?: DefaultTextStyle): Markdown {
+		const entry = this.markdownCache.get(key);
+		if (entry) {
+			if (entry.text !== text) {
+				entry.md.setText(text);
+				entry.text = text;
+			}
+			return entry.md;
+		}
+		const md = new Markdown(text, 1, 0, this.markdownTheme, style);
+		this.markdownCache.set(key, { md, text });
+		return md;
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
@@ -90,7 +116,7 @@ export class AssistantMessageComponent extends Container {
 			if (content.type === "text" && content.text.trim()) {
 				// Assistant text messages with no background - trim the text
 				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+				this.contentContainer.addChild(this.reuseMarkdown(`${i}:text`, content.text.trim()));
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
@@ -109,7 +135,7 @@ export class AssistantMessageComponent extends Container {
 				} else {
 					// Thinking traces in thinkingText color, italic, with ✻ prefix
 					this.contentContainer.addChild(
-						new Markdown(`✻ ${content.thinking.trim()}`, 1, 0, this.markdownTheme, {
+						this.reuseMarkdown(`${i}:thinking`, `✻ ${content.thinking.trim()}`, {
 							color: (text: string) => theme.fg("thinkingText", text),
 							italic: true,
 						}),
