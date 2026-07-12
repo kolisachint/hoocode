@@ -805,6 +805,16 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getEnableMcpStats(): boolean {
+		return this.settings.enableMcpStats ?? DEFAULT_SETTINGS.enableMcpStats!;
+	}
+
+	setEnableMcpStats(enabled: boolean): void {
+		this.globalSettings.enableMcpStats = enabled;
+		this.markModified("enableMcpStats");
+		this.save();
+	}
+
 	getEnableWebTools(): boolean {
 		return this.settings.enableWebTools ?? DEFAULT_SETTINGS.enableWebTools!;
 	}

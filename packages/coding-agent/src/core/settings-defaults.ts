@@ -33,6 +33,7 @@ export const DEFAULT_SETTINGS = {
 	enableTodoWrite: true,
 	enablePluginTools: true,
 	deferMcpSchemas: true,
+	enableMcpStats: true,
 	enableWebTools: false,
 	enableBrowserTools: false,
 	enableBrowserLivePreview: false,

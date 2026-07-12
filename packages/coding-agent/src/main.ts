@@ -28,6 +28,7 @@ import { AuthStorage } from "./core/auth-storage.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import type { ExtensionAPI, ExtensionFactory } from "./core/extensions/types.js";
 import { KeybindingsManager } from "./core/keybindings.js";
+import { setMcpStatsEnabled } from "./core/mcp-stats.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
@@ -493,6 +494,9 @@ function buildSessionOptions(
 	if (!isSubagentChild && settingsManager.getDeferMcpSchemas()) {
 		process.env[DEFER_MCP_SCHEMAS_ENV] = "1";
 	}
+
+	// Per-server MCP reliability stats (default on; disable via enableMcpStats).
+	setMcpStatsEnabled(settingsManager.getEnableMcpStats());
 
 	// Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...). Top-level agent
 	// only: these are capability-acquisition tools and must never be available to

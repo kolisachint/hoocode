@@ -29,6 +29,7 @@ import {
 	uninstallPlugin,
 } from "../extensions/plugins/install.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
+import { formatMcpReliability, mcpStats } from "../mcp-stats.js";
 import { formatLiveActivationSummary, getLivePluginActivator } from "../plugin-activation.js";
 import {
 	INSTALL_PLUGIN_TOOL_NAME,
@@ -125,7 +126,7 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 			if (installed.length === 0) {
 				return { content: [{ type: "text" as const, text: "No plugins installed." }], details: { count: 0 } };
 			}
-			const lines = installed.map((p) => {
+			const lines = installed.flatMap((p) => {
 				const caps = [
 					p.skillsDir && "skills",
 					p.commandsDir && "commands",
@@ -136,7 +137,14 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 					.filter(Boolean)
 					.join(", ");
 				const version = p.version ? `@${p.version}` : "";
-				return `${p.id}${version} [${p.supportPlatform.join(", ")}]${caps ? ` — ${caps}` : ""}`;
+				const out = [`${p.id}${version} [${p.supportPlatform.join(", ")}]${caps ? ` — ${caps}` : ""}`];
+				// Observed reliability for the plugin's MCP servers, when there is
+				// enough local history to be meaningful.
+				for (const server of Object.keys(p.mcpServers ?? {})) {
+					const reliability = formatMcpReliability(mcpStats.get(server));
+					if (reliability) out.push(`  mcp "${server}": ${reliability}`);
+				}
+				return out;
 			});
 			const text = `Installed plugins (${installed.length}):\n${lines.join("\n")}`;
 			return { content: [{ type: "text" as const, text }], details: { count: installed.length } };

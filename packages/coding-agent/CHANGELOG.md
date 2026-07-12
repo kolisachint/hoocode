@@ -4,6 +4,14 @@
 
 ### Added
 
+- Per-server MCP reliability stats (`<agentDir>/mcp-stats.json`, toggle with
+  the `enableMcpStats` setting). Tool-call and connect outcomes are recorded
+  locally — only transport-level failures (server exit, timeout, failed
+  connect) count against a server — and surfaced where server choice happens:
+  the connect notification and `ListPlugins` show the observed success rate,
+  and chronically failing servers get an `[unreliable: …]` tag on their
+  `ResolveMcpTools` catalog line so the model can prefer alternatives at
+  resolve time.
 - MCP server configs (standard `mcp.json`, per-server files, and plugin
   manifests) accept optional server-level `promptSnippet` and
   `promptGuidelines` for system-prompt steering. Eager mode applies them to

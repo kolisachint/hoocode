@@ -23,6 +23,7 @@ import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
 import { type ExtensionMcpServerConfig, getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
+import { formatMcpReliability, formatMcpReliabilityWarning, mcpStats } from "../../core/mcp-stats.js";
 import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
 import {
@@ -218,6 +219,7 @@ async function getOrConnectMcp(name: string): Promise<McpConnection | undefined>
 		const { conn } = await connectMcpServer(config);
 		return conn;
 	} catch {
+		mcpStats.recordConnectFailure(name);
 		return undefined;
 	}
 }
@@ -360,6 +362,7 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 			const activeConn = await getOrConnectMcp(capturedServer);
 			if (!activeConn) {
 				if (task) taskStore.update(task.id, { status: "failed" });
+				mcpStats.recordCall(capturedServer, "transport_failure");
 				return {
 					content: [
 						{ type: "text", text: `MCP server "${capturedServer}" is not connected (reconnect attempt failed)` },
@@ -379,9 +382,13 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 				]);
 
 				if (task) taskStore.update(task.id, { status: "done" });
+				mcpStats.recordCall(capturedServer, "ok");
 				return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: undefined };
 			} catch (error) {
 				if (task) taskStore.update(task.id, { status: "failed" });
+				// A user abort says nothing about the server; an rpc rejection here
+				// is transport-level (server exit or timeout), not a bad result.
+				if (!signal.aborted) mcpStats.recordCall(capturedServer, "transport_failure");
 				throw error;
 			}
 		},
@@ -509,6 +516,7 @@ async function runMcpSetup(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
 	const outcomes = await connectAllInOrder(allServerConfigs, connectMcpServer);
 	for (const { config: serverConfig, result } of outcomes) {
 		if (result.status === "rejected") {
+			mcpStats.recordConnectFailure(serverConfig.name);
 			ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(result.reason)}`, "error");
 			continue;
 		}
@@ -559,7 +567,9 @@ export function resetMcpRegistrationState(): void {
 function mcpConnectedMessage(serverConfig: McpServerConfig, toolCount: number, defer: boolean): string {
 	const bgMode = serverConfig.background !== false ? "background" : "foreground";
 	const suffix = defer ? ", schemas deferred" : "";
-	return `MCP: connected "${serverConfig.name}" (${toolCount} tool${toolCount === 1 ? "" : "s"}, ${bgMode}${suffix})`;
+	const reliability = formatMcpReliability(mcpStats.get(serverConfig.name));
+	const reliabilitySuffix = reliability ? ` — ${reliability}` : "";
+	return `MCP: connected "${serverConfig.name}" (${toolCount} tool${toolCount === 1 ? "" : "s"}, ${bgMode}${suffix})${reliabilitySuffix}`;
 }
 
 /** Register (eager) or catalog (deferred) one connected server's tools. Returns the registered tool names. */
@@ -600,14 +610,18 @@ function registerResolverTool(pi: ExtensionAPI, state: McpRegistrationState): vo
 	);
 	// Server-level steering in deferred mode: the snippet annotates the server's
 	// catalog line and the guidelines ride on the resolver itself, so the model
-	// is steered toward a server's tools before any schema is resolved.
+	// is steered toward a server's tools before any schema is resolved. Servers
+	// with a chronically bad observed transport record get a warning tag on the
+	// same line so the model can prefer alternatives at resolve time.
 	const serverSnippets = new Map<string, string>();
 	const serverGuidelines: string[] = [];
 	const seenServers = new Set<string>();
 	for (const { serverConfig } of state.deferredByName.values()) {
 		if (seenServers.has(serverConfig.name)) continue;
 		seenServers.add(serverConfig.name);
-		if (serverConfig.promptSnippet) serverSnippets.set(serverConfig.name, serverConfig.promptSnippet);
+		const warning = formatMcpReliabilityWarning(mcpStats.get(serverConfig.name));
+		const annotation = [serverConfig.promptSnippet, warning].filter(Boolean).join(" ");
+		if (annotation) serverSnippets.set(serverConfig.name, annotation);
 		if (serverConfig.promptGuidelines) serverGuidelines.push(...serverConfig.promptGuidelines);
 	}
 	pi.registerTool({
@@ -679,6 +693,7 @@ export async function activateMcpServersLive(
 	const outcomes = await connectAllInOrder(configs, connectMcpServer);
 	for (const { config: serverConfig, result } of outcomes) {
 		if (result.status === "rejected") {
+			mcpStats.recordConnectFailure(serverConfig.name);
 			activation.errors.push(`${serverConfig.name}: ${String(result.reason)}`);
 			notify(`MCP: failed to connect "${serverConfig.name}": ${String(result.reason)}`, "error");
 			continue;

@@ -13,6 +13,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearExtensionMcpServers } from "../src/core/extension-mcp-servers.js";
 import type { ExtensionAPI, ToolDefinition } from "../src/core/extensions/types.js";
+import { mcpStats } from "../src/core/mcp-stats.js";
 import { formatLiveActivationSummary } from "../src/core/plugin-activation.js";
 import { DEFER_MCP_SCHEMAS_ENV } from "../src/core/subagent-depth.js";
 import { activateMcpServersLive, resetMcpRegistrationState } from "../src/extensions/core/mcp-loader.js";
@@ -191,6 +192,23 @@ describe("activateMcpServersLive", () => {
 		const resolver = tools.get("ResolveMcpTools");
 		expect(resolver?.description).toContain(`${server}: Prefer this server for echo work`);
 		expect(resolver?.promptGuidelines).toEqual(["Always echo politely"]);
+	});
+
+	it("flags a chronically failing server in the deferred catalog and records call outcomes", async () => {
+		process.env[DEFER_MCP_SCHEMAS_ENV] = "1";
+		const { pi, tools } = fakePi();
+		const server = nextServerName();
+		// Seed a bad observed record for this server before it connects.
+		for (let i = 0; i < 10; i++) mcpStats.recordCall(server, i < 6 ? "transport_failure" : "ok");
+
+		await activateMcpServersLive(pi, { [server]: { command: "node", args: [FAKE_SERVER] } }, noopNotify);
+		expect(tools.get("ResolveMcpTools")?.description).toContain(`${server}: [unreliable:`);
+
+		// A successful call through the registered tool lands in the same stats.
+		await callTool(tools.get("ResolveMcpTools")!, { names: [`mcp_${server}_echo`] });
+		await callTool(tools.get(`mcp_${server}_echo`)!, { message: "x" });
+		expect(mcpStats.get(server)?.calls).toBe(11);
+		expect(mcpStats.get(server)?.callTransportFailures).toBe(6);
 	});
 
 	it("appends to an existing deferred catalog and refreshes the resolver description", async () => {
