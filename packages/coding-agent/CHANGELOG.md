@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Model-driven plugin installs now live-activate: `InstallPlugin` connects the
+  plugin's MCP servers immediately so the model can use the new tools in the
+  same turn (deferred-catalog or eager, matching the session's
+  `deferMcpSchemas` mode). Reload-bound capabilities (skills, commands, agents,
+  themes, hooks, providers) are reported in the tool result as activating on
+  the next reload. A later `/reload` converges to the same state.
+
 ### Changed
 
 - MCP servers now connect concurrently at session start, so startup latency is

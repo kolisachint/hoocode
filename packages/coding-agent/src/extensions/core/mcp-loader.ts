@@ -21,7 +21,7 @@ import { summarizeArgs } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
-import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
+import { type ExtensionMcpServerConfig, getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
 import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
@@ -477,12 +477,8 @@ async function runMcpSetup(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
 	// top-level only — a subagent that needs MCP has this env cleared, so it
 	// eager-registers its allowlisted tools at dispatch (the dispatch ↔ schema
 	// interaction) and they are immediately callable.
-	const defer = deferMcpSchemas();
-	const deferredCatalog: DeferredMcpToolEntry[] = [];
-	// Retain each deferred tool's raw definition + config so ResolveMcpTools can
-	// build the full ToolDefinition on request.
-	const deferredByName = new Map<string, { serverConfig: McpServerConfig; tool: McpToolDef }>();
-	const resolvedNames = new Set<string>();
+	resetMcpRegistrationState();
+	const state = ensureMcpRegistrationState();
 
 	// 3. Connect to all servers concurrently, then register (or defer) tools in
 	// config order. Retain every config up front so a tool call can lazily
@@ -497,59 +493,170 @@ async function runMcpSetup(pi: ExtensionAPI, ctx: ExtensionContext): Promise<voi
 			continue;
 		}
 		const { tools } = result.value;
-
-		for (const tool of tools) {
-			const toolName = `mcp_${serverConfig.name}_${tool.name}`;
-			if (defer) {
-				deferredCatalog.push({ toolName, server: serverConfig.name, description: tool.description });
-				deferredByName.set(toolName, { serverConfig, tool });
-			} else {
-				pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
-			}
-		}
-
-		const bgMode = serverConfig.background !== false ? "background" : "foreground";
-		const suffix = defer ? ", schemas deferred" : "";
-		ctx.ui.notify(
-			`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"}, ${bgMode}${suffix})`,
-			"info",
-		);
+		registerServerTools(pi, state, serverConfig, tools);
+		ctx.ui.notify(mcpConnectedMessage(serverConfig, tools.length, state.defer), "info");
 	}
 
 	// 4. In deferred mode, register the single resolver that materializes schemas on demand.
-	if (defer && deferredCatalog.length > 0) {
-		const resolveParams = Type.Object(
-			{
-				names: Type.Array(Type.String(), {
-					description: "MCP tool names to make callable (e.g. 'mcp_github_create_pr' or 'create_pr').",
-				}),
-			},
-			{ additionalProperties: false },
-		);
-		pi.registerTool({
-			name: RESOLVE_MCP_TOOLS_NAME,
-			label: RESOLVE_MCP_TOOLS_NAME,
-			description:
-				"MCP tools are connected but their schemas are loaded on demand to keep context small. Call this with the tool name(s) you need to make them callable, then call the tool(s). Available MCP tools:\n" +
-				formatDeferredCatalog(deferredCatalog),
-			promptSnippet: "Resolve deferred MCP tool schemas by name before calling them.",
-			parameters: resolveParams,
-			async execute(_toolCallId: string, params: Static<typeof resolveParams>) {
-				const matched = selectResolvable(deferredCatalog, params.names ?? []);
-				const newlyResolved: string[] = [];
-				for (const entry of matched) {
-					if (resolvedNames.has(entry.toolName)) continue;
-					const raw = deferredByName.get(entry.toolName);
-					if (!raw) continue;
-					pi.registerTool(buildMcpToolDefinition(raw.serverConfig, raw.tool));
-					resolvedNames.add(entry.toolName);
-					newlyResolved.push(entry.toolName);
-				}
-				const text = matched.length
-					? `Resolved ${newlyResolved.length} MCP tool(s): ${matched.map((m) => m.toolName).join(", ")}. They are now callable.`
-					: `No MCP tools matched: ${(params.names ?? []).join(", ") || "(none)"}. See ResolveMcpTools for the catalog.`;
-				return { content: [{ type: "text" as const, text }], details: undefined };
-			},
-		} as ToolDefinition);
+	if (state.defer && state.deferredCatalog.length > 0) {
+		registerResolverTool(pi, state);
 	}
+}
+
+/**
+ * Registration state shared between the session-start setup pass and post-start
+ * live activation (an InstallPlugin'd plugin's MCP servers). Holds the deferred
+ * catalog so live-activated tools land in the same ResolveMcpTools surface the
+ * setup pass built. Reset by each setup pass (startup and /reload rebuild the
+ * tool registry from scratch).
+ */
+interface McpRegistrationState {
+	/** Whether this session defers MCP tool schemas (captured once per pass). */
+	defer: boolean;
+	deferredCatalog: DeferredMcpToolEntry[];
+	/** Raw definition + config per deferred tool so ResolveMcpTools can build the full ToolDefinition on request. */
+	deferredByName: Map<string, { serverConfig: McpServerConfig; tool: McpToolDef }>;
+	resolvedNames: Set<string>;
+}
+
+let mcpRegistrationState: McpRegistrationState | undefined;
+
+function ensureMcpRegistrationState(): McpRegistrationState {
+	mcpRegistrationState ??= {
+		defer: deferMcpSchemas(),
+		deferredCatalog: [],
+		deferredByName: new Map(),
+		resolvedNames: new Set(),
+	};
+	return mcpRegistrationState;
+}
+
+/** Drop registration state so the next pass starts fresh (each setup pass rebuilds the registry). */
+export function resetMcpRegistrationState(): void {
+	mcpRegistrationState = undefined;
+}
+
+function mcpConnectedMessage(serverConfig: McpServerConfig, toolCount: number, defer: boolean): string {
+	const bgMode = serverConfig.background !== false ? "background" : "foreground";
+	const suffix = defer ? ", schemas deferred" : "";
+	return `MCP: connected "${serverConfig.name}" (${toolCount} tool${toolCount === 1 ? "" : "s"}, ${bgMode}${suffix})`;
+}
+
+/** Register (eager) or catalog (deferred) one connected server's tools. Returns the registered tool names. */
+function registerServerTools(
+	pi: ExtensionAPI,
+	state: McpRegistrationState,
+	serverConfig: McpServerConfig,
+	tools: McpToolDef[],
+): string[] {
+	const names: string[] = [];
+	for (const tool of tools) {
+		const toolName = `mcp_${serverConfig.name}_${tool.name}`;
+		names.push(toolName);
+		if (state.defer) {
+			if (state.deferredByName.has(toolName)) continue;
+			state.deferredCatalog.push({ toolName, server: serverConfig.name, description: tool.description });
+			state.deferredByName.set(toolName, { serverConfig, tool });
+		} else {
+			pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
+		}
+	}
+	return names;
+}
+
+/**
+ * (Re-)register the ResolveMcpTools resolver from the current catalog.
+ * registerTool replaces by name, so calling this again after live activation
+ * refreshes the model-visible catalog embedded in the tool description.
+ */
+function registerResolverTool(pi: ExtensionAPI, state: McpRegistrationState): void {
+	const resolveParams = Type.Object(
+		{
+			names: Type.Array(Type.String(), {
+				description: "MCP tool names to make callable (e.g. 'mcp_github_create_pr' or 'create_pr').",
+			}),
+		},
+		{ additionalProperties: false },
+	);
+	pi.registerTool({
+		name: RESOLVE_MCP_TOOLS_NAME,
+		label: RESOLVE_MCP_TOOLS_NAME,
+		description:
+			"MCP tools are connected but their schemas are loaded on demand to keep context small. Call this with the tool name(s) you need to make them callable, then call the tool(s). Available MCP tools:\n" +
+			formatDeferredCatalog(state.deferredCatalog),
+		promptSnippet: "Resolve deferred MCP tool schemas by name before calling them.",
+		parameters: resolveParams,
+		async execute(_toolCallId: string, params: Static<typeof resolveParams>) {
+			const matched = selectResolvable(state.deferredCatalog, params.names ?? []);
+			const newlyResolved: string[] = [];
+			for (const entry of matched) {
+				if (state.resolvedNames.has(entry.toolName)) continue;
+				const raw = state.deferredByName.get(entry.toolName);
+				if (!raw) continue;
+				pi.registerTool(buildMcpToolDefinition(raw.serverConfig, raw.tool));
+				state.resolvedNames.add(entry.toolName);
+				newlyResolved.push(entry.toolName);
+			}
+			const text = matched.length
+				? `Resolved ${newlyResolved.length} MCP tool(s): ${matched.map((m) => m.toolName).join(", ")}. They are now callable.`
+				: `No MCP tools matched: ${(params.names ?? []).join(", ") || "(none)"}. See ResolveMcpTools for the catalog.`;
+			return { content: [{ type: "text" as const, text }], details: undefined };
+		},
+	} as ToolDefinition);
+}
+
+/** Outcome of live-activating MCP servers after session start (see {@link activateMcpServersLive}). */
+export interface LiveMcpActivation {
+	/** Full `mcp_<server>_<tool>` names now callable (eager) or resolvable via ResolveMcpTools (deferred). */
+	registeredTools: string[];
+	/** Whether the tools went into the deferred catalog rather than being registered eagerly. */
+	deferred: boolean;
+	/** Per-server connect failures. */
+	errors: string[];
+	/** Servers skipped because a same-named server is already active (first-wins, like startup). */
+	skipped: string[];
+}
+
+/**
+ * Connect and register MCP servers mid-session — the live half of model-driven
+ * plugin install (InstallPlugin). Honors the session's deferral mode: deferred
+ * tools are appended to the shared catalog and the ResolveMcpTools description
+ * is refreshed; eager tools register directly. A later /reload converges to the
+ * same set by rebuilding everything from disk.
+ */
+export async function activateMcpServersLive(
+	pi: ExtensionAPI,
+	mcpServers: Record<string, ExtensionMcpServerConfig>,
+	notify: (message: string, level: "info" | "warning" | "error") => void,
+): Promise<LiveMcpActivation> {
+	installMcpExitCleanup();
+	const state = ensureMcpRegistrationState();
+	const activation: LiveMcpActivation = { registeredTools: [], deferred: state.defer, errors: [], skipped: [] };
+
+	const configs: McpServerConfig[] = [];
+	for (const serverConfig of parseStandardMcpConfig({ mcpServers }, "live-activation")) {
+		if (mcpServerConfigs.has(serverConfig.name)) {
+			activation.skipped.push(serverConfig.name);
+			continue;
+		}
+		mcpServerConfigs.set(serverConfig.name, serverConfig);
+		configs.push(serverConfig);
+	}
+
+	const outcomes = await connectAllInOrder(configs, connectMcpServer);
+	for (const { config: serverConfig, result } of outcomes) {
+		if (result.status === "rejected") {
+			activation.errors.push(`${serverConfig.name}: ${String(result.reason)}`);
+			notify(`MCP: failed to connect "${serverConfig.name}": ${String(result.reason)}`, "error");
+			continue;
+		}
+		const { tools } = result.value;
+		activation.registeredTools.push(...registerServerTools(pi, state, serverConfig, tools));
+		notify(mcpConnectedMessage(serverConfig, tools.length, state.defer), "info");
+	}
+
+	if (state.defer && activation.registeredTools.length > 0) {
+		registerResolverTool(pi, state);
+	}
+	return activation;
 }

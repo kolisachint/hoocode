@@ -11,6 +11,7 @@
  *   - thinking-escalation.ts — raise thinking after tool errors, then restore
  *   - loop.ts               — /loop cron scheduling + autonomous continuation
  *   - marketplace.ts        — /plugin marketplace + install/remove
+ *   - plugin-activator.ts   — live (same-turn) activation for model-driven installs
  *   - config.ts             — hoo-config.json types, I/O, and merge rules
  *
  * `bin/hoocode.js` loads this module's default export as the built-in
@@ -25,6 +26,7 @@ import { setupMarketplace } from "./marketplace.js";
 import { setupMcpLoader } from "./mcp-loader.js";
 import { setupMode } from "./modes.js";
 import { setupPermissionGate } from "./permission-gate.js";
+import { setupPluginActivator } from "./plugin-activator.js";
 import { setupScaffold } from "./scaffold.js";
 import { setupThinkingEscalation } from "./thinking-escalation.js";
 
@@ -38,6 +40,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupThinkingEscalation(pi);
 	setupLoop(pi);
 	setupMarketplace(pi);
+	setupPluginActivator(pi);
 }
 
 hooCore.displayName = "hoo-core";

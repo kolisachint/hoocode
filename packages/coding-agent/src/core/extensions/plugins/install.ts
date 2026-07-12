@@ -213,7 +213,8 @@ export interface InstallOutcome {
  * Install an available plugin by name into `.agents/plugins`. Copies local
  * sources; clones git sources. Transparent + reversible by construction — the
  * plugin lands in a named directory and {@link uninstallPlugin} removes it.
- * Active after the next reload.
+ * Activation: the human /plugin path reloads; the model path live-activates
+ * (see extensions/core/plugin-activator.ts). A reload always converges.
  */
 export async function installAvailablePlugin(cwd: string, name: string): Promise<InstallOutcome> {
 	const found = findAvailablePlugin(cwd, name);
@@ -257,7 +258,7 @@ export async function installAvailablePlugin(cwd: string, name: string): Promise
 		message:
 			`Installed "${name}" from marketplace "${found.marketplaceName}" ` +
 			`(${parsed.supportPlatform.join(", ")}) to ${path.relative(cwd, dest) || dest}. ` +
-			`Active after the next reload; remove it with UninstallPlugin.`,
+			`Remove it with UninstallPlugin.`,
 	};
 }
 

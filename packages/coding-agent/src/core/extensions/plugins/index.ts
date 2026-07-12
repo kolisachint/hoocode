@@ -29,7 +29,7 @@ function substituteRoot(value: string, root: string): string {
 }
 
 /** Coerce parsed mcpServers into the standard config shape, substituting root vars. */
-function resolveMcpServers(
+export function resolveMcpServers(
 	mcpServers: Record<string, unknown>,
 	root: string,
 ): Record<string, ExtensionMcpServerConfig> {
