@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Merged the `glob` tool into `find`.** The two shipped side by side in the
+  default tool set and did near-identical fd-backed work, adding selection
+  ambiguity and duplicate schema tokens on every request. `find` — the canonical
+  tool (the Claude `Glob`/`Find` alias target, a member of the agent tool
+  allowlist, and the tool with typed extension events) — now absorbs `glob`'s
+  capabilities: `pattern` accepts an array for OR logic, plus optional `exclude`,
+  `type` (files/dirs/symlinks), `depth`, and `compress`. Existing single-pattern
+  `find` calls are unchanged (flat output, fd parse errors still surface). The
+  `glob` tool is removed; Claude Code's `Glob` continues to normalize to `find`.
+
 ## [0.4.113] - 2026-07-07
 
 ### Performance
