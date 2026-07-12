@@ -7,13 +7,16 @@
 
 import * as os from "node:os";
 import * as path from "node:path";
-import { type Container, Spacer, Text } from "@kolisachint/hoocode-tui";
+import { type Container, Spacer, Text, visibleWidth } from "@kolisachint/hoocode-tui";
+import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionRunner } from "../../core/extensions/index.js";
 import type { PromptTemplate } from "../../core/prompt-templates.js";
 import type { ResourceDiagnostic, ResourceLoader } from "../../core/resource-loader.js";
 import type { SourceInfo } from "../../core/source-info.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
+import { BRAND_MARK, BRAND_NAME, CATEGORY_GLYPH, type CategoryKey } from "./brand.js";
+import { appKeyLabel } from "./components/keybinding-hints.js";
 import { type ThemeColor, theme } from "./theme/theme.js";
 
 // ============================================================================
@@ -464,22 +467,6 @@ export function showLoadedResources(
 		}
 		return theme.fg("dim", `  ${labels.join(", ")}`);
 	};
-	const addLoadedSection = (
-		name: string,
-		collapsedBody: string,
-		expandedBody = collapsedBody,
-		color: ThemeColor = "mdHeading",
-	): void => {
-		const section = new ExpandableText(
-			() => `${sectionHeader(name, color)}\n${collapsedBody}`,
-			() => `${sectionHeader(name, color)}\n${expandedBody}`,
-			deps.isExpanded(),
-			0,
-			0,
-		);
-		chatContainer.addChild(section);
-		chatContainer.addChild(new Spacer(1));
-	};
 
 	const skillsResult = resourceLoader.getSkills();
 	const promptsResult = resourceLoader.getPrompts();
@@ -524,122 +511,167 @@ export function showLoadedResources(
 		const templates = deps.getPromptTemplates();
 		const loadedThemes = themesResult.themes;
 		const customThemes = loadedThemes.filter((t) => t.sourcePath);
+		const agentPaths = resourceLoader.getAgentPaths();
+		const mcpServerCount = getExtensionMcpServers().reduce((n, e) => n + Object.keys(e.mcpServers).length, 0);
+		// Plugins register their synthetic extension factory as `plugin:<id>`;
+		// split them out so plugins and code extensions each get their own count.
+		// (displayName is absent from the options-provided extension shape, so read
+		// it structurally.)
+		const displayNameOf = (e: object): string | undefined => {
+			const value = (e as { displayName?: unknown }).displayName;
+			return typeof value === "string" ? value : undefined;
+		};
+		const pluginCount = extensions.filter((e) => displayNameOf(e)?.startsWith("plugin:")).length;
+		const codeExtensionCount = extensions.length - pluginCount;
 
-		const totalItems =
-			contextFiles.length + skills.length + templates.length + extensions.length + customThemes.length;
-
-		// Meta items: active mode and subagent system prompt (always shown)
-		const metaItems: string[] = [];
+		// ── Ready header: brand mark + product + active mode ────────────────────
+		// Answers "what session is this" in one line; the old mode/<x> +
+		// subagent_system_prompt meta jargon lives in the expanded details.
 		const rawMode = deps.getActiveMode().replace(" + subagent", "");
-		metaItems.push(`mode/${rawMode}`);
-		if (deps.getSubagentEnabled()) {
-			metaItems.push("subagent_system_prompt");
+		const headerLine =
+			`${theme.bold(theme.fg("accent", BRAND_MARK))} ` +
+			`${theme.bold(`${BRAND_NAME.toLowerCase()} ready`)} ` +
+			`${theme.fg("dim", "·")} ${theme.bold(theme.fg("accent", rawMode.toUpperCase()))}` +
+			(deps.getSubagentEnabled() ? theme.fg("dim", " · subagents on") : "");
+		chatContainer.addChild(new Text(headerLine, 0, 0));
+
+		// ── Counted capability grid ──────────────────────────────────────────────
+		// One cell per loaded capability class (glyph + count + label), so "what
+		// can this session do" reads at a glance; names/paths sit one keypress
+		// away in the details below. Cells pad to a common width, four per row.
+		const plural = (n: number, s: string) => (n === 1 ? s : `${s}s`);
+		const cells: Array<{ key: CategoryKey; count: number; label: string }> = [];
+		if (skills.length > 0) cells.push({ key: "skills", count: skills.length, label: plural(skills.length, "skill") });
+		if (templates.length > 0) {
+			cells.push({ key: "commands", count: templates.length, label: plural(templates.length, "command") });
+		}
+		if (agentPaths.length > 0) {
+			cells.push({ key: "agents", count: agentPaths.length, label: plural(agentPaths.length, "agent") });
+		}
+		if (mcpServerCount > 0) cells.push({ key: "mcp", count: mcpServerCount, label: "MCP" });
+		if (pluginCount > 0) cells.push({ key: "plugins", count: pluginCount, label: plural(pluginCount, "plugin") });
+		if (codeExtensionCount > 0) {
+			cells.push({
+				key: "extensions",
+				count: codeExtensionCount,
+				label: plural(codeExtensionCount, "extension"),
+			});
+		}
+		if (customThemes.length > 0) {
+			cells.push({ key: "themes", count: customThemes.length, label: plural(customThemes.length, "theme") });
 		}
 
-		if (totalItems > 0 && totalItems <= 5) {
-			const allCompactItems: string[] = [...metaItems];
-			if (contextFiles.length > 0) {
-				allCompactItems.push(
-					...contextFiles.map((contextFile) => formatContextPath(contextFile.path, deps.getCwd())),
+		if (cells.length > 0) {
+			const cellPlain = (c: (typeof cells)[number]) => `${CATEGORY_GLYPH[c.key]} ${c.count} ${c.label}`;
+			const cellWidth = Math.max(...cells.map((c) => visibleWidth(cellPlain(c)))) + 3;
+			const styledCell = (c: (typeof cells)[number]) => {
+				const pad = " ".repeat(Math.max(0, cellWidth - visibleWidth(cellPlain(c))));
+				return (
+					`${theme.fg("accent", CATEGORY_GLYPH[c.key])} ` +
+					`${theme.bold(String(c.count))} ${theme.fg("muted", c.label)}${pad}`
+				);
+			};
+			const PER_ROW = 4;
+			const rows: string[] = [];
+			for (let i = 0; i < cells.length; i += PER_ROW) {
+				rows.push(
+					`  ${cells
+						.slice(i, i + PER_ROW)
+						.map(styledCell)
+						.join("")}`.trimEnd(),
 				);
 			}
-			if (skills.length > 0) {
-				allCompactItems.push(...skills.map((skill) => skill.name));
-			}
-			if (templates.length > 0) {
-				allCompactItems.push(...templates.map((template) => `/${template.name}`));
-			}
-			if (extensions.length > 0) {
-				allCompactItems.push(...getCompactExtensionLabels(extensions));
-			}
-			if (customThemes.length > 0) {
-				allCompactItems.push(
-					...customThemes.map(
-						(loadedTheme) =>
-							loadedTheme.name ?? getCompactPathLabel(loadedTheme.sourcePath!, loadedTheme.sourceInfo),
-					),
-				);
-			}
-			chatContainer.addChild(
-				new Text(`${theme.fg("mdHeading", "[Resources]")} ${theme.fg("dim", allCompactItems.join(", "))}`, 0, 0),
-			);
-		} else if (totalItems === 0) {
-			chatContainer.addChild(
-				new Text(`${theme.fg("mdHeading", "[Resources]")} ${theme.fg("dim", metaItems.join(", "))}`, 0, 0),
-			);
+			chatContainer.addChild(new Text(rows.join("\n"), 0, 0));
 		} else {
-			addLoadedSection("Resources", formatCompactList(metaItems), formatCompactList(metaItems));
-			if (contextFiles.length > 0) {
-				chatContainer.addChild(new Spacer(1));
-				const contextList = contextFiles.map((f) => theme.fg("dim", `  ${formatDisplayPath(f.path)}`)).join("\n");
-				const contextCompactList = formatCompactList(
-					contextFiles.map((contextFile) => formatContextPath(contextFile.path, deps.getCwd())),
-					{ sort: false },
-				);
-				addLoadedSection("Context", contextCompactList, contextList);
-			}
+			chatContainer.addChild(new Text(theme.fg("dim", "  no project resources loaded"), 0, 0));
+		}
 
-			if (skills.length > 0) {
-				const groups = buildScopeGroups(
-					skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
-				);
-				const skillList = formatScopeGroups(groups, {
-					formatPath: (item) => formatDisplayPath(item.path),
-					formatPackagePath: (item) => getShortPath(item.path, item.sourceInfo),
-				});
-				const skillCompactList = formatCompactList(skills.map((skill) => skill.name));
-				addLoadedSection("Skills", skillCompactList, skillList);
-			}
+		// Context files stay visible in the summary — they shape every reply.
+		if (contextFiles.length > 0) {
+			const names = contextFiles.map((f) => formatContextPath(f.path, deps.getCwd())).join(", ");
+			chatContainer.addChild(
+				new Text(`  ${theme.fg("accent", CATEGORY_GLYPH.context)} ${theme.fg("muted", "context")} ${names}`, 0, 0),
+			);
+		}
 
-			if (templates.length > 0) {
-				const groups = buildScopeGroups(
-					templates.map((template) => ({ path: template.filePath, sourceInfo: template.sourceInfo })),
-				);
-				const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
-				const templateList = formatScopeGroups(groups, {
-					formatPath: (item) => {
-						const template = templateByPath.get(item.path);
-						return template ? `/${template.name}` : formatDisplayPath(item.path);
-					},
-					formatPackagePath: (item) => {
-						const template = templateByPath.get(item.path);
-						return template ? `/${template.name}` : formatDisplayPath(item.path);
-					},
-				});
-				const promptCompactList = formatCompactList(templates.map((template) => `/${template.name}`));
-				addLoadedSection("Prompts", promptCompactList, templateList);
-			}
+		// ── Details: names + scope-grouped paths, one keypress away ─────────────
+		// A single expandable holds every per-category listing; collapsed it is
+		// just the hint line, so a resource-heavy project no longer buries the
+		// prompt under a wall of names at launch.
+		const detailSections: string[] = [];
+		const metaItems = [`mode/${rawMode}`];
+		if (deps.getSubagentEnabled()) metaItems.push("subagent_system_prompt");
+		detailSections.push(`${sectionHeader("Resources")}\n${formatCompactList(metaItems)}`);
 
-			if (extensions.length > 0) {
-				const groups = buildScopeGroups(extensions);
-				const extList = formatScopeGroups(groups, {
-					formatPath: (item) => item.displayName ?? formatExtensionDisplayPath(item.path),
-					formatPackagePath: (item) =>
-						item.displayName ?? formatExtensionDisplayPath(getShortPath(item.path, item.sourceInfo)),
-				});
-				const extensionCompactList = formatCompactList(getCompactExtensionLabels(extensions));
-				addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
-			}
+		if (contextFiles.length > 0) {
+			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${formatDisplayPath(f.path)}`)).join("\n");
+			detailSections.push(`${sectionHeader("Context")}\n${contextList}`);
+		}
+		if (skills.length > 0) {
+			const groups = buildScopeGroups(
+				skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
+			);
+			const skillList = formatScopeGroups(groups, {
+				formatPath: (item) => formatDisplayPath(item.path),
+				formatPackagePath: (item) => getShortPath(item.path, item.sourceInfo),
+			});
+			detailSections.push(
+				`${sectionHeader("Skills")}\n${formatCompactList(skills.map((skill) => skill.name))}\n${skillList}`,
+			);
+		}
+		if (templates.length > 0) {
+			const groups = buildScopeGroups(
+				templates.map((template) => ({ path: template.filePath, sourceInfo: template.sourceInfo })),
+			);
+			const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
+			const formatTemplate = (item: { path: string }) => {
+				const template = templateByPath.get(item.path);
+				return template ? `/${template.name}` : formatDisplayPath(item.path);
+			};
+			const templateList = formatScopeGroups(groups, {
+				formatPath: formatTemplate,
+				formatPackagePath: formatTemplate,
+			});
+			detailSections.push(
+				`${sectionHeader("Prompts")}\n${formatCompactList(templates.map((t) => `/${t.name}`))}\n${templateList}`,
+			);
+		}
+		if (extensions.length > 0) {
+			const groups = buildScopeGroups(extensions);
+			const extList = formatScopeGroups(groups, {
+				formatPath: (item) => item.displayName ?? formatExtensionDisplayPath(item.path),
+				formatPackagePath: (item) =>
+					item.displayName ?? formatExtensionDisplayPath(getShortPath(item.path, item.sourceInfo)),
+			});
+			detailSections.push(
+				`${sectionHeader("Extensions")}\n${formatCompactList(getCompactExtensionLabels(extensions))}\n${extList}`,
+			);
+		}
+		if (customThemes.length > 0) {
+			const groups = buildScopeGroups(
+				customThemes.map((loadedTheme) => ({
+					path: loadedTheme.sourcePath!,
+					sourceInfo: loadedTheme.sourceInfo,
+				})),
+			);
+			const themeList = formatScopeGroups(groups, {
+				formatPath: (item) => formatDisplayPath(item.path),
+				formatPackagePath: (item) => getShortPath(item.path, item.sourceInfo),
+			});
+			detailSections.push(`${sectionHeader("Themes")}\n${themeList}`);
+		}
 
-			if (customThemes.length > 0) {
-				const groups = buildScopeGroups(
-					customThemes.map((loadedTheme) => ({
-						path: loadedTheme.sourcePath!,
-						sourceInfo: loadedTheme.sourceInfo,
-					})),
-				);
-				const themeList = formatScopeGroups(groups, {
-					formatPath: (item) => formatDisplayPath(item.path),
-					formatPackagePath: (item) => getShortPath(item.path, item.sourceInfo),
-				});
-				const themeCompactList = formatCompactList(
-					customThemes.map(
-						(loadedTheme) =>
-							loadedTheme.name ?? getCompactPathLabel(loadedTheme.sourcePath!, loadedTheme.sourceInfo),
-					),
-				);
-				addLoadedSection("Themes", themeCompactList, themeList);
-			}
+		if (detailSections.length > 0) {
+			const expandHint = theme.fg("dim", `  ${appKeyLabel("app.tools.expand")} details`);
+			chatContainer.addChild(
+				new ExpandableText(
+					() => expandHint,
+					() => detailSections.join("\n\n"),
+					deps.isExpanded(),
+					0,
+					0,
+				),
+			);
 		}
 
 		if (contextWarnings.length > 0) {
