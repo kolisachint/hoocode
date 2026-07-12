@@ -57,10 +57,31 @@ export function normalizePlatforms(value: unknown): MarketplacePlatform[] {
 	return out;
 }
 
+/** Structured source pointing at an entire git repository. */
+export interface MarketplacePluginSourceUrl {
+	source: "url";
+	url: string;
+	ref?: string;
+	sha?: string;
+}
+
+/** Structured source pointing at a subdirectory within a git repository. */
+export interface MarketplacePluginSourceGitSubdir {
+	source: "git-subdir";
+	url: string;
+	/** Subdirectory path inside the repository. */
+	path: string;
+	ref?: string;
+	sha?: string;
+}
+
+/** Source value authored in a marketplace manifest. */
+export type MarketplacePluginSource = string | MarketplacePluginSourceUrl | MarketplacePluginSourceGitSubdir;
+
 export interface MarketplacePluginEntry {
 	name: string;
-	/** Relative path, git URL, or `npm:<spec>`. */
-	source: string;
+	/** Relative path, git URL, `npm:<spec>`, or structured source object. */
+	source: MarketplacePluginSource;
 	description?: string;
 	/**
 	 * Optional platform(s) this entry targets. Only set when authored on the
@@ -93,13 +114,41 @@ interface RawMarketplace {
 	owner?: string;
 	/** Optional authored platform hint (string | string[]); folded into supportPlatform. */
 	supportPlatform?: unknown;
-	plugins?: Array<{ name?: string; source?: string; description?: string; supportPlatform?: unknown }>;
+	plugins?: Array<{ name?: string; source?: unknown; description?: string; supportPlatform?: unknown }>;
+}
+
+/** Validate and normalize an authored source value. Returns null for unsupported/invalid shapes. */
+function normalizeSource(source: unknown): MarketplacePluginSource | null {
+	if (typeof source === "string") return source;
+	if (!source || typeof source !== "object") return null;
+	const obj = source as Record<string, unknown>;
+	const src = obj.source;
+	const url = obj.url;
+	if (src === "url" && typeof url === "string") {
+		return {
+			source: "url",
+			url,
+			...(typeof obj.ref === "string" ? { ref: obj.ref } : {}),
+			...(typeof obj.sha === "string" ? { sha: obj.sha } : {}),
+		};
+	}
+	if (src === "git-subdir" && typeof url === "string" && typeof obj.path === "string") {
+		return {
+			source: "git-subdir",
+			url,
+			path: obj.path,
+			...(typeof obj.ref === "string" ? { ref: obj.ref } : {}),
+			...(typeof obj.sha === "string" ? { sha: obj.sha } : {}),
+		};
+	}
+	return null;
 }
 
 /** A resolved, installable plugin source. */
 export type ResolvedPluginSource =
 	| { kind: "local"; path: string }
-	| { kind: "git"; url: string }
+	| { kind: "git"; url: string; ref?: string; sha?: string }
+	| { kind: "git-subdir"; url: string; path: string; ref?: string; sha?: string }
 	| { kind: "npm"; spec: string };
 
 function readJson<T>(file: string): T | null {
@@ -134,15 +183,16 @@ export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
 
 	const plugins: MarketplacePluginEntry[] = [];
 	for (const entry of raw.plugins ?? []) {
-		if (entry?.name && entry.source) {
-			const entryPlatforms = normalizePlatforms(entry.supportPlatform);
-			plugins.push({
-				name: entry.name,
-				source: entry.source,
-				description: entry.description,
-				...(entryPlatforms.length > 0 ? { supportPlatform: entryPlatforms } : {}),
-			});
-		}
+		if (!entry?.name || !entry.source) continue;
+		const normalized = normalizeSource(entry.source);
+		if (!normalized) continue;
+		const entryPlatforms = normalizePlatforms(entry.supportPlatform);
+		plugins.push({
+			name: entry.name,
+			source: normalized,
+			description: entry.description,
+			...(entryPlatforms.length > 0 ? { supportPlatform: entryPlatforms } : {}),
+		});
 	}
 
 	// supportPlatform = platforms of all present index files, plus any authored
@@ -163,12 +213,18 @@ export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
 }
 
 /** Classify and resolve a plugin `source` against its marketplace root. */
-export function resolvePluginSource(source: string, marketplaceRoot: string): ResolvedPluginSource {
-	const s = source.trim();
-	if (s.startsWith("npm:")) return { kind: "npm", spec: s.slice(4) };
-	if (/^https?:\/\//.test(s) || s.startsWith("git@") || s.endsWith(".git")) return { kind: "git", url: s };
-	// Otherwise a path relative to (or absolute within) the marketplace repo.
-	return { kind: "local", path: path.isAbsolute(s) ? s : path.resolve(marketplaceRoot, s) };
+export function resolvePluginSource(source: MarketplacePluginSource, marketplaceRoot: string): ResolvedPluginSource {
+	if (typeof source === "string") {
+		const s = source.trim();
+		if (s.startsWith("npm:")) return { kind: "npm", spec: s.slice(4) };
+		if (/^https?:\/\//.test(s) || s.startsWith("git@") || s.endsWith(".git")) return { kind: "git", url: s };
+		// Otherwise a path relative to (or absolute within) the marketplace repo.
+		return { kind: "local", path: path.isAbsolute(s) ? s : path.resolve(marketplaceRoot, s) };
+	}
+	if (source.source === "url") {
+		return { kind: "git", url: source.url, ref: source.ref, sha: source.sha };
+	}
+	return { kind: "git-subdir", url: source.url, path: source.path, ref: source.ref, sha: source.sha };
 }
 
 // ============================================================================

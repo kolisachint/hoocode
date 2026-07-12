@@ -128,9 +128,15 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 			// ── list available plugins ──────────────────────────────────────────
 			if (trimmed === "list" || trimmed === "") {
 				const available = listAvailablePlugins(cwd);
-				const lines = available.map(
-					(p) => `${p.name} [${p.supportPlatform.join(", ")}] — ${p.description ?? p.source}`,
-				);
+				const lines = available.map((p) => {
+					const src =
+						typeof p.source === "string"
+							? p.source
+							: p.source.source === "url"
+								? p.source.url
+								: `${p.source.url}/${p.source.path}`;
+					return `${p.name} [${p.supportPlatform.join(", ")}] — ${p.description ?? src}`;
+				});
 				ctx.ui.notify(lines.length ? lines.join("\n") : "No plugins available. Add a marketplace first.", "info");
 				return;
 			}
