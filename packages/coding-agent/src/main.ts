@@ -42,6 +42,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import {
 	canSpawnSubagent,
+	DEFER_MCP_SCHEMAS_ENV,
 	DELEGATE_ALLOW_ENV,
 	NESTED_CONCURRENCY_ENV,
 	resolveMaxSubagentDepth,
@@ -484,6 +485,13 @@ function buildSessionOptions(
 	// its todos would otherwise leak into the parent's "main" task group in the pane.
 	if (!isSubagentChild && (parsed.todoWrite ?? settingsManager.getEnableTodoWrite())) {
 		options.customTools = [...(options.customTools ?? []), createTodoWriteToolDefinition()];
+	}
+
+	// Deferred MCP tool schemas (opt-in): set for the top-level agent only. Subagent
+	// children clear this env (see subagent-pool) so a child that needs MCP resolves
+	// its allowlisted tools eagerly at dispatch.
+	if (!isSubagentChild && settingsManager.getDeferMcpSchemas()) {
+		process.env[DEFER_MCP_SCHEMAS_ENV] = "1";
 	}
 
 	// Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...). Top-level agent

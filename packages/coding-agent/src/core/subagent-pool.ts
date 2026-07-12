@@ -16,6 +16,7 @@ import { OutputVerifier } from "./output-verifier.js";
 import type { Settings } from "./settings-manager.js";
 import {
 	currentSubagentDepth,
+	DEFER_MCP_SCHEMAS_ENV,
 	resolveMaxSubagentDepth,
 	SUBAGENT_DEPTH_ENV,
 	SUBAGENT_SKIP_MCP_ENV,
@@ -757,6 +758,9 @@ export class SubagentPool extends EventEmitter {
 		if (!toolAllowlistNeedsMcp(def?.tools)) {
 			env[SUBAGENT_SKIP_MCP_ENV] = "1";
 		}
+		// A child never defers MCP schemas: if it needs MCP it eager-registers its
+		// allowlisted tools at dispatch so they are immediately callable (spec §2).
+		delete env[DEFER_MCP_SCHEMAS_ENV];
 		return env;
 	}
 
