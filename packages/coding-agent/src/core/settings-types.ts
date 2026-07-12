@@ -123,6 +123,7 @@ export interface Settings {
 	maxSubagentDepth?: number; // default: 2 - tree-wide subagent nesting cap (2 = a subagent may spawn one more level; 1 = no nesting)
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
+	enablePluginTools?: boolean; // default: true - enable the plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin on the top-level agent
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
 	enableBrowserTools?: boolean; // default: false - enable the browser_run + browser_continue tools (browsertools engine)
 	enableBrowserLivePreview?: boolean; // default: false - default the live viewer on for browser_run runs and auto-open it

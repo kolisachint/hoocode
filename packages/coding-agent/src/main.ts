@@ -49,6 +49,7 @@ import {
 	SUBAGENT_MAX_DEPTH_ENV,
 } from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
+import { createPluginLifecycleToolDefinitions } from "./core/tools/plugins.js";
 import {
 	buildTaskMainPrompt,
 	createTaskOutputToolDefinition,
@@ -482,6 +483,13 @@ function buildSessionOptions(
 	// its todos would otherwise leak into the parent's "main" task group in the pane.
 	if (!isSubagentChild && (parsed.todoWrite ?? settingsManager.getEnableTodoWrite())) {
 		options.customTools = [...(options.customTools ?? []), createTodoWriteToolDefinition()];
+	}
+
+	// Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...). Top-level agent
+	// only: these are capability-acquisition tools and must never be available to
+	// a spawned subagent child (privilege-amplification guardrail, spec §3).
+	if (!isSubagentChild && settingsManager.getEnablePluginTools()) {
+		options.customTools = [...(options.customTools ?? []), ...createPluginLifecycleToolDefinitions()];
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };

@@ -785,6 +785,16 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getEnablePluginTools(): boolean {
+		return this.settings.enablePluginTools ?? DEFAULT_SETTINGS.enablePluginTools!;
+	}
+
+	setEnablePluginTools(enabled: boolean): void {
+		this.globalSettings.enablePluginTools = enabled;
+		this.markModified("enablePluginTools");
+		this.save();
+	}
+
 	getEnableWebTools(): boolean {
 		return this.settings.enableWebTools ?? DEFAULT_SETTINGS.enableWebTools!;
 	}

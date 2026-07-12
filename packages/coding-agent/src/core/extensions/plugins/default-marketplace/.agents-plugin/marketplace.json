@@ -1,0 +1,12 @@
+{
+  "name": "hoocode",
+  "owner": "hoocode",
+  "supportPlatform": ["agents", "claude", "github"],
+  "plugins": [
+    {
+      "name": "hello-world",
+      "source": "./plugins/hello-world",
+      "description": "Minimal example plugin: a greeting skill and a /hello command."
+    }
+  ]
+}

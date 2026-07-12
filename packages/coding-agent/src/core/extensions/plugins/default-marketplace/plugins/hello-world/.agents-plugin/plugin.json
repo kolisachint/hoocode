@@ -1,0 +1,6 @@
+{
+  "name": "hello-world",
+  "version": "0.1.0",
+  "description": "Minimal example plugin: a greeting skill and a /hello command.",
+  "author": "hoocode"
+}
