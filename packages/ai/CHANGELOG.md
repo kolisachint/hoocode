@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Remove `amazon-bedrock`, `mistral`, `cloudflare-workers-ai`, and `cloudflare-ai-gateway` providers and their implementations, SDK dependencies, test files, and all references across the codebase.
+
 ## [0.4.115] - 2026-07-12
 
 ## [0.4.114] - 2026-07-12

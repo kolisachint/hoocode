@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Removed
+
+- Remove `amazon-bedrock`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`, and `mistral` provider entries from model resolver, display names, SDK headers, and login controller.
+
 ## [0.4.115] - 2026-07-12
 
 ## [0.4.114] - 2026-07-12
