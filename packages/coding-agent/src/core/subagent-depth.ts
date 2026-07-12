@@ -34,6 +34,18 @@ export const DELEGATE_ALLOW_ENV = "HOOCODE_DELEGATE_ALLOW";
  */
 export const SUBAGENT_SKIP_MCP_ENV = "HOOCODE_SKIP_MCP";
 
+/**
+ * When set to "1", the MCP loader defers tool *schemas*: it injects tool names
+ * only (via a ResolveMcpTools tool) and materializes each full schema on demand,
+ * instead of registering every MCP tool's full JSON schema up front (spec §2).
+ *
+ * Set on the top-level agent (opt-in via the deferMcpSchemas setting) and cleared
+ * for subagent children — a child that needs MCP resolves its allowlisted tools
+ * eagerly at dispatch (the dispatch ↔ schema interaction), so its scoped tools
+ * are immediately callable.
+ */
+export const DEFER_MCP_SCHEMAS_ENV = "HOOCODE_DEFER_MCP_SCHEMAS";
+
 /** Default tree-wide cap: subagents cannot spawn subagents (original behavior). */
 export const DEFAULT_MAX_SUBAGENT_DEPTH = 1;
 
@@ -129,6 +141,11 @@ export function isDelegateAllowed(subagentType: string, env: NodeJS.ProcessEnv =
 /** Whether this process should skip connecting MCP servers at startup (see SUBAGENT_SKIP_MCP_ENV). */
 export function subagentSkipMcp(env: NodeJS.ProcessEnv = process.env): boolean {
 	return env[SUBAGENT_SKIP_MCP_ENV] === "1";
+}
+
+/** Whether this process should defer MCP tool schemas (see DEFER_MCP_SCHEMAS_ENV). */
+export function deferMcpSchemas(env: NodeJS.ProcessEnv = process.env): boolean {
+	return env[DEFER_MCP_SCHEMAS_ENV] === "1";
 }
 
 /**

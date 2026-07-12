@@ -42,6 +42,7 @@ import { SessionManager } from "./core/session-manager.js";
 import { SettingsManager } from "./core/settings-manager.js";
 import {
 	canSpawnSubagent,
+	DEFER_MCP_SCHEMAS_ENV,
 	DELEGATE_ALLOW_ENV,
 	NESTED_CONCURRENCY_ENV,
 	resolveMaxSubagentDepth,
@@ -49,6 +50,8 @@ import {
 	SUBAGENT_MAX_DEPTH_ENV,
 } from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
+import { createPluginLifecycleToolDefinitions } from "./core/tools/plugins.js";
+import { createProposePluginToolDefinitions } from "./core/tools/propose-plugin.js";
 import {
 	buildTaskMainPrompt,
 	createTaskOutputToolDefinition,
@@ -482,6 +485,24 @@ function buildSessionOptions(
 	// its todos would otherwise leak into the parent's "main" task group in the pane.
 	if (!isSubagentChild && (parsed.todoWrite ?? settingsManager.getEnableTodoWrite())) {
 		options.customTools = [...(options.customTools ?? []), createTodoWriteToolDefinition()];
+	}
+
+	// Deferred MCP tool schemas (opt-in): set for the top-level agent only. Subagent
+	// children clear this env (see subagent-pool) so a child that needs MCP resolves
+	// its allowlisted tools eagerly at dispatch.
+	if (!isSubagentChild && settingsManager.getDeferMcpSchemas()) {
+		process.env[DEFER_MCP_SCHEMAS_ENV] = "1";
+	}
+
+	// Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...). Top-level agent
+	// only: these are capability-acquisition tools and must never be available to
+	// a spawned subagent child (privilege-amplification guardrail, spec §3).
+	if (!isSubagentChild && settingsManager.getEnablePluginTools()) {
+		options.customTools = [
+			...(options.customTools ?? []),
+			...createPluginLifecycleToolDefinitions(),
+			...createProposePluginToolDefinitions(),
+		];
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };

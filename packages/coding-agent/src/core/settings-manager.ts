@@ -785,6 +785,26 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getEnablePluginTools(): boolean {
+		return this.settings.enablePluginTools ?? DEFAULT_SETTINGS.enablePluginTools!;
+	}
+
+	setEnablePluginTools(enabled: boolean): void {
+		this.globalSettings.enablePluginTools = enabled;
+		this.markModified("enablePluginTools");
+		this.save();
+	}
+
+	getDeferMcpSchemas(): boolean {
+		return this.settings.deferMcpSchemas ?? DEFAULT_SETTINGS.deferMcpSchemas!;
+	}
+
+	setDeferMcpSchemas(enabled: boolean): void {
+		this.globalSettings.deferMcpSchemas = enabled;
+		this.markModified("deferMcpSchemas");
+		this.save();
+	}
+
 	getEnableWebTools(): boolean {
 		return this.settings.enableWebTools ?? DEFAULT_SETTINGS.enableWebTools!;
 	}

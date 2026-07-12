@@ -18,18 +18,19 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-
-export const AGENTS_MARKETPLACE_FILE = path.join(".agents-plugin", "marketplace.json");
-export const CLAUDE_MARKETPLACE_FILE = path.join(".claude-plugin", "marketplace.json");
-export const COPILOT_MARKETPLACE_FILE = path.join(".github", "marketplace.json");
+import { PLUGIN_FORMATS } from "./formats/index.js";
+import type { MarketplacePlatform } from "./formats/types.js";
 
 /**
  * Canonical platform token used by the optional `supportPlatform` field. The
  * `.github/marketplace.json` (Copilot-style) format is surfaced as `"github"` —
  * friendlier than the internal `format: "copilot"` and matching where the file
  * lives. Authored aliases (`copilot`, `gh`) normalize to `github`.
+ *
+ * Re-exported from the format registry so the platform vocabulary has a single
+ * source of truth.
  */
-export type MarketplacePlatform = "agents" | "claude" | "github";
+export type { MarketplacePlatform } from "./formats/types.js";
 
 /** Map an internal marketplace `format` to its public platform token. */
 function formatToPlatform(format: NormalizedMarketplace["format"]): MarketplacePlatform {
@@ -115,16 +116,14 @@ function readJson<T>(file: string): T | null {
  * or it is invalid.
  */
 export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
-	const agentsPath = path.join(dir, AGENTS_MARKETPLACE_FILE);
-	const claudePath = path.join(dir, CLAUDE_MARKETPLACE_FILE);
-	const copilotPath = path.join(dir, COPILOT_MARKETPLACE_FILE);
-
 	// Record every index format present so a conflict (more than one file) is
-	// visible via supportPlatform, not silently dropped.
+	// visible via supportPlatform, not silently dropped. PLUGIN_FORMATS is
+	// precedence-ordered (native > Claude > Copilot), so `present` inherits it.
 	const present: Array<{ format: NormalizedMarketplace["format"]; path: string }> = [];
-	if (fs.existsSync(agentsPath)) present.push({ format: "agents", path: agentsPath });
-	if (fs.existsSync(claudePath)) present.push({ format: "claude", path: claudePath });
-	if (fs.existsSync(copilotPath)) present.push({ format: "copilot", path: copilotPath });
+	for (const fmt of PLUGIN_FORMATS) {
+		const p = path.join(dir, fmt.marketplaceFile);
+		if (fs.existsSync(p)) present.push({ format: fmt.id, path: p });
+	}
 	if (present.length === 0) return null;
 
 	// Precedence winner (present is built in agents > claude > copilot order).

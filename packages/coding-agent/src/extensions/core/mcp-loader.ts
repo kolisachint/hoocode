@@ -22,9 +22,10 @@ import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
 import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
-import type { ExtensionAPI, ExtensionContext, SessionStartEvent } from "../../core/extensions/types.js";
-import { subagentSkipMcp } from "../../core/subagent-depth.js";
+import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
+import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
+import { type DeferredMcpToolEntry, formatDeferredCatalog, selectResolvable } from "./mcp-deferred.js";
 
 const HOOCODE_DIR = getHooCodeDir();
 
@@ -280,6 +281,90 @@ function loadStandardMcpFile(filePath: string): McpServerConfig[] {
 	}
 }
 
+/**
+ * Build the full {@link ToolDefinition} for one MCP tool — the complete JSON
+ * schema plus the connect/execute machinery. Shared by the eager path (register
+ * every tool up front) and the deferred path (materialize on resolve), so both
+ * produce identical, callable tools.
+ */
+function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef): ToolDefinition {
+	const toolName = `mcp_${serverConfig.name}_${tool.name}`;
+	const schema = buildMcpSchema(tool);
+	const capturedServer = serverConfig.name;
+	const capturedTool = tool.name;
+	// MCP tools default to background mode since they are external processes with potential high latency
+	const isBackground = serverConfig.background !== false;
+
+	return {
+		name: toolName,
+		label: `[MCP] ${serverConfig.name} › ${tool.name}`,
+		description: tool.description,
+		parameters: schema,
+		background: isBackground,
+		// Render a clean, prefixed title in chat — `MCP [server › tool] <args>` —
+		// parallel to the subagent `Task [type] <desc>` line. Without this the
+		// ToolExecutionComponent falls back to the raw `mcp_<server>_<tool>` name.
+		// The args summary reuses the same helper as the background start/finish
+		// messages so the chat title stays in sync with them.
+		renderCall(args, theme) {
+			const summary = summarizeArgs((args ?? {}) as Record<string, unknown>);
+			const text =
+				theme.fg("toolTitle", theme.bold("MCP ")) +
+				theme.fg("accent", `[${capturedServer} › ${capturedTool}]`) +
+				(summary ? theme.fg("dim", ` ${summary}`) : "");
+			return new Text(text, 0, 0);
+		},
+		async execute(
+			_toolCallId: string,
+			params: Static<typeof schema>,
+			signal: AbortSignal,
+			_onUpdate: AgentToolUpdateCallback,
+		): Promise<AgentToolResult<undefined>> {
+			// Background MCP tools get a task store entry so they appear in the task pane.
+			// Foreground tools skip this (their result is awaited inline). The server
+			// name rides in subagentMode and becomes the row's `[server]` origin tag;
+			// the title carries just the tool.
+			const task = isBackground
+				? taskStore.create(capturedTool, { source: "mcp", subagentMode: capturedServer })
+				: undefined;
+			if (task) taskStore.update(task.id, { status: "in_progress" });
+
+			// Lazily (re)connect: a dropped connection (server exit, process churn
+			// between turns, a racing teardown) should transparently reconnect from
+			// the retained config rather than permanently fail with "not connected".
+			const activeConn = await getOrConnectMcp(capturedServer);
+			if (!activeConn) {
+				if (task) taskStore.update(task.id, { status: "failed" });
+				return {
+					content: [
+						{ type: "text", text: `MCP server "${capturedServer}" is not connected (reconnect attempt failed)` },
+					],
+					details: undefined,
+				};
+			}
+
+			try {
+				const abortPromise = new Promise<never>((_, reject) => {
+					signal.addEventListener("abort", () => reject(new Error("Aborted")));
+				});
+
+				const result = await Promise.race([
+					activeConn.rpc("tools/call", { name: capturedTool, arguments: params }),
+					abortPromise,
+				]);
+
+				if (task) taskStore.update(task.id, { status: "done" });
+				return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: undefined };
+			} catch (error) {
+				if (task) taskStore.update(task.id, { status: "failed" });
+				throw error;
+			}
+		},
+	} as ToolDefinition;
+}
+
+const RESOLVE_MCP_TOOLS_NAME = "ResolveMcpTools";
+
 export function setupMcpLoader(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		// A spawned subagent whose tool allowlist has no MCP tools is told by its
@@ -367,7 +452,18 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 			}
 		}
 
-		// 3. Connect to all servers and register tools
+		// Deferral (spec §2): inject MCP tool names only and materialize each schema
+		// on demand via ResolveMcpTools. Opt-in and top-level only — a subagent that
+		// needs MCP has this env cleared, so it eager-registers its allowlisted tools
+		// at dispatch (the dispatch ↔ schema interaction) and they are immediately callable.
+		const defer = deferMcpSchemas();
+		const deferredCatalog: DeferredMcpToolEntry[] = [];
+		// Retain each deferred tool's raw definition + config so ResolveMcpTools can
+		// build the full ToolDefinition on request.
+		const deferredByName = new Map<string, { serverConfig: McpServerConfig; tool: McpToolDef }>();
+		const resolvedNames = new Set<string>();
+
+		// 3. Connect to all servers and register (or defer) tools
 		for (const serverConfig of allServerConfigs) {
 			// Retain the config so a tool call can lazily reconnect a dropped server.
 			mcpServerConfigs.set(serverConfig.name, serverConfig);
@@ -376,97 +472,60 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 
 				for (const tool of tools) {
 					const toolName = `mcp_${serverConfig.name}_${tool.name}`;
-					const schema = buildMcpSchema(tool);
-					const capturedServer = serverConfig.name;
-					const capturedTool = tool.name;
-					// MCP tools default to background mode since they are external processes with potential high latency
-					const isBackground = serverConfig.background !== false;
-
-					pi.registerTool({
-						name: toolName,
-						label: `[MCP] ${serverConfig.name} › ${tool.name}`,
-						description: tool.description,
-						parameters: schema,
-						background: isBackground,
-						// Render a clean, prefixed title in chat — `MCP [server › tool] <args>` —
-						// parallel to the subagent `Task [type] <desc>` line. Without this the
-						// ToolExecutionComponent falls back to the raw `mcp_<server>_<tool>` name.
-						// The args summary reuses the same helper as the background start/finish
-						// messages so the chat title stays in sync with them.
-						renderCall(args, theme) {
-							const summary = summarizeArgs((args ?? {}) as Record<string, unknown>);
-							const text =
-								theme.fg("toolTitle", theme.bold("MCP ")) +
-								theme.fg("accent", `[${capturedServer} › ${capturedTool}]`) +
-								(summary ? theme.fg("dim", ` ${summary}`) : "");
-							return new Text(text, 0, 0);
-						},
-						async execute(
-							_toolCallId: string,
-							params: Static<typeof schema>,
-							signal: AbortSignal,
-							_onUpdate: AgentToolUpdateCallback,
-						): Promise<AgentToolResult<undefined>> {
-							// Background MCP tools get a task store entry so they appear in the task pane.
-							// Foreground tools skip this (their result is awaited inline). The server
-							// name rides in subagentMode and becomes the row's `[server]` origin tag;
-							// the title carries just the tool.
-							const task = isBackground
-								? taskStore.create(capturedTool, { source: "mcp", subagentMode: capturedServer })
-								: undefined;
-							if (task) taskStore.update(task.id, { status: "in_progress" });
-
-							// Lazily (re)connect: a dropped connection (server exit, process churn
-							// between turns, a racing teardown) should transparently reconnect from
-							// the retained config rather than permanently fail with "not connected".
-							const activeConn = await getOrConnectMcp(capturedServer);
-							if (!activeConn) {
-								if (task) taskStore.update(task.id, { status: "failed" });
-								return {
-									content: [
-										{
-											type: "text",
-											text: `MCP server "${capturedServer}" is not connected (reconnect attempt failed)`,
-										},
-									],
-									details: undefined,
-								};
-							}
-
-							try {
-								const abortPromise = new Promise<never>((_, reject) => {
-									signal.addEventListener("abort", () => reject(new Error("Aborted")));
-								});
-
-								const result = await Promise.race([
-									activeConn.rpc("tools/call", {
-										name: capturedTool,
-										arguments: params,
-									}),
-									abortPromise,
-								]);
-
-								if (task) taskStore.update(task.id, { status: "done" });
-								return {
-									content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
-									details: undefined,
-								};
-							} catch (error) {
-								if (task) taskStore.update(task.id, { status: "failed" });
-								throw error;
-							}
-						},
-					});
+					if (defer) {
+						deferredCatalog.push({ toolName, server: serverConfig.name, description: tool.description });
+						deferredByName.set(toolName, { serverConfig, tool });
+					} else {
+						pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
+					}
 				}
 
 				const bgMode = serverConfig.background !== false ? "background" : "foreground";
+				const suffix = defer ? ", schemas deferred" : "";
 				ctx.ui.notify(
-					`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"}, ${bgMode})`,
+					`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"}, ${bgMode}${suffix})`,
 					"info",
 				);
 			} catch (err) {
 				ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(err)}`, "error");
 			}
+		}
+
+		// 4. In deferred mode, register the single resolver that materializes schemas on demand.
+		if (defer && deferredCatalog.length > 0) {
+			const resolveParams = Type.Object(
+				{
+					names: Type.Array(Type.String(), {
+						description: "MCP tool names to make callable (e.g. 'mcp_github_create_pr' or 'create_pr').",
+					}),
+				},
+				{ additionalProperties: false },
+			);
+			pi.registerTool({
+				name: RESOLVE_MCP_TOOLS_NAME,
+				label: RESOLVE_MCP_TOOLS_NAME,
+				description:
+					"MCP tools are connected but their schemas are loaded on demand to keep context small. Call this with the tool name(s) you need to make them callable, then call the tool(s). Available MCP tools:\n" +
+					formatDeferredCatalog(deferredCatalog),
+				promptSnippet: "Resolve deferred MCP tool schemas by name before calling them.",
+				parameters: resolveParams,
+				async execute(_toolCallId: string, params: Static<typeof resolveParams>) {
+					const matched = selectResolvable(deferredCatalog, params.names ?? []);
+					const newlyResolved: string[] = [];
+					for (const entry of matched) {
+						if (resolvedNames.has(entry.toolName)) continue;
+						const raw = deferredByName.get(entry.toolName);
+						if (!raw) continue;
+						pi.registerTool(buildMcpToolDefinition(raw.serverConfig, raw.tool));
+						resolvedNames.add(entry.toolName);
+						newlyResolved.push(entry.toolName);
+					}
+					const text = matched.length
+						? `Resolved ${newlyResolved.length} MCP tool(s): ${matched.map((m) => m.toolName).join(", ")}. They are now callable.`
+						: `No MCP tools matched: ${(params.names ?? []).join(", ") || "(none)"}. See ResolveMcpTools for the catalog.`;
+					return { content: [{ type: "text" as const, text }], details: undefined };
+				},
+			} as ToolDefinition);
 		}
 	});
 }
