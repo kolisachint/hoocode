@@ -91,6 +91,12 @@ export interface PluginDraft {
 	version?: string;
 	description?: string;
 	author?: string;
+	/**
+	 * Which platform layouts to scaffold this draft into (e.g. `["claude",
+	 * "github"]`). Consumed as the default target set by `emitForPlatforms`;
+	 * omit to render every registered format.
+	 */
+	supportPlatform?: MarketplacePlatform[];
 	skills?: AuthoredSkill[];
 	commands?: AuthoredCommand[];
 	agents?: AuthoredAgent[];

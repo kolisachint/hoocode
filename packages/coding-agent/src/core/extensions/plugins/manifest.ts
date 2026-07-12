@@ -18,6 +18,7 @@
 
 import type { ProviderConfig } from "../types.js";
 import { parsePluginWithFormats } from "./formats/index.js";
+import type { MarketplacePlatform } from "./formats/types.js";
 
 /** Marker subdirectory + manifest filename for each supported format. */
 export const NATIVE_MANIFEST_DIR = ".agents-plugin";
@@ -64,8 +65,16 @@ export interface NormalizedPlugin {
 	root: string;
 	/** Absolute path to the parsed manifest file. */
 	manifestPath: string;
-	/** Which manifest format produced this plugin. */
+	/** Which manifest format produced this plugin (the precedence winner). */
 	format: "agents" | "claude" | "copilot";
+	/**
+	 * Every platform this plugin directory offers. When a directory carries more
+	 * than one format manifest (e.g. both `.claude-plugin/` and `.github/`), all
+	 * are recorded here — the precedence winner's platform first — rather than
+	 * hidden behind the single `format`. Always non-empty (at least `format`'s
+	 * platform), mirroring the marketplace's `supportPlatform`.
+	 */
+	supportPlatform: MarketplacePlatform[];
 	/** Resolved capability directories (only set when they exist on disk). */
 	skillsDir?: string;
 	commandsDir?: string;

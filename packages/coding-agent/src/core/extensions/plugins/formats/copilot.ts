@@ -80,6 +80,8 @@ export const copilotFormat: PluginFormatAdapter = {
 			root,
 			manifestPath,
 			format: "copilot",
+			// Single-format view; the registry widens this to every format present.
+			supportPlatform: ["github"],
 			// Copilot has no skills dir; prompts are command-shaped and map to commandsDir.
 			commandsDir: dirIfExists(root, PROMPTS_DIR),
 			agentsDir: dirIfExists(root, CHATMODES_DIR),

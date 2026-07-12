@@ -11,6 +11,7 @@ import {
 	loadPlugins,
 } from "../src/core/extensions/loader.js";
 import {
+	emitForPlatforms,
 	getFormat,
 	getFormatByPlatform,
 	PLUGIN_FORMATS,
@@ -125,6 +126,47 @@ describe("plugin format registry", () => {
 		} finally {
 			fs.rmSync(tmp, { recursive: true, force: true });
 		}
+	});
+
+	it("records supportPlatform for every format present (winner first)", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-fmt-sp-"));
+		try {
+			const root = path.join(tmp, "dual");
+			writeJson(path.join(root, ".claude-plugin", "plugin.json"), { name: "dual" });
+			writeJson(path.join(root, ".github", "copilot-plugin.json"), { name: "dual" });
+			const plugin = parsePluginDir(root);
+			expect(plugin?.format).toBe("claude"); // precedence winner
+			expect(plugin?.supportPlatform).toEqual(["claude", "github"]); // both recorded
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	it("single-format plugins report just their own platform", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-fmt-solo-"));
+		try {
+			const root = path.join(tmp, "solo");
+			writeJson(path.join(root, ".github", "copilot-plugin.json"), { name: "solo" });
+			expect(parsePluginDir(root)?.supportPlatform).toEqual(["github"]);
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	it("emitForPlatforms renders only the requested platforms", () => {
+		const draft: PluginDraft = { id: "sel", commands: [{ name: "go", body: "Go." }] };
+
+		const claudeOnly = emitForPlatforms(draft, ["claude"]).map((f) => f.path);
+		expect(claudeOnly.some((p) => p.includes(".claude-plugin"))).toBe(true);
+		expect(claudeOnly.some((p) => p.includes(".github"))).toBe(false);
+
+		const both = emitForPlatforms(draft, ["claude", "github"]).map((f) => f.path);
+		expect(both.some((p) => p.includes(".claude-plugin"))).toBe(true);
+		expect(both.some((p) => p.includes(".github"))).toBe(true);
+
+		// Defaults to the draft's own supportPlatform when no platforms passed.
+		const fromDraft = emitForPlatforms({ ...draft, supportPlatform: ["github"] }).map((f) => f.path);
+		expect(fromDraft.every((p) => p.includes(".github"))).toBe(true);
 	});
 });
 
@@ -262,6 +304,7 @@ describe("plugin factory wiring", () => {
 			skillsDir: "/tmp/p/skills",
 			commandsDir: "/tmp/p/commands",
 			agentsDir: "/tmp/p/agents",
+			supportPlatform: ["agents" as const],
 			providers: [{ name: "prov", config: { baseUrl: "https://x" } }],
 			hooks: { PreToolUse: [{ matcher: "*", hooks: [{ command: "true" }] }] },
 		};

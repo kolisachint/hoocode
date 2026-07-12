@@ -68,6 +68,8 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 				root,
 				manifestPath,
 				format: opts.id,
+				// Single-format view; the registry widens this to every format present.
+				supportPlatform: [opts.id],
 				skillsDir: dirIfExists(root, "skills"),
 				commandsDir: dirIfExists(root, "commands"),
 				agentsDir: dirIfExists(root, "agents"),
