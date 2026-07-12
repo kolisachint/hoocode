@@ -27,7 +27,7 @@ describe("VoicePanel", () => {
 		expect(text).toContain("ctrl+r cancel");
 	});
 
-	it("shows mic, elapsed timer, waveform, and the live partial while listening", () => {
+	it("shows the recording dot, elapsed timer, waveform, and the live partial while listening", () => {
 		panel = new VoicePanel(undefined, "ctrl+r cancel");
 		panel.startListening();
 		panel.pushLevel(0.2);
@@ -35,13 +35,39 @@ describe("VoicePanel", () => {
 		panel.setPartial("and so my fellow");
 		const lines = panel.render(60);
 		const text = plain(lines);
-		expect(text).toContain("🎙");
+		expect(text).toContain("●"); // single-cell recording dot (replaced the emoji mic)
 		expect(text).toContain("Listening");
 		expect(text).toContain("0:00"); // elapsed timer
 		expect(text).toContain("and so my fellow"); // live partial preview
-		expect(text).toContain("ctrl+r cancel"); // dim footer
+		expect(text).toContain("ctrl+r cancel"); // hint, right-aligned on the header
 		// waveform line carries block glyphs from the pushed levels
 		expect(text).toMatch(/[▁▂▃▄▅▆▇█]/);
+	});
+
+	it("left-anchors the waveform and fills the remainder with a baseline track", () => {
+		panel = new VoicePanel(undefined, "ctrl+r cancel");
+		panel.startListening();
+		panel.pushLevel(0.5);
+		panel.pushLevel(0.5);
+		const lines = panel.render(40);
+		const wave = lines.find((l) => /[▂▃▄▅▆▇█]/.test(l.replace(/\x1b\[[0-9;]*m/g, "")));
+		expect(wave).toBeDefined();
+		const visible = (wave ?? "").replace(/\x1b\[[0-9;]*m/g, "");
+		// The two loud samples sit at the LEFT edge (after the 1-cell indent), and
+		// the rest of the row is a ▁ baseline track — never a run of blank cells.
+		expect(visible.slice(1, 3)).toMatch(/[▂▃▄▅▆▇█]{2}/);
+		expect(visible).not.toMatch(/ {4,}/);
+		expect(visible).toContain("▁▁▁");
+	});
+
+	it("shows a determinate download bar while the binary fetches", () => {
+		panel = new VoicePanel(undefined, "ctrl+r cancel");
+		panel.setWarming("Starting voice input…", "first run downloads the voicetools binary and speech model");
+		panel.setDownloadProgress(450 * 1024 * 1024, 900 * 1024 * 1024);
+		const text = plain(panel.render(80));
+		expect(text).toContain("50%");
+		expect(text).toContain("450 MB / 900 MB");
+		expect(text).toContain("first run downloads");
 	});
 
 	it("shows a shrinking silence countdown, and abandons it when a loud level resumes", () => {

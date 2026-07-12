@@ -275,11 +275,18 @@ async function verifyChecksum(downloadUrl: string, filePath: string): Promise<vo
 	}
 }
 
+/**
+ * Live download progress: bytes received so far and the total from
+ * Content-Length (null when the server doesn't send one). Callers use it to
+ * drive a progress bar instead of an indefinite spinner.
+ */
+export type DownloadProgress = (receivedBytes: number, totalBytes: number | null) => void;
+
 // Download a file from URL into `dest`, validating integrity. Throws (and removes
 // the partial file) on a truncated transfer (bytes written != Content-Length when
 // the header is present) or a SHA-256 mismatch, so a corrupt artifact is never
 // left behind. Exported for tests.
-export async function downloadFile(url: string, dest: string): Promise<void> {
+export async function downloadFile(url: string, dest: string, onProgress?: DownloadProgress): Promise<void> {
 	try {
 		const response = await fetch(url, {
 			signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS),
@@ -298,7 +305,15 @@ export async function downloadFile(url: string, dest: string): Promise<void> {
 			contentLengthHeader !== null && contentLengthHeader.trim() !== "" ? Number(contentLengthHeader) : null;
 
 		const fileStream = createWriteStream(dest);
-		await pipeline(Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]), fileStream);
+		const source = Readable.fromWeb(response.body as Parameters<typeof Readable.fromWeb>[0]);
+		if (onProgress) {
+			let received = 0;
+			source.on("data", (chunk: Buffer) => {
+				received += chunk.length;
+				onProgress(received, expectedBytes);
+			});
+		}
+		await pipeline(source, fileStream);
 
 		if (expectedBytes !== null && Number.isFinite(expectedBytes)) {
 			const bytesWritten = statSync(dest).size;
@@ -340,7 +355,7 @@ function findBinaryRecursively(rootDir: string, binaryFileName: string): string 
 }
 
 // Download and install a tool
-async function downloadTool(tool: ManagedTool): Promise<string> {
+async function downloadTool(tool: ManagedTool, onProgress?: DownloadProgress): Promise<string> {
 	const config = TOOLS[tool];
 	if (!config) throw new Error(`Unknown tool: ${tool}`);
 
@@ -384,7 +399,7 @@ async function downloadTool(tool: ManagedTool): Promise<string> {
 		let downloaded = false;
 		for (let attempt = 1; attempt <= 2 && !downloaded; attempt++) {
 			try {
-				await downloadFile(downloadUrl, tempArchivePath);
+				await downloadFile(downloadUrl, tempArchivePath, onProgress);
 				downloaded = true;
 			} catch (e) {
 				lastError = e;
@@ -456,7 +471,12 @@ const TERMUX_PACKAGES: Record<string, string> = {
 
 // Ensure a tool is available, downloading if necessary
 // Returns the path to the tool, or null if unavailable
-export async function ensureTool(tool: ManagedTool, silent: boolean = false): Promise<string | undefined> {
+// onProgress receives live byte counts while the release archive downloads.
+export async function ensureTool(
+	tool: ManagedTool,
+	silent: boolean = false,
+	onProgress?: DownloadProgress,
+): Promise<string | undefined> {
 	const existingPath = getToolPath(tool);
 	if (existingPath) {
 		return existingPath;
@@ -488,7 +508,7 @@ export async function ensureTool(tool: ManagedTool, silent: boolean = false): Pr
 	}
 
 	try {
-		const path = await downloadTool(tool);
+		const path = await downloadTool(tool, onProgress);
 		if (!silent) {
 			console.log(chalk.dim(`${config.name} installed to ${path}`));
 		}
