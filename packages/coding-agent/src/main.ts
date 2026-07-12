@@ -487,9 +487,9 @@ function buildSessionOptions(
 		options.customTools = [...(options.customTools ?? []), createTodoWriteToolDefinition()];
 	}
 
-	// Deferred MCP tool schemas (opt-in): set for the top-level agent only. Subagent
-	// children clear this env (see subagent-pool) so a child that needs MCP resolves
-	// its allowlisted tools eagerly at dispatch.
+	// Deferred MCP tool schemas (default on; disable via deferMcpSchemas): set for
+	// the top-level agent only. Subagent children clear this env (see subagent-pool)
+	// so a child that needs MCP resolves its allowlisted tools eagerly at dispatch.
 	if (!isSubagentChild && settingsManager.getDeferMcpSchemas()) {
 		process.env[DEFER_MCP_SCHEMAS_ENV] = "1";
 	}

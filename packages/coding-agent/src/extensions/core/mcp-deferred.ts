@@ -3,11 +3,27 @@
  *
  * MCP tool schemas are the only genuinely heavy thing an installed plugin's
  * server adds to context: every tool's full JSON schema lands up front. When
- * deferral is enabled (opt-in, top-level agent only), the loader injects tool
- * *names* only and materializes each schema on demand — the same deferred-tool /
- * ToolSearch shape the harness uses. This module holds the format-agnostic
- * catalog helpers; the connect/register machinery lives in mcp-loader.ts.
+ * deferral is enabled (default on, top-level agent only), the loader injects
+ * tool *names* only and materializes each schema on demand — the same
+ * deferred-tool / ToolSearch shape the harness uses. This module holds the
+ * format-agnostic catalog helpers; the connect/register machinery lives in
+ * mcp-loader.ts.
  */
+
+/**
+ * Kick off one connect per config concurrently and settle into per-config
+ * outcomes in the ORIGINAL config order. Startup latency becomes the slowest
+ * server's handshake rather than the sum, while registration order (and thus
+ * the deferred catalog text and tool listing) stays deterministic across runs
+ * for stable, cache-friendly system prompts.
+ */
+export async function connectAllInOrder<C, T>(
+	configs: readonly C[],
+	connect: (config: C) => Promise<T>,
+): Promise<{ config: C; result: PromiseSettledResult<T> }[]> {
+	const settled = await Promise.allSettled(configs.map((c) => connect(c)));
+	return configs.map((config, i) => ({ config, result: settled[i] }));
+}
 
 /** A deferred tool as surfaced to the model: name + one-line description, no schema. */
 export interface DeferredMcpToolEntry {

@@ -25,7 +25,12 @@ import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
 import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
-import { type DeferredMcpToolEntry, formatDeferredCatalog, selectResolvable } from "./mcp-deferred.js";
+import {
+	connectAllInOrder,
+	type DeferredMcpToolEntry,
+	formatDeferredCatalog,
+	selectResolvable,
+} from "./mcp-deferred.js";
 
 const HOOCODE_DIR = getHooCodeDir();
 
@@ -365,167 +370,186 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 
 const RESOLVE_MCP_TOOLS_NAME = "ResolveMcpTools";
 
+/**
+ * Serializes MCP setup across session_start firings. A /reload re-entering
+ * while a previous pass's connects are still in flight would race
+ * connectMcpServer's terminate-then-replace against the earlier pass
+ * registering the same server, so each setup waits for the previous one.
+ */
+let mcpSetupChain: Promise<void> = Promise.resolve();
+
 export function setupMcpLoader(pi: ExtensionAPI): void {
-	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+	pi.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		// A spawned subagent whose tool allowlist has no MCP tools is told by its
 		// parent to skip server connection entirely (see SUBAGENT_SKIP_MCP_ENV).
 		// Each connect is a ~15s-timeout handshake; doing it for a subagent that can
 		// never call the tools is pure startup latency.
 		if (subagentSkipMcp()) return;
 
-		installMcpExitCleanup();
-		const allServerConfigs: McpServerConfig[] = [];
-		const seenNames = new Set<string>();
+		const run = mcpSetupChain.then(() => runMcpSetup(pi, ctx));
+		mcpSetupChain = run.then(
+			() => undefined,
+			() => undefined,
+		);
+		return run;
+	});
+}
 
-		// 1. Load from standard mcp.json locations
-		// User-level: ~/.agents/mcp.json
-		const userAgentsConfig = loadStandardMcpFile(join(homedir(), ".agents", "mcp.json"));
-		for (const config of userAgentsConfig) {
-			if (!seenNames.has(config.name)) {
-				seenNames.add(config.name);
-				allServerConfigs.push(config);
-			}
+async function runMcpSetup(pi: ExtensionAPI, ctx: ExtensionContext): Promise<void> {
+	installMcpExitCleanup();
+	const allServerConfigs: McpServerConfig[] = [];
+	const seenNames = new Set<string>();
+
+	// 1. Load from standard mcp.json locations
+	// User-level: ~/.agents/mcp.json
+	const userAgentsConfig = loadStandardMcpFile(join(homedir(), ".agents", "mcp.json"));
+	for (const config of userAgentsConfig) {
+		if (!seenNames.has(config.name)) {
+			seenNames.add(config.name);
+			allServerConfigs.push(config);
+		}
+	}
+
+	// Project-level: ./.agents/mcp.json
+	const projectAgentsConfig = loadStandardMcpFile(join(ctx.cwd, ".agents", "mcp.json"));
+	for (const config of projectAgentsConfig) {
+		if (!seenNames.has(config.name)) {
+			seenNames.add(config.name);
+			allServerConfigs.push(config);
+		}
+	}
+
+	// Claude Desktop: ~/.config/claude/mcp.json
+	const claudeDesktopConfig = loadStandardMcpFile(join(homedir(), ".config", "claude", "mcp.json"));
+	for (const config of claudeDesktopConfig) {
+		if (!seenNames.has(config.name)) {
+			seenNames.add(config.name);
+			allServerConfigs.push(config);
+		}
+	}
+
+	// 2. Load from hoocode's per-server format (existing behavior)
+	const searchDirs = [join(HOOCODE_DIR, "mcp-servers"), join(ctx.cwd, ".hoocode", "mcp-servers")];
+
+	for (const dir of searchDirs) {
+		if (!existsSync(dir)) continue;
+
+		let files: string[];
+		try {
+			files = (await readdir(dir)).filter((f) => f.endsWith(".json"));
+		} catch {
+			continue;
 		}
 
-		// Project-level: ./.agents/mcp.json
-		const projectAgentsConfig = loadStandardMcpFile(join(ctx.cwd, ".agents", "mcp.json"));
-		for (const config of projectAgentsConfig) {
-			if (!seenNames.has(config.name)) {
-				seenNames.add(config.name);
-				allServerConfigs.push(config);
-			}
-		}
+		for (const file of files) {
+			const cfgPath = join(dir, file);
+			let serverConfig: McpServerConfig;
 
-		// Claude Desktop: ~/.config/claude/mcp.json
-		const claudeDesktopConfig = loadStandardMcpFile(join(homedir(), ".config", "claude", "mcp.json"));
-		for (const config of claudeDesktopConfig) {
-			if (!seenNames.has(config.name)) {
-				seenNames.add(config.name);
-				allServerConfigs.push(config);
-			}
-		}
-
-		// 2. Load from hoocode's per-server format (existing behavior)
-		const searchDirs = [join(HOOCODE_DIR, "mcp-servers"), join(ctx.cwd, ".hoocode", "mcp-servers")];
-
-		for (const dir of searchDirs) {
-			if (!existsSync(dir)) continue;
-
-			let files: string[];
 			try {
-				files = (await readdir(dir)).filter((f) => f.endsWith(".json"));
-			} catch {
+				serverConfig = JSON.parse(readFileSync(cfgPath, "utf8")) as McpServerConfig;
+				if (!serverConfig.name || !serverConfig.command) {
+					ctx.ui.notify(`MCP: config "${file}" is missing required "name" or "command"`, "warning");
+					continue;
+				}
+			} catch (err) {
+				ctx.ui.notify(`MCP: failed to parse "${file}": ${String(err)}`, "error");
 				continue;
 			}
 
-			for (const file of files) {
-				const cfgPath = join(dir, file);
-				let serverConfig: McpServerConfig;
+			// Skip if already loaded from standard config
+			if (seenNames.has(serverConfig.name)) continue;
+			seenNames.add(serverConfig.name);
+			allServerConfigs.push(serverConfig);
+		}
+	}
 
-				try {
-					serverConfig = JSON.parse(readFileSync(cfgPath, "utf8")) as McpServerConfig;
-					if (!serverConfig.name || !serverConfig.command) {
-						ctx.ui.notify(`MCP: config "${file}" is missing required "name" or "command"`, "warning");
-						continue;
-					}
-				} catch (err) {
-					ctx.ui.notify(`MCP: failed to parse "${file}": ${String(err)}`, "error");
-					continue;
+	// 2b. Load from plugins/extensions that registered MCP servers during load.
+	for (const entry of getExtensionMcpServers()) {
+		for (const serverConfig of parseStandardMcpConfig({ mcpServers: entry.mcpServers }, `plugin:${entry.source}`)) {
+			if (seenNames.has(serverConfig.name)) continue;
+			seenNames.add(serverConfig.name);
+			allServerConfigs.push(serverConfig);
+		}
+	}
+
+	// Deferral (spec §2): inject MCP tool names only and materialize each schema
+	// on demand via ResolveMcpTools. Default-on (the deferMcpSchemas setting) and
+	// top-level only — a subagent that needs MCP has this env cleared, so it
+	// eager-registers its allowlisted tools at dispatch (the dispatch ↔ schema
+	// interaction) and they are immediately callable.
+	const defer = deferMcpSchemas();
+	const deferredCatalog: DeferredMcpToolEntry[] = [];
+	// Retain each deferred tool's raw definition + config so ResolveMcpTools can
+	// build the full ToolDefinition on request.
+	const deferredByName = new Map<string, { serverConfig: McpServerConfig; tool: McpToolDef }>();
+	const resolvedNames = new Set<string>();
+
+	// 3. Connect to all servers concurrently, then register (or defer) tools in
+	// config order. Retain every config up front so a tool call can lazily
+	// reconnect a dropped server even when its initial connect fails.
+	for (const serverConfig of allServerConfigs) {
+		mcpServerConfigs.set(serverConfig.name, serverConfig);
+	}
+	const outcomes = await connectAllInOrder(allServerConfigs, connectMcpServer);
+	for (const { config: serverConfig, result } of outcomes) {
+		if (result.status === "rejected") {
+			ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(result.reason)}`, "error");
+			continue;
+		}
+		const { tools } = result.value;
+
+		for (const tool of tools) {
+			const toolName = `mcp_${serverConfig.name}_${tool.name}`;
+			if (defer) {
+				deferredCatalog.push({ toolName, server: serverConfig.name, description: tool.description });
+				deferredByName.set(toolName, { serverConfig, tool });
+			} else {
+				pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
+			}
+		}
+
+		const bgMode = serverConfig.background !== false ? "background" : "foreground";
+		const suffix = defer ? ", schemas deferred" : "";
+		ctx.ui.notify(
+			`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"}, ${bgMode}${suffix})`,
+			"info",
+		);
+	}
+
+	// 4. In deferred mode, register the single resolver that materializes schemas on demand.
+	if (defer && deferredCatalog.length > 0) {
+		const resolveParams = Type.Object(
+			{
+				names: Type.Array(Type.String(), {
+					description: "MCP tool names to make callable (e.g. 'mcp_github_create_pr' or 'create_pr').",
+				}),
+			},
+			{ additionalProperties: false },
+		);
+		pi.registerTool({
+			name: RESOLVE_MCP_TOOLS_NAME,
+			label: RESOLVE_MCP_TOOLS_NAME,
+			description:
+				"MCP tools are connected but their schemas are loaded on demand to keep context small. Call this with the tool name(s) you need to make them callable, then call the tool(s). Available MCP tools:\n" +
+				formatDeferredCatalog(deferredCatalog),
+			promptSnippet: "Resolve deferred MCP tool schemas by name before calling them.",
+			parameters: resolveParams,
+			async execute(_toolCallId: string, params: Static<typeof resolveParams>) {
+				const matched = selectResolvable(deferredCatalog, params.names ?? []);
+				const newlyResolved: string[] = [];
+				for (const entry of matched) {
+					if (resolvedNames.has(entry.toolName)) continue;
+					const raw = deferredByName.get(entry.toolName);
+					if (!raw) continue;
+					pi.registerTool(buildMcpToolDefinition(raw.serverConfig, raw.tool));
+					resolvedNames.add(entry.toolName);
+					newlyResolved.push(entry.toolName);
 				}
-
-				// Skip if already loaded from standard config
-				if (seenNames.has(serverConfig.name)) continue;
-				seenNames.add(serverConfig.name);
-				allServerConfigs.push(serverConfig);
-			}
-		}
-
-		// 2b. Load from plugins/extensions that registered MCP servers during load.
-		for (const entry of getExtensionMcpServers()) {
-			for (const serverConfig of parseStandardMcpConfig(
-				{ mcpServers: entry.mcpServers },
-				`plugin:${entry.source}`,
-			)) {
-				if (seenNames.has(serverConfig.name)) continue;
-				seenNames.add(serverConfig.name);
-				allServerConfigs.push(serverConfig);
-			}
-		}
-
-		// Deferral (spec §2): inject MCP tool names only and materialize each schema
-		// on demand via ResolveMcpTools. Opt-in and top-level only — a subagent that
-		// needs MCP has this env cleared, so it eager-registers its allowlisted tools
-		// at dispatch (the dispatch ↔ schema interaction) and they are immediately callable.
-		const defer = deferMcpSchemas();
-		const deferredCatalog: DeferredMcpToolEntry[] = [];
-		// Retain each deferred tool's raw definition + config so ResolveMcpTools can
-		// build the full ToolDefinition on request.
-		const deferredByName = new Map<string, { serverConfig: McpServerConfig; tool: McpToolDef }>();
-		const resolvedNames = new Set<string>();
-
-		// 3. Connect to all servers and register (or defer) tools
-		for (const serverConfig of allServerConfigs) {
-			// Retain the config so a tool call can lazily reconnect a dropped server.
-			mcpServerConfigs.set(serverConfig.name, serverConfig);
-			try {
-				const { tools } = await connectMcpServer(serverConfig);
-
-				for (const tool of tools) {
-					const toolName = `mcp_${serverConfig.name}_${tool.name}`;
-					if (defer) {
-						deferredCatalog.push({ toolName, server: serverConfig.name, description: tool.description });
-						deferredByName.set(toolName, { serverConfig, tool });
-					} else {
-						pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
-					}
-				}
-
-				const bgMode = serverConfig.background !== false ? "background" : "foreground";
-				const suffix = defer ? ", schemas deferred" : "";
-				ctx.ui.notify(
-					`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"}, ${bgMode}${suffix})`,
-					"info",
-				);
-			} catch (err) {
-				ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(err)}`, "error");
-			}
-		}
-
-		// 4. In deferred mode, register the single resolver that materializes schemas on demand.
-		if (defer && deferredCatalog.length > 0) {
-			const resolveParams = Type.Object(
-				{
-					names: Type.Array(Type.String(), {
-						description: "MCP tool names to make callable (e.g. 'mcp_github_create_pr' or 'create_pr').",
-					}),
-				},
-				{ additionalProperties: false },
-			);
-			pi.registerTool({
-				name: RESOLVE_MCP_TOOLS_NAME,
-				label: RESOLVE_MCP_TOOLS_NAME,
-				description:
-					"MCP tools are connected but their schemas are loaded on demand to keep context small. Call this with the tool name(s) you need to make them callable, then call the tool(s). Available MCP tools:\n" +
-					formatDeferredCatalog(deferredCatalog),
-				promptSnippet: "Resolve deferred MCP tool schemas by name before calling them.",
-				parameters: resolveParams,
-				async execute(_toolCallId: string, params: Static<typeof resolveParams>) {
-					const matched = selectResolvable(deferredCatalog, params.names ?? []);
-					const newlyResolved: string[] = [];
-					for (const entry of matched) {
-						if (resolvedNames.has(entry.toolName)) continue;
-						const raw = deferredByName.get(entry.toolName);
-						if (!raw) continue;
-						pi.registerTool(buildMcpToolDefinition(raw.serverConfig, raw.tool));
-						resolvedNames.add(entry.toolName);
-						newlyResolved.push(entry.toolName);
-					}
-					const text = matched.length
-						? `Resolved ${newlyResolved.length} MCP tool(s): ${matched.map((m) => m.toolName).join(", ")}. They are now callable.`
-						: `No MCP tools matched: ${(params.names ?? []).join(", ") || "(none)"}. See ResolveMcpTools for the catalog.`;
-					return { content: [{ type: "text" as const, text }], details: undefined };
-				},
-			} as ToolDefinition);
-		}
-	});
+				const text = matched.length
+					? `Resolved ${newlyResolved.length} MCP tool(s): ${matched.map((m) => m.toolName).join(", ")}. They are now callable.`
+					: `No MCP tools matched: ${(params.names ?? []).join(", ") || "(none)"}. See ResolveMcpTools for the catalog.`;
+				return { content: [{ type: "text" as const, text }], details: undefined };
+			},
+		} as ToolDefinition);
+	}
 }

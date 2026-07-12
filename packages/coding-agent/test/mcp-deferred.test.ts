@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { deferMcpSchemas } from "../src/core/subagent-depth.js";
 import {
+	connectAllInOrder,
 	type DeferredMcpToolEntry,
 	formatDeferredCatalog,
 	selectResolvable,
@@ -56,5 +57,51 @@ describe("selectResolvable", () => {
 		expect(selectResolvable(catalog, ["mcp_github_create_pr", "create_pr"]).map((e) => e.toolName)).toEqual([
 			"mcp_github_create_pr",
 		]);
+	});
+});
+
+describe("connectAllInOrder", () => {
+	it("starts every connect before any completes (concurrent, not sequential)", async () => {
+		const started: string[] = [];
+		const resolvers = new Map<string, () => void>();
+		const promise = connectAllInOrder(["a", "b", "c"], (name) => {
+			started.push(name);
+			return new Promise<string>((resolve) => {
+				resolvers.set(name, () => resolve(`conn-${name}`));
+			});
+		});
+		// All connects were kicked off synchronously, before any resolved.
+		expect(started).toEqual(["a", "b", "c"]);
+		for (const resolve of resolvers.values()) resolve();
+		await promise;
+	});
+
+	it("returns outcomes in config order even when completion order differs", async () => {
+		const resolvers = new Map<string, (v: string) => void>();
+		const promise = connectAllInOrder(
+			["slow", "fast"],
+			(name) => new Promise<string>((resolve) => resolvers.set(name, resolve)),
+		);
+		resolvers.get("fast")?.("conn-fast");
+		resolvers.get("slow")?.("conn-slow");
+		const outcomes = await promise;
+		expect(outcomes.map((o) => o.config)).toEqual(["slow", "fast"]);
+		expect(outcomes.map((o) => (o.result.status === "fulfilled" ? o.result.value : "?"))).toEqual([
+			"conn-slow",
+			"conn-fast",
+		]);
+	});
+
+	it("isolates failures: one rejected connect does not affect the others", async () => {
+		const outcomes = await connectAllInOrder(["ok", "dead", "ok2"], (name) =>
+			name === "dead" ? Promise.reject(new Error("handshake timeout")) : Promise.resolve(`conn-${name}`),
+		);
+		expect(outcomes.map((o) => o.result.status)).toEqual(["fulfilled", "rejected", "fulfilled"]);
+		const dead = outcomes[1]?.result;
+		expect(dead?.status === "rejected" && String(dead.reason)).toContain("handshake timeout");
+	});
+
+	it("handles an empty config list", async () => {
+		expect(await connectAllInOrder([], () => Promise.resolve(1))).toEqual([]);
 	});
 });

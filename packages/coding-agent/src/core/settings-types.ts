@@ -124,7 +124,7 @@ export interface Settings {
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	enablePluginTools?: boolean; // default: true - enable the plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin on the top-level agent
-	deferMcpSchemas?: boolean; // default: false - defer MCP tool schemas (inject names only + ResolveMcpTools on demand) instead of registering every schema up front
+	deferMcpSchemas?: boolean; // default: true - defer MCP tool schemas (inject names only + ResolveMcpTools on demand); set false to eager-register every schema up front
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
 	enableBrowserTools?: boolean; // default: false - enable the browser_run + browser_continue tools (browsertools engine)
 	enableBrowserLivePreview?: boolean; // default: false - default the live viewer on for browser_run runs and auto-open it

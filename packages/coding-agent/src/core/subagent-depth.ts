@@ -39,10 +39,10 @@ export const SUBAGENT_SKIP_MCP_ENV = "HOOCODE_SKIP_MCP";
  * only (via a ResolveMcpTools tool) and materializes each full schema on demand,
  * instead of registering every MCP tool's full JSON schema up front (spec §2).
  *
- * Set on the top-level agent (opt-in via the deferMcpSchemas setting) and cleared
- * for subagent children — a child that needs MCP resolves its allowlisted tools
- * eagerly at dispatch (the dispatch ↔ schema interaction), so its scoped tools
- * are immediately callable.
+ * Set on the top-level agent (via the deferMcpSchemas setting, default on) and
+ * cleared for subagent children — a child that needs MCP resolves its allowlisted
+ * tools eagerly at dispatch (the dispatch ↔ schema interaction), so its scoped
+ * tools are immediately callable.
  */
 export const DEFER_MCP_SCHEMAS_ENV = "HOOCODE_DEFER_MCP_SCHEMAS";
 

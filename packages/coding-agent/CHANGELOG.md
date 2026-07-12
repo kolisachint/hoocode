@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed
+
+- MCP servers now connect concurrently at session start, so startup latency is
+  the slowest server's handshake instead of the sum of all handshakes. Tool
+  registration (and the deferred catalog) keeps deterministic config order, and
+  setup passes are serialized across `/reload` so an in-flight connect can't
+  race a reload's reconnect.
+- `deferMcpSchemas` now defaults to `true`: MCP tool schemas are deferred
+  (names-only catalog + `ResolveMcpTools` on demand) instead of registering
+  every schema up front, keeping the context window small for large MCP
+  setups. Set `deferMcpSchemas: false` to restore eager registration.
+  Subagents are unaffected — they still eager-register their allowlisted MCP
+  tools at dispatch.
+
 ## [0.4.118] - 2026-07-12
 
 ## [0.4.117] - 2026-07-12
