@@ -1,7 +1,40 @@
 import { type Component, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
+import { taskStore } from "../../../core/task-store.js";
+import { BRAND_MARK, GIT_BRANCH_GLYPH } from "../brand.js";
 import { theme } from "../theme/theme.js";
+
+/**
+ * Assemble one footer line: `left` flush left, `right` flush right when it fits
+ * (≥2 cols between), padded to the full width. When it doesn't fit, drop `right`
+ * and pad; when even `left` overflows, truncate it. Width math runs on the plain
+ * strings; the styled strings carry the colour. Every returned line is exactly
+ * `width` cells or fewer — the invariant the footer-width tests hold us to.
+ */
+function assembleLine(width: number, leftPlain: string, leftStyled: string, rightPlain = "", rightStyled = ""): string {
+	const lw = visibleWidth(leftPlain);
+	if (rightPlain && lw + 2 + visibleWidth(rightPlain) <= width) {
+		return leftStyled + " ".repeat(width - lw - visibleWidth(rightPlain)) + rightStyled;
+	}
+	if (lw <= width) return leftStyled + " ".repeat(width - lw);
+	return truncateToWidth(leftStyled, width, theme.fg("dim", "…"));
+}
+
+/** A compact context-fill gauge, coloured by proximity to the auto-compact trip point. */
+function contextGauge(percent: number, errorLevel: number, warnLevel: number): { plain: string; styled: string } {
+	const CELLS = 8;
+	const filled = Math.max(0, Math.min(CELLS, Math.round((percent / 100) * CELLS)));
+	const fill = "▰".repeat(filled);
+	const track = "▱".repeat(CELLS - filled);
+	const color = percent >= errorLevel ? "error" : percent >= warnLevel ? "warning" : "accent";
+	return { plain: fill + track, styled: theme.fg(color, fill) + theme.fg("dim", track) };
+}
+
+/** Count subagent runs currently in flight, for the footer's live delegation cue. */
+function activeSubagentCount(): number {
+	return taskStore.list().filter((t) => t.source === "subagent" && t.status === "in_progress").length;
+}
 
 /**
  * Sanitize text for display in a single-line status.
@@ -92,170 +125,101 @@ export class FooterComponent implements Component {
 		if (home && pwd.startsWith(home)) {
 			pwd = `~${pwd.slice(home.length)}`;
 		}
-
-		// Add git branch if available
 		const branch = this.footerData.getGitBranch();
-		if (branch) {
-			pwd = `${pwd} (${branch})`;
-		}
-
-		// Add session name if set
 		const sessionName = this.session.sessionManager.getSessionName();
-		if (sessionName) {
-			pwd = `${pwd} • ${sessionName}`;
-		}
-
-		// Format mode for display (e.g., build)
 		const modeLabel = this.footerData.getActiveMode();
 
-		// Calculate widths for right-aligning mode
-		const pwdWidth = visibleWidth(pwd);
-		const modeWidth = visibleWidth(modeLabel);
-		const modePadding = Math.max(2, width - pwdWidth - modeWidth);
-
-		// Build pwd line with mode right-aligned in accent color (if it fits)
-		let pwdLine: string;
-		if (pwdWidth + modeWidth + 2 <= width) {
-			pwdLine = pwd + " ".repeat(modePadding) + theme.fg("accent", modeLabel);
-		} else {
-			// Not enough space, just show pwd
-			pwdLine = pwd;
+		// ── Line 1 — identity & location ────────────────────────────────────────
+		// Lead with the brand mark + MODE (the agent's guardrail: Ask/Plan/Build/
+		// Debug) in bold accent so it is the first thing the eye lands on, then the
+		// path, git branch, and session name in descending emphasis. The live
+		// subagent count sits flush right — present only while work is delegated.
+		const modeUp = modeLabel.toUpperCase();
+		const brand = `${BRAND_MARK} ${modeUp}`;
+		let l1Plain = `${brand}  ${pwd}`;
+		let l1Styled = `${theme.bold(theme.fg("accent", brand))}  ${theme.fg("muted", pwd)}`;
+		if (branch) {
+			l1Plain += ` ${GIT_BRANCH_GLYPH} ${branch}`;
+			l1Styled += ` ${theme.fg("dim", GIT_BRANCH_GLYPH)} ${theme.fg("muted", branch)}`;
 		}
-
-		// Build stats line
-		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
-
-		// Show cost with "(sub)" indicator if using OAuth subscription
-		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
-		if (totalCost || usingSubscription) {
-			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
-			statsParts.push(costStr);
+		if (sessionName) {
+			l1Plain += ` • ${sessionName}`;
+			l1Styled += theme.fg("dim", ` • ${sessionName}`);
 		}
+		const nSub = activeSubagentCount();
+		const l1RightPlain = nSub > 0 ? `◇${nSub} running` : "";
+		const l1RightStyled = nSub > 0 ? theme.fg("accent", `◇${nSub}`) + theme.fg("dim", " running") : "";
+		const line1 = assembleLine(width, l1Plain, l1Styled, l1RightPlain, l1RightStyled);
 
-		// Auto-compact threshold: compaction fires when context > (window - reserveTokens).
-		// Show it so users see the actual trip point, not just the raw window percentage.
+		// ── Line 2 — session vitals ─────────────────────────────────────────────
+		// A context-fill gauge (coloured by proximity to the auto-compact trip
+		// point) leads, then token/cost deltas, with the model + thinking level
+		// flush right. Numbers read in muted, labels/arrows in dim — a legible
+		// hierarchy in place of the old uniform grey.
 		let thresholdPercent: number | undefined;
 		if (this.autoCompactEnabled && contextWindow > 0) {
 			const reserveTokens = this.session.settingsManager.getCompactionSettings().reserveTokens;
 			const effective = contextWindow - reserveTokens;
 			if (effective > 0) thresholdPercent = (effective / contextWindow) * 100;
 		}
-
-		const autoIndicator =
-			thresholdPercent !== undefined
-				? ` (auto @ ${thresholdPercent.toFixed(0)}%)`
-				: this.autoCompactEnabled
-					? " (auto)"
-					: "";
-		const contextPercentDisplay =
-			contextPercent === "?"
-				? `?/${formatTokens(contextWindow)}${autoIndicator}`
-				: `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
-
-		// Color based on proximity to the auto-compact trip point.
-		// With threshold known: error within 3pp, warning within 10pp. Without it: old fixed bands.
-		let contextPercentStr: string;
 		const errorLevel = thresholdPercent !== undefined ? thresholdPercent - 3 : 90;
 		const warnLevel = thresholdPercent !== undefined ? thresholdPercent - 10 : 70;
-		if (contextPercentValue >= errorLevel) {
-			contextPercentStr = theme.fg("error", contextPercentDisplay);
-		} else if (contextPercentValue >= warnLevel) {
-			contextPercentStr = theme.fg("warning", contextPercentDisplay);
-		} else {
-			contextPercentStr = contextPercentDisplay;
+		const autoIndicator =
+			thresholdPercent !== undefined
+				? ` auto@${thresholdPercent.toFixed(0)}%`
+				: this.autoCompactEnabled
+					? " auto"
+					: "";
+
+		const gauge = contextGauge(contextPercentValue, errorLevel, warnLevel);
+		const pctText = contextPercent === "?" ? "?" : `${contextPercent}%`;
+		const pctColor =
+			contextPercentValue >= errorLevel ? "error" : contextPercentValue >= warnLevel ? "warning" : "muted";
+		const winText = `${formatTokens(contextWindow)}${autoIndicator}`;
+
+		const segs: Array<{ plain: string; styled: string }> = [
+			{
+				plain: `${gauge.plain} ${pctText} ${winText}`,
+				styled: `${gauge.styled} ${theme.fg(pctColor, pctText)} ${theme.fg("dim", winText)}`,
+			},
+		];
+		const arrow = (a: string, n: number) => ({
+			plain: `${a}${formatTokens(n)}`,
+			styled: theme.fg("dim", a) + theme.fg("muted", formatTokens(n)),
+		});
+		if (totalInput) segs.push(arrow("↑", totalInput));
+		if (totalOutput) segs.push(arrow("↓", totalOutput));
+		if (totalCacheRead) segs.push(arrow("R", totalCacheRead));
+		if (totalCacheWrite) segs.push(arrow("W", totalCacheWrite));
+		const usingSubscription = state.model ? this.session.modelRegistry.isUsingOAuth(state.model) : false;
+		if (totalCost || usingSubscription) {
+			const costStr = `$${totalCost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`;
+			segs.push({ plain: costStr, styled: theme.fg("muted", costStr) });
 		}
-		statsParts.push(contextPercentStr);
+		const l2Plain = segs.map((s) => s.plain).join("  ");
+		const l2Styled = segs.map((s) => s.styled).join("  ");
 
-		let statsLeft = statsParts.join(" ");
-
-		// Add model name on the right side, plus thinking level if model supports it
+		// Right: model, thinking level, and provider (when several are configured).
 		const modelName = state.model?.id || "no-model";
-
-		let statsLeftWidth = visibleWidth(statsLeft);
-
-		// If statsLeft is too wide, truncate it
-		if (statsLeftWidth > width) {
-			statsLeft = truncateToWidth(statsLeft, width, "...");
-			statsLeftWidth = visibleWidth(statsLeft);
-		}
-
-		// Calculate available space for padding (minimum 2 spaces between stats and model)
-		const minPadding = 2;
-
-		// Add thinking level indicator if model supports reasoning
-		let rightSideWithoutProvider = modelName;
+		let r2Plain = modelName;
+		let r2Styled = theme.fg("muted", modelName);
 		if (state.model?.reasoning) {
-			const thinkingLevel = state.thinkingLevel || "off";
-			rightSideWithoutProvider =
-				thinkingLevel === "off" ? `${modelName} • thinking off` : `${modelName} • ${thinkingLevel}`;
+			const tl = state.thinkingLevel || "off";
+			const tstr = tl === "off" ? "thinking off" : tl;
+			r2Plain += ` • ${tstr}`;
+			r2Styled += theme.fg("dim", ` • ${tstr}`);
 		}
-
-		// Prepend the provider in parentheses if there are multiple providers and there's enough room
-		let rightSide = rightSideWithoutProvider;
 		if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-			rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
-			if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
-				// Too wide, fall back
-				rightSide = rightSideWithoutProvider;
+			// Prepend the provider only when the whole right cluster still fits.
+			const withProv = `(${state.model.provider}) ${r2Plain}`;
+			if (visibleWidth(l2Plain) + 2 + visibleWidth(withProv) <= width) {
+				r2Plain = withProv;
+				r2Styled = theme.fg("dim", `(${state.model.provider}) `) + r2Styled;
 			}
 		}
+		const line2 = assembleLine(width, l2Plain, l2Styled, r2Plain, r2Styled);
 
-		const rightSideWidth = visibleWidth(rightSide);
-		const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
-
-		let statsLine: string;
-		if (totalNeeded <= width) {
-			// Both fit - add padding to right-align model
-			const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
-			statsLine = statsLeft + padding + rightSide;
-		} else {
-			// Need to truncate right side
-			const availableForRight = width - statsLeftWidth - minPadding;
-			if (availableForRight > 0) {
-				const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
-				const truncatedRightWidth = visibleWidth(truncatedRight);
-				const padding = " ".repeat(Math.max(0, width - statsLeftWidth - truncatedRightWidth));
-				statsLine = statsLeft + padding + truncatedRight;
-			} else {
-				// Not enough space for right side at all
-				statsLine = statsLeft;
-			}
-		}
-
-		// Apply dim to each part separately. statsLeft may contain color codes (for context %)
-		// that end with a reset, which would clear an outer dim wrapper. So we dim the parts
-		// before and after the colored section independently.
-		const dimStatsLeft = theme.fg("dim", statsLeft);
-		const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
-		const dimRemainder = theme.fg("dim", remainder);
-
-		// Build the final pwd line: dim the path, accent the mode label (if present)
-		let finalPwdLine: string;
-		if (pwdLine === pwd) {
-			// Just pwd, no mode (or it didn't fit) - dim the whole thing
-			finalPwdLine = truncateToWidth(theme.fg("dim", pwdLine), width, theme.fg("dim", "..."));
-		} else {
-			// pwdLine has mode appended with accent color
-			// Extract the plain text version for width calculation
-			const pwdLinePlain = pwd + " ".repeat(modePadding) + modeLabel;
-			// Truncate the plain text if needed
-			const truncatedPlain = truncateToWidth(pwdLinePlain, width, "...");
-			// Check if mode was truncated out
-			if (!truncatedPlain.includes(modeLabel)) {
-				// Mode didn't fit after truncation, just show dimmed truncated pwd
-				finalPwdLine = theme.fg("dim", truncatedPlain);
-			} else {
-				// Split at the mode part and apply colors
-				const pwdPart = truncatedPlain.slice(0, truncatedPlain.indexOf(modeLabel));
-				finalPwdLine = theme.fg("dim", pwdPart) + theme.fg("accent", modeLabel);
-			}
-		}
-
-		const lines = [finalPwdLine, dimStatsLeft + dimRemainder];
+		const lines = [line1, line2];
 
 		// Add extension statuses on a single line, sorted by key alphabetically
 		const extensionStatuses = this.footerData.getExtensionStatuses();

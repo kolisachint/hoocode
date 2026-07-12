@@ -2,7 +2,7 @@
 	"$schema": "https://raw.githubusercontent.com/kolisachint/hoocode/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
 	"name": "light",
 	"vars": {
-		"teal": "#5a8080",
+		"teal": "#0e857a",
 		"blue": "#547da7",
 		"green": "#588458",
 		"red": "#aa5555",
