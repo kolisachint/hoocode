@@ -125,13 +125,15 @@ describe("plugin lifecycle tools", () => {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	});
 
-	it("exposes exactly the five capability-acquisition tool names", () => {
+	it("exposes the capability-acquisition tool names (lifecycle + authoring) for the guardrail", () => {
 		expect(PLUGIN_SYSTEM_TOOL_NAMES).toEqual([
 			"SearchPlugins",
 			"ListPlugins",
 			"SuggestPluginInstall",
 			"InstallPlugin",
 			"UninstallPlugin",
+			"ProposePlugin",
+			"ProposeExecutablePlugin",
 		]);
 	});
 

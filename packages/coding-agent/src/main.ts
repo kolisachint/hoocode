@@ -50,6 +50,7 @@ import {
 } from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { createPluginLifecycleToolDefinitions } from "./core/tools/plugins.js";
+import { createProposePluginToolDefinitions } from "./core/tools/propose-plugin.js";
 import {
 	buildTaskMainPrompt,
 	createTaskOutputToolDefinition,
@@ -489,7 +490,11 @@ function buildSessionOptions(
 	// only: these are capability-acquisition tools and must never be available to
 	// a spawned subagent child (privilege-amplification guardrail, spec §3).
 	if (!isSubagentChild && settingsManager.getEnablePluginTools()) {
-		options.customTools = [...(options.customTools ?? []), ...createPluginLifecycleToolDefinitions()];
+		options.customTools = [
+			...(options.customTools ?? []),
+			...createPluginLifecycleToolDefinitions(),
+			...createProposePluginToolDefinitions(),
+		];
 	}
 
 	return { options, cliThinkingFromModel, diagnostics };

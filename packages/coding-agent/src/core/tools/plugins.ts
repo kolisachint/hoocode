@@ -29,25 +29,23 @@ import {
 	uninstallPlugin,
 } from "../extensions/plugins/install.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
-
-export const SEARCH_PLUGINS_TOOL_NAME = "SearchPlugins";
-export const LIST_PLUGINS_TOOL_NAME = "ListPlugins";
-export const SUGGEST_PLUGIN_INSTALL_TOOL_NAME = "SuggestPluginInstall";
-export const INSTALL_PLUGIN_TOOL_NAME = "InstallPlugin";
-export const UNINSTALL_PLUGIN_TOOL_NAME = "UninstallPlugin";
-
-/**
- * Capability-acquisition tools. Kept on the top-level agent only; the subagent
- * authoring gate (spec §3) strips these from any authored allowlist so a
- * low-trust authored agent cannot bootstrap privilege (author → spawn → install).
- */
-export const PLUGIN_SYSTEM_TOOL_NAMES: readonly string[] = [
-	SEARCH_PLUGINS_TOOL_NAME,
-	LIST_PLUGINS_TOOL_NAME,
-	SUGGEST_PLUGIN_INSTALL_TOOL_NAME,
+import {
 	INSTALL_PLUGIN_TOOL_NAME,
+	LIST_PLUGINS_TOOL_NAME,
+	SEARCH_PLUGINS_TOOL_NAME,
+	SUGGEST_PLUGIN_INSTALL_TOOL_NAME,
 	UNINSTALL_PLUGIN_TOOL_NAME,
-];
+} from "./plugin-tool-names.js";
+
+// Re-export the shared name constants (defined in plugin-tool-names.ts to avoid import cycles).
+export {
+	INSTALL_PLUGIN_TOOL_NAME,
+	LIST_PLUGINS_TOOL_NAME,
+	PLUGIN_SYSTEM_TOOL_NAMES,
+	SEARCH_PLUGINS_TOOL_NAME,
+	SUGGEST_PLUGIN_INSTALL_TOOL_NAME,
+	UNINSTALL_PLUGIN_TOOL_NAME,
+} from "./plugin-tool-names.js";
 
 const platformSchema = Type.Union([Type.Literal("agents"), Type.Literal("claude"), Type.Literal("github")], {
 	description: "Platform filter: agents (native), claude (Claude Code), or github (GitHub Copilot).",
