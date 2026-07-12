@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
@@ -13,6 +14,7 @@ import {
 	readMarketplaceRecords,
 	uninstallPlugin,
 } from "../src/core/extensions/plugins/install.js";
+import { parseMarketplaceDir, resolvePluginSource } from "../src/core/extensions/plugins/marketplace.js";
 import {
 	createInstallPluginToolDefinition,
 	createListPluginsToolDefinition,
@@ -56,6 +58,51 @@ function seedLocalMarketplace(cwd: string): void {
 	writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
 		marketplaces: [{ location: market, dir: market }],
 	});
+}
+
+function execInDir(dir: string, command: string, args: string[]): void {
+	const result = spawnSync(command, args, { cwd: dir, env: process.env });
+	if (result.status !== 0) {
+		throw new Error(`${command} ${args.join(" ")} failed: ${result.stderr?.toString() ?? ""}`);
+	}
+}
+
+/** Seed a git-backed marketplace with a plugin in a subdirectory. */
+function seedGitSubdirMarketplace(cwd: string): { marketDir: string; repoDir: string } {
+	const repoDir = path.join(cwd, "repo");
+	const marketDir = path.join(cwd, "market");
+
+	fs.mkdirSync(path.join(repoDir, "plugins", "widget"), { recursive: true });
+	writeJson(path.join(repoDir, "plugins", "widget", ".agents-plugin", "plugin.json"), {
+		name: "widget",
+		version: "1.0.0",
+	});
+	fs.mkdirSync(path.join(repoDir, "plugins", "widget", "skills", "w"), { recursive: true });
+	fs.writeFileSync(
+		path.join(repoDir, "plugins", "widget", "skills", "w", "SKILL.md"),
+		"---\nname: w\ndescription: does w\n---\n\nDo w.\n",
+	);
+
+	execInDir(repoDir, "git", ["init", "--quiet"]);
+	execInDir(repoDir, "git", ["config", "user.email", "test@example.com"]);
+	execInDir(repoDir, "git", ["config", "user.name", "Test"]);
+	execInDir(repoDir, "git", ["add", "."]);
+	execInDir(repoDir, "git", ["commit", "--quiet", "-m", "initial"]);
+
+	writeJson(path.join(marketDir, ".agents-plugin", "marketplace.json"), {
+		name: "git-market",
+		plugins: [
+			{
+				name: "widget",
+				description: "A widget from a git subdirectory.",
+				source: { source: "git-subdir", url: repoDir, path: "plugins/widget" },
+			},
+		],
+	});
+	writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+		marketplaces: [{ location: marketDir, dir: marketDir }],
+	});
+	return { marketDir, repoDir };
 }
 
 describe("plugin install engine", () => {
@@ -110,6 +157,47 @@ describe("plugin install engine", () => {
 		seedLocalMarketplace(cwd);
 		expect(findAvailablePlugin(cwd, "widget")?.name).toBe("widget");
 		expect(findAvailablePlugin(cwd, "nope")).toBeUndefined();
+	});
+
+	it("resolves structured url and git-subdir sources", () => {
+		const url = resolvePluginSource({ source: "url", url: "https://example.com/repo.git" }, cwd);
+		expect(url).toEqual({ kind: "git", url: "https://example.com/repo.git" });
+
+		const subdir = resolvePluginSource(
+			{ source: "git-subdir", url: "https://example.com/repo.git", path: "plugins/foo" },
+			cwd,
+		);
+		expect(subdir).toEqual({
+			kind: "git-subdir",
+			url: "https://example.com/repo.git",
+			path: "plugins/foo",
+		});
+	});
+
+	it("parses marketplace entries with structured sources and skips invalid ones", () => {
+		const market = path.join(cwd, "market");
+		writeJson(path.join(market, ".agents-plugin", "marketplace.json"), {
+			name: "mixed",
+			plugins: [
+				{ name: "good-url", source: { source: "url", url: "https://example.com/repo.git" } },
+				{ name: "good-subdir", source: { source: "git-subdir", url: "https://example.com/repo.git", path: "p" } },
+				{ name: "bad-source", source: { source: "unknown", url: "https://example.com/repo.git" } },
+				{ name: "bad-shape", source: 123 },
+			],
+		});
+		const parsed = parseMarketplaceDir(market);
+		expect(parsed).not.toBeNull();
+		expect(parsed?.plugins.map((p) => p.name)).toEqual(["good-url", "good-subdir"]);
+	});
+
+	it("installs a plugin from a git-subdir source", async () => {
+		seedGitSubdirMarketplace(cwd);
+		expect(isPluginInstalled(cwd, "widget", cwd)).toBe(false);
+
+		const outcome = await installAvailablePlugin(cwd, "widget");
+		expect(outcome.installed).toBe(true);
+		expect(fs.existsSync(path.join(installedPluginsDir(cwd), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
+		expect(listInstalledPlugins(cwd, cwd).some((p) => p.id === "widget")).toBe(true);
 	});
 });
 

@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fix `SearchPlugins`, `SuggestPluginInstall`, and `InstallPlugin` crashing with
+  `source.trim is not a function` when a marketplace contains structured source
+  objects (Claude and GitHub Copilot marketplace formats). The parser now
+  normalizes `url` and `git-subdir` source objects, and installation supports
+  full-repo and subdirectory git clones with optional `ref`/`sha`.
+
 ## [0.4.116] - 2026-07-12
 
 ### Removed

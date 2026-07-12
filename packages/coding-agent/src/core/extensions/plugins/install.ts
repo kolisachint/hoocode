@@ -12,7 +12,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAgentDir } from "../../../config.js";
@@ -22,6 +23,7 @@ import { discoverPlugins } from "./index.js";
 import type { NormalizedPlugin } from "./manifest.js";
 import { parsePluginDir } from "./manifest.js";
 import {
+	type MarketplacePluginSource,
 	type MarketplaceRecord,
 	parseMarketplaceDir,
 	readMarketplaceStore,
@@ -81,10 +83,10 @@ export function readMarketplaceRecords(cwd: string): MarketplaceRecord[] {
 export interface AvailablePlugin {
 	name: string;
 	description?: string;
-	/** Relative path, git URL, or `npm:<spec>`. */
-	source: string;
+	/** Relative path, git URL, `npm:<spec>`, or structured source object. */
+	source: MarketplacePluginSource;
 	/** Resolved source kind, for display and gating. */
-	sourceKind: "local" | "git" | "npm";
+	sourceKind: "local" | "git" | "git-subdir" | "npm";
 	marketplaceName: string;
 	marketplaceRoot: string;
 	/** Platforms this entry targets (per-entry hint, else the marketplace's). */
@@ -146,6 +148,57 @@ function execGit(args: string[]): Promise<{ code: number; stdout: string; stderr
 	});
 }
 
+/**
+ * Clone a git repository into `dest`.
+ * If `ref` is provided, does a shallow clone of that branch/tag.
+ * If only `sha` is provided, does a full clone and checks out the commit.
+ * Returns the clone result; on failure `dest` may be partially created.
+ */
+async function cloneGitRepo(
+	url: string,
+	dest: string,
+	ref?: string,
+	sha?: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+	if (ref) {
+		return execGit(["clone", "--branch", ref, "--depth", "1", "--", url, dest]);
+	}
+	if (sha) {
+		const cloneRes = await execGit(["clone", "--", url, dest]);
+		if (cloneRes.code !== 0) return cloneRes;
+		return execGit(["-C", dest, "checkout", "--quiet", sha]);
+	}
+	return execGit(["clone", "--depth", "1", "--", url, dest]);
+}
+
+/**
+ * Resolve a git-subdir source: clone the repo, checkout the requested ref/sha,
+ * and copy the subdirectory to `dest`. Cleans up the temporary clone on failure.
+ */
+async function installGitSubdir(
+	url: string,
+	subdir: string,
+	dest: string,
+	ref?: string,
+	sha?: string,
+): Promise<{ ok: true } | { ok: false; message: string }> {
+	const tmpDir = mkdtempSync(path.join(os.tmpdir(), "hoo-plugin-clone-"));
+	try {
+		const cloneRes = await cloneGitRepo(url, tmpDir, ref, sha);
+		if (cloneRes.code !== 0) {
+			return { ok: false, message: `git clone failed: ${cloneRes.stderr || cloneRes.stdout}`.trim() };
+		}
+		const src = path.resolve(tmpDir, subdir);
+		if (!existsSync(src)) {
+			return { ok: false, message: `Plugin subdirectory not found in cloned repo: ${subdir}` };
+		}
+		cpSync(src, dest, { recursive: true });
+		return { ok: true };
+	} finally {
+		rmSync(tmpDir, { recursive: true, force: true });
+	}
+}
+
 export interface InstallOutcome {
 	installed: boolean;
 	/** Install destination directory (when installed). */
@@ -177,10 +230,16 @@ export async function installAvailablePlugin(cwd: string, name: string): Promise
 		}
 		cpSync(resolved.path, dest, { recursive: true });
 	} else if (resolved.kind === "git") {
-		const res = await execGit(["clone", "--depth", "1", resolved.url, dest]);
+		const res = await cloneGitRepo(resolved.url, dest, resolved.ref, resolved.sha);
 		if (res.code !== 0) {
 			rmSync(dest, { recursive: true, force: true });
 			return { installed: false, message: `git clone failed: ${res.stderr || res.stdout}`.trim() };
+		}
+	} else if (resolved.kind === "git-subdir") {
+		const res = await installGitSubdir(resolved.url, resolved.path, dest, resolved.ref, resolved.sha);
+		if (!res.ok) {
+			rmSync(dest, { recursive: true, force: true });
+			return { installed: false, message: res.message };
 		}
 	} else {
 		return { installed: false, message: `npm plugin sources are not supported yet (${resolved.spec}).` };

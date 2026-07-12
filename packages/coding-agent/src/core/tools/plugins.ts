@@ -51,9 +51,15 @@ const platformSchema = Type.Union([Type.Literal("agents"), Type.Literal("claude"
 	description: "Platform filter: agents (native), claude (Claude Code), or github (GitHub Copilot).",
 });
 
+function formatSourceForDisplay(source: AvailablePlugin["source"]): string {
+	if (typeof source === "string") return source;
+	if (source.source === "url") return source.url;
+	return `${source.url}/${source.path}`;
+}
+
 function describeAvailable(p: AvailablePlugin): string {
 	const platforms = p.supportPlatform.length ? ` [${p.supportPlatform.join(", ")}]` : "";
-	return `${p.name}${platforms} — ${p.description ?? p.source} (${p.sourceKind}, marketplace: ${p.marketplaceName})`;
+	return `${p.name}${platforms} — ${p.description ?? formatSourceForDisplay(p.source)} (${p.sourceKind}, marketplace: ${p.marketplaceName})`;
 }
 
 // ── SearchPlugins ───────────────────────────────────────────────────────────
