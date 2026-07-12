@@ -354,16 +354,19 @@ function formatTaskLine(
 	// Owner marker between the status icon and the id, derived from the owning
 	// agent's kind so the flat lens attributes rows the same way the grouped
 	// lenses do (a roster-less owner falls back on the task's source). MCP rows
-	// have no owning agent and keep their own ⧉ marker. Every row carries one
-	// cell, so the id column stays aligned.
+	// have no owning agent and keep their own ⧉ marker. Main-owned rows carry NO
+	// glyph in the flat lens — the pane's rail already says "main", so a ◆ on
+	// every plan row was pure noise; the glyph appears only where it
+	// disambiguates (subagent runs, MCP calls, mixed trees).
 	const isMcp = task.source === "mcp";
 	const ownerKind = options.owner?.kind ?? (task.source === "subagent" ? "subagent" : "main");
+	const showOwnerGlyph = !grouped && (isMcp || ownerKind !== "main");
 	const sourceGlyph = isMcp ? MCP_SOURCE_GLYPH : AGENT_GLYPH[ownerKind];
 	// Subagent rows carry their agent's identity color on the glyph (and tag
 	// below) — the same hue as the chat's `Agent [type]` line and TaskOutput —
 	// so a user can trace one agent across the whole TUI at a glance.
 	const agentTypeName = !isMcp && ownerKind === "subagent" ? (task.subagentMode ?? task.agent) : undefined;
-	const styledSource = grouped
+	const styledSource = !showOwnerGlyph
 		? ""
 		: agentTypeName
 			? theme.fg(agentColorFor(agentTypeName), sourceGlyph)
@@ -466,7 +469,7 @@ function formatTaskLine(
 	const treePrefix = options.treePrefix ? theme.fg("borderMuted", options.treePrefix) : "";
 	const leftBody = grouped
 		? `${indent}${icon} ${styledTag}${styledTitle}`
-		: `${treePrefix}${icon} ${styledSource} ${styledTag}${styledTitle}`;
+		: `${treePrefix}${icon} ${styledSource ? `${styledSource} ` : ""}${styledTag}${styledTitle}`;
 	const left = truncateToWidth(leftBody, leftWidth, "…");
 
 	// Pad every row to the full pane width so rows align regardless of whether they
@@ -711,11 +714,12 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   done/total count on the left, the per-turn token/elapsed/cost delta on the right.
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
  *   The active row animates a braille spinner; pending rows read `queued`.
- * - A single-cell owner glyph (◆ main / ◇ subagent / ▸ team role / ⧉ MCP) sits
- *   before the id, derived from the owning agent's kind, so every row's origin
- *   is readable at a glance even in the flat lens. A text origin tag before the
- *   title names the owner: the subagent type ("[explore]"), the team role
- *   ("[planner]", fed by `--team <url>`), or the MCP server ("[github]").
+ * - A single-cell owner glyph (◇ subagent / ▸ team role / ⧉ MCP) sits before
+ *   the id where it disambiguates; main-owned rows carry no glyph in the flat
+ *   lens (the rail already attributes the pane to the main agent). A text
+ *   origin tag before the title names the owner: the subagent type
+ *   ("[explore]"), the team role ("[planner]", fed by `--team <url>`), or the
+ *   MCP server ("[github]").
  * - Three views split by ownership (cycled via app.tasks.cycleView, shown as a
  *   `tasks · subagents · teams` switcher in the header):
  *     - flat ("tasks") — the main agent's own TodoWrite plan, with each

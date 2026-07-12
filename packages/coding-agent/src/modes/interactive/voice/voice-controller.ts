@@ -29,9 +29,11 @@ const VOICE_SILENCE_MS = 800;
  * Kept long enough that normal pacing between dictations (reading a reply,
  * typing) doesn't repeatedly hit the multi-second cold start. */
 const VOICE_IDLE_TIMEOUT_MS = 300_000;
-const VOICE_UNAVAILABLE_MESSAGE =
-	"Voice input failed: voicetools binary unavailable and could not be downloaded. " +
-	"Install it, set VOICETOOLS_BIN, or ensure a published release exists for this platform.";
+const VOICE_UNAVAILABLE_MESSAGE = [
+	`Voice unavailable — no voicetools binary for ${process.platform}-${process.arch} (and download failed).`,
+	"  fix: set VOICETOOLS_BIN=/path/to/voicetools",
+	"  or:  install voicetools from its published release, then press the voice key again",
+].join("\n");
 
 /** The slice of the interactive mode the voice feature needs. */
 export interface VoiceControllerDeps {
@@ -84,7 +86,7 @@ export class VoiceController {
 
 		if (this.daemonUnsupported) {
 			this.starting = true;
-			this.showWarming("Starting voice input...");
+			this.showWarming("Starting voice input…", "first run downloads the voicetools binary and speech model");
 			void this.resolveBin()
 				.then((bin) => {
 					if (!this.starting) return;
@@ -118,7 +120,7 @@ export class VoiceController {
 		// the legacy fallback (it would just hit the same error) but leaves
 		// daemon mode available to retry on the next press.
 		this.starting = true;
-		this.showWarming("Warming up voice input...");
+		this.showWarming("Warming up voice input…", "first run downloads the voicetools binary and speech model");
 		void this.resolveBin()
 			.then(async (bin) => {
 				if (!bin) {
@@ -299,7 +301,11 @@ export class VoiceController {
 	private async resolveBin(): Promise<string | undefined> {
 		const override = process.env.VOICETOOLS_BIN?.trim();
 		if (override) return override;
-		return ensureTool("voicetools", true);
+		// First run downloads the voicetools release archive; stream the byte counts
+		// into the panel so the wait shows a determinate progress bar, not a spinner.
+		return ensureTool("voicetools", true, (received, total) => {
+			if (this.starting) this.panel?.setDownloadProgress(received, total);
+		});
 	}
 
 	/** Create (or reuse) the voice panel and mount it in the status container. */
@@ -313,8 +319,8 @@ export class VoiceController {
 		return this.panel;
 	}
 
-	private showWarming(message: string): void {
-		this.showPanel().setWarming(message);
+	private showWarming(message: string, detail?: string): void {
+		this.showPanel().setWarming(message, detail);
 	}
 
 	/** Collapse the voice panel back to nothing (idle) and stop its animation. */
