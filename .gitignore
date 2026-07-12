@@ -7,5 +7,10 @@ node_modules
 **/dist/
 
 # IDE / tool artifacts
+.hoocode/
 **/.hoocode/dispatch/
 mcp-servers/*
+
+# Plugin marketplace cache / generated config
+.agents/marketplace-cache/
+.agents/marketplaces.json
