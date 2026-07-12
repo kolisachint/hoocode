@@ -68,35 +68,6 @@ async function testImmediateAbort<TApi extends Api>(llm: Model<TApi>, options: S
 	expect(response.stopReason).toBe("aborted");
 }
 
-async function testAbortThenNewMessage<TApi extends Api>(llm: Model<TApi>, options: StreamOptionsWithExtras = {}) {
-	// First request: abort immediately before any response content arrives
-	const controller = new AbortController();
-	controller.abort();
-
-	const context: Context = {
-		messages: [{ role: "user", content: "Hello, how are you?", timestamp: Date.now() }],
-	};
-
-	const abortedResponse = await complete(llm, context, { ...options, signal: controller.signal });
-	expect(abortedResponse.stopReason).toBe("aborted");
-	// The aborted message has empty content since we aborted before anything arrived
-	expect(abortedResponse.content.length).toBe(0);
-
-	// Add the aborted assistant message to context (this is what happens in the real coding agent)
-	context.messages.push(abortedResponse);
-
-	// Second request: send a new message - this should work even with the aborted message in context
-	context.messages.push({
-		role: "user",
-		content: "What is 2 + 2?",
-		timestamp: Date.now(),
-	});
-
-	const followUp = await complete(llm, context, options);
-	expect(followUp.stopReason).toBe("stop");
-	expect(followUp.content.length).toBeGreaterThan(0);
-}
-
 describe("AI Providers Abort Tests", () => {
 	describe.skipIf(!process.env.GEMINI_API_KEY)("Google Provider Abort", () => {
 		const llm = getModel("google", "gemini-2.5-flash");

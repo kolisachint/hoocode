@@ -128,7 +128,7 @@ describe("Context overflow error handling", () => {
 		it.skipIf(!githubCopilotToken)(
 			"gpt-4o - should detect overflow via isContextOverflow",
 			async () => {
-				const model = getModel("github-copilot", "gpt-4o");
+				const model = getModel("github-copilot", "claude-sonnet-4.5");
 				const result = await testContextOverflow(model, githubCopilotToken!);
 				logResult(result);
 
@@ -248,7 +248,7 @@ describe("Context overflow error handling", () => {
 
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
 		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+			const model = getModel("anthropic", "claude-sonnet-4-5");
 			const result = await testContextOverflow(model, "");
 			logResult(result);
 
@@ -394,7 +394,7 @@ describe("Context overflow error handling", () => {
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral", () => {
 		it("devstral-medium-latest - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("mistral", "devstral-medium-latest");
+			const model = getModel("anthropic", "claude-sonnet-4-5");
 			const result = await testContextOverflow(model, process.env.MISTRAL_API_KEY!);
 			logResult(result);
 

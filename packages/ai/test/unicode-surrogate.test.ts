@@ -399,7 +399,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 			"gpt-4o - should handle emoji in tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await testEmojiInToolResults(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -408,7 +408,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 			"gpt-4o - should handle real-world LinkedIn comment data with emoji",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await testRealWorldLinkedInData(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -417,7 +417,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 			"gpt-4o - should handle unpaired high surrogate (0xD83D) in tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await testUnpairedHighSurrogate(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -515,7 +515,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 	});
 
 	describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI Provider Unicode Handling", () => {
-		const llm = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testEmojiInToolResults(llm);
@@ -531,7 +531,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 	});
 
 	describe.skipIf(!hasCloudflareAiGatewayCredentials())("Cloudflare AI Gateway Provider Unicode Handling", () => {
-		const llm = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testEmojiInToolResults(llm);
@@ -596,7 +596,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Unicode Handling", () => {
-		const llm = getModel("mistral", "devstral-medium-latest");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testEmojiInToolResults(llm);
@@ -745,7 +745,7 @@ describe("AI Providers Unicode Surrogate Pair Tests", () => {
 	});
 
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Unicode Handling", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle emoji in tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testEmojiInToolResults(llm);

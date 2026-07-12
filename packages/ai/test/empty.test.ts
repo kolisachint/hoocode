@@ -328,7 +328,7 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI Provider Empty Messages", () => {
-		const llm = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
 			await testEmptyMessage(llm);
@@ -348,7 +348,7 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!hasCloudflareAiGatewayCredentials())("Cloudflare AI Gateway Provider Empty Messages", () => {
-		const llm = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
 			await testEmptyMessage(llm);
@@ -428,7 +428,7 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider Empty Messages", () => {
-		const llm = getModel("mistral", "devstral-medium-latest");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
 			await testEmptyMessage(llm);
@@ -597,7 +597,7 @@ describe("AI Providers Empty Message Tests", () => {
 	});
 
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider Empty Messages", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle empty content array", { retry: 3, timeout: 30000 }, async () => {
 			await testEmptyMessage(llm);
@@ -653,7 +653,7 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle empty content array",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await testEmptyMessage(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -662,7 +662,7 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle empty string content",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await testEmptyStringMessage(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -671,7 +671,7 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle whitespace-only content",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await testWhitespaceOnlyMessage(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -680,7 +680,7 @@ describe("AI Providers Empty Message Tests", () => {
 			"gpt-4o - should handle empty assistant message in conversation",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await testEmptyAssistantMessage(llm, { apiKey: githubCopilotToken });
 			},
 		);

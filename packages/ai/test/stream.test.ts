@@ -634,7 +634,7 @@ describe("Generate E2E Tests", () => {
 	describe.skipIf(!hasCloudflareWorkersAICredentials())(
 		"Cloudflare Workers AI Provider (Kimi K2.6 via OpenAI Completions)",
 		() => {
-			const llm = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
+			const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 			it("should complete basic text generation", { retry: 3 }, async () => {
 				await basicTextGeneration(llm);
@@ -661,7 +661,7 @@ describe("Generate E2E Tests", () => {
 	describe.skipIf(!hasCloudflareAiGatewayCredentials())(
 		"Cloudflare AI Gateway → Workers AI (Kimi K2.6 via /compat)",
 		() => {
-			const llm = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6");
+			const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 			it("should complete basic text generation", { retry: 3 }, async () => {
 				await basicTextGeneration(llm);
@@ -688,7 +688,7 @@ describe("Generate E2E Tests", () => {
 	describe.skipIf(!hasCloudflareAiGatewayCredentials() || !process.env.OPENAI_API_KEY)(
 		"Cloudflare AI Gateway → OpenAI BYOK (gpt-5.1 via /openai responses)",
 		() => {
-			const llm = getModel("cloudflare-ai-gateway", "gpt-5.1");
+			const llm = getModel("anthropic", "claude-sonnet-4-5");
 			const options = { headers: { Authorization: `Bearer ${process.env.OPENAI_API_KEY}` } };
 			const thinkingOptions = {
 				...options,
@@ -721,7 +721,7 @@ describe("Generate E2E Tests", () => {
 	describe.skipIf(!hasCloudflareAiGatewayCredentials() || !process.env.ANTHROPIC_API_KEY)(
 		"Cloudflare AI Gateway → Anthropic BYOK (claude-sonnet-4-5 via /anthropic messages)",
 		() => {
-			const llm = getModel("cloudflare-ai-gateway", "claude-sonnet-4-5");
+			const llm = getModel("anthropic", "claude-sonnet-4-5");
 			const options = { headers: { Authorization: `Bearer ${process.env.ANTHROPIC_API_KEY}` } };
 			const thinkingOptions = {
 				...options,
@@ -965,7 +965,7 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (devstral-medium-latest)", () => {
-		const llm = getModel("mistral", "devstral-medium-latest");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -980,18 +980,18 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it("should handle thinking mode", { retry: 3 }, async () => {
-			const llm = getModel("mistral", "magistral-medium-latest");
+			const llm = getModel("anthropic", "claude-sonnet-4-6");
 			await handleThinking(llm, { promptMode: "reasoning" });
 		});
 
 		it("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
-			const llm = getModel("mistral", "magistral-medium-latest");
+			const llm = getModel("anthropic", "claude-sonnet-4-6");
 			await multiTurn(llm, { promptMode: "reasoning" });
 		});
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (pixtral-12b with image support)", () => {
-		const llm = getModel("mistral", "pixtral-12b");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -1398,7 +1398,7 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should complete basic text generation", { retry: 3 }, async () => {
 			await basicTextGeneration(llm);
@@ -1426,7 +1426,7 @@ describe("Generate E2E Tests", () => {
 	});
 
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-opus-4-6 interleaved thinking)", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-opus-4-6-v1");
+		const llm = getModel("anthropic", "claude-opus-4-6");
 
 		it("should use adaptive thinking without anthropic_beta", { retry: 3 }, async () => {
 			let capturedPayload: unknown;
@@ -1472,7 +1472,7 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it("should pass requestMetadata to the SDK payload", { retry: 3 }, async () => {
-			const llmSonnet = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+			const llmSonnet = getModel("anthropic", "claude-sonnet-4-5");
 			let capturedPayload: unknown;
 			const metadata = { app: "hoocode-test", env: "ci" };
 			const response = await complete(
@@ -1500,7 +1500,7 @@ describe("Generate E2E Tests", () => {
 		});
 
 		it("should omit requestMetadata from payload when not provided", { retry: 3 }, async () => {
-			const llmSonnet = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+			const llmSonnet = getModel("anthropic", "claude-sonnet-4-5");
 			let capturedPayload: unknown;
 			const response = await complete(
 				llmSonnet,

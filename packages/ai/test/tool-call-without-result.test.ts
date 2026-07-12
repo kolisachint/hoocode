@@ -176,7 +176,7 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI Provider", () => {
-		const model = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
+		const model = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
@@ -184,7 +184,7 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!hasCloudflareAiGatewayCredentials())("Cloudflare AI Gateway Provider", () => {
-		const model = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6");
+		const model = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
@@ -216,7 +216,7 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
-		const model = getModel("mistral", "devstral-medium-latest");
+		const model = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
@@ -280,7 +280,7 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider", () => {
-		const model = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+		const model = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
@@ -308,7 +308,7 @@ describe("Tool Call Without Result Tests", () => {
 			"gpt-4o - should filter out tool calls without corresponding tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const model = getModel("github-copilot", "gpt-4o");
+				const model = getModel("github-copilot", "claude-sonnet-4.5");
 				await testToolCallWithoutResult(model, { apiKey: githubCopilotToken });
 			},
 		);

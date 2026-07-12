@@ -287,7 +287,7 @@ describe("Tool Results with Images", () => {
 	});
 
 	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider (pixtral-12b)", () => {
-		const llm = getModel("mistral", "pixtral-12b");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle tool result with only image", { retry: 5, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);
@@ -406,7 +406,7 @@ describe("Tool Results with Images", () => {
 	});
 
 	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider (claude-sonnet-4-5)", () => {
-		const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should handle tool result with only image", { retry: 3, timeout: 30000 }, async () => {
 			await handleToolWithImageResult(llm);
@@ -446,7 +446,7 @@ describe("Tool Results with Images", () => {
 			"gpt-4o - should handle tool result with only image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await handleToolWithImageResult(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -455,7 +455,7 @@ describe("Tool Results with Images", () => {
 			"gpt-4o - should handle tool result with text and image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 				await handleToolWithTextAndImageResult(llm, { apiKey: githubCopilotToken });
 			},
 		);

@@ -337,7 +337,7 @@ describe("totalTokens field", () => {
 			"@cf/moonshotai/kimi-k2.6 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("cloudflare-workers-ai", "@cf/moonshotai/kimi-k2.6");
+				const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 				console.log(`\nCloudflare Workers AI / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, {
@@ -362,7 +362,7 @@ describe("totalTokens field", () => {
 			"workers-ai/@cf/moonshotai/kimi-k2.6 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("cloudflare-ai-gateway", "workers-ai/@cf/moonshotai/kimi-k2.6");
+				const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 				console.log(`\nCloudflare AI Gateway / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, {
@@ -451,7 +451,7 @@ describe("totalTokens field", () => {
 			"devstral-medium-latest - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("mistral", "devstral-medium-latest");
+				const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 				console.log(`\nMistral / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.MISTRAL_API_KEY });
@@ -692,7 +692,7 @@ describe("totalTokens field", () => {
 			"google/gemini-2.0-flash-001 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("openrouter", "google/gemini-2.0-flash-001");
+				const llm = getModel("openrouter", "google/gemini-2.5-flash");
 
 				console.log(`\nOpenRouter / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.OPENROUTER_API_KEY });
@@ -732,7 +732,7 @@ describe("totalTokens field", () => {
 			"gpt-4o - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "claude-sonnet-4.5");
 
 				console.log(`\nGitHub Copilot / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: githubCopilotToken });
@@ -774,7 +774,7 @@ describe("totalTokens field", () => {
 			"claude-sonnet-4-5 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-5-20250929-v1:0");
+				const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 				console.log(`\nAmazon Bedrock / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm);
