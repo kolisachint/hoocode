@@ -44,16 +44,18 @@ The agent works through a small, deterministic tool set. Available by default:
 |---|---|
 | `read` · `write` · `edit` | Read files, create new ones, and make exact-text edits. One `edit` call can apply several replacements at once, and an edit can set `replaceAll` to replace every occurrence instead of requiring a unique match. |
 | `bash` | Run shell commands — each one gated by the `Yes / No / Always` permission prompt. |
-| `grep` · `find` · `ls` | Search file contents (ripgrep), find files by glob (fd), and list directories. `grep`/`find` respect `.gitignore`; `ls` lists a single directory and takes an optional `ignore` list to skip noise like `node_modules`. |
+| `grep` · `find` · `ls` | Search file contents (ripgrep), find files by glob pattern (fd — one or more patterns, optional type/depth/exclude filters), and list directories. `grep`/`find` respect `.gitignore`; `ls` lists a single directory and takes an optional `ignore` list to skip noise like `node_modules`. |
+| **Task** (subagents) · **TodoWrite** | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer, and maintain a live todo list shown in the task panel. Both are **on by default** — disable with `"enableSubagent": false` / `"enableTodoWrite": false`. |
 
 When running interactively, the agent can also ask you to make a decision through a multiple-choice prompt when it genuinely needs your input to proceed. In non-interactive (`-p`) runs it falls back to proceeding on its own.
 
-Two extra tools are **off by default** — turn them on per session with a flag, or persistently in settings:
+Three tool groups are **off by default** — turn them on per session with a flag, or persistently in settings:
 
-| Tool | Enable | What it does |
+| Tool group | Enable | What it does |
 |---|---|---|
-| **Task** (subagents) | `--enable-subagents` or `"enableSubagent": true` | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer. |
-| **TodoWrite** | `--enable-todowrite` or `"enableTodoWrite": true` | Maintain a live todo list for the current task, shown in the task panel. |
+| **Web** (`webfetch` · `websearch`) | `--enable-webtools` or `"enableWebTools": true` | Fetch a URL as text and run web searches. |
+| **Browser** (`browser_run` · `browser_continue`) | `--enable-browsertools` or `"enableBrowserTools": true` | Drive a real browser to load pages, interact, and capture results. |
+| **Documents** (`DocRead` · `DocEdit` · `DocWrite` · `DocScan` · `DocGrep` · `DocPeek`) | `--enable-filetools` or `"enableFileTools": true` | Read, search, and edit structured documents — OOXML (docx/xlsx/pptx), PDF, XML, drawio. |
 
 ## Extensibility
 

@@ -31,14 +31,6 @@ export {
 	type FindToolOptions,
 } from "./find.js";
 export {
-	createGlobTool,
-	createGlobToolDefinition,
-	type GlobOperations,
-	type GlobToolDetails,
-	type GlobToolInput,
-	type GlobToolOptions,
-} from "./glob.js";
-export {
 	createGrepTool,
 	createGrepToolDefinition,
 	type GrepOperations,
@@ -129,7 +121,6 @@ import {
 } from "./doc/index.js";
 import { createEditToolDefinition, type EditToolOptions } from "./edit.js";
 import { createFindToolDefinition, type FindToolOptions } from "./find.js";
-import { createGlobToolDefinition, type GlobToolOptions } from "./glob.js";
 import { createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
 import { createLsToolDefinition, type LsToolOptions } from "./ls.js";
 import { createReadToolDefinition, type ReadToolOptions } from "./read.js";
@@ -148,7 +139,6 @@ export interface ToolsOptions {
 	edit?: EditToolOptions;
 	grep?: GrepToolOptions;
 	find?: FindToolOptions;
-	glob?: GlobToolOptions;
 	ls?: LsToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
@@ -175,7 +165,6 @@ const TOOL_FACTORIES = {
 	write: createWriteToolDefinition,
 	grep: createGrepToolDefinition,
 	find: createFindToolDefinition,
-	glob: createGlobToolDefinition,
 	ls: createLsToolDefinition,
 	webfetch: createWebFetchToolDefinition,
 	websearch: createWebSearchToolDefinition,
@@ -194,10 +183,10 @@ export type ToolName = keyof typeof TOOL_FACTORIES;
 export const allToolNames: Set<ToolName> = new Set(Object.keys(TOOL_FACTORIES) as ToolName[]);
 
 /** The default coding bundle (read/write + shell). */
-const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "glob", "ls"];
+const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 
 /** Read-only exploration bundle. */
-const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "grep", "find", "glob", "ls"];
+const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "grep", "find", "ls"];
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
 	const factory = TOOL_FACTORIES[toolName] as (cwd: string, options?: ToolsOptions[ToolName]) => ToolDef;

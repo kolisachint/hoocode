@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
-import { spawn } from "child_process";
+import { type ChildProcess, spawn } from "child_process";
 import { existsSync } from "fs";
 import path from "path";
 import { type Static, Type } from "typebox";
@@ -15,16 +15,32 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
 const findSchema = Type.Object({
-	pattern: Type.String({
-		description: "Glob pattern to match files, e.g. '*.ts', '**/*.json', or 'src/**/*.spec.ts'",
+	pattern: Type.Union([Type.String(), Type.Array(Type.String())], {
+		description:
+			"Glob pattern(s) to match files. Pass one pattern or an array for OR logic, e.g. '*.ts', 'src/**/*.spec.ts', or ['src/**/*.ts', 'test/**/*.ts'].",
 	}),
 	path: Type.Optional(Type.String({ description: "Directory to search in (default: current directory)" })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of results (default: 1000)" })),
+	exclude: Type.Optional(
+		Type.Union([Type.String(), Type.Array(Type.String())], {
+			description: "Additional exclusion glob(s), e.g. '**/*.test.ts' or ['**/dist/**', '**/build/**'].",
+		}),
+	),
+	type: Type.Optional(
+		Type.Union([Type.Literal("f"), Type.Literal("d"), Type.Literal("l")], {
+			description: "Filter by entry type: 'f' files, 'd' directories, 'l' symlinks (default: 'f').",
+		}),
+	),
+	depth: Type.Optional(Type.Number({ description: "Maximum directory depth to search." })),
+	limit: Type.Optional(Type.Number({ description: "Maximum number of results (default: 1000)." })),
+	compress: Type.Optional(
+		Type.Boolean({ description: "Group files in the same directory to shorten output (default: false)." }),
+	),
 });
 
 export type FindToolInput = Static<typeof findSchema>;
 
 const DEFAULT_LIMIT = 1000;
+const NO_RESULTS_MESSAGE = "No files found matching pattern";
 
 export interface FindToolDetails {
 	truncation?: TruncationResult;
@@ -38,8 +54,12 @@ export interface FindToolDetails {
 export interface FindOperations {
 	/** Check if path exists */
 	exists: (absolutePath: string) => Promise<boolean> | boolean;
-	/** Find files matching glob pattern. Returns relative or absolute paths. */
-	glob: (pattern: string, cwd: string, options: { ignore: string[]; limit: number }) => Promise<string[]> | string[];
+	/** Find files matching one or more glob patterns. Returns relative or absolute paths. */
+	glob: (
+		patterns: string[],
+		cwd: string,
+		options: { ignore: string[]; limit: number; type?: string },
+	) => Promise<string[]> | string[];
 }
 
 const defaultFindOperations: FindOperations = {
@@ -53,20 +73,97 @@ export interface FindToolOptions {
 	operations?: FindOperations;
 }
 
+/**
+ * Compress a list of file paths by grouping files in the same directory.
+ *
+ * Compression rules:
+ * - If a directory has >=3 entries all sharing the same extension: fold into `dir/{stem1,stem2,stem3}.ext`
+ * - If >=3 entries with mixed extensions: sub-group by extension; fold sub-groups >=3
+ * - If directory has >6 total files: summarize verbatim after sub-grouping
+ * - 1-2 entries: emit verbatim
+ */
+function compressPaths(paths: string[]): string {
+	if (paths.length === 0) return "";
+
+	const sorted = [...paths].sort();
+
+	const dirMap = new Map<string, string[]>();
+	for (const p of sorted) {
+		const dir = path.dirname(p);
+		const base = path.basename(p);
+		if (!dirMap.has(dir)) dirMap.set(dir, []);
+		dirMap.get(dir)!.push(base);
+	}
+
+	const result: string[] = [];
+
+	for (const [dir, files] of dirMap) {
+		if (files.length <= 2) {
+			for (const f of files) result.push(dir === "." ? f : `${dir}/${f}`);
+			continue;
+		}
+
+		const extMap = new Map<string, string[]>();
+		for (const f of files) {
+			const ext = path.extname(f);
+			const stem = path.basename(f, ext);
+			if (!extMap.has(ext)) extMap.set(ext, []);
+			extMap.get(ext)!.push(stem);
+		}
+
+		if (extMap.size === 1 && files.length >= 3) {
+			const [ext, stems] = extMap.entries().next().value!;
+			const displayDir = dir === "." ? "" : `${dir}/`;
+			result.push(`${displayDir}{${stems.join(",")}}${ext}`);
+			continue;
+		}
+
+		let anyFolded = false;
+		const subResults: string[] = [];
+		for (const [ext, stems] of extMap) {
+			if (stems.length >= 3) {
+				const displayDir = dir === "." ? "" : `${dir}/`;
+				subResults.push(`${displayDir}{${stems.join(",")}}${ext}`);
+				anyFolded = true;
+			} else {
+				for (const stem of stems) subResults.push(dir === "." ? `${stem}${ext}` : `${dir}/${stem}${ext}`);
+			}
+		}
+
+		if (anyFolded || files.length > 6) {
+			result.push(...subResults);
+		} else {
+			for (const f of files) result.push(dir === "." ? f : `${dir}/${f}`);
+		}
+	}
+
+	return result.join("\n");
+}
+
 function formatFindCall(
-	args: { pattern: string; path?: string; limit?: number } | undefined,
+	args: { pattern?: string | string[]; path?: string; type?: string; depth?: number; limit?: number } | undefined,
 	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
 ): string {
-	const pattern = str(args?.pattern);
+	const patterns = args?.pattern;
+	const patternStr = Array.isArray(patterns) ? patterns.join(", ") : str(patterns);
 	const rawPath = str(args?.path);
-	const path = rawPath !== null ? shortenPath(rawPath || ".") : null;
+	const displayPath = rawPath !== null ? shortenPath(rawPath || ".") : null;
+	const type = args?.type;
+	const depth = args?.depth;
 	const limit = args?.limit;
 	const invalidArg = invalidArgText(theme);
 	let text =
 		theme.fg("toolTitle", theme.bold("find")) +
 		" " +
-		(pattern === null ? invalidArg : theme.fg("accent", pattern || "")) +
-		theme.fg("toolOutput", ` in ${path === null ? invalidArg : path}`);
+		(patternStr === null || patternStr === "" ? invalidArg : theme.fg("accent", patternStr)) +
+		theme.fg("toolOutput", ` in ${displayPath === null ? invalidArg : displayPath}`);
+	if (type && type !== "f") {
+		const typeLabel = type === "d" ? "dirs" : type === "l" ? "symlinks" : type;
+		text += theme.fg("toolOutput", ` (${typeLabel})`);
+	}
+	if (depth !== undefined) {
+		text += theme.fg("toolOutput", ` (depth ${depth})`);
+	}
 	if (limit !== undefined) {
 		text += theme.fg("toolOutput", ` (limit ${limit})`);
 	}
@@ -114,12 +211,28 @@ export function createFindToolDefinition(
 	return {
 		name: "find",
 		label: "find",
-		description: `Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
-		promptSnippet: "Find files by glob pattern (respects .gitignore)",
+		description: `Search for files by one or more glob patterns (OR logic across an array). Optionally filter by entry type (files/dirs/symlinks), directory depth, and extra exclusions. Returns matching paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
+		promptSnippet: "Find files by glob pattern (supports multiple patterns, respects .gitignore)",
 		parameters: findSchema,
 		async execute(
 			_toolCallId,
-			{ pattern, path: searchDir, limit }: { pattern: string; path?: string; limit?: number },
+			{
+				pattern: rawPattern,
+				path: searchDir,
+				exclude: rawExclude,
+				type,
+				depth,
+				limit,
+				compress = false,
+			}: {
+				pattern: string | string[];
+				path?: string;
+				exclude?: string | string[];
+				type?: "f" | "d" | "l";
+				depth?: number;
+				limit?: number;
+				compress?: boolean;
+			},
 			signal?: AbortSignal,
 			_onUpdate?,
 			_ctx?,
@@ -131,16 +244,16 @@ export function createFindToolDefinition(
 				}
 
 				let settled = false;
-				let stopChild: (() => void) | undefined;
+				let stopChildren: (() => void) | undefined;
 				const settle = (fn: () => void) => {
 					if (settled) return;
 					settled = true;
 					signal?.removeEventListener("abort", onAbort);
-					stopChild = undefined;
+					stopChildren = undefined;
 					fn();
 				};
 				const onAbort = () => {
-					stopChild?.();
+					stopChildren?.();
 					settle(() => reject(new Error("Operation aborted")));
 				};
 				signal?.addEventListener("abort", onAbort, { once: true });
@@ -150,6 +263,46 @@ export function createFindToolDefinition(
 						const searchPath = resolveToCwd(searchDir || ".", cwd);
 						const effectiveLimit = limit ?? DEFAULT_LIMIT;
 						const ops = customOps ?? defaultFindOperations;
+
+						const patterns = Array.isArray(rawPattern) ? rawPattern : [rawPattern];
+						const excludePatterns = rawExclude ? (Array.isArray(rawExclude) ? rawExclude : [rawExclude]) : [];
+						// Always exclude node_modules and .git, plus any caller exclusions.
+						const allIgnore = ["**/node_modules/**", "**/.git/**", ...excludePatterns];
+						const typeFilter = type === "d" ? "d" : type === "l" ? "l" : "f";
+
+						const emit = (relativized: string[]) => {
+							if (relativized.length === 0) {
+								settle(() =>
+									resolve({ content: [{ type: "text", text: NO_RESULTS_MESSAGE }], details: undefined }),
+								);
+								return;
+							}
+							const unique = [...new Set(relativized)].sort();
+							const resultLimitReached = unique.length >= effectiveLimit;
+							const truncated = unique.slice(0, effectiveLimit);
+							const rawOutput = compress ? compressPaths(truncated) : truncated.join("\n");
+							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+							let resultOutput = truncation.content;
+							const details: FindToolDetails = {};
+							const notices: string[] = [];
+							if (resultLimitReached) {
+								notices.push(
+									`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+								);
+								details.resultLimitReached = effectiveLimit;
+							}
+							if (truncation.truncated) {
+								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+								details.truncation = truncation;
+							}
+							if (notices.length > 0) resultOutput += `\n\n[${notices.join(". ")}]`;
+							settle(() =>
+								resolve({
+									content: [{ type: "text", text: resultOutput }],
+									details: Object.keys(details).length > 0 ? details : undefined,
+								}),
+							);
+						};
 
 						// If custom operations provide glob(), use that instead of fd.
 						if (customOps?.glob) {
@@ -161,50 +314,19 @@ export function createFindToolDefinition(
 								settle(() => reject(new Error("Operation aborted")));
 								return;
 							}
-							const results = await ops.glob(pattern, searchPath, {
-								ignore: ["**/node_modules/**", "**/.git/**"],
+							const results = await ops.glob(patterns, searchPath, {
+								ignore: allIgnore,
 								limit: effectiveLimit,
+								type: typeFilter,
 							});
 							if (signal?.aborted) {
 								settle(() => reject(new Error("Operation aborted")));
 								return;
 							}
-							if (results.length === 0) {
-								settle(() =>
-									resolve({
-										content: [{ type: "text", text: "No files found matching pattern" }],
-										details: undefined,
-									}),
-								);
-								return;
-							}
-
-							// Relativize paths against the search root for stable output.
-							const relativized = results.map((p) => {
-								if (p.startsWith(searchPath)) return toPosixPath(p.slice(searchPath.length + 1));
-								return toPosixPath(path.relative(searchPath, p));
-							});
-							const resultLimitReached = relativized.length >= effectiveLimit;
-							const rawOutput = relativized.join("\n");
-							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-							let resultOutput = truncation.content;
-							const details: FindToolDetails = {};
-							const notices: string[] = [];
-							if (resultLimitReached) {
-								notices.push(`${effectiveLimit} results limit reached`);
-								details.resultLimitReached = effectiveLimit;
-							}
-							if (truncation.truncated) {
-								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
-								details.truncation = truncation;
-							}
-							if (notices.length > 0) {
-								resultOutput += `\n\n[${notices.join(". ")}]`;
-							}
-							settle(() =>
-								resolve({
-									content: [{ type: "text", text: resultOutput }],
-									details: Object.keys(details).length > 0 ? details : undefined,
+							emit(
+								results.map((p) => {
+									if (p.startsWith(searchPath)) return toPosixPath(p.slice(searchPath.length + 1));
+									return toPosixPath(path.relative(searchPath, p));
 								}),
 							);
 							return;
@@ -227,106 +349,69 @@ export function createFindToolDefinition(
 							return;
 						}
 
-						// Build fd arguments. --no-require-git makes fd apply hierarchical .gitignore
-						// semantics whether or not the search path is inside a git repository, without
-						// leaking sibling-directory rules the way --ignore-file (a global source) would.
-						const args: string[] = [
-							"--glob",
-							"--color=never",
-							"--hidden",
-							"--no-require-git",
-							"--max-results",
-							String(effectiveLimit),
-						];
-
-						const effectivePattern = applyFdGlobPattern(args, pattern);
-						args.push("--", effectivePattern, searchPath);
-
-						const child = spawn(fdPath, args, { stdio: ["ignore", "pipe", "pipe"] });
-						const rl = createInterface({ input: child.stdout });
-						let stderr = "";
-						const lines: string[] = [];
-
-						stopChild = () => {
-							if (!child.killed) {
-								child.kill();
-							}
+						const children: ChildProcess[] = [];
+						stopChildren = () => {
+							for (const child of children) if (!child.killed) child.kill();
 						};
 
-						const cleanup = () => {
-							rl.close();
-						};
+						// Run each pattern with fd. fd errors (e.g. an invalid glob) surface as a
+						// rejection when the pattern produced no output, matching the shell's
+						// behavior; a non-zero exit that still produced matches is tolerated.
+						const runPattern = (pattern: string): Promise<string[]> =>
+							new Promise<string[]>((res, rej) => {
+								const args: string[] = [
+									"--glob",
+									"--color=never",
+									"--hidden",
+									"--no-require-git",
+									"--type",
+									typeFilter,
+									"--max-results",
+									String(effectiveLimit),
+								];
+								for (const excl of allIgnore) args.push("--exclude", excl);
+								if (depth !== undefined) args.push("--max-depth", String(depth));
+								const effectivePattern = applyFdGlobPattern(args, pattern);
+								args.push("--", effectivePattern, searchPath);
 
-						child.stderr?.on("data", (chunk) => {
-							stderr += chunk.toString();
-						});
+								const child = spawn(fdPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+								children.push(child);
+								const rl = createInterface({ input: child.stdout! });
+								let stderr = "";
+								const lines: string[] = [];
+								child.stderr?.on("data", (chunk) => {
+									stderr += chunk.toString();
+								});
+								rl.on("line", (line) => lines.push(line));
+								child.on("error", (error) => {
+									rl.close();
+									rej(new Error(`Failed to run fd: ${error.message}`));
+								});
+								child.on("close", (code) => {
+									rl.close();
+									if (code !== 0 && lines.length === 0) {
+										rej(new Error(stderr.trim() || `fd exited with code ${code}`));
+										return;
+									}
+									res(lines);
+								});
+							});
 
-						rl.on("line", (line) => {
-							lines.push(line);
-						});
+						const patternResults = await Promise.all(patterns.map(runPattern));
+						if (signal?.aborted) {
+							settle(() => reject(new Error("Operation aborted")));
+							return;
+						}
 
-						child.on("error", (error) => {
-							cleanup();
-							settle(() => reject(new Error(`Failed to run fd: ${error.message}`)));
-						});
-
-						child.on("close", (code) => {
-							cleanup();
-							if (signal?.aborted) {
-								settle(() => reject(new Error("Operation aborted")));
-								return;
-							}
-							const output = lines.join("\n");
-							if (code !== 0) {
-								const errorMsg = stderr.trim() || `fd exited with code ${code}`;
-								if (!output) {
-									settle(() => reject(new Error(errorMsg)));
-									return;
-								}
-							}
-							if (!output) {
-								settle(() =>
-									resolve({
-										content: [{ type: "text", text: "No files found matching pattern" }],
-										details: undefined,
-									}),
-								);
-								return;
-							}
-
-							const relativized: string[] = [];
-							for (const rawLine of lines) {
+						const relativized: string[] = [];
+						for (const results of patternResults) {
+							for (const rawLine of results) {
 								const line = rawLine.replace(/\r$/, "").trim();
 								if (!line) continue;
 								relativized.push(relativizeFdLine(line, searchPath));
 							}
-
-							const resultLimitReached = relativized.length >= effectiveLimit;
-							const rawOutput = relativized.join("\n");
-							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
-							let resultOutput = truncation.content;
-							const details: FindToolDetails = {};
-							const notices: string[] = [];
-							if (resultLimitReached) {
-								notices.push(
-									`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
-								);
-								details.resultLimitReached = effectiveLimit;
-							}
-							if (truncation.truncated) {
-								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
-								details.truncation = truncation;
-							}
-							if (notices.length > 0) {
-								resultOutput += `\n\n[${notices.join(". ")}]`;
-							}
-							settle(() =>
-								resolve({
-									content: [{ type: "text", text: resultOutput }],
-									details: Object.keys(details).length > 0 ? details : undefined,
-								}),
-							);
-						});
+						}
+						emit(relativized);
 					} catch (e) {
 						if (signal?.aborted) {
 							settle(() => reject(new Error("Operation aborted")));
