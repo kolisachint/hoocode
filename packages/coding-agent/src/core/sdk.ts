@@ -178,17 +178,6 @@ function getAttributionHeaders(
 		};
 	}
 
-	if (
-		model.provider === "cloudflare-workers-ai" ||
-		model.provider === "cloudflare-ai-gateway" ||
-		model.baseUrl.includes("api.cloudflare.com") ||
-		model.baseUrl.includes("gateway.ai.cloudflare.com")
-	) {
-		return {
-			"User-Agent": "hoocode",
-		};
-	}
-
 	return undefined;
 }
 

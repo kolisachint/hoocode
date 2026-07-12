@@ -7,19 +7,15 @@
  * `/login` and `/logout` commands call `showOAuthSelector`.
  */
 
-import * as path from "node:path";
 import { getProviders, type Model, type OAuthProviderId, type OAuthSelectPrompt } from "@kolisachint/hoocode-ai";
 import type { Component, Container, TUI } from "@kolisachint/hoocode-tui";
-import { getAuthPath, getDocsPath } from "../../config.js";
+import { getAuthPath } from "../../config.js";
 import type { AgentSession } from "../../core/agent-session.js";
 import { defaultModelPerProvider } from "../../core/model-resolver.js";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.js";
 import { ExtensionSelectorComponent } from "./components/extension-selector.js";
 import { LoginDialogComponent } from "./components/login-dialog.js";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.js";
-import { theme } from "./theme/theme.js";
-
-const BEDROCK_PROVIDER_ID = "amazon-bedrock";
 
 const BUILT_IN_MODEL_PROVIDERS = new Set<string>(getProviders());
 
@@ -169,8 +165,6 @@ export class LoginController {
 
 					if (providerOption.authType === "oauth") {
 						await this.showLoginDialog(providerOption.id, providerOption.name);
-					} else if (providerOption.id === BEDROCK_PROVIDER_ID) {
-						this.showBedrockSetupDialog(providerOption.id, providerOption.name);
 					} else {
 						await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
 					}
@@ -284,27 +278,6 @@ export class LoginController {
 				void this.deps.maybeWarnAboutAnthropicSubscriptionAuth();
 			}
 		}
-	}
-
-	private showBedrockSetupDialog(providerId: string, providerName: string): void {
-		const dialog = new LoginDialogComponent(
-			this.deps.ui,
-			providerId,
-			() => this.restoreEditor(),
-			providerName,
-			"Amazon Bedrock setup",
-		);
-		dialog.showInfo([
-			theme.fg("text", "Amazon Bedrock uses AWS credentials instead of a single API key."),
-			theme.fg("text", "Configure an AWS profile, IAM keys, bearer token, or role-based credentials."),
-			theme.fg("muted", "See:"),
-			theme.fg("accent", `  ${path.join(getDocsPath(), "providers.md")}`),
-		]);
-
-		this.deps.editorContainer.clear();
-		this.deps.editorContainer.addChild(dialog);
-		this.deps.ui.setFocus(dialog);
-		this.deps.ui.requestRender();
 	}
 
 	private async showApiKeyLoginDialog(providerId: string, providerName: string): Promise<void> {

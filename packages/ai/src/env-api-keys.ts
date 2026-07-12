@@ -121,8 +121,6 @@ function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 		opencode: "OPENCODE_API_KEY",
 		"opencode-go": "OPENCODE_API_KEY",
 		"kimi-coding": "KIMI_API_KEY",
-		"cloudflare-workers-ai": "CLOUDFLARE_API_KEY",
-		"cloudflare-ai-gateway": "CLOUDFLARE_API_KEY",
 		xiaomi: "XIAOMI_API_KEY",
 		"xiaomi-token-plan-cn": "XIAOMI_TOKEN_PLAN_CN_API_KEY",
 		"xiaomi-token-plan-ams": "XIAOMI_TOKEN_PLAN_AMS_API_KEY",
@@ -177,32 +175,6 @@ export function getEnvApiKey(provider: string): string | undefined {
 		const hasLocation = !!(process.env.GOOGLE_CLOUD_LOCATION || getProcEnv("GOOGLE_CLOUD_LOCATION"));
 
 		if (hasCredentials && hasProject && hasLocation) {
-			return "<authenticated>";
-		}
-	}
-
-	if (provider === "amazon-bedrock") {
-		// Amazon Bedrock supports multiple credential sources:
-		// 1. AWS_PROFILE - named profile from ~/.aws/credentials
-		// 2. AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY - standard IAM keys
-		// 3. AWS_BEARER_TOKEN_BEDROCK - Bedrock bearer token
-		// 4. AWS_CONTAINER_CREDENTIALS_RELATIVE_URI - ECS task roles
-		// 5. AWS_CONTAINER_CREDENTIALS_FULL_URI - ECS task roles (full URI)
-		// 6. AWS_WEB_IDENTITY_TOKEN_FILE - IRSA (IAM Roles for Service Accounts)
-		if (
-			process.env.AWS_PROFILE ||
-			(process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) ||
-			process.env.AWS_BEARER_TOKEN_BEDROCK ||
-			process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
-			process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ||
-			process.env.AWS_WEB_IDENTITY_TOKEN_FILE ||
-			getProcEnv("AWS_PROFILE") ||
-			(getProcEnv("AWS_ACCESS_KEY_ID") && getProcEnv("AWS_SECRET_ACCESS_KEY")) ||
-			getProcEnv("AWS_BEARER_TOKEN_BEDROCK") ||
-			getProcEnv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") ||
-			getProcEnv("AWS_CONTAINER_CREDENTIALS_FULL_URI") ||
-			getProcEnv("AWS_WEB_IDENTITY_TOKEN_FILE")
-		) {
 			return "<authenticated>";
 		}
 	}
