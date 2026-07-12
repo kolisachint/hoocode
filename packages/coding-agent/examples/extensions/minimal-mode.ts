@@ -264,7 +264,7 @@ export default function (pi: ExtensionAPI) {
 		},
 
 		renderCall(args, theme, _context) {
-			const pattern = args.pattern || "";
+			const pattern = Array.isArray(args.pattern) ? args.pattern.join(", ") : args.pattern || "";
 			const path = shortenPath(args.path || ".");
 			const limit = args.limit;
 
