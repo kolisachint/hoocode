@@ -63,9 +63,10 @@ describe("task panel rendering", () => {
 		expect(text).not.toContain("●");
 		// A pending task is tagged queued.
 		expect(text).toContain("queued");
-		// The active row reads running…; the owner glyph (◆ main) precedes each title.
+		// The active row reads running…. Main-owned rows carry NO owner glyph in the
+		// flat lens (the rail already attributes the pane to the main agent).
 		expect(text).toContain("running…");
-		expect(text).toContain("◆");
+		expect(text).not.toContain("◆");
 	});
 
 	test("each lens carries the owner glyph and tag for its own rows", () => {
@@ -79,11 +80,12 @@ describe("task panel rendering", () => {
 		taskStore.update(role.id, { status: "in_progress" });
 		taskStore.update(plain.id, { status: "in_progress" });
 
-		// flat ("tasks") shows only the main agent's own plan: ◆, no delegated rows.
+		// flat ("tasks") shows only the main agent's own plan — glyph-free rows
+		// (main needs no marker), no delegated rows.
 		panel.setView("flat");
 		const flat = renderPanel();
 		const plainRow = flat.find((l) => l.includes("init project"));
-		expect(plainRow).toContain("◆");
+		expect(plainRow).not.toContain("◆");
 		expect(plainRow).not.toContain("◇");
 		expect(flat.some((l) => l.includes("find the bug"))).toBe(false);
 		expect(flat.some((l) => l.includes("fetch"))).toBe(false);

@@ -887,14 +887,46 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 		},
 
 		renderResult(result, _options, theme) {
-			// Display-only colorization of the roster/status lines (the text sent to
-			// the model stays plain). Lines that aren't roster rows — collected
-			// bodies, status sentences — render exactly like the default fallback.
+			// Display-only framing/colorization (the text sent to the model stays
+			// plain). A single-task pull renders as a result CARD — a status-stamped
+			// header, a left spine down the body, and a closing corner — so a
+			// collected result reads as a discrete artifact instead of blending into
+			// the surrounding tool chatter. Roster/list responses keep the line
+			// colorization.
 			const text = result.content
 				.map((c) => (c.type === "text" ? c.text : ""))
 				.filter(Boolean)
 				.join("\n");
 			if (!text) return new Text("", 0, 0);
+
+			const details = result.details as TaskOutputDetails | undefined;
+			const cardStatus = details?.task_id ? details.status : undefined;
+			if (cardStatus && cardStatus !== "list" && cardStatus !== "empty") {
+				const presentation: Record<
+					string,
+					{ glyph: string; color: "success" | "warning" | "error" | "muted" | "dim" }
+				> = {
+					done: { glyph: "✓", color: "success" },
+					running: { glyph: "◐", color: "warning" },
+					collected: { glyph: "✓", color: "muted" },
+					cancelled: { glyph: "⊘", color: "dim" },
+					unknown: { glyph: "?", color: "dim" },
+				};
+				const { glyph, color } = presentation[cardStatus] ?? { glyph: "✗", color: "error" as const };
+				const label = details?.task_id ?? "";
+				const hashIdx = label.indexOf("#");
+				const labelColor = hashIdx > 0 ? agentColorFor(label.slice(0, hashIdx)) : "accent";
+				const spine = (s: string) => theme.fg("borderMuted", s);
+				const header =
+					`${spine("╭")} ${theme.fg(color, glyph)} ` +
+					`${theme.bold(theme.fg(color, cardStatus))} ${theme.fg(labelColor, label)}`;
+				const body = text
+					.split("\n")
+					.map((line) => `${spine("│")} ${theme.fg("toolOutput", line)}`)
+					.join("\n");
+				return new Text(`${header}\n${body}\n${spine("╰")}`, 0, 0);
+			}
+
 			const rosterLine =
 				/^- (\S+)\s{2}(running|done \(uncollected\)|collected|failed|stalled|timeout|cancelled)(.*)$/;
 			const styled = text
