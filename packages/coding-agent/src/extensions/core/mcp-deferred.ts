@@ -35,8 +35,15 @@ export interface DeferredMcpToolEntry {
 	description: string;
 }
 
-/** Render the deferred catalog as the names-only surface embedded in the resolver tool's description. */
-export function formatDeferredCatalog(entries: DeferredMcpToolEntry[]): string {
+/**
+ * Render the deferred catalog as the names-only surface embedded in the resolver
+ * tool's description. `serverSnippets` optionally annotates a server's header
+ * line with its configured steering text (see McpServerConfig.promptSnippet).
+ */
+export function formatDeferredCatalog(
+	entries: DeferredMcpToolEntry[],
+	serverSnippets?: ReadonlyMap<string, string>,
+): string {
 	if (entries.length === 0) return "(no MCP tools available)";
 	const byServer = new Map<string, DeferredMcpToolEntry[]>();
 	for (const e of entries) {
@@ -46,7 +53,8 @@ export function formatDeferredCatalog(entries: DeferredMcpToolEntry[]): string {
 	}
 	const lines: string[] = [];
 	for (const [server, list] of byServer) {
-		lines.push(`${server}:`);
+		const snippet = serverSnippets?.get(server);
+		lines.push(`${server}:${snippet ? ` ${snippet}` : ""}`);
 		for (const e of list) {
 			const desc = e.description.split("\n")[0]?.slice(0, 120) ?? "";
 			lines.push(`  ${e.toolName}${desc ? ` — ${desc}` : ""}`);

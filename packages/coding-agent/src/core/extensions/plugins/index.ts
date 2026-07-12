@@ -45,6 +45,8 @@ export function resolveMcpServers(
 				? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, substituteRoot(String(v), root)]))
 				: undefined,
 			background: cfg.background,
+			promptSnippet: cfg.promptSnippet,
+			promptGuidelines: cfg.promptGuidelines,
 		};
 	}
 	return out;

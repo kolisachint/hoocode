@@ -147,6 +147,52 @@ describe("activateMcpServersLive", () => {
 		expect(tools.get("ResolveMcpTools")?.description).toContain(`mcp_${good}_echo`);
 	});
 
+	it("eager mode: applies server-level promptSnippet and promptGuidelines to each tool", async () => {
+		delete process.env[DEFER_MCP_SCHEMAS_ENV];
+		const { pi, tools } = fakePi();
+		const server = nextServerName();
+
+		await activateMcpServersLive(
+			pi,
+			{
+				[server]: {
+					command: "node",
+					args: [FAKE_SERVER],
+					promptSnippet: "Prefer this server for echo work",
+					promptGuidelines: ["Always echo politely"],
+				},
+			},
+			noopNotify,
+		);
+
+		const tool = tools.get(`mcp_${server}_echo`);
+		expect(tool?.promptSnippet).toBe("Prefer this server for echo work");
+		expect(tool?.promptGuidelines).toEqual(["Always echo politely"]);
+	});
+
+	it("deferred mode: surfaces server snippet in the catalog and guidelines on the resolver", async () => {
+		process.env[DEFER_MCP_SCHEMAS_ENV] = "1";
+		const { pi, tools } = fakePi();
+		const server = nextServerName();
+
+		await activateMcpServersLive(
+			pi,
+			{
+				[server]: {
+					command: "node",
+					args: [FAKE_SERVER],
+					promptSnippet: "Prefer this server for echo work",
+					promptGuidelines: ["Always echo politely"],
+				},
+			},
+			noopNotify,
+		);
+
+		const resolver = tools.get("ResolveMcpTools");
+		expect(resolver?.description).toContain(`${server}: Prefer this server for echo work`);
+		expect(resolver?.promptGuidelines).toEqual(["Always echo politely"]);
+	});
+
 	it("appends to an existing deferred catalog and refreshes the resolver description", async () => {
 		process.env[DEFER_MCP_SCHEMAS_ENV] = "1";
 		const { pi, tools } = fakePi();

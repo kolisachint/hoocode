@@ -55,6 +55,18 @@ export interface McpServerConfig {
 	env?: Record<string, string>;
 	/** Run MCP tools in background by default (default: true for MCP servers) */
 	background?: boolean;
+	/**
+	 * One-line steering text for the system prompt ("Use these tools for GitHub
+	 * operations instead of bash git"). Eager mode applies it to each of the
+	 * server's tools; deferred mode shows it on the server's catalog line.
+	 */
+	promptSnippet?: string;
+	/**
+	 * Guideline bullets appended to the system prompt while the server's tools
+	 * (eager) or the ResolveMcpTools resolver (deferred) are registered.
+	 * Duplicates are collapsed by the prompt builder.
+	 */
+	promptGuidelines?: string[];
 }
 
 /** Standard MCP config format used by Claude Desktop and other tools */
@@ -63,6 +75,8 @@ interface StandardMcpServerConfig {
 	args?: string[];
 	env?: Record<string, string>;
 	background?: boolean;
+	promptSnippet?: string;
+	promptGuidelines?: string[];
 }
 
 interface StandardMcpConfig {
@@ -265,6 +279,8 @@ function parseStandardMcpConfig(config: StandardMcpConfig, _source: string): Mcp
 			args: serverConfig.args,
 			env: serverConfig.env,
 			background: serverConfig.background,
+			promptSnippet: serverConfig.promptSnippet,
+			promptGuidelines: serverConfig.promptGuidelines,
 		});
 	}
 	return servers;
@@ -306,6 +322,10 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 		description: tool.description,
 		parameters: schema,
 		background: isBackground,
+		// Server-level steering: the config's snippet/guidelines ride on each of
+		// the server's tools (the prompt builder collapses duplicate guidelines).
+		promptSnippet: serverConfig.promptSnippet,
+		promptGuidelines: serverConfig.promptGuidelines,
 		// Render a clean, prefixed title in chat — `MCP [server › tool] <args>` —
 		// parallel to the subagent `Task [type] <desc>` line. Without this the
 		// ToolExecutionComponent falls back to the raw `mcp_<server>_<tool>` name.
@@ -578,13 +598,26 @@ function registerResolverTool(pi: ExtensionAPI, state: McpRegistrationState): vo
 		},
 		{ additionalProperties: false },
 	);
+	// Server-level steering in deferred mode: the snippet annotates the server's
+	// catalog line and the guidelines ride on the resolver itself, so the model
+	// is steered toward a server's tools before any schema is resolved.
+	const serverSnippets = new Map<string, string>();
+	const serverGuidelines: string[] = [];
+	const seenServers = new Set<string>();
+	for (const { serverConfig } of state.deferredByName.values()) {
+		if (seenServers.has(serverConfig.name)) continue;
+		seenServers.add(serverConfig.name);
+		if (serverConfig.promptSnippet) serverSnippets.set(serverConfig.name, serverConfig.promptSnippet);
+		if (serverConfig.promptGuidelines) serverGuidelines.push(...serverConfig.promptGuidelines);
+	}
 	pi.registerTool({
 		name: RESOLVE_MCP_TOOLS_NAME,
 		label: RESOLVE_MCP_TOOLS_NAME,
 		description:
 			"MCP tools are connected but their schemas are loaded on demand to keep context small. Call this with the tool name(s) you need to make them callable, then call the tool(s). Available MCP tools:\n" +
-			formatDeferredCatalog(state.deferredCatalog),
+			formatDeferredCatalog(state.deferredCatalog, serverSnippets),
 		promptSnippet: "Resolve deferred MCP tool schemas by name before calling them.",
+		promptGuidelines: serverGuidelines.length > 0 ? serverGuidelines : undefined,
 		parameters: resolveParams,
 		async execute(_toolCallId: string, params: Static<typeof resolveParams>) {
 			const matched = selectResolvable(state.deferredCatalog, params.names ?? []);

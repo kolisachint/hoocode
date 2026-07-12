@@ -77,11 +77,21 @@ Standard `mcp.json` format:
     "my-server": {
       "command": "npx",
       "args": ["-y", "my-mcp-server"],
-      "env": { "API_KEY": "..." }
+      "env": { "API_KEY": "..." },
+      "promptSnippet": "Use these tools for acme-db queries instead of raw SQL over bash",
+      "promptGuidelines": ["Prefer my-server tools over bash psql for database work"]
     }
   }
 }
 ```
+
+`promptSnippet` and `promptGuidelines` are optional server-level steering for the
+system prompt. With eager schemas they ride on each of the server's tools; with
+deferred schemas (the default) the snippet annotates the server's line in the
+`ResolveMcpTools` catalog and the guidelines ride on the resolver, so the model
+is steered toward the server before resolving any schema. Plugin-provided
+servers (`mcpServers` in a plugin manifest or `.mcp.json`) accept the same
+fields.
 
 Per-server format (`.hoocode/mcp-servers/<name>.json`):
 

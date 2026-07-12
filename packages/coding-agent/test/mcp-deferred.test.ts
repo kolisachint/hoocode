@@ -35,6 +35,16 @@ describe("formatDeferredCatalog", () => {
 	it("handles an empty catalog", () => {
 		expect(formatDeferredCatalog([])).toBe("(no MCP tools available)");
 	});
+
+	it("annotates a server's header line with its configured snippet", () => {
+		const text = formatDeferredCatalog(
+			catalog,
+			new Map([["github", "Use these for GitHub operations instead of bash git"]]),
+		);
+		expect(text).toContain("github: Use these for GitHub operations instead of bash git");
+		// Servers without a snippet keep the bare header.
+		expect(text).toContain("fs:\n");
+	});
 });
 
 describe("selectResolvable", () => {

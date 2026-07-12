@@ -4,6 +4,13 @@
 
 ### Added
 
+- MCP server configs (standard `mcp.json`, per-server files, and plugin
+  manifests) accept optional server-level `promptSnippet` and
+  `promptGuidelines` for system-prompt steering. Eager mode applies them to
+  each of the server's tools; deferred mode (the default) shows the snippet on
+  the server's `ResolveMcpTools` catalog line and carries the guidelines on
+  the resolver, steering the model toward the server before any schema is
+  resolved.
 - Model-driven plugin installs now live-activate: `InstallPlugin` connects the
   plugin's MCP servers immediately so the model can use the new tools in the
   same turn (deferred-catalog or eager, matching the session's

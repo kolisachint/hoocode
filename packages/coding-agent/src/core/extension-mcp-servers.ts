@@ -18,6 +18,10 @@ export interface ExtensionMcpServerConfig {
 	args?: string[];
 	env?: Record<string, string>;
 	background?: boolean;
+	/** One-line steering text injected into the system prompt (see McpServerConfig.promptSnippet). */
+	promptSnippet?: string;
+	/** Guideline bullets injected into the system prompt (see McpServerConfig.promptGuidelines). */
+	promptGuidelines?: string[];
 }
 
 export interface ExtensionMcpEntry {
