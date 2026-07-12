@@ -47,7 +47,7 @@ describe("subagent footer indicator", () => {
 		provider.setSubagentEnabled(harness.session.getActiveToolNames().includes("Task"));
 
 		expect(provider.getSubagentEnabled()).toBe(true);
-		expect(provider.getActiveMode()).toBe("build + subagent");
+		expect(provider.getActiveMode()).toBe("build");
 		provider.dispose();
 	});
 
