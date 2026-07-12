@@ -10,7 +10,23 @@ import {
 	discoverAndLoadExtensions,
 	loadPlugins,
 } from "../src/core/extensions/loader.js";
+import {
+	getFormat,
+	getFormatByPlatform,
+	PLUGIN_FORMATS,
+	parsePluginWithFormats,
+} from "../src/core/extensions/plugins/formats/index.js";
+import type { PluginDraft } from "../src/core/extensions/plugins/formats/types.js";
 import { buildPluginFactory, discoverPlugins, parsePluginDir } from "../src/core/extensions/plugins/index.js";
+
+/** Write a set of emitted files (paths relative to `root`) to disk. */
+function writeEmitted(root: string, files: { path: string; content: string }[]): void {
+	for (const f of files) {
+		const abs = path.join(root, f.path);
+		fs.mkdirSync(path.dirname(abs), { recursive: true });
+		fs.writeFileSync(abs, f.content);
+	}
+}
 
 function writeJson(file: string, data: unknown): void {
 	fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -88,6 +104,110 @@ describe("plugin manifests", () => {
 		const found = discoverPlugins([path.join(tempDir, "a"), path.join(tempDir, "b")]);
 		expect(found).toHaveLength(1);
 		expect(found[0].id).toBe("shared");
+	});
+});
+
+describe("plugin format registry", () => {
+	it("registers agents, claude and copilot in precedence order", () => {
+		expect(PLUGIN_FORMATS.map((f) => f.id)).toEqual(["agents", "claude", "copilot"]);
+		expect(getFormat("copilot")?.platform).toBe("github");
+		expect(getFormatByPlatform("github")?.id).toBe("copilot");
+	});
+
+	it("prefers the highest-precedence format when several coexist", () => {
+		const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-fmt-"));
+		try {
+			const root = path.join(tmp, "multi");
+			writeJson(path.join(root, ".github", "copilot-plugin.json"), { name: "from-copilot" });
+			writeJson(path.join(root, ".claude-plugin", "plugin.json"), { name: "from-claude" });
+			writeJson(path.join(root, ".agents-plugin", "plugin.json"), { name: "from-agents" });
+			expect(parsePluginWithFormats(root)?.format).toBe("agents");
+		} finally {
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("copilot (.github) plugin format", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-copilot-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(tempDir, { recursive: true, force: true });
+	});
+
+	it("parses a Copilot plugin and maps prompts/chatmodes/mcp/hooks", () => {
+		const root = path.join(tempDir, "cop");
+		writeJson(path.join(root, ".github", "copilot-plugin.json"), {
+			name: "cop",
+			version: "2.0.0",
+			description: "copilot format",
+		});
+		fs.mkdirSync(path.join(root, ".github", "prompts"), { recursive: true });
+		fs.mkdirSync(path.join(root, ".github", "chatmodes"), { recursive: true });
+		// VS Code / Copilot use `{ servers }`.
+		writeJson(path.join(root, ".github", "mcp.json"), { servers: { demo: { command: "demo-server" } } });
+		writeJson(path.join(root, ".github", "hooks", "hooks.json"), {
+			hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "true" }] }] },
+		});
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.format).toBe("copilot");
+		expect(plugin?.id).toBe("cop");
+		expect(plugin?.version).toBe("2.0.0");
+		expect(plugin?.commandsDir).toBe(path.join(root, ".github", "prompts"));
+		expect(plugin?.agentsDir).toBe(path.join(root, ".github", "chatmodes"));
+		expect(plugin?.skillsDir).toBeUndefined();
+		expect(plugin?.mcpServers).toMatchObject({ demo: { command: "demo-server" } });
+		expect(plugin?.hooks?.PreToolUse).toHaveLength(1);
+	});
+
+	it("round-trips an emitted Copilot plugin back through the reader", () => {
+		const draft: PluginDraft = {
+			id: "authored",
+			version: "0.1.0",
+			description: "authored copilot plugin",
+			commands: [{ name: "greet", description: "say hi", body: "Say hello to the user." }],
+			agents: [{ name: "scout", description: "read-only scout", tools: "read, grep", body: "You explore." }],
+			mcpServers: [{ name: "svc", command: "svc-bin", args: ["--port", "1"] }],
+		};
+		const root = path.join(tempDir, "rt");
+		writeEmitted(root, getFormat("copilot")!.emit(draft));
+
+		expect(fs.existsSync(path.join(root, ".github", "prompts", "greet.prompt.md"))).toBe(true);
+		expect(fs.existsSync(path.join(root, ".github", "chatmodes", "scout.chatmode.md"))).toBe(true);
+
+		const parsed = parsePluginDir(root);
+		expect(parsed?.format).toBe("copilot");
+		expect(parsed?.id).toBe("authored");
+		expect(parsed?.commandsDir).toBe(path.join(root, ".github", "prompts"));
+		expect(parsed?.agentsDir).toBe(path.join(root, ".github", "chatmodes"));
+		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin", args: ["--port", "1"] } });
+	});
+
+	it("emits Claude and Copilot layouts from the same draft", () => {
+		const draft: PluginDraft = {
+			id: "dual",
+			skills: [{ name: "helper", description: "helps", body: "Help." }],
+			agents: [{ name: "agent1", tools: "read", body: "You act." }],
+		};
+		const claudeFiles = getFormat("claude")!
+			.emit(draft)
+			.map((f) => f.path);
+		const copilotFiles = getFormat("copilot")!
+			.emit(draft)
+			.map((f) => f.path);
+
+		expect(claudeFiles).toContain(path.join(".claude-plugin", "plugin.json"));
+		expect(claudeFiles).toContain(path.join("skills", "helper", "SKILL.md"));
+		expect(claudeFiles).toContain(path.join("agents", "agent1.md"));
+
+		expect(copilotFiles).toContain(path.join(".github", "copilot-plugin.json"));
+		expect(copilotFiles).toContain(path.join(".github", "prompts", "helper.prompt.md"));
+		expect(copilotFiles).toContain(path.join(".github", "chatmodes", "agent1.chatmode.md"));
 	});
 });
 
