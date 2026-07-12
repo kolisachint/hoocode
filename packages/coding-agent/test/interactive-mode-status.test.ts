@@ -426,8 +426,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
-		expect(output).toContain("hoocode ready");
-		expect(output).toContain("BUILD");
 		expect(output).toContain("1 skill");
 		// Names and scope lists live behind the expand hint, not in the summary.
 		expect(output).not.toContain("commit");
@@ -446,7 +444,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
-		expect(output).toContain("hoocode ready");
 		expect(output).toContain("[Resources]");
 		expect(output).toContain("[Skills]");
 		expect(output).toContain("commit");
@@ -552,8 +549,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 3 extensions
+			"⊹ 3 extensions
 			[Resources]
 			  mode/build
 
@@ -593,8 +589,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 1 extension
+			"⊹ 1 extension
 			[Resources]
 			  mode/build
 
@@ -632,8 +627,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 1 extension
+			"⊹ 1 extension
 			[Resources]
 			  mode/build
 
@@ -680,8 +674,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 2 extensions
+			"⊹ 2 extensions
 			[Resources]
 			  mode/build
 
@@ -729,8 +722,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 2 extensions
+			"⊹ 2 extensions
 			[Resources]
 			  mode/build
 
@@ -778,8 +770,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 2 extensions
+			"⊹ 2 extensions
 			[Resources]
 			  mode/build
 
@@ -818,8 +809,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 1 extension
+			"⊹ 1 extension
 			[Resources]
 			  mode/build
 
@@ -860,8 +850,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 1 extension
+			"⊹ 1 extension
 			[Resources]
 			  mode/build
 
@@ -886,8 +875,7 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-			"⬢ hoocode ready · BUILD
-			  ⊹ 8 extensions
+			"⊹ 8 extensions
 			[Resources]
 			  mode/build
 
@@ -1005,7 +993,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer);
-		expect(output).toContain("hoocode ready");
 		expect(output).toContain("consider trimming");
 	});
 

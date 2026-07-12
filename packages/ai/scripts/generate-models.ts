@@ -723,11 +723,11 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				// Switch them to openai-completions so requests use Bearer auth
 				// and the standard /v1/chat/completions endpoint.
 				if (variant.provider === "opencode-go") {
-					if (modelId === "minimax-m2.7") {
+					if (modelId === "minimax-m2.7" || modelId === "minimax-m3") {
 						api = "openai-completions";
 						baseUrl = `${variant.basePath}/v1`;
 					}
-					if (modelId === "qwen3.5-plus" || modelId === "qwen3.6-plus") {
+					if (modelId === "qwen3.5-plus" || modelId === "qwen3.6-plus" || modelId === "qwen3.7-plus" || modelId === "qwen3.7-max") {
 						api = "openai-completions";
 						baseUrl = `${variant.basePath}/v1`;
 						// Qwen/DashScope uses enable_thinking at the top level.

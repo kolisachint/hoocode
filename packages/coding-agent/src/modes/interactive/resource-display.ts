@@ -15,7 +15,7 @@ import type { ResourceDiagnostic, ResourceLoader } from "../../core/resource-loa
 import type { SourceInfo } from "../../core/source-info.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
-import { BRAND_MARK, BRAND_NAME, CATEGORY_GLYPH, type CategoryKey } from "./brand.js";
+import { CATEGORY_GLYPH, type CategoryKey } from "./brand.js";
 import { appKeyLabel } from "./components/keybinding-hints.js";
 import { type ThemeColor, theme } from "./theme/theme.js";
 
@@ -524,16 +524,7 @@ export function showLoadedResources(
 		const pluginCount = extensions.filter((e) => displayNameOf(e)?.startsWith("plugin:")).length;
 		const codeExtensionCount = extensions.length - pluginCount;
 
-		// ── Ready header: brand mark + product + active mode ────────────────────
-		// Answers "what session is this" in one line; the old mode/<x> +
-		// subagent_system_prompt meta jargon lives in the expanded details.
-		const rawMode = deps.getActiveMode().replace(" + subagent", "");
-		const headerLine =
-			`${theme.bold(theme.fg("accent", BRAND_MARK))} ` +
-			`${theme.bold(`${BRAND_NAME.toLowerCase()} ready`)} ` +
-			`${theme.fg("dim", "·")} ${theme.bold(theme.fg("accent", rawMode.toUpperCase()))}` +
-			(deps.getSubagentEnabled() ? theme.fg("dim", " · subagents on") : "");
-		chatContainer.addChild(new Text(headerLine, 0, 0));
+		const rawMode = deps.getActiveMode();
 
 		// ── Counted capability grid ──────────────────────────────────────────────
 		// One cell per loaded capability class (glyph + count + label), so "what

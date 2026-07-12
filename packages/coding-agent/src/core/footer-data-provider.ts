@@ -350,9 +350,6 @@ export class FooterDataProvider {
 
 	/** Current active mode (e.g., ask, plan, build, debug) */
 	getActiveMode(): string {
-		if (this.subagentEnabled) {
-			return `${this.activeMode} + subagent`;
-		}
 		return this.activeMode;
 	}
 
