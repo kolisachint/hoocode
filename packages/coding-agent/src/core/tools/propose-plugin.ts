@@ -96,7 +96,7 @@ function summarizeWrite(id: string, platforms: MarketplacePlatform[], files: str
 	return (
 		`Authored plugin "${id}" (${platforms.join(", ")}) with ${files.length} file(s) at ${dest}:\n` +
 		files.map((f) => `  ${f}`).join("\n") +
-		`\nActive after the next reload; remove it with UninstallPlugin.`
+		`\nRemove it with UninstallPlugin.`
 	);
 }
 
@@ -133,6 +133,7 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 		promptSnippet:
 			"Author a skill/command/read-only-subagent plugin to fill a capability gap (scaffold; reversible).",
 		promptGuidelines: [
+			"Sense reusability proactively: when you complete a multi-step recipe you would plausibly repeat (or repeat the same pattern twice in one session) and SearchPlugins finds nothing that covers it, author it as a skill/command with ProposePlugin autonomously — announce what you created and why. It activates immediately and is reversible with UninstallPlugin.",
 			"Use ProposePlugin only for passive capabilities: skills, commands, and subagents whose tools are read-only (read, grep, glob, webfetch).",
 			"A subagent that needs Bash/Write/Edit/MCP or tools:* is mutating — author it with ProposeExecutablePlugin (human confirmation), not here.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
@@ -177,7 +178,10 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 				agents: params.subagents,
 			};
 			const result = writePluginDraft(ctx.cwd, draft, platforms);
-			const text = summarizeWrite(params.id, platforms, result.files, result.dest);
+			// Passive capabilities activate live — the authored skill/command/subagent
+			// is usable on the very next model request, in this same turn.
+			const activation = ctx.activatePlugin(result.dest);
+			const text = `${summarizeWrite(params.id, platforms, result.files, result.dest)}\n${activation.message}`;
 			ctx.ui.notify(`Authored plugin "${params.id}" (${platforms.join(", ")}).`, "info");
 			return { content: [{ type: "text" as const, text }], details: { id: params.id, authored: true } };
 		},
@@ -298,7 +302,10 @@ export function createProposeExecutablePluginToolDefinition(): ToolDefinition {
 				agents: params.subagents,
 			};
 			const result = writePluginDraft(ctx.cwd, draft, platforms);
-			const text = summarizeWrite(params.id, platforms, result.files, result.dest);
+			// Human confirmed above: activate now. Subagents go live immediately;
+			// hooks/MCP servers activate via the automatic reload once the turn ends.
+			const activation = ctx.activatePlugin(result.dest);
+			const text = `${summarizeWrite(params.id, platforms, result.files, result.dest)}\n${activation.message}`;
 			ctx.ui.notify(`Authored executable plugin "${params.id}" (${platforms.join(", ")}).`, "info");
 			return {
 				content: [{ type: "text" as const, text }],

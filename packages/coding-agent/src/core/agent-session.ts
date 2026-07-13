@@ -13,7 +13,7 @@
  * Modes use this class and add their own I/O layer on top.
  */
 
-import { basename, dirname } from "node:path";
+import { basename, dirname, sep } from "node:path";
 import type {
 	Agent,
 	AgentEvent,
@@ -57,6 +57,7 @@ import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import {
+	type ActivatedCapability,
 	type ContextUsage,
 	type ExtensionCommandContextActions,
 	type ExtensionErrorListener,
@@ -66,6 +67,7 @@ import {
 	type MessageEndEvent,
 	type MessageStartEvent,
 	type MessageUpdateEvent,
+	type PluginActivationResult,
 	type ReplacedSessionContext,
 	type SessionStartEvent,
 	type ShutdownHandler,
@@ -78,8 +80,10 @@ import {
 	type TurnStartEvent,
 	wrapRegisteredTools,
 } from "./extensions/index.js";
+import { parsePluginDir } from "./extensions/plugins/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import type { ModelRegistry } from "./model-registry.js";
+import type { PathMetadata } from "./package-manager.js";
 import { expandPromptTemplate, type PromptTemplate, tryExpandPromptTemplate } from "./prompt-templates.js";
 import { clearProviderExhaustion, isProviderQuotaError, markProviderExhausted } from "./provider-health.js";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.js";
@@ -121,6 +125,27 @@ export type AgentSessionEvent =
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
+
+function describeActivation(
+	pluginId: string,
+	skills: ActivatedCapability[],
+	commands: ActivatedCapability[],
+	agents: ActivatedCapability[],
+	pendingReload: boolean,
+): string {
+	const parts: string[] = [];
+	const list = (label: string, caps: ActivatedCapability[], render: (c: ActivatedCapability) => string) => {
+		if (caps.length > 0) parts.push(`${label}: ${caps.map(render).join(", ")}`);
+	};
+	list("skills", skills, (c) => c.name);
+	list("commands", commands, (c) => `/${c.name}`);
+	list("subagents", agents, (c) => c.name);
+	const now = parts.length > 0 ? ` Active NOW (usable this turn) — ${parts.join("; ")}.` : "";
+	const later = pendingReload
+		? " This plugin also bundles executable capabilities (hooks/MCP servers); they activate automatically when the current turn ends."
+		: "";
+	return `Plugin "${pluginId}" activated in the live session.${now}${later}`;
+}
 
 // ============================================================================
 // Types
@@ -270,6 +295,22 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 
+	/**
+	 * Set when tools or the system prompt change while a run is in flight (a tool
+	 * registered mid-turn, a plugin activated live). The agent loop snapshots its
+	 * context at run start; this flag makes prepareNextTurn hand the loop a fresh
+	 * systemPrompt + tools before the next provider request, so mid-turn
+	 * capability changes are visible within the same turn.
+	 */
+	private _runtimeContextDirty = false;
+
+	/**
+	 * Set when a change needs a full reload (executable plugin capabilities:
+	 * hooks, MCP servers, providers) that cannot be wired mid-turn. Consumed on
+	 * agent_end: once the session is idle the reload runs automatically.
+	 */
+	private _reloadWhenIdle = false;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -344,6 +385,21 @@ export class AgentSession {
 		// (session persistence, extensions, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 		this._installAgentToolHooks();
+
+		// Refresh the loop's frozen context snapshot between turns whenever tools or
+		// the system prompt changed mid-run (deferred MCP schema resolution, live
+		// plugin activation). Keeps the loop's message history; swaps prompt + tools.
+		this.agent.prepareNextTurn = (loopContext) => {
+			if (!this._runtimeContextDirty) return undefined;
+			this._runtimeContextDirty = false;
+			return {
+				context: {
+					systemPrompt: this.agent.state.systemPrompt,
+					messages: loopContext.context.messages,
+					tools: this.agent.state.tools.slice(),
+				},
+			};
+		};
 
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
@@ -577,6 +633,19 @@ export class AgentSession {
 
 			this._retry.resolve();
 			await this._compaction.checkCompaction(msg);
+		}
+
+		// A live plugin activation (or uninstall) mid-run deferred its executable
+		// capabilities to a full reload; run it once the session settles. agent_end
+		// fires before the run's streaming flag clears, so defer one tick and
+		// re-check — if another run started meanwhile, the flag stays armed for the
+		// next agent_end.
+		if (event.type === "agent_end" && this._reloadWhenIdle) {
+			setTimeout(() => {
+				if (this._reloadWhenIdle && !this.isStreaming && !this.isCompacting) {
+					this._runIdleReload();
+				}
+			}, 0);
 		}
 	}
 
@@ -821,6 +890,8 @@ export class AgentSession {
 		// Rebuild base system prompt with new tool set
 		this._baseSystemPrompt = this._rebuildSystemPrompt(validToolNames);
 		this.agent.state.systemPrompt = this._baseSystemPrompt;
+		// If a run is in flight, let prepareNextTurn hand the loop this new state.
+		this._runtimeContextDirty = true;
 	}
 
 	/** Whether compaction or branch summarization is currently running */
@@ -1833,6 +1904,8 @@ export class AgentSession {
 					})();
 				},
 				getSystemPrompt: () => this.systemPrompt,
+				activatePlugin: (pluginDir) => this.activatePlugin(pluginDir),
+				requestReloadWhenIdle: () => this.requestReloadWhenIdle(),
 			},
 			{
 				registerProvider: (name, config) => {
@@ -2019,6 +2092,106 @@ export class AgentSession {
 			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
 			await this.extendResourcesFromExtensions("reload");
 		}
+	}
+
+	// =========================================================================
+	// Live plugin activation (single-turn install → use)
+	// =========================================================================
+
+	/**
+	 * Activate a just-installed or just-authored plugin in the LIVE session, no
+	 * reload required. Passive capabilities — skills, slash commands, subagents,
+	 * themes — register immediately and become visible to the model on its next
+	 * provider request, even mid-turn (via the prepareNextTurn context refresh).
+	 *
+	 * Executable capabilities (hooks, MCP servers, providers) cannot be safely
+	 * wired into a run that is already streaming; when the plugin bundles any,
+	 * this schedules an automatic full reload for when the session next goes
+	 * idle (end of the current turn), so they still activate autonomously.
+	 */
+	activatePlugin(pluginDir: string): PluginActivationResult {
+		const plugin = parsePluginDir(pluginDir);
+		if (!plugin) {
+			return { activated: false, message: `No recognizable plugin manifest at ${pluginDir}.` };
+		}
+
+		const metadata: PathMetadata = { source: "plugin", scope: "project", origin: "top-level" };
+		const paths: ResourceExtensionPaths = {
+			skillPaths: plugin.skillsDir ? [{ path: plugin.skillsDir, metadata }] : undefined,
+			slashCommandPaths: plugin.commandsDir ? [{ path: plugin.commandsDir, metadata }] : undefined,
+			agentPaths: plugin.agentsDir ? [{ path: plugin.agentsDir, metadata }] : undefined,
+			themePaths: plugin.themesDir ? [{ path: plugin.themesDir, metadata }] : undefined,
+		};
+		this._resourceLoader.extendResources(paths);
+		updateSubagentSkillPaths(this._resourceLoader.getSkillPaths());
+		updateWarmSubagentSkillPaths(this._resourceLoader.getSkillPaths());
+
+		// Rebuild the system prompt (skills + agent catalog are injected there) and
+		// mark the run context dirty so the refresh lands before the next provider
+		// request in the current run.
+		this._baseSystemPrompt = this._rebuildSystemPrompt(this.getActiveToolNames());
+		this.agent.state.systemPrompt = this._baseSystemPrompt;
+		this._runtimeContextDirty = true;
+
+		const underRoot = (filePath: string | undefined): boolean =>
+			!!filePath && (filePath === plugin.root || filePath.startsWith(`${plugin.root}${sep}`));
+		const skills = this._resourceLoader
+			.getSkills()
+			.skills.filter((s) => underRoot(s.filePath))
+			.map((s) => ({ name: s.name, description: s.description }));
+		const commands = this._resourceLoader
+			.getPrompts()
+			.prompts.filter((p) => underRoot(p.filePath))
+			.map((p) => ({ name: p.name, description: p.description }));
+		const agents = loadAgentRegistry({ cwd: this._cwd })
+			.list()
+			.filter((a) => underRoot(a.filePath))
+			.map((a) => ({ name: a.name, description: a.description }));
+
+		const needsReload = !!(plugin.hooks || plugin.mcpServers || (plugin.providers?.length ?? 0) > 0);
+		if (needsReload) {
+			this._reloadWhenIdle = true;
+			if (!this.isStreaming && !this.isCompacting) this._runIdleReload();
+		}
+
+		return {
+			activated: true,
+			pluginId: plugin.id,
+			skills,
+			commands,
+			agents,
+			pendingReloadForExecutables: needsReload,
+			message: describeActivation(plugin.id, skills, commands, agents, needsReload),
+		};
+	}
+
+	/**
+	 * Ask for a full reload once the session is idle — used when a change (e.g.
+	 * uninstalling a plugin) can only take effect through the reload path. Runs
+	 * immediately when already idle.
+	 */
+	requestReloadWhenIdle(): void {
+		this._reloadWhenIdle = true;
+		if (!this.isStreaming && !this.isCompacting) this._runIdleReload();
+	}
+
+	/** Run the pending idle reload through the mode's reload flow when bound (UI refresh included). */
+	private _runIdleReload(): void {
+		if (!this._reloadWhenIdle) return;
+		this._reloadWhenIdle = false;
+		const reloadFlow = this._extensionCommandContextActions?.reload;
+		void (async () => {
+			try {
+				if (reloadFlow) {
+					await reloadFlow();
+				} else {
+					await this.reload();
+				}
+			} catch {
+				// Auto-reload is best-effort; a failed reload leaves the session usable
+				// and the plugin activates on the next manual /reload or restart.
+			}
+		})();
 	}
 
 	// =========================================================================
