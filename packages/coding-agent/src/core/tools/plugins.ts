@@ -21,6 +21,7 @@
  */
 
 import { type Static, Type } from "typebox";
+import { getArmedReuseNudges } from "../../extensions/core/prompt-reactive/policy.js";
 import {
 	type AvailablePlugin,
 	ensureWellKnownMarketplaces,
@@ -107,6 +108,13 @@ export function createSearchPluginsToolDefinition(): ToolDefinition {
 				: "No matching plugins in the registered marketplaces.";
 			if (fetchErrors.length > 0) {
 				text += `\n(Some well-known marketplaces could not be fetched: ${fetchErrors.join("; ")})`;
+			}
+			// Surface any reuse nudges the runtime armed from actual work cues, so a
+			// reusability signal reaches the plugin layer even when the model didn't
+			// call SearchPlugins in response to a nudge (see prompt-reactive/policy).
+			const armed = getArmedReuseNudges();
+			if (armed.length > 0) {
+				text += `\n\nActive reuse cues from this session:\n${armed.map((n) => `- ${n.snippet}`).join("\n")}`;
 			}
 			return { content: [{ type: "text" as const, text }], details: { count: results.length } };
 		},
