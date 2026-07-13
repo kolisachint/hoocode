@@ -486,6 +486,20 @@ describe("plugin MCP servers", () => {
 		expect(entries[0].mcpServers.atlassian).toMatchObject({ command: "mcp-atlassian" });
 	});
 
+	it("resolves a string `mcpServers` path whose file uses the `servers` key", async () => {
+		// The referenced server file may use the Code/Copilot `{ servers }` key
+		// rather than `{ mcpServers }`; readMcpFile accepts both.
+		const root = path.join(tempDir, "plugins", "atlassian");
+		writeJson(path.join(root, ".claude-plugin", "plugin.json"), {
+			name: "atlassian",
+			mcpServers: "./.mcp.json",
+		});
+		writeJson(path.join(root, ".mcp.json"), { servers: { atlassian: { command: "mcp-atlassian" } } });
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.mcpServers).toMatchObject({ atlassian: { command: "mcp-atlassian" } });
+	});
+
 	it("registers remote http/sse servers instead of skipping them", async () => {
 		writeJson(path.join(tempDir, "plugins", "remote", ".claude-plugin", "plugin.json"), { name: "remote" });
 		writeJson(path.join(tempDir, "plugins", "remote", ".mcp.json"), {
