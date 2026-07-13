@@ -13,7 +13,10 @@ const toUrl = (p) => pathToFileURL(p).href;
 const { initConfig } = await import(toUrl(join(distDir, "init.js")));
 await initConfig();
 
-const { default: hooCore } = await import(toUrl(join(distDir, "extensions", "core", "hoo-core.js")));
+// No extensionFactories passed: main() defaults to the built-in hoo-core
+// (DEFAULT_EXTENSION_FACTORIES), the single source of truth shared with the
+// compiled binary entry (src/cli.ts). This avoids a second hoo-core reference
+// here and any risk of double-registration.
 const { main } = await import(toUrl(join(distDir, "main.js")));
 
-await main(process.argv.slice(2), { extensionFactories: [hooCore] });
+await main(process.argv.slice(2));

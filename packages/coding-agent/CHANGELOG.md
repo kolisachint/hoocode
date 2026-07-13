@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Compiled binary: the standalone (Bun `--compile`) build now bundles the
+  hoo-core built-in extension, restoring `/loop`, `/plugin`, `/mode`, `/cost`,
+  the scaffold commands, and the MCP loader (remote `type: "http"`/`sse`
+  servers plus the OAuth browser flow) in the packaged executable. hoo-core
+  was only referenced from the node entry (`bin/hoocode.js`) via a dynamic
+  `import()` the compiler could not follow, so it was silently dropped from
+  the binary. The built-in factory list now lives in one place — a
+  `DEFAULT_EXTENSION_FACTORIES` default in `main()` reached by a static import
+  — so both the node CLI and the compiled binary load it identically, while
+  callers that pass their own `extensionFactories` (downstream embedders) are
+  unaffected.
+
 ## [0.4.123] - 2026-07-13
 
 ## [0.4.122] - 2026-07-13
