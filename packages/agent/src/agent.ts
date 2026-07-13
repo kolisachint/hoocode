@@ -23,6 +23,7 @@ import type {
 	BackgroundToolResult,
 	BeforeToolCallContext,
 	BeforeToolCallResult,
+	PrepareNextTurnContext,
 	StreamFn,
 	ToolExecutionMode,
 } from "./types.js";
@@ -105,6 +106,7 @@ export interface AgentOptions {
 	beforeToolCall?: (context: BeforeToolCallContext, signal?: AbortSignal) => Promise<BeforeToolCallResult | undefined>;
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
 	prepareNextTurn?: (
+		context: PrepareNextTurnContext,
 		signal?: AbortSignal,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	createBackgroundResultMessage?: (result: BackgroundToolResult) => AgentMessage;
@@ -187,6 +189,7 @@ export class Agent {
 		signal?: AbortSignal,
 	) => Promise<AfterToolCallResult | undefined>;
 	public prepareNextTurn?: (
+		context: PrepareNextTurnContext,
 		signal?: AbortSignal,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	/** Builds the follow-up message injected when a background tool finishes. */
@@ -449,7 +452,10 @@ export class Agent {
 			toolExecution: this.toolExecution,
 			beforeToolCall: this.beforeToolCall,
 			afterToolCall: this.afterToolCall,
-			prepareNextTurn: this.prepareNextTurn ? async () => await this.prepareNextTurn?.(this.signal) : undefined,
+			// Always provide the hook (late assignment supported): a session may set
+			// prepareNextTurn after this run started, e.g. to refresh tools/system
+			// prompt changed mid-run by a tool (deferred MCP schemas, plugin install).
+			prepareNextTurn: async (loopContext) => await this.prepareNextTurn?.(loopContext, this.signal),
 			createBackgroundResultMessage: this.createBackgroundResultMessage,
 			createBackgroundPlaceholder: this.createBackgroundPlaceholder,
 			onBackgroundTaskCountChange: this.onBackgroundTaskCountChange,
