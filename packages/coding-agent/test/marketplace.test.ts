@@ -72,6 +72,38 @@ describe("marketplace manifests", () => {
 		expect(market?.plugins[0].name).toBe("bar");
 	});
 
+	it("parses the real-world Copilot index location (.github/plugin/marketplace.json) and the github source shape", () => {
+		// Mirrors github/copilot-plugins: index under .github/plugin/, entries with
+		// { source: "github", repo, path? } and metadata objects.
+		const dir = path.join(tempDir, "copilot-plugin-market");
+		writeJson(path.join(dir, ".github", "plugin", "marketplace.json"), {
+			name: "copilot-plugins",
+			metadata: { description: "GitHub Copilot plugins", version: "1.0.0" },
+			owner: { name: "GitHub" },
+			plugins: [
+				{ name: "workiq", source: { source: "github", repo: "microsoft/work-iq", path: "plugins/workiq" } },
+				{
+					name: "advanced-security",
+					source: { source: "github", repo: "github/copilot-advanced-security-plugin" },
+				},
+				{ name: "spark", source: "./plugins/spark" },
+			],
+		});
+		const market = parseMarketplaceDir(dir);
+		expect(market?.format).toBe("copilot");
+		expect(market?.supportPlatform).toEqual(["github"]);
+		expect(market?.plugins.map((p) => p.name)).toEqual(["workiq", "advanced-security", "spark"]);
+
+		const workiq = resolvePluginSource(market!.plugins[0].source, market!.root);
+		expect(workiq).toEqual({
+			kind: "git-subdir",
+			url: "https://github.com/microsoft/work-iq.git",
+			path: "plugins/workiq",
+		});
+		const advSec = resolvePluginSource(market!.plugins[1].source, market!.root);
+		expect(advSec).toEqual({ kind: "git", url: "https://github.com/github/copilot-advanced-security-plugin.git" });
+	});
+
 	it("prefers the Claude manifest when both are present", () => {
 		const dir = path.join(tempDir, "both");
 		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), { name: "from-claude", plugins: [] });

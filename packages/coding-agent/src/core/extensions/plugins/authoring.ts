@@ -104,14 +104,17 @@ export function writePluginDraft(cwd: string, draft: PluginDraft, platforms?: Ma
 	const dest = path.join(installedPluginsDir(cwd), sanitizeForDir(draft.id));
 	const files = emitForPlatforms({ ...draft, supportPlatform: targets }, targets);
 
+	// Formats share the capability tree (only marker manifests differ), so
+	// dedupe by path — later formats overwrite with identical content.
+	const byPath = new Map(files.map((f) => [f.path, f]));
 	mkdirSync(dest, { recursive: true });
-	for (const f of files) {
+	for (const f of byPath.values()) {
 		const abs = path.join(dest, f.path);
 		mkdirSync(path.dirname(abs), { recursive: true });
 		writeFileSync(abs, f.content);
 	}
 
-	return { dest, files: files.map((f) => f.path), plugin: parsePluginDir(dest) };
+	return { dest, files: [...byPath.keys()], plugin: parsePluginDir(dest) };
 }
 
 /** Whether a plugin id already exists on disk (so authoring never silently clobbers). */

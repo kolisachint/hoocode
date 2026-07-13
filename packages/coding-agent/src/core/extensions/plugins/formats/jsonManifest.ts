@@ -11,7 +11,6 @@ import * as path from "node:path";
 import type { NormalizedPlugin, PluginProvider } from "../manifest.js";
 import {
 	authoredHooksToConfig,
-	dirIfExists,
 	emitJson,
 	emitMarkdown,
 	normalizeHooks,
@@ -19,6 +18,7 @@ import {
 	parseAuthor,
 	type RawManifest,
 	readJson,
+	resolveCapabilityDir,
 	slug,
 } from "./shared.js";
 import type { EmittedFile, PluginDraft, PluginFormatAdapter, PluginFormatId } from "./types.js";
@@ -43,7 +43,7 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 		platform: opts.id, // "agents" | "claude" map 1:1 to their platform token
 		precedence: opts.precedence,
 		label: opts.label,
-		marketplaceFile: path.join(opts.manifestDir, "marketplace.json"),
+		marketplaceFiles: [path.join(opts.manifestDir, "marketplace.json")],
 
 		detectPlugin(root: string): boolean {
 			return readJson(path.join(root, manifestRelPath)) != null;
@@ -70,10 +70,10 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 				format: opts.id,
 				// Single-format view; the registry widens this to every format present.
 				supportPlatform: [opts.id],
-				skillsDir: dirIfExists(root, "skills"),
-				commandsDir: dirIfExists(root, "commands"),
-				agentsDir: dirIfExists(root, "agents"),
-				themesDir: dirIfExists(root, "themes"),
+				skillsDir: resolveCapabilityDir(root, raw.skills, "skills"),
+				commandsDir: resolveCapabilityDir(root, raw.commands, "commands"),
+				agentsDir: resolveCapabilityDir(root, raw.agents, "agents"),
+				themesDir: resolveCapabilityDir(root, raw.themes, "themes"),
 				hooks: normalizeHooks(raw.hooks, root),
 				mcpServers: normalizeMcp(raw.mcpServers, root),
 				providers,

@@ -90,8 +90,9 @@ describe("ProposePlugin (scaffold path)", () => {
 		// Default targets are Claude + Copilot.
 		expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".github", "copilot-plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".github", "chatmodes", "scout.chatmode.md"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, ".github", "plugin", "plugin.json"))).toBe(true);
+		// Copilot shares the Claude-mirror capability tree — one tree, two manifests.
+		expect(fs.existsSync(path.join(dest, "agents", "scout.md"))).toBe(true);
 
 		// Claude wins precedence; both platforms recorded.
 		const parsed = parsePluginDir(dest);

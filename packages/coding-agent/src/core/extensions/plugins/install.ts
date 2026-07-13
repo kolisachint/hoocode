@@ -12,7 +12,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -68,6 +68,10 @@ export function defaultMarketplaceRecord(): MarketplaceRecord {
  */
 export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string }> = [
 	{ name: "claude-plugins-official", url: "https://github.com/anthropics/claude-plugins-official" },
+	// The Copilot plugin directory ships both a `.github/plugin/marketplace.json`
+	// and a `.claude-plugin/marketplace.json`, so it parses with
+	// supportPlatform ["claude", "github"] — the default `github` source.
+	{ name: "copilot-plugins", url: "https://github.com/github/copilot-plugins" },
 ];
 
 /** Local cache directory for a marketplace fetched from `url` (same convention as `/plugin marketplace add`). */
@@ -293,7 +297,24 @@ export async function installAvailablePlugin(cwd: string, name: string): Promise
 		return { installed: false, message: `npm plugin sources are not supported yet (${resolved.spec}).` };
 	}
 
-	const parsed = parsePluginDir(dest);
+	let parsed = parsePluginDir(dest);
+	if (!parsed) {
+		// Manifest-less plugin dir (some marketplaces index bare capability trees,
+		// e.g. a plugin that is just a `skills/` directory): synthesize a native
+		// manifest from the marketplace entry so the standard loader can carry it.
+		const manifestDir = path.join(dest, ".agents-plugin");
+		mkdirSync(manifestDir, { recursive: true });
+		writeFileSync(
+			path.join(manifestDir, "plugin.json"),
+			`${JSON.stringify(
+				{ name: found.name, ...(found.description ? { description: found.description } : {}) },
+				null,
+				2,
+			)}\n`,
+			"utf8",
+		);
+		parsed = parsePluginDir(dest);
+	}
 	if (!parsed) {
 		rmSync(dest, { recursive: true, force: true });
 		return { installed: false, message: `Installed source for "${name}" has no recognizable plugin manifest.` };
