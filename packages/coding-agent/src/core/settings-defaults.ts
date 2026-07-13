@@ -32,7 +32,7 @@ export const DEFAULT_SETTINGS = {
 	nestedSubagentConcurrency: 2,
 	enableTodoWrite: true,
 	enablePluginTools: true,
-	deferMcpSchemas: false,
+	deferMcpSchemas: true,
 	enableWebTools: false,
 	enableBrowserTools: false,
 	enableBrowserLivePreview: false,

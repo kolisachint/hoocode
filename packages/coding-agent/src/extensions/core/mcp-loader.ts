@@ -453,7 +453,7 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 		}
 
 		// Deferral (spec §2): inject MCP tool names only and materialize each schema
-		// on demand via ResolveMcpTools. Opt-in and top-level only — a subagent that
+		// on demand via ResolveMcpTools. Default-on and top-level only — a subagent that
 		// needs MCP has this env cleared, so it eager-registers its allowlisted tools
 		// at dispatch (the dispatch ↔ schema interaction) and they are immediately callable.
 		const defer = deferMcpSchemas();
