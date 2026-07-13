@@ -26,12 +26,38 @@
   reusable recipe as a plugin with `ProposePlugin` autonomously when no
   marketplace plugin covers it.
 
+- Real-world GitHub Copilot plugin support: the Copilot adapter now reads the
+  convention established by `github/copilot-plugins` — plugin manifests at
+  `.github/plugin/plugin.json` over a Claude-mirror capability tree, marketplace
+  indices at `.github/plugin/marketplace.json`, manifest dir-path overrides
+  (`"skills": "./skills/"`), and the `{ "source": "github", "repo", "path" }`
+  source shorthand. The legacy authored layout (`.github/copilot-plugin.json` +
+  prompts/chatmodes) still parses. `github/copilot-plugins` joins the well-known
+  trusted marketplaces (searchable with `platform: "github"`).
+- Manifest-less marketplace plugins (bare capability trees, e.g.
+  copilot-plugins' `spark`) now install: a native manifest is synthesized from
+  the marketplace entry so the standard loader carries them.
+- Hooks + bundled scripts verified end to end through the install path: script
+  exec bits survive install, the `{ description, hooks }` `hooks.json` wrapper
+  parses, `${CLAUDE_PLUGIN_ROOT}` resolves to the installed root, event JSON
+  arrives on stdin, and exit-code 2 blocks the tool call.
+
 ### Changed
 
 - `deferMcpSchemas` now defaults to **on**: MCP tool schemas are deferred
   (names only in context, resolved on demand via `ResolveMcpTools`), cutting
   the context cost of MCP-heavy plugins. Set `deferMcpSchemas: false` to
   restore eager schema registration.
+- `ProposePlugin`'s Copilot output now follows the real-world convention: one
+  shared capability tree plus a `.github/plugin/plugin.json` marker manifest
+  (previously `.github/copilot-plugin.json` + `.prompt.md`/`.chatmode.md`
+  files).
+
+### Known limitations
+
+- Remote MCP servers (`{ "type": "http", "url": ... }` in a plugin's
+  `.mcp.json`, e.g. workiq) are not yet supported — the MCP loader is
+  stdio-only; such servers are skipped at plugin load.
 
 ## [0.4.118] - 2026-07-12
 
