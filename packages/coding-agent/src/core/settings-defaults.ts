@@ -9,6 +9,10 @@ export const DEFAULT_SETTINGS = {
 		reserveTokens: 16384,
 		keepRecentTokens: 20000,
 	},
+	toolOutput: {
+		maxBytes: 16 * 1024,
+		maxLines: 800,
+	},
 	branchSummary: {
 		reserveTokens: 16384,
 		skipPrompt: false,

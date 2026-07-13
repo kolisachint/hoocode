@@ -14,6 +14,11 @@ export interface CompactionSettings {
 	keepRecentTokens?: number; // default: 20000
 }
 
+export interface ToolOutputSettings {
+	maxBytes?: number; // default: 16384 (16KB) - byte cap on a single read/bash tool result before truncation
+	maxLines?: number; // default: 800 - line cap on a single read/bash tool result before truncation
+}
+
 export interface BranchSummarySettings {
 	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
 	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
@@ -102,6 +107,7 @@ export interface Settings {
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	toolOutput?: ToolOutputSettings; // caps on a single read/bash result (bounds per-turn transcript growth)
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;

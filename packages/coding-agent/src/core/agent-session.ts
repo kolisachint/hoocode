@@ -2022,6 +2022,8 @@ export class AgentSession {
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
 		const shellPath = this.settingsManager.getShellPath();
 		const browserLivePreview = this.settingsManager.getEnableBrowserLivePreview();
+		const toolMaxOutputBytes = this.settingsManager.getToolOutputMaxBytes();
+		const toolMaxOutputLines = this.settingsManager.getToolOutputMaxLines();
 		const baseToolDefinitions = this._baseToolsOverride
 			? Object.fromEntries(
 					Object.entries(this._baseToolsOverride).map(([name, tool]) => [
@@ -2030,8 +2032,13 @@ export class AgentSession {
 					]),
 				)
 			: createAllToolDefinitions(this._cwd, {
-					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					read: { autoResizeImages, maxOutputBytes: toolMaxOutputBytes, maxOutputLines: toolMaxOutputLines },
+					bash: {
+						commandPrefix: shellCommandPrefix,
+						shellPath,
+						maxOutputBytes: toolMaxOutputBytes,
+						maxOutputLines: toolMaxOutputLines,
+					},
 					browser_run: { liveView: browserLivePreview },
 				});
 

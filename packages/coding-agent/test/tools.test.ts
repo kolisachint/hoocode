@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.js";
 import { type BashOperations, createBashTool, createLocalBashOperations } from "../src/core/tools/bash.js";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.js";
+import { DEFAULT_MAX_LINES } from "../src/core/tools/truncate.js";
 import {
 	createEditTool,
 	createFindTool,
@@ -76,9 +77,11 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			expect(output).toContain("Line 1");
-			expect(output).toContain("Line 2000");
-			expect(output).not.toContain("Line 2001");
-			expect(output).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]");
+			expect(output).toContain(`Line ${DEFAULT_MAX_LINES}`);
+			expect(output).not.toContain(`Line ${DEFAULT_MAX_LINES + 1}`);
+			expect(output).toContain(
+				`[Showing lines 1-${DEFAULT_MAX_LINES} of 2500. Use offset=${DEFAULT_MAX_LINES + 1} to continue.]`,
+			);
 		});
 
 		it("should truncate when byte limit exceeded", async () => {
@@ -164,7 +167,7 @@ describe("Coding Agent Tools", () => {
 			expect(result.details?.truncation?.truncated).toBe(true);
 			expect(result.details?.truncation?.truncatedBy).toBe("lines");
 			expect(result.details?.truncation?.totalLines).toBe(2500);
-			expect(result.details?.truncation?.outputLines).toBe(2000);
+			expect(result.details?.truncation?.outputLines).toBe(DEFAULT_MAX_LINES);
 		});
 
 		it("should detect image MIME type from file magic (not extension)", async () => {
