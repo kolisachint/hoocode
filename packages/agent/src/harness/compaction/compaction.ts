@@ -128,6 +128,16 @@ export interface CompactionSettings {
 	enabled: boolean;
 	reserveTokens: number;
 	keepRecentTokens: number;
+	/**
+	 * Optional soft trigger: compact once the context exceeds this fraction of the
+	 * model's window, even when the reserveTokens rule has not yet fired. On large
+	 * windows the reserve rule only triggers near the ceiling (e.g. window − 16K),
+	 * so the transcript is carried near-full for many turns; a ratio caps that.
+	 * Only applied when set to a value in (0, 1); the reserve rule is always
+	 * evaluated and whichever fires first wins. Left unset here so the library's
+	 * default behavior is unchanged — consumers opt in via their own settings.
+	 */
+	maxContextRatio?: number;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
@@ -230,7 +240,12 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
 	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	let trigger = contextWindow - settings.reserveTokens;
+	const ratio = settings.maxContextRatio;
+	if (typeof ratio === "number" && ratio > 0 && ratio < 1) {
+		trigger = Math.min(trigger, Math.floor(ratio * contextWindow));
+	}
+	return contextTokens > trigger;
 }
 
 // ============================================================================

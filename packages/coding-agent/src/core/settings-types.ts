@@ -12,6 +12,7 @@ export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+	maxContextRatio?: number; // default: 0.75 - compact once context exceeds this fraction of the window, even before the reserveTokens rule fires (bounds transcript growth on large windows)
 }
 
 export interface ToolOutputSettings {
