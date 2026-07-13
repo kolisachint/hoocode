@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added
+
+- Remote MCP servers: the MCP loader now speaks Streamable HTTP
+  (`{ "type": "http", "url": ..., "headers": ... }`) and the legacy SSE
+  transport (`"type": "sse"`) in addition to stdio, across every config
+  source — standard `mcp.json` files, `~/.hoocode/mcp-servers/*.json`, and
+  plugin `.mcp.json` registrations in both the Claude (`mcpServers`) and
+  Copilot / VS Code (`servers`) shapes. This closes the 0.4.119 known
+  limitation: remote plugin servers (e.g. workiq from the Copilot directory,
+  or Atlassian Rovo) are connected instead of skipped. Built on the official
+  `@modelcontextprotocol/sdk` client transports; a `type: "http"` endpoint
+  that rejects streamable HTTP with a 4xx automatically falls back to the
+  legacy SSE transport.
+- MCP OAuth: remote servers that demand authorization get the full MCP auth
+  flow — RFC 9728/8414 discovery, dynamic client registration, browser-based
+  authorization code + PKCE via a loopback redirect listener, and automatic
+  token refresh — with per-server-URL state persisted under
+  `~/.hoocode/mcp-auth/` (0600). When interactive sign-in is needed the
+  session keeps starting; the server's tools connect and register as soon as
+  the browser flow completes. The headless `loadMcpTools` in
+  `@kolisachint/hoocode-agent-core` accepts the same remote entries plus
+  `McpRemoteOptions` (storage dir, browser opener, auth callbacks), and the
+  transport/provider are exported as `connectHttpMcpServer` /
+  `McpFileOAuthProvider`.
+
 ## [0.4.119] - 2026-07-13
 
 ### Added

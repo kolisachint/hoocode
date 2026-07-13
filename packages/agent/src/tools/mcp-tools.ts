@@ -1,12 +1,14 @@
 /**
  * Headless MCP tool loader: parse a standard mcp.json file (the
  * `{ "mcpServers": { ... } }` format used by Claude Desktop, VS Code, and the
- * hoocode CLI), spawn the declared stdio servers, and expose their tools as
- * AgentTool instances usable by any Agent in any process.
+ * hoocode CLI), connect the declared servers — stdio (`command`), Streamable
+ * HTTP (`{ "type": "http", "url": ... }`), or legacy SSE (`"type": "sse"`) —
+ * and expose their tools as AgentTool instances usable by any Agent in any
+ * process.
  *
- * Spawned servers are tracked per loader call and reaped on process exit so
- * they never linger as orphans. Call closeMcpTools() to terminate them
- * earlier (tests, graceful shutdown).
+ * Connections are tracked per loader call and reaped on process exit so
+ * spawned servers never linger as orphans. Call closeMcpTools() to terminate
+ * them earlier (tests, graceful shutdown).
  */
 
 import { type ChildProcess, spawn } from "node:child_process";
@@ -14,6 +16,7 @@ import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { type TObject, Type } from "typebox";
 import type { AgentTool, AgentToolResult } from "../types.js";
+import { connectHttpMcpServer, type McpRemoteOptions } from "./mcp-http-transport.js";
 
 export interface McpToolsServerConfig {
 	/** Unique server identifier used as prefix for tool names. */
@@ -138,24 +141,28 @@ function spawnMcpServer(config: McpToolsServerConfig): McpConnection {
 	};
 }
 
+async function handshake(conn: McpConnection): Promise<McpToolDef[]> {
+	await conn.rpc(
+		"initialize",
+		{
+			protocolVersion: "2024-11-05",
+			capabilities: { tools: {} },
+			clientInfo: { name: "hoocode-agent-core", version: "1.0.0" },
+		},
+		MCP_HANDSHAKE_TIMEOUT_MS,
+	);
+	// Per the MCP spec the client must acknowledge a successful initialize with
+	// the initialized notification before issuing further requests; strict
+	// servers gate tools/call on it.
+	conn.notify("notifications/initialized");
+	const toolsResult = (await conn.rpc("tools/list", {}, MCP_HANDSHAKE_TIMEOUT_MS)) as { tools?: McpToolDef[] };
+	return toolsResult.tools ?? [];
+}
+
 async function connectMcpServer(config: McpToolsServerConfig): Promise<{ conn: McpConnection; tools: McpToolDef[] }> {
 	const conn = spawnMcpServer(config);
 	try {
-		await conn.rpc(
-			"initialize",
-			{
-				protocolVersion: "2024-11-05",
-				capabilities: { tools: {} },
-				clientInfo: { name: "hoocode-agent-core", version: "1.0.0" },
-			},
-			MCP_HANDSHAKE_TIMEOUT_MS,
-		);
-		// Per the MCP spec the client must acknowledge a successful initialize with
-		// the initialized notification before issuing further requests; strict
-		// servers gate tools/call on it.
-		conn.notify("notifications/initialized");
-		const toolsResult = (await conn.rpc("tools/list", {}, MCP_HANDSHAKE_TIMEOUT_MS)) as { tools?: McpToolDef[] };
-		return { conn, tools: toolsResult.tools ?? [] };
+		return { conn, tools: await handshake(conn) };
 	} catch (error) {
 		conn.terminate();
 		throw error;
@@ -213,19 +220,57 @@ function createMcpAgentTool(serverName: string, conn: McpConnection, tool: McpTo
 	};
 }
 
+interface StandardMcpServerEntry {
+	command?: string;
+	args?: string[];
+	env?: Record<string, string>;
+	/** "stdio" (default with command), "http" (Streamable HTTP), or "sse" (legacy). */
+	type?: string;
+	/** Remote server URL for http/sse transports. */
+	url?: string;
+	/** Extra HTTP headers (e.g. Authorization) for remote transports. */
+	headers?: Record<string, string>;
+}
+
 interface StandardMcpConfig {
-	mcpServers?: Record<string, { command: string; args?: string[]; env?: Record<string, string> }>;
+	mcpServers?: Record<string, StandardMcpServerEntry>;
+}
+
+async function connectRemoteMcpServer(
+	name: string,
+	entry: StandardMcpServerEntry,
+	remoteOptions?: McpRemoteOptions,
+): Promise<{ conn: McpConnection; tools: McpToolDef[] }> {
+	const conn = connectHttpMcpServer(
+		{
+			name,
+			url: entry.url!,
+			headers: entry.headers,
+			type: entry.type === "sse" ? "sse" : "http",
+		},
+		remoteOptions,
+	);
+	try {
+		return { conn, tools: await handshake(conn) };
+	} catch (error) {
+		conn.terminate();
+		throw error;
+	}
 }
 
 /**
- * Parse a standard mcp.json file, start every declared stdio server, and
+ * Parse a standard mcp.json file, connect every declared server — stdio
+ * (`command`) or remote (`{ "type": "http" | "sse", "url": ... }`) — and
  * return their tools as AgentTool instances (named `mcp_<server>_<tool>`).
  *
  * An empty or server-less config resolves to []. A missing or malformed file,
  * or a server that fails its handshake, rejects — callers decide whether MCP
- * is optional. Spawned servers are terminated automatically on process exit.
+ * is optional. Connections are terminated automatically on process exit.
+ *
+ * `remoteOptions` customizes remote-server behavior (OAuth storage directory,
+ * browser opener, authorization timeout); see {@link McpRemoteOptions}.
  */
-export async function loadMcpTools(mcpJsonPath: string): Promise<AgentTool<any>[]> {
+export async function loadMcpTools(mcpJsonPath: string, remoteOptions?: McpRemoteOptions): Promise<AgentTool<any>[]> {
 	const raw = await readFile(mcpJsonPath, "utf-8");
 	const parsed = JSON.parse(raw) as StandardMcpConfig;
 	const servers = Object.entries(parsed.mcpServers ?? {});
@@ -234,18 +279,33 @@ export async function loadMcpTools(mcpJsonPath: string): Promise<AgentTool<any>[
 	installExitCleanup();
 	const tools: AgentTool<any>[] = [];
 	for (const [name, serverConfig] of servers) {
-		if (!serverConfig || typeof serverConfig.command !== "string") {
-			throw new Error(`${mcpJsonPath}: mcpServers["${name}"] is missing a "command"`);
+		const isRemote =
+			serverConfig &&
+			(serverConfig.type === "http" ||
+				serverConfig.type === "sse" ||
+				(typeof serverConfig.command !== "string" && typeof serverConfig.url === "string"));
+		let connected: { conn: McpConnection; tools: McpToolDef[] };
+		if (isRemote) {
+			if (typeof serverConfig.url !== "string") {
+				throw new Error(`${mcpJsonPath}: mcpServers["${name}"] has type "${serverConfig.type}" but no "url"`);
+			}
+			connected = await connectRemoteMcpServer(name, serverConfig, remoteOptions);
+		} else {
+			if (!serverConfig || typeof serverConfig.command !== "string") {
+				throw new Error(
+					`${mcpJsonPath}: mcpServers["${name}"] is missing a "command" (or a "url" for remote servers)`,
+				);
+			}
+			connected = await connectMcpServer({
+				name,
+				command: serverConfig.command,
+				args: serverConfig.args,
+				env: serverConfig.env,
+			});
 		}
-		const { conn, tools: toolDefs } = await connectMcpServer({
-			name,
-			command: serverConfig.command,
-			args: serverConfig.args,
-			env: serverConfig.env,
-		});
-		liveConnections.add(conn);
-		for (const toolDef of toolDefs) {
-			tools.push(createMcpAgentTool(name, conn, toolDef));
+		liveConnections.add(connected.conn);
+		for (const toolDef of connected.tools) {
+			tools.push(createMcpAgentTool(name, connected.conn, toolDef));
 		}
 	}
 	return tools;

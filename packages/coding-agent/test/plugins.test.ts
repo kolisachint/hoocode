@@ -457,4 +457,47 @@ describe("plugin MCP servers", () => {
 		const plugin = parsePluginDir(root);
 		expect(plugin?.mcpServers).toMatchObject({ fs: { command: "fs-server" } });
 	});
+
+	it("registers remote http/sse servers instead of skipping them", async () => {
+		writeJson(path.join(tempDir, "plugins", "remote", ".claude-plugin", "plugin.json"), { name: "remote" });
+		writeJson(path.join(tempDir, "plugins", "remote", ".mcp.json"), {
+			mcpServers: {
+				workiq: { type: "http", url: "https://mcp.example.com/mcp", headers: { authorization: "Bearer t" } },
+				legacy: { type: "sse", url: "https://sse.example.com/mcp" },
+				typeless: { url: "https://plain.example.com/mcp" },
+			},
+		});
+
+		const result = await loadPlugins(
+			[path.join(tempDir, "plugins")],
+			tempDir,
+			createEventBus(),
+			createExtensionRuntime(),
+		);
+
+		expect(result.errors).toHaveLength(0);
+		const entries = getExtensionMcpServers();
+		expect(entries).toHaveLength(1);
+		expect(entries[0].mcpServers.workiq).toEqual({
+			type: "http",
+			url: "https://mcp.example.com/mcp",
+			headers: { authorization: "Bearer t" },
+			background: undefined,
+		});
+		expect(entries[0].mcpServers.legacy).toMatchObject({ type: "sse", url: "https://sse.example.com/mcp" });
+		// No explicit type defaults to Streamable HTTP.
+		expect(entries[0].mcpServers.typeless).toMatchObject({ type: "http", url: "https://plain.example.com/mcp" });
+	});
+
+	it("still skips entries with neither command nor url", async () => {
+		writeJson(path.join(tempDir, "plugins", "broken", ".agents-plugin", "plugin.json"), {
+			name: "broken",
+			mcpServers: { bad: { args: ["--nope"] } },
+		});
+
+		await loadPlugins([path.join(tempDir, "plugins")], tempDir, createEventBus(), createExtensionRuntime());
+
+		const entries = getExtensionMcpServers();
+		expect(entries.flatMap((e) => Object.keys(e.mcpServers))).toEqual([]);
+	});
 });

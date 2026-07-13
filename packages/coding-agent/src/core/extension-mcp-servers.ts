@@ -14,9 +14,16 @@
 
 /** Standard MCP server config (Claude Desktop / `.mcp.json` shape). */
 export interface ExtensionMcpServerConfig {
-	command: string;
+	/** Executable to spawn (stdio transport). One of command/url is required. */
+	command?: string;
 	args?: string[];
 	env?: Record<string, string>;
+	/** Transport: "stdio" (default with command), "http" (Streamable HTTP), or "sse" (legacy) */
+	type?: "stdio" | "http" | "sse";
+	/** Remote server URL (http/sse transports) */
+	url?: string;
+	/** Extra HTTP headers (e.g. Authorization) for remote transports */
+	headers?: Record<string, string>;
 	background?: boolean;
 }
 
