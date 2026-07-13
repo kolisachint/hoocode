@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- Remote MCP servers: the MCP loader now speaks Streamable HTTP
+  (`{ "type": "http", "url": ..., "headers": ... }`) and the legacy SSE
+  transport (`"type": "sse"`) in addition to stdio, across every config
+  source — standard `mcp.json` files, `~/.hoocode/mcp-servers/*.json`, and
+  plugin `.mcp.json` registrations in both the Claude (`mcpServers`) and
+  Copilot / VS Code (`servers`) shapes. This closes the 0.4.119 known
+  limitation: remote plugin servers (e.g. workiq from the Copilot directory)
+  are connected instead of skipped, giving full coverage of the Copilot
+  directory's MCP plugins. The headless `loadMcpTools` in
+  `@kolisachint/hoocode-agent-core` accepts the same remote entries, and the
+  new transport is exported as `connectHttpMcpServer`.
+
 ## [0.4.119] - 2026-07-13
 
 ### Added

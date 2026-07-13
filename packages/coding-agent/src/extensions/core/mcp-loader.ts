@@ -1,7 +1,9 @@
 /**
  * MCP server loader — discovers server configs (standard mcp.json locations,
  * hoocode's per-server JSON files, plugin registrations), connects via JSON-RPC
- * 2.0 over stdio, and registers each server tool as `mcp_<server>_<tool>`.
+ * 2.0 over stdio (`command`), Streamable HTTP (`{ "type": "http", "url": ... }`),
+ * or legacy SSE (`"type": "sse"`), and registers each server tool as
+ * `mcp_<server>_<tool>`.
  *
  * Config sources (first-wins by server name):
  *   1. ~/.agents/mcp.json (user), ./.agents/mcp.json (project),
@@ -17,7 +19,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
 import type { AgentToolResult, AgentToolUpdateCallback } from "@kolisachint/hoocode-agent-core";
-import { summarizeArgs } from "@kolisachint/hoocode-agent-core";
+import { connectHttpMcpServer, summarizeArgs } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
@@ -42,21 +44,30 @@ interface McpToolDef {
 export interface McpServerConfig {
 	/** Unique server identifier used as prefix for registered tool names */
 	name: string;
-	/** Executable to spawn */
-	command: string;
+	/** Executable to spawn (stdio transport). One of command/url is required. */
+	command?: string;
 	/** Optional arguments passed to the command */
 	args?: string[];
 	/** Optional extra environment variables for the server process */
 	env?: Record<string, string>;
+	/** Transport: "stdio" (default with command), "http" (Streamable HTTP), or "sse" (legacy) */
+	type?: "stdio" | "http" | "sse";
+	/** Remote server URL (http/sse transports) */
+	url?: string;
+	/** Extra HTTP headers (e.g. Authorization) for remote transports */
+	headers?: Record<string, string>;
 	/** Run MCP tools in background by default (default: true for MCP servers) */
 	background?: boolean;
 }
 
-/** Standard MCP config format used by Claude Desktop and other tools */
+/** Standard MCP config format used by Claude Desktop, Claude Code, VS Code / Copilot */
 interface StandardMcpServerConfig {
-	command: string;
+	command?: string;
 	args?: string[];
 	env?: Record<string, string>;
+	type?: "stdio" | "http" | "sse";
+	url?: string;
+	headers?: Record<string, string>;
 	background?: boolean;
 }
 
@@ -83,7 +94,7 @@ const mcpServerConfigs = new Map<string, McpServerConfig>();
  *  themselves are left untimed since MCP tools can be long-running. */
 const MCP_HANDSHAKE_TIMEOUT_MS = 15000;
 
-function spawnMcpServer(config: McpServerConfig): McpConnection {
+function spawnMcpServer(config: McpServerConfig & { command: string }): McpConnection {
 	const proc: ChildProcess = spawn(config.command, config.args ?? [], {
 		env: { ...process.env, ...(config.env ?? {}) },
 		stdio: ["pipe", "pipe", "pipe"],
@@ -158,31 +169,63 @@ function spawnMcpServer(config: McpServerConfig): McpConnection {
 	};
 }
 
+/** Remote servers use `{ type: "http" | "sse", url }`; stdio servers use `command`. */
+function isRemoteServer(config: McpServerConfig): boolean {
+	return config.type === "http" || config.type === "sse" || (!config.command && typeof config.url === "string");
+}
+
+function openMcpConnection(config: McpServerConfig): McpConnection {
+	if (isRemoteServer(config)) {
+		if (typeof config.url !== "string") {
+			throw new Error(`MCP server "${config.name}" has type "${config.type}" but no "url"`);
+		}
+		return connectHttpMcpServer({
+			name: config.name,
+			url: config.url,
+			headers: config.headers,
+			type: config.type === "sse" ? "sse" : "http",
+		});
+	}
+	if (typeof config.command !== "string") {
+		throw new Error(`MCP server "${config.name}" needs a "command" (stdio) or a "url" (http/sse)`);
+	}
+	return spawnMcpServer(config as McpServerConfig & { command: string });
+}
+
 async function connectMcpServer(config: McpServerConfig): Promise<{ conn: McpConnection; tools: McpToolDef[] }> {
 	mcpConnections.get(config.name)?.terminate();
 
-	const conn = spawnMcpServer(config);
+	const conn = openMcpConnection(config);
 	mcpConnections.set(config.name, conn);
 
-	await conn.rpc(
-		"initialize",
-		{
-			protocolVersion: "2024-11-05",
-			capabilities: { tools: {} },
-			clientInfo: { name: "hoocode", version: "1.0.0" },
-		},
-		MCP_HANDSHAKE_TIMEOUT_MS,
-	);
+	try {
+		await conn.rpc(
+			"initialize",
+			{
+				protocolVersion: "2024-11-05",
+				capabilities: { tools: {} },
+				clientInfo: { name: "hoocode", version: "1.0.0" },
+			},
+			MCP_HANDSHAKE_TIMEOUT_MS,
+		);
 
-	// Per the MCP spec the client must acknowledge a successful initialize with the
-	// initialized notification before issuing further requests; strict servers gate
-	// tools/call on it.
-	conn.notify("notifications/initialized");
+		// Per the MCP spec the client must acknowledge a successful initialize with the
+		// initialized notification before issuing further requests; strict servers gate
+		// tools/call on it.
+		conn.notify("notifications/initialized");
 
-	const toolsResult = (await conn.rpc("tools/list", {}, MCP_HANDSHAKE_TIMEOUT_MS)) as {
-		tools?: McpToolDef[];
-	};
-	return { conn, tools: toolsResult.tools ?? [] };
+		const toolsResult = (await conn.rpc("tools/list", {}, MCP_HANDSHAKE_TIMEOUT_MS)) as {
+			tools?: McpToolDef[];
+		};
+		return { conn, tools: toolsResult.tools ?? [] };
+	} catch (error) {
+		// Don't leave a half-connected entry behind: remote transports have no
+		// process-exit event to evict them, so getOrConnectMcp would keep handing
+		// out the dead connection instead of reconnecting.
+		conn.terminate();
+		if (mcpConnections.get(config.name) === conn) mcpConnections.delete(config.name);
+		throw error;
+	}
 }
 
 /**
@@ -259,6 +302,9 @@ function parseStandardMcpConfig(config: StandardMcpConfig, _source: string): Mcp
 			command: serverConfig.command,
 			args: serverConfig.args,
 			env: serverConfig.env,
+			type: serverConfig.type,
+			url: serverConfig.url,
+			headers: serverConfig.headers,
 			background: serverConfig.background,
 		});
 	}
@@ -424,8 +470,8 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 
 				try {
 					serverConfig = JSON.parse(readFileSync(cfgPath, "utf8")) as McpServerConfig;
-					if (!serverConfig.name || !serverConfig.command) {
-						ctx.ui.notify(`MCP: config "${file}" is missing required "name" or "command"`, "warning");
+					if (!serverConfig.name || (!serverConfig.command && !serverConfig.url)) {
+						ctx.ui.notify(`MCP: config "${file}" is missing required "name" or "command"/"url"`, "warning");
 						continue;
 					}
 				} catch (err) {

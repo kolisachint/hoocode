@@ -24,6 +24,7 @@ export * from "./harness/utils/truncate.js";
 export * from "./proxy.js";
 // Headless tool bundles
 export * from "./tools/default-tools.js";
+export * from "./tools/mcp-http-transport.js";
 export * from "./tools/mcp-tools.js";
 // Types
 export * from "./types.js";
