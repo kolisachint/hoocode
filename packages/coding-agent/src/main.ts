@@ -503,6 +503,9 @@ function buildSessionOptions(
 	// Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...). Top-level agent
 	// only: these are capability-acquisition tools and must never be available to
 	// a spawned subagent child (privilege-amplification guardrail, spec §3).
+	// `enablePluginTools` is the master switch for the whole autonomous plugin
+	// system (default off) — it gates both these tools and the runtime reuse
+	// nudge (see extensions/core/prompt-reactive), so both flip together.
 	if (!isSubagentChild && settingsManager.getEnablePluginTools()) {
 		options.customTools = [
 			...(options.customTools ?? []),

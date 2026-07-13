@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added
+
+- Runtime "plugin reuse nudge": a reactive extension
+  (`extensions/core/prompt-reactive`) that watches tool output and turn text for
+  reusability cues (e.g. "active voice", "avoid repetition", "prefer JSON", an
+  explicit capability gap) and attaches a matching, plugin-facing note to the
+  next turn via the ephemeral `context` hook — instead of relying only on the
+  static plugin guidance folded into the system prompt once at session build.
+  The cue → nudge table in `prompt-reactive/policy.ts` is the single source of
+  truth; armed nudges are also surfaced to `SearchPlugins` so a reusability
+  signal reaches the plugin layer even when no tool asked for it. Conservative
+  by design: one note per turn, at most once per category per session, never
+  blocking. Wired once from hoo-core via a static import (Bun-bundle-safe) with
+  an idempotency guard so composing default extensions twice is harmless.
+
+### Changed
+
+- `enablePluginTools` is now the master switch for the **whole autonomous plugin
+  system** — the plugin lifecycle tools (SearchPlugins, InstallPlugin, …),
+  ProposePlugin, and the new runtime reuse nudge — and **defaults to off**. Set
+  it to `true` in settings.json to opt in; both the tool surface and the nudge
+  flip together.
+
 ## [0.4.124] - 2026-07-13
 
 ### Fixed

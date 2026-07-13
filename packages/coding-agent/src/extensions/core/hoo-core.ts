@@ -11,6 +11,7 @@
  *   - thinking-escalation.ts — raise thinking after tool errors, then restore
  *   - loop.ts               — /loop cron scheduling + autonomous continuation
  *   - marketplace.ts        — /plugin marketplace + install/remove
+ *   - prompt-reactive/      — runtime plugin-reuse nudge (reactive to tool/turn cues)
  *   - config.ts             — hoo-config.json types, I/O, and merge rules
  *
  * `bin/hoocode.js` loads this module's default export as the built-in
@@ -25,6 +26,7 @@ import { setupMarketplace } from "./marketplace.js";
 import { setupMcpLoader } from "./mcp-loader.js";
 import { setupMode } from "./modes.js";
 import { setupPermissionGate } from "./permission-gate.js";
+import { setupPromptReactiveNudges } from "./prompt-reactive/nudges.js";
 import { setupScaffold } from "./scaffold.js";
 import { setupThinkingEscalation } from "./thinking-escalation.js";
 
@@ -38,6 +40,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupThinkingEscalation(pi);
 	setupLoop(pi);
 	setupMarketplace(pi);
+	setupPromptReactiveNudges(pi);
 }
 
 hooCore.displayName = "hoo-core";
