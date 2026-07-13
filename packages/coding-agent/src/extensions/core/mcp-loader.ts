@@ -18,7 +18,7 @@ import { readdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { createInterface } from "node:readline";
-import type { AgentToolResult, AgentToolUpdateCallback } from "@kolisachint/hoocode-agent-core";
+import type { AgentToolResult, AgentToolUpdateCallback, McpRemoteOptions } from "@kolisachint/hoocode-agent-core";
 import { connectHttpMcpServer, summarizeArgs } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
@@ -89,6 +89,14 @@ const mcpConnections = new Map<string, McpConnection>();
  * instead of permanently failing with "not connected".
  */
 const mcpServerConfigs = new Map<string, McpServerConfig>();
+/** Remote-transport options (OAuth storage, auth callbacks) per server name. */
+const mcpRemoteOptions = new Map<string, McpRemoteOptions>();
+/**
+ * Servers with a browser authorization flow in flight. While a name is here,
+ * a failed handshake must NOT tear the connection down (that would kill the
+ * OAuth loopback listener); the auth-completion handler reconnects instead.
+ */
+const mcpAuthPending = new Set<string>();
 
 /** Timeout for the connection handshake (initialize / tools/list). Tool calls
  *  themselves are left untimed since MCP tools can be long-running. */
@@ -179,12 +187,15 @@ function openMcpConnection(config: McpServerConfig): McpConnection {
 		if (typeof config.url !== "string") {
 			throw new Error(`MCP server "${config.name}" has type "${config.type}" but no "url"`);
 		}
-		return connectHttpMcpServer({
-			name: config.name,
-			url: config.url,
-			headers: config.headers,
-			type: config.type === "sse" ? "sse" : "http",
-		});
+		return connectHttpMcpServer(
+			{
+				name: config.name,
+				url: config.url,
+				headers: config.headers,
+				type: config.type === "sse" ? "sse" : "http",
+			},
+			mcpRemoteOptions.get(config.name),
+		);
 	}
 	if (typeof config.command !== "string") {
 		throw new Error(`MCP server "${config.name}" needs a "command" (stdio) or a "url" (http/sse)`);
@@ -221,9 +232,13 @@ async function connectMcpServer(config: McpServerConfig): Promise<{ conn: McpCon
 	} catch (error) {
 		// Don't leave a half-connected entry behind: remote transports have no
 		// process-exit event to evict them, so getOrConnectMcp would keep handing
-		// out the dead connection instead of reconnecting.
-		conn.terminate();
-		if (mcpConnections.get(config.name) === conn) mcpConnections.delete(config.name);
+		// out the dead connection instead of reconnecting. Exception: a pending
+		// browser authorization — terminating would kill the OAuth loopback
+		// listener; the auth-completion handler reconnects that server itself.
+		if (!mcpAuthPending.has(config.name)) {
+			conn.terminate();
+			if (mcpConnections.get(config.name) === conn) mcpConnections.delete(config.name);
+		}
 		throw error;
 	}
 }
@@ -509,10 +524,49 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 		const deferredByName = new Map<string, { serverConfig: McpServerConfig; tool: McpToolDef }>();
 		const resolvedNames = new Set<string>();
 
+		// Remote servers get OAuth support: tokens persist under
+		// ~/.hoocode/mcp-auth, and when a server demands interactive (browser)
+		// authorization the handshake fails fast while the flow keeps running in
+		// the background — on completion the server is reconnected and its tools
+		// registered (eagerly, since the deferred catalog is already sealed).
+		const buildRemoteOptions = (serverConfig: McpServerConfig): McpRemoteOptions => ({
+			authStorageDir: join(HOOCODE_DIR, "mcp-auth"),
+			onAuthRequired: (authorizationUrl, completed) => {
+				mcpAuthPending.add(serverConfig.name);
+				ctx.ui.notify(
+					`MCP: "${serverConfig.name}" requires authorization — complete the sign-in opened in your browser` +
+						(authorizationUrl ? `: ${authorizationUrl}` : ""),
+					"warning",
+				);
+				completed
+					.then(async () => {
+						mcpAuthPending.delete(serverConfig.name);
+						try {
+							const { tools } = await connectMcpServer(serverConfig);
+							for (const tool of tools) pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
+							ctx.ui.notify(
+								`MCP: connected "${serverConfig.name}" after authorization (${tools.length} tool${tools.length === 1 ? "" : "s"})`,
+								"info",
+							);
+						} catch (err) {
+							ctx.ui.notify(
+								`MCP: failed to connect "${serverConfig.name}" after authorization: ${String(err)}`,
+								"error",
+							);
+						}
+					})
+					.catch((err: unknown) => {
+						mcpAuthPending.delete(serverConfig.name);
+						ctx.ui.notify(`MCP: authorization for "${serverConfig.name}" failed: ${String(err)}`, "error");
+					});
+			},
+		});
+
 		// 3. Connect to all servers and register (or defer) tools
 		for (const serverConfig of allServerConfigs) {
 			// Retain the config so a tool call can lazily reconnect a dropped server.
 			mcpServerConfigs.set(serverConfig.name, serverConfig);
+			mcpRemoteOptions.set(serverConfig.name, buildRemoteOptions(serverConfig));
 			try {
 				const { tools } = await connectMcpServer(serverConfig);
 
@@ -533,7 +587,14 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 					"info",
 				);
 			} catch (err) {
-				ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(err)}`, "error");
+				if (mcpAuthPending.has(serverConfig.name)) {
+					ctx.ui.notify(
+						`MCP: "${serverConfig.name}" is waiting for browser authorization; tools will register once it completes`,
+						"info",
+					);
+				} else {
+					ctx.ui.notify(`MCP: failed to connect "${serverConfig.name}": ${String(err)}`, "error");
+				}
 			}
 		}
 

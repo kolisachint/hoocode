@@ -16,7 +16,7 @@ import { readFile } from "node:fs/promises";
 import { createInterface } from "node:readline";
 import { type TObject, Type } from "typebox";
 import type { AgentTool, AgentToolResult } from "../types.js";
-import { connectHttpMcpServer } from "./mcp-http-transport.js";
+import { connectHttpMcpServer, type McpRemoteOptions } from "./mcp-http-transport.js";
 
 export interface McpToolsServerConfig {
 	/** Unique server identifier used as prefix for tool names. */
@@ -239,13 +239,17 @@ interface StandardMcpConfig {
 async function connectRemoteMcpServer(
 	name: string,
 	entry: StandardMcpServerEntry,
+	remoteOptions?: McpRemoteOptions,
 ): Promise<{ conn: McpConnection; tools: McpToolDef[] }> {
-	const conn = connectHttpMcpServer({
-		name,
-		url: entry.url!,
-		headers: entry.headers,
-		type: entry.type === "sse" ? "sse" : "http",
-	});
+	const conn = connectHttpMcpServer(
+		{
+			name,
+			url: entry.url!,
+			headers: entry.headers,
+			type: entry.type === "sse" ? "sse" : "http",
+		},
+		remoteOptions,
+	);
 	try {
 		return { conn, tools: await handshake(conn) };
 	} catch (error) {
@@ -262,8 +266,11 @@ async function connectRemoteMcpServer(
  * An empty or server-less config resolves to []. A missing or malformed file,
  * or a server that fails its handshake, rejects — callers decide whether MCP
  * is optional. Connections are terminated automatically on process exit.
+ *
+ * `remoteOptions` customizes remote-server behavior (OAuth storage directory,
+ * browser opener, authorization timeout); see {@link McpRemoteOptions}.
  */
-export async function loadMcpTools(mcpJsonPath: string): Promise<AgentTool<any>[]> {
+export async function loadMcpTools(mcpJsonPath: string, remoteOptions?: McpRemoteOptions): Promise<AgentTool<any>[]> {
 	const raw = await readFile(mcpJsonPath, "utf-8");
 	const parsed = JSON.parse(raw) as StandardMcpConfig;
 	const servers = Object.entries(parsed.mcpServers ?? {});
@@ -282,7 +289,7 @@ export async function loadMcpTools(mcpJsonPath: string): Promise<AgentTool<any>[
 			if (typeof serverConfig.url !== "string") {
 				throw new Error(`${mcpJsonPath}: mcpServers["${name}"] has type "${serverConfig.type}" but no "url"`);
 			}
-			connected = await connectRemoteMcpServer(name, serverConfig);
+			connected = await connectRemoteMcpServer(name, serverConfig, remoteOptions);
 		} else {
 			if (!serverConfig || typeof serverConfig.command !== "string") {
 				throw new Error(
