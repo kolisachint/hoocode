@@ -59,6 +59,11 @@ import {
 } from "./core/tools/subagent.js";
 import { createTodoWriteToolDefinition } from "./core/tools/todo.js";
 import { WARM_SUBAGENTS_ENV } from "./core/warm-subagent-pool-instance.js";
+// Static import (not dynamic) so `bun build --compile` statically reaches
+// hoo-core from the compiled entry chain (src/bun/cli.ts -> src/cli.ts ->
+// main.ts) and bundles it into the standalone binary. The node CLI reaches it
+// via this same path through DEFAULT_EXTENSION_FACTORIES below.
+import hooCore from "./extensions/core/hoo-core.js";
 import { runMigrations, showDeprecationWarnings } from "./migrations.js";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.js";
 import { ExtensionSelectorComponent } from "./modes/interactive/components/extension-selector.js";
@@ -551,6 +556,16 @@ export interface MainOptions {
 	extensionFactories?: ExtensionFactory[];
 }
 
+/**
+ * Built-in extension factories loaded when the caller supplies none. This is
+ * the single source of truth for the app's built-ins (hoo-core: /loop, /plugin,
+ * /mode, /cost, scaffold commands, the MCP loader + remote-MCP/OAuth flow).
+ * Both entry points — the node CLI (bin/hoocode.js) and the compiled binary
+ * (src/cli.ts) — call main() without factories and inherit this default.
+ * Downstream embedders that pass their own extensionFactories override it.
+ */
+const DEFAULT_EXTENSION_FACTORIES: ExtensionFactory[] = [hooCore];
+
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.HOOCODE_OFFLINE);
@@ -674,9 +689,12 @@ export async function main(args: string[], options?: MainOptions) {
 						{ internal: true },
 					),
 				];
+	// `??` (not `[...a, ...b]`) so an explicit list — from bin/hoocode.js or a
+	// downstream embedder — fully replaces the default and hoo-core is never
+	// registered twice.
 	const allExtensionFactories: ExtensionFactory[] = [
 		...cliResourcePathFactories,
-		...(options?.extensionFactories ?? []),
+		...(options?.extensionFactories ?? DEFAULT_EXTENSION_FACTORIES),
 	];
 	const authStorage = AuthStorage.create();
 	// A spawned subagent (run with a task id) is a single-shot, non-interactive
