@@ -250,6 +250,44 @@ first and the legacy `.hoocode/plugins/` second. `npm:` sources are recognized b
 not yet installed (deferred). Version/dependency resolution and update/pin are
 future work.
 
+### 2.7 Shipped: single-turn capability loop (search → install → use, live)
+
+The model-facing lifecycle tools close the loop **within one turn**:
+
+1. `SearchPlugins` queries all registered marketplaces. Curated **well-known
+   marketplaces** (`WELL_KNOWN_MARKETPLACES` in
+   `core/extensions/plugins/install.ts`, currently the official
+   `anthropics/claude-plugins-official` directory, 250+ plugins) are cloned
+   lazily into `.agents/marketplace-cache/` on first search — trusted out of the
+   box (shipping an entry is a maintainer-level trust decision), never
+   auto-updated, offline degrades gracefully.
+2. `InstallPlugin` installs from a registered marketplace, then calls
+   `AgentSession.activatePlugin(dest)` (exposed to tools as
+   `ctx.activatePlugin`): passive capabilities — skills, slash commands,
+   subagents, themes — register in the **live** session via
+   `ResourceLoader.extendResources()` plus a system-prompt rebuild.
+3. The rebuilt context reaches the model **mid-run**: `AgentSession` marks its
+   runtime context dirty and serves the agent loop's `prepareNextTurn` hook, so
+   the very next provider request in the same run carries the new system prompt
+   and tool set. (This also makes `ResolveMcpTools`-resolved deferred MCP
+   schemas callable in the same turn — previously the loop context was frozen
+   at run start.)
+4. Executable capabilities (hooks, MCP servers, providers) cannot be wired into
+   a streaming run; when a plugin bundles them, an automatic full reload runs
+   once the session goes idle (end of the current turn) — still autonomous.
+   `UninstallPlugin` and `ProposePlugin` use the same machinery
+   (`ctx.requestReloadWhenIdle`, live activation of authored plugins).
+
+MCP tool schemas are **deferred by default** (`deferMcpSchemas: true`): names
+only in context, full schema materialized on demand via `ResolveMcpTools`.
+
+End-to-end coverage: `test/plugin-e2e-official.test.ts` clones the real
+official marketplace, installs `skill-creator`, asserts the skill is in the
+live system prompt and in the `prepareNextTurn` refresh, reads the skill body
+(the "use" act), then uninstalls. `packages/agent`'s
+`test/prepare-next-turn-refresh.test.ts` proves the mid-run context swap at the
+loop level.
+
 ---
 
 ## File map

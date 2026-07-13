@@ -117,8 +117,13 @@ export interface PluginFormatAdapter {
 	readonly precedence: number;
 	/** Short human label for messages and scaffolding summaries. */
 	readonly label: string;
-	/** Location of this format's marketplace index file, relative to a marketplace root (POSIX). */
-	readonly marketplaceFile: string;
+	/**
+	 * Candidate locations of this format's marketplace index file, relative to a
+	 * marketplace root (POSIX), in precedence order. Formats with more than one
+	 * real-world convention (Copilot uses both `.github/plugin/marketplace.json`
+	 * and `.github/marketplace.json`) list every location they accept.
+	 */
+	readonly marketplaceFiles: readonly string[];
 
 	/** True if `root` carries this format's plugin manifest. */
 	detectPlugin(root: string): boolean;

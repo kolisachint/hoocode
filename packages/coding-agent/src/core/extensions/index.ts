@@ -20,6 +20,8 @@ export type {
 } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {
+	// Live plugin activation
+	ActivatedCapability,
 	AfterProviderResponseEvent,
 	AgentEndEvent,
 	AgentStartEvent,
@@ -99,6 +101,7 @@ export type {
 	MessageUpdateEvent,
 	ModelSelectEvent,
 	ModelSelectSource,
+	PluginActivationResult,
 	// Provider Registration
 	ProviderConfig,
 	ProviderModelConfig,

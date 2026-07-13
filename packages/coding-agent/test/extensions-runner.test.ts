@@ -78,6 +78,8 @@ describe("ExtensionRunner", () => {
 		getContextUsage: () => undefined,
 		compact: () => {},
 		getSystemPrompt: () => "",
+		activatePlugin: () => ({ activated: false, message: "not available in tests" }),
+		requestReloadWhenIdle: () => {},
 	};
 
 	describe("shortcut conflicts", () => {

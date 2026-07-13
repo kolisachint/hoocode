@@ -2,6 +2,63 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Single-turn capability loop**: `InstallPlugin` and `ProposePlugin` now
+  activate the plugin in the live session — skills, slash commands, and
+  subagents are usable on the model's very next request, in the same turn, with
+  no `/reload`. Plugins bundling executable capabilities (hooks, MCP servers)
+  trigger an automatic reload when the turn ends. `UninstallPlugin` schedules
+  the same idle reload so cleanup is autonomous too.
+- Mid-run context refresh: tool or system-prompt changes made while a run is
+  streaming (deferred MCP schema resolution via `ResolveMcpTools`, live plugin
+  activation) now reach the next provider request within the same run, via the
+  agent loop's `prepareNextTurn` hook. Previously the loop's context was frozen
+  at run start, so `ResolveMcpTools`-resolved tools were not callable until the
+  next user prompt.
+- Well-known marketplaces: the official Claude plugins directory
+  (`anthropics/claude-plugins-official`, 250+ plugins) is registered as a
+  curated, trusted marketplace out of the box. Its index is cloned lazily into
+  `.agents/marketplace-cache/` on first `SearchPlugins` call (offline degrades
+  gracefully) and is never auto-updated.
+- Reusability sensing: system-prompt guidance now nudges the model to
+  `SearchPlugins` before hand-rolling a missing capability, and to author a
+  reusable recipe as a plugin with `ProposePlugin` autonomously when no
+  marketplace plugin covers it.
+
+- Real-world GitHub Copilot plugin support: the Copilot adapter now reads the
+  convention established by `github/copilot-plugins` — plugin manifests at
+  `.github/plugin/plugin.json` over a Claude-mirror capability tree, marketplace
+  indices at `.github/plugin/marketplace.json`, manifest dir-path overrides
+  (`"skills": "./skills/"`), and the `{ "source": "github", "repo", "path" }`
+  source shorthand. The legacy authored layout (`.github/copilot-plugin.json` +
+  prompts/chatmodes) still parses. `github/copilot-plugins` joins the well-known
+  trusted marketplaces (searchable with `platform: "github"`).
+- Manifest-less marketplace plugins (bare capability trees, e.g.
+  copilot-plugins' `spark`) now install: a native manifest is synthesized from
+  the marketplace entry so the standard loader carries them.
+- Hooks + bundled scripts verified end to end through the install path: script
+  exec bits survive install, the `{ description, hooks }` `hooks.json` wrapper
+  parses, `${CLAUDE_PLUGIN_ROOT}` resolves to the installed root, event JSON
+  arrives on stdin, and exit-code 2 blocks the tool call.
+
+### Changed
+
+- `deferMcpSchemas` now defaults to **on**: MCP tool schemas are deferred
+  (names only in context, resolved on demand via `ResolveMcpTools`), cutting
+  the context cost of MCP-heavy plugins. Set `deferMcpSchemas: false` to
+  restore eager schema registration.
+- `ProposePlugin`'s Copilot output now follows the real-world convention: one
+  shared capability tree plus a `.github/plugin/plugin.json` marker manifest
+  (previously `.github/copilot-plugin.json` + `.prompt.md`/`.chatmode.md`
+  files).
+
+### Known limitations
+
+- Remote MCP servers (`{ "type": "http", "url": ... }` in a plugin's
+  `.mcp.json`, e.g. workiq) are not yet supported — the MCP loader is
+  stdio-only; such servers are skipped at plugin load.
+
 ## [0.4.118] - 2026-07-12
 
 ## [0.4.117] - 2026-07-12

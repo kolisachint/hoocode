@@ -331,6 +331,29 @@ export interface CompactOptions {
 	onError?: (error: Error) => void;
 }
 
+/** A capability surfaced by a live plugin activation. */
+export interface ActivatedCapability {
+	name: string;
+	description?: string;
+}
+
+/**
+ * Result of activating a plugin in the live session (no reload).
+ * See AgentSession.activatePlugin.
+ */
+export type PluginActivationResult =
+	| { activated: false; message: string }
+	| {
+			activated: true;
+			pluginId: string;
+			skills: ActivatedCapability[];
+			commands: ActivatedCapability[];
+			agents: ActivatedCapability[];
+			/** True when hooks/MCP servers/providers were found and a full reload was scheduled for idle. */
+			pendingReloadForExecutables: boolean;
+			message: string;
+	  };
+
 /**
  * Context passed to extension event handlers.
  */
@@ -363,6 +386,15 @@ export interface ExtensionContext {
 	compact(options?: CompactOptions): void;
 	/** Get the current effective system prompt. */
 	getSystemPrompt(): string;
+	/**
+	 * Activate a just-installed/authored plugin in the LIVE session. Passive
+	 * capabilities (skills, commands, subagents, themes) become usable on the
+	 * model's next request — mid-turn included; executable capabilities (hooks,
+	 * MCP servers) trigger an automatic reload once the session is idle.
+	 */
+	activatePlugin(pluginDir: string): PluginActivationResult;
+	/** Schedule a full reload for when the session next goes idle (immediate when already idle). */
+	requestReloadWhenIdle(): void;
 }
 
 /**
@@ -1571,6 +1603,8 @@ export interface ExtensionContextActions {
 	getContextUsage: () => ContextUsage | undefined;
 	compact: (options?: CompactOptions) => void;
 	getSystemPrompt: () => string;
+	activatePlugin: (pluginDir: string) => PluginActivationResult;
+	requestReloadWhenIdle: () => void;
 }
 
 /**

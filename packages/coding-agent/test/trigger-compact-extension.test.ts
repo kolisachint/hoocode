@@ -18,6 +18,8 @@ function createContext(tokens: number | null, compact = vi.fn()): ExtensionConte
 		getContextUsage: () => ({ tokens, contextWindow: 200_000, percent: tokens === null ? null : tokens / 2000 }),
 		compact,
 		getSystemPrompt: () => "",
+		activatePlugin: () => ({ activated: false, message: "not available in tests" }),
+		requestReloadWhenIdle: () => {},
 	};
 }
 

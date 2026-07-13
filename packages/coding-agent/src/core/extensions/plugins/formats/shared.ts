@@ -12,12 +12,17 @@ import * as path from "node:path";
 import type { PluginHooksConfig } from "../manifest.js";
 import type { AuthoredHook } from "./types.js";
 
-/** Raw manifest shape accepted by the `plugin.json`-style formats (agents/claude). */
+/** Raw manifest shape accepted by the `plugin.json`-style formats (agents/claude/copilot). */
 export interface RawManifest {
 	name?: string;
 	version?: string;
 	description?: string;
 	author?: string | { name?: string };
+	/** Optional capability-dir override(s): a path (or list of paths) relative to the plugin root, e.g. `"skills": "./skills/"`. */
+	skills?: unknown;
+	commands?: unknown;
+	agents?: unknown;
+	themes?: unknown;
 	hooks?: PluginHooksConfig | { hooks?: PluginHooksConfig };
 	mcpServers?: Record<string, unknown>;
 	/** Native-only. */
@@ -35,6 +40,21 @@ export function readJson<T>(file: string): T | null {
 export function dirIfExists(root: string, name: string): string | undefined {
 	const p = path.join(root, name);
 	return fs.existsSync(p) && fs.statSync(p).isDirectory() ? p : undefined;
+}
+
+/**
+ * Resolve a capability directory: an explicit manifest override — a path (or
+ * list of paths, first existing wins) relative to the plugin root, e.g.
+ * `"skills": "./skills/"` — beats the conventional directory.
+ */
+export function resolveCapabilityDir(root: string, override: unknown, conventional: string): string | undefined {
+	const candidates = Array.isArray(override) ? override : [override];
+	for (const c of candidates) {
+		if (typeof c !== "string" || !c.trim()) continue;
+		const p = path.resolve(root, c.trim());
+		if (fs.existsSync(p) && fs.statSync(p).isDirectory()) return p;
+	}
+	return dirIfExists(root, conventional);
 }
 
 /** Coerce an author field (string or `{ name }`) to a plain string. */

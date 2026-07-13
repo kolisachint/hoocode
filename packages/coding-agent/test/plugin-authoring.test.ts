@@ -12,6 +12,7 @@ import {
 /** ExtensionContext stub. `hasUI` + a scripted confirm answer drive the executable path. */
 function makeCtx(cwd: string, opts: { hasUI?: boolean; confirm?: boolean } = {}) {
 	const notifications: string[] = [];
+	const activations: string[] = [];
 	const ctx = {
 		cwd,
 		hasUI: opts.hasUI ?? false,
@@ -19,8 +20,21 @@ function makeCtx(cwd: string, opts: { hasUI?: boolean; confirm?: boolean } = {})
 			notify: (msg: string) => notifications.push(msg),
 			confirm: async () => opts.confirm ?? false,
 		},
+		activatePlugin: (dir: string) => {
+			activations.push(dir);
+			return {
+				activated: true,
+				pluginId: "stub",
+				skills: [],
+				commands: [],
+				agents: [],
+				pendingReloadForExecutables: false,
+				message: `activated ${dir}`,
+			};
+		},
+		requestReloadWhenIdle: () => {},
 	} as never;
-	return { ctx, notifications };
+	return { ctx, notifications, activations };
 }
 
 describe("allowlist classification", () => {
@@ -76,8 +90,9 @@ describe("ProposePlugin (scaffold path)", () => {
 		// Default targets are Claude + Copilot.
 		expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".github", "copilot-plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".github", "chatmodes", "scout.chatmode.md"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, ".github", "plugin", "plugin.json"))).toBe(true);
+		// Copilot shares the Claude-mirror capability tree — one tree, two manifests.
+		expect(fs.existsSync(path.join(dest, "agents", "scout.md"))).toBe(true);
 
 		// Claude wins precedence; both platforms recorded.
 		const parsed = parsePluginDir(dest);

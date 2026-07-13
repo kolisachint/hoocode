@@ -1134,6 +1134,8 @@ export class InteractiveMode {
 				})();
 			},
 			getSystemPrompt: () => this.session.systemPrompt,
+			activatePlugin: (pluginDir) => this.session.activatePlugin(pluginDir),
+			requestReloadWhenIdle: () => this.session.requestReloadWhenIdle(),
 		});
 
 		// Set up the extension shortcut handler on the default editor

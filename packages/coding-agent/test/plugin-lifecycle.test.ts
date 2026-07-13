@@ -11,8 +11,10 @@ import {
 	isPluginInstalled,
 	listAvailablePlugins,
 	listInstalledPlugins,
+	marketplaceCacheDir,
 	readMarketplaceRecords,
 	uninstallPlugin,
+	WELL_KNOWN_MARKETPLACES,
 } from "../src/core/extensions/plugins/install.js";
 import { parseMarketplaceDir, resolvePluginSource } from "../src/core/extensions/plugins/marketplace.js";
 import {
@@ -31,12 +33,40 @@ function writeJson(file: string, data: unknown): void {
 /** Minimal ExtensionContext stub sufficient for the plugin tools. */
 function makeCtx(cwd: string) {
 	const notifications: string[] = [];
+	const activations: string[] = [];
+	const reloadRequests: string[] = [];
 	const ctx = {
 		cwd,
 		hasUI: false,
 		ui: { notify: (msg: string) => notifications.push(msg) },
+		activatePlugin: (dir: string) => {
+			activations.push(dir);
+			return {
+				activated: true,
+				pluginId: "stub",
+				skills: [],
+				commands: [],
+				agents: [],
+				pendingReloadForExecutables: false,
+				message: `activated ${dir}`,
+			};
+		},
+		requestReloadWhenIdle: () => {
+			reloadRequests.push("reload");
+		},
 	} as never;
-	return { ctx, notifications };
+	return { ctx, notifications, activations, reloadRequests };
+}
+
+/**
+ * Keep tool tests hermetic: pre-create an EMPTY cache dir for every well-known
+ * marketplace so SearchPlugins' lazy fetch no-ops (no network) and the empty
+ * dir parses to no manifest (skipped from results).
+ */
+function stubWellKnownMarketplaces(cwd: string): void {
+	for (const wk of WELL_KNOWN_MARKETPLACES) {
+		fs.mkdirSync(marketplaceCacheDir(cwd, wk.url), { recursive: true });
+	}
 }
 
 /** Seed a local marketplace with a single native-format plugin and register it. */
@@ -207,6 +237,7 @@ describe("plugin lifecycle tools", () => {
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-lifecycle-tools-"));
 		seedLocalMarketplace(cwd);
+		stubWellKnownMarketplaces(cwd);
 	});
 
 	afterEach(() => {

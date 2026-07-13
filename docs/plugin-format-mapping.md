@@ -2,10 +2,10 @@
 
 Status: **reference**. This document is the single source of truth for how hoocode
 supports plugins authored for **Claude Code** (`.claude-plugin/`) and **GitHub /
-Copilot** (`.github/marketplace.json`) alongside hoocode's **native** format
-(`.agents-plugin/`), and where each thing is **packaged, installed, stored, and
-loaded**. It exists so that both humans and agents can reason about the layout
-without re-reading the loader.
+Copilot** (`.github/plugin/`, with `.github/marketplace.json` as a legacy index
+location) alongside hoocode's **native** format (`.agents-plugin/`), and where
+each thing is **packaged, installed, stored, and loaded**. It exists so that both
+humans and agents can reason about the layout without re-reading the loader.
 
 Companion design doc: [`loop-and-plugin-system.md`](./loop-and-plugin-system.md)
 (what shipped and what is deferred). This doc focuses on the **cross-vendor
@@ -43,15 +43,21 @@ It is easy to conflate these. They are separate layers.
 
 | Layer | What it is | Formats hoocode accepts |
 |---|---|---|
-| **Plugin manifest** | Describes **one** capability bundle (a single plugin directory). | `.agents-plugin/plugin.json` (native), `.claude-plugin/plugin.json` (Claude) |
-| **Marketplace index** | Lists **many** installable plugins in a repo/dir. | `.agents-plugin/marketplace.json` (native), `.claude-plugin/marketplace.json` (Claude), `.github/marketplace.json` (GitHub/Copilot) |
+| **Plugin manifest** | Describes **one** capability bundle (a single plugin directory). | `.agents-plugin/plugin.json` (native), `.claude-plugin/plugin.json` (Claude), `.github/plugin/plugin.json` (Copilot; legacy `.github/copilot-plugin.json` still read) |
+| **Marketplace index** | Lists **many** installable plugins in a repo/dir. | `.agents-plugin/marketplace.json` (native), `.claude-plugin/marketplace.json` (Claude), `.github/plugin/marketplace.json` (Copilot; legacy `.github/marketplace.json` still read) |
 
-**Key discrepancy to remember:** there is **no `.github/plugin.json`**. GitHub /
-Copilot participates **only at the marketplace-index level**. A plugin *listed in*
-a `.github/marketplace.json` is still shipped as an `.agents-plugin/` or
-`.claude-plugin/` plugin directory (or a git URL / `npm:` spec pointing at one).
-So "GitHub plugin" = *a plugin discovered through a GitHub-style marketplace
-index*, never *a plugin whose manifest lives under `.github/`*.
+**Real-world Copilot convention** (established by
+[github/copilot-plugins](https://github.com/github/copilot-plugins) and the
+plugins it indexes, e.g. microsoft/work-iq): the manifest lives at
+`.github/plugin/plugin.json` and the **capability tree mirrors the Claude
+layout** (top-level `skills/`, `commands/`, `agents/`, `hooks/hooks.json`,
+`.mcp.json`). Manifests may carry dir-path overrides (`"skills": "./skills/"`),
+which hoocode honors. Marketplace entries may use the shorthand source
+`{ "source": "github", "repo": "owner/name", "path": "subdir" }`, which hoocode
+normalizes to the equivalent git / git-subdir source. Plugins in the wild often
+ship *both* `.claude-plugin/` and `.github/plugin/` manifests over one shared
+capability tree — hoocode's authored output follows the same pattern (one tree,
+one marker manifest per platform).
 
 ---
 
@@ -118,7 +124,7 @@ The `format` field is the precedence **winner**; no plugin lists are merged.
 |---|---|---|---|---|
 | `.agents-plugin/marketplace.json` | `"agents"` | `agents` | native | preferred; the `.agents` surface |
 | `.claude-plugin/marketplace.json` | `"claude"` | `claude` | Claude Code | |
-| `.github/marketplace.json` | `"copilot"` | `github` | GitHub / Copilot-style git index | **index only — never a plugin manifest** |
+| `.github/plugin/marketplace.json` (or legacy `.github/marketplace.json`) | `"copilot"` | `github` | GitHub / Copilot plugin directory index | plugins may also carry a `.github/plugin/plugin.json` manifest |
 
 ### `supportPlatform` — conflict is recorded, not hidden
 
@@ -238,7 +244,7 @@ live in the session — **loaded means ready to use**, no extra step.
 | # | Discrepancy | Resolution in hoocode |
 |---|---|---|
 | 1 | Claude has `.claude-plugin/`; hoocode wants a native home | Native `.agents-plugin/plugin.json` is a strict superset; **native wins** when both present |
-| 2 | GitHub/Copilot only defines a **marketplace index** (`.github/marketplace.json`), not a plugin manifest | Supported at the index level only; listed plugins still ship as `.agents-plugin`/`.claude-plugin` dirs or git/npm sources |
+| 2 | GitHub/Copilot plugins ship a `.github/plugin/plugin.json` manifest over a Claude-mirror capability tree (often alongside a `.claude-plugin/` manifest); some indexed plugins are bare capability trees with **no manifest at all** | Copilot manifests parse natively (dir overrides honored); manifest-less installs get a synthesized `.agents-plugin/plugin.json` from the marketplace entry |
 | 3 | Claude marketplace had no native equivalent | Added native `.agents-plugin/marketplace.json` (preferred over Claude/Copilot) |
 | 4 | Claude uses `${CLAUDE_PLUGIN_ROOT}` | Both `${CLAUDE_PLUGIN_ROOT}` and `${AGENTS_PLUGIN_ROOT}` are substituted/exported |
 | 5 | Installs historically hardcoded `.hoocode/plugins/` | Installs now default to `.agents/plugins/`; `.hoocode/plugins/` still discovered + removable |

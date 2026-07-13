@@ -1,6 +1,8 @@
 # Plugin System: discovery, lifecycle, lazy loading, and capability authoring
 
-**Status:** design spec / implementation handoff
+**Status:** implemented (see `docs/loop-and-plugin-system.md` §2.7 for what
+shipped: lifecycle tools, authoring, deferred MCP schemas — default on — plus
+single-turn live activation and the curated well-known marketplace list)
 **Scope:** `packages/coding-agent` plugin + agent subsystem
 
 ## Goal

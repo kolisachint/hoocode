@@ -37,6 +37,8 @@ function resolveMcpServers(
 	for (const [name, raw] of Object.entries(mcpServers)) {
 		if (!raw || typeof raw !== "object") continue;
 		const cfg = raw as ExtensionMcpServerConfig;
+		// Remote servers ({ type: "http", url } — no command) are not supported by
+		// the stdio-only MCP loader yet; they are skipped here. Future work.
 		if (typeof cfg.command !== "string") continue;
 		out[name] = {
 			command: substituteRoot(cfg.command, root),

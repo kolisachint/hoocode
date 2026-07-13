@@ -37,6 +37,7 @@ import type {
 	MessageEndEvent,
 	MessageEndEventResult,
 	MessageRenderer,
+	PluginActivationResult,
 	ProviderConfig,
 	RegisteredCommand,
 	RegisteredTool,
@@ -241,6 +242,11 @@ export class ExtensionRunner {
 	private getContextUsageFn: () => ContextUsage | undefined = () => undefined;
 	private compactFn: (options?: CompactOptions) => void = () => {};
 	private getSystemPromptFn: () => string = () => "";
+	private activatePluginFn: (pluginDir: string) => PluginActivationResult = () => ({
+		activated: false,
+		message: "Live plugin activation is not available in this mode.",
+	});
+	private requestReloadWhenIdleFn: () => void = () => {};
 	private newSessionHandler: NewSessionHandler = async () => ({ cancelled: false });
 	private forkHandler: ForkHandler = async () => ({ cancelled: false });
 	private navigateTreeHandler: NavigateTreeHandler = async () => ({ cancelled: false });
@@ -300,6 +306,8 @@ export class ExtensionRunner {
 		this.getContextUsageFn = contextActions.getContextUsage;
 		this.compactFn = contextActions.compact;
 		this.getSystemPromptFn = contextActions.getSystemPrompt;
+		this.activatePluginFn = contextActions.activatePlugin;
+		this.requestReloadWhenIdleFn = contextActions.requestReloadWhenIdle;
 
 		// Flush provider registrations queued during extension loading
 		for (const { name, config, extensionPath } of this.runtime.pendingProviderRegistrations) {
@@ -632,6 +640,14 @@ export class ExtensionRunner {
 			getSystemPrompt: () => {
 				runner.assertActive();
 				return runner.getSystemPromptFn();
+			},
+			activatePlugin: (pluginDir) => {
+				runner.assertActive();
+				return runner.activatePluginFn(pluginDir);
+			},
+			requestReloadWhenIdle: () => {
+				runner.assertActive();
+				runner.requestReloadWhenIdleFn();
 			},
 		};
 	}

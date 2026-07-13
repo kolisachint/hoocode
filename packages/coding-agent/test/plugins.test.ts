@@ -165,8 +165,11 @@ describe("plugin format registry", () => {
 		expect(both.some((p) => p.includes(".github"))).toBe(true);
 
 		// Defaults to the draft's own supportPlatform when no platforms passed.
+		// Copilot's capability tree mirrors the Claude layout, so only the marker
+		// manifest is .github-specific.
 		const fromDraft = emitForPlatforms({ ...draft, supportPlatform: ["github"] }).map((f) => f.path);
-		expect(fromDraft.every((p) => p.includes(".github"))).toBe(true);
+		expect(fromDraft).toContain(path.join(".github", "plugin", "plugin.json"));
+		expect(fromDraft.some((p) => p.includes(".claude-plugin") || p.includes(".agents-plugin"))).toBe(false);
 	});
 });
 
@@ -181,7 +184,37 @@ describe("copilot (.github) plugin format", () => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	});
 
-	it("parses a Copilot plugin and maps prompts/chatmodes/mcp/hooks", () => {
+	it("parses a real-world Copilot plugin (.github/plugin/plugin.json + Claude-mirror layout)", () => {
+		// Mirrors microsoft/work-iq plugins/workiq: manifest under .github/plugin/,
+		// a `skills` path override in the manifest, and a top-level .mcp.json.
+		const root = path.join(tempDir, "workiq-like");
+		writeJson(path.join(root, ".github", "plugin", "plugin.json"), {
+			name: "workiq-like",
+			version: "2.0.0",
+			description: "real-world copilot layout",
+			skills: "./skills/",
+		});
+		fs.mkdirSync(path.join(root, "skills", "workiq"), { recursive: true });
+		fs.writeFileSync(path.join(root, "skills", "workiq", "SKILL.md"), "---\nname: workiq\n---\n\nUse WorkIQ.\n");
+		writeJson(path.join(root, ".mcp.json"), { mcpServers: { svc: { command: "svc-bin" } } });
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.format).toBe("copilot");
+		expect(plugin?.id).toBe("workiq-like");
+		expect(plugin?.supportPlatform).toEqual(["github"]);
+		expect(plugin?.skillsDir).toBe(path.join(root, "skills"));
+		expect(plugin?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
+	});
+
+	it("honors manifest dir overrides in plugin.json-style formats", () => {
+		const root = path.join(tempDir, "override");
+		writeJson(path.join(root, ".claude-plugin", "plugin.json"), { name: "override", skills: "./my-skills" });
+		fs.mkdirSync(path.join(root, "my-skills", "s"), { recursive: true });
+		fs.writeFileSync(path.join(root, "my-skills", "s", "SKILL.md"), "---\nname: s\n---\n\nBody.\n");
+		expect(parsePluginDir(root)?.skillsDir).toBe(path.join(root, "my-skills"));
+	});
+
+	it("parses a legacy-authored Copilot plugin (copilot-plugin.json + prompts/chatmodes)", () => {
 		const root = path.join(tempDir, "cop");
 		writeJson(path.join(root, ".github", "copilot-plugin.json"), {
 			name: "cop",
@@ -219,14 +252,17 @@ describe("copilot (.github) plugin format", () => {
 		const root = path.join(tempDir, "rt");
 		writeEmitted(root, getFormat("copilot")!.emit(draft));
 
-		expect(fs.existsSync(path.join(root, ".github", "prompts", "greet.prompt.md"))).toBe(true);
-		expect(fs.existsSync(path.join(root, ".github", "chatmodes", "scout.chatmode.md"))).toBe(true);
+		// Real-world convention: manifest under .github/plugin/, capability tree
+		// mirrors the Claude layout (see github/copilot-plugins).
+		expect(fs.existsSync(path.join(root, ".github", "plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(root, "commands", "greet.md"))).toBe(true);
+		expect(fs.existsSync(path.join(root, "agents", "scout.md"))).toBe(true);
 
 		const parsed = parsePluginDir(root);
 		expect(parsed?.format).toBe("copilot");
 		expect(parsed?.id).toBe("authored");
-		expect(parsed?.commandsDir).toBe(path.join(root, ".github", "prompts"));
-		expect(parsed?.agentsDir).toBe(path.join(root, ".github", "chatmodes"));
+		expect(parsed?.commandsDir).toBe(path.join(root, "commands"));
+		expect(parsed?.agentsDir).toBe(path.join(root, "agents"));
 		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin", args: ["--port", "1"] } });
 	});
 
@@ -247,9 +283,10 @@ describe("copilot (.github) plugin format", () => {
 		expect(claudeFiles).toContain(path.join("skills", "helper", "SKILL.md"));
 		expect(claudeFiles).toContain(path.join("agents", "agent1.md"));
 
-		expect(copilotFiles).toContain(path.join(".github", "copilot-plugin.json"));
-		expect(copilotFiles).toContain(path.join(".github", "prompts", "helper.prompt.md"));
-		expect(copilotFiles).toContain(path.join(".github", "chatmodes", "agent1.chatmode.md"));
+		expect(copilotFiles).toContain(path.join(".github", "plugin", "plugin.json"));
+		// Same capability tree as Claude — only the marker manifest differs.
+		expect(copilotFiles).toContain(path.join("skills", "helper", "SKILL.md"));
+		expect(copilotFiles).toContain(path.join("agents", "agent1.md"));
 	});
 });
 

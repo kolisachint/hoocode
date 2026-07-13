@@ -12,7 +12,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -59,6 +59,48 @@ export function defaultMarketplaceRecord(): MarketplaceRecord {
 }
 
 /**
+ * Curated well-known marketplaces, trusted out of the box. Shipping an entry
+ * here is a maintainer-level trust decision (the human half of the "adding a
+ * marketplace is the human trust boundary" rule) — keep this list short and
+ * high-trust. Indices are cloned lazily into the marketplace cache on first
+ * search and never auto-updated afterwards (plugin sources inside the official
+ * index are sha-pinned).
+ */
+export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string }> = [
+	{ name: "claude-plugins-official", url: "https://github.com/anthropics/claude-plugins-official" },
+	// The Copilot plugin directory ships both a `.github/plugin/marketplace.json`
+	// and a `.claude-plugin/marketplace.json`, so it parses with
+	// supportPlatform ["claude", "github"] — the default `github` source.
+	{ name: "copilot-plugins", url: "https://github.com/github/copilot-plugins" },
+];
+
+/** Local cache directory for a marketplace fetched from `url` (same convention as `/plugin marketplace add`). */
+export function marketplaceCacheDir(cwd: string, url: string): string {
+	return path.join(cwd, ".agents", "marketplace-cache", sanitizeForDir(url));
+}
+
+/**
+ * Clone any well-known marketplace index that is not in the local cache yet.
+ * No-op (and no network) when every index is already cached. Returns one error
+ * string per marketplace that could not be fetched (offline is non-fatal —
+ * search degrades to the marketplaces already available).
+ */
+export async function ensureWellKnownMarketplaces(cwd: string): Promise<string[]> {
+	const errors: string[] = [];
+	for (const wk of WELL_KNOWN_MARKETPLACES) {
+		const dir = marketplaceCacheDir(cwd, wk.url);
+		if (existsSync(dir)) continue;
+		mkdirSync(path.dirname(dir), { recursive: true });
+		const res = await cloneGitRepo(wk.url, dir);
+		if (res.code !== 0) {
+			rmSync(dir, { recursive: true, force: true });
+			errors.push(`${wk.name}: ${(res.stderr || res.stdout).trim()}`);
+		}
+	}
+	return errors;
+}
+
+/**
  * All marketplace records in effect: the bundled default first (curated,
  * trusted), then user-added ones from `.agents/` (falling back to legacy
  * `.hoocode/`). Deduplicated by directory.
@@ -67,6 +109,15 @@ export function readMarketplaceRecords(cwd: string): MarketplaceRecord[] {
 	const records: MarketplaceRecord[] = [];
 	const def = defaultMarketplaceRecord();
 	if (existsSync(def.dir)) records.push(def);
+
+	// Well-known marketplaces participate once their index is cached locally
+	// (see ensureWellKnownMarketplaces; SearchPlugins fetches lazily).
+	for (const wk of WELL_KNOWN_MARKETPLACES) {
+		const dir = marketplaceCacheDir(cwd, wk.url);
+		if (existsSync(dir) && !records.some((x) => x.dir === dir)) {
+			records.push({ location: wk.url, dir });
+		}
+	}
 
 	const primary = readMarketplaceStore(marketplaceStorePath(cwd));
 	const user =
@@ -213,7 +264,8 @@ export interface InstallOutcome {
  * Install an available plugin by name into `.agents/plugins`. Copies local
  * sources; clones git sources. Transparent + reversible by construction — the
  * plugin lands in a named directory and {@link uninstallPlugin} removes it.
- * Active after the next reload.
+ * Callers activate the result (live activation via AgentSession.activatePlugin,
+ * or a reload).
  */
 export async function installAvailablePlugin(cwd: string, name: string): Promise<InstallOutcome> {
 	const found = findAvailablePlugin(cwd, name);
@@ -245,7 +297,24 @@ export async function installAvailablePlugin(cwd: string, name: string): Promise
 		return { installed: false, message: `npm plugin sources are not supported yet (${resolved.spec}).` };
 	}
 
-	const parsed = parsePluginDir(dest);
+	let parsed = parsePluginDir(dest);
+	if (!parsed) {
+		// Manifest-less plugin dir (some marketplaces index bare capability trees,
+		// e.g. a plugin that is just a `skills/` directory): synthesize a native
+		// manifest from the marketplace entry so the standard loader can carry it.
+		const manifestDir = path.join(dest, ".agents-plugin");
+		mkdirSync(manifestDir, { recursive: true });
+		writeFileSync(
+			path.join(manifestDir, "plugin.json"),
+			`${JSON.stringify(
+				{ name: found.name, ...(found.description ? { description: found.description } : {}) },
+				null,
+				2,
+			)}\n`,
+			"utf8",
+		);
+		parsed = parsePluginDir(dest);
+	}
 	if (!parsed) {
 		rmSync(dest, { recursive: true, force: true });
 		return { installed: false, message: `Installed source for "${name}" has no recognizable plugin manifest.` };
@@ -257,7 +326,7 @@ export async function installAvailablePlugin(cwd: string, name: string): Promise
 		message:
 			`Installed "${name}" from marketplace "${found.marketplaceName}" ` +
 			`(${parsed.supportPlatform.join(", ")}) to ${path.relative(cwd, dest) || dest}. ` +
-			`Active after the next reload; remove it with UninstallPlugin.`,
+			`Remove it with UninstallPlugin.`,
 	};
 }
 
@@ -275,5 +344,5 @@ export function uninstallPlugin(cwd: string, name: string): UninstallOutcome {
 	const present = candidates.filter((p) => existsSync(p));
 	if (present.length === 0) return { removed: false, message: `Plugin "${name}" is not installed.` };
 	for (const p of present) rmSync(p, { recursive: true, force: true });
-	return { removed: true, message: `Removed "${name}". Effective after the next reload.` };
+	return { removed: true, message: `Removed "${name}".` };
 }

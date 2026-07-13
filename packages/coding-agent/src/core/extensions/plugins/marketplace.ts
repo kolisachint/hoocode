@@ -124,22 +124,24 @@ function normalizeSource(source: unknown): MarketplacePluginSource | null {
 	const obj = source as Record<string, unknown>;
 	const src = obj.source;
 	const url = obj.url;
+	const pin = {
+		...(typeof obj.ref === "string" ? { ref: obj.ref } : {}),
+		...(typeof obj.sha === "string" ? { sha: obj.sha } : {}),
+	};
 	if (src === "url" && typeof url === "string") {
-		return {
-			source: "url",
-			url,
-			...(typeof obj.ref === "string" ? { ref: obj.ref } : {}),
-			...(typeof obj.sha === "string" ? { sha: obj.sha } : {}),
-		};
+		return { source: "url", url, ...pin };
 	}
 	if (src === "git-subdir" && typeof url === "string" && typeof obj.path === "string") {
-		return {
-			source: "git-subdir",
-			url,
-			path: obj.path,
-			...(typeof obj.ref === "string" ? { ref: obj.ref } : {}),
-			...(typeof obj.sha === "string" ? { sha: obj.sha } : {}),
-		};
+		return { source: "git-subdir", url, path: obj.path, ...pin };
+	}
+	// Copilot marketplace shorthand: { source: "github", repo: "owner/name", path? }
+	// (used by github/copilot-plugins). Normalize to the equivalent git source.
+	if (src === "github" && typeof obj.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(obj.repo)) {
+		const repoUrl = `https://github.com/${obj.repo}.git`;
+		if (typeof obj.path === "string" && obj.path.length > 0) {
+			return { source: "git-subdir", url: repoUrl, path: obj.path, ...pin };
+		}
+		return { source: "url", url: repoUrl, ...pin };
 	}
 	return null;
 }
@@ -170,8 +172,13 @@ export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
 	// precedence-ordered (native > Claude > Copilot), so `present` inherits it.
 	const present: Array<{ format: NormalizedMarketplace["format"]; path: string }> = [];
 	for (const fmt of PLUGIN_FORMATS) {
-		const p = path.join(dir, fmt.marketplaceFile);
-		if (fs.existsSync(p)) present.push({ format: fmt.id, path: p });
+		for (const candidate of fmt.marketplaceFiles) {
+			const p = path.join(dir, candidate);
+			if (fs.existsSync(p)) {
+				present.push({ format: fmt.id, path: p });
+				break; // first candidate wins within a format
+			}
+		}
 	}
 	if (present.length === 0) return null;
 
