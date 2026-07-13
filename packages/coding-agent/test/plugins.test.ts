@@ -458,6 +458,34 @@ describe("plugin MCP servers", () => {
 		expect(plugin?.mcpServers).toMatchObject({ fs: { command: "fs-server" } });
 	});
 
+	it("resolves a Claude-form string `mcpServers` path into the registry", async () => {
+		// Claude Code manifests may set `"mcpServers": "./.mcp.json"` (a path, not an
+		// inline object). The path must be resolved and its servers registered.
+		const root = path.join(tempDir, "plugins", "atlassian");
+		writeJson(path.join(root, ".claude-plugin", "plugin.json"), {
+			name: "atlassian",
+			mcpServers: "./.mcp.json",
+		});
+		writeJson(path.join(root, ".mcp.json"), { mcpServers: { atlassian: { command: "mcp-atlassian" } } });
+
+		// Parses correctly via parsePluginDir.
+		const plugin = parsePluginDir(root);
+		expect(plugin?.mcpServers).toMatchObject({ atlassian: { command: "mcp-atlassian" } });
+
+		// And flows through loadPlugins into the extension MCP registry.
+		const result = await loadPlugins(
+			[path.join(tempDir, "plugins")],
+			tempDir,
+			createEventBus(),
+			createExtensionRuntime(),
+		);
+		expect(result.errors).toHaveLength(0);
+		const entries = getExtensionMcpServers();
+		expect(entries).toHaveLength(1);
+		expect(entries[0].source).toBe("atlassian");
+		expect(entries[0].mcpServers.atlassian).toMatchObject({ command: "mcp-atlassian" });
+	});
+
 	it("registers remote http/sse servers instead of skipping them", async () => {
 		writeJson(path.join(tempDir, "plugins", "remote", ".claude-plugin", "plugin.json"), { name: "remote" });
 		writeJson(path.join(tempDir, "plugins", "remote", ".mcp.json"), {

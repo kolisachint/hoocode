@@ -24,7 +24,8 @@ export interface RawManifest {
 	agents?: unknown;
 	themes?: unknown;
 	hooks?: PluginHooksConfig | { hooks?: PluginHooksConfig };
-	mcpServers?: Record<string, unknown>;
+	/** Inline server map, or a path (Claude Code form, e.g. `"./.mcp.json"`) relative to the plugin root. */
+	mcpServers?: Record<string, unknown> | string;
 	/** Native-only. */
 	providers?: unknown;
 }
@@ -84,21 +85,38 @@ export function normalizeHooks(raw: RawManifest["hooks"], root: string): PluginH
 	return config && Object.keys(config).length > 0 ? config : undefined;
 }
 
-/** Read inline `mcpServers`, falling back to a `.mcp.json` file at `root`. */
+/**
+ * Resolve inline `mcpServers`, a manifest-supplied file path, or a `.mcp.json`
+ * file at `root`.
+ *
+ * `raw` may be:
+ *  - a string path (Claude Code form: `"mcpServers": "./.mcp.json"`), resolved
+ *    relative to the plugin root and read as a server file;
+ *  - an inline server map (returned as-is);
+ *  - undefined, falling back to `<root>/<mcpFileName>`.
+ *
+ * Server files use `{ mcpServers }` (Claude/native) or `{ servers }` (Code/Copilot);
+ * both keys are accepted.
+ */
 export function normalizeMcp(
-	raw: Record<string, unknown> | undefined,
+	raw: Record<string, unknown> | string | undefined,
 	root: string,
 	mcpFileName = ".mcp.json",
 ): Record<string, unknown> | undefined {
-	if (raw && Object.keys(raw).length > 0) return raw;
-	const mcpFile = path.join(root, mcpFileName);
-	if (fs.existsSync(mcpFile)) {
-		// VS Code / Copilot use `{ servers }`; Claude/native use `{ mcpServers }`. Accept both.
-		const fileRaw = readJson<{ mcpServers?: Record<string, unknown>; servers?: Record<string, unknown> }>(mcpFile);
-		const servers = fileRaw?.mcpServers ?? fileRaw?.servers;
-		if (servers && Object.keys(servers).length > 0) return servers;
+	// Claude Code form: a path to a server file, relative to the plugin root.
+	if (typeof raw === "string") {
+		return raw.trim() ? readMcpFile(path.resolve(root, raw.trim())) : undefined;
 	}
-	return undefined;
+	if (raw && Object.keys(raw).length > 0) return raw;
+	return readMcpFile(path.join(root, mcpFileName));
+}
+
+/** Read a server file, accepting both `{ mcpServers }` and `{ servers }` keys. */
+function readMcpFile(mcpFile: string): Record<string, unknown> | undefined {
+	if (!fs.existsSync(mcpFile)) return undefined;
+	const fileRaw = readJson<{ mcpServers?: Record<string, unknown>; servers?: Record<string, unknown> }>(mcpFile);
+	const servers = fileRaw?.mcpServers ?? fileRaw?.servers;
+	return servers && Object.keys(servers).length > 0 ? servers : undefined;
 }
 
 // ============================================================================
