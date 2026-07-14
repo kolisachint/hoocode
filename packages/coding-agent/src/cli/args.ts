@@ -52,6 +52,8 @@ export interface Args {
 	enableBrowserLivePreview?: boolean;
 	/** Enable the document tools — DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (off by default). */
 	enableFileTools?: boolean;
+	/** Enable the autonomous plugin system — plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin (off by default). */
+	enablePluginTools?: boolean;
 	/** Path to an explicit PEM CA bundle to trust additively for hoocode's own TLS traffic. */
 	caCert?: string;
 	/** Trust the OS/system CA store additively (opt-in) for hoocode's own TLS traffic. */
@@ -168,6 +170,8 @@ export function parseArgs(args: string[]): Args {
 			result.enableBrowserLivePreview = true;
 		} else if (arg === "--enable-filetools") {
 			result.enableFileTools = true;
+		} else if (arg === "--enable-plugintools") {
+			result.enablePluginTools = true;
 		} else if (arg === "--ca-cert" && i + 1 < args.length) {
 			result.caCert = args[++i];
 		} else if (arg === "--use-system-ca") {
@@ -349,6 +353,10 @@ ${chalk.bold("Options:")}
                                   DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for
                                   XML, drawio, docx/xlsx/pptx, PDF via the filetools binary
                                   Can also be enabled via the "enableFileTools" setting
+  --enable-plugintools           Enable the autonomous plugin system (off by default)
+                                  Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and
+                                  ProposePlugin, plus the runtime plugin-reuse nudge
+                                  Can also be enabled via the "enablePluginTools" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
