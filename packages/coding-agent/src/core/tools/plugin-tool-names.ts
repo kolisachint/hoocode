@@ -17,9 +17,15 @@ export const SUGGEST_PLUGIN_INSTALL_TOOL_NAME = "SuggestPluginInstall";
 export const INSTALL_PLUGIN_TOOL_NAME = "InstallPlugin";
 export const UNINSTALL_PLUGIN_TOOL_NAME = "UninstallPlugin";
 
-// Authoring tools (spec §3).
+// Authoring tools (spec §3). A single risk-gated authoring tool (ProposePlugin)
+// computes risk from *content* — passive skills/commands/read-only subagents run
+// autonomously; executable content (hooks, MCP servers, mutating subagents)
+// auto-triggers a human-confirmation gate in the same tool. UpdatePlugin merges
+// inline-authored content into an existing local plugin (no remote fetch, so the
+// supply-chain vector that keeps marketplace UpdatePlugin out of the model's
+// hands is structurally absent — see propose-plugin.ts).
 export const PROPOSE_PLUGIN_TOOL_NAME = "ProposePlugin";
-export const PROPOSE_EXECUTABLE_PLUGIN_TOOL_NAME = "ProposeExecutablePlugin";
+export const UPDATE_PLUGIN_TOOL_NAME = "UpdatePlugin";
 
 /** Every capability-acquisition tool — the guardrail set stripped from authored allowlists. */
 export const PLUGIN_SYSTEM_TOOL_NAMES: readonly string[] = [
@@ -29,5 +35,5 @@ export const PLUGIN_SYSTEM_TOOL_NAMES: readonly string[] = [
 	INSTALL_PLUGIN_TOOL_NAME,
 	UNINSTALL_PLUGIN_TOOL_NAME,
 	PROPOSE_PLUGIN_TOOL_NAME,
-	PROPOSE_EXECUTABLE_PLUGIN_TOOL_NAME,
+	UPDATE_PLUGIN_TOOL_NAME,
 ];

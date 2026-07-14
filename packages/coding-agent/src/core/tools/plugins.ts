@@ -123,7 +123,14 @@ export function createSearchPluginsToolDefinition(): ToolDefinition {
 
 // ── ListPlugins ─────────────────────────────────────────────────────────────
 
-const listParams = Type.Object({}, { additionalProperties: false });
+const listParams = Type.Object(
+	{
+		id: Type.Optional(
+			Type.String({ description: "Show only the plugin with this id (exact match). Omit to list all." }),
+		),
+	},
+	{ additionalProperties: false },
+);
 
 export interface ListPluginsDetails {
 	count: number;
@@ -134,14 +141,16 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 		name: LIST_PLUGINS_TOOL_NAME,
 		label: LIST_PLUGINS_TOOL_NAME,
 		description:
-			"List the plugins currently installed (id, version, format, supported platforms, and bundled capabilities). Read-only — check this before installing a duplicate.",
-		promptSnippet: "List installed plugins (read-only).",
+			"List the plugins currently installed (id, version, format, supported platforms, and bundled capabilities). Read-only — check this before installing a duplicate, or pass `id` to look up a single plugin.",
+		promptSnippet: "List installed plugins, or look one up by id (read-only).",
 		parameters: listParams,
 		executionMode: "parallel",
-		async execute(_id, _params, _signal, _onUpdate, ctx) {
-			const installed = listInstalledPlugins(ctx.cwd);
+		async execute(_id, params: Static<typeof listParams>, _signal, _onUpdate, ctx) {
+			const all = listInstalledPlugins(ctx.cwd);
+			const installed = params.id ? all.filter((p) => p.id === params.id) : all;
 			if (installed.length === 0) {
-				return { content: [{ type: "text" as const, text: "No plugins installed." }], details: { count: 0 } };
+				const text = params.id ? `No installed plugin with id "${params.id}".` : "No plugins installed.";
+				return { content: [{ type: "text" as const, text }], details: { count: 0 } };
 			}
 			const lines = installed.map((p) => {
 				const caps = [

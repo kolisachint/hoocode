@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { classifyAllowlist } from "../src/core/extensions/plugins/authoring.js";
 import { parsePluginDir } from "../src/core/extensions/plugins/manifest.js";
 import {
-	createProposeExecutablePluginToolDefinition,
 	createProposePluginToolDefinition,
+	createUpdatePluginToolDefinition,
 } from "../src/core/tools/propose-plugin.js";
 
 /** ExtensionContext stub. `hasUI` + a scripted confirm answer drive the executable path. */
@@ -115,8 +115,8 @@ describe("ProposePlugin (scaffold path)", () => {
 		expect(fs.existsSync(path.join(dest, ".github"))).toBe(false);
 	});
 
-	it("rejects a mutating subagent allowlist (redirects to the executable path)", async () => {
-		const { ctx } = makeCtx(cwd);
+	it("routes a mutating subagent through the confirm gate (fails closed with no UI)", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: false });
 		const tool = createProposePluginToolDefinition();
 		const res = await tool.execute(
 			"1",
@@ -126,8 +126,29 @@ describe("ProposePlugin (scaffold path)", () => {
 			ctx,
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
-		expect((res.content[0] as { text: string }).text).toContain("ProposeExecutablePlugin");
+		expect((res.content[0] as { text: string }).text).toContain("human confirmation");
 		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "bad"))).toBe(false);
+	});
+
+	it("authors a mixed skill + mutating subagent in one call once confirmed", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
+		const tool = createProposePluginToolDefinition();
+		const res = await tool.execute(
+			"1",
+			{
+				id: "mixed",
+				skills: [{ name: "assist", body: "Assist." }],
+				subagents: [{ name: "worker", tools: "read, bash", body: "You act." }],
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect((res.details as { authored: boolean; confirmed: boolean }).authored).toBe(true);
+		expect((res.details as { confirmed: boolean }).confirmed).toBe(true);
+		const dest = path.join(cwd, ".agents", "plugins", "mixed");
+		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, "agents", "worker.md"))).toBe(true);
 	});
 
 	it("rejects a subagent that carries plugin-system tools (privilege guardrail)", async () => {
@@ -146,7 +167,7 @@ describe("ProposePlugin (scaffold path)", () => {
 	});
 });
 
-describe("ProposeExecutablePlugin (risk-bearing path)", () => {
+describe("ProposePlugin (executable path — computed risk gate)", () => {
 	let cwd: string;
 
 	beforeEach(() => {
@@ -159,7 +180,7 @@ describe("ProposeExecutablePlugin (risk-bearing path)", () => {
 
 	it("blocks a hook plugin until confirmation (no UI = fail closed)", async () => {
 		const { ctx } = makeCtx(cwd, { hasUI: false });
-		const tool = createProposeExecutablePluginToolDefinition();
+		const tool = createProposePluginToolDefinition();
 		const res = await tool.execute(
 			"1",
 			{ id: "hooky", hooks: [{ event: "PreToolUse", matcher: "Bash", command: "echo hi" }] },
@@ -173,7 +194,7 @@ describe("ProposeExecutablePlugin (risk-bearing path)", () => {
 
 	it("does not author when the human declines", async () => {
 		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: false });
-		const tool = createProposeExecutablePluginToolDefinition();
+		const tool = createProposePluginToolDefinition();
 		const res = await tool.execute(
 			"1",
 			{ id: "mcpy", mcpServers: [{ name: "svc", command: "svc-bin" }] },
@@ -187,7 +208,7 @@ describe("ProposeExecutablePlugin (risk-bearing path)", () => {
 
 	it("authors a hook + MCP plugin once confirmed, and round-trips", async () => {
 		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
-		const tool = createProposeExecutablePluginToolDefinition();
+		const tool = createProposePluginToolDefinition();
 		const res = await tool.execute(
 			"1",
 			{
@@ -207,9 +228,23 @@ describe("ProposeExecutablePlugin (risk-bearing path)", () => {
 		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
 	});
 
+	it("does NOT prompt for a purely passive plugin (no confirm even with UI off)", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: false });
+		const tool = createProposePluginToolDefinition();
+		const res = await tool.execute(
+			"1",
+			{ id: "passive", commands: [{ name: "go", body: "Go." }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect((res.details as { authored: boolean; confirmed?: boolean }).authored).toBe(true);
+		expect((res.details as { confirmed?: boolean }).confirmed).toBe(false);
+	});
+
 	it("still rejects plugin-system tools on a subagent, even with confirmation", async () => {
 		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
-		const tool = createProposeExecutablePluginToolDefinition();
+		const tool = createProposePluginToolDefinition();
 		const res = await tool.execute(
 			"1",
 			{ id: "sneaky", subagents: [{ name: "w", tools: "bash, ProposePlugin", body: "You act." }] },
@@ -219,5 +254,126 @@ describe("ProposeExecutablePlugin (risk-bearing path)", () => {
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
 		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "sneaky"))).toBe(false);
+	});
+
+	it("refuses to author over an existing plugin (points at UpdatePlugin)", async () => {
+		const { ctx } = makeCtx(cwd);
+		const tool = createProposePluginToolDefinition();
+		await tool.execute("1", { id: "dup", commands: [{ name: "go", body: "Go." }] }, undefined, undefined, ctx);
+		const res = await tool.execute(
+			"2",
+			{ id: "dup", commands: [{ name: "stop", body: "Stop." }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect((res.details as { authored: boolean }).authored).toBe(false);
+		expect((res.content[0] as { text: string }).text).toContain("UpdatePlugin");
+	});
+});
+
+describe("UpdatePlugin (merge into an existing local plugin)", () => {
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-update-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it("rejects updating a plugin that does not exist", async () => {
+		const { ctx } = makeCtx(cwd);
+		const update = createUpdatePluginToolDefinition();
+		const res = await update.execute(
+			"1",
+			{ id: "ghost", skills: [{ name: "s", body: "b" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect((res.details as { authored: boolean }).authored).toBe(false);
+		expect((res.content[0] as { text: string }).text).toContain("ProposePlugin");
+	});
+
+	it("adds a skill to an existing plugin while preserving the original capabilities", async () => {
+		const { ctx } = makeCtx(cwd);
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{ id: "grow", skills: [{ name: "first", body: "First." }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const update = createUpdatePluginToolDefinition();
+		const res = await update.execute(
+			"2",
+			{ id: "grow", skills: [{ name: "second", body: "Second." }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect((res.details as { authored: boolean }).authored).toBe(true);
+
+		const dest = path.join(cwd, ".agents", "plugins", "grow");
+		// Both the original and the added skill are present.
+		expect(fs.existsSync(path.join(dest, "skills", "first", "SKILL.md"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, "skills", "second", "SKILL.md"))).toBe(true);
+	});
+
+	it("unions an added hook with existing hooks (confirmed), preserving the original", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{ id: "hookgrow", hooks: [{ event: "PreToolUse", matcher: "Bash", command: "echo a" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const update = createUpdatePluginToolDefinition();
+		await update.execute(
+			"2",
+			{ id: "hookgrow", hooks: [{ event: "PostToolUse", command: "echo b" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "hookgrow"));
+		expect(parsed?.hooks?.PreToolUse).toHaveLength(1);
+		expect(parsed?.hooks?.PostToolUse).toHaveLength(1);
+	});
+
+	it("adding a passive skill to an executable plugin does not re-prompt (fails open with no UI)", async () => {
+		// Seed an executable plugin with confirmation.
+		const seed = makeCtx(cwd, { hasUI: true, confirm: true });
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{ id: "exec", mcpServers: [{ name: "svc", command: "svc-bin" }] },
+			undefined,
+			undefined,
+			seed.ctx,
+		);
+
+		// Now add a passive skill with NO UI — must still succeed (delta is passive).
+		const noUi = makeCtx(cwd, { hasUI: false });
+		const update = createUpdatePluginToolDefinition();
+		const res = await update.execute(
+			"2",
+			{ id: "exec", skills: [{ name: "note", body: "Note." }] },
+			undefined,
+			undefined,
+			noUi.ctx,
+		);
+		expect((res.details as { authored: boolean }).authored).toBe(true);
+		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "exec"));
+		// The original MCP server survived the merge.
+		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
 	});
 });

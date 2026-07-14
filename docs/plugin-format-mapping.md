@@ -150,7 +150,7 @@ hoocode --support-platform claude,copilot     # both (comma or repeated flag)
 Tokens are the aliases above (`copilot`/`gh` → `github`, `native` → `agents`);
 unknown tokens warn and are skipped. The targets apply to:
 
-- **Authored plugins** (`ProposePlugin` / `ProposeExecutablePlugin`): replaces
+- **Authored plugins** (`ProposePlugin` / `UpdatePlugin`): replaces
   the default `claude + github` target set. An explicit `platforms` tool
   parameter still wins over the session targets.
 - **Workspace scaffolds** (`/new-skill`, `/new-agent`, `/new-command`): instead
