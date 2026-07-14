@@ -5,6 +5,7 @@ import {
 	convertToLlm,
 	createBackgroundPlaceholderText,
 	createBackgroundTaskMessage,
+	estimateContextTokens,
 	type ThinkingLevel,
 } from "@kolisachint/hoocode-agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@kolisachint/hoocode-ai";
@@ -352,6 +353,25 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
+	// Token-budget pressure for context GC: the fraction of the active model's
+	// context window in use, measured from the real usage on the outgoing
+	// message copy. It latches to a high-water mark so that our own evictions —
+	// which shrink the next turn's measured usage — cannot oscillate a message
+	// in and out of the transcript and thrash the provider's prefix cache. A
+	// large drop (compaction, fork) resets the latch to the new, smaller size.
+	let budgetPressureHighWater = 0;
+	const getBudgetPressure = (contextMessages: AgentMessage[]): number => {
+		const contextWindow = agent.state.model?.contextWindow ?? 0;
+		if (contextWindow <= 0) return 0;
+		const gauge = Math.min(estimateContextTokens(contextMessages).tokens / contextWindow, 1);
+		if (gauge > budgetPressureHighWater) {
+			budgetPressureHighWater = gauge; // rising usage — track it
+		} else if (gauge < budgetPressureHighWater - 0.15) {
+			budgetPressureHighWater = gauge; // context collapsed — reset the latch
+		}
+		return budgetPressureHighWater;
+	};
+
 	agent = new Agent({
 		initialState: {
 			systemPrompt: "",
@@ -408,7 +428,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		transformContext: async (messages) => {
 			const runner = extensionRunnerRef.current;
 			const transformed = runner ? await runner.emitContext(messages) : messages;
-			return settingsManager.getContextGcEnabled() ? evictSupersededReads(transformed, { cwd }) : transformed;
+			if (!settingsManager.getContextGcEnabled()) return transformed;
+			return evictSupersededReads(transformed, { cwd, budgetPressure: getBudgetPressure(transformed) });
 		},
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),

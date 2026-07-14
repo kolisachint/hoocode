@@ -20,8 +20,14 @@
  *
  * Deliberately conservative: paths are matched after `path.resolve`, so two
  * different files never collide, and any ambiguity results in NOT evicting.
- * Bash-output eviction is intentionally left out for now — that output is not
- * always recoverable, so it needs its own safeguards.
+ *
+ * Bash-output eviction is additionally gated on token-budget pressure
+ * (`options.budgetPressure`, the fraction of the model's context window in
+ * use). At 0 pressure — the default — behaviour is identical to read-only GC.
+ * Bash output is not always recoverable, so it carries its own safeguards: a
+ * command that looks side-effecting is never elided (re-running it, as the
+ * stub invites, could repeat a destructive action), and below 80% pressure
+ * only large outputs are elided.
  */
 
 import { resolve } from "node:path";
@@ -32,9 +38,28 @@ const READ_TOOLS = new Set(["read"]);
 /** Tool names that change a file, making a prior read of that path stale. */
 const MUTATE_TOOLS = new Set(["edit", "write"]);
 
+/**
+ * Commands whose bash output must never be elided, because the stub invites
+ * the model to re-run the command and re-running could repeat a destructive or
+ * state-changing action. Tested against the whole command string, and
+ * deliberately over-broad: a false positive merely keeps an output (safe),
+ * while the common verbose *read* commands (cat/grep/ls/find/git log/diff,
+ * test runners) intentionally do NOT match, so they stay evictable.
+ */
+const BASH_SIDE_EFFECT_PATTERN =
+	/(\b(write|insert|delete|update|curl|wget|psql|mysql|sqlite3|migrate|drop|truncate|rm|rmdir|mv|cp|dd|kill|tee|chmod|chown|ln|mkdir|touch)\b|\bgit\s+(commit|push|reset|checkout|rebase|clean|apply|merge)\b|\bsed\b[^|]*-i|>>?)/i;
+/** Below 80% pressure, only bash outputs larger than this (chars) are elided. */
+const BASH_EVICTION_CHAR_THRESHOLD = 2000;
+
 export interface ContextGcOptions {
 	/** Working directory used to resolve relative tool path arguments. */
 	cwd: string;
+	/**
+	 * Token-budget pressure in [0, 1] — the fraction of the model's context
+	 * window currently in use. Absent or 0 reproduces read-only GC behaviour.
+	 * Bash-output eviction begins at 0.6 and becomes unconditional at 0.8.
+	 */
+	budgetPressure?: number;
 }
 
 interface AssistantLike {
@@ -68,10 +93,17 @@ export function evictSupersededReads(messages: AgentMessage[], options: ContextG
 	// display path (the original argument) for the stub text.
 	const resolvedPathByCallId = new Map<string, string>();
 	const displayPathByResolved = new Map<string, string>();
+	// Bash calls carry a `command`, not a `path`; capture it so the eviction
+	// pass can consult the side-effect guard by tool call id.
+	const bashCommandByCallId = new Map<string, string>();
 	for (const m of messages) {
 		if (!isAssistant(m)) continue;
 		for (const block of m.content) {
 			if (block.type !== "toolCall" || !block.id) continue;
+			if (block.name === "bash") {
+				const cmd = block.arguments?.command;
+				if (typeof cmd === "string" && cmd.length > 0) bashCommandByCallId.set(block.id, cmd);
+			}
 			const rawPath = block.arguments?.path;
 			if (typeof rawPath !== "string" || rawPath.length === 0) continue;
 			const resolved = resolve(options.cwd, rawPath);
@@ -99,26 +131,54 @@ export function evictSupersededReads(messages: AgentMessage[], options: ContextG
 	// Second pass: build the output, stubbing evicted reads. Keep every other
 	// message by reference; clone only the ones we rewrite so the persisted
 	// history (which may share these objects) is never mutated.
+	const pressure = options.budgetPressure ?? 0;
 	let changed = false;
 	const out = messages.map((m, i) => {
-		if (!isToolResult(m) || m.isError || !READ_TOOLS.has(m.toolName)) return m;
-		const path = resolvedPathByCallId.get(m.toolCallId);
-		if (!path) return m;
-		const laterRead = (lastReadIndex.get(path) ?? -1) > i;
-		const laterMutate = (lastMutateIndex.get(path) ?? -1) > i;
-		if (!laterRead && !laterMutate) return m;
-		changed = true;
-		const display = displayPathByResolved.get(path) ?? path;
-		const reason = laterMutate ? "the file was modified after this read" : "the file was read again later";
-		return {
-			...m,
-			content: [
-				{
-					type: "text" as const,
-					text: `[Superseded read of ${display} elided to save context — ${reason}. Re-read the file if you need its current contents.]`,
-				},
-			],
-		};
+		if (!isToolResult(m) || m.isError) return m;
+
+		// Superseded-read eviction — always on, pressure-independent.
+		if (READ_TOOLS.has(m.toolName)) {
+			const path = resolvedPathByCallId.get(m.toolCallId);
+			if (!path) return m;
+			const laterRead = (lastReadIndex.get(path) ?? -1) > i;
+			const laterMutate = (lastMutateIndex.get(path) ?? -1) > i;
+			if (!laterRead && !laterMutate) return m;
+			changed = true;
+			const display = displayPathByResolved.get(path) ?? path;
+			const reason = laterMutate ? "the file was modified after this read" : "the file was read again later";
+			return {
+				...m,
+				content: [
+					{
+						type: "text" as const,
+						text: `[Superseded read of ${display} elided to save context — ${reason}. Re-read the file if you need its current contents.]`,
+					},
+				],
+			};
+		}
+
+		// Bash-output eviction — only under token-budget pressure (>= 0.6).
+		if (pressure >= 0.6 && m.toolName === "bash") {
+			const cmd = bashCommandByCallId.get(m.toolCallId) ?? "";
+			if (BASH_SIDE_EFFECT_PATTERN.test(cmd)) return m;
+			const textLen = m.content.filter((c) => c.type === "text").reduce((sum, c) => sum + (c.text?.length ?? 0), 0);
+			// 60–79%: elide only large outputs. 80%+: elide unconditionally.
+			const shouldEvict = pressure >= 0.8 || textLen > BASH_EVICTION_CHAR_THRESHOLD;
+			if (shouldEvict) {
+				changed = true;
+				return {
+					...m,
+					content: [
+						{
+							type: "text" as const,
+							text: `[Bash output elided at ${Math.round(pressure * 100)}% token budget — re-run if needed.]`,
+						},
+					],
+				};
+			}
+		}
+
+		return m;
 	});
 
 	return changed ? out : messages;

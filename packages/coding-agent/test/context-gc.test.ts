@@ -12,6 +12,23 @@ function assistantCall(id: string, name: string, path: string): AgentMessage {
 	} as unknown as AgentMessage;
 }
 
+function bashCall(id: string, command: string): AgentMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "toolCall", id, name: "bash", arguments: { command } }],
+	} as unknown as AgentMessage;
+}
+
+function bashResult(id: string, text: string, isError = false): AgentMessage {
+	return {
+		role: "toolResult",
+		toolCallId: id,
+		toolName: "bash",
+		content: [{ type: "text", text }],
+		isError,
+	} as unknown as AgentMessage;
+}
+
 function readResult(id: string, text: string): AgentMessage {
 	return {
 		role: "toolResult",
@@ -101,5 +118,65 @@ describe("evictSupersededReads", () => {
 		const out = evictSupersededReads(messages, { cwd: CWD });
 		expect(out).toBe(messages);
 		expect(textOf(out[1])).toBe("ONLY READ");
+	});
+});
+
+describe("evictSupersededReads — bash output eviction", () => {
+	const small = "x".repeat(100);
+	const large = "x".repeat(2500);
+
+	it("does not evict bash output at zero pressure", () => {
+		const messages = [bashCall("b1", "ls -la"), bashResult("b1", large)];
+		const out = evictSupersededReads(messages, { cwd: CWD });
+		expect(out).toBe(messages);
+		expect(textOf(out[1])).toBe(large);
+	});
+
+	it("does not evict a small bash output at moderate pressure", () => {
+		const messages = [bashCall("b1", "ls -la"), bashResult("b1", small)];
+		const out = evictSupersededReads(messages, { cwd: CWD, budgetPressure: 0.65 });
+		expect(out).toBe(messages);
+		expect(textOf(out[1])).toBe(small);
+	});
+
+	it("evicts a large bash output at moderate pressure with a budget stub", () => {
+		const messages = [bashCall("b1", "cat huge.log"), bashResult("b1", large)];
+		const out = evictSupersededReads(messages, { cwd: CWD, budgetPressure: 0.65 });
+		expect(textOf(out[1])).not.toContain("xxxx");
+		expect(textOf(out[1])).toContain("65% token budget");
+	});
+
+	it("never evicts side-effecting commands even when large (psql)", () => {
+		const messages = [bashCall("b1", "psql -c 'select 1'"), bashResult("b1", large)];
+		const out = evictSupersededReads(messages, { cwd: CWD, budgetPressure: 0.65 });
+		expect(out).toBe(messages);
+		expect(textOf(out[1])).toBe(large);
+	});
+
+	it("never evicts side-effecting commands even at high pressure (rm -rf)", () => {
+		const messages = [bashCall("b1", "echo hi && rm -rf dist"), bashResult("b1", small)];
+		const out = evictSupersededReads(messages, { cwd: CWD, budgetPressure: 0.85 });
+		expect(out).toBe(messages);
+		expect(textOf(out[1])).toBe(small);
+	});
+
+	it("never evicts a redirecting command (output side effect)", () => {
+		const messages = [bashCall("b1", "echo data > out.txt"), bashResult("b1", small)];
+		const out = evictSupersededReads(messages, { cwd: CWD, budgetPressure: 0.85 });
+		expect(out).toBe(messages);
+		expect(textOf(out[1])).toBe(small);
+	});
+
+	it("evicts even a small bash output at high pressure", () => {
+		const messages = [bashCall("b1", "ls"), bashResult("b1", small)];
+		const out = evictSupersededReads(messages, { cwd: CWD, budgetPressure: 0.85 });
+		expect(textOf(out[1])).toContain("85% token budget");
+	});
+
+	it("never evicts an errored bash result", () => {
+		const messages = [bashCall("b1", "cat huge.log"), bashResult("b1", large, true)];
+		const out = evictSupersededReads(messages, { cwd: CWD, budgetPressure: 0.85 });
+		expect(out).toBe(messages);
+		expect(textOf(out[1])).toBe(large);
 	});
 });
