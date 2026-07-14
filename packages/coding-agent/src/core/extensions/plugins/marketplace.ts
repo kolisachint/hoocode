@@ -104,10 +104,36 @@ export interface NormalizedMarketplace {
 
 interface RawMarketplace {
 	name?: string;
-	owner?: string;
+	/** Both Claude Code and Copilot CLI define `owner` as `{ name, email? }`; a bare string is tolerated. */
+	owner?: string | { name?: string; email?: string };
+	/** Shared optional metadata: `pluginRoot` is a base dir prepended to relative plugin source paths. */
+	metadata?: { description?: string; version?: string; pluginRoot?: string };
 	/** Optional authored platform hint (string | string[]); folded into supportPlatform. */
 	supportPlatform?: unknown;
 	plugins?: Array<{ name?: string; source?: unknown; description?: string; supportPlatform?: unknown }>;
+}
+
+/** True when a string source is a path (not npm:/git/URL) that `pluginRoot` should prefix. */
+function isRelativePathSource(source: string): boolean {
+	const s = source.trim();
+	return (
+		!s.startsWith("npm:") &&
+		!/^https?:\/\//.test(s) &&
+		!s.startsWith("git@") &&
+		!s.endsWith(".git") &&
+		!path.isAbsolute(s)
+	);
+}
+
+/**
+ * Apply `metadata.pluginRoot` (Claude Code and Copilot CLI share the field):
+ * a base directory prepended to relative plugin source paths, so
+ * `"source": "formatter"` with `"pluginRoot": "./plugins"` resolves like
+ * `"./plugins/formatter"`.
+ */
+function applyPluginRoot(source: MarketplacePluginSource, pluginRoot: string | undefined): MarketplacePluginSource {
+	if (!pluginRoot || typeof source !== "string" || !isRelativePathSource(source)) return source;
+	return `${pluginRoot.replace(/\/+$/, "")}/${source.trim().replace(/^\.\//, "")}`;
 }
 
 /** Validate and normalize an authored source value. Returns null for unsupported/invalid shapes. */
@@ -181,6 +207,11 @@ export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
 	const raw = readJson<RawMarketplace>(manifestPath);
 	if (!raw) return null;
 
+	const pluginRoot =
+		typeof raw.metadata?.pluginRoot === "string" && raw.metadata.pluginRoot.trim()
+			? raw.metadata.pluginRoot.trim()
+			: undefined;
+
 	const plugins: MarketplacePluginEntry[] = [];
 	for (const entry of raw.plugins ?? []) {
 		if (!entry?.name || !entry.source) continue;
@@ -189,7 +220,7 @@ export function parseMarketplaceDir(dir: string): NormalizedMarketplace | null {
 		const entryPlatforms = normalizePlatforms(entry.supportPlatform);
 		plugins.push({
 			name: entry.name,
-			source: normalized,
+			source: applyPluginRoot(normalized, pluginRoot),
 			description: entry.description,
 			...(entryPlatforms.length > 0 ? { supportPlatform: entryPlatforms } : {}),
 		});

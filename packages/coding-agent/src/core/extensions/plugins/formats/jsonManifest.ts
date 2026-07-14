@@ -101,7 +101,8 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 					name: draft.id,
 					...(draft.version ? { version: draft.version } : {}),
 					...(draft.description ? { description: draft.description } : {}),
-					...(draft.author ? { author: draft.author } : {}),
+					// Claude Code's schema documents `author` as an object with `name`.
+					...(draft.author ? { author: { name: draft.author } } : {}),
 					...(mcpServers ? { mcpServers } : {}),
 				}),
 			});

@@ -104,6 +104,42 @@ describe("marketplace manifests", () => {
 		expect(advSec).toEqual({ kind: "git", url: "https://github.com/github/copilot-advanced-security-plugin.git" });
 	});
 
+	it("parses the canonical Copilot CLI marketplace locations (root and .plugin/)", () => {
+		// Copilot CLI probe order: marketplace.json, .plugin/marketplace.json,
+		// .github/plugin/marketplace.json, .claude-plugin/marketplace.json.
+		const rootDir = path.join(tempDir, "root-market");
+		writeJson(path.join(rootDir, "marketplace.json"), {
+			name: "root-market",
+			owner: { name: "Octo", email: "octo@example.com" },
+			plugins: [{ name: "foo", source: "./plugins/foo" }],
+		});
+		expect(parseMarketplaceDir(rootDir)?.format).toBe("copilot");
+		expect(parseMarketplaceDir(rootDir)?.supportPlatform).toEqual(["github"]);
+
+		const dotDir = path.join(tempDir, "dot-market");
+		writeJson(path.join(dotDir, ".plugin", "marketplace.json"), { name: "dot-market", plugins: [] });
+		expect(parseMarketplaceDir(dotDir)?.format).toBe("copilot");
+	});
+
+	it("applies metadata.pluginRoot to relative plugin sources (Claude and Copilot share the field)", () => {
+		const dir = path.join(tempDir, "rooted");
+		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), {
+			name: "rooted",
+			owner: { name: "me" },
+			metadata: { pluginRoot: "./plugins" },
+			plugins: [
+				{ name: "formatter", source: "formatter" },
+				{ name: "linter", source: "./linter" },
+				{ name: "remote", source: "https://github.com/x/remote.git" },
+			],
+		});
+		const market = parseMarketplaceDir(dir);
+		expect(market?.plugins.find((p) => p.name === "formatter")?.source).toBe("./plugins/formatter");
+		expect(market?.plugins.find((p) => p.name === "linter")?.source).toBe("./plugins/linter");
+		// Non-path sources are untouched by pluginRoot.
+		expect(market?.plugins.find((p) => p.name === "remote")?.source).toBe("https://github.com/x/remote.git");
+	});
+
 	it("prefers the Claude manifest when both are present", () => {
 		const dir = path.join(tempDir, "both");
 		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), { name: "from-claude", plugins: [] });

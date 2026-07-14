@@ -158,17 +158,17 @@ describe("plugin format registry", () => {
 
 		const claudeOnly = emitForPlatforms(draft, ["claude"]).map((f) => f.path);
 		expect(claudeOnly.some((p) => p.includes(".claude-plugin"))).toBe(true);
-		expect(claudeOnly.some((p) => p.includes(".github"))).toBe(false);
+		expect(claudeOnly).not.toContain("plugin.json");
 
 		const both = emitForPlatforms(draft, ["claude", "github"]).map((f) => f.path);
 		expect(both.some((p) => p.includes(".claude-plugin"))).toBe(true);
-		expect(both.some((p) => p.includes(".github"))).toBe(true);
+		expect(both).toContain("plugin.json");
 
 		// Defaults to the draft's own supportPlatform when no platforms passed.
-		// Copilot's capability tree mirrors the Claude layout, so only the marker
-		// manifest is .github-specific.
+		// Copilot's capability tree mirrors the Claude layout, so only the root
+		// plugin.json manifest is Copilot-specific.
 		const fromDraft = emitForPlatforms({ ...draft, supportPlatform: ["github"] }).map((f) => f.path);
-		expect(fromDraft).toContain(path.join(".github", "plugin", "plugin.json"));
+		expect(fromDraft).toContain("plugin.json");
 		expect(fromDraft.some((p) => p.includes(".claude-plugin") || p.includes(".agents-plugin"))).toBe(false);
 	});
 });
@@ -204,6 +204,40 @@ describe("copilot (.github) plugin format", () => {
 		expect(plugin?.supportPlatform).toEqual(["github"]);
 		expect(plugin?.skillsDir).toBe(path.join(root, "skills"));
 		expect(plugin?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
+	});
+
+	it("parses the canonical Copilot CLI layout (root plugin.json + root hooks.json)", () => {
+		// Per the Copilot CLI plugin reference: plugin.json at the plugin root,
+		// hooks config at root hooks.json, agents as agents/<name>.agent.md.
+		const root = path.join(tempDir, "cli-canonical");
+		writeJson(path.join(root, "plugin.json"), {
+			name: "cli-canonical",
+			version: "1.0.0",
+			author: { name: "Octo" },
+		});
+		fs.mkdirSync(path.join(root, "agents"), { recursive: true });
+		fs.writeFileSync(path.join(root, "agents", "helper.agent.md"), "---\nname: helper\n---\n\nHelp.\n");
+		writeJson(path.join(root, "hooks.json"), {
+			hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "true" }] }] },
+		});
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.format).toBe("copilot");
+		expect(plugin?.id).toBe("cli-canonical");
+		expect(plugin?.author).toBe("Octo");
+		expect(plugin?.agentsDir).toBe(path.join(root, "agents"));
+		expect(plugin?.hooks?.PreToolUse).toHaveLength(1);
+	});
+
+	it("probes manifest locations in the Copilot CLI's documented order", () => {
+		// .plugin/plugin.json beats root plugin.json beats .github/plugin/plugin.json.
+		const root = path.join(tempDir, "probe");
+		writeJson(path.join(root, ".github", "plugin", "plugin.json"), { name: "from-github-dir" });
+		expect(parsePluginDir(root)?.id).toBe("from-github-dir");
+		writeJson(path.join(root, "plugin.json"), { name: "from-root" });
+		expect(parsePluginDir(root)?.id).toBe("from-root");
+		writeJson(path.join(root, ".plugin", "plugin.json"), { name: "from-dot-plugin" });
+		expect(parsePluginDir(root)?.id).toBe("from-dot-plugin");
 	});
 
 	it("honors manifest dir overrides in plugin.json-style formats", () => {
@@ -252,9 +286,9 @@ describe("copilot (.github) plugin format", () => {
 		const root = path.join(tempDir, "rt");
 		writeEmitted(root, getFormat("copilot")!.emit(draft));
 
-		// Real-world convention: manifest under .github/plugin/, capability tree
-		// mirrors the Claude layout (see github/copilot-plugins).
-		expect(fs.existsSync(path.join(root, ".github", "plugin", "plugin.json"))).toBe(true);
+		// Canonical Copilot CLI convention: manifest at root plugin.json, capability
+		// tree mirrors the Claude layout.
+		expect(fs.existsSync(path.join(root, "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(root, "commands", "greet.md"))).toBe(true);
 		expect(fs.existsSync(path.join(root, "agents", "scout.md"))).toBe(true);
 
@@ -283,8 +317,8 @@ describe("copilot (.github) plugin format", () => {
 		expect(claudeFiles).toContain(path.join("skills", "helper", "SKILL.md"));
 		expect(claudeFiles).toContain(path.join("agents", "agent1.md"));
 
-		expect(copilotFiles).toContain(path.join(".github", "plugin", "plugin.json"));
-		// Same capability tree as Claude — only the marker manifest differs.
+		expect(copilotFiles).toContain("plugin.json");
+		// Same capability tree as Claude — only the manifest location differs.
 		expect(copilotFiles).toContain(path.join("skills", "helper", "SKILL.md"));
 		expect(copilotFiles).toContain(path.join("agents", "agent1.md"));
 	});

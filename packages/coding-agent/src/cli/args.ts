@@ -378,7 +378,7 @@ ${chalk.bold("Options:")}
                                   Tokens: claude, copilot (alias: github, gh), agents (alias: native)
                                   e.g. --support-platform copilot writes .github/skills/<name>/SKILL.md,
                                   .github/agents/<name>.agent.md, .github/prompts/<name>.prompt.md and
-                                  a .github/plugin/plugin.json manifest for authored plugins
+                                  a root plugin.json manifest (Copilot CLI spec) for authored plugins
                                   Default: claude + copilot for authored plugins; .hoocode/ for scaffolds
                                   Can also be set via the "supportPlatform" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh

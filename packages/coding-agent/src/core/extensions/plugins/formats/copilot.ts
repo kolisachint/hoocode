@@ -1,16 +1,27 @@
 /**
- * GitHub Copilot `.github` format.
+ * GitHub Copilot format.
  *
- * The real-world convention (see github/copilot-plugins and the plugins it
- * indexes, e.g. microsoft/work-iq) mirrors the Claude Code bundle layout and
- * differs only in the marker/manifest location:
+ * Per the official Copilot CLI plugin reference (docs.github.com
+ * copilot/reference/copilot-cli-reference/cli-plugin-reference, "File
+ * locations"; verified 2026-07), the CLI probes these locations in order:
  *
- *   marker/manifest   .github/plugin/plugin.json        { name, version, description, skills?: "./skills/" }
- *   marketplace       .github/plugin/marketplace.json   (also accepts .github/marketplace.json)
+ *   plugin manifest   .plugin/plugin.json, plugin.json (canonical),
+ *                     .github/plugin/plugin.json, .claude-plugin/plugin.json
+ *   marketplace       marketplace.json, .plugin/marketplace.json,
+ *                     .github/plugin/marketplace.json (the documented home for
+ *                     GitHub-hosted marketplaces), .claude-plugin/marketplace.json
+ *
+ * This adapter mirrors that order, except `.claude-plugin/` — the Claude
+ * adapter owns that marker and wins precedence, so a `.claude-plugin`-only
+ * directory correctly parses as a Claude plugin (Copilot reads those natively
+ * anyway). Real-world plugins indexed by github/copilot-plugins (e.g.
+ * microsoft/work-iq) still ship `.github/plugin/plugin.json`, which the probe
+ * order covers. The capability tree matches the Claude layout:
+ *
  *   skills            skills/<name>/SKILL.md            (or the manifest's `skills` path override)
  *   commands          commands/<name>.md
- *   subagents         agents/<name>.md
- *   hooks             hooks/hooks.json                  ({ description?, hooks: { Event: [...] } })
+ *   subagents         agents/<name>.md                  (Copilot also emits/reads `.agent.md` names)
+ *   hooks             hooks.json or hooks/hooks.json    ({ description?, hooks: { Event: [...] } })
  *   MCP servers       .mcp.json                         ({ mcpServers } | { servers })
  *
  * Workspace-level (non-plugin) conventions, per the current GitHub Copilot
@@ -50,10 +61,21 @@ import {
 import type { EmittedFile, PluginDraft, PluginFormatAdapter } from "./types.js";
 
 const MARKER_DIR = ".github";
-/** Real-world manifest location (github/copilot-plugins convention). */
-const manifestRelPath = path.join(MARKER_DIR, "plugin", "plugin.json");
-/** Legacy hoocode-authored manifest location, still read for compatibility. */
-const legacyManifestRelPath = path.join(MARKER_DIR, "copilot-plugin.json");
+/**
+ * Manifest probe order per the Copilot CLI plugin reference: `.plugin/`, then
+ * the canonical root `plugin.json`, then `.github/plugin/` (real-world plugins
+ * like microsoft/work-iq), then hoocode's legacy `.github/copilot-plugin.json`.
+ * (`.claude-plugin/plugin.json`, the CLI's 4th probe, belongs to the Claude
+ * adapter.)
+ */
+const MANIFEST_REL_PATHS = [
+	path.join(".plugin", "plugin.json"),
+	"plugin.json",
+	path.join(MARKER_DIR, "plugin", "plugin.json"),
+	path.join(MARKER_DIR, "copilot-plugin.json"),
+] as const;
+/** Canonical authored manifest location (root `plugin.json`). */
+const emitManifestRelPath = "plugin.json";
 
 // Legacy authored layout (read-only fallbacks).
 const LEGACY_PROMPTS_DIR = path.join(MARKER_DIR, "prompts");
@@ -61,9 +83,9 @@ const LEGACY_CHATMODES_DIR = path.join(MARKER_DIR, "chatmodes");
 const LEGACY_MCP_FILE = path.join(MARKER_DIR, "mcp.json");
 const LEGACY_HOOKS_FILE = path.join(MARKER_DIR, "hooks", "hooks.json");
 
-/** Read legacy `.github/hooks/hooks.json` into the shared hooks event-map shape. */
-function readLegacyHooks(root: string): NormalizedPlugin["hooks"] {
-	const file = path.join(root, LEGACY_HOOKS_FILE);
+/** Read a hooks JSON file (either `{ hooks: {...} }` or a bare event map). */
+function readHooksFile(root: string, rel: string): NormalizedPlugin["hooks"] {
+	const file = path.join(root, rel);
 	if (!fs.existsSync(file)) return undefined;
 	const raw = readJson<{ hooks?: Record<string, unknown> } | Record<string, unknown>>(file);
 	if (!raw || typeof raw !== "object") return undefined;
@@ -72,7 +94,7 @@ function readLegacyHooks(root: string): NormalizedPlugin["hooks"] {
 }
 
 function manifestPathFor(root: string): string | undefined {
-	for (const rel of [manifestRelPath, legacyManifestRelPath]) {
+	for (const rel of MANIFEST_REL_PATHS) {
 		if (readJson(path.join(root, rel)) != null) return path.join(root, rel);
 	}
 	return undefined;
@@ -82,8 +104,15 @@ export const copilotFormat: PluginFormatAdapter = {
 	id: "copilot",
 	platform: "github",
 	precedence: 2,
-	label: "GitHub Copilot (.github)",
-	marketplaceFiles: [path.join(MARKER_DIR, "plugin", "marketplace.json"), path.join(MARKER_DIR, "marketplace.json")],
+	label: "GitHub Copilot",
+	// Copilot CLI probe order (minus .claude-plugin/, which the Claude adapter
+	// owns), plus hoocode's legacy .github/marketplace.json location.
+	marketplaceFiles: [
+		"marketplace.json",
+		path.join(".plugin", "marketplace.json"),
+		path.join(MARKER_DIR, "plugin", "marketplace.json"),
+		path.join(MARKER_DIR, "marketplace.json"),
+	],
 
 	workspace: {
 		root: MARKER_DIR,
@@ -137,7 +166,12 @@ export const copilotFormat: PluginFormatAdapter = {
 			commandsDir: resolveCapabilityDir(root, raw.commands, "commands") ?? dirIfExists(root, LEGACY_PROMPTS_DIR),
 			agentsDir: resolveCapabilityDir(root, raw.agents, "agents") ?? dirIfExists(root, LEGACY_CHATMODES_DIR),
 			themesDir: resolveCapabilityDir(root, raw.themes, "themes"),
-			hooks: normalizeHooks(raw.hooks, root) ?? readLegacyHooks(root),
+			// Copilot CLI plugins put hooks config at root `hooks.json`; normalizeHooks
+			// covers the Claude-mirror `hooks/hooks.json`, then the legacy location.
+			hooks:
+				normalizeHooks(raw.hooks, root) ??
+				readHooksFile(root, "hooks.json") ??
+				readHooksFile(root, LEGACY_HOOKS_FILE),
 			mcpServers: normalizeMcp(raw.mcpServers, root) ?? normalizeMcp(undefined, root, LEGACY_MCP_FILE),
 			// Providers are a native-only concept.
 			providers: undefined,
@@ -145,19 +179,20 @@ export const copilotFormat: PluginFormatAdapter = {
 	},
 
 	emit(draft: PluginDraft): EmittedFile[] {
-		// Real-world convention: only the marker manifest is Copilot-specific; the
-		// capability tree mirrors the Claude layout, so a plugin authored for both
-		// platforms is one tree plus two marker manifests (exactly how plugins in
-		// github/copilot-plugins ship).
+		// Only the manifest is Copilot-specific — the canonical location is root
+		// `plugin.json` (Copilot CLI spec) — and the capability tree mirrors the
+		// Claude layout, so a plugin authored for both platforms is one tree with a
+		// root manifest for Copilot and a .claude-plugin/ manifest for Claude.
 		const files: EmittedFile[] = [];
 
 		files.push({
-			path: manifestRelPath,
+			path: emitManifestRelPath,
 			content: emitJson({
 				name: draft.id,
 				...(draft.version ? { version: draft.version } : {}),
 				...(draft.description ? { description: draft.description } : {}),
-				...(draft.author ? { author: draft.author } : {}),
+				// Spec: `author` is an object with a required `name`.
+				...(draft.author ? { author: { name: draft.author } } : {}),
 			}),
 		});
 

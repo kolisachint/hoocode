@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Copilot plugin manifest and marketplace locations now match the official
+  Copilot CLI plugin reference. The adapter probes manifests in the CLI's
+  documented order — `.plugin/plugin.json`, root `plugin.json` (canonical),
+  `.github/plugin/plugin.json`, legacy `.github/copilot-plugin.json` — and
+  authored Copilot plugins now emit the canonical root `plugin.json` instead of
+  `.github/plugin/plugin.json`. Marketplace indexes are probed as root
+  `marketplace.json`, `.plugin/marketplace.json`,
+  `.github/plugin/marketplace.json`, then legacy `.github/marketplace.json`.
+  Copilot plugins with root `hooks.json` (CLI convention) now load, manifest
+  `author` is emitted as an object (`{ "name": ... }`) per both vendors'
+  schemas, and `metadata.pluginRoot` (shared by Claude Code and Copilot CLI
+  marketplace schemas) is applied to relative plugin sources.
+
 ### Added
 
 - `--support-platform <list>` CLI flag (and `supportPlatform` setting): pick

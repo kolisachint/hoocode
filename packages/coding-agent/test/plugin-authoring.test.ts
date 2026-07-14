@@ -87,10 +87,10 @@ describe("ProposePlugin (scaffold path)", () => {
 		expect((res.details as { authored: boolean }).authored).toBe(true);
 
 		const dest = path.join(cwd, ".agents", "plugins", "myhelper");
-		// Default targets are Claude + Copilot.
+		// Default targets are Claude + Copilot (Copilot manifest at root plugin.json).
 		expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".github", "plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, "plugin.json"))).toBe(true);
 		// Copilot shares the Claude-mirror capability tree — one tree, two manifests.
 		expect(fs.existsSync(path.join(dest, "agents", "scout.md"))).toBe(true);
 
