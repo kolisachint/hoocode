@@ -256,6 +256,22 @@ describe("ProposePlugin (executable path — computed risk gate)", () => {
 		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "sneaky"))).toBe(false);
 	});
 
+	it("rejects an empty draft (no capabilities at all)", async () => {
+		const { ctx } = makeCtx(cwd);
+		const tool = createProposePluginToolDefinition();
+		const res = await tool.execute("1", { id: "hollow", description: "nothing inside" }, undefined, undefined, ctx);
+		expect((res.details as { authored: boolean }).authored).toBe(false);
+		expect((res.content[0] as { text: string }).text).toContain("Nothing to author");
+		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "hollow"))).toBe(false);
+	});
+
+	it("stamps the authored provenance marker", async () => {
+		const { ctx } = makeCtx(cwd);
+		const tool = createProposePluginToolDefinition();
+		await tool.execute("1", { id: "marked", commands: [{ name: "go", body: "Go." }] }, undefined, undefined, ctx);
+		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "marked", ".authored.json"))).toBe(true);
+	});
+
 	it("refuses to author over an existing plugin (points at UpdatePlugin)", async () => {
 		const { ctx } = makeCtx(cwd);
 		const tool = createProposePluginToolDefinition();
@@ -295,6 +311,57 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
 		expect((res.content[0] as { text: string }).text).toContain("ProposePlugin");
+	});
+
+	it("refuses a plugin without the authored marker (e.g. a marketplace install)", async () => {
+		// Simulate a marketplace install: a valid plugin dir with no .authored.json.
+		const dest = path.join(cwd, ".agents", "plugins", "thirdparty");
+		fs.mkdirSync(path.join(dest, ".claude-plugin"), { recursive: true });
+		fs.writeFileSync(
+			path.join(dest, ".claude-plugin", "plugin.json"),
+			`${JSON.stringify({ name: "thirdparty", description: "from a marketplace" })}\n`,
+		);
+
+		const { ctx } = makeCtx(cwd);
+		const update = createUpdatePluginToolDefinition();
+		const res = await update.execute(
+			"1",
+			{ id: "thirdparty", skills: [{ name: "extra", body: "Extra." }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect((res.details as { authored: boolean }).authored).toBe(false);
+		expect((res.content[0] as { text: string }).text).toContain("not authored");
+		// The plugin was left untouched.
+		expect(fs.existsSync(path.join(dest, "skills"))).toBe(false);
+	});
+
+	it("a platforms-only update adds a vendor layout without touching capabilities", async () => {
+		const { ctx } = makeCtx(cwd);
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{ id: "widen", platforms: ["claude"], commands: [{ name: "go", body: "Go." }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		const dest = path.join(cwd, ".agents", "plugins", "widen");
+		expect(fs.existsSync(path.join(dest, ".github"))).toBe(false);
+
+		const update = createUpdatePluginToolDefinition();
+		const res = await update.execute(
+			"2",
+			{ id: "widen", platforms: ["claude", "github"] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect((res.details as { authored: boolean }).authored).toBe(true);
+		// Copilot manifest added; original command untouched.
+		expect(fs.existsSync(path.join(dest, ".github", "plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, "commands", "go.md"))).toBe(true);
 	});
 
 	it("adds a skill to an existing plugin while preserving the original capabilities", async () => {

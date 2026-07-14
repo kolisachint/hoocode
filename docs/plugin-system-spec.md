@@ -56,6 +56,10 @@ capability gaps itself. **Install is the "load act."**
     **locally authored** plugins (§3). It merges **inline caller-supplied**
     content — it never fetches a remote — so the "benign v1 → hostile v2" vector
     is structurally absent. Executable additions still pass the §3 confirm gate.
+    Authored plugins are identified by a `.authored.json` provenance marker
+    stamped at scaffold time; marketplace installs land in the same
+    `.agents/plugins/` directory but lack the marker and are refused (they also
+    don't round-trip losslessly through the authoring emitters).
 - `SearchMarketplace` — redundant with `SearchPlugins`, or a trust-crossing
   ramp to registering new sources. Drop.
 

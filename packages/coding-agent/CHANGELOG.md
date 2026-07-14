@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Plugin authoring is now a single risk-gated `ProposePlugin` tool, replacing
+  the `ProposePlugin` / `ProposeExecutablePlugin` split. The human-confirmation
+  gate is computed from the draft's content — hooks, MCP servers, or a
+  mutating-subagent allowlist trigger it; passive skills/commands/read-only
+  subagents author autonomously — instead of being pre-declared by tool choice,
+  so a mixed passive+executable plugin authors in one call and executable
+  content can never ride in through a "passive" path. Authored plugins now
+  carry a `.authored.json` provenance marker at their root.
+
+### Added
+
+- `UpdatePlugin` tool: merge inline-authored capabilities into an existing
+  locally authored plugin — skills/commands/subagents are added or replaced by
+  name, hooks and MCP servers are unioned with what's on disk. Additive-only
+  and no remote fetch; executable additions require the same human confirmation
+  as authoring, and marketplace-installed plugins are refused (they don't carry
+  the authored provenance marker and don't round-trip losslessly through the
+  authoring emitters).
+- `ListPlugins` accepts an optional `id` parameter to look up a single
+  installed plugin.
+
 ## [0.4.131] - 2026-07-14
 
 ## [0.4.130] - 2026-07-14

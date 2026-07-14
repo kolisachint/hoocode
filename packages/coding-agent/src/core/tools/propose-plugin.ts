@@ -30,6 +30,7 @@ import { type Static, Type } from "typebox";
 import {
 	classifyAllowlist,
 	getPlugin,
+	isAuthoredPlugin,
 	mergePluginDraft,
 	pluginExists,
 	resolveAuthoringPlatforms,
@@ -154,6 +155,17 @@ function draftFrom(id: string, params: CapabilityInput, platforms: MarketplacePl
 		hooks: params.hooks,
 		mcpServers: params.mcpServers,
 	};
+}
+
+/** Total capabilities carried by the draft (empty arrays count as nothing). */
+function capabilityCount(params: CapabilityInput): number {
+	return (
+		(params.skills?.length ?? 0) +
+		(params.commands?.length ?? 0) +
+		(params.subagents?.length ?? 0) +
+		(params.hooks?.length ?? 0) +
+		(params.mcpServers?.length ?? 0)
+	);
 }
 
 /** The subagents whose allowlist makes them mutating/high-privilege (need the confirm gate). */
@@ -298,6 +310,10 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 			const violation = guardrailViolation(params);
 			if (violation) return reject(params.id, violation);
 
+			if (capabilityCount(params) === 0) {
+				return reject(params.id, "Nothing to author. Provide skills, commands, subagents, hooks, or mcpServers.");
+			}
+
 			if (pluginExists(ctx.cwd, params.id)) {
 				return reject(
 					params.id,
@@ -335,13 +351,16 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 		name: UPDATE_PLUGIN_TOOL_NAME,
 		label: UPDATE_PLUGIN_TOOL_NAME,
 		description:
-			"Merge inline-authored capabilities into an EXISTING local plugin (one you authored). Skills/commands/subagents " +
-			"are added or replaced by name; hooks and MCP servers are unioned with what's already there; metadata is " +
-			"overwritten only where you supply it. Nothing is fetched from a remote. Passive additions apply autonomously; " +
-			"executable additions (hooks, MCP servers, mutating subagents) require human confirmation. Use ProposePlugin to create.",
-		promptSnippet: "Add/replace capabilities in an existing local plugin (executable additions ask to confirm).",
+			"Merge inline-authored capabilities into an EXISTING locally AUTHORED plugin (marketplace-installed plugins " +
+			"are refused). Skills/commands/subagents are added or replaced by name; hooks and MCP servers are unioned " +
+			"with what's already there; metadata is overwritten only where you supply it. Additive only — it cannot " +
+			"remove a capability (UninstallPlugin and re-author to remove). Nothing is fetched from a remote. Passive " +
+			"additions apply autonomously; executable additions (hooks, MCP servers, mutating subagents) require human " +
+			"confirmation. Use ProposePlugin to create.",
+		promptSnippet:
+			"Add/replace capabilities in a plugin you authored (additive; executable additions ask to confirm).",
 		promptGuidelines: [
-			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one).",
+			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one). It cannot remove a capability — UninstallPlugin and re-author for that.",
 			"Only executable *additions* trigger confirmation — adding a passive skill to an already-executable plugin does not re-prompt.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
 		],
@@ -357,15 +376,21 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 					`No plugin named "${params.id}" is installed. Use ProposePlugin to create it first.`,
 				);
 			}
-			if (
-				!hasExecutable(params) &&
-				!params.skills &&
-				!params.commands &&
-				!params.subagents &&
-				!params.version &&
-				!params.description
-			) {
-				return reject(params.id, "Nothing to update. Provide skills, commands, subagents, hooks, or mcpServers.");
+			// Authored-only: marketplace installs land in the same directory but don't
+			// round-trip losslessly through our emitters (see mergePluginDraft).
+			if (!isAuthoredPlugin(ctx.cwd, params.id)) {
+				return reject(
+					params.id,
+					`Plugin "${params.id}" was not authored in this workspace (likely installed from a marketplace). ` +
+						"UpdatePlugin only modifies locally authored plugins — updating a marketplace plugin is a human " +
+						"action (uninstall it and install a newer version instead).",
+				);
+			}
+			if (capabilityCount(params) === 0 && !params.version && !params.description && !params.platforms) {
+				return reject(
+					params.id,
+					"Nothing to update. Provide skills, commands, subagents, hooks, mcpServers, platforms, or metadata.",
+				);
 			}
 
 			// Gate on the DELTA only — existing executables aren't re-confirmed.
