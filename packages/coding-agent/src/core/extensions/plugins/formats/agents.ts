@@ -9,6 +9,7 @@ import { createJsonManifestAdapter } from "./jsonManifest.js";
 export const agentsFormat = createJsonManifestAdapter({
 	id: "agents",
 	manifestDir: ".agents-plugin",
+	workspaceRoot: ".agents",
 	precedence: 0,
 	label: "Native (.agents-plugin)",
 	supportsProviders: true,

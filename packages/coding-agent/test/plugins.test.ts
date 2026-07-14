@@ -206,6 +206,40 @@ describe("copilot (.github) plugin format", () => {
 		expect(plugin?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
 	});
 
+	it("parses the canonical Copilot CLI layout (root plugin.json + root hooks.json)", () => {
+		// Per the Copilot CLI plugin reference: plugin.json at the plugin root,
+		// hooks config at root hooks.json, agents as agents/<name>.agent.md.
+		const root = path.join(tempDir, "cli-canonical");
+		writeJson(path.join(root, "plugin.json"), {
+			name: "cli-canonical",
+			version: "1.0.0",
+			author: { name: "Octo" },
+		});
+		fs.mkdirSync(path.join(root, "agents"), { recursive: true });
+		fs.writeFileSync(path.join(root, "agents", "helper.agent.md"), "---\nname: helper\n---\n\nHelp.\n");
+		writeJson(path.join(root, "hooks.json"), {
+			hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "true" }] }] },
+		});
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.format).toBe("copilot");
+		expect(plugin?.id).toBe("cli-canonical");
+		expect(plugin?.author).toBe("Octo");
+		expect(plugin?.agentsDir).toBe(path.join(root, "agents"));
+		expect(plugin?.hooks?.PreToolUse).toHaveLength(1);
+	});
+
+	it("probes manifest locations with .github/plugin/ first, then the CLI's other locations", () => {
+		// .github/plugin/plugin.json (preferred) beats root plugin.json beats .plugin/plugin.json.
+		const root = path.join(tempDir, "probe");
+		writeJson(path.join(root, ".plugin", "plugin.json"), { name: "from-dot-plugin" });
+		expect(parsePluginDir(root)?.id).toBe("from-dot-plugin");
+		writeJson(path.join(root, "plugin.json"), { name: "from-root" });
+		expect(parsePluginDir(root)?.id).toBe("from-root");
+		writeJson(path.join(root, ".github", "plugin", "plugin.json"), { name: "from-github-dir" });
+		expect(parsePluginDir(root)?.id).toBe("from-github-dir");
+	});
+
 	it("honors manifest dir overrides in plugin.json-style formats", () => {
 		const root = path.join(tempDir, "override");
 		writeJson(path.join(root, ".claude-plugin", "plugin.json"), { name: "override", skills: "./my-skills" });
@@ -252,8 +286,8 @@ describe("copilot (.github) plugin format", () => {
 		const root = path.join(tempDir, "rt");
 		writeEmitted(root, getFormat("copilot")!.emit(draft));
 
-		// Real-world convention: manifest under .github/plugin/, capability tree
-		// mirrors the Claude layout (see github/copilot-plugins).
+		// Preferred Copilot home: manifest under .github/plugin/, capability tree
+		// mirrors the Claude layout (matches github/copilot-plugins-indexed plugins).
 		expect(fs.existsSync(path.join(root, ".github", "plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(root, "commands", "greet.md"))).toBe(true);
 		expect(fs.existsSync(path.join(root, "agents", "scout.md"))).toBe(true);
@@ -284,7 +318,7 @@ describe("copilot (.github) plugin format", () => {
 		expect(claudeFiles).toContain(path.join("agents", "agent1.md"));
 
 		expect(copilotFiles).toContain(path.join(".github", "plugin", "plugin.json"));
-		// Same capability tree as Claude — only the marker manifest differs.
+		// Same capability tree as Claude — only the manifest location differs.
 		expect(copilotFiles).toContain(path.join("skills", "helper", "SKILL.md"));
 		expect(copilotFiles).toContain(path.join("agents", "agent1.md"));
 	});

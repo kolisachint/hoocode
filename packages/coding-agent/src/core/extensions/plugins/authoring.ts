@@ -18,12 +18,14 @@ import * as path from "node:path";
 import { CLAUDE_TOOL_ALIASES } from "../../agent-frontmatter.js";
 import { PLUGIN_SYSTEM_TOOL_NAMES } from "../../tools/plugin-tool-names.js";
 import { emitForPlatforms } from "./formats/index.js";
+import { resolveAuthoringPlatforms } from "./formats/platform-targets.js";
 import type { MarketplacePlatform, PluginDraft } from "./formats/types.js";
 import { installedPluginsDir, sanitizeForDir } from "./install.js";
 import { type NormalizedPlugin, parsePluginDir } from "./manifest.js";
 
-/** Default authoring targets: the two external vendor formats the model can author into. */
-export const DEFAULT_AUTHORING_PLATFORMS: MarketplacePlatform[] = ["claude", "github"];
+// Re-exported so existing importers keep one vocabulary; the resolution chain
+// (explicit → session --support-platform → default) lives in platform-targets.
+export { DEFAULT_AUTHORING_PLATFORMS, resolveAuthoringPlatforms } from "./formats/platform-targets.js";
 
 /** hoocode tool names that only read (no mutation, no exec). Grants limited to these are low-risk. */
 const READONLY_TOOLS = new Set(["read", "grep", "find", "ls", "webfetch", "websearch"]);
@@ -100,7 +102,7 @@ export interface WriteResult {
  * re-parsed plugin so callers can confirm the round-trip.
  */
 export function writePluginDraft(cwd: string, draft: PluginDraft, platforms?: MarketplacePlatform[]): WriteResult {
-	const targets = platforms ?? draft.supportPlatform ?? DEFAULT_AUTHORING_PLATFORMS;
+	const targets = resolveAuthoringPlatforms(platforms ?? draft.supportPlatform);
 	const dest = path.join(installedPluginsDir(cwd), sanitizeForDir(draft.id));
 	const files = emitForPlatforms({ ...draft, supportPlatform: targets }, targets);
 

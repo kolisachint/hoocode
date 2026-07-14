@@ -87,7 +87,7 @@ describe("ProposePlugin (scaffold path)", () => {
 		expect((res.details as { authored: boolean }).authored).toBe(true);
 
 		const dest = path.join(cwd, ".agents", "plugins", "myhelper");
-		// Default targets are Claude + Copilot.
+		// Default targets are Claude + Copilot (Copilot manifest under .github/plugin/).
 		expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, ".github", "plugin", "plugin.json"))).toBe(true);

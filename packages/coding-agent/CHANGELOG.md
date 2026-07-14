@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The Copilot adapter now reads every plugin manifest and marketplace location
+  accepted by the official Copilot CLI plugin reference, keeping
+  `.github/plugin/` as the preferred home (matching the real-world plugins
+  indexed by github/copilot-plugins). Manifests are probed as
+  `.github/plugin/plugin.json`, root `plugin.json`, `.plugin/plugin.json`, then
+  legacy `.github/copilot-plugin.json`; marketplace indexes as
+  `.github/plugin/marketplace.json`, legacy `.github/marketplace.json`, root
+  `marketplace.json`, then `.plugin/marketplace.json` — previously only the
+  `.github/` locations were read. Copilot plugins with root `hooks.json` (CLI
+  convention) now load, manifest `author` is emitted as an object
+  (`{ "name": ... }`) per both vendors' schemas, and `metadata.pluginRoot`
+  (shared by the Claude Code and Copilot CLI marketplace schemas) is applied to
+  relative plugin sources.
+
+### Added
+
+- `--support-platform <list>` CLI flag (and `supportPlatform` setting): pick
+  which vendor layout(s) hoocode targets when it **writes** artifacts. Tokens:
+  `claude`, `copilot` (aliases `github`, `gh`), `agents` (alias `native`);
+  comma-separated and/or repeated. Applies to authored plugins
+  (ProposePlugin / ProposeExecutablePlugin — overrides the claude+github
+  default target set) and to the `/new-skill` `/new-agent` `/new-command`
+  scaffolds, which then land in each platform's workspace conventions instead
+  of `.hoocode/`: Copilot gets `.github/skills/<name>/SKILL.md`,
+  `.github/agents/<name>.agent.md` (frontmatter `tools` as a YAML list, per the
+  current custom-agents spec), and `.github/prompts/<name>.prompt.md`; Claude
+  gets `.claude/skills|agents|commands/`; native gets the `.agents/`
+  equivalents. Implemented as a per-adapter `WorkspaceLayout` on the plugin
+  format registry, so each vendor's conventions stay a one-file concern
+  (`formats/<vendor>.ts`) and new platforms plug in without touching callers.
+
 ## [0.4.129] - 2026-07-14
 
 ## [0.4.128] - 2026-07-14
