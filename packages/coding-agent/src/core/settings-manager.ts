@@ -524,6 +524,23 @@ export class SettingsManager {
 		return { ...DEFAULT_SETTINGS.compaction, ...this.settings.compaction };
 	}
 
+	/** Byte cap on a single read/bash tool result before truncation. Clamped to >= 1024. */
+	getToolOutputMaxBytes(): number {
+		const v = this.settings.toolOutput?.maxBytes ?? DEFAULT_SETTINGS.toolOutput!.maxBytes;
+		return Number.isFinite(v) && v >= 1024 ? Math.floor(v) : DEFAULT_SETTINGS.toolOutput!.maxBytes;
+	}
+
+	/** Line cap on a single read/bash tool result before truncation. Clamped to >= 1. */
+	getToolOutputMaxLines(): number {
+		const v = this.settings.toolOutput?.maxLines ?? DEFAULT_SETTINGS.toolOutput!.maxLines;
+		return Number.isFinite(v) && v >= 1 ? Math.floor(v) : DEFAULT_SETTINGS.toolOutput!.maxLines;
+	}
+
+	/** Whether to stub superseded read results out of the outgoing context. */
+	getContextGcEnabled(): boolean {
+		return this.settings.contextGc?.enabled ?? DEFAULT_SETTINGS.contextGc!.enabled;
+	}
+
 	getBranchSummarySettings(): Required<BranchSummarySettings> {
 		return { ...DEFAULT_SETTINGS.branchSummary, ...this.settings.branchSummary };
 	}

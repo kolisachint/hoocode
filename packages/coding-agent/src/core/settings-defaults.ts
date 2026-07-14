@@ -8,6 +8,14 @@ export const DEFAULT_SETTINGS = {
 		enabled: true,
 		reserveTokens: 16384,
 		keepRecentTokens: 20000,
+		maxContextRatio: 0.75,
+	},
+	toolOutput: {
+		maxBytes: 16 * 1024,
+		maxLines: 800,
+	},
+	contextGc: {
+		enabled: true,
 	},
 	branchSummary: {
 		reserveTokens: 16384,

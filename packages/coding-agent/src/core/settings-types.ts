@@ -12,6 +12,16 @@ export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	reserveTokens?: number; // default: 16384
 	keepRecentTokens?: number; // default: 20000
+	maxContextRatio?: number; // default: 0.75 - compact once context exceeds this fraction of the window, even before the reserveTokens rule fires (bounds transcript growth on large windows)
+}
+
+export interface ToolOutputSettings {
+	maxBytes?: number; // default: 16384 (16KB) - byte cap on a single read/bash tool result before truncation
+	maxLines?: number; // default: 800 - line cap on a single read/bash tool result before truncation
+}
+
+export interface ContextGcSettings {
+	enabled?: boolean; // default: true - stub out superseded read results (file later edited/re-read) from the outgoing context
 }
 
 export interface BranchSummarySettings {
@@ -102,6 +112,8 @@ export interface Settings {
 	followUpMode?: "all" | "one-at-a-time";
 	theme?: string;
 	compaction?: CompactionSettings;
+	toolOutput?: ToolOutputSettings; // caps on a single read/bash result (bounds per-turn transcript growth)
+	contextGc?: ContextGcSettings; // garbage-collect superseded read results from the outgoing context
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;

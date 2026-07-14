@@ -2,14 +2,20 @@
  * Shared truncation utilities for tool outputs.
  *
  * Truncation is based on two independent limits - whichever is hit first wins:
- * - Line limit (default: 2000 lines)
- * - Byte limit (default: 50KB)
+ * - Line limit (default: 800 lines)
+ * - Byte limit (default: 16KB)
+ *
+ * These caps bound how much a single tool result can inject into the transcript.
+ * Because the whole transcript is re-sent every turn, one oversized result is
+ * paid again on every subsequent turn until compaction, so the caps are kept
+ * tight; read/bash page past them on demand (read via offset/limit, bash via the
+ * temp-file spill), and both are overridable through the `toolOutput` setting.
  *
  * Never returns partial lines (except bash tail truncation edge case).
  */
 
-export const DEFAULT_MAX_LINES = 2000;
-export const DEFAULT_MAX_BYTES = 50 * 1024; // 50KB
+export const DEFAULT_MAX_LINES = 800;
+export const DEFAULT_MAX_BYTES = 16 * 1024; // 16KB
 export const GREP_MAX_LINE_LENGTH = 500; // Max chars per grep match line
 
 export interface TruncationResult {

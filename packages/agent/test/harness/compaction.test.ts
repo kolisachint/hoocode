@@ -157,6 +157,22 @@ describe("harness compaction", () => {
 		expect(shouldCompact(95000, 100000, { ...settings, enabled: false })).toBe(false);
 	});
 
+	it("applies the soft ratio trigger before the reserve rule fires", () => {
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 10000,
+			keepRecentTokens: 20000,
+			maxContextRatio: 0.75,
+		};
+		// Window 100000: reserve rule fires at 90000, ratio at 75000 → ratio wins.
+		expect(shouldCompact(80000, 100000, settings)).toBe(true);
+		expect(shouldCompact(70000, 100000, settings)).toBe(false);
+		// Unset ratio keeps the reserve-only behavior (89000 stays below 90000).
+		expect(shouldCompact(89000, 100000, { ...settings, maxContextRatio: undefined })).toBe(false);
+		// Out-of-range ratios are ignored (reserve rule only).
+		expect(shouldCompact(80000, 100000, { ...settings, maxContextRatio: 1.5 })).toBe(false);
+	});
+
 	it("finds a cut point based on token differences", () => {
 		const entries: SessionTreeEntry[] = [];
 		let parentId: string | null = null;

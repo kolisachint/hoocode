@@ -158,6 +158,10 @@ export interface BashToolOptions {
 	 * before the shell is invoked. Evaluated before allowedCommands.
 	 */
 	deniedCommands?: string[];
+	/** Byte cap on returned output before truncation (tail-kept). Default: DEFAULT_MAX_BYTES. */
+	maxOutputBytes?: number;
+	/** Line cap on returned output before truncation (tail-kept). Default: DEFAULT_MAX_LINES. */
+	maxOutputLines?: number;
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -278,10 +282,12 @@ export function createBashToolDefinition(
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
 	const spawnHook = options?.spawnHook;
+	const maxBytes = options?.maxOutputBytes ?? DEFAULT_MAX_BYTES;
+	const maxLines = options?.maxOutputLines ?? DEFAULT_MAX_LINES;
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${maxLines} lines or ${Math.round(maxBytes / 1024)}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		parameters: bashSchema,
 		async execute(
@@ -328,7 +334,7 @@ export function createBashToolDefinition(
 
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
-			const output = new OutputAccumulator({ tempFilePrefix: "hoocode-bash" });
+			const output = new OutputAccumulator({ tempFilePrefix: "hoocode-bash", maxBytes, maxLines });
 			let updateTimer: NodeJS.Timeout | undefined;
 			let updateDirty = false;
 			let lastUpdateAt = 0;
@@ -401,7 +407,7 @@ export function createBashToolDefinition(
 					} else if (truncation.truncatedBy === "lines") {
 						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
 					} else {
-						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
+						text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(maxBytes)} limit). Full output: ${snapshot.fullOutputPath}]`;
 					}
 				}
 				return { text, details };
