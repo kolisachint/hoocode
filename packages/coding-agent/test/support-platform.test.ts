@@ -98,8 +98,8 @@ describe("plugin authoring honors the session targets", () => {
 			skills: [{ name: "helper", description: "helps", body: "Help." }],
 		});
 
-		// Canonical Copilot CLI manifest location: plugin.json at the plugin root.
-		expect(fs.existsSync(path.join(result.dest, "plugin.json"))).toBe(true);
+		// Preferred Copilot manifest location: .github/plugin/plugin.json.
+		expect(fs.existsSync(path.join(result.dest, ".github", "plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin"))).toBe(false);
 		expect(fs.existsSync(path.join(result.dest, "skills", "helper", "SKILL.md"))).toBe(true);
 
@@ -125,7 +125,7 @@ describe("plugin authoring honors the session targets", () => {
 	it("without session targets the default (claude + github) still applies", () => {
 		const result = writePluginDraft(cwd, { id: "both", skills: [{ name: "s", body: "S." }] });
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(result.dest, "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(result.dest, ".github", "plugin", "plugin.json"))).toBe(true);
 	});
 });
 

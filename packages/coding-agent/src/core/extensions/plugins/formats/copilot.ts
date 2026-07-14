@@ -1,22 +1,18 @@
 /**
  * GitHub Copilot format.
  *
- * Per the official Copilot CLI plugin reference (docs.github.com
- * copilot/reference/copilot-cli-reference/cli-plugin-reference, "File
- * locations"; verified 2026-07), the CLI probes these locations in order:
- *
- *   plugin manifest   .plugin/plugin.json, plugin.json (canonical),
- *                     .github/plugin/plugin.json, .claude-plugin/plugin.json
- *   marketplace       marketplace.json, .plugin/marketplace.json,
- *                     .github/plugin/marketplace.json (the documented home for
- *                     GitHub-hosted marketplaces), .claude-plugin/marketplace.json
- *
- * This adapter mirrors that order, except `.claude-plugin/` — the Claude
- * adapter owns that marker and wins precedence, so a `.claude-plugin`-only
- * directory correctly parses as a Claude plugin (Copilot reads those natively
- * anyway). Real-world plugins indexed by github/copilot-plugins (e.g.
- * microsoft/work-iq) still ship `.github/plugin/plugin.json`, which the probe
- * order covers. The capability tree matches the Claude layout:
+ * hoocode's preferred Copilot home is the `.github/plugin/` marker directory —
+ * the convention used by the real-world plugins indexed by
+ * github/copilot-plugins (e.g. microsoft/work-iq) and the documented location
+ * for GitHub-hosted marketplaces. The official Copilot CLI plugin reference
+ * (docs.github.com copilot/reference/copilot-cli-reference/cli-plugin-reference,
+ * "File locations"; verified 2026-07) accepts several locations for both files
+ * (`.plugin/`, plugin root, `.github/plugin/`, `.claude-plugin/`), so this
+ * adapter reads them all — `.github/plugin/` first, then root, then `.plugin/`,
+ * then the legacy hoocode layout — and writes `.github/plugin/`.
+ * (`.claude-plugin/` belongs to the Claude adapter, which wins precedence, so a
+ * `.claude-plugin`-only directory correctly parses as a Claude plugin; Copilot
+ * reads those natively anyway.) The capability tree matches the Claude layout:
  *
  *   skills            skills/<name>/SKILL.md            (or the manifest's `skills` path override)
  *   commands          commands/<name>.md
@@ -62,20 +58,21 @@ import type { EmittedFile, PluginDraft, PluginFormatAdapter } from "./types.js";
 
 const MARKER_DIR = ".github";
 /**
- * Manifest probe order per the Copilot CLI plugin reference: `.plugin/`, then
- * the canonical root `plugin.json`, then `.github/plugin/` (real-world plugins
- * like microsoft/work-iq), then hoocode's legacy `.github/copilot-plugin.json`.
- * (`.claude-plugin/plugin.json`, the CLI's 4th probe, belongs to the Claude
- * adapter.)
+ * Manifest probe order: `.github/plugin/plugin.json` first — hoocode's
+ * preferred Copilot home, matching the real-world plugins indexed by
+ * github/copilot-plugins (e.g. microsoft/work-iq) — then the Copilot CLI
+ * reference's other locations (root `plugin.json`, `.plugin/plugin.json`) and
+ * hoocode's legacy `.github/copilot-plugin.json`. (`.claude-plugin/plugin.json`,
+ * also probed by the CLI, belongs to the Claude adapter.)
  */
 const MANIFEST_REL_PATHS = [
-	path.join(".plugin", "plugin.json"),
-	"plugin.json",
 	path.join(MARKER_DIR, "plugin", "plugin.json"),
+	"plugin.json",
+	path.join(".plugin", "plugin.json"),
 	path.join(MARKER_DIR, "copilot-plugin.json"),
 ] as const;
-/** Canonical authored manifest location (root `plugin.json`). */
-const emitManifestRelPath = "plugin.json";
+/** Authored manifest location: the preferred `.github/plugin/` home. */
+const emitManifestRelPath = path.join(MARKER_DIR, "plugin", "plugin.json");
 
 // Legacy authored layout (read-only fallbacks).
 const LEGACY_PROMPTS_DIR = path.join(MARKER_DIR, "prompts");
@@ -104,14 +101,15 @@ export const copilotFormat: PluginFormatAdapter = {
 	id: "copilot",
 	platform: "github",
 	precedence: 2,
-	label: "GitHub Copilot",
-	// Copilot CLI probe order (minus .claude-plugin/, which the Claude adapter
-	// owns), plus hoocode's legacy .github/marketplace.json location.
+	label: "GitHub Copilot (.github)",
+	// .github/plugin/ first (hoocode's preferred Copilot home and the documented
+	// location for GitHub-hosted marketplaces), then the legacy .github/ spot,
+	// then the Copilot CLI's other probe locations (root, .plugin/).
 	marketplaceFiles: [
-		"marketplace.json",
-		path.join(".plugin", "marketplace.json"),
 		path.join(MARKER_DIR, "plugin", "marketplace.json"),
 		path.join(MARKER_DIR, "marketplace.json"),
+		"marketplace.json",
+		path.join(".plugin", "marketplace.json"),
 	],
 
 	workspace: {
