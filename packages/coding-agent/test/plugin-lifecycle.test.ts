@@ -252,7 +252,8 @@ describe("plugin lifecycle tools", () => {
 			"InstallPlugin",
 			"UninstallPlugin",
 			"ProposePlugin",
-			"ProposeExecutablePlugin",
+			"UpdatePlugin",
+			"RemovePluginCapability",
 		]);
 	});
 

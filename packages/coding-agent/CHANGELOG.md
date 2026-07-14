@@ -2,6 +2,36 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Plugin authoring is now a single risk-gated `ProposePlugin` tool, replacing
+  the `ProposePlugin` / `ProposeExecutablePlugin` split. The human-confirmation
+  gate is computed from the draft's content — hooks, MCP servers, or a
+  mutating-subagent allowlist trigger it; passive skills/commands/read-only
+  subagents author autonomously — instead of being pre-declared by tool choice,
+  so a mixed passive+executable plugin authors in one call and executable
+  content can never ride in through a "passive" path. Authored plugins now
+  carry a `.authored.json` provenance marker at their root.
+
+### Added
+
+- `UpdatePlugin` tool: merge inline-authored capabilities into an existing
+  locally authored plugin — skills/commands/subagents are added or replaced by
+  name, hooks and MCP servers are unioned with what's on disk. Additive-only
+  and no remote fetch; executable additions require the same human confirmation
+  as authoring, and marketplace-installed plugins are refused (they don't carry
+  the authored provenance marker and don't round-trip losslessly through the
+  authoring emitters).
+- `RemovePluginCapability` tool: remove named capabilities from a locally
+  authored plugin — skills/commands/subagents/MCP servers by name, hooks by
+  event (narrowed by matcher/command). The subtractive half of `UpdatePlugin`;
+  runs autonomously since removal is the low-risk direction (deleting
+  capabilities cannot execute code). Also the supported way to *change* a hook
+  (hooks have no name to replace by): remove the old one, then add the new one
+  via `UpdatePlugin`.
+- `ListPlugins` accepts an optional `id` parameter to look up a single
+  installed plugin.
+
 ## [0.4.132] - 2026-07-14
 
 ## [0.4.131] - 2026-07-14

@@ -48,9 +48,18 @@ capability gaps itself. **Install is the "load act."**
 **NOT model tools:**
 
 - `AddMarketplace` — human/config only (trust boundary).
-- `UpdatePlugin` — supply-chain sensitive (benign v1 → hostile v2); model has
-  no good judgment about accepting a new version. CLI/config only; at most a
-  `SuggestPluginUpdate` nudge. No auto-update.
+- `UpdatePlugin` **(marketplace)** — supply-chain sensitive (benign v1 → hostile
+  v2); model has no good judgment about accepting a new *remote* version.
+  CLI/config only; at most a `SuggestPluginUpdate` nudge. No auto-update from a
+  marketplace.
+  - **Carve-out (implemented):** a model-facing `UpdatePlugin` *does* exist for
+    **locally authored** plugins (§3). It merges **inline caller-supplied**
+    content — it never fetches a remote — so the "benign v1 → hostile v2" vector
+    is structurally absent. Executable additions still pass the §3 confirm gate.
+    Authored plugins are identified by a `.authored.json` provenance marker
+    stamped at scaffold time; marketplace installs land in the same
+    `.agents/plugins/` directory but lack the marker and are refused (they also
+    don't round-trip losslessly through the authoring emitters).
 - `SearchMarketplace` — redundant with `SearchPlugins`, or a trust-crossing
   ramp to registering new sources. Drop.
 
@@ -102,8 +111,21 @@ code.
 Completes the spectrum: discover (`SearchPlugins`) → acquire (`InstallPlugin`)
 → **author (`ProposePlugin`)**, for when no marketplace plugin fits a gap.
 Gate on the *content / capability-grant* trust axis, **not** the *source* axis
-used for install. **Escalating-risk paths — build them separately, do not
-collapse into one tool.**
+used for install.
+
+> **Revised (implemented): one tool, computed gate.** The original spec said
+> "escalating-risk paths — build them separately, do not collapse into one
+> tool." That was interpreted too literally as *two tools*. Two tools force the
+> model to *pre-declare* risk by tool choice and make a mixed plugin (skill +
+> hook) impossible to author in one call. The current implementation keeps the
+> **escalating risk gate** but in a **single `ProposePlugin`**: risk is computed
+> from the draft's *content* (via `classifyAllowlist` + presence of
+> hooks/MCP servers), so a hook can never be mis-routed through a "passive"
+> path, and passive-plus-executable plugins author in one call — the executable
+> portion alone triggers the confirm gate. `UpdatePlugin` (local, merge-only)
+> reuses the same gate, and `RemovePluginCapability` is its subtractive half —
+> autonomous, per the same reasoning that makes `UninstallPlugin` low-risk
+> (deleting capabilities cannot execute code). Both are authored-only.
 
 | Authored capability | Risk shape | Treatment |
 |---|---|---|
