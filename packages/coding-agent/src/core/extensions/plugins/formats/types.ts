@@ -104,6 +104,22 @@ export interface PluginDraft {
 	mcpServers?: AuthoredMcpServer[];
 }
 
+/**
+ * Writer for a platform's *workspace-level* (non-plugin) artifact conventions —
+ * where a standalone skill, subagent, or command lives inside a repository for
+ * that vendor (e.g. Copilot reads `.github/skills/<name>/SKILL.md`,
+ * `.github/agents/<name>.agent.md`, `.github/prompts/<name>.prompt.md`).
+ * Unlike {@link PluginFormatAdapter.emit}, the returned paths are relative to
+ * the **workspace root** (cwd), marker directory included.
+ */
+export interface WorkspaceLayout {
+	/** Marker root the artifacts land under, e.g. ".github", ".claude", ".agents". */
+	readonly root: string;
+	emitSkill(skill: AuthoredSkill): EmittedFile;
+	emitAgent(agent: AuthoredAgent): EmittedFile;
+	emitCommand(command: AuthoredCommand): EmittedFile;
+}
+
 /** Reader + writer for a single plugin format. */
 export interface PluginFormatAdapter {
 	/** Internal format id (stable; used in `NormalizedPlugin.format`). */
@@ -131,4 +147,6 @@ export interface PluginFormatAdapter {
 	parsePlugin(root: string): NormalizedPlugin | null;
 	/** Render `draft` into this format's on-disk layout (paths relative to the plugin root). */
 	emit(draft: PluginDraft): EmittedFile[];
+	/** This platform's workspace-level artifact conventions (paths relative to the workspace root). */
+	readonly workspace: WorkspaceLayout;
 }

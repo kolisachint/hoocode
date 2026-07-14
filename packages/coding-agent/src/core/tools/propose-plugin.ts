@@ -22,8 +22,8 @@
 import { type Static, Type } from "typebox";
 import {
 	classifyAllowlist,
-	DEFAULT_AUTHORING_PLATFORMS,
 	pluginExists,
+	resolveAuthoringPlatforms,
 	writePluginDraft,
 } from "../extensions/plugins/authoring.js";
 import type { MarketplacePlatform, PluginDraft } from "../extensions/plugins/formats/types.js";
@@ -89,7 +89,8 @@ const mcpServerSchema = Type.Object(
 );
 
 function resolvePlatforms(input: string[] | undefined): MarketplacePlatform[] {
-	return (input && input.length > 0 ? (input as MarketplacePlatform[]) : DEFAULT_AUTHORING_PLATFORMS).slice();
+	// Explicit tool param → session --support-platform targets → claude + github.
+	return resolveAuthoringPlatforms(input as MarketplacePlatform[] | undefined);
 }
 
 function summarizeWrite(id: string, platforms: MarketplacePlatform[], files: string[], dest: string): string {
@@ -108,7 +109,10 @@ const proposeParams = Type.Object(
 		description: Type.Optional(Type.String({ description: "Plugin description." })),
 		version: Type.Optional(Type.String({ description: "Plugin version, e.g. '0.1.0'." })),
 		platforms: Type.Optional(
-			Type.Array(platformSchema, { description: "Formats to scaffold into. Default: claude + github." }),
+			Type.Array(platformSchema, {
+				description:
+					"Formats to scaffold into. Default: the session's --support-platform targets, else claude + github.",
+			}),
 		),
 		skills: Type.Optional(Type.Array(skillSchema)),
 		commands: Type.Optional(Type.Array(commandSchema)),
@@ -196,7 +200,10 @@ const proposeExecParams = Type.Object(
 		description: Type.Optional(Type.String({ description: "Plugin description." })),
 		version: Type.Optional(Type.String({ description: "Plugin version, e.g. '0.1.0'." })),
 		platforms: Type.Optional(
-			Type.Array(platformSchema, { description: "Formats to scaffold into. Default: claude + github." }),
+			Type.Array(platformSchema, {
+				description:
+					"Formats to scaffold into. Default: the session's --support-platform targets, else claude + github.",
+			}),
 		),
 		hooks: Type.Optional(Type.Array(hookSchema)),
 		mcpServers: Type.Optional(Type.Array(mcpServerSchema)),

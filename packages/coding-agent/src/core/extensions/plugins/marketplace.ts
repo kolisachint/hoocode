@@ -19,6 +19,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { PLUGIN_FORMATS } from "./formats/index.js";
+import { normalizePlatformToken } from "./formats/platform-targets.js";
 import type { MarketplacePlatform } from "./formats/types.js";
 
 /**
@@ -43,15 +44,7 @@ export function normalizePlatforms(value: unknown): MarketplacePlatform[] {
 	const out: MarketplacePlatform[] = [];
 	for (const v of raw) {
 		if (typeof v !== "string") continue;
-		const t = v.trim().toLowerCase();
-		const canonical: MarketplacePlatform | undefined =
-			t === "agents" || t === "native"
-				? "agents"
-				: t === "claude"
-					? "claude"
-					: t === "github" || t === "copilot" || t === "gh"
-						? "github"
-						: undefined;
+		const canonical = normalizePlatformToken(v);
 		if (canonical && !out.includes(canonical)) out.push(canonical);
 	}
 	return out;

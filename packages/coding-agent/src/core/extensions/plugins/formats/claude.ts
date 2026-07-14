@@ -12,6 +12,7 @@ import { createJsonManifestAdapter } from "./jsonManifest.js";
 export const claudeFormat = createJsonManifestAdapter({
 	id: "claude",
 	manifestDir: ".claude-plugin",
+	workspaceRoot: ".claude",
 	precedence: 1,
 	label: "Claude Code (.claude-plugin)",
 	supportsProviders: false,

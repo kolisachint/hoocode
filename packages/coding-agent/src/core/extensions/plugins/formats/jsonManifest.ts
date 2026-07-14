@@ -11,6 +11,7 @@ import * as path from "node:path";
 import type { NormalizedPlugin, PluginProvider } from "../manifest.js";
 import {
 	authoredHooksToConfig,
+	claudeStyleWorkspace,
 	emitJson,
 	emitMarkdown,
 	normalizeHooks,
@@ -29,6 +30,8 @@ interface JsonManifestOptions {
 	id: Extract<PluginFormatId, "agents" | "claude">;
 	/** Marker subdirectory, e.g. ".agents-plugin". */
 	manifestDir: string;
+	/** Workspace-level artifact root, e.g. ".agents" / ".claude" (skills/, agents/, commands/ live under it). */
+	workspaceRoot: string;
 	precedence: number;
 	label: string;
 	/** Native honors `providers`; the Claude-compat path ignores them. */
@@ -44,6 +47,7 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 		precedence: opts.precedence,
 		label: opts.label,
 		marketplaceFiles: [path.join(opts.manifestDir, "marketplace.json")],
+		workspace: claudeStyleWorkspace(opts.workspaceRoot),
 
 		detectPlugin(root: string): boolean {
 			return readJson(path.join(root, manifestRelPath)) != null;

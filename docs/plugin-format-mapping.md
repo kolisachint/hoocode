@@ -126,6 +126,38 @@ The `format` field is the precedence **winner**; no plugin lists are merged.
 | `.claude-plugin/marketplace.json` | `"claude"` | `claude` | Claude Code | |
 | `.github/plugin/marketplace.json` (or legacy `.github/marketplace.json`) | `"copilot"` | `github` | GitHub / Copilot plugin directory index | plugins may also carry a `.github/plugin/plugin.json` manifest |
 
+### `--support-platform` — targeting what hoocode *writes*
+
+The same platform vocabulary drives the write side. The `--support-platform`
+CLI flag (or the `supportPlatform` setting; flag wins) sets the session-wide
+target layout(s) for everything hoocode produces:
+
+```
+hoocode --support-platform copilot            # Copilot layouts only
+hoocode --support-platform claude,copilot     # both (comma or repeated flag)
+```
+
+Tokens are the aliases above (`copilot`/`gh` → `github`, `native` → `agents`);
+unknown tokens warn and are skipped. The targets apply to:
+
+- **Authored plugins** (`ProposePlugin` / `ProposeExecutablePlugin`): replaces
+  the default `claude + github` target set. An explicit `platforms` tool
+  parameter still wins over the session targets.
+- **Workspace scaffolds** (`/new-skill`, `/new-agent`, `/new-command`): instead
+  of `.hoocode/`, each target platform's *workspace* conventions are written
+  (verified against the vendors' docs, 2026-07):
+
+| Artifact | `claude` | `github` (Copilot) | `agents` (native) |
+|---|---|---|---|
+| skill | `.claude/skills/<name>/SKILL.md` | `.github/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` |
+| subagent | `.claude/agents/<name>.md` (`tools` comma string) | `.github/agents/<name>.agent.md` (`tools` YAML list) | `.agents/agents/<name>.md` |
+| command | `.claude/commands/<name>.md` | `.github/prompts/<name>.prompt.md` | `.agents/commands/<name>.md` |
+
+Each adapter (`formats/claude.ts`, `formats/copilot.ts`, `formats/agents.ts`)
+carries its own `WorkspaceLayout`, and the session state lives in
+`formats/platform-targets.ts` — supporting a new vendor's write conventions is
+still a one-adapter change.
+
 ### `supportPlatform` — conflict is recorded, not hidden
 
 When a repo carries **more than one** index format (a "conflict"), precedence

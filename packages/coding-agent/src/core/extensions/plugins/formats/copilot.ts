@@ -13,6 +13,15 @@
  *   hooks             hooks/hooks.json                  ({ description?, hooks: { Event: [...] } })
  *   MCP servers       .mcp.json                         ({ mcpServers } | { servers })
  *
+ * Workspace-level (non-plugin) conventions, per the current GitHub Copilot
+ * customization docs (docs.github.com — agent skills, custom agents, prompt
+ * files; verified 2026-07):
+ *
+ *   skills            .github/skills/<name>/SKILL.md    (agentskills.io open standard)
+ *   custom agents     .github/agents/<name>.agent.md    (frontmatter: name, description,
+ *                                                        tools as a YAML list, model, ...)
+ *   prompt files      .github/prompts/<name>.prompt.md  (VS Code / Copilot prompt files)
+ *
  * Earlier hoocode releases authored a different Copilot mapping
  * (`.github/copilot-plugin.json` + `.github/prompts/*.prompt.md` +
  * `.github/chatmodes/*.chatmode.md`); the reader still accepts that layout as a
@@ -36,6 +45,7 @@ import {
 	readJson,
 	resolveCapabilityDir,
 	slug,
+	toolsYamlList,
 } from "./shared.js";
 import type { EmittedFile, PluginDraft, PluginFormatAdapter } from "./types.js";
 
@@ -74,6 +84,29 @@ export const copilotFormat: PluginFormatAdapter = {
 	precedence: 2,
 	label: "GitHub Copilot (.github)",
 	marketplaceFiles: [path.join(MARKER_DIR, "plugin", "marketplace.json"), path.join(MARKER_DIR, "marketplace.json")],
+
+	workspace: {
+		root: MARKER_DIR,
+		// Copilot reads repo skills from .github/skills (also .claude/skills and
+		// .agents/skills, which the sibling adapters cover).
+		emitSkill: (s) => ({
+			path: path.join(MARKER_DIR, "skills", slug(s.name), "SKILL.md"),
+			content: emitMarkdown({ name: s.name, description: s.description }, s.body),
+		}),
+		// Custom agents take `tools` as a YAML list (not the Claude comma string).
+		emitAgent: (a) => ({
+			path: path.join(MARKER_DIR, "agents", `${slug(a.name)}.agent.md`),
+			content: emitMarkdown(
+				{ name: a.name, description: a.description, tools: toolsYamlList(a.tools), model: a.model },
+				a.body,
+			),
+		}),
+		// The closest Copilot equivalent of a slash command is a prompt file.
+		emitCommand: (c) => ({
+			path: path.join(MARKER_DIR, "prompts", `${slug(c.name)}.prompt.md`),
+			content: emitMarkdown({ description: c.description }, c.body),
+		}),
+	},
 
 	detectPlugin(root: string): boolean {
 		return manifestPathFor(root) !== undefined;

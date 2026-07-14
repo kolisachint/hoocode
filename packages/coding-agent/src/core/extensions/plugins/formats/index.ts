@@ -80,4 +80,20 @@ export function emitForPlatforms(draft: PluginDraft, platforms?: MarketplacePlat
 }
 
 export { agentsFormat, claudeFormat, copilotFormat };
-export type { EmittedFile, MarketplacePlatform, PluginDraft, PluginFormatAdapter, PluginFormatId } from "./types.js";
+export {
+	DEFAULT_AUTHORING_PLATFORMS,
+	getSupportPlatforms,
+	normalizePlatformToken,
+	parseSupportPlatforms,
+	resolveAuthoringPlatforms,
+	type SupportPlatformParse,
+	setSupportPlatforms,
+} from "./platform-targets.js";
+export type {
+	EmittedFile,
+	MarketplacePlatform,
+	PluginDraft,
+	PluginFormatAdapter,
+	PluginFormatId,
+	WorkspaceLayout,
+} from "./types.js";

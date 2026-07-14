@@ -54,6 +54,13 @@ export interface Args {
 	enableFileTools?: boolean;
 	/** Enable the autonomous plugin system — plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin (off by default). */
 	enablePluginTools?: boolean;
+	/**
+	 * Platform layout(s) hoocode targets when it WRITES artifacts (authored
+	 * plugins, /new-skill //new-agent //new-command scaffolds). Raw tokens as
+	 * given (comma-separated and/or repeated); normalized downstream:
+	 * agents|native, claude, github|copilot|gh.
+	 */
+	supportPlatform?: string[];
 	/** Path to an explicit PEM CA bundle to trust additively for hoocode's own TLS traffic. */
 	caCert?: string;
 	/** Trust the OS/system CA store additively (opt-in) for hoocode's own TLS traffic. */
@@ -172,6 +179,14 @@ export function parseArgs(args: string[]): Args {
 			result.enableFileTools = true;
 		} else if (arg === "--enable-plugintools") {
 			result.enablePluginTools = true;
+		} else if (arg === "--support-platform" && i + 1 < args.length) {
+			result.supportPlatform = [
+				...(result.supportPlatform ?? []),
+				...args[++i]
+					.split(",")
+					.map((s) => s.trim())
+					.filter(Boolean),
+			];
 		} else if (arg === "--ca-cert" && i + 1 < args.length) {
 			result.caCert = args[++i];
 		} else if (arg === "--use-system-ca") {
@@ -357,6 +372,15 @@ ${chalk.bold("Options:")}
                                   Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and
                                   ProposePlugin, plus the runtime plugin-reuse nudge
                                   Can also be enabled via the "enablePluginTools" setting
+  --support-platform <list>      Platform layout(s) hoocode targets when it writes artifacts:
+                                  authored plugins (ProposePlugin) and the /new-skill /new-agent
+                                  /new-command scaffolds. Comma-separated and/or repeated.
+                                  Tokens: claude, copilot (alias: github, gh), agents (alias: native)
+                                  e.g. --support-platform copilot writes .github/skills/<name>/SKILL.md,
+                                  .github/agents/<name>.agent.md, .github/prompts/<name>.prompt.md and
+                                  a .github/plugin/plugin.json manifest for authored plugins
+                                  Default: claude + copilot for authored plugins; .hoocode/ for scaffolds
+                                  Can also be set via the "supportPlatform" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)

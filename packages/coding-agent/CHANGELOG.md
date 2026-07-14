@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- `--support-platform <list>` CLI flag (and `supportPlatform` setting): pick
+  which vendor layout(s) hoocode targets when it **writes** artifacts. Tokens:
+  `claude`, `copilot` (aliases `github`, `gh`), `agents` (alias `native`);
+  comma-separated and/or repeated. Applies to authored plugins
+  (ProposePlugin / ProposeExecutablePlugin — overrides the claude+github
+  default target set) and to the `/new-skill` `/new-agent` `/new-command`
+  scaffolds, which then land in each platform's workspace conventions instead
+  of `.hoocode/`: Copilot gets `.github/skills/<name>/SKILL.md`,
+  `.github/agents/<name>.agent.md` (frontmatter `tools` as a YAML list, per the
+  current custom-agents spec), and `.github/prompts/<name>.prompt.md`; Claude
+  gets `.claude/skills|agents|commands/`; native gets the `.agents/`
+  equivalents. Implemented as a per-adapter `WorkspaceLayout` on the plugin
+  format registry, so each vendor's conventions stay a one-file concern
+  (`formats/<vendor>.ts`) and new platforms plug in without touching callers.
+
 ## [0.4.129] - 2026-07-14
 
 ## [0.4.128] - 2026-07-14

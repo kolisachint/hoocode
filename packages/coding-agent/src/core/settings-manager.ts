@@ -802,6 +802,13 @@ export class SettingsManager {
 		this.save();
 	}
 
+	/** Raw `supportPlatform` tokens (string coerced to an array), or undefined when unset. */
+	getSupportPlatform(): string[] | undefined {
+		const value = this.settings.supportPlatform;
+		if (value === undefined) return undefined;
+		return Array.isArray(value) ? value : [value];
+	}
+
 	getEnablePluginTools(): boolean {
 		return this.settings.enablePluginTools ?? DEFAULT_SETTINGS.enablePluginTools!;
 	}

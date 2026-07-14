@@ -10,7 +10,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import type { PluginHooksConfig } from "../manifest.js";
-import type { AuthoredHook } from "./types.js";
+import type { AuthoredHook, WorkspaceLayout } from "./types.js";
 
 /** Raw manifest shape accepted by the `plugin.json`-style formats (agents/claude/copilot). */
 export interface RawManifest {
@@ -167,4 +167,41 @@ export function slug(name: string): string {
 		.replace(/[^a-zA-Z0-9._-]+/g, "-")
 		.replace(/^-+|-+$/g, "")
 		.slice(0, 80);
+}
+
+/**
+ * Render a comma-separated tool allowlist (Claude Code convention, e.g.
+ * "read, grep") as a YAML flow sequence (`['read', 'grep']`) for formats whose
+ * frontmatter takes tools as a list (Copilot custom agents / prompt files).
+ */
+export function toolsYamlList(tools: string | undefined): string | undefined {
+	const items = (tools ?? "")
+		.split(/[,\s]+/)
+		.map((t) => t.trim())
+		.filter(Boolean);
+	if (items.length === 0) return undefined;
+	return `[${items.map((t) => `'${t.replace(/'/g, "''")}'`).join(", ")}]`;
+}
+
+/**
+ * The workspace layout shared by the `.agents/` and `.claude/` conventions:
+ * `<root>/skills/<name>/SKILL.md`, `<root>/agents/<name>.md`,
+ * `<root>/commands/<name>.md`. Copilot's differs and lives in its adapter.
+ */
+export function claudeStyleWorkspace(root: string): WorkspaceLayout {
+	return {
+		root,
+		emitSkill: (s) => ({
+			path: path.join(root, "skills", slug(s.name), "SKILL.md"),
+			content: emitMarkdown({ name: s.name, description: s.description }, s.body),
+		}),
+		emitAgent: (a) => ({
+			path: path.join(root, "agents", `${slug(a.name)}.md`),
+			content: emitMarkdown({ name: a.name, description: a.description, tools: a.tools, model: a.model }, a.body),
+		}),
+		emitCommand: (c) => ({
+			path: path.join(root, "commands", `${slug(c.name)}.md`),
+			content: emitMarkdown({ name: c.name, description: c.description }, c.body),
+		}),
+	};
 }
