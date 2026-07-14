@@ -658,7 +658,11 @@ describe("openai-codex streaming", () => {
 				messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
 			};
 
-			const result = await streamOpenAICodexResponses(model, context, { apiKey: token, serviceTier }).result();
+			const result = await streamOpenAICodexResponses(model, context, {
+				apiKey: token,
+				serviceTier,
+				transport: "sse",
+			}).result();
 
 			expect(result.usage.cost.input).toBe(1 * multiplier);
 			expect(result.usage.cost.output).toBe(2 * multiplier);
