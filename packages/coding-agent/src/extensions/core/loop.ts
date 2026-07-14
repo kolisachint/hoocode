@@ -25,6 +25,20 @@ import { TaskScheduler } from "../../core/scheduler.js";
 const AUTO_LOOP_DONE_TOKEN = "LOOP_DONE";
 const DEFAULT_AUTO_MAX_TURNS = 10;
 
+/**
+ * Event-bus channel: the autonomous-loop active state changed.
+ * Payload: `{ active: boolean }`. Emitted whenever `/loop auto` starts or stops
+ * so other extensions (e.g. ask_options) can adapt to running unattended.
+ */
+export const LOOP_AUTO_CHANGED = "loop:auto-changed";
+
+/**
+ * Event-bus channel: request to halt the autonomous loop.
+ * Payload: `{ reason: string }`. Sent by another extension when it hits a
+ * blocker that requires a human decision the loop cannot safely make on its own.
+ */
+export const LOOP_HALT = "loop:halt";
+
 /** Convert a simple interval token ("5m", "2h", "1d") to a 5-field cron, or null. */
 function intervalToCron(token: string): string | null {
 	const m = /^(\d+)(m|h|d)$/.exec(token.trim());
@@ -60,8 +74,26 @@ function assistantText(message: { content: unknown }): string {
 export function setupLoop(pi: ExtensionAPI): void {
 	let scheduler: TaskScheduler | undefined;
 	let auto: { remaining: number } | null = null;
+	let activeCtx: ExtensionContext | undefined;
+
+	/** Set the autonomous-loop state and broadcast the active flag on the bus. */
+	function setAuto(next: { remaining: number } | null): void {
+		const was = auto !== null;
+		auto = next;
+		if (was !== (next !== null)) pi.events.emit(LOOP_AUTO_CHANGED, { active: next !== null });
+	}
+
+	// Another extension (e.g. ask_options) hit a decision it cannot safely make
+	// while unattended. Stop iterating and let the model report the blocker.
+	pi.events.on(LOOP_HALT, (data) => {
+		if (!auto) return;
+		const reason = (data as { reason?: string })?.reason?.trim() || "a decision that needs the user.";
+		setAuto(null);
+		activeCtx?.ui.notify(`Autonomous loop halted: ${reason}`, "warning");
+	});
 
 	pi.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
+		activeCtx = ctx;
 		if (scheduler) return;
 		const isIdle = () => {
 			try {
@@ -83,7 +115,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", () => {
 		scheduler?.stop();
-		auto = null;
+		setAuto(null);
 	});
 
 	// Autonomous continuation: re-prompt on each agent_end until LOOP_DONE or budget.
@@ -93,12 +125,12 @@ export function setupLoop(pi: ExtensionAPI): void {
 		const last = [...event.messages].reverse().find((m) => m.role === "assistant");
 		const text = last ? assistantText(last) : "";
 		if (text.includes(AUTO_LOOP_DONE_TOKEN)) {
-			auto = null;
+			setAuto(null);
 			ctx.ui.notify("Autonomous loop complete.", "info");
 			return;
 		}
 		if (auto.remaining <= 0) {
-			auto = null;
+			setAuto(null);
 			ctx.ui.notify("Autonomous loop stopped: max turns reached.", "warning");
 			return;
 		}
@@ -197,7 +229,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 			if (trimmed === "stop") {
 				const had = scheduler.list().length > 0 || auto !== null;
 				scheduler.clear();
-				auto = null;
+				setAuto(null);
 				ctx.ui.notify(had ? "Stopped all loops and scheduled tasks." : "Nothing to stop.", "info");
 				return;
 			}
@@ -224,7 +256,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 					ctx.ui.notify("Usage: /loop auto [--max-turns N] <task>", "warning");
 					return;
 				}
-				auto = { remaining: maxTurns };
+				setAuto({ remaining: maxTurns });
 				pi.sendUserMessage(
 					`${rest}\n\n(Autonomous loop: keep working until the task is fully complete, then reply with ${AUTO_LOOP_DONE_TOKEN}.)`,
 					{ deliverAs: "followUp" },

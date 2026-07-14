@@ -9,6 +9,7 @@
 import type { AgentToolResult, AgentToolUpdateCallback } from "@kolisachint/hoocode-agent-core";
 import { type Static, Type } from "typebox";
 import type { AskQuestion, ExtensionAPI, ExtensionContext, SessionStartEvent } from "../../core/extensions/types.js";
+import { LOOP_AUTO_CHANGED, LOOP_HALT } from "./loop.js";
 
 const askOptionsSchema = Type.Object({
 	questions: Type.Array(
@@ -46,6 +47,13 @@ export function setupAskOptions(pi: ExtensionAPI): void {
 		activeCtx = ctx;
 	});
 
+	// Track whether an autonomous /loop is running so we never block on a human
+	// who isn't there. The loop extension broadcasts this on the shared bus.
+	let autoLoopActive = false;
+	pi.events.on(LOOP_AUTO_CHANGED, (data) => {
+		autoLoopActive = !!(data as { active?: boolean })?.active;
+	});
+
 	pi.registerTool({
 		name: "ask_options",
 		label: "Ask the user",
@@ -76,6 +84,43 @@ export function setupAskOptions(pi: ExtensionAPI): void {
 			if (!params.questions.length) {
 				return {
 					content: [{ type: "text", text: "No questions were provided." }],
+					details: undefined,
+				};
+			}
+
+			// Autonomous loop: no human is watching, so never block on the pane.
+			// Decide any question that carries a recommended default and proceed;
+			// if any question lacks one, there is no safe default — halt the loop
+			// and let the model report the blocker instead of guessing.
+			if (autoLoopActive) {
+				const blockers = params.questions.filter((q) => !q.options.some((o) => o.recommended));
+				if (blockers.length) {
+					const list = blockers.map((q) => `  • ${q.question}`).join("\n");
+					pi.events.emit(LOOP_HALT, {
+						reason: `ask_options had ${blockers.length} question(s) with no recommended default.`,
+					});
+					return {
+						content: [
+							{
+								type: "text",
+								text:
+									`Autonomous loop: no user is available to answer, and ${blockers.length} question(s) have ` +
+									`no recommended default to fall back on:\n${list}\n\n` +
+									`The loop has been stopped. Do not guess — stop and report this blocker to the user, ` +
+									`explaining what decision is needed and the options you were weighing.`,
+							},
+						],
+						details: undefined,
+					};
+				}
+				const text = params.questions
+					.map((q) => {
+						const rec = q.options.find((o) => o.recommended);
+						return `${q.question}\n  → ${rec?.label} (auto-selected recommended default; autonomous loop, no user present)`;
+					})
+					.join("\n\n");
+				return {
+					content: [{ type: "text", text }],
 					details: undefined,
 				};
 			}
