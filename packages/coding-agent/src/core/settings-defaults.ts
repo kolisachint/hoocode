@@ -14,6 +14,9 @@ export const DEFAULT_SETTINGS = {
 		maxBytes: 16 * 1024,
 		maxLines: 800,
 	},
+	contextGc: {
+		enabled: true,
+	},
 	branchSummary: {
 		reserveTokens: 16384,
 		skipPrompt: false,

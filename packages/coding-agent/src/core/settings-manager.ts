@@ -536,6 +536,11 @@ export class SettingsManager {
 		return Number.isFinite(v) && v >= 1 ? Math.floor(v) : DEFAULT_SETTINGS.toolOutput!.maxLines;
 	}
 
+	/** Whether to stub superseded read results out of the outgoing context. */
+	getContextGcEnabled(): boolean {
+		return this.settings.contextGc?.enabled ?? DEFAULT_SETTINGS.contextGc!.enabled;
+	}
+
 	getBranchSummarySettings(): Required<BranchSummarySettings> {
 		return { ...DEFAULT_SETTINGS.branchSummary, ...this.settings.branchSummary };
 	}

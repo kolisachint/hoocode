@@ -20,6 +20,10 @@ export interface ToolOutputSettings {
 	maxLines?: number; // default: 800 - line cap on a single read/bash tool result before truncation
 }
 
+export interface ContextGcSettings {
+	enabled?: boolean; // default: true - stub out superseded read results (file later edited/re-read) from the outgoing context
+}
+
 export interface BranchSummarySettings {
 	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
 	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
@@ -109,6 +113,7 @@ export interface Settings {
 	theme?: string;
 	compaction?: CompactionSettings;
 	toolOutput?: ToolOutputSettings; // caps on a single read/bash result (bounds per-turn transcript growth)
+	contextGc?: ContextGcSettings; // garbage-collect superseded read results from the outgoing context
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
