@@ -391,6 +391,34 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 		expect(fs.existsSync(path.join(dest, "skills", "second", "SKILL.md"))).toBe(true);
 	});
 
+	it("a delta hook with the same event/matcher but a new command is ADDED, not a replacement (pins the no-modify-in-place semantics)", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{ id: "hookdup", hooks: [{ event: "PreToolUse", matcher: "Bash", command: "echo old" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const update = createUpdatePluginToolDefinition();
+		await update.execute(
+			"2",
+			{ id: "hookdup", hooks: [{ event: "PreToolUse", matcher: "Bash", command: "echo new" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		// Both hooks fire: hooks have no identity, so a changed command is a new
+		// hook. Changing this to replacement-by-event/matcher would silently drop
+		// legitimate sibling hooks — see mergePluginDraft's doc comment first.
+		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "hookdup"));
+		const commands = (parsed?.hooks?.PreToolUse ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+		expect(commands.sort()).toEqual(["echo new", "echo old"]);
+	});
+
 	it("unions an added hook with existing hooks (confirmed), preserving the original", async () => {
 		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
 		const propose = createProposePluginToolDefinition();

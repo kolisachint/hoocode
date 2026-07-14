@@ -361,6 +361,7 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 			"Add/replace capabilities in a plugin you authored (additive; executable additions ask to confirm).",
 		promptGuidelines: [
 			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one). It cannot remove a capability — UninstallPlugin and re-author for that.",
+			"Hooks cannot be modified in place: they have no name, so supplying a changed command ADDS a second hook alongside the old one (both fire). To change or remove a hook, UninstallPlugin and re-author the plugin.",
 			"Only executable *additions* trigger confirmation — adding a passive skill to an already-executable plugin does not re-prompt.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
 		],

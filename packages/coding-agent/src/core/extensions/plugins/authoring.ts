@@ -217,6 +217,11 @@ function dedupeHooks(hooks: AuthoredHook[]): AuthoredHook[] {
  *  - **Hooks** and **MCP servers** live in single files that a re-emit rewrites,
  *    so they are re-emitted as the *union* of existing + delta (MCP keyed by
  *    server name with delta winning; hooks deduped by event/matcher/command).
+ *    Hooks have no name, so there is deliberately no modify-in-place: a delta
+ *    hook with the same event/matcher but a different command is a NEW hook
+ *    added alongside the old one, never a replacement. (Keying replacement by
+ *    event+matcher would silently drop legitimate sibling hooks that share
+ *    them.) Changing or removing a hook means uninstall + re-author.
  *  - **Metadata** (version, description, author) takes the delta's value when
  *    provided, else keeps the existing one.
  *
