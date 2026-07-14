@@ -72,6 +72,16 @@ budgets reading the normalized `StopReason` — remains a possible future
 refinement, but the extension-level loop covers the autonomous-iteration need
 without modifying the core turn loop.
 
+**`ask_options` while unattended.** A `/loop auto` run has no human watching, so
+the blocking options pane would stall it. The loop broadcasts its active state on
+the shared event bus (`loop:auto-changed`); `ask_options` listens and, while a
+loop is active, never blocks: it auto-selects any question that carries a
+`recommended` option and returns the decision to the model. If any question has
+no recommended default there is no safe fallback, so the tool emits `loop:halt` —
+the loop clears its state and notifies — and returns a result telling the model
+to stop and report the blocker rather than guess. Normal blocking behavior
+resumes once the loop ends.
+
 ---
 
 ## 2. Plugin system
