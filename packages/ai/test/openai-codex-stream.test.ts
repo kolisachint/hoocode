@@ -175,7 +175,7 @@ describe("openai-codex streaming", () => {
 			messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
 		};
 
-		const streamResult = streamOpenAICodexResponses(model, context, { apiKey: token });
+		const streamResult = streamOpenAICodexResponses(model, context, { apiKey: token, transport: "sse" });
 		let sawTextDelta = false;
 		let sawDone = false;
 
@@ -407,7 +407,7 @@ describe("openai-codex streaming", () => {
 			messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
 		};
 
-		const streamResult = streamOpenAICodexResponses(model, context, { apiKey: token, sessionId });
+		const streamResult = streamOpenAICodexResponses(model, context, { apiKey: token, sessionId, transport: "sse" });
 		await streamResult.result();
 	});
 
@@ -462,7 +462,11 @@ describe("openai-codex streaming", () => {
 			messages: [{ role: "user", content: "Say hello", timestamp: Date.now() }],
 		};
 
-		await streamSimpleOpenAICodexResponses(model, context, { apiKey: token, reasoning: "xhigh" }).result();
+		await streamSimpleOpenAICodexResponses(model, context, {
+			apiKey: token,
+			reasoning: "xhigh",
+			transport: "sse",
+		}).result();
 
 		expect(requestedReasoning).toEqual({ effort: "xhigh", summary: "auto" });
 	});
@@ -545,6 +549,10 @@ describe("openai-codex streaming", () => {
 			provider: "openai-codex",
 			baseUrl: "https://chatgpt.com/backend-api",
 			reasoning: true,
+			// Mirror the generated config for these models: minimal is unsupported and
+			// clamped up to low, while xhigh passes through. buildRequestBody performs
+			// the clamp via this map, so the test must supply it.
+			thinkingLevelMap: { xhigh: "xhigh", minimal: "low" },
 			input: ["text"],
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 			contextWindow: 400000,
@@ -559,6 +567,7 @@ describe("openai-codex streaming", () => {
 		const streamResult = streamOpenAICodexResponses(model, context, {
 			apiKey: token,
 			reasoningEffort: "minimal",
+			transport: "sse",
 		});
 		await streamResult.result();
 	});
@@ -749,7 +758,7 @@ describe("openai-codex streaming", () => {
 		};
 
 		// No sessionId provided
-		const streamResult = streamOpenAICodexResponses(model, context, { apiKey: token });
+		const streamResult = streamOpenAICodexResponses(model, context, { apiKey: token, transport: "sse" });
 		await streamResult.result();
 	});
 	it("forwards auto transport from streamSimple options and uses cached websocket context", async () => {
