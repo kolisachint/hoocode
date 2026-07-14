@@ -22,6 +22,13 @@
   as authoring, and marketplace-installed plugins are refused (they don't carry
   the authored provenance marker and don't round-trip losslessly through the
   authoring emitters).
+- `RemovePluginCapability` tool: remove named capabilities from a locally
+  authored plugin — skills/commands/subagents/MCP servers by name, hooks by
+  event (narrowed by matcher/command). The subtractive half of `UpdatePlugin`;
+  runs autonomously since removal is the low-risk direction (deleting
+  capabilities cannot execute code). Also the supported way to *change* a hook
+  (hooks have no name to replace by): remove the old one, then add the new one
+  via `UpdatePlugin`.
 - `ListPlugins` accepts an optional `id` parameter to look up a single
   installed plugin.
 

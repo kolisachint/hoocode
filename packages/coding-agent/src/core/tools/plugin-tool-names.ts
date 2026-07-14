@@ -26,6 +26,7 @@ export const UNINSTALL_PLUGIN_TOOL_NAME = "UninstallPlugin";
 // hands is structurally absent — see propose-plugin.ts).
 export const PROPOSE_PLUGIN_TOOL_NAME = "ProposePlugin";
 export const UPDATE_PLUGIN_TOOL_NAME = "UpdatePlugin";
+export const REMOVE_PLUGIN_CAPABILITY_TOOL_NAME = "RemovePluginCapability";
 
 /** Every capability-acquisition tool — the guardrail set stripped from authored allowlists. */
 export const PLUGIN_SYSTEM_TOOL_NAMES: readonly string[] = [
@@ -36,4 +37,5 @@ export const PLUGIN_SYSTEM_TOOL_NAMES: readonly string[] = [
 	UNINSTALL_PLUGIN_TOOL_NAME,
 	PROPOSE_PLUGIN_TOOL_NAME,
 	UPDATE_PLUGIN_TOOL_NAME,
+	REMOVE_PLUGIN_CAPABILITY_TOOL_NAME,
 ];

@@ -33,15 +33,24 @@ import {
 	isAuthoredPlugin,
 	mergePluginDraft,
 	pluginExists,
+	removeFromPlugin,
 	resolveAuthoringPlatforms,
 	writePluginDraft,
 } from "../extensions/plugins/authoring.js";
 import type { MarketplacePlatform, PluginDraft } from "../extensions/plugins/formats/types.js";
 import type { ExtensionContext } from "../extensions/types.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
-import { PROPOSE_PLUGIN_TOOL_NAME, UPDATE_PLUGIN_TOOL_NAME } from "./plugin-tool-names.js";
+import {
+	PROPOSE_PLUGIN_TOOL_NAME,
+	REMOVE_PLUGIN_CAPABILITY_TOOL_NAME,
+	UPDATE_PLUGIN_TOOL_NAME,
+} from "./plugin-tool-names.js";
 
-export { PROPOSE_PLUGIN_TOOL_NAME, UPDATE_PLUGIN_TOOL_NAME } from "./plugin-tool-names.js";
+export {
+	PROPOSE_PLUGIN_TOOL_NAME,
+	REMOVE_PLUGIN_CAPABILITY_TOOL_NAME,
+	UPDATE_PLUGIN_TOOL_NAME,
+} from "./plugin-tool-names.js";
 
 const platformSchema = Type.Union([Type.Literal("claude"), Type.Literal("github"), Type.Literal("agents")], {
 	description: "Target format: claude (Claude Code), github (GitHub Copilot), or agents (native).",
@@ -353,15 +362,15 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 		description:
 			"Merge inline-authored capabilities into an EXISTING locally AUTHORED plugin (marketplace-installed plugins " +
 			"are refused). Skills/commands/subagents are added or replaced by name; hooks and MCP servers are unioned " +
-			"with what's already there; metadata is overwritten only where you supply it. Additive only — it cannot " +
-			"remove a capability (UninstallPlugin and re-author to remove). Nothing is fetched from a remote. Passive " +
+			"with what's already there; metadata is overwritten only where you supply it. Additive only — remove a " +
+			"capability with RemovePluginCapability. Nothing is fetched from a remote. Passive " +
 			"additions apply autonomously; executable additions (hooks, MCP servers, mutating subagents) require human " +
 			"confirmation. Use ProposePlugin to create.",
 		promptSnippet:
 			"Add/replace capabilities in a plugin you authored (additive; executable additions ask to confirm).",
 		promptGuidelines: [
-			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one). It cannot remove a capability — UninstallPlugin and re-author for that.",
-			"Hooks cannot be modified in place: they have no name, so supplying a changed command ADDS a second hook alongside the old one (both fire). To change or remove a hook, UninstallPlugin and re-author the plugin.",
+			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one). It cannot remove a capability — use RemovePluginCapability for that.",
+			"Hooks cannot be modified in place: they have no name, so supplying a changed command ADDS a second hook alongside the old one (both fire). To change a hook, RemovePluginCapability the old one first, then add the new one here.",
 			"Only executable *additions* trigger confirmation — adding a passive skill to an already-executable plugin does not re-prompt.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
 		],
@@ -416,7 +425,111 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 	});
 }
 
-/** Both authoring tool definitions, for registration on the top-level agent. */
+// ── RemovePluginCapability (subtract from an authored plugin) ─────────────────
+
+const hookRemovalSchema = Type.Object(
+	{
+		event: Type.String({ description: "Event of the hook(s) to remove, e.g. PreToolUse." }),
+		matcher: Type.Optional(Type.String({ description: "Narrow to hooks with exactly this matcher." })),
+		command: Type.Optional(Type.String({ description: "Narrow to hooks with exactly this command." })),
+	},
+	{ additionalProperties: false },
+);
+
+const removeParams = Type.Object(
+	{
+		id: Type.String({ description: "Id of the authored plugin to remove capabilities from." }),
+		skills: Type.Optional(Type.Array(Type.String(), { description: "Skill names to remove." })),
+		commands: Type.Optional(Type.Array(Type.String(), { description: "Command names to remove." })),
+		subagents: Type.Optional(Type.Array(Type.String(), { description: "Subagent names to remove." })),
+		mcpServers: Type.Optional(Type.Array(Type.String(), { description: "MCP server names to remove." })),
+		hooks: Type.Optional(
+			Type.Array(hookRemovalSchema, {
+				description: "Hooks to remove, matched by event and narrowed by matcher/command when provided.",
+			}),
+		),
+	},
+	{ additionalProperties: false },
+);
+
+export interface RemovePluginCapabilityDetails {
+	id: string;
+	removed: string[];
+	missing: string[];
+}
+
+export function createRemovePluginCapabilityToolDefinition(): ToolDefinition {
+	return defineTool<typeof removeParams, RemovePluginCapabilityDetails>({
+		name: REMOVE_PLUGIN_CAPABILITY_TOOL_NAME,
+		label: REMOVE_PLUGIN_CAPABILITY_TOOL_NAME,
+		description:
+			"Remove named capabilities from a locally AUTHORED plugin — skills, commands, subagents, and MCP servers by " +
+			"name; hooks by event (narrowed by matcher/command). The subtractive half of UpdatePlugin. Removal is " +
+			"low-risk and autonomous (deleting capabilities cannot execute code). To remove the whole plugin, use " +
+			"UninstallPlugin; marketplace-installed plugins are refused here.",
+		promptSnippet: "Remove capabilities from a plugin you authored (low risk; autonomous).",
+		promptGuidelines: [
+			"Removal runs autonomously (the low-risk direction) — announce what you removed and why.",
+			"To CHANGE a hook (hooks have no name to replace by): RemovePluginCapability the old hook, then UpdatePlugin the new one (which asks for confirmation).",
+		],
+		parameters: removeParams,
+		async execute(_id, params: Static<typeof removeParams>, _signal, _onUpdate, ctx: ExtensionContext) {
+			const noDetails = (msg: string) => ({
+				content: [{ type: "text" as const, text: msg }],
+				details: { id: params.id, removed: [], missing: [] },
+			});
+
+			const existing = getPlugin(ctx.cwd, params.id);
+			if (!existing) {
+				return noDetails(`No plugin named "${params.id}" is installed.`);
+			}
+			if (!isAuthoredPlugin(ctx.cwd, params.id)) {
+				return noDetails(
+					`Plugin "${params.id}" was not authored in this workspace (likely installed from a marketplace). ` +
+						"RemovePluginCapability only edits locally authored plugins — use UninstallPlugin to remove it entirely.",
+				);
+			}
+			const requested =
+				(params.skills?.length ?? 0) +
+				(params.commands?.length ?? 0) +
+				(params.subagents?.length ?? 0) +
+				(params.mcpServers?.length ?? 0) +
+				(params.hooks?.length ?? 0);
+			if (requested === 0) {
+				return noDetails("Nothing to remove. Name skills, commands, subagents, mcpServers, or hooks.");
+			}
+
+			const result = removeFromPlugin(ctx.cwd, params.id, {
+				skills: params.skills,
+				commands: params.commands,
+				subagents: params.subagents,
+				mcpServers: params.mcpServers,
+				hooks: params.hooks,
+			});
+			const lines: string[] = [];
+			if (result.removed.length > 0) {
+				lines.push(`Removed from plugin "${params.id}":`, ...result.removed.map((r) => `  ${r}`));
+			}
+			if (result.missing.length > 0) {
+				lines.push(`Not found (nothing removed):`, ...result.missing.map((m) => `  ${m}`));
+			}
+			const text = lines.join("\n");
+			// Removal takes effect through the reload path, same as UninstallPlugin.
+			if (result.removed.length > 0) ctx.requestReloadWhenIdle();
+			ctx.ui.notify(text, result.removed.length > 0 ? "info" : "warning");
+			return {
+				content: [{ type: "text" as const, text }],
+				details: { id: params.id, removed: result.removed, missing: result.missing },
+			};
+		},
+	});
+}
+
+/** All three authoring tool definitions, for registration on the top-level agent. */
 export function createProposePluginToolDefinitions(): ToolDefinition[] {
-	return [createProposePluginToolDefinition(), createUpdatePluginToolDefinition()];
+	return [
+		createProposePluginToolDefinition(),
+		createUpdatePluginToolDefinition(),
+		createRemovePluginCapabilityToolDefinition(),
+	];
 }

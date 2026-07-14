@@ -6,6 +6,7 @@ import { classifyAllowlist } from "../src/core/extensions/plugins/authoring.js";
 import { parsePluginDir } from "../src/core/extensions/plugins/manifest.js";
 import {
 	createProposePluginToolDefinition,
+	createRemovePluginCapabilityToolDefinition,
 	createUpdatePluginToolDefinition,
 } from "../src/core/tools/propose-plugin.js";
 
@@ -470,5 +471,179 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "exec"));
 		// The original MCP server survived the merge.
 		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
+	});
+});
+
+describe("RemovePluginCapability (subtract from an authored plugin)", () => {
+	let cwd: string;
+
+	beforeEach(() => {
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-remove-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(cwd, { recursive: true, force: true });
+	});
+
+	it("removes a skill by name, leaving siblings intact (autonomous, no UI needed)", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: false });
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{
+				id: "trim",
+				skills: [
+					{ name: "keep", body: "Keep." },
+					{ name: "drop", body: "Drop." },
+				],
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const remove = createRemovePluginCapabilityToolDefinition();
+		const res = await remove.execute("2", { id: "trim", skills: ["drop"] }, undefined, undefined, ctx);
+		expect((res.details as { removed: string[] }).removed).toEqual(['skill "drop"']);
+
+		const dest = path.join(cwd, ".agents", "plugins", "trim");
+		expect(fs.existsSync(path.join(dest, "skills", "drop"))).toBe(false);
+		expect(fs.existsSync(path.join(dest, "skills", "keep", "SKILL.md"))).toBe(true);
+	});
+
+	it("removes one hook by event+command, preserving the sibling; removing the last hook deletes hooks.json", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{
+				id: "dehook",
+				hooks: [
+					{ event: "PreToolUse", matcher: "Bash", command: "echo a" },
+					{ event: "PreToolUse", matcher: "Bash", command: "echo b" },
+				],
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const remove = createRemovePluginCapabilityToolDefinition();
+		await remove.execute(
+			"2",
+			{ id: "dehook", hooks: [{ event: "PreToolUse", command: "echo a" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		const dest = path.join(cwd, ".agents", "plugins", "dehook");
+		let parsed = parsePluginDir(dest);
+		const commands = (parsed?.hooks?.PreToolUse ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+		expect(commands).toEqual(["echo b"]);
+
+		// Removing the last hook must delete hooks.json — a stale file would
+		// resurrect the hook through the parser's on-disk fallback.
+		await remove.execute("3", { id: "dehook", hooks: [{ event: "PreToolUse" }] }, undefined, undefined, ctx);
+		expect(fs.existsSync(path.join(dest, "hooks", "hooks.json"))).toBe(false);
+		parsed = parsePluginDir(dest);
+		expect(parsed?.hooks).toBeUndefined();
+	});
+
+	it("removes an MCP server by name; removing the last one deletes .mcp.json and the manifest entry", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{
+				id: "demcp",
+				mcpServers: [
+					{ name: "keep", command: "keep-bin" },
+					{ name: "drop", command: "drop-bin" },
+				],
+			},
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const remove = createRemovePluginCapabilityToolDefinition();
+		await remove.execute("2", { id: "demcp", mcpServers: ["drop"] }, undefined, undefined, ctx);
+		const dest = path.join(cwd, ".agents", "plugins", "demcp");
+		let parsed = parsePluginDir(dest);
+		expect(parsed?.mcpServers).toMatchObject({ keep: { command: "keep-bin" } });
+		expect(parsed?.mcpServers?.drop).toBeUndefined();
+
+		await remove.execute("3", { id: "demcp", mcpServers: ["keep"] }, undefined, undefined, ctx);
+		expect(fs.existsSync(path.join(dest, ".mcp.json"))).toBe(false);
+		parsed = parsePluginDir(dest);
+		expect(parsed?.mcpServers).toBeUndefined();
+	});
+
+	it("supports the change-a-hook recipe: remove the old, update in the new", async () => {
+		const { ctx } = makeCtx(cwd, { hasUI: true, confirm: true });
+		const propose = createProposePluginToolDefinition();
+		await propose.execute(
+			"1",
+			{ id: "rehook", hooks: [{ event: "PreToolUse", matcher: "Bash", command: "echo old" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const remove = createRemovePluginCapabilityToolDefinition();
+		await remove.execute(
+			"2",
+			{ id: "rehook", hooks: [{ event: "PreToolUse", matcher: "Bash", command: "echo old" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		const update = createUpdatePluginToolDefinition();
+		await update.execute(
+			"3",
+			{ id: "rehook", hooks: [{ event: "PreToolUse", matcher: "Bash", command: "echo new" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+
+		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "rehook"));
+		const commands = (parsed?.hooks?.PreToolUse ?? []).flatMap((g) => g.hooks.map((h) => h.command));
+		// Exactly the new hook — no duplicate, no leftover.
+		expect(commands).toEqual(["echo new"]);
+	});
+
+	it("reports missing capabilities without removing anything", async () => {
+		const { ctx } = makeCtx(cwd);
+		const propose = createProposePluginToolDefinition();
+		await propose.execute("1", { id: "misses", commands: [{ name: "go", body: "Go." }] }, undefined, undefined, ctx);
+
+		const remove = createRemovePluginCapabilityToolDefinition();
+		const res = await remove.execute("2", { id: "misses", skills: ["ghost"] }, undefined, undefined, ctx);
+		expect((res.details as { removed: string[]; missing: string[] }).removed).toEqual([]);
+		expect((res.details as { missing: string[] }).missing).toEqual(['skill "ghost"']);
+		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "misses", "commands", "go.md"))).toBe(true);
+	});
+
+	it("refuses a plugin without the authored marker", async () => {
+		const dest = path.join(cwd, ".agents", "plugins", "thirdparty");
+		fs.mkdirSync(path.join(dest, ".claude-plugin"), { recursive: true });
+		fs.writeFileSync(path.join(dest, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name: "thirdparty" })}\n`);
+
+		const { ctx } = makeCtx(cwd);
+		const remove = createRemovePluginCapabilityToolDefinition();
+		const res = await remove.execute("1", { id: "thirdparty", skills: ["x"] }, undefined, undefined, ctx);
+		expect((res.details as { removed: string[] }).removed).toEqual([]);
+		expect((res.content[0] as { text: string }).text).toContain("not authored");
+	});
+
+	it("rejects an empty removal request", async () => {
+		const { ctx } = makeCtx(cwd);
+		const propose = createProposePluginToolDefinition();
+		await propose.execute("1", { id: "noop", commands: [{ name: "go", body: "Go." }] }, undefined, undefined, ctx);
+
+		const remove = createRemovePluginCapabilityToolDefinition();
+		const res = await remove.execute("2", { id: "noop" }, undefined, undefined, ctx);
+		expect((res.content[0] as { text: string }).text).toContain("Nothing to remove");
 	});
 });

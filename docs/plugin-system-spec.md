@@ -123,7 +123,9 @@ used for install.
 > hooks/MCP servers), so a hook can never be mis-routed through a "passive"
 > path, and passive-plus-executable plugins author in one call — the executable
 > portion alone triggers the confirm gate. `UpdatePlugin` (local, merge-only)
-> reuses the same gate.
+> reuses the same gate, and `RemovePluginCapability` is its subtractive half —
+> autonomous, per the same reasoning that makes `UninstallPlugin` low-risk
+> (deleting capabilities cannot execute code). Both are authored-only.
 
 | Authored capability | Risk shape | Treatment |
 |---|---|---|

@@ -13,12 +13,13 @@
  * GitHub Copilot by default) and round-trips back through {@link parsePluginDir}.
  */
 
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { CLAUDE_TOOL_ALIASES } from "../../agent-frontmatter.js";
 import { PLUGIN_SYSTEM_TOOL_NAMES } from "../../tools/plugin-tool-names.js";
 import { emitForPlatforms } from "./formats/index.js";
 import { resolveAuthoringPlatforms } from "./formats/platform-targets.js";
+import { slug } from "./formats/shared.js";
 import type { AuthoredHook, AuthoredMcpServer, MarketplacePlatform, PluginDraft } from "./formats/types.js";
 import { installedPluginsDir, sanitizeForDir } from "./install.js";
 import { type NormalizedPlugin, type PluginHooksConfig, parsePluginDir } from "./manifest.js";
@@ -221,7 +222,8 @@ function dedupeHooks(hooks: AuthoredHook[]): AuthoredHook[] {
  *    hook with the same event/matcher but a different command is a NEW hook
  *    added alongside the old one, never a replacement. (Keying replacement by
  *    event+matcher would silently drop legitimate sibling hooks that share
- *    them.) Changing or removing a hook means uninstall + re-author.
+ *    them.) Changing a hook = {@link removeFromPlugin} the old one + merge the
+ *    new one.
  *  - **Metadata** (version, description, author) takes the delta's value when
  *    provided, else keeps the existing one.
  *
@@ -272,4 +274,143 @@ export function mergePluginDraft(
 		mcpServers: mcpByName.size ? [...mcpByName.values()] : undefined,
 	};
 	return writePluginDraft(cwd, merged, targets);
+}
+
+/** A hook to remove: `event` is required; `matcher`/`command` narrow the match when provided. */
+export interface HookRemovalSpec {
+	event: string;
+	matcher?: string;
+	command?: string;
+}
+
+/** Named capabilities to remove from an authored plugin. */
+export interface RemovalSpec {
+	skills?: string[];
+	commands?: string[];
+	subagents?: string[];
+	mcpServers?: string[];
+	hooks?: HookRemovalSpec[];
+}
+
+export interface RemoveResult {
+	dest: string;
+	/** Human-readable descriptions of what was removed. */
+	removed: string[];
+	/** Requested capabilities that were not found (nothing was removed for these). */
+	missing: string[];
+}
+
+function describeHookSpec(h: HookRemovalSpec): string {
+	return `hook [${h.event}${h.matcher !== undefined ? ` matcher=${h.matcher}` : ""}${h.command !== undefined ? ` command=${h.command}` : ""}]`;
+}
+
+/**
+ * Remove named capabilities from the authored plugin `id`. The inverse of the
+ * additive merge, and — like {@link mergePluginDraft} — authored-only.
+ *
+ * Removal is the low-risk direction (deleting capabilities cannot execute
+ * code), which is why callers may run it without a confirmation gate.
+ *
+ *  - **Skills / commands / subagents** are directory-scanned, so removal is a
+ *    surgical file delete at our emit conventions; no re-emit needed.
+ *  - **Hooks** (matched by event, narrowed by matcher/command when given) and
+ *    **MCP servers** (by name) live in single files, so the remaining set is
+ *    re-emitted — and when a set empties, its file is DELETED, because the
+ *    parser falls back to `hooks/hooks.json` / `.mcp.json` on disk and a stale
+ *    file would resurrect the removed capability on the next parse.
+ */
+export function removeFromPlugin(cwd: string, id: string, spec: RemovalSpec): RemoveResult {
+	const existing = getPlugin(cwd, id);
+	if (!existing) {
+		throw new Error(`Cannot remove from plugin "${id}": it does not exist.`);
+	}
+	if (!isAuthoredPlugin(cwd, id)) {
+		throw new Error(
+			`Cannot remove from plugin "${id}": it was not authored here (no ${AUTHORED_MARKER_FILE} marker). ` +
+				"Only locally authored plugins can be edited.",
+		);
+	}
+	const dest = path.join(installedPluginsDir(cwd), sanitizeForDir(id));
+	const removed: string[] = [];
+	const missing: string[] = [];
+
+	// Directory-scanned capabilities: surgical deletes at our emit conventions.
+	const fileTargets: Array<[kind: string, name: string, relPath: string]> = [
+		...(spec.skills ?? []).map((n): [string, string, string] => ["skill", n, path.join("skills", slug(n))]),
+		...(spec.commands ?? []).map((n): [string, string, string] => [
+			"command",
+			n,
+			path.join("commands", `${slug(n)}.md`),
+		]),
+		...(spec.subagents ?? []).map((n): [string, string, string] => [
+			"subagent",
+			n,
+			path.join("agents", `${slug(n)}.md`),
+		]),
+	];
+	for (const [kind, name, rel] of fileTargets) {
+		const abs = path.join(dest, rel);
+		if (existsSync(abs)) {
+			rmSync(abs, { recursive: true, force: true });
+			removed.push(`${kind} "${name}"`);
+		} else {
+			missing.push(`${kind} "${name}"`);
+		}
+	}
+
+	// Single-file capabilities: filter the reconstructed sets, then re-emit.
+	let singleFileChanged = false;
+	let remainingHooks = existing.hooks ? hooksConfigToAuthored(existing.hooks) : [];
+	for (const h of spec.hooks ?? []) {
+		const before = remainingHooks.length;
+		remainingHooks = remainingHooks.filter(
+			(x) =>
+				!(
+					x.event === h.event &&
+					(h.matcher === undefined || (x.matcher ?? "") === h.matcher) &&
+					(h.command === undefined || x.command === h.command)
+				),
+		);
+		const n = before - remainingHooks.length;
+		if (n > 0) {
+			removed.push(`${n} ${describeHookSpec(h)}`);
+			singleFileChanged = true;
+		} else {
+			missing.push(describeHookSpec(h));
+		}
+	}
+	let remainingMcp = existing.mcpServers ? mcpRecordToAuthored(existing.mcpServers) : [];
+	for (const name of spec.mcpServers ?? []) {
+		const before = remainingMcp.length;
+		remainingMcp = remainingMcp.filter((s) => s.name !== name);
+		if (remainingMcp.length < before) {
+			removed.push(`mcp server "${name}"`);
+			singleFileChanged = true;
+		} else {
+			missing.push(`mcp server "${name}"`);
+		}
+	}
+
+	if (singleFileChanged) {
+		const targets = resolveAuthoringPlatforms(existing.supportPlatform);
+		writePluginDraft(
+			cwd,
+			{
+				id,
+				version: existing.version,
+				description: existing.description,
+				author: existing.author,
+				supportPlatform: targets,
+				hooks: remainingHooks.length ? remainingHooks : undefined,
+				mcpServers: remainingMcp.length ? remainingMcp : undefined,
+			},
+			targets,
+		);
+		// Emit skips empty sets, so a stale file from the previous emit survives
+		// and the parser's on-disk fallback would resurrect it — delete explicitly.
+		if (remainingHooks.length === 0) rmSync(path.join(dest, "hooks", "hooks.json"), { force: true });
+		if (remainingMcp.length === 0) rmSync(path.join(dest, ".mcp.json"), { force: true });
+	}
+
+	return { dest, removed, missing };
 }
