@@ -32,6 +32,8 @@
 - `ListPlugins` accepts an optional `id` parameter to look up a single
   installed plugin.
 
+## [0.4.132] - 2026-07-14
+
 ## [0.4.131] - 2026-07-14
 
 ## [0.4.130] - 2026-07-14
