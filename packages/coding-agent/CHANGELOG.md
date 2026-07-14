@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- `--enable-plugintools` CLI flag: toggle the autonomous plugin system
+  (`enablePluginTools`) per session without editing settings.json, matching
+  the existing `--enable-webtools` / `--enable-filetools` pattern.
+
 ## [0.4.126] - 2026-07-14
 
 ## [0.4.125] - 2026-07-13
