@@ -24,9 +24,9 @@ function model(provider: string, id: string, priceIn: number, priceOut = priceIn
 	} as Model<Api>;
 }
 
-// A provider with three price tiers plus a cheaper solo model from another
-// provider. The most expensive model (acme/big) is the derived `capable`, and
-// fast/standard are drawn from acme (capable's own provider), cheapest first.
+// Four models across two providers. By combined price: tiny(1) < solo(4) <
+// mid(6) < big(30). `capable` is the priciest (acme/big); fast/standard come from
+// everything priced at/under capable, cheapest-first: fast=tiny, standard=median.
 const AVAILABLE: Model<Api>[] = [
 	model("acme", "tiny", 0.5),
 	model("acme", "mid", 3),
@@ -70,8 +70,8 @@ describe("model categories", () => {
 		it("derives a default per tier from the available set (no explicit config)", () => {
 			expect(deriveDefaultModelCategories(AVAILABLE)).toEqual({
 				capable: "acme/big", // most capable = highest combined price
-				fast: "acme/tiny", // cheapest from capable's provider
-				standard: "acme/mid", // mid of capable's provider, cheapest-first
+				fast: "acme/tiny", // cheapest available
+				standard: "acme/mid", // upper-median of {tiny, solo, mid, big}
 			});
 		});
 
@@ -82,13 +82,29 @@ describe("model categories", () => {
 			expect(resolveModelReference("capable", undefined, AVAILABLE)).toBe("acme/big");
 		});
 
-		it("anchors capable to the configured default model when it is available", () => {
+		it("anchors capable to the configured default model, clamping cheaper tiers below it", () => {
+			// other/solo (price 4) is the primary; only acme/tiny (price 1) is cheaper.
 			const settings: Settings = { defaultProvider: "other", defaultModel: "solo" };
 			// capable follows the user's primary/default model...
 			expect(resolveModelCategory("capable", settings, AVAILABLE)).toBe("other/solo");
-			// ...and fast/standard are drawn from that primary's provider (only one here).
-			expect(resolveModelCategory("fast", settings, AVAILABLE)).toBe("other/solo");
+			// ...fast is still the genuinely cheapest available model at/under capable...
+			expect(resolveModelCategory("fast", settings, AVAILABLE)).toBe("acme/tiny");
+			// ...and standard never exceeds capable (upper-median of {tiny, solo}).
 			expect(resolveModelCategory("standard", settings, AVAILABLE)).toBe("other/solo");
+		});
+
+		it("keeps tiers monotonic across providers (a single-model top provider does not collapse fast)", () => {
+			// Cheap models live on a different provider than the most capable model.
+			const mixed: Model<Api>[] = [
+				model("oai", "mini", 0.15, 0.6),
+				model("oai", "gpt", 2, 8),
+				model("ant", "opus", 15, 75),
+			];
+			expect(deriveDefaultModelCategories(mixed)).toEqual({
+				fast: "oai/mini",
+				standard: "oai/gpt",
+				capable: "ant/opus",
+			});
 		});
 
 		it("keeps explicit config winning even when available models could derive a default", () => {

@@ -52,10 +52,13 @@ function compareById(a: Model<Api>, b: Model<Api>): number {
  *      (`settings.defaultProvider`/`defaultModel`) when it is in the available
  *      set, otherwise the most capable available model, using combined token
  *      price (input + output cost) as a stand-in for capability.
- *   2. `fast` and `standard` are chosen from the primary model's OWN provider,
- *      ordered cheapest -> most expensive by combined token price: `fast` is the
- *      cheapest, `standard` is the upper-median of that ordering (both collapse
- *      toward the primary when the provider offers too few distinct models).
+ *   2. `fast` and `standard` are the cheapest and the upper-median of every
+ *      available model priced at or below `capable`, ordered cheapest-first.
+ *      Clamping to `capable`'s price keeps the tiers monotonic
+ *      (`fast` <= `standard` <= `capable`), and drawing from the whole available
+ *      set — not just `capable`'s own provider — still yields a genuinely cheap
+ *      `fast` when the primary model's provider has nothing cheaper (a strict
+ *      same-provider rule collapses every tier onto a single-model provider).
  *
  * Every ordering breaks ties on a fixed key (context window, then id) so the same
  * available set always yields the same mapping. An empty available set yields an
@@ -67,29 +70,32 @@ export function deriveDefaultModelCategories(
 ): { fast?: string; standard?: string; capable?: string } {
 	if (availableModels.length === 0) return {};
 
-	// 1. Primary model (capable tier).
+	// capable = primary model.
 	const configuredDefault =
 		settings?.defaultProvider && settings?.defaultModel
 			? availableModels.find((m) => m.provider === settings.defaultProvider && m.id === settings.defaultModel)
 			: undefined;
 	// Most capable = highest combined price; ties -> larger context window, then id.
-	const mostCapable = [...availableModels].sort(
-		(a, b) => combinedPrice(b) - combinedPrice(a) || b.contextWindow - a.contextWindow || compareById(a, b),
-	)[0];
-	const primary = configuredDefault ?? mostCapable;
+	const capable =
+		configuredDefault ??
+		[...availableModels].sort(
+			(a, b) => combinedPrice(b) - combinedPrice(a) || b.contextWindow - a.contextWindow || compareById(a, b),
+		)[0];
 
-	// 2. fast/standard drawn from the primary model's own provider, cheapest first.
-	const sameProvider = availableModels
-		.filter((m) => m.provider === primary.provider)
+	// fast/standard: every model priced at or below capable, cheapest-first.
+	// `capable` is always in this set (its price <= its own price), so it never empties.
+	const capablePrice = combinedPrice(capable);
+	const candidates = availableModels
+		.filter((m) => combinedPrice(m) <= capablePrice)
 		.sort((a, b) => combinedPrice(a) - combinedPrice(b) || a.contextWindow - b.contextWindow || compareById(a, b));
 
-	const fast = sameProvider[0] ?? primary;
-	const standard = sameProvider[Math.floor(sameProvider.length / 2)] ?? primary;
+	const fast = candidates[0] ?? capable;
+	const standard = candidates[Math.floor(candidates.length / 2)] ?? capable;
 
 	return {
 		fast: modelRef(fast),
 		standard: modelRef(standard),
-		capable: modelRef(primary),
+		capable: modelRef(capable),
 	};
 }
 

@@ -80,8 +80,9 @@ export interface WarningSettings {
  *   - `capable` = the user's primary model — the configured default
  *     (`defaultProvider`/`defaultModel`) when available, else the most capable
  *     available model (highest combined input+output token price as a proxy).
- *   - `fast` / `standard` = the cheapest / upper-median model from `capable`'s own
- *     provider, ordered cheapest-first by combined token price.
+ *   - `fast` / `standard` = the cheapest / upper-median of every available model
+ *     priced at or below `capable`, ordered cheapest-first. Clamping to
+ *     `capable`'s price keeps tiers monotonic (`fast` <= `standard` <= `capable`).
  * Ties break on a fixed key (context window, then id), so identical inputs always
  * yield the same mapping. When no models are available, tiers stay unresolved and
  * the agent's or parent's default model is used.
