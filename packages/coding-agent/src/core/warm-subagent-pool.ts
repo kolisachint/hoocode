@@ -21,6 +21,7 @@
  */
 
 import type { AgentEvent } from "@kolisachint/hoocode-agent-core";
+import type { Api, Model } from "@kolisachint/hoocode-ai";
 import { getSubagentSpawnCommand } from "../config.js";
 import { RpcClient } from "../modes/rpc/rpc-client.js";
 import { MODEL_INHERIT } from "./agent-frontmatter.js";
@@ -89,6 +90,7 @@ export class WarmSubagentWorker {
 		registry: AgentRegistry,
 		skillPaths: readonly string[],
 		settings: Settings | undefined,
+		availableModels: readonly Model<Api>[],
 		/** Spawn command override (tests inject a fake RPC child); defaults to the real spawn command. */
 		spawnCommand?: { executable: string; prefixArgs: string[] },
 	) {
@@ -98,7 +100,7 @@ export class WarmSubagentWorker {
 			prefixArgs,
 			cwd: options.cwd,
 			env: this.env as Record<string, string>,
-			args: buildWorkerArgs(options, registry, skillPaths, settings),
+			args: buildWorkerArgs(options, registry, skillPaths, settings, availableModels),
 		});
 	}
 
@@ -210,6 +212,11 @@ export class WarmSubagentPool {
 		private readonly cwd: string,
 		private readonly settings: Settings | undefined,
 		private skillPaths: string[] = [],
+		/**
+		 * Available models used to derive default model-category mappings when a tier
+		 * is not explicitly set in `settings.modelCategories` (snapshot at creation).
+		 */
+		private readonly availableModels: readonly Model<Api>[] = [],
 		private readonly maxPerKey = 2,
 		private readonly idleTtlMs = 30_000,
 		/** Spawn command override (tests inject a fake RPC child); defaults to the real spawn command. */
@@ -233,7 +240,9 @@ export class WarmSubagentPool {
 
 	/** Stable key for one worker configuration. */
 	private keyFor(options: WarmDispatchOptions): string {
-		const resolved = options.model ? resolveModelReference(options.model, this.settings) : undefined;
+		const resolved = options.model
+			? resolveModelReference(options.model, this.settings, this.availableModels)
+			: undefined;
 		return `${options.agentType}::${resolved ?? "default"}::${options.provider ?? "default"}`;
 	}
 
@@ -293,6 +302,7 @@ export class WarmSubagentPool {
 			this.getRegistry(),
 			this.skillPaths,
 			this.settings,
+			this.availableModels,
 			this.spawnCommand,
 		);
 		this.incLive(key);
@@ -395,6 +405,7 @@ function buildWorkerArgs(
 	registry: AgentRegistry,
 	skillPaths: readonly string[],
 	settings: Settings | undefined,
+	availableModels: readonly Model<Api>[],
 ): string[] {
 	const args: string[] = [];
 	const def = registry.get(options.agentType);
@@ -421,7 +432,7 @@ function buildWorkerArgs(
 	// wins, else the requested model/category, resolved to a concrete id.
 	const explicitModel = def?.model && def.model !== MODEL_INHERIT ? def.model : undefined;
 	const rawModel = explicitModel ?? options.model;
-	const modelToUse = rawModel ? resolveModelReference(rawModel, settings) : undefined;
+	const modelToUse = rawModel ? resolveModelReference(rawModel, settings, availableModels) : undefined;
 	if (modelToUse) args.push("--model", modelToUse);
 	if (options.provider) args.push("--provider", options.provider);
 

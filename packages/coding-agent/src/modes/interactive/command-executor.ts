@@ -148,7 +148,7 @@ export class CommandExecutor {
 
 		this.ctx.showStatus(`Spawning ${mode} subagent...`);
 		try {
-			const pool = getSubagentPool(this.ctx.sessionManager.getCwd());
+			const pool = getSubagentPool(this.ctx.sessionManager.getCwd(), this.ctx.session.modelRegistry.getAvailable());
 			const dispatchResult = await pool.dispatch(task, {
 				forceAgent: mode,
 				model: this.ctx.session.model?.id,

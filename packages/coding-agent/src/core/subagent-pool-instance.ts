@@ -7,6 +7,7 @@
  * down on process exit.
  */
 
+import type { Api, Model } from "@kolisachint/hoocode-ai";
 import { getAgentDir, getSubagentSpawnCommand } from "../config.js";
 import { SettingsManager } from "./settings-manager.js";
 import { poolConcurrencyForDepth } from "./subagent-depth.js";
@@ -19,8 +20,15 @@ let exitHandlerRegistered = false;
 /** Latest non-default skill paths to forward to subagents, kept in sync with the resource loader. */
 let latestSkillPaths: string[] = [];
 
-/** Get the shared pool for a given working directory, creating it on first use. */
-export function getSubagentPool(cwd: string): SubagentPool {
+/**
+ * Get the shared pool for a given working directory, creating it on first use.
+ *
+ * `availableModels` (the caller's `ModelRegistry.getAvailable()`) is snapshotted
+ * on first creation and used to derive default model-category mappings for any
+ * tier the user has not explicitly configured. Later calls reuse the existing
+ * pool, so pass it on the first dispatch of a session.
+ */
+export function getSubagentPool(cwd: string, availableModels: readonly Model<Api>[] = []): SubagentPool {
 	if (override) return override;
 	if (!pool) {
 		const { executable, prefixArgs } = getSubagentSpawnCommand();
@@ -41,6 +49,7 @@ export function getSubagentPool(cwd: string): SubagentPool {
 			skillPaths: latestSkillPaths,
 			maxConcurrency: poolConcurrencyForDepth(),
 			settings,
+			availableModels,
 		});
 
 		wireProgressToTaskStore(pool);

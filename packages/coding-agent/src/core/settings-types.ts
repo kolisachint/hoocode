@@ -72,8 +72,19 @@ export interface WarningSettings {
 /**
  * Model categories for subagent model selection.
  * Categories map to explicit model IDs (e.g., "<provider>/<model-id>").
- * When a category is not configured, no override is applied and the agent's or
- * parent's default model is used.
+ *
+ * A field set here always wins. When a tier is left unset, it does NOT become a
+ * no-op: it resolves to a default *derived* from the user's available models
+ * (nothing is hardcoded, so the feature stays provider-neutral). The derivation,
+ * implemented in `deriveDefaultModelCategories` (core/model-categories.ts), is:
+ *   - `capable` = the user's primary model — the configured default
+ *     (`defaultProvider`/`defaultModel`) when available, else the most capable
+ *     available model (highest combined input+output token price as a proxy).
+ *   - `fast` / `standard` = the cheapest / upper-median model from `capable`'s own
+ *     provider, ordered cheapest-first by combined token price.
+ * Ties break on a fixed key (context window, then id), so identical inputs always
+ * yield the same mapping. When no models are available, tiers stay unresolved and
+ * the agent's or parent's default model is used.
  */
 export interface ModelCategories {
 	/** Quick, cheap models for read-only exploration (grep, find, file discovery) */

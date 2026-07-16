@@ -36,7 +36,7 @@ describe("WarmSubagentPool", () => {
 	});
 
 	it("runs a task on a warm worker and returns its answer + usage", async () => {
-		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn());
+		const pool = make(process.cwd(), undefined, [], [], 2, 30_000, fakeSpawn());
 		const result = await pool.dispatch("trace the bug", opts);
 
 		expect(result.ok).toBe(true);
@@ -46,7 +46,7 @@ describe("WarmSubagentPool", () => {
 	});
 
 	it("reuses the same worker across tasks and resets it between them", async () => {
-		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn());
+		const pool = make(process.cwd(), undefined, [], [], 2, 30_000, fakeSpawn());
 
 		const first = await pool.dispatch("task one", opts);
 		// Released back to the pool as an idle worker.
@@ -67,7 +67,7 @@ describe("WarmSubagentPool", () => {
 	});
 
 	it("reports live tool activity during a run and clears it at the end", async () => {
-		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn());
+		const pool = make(process.cwd(), undefined, [], [], 2, 30_000, fakeSpawn());
 		const activity: string[] = [];
 		await pool.dispatch("trace the bug", opts, (a) => activity.push(a));
 
@@ -78,7 +78,7 @@ describe("WarmSubagentPool", () => {
 	});
 
 	it("reports a task failure (turn ended in error) without throwing", async () => {
-		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn(["--fail-prompt"]));
+		const pool = make(process.cwd(), undefined, [], [], 2, 30_000, fakeSpawn(["--fail-prompt"]));
 		const result = await pool.dispatch("do the thing", opts);
 
 		expect(result.ok).toBe(false);
@@ -87,7 +87,7 @@ describe("WarmSubagentPool", () => {
 	});
 
 	it("surfaces an infra failure as WarmWorkerError and discards the dead worker", async () => {
-		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn());
+		const pool = make(process.cwd(), undefined, [], [], 2, 30_000, fakeSpawn());
 		// Child exits on the first prompt → the run rejects with WarmWorkerError so the
 		// caller can fall back to the cold pool, and no dead worker is parked.
 		process.env.FAKE_EXIT_ON_PROMPT = "1";
@@ -100,7 +100,7 @@ describe("WarmSubagentPool", () => {
 	});
 
 	it("treats explore as poolable and a fork-only agent as not", () => {
-		const pool = make(process.cwd(), undefined, [], 2, 30_000, fakeSpawn());
+		const pool = make(process.cwd(), undefined, [], [], 2, 30_000, fakeSpawn());
 		expect(pool.isPoolable("explore")).toBe(true);
 		expect(pool.isPoolable("does-not-exist")).toBe(false);
 	});
