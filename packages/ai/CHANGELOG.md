@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- Opt-in schema-constrained tool-call decoding via the new
+  `constrainToolCalls` stream option, so small/local models cannot emit
+  malformed tool-call JSON. Routed per provider by capability instead of
+  hardcoded provider checks: the new `toolCallConstraint` compat field
+  ("strict" | "none", auto-detected as "strict" for api.openai.com and
+  overridable per model for local runtimes such as vLLM/TGI) gates OpenAI
+  strict function calling on the completions API, and the responses API
+  (openai, azure) sends `strict: true` when constrained. Tool schemas are
+  transformed into the closed form strict mode requires by the new
+  `toStrictJsonSchema` helper (all properties required, formerly-optional
+  ones nullable, `additionalProperties: false`, unsupported keywords
+  stripped). Providers without a decoding-constraint mechanism ignore the
+  flag — Anthropic's `input_schema` is documentation only, Google already
+  enforces `parametersJsonSchema` server-side, and llama.cpp's server
+  constrains tool calls itself via lazy grammars — and the tolerant streaming
+  JSON parser remains the fallback everywhere.
+
 ## [0.4.136] - 2026-07-16
 
 ## [0.4.135] - 2026-07-16

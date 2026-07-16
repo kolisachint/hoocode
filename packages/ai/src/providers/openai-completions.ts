@@ -34,6 +34,7 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { toStrictJsonSchema } from "../utils/tool-constraints.js";
 import { resolveCacheRetention } from "./cache-retention.js";
 
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
@@ -522,7 +523,7 @@ function buildParams(
 	}
 
 	if (context.tools && context.tools.length > 0) {
-		params.tools = convertTools(context.tools, compat);
+		params.tools = convertTools(context.tools, compat, options?.constrainToolCalls === true);
 		if (compat.zaiToolStream) {
 			(params as any).tool_stream = true;
 		}
@@ -985,15 +986,22 @@ export function convertMessages(
 function convertTools(
 	tools: Tool[],
 	compat: ResolvedOpenAICompletionsCompat,
+	constrainToolCalls: boolean,
 ): OpenAI.Chat.Completions.ChatCompletionTool[] {
+	// Constrained decoding: strict function calling guarantees the model can
+	// only emit arguments matching the (closed) schema. Requested per call via
+	// options.constrainToolCalls and gated on the compat capability so local
+	// runtimes can opt in without hardcoded provider checks.
+	const strict = constrainToolCalls && compat.toolCallConstraint === "strict" && compat.supportsStrictMode !== false;
 	return tools.map((tool) => ({
 		type: "function",
 		function: {
 			name: tool.name,
 			description: tool.description,
-			parameters: tool.parameters as any, // TypeBox already generates JSON Schema
+			// TypeBox already generates JSON Schema; strict mode needs the closed form.
+			parameters: strict ? toStrictJsonSchema(tool.parameters) : (tool.parameters as any),
 			// Only include strict if provider supports it. Some reject unknown fields.
-			...(compat.supportsStrictMode !== false && { strict: false }),
+			...(compat.supportsStrictMode !== false && { strict }),
 		},
 	}));
 }
@@ -1117,6 +1125,7 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		vercelGatewayRouting: {},
 		zaiToolStream: false,
 		supportsStrictMode: !isMoonshot && !isTogether,
+		toolCallConstraint: provider === "openai" || baseUrl.includes("api.openai.com") ? "strict" : "none",
 		cacheControlFormat,
 		sendSessionAffinityHeaders: false,
 		supportsLongCacheRetention: !(isTogether || isOpencodeGo),
@@ -1150,6 +1159,7 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 		zaiToolStream: model.compat.zaiToolStream ?? detected.zaiToolStream,
 		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
+		toolCallConstraint: model.compat.toolCallConstraint ?? detected.toolCallConstraint,
 		cacheControlFormat: model.compat.cacheControlFormat ?? detected.cacheControlFormat,
 		sendSessionAffinityHeaders: model.compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
 		supportsLongCacheRetention: model.compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,

@@ -257,7 +257,7 @@ function buildParams(
 	}
 
 	if (context.tools && context.tools.length > 0) {
-		params.tools = convertResponsesTools(context.tools);
+		params.tools = convertResponsesTools(context.tools, { constrainToolCalls: options?.constrainToolCalls });
 	}
 
 	if (model.reasoning) {

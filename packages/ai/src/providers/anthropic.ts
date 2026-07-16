@@ -1122,6 +1122,13 @@ function shouldUseFineGrainedToolStreamingBeta(model: Model<"anthropic-messages"
 	return !!context.tools?.length && !getAnthropicCompat(model).supportsEagerToolInputStreaming;
 }
 
+/**
+ * Note on `constrainToolCalls`: the Anthropic Messages API has no
+ * grammar/schema-constrained decoding knob — `input_schema` documents the
+ * expected arguments but does not constrain generation — so the option is
+ * intentionally ignored here and the tolerant streaming JSON parser remains
+ * the only guard.
+ */
 function convertTools(
 	tools: Tool[],
 	isOAuthToken: boolean,

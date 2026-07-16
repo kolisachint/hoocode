@@ -16,6 +16,7 @@ export function buildBaseOptions(model: Model<Api>, options?: SimpleStreamOption
 		maxRetries: options?.maxRetries,
 		maxRetryDelayMs: options?.maxRetryDelayMs,
 		metadata: options?.metadata,
+		constrainToolCalls: options?.constrainToolCalls,
 	};
 }
 

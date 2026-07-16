@@ -268,6 +268,10 @@ function sanitizeForOpenApi(schema: unknown): unknown {
  * anyOf, oneOf, const, etc.). Set `useParameters` to true to use the legacy `parameters`
  * field instead (OpenAPI 3.03 Schema). This is needed for Cloud Code Assist with Claude
  * models, where the API translates `parameters` into Anthropic's `input_schema`.
+ *
+ * Note on `constrainToolCalls`: Gemini already receives the full JSON schema
+ * via `parametersJsonSchema` and enforces it server-side; there is no extra
+ * per-request decoding-constraint knob to flip, so the option is a no-op here.
  */
 export function convertTools(
 	tools: Tool[],

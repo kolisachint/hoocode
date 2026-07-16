@@ -31,6 +31,7 @@ import type { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { shortHash } from "../utils/hash.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
+import { toStrictJsonSchema } from "../utils/tool-constraints.js";
 import { transformMessages } from "./transform-messages.js";
 
 // =============================================================================
@@ -81,6 +82,12 @@ export interface ConvertResponsesMessagesOptions {
 
 export interface ConvertResponsesToolsOptions {
 	strict?: boolean | null;
+	/**
+	 * Constrain tool-call argument decoding: send `strict: true` with each
+	 * tool's schema transformed into the closed form strict mode requires.
+	 * Takes precedence over `strict`.
+	 */
+	constrainToolCalls?: boolean;
 }
 
 // =============================================================================
@@ -266,6 +273,15 @@ export function convertResponsesMessages<TApi extends Api>(
 // =============================================================================
 
 export function convertResponsesTools(tools: Tool[], options?: ConvertResponsesToolsOptions): OpenAITool[] {
+	if (options?.constrainToolCalls) {
+		return tools.map((tool) => ({
+			type: "function",
+			name: tool.name,
+			description: tool.description,
+			parameters: toStrictJsonSchema(tool.parameters),
+			strict: true,
+		}));
+	}
 	const strict = options?.strict === undefined ? false : options.strict;
 	return tools.map((tool) => ({
 		type: "function",
