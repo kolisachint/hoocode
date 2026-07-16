@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- Completion chime: interactive mode can now ring the terminal bell when an
+  assistant turn finishes after you have likely stepped away — specifically when
+  a turn runs longer than 10s (measured from the turn's start to when the agent
+  goes truly idle), or when the agent blocks awaiting your input (the
+  `ask_options` pane). The cue is a single BEL byte, so it is output-only with no
+  new dependencies, and it is debounced so rapid turns do not spam it. Off by
+  default; enable via the `terminal.chimeOnTurnComplete` setting.
+
 ## [0.4.135] - 2026-07-16
 
 ## [0.4.134] - 2026-07-16

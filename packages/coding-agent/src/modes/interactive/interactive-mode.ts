@@ -65,6 +65,7 @@ import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { BashExecutionController } from "./bash-execution-controller.js";
 import { type CommandContext, CommandExecutor } from "./command-executor.js";
+import { BELL, CompletionChime } from "./completion-chime.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
@@ -264,6 +265,15 @@ export class InteractiveMode {
 	private retryLoader: Loader | undefined = undefined;
 	private retryCountdown: CountdownTimer | undefined = undefined;
 	private retryEscapeHandler?: () => void;
+
+	// Completion chime state
+	private chime?: CompletionChime;
+	// True between auto_retry_start and the next agent_start: the turn is not done,
+	// it is about to re-run, so the deferred completion check must not fire the chime.
+	private chimePendingRetry = false;
+	// Whether the current turn's final assistant message was user-aborted (Ctrl+C /
+	// Esc). An aborted turn means the user is present, so no chime.
+	private chimeTurnAborted = false;
 
 	// Shutdown state
 	private shutdownRequested = false;
@@ -504,6 +514,13 @@ export class InteractiveMode {
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+
+		// Completion chime: rings the terminal bell when a long turn finishes or the
+		// agent blocks awaiting input. Enable is read fresh so a live toggle applies.
+		this.chime = new CompletionChime({
+			isEnabled: () => this.settingsManager.getChimeOnTurnComplete(),
+			ring: () => this.ui.terminal.write(BELL),
+		});
 
 		// Register themes from resource loader and initialize
 		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
@@ -1265,7 +1282,12 @@ export class InteractiveMode {
 			select: (title, options, opts) => this.dialogs.showSelector(title, options, opts),
 			confirm: (title, message, opts) => this.dialogs.confirm(title, message, opts),
 			input: (title, placeholder, opts) => this.dialogs.showInput(title, placeholder, opts),
-			askOptions: (questions, opts) => this.dialogs.showAskOptions(questions, opts),
+			askOptions: (questions, opts) => {
+				// The agent is blocking on the user (the ask_options pane): ring now,
+				// bypassing the duration threshold — this is the "it needs you" cue.
+				this.chime?.onBlockedForInput();
+				return this.dialogs.showAskOptions(questions, opts);
+			},
 			notify: (message, type) => this.showExtensionNotify(message, type),
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
@@ -1778,6 +1800,22 @@ export class InteractiveMode {
 		});
 	}
 
+	/**
+	 * Deferred completion chime. Called from the agent_end handler, it waits one
+	 * tick so the streaming flag settles and any retry has had a chance to arm, then
+	 * rings only when the session is genuinely idle (not streaming, not compacting)
+	 * and no retry is pending. The chime itself enforces the enable/threshold/debounce
+	 * rules; here we only decide whether the turn has truly ended.
+	 */
+	private maybeChimeOnIdle(): void {
+		setTimeout(() => {
+			if (this.chimePendingRetry || this.session.isStreaming || this.session.isCompacting) {
+				return;
+			}
+			this.chime?.onTurnComplete({ aborted: this.chimeTurnAborted });
+		}, 0);
+	}
+
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
 		if (!this.isInitialized) {
 			await this.init();
@@ -1788,6 +1826,10 @@ export class InteractiveMode {
 		switch (event.type) {
 			case "agent_start":
 				this.pendingTools.clear();
+				// A (possibly retried) turn is (re)starting: anchor its duration on the
+				// first start and clear the pending-retry gate now that it has resumed.
+				this.chime?.onTurnStart();
+				this.chimePendingRetry = false;
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -1841,6 +1883,7 @@ export class InteractiveMode {
 					// glanceable for the whole turn. Active tasks are kept: a follow-up/steer
 					// message can arrive while a subagent is still running.
 					taskStore.reset();
+					this.chimeTurnAborted = false;
 					this.addMessageToChat(event.message);
 					this.messageQueue.updatePendingMessagesDisplay();
 					this.ui.requestRender();
@@ -1895,6 +1938,11 @@ export class InteractiveMode {
 
 			case "message_end":
 				if (event.message.role === "user") break;
+				if (event.message.role === "assistant") {
+					// Remember whether the turn's latest assistant message was user-aborted,
+					// so the completion chime stays silent when the user is clearly present.
+					this.chimeTurnAborted = event.message.stopReason === "aborted";
+				}
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
 					let errorMessage: string | undefined;
@@ -1994,6 +2042,13 @@ export class InteractiveMode {
 
 				await this.checkShutdownRequested();
 
+				// agent_end fires before the streaming flag clears and before the retry
+				// decision is made (both happen after this listener returns), so defer a
+				// tick and re-check: only chime once the session is genuinely idle and no
+				// retry is pending — otherwise a retried or auto-continued turn would ring
+				// a premature "it's done".
+				this.maybeChimeOnIdle();
+
 				this.ui.requestRender();
 				break;
 
@@ -2068,6 +2123,9 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_start": {
+				// The turn is not done — it will re-run after a backoff (during which the
+				// session reads as idle). Gate the deferred completion chime until then.
+				this.chimePendingRetry = true;
 				// Set up escape to abort retry
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
