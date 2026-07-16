@@ -45,6 +45,7 @@ export const DEFAULT_SETTINGS = {
 	enableBrowserTools: false,
 	enableBrowserLivePreview: false,
 	enableFileTools: false,
+	light: false,
 	terminal: {
 		showImages: true,
 		imageWidthCells: 60,

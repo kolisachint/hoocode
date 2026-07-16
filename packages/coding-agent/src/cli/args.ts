@@ -54,6 +54,10 @@ export interface Args {
 	enableFileTools?: boolean;
 	/** Enable the autonomous plugin system — plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin (off by default). */
 	enablePluginTools?: boolean;
+	/** Minimal low-token preset for small/local models: read/write/edit/bash only, terse prompt, no subagents/todo/skills/context files/mode appendix. */
+	light?: boolean;
+	/** Print the fixed per-turn surface (system prompt + serialized tool schema token estimate) and exit. */
+	printTokenSurface?: boolean;
 	/**
 	 * Platform layout(s) hoocode targets when it WRITES artifacts (authored
 	 * plugins, /new-skill //new-agent //new-command scaffolds). Raw tokens as
@@ -179,6 +183,10 @@ export function parseArgs(args: string[]): Args {
 			result.enableFileTools = true;
 		} else if (arg === "--enable-plugintools") {
 			result.enablePluginTools = true;
+		} else if (arg === "--light") {
+			result.light = true;
+		} else if (arg === "--print-token-surface") {
+			result.printTokenSurface = true;
 		} else if (arg === "--support-platform" && i + 1 < args.length) {
 			result.supportPlatform = [
 				...(result.supportPlatform ?? []),
@@ -372,6 +380,13 @@ ${chalk.bold("Options:")}
                                   Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and
                                   ProposePlugin, plus the runtime plugin-reuse nudge
                                   Can also be enabled via the "enablePluginTools" setting
+  --light                        Minimal low-token preset for small/local models:
+                                  only the read/write/edit/bash tools (short descriptions,
+                                  stripped schemas; search via bash), a terse system prompt, and
+                                  no subagents/TodoWrite/skills/context files/mode appendix
+                                  Can also be enabled via the "light" setting
+  --print-token-surface          Print the fixed per-turn surface (system prompt + serialized
+                                  tool schema token estimate) and exit
   --support-platform <list>      Platform layout(s) hoocode targets when it writes artifacts:
                                   authored plugins (ProposePlugin) and the /new-skill /new-agent
                                   /new-command scaffolds. Comma-separated and/or repeated.

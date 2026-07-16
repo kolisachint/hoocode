@@ -155,6 +155,7 @@ export interface Settings {
 	enableBrowserTools?: boolean; // default: false - enable the browser_run + browser_continue tools (browsertools engine)
 	enableBrowserLivePreview?: boolean; // default: false - default the live viewer on for browser_run runs and auto-open it
 	enableFileTools?: boolean; // default: false - enable the document tools: DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary)
+	light?: boolean; // default: false - minimal low-token preset for small/local models: read/write/edit/bash only (short schemas), terse prompt, no subagents/TodoWrite/skills/context files/mode appendix. Same as the --light CLI flag.
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)

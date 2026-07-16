@@ -29,6 +29,13 @@ import { exportFromFile } from "./core/export-html/index.js";
 import { parseSupportPlatforms, setSupportPlatforms } from "./core/extensions/plugins/formats/platform-targets.js";
 import type { ExtensionAPI, ExtensionFactory } from "./core/extensions/types.js";
 import { KeybindingsManager } from "./core/keybindings.js";
+import {
+	createLightTools,
+	LIGHT_MODE_ENV,
+	LIGHT_SYSTEM_PROMPT,
+	LIGHT_TOOL_NAMES,
+	measurePromptSurface,
+} from "./core/light.js";
 import type { ModelRegistry } from "./core/model-registry.js";
 import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.js";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.js";
@@ -316,6 +323,7 @@ function buildSessionOptions(
 	hasExistingSession: boolean,
 	modelRegistry: ModelRegistry,
 	settingsManager: SettingsManager,
+	lightMode: boolean,
 ): {
 	options: CreateAgentSessionOptions;
 	cliThinkingFromModel: boolean;
@@ -402,6 +410,12 @@ function buildSessionOptions(
 	}
 	if (parsed.disallowedTools) {
 		options.disallowedTools = [...parsed.disallowedTools];
+	}
+	// Light preset: restrict to the four core tools unless the user passed an
+	// explicit allowlist or suppression flag (explicit flags win over the preset).
+	// The allowlist also blocks Task/TodoWrite/plugin tools from becoming active.
+	if (lightMode && !parsed.tools && !parsed.noTools && !parsed.noBuiltinTools) {
+		options.tools = [...LIGHT_TOOL_NAMES];
 	}
 	// Artifact platform targeting: --support-platform flag (falls back to the
 	// supportPlatform setting) picks which vendor layout(s) hoocode writes when
@@ -495,7 +509,7 @@ function buildSessionOptions(
 	} else {
 		delete process.env[DELEGATE_ALLOW_ENV];
 	}
-	if (canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
+	if (!lightMode && canSpawnSubagent() && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 		options.customTools = [
 			...(options.customTools ?? []),
 			createTaskToolDefinition(),
@@ -513,7 +527,7 @@ function buildSessionOptions(
 	// Optional TodoWrite tool: opt-in via --enable-todowrite flag or the
 	// enableTodoWrite setting. Never registered inside a spawned subagent child —
 	// its todos would otherwise leak into the parent's "main" task group in the pane.
-	if (!isSubagentChild && (parsed.todoWrite ?? settingsManager.getEnableTodoWrite())) {
+	if (!isSubagentChild && !lightMode && (parsed.todoWrite ?? settingsManager.getEnableTodoWrite())) {
 		options.customTools = [...(options.customTools ?? []), createTodoWriteToolDefinition()];
 	}
 
@@ -531,7 +545,7 @@ function buildSessionOptions(
 	// `enablePluginTools` is the master switch for the whole autonomous plugin
 	// system (default off) — it gates both these tools and the runtime reuse
 	// nudge (see extensions/core/prompt-reactive), so both flip together.
-	if (!isSubagentChild && (parsed.enablePluginTools ?? settingsManager.getEnablePluginTools())) {
+	if (!isSubagentChild && !lightMode && (parsed.enablePluginTools ?? settingsManager.getEnablePluginTools())) {
 		options.customTools = [
 			...(options.customTools ?? []),
 			...createPluginLifecycleToolDefinitions(),
@@ -738,10 +752,22 @@ export async function main(args: string[], options?: MainOptions) {
 		sessionManager,
 		sessionStartEvent,
 	}) => {
+		// Light preset: resolve before services so it can shape resource loading
+		// (no skills/context files, terse system prompt). The env flag tells code
+		// that cannot see flags or settings — the hoo-core modes extension — to
+		// skip its system-prompt appendix.
+		const earlySettingsManager = SettingsManager.create(cwd, agentDir);
+		const lightMode = parsed.light ?? earlySettingsManager.getLight();
+		if (lightMode) {
+			process.env[LIGHT_MODE_ENV] = "1";
+		} else {
+			delete process.env[LIGHT_MODE_ENV];
+		}
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
 			authStorage,
+			settingsManager: earlySettingsManager,
 			extensionFlagValues: parsed.unknownFlags,
 			resourceLoaderOptions: {
 				additionalExtensionPaths: resolvedExtensionPaths,
@@ -750,12 +776,12 @@ export async function main(args: string[], options?: MainOptions) {
 				additionalSlashCommandPaths: resolvedSlashCommandPaths,
 				additionalThemePaths: resolvedThemePaths,
 				noExtensions: parsed.noExtensions,
-				noSkills: parsed.noSkills,
+				noSkills: parsed.noSkills || lightMode,
 				noPromptTemplates: parsed.noPromptTemplates || isSubagentBoot,
 				noSlashCommands: parsed.noSlashCommands || isSubagentBoot,
 				noThemes: parsed.noThemes || isSubagentBoot,
-				noContextFiles: parsed.noContextFiles,
-				systemPrompt: parsed.systemPrompt,
+				noContextFiles: parsed.noContextFiles || lightMode,
+				systemPrompt: parsed.systemPrompt ?? (lightMode ? LIGHT_SYSTEM_PROMPT : undefined),
 				extensionFactories: allExtensionFactories,
 			},
 		});
@@ -770,7 +796,7 @@ export async function main(args: string[], options?: MainOptions) {
 		];
 
 		// When subagent tooling is enabled, append the main session subagent instructions.
-		if (parsed.subagent ?? settingsManager.getEnableSubagent()) {
+		if (!lightMode && (parsed.subagent ?? settingsManager.getEnableSubagent())) {
 			resourceLoader.addAppendSystemPrompt(buildTaskMainPrompt());
 		}
 
@@ -787,8 +813,14 @@ export async function main(args: string[], options?: MainOptions) {
 			sessionManager.buildSessionContext().messages.length > 0,
 			modelRegistry,
 			settingsManager,
+			lightMode,
 		);
 		diagnostics.push(...sessionOptionDiagnostics);
+		// Swap in the short-schema read/write/edit/bash tool variants. Skipped
+		// when the user's own --tools allowlist overrode the light tool set.
+		if (lightMode && !parsed.tools) {
+			sessionOptions.baseToolsOverride = createLightTools(cwd);
+		}
 
 		if (parsed.apiKey) {
 			if (!sessionOptions.model) {
@@ -814,6 +846,7 @@ export async function main(args: string[], options?: MainOptions) {
 			enableWebTools: sessionOptions.enableWebTools,
 			enableBrowserTools: sessionOptions.enableBrowserTools,
 			enableFileTools: sessionOptions.enableFileTools,
+			baseToolsOverride: sessionOptions.baseToolsOverride,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
@@ -846,6 +879,18 @@ export async function main(args: string[], options?: MainOptions) {
 	if (parsed.listModels !== undefined) {
 		const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
 		await listModels(modelRegistry, searchPattern);
+		process.exit(0);
+	}
+
+	if (parsed.printTokenSurface) {
+		const surface = measurePromptSurface(session);
+		console.log("Fixed per-turn surface (chars/4 token estimate):");
+		console.log(`  system prompt: ${surface.systemPromptTokens} tokens`);
+		for (const tool of surface.tools) {
+			console.log(`  tool ${tool.name}: ${tool.tokens} tokens`);
+		}
+		console.log(`  tool schemas total: ${surface.toolSchemaTokens} tokens`);
+		console.log(`  total: ${surface.totalTokens} tokens`);
 		process.exit(0);
 	}
 

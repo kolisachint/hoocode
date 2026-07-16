@@ -2,6 +2,7 @@ import { join } from "node:path";
 import {
 	Agent,
 	type AgentMessage,
+	type AgentTool,
 	convertToLlm,
 	createBackgroundPlaceholderText,
 	createBackgroundTaskMessage,
@@ -103,6 +104,12 @@ export interface CreateAgentSessionOptions {
 	enableFileTools?: boolean;
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
+	/**
+	 * Replace the built-in base tools entirely (the light preset uses this to
+	 * swap in short-schema read/write/edit/bash variants). Keys become the
+	 * default active tool set when no explicit `tools` allowlist is provided.
+	 */
+	baseToolsOverride?: Record<string, AgentTool>;
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
@@ -461,6 +468,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		scopedModels: options.scopedModels,
 		resourceLoader,
 		customTools: options.customTools,
+		baseToolsOverride: options.baseToolsOverride,
 		modelRegistry,
 		initialActiveToolNames,
 		allowedToolNames,
