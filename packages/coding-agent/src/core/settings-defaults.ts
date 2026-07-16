@@ -50,6 +50,7 @@ export const DEFAULT_SETTINGS = {
 		imageWidthCells: 60,
 		clearOnShrink: false,
 		showTerminalProgress: false,
+		chimeOnTurnComplete: false,
 	},
 	images: {
 		autoResize: true,

@@ -937,6 +937,19 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getChimeOnTurnComplete(): boolean {
+		return this.settings.terminal?.chimeOnTurnComplete ?? DEFAULT_SETTINGS.terminal!.chimeOnTurnComplete;
+	}
+
+	setChimeOnTurnComplete(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.chimeOnTurnComplete = enabled;
+		this.markModified("terminal", "chimeOnTurnComplete");
+		this.save();
+	}
+
 	getImageAutoResize(): boolean {
 		return this.settings.images?.autoResize ?? DEFAULT_SETTINGS.images!.autoResize;
 	}
