@@ -176,7 +176,11 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 		parameters: taskParams,
 
 		async execute(_toolCallId, params: TaskParams, signal, _onUpdate, ctx) {
-			const pool = getSubagentPool(ctx.cwd);
+			// Snapshot the caller's available models so unconfigured model-category
+			// tiers (fast/standard/capable) resolve to a derived default instead of a
+			// no-op. Explicit settings.modelCategories still win inside the pool.
+			const availableModels = ctx.modelRegistry.getAvailable();
+			const pool = getSubagentPool(ctx.cwd, availableModels);
 
 			// User-initiated cancel (Esc/abort): kill the dispatched run's whole
 			// process tree and let the dispatch settle with status "cancelled" —
@@ -331,7 +335,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 				// inbox, and return the same notify-and-pull shape as the cold path. An
 				// infra failure falls through to the cold dispatch below.
 				if (warmSubagentsEnabled() && !forkSessionFile) {
-					const warm = getWarmSubagentPool(ctx.cwd);
+					const warm = getWarmSubagentPool(ctx.cwd, availableModels);
 					if (warm.isPoolable(params.subagent_type)) {
 						try {
 							const warmResult = await warm.dispatch(
@@ -406,7 +410,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 			// cold pool below, so enabling this can only change latency, never whether
 			// the task can run.
 			if (warmSubagentsEnabled() && !forkSessionFile) {
-				const warm = getWarmSubagentPool(ctx.cwd);
+				const warm = getWarmSubagentPool(ctx.cwd, availableModels);
 				if (warm.isPoolable(params.subagent_type)) {
 					try {
 						const warmResult = await warm.dispatch(
@@ -796,7 +800,9 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 
 		async execute(_toolCallId, params: TaskOutputParams, _signal, _onUpdate, ctx) {
 			// Touch the pool so the inbox is wired to its progress stream for activity.
-			subagentInbox.observe(getSubagentPool(ctx.cwd));
+			// The pool is normally already created by a prior dispatch; pass available
+			// models so a first-touch here still seeds category derivation.
+			subagentInbox.observe(getSubagentPool(ctx.cwd, ctx.modelRegistry.getAvailable()));
 			const handle = params.task_id?.trim();
 
 			// Barrier: wait for the target (or all outstanding) to settle first.

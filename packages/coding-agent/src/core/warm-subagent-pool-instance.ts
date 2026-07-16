@@ -8,6 +8,7 @@
  * readable from the Task tool without threading a setting through every call.
  */
 
+import type { Api, Model } from "@kolisachint/hoocode-ai";
 import { getAgentDir } from "../config.js";
 import { SettingsManager } from "./settings-manager.js";
 import { WarmSubagentPool } from "./warm-subagent-pool.js";
@@ -25,13 +26,19 @@ export function warmSubagentsEnabled(env: NodeJS.ProcessEnv = process.env): bool
 	return env[WARM_SUBAGENTS_ENV] === "1";
 }
 
-/** Get the shared warm pool for a working directory, creating it on first use. */
-export function getWarmSubagentPool(cwd: string): WarmSubagentPool {
+/**
+ * Get the shared warm pool for a working directory, creating it on first use.
+ *
+ * `availableModels` (the caller's `ModelRegistry.getAvailable()`) is snapshotted
+ * on first creation and used to derive default model-category mappings for any
+ * tier the user has not explicitly configured.
+ */
+export function getWarmSubagentPool(cwd: string, availableModels: readonly Model<Api>[] = []): WarmSubagentPool {
 	if (override) return override;
 	if (!pool) {
 		const settingsManager = SettingsManager.create(cwd, getAgentDir());
 		const settings = { ...settingsManager.getGlobalSettings(), ...settingsManager.getProjectSettings() };
-		pool = new WarmSubagentPool(cwd, settings, latestSkillPaths);
+		pool = new WarmSubagentPool(cwd, settings, latestSkillPaths, availableModels);
 		if (!exitHandlerRegistered) {
 			exitHandlerRegistered = true;
 			process.once("exit", () => void pool?.dispose());

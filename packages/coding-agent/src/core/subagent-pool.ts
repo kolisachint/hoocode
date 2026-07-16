@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { Api, Model } from "@kolisachint/hoocode-ai";
 import { getDispatchTaskDir } from "../config.js";
 import { attachJsonlLineReader } from "../modes/rpc/jsonl.js";
 import { writeFileAtomicSync } from "../utils/atomic-file.js";
@@ -128,6 +129,12 @@ export interface SubagentPoolOptions {
 	skillPaths?: string[];
 	/** Settings for model category resolution. */
 	settings?: Settings;
+	/**
+	 * Available/configured models used to derive default model-category mappings
+	 * when a tier is not explicitly set in `settings.modelCategories`. Snapshotted
+	 * at pool creation, mirroring how `settings` is captured.
+	 */
+	availableModels?: readonly Model<Api>[];
 }
 
 /**
@@ -238,6 +245,8 @@ export class SubagentPool extends EventEmitter {
 	private taskStatus = new Map<string, "done" | "failed" | "stalled" | "timeout" | "cancelled">();
 	/** Settings for model category resolution. */
 	private readonly settings?: Settings;
+	/** Available models used to derive default model-category mappings (snapshot). */
+	private readonly availableModels: readonly Model<Api>[];
 
 	constructor(options: SubagentPoolOptions) {
 		super();
@@ -249,6 +258,7 @@ export class SubagentPool extends EventEmitter {
 		this.defaultTokenBudget = options.defaultTokenBudget ?? 0;
 		this.skillPaths = options.skillPaths ? [...options.skillPaths] : [];
 		this.settings = options.settings;
+		this.availableModels = options.availableModels ?? [];
 		this.verifier = new OutputVerifier(this.cwd);
 		this.lifeguard = new SubagentLifeguard(this.cwd);
 		this.lifeguard.on("stalled", (data: { task_id: string; pid: number }) => {
@@ -706,10 +716,10 @@ export class SubagentPool extends EventEmitter {
 		const explicitModel =
 			!task.useInheritedModelFallback && def?.model && def.model !== MODEL_INHERIT ? def.model : undefined;
 		// Resolve a model-category reference (fast/standard/capable) to its
-		// configured model id. An unconfigured category resolves to undefined, so no
-		// `--model` is passed and the child keeps its default model.
+		// configured or derived model id. An unresolvable category yields undefined,
+		// so no `--model` is passed and the child keeps its default model.
 		const rawModel = explicitModel ?? task.model;
-		const modelToUse = rawModel ? resolveModelReference(rawModel, this.settings) : undefined;
+		const modelToUse = rawModel ? resolveModelReference(rawModel, this.settings, this.availableModels) : undefined;
 		if (modelToUse) {
 			args.push("--model", modelToUse);
 		}
