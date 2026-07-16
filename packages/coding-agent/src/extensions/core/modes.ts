@@ -21,6 +21,7 @@ import type {
 	ExtensionContext,
 	SessionStartEvent,
 } from "../../core/extensions/types.js";
+import { isLightModeEnv } from "../../core/light.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
 import { mergeSearchPaths, readConfig, readMergedConfig, writeConfig } from "./config.js";
 
@@ -185,6 +186,13 @@ export function setupMode(pi: ExtensionAPI): void {
 	//   4. Re-resolve active_mode from the merged result
 
 	pi.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
+		// Light mode strips every fixed prompt appendix. Leaving
+		// cachedSystemPrompt unset makes before_agent_start a no-op, so no
+		// `<!-- hoo-core: mode= -->` block is appended.
+		if (isLightModeEnv()) {
+			return;
+		}
+
 		// Steps 1–3: merge global + project configs
 		const config = readMergedConfig(ctx.cwd);
 

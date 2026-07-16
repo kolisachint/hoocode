@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import type { ThinkingLevel } from "@kolisachint/hoocode-agent-core";
+import type { AgentTool, ThinkingLevel } from "@kolisachint/hoocode-agent-core";
 import type { Model } from "@kolisachint/hoocode-ai";
 import { getAgentDir } from "../config.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -58,6 +58,7 @@ export interface CreateAgentSessionFromServicesOptions {
 	enableWebTools?: boolean;
 	enableBrowserTools?: boolean;
 	enableFileTools?: boolean;
+	baseToolsOverride?: Record<string, AgentTool>;
 }
 
 /**
@@ -200,5 +201,6 @@ export async function createAgentSessionFromServices(
 		enableWebTools: options.enableWebTools,
 		enableBrowserTools: options.enableBrowserTools,
 		enableFileTools: options.enableFileTools,
+		baseToolsOverride: options.baseToolsOverride,
 	});
 }

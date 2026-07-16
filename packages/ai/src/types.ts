@@ -137,6 +137,18 @@ export interface StreamOptions {
 	 * For example, Anthropic uses `user_id` for abuse tracking and rate limiting.
 	 */
 	metadata?: Record<string, unknown>;
+	/**
+	 * Ask the provider to constrain tool-call argument decoding to each tool's
+	 * JSON schema so malformed tool-call JSON cannot be emitted (the primary
+	 * fix for small/local models that mangle tool calls). Routed per provider
+	 * by capability: OpenAI-compatible providers send strict function calling
+	 * with a closed schema when the resolved compat's `toolCallConstraint`
+	 * allows it. Providers with no constraint mechanism ignore the flag —
+	 * Anthropic's `input_schema` is documentation only, and Google already
+	 * passes full JSON schemas via `parametersJsonSchema` — and the tolerant
+	 * streaming JSON parser remains the fallback everywhere.
+	 */
+	constrainToolCalls?: boolean;
 }
 
 export type ProviderStreamOptions = StreamOptions & Record<string, unknown>;
@@ -397,6 +409,16 @@ export interface OpenAICompletionsCompat {
 	zaiToolStream?: boolean;
 	/** Whether the provider supports the `strict` field in tool definitions. Default: true. */
 	supportsStrictMode?: boolean;
+	/**
+	 * Which mechanism the provider supports for constraining tool-call argument
+	 * decoding when `constrainToolCalls` is requested. "strict" sends OpenAI
+	 * strict function calling (`strict: true` with a closed schema); "none"
+	 * leaves tool calls unconstrained. Default: auto-detected ("strict" for
+	 * api.openai.com, otherwise "none"). Set explicitly for local runtimes that
+	 * honor strict schemas (e.g. vLLM/TGI); llama.cpp's server constrains tool
+	 * calls itself via lazy grammars, so it needs no client-side setting.
+	 */
+	toolCallConstraint?: "strict" | "none";
 	/** Cache control convention for prompt caching. "anthropic" applies Anthropic-style `cache_control` markers to the system prompt, last tool definition, and last user/assistant text content. */
 	cacheControlFormat?: "anthropic";
 	/** Whether to send known session-affinity headers (`session_id`, `x-client-request-id`, `x-session-affinity`) from `options.sessionId` when caching is enabled. Default: false. */

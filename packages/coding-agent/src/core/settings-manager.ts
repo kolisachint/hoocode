@@ -869,6 +869,16 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getLight(): boolean {
+		return this.settings.light ?? DEFAULT_SETTINGS.light!;
+	}
+
+	setLight(enabled: boolean): void {
+		this.globalSettings.light = enabled;
+		this.markModified("light");
+		this.save();
+	}
+
 	getThinkingBudgets(): ThinkingBudgetsSettings | undefined {
 		return this.settings.thinkingBudgets;
 	}

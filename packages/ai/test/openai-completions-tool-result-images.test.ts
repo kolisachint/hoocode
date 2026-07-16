@@ -36,6 +36,7 @@ const compat: Required<Omit<OpenAICompletionsCompat, "promptSuffix">> & {
 	vercelGatewayRouting: {},
 	zaiToolStream: false,
 	supportsStrictMode: true,
+	toolCallConstraint: "none" as const,
 	cacheControlFormat: "anthropic",
 	sendSessionAffinityHeaders: false,
 	supportsLongCacheRetention: true,

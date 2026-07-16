@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- `--light` flag (and `light` setting): a minimal, low-token preset for
+  small/local models. Restricts the session to exactly the read/write/edit/bash
+  tools with shortened descriptions and stripped parameter schemas (search
+  happens via bash instead of grep/find/ls), replaces the system prompt with a
+  terse three-line prompt, and disables subagents, TodoWrite, skills, context
+  files, plugin tools, and the hoo-core mode-prompt appendix. The fixed
+  per-turn surface (system prompt + serialized tool schemas) measures ~293
+  tokens, down from ~2000+ in full mode. Explicit flags such as `--tools` and
+  `--system-prompt` still win over the preset. Inspect the surface of any
+  session with the new `--print-token-surface` flag.
+
 ## [0.4.136] - 2026-07-16
 
 ### Added
