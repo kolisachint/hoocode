@@ -1,7 +1,7 @@
 {
 	"name": "@kolisachint/hoocode-extension-sandbox",
 	"private": true,
-	"version": "0.2.130",
+	"version": "0.2.131",
 	"type": "module",
 	"engines": {
 		"bun": ">=1.0.0"
