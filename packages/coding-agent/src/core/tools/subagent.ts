@@ -178,8 +178,10 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 		async execute(_toolCallId, params: TaskParams, signal, _onUpdate, ctx) {
 			// Snapshot the caller's available models so unconfigured model-category
 			// tiers (fast/standard/capable) resolve to a derived default instead of a
-			// no-op. Explicit settings.modelCategories still win inside the pool.
-			const availableModels = ctx.modelRegistry.getAvailable();
+			// no-op. Explicit settings.modelCategories still win inside the pool. The
+			// registry can be absent in some tool contexts; an empty list just keeps
+			// category derivation a no-op (inherit parent), so guard the access.
+			const availableModels = ctx.modelRegistry?.getAvailable() ?? [];
 			const pool = getSubagentPool(ctx.cwd, availableModels);
 
 			// User-initiated cancel (Esc/abort): kill the dispatched run's whole
@@ -802,7 +804,7 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 			// Touch the pool so the inbox is wired to its progress stream for activity.
 			// The pool is normally already created by a prior dispatch; pass available
 			// models so a first-touch here still seeds category derivation.
-			subagentInbox.observe(getSubagentPool(ctx.cwd, ctx.modelRegistry.getAvailable()));
+			subagentInbox.observe(getSubagentPool(ctx.cwd, ctx.modelRegistry?.getAvailable() ?? []));
 			const handle = params.task_id?.trim();
 
 			// Barrier: wait for the target (or all outstanding) to settle first.
