@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # HooCode container image.
 #
 # Ships the compiled Bun standalone binary on a glibc base. The container is
@@ -24,8 +22,29 @@ WORKDIR /src
 # Copy the whole monorepo; .dockerignore keeps node_modules/dist/.git out.
 COPY . .
 
-# Produces packages/coding-agent/binaries/linux-x64/ (binary + sidecars).
-RUN bash scripts/build-unix-binary.sh linux-x64
+# Compile the binary and assemble its sidecar assets into /out. The compiled
+# binary resolves assets (themes, wasm, docs, examples) relative to the
+# directory containing the executable — see getPackageDir() in
+# packages/coding-agent/src/config.ts — so the whole /out dir ships together.
+# koffi is externalized: it is Windows-only (VT input) with a try/catch
+# fallback, and bundling it would embed ~74MB of per-platform .node files.
+RUN <<'EOF'
+set -eu
+bun install --frozen-lockfile
+bun run build
+cd packages/coding-agent
+mkdir -p /out/theme /out/assets
+bun build --compile --external koffi --target=bun-linux-x64 ./dist/bun/cli.js --outfile /out/hoocode
+chmod +x /out/hoocode
+cp package.json README.md CHANGELOG.md /out/
+cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm /out/
+cp dist/modes/interactive/theme/*.json /out/theme/
+if [ -d dist/modes/interactive/assets ]; then cp -r dist/modes/interactive/assets/. /out/assets/; fi
+cp -r dist/core/export-html /out/
+cp -r ../../docs /out/
+cp -r examples /out/examples
+find /out/examples -type d -name node_modules -prune -exec rm -rf {} +
+EOF
 
 # ---------------------------------------------------------------------------
 # Stage 2: minimal glibc runtime.
@@ -44,7 +63,7 @@ RUN useradd --create-home --uid 10001 --shell /usr/sbin/nologin hoo
 
 # The whole assembled directory ships together — the binary resolves its
 # sidecar assets (themes, wasm, docs, examples) relative to this location.
-COPY --from=builder /src/packages/coding-agent/binaries/linux-x64 /opt/hoocode
+COPY --from=builder /out /opt/hoocode
 
 ENV PATH="/opt/hoocode:${PATH}" \
     # Resolve package assets explicitly — never depends on symlink/execPath.
