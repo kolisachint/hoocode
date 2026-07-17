@@ -670,6 +670,21 @@ Run deploy script`,
 		expect(templates.some((t) => t.name === "deploy")).toBe(true);
 	});
 
+	test("strips the Copilot `.prompt.md` suffix to yield the command name", () => {
+		// A Copilot prompt file `greet.prompt.md` must load as `greet`, not `greet.prompt`.
+		mkdirSync(slashDir, { recursive: true });
+		writeFileSync(join(slashDir, "greet.prompt.md"), "---\ndescription: Say hi\n---\nSay hello");
+		const templates = loadPromptTemplates({
+			cwd: process.cwd(),
+			agentDir: getAgentDir(),
+			promptPaths: [],
+			slashCommandPaths: [slashDir],
+			includeDefaults: false,
+		});
+		expect(templates.some((t) => t.name === "greet")).toBe(true);
+		expect(templates.some((t) => t.name === "greet.prompt")).toBe(false);
+	});
+
 	afterAll(() => {
 		try {
 			rmSync(promptDir, { recursive: true, force: true });

@@ -288,14 +288,19 @@ describe("copilot (.github) plugin format", () => {
 
 		// Preferred Copilot home: manifest under .github/plugin/, capability tree
 		// mirrors the Claude layout (matches github/copilot-plugins-indexed plugins).
+		// Custom agents carry the `.agent.md` suffix Copilot recognizes.
 		expect(fs.existsSync(path.join(root, ".github", "plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(root, "commands", "greet.md"))).toBe(true);
-		expect(fs.existsSync(path.join(root, "agents", "scout.md"))).toBe(true);
+		// Commands map to Copilot prompt files: .github/prompts/<name>.prompt.md.
+		expect(fs.existsSync(path.join(root, ".github", "prompts", "greet.prompt.md"))).toBe(true);
+		expect(fs.existsSync(path.join(root, "agents", "scout.agent.md"))).toBe(true);
+		// Copilot custom agents take `tools` as a YAML list (not the Claude comma string).
+		const agentMd = fs.readFileSync(path.join(root, "agents", "scout.agent.md"), "utf8");
+		expect(agentMd).toContain("tools: ['read', 'grep']");
 
 		const parsed = parsePluginDir(root);
 		expect(parsed?.format).toBe("copilot");
 		expect(parsed?.id).toBe("authored");
-		expect(parsed?.commandsDir).toBe(path.join(root, "commands"));
+		expect(parsed?.commandsDir).toBe(path.join(root, ".github", "prompts"));
 		expect(parsed?.agentsDir).toBe(path.join(root, "agents"));
 		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin", args: ["--port", "1"] } });
 	});
@@ -318,9 +323,9 @@ describe("copilot (.github) plugin format", () => {
 		expect(claudeFiles).toContain(path.join("agents", "agent1.md"));
 
 		expect(copilotFiles).toContain(path.join(".github", "plugin", "plugin.json"));
-		// Same capability tree as Claude — only the manifest location differs.
+		// Same skills tree as Claude; agents carry Copilot's `.agent.md` suffix.
 		expect(copilotFiles).toContain(path.join("skills", "helper", "SKILL.md"));
-		expect(copilotFiles).toContain(path.join("agents", "agent1.md"));
+		expect(copilotFiles).toContain(path.join("agents", "agent1.agent.md"));
 	});
 });
 

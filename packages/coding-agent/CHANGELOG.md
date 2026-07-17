@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub Copilot plugin authoring (`ProposePlugin` / `UpdatePlugin` with
+  `--support-platform github`) now emits custom agents as
+  `agents/<name>.agent.md` with a YAML-list `tools` frontmatter, matching the
+  current GitHub Copilot plugin spec (docs.github.com custom agents /
+  plugins-creating; verified 2026-07) so Copilot recognizes them. Previously
+  they were written as bare `agents/<name>.md` with a Claude-style comma-string
+  `tools`, which Copilot does not load as agents. The reader still accepts the
+  bare `.md` layout (and the legacy `.github/chatmodes/` fallback), so
+  previously authored plugins keep loading.
+- GitHub Copilot plugin authoring now maps a plugin's commands to Copilot
+  prompt files — `.github/prompts/<name>.prompt.md` — instead of Claude-style
+  `commands/<name>.md`, matching the Copilot/VS Code prompt-file convention and
+  this adapter's workspace command layout. The reader loads them from
+  `.github/prompts/` (and still honors a manifest `commands` path or a
+  `commands/` dir). Relatedly, command-name derivation now strips a `.prompt.md`
+  suffix, so a `greet.prompt.md` prompt file loads as the command `greet`
+  (previously `greet.prompt`).
+
 ## [0.4.138] - 2026-07-17
 
 ### Changed
