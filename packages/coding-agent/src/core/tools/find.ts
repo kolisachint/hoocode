@@ -9,6 +9,7 @@ import { keyHint } from "../../modes/interactive/components/keybinding-hints.js"
 import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { applyFdGlobPattern, relativizeFdLine, toPosixPath } from "./fd-utils.js";
+import { isNativeSearchForced, nativeFind } from "./native-search.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -332,20 +333,33 @@ export function createFindToolDefinition(
 							return;
 						}
 
-						// Default implementation uses fd.
-						const fdPath = await ensureTool("fd", true);
+						// Default implementation uses fd, with a pure-JS fallback when fd is
+						// unavailable (restricted environments) or explicitly forced.
+						const fdPath = isNativeSearchForced() ? undefined : await ensureTool("fd", true);
 						if (signal?.aborted) {
 							settle(() => reject(new Error("Operation aborted")));
 							return;
 						}
 						if (!fdPath) {
-							settle(() =>
-								reject(
-									new Error(
-										"fd unavailable and could not be downloaded — use the bash tool to run find instead",
-									),
-								),
-							);
+							if (!(await ops.exists(searchPath))) {
+								settle(() => reject(new Error(`Path not found: ${searchPath}`)));
+								return;
+							}
+							const nativeResults = nativeFind(searchPath, {
+								patterns,
+								type: typeFilter,
+								excludeGlobs: allIgnore,
+								maxDepth: depth,
+								// find always excludes node_modules/.git; the exclude globs above
+								// cover them too, but skipping the dirs avoids descending them.
+								alwaysSkipDirs: new Set([".git", "node_modules"]),
+								signal,
+							});
+							if (signal?.aborted) {
+								settle(() => reject(new Error("Operation aborted")));
+								return;
+							}
+							emit(nativeResults);
 							return;
 						}
 
