@@ -52,10 +52,6 @@ export {
 	UPDATE_PLUGIN_TOOL_NAME,
 } from "./plugin-tool-names.js";
 
-const platformSchema = Type.Union([Type.Literal("claude"), Type.Literal("github"), Type.Literal("agents")], {
-	description: "Target format: claude (Claude Code), github (GitHub Copilot), or agents (native).",
-});
-
 const skillSchema = Type.Object(
 	{
 		name: Type.String({ description: "Skill name." }),
@@ -115,13 +111,6 @@ const mcpServerSchema = Type.Object(
 const capabilityProps = {
 	description: Type.Optional(Type.String({ description: "Plugin description." })),
 	version: Type.Optional(Type.String({ description: "Plugin version, e.g. '0.1.0'." })),
-	platforms: Type.Optional(
-		Type.Array(platformSchema, {
-			description:
-				"Formats to scaffold into. Default: the session's --support-platform targets, else claude + github " +
-				"(UpdatePlugin defaults to the plugin's existing platforms).",
-		}),
-	),
 	skills: Type.Optional(Type.Array(skillSchema)),
 	commands: Type.Optional(Type.Array(commandSchema)),
 	subagents: Type.Optional(
@@ -139,7 +128,6 @@ const capabilityProps = {
 interface CapabilityInput {
 	description?: string;
 	version?: string;
-	platforms?: MarketplacePlatform[];
 	skills?: Static<typeof skillSchema>[];
 	commands?: Static<typeof commandSchema>[];
 	subagents?: Static<typeof subagentSchema>[];
@@ -147,9 +135,11 @@ interface CapabilityInput {
 	mcpServers?: Static<typeof mcpServerSchema>[];
 }
 
-function resolvePlatforms(input: MarketplacePlatform[] | undefined): MarketplacePlatform[] {
-	// Explicit tool param → session --support-platform targets → claude + github.
-	return resolveAuthoringPlatforms(input);
+function resolvePlatforms(): MarketplacePlatform[] {
+	// No model-facing platform selection: authored artifacts default to the
+	// portable native format, unless the human set --support-platform for the
+	// session (interop). See resolveAuthoringPlatforms.
+	return resolveAuthoringPlatforms();
 }
 
 function draftFrom(id: string, params: CapabilityInput, platforms: MarketplacePlatform[]): PluginDraft {
@@ -302,14 +292,16 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 		name: PROPOSE_PLUGIN_TOOL_NAME,
 		label: PROPOSE_PLUGIN_TOOL_NAME,
 		description:
-			"Author a NEW plugin to fill a capability gap when no marketplace plugin fits. Accepts any capability mix — " +
-			"skills, slash commands, subagents, hooks, MCP servers. Passive content (skills, commands, read-only " +
+			"Author a NEW portable, reusable plugin to fill a capability gap when no marketplace plugin fits. Accepts any " +
+			"capability mix — skills, slash commands, subagents, hooks, MCP servers. Authored as one self-contained, " +
+			"vendor-neutral artifact usable across sessions and projects. Passive content (skills, commands, read-only " +
 			"subagents) is authored autonomously; executable content (hooks, MCP servers, mutating subagents) is shown " +
 			"and requires human confirmation before it activates. To change an existing plugin, use UpdatePlugin.",
 		promptSnippet:
-			"Author a new plugin to fill a capability gap (passive is autonomous; executable asks to confirm).",
+			"Author a new portable, reusable plugin to fill a capability gap (passive is autonomous; executable asks to confirm).",
 		promptGuidelines: [
-			"Sense reusability proactively: when you complete a multi-step recipe you'd plausibly repeat (or repeat the same pattern twice in one session) and SearchPlugins finds nothing that covers it, author it with ProposePlugin. Passive skills/commands activate immediately and are reversible with UninstallPlugin — announce what you created and why.",
+			"Sense reusability proactively: when you complete a multi-step recipe you'd plausibly repeat (or repeat the same pattern twice in one session) and SearchPlugins finds nothing that covers it, author it with ProposePlugin. Name and describe it by the capability, not the one-off task that prompted it, so it triggers again in other contexts. Passive skills/commands activate immediately and are reversible with UninstallPlugin — announce what you created and why.",
+			"Author for portability: write self-contained, vendor-neutral content — no absolute or machine-specific paths, no embedded secrets or environment-specific values, no assumptions about the current repo unless that is the capability's point. Prefer relative paths and runtime discovery, and state any prerequisites in the body. The artifact is written in the portable native layout; you never choose a vendor format.",
 			"One tool for the whole plugin: put skills + a hook in a single call. The risk gate is computed from content — you don't pre-classify. Read-only subagents and skills/commands go straight through; hooks, MCP servers, or a subagent needing Bash/Write/Edit/MCP or tools:* pause for human confirmation.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
 			"Publishing a proven-useful plugin to a marketplace stays a human action — do not do it autonomously.",
@@ -333,7 +325,7 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 			const gate = await passExecutableGate(params.id, params, ctx);
 			if (!gate.ok) return gate.result;
 
-			const platforms = resolvePlatforms(params.platforms);
+			const platforms = resolvePlatforms();
 			const result = writePluginDraft(ctx.cwd, draftFrom(params.id, params, platforms), platforms);
 			// Passive capabilities activate live — usable on the very next model request,
 			// this same turn; hooks/MCP servers activate via the reload once the turn ends.
@@ -363,13 +355,14 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 			"Merge inline-authored capabilities into an EXISTING locally AUTHORED plugin (marketplace-installed plugins " +
 			"are refused). Skills/commands/subagents are added or replaced by name; hooks and MCP servers are unioned " +
 			"with what's already there; metadata is overwritten only where you supply it. Additive only — remove a " +
-			"capability with RemovePluginCapability. Nothing is fetched from a remote. Passive " +
-			"additions apply autonomously; executable additions (hooks, MCP servers, mutating subagents) require human " +
-			"confirmation. Use ProposePlugin to create.",
+			"capability with RemovePluginCapability. Nothing is fetched from a remote. Keep additions as portable and " +
+			"vendor-neutral as the original. Passive additions apply autonomously; executable additions (hooks, MCP " +
+			"servers, mutating subagents) require human confirmation. Use ProposePlugin to create.",
 		promptSnippet:
-			"Add/replace capabilities in a plugin you authored (additive; executable additions ask to confirm).",
+			"Add/replace capabilities in a portable plugin you authored (additive; executable additions ask to confirm).",
 		promptGuidelines: [
 			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one). It cannot remove a capability — use RemovePluginCapability for that.",
+			"Keep additions portable: same vendor-neutral content rules as ProposePlugin — no absolute paths, no secrets, capability-not-task naming.",
 			"Hooks cannot be modified in place: they have no name, so supplying a changed command ADDS a second hook alongside the old one (both fire). To change a hook, RemovePluginCapability the old one first, then add the new one here.",
 			"Only executable *additions* trigger confirmation — adding a passive skill to an already-executable plugin does not re-prompt.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
@@ -396,10 +389,10 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 						"action (uninstall it and install a newer version instead).",
 				);
 			}
-			if (capabilityCount(params) === 0 && !params.version && !params.description && !params.platforms) {
+			if (capabilityCount(params) === 0 && !params.version && !params.description) {
 				return reject(
 					params.id,
-					"Nothing to update. Provide skills, commands, subagents, hooks, mcpServers, platforms, or metadata.",
+					"Nothing to update. Provide skills, commands, subagents, hooks, mcpServers, or metadata.",
 				);
 			}
 
@@ -407,12 +400,9 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 			const gate = await passExecutableGate(params.id, params, ctx);
 			if (!gate.ok) return gate.result;
 
-			const result = mergePluginDraft(
-				ctx.cwd,
-				params.id,
-				draftFrom(params.id, params, existing.supportPlatform),
-				params.platforms,
-			);
+			// No model-facing platform selection: a merge keeps the plugin's existing
+			// layout (mergePluginDraft defaults to existing.supportPlatform).
+			const result = mergePluginDraft(ctx.cwd, params.id, draftFrom(params.id, params, existing.supportPlatform));
 			const platforms = result.plugin?.supportPlatform ?? existing.supportPlatform;
 			const activation = ctx.activatePlugin(result.dest);
 			const text = `${summarizeWrite(params.id, platforms, result.files, result.dest, "Updated")}\n${activation.message}`;

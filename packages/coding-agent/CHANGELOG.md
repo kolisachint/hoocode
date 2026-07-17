@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Authored plugins are now portable-by-default. `ProposePlugin` and
+  `UpdatePlugin` write one vendor-neutral native (`.agents-plugin`) artifact
+  instead of forking into Claude + Copilot layouts, and no longer expose a
+  per-call `platforms` parameter. Vendor layouts remain available only through
+  the `--support-platform` session flag (an opt-in interop choice), which is
+  now authoritative — the model cannot override it. Both tools' descriptions
+  and guidelines now steer toward self-contained, reusable, vendor-neutral
+  content.
+
 ## [0.4.137] - 2026-07-16
 
 ### Added

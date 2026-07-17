@@ -61,12 +61,13 @@ describe("platform token normalization", () => {
 });
 
 describe("session target resolution", () => {
-	it("defaults to claude + github when nothing is configured", () => {
+	it("defaults to the portable native format (agents) when nothing is configured", () => {
 		expect(getSupportPlatforms()).toBeUndefined();
 		expect(resolveAuthoringPlatforms()).toEqual([...DEFAULT_AUTHORING_PLATFORMS]);
+		expect(resolveAuthoringPlatforms()).toEqual(["agents"]);
 	});
 
-	it("session targets replace the default; explicit per-call platforms still win", () => {
+	it("session targets replace the default; an explicit set still wins (internal callers only)", () => {
 		setSupportPlatforms(["github"]);
 		expect(resolveAuthoringPlatforms()).toEqual(["github"]);
 		expect(resolveAuthoringPlatforms(["claude"])).toEqual(["claude"]);
@@ -122,10 +123,15 @@ describe("plugin authoring honors the session targets", () => {
 		expect(parsed?.supportPlatform).toEqual(["claude"]);
 	});
 
-	it("without session targets the default (claude + github) still applies", () => {
-		const result = writePluginDraft(cwd, { id: "both", skills: [{ name: "s", body: "S." }] });
-		expect(fs.existsSync(path.join(result.dest, ".claude-plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(result.dest, ".github", "plugin", "plugin.json"))).toBe(true);
+	it("without session targets the portable native default (agents only) applies", () => {
+		const result = writePluginDraft(cwd, { id: "native", skills: [{ name: "s", body: "S." }] });
+		expect(fs.existsSync(path.join(result.dest, ".agents-plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(result.dest, ".claude-plugin"))).toBe(false);
+		expect(fs.existsSync(path.join(result.dest, ".github"))).toBe(false);
+		expect(fs.existsSync(path.join(result.dest, "skills", "s", "SKILL.md"))).toBe(true);
+
+		const parsed = parsePluginDir(result.dest);
+		expect(parsed?.supportPlatform).toEqual(["agents"]);
 	});
 });
 
