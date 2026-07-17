@@ -88,32 +88,16 @@ describe("ProposePlugin (scaffold path)", () => {
 		expect((res.details as { authored: boolean }).authored).toBe(true);
 
 		const dest = path.join(cwd, ".agents", "plugins", "myhelper");
-		// Default targets are Claude + Copilot (Copilot manifest under .github/plugin/).
-		expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
+		// Default target is the portable native format only — no vendor forks.
+		expect(fs.existsSync(path.join(dest, ".agents-plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, ".claude-plugin"))).toBe(false);
+		expect(fs.existsSync(path.join(dest, ".github"))).toBe(false);
 		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".github", "plugin", "plugin.json"))).toBe(true);
-		// Copilot shares the Claude-mirror capability tree — one tree, two manifests.
 		expect(fs.existsSync(path.join(dest, "agents", "scout.md"))).toBe(true);
 
-		// Claude wins precedence; both platforms recorded.
 		const parsed = parsePluginDir(dest);
 		expect(parsed?.id).toBe("myhelper");
-		expect(parsed?.supportPlatform).toEqual(["claude", "github"]);
-	});
-
-	it("honors an explicit platforms selection", async () => {
-		const { ctx } = makeCtx(cwd);
-		const tool = createProposePluginToolDefinition();
-		await tool.execute(
-			"1",
-			{ id: "claudeonly", platforms: ["claude"], commands: [{ name: "go", body: "Go." }] },
-			undefined,
-			undefined,
-			ctx,
-		);
-		const dest = path.join(cwd, ".agents", "plugins", "claudeonly");
-		expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".github"))).toBe(false);
+		expect(parsed?.supportPlatform).toEqual(["agents"]);
 	});
 
 	it("routes a mutating subagent through the confirm gate (fails closed with no UI)", async () => {
@@ -336,33 +320,6 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 		expect((res.content[0] as { text: string }).text).toContain("not authored");
 		// The plugin was left untouched.
 		expect(fs.existsSync(path.join(dest, "skills"))).toBe(false);
-	});
-
-	it("a platforms-only update adds a vendor layout without touching capabilities", async () => {
-		const { ctx } = makeCtx(cwd);
-		const propose = createProposePluginToolDefinition();
-		await propose.execute(
-			"1",
-			{ id: "widen", platforms: ["claude"], commands: [{ name: "go", body: "Go." }] },
-			undefined,
-			undefined,
-			ctx,
-		);
-		const dest = path.join(cwd, ".agents", "plugins", "widen");
-		expect(fs.existsSync(path.join(dest, ".github"))).toBe(false);
-
-		const update = createUpdatePluginToolDefinition();
-		const res = await update.execute(
-			"2",
-			{ id: "widen", platforms: ["claude", "github"] },
-			undefined,
-			undefined,
-			ctx,
-		);
-		expect((res.details as { authored: boolean }).authored).toBe(true);
-		// Copilot manifest added; original command untouched.
-		expect(fs.existsSync(path.join(dest, ".github", "plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, "commands", "go.md"))).toBe(true);
 	});
 
 	it("adds a skill to an existing plugin while preserving the original capabilities", async () => {

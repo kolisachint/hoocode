@@ -20,8 +20,14 @@
 
 import type { MarketplacePlatform } from "./types.js";
 
-/** Default authoring targets when neither the call nor the session picked any. */
-export const DEFAULT_AUTHORING_PLATFORMS: readonly MarketplacePlatform[] = ["claude", "github"];
+/**
+ * Default authoring target when neither the call nor the session picked any: the
+ * portable native format. Authored artifacts are meant to be reusable, so they
+ * default to one vendor-neutral layout (a strict superset hoocode reads directly)
+ * rather than forking into vendor copies. Vendor layouts are an opt-in interop
+ * concern, requested only via the `--support-platform` session flag.
+ */
+export const DEFAULT_AUTHORING_PLATFORMS: readonly MarketplacePlatform[] = ["agents"];
 
 /** Canonicalize one platform token, folding the user-facing aliases. */
 export function normalizePlatformToken(token: string): MarketplacePlatform | undefined {

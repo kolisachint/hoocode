@@ -150,9 +150,12 @@ hoocode --support-platform claude,copilot     # both (comma or repeated flag)
 Tokens are the aliases above (`copilot`/`gh` → `github`, `native` → `agents`);
 unknown tokens warn and are skipped. The targets apply to:
 
-- **Authored plugins** (`ProposePlugin` / `UpdatePlugin`): replaces
-  the default `claude + github` target set. An explicit `platforms` tool
-  parameter still wins over the session targets.
+- **Authored plugins** (`ProposePlugin` / `UpdatePlugin`): replaces the default
+  portable `agents` (native) target. Authored artifacts are meant to be
+  reusable, so with no flag they are written as one vendor-neutral native
+  layout; `--support-platform` is the only way to also emit vendor layouts (an
+  opt-in interop choice). The authoring tools expose no per-call platform
+  parameter — the session flag governs.
 - **Workspace scaffolds** (`/new-skill`, `/new-agent`, `/new-command`): instead
   of `.hoocode/`, each target platform's *workspace* conventions are written
   (verified against the vendors' docs, 2026-07):
