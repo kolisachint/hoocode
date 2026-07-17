@@ -291,6 +291,10 @@ describe("copilot (.github) plugin format", () => {
 		// Custom agents carry the `.agent.md` suffix Copilot recognizes.
 		expect(fs.existsSync(path.join(root, ".github", "plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(root, "commands", "greet.md"))).toBe(true);
+		// `commands` has no default path in the Copilot manifest, so it must be
+		// declared for Copilot to discover the dir (agents/skills use defaults).
+		const manifest = JSON.parse(fs.readFileSync(path.join(root, ".github", "plugin", "plugin.json"), "utf8"));
+		expect(manifest.commands).toBe("./commands/");
 		expect(fs.existsSync(path.join(root, "agents", "scout.agent.md"))).toBe(true);
 		// Copilot custom agents take `tools` as a YAML list (not the Claude comma string).
 		const agentMd = fs.readFileSync(path.join(root, "agents", "scout.agent.md"), "utf8");

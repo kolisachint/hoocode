@@ -65,7 +65,10 @@ detail: **custom agents are emitted as `agents/<name>.agent.md` with a YAML-list
 `tools` frontmatter** — the `.agent.md` suffix and list form are what Copilot
 recognizes (docs.github.com custom agents / plugins-creating; verified 2026-07).
 The reader still accepts bare `agents/<name>.md` and the legacy
-`.github/chatmodes/` layout. Manifests may carry
+`.github/chatmodes/` layout. Because the Copilot manifest has **no default
+`commands` path** (unlike `agents/` and `skills/`), the emitter declares
+`"commands": "./commands/"` whenever the plugin ships commands, so Copilot
+discovers them. Manifests may carry
 dir-path overrides (`"skills": "./skills/"`), which hoocode honors, and
 `author` is an object (`{ "name": ... }`). Marketplace entries may use the
 shorthand source

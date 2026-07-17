@@ -194,6 +194,10 @@ export const copilotFormat: PluginFormatAdapter = {
 				...(draft.description ? { description: draft.description } : {}),
 				// Spec: `author` is an object with a required `name`.
 				...(draft.author ? { author: { name: draft.author } } : {}),
+				// `agents`/`skills` default to `agents/`+`skills/`, so they need no
+				// declaration; `commands` has no default path in the Copilot manifest,
+				// so declare it explicitly or Copilot won't discover `commands/`.
+				...(draft.commands?.length ? { commands: "./commands/" } : {}),
 			}),
 		});
 
