@@ -55,8 +55,13 @@ EOF
 FROM debian:bookworm-slim AS base
 
 # ca-certificates: TLS to the model provider. git: core to coding workflows.
+# ripgrep + fd-find: native search. HOOCODE_OFFLINE=1 skips the fd/rg download,
+# so without these the agent uses the slower pure-JS search fallback. hoocode
+# resolves them from PATH (it already knows Debian's `fdfind` name), so no
+# symlink is required — the extra `fd` symlink is just for humans in a shell.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates git \
+    && apt-get install -y --no-install-recommends ca-certificates git ripgrep fd-find \
+    && ln -s "$(command -v fdfind)" /usr/local/bin/fd \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user. Login shell is nologin here; the ssh stage switches it to bash.

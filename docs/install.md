@@ -117,7 +117,10 @@ image relies on that boundary rather than the in-container bash sandbox, it does
 (bubblewrap) would require.
 
 The binary is compiled inside the image's builder stage, so building the image
-is the only step — there is no separate binary to fetch or install.
+is the only step — there is no separate binary to fetch or install. The image
+also bundles `ripgrep` and `fd-find`, so native `fd`/`rg` search works even with
+`HOOCODE_OFFLINE=1` (which skips the on-demand download); without them the agent
+would fall back to the slower pure-JS search.
 
 **SSH access (opt-in).** For a remote host you can only reach over the network
 (no Docker socket, no `kubectl exec`), build the `ssh` target. It adds an
