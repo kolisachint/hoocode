@@ -97,6 +97,56 @@ distroless. Use a glibc base (`debian:*-slim`, `gcr.io/distroless/nodejs*`), or
 install via npm (`npm i -g @kolisachint/hoocode-agent`) on any image with
 Node ≥ 20.
 
+**Prebuilt image.** The repo ships a multi-stage [`Dockerfile`](../Dockerfile)
+that compiles the `linux-x64` standalone binary (`bun build --compile`) and
+runs it on `debian:bookworm-slim` as a non-root user (uid 10001). It sets
+`HOOCODE_OFFLINE=1`, points `HOOCODE_CODING_AGENT_DIR` at a writable volume
+(`/home/hoo/.hoocode`), and sets `HOOCODE_PACKAGE_DIR` so asset resolution never
+depends on the executable path:
+
+```bash
+docker build -t hoocode .
+docker run --rm -it -e ANTHROPIC_API_KEY=... -v "$PWD":/work -w /work hoocode
+```
+
+The container is intended to be the sole trust boundary — run it hardened
+(`--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--read-only` with the
+`/home/hoo/.hoocode` volume writable, plus your egress allowlist). Because the
+image relies on that boundary rather than the in-container bash sandbox, it does
+**not** need the privileged Linux namespaces that `@anthropic-ai/sandbox-runtime`
+(bubblewrap) would require.
+
+The binary is compiled inside the image's builder stage, so building the image
+is the only step — there is no separate binary to fetch or install. The image
+also bundles `ripgrep` and `fd-find`, so native `fd`/`rg` search works even with
+`HOOCODE_OFFLINE=1` (which skips the on-demand download); without them the agent
+would fall back to the slower pure-JS search.
+
+**SSH access (opt-in).** For a remote host you can only reach over the network
+(no Docker socket, no `kubectl exec`), build the `ssh` target. It adds an
+OpenSSH server to the same image; `sshd` runs as root for privilege separation
+but sessions land as the non-root `hoo` user, with **public-key auth only**
+(`PasswordAuthentication no`, `PermitRootLogin no`):
+
+```bash
+docker build --target ssh -t hoocode-ssh .
+docker run -d --name hoocode-ssh -p 2222:22 \
+  -e SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" \
+  -e ANTHROPIC_API_KEY=... \
+  hoocode-ssh
+ssh -p 2222 hoo@<host>          # then run `hoocode` in the session
+```
+
+Provide the authorized key via the `SSH_PUBKEY` env var (shown above) or by
+mounting a file at `/home/hoo/.ssh/authorized_keys`; the container refuses to
+start with neither. Mount a volume at `/etc/ssh` to keep host keys stable
+across restarts. Where you can instead reach the runtime directly,
+`docker exec -it <name> bash` (or `kubectl exec`) gives the same shell with no
+extra listener — prefer it. The SSH variant is deliberately less locked-down
+than the default image (a root daemon plus a network listener), so run it with
+a normal capability set rather than `--cap-drop=ALL`, and keep isolation at the
+network/egress layer.
+
 ## Contributing
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines and
