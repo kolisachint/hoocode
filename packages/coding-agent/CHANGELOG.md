@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- A2A (Agent2Agent) discovery: `hoocode a2a` publishes an `AgentCard` describing
+  the instance's active tools and discovered skills so other agents can find out
+  what this HooCode can do. `--print` (default) writes the card as JSON;
+  `--serve` (or `--port`/`--host`) serves it over HTTP at
+  `/.well-known/agent.json` (and the `/.well-known/agent-card.json` alias). The
+  card is built dynamically — enabling web/browser/document tools or adding a
+  project skill changes what is advertised. Discovery only; the card honestly
+  advertises that JSON-RPC task execution is not implemented. See
+  [docs/a2a-discovery.md](../../docs/a2a-discovery.md).
+
 ## [0.4.140] - 2026-07-17
 
 ## [0.4.139] - 2026-07-17

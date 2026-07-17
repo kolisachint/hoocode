@@ -64,6 +64,7 @@ Four tool groups are **off by default** — turn them on per session with a flag
 - **TypeScript extensions** — hook into the agent runtime to add commands, tools, UI, and behavior. See [`packages/coding-agent/examples`](../packages/coding-agent/examples) for working examples.
 - **Per-project profiles** — scope settings, enabled tools, and providers to each project.
 - **Claude compatibility** — reads Claude `.claude/agents` subagents and `SKILL.md` skills natively, normalizing `allowed-tools` to HooCode tool names.
+- **A2A discovery** — `hoocode a2a` publishes an Agent2Agent `AgentCard` of the instance's active tools and skills at `/.well-known/agent.json` so other agents can discover it. See [A2A Discovery](a2a-discovery.md).
 
 ## Packages
 

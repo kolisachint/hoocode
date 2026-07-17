@@ -322,6 +322,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} resources                 List discovered skills, subagents, slash commands, and MCP servers
+  ${APP_NAME} a2a [--serve]             Publish an A2A AgentCard of active tools/skills for agent discovery
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
 
 ${chalk.bold("Options:")}

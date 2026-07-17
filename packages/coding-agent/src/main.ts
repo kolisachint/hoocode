@@ -10,6 +10,7 @@ import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@kolisachint/hoocode-ai";
 import { ProcessTerminal, setKeybindings, TUI } from "@kolisachint/hoocode-tui";
 import chalk from "chalk";
+import { handleA2ACommand } from "./a2a-cli.js";
 import { type Args, type Mode, parseArgs, printHelp } from "./cli/args.js";
 import { processFileArguments } from "./cli/file-processor.js";
 import { buildInitialMessage } from "./cli/initial-message.js";
@@ -625,6 +626,10 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (await handleResourcesCommand(args)) {
+		return;
+	}
+
+	if (await handleA2ACommand(args)) {
 		return;
 	}
 
