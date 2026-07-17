@@ -25,7 +25,7 @@ WORKDIR /src
 COPY . .
 
 # Produces packages/coding-agent/binaries/linux-x64/ (binary + sidecars).
-RUN bash scripts/build-linux-binary.sh
+RUN bash scripts/build-unix-binary.sh linux-x64
 
 # ---------------------------------------------------------------------------
 # Stage 2: minimal glibc runtime.

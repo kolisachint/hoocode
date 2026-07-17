@@ -116,8 +116,12 @@ image relies on that boundary rather than the in-container bash sandbox, it does
 **not** need the privileged Linux namespaces that `@anthropic-ai/sandbox-runtime`
 (bubblewrap) would require.
 
-The same `linux-x64` archive is published on each GitHub release as
-`hoocode-linux-x64.tar.gz` if you prefer to run the binary directly.
+Prebuilt standalone binaries are published on each GitHub release for every
+supported target — `hoocode-linux-x64.tar.gz`, `hoocode-linux-arm64.tar.gz`,
+`hoocode-darwin-x64.tar.gz`, `hoocode-darwin-arm64.tar.gz`, and the Windows
+`hoocode-windows-x64.zip` — if you prefer to run the binary directly. Build any
+of them locally with `scripts/build-unix-binary.sh <target>` (Unix) or
+`scripts/build-binaries.sh` (Windows).
 
 ## Contributing
 
