@@ -16,7 +16,10 @@
  *
  *   skills            skills/<name>/SKILL.md            (or the manifest's `skills` path override)
  *   commands          commands/<name>.md
- *   subagents         agents/<name>.md                  (Copilot also emits/reads `.agent.md` names)
+ *   subagents         agents/<name>.agent.md            (Copilot's custom-agent convention — the
+ *                                                        `.agent.md` suffix and a YAML-list `tools`
+ *                                                        frontmatter are what Copilot recognizes; the
+ *                                                        reader still accepts bare `.md` names)
  *   hooks             hooks.json or hooks/hooks.json    ({ description?, hooks: { Event: [...] } })
  *   MCP servers       .mcp.json                         ({ mcpServers } | { servers })
  *
@@ -207,9 +210,16 @@ export const copilotFormat: PluginFormatAdapter = {
 			});
 		}
 		for (const a of draft.agents ?? []) {
+			// Copilot recognizes custom agents by the `.agent.md` suffix, and takes
+			// `tools` as a YAML list (not the Claude comma string) — matching this
+			// adapter's workspace.emitAgent and the current GitHub Copilot docs
+			// (docs.github.com custom agents / plugins-creating; verified 2026-07).
 			files.push({
-				path: path.join("agents", `${slug(a.name)}.md`),
-				content: emitMarkdown({ name: a.name, description: a.description, tools: a.tools, model: a.model }, a.body),
+				path: path.join("agents", `${slug(a.name)}.agent.md`),
+				content: emitMarkdown(
+					{ name: a.name, description: a.description, tools: toolsYamlList(a.tools), model: a.model },
+					a.body,
+				),
 			});
 		}
 		if (draft.mcpServers?.length) {

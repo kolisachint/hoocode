@@ -60,7 +60,12 @@ locations"; verified 2026-07) accepts several locations for both files
 reads them all — `.github/plugin/` first — while **emitting**
 `.github/plugin/plugin.json` for authored plugins. The **capability tree
 mirrors the Claude layout** (top-level `skills/`, `agents/`, `commands/`, hooks
-at root `hooks.json` or `hooks/hooks.json`, `.mcp.json`). Manifests may carry
+at root `hooks.json` or `hooks/hooks.json`, `.mcp.json`) with one Copilot-specific
+detail: **custom agents are emitted as `agents/<name>.agent.md` with a YAML-list
+`tools` frontmatter** — the `.agent.md` suffix and list form are what Copilot
+recognizes (docs.github.com custom agents / plugins-creating; verified 2026-07).
+The reader still accepts bare `agents/<name>.md` and the legacy
+`.github/chatmodes/` layout. Manifests may carry
 dir-path overrides (`"skills": "./skills/"`), which hoocode honors, and
 `author` is an object (`{ "name": ... }`). Marketplace entries may use the
 shorthand source

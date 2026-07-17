@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- GitHub Copilot plugin authoring (`ProposePlugin` / `UpdatePlugin` with
+  `--support-platform github`) now emits custom agents as
+  `agents/<name>.agent.md` with a YAML-list `tools` frontmatter, matching the
+  current GitHub Copilot plugin spec (docs.github.com custom agents /
+  plugins-creating; verified 2026-07) so Copilot recognizes them. Previously
+  they were written as bare `agents/<name>.md` with a Claude-style comma-string
+  `tools`, which Copilot does not load as agents. The reader still accepts the
+  bare `.md` layout (and the legacy `.github/chatmodes/` fallback), so
+  previously authored plugins keep loading.
+
 ## [0.4.138] - 2026-07-17
 
 ### Changed
