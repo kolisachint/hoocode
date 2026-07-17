@@ -323,7 +323,10 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test("does not self-update when npm install path is not writable", () => {
+	// root (uid 0) bypasses filesystem permission bits, so a read-only dir is still
+	// writable and the "not writable" branch can't be exercised. Common in containers.
+	const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+	test.skipIf(isRoot)("does not self-update when npm install path is not writable", () => {
 		const { packageDir } = createNpmPrefixInstall();
 		chmodSync(packageDir, 0o500);
 

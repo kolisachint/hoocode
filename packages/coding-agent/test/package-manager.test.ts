@@ -49,6 +49,7 @@ describe("DefaultPackageManager", () => {
 	let settingsManager: SettingsManager;
 	let packageManager: DefaultPackageManager;
 	let previousOfflineEnv: string | undefined;
+	let previousHome: string | undefined;
 
 	beforeEach(() => {
 		previousOfflineEnv = process.env.HOOCODE_OFFLINE;
@@ -57,6 +58,12 @@ describe("DefaultPackageManager", () => {
 		mkdirSync(tempDir, { recursive: true });
 		agentDir = join(tempDir, "agent");
 		mkdirSync(agentDir, { recursive: true });
+
+		// Isolate user-level resource discovery (~/.claude, ~/.agents) from the real
+		// HOME so tests don't pick up whatever skills the developer/CI user has installed.
+		previousHome = process.env.HOME;
+		process.env.HOME = join(tempDir, "home");
+		mkdirSync(process.env.HOME, { recursive: true });
 
 		settingsManager = SettingsManager.inMemory();
 		packageManager = new DefaultPackageManager({
@@ -72,6 +79,8 @@ describe("DefaultPackageManager", () => {
 		} else {
 			process.env.HOOCODE_OFFLINE = previousOfflineEnv;
 		}
+		if (previousHome === undefined) delete process.env.HOME;
+		else process.env.HOME = previousHome;
 		vi.restoreAllMocks();
 		vi.unstubAllGlobals();
 		rmSync(tempDir, { recursive: true, force: true });

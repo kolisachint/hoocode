@@ -539,10 +539,13 @@ export async function findInitialModel(options: {
 		};
 	}
 
-	// 3. Try saved default from settings
+	// 3. Try saved default from settings (or the hoo-config default). Only honour it
+	// when the provider actually has configured auth — otherwise a stale or seeded
+	// default (e.g. anthropic with no key) would wedge selection instead of falling
+	// through to auto-detection of a provider the user can actually use.
 	if (defaultProvider && defaultModelId) {
 		const found = modelRegistry.find(defaultProvider, defaultModelId);
-		if (found) {
+		if (found && modelRegistry.hasConfiguredAuth(found)) {
 			model = found;
 			if (defaultThinkingLevel) {
 				thinkingLevel = defaultThinkingLevel;

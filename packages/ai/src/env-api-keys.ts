@@ -90,7 +90,12 @@ function hasVertexAdcCredentials(): boolean {
 
 function getApiKeyEnvVars(provider: string): readonly string[] | undefined {
 	if (provider === "github-copilot") {
-		return ["COPILOT_GITHUB_TOKEN", "GH_TOKEN", "GITHUB_TOKEN"];
+		// Only the explicit COPILOT_GITHUB_TOKEN opts a GitHub token into Copilot
+		// inference. GH_TOKEN / GITHUB_TOKEN are ambient in CI and GitHub-integrated
+		// environments for *repository* access — treating them as Copilot credentials
+		// made auto-selection silently pick Copilot (and fail against its blocked
+		// host) whenever those were present. Use /login or COPILOT_GITHUB_TOKEN.
+		return ["COPILOT_GITHUB_TOKEN"];
 	}
 
 	// ANTHROPIC_OAUTH_TOKEN takes precedence over ANTHROPIC_API_KEY

@@ -1,5 +1,9 @@
 #!/usr/bin/env tsx
 
+// `canvas` is an optionalDependency: it builds native bindings (pangocairo) that
+// aren't available in some restricted/minimal environments, so `bun install` may
+// skip it there. This maintenance script (regenerates a committed test fixture)
+// is the only consumer; install canvas explicitly to run it.
 import { createCanvas } from "canvas";
 import { writeFileSync } from "fs";
 import { join, dirname } from "path";

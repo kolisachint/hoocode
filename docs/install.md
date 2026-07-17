@@ -52,6 +52,26 @@ bun run check        # Lint, format, and type check
 See [docs/bun-migration.md](bun-migration.md) for the completed npm → bun
 migration history and rules.
 
+## Restricted / offline environments
+
+HooCode runs without network access. Two capabilities normally reach out to
+GitHub to download helper binaries (`fd` for the `find` tool and file
+autocomplete, `rg` for the `grep` tool); everything else is self-contained.
+
+- **`HOOCODE_OFFLINE=1`** (or `--offline`) disables all startup network
+  operations — no binary downloads, no version checks. The `find`/`grep` tools
+  fall back to a built-in pure-JS implementation, so search keeps working.
+- **`HOOCODE_NATIVE_SEARCH=1`** forces the pure-JS `find`/`grep` path even when
+  `fd`/`rg` could be downloaded. It also engages automatically whenever those
+  binaries are unavailable.
+- **Pre-seed the binaries** to get native `fd`/`rg` speed offline: install them
+  from your OS package manager (they are used straight from `PATH`), or drop the
+  executables into `~/.hoocode/bin/{fd,rg}`.
+
+The interactive UI no longer blocks on these downloads — it starts immediately
+and wires `fd` in once resolved, so a slow or blocked network never delays
+launch.
+
 ## Contributing
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines and

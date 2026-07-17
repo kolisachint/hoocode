@@ -28,7 +28,9 @@ describe("native search fallback (HOOCODE_NATIVE_SEARCH)", () => {
 
 	const textOf = (result: { content: Array<{ text?: string }> }): string => result.content[0]?.text ?? "";
 
-	async function runFind(args: Record<string, unknown>): Promise<string[]> {
+	async function runFind(
+		args: Parameters<ReturnType<typeof createFindToolDefinition>["execute"]>[1],
+	): Promise<string[]> {
 		const def = createFindToolDefinition(root);
 		const ctx = {} as Parameters<typeof def.execute>[4];
 		const result = (await def.execute("call", args, undefined, undefined, ctx)) as {
@@ -43,7 +45,9 @@ describe("native search fallback (HOOCODE_NATIVE_SEARCH)", () => {
 			.sort();
 	}
 
-	async function runGrep(args: Record<string, unknown>): Promise<string> {
+	async function runGrep(
+		args: Parameters<ReturnType<typeof createGrepToolDefinition>["execute"]>[1],
+	): Promise<string> {
 		const def = createGrepToolDefinition(root);
 		const ctx = {} as Parameters<typeof def.execute>[4];
 		const result = (await def.execute("call", args, undefined, undefined, ctx)) as {
