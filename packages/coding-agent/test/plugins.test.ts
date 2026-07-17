@@ -290,11 +290,8 @@ describe("copilot (.github) plugin format", () => {
 		// mirrors the Claude layout (matches github/copilot-plugins-indexed plugins).
 		// Custom agents carry the `.agent.md` suffix Copilot recognizes.
 		expect(fs.existsSync(path.join(root, ".github", "plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(root, "commands", "greet.md"))).toBe(true);
-		// `commands` has no default path in the Copilot manifest, so it must be
-		// declared for Copilot to discover the dir (agents/skills use defaults).
-		const manifest = JSON.parse(fs.readFileSync(path.join(root, ".github", "plugin", "plugin.json"), "utf8"));
-		expect(manifest.commands).toBe("./commands/");
+		// Commands map to Copilot prompt files: .github/prompts/<name>.prompt.md.
+		expect(fs.existsSync(path.join(root, ".github", "prompts", "greet.prompt.md"))).toBe(true);
 		expect(fs.existsSync(path.join(root, "agents", "scout.agent.md"))).toBe(true);
 		// Copilot custom agents take `tools` as a YAML list (not the Claude comma string).
 		const agentMd = fs.readFileSync(path.join(root, "agents", "scout.agent.md"), "utf8");
@@ -303,7 +300,7 @@ describe("copilot (.github) plugin format", () => {
 		const parsed = parsePluginDir(root);
 		expect(parsed?.format).toBe("copilot");
 		expect(parsed?.id).toBe("authored");
-		expect(parsed?.commandsDir).toBe(path.join(root, "commands"));
+		expect(parsed?.commandsDir).toBe(path.join(root, ".github", "prompts"));
 		expect(parsed?.agentsDir).toBe(path.join(root, "agents"));
 		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin", args: ["--port", "1"] } });
 	});

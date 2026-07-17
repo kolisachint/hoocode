@@ -110,7 +110,9 @@ function loadTemplateFromFile(filePath: string, sourceInfo: SourceInfo): PromptT
 		const rawContent = readFileSync(filePath, "utf-8");
 		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(rawContent);
 
-		const name = basename(filePath).replace(/\.md$/, "");
+		// Strip a Copilot `.prompt.md` suffix as well as a plain `.md`, so both
+		// `greet.prompt.md` (prompt files) and `greet.md` yield the command `greet`.
+		const name = basename(filePath).replace(/\.(prompt\.)?md$/, "");
 
 		// Get description from frontmatter or first non-empty line
 		let description = frontmatter.description || "";

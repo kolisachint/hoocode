@@ -15,7 +15,9 @@
  * reads those natively anyway.) The capability tree matches the Claude layout:
  *
  *   skills            skills/<name>/SKILL.md            (or the manifest's `skills` path override)
- *   commands          commands/<name>.md
+ *   commands          .github/prompts/<name>.prompt.md  (Copilot's prompt-file convention — the
+ *                                                        analog of a slash command; a manifest
+ *                                                        `commands` path or `commands/` dir is read too)
  *   subagents         agents/<name>.agent.md            (Copilot's custom-agent convention — the
  *                                                        `.agent.md` suffix and a YAML-list `tools`
  *                                                        frontmatter are what Copilot recognizes; the
@@ -77,8 +79,14 @@ const MANIFEST_REL_PATHS = [
 /** Authored manifest location: the preferred `.github/plugin/` home. */
 const emitManifestRelPath = path.join(MARKER_DIR, "plugin", "plugin.json");
 
+/**
+ * Copilot prompt-file home. `.github/prompts/<name>.prompt.md` is the current
+ * Copilot/VS Code prompt-file convention, and hoocode maps a plugin's commands
+ * to it (both the writer and this reader), so it is the authored location for
+ * commands — not merely a legacy fallback.
+ */
+const PROMPTS_DIR = path.join(MARKER_DIR, "prompts");
 // Legacy authored layout (read-only fallbacks).
-const LEGACY_PROMPTS_DIR = path.join(MARKER_DIR, "prompts");
 const LEGACY_CHATMODES_DIR = path.join(MARKER_DIR, "chatmodes");
 const LEGACY_MCP_FILE = path.join(MARKER_DIR, "mcp.json");
 const LEGACY_HOOKS_FILE = path.join(MARKER_DIR, "hooks", "hooks.json");
@@ -164,7 +172,9 @@ export const copilotFormat: PluginFormatAdapter = {
 			// Claude-mirror layout (manifest overrides honored), with the legacy
 			// prompts/chatmodes locations as read-only fallbacks.
 			skillsDir: resolveCapabilityDir(root, raw.skills, "skills"),
-			commandsDir: resolveCapabilityDir(root, raw.commands, "commands") ?? dirIfExists(root, LEGACY_PROMPTS_DIR),
+			// Commands map to Copilot prompt files at `.github/prompts/`; a manifest
+			// `commands` override or a conventional `commands/` dir still wins if present.
+			commandsDir: resolveCapabilityDir(root, raw.commands, "commands") ?? dirIfExists(root, PROMPTS_DIR),
 			agentsDir: resolveCapabilityDir(root, raw.agents, "agents") ?? dirIfExists(root, LEGACY_CHATMODES_DIR),
 			themesDir: resolveCapabilityDir(root, raw.themes, "themes"),
 			// Copilot CLI plugins put hooks config at root `hooks.json`; normalizeHooks
@@ -194,10 +204,6 @@ export const copilotFormat: PluginFormatAdapter = {
 				...(draft.description ? { description: draft.description } : {}),
 				// Spec: `author` is an object with a required `name`.
 				...(draft.author ? { author: { name: draft.author } } : {}),
-				// `agents`/`skills` default to `agents/`+`skills/`, so they need no
-				// declaration; `commands` has no default path in the Copilot manifest,
-				// so declare it explicitly or Copilot won't discover `commands/`.
-				...(draft.commands?.length ? { commands: "./commands/" } : {}),
 			}),
 		});
 
@@ -208,8 +214,11 @@ export const copilotFormat: PluginFormatAdapter = {
 			});
 		}
 		for (const c of draft.commands ?? []) {
+			// Copilot's analog of a slash command is a prompt file:
+			// `.github/prompts/<name>.prompt.md` (docs.github.com prompt files;
+			// verified 2026-07) — same target as this adapter's workspace.emitCommand.
 			files.push({
-				path: path.join("commands", `${slug(c.name)}.md`),
+				path: path.join(PROMPTS_DIR, `${slug(c.name)}.prompt.md`),
 				content: emitMarkdown({ description: c.description }, c.body),
 			});
 		}

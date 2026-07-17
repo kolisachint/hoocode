@@ -13,10 +13,14 @@
   `tools`, which Copilot does not load as agents. The reader still accepts the
   bare `.md` layout (and the legacy `.github/chatmodes/` fallback), so
   previously authored plugins keep loading.
-- GitHub Copilot plugin authoring now declares `"commands": "./commands/"` in
-  the emitted `plugin.json` when the plugin has commands. `agents`/`skills` use
-  their default paths, but `commands` has no default in the Copilot manifest, so
-  without the declaration Copilot never discovered the `commands/` directory.
+- GitHub Copilot plugin authoring now maps a plugin's commands to Copilot
+  prompt files — `.github/prompts/<name>.prompt.md` — instead of Claude-style
+  `commands/<name>.md`, matching the Copilot/VS Code prompt-file convention and
+  this adapter's workspace command layout. The reader loads them from
+  `.github/prompts/` (and still honors a manifest `commands` path or a
+  `commands/` dir). Relatedly, command-name derivation now strips a `.prompt.md`
+  suffix, so a `greet.prompt.md` prompt file loads as the command `greet`
+  (previously `greet.prompt`).
 
 ## [0.4.138] - 2026-07-17
 
