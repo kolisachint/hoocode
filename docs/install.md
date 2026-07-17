@@ -97,6 +97,28 @@ distroless. Use a glibc base (`debian:*-slim`, `gcr.io/distroless/nodejs*`), or
 install via npm (`npm i -g @kolisachint/hoocode-agent`) on any image with
 Node ≥ 20.
 
+**Prebuilt image.** The repo ships a multi-stage [`Dockerfile`](../Dockerfile)
+that compiles the `linux-x64` standalone binary (`bun build --compile`) and
+runs it on `debian:bookworm-slim` as a non-root user (uid 10001). It sets
+`HOOCODE_OFFLINE=1`, points `HOOCODE_CODING_AGENT_DIR` at a writable volume
+(`/home/hoo/.hoocode`), and sets `HOOCODE_PACKAGE_DIR` so asset resolution never
+depends on the executable path:
+
+```bash
+docker build -t hoocode .
+docker run --rm -it -e ANTHROPIC_API_KEY=... -v "$PWD":/work -w /work hoocode
+```
+
+The container is intended to be the sole trust boundary — run it hardened
+(`--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--read-only` with the
+`/home/hoo/.hoocode` volume writable, plus your egress allowlist). Because the
+image relies on that boundary rather than the in-container bash sandbox, it does
+**not** need the privileged Linux namespaces that `@anthropic-ai/sandbox-runtime`
+(bubblewrap) would require.
+
+The same `linux-x64` archive is published on each GitHub release as
+`hoocode-linux-x64.tar.gz` if you prefer to run the binary directly.
+
 ## Contributing
 
 See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines and

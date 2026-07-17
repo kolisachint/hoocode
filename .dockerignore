@@ -1,0 +1,19 @@
+# Keep the build context small and reproducible. The builder stage runs a
+# clean `bun install` + `bun run build`, so host build artifacts must not leak in.
+.git
+**/node_modules
+**/dist
+**/binaries
+*.sha256
+.DS_Store
+
+# Local agent/tool state
+.hoocode/
+**/.hoocode/
+.agents/marketplace-cache/
+.agents/marketplaces.json
+.sisyphus/
+
+# CI workflows aren't needed to build the binary (docs/ IS — it ships as a
+# sidecar asset next to the compiled binary).
+.github/
