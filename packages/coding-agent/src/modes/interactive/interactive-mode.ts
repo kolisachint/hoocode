@@ -706,10 +706,19 @@ export class InteractiveMode {
 			settingsManager: this.settingsManager,
 		});
 
-		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
-		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
-		const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
-		this.fdPath = fdPath;
+		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir).
+		// Both help — fd for autocomplete, rg for the grep tool — but neither is required
+		// to start: resolving them can hit a slow or failing network in restricted
+		// environments, and awaiting here froze first paint. Resolve in the background
+		// (silently, so download notices never corrupt the TUI) and wire fd in when ready;
+		// the grep/find tools resolve rg/fd on demand with a native fallback regardless.
+		void Promise.all([ensureTool("fd", true), ensureTool("rg", true)])
+			.then(([fdPath]) => {
+				this.fdPath = fdPath;
+			})
+			.catch(() => {
+				// Non-fatal: autocomplete simply stays disabled until/unless fd resolves.
+			});
 
 		// Add header container as first child
 		this.ui.addChild(this.headerContainer);

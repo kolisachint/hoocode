@@ -56,7 +56,19 @@ export interface ThinkingEscalationConfig {
 	cooldown_turns?: number;
 }
 
+/** LLM defaults seeded in hoo-config.json and honoured during model selection. */
+export interface HooLlmConfig {
+	/** Preferred provider when the pi-layer settings.json has no saved default. */
+	default_provider?: string;
+	/** Preferred model id for `default_provider` (otherwise the provider's built-in default). */
+	default_model?: string;
+	/** Informational map of provider → env var holding its API key. */
+	providers?: Record<string, { api_key_env?: string }>;
+}
+
 export interface HooConfig {
+	/** LLM default provider/model preferences. */
+	llm?: HooLlmConfig;
 	/** Manually-pinned active mode (overrides default "build") */
 	active_mode?: string;
 	/** Per-mode configuration keyed by mode name */

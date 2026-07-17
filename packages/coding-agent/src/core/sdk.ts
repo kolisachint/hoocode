@@ -11,6 +11,7 @@ import {
 } from "@kolisachint/hoocode-agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@kolisachint/hoocode-ai";
 import { getAgentDir } from "../config.js";
+import { readConfig as readHooConfig } from "../extensions/core/config.js";
 import { AgentSession } from "./agent-session.js";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.js";
 import { AuthStorage } from "./auth-storage.js";
@@ -18,7 +19,7 @@ import { evictSupersededReads } from "./context-gc.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.js";
 import { ModelRegistry } from "./model-registry.js";
-import { findInitialModel } from "./model-resolver.js";
+import { defaultModelPerProvider, findInitialModel } from "./model-resolver.js";
 import type { ResourceLoader } from "./resource-loader.js";
 import { DefaultResourceLoader } from "./resource-loader.js";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.js";
@@ -266,11 +267,24 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// If still no model, use findInitialModel (checks settings default, then provider defaults)
 	if (!model) {
+		// The pi-layer settings.json default wins; when it is unset, fall back to the
+		// hoo-config.json `llm.default_provider` so the seeded/user default actually
+		// takes effect. findInitialModel only honours it if that provider has auth.
+		const hooLlm = readHooConfig().llm;
+		const defaultProvider = settingsManager.getDefaultProvider() ?? hooLlm?.default_provider;
+		const defaultModelId =
+			settingsManager.getDefaultModel() ??
+			(settingsManager.getDefaultProvider()
+				? undefined
+				: (hooLlm?.default_model ??
+					(defaultProvider && defaultProvider in defaultModelPerProvider
+						? defaultModelPerProvider[defaultProvider as keyof typeof defaultModelPerProvider]
+						: undefined)));
 		const result = await findInitialModel({
 			scopedModels: [],
 			isContinuing: hasExistingSession,
-			defaultProvider: settingsManager.getDefaultProvider(),
-			defaultModelId: settingsManager.getDefaultModel(),
+			defaultProvider,
+			defaultModelId,
 			defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),
 			modelRegistry,
 		});

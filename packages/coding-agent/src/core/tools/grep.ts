@@ -9,6 +9,7 @@ import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import { isNativeSearchForced, nativeGrep } from "./native-search.js";
 import { resolveToCwd } from "./path-utils.js";
 import { getTextOutput, invalidArgText, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -169,17 +170,10 @@ export function createGrepToolDefinition(
 
 				(async () => {
 					try {
-						const rgPath = await ensureTool("rg", true);
-						if (!rgPath) {
-							settle(() =>
-								reject(
-									new Error(
-										"ripgrep (rg) unavailable and could not be downloaded — use the bash tool to run grep/rg instead",
-									),
-								),
-							);
-							return;
-						}
+						// rg drives the fast path; when it is unavailable (restricted
+						// environments) or forced off, a pure-JS scan produces the same
+						// match shape so the tool degrades automatically instead of failing.
+						const rgPath = isNativeSearchForced() ? undefined : await ensureTool("rg", true);
 
 						const searchPath = resolveToCwd(searchDir || ".", cwd);
 						const ops = customOps ?? defaultGrepOperations;
@@ -218,40 +212,10 @@ export function createGrepToolDefinition(
 							return lines;
 						};
 
-						const args: string[] = ["--json", "--line-number", "--color=never", "--hidden"];
-						if (ignoreCase) args.push("--ignore-case");
-						if (literal) args.push("--fixed-strings");
-						if (glob) args.push("--glob", glob);
-						args.push("--", pattern, searchPath);
-
-						const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
-						const rl = createInterface({ input: child.stdout });
-						let stderr = "";
-						let matchCount = 0;
+						// Match collection is shared between the rg and native paths.
+						const matches: Array<{ filePath: string; lineNumber: number; lineText?: string }> = [];
 						let matchLimitReached = false;
 						let linesTruncated = false;
-						let aborted = false;
-						let killedDueToLimit = false;
-						const outputLines: string[] = [];
-
-						const cleanup = () => {
-							rl.close();
-							signal?.removeEventListener("abort", onAbort);
-						};
-						const stopChild = (dueToLimit = false) => {
-							if (!child.killed) {
-								killedDueToLimit = dueToLimit;
-								child.kill();
-							}
-						};
-						const onAbort = () => {
-							aborted = true;
-							stopChild();
-						};
-						signal?.addEventListener("abort", onAbort, { once: true });
-						child.stderr?.on("data", (chunk) => {
-							stderr += chunk.toString();
-						});
 
 						// Format a context block around a match line. Path is omitted (emitted once per file).
 						const formatBlock = async (filePath: string, lineNumber: number): Promise<string[]> => {
@@ -273,58 +237,16 @@ export function createGrepToolDefinition(
 							return block;
 						};
 
-						// Collect matches during streaming, then format them after rg exits.
-						const matches: Array<{ filePath: string; lineNumber: number; lineText?: string }> = [];
-						rl.on("line", (line) => {
-							if (!line.trim() || matchCount >= effectiveLimit) return;
-							let event: any;
-							try {
-								event = JSON.parse(line);
-							} catch {
-								return;
-							}
-							if (event.type === "match") {
-								matchCount++;
-								const filePath = event.data?.path?.text;
-								const lineNumber = event.data?.line_number;
-								const lineText = event.data?.lines?.text;
-								if (filePath && typeof lineNumber === "number")
-									matches.push({ filePath, lineNumber, lineText });
-								if (matchCount >= effectiveLimit) {
-									matchLimitReached = true;
-									stopChild(true);
-								}
-							}
-						});
-
-						child.on("error", (error) => {
-							cleanup();
-							settle(() => reject(new Error(`Failed to run ripgrep: ${error.message}`)));
-						});
-						child.on("close", async (code) => {
-							cleanup();
-							if (aborted) {
-								settle(() => reject(new Error("Operation aborted")));
-								return;
-							}
-							if (!killedDueToLimit && code !== 0 && code !== 1) {
-								const trimmedStderr = stderr.trim();
-								let errorMsg = trimmedStderr || `ripgrep exited with code ${code}`;
-								// A regex parse error means the pattern is not a valid regex. Point the
-								// caller at the `literal` option so they can search the text verbatim.
-								if (!literal && /regex parse error/i.test(trimmedStderr)) {
-									errorMsg += `\n\nThe pattern is not a valid regex. To search for it as plain text, pass literal: true (or escape the regex metacharacters).`;
-								}
-								settle(() => reject(new Error(errorMsg)));
-								return;
-							}
-							if (matchCount === 0) {
+						// Format the collected matches into the tool result. Shared by both paths.
+						const finalize = async () => {
+							if (matches.length === 0) {
 								settle(() =>
 									resolve({ content: [{ type: "text", text: "No matches found" }], details: undefined }),
 								);
 								return;
 							}
 
+							const outputLines: string[] = [];
 							// Group matches by file path, showing filename once per file.
 							const fileGroups = new Map<string, typeof matches>();
 							for (const match of matches) {
@@ -387,6 +309,123 @@ export function createGrepToolDefinition(
 									details: Object.keys(details).length > 0 ? details : undefined,
 								}),
 							);
+						};
+
+						// --- Native fallback: no rg binary available (or forced off) ---
+						if (!rgPath) {
+							let result: Awaited<ReturnType<typeof nativeGrep>>;
+							try {
+								result = await nativeGrep(searchPath, {
+									pattern,
+									isDirectory,
+									ignoreCase,
+									literal,
+									glob,
+									limit: effectiveLimit,
+									signal,
+									readFile: ops.readFile,
+								});
+							} catch (e) {
+								if (signal?.aborted) {
+									settle(() => reject(new Error("Operation aborted")));
+									return;
+								}
+								const err = e as Error & { invalidRegex?: boolean };
+								let errorMsg = err.message || "grep failed";
+								if (err.invalidRegex && !literal) {
+									errorMsg += `\n\nThe pattern is not a valid regex. To search for it as plain text, pass literal: true (or escape the regex metacharacters).`;
+								}
+								settle(() => reject(new Error(errorMsg)));
+								return;
+							}
+							if (signal?.aborted) {
+								settle(() => reject(new Error("Operation aborted")));
+								return;
+							}
+							matches.push(...result.matches);
+							matchLimitReached = result.matchLimitReached;
+							await finalize();
+							return;
+						}
+
+						// --- Fast path: stream rg --json ---
+						const args: string[] = ["--json", "--line-number", "--color=never", "--hidden"];
+						if (ignoreCase) args.push("--ignore-case");
+						if (literal) args.push("--fixed-strings");
+						if (glob) args.push("--glob", glob);
+						args.push("--", pattern, searchPath);
+
+						const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+						const rl = createInterface({ input: child.stdout });
+						let stderr = "";
+						let matchCount = 0;
+						let aborted = false;
+						let killedDueToLimit = false;
+
+						const cleanup = () => {
+							rl.close();
+							signal?.removeEventListener("abort", onAbort);
+						};
+						const stopChild = (dueToLimit = false) => {
+							if (!child.killed) {
+								killedDueToLimit = dueToLimit;
+								child.kill();
+							}
+						};
+						const onAbort = () => {
+							aborted = true;
+							stopChild();
+						};
+						signal?.addEventListener("abort", onAbort, { once: true });
+						child.stderr?.on("data", (chunk) => {
+							stderr += chunk.toString();
+						});
+
+						// Collect matches during streaming, then format them after rg exits.
+						rl.on("line", (line) => {
+							if (!line.trim() || matchCount >= effectiveLimit) return;
+							let event: any;
+							try {
+								event = JSON.parse(line);
+							} catch {
+								return;
+							}
+							if (event.type === "match") {
+								matchCount++;
+								const filePath = event.data?.path?.text;
+								const lineNumber = event.data?.line_number;
+								const lineText = event.data?.lines?.text;
+								if (filePath && typeof lineNumber === "number")
+									matches.push({ filePath, lineNumber, lineText });
+								if (matchCount >= effectiveLimit) {
+									matchLimitReached = true;
+									stopChild(true);
+								}
+							}
+						});
+
+						child.on("error", (error) => {
+							cleanup();
+							settle(() => reject(new Error(`Failed to run ripgrep: ${error.message}`)));
+						});
+						child.on("close", async (code) => {
+							cleanup();
+							if (aborted) {
+								settle(() => reject(new Error("Operation aborted")));
+								return;
+							}
+							if (!killedDueToLimit && code !== 0 && code !== 1) {
+								const trimmedStderr = stderr.trim();
+								let errorMsg = trimmedStderr || `ripgrep exited with code ${code}`;
+								// A regex parse error means the pattern is not a valid regex. Point the
+								// caller at the `literal` option so they can search the text verbatim.
+								if (!literal && /regex parse error/i.test(trimmedStderr)) {
+									errorMsg += `\n\nThe pattern is not a valid regex. To search for it as plain text, pass literal: true (or escape the regex metacharacters).`;
+								}
+								settle(() => reject(new Error(errorMsg)));
+								return;
+							}
+							await finalize();
 						});
 					} catch (err) {
 						settle(() => reject(err as Error));

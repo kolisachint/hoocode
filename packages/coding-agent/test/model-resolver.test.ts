@@ -468,3 +468,48 @@ describe("default model selection", () => {
 		expect(result.model?.id).toBe("anthropic/claude-opus-4-6");
 	});
 });
+
+describe("findInitialModel saved/default selection", () => {
+	// Registry stub: `authProviders` lists providers with configured auth; all
+	// mock models are otherwise findable and reported as available when authed.
+	const makeRegistry = (authProviders: string[]) =>
+		({
+			find: (provider: string, id: string) => allModels.find((m) => m.provider === provider && m.id === id),
+			hasConfiguredAuth: (m: Model<"anthropic-messages">) => authProviders.includes(m.provider),
+			getAvailable: async () => mockModels.filter((m) => authProviders.includes(m.provider)),
+		}) as unknown as Parameters<typeof findInitialModel>[0]["modelRegistry"];
+
+	test("honours a saved default when that provider has auth", async () => {
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: "openai",
+			defaultModelId: "gpt-4o",
+			modelRegistry: makeRegistry(["anthropic", "openai"]),
+		});
+		expect(result.model?.provider).toBe("openai");
+		expect(result.model?.id).toBe("gpt-4o");
+	});
+
+	test("skips a saved default without auth and auto-detects an available provider", async () => {
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: "anthropic",
+			defaultModelId: "claude-sonnet-4-5",
+			modelRegistry: makeRegistry(["openai"]), // no anthropic auth
+		});
+		expect(result.model?.provider).toBe("openai");
+	});
+
+	test("falls through to no model when nothing is authed", async () => {
+		const result = await findInitialModel({
+			scopedModels: [],
+			isContinuing: false,
+			defaultProvider: "anthropic",
+			defaultModelId: "claude-sonnet-4-5",
+			modelRegistry: makeRegistry([]),
+		});
+		expect(result.model).toBeUndefined();
+	});
+});

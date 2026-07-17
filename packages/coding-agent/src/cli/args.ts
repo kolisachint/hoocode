@@ -513,6 +513,8 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
   HOOCODE_PACKAGE_DIR              - Override package directory (for Nix/Guix store paths).
   HOOCODE_OFFLINE                  - Disable startup network operations when set to 1/true/yes.
+  HOOCODE_NATIVE_SEARCH            - Force the pure-JS find/grep fallback instead of the fd/rg binaries
+                                     when set to 1 (also used automatically when fd/rg are unavailable).
   HOOCODE_CA_CERT                  - Path to an extra PEM CA bundle to trust for hoocode's own TLS traffic
                                      (additive; verification stays on). Precedence: --ca-cert > this > NODE_EXTRA_CA_CERTS
   HOOCODE_USE_SYSTEM_CA            - Also trust the OS/system CA store when set to 1/true/yes (same as --use-system-ca)
