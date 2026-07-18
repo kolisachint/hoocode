@@ -712,7 +712,11 @@ export class InteractiveMode {
 		// environments, and awaiting here froze first paint. Resolve in the background
 		// (silently, so download notices never corrupt the TUI) and wire fd in when ready;
 		// the grep/find tools resolve rg/fd on demand with a native fallback regardless.
-		void Promise.all([ensureTool("fd", true), ensureTool("rg", true)])
+		void Promise.all([
+			ensureTool("fd", true),
+			ensureTool("rg", true),
+			this.settingsManager.getEnableEmbsearchTools() ? ensureTool("embsearch", true) : Promise.resolve(null),
+		])
 			.then(([fdPath]) => {
 				this.fdPath = fdPath;
 			})
