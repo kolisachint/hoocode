@@ -14,8 +14,8 @@
  * blocks session startup or affects grep/find.
  */
 
-import { spawnSync } from "child_process";
 import { readFileSync } from "fs";
+import { ensureTool } from "../../utils/tools-manager.js";
 import { chunkFile } from "./chunker.js";
 import { EmbSearchClient } from "./client.js";
 import {
@@ -87,10 +87,11 @@ export class EmbsearchService {
 		this.options.onProgress?.(state);
 	}
 
-	private resolveBinary(): string | undefined {
-		const candidate = this.options.binaryPath ?? "embsearch";
-		const probe = spawnSync(candidate, ["--version"], { stdio: "ignore", timeout: 5000 });
-		return probe.error ? undefined : candidate;
+	private async resolveBinary(): Promise<string | undefined> {
+		if (this.options.binaryPath) {
+			return this.options.binaryPath;
+		}
+		return await ensureTool("embsearch", true);
 	}
 
 	/**
@@ -108,7 +109,7 @@ export class EmbsearchService {
 	}
 
 	private async run(signal?: AbortSignal): Promise<void> {
-		const binary = this.resolveBinary();
+		const binary = await this.resolveBinary();
 		if (!binary) {
 			this.setState({
 				phase: "unavailable",

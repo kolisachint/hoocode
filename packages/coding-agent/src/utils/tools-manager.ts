@@ -30,7 +30,7 @@ function isOfflineModeEnabled(): boolean {
 }
 
 /** Tools whose binaries hoocode can resolve from PATH or download on demand. */
-export type ManagedTool = "fd" | "rg" | "webtools" | "filetools" | "browsertools" | "voicetools";
+export type ManagedTool = "fd" | "rg" | "webtools" | "filetools" | "browsertools" | "voicetools" | "embsearch";
 
 interface ToolConfig {
 	name: string;
@@ -161,6 +161,27 @@ const TOOLS: Record<string, ToolConfig> = {
 				return `filetools-${archStr}-unknown-linux-gnu.tar.gz`;
 			} else if (plat === "win32") {
 				return `filetools-${archStr}-pc-windows-msvc.zip`;
+			}
+			return null;
+		},
+	},
+	embsearch: {
+		name: "embsearch",
+		repo: "kolisachint/embeddingsearchtools",
+		binaryName: "embsearch",
+		tagPrefix: "v",
+		// Release archives follow Rust target triples: embsearch-<arch>-<target>.<ext>.
+		// Must be the ONNX build (model bundled); the mock build is rejected by the
+		// EmbsearchService. A missing platform asset 404s and ensureTool degrades
+		// gracefully (returns undefined; the semantic_search tool stays unavailable).
+		getAssetName: (_version, plat, architecture) => {
+			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
+			if (plat === "darwin") {
+				return `embsearch-${archStr}-apple-darwin.tar.gz`;
+			} else if (plat === "linux") {
+				return `embsearch-${archStr}-unknown-linux-gnu.tar.gz`;
+			} else if (plat === "win32") {
+				return `embsearch-${archStr}-pc-windows-msvc.zip`;
 			}
 			return null;
 		},
@@ -467,6 +488,7 @@ const TERMUX_PACKAGES: Record<string, string> = {
 	filetools: "filetools",
 	browsertools: "browsertools",
 	voicetools: "voicetools",
+	embsearch: "embsearch",
 };
 
 // Ensure a tool is available, downloading if necessary
