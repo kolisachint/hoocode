@@ -25,6 +25,11 @@ import {
 } from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import {
+	EmbsearchService,
+	registerEmbsearchService,
+	unregisterEmbsearchService,
+} from "./core/embsearch/embsearch-service.js";
 import { exportFromFile } from "./core/export-html/index.js";
 import { parseSupportPlatforms, setSupportPlatforms } from "./core/extensions/plugins/formats/platform-targets.js";
 import type { ExtensionAPI, ExtensionFactory } from "./core/extensions/types.js";
@@ -57,6 +62,7 @@ import {
 	resolveNestedConcurrency,
 	SUBAGENT_MAX_DEPTH_ENV,
 } from "./core/subagent-depth.js";
+import { taskStore } from "./core/task-store.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { createPluginLifecycleToolDefinitions } from "./core/tools/plugins.js";
 import { createProposePluginToolDefinitions } from "./core/tools/propose-plugin.js";
@@ -446,6 +452,12 @@ function buildSessionOptions(
 	// default; this adds them to the default active set.
 	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
 		options.enableWebTools = true;
+	}
+	// Semantic search (semantic_search tool): opt-in via --enable-embsearchtools
+	// flag or the enableEmbsearchTools setting. Registered as a base tool but
+	// inactive by default; this adds it to the default active set.
+	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
+		options.enableEmbsearchTools = true;
 	}
 	// Browser tools (browser_run + browser_continue): opt-in via --enable-browsertools
 	// flag or the enableBrowserTools setting. Registered as base tools but inactive by
@@ -846,6 +858,7 @@ export async function main(args: string[], options?: MainOptions) {
 			enableWebTools: sessionOptions.enableWebTools,
 			enableBrowserTools: sessionOptions.enableBrowserTools,
 			enableFileTools: sessionOptions.enableFileTools,
+			enableEmbsearchTools: sessionOptions.enableEmbsearchTools,
 			baseToolsOverride: sessionOptions.baseToolsOverride,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
@@ -937,9 +950,71 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(1);
 	}
 
+	// Start the optional local embedding index service in the background. It is
+	// completely off unless --enable-embsearchtools or the setting is true.
+	let embsearchService: EmbsearchService | undefined;
+	if (session.getActiveToolNames().includes("semantic_search")) {
+		let indexTask: ReturnType<typeof taskStore.create> | undefined;
+		const isInteractive = appMode === "interactive";
+		embsearchService = new EmbsearchService({
+			cwd: sessionManager.getCwd(),
+			binaryPath: settingsManager.getEmbsearchBinaryPath(),
+			thresholdBytes: settingsManager.getEmbsearchThresholdBytes(),
+			onProgress: (state) => {
+				if (state.phase === "indexing") {
+					const pct = Math.round((state.done / state.total) * 100);
+					const text = `embsearch: indexing ${state.done}/${state.total} chunks (${pct}%)`;
+					if (isInteractive) {
+						indexTask ??= taskStore.create(text);
+						taskStore.update(indexTask.id, { title: text });
+					} else {
+						console.error(chalk.dim(text));
+					}
+				} else if (state.phase === "ready") {
+					if (isInteractive && indexTask) {
+						taskStore.update(indexTask.id, {
+							title: `embsearch: ready (${state.chunkCount} chunks)`,
+							status: "done",
+						});
+					} else {
+						console.error(chalk.dim(`embsearch: ready (${state.chunkCount} chunks)`));
+					}
+				} else if (state.phase === "skipped") {
+					if (isInteractive && indexTask) {
+						taskStore.update(indexTask.id, {
+							title: `embsearch: skipped (${state.reason})`,
+							status: "done",
+						});
+					} else {
+						console.error(chalk.dim(`embsearch: skipped (${state.reason})`));
+					}
+				} else if (state.phase === "unavailable") {
+					if (isInteractive && indexTask) {
+						taskStore.update(indexTask.id, {
+							title: `embsearch: unavailable (${state.reason})`,
+							status: "failed",
+						});
+					} else {
+						console.error(chalk.dim(`embsearch: unavailable (${state.reason})`));
+					}
+				}
+			},
+		});
+		registerEmbsearchService(sessionManager.getCwd(), embsearchService);
+		embsearchService.start().catch(() => {
+			// Errors are logged by the onProgress unavailable state; swallow to avoid
+			// crashing the session because of an optional background index.
+		});
+	}
+
 	if (appMode === "rpc") {
 		printTimings();
-		await runRpcMode(runtime);
+		try {
+			await runRpcMode(runtime);
+		} finally {
+			await embsearchService?.dispose();
+			unregisterEmbsearchService(sessionManager.getCwd());
+		}
 	} else if (appMode === "interactive") {
 		if (scopedModels.length > 0 && (parsed.verbose || !settingsManager.getQuietStartup())) {
 			const modelList = scopedModels
@@ -1014,6 +1089,8 @@ export async function main(args: string[], options?: MainOptions) {
 		} finally {
 			teamView?.stop();
 			await autoTeam?.stop();
+			await embsearchService?.dispose();
+			unregisterEmbsearchService(sessionManager.getCwd());
 		}
 	} else {
 		printTimings();
@@ -1025,6 +1102,8 @@ export async function main(args: string[], options?: MainOptions) {
 			taskId: parsed.taskId,
 			maxTurns: parsed.maxTurns,
 		});
+		await embsearchService?.dispose();
+		unregisterEmbsearchService(sessionManager.getCwd());
 		stopThemeWatcher();
 		restoreStdout();
 		if (exitCode !== 0) {

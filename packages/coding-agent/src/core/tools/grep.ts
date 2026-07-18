@@ -8,6 +8,7 @@ import path from "path";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { ensureTool } from "../../utils/tools-manager.js";
+import { getEmbsearchService } from "../embsearch/embsearch-service.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { isNativeSearchForced, nativeGrep } from "./native-search.js";
 import { resolveToCwd } from "./path-utils.js";
@@ -240,8 +241,15 @@ export function createGrepToolDefinition(
 						// Format the collected matches into the tool result. Shared by both paths.
 						const finalize = async () => {
 							if (matches.length === 0) {
+								const service = getEmbsearchService(cwd);
+								const hint = service?.isAvailable()
+									? "\n\n[Hint: no exact matches; use semantic_search to find conceptually related code]"
+									: "";
 								settle(() =>
-									resolve({ content: [{ type: "text", text: "No matches found" }], details: undefined }),
+									resolve({
+										content: [{ type: "text", text: `No matches found${hint}` }],
+										details: undefined,
+									}),
 								);
 								return;
 							}

@@ -94,6 +94,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"grep",
 			"ls",
 			"read",
+			"semantic_search",
 			"webfetch",
 			"websearch",
 			"write",

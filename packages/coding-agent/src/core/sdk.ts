@@ -103,6 +103,14 @@ export interface CreateAgentSessionOptions {
 	 * losslessly extract/edit structured/binary documents.
 	 */
 	enableFileTools?: boolean;
+	/**
+	 * Enable the built-in `semantic_search` tool (local embedding index via the
+	 * `embsearch` binary). Defined but inactive by default. Ignored when an
+	 * explicit `tools` allowlist is provided (list it there instead). The tool
+	 * only returns results once the per-session index service reports available;
+	 * otherwise it errors with a pointer back to grep/find.
+	 */
+	enableEmbsearchTools?: boolean;
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
 	/**
@@ -325,6 +333,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		...(options.enableWebTools ? ["webfetch", "websearch"] : []),
 		...(options.enableBrowserTools ? ["browser_run", "browser_continue"] : []),
 		...(options.enableFileTools ? ["DocRead", "DocEdit", "DocWrite", "DocScan", "DocGrep", "DocPeek"] : []),
+		...(options.enableEmbsearchTools ? ["semantic_search"] : []),
 	] as ToolName[];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const initialActiveToolNames: string[] = options.tools

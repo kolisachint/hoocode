@@ -54,6 +54,7 @@ import {
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.js";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.js";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.js";
+import { getEmbsearchService } from "./embsearch/embsearch-service.js";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.js";
 import { createToolHtmlRenderer } from "./export-html/tool-renderer.js";
 import {
@@ -2040,6 +2041,7 @@ export class AgentSession {
 						maxOutputLines: toolMaxOutputLines,
 					},
 					browser_run: { liveView: browserLivePreview },
+					semantic_search: { getService: () => getEmbsearchService(this._cwd) },
 				});
 
 		this._baseToolDefinitions = new Map(
