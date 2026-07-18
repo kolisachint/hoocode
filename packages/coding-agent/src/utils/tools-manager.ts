@@ -173,7 +173,7 @@ const TOOLS: Record<string, ToolConfig> = {
 		// Release archives follow Rust target triples: embsearch-<arch>-<target>.<ext>.
 		// Must be the ONNX build (model bundled); the mock build is rejected by the
 		// EmbsearchService. A missing platform asset 404s and ensureTool degrades
-		// gracefully (returns undefined; the semantic_search tool stays unavailable).
+		// gracefully (returns undefined; the search tool stays lexical-only).
 		getAssetName: (_version, plat, architecture) => {
 			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
 			if (plat === "darwin") {

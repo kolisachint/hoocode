@@ -453,9 +453,10 @@ function buildSessionOptions(
 	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
 		options.enableWebTools = true;
 	}
-	// Semantic search (semantic_search tool): opt-in via --enable-embsearchtools
-	// flag or the enableEmbsearchTools setting. Registered as a base tool but
-	// inactive by default; this adds it to the default active set.
+	// Ranked code search (search tool, lexical + semantic hybrid): opt-in via
+	// --enable-search-tool (or legacy --enable-embsearchtools) or the
+	// enableEmbsearchTools setting. Registered as a base tool but inactive by
+	// default; this adds it to the default active set.
 	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
 		options.enableEmbsearchTools = true;
 	}
@@ -951,9 +952,10 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	// Start the optional local embedding index service in the background. It is
-	// completely off unless --enable-embsearchtools or the setting is true.
+	// completely off unless --enable-search-tool (or the setting) is true; the
+	// search tool runs lexical-only until the index reports available.
 	let embsearchService: EmbsearchService | undefined;
-	if (session.getActiveToolNames().includes("semantic_search")) {
+	if (session.getActiveToolNames().includes("search")) {
 		let indexTask: ReturnType<typeof taskStore.create> | undefined;
 		const isInteractive = appMode === "interactive";
 		embsearchService = new EmbsearchService({

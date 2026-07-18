@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Added
+
+- Hybrid code retrieval (docs/hybrid-retrieval-design.md): the new unified
+  `search` tool replaces `semantic_search`, with `mode: auto | lexical |
+  semantic | hybrid`. Hybrid mode runs grep-backed lexical retrieval and the
+  local embedding index in parallel and fuses results with Reciprocal Rank
+  Fusion (`k=60`, rank-only, deterministic tie-breaks). Lexical hits are
+  mapped to indexed chunk ids (with `rel#L<line>` fallbacks for uncovered
+  files), collapsed, and re-ranked before fusion. Results are expanded into
+  line-window snippets under a token budget; full per-call diagnostics go to
+  `search-trace.jsonl` in the embsearch store dir, never into model context.
+- `--enable-search-tool` CLI flag (alias of the legacy
+  `--enable-embsearchtools`; same `enableEmbsearchTools` setting).
+- Retrieval eval gate (`scripts/search-eval.mjs` + a repo-grounded gold set
+  in `test/fixtures/search-eval.json`): Recall@5/10/50 per mode with an RRF
+  `k` sweep, gold answers matched by span overlap. Lexical baseline recorded
+  in docs/hybrid-retrieval-design.md.
+- Lexical retrieval quality: unindexed grep hits now coalesce into per-file
+  clusters (no more near-duplicate windows of the same file), candidates are
+  ranked by distinct query terms matched instead of directory order, one
+  file contributes at most 8 candidates, and ripgrep runs with `--sort path`
+  so capped result sets are deterministic across runs. Search traces rotate
+  at 5 MB.
+- Deterministic reranker over the fused top-50 (on by default): term
+  coverage of each candidate's expanded window, path affinity with an
+  exact-path bonus (a query naming a file now ranks that file first), and
+  the fused order as prior. Measured on the eval gate with a full index:
+  the default search path went from R@5 42% / R@10 58% to R@5 63% /
+  R@10 83% (Recall@50 92%).
+- Eval-driven defaults: RRF `k` is now 2 (beat the folklore k=60 on every
+  differing gold query), only the top 20 lexical candidates vote in hybrid
+  fusion, and `auto` no longer routes path-like queries to lexical (they
+  score 0% lexically, 100% in hybrid).
+
+### Changed
+
+- When the embedding index is unavailable (disabled, under threshold, missing
+  binary, or still building) the `search` tool degrades to lexical retrieval
+  with a notice instead of erroring like the old `semantic_search` tool.
+- `grep`'s no-match hint now points at the `search` tool.
+
 ## [0.4.142] - 2026-07-18
 
 ## [0.4.141] - 2026-07-18

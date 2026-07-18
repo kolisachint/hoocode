@@ -1,0 +1,80 @@
+[
+	{
+		"id": "symbol-rrffuse",
+		"class": "exact-symbol",
+		"query": "rrfFuse",
+		"gold": [{ "path": "packages/coding-agent/src/core/search/rrf.ts" }]
+	},
+	{
+		"id": "symbol-embsearch-service",
+		"class": "exact-symbol",
+		"query": "EmbsearchService",
+		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts" }]
+	},
+	{
+		"id": "path-hybrid-search",
+		"class": "path",
+		"query": "core/search/hybrid-search.ts",
+		"gold": [{ "path": "packages/coding-agent/src/core/search/hybrid-search.ts" }]
+	},
+	{
+		"id": "error-rrf-rank",
+		"class": "error-fragment",
+		"query": "\"RRF rank must be a positive integer\"",
+		"gold": [{ "path": "packages/coding-agent/src/core/search/rrf.ts" }]
+	},
+	{
+		"id": "error-daemon-exit",
+		"class": "error-fragment",
+		"query": "\"embsearch daemon exited\"",
+		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/client.ts" }]
+	},
+	{
+		"id": "concept-token-budget-expansion",
+		"class": "conceptual",
+		"query": "where are search results expanded into line window snippets under a token budget",
+		"gold": [{ "path": "packages/coding-agent/src/core/search/context-assembler.ts" }]
+	},
+	{
+		"id": "concept-mode-choice",
+		"class": "conceptual",
+		"query": "how does the agent decide between lexical and semantic retrieval",
+		"gold": [{ "path": "packages/coding-agent/src/core/search/mode.ts" }]
+	},
+	{
+		"id": "concept-chunk-overlap",
+		"class": "conceptual",
+		"query": "overlapping line windows when splitting files for embedding",
+		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/chunker.ts" }]
+	},
+	{
+		"id": "crossfile-mode-propagation",
+		"class": "cross-file",
+		"query": "where is the search mode resolved and then used to pick retrievers",
+		"gold": [
+			{ "path": "packages/coding-agent/src/core/search/mode.ts" },
+			{ "path": "packages/coding-agent/src/core/search/hybrid-search.ts" }
+		]
+	},
+	{
+		"id": "boundary-daemon-protocol",
+		"class": "boundary",
+		"query": "where does TypeScript talk newline-delimited JSON to the embedding daemon",
+		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/client.ts" }]
+	},
+	{
+		"id": "concept-index-freshness",
+		"class": "conceptual",
+		"query": "how does the index know which files changed since the last build",
+		"gold": [
+			{ "path": "packages/coding-agent/src/core/embsearch/index-meta.ts" },
+			{ "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts" }
+		]
+	},
+	{
+		"id": "symbol-grep-hint",
+		"class": "error-fragment",
+		"query": "\"No matches found\"",
+		"gold": [{ "path": "packages/coding-agent/src/core/tools/grep.ts" }]
+	}
+]

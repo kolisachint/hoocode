@@ -54,7 +54,7 @@ export interface Args {
 	enableFileTools?: boolean;
 	/** Enable the autonomous plugin system — plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin (off by default). */
 	enablePluginTools?: boolean;
-	/** Enable semantic code search: index the repo with the embsearch binary and register the semantic_search tool (off by default). */
+	/** Enable ranked code search: register the unified search tool (lexical + semantic hybrid) and index the repo with the embsearch binary (off by default). */
 	enableEmbsearchTools?: boolean;
 	/** Minimal low-token preset for small/local models: read/write/edit/bash only, terse prompt, no subagents/todo/skills/context files/mode appendix. */
 	light?: boolean;
@@ -179,7 +179,7 @@ export function parseArgs(args: string[]): Args {
 			result.enableWebTools = true;
 		} else if (arg === "--enable-browsertools") {
 			result.enableBrowserTools = true;
-		} else if (arg === "--enable-embsearchtools") {
+		} else if (arg === "--enable-search-tool" || arg === "--enable-embsearchtools") {
 			result.enableEmbsearchTools = true;
 		} else if (arg === "--enable-browser-live-preview") {
 			result.enableBrowserLivePreview = true;
@@ -380,12 +380,15 @@ ${chalk.bold("Options:")}
                                   DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for
                                   XML, drawio, docx/xlsx/pptx, PDF via the filetools binary
                                   Can also be enabled via the "enableFileTools" setting
-  --enable-embsearchtools        Enable semantic code search via local embeddings (off by default)
-                                  On session start, repos over the size threshold are indexed with
-                                  the embsearch binary (local MiniLM embeddings, stored under
-                                  ~/.hoocode/embsearch) and a semantic_search tool is registered.
-                                  grep/find behavior is unchanged. Requires embsearch on PATH or
-                                  the "embsearchBinaryPath" setting.
+  --enable-search-tool           Enable the ranked search tool (off by default)
+                                  Registers a unified search tool with lexical, semantic, and
+                                  hybrid (rank-fused) modes. On session start, repos over the
+                                  size threshold are indexed with the embsearch binary (local
+                                  MiniLM embeddings, stored under ~/.hoocode/embsearch); until
+                                  the index is ready the tool runs lexical-only. grep/find are
+                                  unchanged. Requires embsearch on PATH or the
+                                  "embsearchBinaryPath" setting for semantic mode.
+                                  Alias: --enable-embsearchtools (legacy)
                                   Can also be enabled via the "enableEmbsearchTools" setting
   --enable-plugintools           Enable the autonomous plugin system (off by default)
                                   Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and

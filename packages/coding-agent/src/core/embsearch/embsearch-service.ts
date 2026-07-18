@@ -62,6 +62,11 @@ export interface SemanticHit {
 	score: number;
 }
 
+export interface SemanticChunkHit extends SemanticHit {
+	/** Per-build chunk id (`relpath#index`) — the fusion identity for hybrid search. */
+	id: string;
+}
+
 export class EmbsearchService {
 	private readonly options: EmbsearchServiceOptions;
 	private client: EmbSearchClient | undefined;
@@ -236,11 +241,16 @@ export class EmbsearchService {
 
 	/** Top-`k` semantic hits as `path` + line range + score. */
 	async search(query: string, k = 10): Promise<SemanticHit[]> {
+		return await this.searchChunks(query, k);
+	}
+
+	/** Top-`k` semantic hits including their chunk ids, for rank fusion. */
+	async searchChunks(query: string, k = 10): Promise<SemanticChunkHit[]> {
 		if (!this.client || this.client.isClosed || !this.meta) {
 			throw new Error("semantic index is not available");
 		}
 		const results = await this.client.query(query, k);
-		const hits: SemanticHit[] = [];
+		const hits: SemanticChunkHit[] = [];
 		for (const result of results) {
 			const sep = result.id.lastIndexOf("#");
 			if (sep === -1) continue;
@@ -248,9 +258,30 @@ export class EmbsearchService {
 			const chunkIndex = Number.parseInt(result.id.slice(sep + 1), 10);
 			const range = this.meta.files[rel]?.chunks[chunkIndex];
 			if (!range) continue;
-			hits.push({ path: rel, startLine: range[0], endLine: range[1], score: result.score });
+			hits.push({ id: result.id, path: rel, startLine: range[0], endLine: range[1], score: result.score });
 		}
 		return hits;
+	}
+
+	/**
+	 * Resolve a repo-relative path + line to its enclosing indexed chunk, or
+	 * undefined when the file/line is not covered by the index. Chunks overlap
+	 * by a few lines; the first (lowest-index) containing chunk wins so the
+	 * mapping is deterministic.
+	 */
+	findEnclosingChunk(
+		rel: string,
+		line: number,
+	): { id: string; path: string; startLine: number; endLine: number } | undefined {
+		const file = this.meta?.files[rel];
+		if (!file) return undefined;
+		for (let i = 0; i < file.chunks.length; i++) {
+			const [startLine, endLine] = file.chunks[i];
+			if (line >= startLine && line <= endLine) {
+				return { id: `${rel}#${i}`, path: rel, startLine, endLine };
+			}
+		}
+		return undefined;
 	}
 
 	private async closeClient(): Promise<void> {
@@ -282,7 +313,7 @@ export class EmbsearchService {
 
 // --- Per-cwd service registry ---
 //
-// The semantic_search tool is constructed by the generic tool factory table and
+// The search tool is constructed by the generic tool factory table and
 // only receives `cwd`; the service is created later during session init (flag
 // gated). This registry connects the two without threading a service instance
 // through every layer between main.ts and the tool factories.
