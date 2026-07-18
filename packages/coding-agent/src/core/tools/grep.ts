@@ -40,6 +40,20 @@ const grepSchema = Type.Object({
 export type GrepToolInput = Static<typeof grepSchema>;
 const DEFAULT_LIMIT = 100;
 
+/**
+ * Match fd/rg semantics for slash-containing globs: rg matches them against the
+ * full search path (absolute here), so `src/**\/*.ts` would silently match
+ * nothing. Anchor anywhere in the tree by prepending `**\/` unless the caller
+ * already did (same normalization the search tool applies).
+ */
+function normalizeGrepGlob(glob: string | undefined): string | undefined {
+	if (!glob) return undefined;
+	if (glob.includes("/") && !glob.startsWith("/") && !glob.startsWith("**/")) {
+		return `**/${glob}`;
+	}
+	return glob;
+}
+
 export interface GrepToolDetails {
 	truncation?: TruncationResult;
 	matchLimitReached?: number;
@@ -130,8 +144,11 @@ export function createGrepToolDefinition(
 	return {
 		name: "grep",
 		label: "grep",
-		description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Long lines are truncated to ${GREP_MAX_LINE_LENGTH} chars.`,
+		description: `Search file contents for a pattern. Returns matching lines with file paths and line numbers. Case-sensitive by default (set ignoreCase for case-insensitive). The pattern is a regex; set literal: true to match plain text. Respects .gitignore; never searches .git. Output is truncated to ${DEFAULT_LIMIT} matches or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). Long lines are truncated to ${GREP_MAX_LINE_LENGTH} chars. For conceptual or half-known-name queries, prefer the search tool.`,
 		promptSnippet: "Search file contents for patterns (respects .gitignore)",
+		promptGuidelines: [
+			"Use grep for exact strings, regexes, call-site enumeration, and counts — its output is proportional to matches and usually cheaper than search. Use the search tool when you only know a concept or half-know a name.",
+		],
 		parameters: grepSchema,
 		async execute(
 			_toolCallId,
@@ -171,6 +188,13 @@ export function createGrepToolDefinition(
 
 				(async () => {
 					try {
+						// An empty pattern matches every line of every file — never useful.
+						if (!pattern) {
+							settle(() => reject(new Error("pattern must not be empty")));
+							return;
+						}
+						const normalizedGlob = normalizeGrepGlob(glob);
+
 						// rg drives the fast path; when it is unavailable (restricted
 						// environments) or forced off, a pure-JS scan produces the same
 						// match shape so the tool degrades automatically instead of failing.
@@ -296,7 +320,7 @@ export function createGrepToolDefinition(
 							const notices: string[] = [];
 							if (matchLimitReached) {
 								notices.push(
-									`${effectiveLimit} matches limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+									`${effectiveLimit} match${effectiveLimit === 1 ? "" : "es"} limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
 								);
 								details.matchLimitReached = effectiveLimit;
 							}
@@ -328,7 +352,7 @@ export function createGrepToolDefinition(
 									isDirectory,
 									ignoreCase,
 									literal,
-									glob,
+									glob: normalizedGlob,
 									limit: effectiveLimit,
 									signal,
 									readFile: ops.readFile,
@@ -357,10 +381,25 @@ export function createGrepToolDefinition(
 						}
 
 						// --- Fast path: stream rg --json ---
-						const args: string[] = ["--json", "--line-number", "--color=never", "--hidden"];
+						// `!.git` because --hidden would otherwise search .git contents;
+						// --no-require-git so .gitignore is honored outside git repos too
+						// (parity with fd and the native fallback); --sort path forces a
+						// deterministic single-threaded walk so the match limit truncates
+						// the same subset on every run.
+						const args: string[] = [
+							"--json",
+							"--line-number",
+							"--color=never",
+							"--hidden",
+							"--no-require-git",
+							"--sort",
+							"path",
+							"--glob",
+							"!**/.git/**",
+						];
 						if (ignoreCase) args.push("--ignore-case");
 						if (literal) args.push("--fixed-strings");
-						if (glob) args.push("--glob", glob);
+						if (normalizedGlob) args.push("--glob", normalizedGlob);
 						args.push("--", pattern, searchPath);
 
 						const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });

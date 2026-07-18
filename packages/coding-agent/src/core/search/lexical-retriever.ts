@@ -129,7 +129,20 @@ export async function runLexicalRetriever(options: RunLexicalOptions): Promise<G
 		// --sort path forces a deterministic (single-threaded) walk: with the
 		// match cap truncating the stream, a parallel walk would return a
 		// different hit subset per run — "same query, different context".
-		const args = ["--json", "--line-number", "--color=never", "--hidden", "--ignore-case", "--sort", "path"];
+		// `!.git` because --hidden would otherwise search .git contents;
+		// --no-require-git so .gitignore is honored outside git repos too.
+		const args = [
+			"--json",
+			"--line-number",
+			"--color=never",
+			"--hidden",
+			"--no-require-git",
+			"--ignore-case",
+			"--sort",
+			"path",
+			"--glob",
+			"!**/.git/**",
+		];
 		if (glob) args.push("--glob", glob);
 		args.push("--", pattern, cwd);
 		const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });

@@ -15,8 +15,12 @@ import type { FusedCandidate } from "./types.js";
 /** Rough chars-per-token for budgeting (index-time uses the same heuristic). */
 const CHARS_PER_TOKEN = 4;
 const DEFAULT_TOKEN_BUDGET = 2000;
-/** Snippet caps keep one giant chunk from eating the whole budget. */
+/** Snippet caps keep one giant chunk from eating the whole budget. Results
+ *  past the top few get a shallower snippet: rank carries most of the value,
+ *  and full-depth snippets for every result roughly doubles the token cost. */
 const MAX_SNIPPET_LINES = 20;
+const TOP_FULL_SNIPPETS = 3;
+const TAIL_SNIPPET_LINES = 8;
 const MAX_SNIPPET_LINE_CHARS = 200;
 
 export interface AssembleOptions {
@@ -66,22 +70,27 @@ export function assembleContext(candidates: readonly FusedCandidate[], options: 
 		usedChars += header.length + 1;
 
 		if (!snippetsExhausted && lines && end >= start) {
-			const snippetEnd = Math.min(end, start + MAX_SNIPPET_LINES - 1);
-			const snippetLines = lines
-				.slice(start - 1, snippetEnd)
-				.map(
-					(text, i) =>
-						`  ${start + i}: ${text.length > MAX_SNIPPET_LINE_CHARS ? `${text.slice(0, MAX_SNIPPET_LINE_CHARS)}…` : text}`,
-				);
+			const depth = snippetCount < TOP_FULL_SNIPPETS ? MAX_SNIPPET_LINES : TAIL_SNIPPET_LINES;
+			const snippetEnd = Math.min(end, start + depth - 1);
+			const rawLines = lines.slice(start - 1, snippetEnd);
+			// Chunk spans often end on a blank line (trailing-newline artifact);
+			// trailing blanks carry no signal, so drop them.
+			while (rawLines.length > 0 && rawLines[rawLines.length - 1].trim() === "") rawLines.pop();
+			const snippetLines = rawLines.map(
+				(text, i) =>
+					`  ${start + i}: ${text.length > MAX_SNIPPET_LINE_CHARS ? `${text.slice(0, MAX_SNIPPET_LINE_CHARS)}…` : text}`,
+			);
 			const snippet = snippetLines.join("\n");
-			if (usedChars + snippet.length <= budgetChars) {
-				sections.push(`${header}\n${snippet}`);
-				usedChars += snippet.length + 1;
-				snippetCount++;
-				continue;
+			if (snippet) {
+				if (usedChars + snippet.length <= budgetChars) {
+					sections.push(`${header}\n${snippet}`);
+					usedChars += snippet.length + 1;
+					snippetCount++;
+					continue;
+				}
+				// Budget hit: stop expanding, keep listing bare headers.
+				snippetsExhausted = true;
 			}
-			// Budget hit: stop expanding, keep listing bare headers.
-			snippetsExhausted = true;
 		}
 		sections.push(header);
 	}

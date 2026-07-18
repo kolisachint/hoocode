@@ -137,6 +137,20 @@ describe("native search fallback (HOOCODE_NATIVE_SEARCH)", () => {
 			const shallow = await runFind({ pattern: "**/*.txt", depth: 1 });
 			expect(shallow).toEqual(["top.txt"]);
 		});
+
+		it("rejects invalid globs like the fd path does", async () => {
+			await expect(runFind({ pattern: "[" })).rejects.toThrow(/error parsing glob.*unclosed character class/);
+			await expect(runFind({ pattern: "{a,b" })).rejects.toThrow(/error parsing glob.*unclosed alternate group/);
+		});
+
+		it("matches all-lowercase patterns case-insensitively (fd smart-case)", async () => {
+			writeFileSync(join(root, "CaseFile.TS"), "");
+			writeFileSync(join(root, "other.js"), "");
+
+			expect(await runFind({ pattern: "casefile.ts" })).toEqual(["CaseFile.TS"]);
+			// An uppercase letter in the pattern keeps matching case-sensitive.
+			expect(await runFind({ pattern: "CaseFile.js" })).toEqual([]);
+		});
 	});
 
 	describe("grep", () => {

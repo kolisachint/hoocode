@@ -262,7 +262,7 @@ export function createFindToolDefinition(
 				(async () => {
 					try {
 						const searchPath = resolveToCwd(searchDir || ".", cwd);
-						const effectiveLimit = limit ?? DEFAULT_LIMIT;
+						const effectiveLimit = Math.max(1, limit ?? DEFAULT_LIMIT);
 						const ops = customOps ?? defaultFindOperations;
 
 						const patterns = Array.isArray(rawPattern) ? rawPattern : [rawPattern];
@@ -278,8 +278,10 @@ export function createFindToolDefinition(
 								);
 								return;
 							}
+							// Sources over-fetch by one so exactly-limit result sets are not
+							// misreported as truncated.
 							const unique = [...new Set(relativized)].sort();
-							const resultLimitReached = unique.length >= effectiveLimit;
+							const resultLimitReached = unique.length > effectiveLimit;
 							const truncated = unique.slice(0, effectiveLimit);
 							const rawOutput = compress ? compressPaths(truncated) : truncated.join("\n");
 							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
@@ -288,7 +290,7 @@ export function createFindToolDefinition(
 							const notices: string[] = [];
 							if (resultLimitReached) {
 								notices.push(
-									`${effectiveLimit} results limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
+									`${effectiveLimit} result${effectiveLimit === 1 ? "" : "s"} limit reached. Use limit=${effectiveLimit * 2} for more, or refine pattern`,
 								);
 								details.resultLimitReached = effectiveLimit;
 							}
@@ -317,7 +319,7 @@ export function createFindToolDefinition(
 							}
 							const results = await ops.glob(patterns, searchPath, {
 								ignore: allIgnore,
-								limit: effectiveLimit,
+								limit: effectiveLimit + 1,
 								type: typeFilter,
 							});
 							if (signal?.aborted) {
@@ -381,7 +383,7 @@ export function createFindToolDefinition(
 									"--type",
 									typeFilter,
 									"--max-results",
-									String(effectiveLimit),
+									String(effectiveLimit + 1),
 								];
 								for (const excl of allIgnore) args.push("--exclude", excl);
 								if (depth !== undefined) args.push("--max-depth", String(depth));

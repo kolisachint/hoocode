@@ -139,7 +139,10 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 	const runEmbed = async (): Promise<void> => {
 		const startedMs = Date.now();
 		try {
-			const chunkHits = await service!.searchChunks(query, EMBED_TOP_K, glob);
+			// The flat index pads top-k with whatever exists; with the cosine
+			// metric the store uses, score <= 0 means "no relation at all", so
+			// those padding hits would cast RRF votes on pure noise.
+			const chunkHits = (await service!.searchChunks(query, EMBED_TOP_K, glob)).filter((hit) => hit.score > 0);
 			const hits: RankedHit[] = chunkHits.map((hit, i) => ({
 				id: hit.id,
 				rank: i + 1,

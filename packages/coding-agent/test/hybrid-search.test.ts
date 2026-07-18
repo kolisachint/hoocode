@@ -85,6 +85,32 @@ describe("retrieveCandidates (stubbed service)", () => {
 		}
 	});
 
+	it("drops zero-score embedding hits (flat-index top-k padding)", async () => {
+		const root = makeRepo();
+		try {
+			const paddedService = {
+				...readyService,
+				getState: () => ({ phase: "ready", chunkCount: 3 }),
+				isAvailable: () => true,
+				searchChunks: async () => [
+					{ id: "src/indexed.ts#0", path: "src/indexed.ts", startLine: 1, endLine: 10, score: 0.9 },
+					{ id: "src/other.ts#0", path: "src/other.ts", startLine: 1, endLine: 1, score: 0 },
+				],
+				findEnclosingChunk: () => undefined,
+			} as unknown as EmbsearchService;
+			const { candidates } = await retrieveCandidates({
+				cwd: root,
+				query: "zzz_no_lexical_match_zzz",
+				mode: "semantic",
+				service: paddedService,
+			});
+			expect(candidates.map((c) => c.id)).toContain("src/indexed.ts#0");
+			expect(candidates.map((c) => c.id)).not.toContain("src/other.ts#0");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("coalesces adjacent unindexed hits into one fallback candidate", async () => {
 		const root = makeRepo();
 		try {

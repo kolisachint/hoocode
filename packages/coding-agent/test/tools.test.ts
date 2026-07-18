@@ -776,7 +776,7 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("1- before");
 			expect(output).toContain("2: match one");
 			expect(output).toContain("3- after");
-			expect(output).toContain("[1 matches limit reached. Use limit=2 for more, or refine pattern]");
+			expect(output).toContain("[1 match limit reached. Use limit=2 for more, or refine pattern]");
 			// Ensure second match is not present
 			expect(output).not.toContain("match two");
 		});
@@ -821,6 +821,58 @@ describe("Coding Agent Tools", () => {
 			});
 
 			expect(getTextOutput(result)).toContain("1: prefix { options suffix");
+		});
+
+		it("should reject an empty pattern", async () => {
+			await expect(grepTool.execute("test-call-grep-empty", { pattern: "", path: testDir })).rejects.toThrow(
+				/pattern must not be empty/,
+			);
+		});
+
+		it("should match slash-containing globs anywhere in the tree", async () => {
+			mkdirSync(join(testDir, "src", "nested"), { recursive: true });
+			writeFileSync(join(testDir, "src", "nested", "hit.ts"), "needle here\n");
+			writeFileSync(join(testDir, "miss.ts"), "needle here\n");
+
+			const result = await grepTool.execute("test-call-grep-slash-glob", {
+				pattern: "needle",
+				path: testDir,
+				glob: "src/**/*.ts",
+			});
+
+			const output = getTextOutput(result);
+			expect(output).toContain("src/nested/hit.ts");
+			expect(output).not.toContain("miss.ts");
+		});
+
+		it("should respect .gitignore outside a git repository", async () => {
+			writeFileSync(join(testDir, ".gitignore"), "ignored-grep.txt\n");
+			writeFileSync(join(testDir, "ignored-grep.txt"), "grep-ignore-needle\n");
+			writeFileSync(join(testDir, "kept-grep.txt"), "grep-ignore-needle\n");
+
+			const result = await grepTool.execute("test-call-grep-gitignore", {
+				pattern: "grep-ignore-needle",
+				path: testDir,
+			});
+
+			const output = getTextOutput(result);
+			expect(output).toContain("kept-grep.txt");
+			expect(output).not.toContain("ignored-grep.txt");
+		});
+
+		it("should never search .git contents", async () => {
+			mkdirSync(join(testDir, ".git", "hooks"), { recursive: true });
+			writeFileSync(join(testDir, ".git", "hooks", "sample.txt"), "git-dir-needle\n");
+			writeFileSync(join(testDir, "outside.txt"), "git-dir-needle\n");
+
+			const result = await grepTool.execute("test-call-grep-git-dir", {
+				pattern: "git-dir-needle",
+				path: testDir,
+			});
+
+			const output = getTextOutput(result);
+			expect(output).toContain("outside.txt");
+			expect(output).not.toContain(".git/hooks/sample.txt");
 		});
 	});
 
@@ -876,6 +928,37 @@ describe("Coding Agent Tools", () => {
 			});
 
 			expect(getTextOutput(result)).toContain("No files found matching pattern");
+		});
+
+		it("should clamp a non-positive limit to 1", async () => {
+			writeFileSync(join(testDir, "one.txt"), "1");
+			writeFileSync(join(testDir, "two.txt"), "2");
+
+			const result = await findTool.execute("test-call-find-limit-zero", {
+				pattern: "*.txt",
+				path: testDir,
+				limit: 0,
+			});
+
+			const output = getTextOutput(result);
+			expect(output).toContain("one.txt");
+			expect(output).toContain("[1 result limit reached. Use limit=2 for more, or refine pattern]");
+		});
+
+		it("should not report a limit when the result count exactly equals it", async () => {
+			writeFileSync(join(testDir, "a.txt"), "a");
+			writeFileSync(join(testDir, "b.txt"), "b");
+
+			const result = await findTool.execute("test-call-find-exact-limit", {
+				pattern: "*.txt",
+				path: testDir,
+				limit: 2,
+			});
+
+			const output = getTextOutput(result);
+			expect(output).toContain("a.txt");
+			expect(output).toContain("b.txt");
+			expect(output).not.toContain("limit reached");
 		});
 	});
 

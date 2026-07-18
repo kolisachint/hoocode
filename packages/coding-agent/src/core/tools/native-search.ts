@@ -152,11 +152,49 @@ export function collectEntries(root: string, opts: WalkOptions = {}): CollectedE
 }
 
 /**
+ * Reject globs fd's parser would reject. minimatch silently treats an unclosed
+ * `[` or `{` as literal text, which made the fallback resolve "no results"
+ * where the fd path errors — same call, different outcome. Error messages
+ * mirror fd/globset so callers (and tests) can match either path.
+ */
+function validateGlob(pattern: string): void {
+	let inClass = false;
+	let braceDepth = 0;
+	for (let i = 0; i < pattern.length; i++) {
+		const c = pattern[i];
+		if (c === "\\") {
+			i++; // skip escaped char
+		} else if (inClass) {
+			if (c === "]") inClass = false;
+		} else if (c === "[") {
+			inClass = true;
+		} else if (c === "{") {
+			braceDepth++;
+		} else if (c === "}") {
+			if (braceDepth > 0) braceDepth--;
+		}
+	}
+	if (inClass) {
+		throw new Error(`error parsing glob '${pattern}': unclosed character class; missing ']'`);
+	}
+	if (braceDepth > 0) {
+		throw new Error(`error parsing glob '${pattern}': unclosed alternate group; missing '}'`);
+	}
+}
+
+/** fd smart-case: a pattern without uppercase letters matches case-insensitively. */
+function isSmartCaseInsensitive(pattern: string): boolean {
+	return !/[A-Z]/.test(pattern);
+}
+
+/**
  * Match a `find` glob against a POSIX relative path, mirroring fd's semantics:
  * a slashless pattern matches the basename at any depth; a pattern containing a
- * slash matches the full path and is anchored anywhere in the tree.
+ * slash matches the full path and is anchored anywhere in the tree. Case
+ * sensitivity is smart-case, like fd.
  */
 function matchesFindPattern(relPosix: string, pattern: string): boolean {
+	const nocase = isSmartCaseInsensitive(pattern);
 	if (pattern.includes("/")) {
 		let p = pattern;
 		if (p.startsWith("/")) {
@@ -164,9 +202,9 @@ function matchesFindPattern(relPosix: string, pattern: string): boolean {
 		} else if (!p.startsWith("**/") && p !== "**") {
 			p = `**/${p}`;
 		}
-		return minimatch(relPosix, p, { dot: true });
+		return minimatch(relPosix, p, { dot: true, nocase });
 	}
-	return minimatch(relPosix, pattern, { dot: true, matchBase: true });
+	return minimatch(relPosix, pattern, { dot: true, matchBase: true, nocase });
 }
 
 export interface NativeFindOptions {
@@ -185,6 +223,9 @@ export interface NativeFindOptions {
  * the caller applies its own dedupe/sort/limit.
  */
 export function nativeFind(root: string, opts: NativeFindOptions): string[] {
+	for (const pattern of opts.patterns) validateGlob(pattern);
+	for (const glob of opts.excludeGlobs) validateGlob(glob);
+
 	const entries = collectEntries(root, {
 		maxDepth: opts.maxDepth,
 		signal: opts.signal,

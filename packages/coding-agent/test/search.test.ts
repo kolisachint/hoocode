@@ -284,4 +284,29 @@ describe("assembleContext", () => {
 		expect(text).toBe("gone.ts:1-10 [embed+grep]");
 		expect(snippetCount).toBe(0);
 	});
+
+	it("gives full snippets to the top results and shallower ones below", () => {
+		const root = makeRepo();
+		try {
+			const candidates = Array.from({ length: 5 }, (_, i) => candidate(`src/a.ts#${i}`, "src/a.ts", 1, 20));
+			const { text } = assembleContext(candidates, { cwd: root });
+			// Top-3 snippets reach 20 lines deep; the tail stops at 8.
+			expect(text.match(/ {2}20: const line20 = 20;/g)?.length).toBe(3);
+			expect(text.match(/ {2}8: const line8 = 8;/g)?.length).toBe(5);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("trims trailing blank lines from snippets", () => {
+		const root = mkdtempSync(join(tmpdir(), "search-assemble-"));
+		try {
+			writeFileSync(join(root, "b.ts"), "const x = 1;\n\n\n");
+			const { text } = assembleContext([candidate("b.ts#0", "b.ts", 1, 4)], { cwd: root });
+			expect(text).toContain("  1: const x = 1;");
+			expect(text).not.toContain("  2:");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
 });
