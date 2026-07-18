@@ -57,6 +57,13 @@ export {
 } from "./read.js";
 // Off-by-default tools (enabled per session via flags/settings).
 export {
+	createSemanticSearchTool,
+	createSemanticSearchToolDefinition,
+	type SemanticSearchToolDetails,
+	type SemanticSearchToolInput,
+	type SemanticSearchToolOptions,
+} from "./semantic-search.js";
+export {
 	buildTaskMainPrompt,
 	createTaskOutputToolDefinition,
 	createTaskToolDefinition,
@@ -124,6 +131,7 @@ import { createFindToolDefinition, type FindToolOptions } from "./find.js";
 import { createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
 import { createLsToolDefinition, type LsToolOptions } from "./ls.js";
 import { createReadToolDefinition, type ReadToolOptions } from "./read.js";
+import { createSemanticSearchToolDefinition, type SemanticSearchToolOptions } from "./semantic-search.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { createWebFetchToolDefinition, type WebFetchToolOptions } from "./webfetch.js";
 import { createWebSearchToolDefinition, type WebSearchToolOptions } from "./websearch.js";
@@ -140,6 +148,7 @@ export interface ToolsOptions {
 	grep?: GrepToolOptions;
 	find?: FindToolOptions;
 	ls?: LsToolOptions;
+	semantic_search?: SemanticSearchToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
 	browser_run?: BrowserRunToolOptions;
@@ -166,6 +175,7 @@ const TOOL_FACTORIES = {
 	grep: createGrepToolDefinition,
 	find: createFindToolDefinition,
 	ls: createLsToolDefinition,
+	semantic_search: createSemanticSearchToolDefinition,
 	webfetch: createWebFetchToolDefinition,
 	websearch: createWebSearchToolDefinition,
 	browser_run: createBrowserRunToolDefinition,

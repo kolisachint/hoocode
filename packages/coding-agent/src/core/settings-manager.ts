@@ -839,6 +839,24 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getEnableEmbsearchTools(): boolean {
+		return this.settings.enableEmbsearchTools ?? DEFAULT_SETTINGS.enableEmbsearchTools!;
+	}
+
+	setEnableEmbsearchTools(enabled: boolean): void {
+		this.globalSettings.enableEmbsearchTools = enabled;
+		this.markModified("enableEmbsearchTools");
+		this.save();
+	}
+
+	getEmbsearchBinaryPath(): string | undefined {
+		return this.settings.embsearchBinaryPath;
+	}
+
+	getEmbsearchThresholdBytes(): number {
+		return this.settings.embsearchThresholdBytes ?? DEFAULT_SETTINGS.embsearchThresholdBytes!;
+	}
+
 	getEnableBrowserTools(): boolean {
 		return this.settings.enableBrowserTools ?? DEFAULT_SETTINGS.enableBrowserTools!;
 	}

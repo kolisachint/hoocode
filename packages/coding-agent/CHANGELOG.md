@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added
+
+- Semantic code search behind the `--enable-embsearchtools` flag and the
+  `enableEmbsearchTools` setting (default off). When enabled, repositories over
+  `embsearchThresholdBytes` (default 10 MB) are chunked and embedded in the
+  background by the `embsearch` binary; results are persisted to
+  `~/.hoocode/embsearch/<hash>` for reuse across sessions. A new
+  `semantic_search` tool returns ranked `path:start-end` hits. `grep` and
+  `find` behavior is unchanged for small repos or when the feature is off.
+- `embsearchBinaryPath` and `embsearchThresholdBytes` settings for controlling
+  the optional embedding engine.
+
+### Changed
+
+- `grep` now appends a one-line hint to `No matches found` when a semantic
+  index is available, pointing the model at `semantic_search` without altering
+  any match output.
+
 ## [0.4.140] - 2026-07-17
 
 ## [0.4.139] - 2026-07-17
