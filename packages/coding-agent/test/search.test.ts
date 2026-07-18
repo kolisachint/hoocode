@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { adaptGrepHits, type ChunkLookup } from "../src/core/search/adapter.js";
 import { assembleContext } from "../src/core/search/context-assembler.js";
-import { buildLexicalPattern } from "../src/core/search/lexical-retriever.js";
+import { buildLexicalPattern, runLexicalRetriever } from "../src/core/search/lexical-retriever.js";
 import { hasStrongLexicalSignals, resolveSearchMode } from "../src/core/search/mode.js";
 import { rrfFuse } from "../src/core/search/rrf.js";
 import type { FusedCandidate, RankedHit } from "../src/core/search/types.js";
@@ -54,6 +54,63 @@ describe("rrfFuse", () => {
 	it("preserves list order for a single retriever", () => {
 		const fused = rrfFuse([[hit("first", 1, "embed", 0.9), hit("second", 2, "embed", 0.5)]]);
 		expect(fused.map((h) => h.id)).toEqual(["first", "second"]);
+	});
+});
+
+describe("runLexicalRetriever glob filter", () => {
+	const makeRepo = () => {
+		const root = mkdtempSync(join(tmpdir(), "glob-test-"));
+		mkdirSync(join(root, "src"));
+		mkdirSync(join(root, "docs"));
+		writeFileSync(join(root, "src/a.ts"), "const alpha = 1;");
+		writeFileSync(join(root, "src/b.ts"), "const beta = 2;");
+		writeFileSync(join(root, "docs/readme.md"), "alpha docs");
+		return root;
+	};
+
+	it("filters by basename glob", async () => {
+		const root = makeRepo();
+		try {
+			const hits = await runLexicalRetriever({ cwd: root, query: "alpha", limit: 10, glob: "*.ts" });
+			const rels = hits.map((h) => h.rel);
+			expect(rels).toContain("src/a.ts");
+			expect(rels).not.toContain("docs/readme.md");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("filters by path glob", async () => {
+		const root = makeRepo();
+		mkdirSync(join(root, "src", "nested"), { recursive: true });
+		writeFileSync(join(root, "src", "nested", "c.ts"), "const alphaNested = 1;");
+		try {
+			const hits = await runLexicalRetriever({
+				cwd: root,
+				query: "alpha",
+				limit: 10,
+				glob: "src/**/*.ts",
+			});
+			const rels = hits.map((h) => h.rel);
+			// After normalization to `**/src/**/*.ts`, all files under src/ match.
+			expect(rels).toContain("src/nested/c.ts");
+			expect(rels).toContain("src/a.ts");
+			expect(rels).not.toContain("docs/readme.md");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("returns all matches when no glob is given", async () => {
+		const root = makeRepo();
+		try {
+			const hits = await runLexicalRetriever({ cwd: root, query: "alpha", limit: 10 });
+			const rels = hits.map((h) => h.rel);
+			expect(rels).toContain("src/a.ts");
+			expect(rels).toContain("docs/readme.md");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 });
 

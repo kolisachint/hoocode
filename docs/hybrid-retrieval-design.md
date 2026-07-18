@@ -27,7 +27,8 @@ diagnostics off the token path, and an eval gate before any reranker.
 ## TL;DR
 
 - **One `search` tool** with `mode: auto | lexical | semantic | hybrid`
-  (default `auto`), registered only behind the existing opt-in flag.
+  (default `auto`) and an optional `glob` filter (e.g. `".ts"`,
+  `"src/**/*.ts"` literal), registered only behind the existing opt-in flag.
   `semantic_search` does not survive as a separate tool — it becomes
   `mode: "semantic"`. The per-cwd service registry
   (`embsearch-service.ts:283-306`) already provides the wiring; this is a
@@ -71,6 +72,14 @@ description is hoocode's primary steering mechanism, collapse to:
 
 Tool descriptions state the split explicitly ("use grep when you want
 matching lines; use search when you want to find where something is").
+
+Parameters for `search`:
+  - `query` — identifier, error text, or natural-language description.
+  - `mode` — `auto | lexical | semantic | hybrid` (default `auto`).
+  - `glob` — optional path filter (e.g. `".ts"`, `"src/**/*.ts"`). Applied to
+    ripgrep via `--glob` and to embedding hits via post-filter; the `glob`
+    scopes results, it does not route mode selection.
+  - `limit` — max results (default 10, max 30).
 
 Gating: when the opt-in flag is off, no `search` tool is registered (current
 `semantic_search` behavior). When on, a single `search` tool appears. The
@@ -145,7 +154,8 @@ Adapter pipeline, in order:
    with many matches get quietly penalized.
 5. **Fuse.**
 
-After fusion, a token-budgeted `ContextAssembler` expands winning chunks
+After fusion, token-budgeted context assembly (`assembleContext` in
+`context-assembler.ts`) expands winning chunks
 into exact line windows; only final compressed spans enter model context.
 Retrieval identity and span expansion stay separate so an exact grep match
 at line 411 and an embedding chunk at 390–440 share their evidence.
@@ -289,11 +299,12 @@ behind the same signature — that model work belongs to
    opt-in flag.
 2. Grep→chunk adapter: map, fallback ids, collapse, re-rank (the
    correctness-critical step).
-3. `rrfFuse(..., 60)` with validation, dedupe guard, deterministic
-   tie-break, trace logging.
+3. `rrfFuse(..., k)` with validation, dedupe guard, deterministic
+    tie-break, trace logging; default `k = 2` from the eval gate.
 4. Unified `search` tool with availability-aware mode resolution replacing
    `semantic_search`; flag renamed.
-5. Token-budgeted `ContextAssembler` reading line windows only after fusion.
+5. Token-budgeted context assembly (`assembleContext`) reading line windows
+   only after fusion.
 6. Recall@K evals + `k` sweep (span-overlap gold set).
 7. Only after recall is stable: rerank the fused top-50; `fusion: "cc"` as
    a labeled-data follow-up.

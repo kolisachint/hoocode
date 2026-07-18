@@ -39,9 +39,11 @@ export interface RetrieveOptions {
 	cwd: string;
 	query: string;
 	mode?: SearchMode;
+	/** Optional glob filter applied to file paths. */
+	glob?: string;
 	/** Maximum fused candidates returned. */
 	limit?: number;
-	/** RRF constant override (eval harness sweeps this). Default: 60. */
+	/** RRF constant override (eval harness sweeps this). Default: {@link DEFAULT_RRF_K}. */
 	rrfK?: number;
 	/** Rerank the fused top-50 before slicing to `limit`. Default: true. */
 	rerank?: boolean;
@@ -66,6 +68,7 @@ export interface RunSearchOptions extends RetrieveOptions {
 	tokenBudget?: number;
 }
 
+
 export interface RunSearchResult {
 	text: string;
 	resolvedMode: ResolvedSearchMode;
@@ -75,8 +78,19 @@ export interface RunSearchResult {
 	indexing?: { done: number; total: number };
 }
 
+function normalizeSearchGlob(glob: string | undefined): string | undefined {
+	if (!glob) return undefined;
+	// Match fd/rg semantics: a slash-containing glob is anchored anywhere in
+	// the tree, so prepend "**/" unless it already starts with a slash or "**/".
+	if (glob.includes("/") && !glob.startsWith("/") && !glob.startsWith("**/")) {
+		return `**/${glob}`;
+	}
+	return glob;
+}
+
 export async function retrieveCandidates(options: RetrieveOptions): Promise<RetrieveResult> {
 	const { cwd, query, service, signal } = options;
+	const glob = normalizeSearchGlob(options.glob);
 	const requestedMode = options.mode ?? "auto";
 	const limit = Math.max(1, options.limit ?? 10);
 	const rrfK = options.rrfK ?? DEFAULT_RRF_K;
@@ -109,7 +123,7 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 	const runLexical = async (): Promise<void> => {
 		const startedMs = Date.now();
 		try {
-			const lineHits = await runLexicalRetriever(cwd, query, LEXICAL_MATCH_LIMIT, signal);
+			const lineHits = await runLexicalRetriever({ cwd, query, limit: LEXICAL_MATCH_LIMIT, glob, signal });
 			const adapted = adaptGrepHits(lineHits, lookupChunk);
 			// In single-retriever lexical mode the full list is the result; in
 			// hybrid, only the front-loaded head is trustworthy enough to vote.
@@ -126,7 +140,7 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 	const runEmbed = async (): Promise<void> => {
 		const startedMs = Date.now();
 		try {
-			const chunkHits = await service!.searchChunks(query, EMBED_TOP_K);
+			const chunkHits = await service!.searchChunks(query, EMBED_TOP_K, glob);
 			const hits: RankedHit[] = chunkHits.map((hit, i) => ({
 				id: hit.id,
 				rank: i + 1,

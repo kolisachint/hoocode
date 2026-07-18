@@ -10,7 +10,7 @@
   `search` tool replaces `semantic_search`, with `mode: auto | lexical |
   semantic | hybrid`. Hybrid mode runs grep-backed lexical retrieval and the
   local embedding index in parallel and fuses results with Reciprocal Rank
-  Fusion (`k=60`, rank-only, deterministic tie-breaks). Lexical hits are
+  Fusion (rank-only, deterministic tie-breaks; `k=2` per the eval gate below). Lexical hits are
   mapped to indexed chunk ids (with `rel#L<line>` fallbacks for uncovered
   files), collapsed, and re-ranked before fusion. Results are expanded into
   line-window snippets under a token budget; full per-call diagnostics go to
