@@ -18,14 +18,22 @@ import { adaptGrepHits, type ChunkLookup } from "./adapter.js";
 import { assembleContext } from "./context-assembler.js";
 import { runLexicalRetriever } from "./lexical-retriever.js";
 import { resolveSearchMode } from "./mode.js";
+import { rerankCandidates } from "./rerank.js";
 import { DEFAULT_RRF_K, rrfFuse } from "./rrf.js";
 import { writeSearchTrace } from "./trace.js";
 import type { CandidateSpan, FusedCandidate, RankedHit, ResolvedSearchMode, SearchMode, SearchTrace } from "./types.js";
 
 /** Raw grep line-hits fetched per query (pre-collapse). */
 const LEXICAL_MATCH_LIMIT = 200;
+/** Adapted lexical candidates entering fusion. The eval gate showed the
+ *  uncapped lexical tail diluting hybrid below plain semantic: lexical
+ *  precision is front-loaded by the adapter's term-evidence ranking, while
+ *  RRF weighs a rank-30 lexical candidate like a rank-30 embedding hit. */
+const LEXICAL_FUSION_CAP = 20;
 /** Embedding hits fetched per query — deep enough for fusion to matter. */
 const EMBED_TOP_K = 50;
+/** Fused candidates kept for reranking / final slicing. */
+const FUSED_WINDOW = 50;
 
 export interface RetrieveOptions {
 	cwd: string;
@@ -35,6 +43,8 @@ export interface RetrieveOptions {
 	limit?: number;
 	/** RRF constant override (eval harness sweeps this). Default: 60. */
 	rrfK?: number;
+	/** Rerank the fused top-50 before slicing to `limit`. Default: true. */
+	rerank?: boolean;
 	service?: EmbsearchService;
 	signal?: AbortSignal;
 }
@@ -48,6 +58,7 @@ export interface RetrieveResult {
 	/** Set while the embedding index is still building. */
 	indexing?: { done: number; total: number };
 	rrfK: number;
+	rerank?: SearchTrace["rerank"];
 }
 
 export interface RunSearchOptions extends RetrieveOptions {
@@ -100,9 +111,12 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 		try {
 			const lineHits = await runLexicalRetriever(cwd, query, LEXICAL_MATCH_LIMIT, signal);
 			const adapted = adaptGrepHits(lineHits, lookupChunk);
+			// In single-retriever lexical mode the full list is the result; in
+			// hybrid, only the front-loaded head is trustworthy enough to vote.
+			const hits = mode === "hybrid" ? adapted.hits.slice(0, LEXICAL_FUSION_CAP) : adapted.hits;
 			for (const [id, span] of adapted.spans) if (!spans.has(id)) spans.set(id, span);
-			lists.push(adapted.hits);
-			retrieverStats.grep = { latencyMs: Date.now() - startedMs, hitCount: adapted.hits.length };
+			lists.push(hits);
+			retrieverStats.grep = { latencyMs: Date.now() - startedMs, hitCount: hits.length };
 		} catch (e) {
 			errors.push(e instanceof Error ? e : new Error(String(e)));
 			retrieverStats.grep = { latencyMs: Date.now() - startedMs, hitCount: 0 };
@@ -139,12 +153,20 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 	// only a total loss is an error.
 	if (lists.length === 0) throw errors[0] ?? new Error("search produced no retriever results");
 
-	const fused = rrfFuse(lists, rrfK).slice(0, limit);
-	const candidates: FusedCandidate[] = [];
+	const fused = rrfFuse(lists, rrfK).slice(0, FUSED_WINDOW);
+	let candidates: FusedCandidate[] = [];
 	for (const hit of fused) {
 		const span = spans.get(hit.id);
 		if (span) candidates.push({ ...hit, ...span });
 	}
+
+	let rerankInfo: SearchTrace["rerank"];
+	if (options.rerank !== false) {
+		const reranked = rerankCandidates(query, candidates, cwd);
+		rerankInfo = { applied: true, candidateCount: candidates.length, latencyMs: reranked.latencyMs };
+		candidates = reranked.candidates;
+	}
+	candidates = candidates.slice(0, limit);
 
 	return {
 		candidates,
@@ -154,6 +176,7 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 		retrievers: retrieverStats,
 		indexing: state?.phase === "indexing" ? { done: state.done, total: state.total } : undefined,
 		rrfK,
+		rerank: rerankInfo,
 	};
 }
 
@@ -172,6 +195,7 @@ export async function runSearch(options: RunSearchOptions): Promise<RunSearchRes
 		rrfK: retrieved.resolvedMode === "hybrid" ? retrieved.rrfK : undefined,
 		retrievers: retrieved.retrievers,
 		fused: retrieved.candidates.map(({ id, rrfScore, ranks, rawScores }) => ({ id, rrfScore, ranks, rawScores })),
+		rerank: retrieved.rerank,
 	});
 
 	return {

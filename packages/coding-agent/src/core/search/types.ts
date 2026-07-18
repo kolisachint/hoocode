@@ -55,4 +55,5 @@ export interface SearchTrace {
 	rrfK?: number;
 	retrievers: Partial<Record<RetrieverSource, { latencyMs: number; hitCount: number }>>;
 	fused: FusedHit[];
+	rerank?: { applied: boolean; candidateCount: number; latencyMs: number };
 }

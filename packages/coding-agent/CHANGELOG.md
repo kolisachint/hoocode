@@ -25,6 +25,16 @@
   file contributes at most 8 candidates, and ripgrep runs with `--sort path`
   so capped result sets are deterministic across runs. Search traces rotate
   at 5 MB.
+- Deterministic reranker over the fused top-50 (on by default): term
+  coverage of each candidate's expanded window, path affinity with an
+  exact-path bonus (a query naming a file now ranks that file first), and
+  the fused order as prior. Measured on the eval gate with a full index:
+  the default search path went from R@5 42% / R@10 58% to R@5 63% /
+  R@10 83% (Recall@50 92%).
+- Eval-driven defaults: RRF `k` is now 2 (beat the folklore k=60 on every
+  differing gold query), only the top 20 lexical candidates vote in hybrid
+  fusion, and `auto` no longer routes path-like queries to lexical (they
+  score 0% lexically, 100% in hybrid).
 
 ### Changed
 

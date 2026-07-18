@@ -1,19 +1,19 @@
 # Design Note: Hybrid retrieval — one `search` tool, RRF fusion
 
-**Status:** Steps 1–6 of the shipping order implemented in
+**Status:** All seven steps of the shipping order implemented in
 `packages/coding-agent/src/core/search/` (rrf.ts, adapter.ts, mode.ts,
-lexical-retriever.ts, context-assembler.ts, hybrid-search.ts, trace.ts,
-eval.ts) and `src/core/tools/search.ts`; `semantic_search` is replaced by
-the unified `search` tool behind `--enable-search-tool` (legacy alias
-`--enable-embsearchtools`). The eval gate (`scripts/search-eval.mjs` +
-`test/fixtures/search-eval.json`) runs; semantic/hybrid rows still need a
-machine with the embsearch binary — see "Eval baseline" below for the
-lexical numbers. Step 7 (rerank) remains gated on those numbers. All work
-is TypeScript-side in hoocode. The Rust daemon
-(`kolisachint/embeddingsearchtools`) needs **no changes** — its protocol
-(`query` with `k`, ids + scores back) already supports fetching a deeper
-top-k per retriever for fusion. Any future Rust work happens in that repo,
-separately.
+lexical-retriever.ts, context-assembler.ts, hybrid-search.ts, rerank.ts,
+trace.ts, eval.ts) and `src/core/tools/search.ts`; `semantic_search` is
+replaced by the unified `search` tool behind `--enable-search-tool` (legacy
+alias `--enable-embsearchtools`). The eval gate ran with a full index —
+see "Eval results" below for the measured numbers and the defaults they
+set (`k = 2`, lexical fusion cap 20, rerank on). Step 7 shipped as a
+deterministic lexical-statistical reranker; a cross-encoder can replace
+its scoring function later. All work is TypeScript-side in hoocode. The
+Rust daemon (`kolisachint/embeddingsearchtools`) needs **no changes** —
+its protocol (`query` with `k`, ids + scores back) already supports
+fetching a deeper top-k per retriever for fusion. Any future Rust work
+(e.g. a cross-encoder op) happens in that repo, separately.
 
 **Motivation:** hoocode has grep and a flag-gated `semantic_search`
 (`packages/coding-agent/src/core/tools/semantic-search.ts`) as separate agent
@@ -224,36 +224,64 @@ the universal-robustness claim.
 chunkId equality.** A chunkId-keyed gold set rots the first time the repo
 or the chunker changes (see stability caveat above).
 
-## Eval baseline (2026-07-18, lexical-only environment)
+## Eval results (2026-07-18, full index: 16.5k chunks over this repo)
 
 `node packages/coding-agent/scripts/search-eval.mjs` over the 12-query gold
-set, on a machine without the embsearch binary (semantic/hybrid rows degrade
-to lexical, which is itself a useful invariant check — degraded rows must
-equal the lexical row exactly, or something is nondeterministic):
+set with the embsearch binary auto-downloaded and the repo fully indexed.
+`+rr` = reranked (step 7). The tool's default path is `auto +rr`:
 
 | config | R@5 | R@10 | R@50 |
 |---|---|---|---|
-| lexical (= all degraded rows, = auto) | 33% | 50% | 50% |
+| lexical | 33% | 42% | 50% |
+| semantic | 67% | 83% | 92% |
+| hybrid k=0 | 54% | 67% | 92% |
+| hybrid k=2 | 54% | 67% | 92% |
+| hybrid k=10 | 46% | 67% | 92% |
+| hybrid k=60 | 46% | 58% | 92% |
+| **auto (k=2) +rr** | **63%** | **83%** | **92%** |
+| hybrid k=2 +rr | 63% | 83% | 92% |
+| hybrid k=60 +rr | 63% | 75% | 92% |
+| semantic +rr | 67% | 83% | 92% |
 
-Findings from standing the gate up:
+Decisions taken from these numbers (each reversible via the same harness):
 
+- **Uncapped lexical lists diluted hybrid below plain semantic** (first
+  measurement: hybrid R@5 42–54% vs semantic 71%). RRF weighs a rank-30
+  lexical candidate like a rank-30 embedding hit, but lexical precision is
+  front-loaded. Fix: only the top 20 adapted lexical candidates vote in
+  hybrid fusion (`LEXICAL_FUSION_CAP`).
+- **`k = 2` replaced `k = 60` as the default**: small k beat 60 on every
+  differing query, twice, with and without reranking — consistent with the
+  parameter-sensitivity finding in Bruch et al. rather than the k=60
+  folklore. Small sample (12 queries); re-sweep when the gold set grows.
+- **Reranking is on by default**: it never hurt any config and lifted
+  hybrid R@10 from 67% to 83%.
+- **`auto` no longer routes path-like queries to lexical**: they scored 0%
+  lexically (content grep cannot find a file by its own name) and 100% in
+  hybrid, where the reranker's exact-path bonus carries them. Strong
+  lexical signals are now only quotes and regex metacharacters.
 - **Determinism bug caught by the harness:** ripgrep's parallel walk
   returned a different hit subset per run once the 200-match cap truncated
   the stream, so identical configs scored differently. Fixed with
-  `--sort path` in the internal lexical retriever — the degraded rows now
-  match the lexical row exactly across runs.
-- **The R@10 misses are exactly the semantic-side query classes**
-  (conceptual, cross-file, boundary): lexical retrieval hits 100% on
-  exact-symbol and error-fragment queries and 0% on most conceptual ones.
-  This is the design's premise made measurable; hybrid numbers need a run
-  with the index up before step 7 can be argued either way.
-- **Known gap — path queries:** a query like `core/search/hybrid-search.ts`
-  routes to lexical (correct) but content grep cannot find a file by its
-  own name; R@10 = 0. v1.1 candidate: filename-match candidates (find-style)
-  for path-like queries, entering fusion as a third evidence source.
+  `--sort path`; degraded rows must equal the lexical row exactly — a
+  standing invariant check.
 
-Re-run on a machine with embsearch available to fill in the semantic and
-hybrid rows; the `k` sweep is only meaningful there.
+Known misses (recorded, not hidden): `concept-token-budget-expansion` is
+found by semantic alone but lost in hybrid fusion at every `k`; and
+`boundary-daemon-protocol` reaches no config's top-50 — a genuinely hard
+query that only a better embedder or a real cross-encoder could recover.
+
+## Step 7 as shipped: deterministic reranker
+
+`core/search/rerank.ts` re-orders the fused top-50 (on by default,
+`rerank: false` to disable) using evidence that is only cheap to compute
+after fusion: distinct-term coverage of the candidate's actual expanded
+window read from disk, path affinity (query terms in the file path) with an
+exact-path bonus, and the fused RRF ordering as prior. Weights live in one
+place and are tuned only through the eval harness. No model, no network,
+fully deterministic; a cross-encoder can later replace the scoring function
+behind the same signature — that model work belongs to
+`kolisachint/embeddingsearchtools`.
 
 ## Shipping order (v1 boundary)
 

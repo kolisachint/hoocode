@@ -37,10 +37,11 @@ export interface EvalConfig {
 	label: string;
 	mode: SearchMode;
 	rrfK?: number;
+	rerank?: boolean;
 }
 
-/** The sweep from the design doc: single retrievers, hybrid across k, and
- *  the routed auto mode. */
+/** The sweep from the design doc — single retrievers, hybrid across k, the
+ *  routed auto mode — plus reranked (`+rr`) variants for the step 7 gate. */
 export const EVAL_CONFIGS: readonly EvalConfig[] = [
 	{ label: "lexical", mode: "lexical" },
 	{ label: "semantic", mode: "semantic" },
@@ -49,6 +50,11 @@ export const EVAL_CONFIGS: readonly EvalConfig[] = [
 	{ label: "hybrid k=10", mode: "hybrid", rrfK: 10 },
 	{ label: "hybrid k=60", mode: "hybrid", rrfK: 60 },
 	{ label: "auto", mode: "auto" },
+	{ label: "lexical +rr", mode: "lexical", rerank: true },
+	{ label: "semantic +rr", mode: "semantic", rerank: true },
+	{ label: "hybrid k=2 +rr", mode: "hybrid", rrfK: 2, rerank: true },
+	{ label: "hybrid k=60 +rr", mode: "hybrid", rrfK: 60, rerank: true },
+	{ label: "auto +rr", mode: "auto", rerank: true },
 ];
 
 /** Candidates fetched per eval query — deep enough for the reranker gate. */
@@ -93,6 +99,7 @@ export async function evaluateQuery(
 			query: evalQuery.query,
 			mode: config.mode,
 			rrfK: config.rrfK,
+			rerank: config.rerank ?? false,
 			limit: EVAL_FETCH_LIMIT,
 			service,
 		});

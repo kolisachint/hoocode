@@ -65,7 +65,10 @@ describe("resolveSearchMode", () => {
 	it("resolves auto to lexical on strong lexical signals", () => {
 		expect(resolveSearchMode('"token budget exceeded"', "auto", true).mode).toBe("lexical");
 		expect(resolveSearchMode("foo\\.bar\\(", "auto", true).mode).toBe("lexical");
-		expect(resolveSearchMode("src/core/sdk.ts", "auto", true).mode).toBe("lexical");
+	});
+
+	it("routes path-like queries to hybrid (eval: 0% lexical, 100% hybrid)", () => {
+		expect(resolveSearchMode("src/core/sdk.ts", "auto", true).mode).toBe("hybrid");
 	});
 
 	it("resolves auto to lexical without degradation when the index is down", () => {

@@ -18,13 +18,14 @@ export interface ModeResolution {
 	degradedReason?: string;
 }
 
-/** Regex metacharacters, quoted strings, or explicit path-with-extension —
- *  queries where exact matching is clearly what the caller wants. */
+/** Regex metacharacters or quoted strings — queries where exact matching is
+ *  clearly what the caller wants. Path-like queries deliberately do NOT
+ *  count: the eval gate showed them scoring 0% lexically (content grep
+ *  cannot find a file by its own name) and 100% in hybrid, where the
+ *  embedding side and the reranker's path-affinity signal carry them. */
 export function hasStrongLexicalSignals(query: string): boolean {
 	if (/["'`]/.test(query)) return true;
 	if (/[\\^$|()[\]{}*+?]/.test(query)) return true;
-	// A path segment ending in a file extension, e.g. src/core/sdk.ts
-	if (/[\w-]+\/[\w./-]*\.\w{1,8}(\s|$)/.test(query)) return true;
 	return false;
 }
 

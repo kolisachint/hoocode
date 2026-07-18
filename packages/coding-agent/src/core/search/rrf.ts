@@ -9,7 +9,14 @@
 
 import type { FusedHit, RankedHit } from "./types.js";
 
-export const DEFAULT_RRF_K = 60;
+/**
+ * Default RRF constant. The literature folklore default is 60; the eval gate
+ * (scripts/search-eval.mjs, 12-query gold set) measured k ∈ {0, 2} beating
+ * k = 60 on every differing query, twice, with reranking on top of either —
+ * small k keeps fusion top-heavy toward each retriever's best hits, and the
+ * reranker corrects the tail. Small sample: re-sweep when the gold set grows.
+ */
+export const DEFAULT_RRF_K = 2;
 
 /**
  * Fuse ranked lists into one deterministic ordering by summed `1/(k + rank)`.

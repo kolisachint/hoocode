@@ -63,13 +63,13 @@ for (const evalQuery of dataset) {
 await service.dispose();
 
 const pct = (x) => `${Math.round(x * 100)}%`.padStart(5);
-console.log("\nconfig        | R@5   | R@10  | R@50  | notes");
-console.log("--------------|-------|-------|-------|------");
+console.log("\nconfig           | R@5   | R@10  | R@50  | notes");
+console.log("-----------------|-------|-------|-------|------");
 for (const config of EVAL_CONFIGS) {
 	const t = totals.get(config.label);
 	const notes = t.degraded === t.n ? "degraded to lexical" : t.degraded > 0 ? `${t.degraded}/${t.n} degraded` : "";
 	console.log(
-		`${config.label.padEnd(13)} | ${pct(t.r5 / t.n)} | ${pct(t.r10 / t.n)} | ${pct(t.r50 / t.n)} | ${notes}`,
+		`${config.label.padEnd(16)} | ${pct(t.r5 / t.n)} | ${pct(t.r10 / t.n)} | ${pct(t.r50 / t.n)} | ${notes}`,
 	);
 }
 

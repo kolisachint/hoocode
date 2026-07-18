@@ -136,7 +136,7 @@ describe("runSearch (stubbed service)", () => {
 			const lines = readFileSync(tracePath, "utf-8").trim().split("\n");
 			const trace = JSON.parse(lines[lines.length - 1]);
 			expect(trace.resolvedMode).toBe("hybrid");
-			expect(trace.rrfK).toBe(60);
+			expect(trace.rrfK).toBe(2);
 			expect(trace.retrievers.grep.hitCount).toBeGreaterThan(0);
 			expect(trace.retrievers.embed.hitCount).toBe(2);
 			expect(trace.fused[0].id).toBe("src/indexed.ts#0");
@@ -191,5 +191,65 @@ describe("eval scoring", () => {
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("rerankCandidates", () => {
+	const fused = (id: string, path: string, startLine: number, endLine: number) => ({
+		id,
+		rrfScore: 1,
+		ranks: { grep: 1 as number },
+		rawScores: {},
+		path,
+		startLine,
+		endLine,
+	});
+
+	it("lifts a deep candidate whose window covers more query terms", async () => {
+		const { rerankCandidates } = await import("../src/core/search/rerank.js");
+		const root = mkdtempSync(join(tmpdir(), "rerank-"));
+		try {
+			writeFileSync(join(root, "weak.ts"), "only budget here\n");
+			writeFileSync(join(root, "strong.ts"), "tokenBudget assembler snippet window\n");
+			const result = rerankCandidates(
+				"tokenBudget assembler window",
+				[fused("weak.ts#0", "weak.ts", 1, 1), fused("strong.ts#0", "strong.ts", 1, 1)],
+				root,
+			);
+			expect(result.candidates[0].id).toBe("strong.ts#0");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("ranks a path-named file first for path-like queries", async () => {
+		const { rerankCandidates } = await import("../src/core/search/rerank.js");
+		const root = mkdtempSync(join(tmpdir(), "rerank-path-"));
+		try {
+			mkdirSync(join(root, "src"), { recursive: true });
+			writeFileSync(join(root, "src", "other.ts"), "mentions hybrid-search.ts in a comment\n");
+			writeFileSync(join(root, "src", "hybrid-search.ts"), "export const x = 1;\n");
+			const result = rerankCandidates(
+				"src/hybrid-search.ts",
+				[
+					fused("src/other.ts#0", "src/other.ts", 1, 1),
+					fused("src/hybrid-search.ts#0", "src/hybrid-search.ts", 1, 1),
+				],
+				root,
+			);
+			expect(result.candidates[0].id).toBe("src/hybrid-search.ts#0");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("keeps fused order on ties and unreadable files", async () => {
+		const { rerankCandidates } = await import("../src/core/search/rerank.js");
+		const result = rerankCandidates(
+			"nomatch",
+			[fused("a.ts#0", "a.ts", 1, 1), fused("b.ts#0", "b.ts", 1, 1)],
+			"/nonexistent",
+		);
+		expect(result.candidates.map((c) => c.id)).toEqual(["a.ts#0", "b.ts#0"]);
 	});
 });
