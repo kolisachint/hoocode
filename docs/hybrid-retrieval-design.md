@@ -1,11 +1,16 @@
 # Design Note: Hybrid retrieval — one `search` tool, RRF fusion
 
-**Status:** Proposed (discussion record; nothing implemented yet). All work
-described here is TypeScript-side in hoocode. The Rust daemon
-(`kolisachint/embeddingsearchtools`) needs **no changes** — its protocol
-(`query` with `k`, ids + scores back) already supports fetching a deeper
-top-k per retriever for fusion. Any future Rust work happens in that repo,
-separately.
+**Status:** Steps 1–5 of the shipping order implemented in
+`packages/coding-agent/src/core/search/` (rrf.ts, adapter.ts, mode.ts,
+lexical-retriever.ts, context-assembler.ts, hybrid-search.ts, trace.ts) and
+`src/core/tools/search.ts`; `semantic_search` is replaced by the unified
+`search` tool behind `--enable-search-tool` (legacy alias
+`--enable-embsearchtools`). Steps 6 (Recall@K evals + `k` sweep) and 7
+(rerank) remain open. All work is TypeScript-side in hoocode. The Rust
+daemon (`kolisachint/embeddingsearchtools`) needs **no changes** — its
+protocol (`query` with `k`, ids + scores back) already supports fetching a
+deeper top-k per retriever for fusion. Any future Rust work happens in that
+repo, separately.
 
 **Motivation:** hoocode has grep and a flag-gated `semantic_search`
 (`packages/coding-agent/src/core/tools/semantic-search.ts`) as separate agent

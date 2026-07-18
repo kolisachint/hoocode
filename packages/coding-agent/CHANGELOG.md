@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- Hybrid code retrieval (docs/hybrid-retrieval-design.md): the new unified
+  `search` tool replaces `semantic_search`, with `mode: auto | lexical |
+  semantic | hybrid`. Hybrid mode runs grep-backed lexical retrieval and the
+  local embedding index in parallel and fuses results with Reciprocal Rank
+  Fusion (`k=60`, rank-only, deterministic tie-breaks). Lexical hits are
+  mapped to indexed chunk ids (with `rel#L<line>` fallbacks for uncovered
+  files), collapsed, and re-ranked before fusion. Results are expanded into
+  line-window snippets under a token budget; full per-call diagnostics go to
+  `search-trace.jsonl` in the embsearch store dir, never into model context.
+- `--enable-search-tool` CLI flag (alias of the legacy
+  `--enable-embsearchtools`; same `enableEmbsearchTools` setting).
+
+### Changed
+
+- When the embedding index is unavailable (disabled, under threshold, missing
+  binary, or still building) the `search` tool degrades to lexical retrieval
+  with a notice instead of erroring like the old `semantic_search` tool.
+- `grep`'s no-match hint now points at the `search` tool.
+
 ## [0.4.142] - 2026-07-18
 
 ## [0.4.141] - 2026-07-18

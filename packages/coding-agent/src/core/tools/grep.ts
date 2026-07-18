@@ -243,7 +243,7 @@ export function createGrepToolDefinition(
 							if (matches.length === 0) {
 								const service = getEmbsearchService(cwd);
 								const hint = service?.isAvailable()
-									? "\n\n[Hint: no exact matches; use semantic_search to find conceptually related code]"
+									? "\n\n[Hint: no exact matches; use the search tool (semantic or hybrid mode) to find conceptually related code]"
 									: "";
 								settle(() =>
 									resolve({

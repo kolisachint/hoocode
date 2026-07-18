@@ -2041,7 +2041,7 @@ export class AgentSession {
 						maxOutputLines: toolMaxOutputLines,
 					},
 					browser_run: { liveView: browserLivePreview },
-					semantic_search: { getService: () => getEmbsearchService(this._cwd) },
+					search: { getService: () => getEmbsearchService(this._cwd) },
 				});
 
 		this._baseToolDefinitions = new Map(
