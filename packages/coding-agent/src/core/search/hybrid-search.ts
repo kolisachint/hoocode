@@ -68,7 +68,6 @@ export interface RunSearchOptions extends RetrieveOptions {
 	tokenBudget?: number;
 }
 
-
 export interface RunSearchResult {
 	text: string;
 	resolvedMode: ResolvedSearchMode;

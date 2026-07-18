@@ -33,7 +33,7 @@ const searchSchema = Type.Object({
 	glob: Type.Optional(
 		Type.String({
 			description:
-				"Optional glob filter applied to file paths. Only file paths matching the glob are searched. Supports both slashless patterns (match base name anywhere) and slash patterns (match full path)."
+				"Optional glob filter applied to file paths. Only file paths matching the glob are searched. Supports both slashless patterns (match base name anywhere) and slash patterns (match full path).",
 		}),
 	),
 	limit: Type.Optional(

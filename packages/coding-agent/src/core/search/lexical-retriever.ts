@@ -129,15 +129,7 @@ export async function runLexicalRetriever(options: RunLexicalOptions): Promise<G
 		// --sort path forces a deterministic (single-threaded) walk: with the
 		// match cap truncating the stream, a parallel walk would return a
 		// different hit subset per run — "same query, different context".
-		const args = [
-			"--json",
-			"--line-number",
-			"--color=never",
-			"--hidden",
-			"--ignore-case",
-			"--sort",
-			"path",
-		];
+		const args = ["--json", "--line-number", "--color=never", "--hidden", "--ignore-case", "--sort", "path"];
 		if (glob) args.push("--glob", glob);
 		args.push("--", pattern, cwd);
 		const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
