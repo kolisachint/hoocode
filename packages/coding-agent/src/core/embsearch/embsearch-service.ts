@@ -15,6 +15,7 @@
  */
 
 import { readFileSync } from "fs";
+import { minimatch } from "minimatch";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { chunkFile } from "./chunker.js";
 import { EmbSearchClient } from "./client.js";
@@ -245,16 +246,21 @@ export class EmbsearchService {
 	}
 
 	/** Top-`k` semantic hits including their chunk ids, for rank fusion. */
-	async searchChunks(query: string, k = 10): Promise<SemanticChunkHit[]> {
+	async searchChunks(query: string, k = 10, glob?: string): Promise<SemanticChunkHit[]> {
 		if (!this.client || this.client.isClosed || !this.meta) {
 			throw new Error("semantic index is not available");
 		}
 		const results = await this.client.query(query, k);
 		const hits: SemanticChunkHit[] = [];
+		const matchGlob = (rel: string): boolean => {
+			if (!glob) return true;
+			return minimatch(rel, glob, { dot: true, matchBase: !glob.includes("/") });
+		};
 		for (const result of results) {
 			const sep = result.id.lastIndexOf("#");
 			if (sep === -1) continue;
 			const rel = result.id.slice(0, sep);
+			if (!matchGlob(rel)) continue;
 			const chunkIndex = Number.parseInt(result.id.slice(sep + 1), 10);
 			const range = this.meta.files[rel]?.chunks[chunkIndex];
 			if (!range) continue;

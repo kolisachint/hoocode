@@ -72,12 +72,32 @@ function termsOnLine(plan: LexicalQueryPlan, lineText: string | undefined): stri
  * Run lexical retrieval over `cwd`, returning up to `limit` line-hits in
  * output order with POSIX repo-relative paths.
  */
-export async function runLexicalRetriever(
-	cwd: string,
-	query: string,
-	limit: number,
-	signal?: AbortSignal,
-): Promise<GrepLineHit[]> {
+export interface RunLexicalOptions {
+	cwd: string;
+	query: string;
+	limit: number;
+	glob?: string;
+	signal?: AbortSignal;
+}
+
+/**
+ * Run the lexical retriever for the search tool. Optional glob filter scopes
+ * file paths (slashless matches basename anywhere, slash patterns match the
+ * full repo-relative path).
+ */
+function normalizeSearchGlob(glob: string | undefined): string | undefined {
+	if (!glob) return undefined;
+	// Match fd/rg semantics: a slash-containing glob is anchored anywhere in
+	// the tree, so prepend "**/" unless it already starts with a slash or "**/".
+	if (glob.includes("/") && !glob.startsWith("/") && !glob.startsWith("**/")) {
+		return `**/${glob}`;
+	}
+	return glob;
+}
+
+export async function runLexicalRetriever(options: RunLexicalOptions): Promise<GrepLineHit[]> {
+	const { cwd, query, limit, glob: rawGlob, signal } = options;
+	const glob = normalizeSearchGlob(rawGlob);
 	const plan = buildLexicalQueryPlan(query);
 	if (!plan) return [];
 	const { pattern } = plan;
@@ -94,6 +114,7 @@ export async function runLexicalRetriever(
 			isDirectory: true,
 			ignoreCase: true,
 			limit,
+			glob,
 			signal,
 			readFile: (p) => readFileSync(p, "utf-8"),
 		});
@@ -116,10 +137,9 @@ export async function runLexicalRetriever(
 			"--ignore-case",
 			"--sort",
 			"path",
-			"--",
-			pattern,
-			cwd,
 		];
+		if (glob) args.push("--glob", glob);
+		args.push("--", pattern, cwd);
 		const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 		const rl = createInterface({ input: child.stdout });
 		const hits: GrepLineHit[] = [];

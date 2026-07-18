@@ -30,6 +30,12 @@ const searchSchema = Type.Object({
 				"Retrieval mode (default: auto). auto picks hybrid when the semantic index is available; lexical = exact-text only; semantic = embedding index only; hybrid = both, fused by rank.",
 		}),
 	),
+	glob: Type.Optional(
+		Type.String({
+			description:
+				"Optional glob filter applied to file paths. Only file paths matching the glob are searched. Supports both slashless patterns (match base name anywhere) and slash patterns (match full path)."
+		}),
+	),
 	limit: Type.Optional(
 		Type.Number({ description: `Maximum number of results (default: ${DEFAULT_RESULTS}, max: ${MAX_RESULTS})` }),
 	),
@@ -101,13 +107,14 @@ export function createSearchToolDefinition(
 			"Use search to locate code by concept or half-known name; use grep for exact matching lines and call sites.",
 		],
 		parameters: searchSchema,
-		async execute(_toolCallId, { query, mode, limit }: SearchToolInput, signal?: AbortSignal) {
+		async execute(_toolCallId, { query, mode, glob, limit }: SearchToolInput, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
 			const result = await runSearch({
 				cwd,
 				query,
 				mode,
+				glob,
 				limit: Math.min(MAX_RESULTS, Math.max(1, limit ?? DEFAULT_RESULTS)),
 				service: options?.getService?.(),
 				signal,
