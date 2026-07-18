@@ -16,7 +16,9 @@ import type { ResolvedSearchMode } from "../search/types.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
-const DEFAULT_RESULTS = 10;
+// Default of 5 balances recall against context cost: eval showed limit=5
+// preserving the top-rank hits of limit=10 at roughly half the tokens.
+const DEFAULT_RESULTS = 5;
 const MAX_RESULTS = 30;
 
 const searchSchema = Type.Object({
@@ -101,10 +103,11 @@ export function createSearchToolDefinition(
 		name: "search",
 		label: "search",
 		description:
-			"Find where code lives: ranked file:line-range results from exact-text (grep-backed) and semantic (local embedding index) retrieval, fused by rank when both are available. Use search when you want to locate something — a concept, a behavior, or an identifier you only half-know; use grep when you want exact matching lines (call sites, counts, context). Falls back to exact-text retrieval automatically when the semantic index is unavailable.",
+			"Find where code lives: ranked file:line-range results from exact-text (grep-backed) and semantic (local embedding index) retrieval, fused by rank when both are available. Use search when you want to locate something — a concept, a behavior, or an identifier you only half-know; use grep when you want exact matching lines (call sites, counts, context). The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the semantic index is unavailable.",
 		promptSnippet: "Ranked code search (exact + semantic, rank-fused)",
 		promptGuidelines: [
-			"Use search to locate code by concept or half-known name; use grep for exact matching lines and call sites.",
+			"Use search to locate code by concept or half-known name; use grep for exact matching lines, call sites, and regexes.",
+			"The default mode (auto) is almost always right — only force lexical/semantic/hybrid deliberately. Use a smaller limit (e.g. 3) for targeted lookups to save context.",
 		],
 		parameters: searchSchema,
 		async execute(_toolCallId, { query, mode, glob, limit }: SearchToolInput, signal?: AbortSignal) {
