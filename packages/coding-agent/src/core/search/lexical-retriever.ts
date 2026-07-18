@@ -25,17 +25,24 @@ function escapeRegExp(value: string): string {
 	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+export interface LexicalQueryPlan {
+	/** rg-ready regex pattern. */
+	pattern: string;
+	/** Raw (unescaped, lowercased) terms, for per-line term attribution. */
+	terms: string[];
+}
+
 /**
- * Build the rg pattern for a query: a quoted segment is searched verbatim;
- * otherwise the longest few identifier-ish tokens are OR-ed together. Returns
- * undefined when the query yields nothing searchable.
+ * Build the retrieval plan for a query: a quoted segment is searched
+ * verbatim; otherwise the longest few identifier-ish tokens are OR-ed
+ * together. Returns undefined when the query yields nothing searchable.
  */
-export function buildLexicalPattern(query: string): string | undefined {
+export function buildLexicalQueryPlan(query: string): LexicalQueryPlan | undefined {
 	const quoted = [...query.matchAll(/["'`]([^"'`]+)["'`]/g)]
 		.map((m) => m[1].trim())
 		.filter((s) => s.length > 0)
 		.sort((a, b) => b.length - a.length)[0];
-	if (quoted) return escapeRegExp(quoted);
+	if (quoted) return { pattern: escapeRegExp(quoted), terms: [quoted.toLowerCase()] };
 
 	const tokens = [...new Set(query.match(/[A-Za-z0-9_$][\w$.-]*/g) ?? [])]
 		.filter((t) => t.length >= MIN_TERM_LENGTH)
@@ -43,9 +50,22 @@ export function buildLexicalPattern(query: string): string | undefined {
 		.slice(0, MAX_TERMS);
 	if (tokens.length === 0) {
 		const trimmed = query.trim();
-		return trimmed ? escapeRegExp(trimmed) : undefined;
+		return trimmed ? { pattern: escapeRegExp(trimmed), terms: [trimmed.toLowerCase()] } : undefined;
 	}
-	return tokens.map(escapeRegExp).join("|");
+	return { pattern: tokens.map(escapeRegExp).join("|"), terms: tokens.map((t) => t.toLowerCase()) };
+}
+
+/** Pattern-only view of {@link buildLexicalQueryPlan}. */
+export function buildLexicalPattern(query: string): string | undefined {
+	return buildLexicalQueryPlan(query)?.pattern;
+}
+
+/** Which plan terms appear on a matched line (retrieval is case-insensitive,
+ *  so attribution is too). */
+function termsOnLine(plan: LexicalQueryPlan, lineText: string | undefined): string[] {
+	if (!lineText) return [];
+	const lower = lineText.toLowerCase();
+	return plan.terms.filter((t) => lower.includes(t));
 }
 
 /**
@@ -58,8 +78,9 @@ export async function runLexicalRetriever(
 	limit: number,
 	signal?: AbortSignal,
 ): Promise<GrepLineHit[]> {
-	const pattern = buildLexicalPattern(query);
-	if (!pattern) return [];
+	const plan = buildLexicalQueryPlan(query);
+	if (!plan) return [];
+	const { pattern } = plan;
 
 	const toRel = (filePath: string): string => {
 		const rel = path.relative(cwd, filePath);
@@ -76,11 +97,29 @@ export async function runLexicalRetriever(
 			signal,
 			readFile: (p) => readFileSync(p, "utf-8"),
 		});
-		return result.matches.map((m) => ({ rel: toRel(m.filePath), line: m.lineNumber }));
+		return result.matches.map((m) => ({
+			rel: toRel(m.filePath),
+			line: m.lineNumber,
+			terms: termsOnLine(plan, m.lineText),
+		}));
 	}
 
 	return new Promise<GrepLineHit[]>((resolve, reject) => {
-		const args = ["--json", "--line-number", "--color=never", "--hidden", "--ignore-case", "--", pattern, cwd];
+		// --sort path forces a deterministic (single-threaded) walk: with the
+		// match cap truncating the stream, a parallel walk would return a
+		// different hit subset per run — "same query, different context".
+		const args = [
+			"--json",
+			"--line-number",
+			"--color=never",
+			"--hidden",
+			"--ignore-case",
+			"--sort",
+			"path",
+			"--",
+			pattern,
+			cwd,
+		];
 		const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 		const rl = createInterface({ input: child.stdout });
 		const hits: GrepLineHit[] = [];
@@ -109,7 +148,7 @@ export async function runLexicalRetriever(
 			const filePath = event.data?.path?.text;
 			const lineNumber = event.data?.line_number;
 			if (filePath && typeof lineNumber === "number") {
-				hits.push({ rel: toRel(filePath), line: lineNumber });
+				hits.push({ rel: toRel(filePath), line: lineNumber, terms: termsOnLine(plan, event.data?.lines?.text) });
 			}
 			if (hits.length >= limit && !child.killed) {
 				killedDueToLimit = true;

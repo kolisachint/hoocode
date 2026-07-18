@@ -1,16 +1,19 @@
 # Design Note: Hybrid retrieval — one `search` tool, RRF fusion
 
-**Status:** Steps 1–5 of the shipping order implemented in
+**Status:** Steps 1–6 of the shipping order implemented in
 `packages/coding-agent/src/core/search/` (rrf.ts, adapter.ts, mode.ts,
-lexical-retriever.ts, context-assembler.ts, hybrid-search.ts, trace.ts) and
-`src/core/tools/search.ts`; `semantic_search` is replaced by the unified
-`search` tool behind `--enable-search-tool` (legacy alias
-`--enable-embsearchtools`). Steps 6 (Recall@K evals + `k` sweep) and 7
-(rerank) remain open. All work is TypeScript-side in hoocode. The Rust
-daemon (`kolisachint/embeddingsearchtools`) needs **no changes** — its
-protocol (`query` with `k`, ids + scores back) already supports fetching a
-deeper top-k per retriever for fusion. Any future Rust work happens in that
-repo, separately.
+lexical-retriever.ts, context-assembler.ts, hybrid-search.ts, trace.ts,
+eval.ts) and `src/core/tools/search.ts`; `semantic_search` is replaced by
+the unified `search` tool behind `--enable-search-tool` (legacy alias
+`--enable-embsearchtools`). The eval gate (`scripts/search-eval.mjs` +
+`test/fixtures/search-eval.json`) runs; semantic/hybrid rows still need a
+machine with the embsearch binary — see "Eval baseline" below for the
+lexical numbers. Step 7 (rerank) remains gated on those numbers. All work
+is TypeScript-side in hoocode. The Rust daemon
+(`kolisachint/embeddingsearchtools`) needs **no changes** — its protocol
+(`query` with `k`, ids + scores back) already supports fetching a deeper
+top-k per retriever for fusion. Any future Rust work happens in that repo,
+separately.
 
 **Motivation:** hoocode has grep and a flag-gated `semantic_search`
 (`packages/coding-agent/src/core/tools/semantic-search.ts`) as separate agent
@@ -220,6 +223,37 @@ the universal-robustness claim.
 **Gold answers are `path` + line range matched by span overlap, never
 chunkId equality.** A chunkId-keyed gold set rots the first time the repo
 or the chunker changes (see stability caveat above).
+
+## Eval baseline (2026-07-18, lexical-only environment)
+
+`node packages/coding-agent/scripts/search-eval.mjs` over the 12-query gold
+set, on a machine without the embsearch binary (semantic/hybrid rows degrade
+to lexical, which is itself a useful invariant check — degraded rows must
+equal the lexical row exactly, or something is nondeterministic):
+
+| config | R@5 | R@10 | R@50 |
+|---|---|---|---|
+| lexical (= all degraded rows, = auto) | 33% | 50% | 50% |
+
+Findings from standing the gate up:
+
+- **Determinism bug caught by the harness:** ripgrep's parallel walk
+  returned a different hit subset per run once the 200-match cap truncated
+  the stream, so identical configs scored differently. Fixed with
+  `--sort path` in the internal lexical retriever — the degraded rows now
+  match the lexical row exactly across runs.
+- **The R@10 misses are exactly the semantic-side query classes**
+  (conceptual, cross-file, boundary): lexical retrieval hits 100% on
+  exact-symbol and error-fragment queries and 0% on most conceptual ones.
+  This is the design's premise made measurable; hybrid numbers need a run
+  with the index up before step 7 can be argued either way.
+- **Known gap — path queries:** a query like `core/search/hybrid-search.ts`
+  routes to lexical (correct) but content grep cannot find a file by its
+  own name; R@10 = 0. v1.1 candidate: filename-match candidates (find-style)
+  for path-like queries, entering fusion as a third evidence source.
+
+Re-run on a machine with embsearch available to fill in the semantic and
+hybrid rows; the `k` sweep is only meaningful there.
 
 ## Shipping order (v1 boundary)
 

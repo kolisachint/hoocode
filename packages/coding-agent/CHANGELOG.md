@@ -15,6 +15,16 @@
   `search-trace.jsonl` in the embsearch store dir, never into model context.
 - `--enable-search-tool` CLI flag (alias of the legacy
   `--enable-embsearchtools`; same `enableEmbsearchTools` setting).
+- Retrieval eval gate (`scripts/search-eval.mjs` + a repo-grounded gold set
+  in `test/fixtures/search-eval.json`): Recall@5/10/50 per mode with an RRF
+  `k` sweep, gold answers matched by span overlap. Lexical baseline recorded
+  in docs/hybrid-retrieval-design.md.
+- Lexical retrieval quality: unindexed grep hits now coalesce into per-file
+  clusters (no more near-duplicate windows of the same file), candidates are
+  ranked by distinct query terms matched instead of directory order, one
+  file contributes at most 8 candidates, and ripgrep runs with `--sort path`
+  so capped result sets are deterministic across runs. Search traces rotate
+  at 5 MB.
 
 ### Changed
 

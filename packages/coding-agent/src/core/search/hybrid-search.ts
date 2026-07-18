@@ -6,6 +6,11 @@
  * Single-retriever modes flow through the same pipeline — rrfFuse over one
  * list preserves its order — so lexical, semantic, and hybrid all produce the
  * same result shape and the same trace record.
+ *
+ * `retrieveCandidates` is the candidate-level core (also used by the eval
+ * harness, which needs forced modes, a configurable `k`, and no trace
+ * pollution); `runSearch` wraps it with span expansion and tracing for the
+ * tool.
  */
 
 import type { EmbsearchService } from "../embsearch/embsearch-service.js";
@@ -22,16 +27,32 @@ const LEXICAL_MATCH_LIMIT = 200;
 /** Embedding hits fetched per query — deep enough for fusion to matter. */
 const EMBED_TOP_K = 50;
 
-export interface RunSearchOptions {
+export interface RetrieveOptions {
 	cwd: string;
 	query: string;
 	mode?: SearchMode;
-	/** Maximum fused results returned. */
+	/** Maximum fused candidates returned. */
 	limit?: number;
-	/** Approximate token budget for the result text. */
-	tokenBudget?: number;
+	/** RRF constant override (eval harness sweeps this). Default: 60. */
+	rrfK?: number;
 	service?: EmbsearchService;
 	signal?: AbortSignal;
+}
+
+export interface RetrieveResult {
+	candidates: FusedCandidate[];
+	resolvedMode: ResolvedSearchMode;
+	degradedReason?: string;
+	indexPhase: SearchTrace["indexPhase"];
+	retrievers: SearchTrace["retrievers"];
+	/** Set while the embedding index is still building. */
+	indexing?: { done: number; total: number };
+	rrfK: number;
+}
+
+export interface RunSearchOptions extends RetrieveOptions {
+	/** Approximate token budget for the result text. */
+	tokenBudget?: number;
 }
 
 export interface RunSearchResult {
@@ -43,10 +64,11 @@ export interface RunSearchResult {
 	indexing?: { done: number; total: number };
 }
 
-export async function runSearch(options: RunSearchOptions): Promise<RunSearchResult> {
+export async function retrieveCandidates(options: RetrieveOptions): Promise<RetrieveResult> {
 	const { cwd, query, service, signal } = options;
 	const requestedMode = options.mode ?? "auto";
 	const limit = Math.max(1, options.limit ?? 10);
+	const rrfK = options.rrfK ?? DEFAULT_RRF_K;
 
 	const state = service?.getState();
 	const embedAvailable = service?.isAvailable() ?? false;
@@ -117,32 +139,46 @@ export async function runSearch(options: RunSearchOptions): Promise<RunSearchRes
 	// only a total loss is an error.
 	if (lists.length === 0) throw errors[0] ?? new Error("search produced no retriever results");
 
-	const fused = rrfFuse(lists, DEFAULT_RRF_K).slice(0, limit);
+	const fused = rrfFuse(lists, rrfK).slice(0, limit);
 	const candidates: FusedCandidate[] = [];
 	for (const hit of fused) {
 		const span = spans.get(hit.id);
 		if (span) candidates.push({ ...hit, ...span });
 	}
 
-	const assembled = assembleContext(candidates, { cwd, tokenBudget: options.tokenBudget });
-
-	writeSearchTrace(cwd, {
-		timestampMs: Date.now(),
-		query,
-		requestedMode,
+	return {
+		candidates,
 		resolvedMode: mode,
 		degradedReason: resolution.degradedReason,
 		indexPhase: state?.phase === "ready" ? "ready" : state?.phase === "indexing" ? "indexing" : "unavailable",
-		rrfK: mode === "hybrid" ? DEFAULT_RRF_K : undefined,
 		retrievers: retrieverStats,
-		fused,
+		indexing: state?.phase === "indexing" ? { done: state.done, total: state.total } : undefined,
+		rrfK,
+	};
+}
+
+export async function runSearch(options: RunSearchOptions): Promise<RunSearchResult> {
+	const retrieved = await retrieveCandidates(options);
+
+	const assembled = assembleContext(retrieved.candidates, { cwd: options.cwd, tokenBudget: options.tokenBudget });
+
+	writeSearchTrace(options.cwd, {
+		timestampMs: Date.now(),
+		query: options.query,
+		requestedMode: options.mode ?? "auto",
+		resolvedMode: retrieved.resolvedMode,
+		degradedReason: retrieved.degradedReason,
+		indexPhase: retrieved.indexPhase,
+		rrfK: retrieved.resolvedMode === "hybrid" ? retrieved.rrfK : undefined,
+		retrievers: retrieved.retrievers,
+		fused: retrieved.candidates.map(({ id, rrfScore, ranks, rawScores }) => ({ id, rrfScore, ranks, rawScores })),
 	});
 
 	return {
 		text: assembled.text,
-		resolvedMode: mode,
-		degradedReason: resolution.degradedReason,
-		resultCount: candidates.length,
-		indexing: state?.phase === "indexing" ? { done: state.done, total: state.total } : undefined,
+		resolvedMode: retrieved.resolvedMode,
+		degradedReason: retrieved.degradedReason,
+		resultCount: retrieved.candidates.length,
+		indexing: retrieved.indexing,
 	};
 }
