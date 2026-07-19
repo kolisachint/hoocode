@@ -380,14 +380,15 @@ ${chalk.bold("Options:")}
                                   DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for
                                   XML, drawio, docx/xlsx/pptx, PDF via the filetools binary
                                   Can also be enabled via the "enableFileTools" setting
-  --enable-search-tool           Enable the ranked search tool (off by default)
-                                  Registers a unified search tool with lexical, semantic, and
-                                  hybrid (rank-fused) modes. On session start, repos over the
-                                  size threshold are indexed with the embsearch binary (local
-                                  MiniLM embeddings, stored under ~/.hoocode/embsearch); until
-                                  the index is ready the tool runs lexical-only. grep/find are
-                                  unchanged. Requires embsearch on PATH or the
-                                  "embsearchBinaryPath" setting for semantic mode.
+  --enable-search-tool           Enable the semantic index for the search tool (off by default)
+                                  The unified search tool (lexical, semantic, hybrid rank-fused
+                                  modes) is always available and runs lexical-only by default.
+                                  This flag turns on the semantic layer: on session start, repos
+                                  over the size threshold are indexed with the embsearch binary
+                                  (local MiniLM embeddings, stored under ~/.hoocode/embsearch);
+                                  until the index is ready search still runs lexical-only, then
+                                  fuses semantic hits once ready. grep/find are unchanged.
+                                  Requires embsearch on PATH or the "embsearchBinaryPath" setting.
                                   Alias: --enable-embsearchtools (legacy)
                                   Can also be enabled via the "enableEmbsearchTools" setting
   --enable-plugintools           Enable the autonomous plugin system (off by default)

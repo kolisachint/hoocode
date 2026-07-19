@@ -155,7 +155,7 @@ export interface Settings {
 	enableBrowserTools?: boolean; // default: false - enable the browser_run + browser_continue tools (browsertools engine)
 	enableBrowserLivePreview?: boolean; // default: false - default the live viewer on for browser_run runs and auto-open it
 	enableFileTools?: boolean; // default: false - enable the document tools: DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary)
-	enableEmbsearchTools?: boolean; // default: false - enable the ranked search tool (lexical + semantic hybrid): index the repo with the embsearch binary and register the search tool. grep/find are unchanged.
+	enableEmbsearchTools?: boolean; // default: false - enable the semantic index layer for the always-on `search` tool: index the repo with the embsearch binary so search can fuse semantic hits. Off = search runs lexical-only. grep/find are unchanged.
 	embsearchBinaryPath?: string; // Path to the embsearch binary. Default: resolve "embsearch" from PATH.
 	embsearchThresholdBytes?: number; // default: 10485760 (10 MB) - minimum indexable source bytes before a repo is embedded; smaller repos skip embedding entirely
 	light?: boolean; // default: false - minimal low-token preset for small/local models: read/write/edit/bash only (short schemas), terse prompt, no subagents/TodoWrite/skills/context files/mode appendix. Same as the --light CLI flag.

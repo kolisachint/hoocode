@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The `search` tool is now **always available** by default, not gated behind
+  `--enable-search-tool` / `enableEmbsearchTools`. It answers "find where X
+  lives" with ranked results and degrades to grep-backed lexical retrieval
+  when no semantic index is present, so it needs no binary to be useful. The
+  `enableEmbsearchTools` flag/setting now controls only the **semantic index
+  layer**: when on, repos over the threshold are indexed with the embsearch
+  binary at session start and semantic hits are fused into search results;
+  when off, search runs lexical-only. `grep`/`find` are unchanged — `grep`
+  still owns exact/regex matching, call sites, and counts.
+
 ## [0.4.145] - 2026-07-18
 
 ## [0.4.144] - 2026-07-18
