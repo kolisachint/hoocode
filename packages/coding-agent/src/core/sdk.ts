@@ -326,7 +326,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+	// `search` is always active: it answers "find where X lives" with ranked
+	// results and degrades to grep-backed lexical retrieval when no semantic
+	// index is present, so it needs no binary to be useful. The
+	// `enableEmbsearchTools` flag only controls whether the semantic index is
+	// built and fused in (see main.ts) — not whether the tool exists.
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "search"];
 	// Web tools are registered as base tools but inactive by default; opt-in adds
 	// them to the default active set. An explicit allowlist (`tools`) takes over
 	// fully, so callers must list them there to enable in that mode.
@@ -334,7 +339,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		...(options.enableWebTools ? ["webfetch", "websearch"] : []),
 		...(options.enableBrowserTools ? ["browser_run", "browser_continue"] : []),
 		...(options.enableFileTools ? ["DocRead", "DocEdit", "DocWrite", "DocScan", "DocGrep", "DocPeek"] : []),
-		...(options.enableEmbsearchTools ? ["search"] : []),
 	] as ToolName[];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const initialActiveToolNames: string[] = options.tools

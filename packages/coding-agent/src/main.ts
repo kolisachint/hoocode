@@ -951,11 +951,13 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(1);
 	}
 
-	// Start the optional local embedding index service in the background. It is
-	// completely off unless --enable-search-tool (or the setting) is true; the
-	// search tool runs lexical-only until the index reports available.
+	// Start the optional local embedding index service in the background. The
+	// `search` tool is always available and runs lexical-only by default; this
+	// semantic-index layer is completely off unless --enable-search-tool (or the
+	// setting) is true. When on, the tool fuses semantic hits once the index
+	// reports available.
 	let embsearchService: EmbsearchService | undefined;
-	if (session.getActiveToolNames().includes("search")) {
+	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
 		let indexTask: ReturnType<typeof taskStore.create> | undefined;
 		const isInteractive = appMode === "interactive";
 		embsearchService = new EmbsearchService({

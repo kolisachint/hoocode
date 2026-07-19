@@ -45,8 +45,8 @@ export const DEFAULT_SETTINGS = {
 	enableBrowserTools: false,
 	enableBrowserLivePreview: false,
 	enableFileTools: false,
-	enableEmbsearchTools: false,
-	embsearchThresholdBytes: 10 * 1024 * 1024,
+	enableEmbsearchTools: true,
+	embsearchThresholdBytes: 0,
 	light: false,
 	terminal: {
 		showImages: true,

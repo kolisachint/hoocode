@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The `search` tool is now **always available** by default, not gated behind
+  `--enable-search-tool` / `enableEmbsearchTools`. It answers "find where X
+  lives" with ranked results and degrades to grep-backed lexical retrieval
+  when no semantic index is present, so it needs no binary to be useful. The
+  `enableEmbsearchTools` flag/setting now controls only the **semantic index
+  layer**: when on, semantic hits from the embsearch index are fused into
+  search results; when off, search runs lexical-only. `grep`/`find` are
+  unchanged — `grep` still owns exact/regex matching, call sites, and counts.
+- **Semantic search is now ON by default** (`enableEmbsearchTools` defaults to
+  `true`), and the repo size threshold is removed (`embsearchThresholdBytes`
+  defaults to `0`, so every repo is indexed regardless of size). On session
+  start the embsearch binary indexes the repo in the background; search runs
+  lexical-only until the index is ready, then fuses semantic hits. If the
+  embsearch binary is unavailable (offline, unsupported platform), search
+  degrades to lexical-only without error. Set `enableEmbsearchTools` to
+  `false` to opt out, or raise `embsearchThresholdBytes` to skip small repos.
+
 ## [0.4.145] - 2026-07-18
 
 ## [0.4.144] - 2026-07-18

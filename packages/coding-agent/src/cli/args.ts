@@ -380,16 +380,19 @@ ${chalk.bold("Options:")}
                                   DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for
                                   XML, drawio, docx/xlsx/pptx, PDF via the filetools binary
                                   Can also be enabled via the "enableFileTools" setting
-  --enable-search-tool           Enable the ranked search tool (off by default)
-                                  Registers a unified search tool with lexical, semantic, and
-                                  hybrid (rank-fused) modes. On session start, repos over the
-                                  size threshold are indexed with the embsearch binary (local
-                                  MiniLM embeddings, stored under ~/.hoocode/embsearch); until
-                                  the index is ready the tool runs lexical-only. grep/find are
-                                  unchanged. Requires embsearch on PATH or the
-                                  "embsearchBinaryPath" setting for semantic mode.
+  --enable-search-tool           Enable the semantic index for the search tool (on by default)
+                                  The unified search tool (lexical, semantic, hybrid rank-fused
+                                  modes) is always available. The semantic layer is now ON by
+                                  default: on session start every repo is indexed with the
+                                  embsearch binary (local MiniLM embeddings, stored under
+                                  ~/.hoocode/embsearch), regardless of size; until the index is
+                                  ready search runs lexical-only, then fuses semantic hits once
+                                  ready. grep/find are unchanged. Requires embsearch on PATH or
+                                  the "embsearchBinaryPath" setting; degrades to lexical-only if
+                                  the binary is unavailable. Disable via the "enableEmbsearchTools"
+                                  setting (false), or raise "embsearchThresholdBytes" to skip
+                                  small repos.
                                   Alias: --enable-embsearchtools (legacy)
-                                  Can also be enabled via the "enableEmbsearchTools" setting
   --enable-plugintools           Enable the autonomous plugin system (off by default)
                                   Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and
                                   ProposePlugin, plus the runtime plugin-reuse nudge
