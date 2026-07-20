@@ -103,11 +103,11 @@ export function createSearchToolDefinition(
 		name: "search",
 		label: "search",
 		description:
-			"Find where code lives: ranked file:line-range results from exact-text (grep-backed) and semantic (local embedding index) retrieval, fused by rank when both are available. Use search when you want to locate something — a concept, a behavior, or an identifier you only half-know; use grep when you want exact matching lines (call sites, counts, context). The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the semantic index is unavailable.",
+			"Find where code lives: ranked file:line-range results from exact-text and semantic (local embedding index) retrieval, fused by rank when both are available. Use search when you want to locate something — a concept, a behavior, or an identifier. Use grep when you want exact matching lines (call sites, counts, context). The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the semantic index is unavailable.",
 		promptSnippet: "Ranked code search (exact + semantic, rank-fused)",
 		promptGuidelines: [
-			"Use search to locate code by concept or half-known name; use grep for exact matching lines, call sites, and regexes.",
-			"The default mode (auto) is almost always right — only force lexical/semantic/hybrid deliberately. Use a smaller limit (e.g. 3) for targeted lookups to save context.",
+			"Start with search when you need to find where code lives, identify relevant files, or match a concept, behavior, or half-known name. Use grep when you need exact-line enumeration, regexes, call-site counts, or raw context.",
+			"The default mode (auto) is almost always right — only force lexical/semantic/hybrid deliberately. Use limit=3 for very targeted lookups; raise limit to 10–20 when exploring a broad topic.",
 		],
 		parameters: searchSchema,
 		async execute(_toolCallId, { query, mode, glob, limit }: SearchToolInput, signal?: AbortSignal) {
