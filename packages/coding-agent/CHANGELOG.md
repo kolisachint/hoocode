@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Surfaced the `search` tool more prominently in the default system prompt: it is now listed first in file-exploration guidance, its description no longer frames it as "grep-backed", and its guidelines encourage starting with search for discovery while reserving `grep` for exact-line/regex enumeration.
+
 ## [0.4.146] - 2026-07-19
 
 ### Changed

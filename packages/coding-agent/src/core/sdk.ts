@@ -104,12 +104,11 @@ export interface CreateAgentSessionOptions {
 	 */
 	enableFileTools?: boolean;
 	/**
-	 * Enable the built-in `search` tool (ranked lexical + semantic retrieval,
-	 * rank-fused; the semantic side uses a local embedding index via the
-	 * `embsearch` binary). Defined but inactive by default. Ignored when an
-	 * explicit `tools` allowlist is provided (list it there instead). While the
-	 * per-session index service is unavailable the tool degrades to lexical
-	 * retrieval instead of erroring.
+	 * Enable the semantic index layer for the built-in `search` tool (ranked
+	 * lexical + semantic retrieval, rank-fused). The search tool is active by
+	 * default; this flag only toggles the optional embedding index. When false,
+	 * search degrades to lexical-only. Ignored when an explicit `tools` allowlist
+	 * is provided (list it there instead).
 	 */
 	enableEmbsearchTools?: boolean;
 	/** Custom tools to register (in addition to built-in tools). */

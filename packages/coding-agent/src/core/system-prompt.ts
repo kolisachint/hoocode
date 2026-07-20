@@ -9,7 +9,7 @@ import { formatSkillsForPrompt, type Skill } from "./skills.js";
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
-	/** Tools to include in prompt. Default: [read, bash, edit, write, grep, find, ls] */
+	/** Tools to include in prompt. Default: [read, bash, edit, write, search, grep, find, ls] */
 	selectedTools?: string[];
 	/** Optional one-line tool snippets keyed by tool name. */
 	toolSnippets?: Record<string, string>;
@@ -96,7 +96,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Build tools list based on selected tools.
 	// A tool appears in Available tools only when the caller provides a one-line snippet.
-	const tools = selectedTools || ["read", "bash", "edit", "write", "grep", "find", "ls"];
+	const tools = selectedTools || ["read", "bash", "edit", "write", "search", "grep", "find", "ls"];
 	const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
 	const toolsList =
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets![name]}`).join("\n") : "(none)";
@@ -113,6 +113,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	};
 
 	const hasBash = tools.includes("bash");
+	const hasSearch = tools.includes("search");
 	const hasGrep = tools.includes("grep");
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
@@ -123,12 +124,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// names, advertising tools that might not exist) and map each to its job so
 	// the model picks the right one instead of defaulting to its bash habit.
 	const explore: string[] = [];
-	if (hasGrep) explore.push("grep (search file contents)");
+	if (hasSearch) explore.push("search (find where code lives by concept or identifier)");
+	if (hasGrep) explore.push("grep (exact line/regex search)");
 	if (hasFind) explore.push("find (locate files by name/glob)");
 	if (hasLs) explore.push("ls (list directory contents)");
 	if (explore.length > 0) {
 		addGuideline(
-			`For file exploration use the dedicated tools — ${explore.join(", ")} — instead of bash (grep/find/ls in the shell); they are faster, and respect .gitignore where applicable`,
+			`For file exploration use the dedicated tools — ${explore.join(", ")} — instead of bash; they are faster, and respect .gitignore where applicable`,
 		);
 	} else if (hasBash) {
 		addGuideline("Use bash for file exploration (ls, rg/grep, find)");

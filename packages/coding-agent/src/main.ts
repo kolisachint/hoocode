@@ -453,10 +453,9 @@ function buildSessionOptions(
 	if (parsed.enableWebTools ?? settingsManager.getEnableWebTools()) {
 		options.enableWebTools = true;
 	}
-	// Ranked code search (search tool, lexical + semantic hybrid): opt-in via
-	// --enable-search-tool (or legacy --enable-embsearchtools) or the
-	// enableEmbsearchTools setting. Registered as a base tool but inactive by
-	// default; this adds it to the default active set.
+	// Ranked code search (search tool, lexical + semantic hybrid). The search tool
+	// is active by default. The enableEmbsearchTools setting controls whether the
+	// optional semantic index layer starts; when off, search degrades to lexical-only.
 	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
 		options.enableEmbsearchTools = true;
 	}
