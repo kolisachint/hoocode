@@ -13,10 +13,13 @@
  *
  *   A `read` result for a path P is stale once, later in the transcript, the
  *   same path is edited/written (its on-disk content changed) or read again
- *   (the newer read reflects newer state). The most recent read of each path is
- *   always kept, and a read is only evicted when a *successful* later event
- *   supersedes it — so a read whose edit failed (and which the model still needs
- *   to retry) is never touched.
+ *   over an overlapping line range (the newer read reflects that region's newer
+ *   state). Reads of disjoint regions of the same file coexist — a later read of
+ *   lines 200-260 does not evict an earlier read of lines 1-40 — so paginating
+ *   through a large file never makes the model re-fetch a region it already has.
+ *   A read is only evicted when a *successful* later event supersedes it — so a
+ *   read whose edit failed (and which the model still needs to retry) is never
+ *   touched.
  *
  * Deliberately conservative: paths are matched after `path.resolve`, so two
  * different files never collide, and any ambiguity results in NOT evicting.
@@ -83,6 +86,35 @@ function isToolResult(m: AgentMessage): m is AgentMessage & ToolResultLike {
 	return (m as { role?: string }).role === "toolResult";
 }
 
+/** Half-open line interval [start, end) a read call covers; end is exclusive. */
+interface ReadRange {
+	start: number;
+	end: number;
+}
+
+/**
+ * Derive the line range a read call covers from its `offset`/`limit` args.
+ * Missing offset means "from line 1"; missing limit means "to end of file"
+ * (open-ended, so it overlaps any later read of the same file).
+ */
+function readRangeFromArgs(args: Record<string, unknown> | undefined): ReadRange {
+	const offsetRaw = args?.offset;
+	const limitRaw = args?.limit;
+	const offset = typeof offsetRaw === "number" && Number.isFinite(offsetRaw) && offsetRaw > 0 ? offsetRaw : 1;
+	const end =
+		typeof limitRaw === "number" && Number.isFinite(limitRaw)
+			? offset + Math.max(0, limitRaw)
+			: Number.POSITIVE_INFINITY;
+	return { start: offset, end };
+}
+
+/** Whether two half-open line ranges intersect. */
+function rangesOverlap(a: ReadRange, b: ReadRange): boolean {
+	return a.start < b.end && b.start < a.end;
+}
+
+const WHOLE_FILE_RANGE: ReadRange = { start: 1, end: Number.POSITIVE_INFINITY };
+
 /**
  * Return a message array with superseded `read` results stubbed out. Returns the
  * original array reference unchanged when there is nothing to evict, so a
@@ -96,6 +128,9 @@ export function evictSupersededReads(messages: AgentMessage[], options: ContextG
 	// Bash calls carry a `command`, not a `path`; capture it so the eviction
 	// pass can consult the side-effect guard by tool call id.
 	const bashCommandByCallId = new Map<string, string>();
+	// Read calls carry `offset`/`limit`; capture the line range each covers so a
+	// later read only supersedes an earlier one when their ranges overlap.
+	const rangeByCallId = new Map<string, ReadRange>();
 	for (const m of messages) {
 		if (!isAssistant(m)) continue;
 		for (const block of m.content) {
@@ -108,21 +143,26 @@ export function evictSupersededReads(messages: AgentMessage[], options: ContextG
 			if (typeof rawPath !== "string" || rawPath.length === 0) continue;
 			const resolved = resolve(options.cwd, rawPath);
 			resolvedPathByCallId.set(block.id, resolved);
+			if (block.name && READ_TOOLS.has(block.name)) rangeByCallId.set(block.id, readRangeFromArgs(block.arguments));
 			if (!displayPathByResolved.has(resolved)) displayPathByResolved.set(resolved, rawPath);
 		}
 	}
 
-	// First pass: per path, the index of the last read and the last successful
-	// mutate. A read at index i is superseded when a later read (index > i) or a
-	// later successful mutate (index > i) exists for the same path.
-	const lastReadIndex = new Map<string, number>();
+	// First pass: per path, collect every successful read (index + line range)
+	// and the last successful mutate. A read at index i is superseded when a later
+	// successful mutate exists (index > i, whole file changed) or a later read of
+	// an overlapping range exists (index > i) for the same path.
+	const readsByPath = new Map<string, Array<{ index: number; range: ReadRange }>>();
 	const lastMutateIndex = new Map<string, number>();
 	messages.forEach((m, i) => {
 		if (!isToolResult(m) || m.isError) return;
 		const path = resolvedPathByCallId.get(m.toolCallId);
 		if (!path) return;
 		if (READ_TOOLS.has(m.toolName)) {
-			lastReadIndex.set(path, i);
+			const range = rangeByCallId.get(m.toolCallId) ?? WHOLE_FILE_RANGE;
+			const list = readsByPath.get(path);
+			if (list) list.push({ index: i, range });
+			else readsByPath.set(path, [{ index: i, range }]);
 		} else if (MUTATE_TOOLS.has(m.toolName)) {
 			lastMutateIndex.set(path, i);
 		}
@@ -140,9 +180,12 @@ export function evictSupersededReads(messages: AgentMessage[], options: ContextG
 		if (READ_TOOLS.has(m.toolName)) {
 			const path = resolvedPathByCallId.get(m.toolCallId);
 			if (!path) return m;
-			const laterRead = (lastReadIndex.get(path) ?? -1) > i;
+			const range = rangeByCallId.get(m.toolCallId) ?? WHOLE_FILE_RANGE;
 			const laterMutate = (lastMutateIndex.get(path) ?? -1) > i;
-			if (!laterRead && !laterMutate) return m;
+			const laterOverlappingRead = (readsByPath.get(path) ?? []).some(
+				(r) => r.index > i && rangesOverlap(r.range, range),
+			);
+			if (!laterOverlappingRead && !laterMutate) return m;
 			changed = true;
 			const display = displayPathByResolved.get(path) ?? path;
 			const reason = laterMutate ? "the file was modified after this read" : "the file was read again later";
