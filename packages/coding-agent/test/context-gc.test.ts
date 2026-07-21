@@ -12,6 +12,13 @@ function assistantCall(id: string, name: string, path: string): AgentMessage {
 	} as unknown as AgentMessage;
 }
 
+function readRangeCall(id: string, path: string, offset?: number, limit?: number): AgentMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "toolCall", id, name: "read", arguments: { path, offset, limit } }],
+	} as unknown as AgentMessage;
+}
+
 function bashCall(id: string, command: string): AgentMessage {
 	return {
 		role: "assistant",
@@ -118,6 +125,80 @@ describe("evictSupersededReads", () => {
 		const out = evictSupersededReads(messages, { cwd: CWD });
 		expect(out).toBe(messages);
 		expect(textOf(out[1])).toBe("ONLY READ");
+	});
+});
+
+describe("evictSupersededReads — offset-aware read ranges", () => {
+	it("keeps two reads of disjoint line ranges of the same file", () => {
+		const messages = [
+			readRangeCall("c1", "src/big.rs", 1, 40),
+			readResult("c1", "HEADER REGION"),
+			readRangeCall("c2", "src/big.rs", 200, 60),
+			readResult("c2", "TAIL REGION"),
+		];
+		const out = evictSupersededReads(messages, { cwd: CWD });
+		// Neither read overlaps the other, so both survive untouched.
+		expect(out).toBe(messages);
+		expect(textOf(out[1])).toBe("HEADER REGION");
+		expect(textOf(out[3])).toBe("TAIL REGION");
+	});
+
+	it("does not ping-pong between two alternating non-overlapping regions", () => {
+		// Reproduces the read loop: the model alternates between two disjoint
+		// windows of one file. Every region must stay hydrated; nothing is stubbed.
+		const messages = [
+			readRangeCall("c1", "src/big.rs", 609, 12),
+			readResult("c1", "SSE CONST REGION"),
+			readRangeCall("c2", "src/big.rs", 621, 40),
+			readResult("c2", "ASSERTIONS REGION"),
+			readRangeCall("c3", "src/big.rs", 609, 12),
+			readResult("c3", "SSE CONST REGION"),
+		];
+		const out = evictSupersededReads(messages, { cwd: CWD });
+		// c1 is superseded by c3 (same 609 region), so it is stubbed; c2 (disjoint)
+		// and c3 (latest) both stay hydrated.
+		expect(textOf(out[1])).toContain("Superseded read");
+		expect(textOf(out[3])).toBe("ASSERTIONS REGION");
+		expect(textOf(out[5])).toBe("SSE CONST REGION");
+	});
+
+	it("stubs an earlier read when a later read overlaps its range", () => {
+		const messages = [
+			readRangeCall("c1", "src/big.rs", 10, 50), // lines 10-59
+			readResult("c1", "FIRST"),
+			readRangeCall("c2", "src/big.rs", 40, 50), // lines 40-89, overlaps 40-59
+			readResult("c2", "SECOND"),
+		];
+		const out = evictSupersededReads(messages, { cwd: CWD });
+		expect(textOf(out[1])).toContain("Superseded read");
+		expect(textOf(out[3])).toBe("SECOND");
+	});
+
+	it("treats a whole-file read (no offset/limit) as overlapping any ranged read", () => {
+		const messages = [
+			readRangeCall("c1", "src/big.rs", 500, 20),
+			readResult("c1", "NARROW WINDOW"),
+			readRangeCall("c2", "src/big.rs"), // whole file
+			readResult("c2", "WHOLE FILE"),
+		];
+		const out = evictSupersededReads(messages, { cwd: CWD });
+		expect(textOf(out[1])).toContain("Superseded read");
+		expect(textOf(out[3])).toBe("WHOLE FILE");
+	});
+
+	it("stubs all disjoint reads of a file once it is mutated", () => {
+		const messages = [
+			readRangeCall("c1", "src/big.rs", 1, 40),
+			readResult("c1", "HEADER REGION"),
+			readRangeCall("c2", "src/big.rs", 200, 60),
+			readResult("c2", "TAIL REGION"),
+			assistantCall("c3", "edit", "src/big.rs"),
+			mutateResult("c3", "edit"),
+		];
+		const out = evictSupersededReads(messages, { cwd: CWD });
+		// A mutate changes the whole file on disk, so every earlier read is stale.
+		expect(textOf(out[1])).toContain("the file was modified after this read");
+		expect(textOf(out[3])).toContain("the file was modified after this read");
 	});
 });
 

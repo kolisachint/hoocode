@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Context GC no longer evicts a `read` result just because the same file was read again over a **different** line range. Eviction is now range-aware: a read is superseded only by a later read whose `offset`/`limit` window overlaps it (or by any later edit/write). This fixes a read loop where alternating reads of two disjoint regions of one large file would repeatedly stub each other, and the "Re-read the file if you need its current contents" hint would drive the model to re-read indefinitely.
+
 ## [0.4.147] - 2026-07-20
 
 ### Changed
