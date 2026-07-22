@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the default `toolOutput.maxBytes` cap from 16KB to 32KB (and the
+  matching `DEFAULT_MAX_BYTES` constant). Dense prose files (e.g. a ~17KB
+  markdown doc) now load in a single `read` instead of being truncated
+  mid-file by the byte cap and paged back in via 4+ overlapping
+  offset-reads. The 800-line cap is unchanged, and the value remains
+  configurable via the `toolOutput` setting.
+
 ## [0.4.149] - 2026-07-22
 
 ## [0.4.148] - 2026-07-21
