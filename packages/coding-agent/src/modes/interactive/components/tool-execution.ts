@@ -17,9 +17,18 @@ import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/rend
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
 
+/**
+ * How a tool block's result body is displayed:
+ * - "standard": result shown (truncated preview, expandable) — the default.
+ * - "collapsed": result hidden; only the call line + status dot render.
+ * - "peek": result hidden by default with a ▸ affordance; the expand key reveals it.
+ */
+export type ToolOutputDisplayLevel = "collapsed" | "peek" | "standard";
+
 export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
+	displayLevel?: ToolOutputDisplayLevel;
 }
 
 /**
@@ -76,6 +85,11 @@ export class ToolExecutionComponent extends Container {
 	private toolCallId: string;
 	private args: any;
 	private expanded = false;
+	// Persisted display level (collapsed/peek/standard). Controls whether the
+	// result body renders at all; `revealed` is the per-block override that the
+	// global expand key flips for collapsed/peek blocks.
+	private displayLevel: ToolOutputDisplayLevel;
+	private revealed = false;
 	private showImages: boolean;
 	private imageWidthCells: number;
 	private isPartial = true;
@@ -124,6 +138,7 @@ export class ToolExecutionComponent extends Container {
 		this.builtInToolDefinition = createAllToolDefinitions(cwd)[toolName as ToolName];
 		this.showImages = options.showImages ?? true;
 		this.imageWidthCells = options.imageWidthCells ?? 60;
+		this.displayLevel = options.displayLevel ?? "standard";
 		this.ui = ui;
 		this.cwd = cwd;
 
@@ -271,7 +286,20 @@ export class ToolExecutionComponent extends Container {
 
 	setExpanded(expanded: boolean): void {
 		this.expanded = expanded;
+		// For collapsed/peek blocks the same global toggle reveals the hidden body;
+		// for standard blocks `expanded` alone switches truncated ↔ full.
+		this.revealed = expanded;
 		this.updateDisplay();
+	}
+
+	setDisplayLevel(level: ToolOutputDisplayLevel): void {
+		this.displayLevel = level;
+		this.updateDisplay();
+	}
+
+	/** Whether the result body should render given the level and reveal state. */
+	private shouldShowBody(): boolean {
+		return this.displayLevel === "standard" || this.revealed;
 	}
 
 	setShowImages(show: boolean): void {
@@ -362,7 +390,9 @@ export class ToolExecutionComponent extends Container {
 			// The dot is prepended to the first line of the call renderer so it stays inline
 			// (adding it as a separate child would stack it on its own line).
 			const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
-			const dot = theme.fg(dotColor, "● ");
+			// Peek blocks advertise their hidden body with a ▸/▾ caret before the dot.
+			const caret = this.displayLevel === "peek" ? theme.fg("muted", this.revealed ? "▾ " : "▸ ") : "";
+			const dot = caret + theme.fg(dotColor, "● ");
 
 			const callRenderer = this.getCallRenderer();
 			if (!callRenderer) {
@@ -381,7 +411,7 @@ export class ToolExecutionComponent extends Container {
 				}
 			}
 
-			if (this.result) {
+			if (this.result && this.shouldShowBody()) {
 				const resultRenderer = this.getResultRenderer();
 				if (!resultRenderer) {
 					const component = this.createResultFallback();
@@ -463,12 +493,13 @@ export class ToolExecutionComponent extends Container {
 
 	private formatToolExecution(): string {
 		const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
-		let text = theme.fg(dotColor, "● ") + theme.fg("toolTitle", theme.bold(this.toolName));
+		const caret = this.displayLevel === "peek" ? theme.fg("muted", this.revealed ? "▾ " : "▸ ") : "";
+		let text = caret + theme.fg(dotColor, "● ") + theme.fg("toolTitle", theme.bold(this.toolName));
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;
 		}
-		const output = this.getTextOutput();
+		const output = this.shouldShowBody() ? this.getTextOutput() : "";
 		if (output) {
 			text += `\n${output}`;
 		}

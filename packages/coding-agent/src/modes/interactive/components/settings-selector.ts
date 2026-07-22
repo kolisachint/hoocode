@@ -40,6 +40,7 @@ export interface ToolToggleInfo {
 export interface SettingsConfig {
 	autoCompact: boolean;
 	tools: ToolToggleInfo[];
+	toolOutputDisplay: "collapsed" | "peek" | "standard";
 	showImages: boolean;
 	imageWidthCells: number;
 	autoResizeImages: boolean;
@@ -69,6 +70,7 @@ export interface SettingsConfig {
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onToolEnabledChange: (name: string, enabled: boolean) => void;
+	onToolOutputDisplayChange: (level: "collapsed" | "peek" | "standard") => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onImageWidthCellsChange: (width: number) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
@@ -294,6 +296,14 @@ export class SettingsSelectorComponent extends Container {
 						(name, enabled) => callbacks.onToolEnabledChange(name, enabled),
 						() => done(),
 					),
+			},
+			{
+				id: "tool-output-display",
+				label: "Tool output display",
+				description:
+					"How tool results render. 'standard': shown (expandable). 'collapsed': hidden. 'peek': hidden with a ▸ reveal caret (press the expand key to reveal).",
+				currentValue: config.toolOutputDisplay,
+				values: ["standard", "collapsed", "peek"],
 			},
 			{
 				id: "steering-mode",
@@ -536,6 +546,9 @@ export class SettingsSelectorComponent extends Container {
 				switch (id) {
 					case "autocompact":
 						callbacks.onAutoCompactChange(newValue === "true");
+						break;
+					case "tool-output-display":
+						callbacks.onToolOutputDisplayChange(newValue as "collapsed" | "peek" | "standard");
 						break;
 					case "show-images":
 						callbacks.onShowImagesChange(newValue === "true");

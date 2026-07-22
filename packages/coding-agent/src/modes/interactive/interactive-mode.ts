@@ -241,6 +241,8 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+	// Persisted tool-output display level (collapsed / peek / standard).
+	private toolOutputDisplay: "collapsed" | "peek" | "standard" = "standard";
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -514,6 +516,9 @@ export class InteractiveMode {
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+
+		// Load tool-output display level
+		this.toolOutputDisplay = this.settingsManager.getToolOutputDisplay();
 
 		// Completion chime: rings the terminal bell when a long turn finishes or the
 		// agent blocks awaiting input. Enable is read fresh so a live toggle applies.
@@ -1929,6 +1934,7 @@ export class InteractiveMode {
 									{
 										showImages: this.settingsManager.getShowImages(),
 										imageWidthCells: this.settingsManager.getImageWidthCells(),
+										displayLevel: this.toolOutputDisplay,
 									},
 									this.getRegisteredToolDefinition(content.name),
 									this.ui,
@@ -2003,6 +2009,7 @@ export class InteractiveMode {
 						{
 							showImages: this.settingsManager.getShowImages(),
 							imageWidthCells: this.settingsManager.getImageWidthCells(),
+							displayLevel: this.toolOutputDisplay,
 						},
 						this.getRegisteredToolDefinition(event.toolName),
 						this.ui,
@@ -2357,6 +2364,7 @@ export class InteractiveMode {
 							{
 								showImages: this.settingsManager.getShowImages(),
 								imageWidthCells: this.settingsManager.getImageWidthCells(),
+								displayLevel: this.toolOutputDisplay,
 							},
 							this.getRegisteredToolDefinition(content.name),
 							this.ui,
@@ -2823,6 +2831,7 @@ export class InteractiveMode {
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					tools: toolToggles,
+					toolOutputDisplay: this.toolOutputDisplay,
 					showImages: this.settingsManager.getShowImages(),
 					imageWidthCells: this.settingsManager.getImageWidthCells(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
@@ -2876,6 +2885,16 @@ export class InteractiveMode {
 						}
 						this.session.setActiveToolsByName([...active]);
 						this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
+					},
+					onToolOutputDisplayChange: (level) => {
+						this.toolOutputDisplay = level;
+						this.settingsManager.setToolOutputDisplay(level);
+						for (const child of this.chatContainer.children) {
+							if (child instanceof ToolExecutionComponent) {
+								child.setDisplayLevel(level);
+							}
+						}
+						this.ui.requestRender();
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);

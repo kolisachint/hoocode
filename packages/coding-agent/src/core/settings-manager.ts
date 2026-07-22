@@ -552,6 +552,18 @@ export class SettingsManager {
 		this.save();
 	}
 
+	/** How tool result bodies render in the TUI (collapsed / peek / standard). */
+	getToolOutputDisplay(): "collapsed" | "peek" | "standard" {
+		const v = this.settings.toolOutputDisplay;
+		return v === "collapsed" || v === "peek" || v === "standard" ? v : DEFAULT_SETTINGS.toolOutputDisplay!;
+	}
+
+	setToolOutputDisplay(display: "collapsed" | "peek" | "standard"): void {
+		this.globalSettings.toolOutputDisplay = display;
+		this.markModified("toolOutputDisplay");
+		this.save();
+	}
+
 	getBranchSummarySettings(): Required<BranchSummarySettings> {
 		return { ...DEFAULT_SETTINGS.branchSummary, ...this.settings.branchSummary };
 	}

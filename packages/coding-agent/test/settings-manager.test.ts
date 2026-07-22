@@ -145,6 +145,27 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("toolOutputDisplay", () => {
+		it("defaults to standard", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getToolOutputDisplay()).toBe("standard");
+		});
+
+		it("round-trips a valid value and rejects an invalid one", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setToolOutputDisplay("peek");
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).toolOutputDisplay).toBe("peek");
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputDisplay()).toBe("peek");
+
+			// An externally written bogus value falls back to the default.
+			writeFileSync(settingsPath, JSON.stringify({ toolOutputDisplay: "bogus" }));
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputDisplay()).toBe("standard");
+		});
+	});
+
 	describe("packages migration", () => {
 		it("should keep local-only extensions in extensions array", () => {
 			const settingsPath = join(agentDir, "settings.json");
