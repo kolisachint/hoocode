@@ -3,7 +3,7 @@
  *
  * Truncation is based on two independent limits - whichever is hit first wins:
  * - Line limit (default: 800 lines)
- * - Byte limit (default: 16KB)
+ * - Byte limit (default: 32KB)
  *
  * These caps bound how much a single tool result can inject into the transcript.
  * Because the whole transcript is re-sent every turn, one oversized result is
@@ -15,7 +15,7 @@
  */
 
 export const DEFAULT_MAX_LINES = 800;
-export const DEFAULT_MAX_BYTES = 16 * 1024; // 16KB
+export const DEFAULT_MAX_BYTES = 32 * 1024; // 32KB
 export const GREP_MAX_LINE_LENGTH = 500; // Max chars per grep match line
 
 export interface TruncationResult {
@@ -44,9 +44,9 @@ export interface TruncationResult {
 }
 
 export interface TruncationOptions {
-	/** Maximum number of lines (default: 2000) */
+	/** Maximum number of lines (default: DEFAULT_MAX_LINES) */
 	maxLines?: number;
-	/** Maximum number of bytes (default: 50KB) */
+	/** Maximum number of bytes (default: DEFAULT_MAX_BYTES) */
 	maxBytes?: number;
 }
 

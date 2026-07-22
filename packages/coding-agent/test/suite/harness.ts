@@ -62,6 +62,14 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
+	/**
+	 * Build the real built-in tools (via AgentSession's own tool pipeline) instead
+	 * of injecting them through `baseToolsOverride`. The override path executes
+	 * tools without an `ExtensionContext`, so tools that consult `ctx` (e.g. the
+	 * read dedup guard, which needs `ctx.sessionManager`) only work on this path.
+	 * When true, `options.tools` is ignored.
+	 */
+	useRealBuiltinTools?: boolean;
 }
 
 export interface Harness {
@@ -180,7 +188,9 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		cwd: tempDir,
 		modelRegistry,
 		resourceLoader,
-		baseToolsOverride: toolMap,
+		// Omitting the override makes AgentSession build the real built-in tools,
+		// which are wrapped with an ExtensionContext (needed for ctx-dependent tools).
+		...(options.useRealBuiltinTools ? {} : { baseToolsOverride: toolMap }),
 		extensionRunnerRef,
 	});
 

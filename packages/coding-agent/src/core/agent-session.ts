@@ -2033,7 +2033,12 @@ export class AgentSession {
 					]),
 				)
 			: createAllToolDefinitions(this._cwd, {
-					read: { autoResizeImages, maxOutputBytes: toolMaxOutputBytes, maxOutputLines: toolMaxOutputLines },
+					read: {
+						autoResizeImages,
+						maxOutputBytes: toolMaxOutputBytes,
+						maxOutputLines: toolMaxOutputLines,
+						dedupReads: this.settingsManager.getContextGcEnabled(),
+					},
 					bash: {
 						commandPrefix: shellCommandPrefix,
 						shellPath,

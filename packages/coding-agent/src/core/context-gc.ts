@@ -24,6 +24,11 @@
  * Deliberately conservative: paths are matched after `path.resolve`, so two
  * different files never collide, and any ambiguity results in NOT evicting.
  *
+ * This post-hoc pass is complemented by an at-call-time guard in the `read`
+ * tool (see `tools/read-dedup.ts`), which short-circuits a redundant re-read
+ * before it fetches. Both share the range math in that module, and this pass
+ * skips the guard's pointer results so they never supersede the read they name.
+ *
  * Bash-output eviction is additionally gated on token-budget pressure
  * (`options.budgetPressure`, the fraction of the model's context window in
  * use). At 0 pressure — the default — behaviour is identical to read-only GC.
@@ -35,6 +40,13 @@
 
 import { resolve } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
+import {
+	isDedupPointerText,
+	type ReadRange,
+	rangesOverlap,
+	readRangeFromArgs,
+	WHOLE_FILE_RANGE,
+} from "./tools/read-dedup.js";
 
 /** Tool names whose result injects file contents into the transcript. */
 const READ_TOOLS = new Set(["read"]);
@@ -86,34 +98,13 @@ function isToolResult(m: AgentMessage): m is AgentMessage & ToolResultLike {
 	return (m as { role?: string }).role === "toolResult";
 }
 
-/** Half-open line interval [start, end) a read call covers; end is exclusive. */
-interface ReadRange {
-	start: number;
-	end: number;
+/** Concatenated text of a tool result's text blocks. */
+function toolResultText(m: ToolResultLike): string {
+	return m.content
+		.filter((c) => c.type === "text")
+		.map((c) => c.text ?? "")
+		.join("");
 }
-
-/**
- * Derive the line range a read call covers from its `offset`/`limit` args.
- * Missing offset means "from line 1"; missing limit means "to end of file"
- * (open-ended, so it overlaps any later read of the same file).
- */
-function readRangeFromArgs(args: Record<string, unknown> | undefined): ReadRange {
-	const offsetRaw = args?.offset;
-	const limitRaw = args?.limit;
-	const offset = typeof offsetRaw === "number" && Number.isFinite(offsetRaw) && offsetRaw > 0 ? offsetRaw : 1;
-	const end =
-		typeof limitRaw === "number" && Number.isFinite(limitRaw)
-			? offset + Math.max(0, limitRaw)
-			: Number.POSITIVE_INFINITY;
-	return { start: offset, end };
-}
-
-/** Whether two half-open line ranges intersect. */
-function rangesOverlap(a: ReadRange, b: ReadRange): boolean {
-	return a.start < b.end && b.start < a.end;
-}
-
-const WHOLE_FILE_RANGE: ReadRange = { start: 1, end: Number.POSITIVE_INFINITY };
 
 /**
  * Return a message array with superseded `read` results stubbed out. Returns the
@@ -159,6 +150,9 @@ export function evictSupersededReads(messages: AgentMessage[], options: ContextG
 		const path = resolvedPathByCallId.get(m.toolCallId);
 		if (!path) return;
 		if (READ_TOOLS.has(m.toolName)) {
+			// A dedup pointer fetched no content, so it must not supersede (stub) the
+			// earlier read it points at — leave it out of the supersession bookkeeping.
+			if (isDedupPointerText(toolResultText(m))) return;
 			const range = rangeByCallId.get(m.toolCallId) ?? WHOLE_FILE_RANGE;
 			const list = readsByPath.get(path);
 			if (list) list.push({ index: i, range });
@@ -180,6 +174,8 @@ export function evictSupersededReads(messages: AgentMessage[], options: ContextG
 		if (READ_TOOLS.has(m.toolName)) {
 			const path = resolvedPathByCallId.get(m.toolCallId);
 			if (!path) return m;
+			// Leave at-call dedup pointers as-is; they are already minimal.
+			if (isDedupPointerText(toolResultText(m))) return m;
 			const range = rangeByCallId.get(m.toolCallId) ?? WHOLE_FILE_RANGE;
 			const laterMutate = (lastMutateIndex.get(path) ?? -1) > i;
 			const laterOverlappingRead = (readsByPath.get(path) ?? []).some(

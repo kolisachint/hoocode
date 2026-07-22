@@ -14,6 +14,7 @@ import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveReadPath } from "./path-utils.js";
+import { buildDedupPointerText, findCoveringRead, readRangeFromArgs } from "./read-dedup.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
@@ -84,6 +85,13 @@ export interface ReadToolOptions {
 	maxOutputBytes?: number;
 	/** Line cap on the returned text before truncation. Default: DEFAULT_MAX_LINES. */
 	maxOutputLines?: number;
+	/**
+	 * When true, a text read whose requested line range is already fully covered
+	 * by an earlier, still-live read in the current session short-circuits with a
+	 * pointer instead of re-fetching the file. Complements the post-hoc context
+	 * GC; gated on the same setting. Default: false.
+	 */
+	dedupReads?: boolean;
 }
 
 type ReadRenderArgs = { path?: string; file_path?: string; offset?: number; limit?: number };
@@ -235,6 +243,7 @@ export function createReadToolDefinition(
 	const ops = options?.operations ?? defaultReadOperations;
 	const maxBytes = options?.maxOutputBytes ?? DEFAULT_MAX_BYTES;
 	const maxLines = options?.maxOutputLines ?? DEFAULT_MAX_LINES;
+	const dedupReads = options?.dedupReads ?? false;
 	return {
 		name: "read",
 		label: "read",
@@ -243,7 +252,7 @@ export function createReadToolDefinition(
 		promptGuidelines: ["Use read to examine files instead of cat or sed."],
 		parameters: readSchema,
 		async execute(
-			_toolCallId,
+			toolCallId,
 			{ path, offset, limit }: { path: string; offset?: number; limit?: number },
 			signal?: AbortSignal,
 			_onUpdate?,
@@ -272,7 +281,21 @@ export function createReadToolDefinition(
 							let content: (TextContent | ImageContent)[];
 							let details: ReadToolDetails | undefined;
 							const nonVisionImageNote = getNonVisionImageNote(ctx?.model);
-							if (mimeType) {
+							// At-call dedup: for plain-text reads, if an earlier still-live read
+							// in this session already covers the requested range, point at it
+							// instead of re-fetching. Skipped for images and structured docs.
+							const dedupCovering =
+								dedupReads && !mimeType && !getDocFormatHint(absolutePath) && ctx?.sessionManager
+									? findCoveringRead(ctx.sessionManager.getBranch(), {
+											resolvedPath: absolutePath,
+											requestedRange: readRangeFromArgs({ offset, limit }),
+											currentCallId: toolCallId,
+											resolvePath: (raw) => resolveReadPath(raw, cwd),
+										})
+									: null;
+							if (dedupCovering) {
+								content = [{ type: "text", text: buildDedupPointerText(dedupCovering) }];
+							} else if (mimeType) {
 								// Read image as binary.
 								const buffer = await ops.readFile(absolutePath);
 								const base64 = buffer.toString("base64");

@@ -11,7 +11,7 @@ export const DEFAULT_SETTINGS = {
 		maxContextRatio: 0.75,
 	},
 	toolOutput: {
-		maxBytes: 16 * 1024,
+		maxBytes: 32 * 1024,
 		maxLines: 800,
 	},
 	contextGc: {

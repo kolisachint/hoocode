@@ -16,7 +16,7 @@ export interface CompactionSettings {
 }
 
 export interface ToolOutputSettings {
-	maxBytes?: number; // default: 16384 (16KB) - byte cap on a single read/bash tool result before truncation
+	maxBytes?: number; // default: 32768 (32KB) - byte cap on a single read/bash tool result before truncation
 	maxLines?: number; // default: 800 - line cap on a single read/bash tool result before truncation
 }
 

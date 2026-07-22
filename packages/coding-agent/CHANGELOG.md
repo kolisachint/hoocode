@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added
+
+- At-call-time read de-duplication (gated on `contextGc.enabled`, the same
+  setting as the post-hoc GC). When the model issues a `read` whose requested
+  line range is already fully covered by an earlier, still-live read in the
+  session, the tool returns a short pointer instead of re-fetching the file.
+  This complements `evictSupersededReads` (which stubs superseded reads on the
+  way out) by preventing the redundant re-fetch up front. The guard is
+  deliberately conservative: a cap-truncated earlier read only covers what it
+  actually delivered, a whole-file read must have been delivered untruncated to
+  count, reads before a compaction boundary (summarized out of the live
+  context) are ignored, and any read superseded by a later edit/write or
+  overlapping read — predicted with the same declared-range test the GC uses —
+  is never treated as covering. Its pointer results are excluded from the GC's
+  supersession bookkeeping so they never stub the read they point at.
+
+### Changed
+
+- Raised the default `toolOutput.maxBytes` cap from 16KB to 32KB (and the
+  matching `DEFAULT_MAX_BYTES` constant). Dense prose files (e.g. a ~17KB
+  markdown doc) now load in a single `read` instead of being truncated
+  mid-file by the byte cap and paged back in via 4+ overlapping
+  offset-reads. The 800-line cap is unchanged, and the value remains
+  configurable via the `toolOutput` setting.
+
 ## [0.4.149] - 2026-07-22
 
 ## [0.4.148] - 2026-07-21
