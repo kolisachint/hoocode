@@ -55,7 +55,9 @@ export {
 	type ReadToolInput,
 	type ReadToolOptions,
 } from "./read.js";
-// Off-by-default tools (enabled per session via flags/settings).
+// Search: always active. It degrades to grep-backed lexical retrieval when no
+// semantic index is present; the `--enable-embsearchtools` flag only gates
+// whether the semantic index is built and fused in, not whether the tool exists.
 export {
 	createSearchTool,
 	createSearchToolDefinition,
@@ -192,11 +194,11 @@ export type ToolName = keyof typeof TOOL_FACTORIES;
 
 export const allToolNames: Set<ToolName> = new Set(Object.keys(TOOL_FACTORIES) as ToolName[]);
 
-/** The default coding bundle (read/write + shell). */
-const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+/** The default coding bundle (read/write + shell + search). */
+const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "search"];
 
 /** Read-only exploration bundle. */
-const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "grep", "find", "ls"];
+const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "grep", "find", "ls", "search"];
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
 	const factory = TOOL_FACTORIES[toolName] as (cwd: string, options?: ToolsOptions[ToolName]) => ToolDef;
