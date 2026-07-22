@@ -425,6 +425,35 @@ class FlagsSubmenu extends Container {
 	}
 }
 
+/**
+ * Generic submenu holding a subset of leaf settings under a category label.
+ * Shares the parent's change handler so cycle rows behave exactly as they did
+ * when flat; nested submenu rows (theme, thinking, warnings) keep their own
+ * factories.
+ */
+class CategorySubmenu extends Container {
+	private settingsList: SettingsList;
+
+	constructor(items: SettingItem[], onChange: (id: string, newValue: string) => void, onCancel: () => void) {
+		super();
+		this.settingsList = new SettingsList(
+			items,
+			Math.min(items.length, 10),
+			getSettingsListTheme(),
+			onChange,
+			onCancel,
+			{
+				enableSearch: true,
+			},
+		);
+		this.addChild(this.settingsList);
+	}
+
+	handleInput(data: string): void {
+		this.settingsList.handleInput(data);
+	}
+}
+
 class SelectSubmenu extends Container {
 	private selectList: SelectList;
 
@@ -804,86 +833,144 @@ export class SettingsSelectorComponent extends Container {
 					),
 			});
 		}
-		items.splice(1, 0, ...toolFlagGroup);
-
 		// Add borders
 		this.addChild(new DynamicBorder());
 
+		// Shared change handler for every leaf (cycle) setting; used by the
+		// top-level list and each category submenu.
+		const applyChange = (id: string, newValue: string): void => {
+			switch (id) {
+				case "autocompact":
+					callbacks.onAutoCompactChange(newValue === "true");
+					break;
+				case "tool-output-display":
+					callbacks.onToolOutputDisplayChange(newValue as "collapsed" | "peek" | "standard");
+					break;
+				case "show-images":
+					callbacks.onShowImagesChange(newValue === "true");
+					break;
+				case "image-width-cells":
+					callbacks.onImageWidthCellsChange(parseInt(newValue, 10));
+					break;
+				case "auto-resize-images":
+					callbacks.onAutoResizeImagesChange(newValue === "true");
+					break;
+				case "block-images":
+					callbacks.onBlockImagesChange(newValue === "true");
+					break;
+				case "skill-commands":
+					callbacks.onEnableSkillCommandsChange(newValue === "true");
+					break;
+				case "steering-mode":
+					callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
+					break;
+				case "follow-up-mode":
+					callbacks.onFollowUpModeChange(newValue as "all" | "one-at-a-time");
+					break;
+				case "transport":
+					callbacks.onTransportChange(newValue as Transport);
+					break;
+				case "hide-thinking":
+					callbacks.onHideThinkingBlockChange(newValue === "true");
+					break;
+				case "collapse-changelog":
+					callbacks.onCollapseChangelogChange(newValue === "true");
+					break;
+				case "quiet-startup":
+					callbacks.onQuietStartupChange(newValue === "true");
+					break;
+				case "install-telemetry":
+					callbacks.onEnableInstallTelemetryChange(newValue === "true");
+					break;
+				case "double-escape-action":
+					callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
+					break;
+				case "tree-filter-mode":
+					callbacks.onTreeFilterModeChange(
+						newValue as "default" | "no-tools" | "user-only" | "labeled-only" | "all",
+					);
+					break;
+				case "show-hardware-cursor":
+					callbacks.onShowHardwareCursorChange(newValue === "true");
+					break;
+				case "editor-padding":
+					callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
+					break;
+				case "autocomplete-max-visible":
+					callbacks.onAutocompleteMaxVisibleChange(parseInt(newValue, 10));
+					break;
+				case "clear-on-shrink":
+					callbacks.onClearOnShrinkChange(newValue === "true");
+					break;
+				case "terminal-progress":
+					callbacks.onShowTerminalProgressChange(newValue === "true");
+					break;
+			}
+		};
+
+		// Partition the flat leaf settings into named category submenus so the
+		// top level stays short. `items` holds autocompact + every leaf setting.
+		const byId = new Map(items.map((item) => [item.id, item] as const));
+		const pick = (ids: string[]): SettingItem[] =>
+			ids.map((id) => byId.get(id)).filter((item): item is SettingItem => item !== undefined);
+		const categoryRow = (id: string, label: string, description: string, ids: string[]): SettingItem => {
+			const members = pick(ids);
+			return {
+				id,
+				label,
+				description,
+				currentValue: `${members.length} setting${members.length === 1 ? "" : "s"}`,
+				submenu: (_currentValue, done) => new CategorySubmenu(members, applyChange, () => done()),
+			};
+		};
+
+		const topItems: SettingItem[] = [
+			...(byId.has("autocompact") ? [byId.get("autocompact")!] : []),
+			...toolFlagGroup,
+			categoryRow(
+				"cat-behavior",
+				"Behavior",
+				"Agent and session behavior: steering, follow-up, thinking, escape, tree filter, transport.",
+				["steering-mode", "follow-up-mode", "thinking", "double-escape-action", "tree-filter-mode", "transport"],
+			),
+			categoryRow(
+				"cat-interface",
+				"Interface",
+				"Appearance and editor: theme, thinking visibility, cursor, padding, autocomplete, terminal.",
+				[
+					"theme",
+					"hide-thinking",
+					"show-hardware-cursor",
+					"editor-padding",
+					"autocomplete-max-visible",
+					"clear-on-shrink",
+					"terminal-progress",
+				],
+			),
+			categoryRow("cat-images", "Images", "Inline image rendering and resizing.", [
+				"show-images",
+				"image-width-cells",
+				"auto-resize-images",
+				"block-images",
+			]),
+			categoryRow("cat-advanced", "Advanced", "Startup, telemetry, skills, and warnings.", [
+				"quiet-startup",
+				"collapse-changelog",
+				"install-telemetry",
+				"skill-commands",
+				"warnings",
+			]),
+		];
+
 		this.settingsList = new SettingsList(
-			items,
-			10,
+			topItems,
+			Math.min(topItems.length, 10),
 			getSettingsListTheme(),
-			(id, newValue) => {
-				switch (id) {
-					case "autocompact":
-						callbacks.onAutoCompactChange(newValue === "true");
-						break;
-					case "tool-output-display":
-						callbacks.onToolOutputDisplayChange(newValue as "collapsed" | "peek" | "standard");
-						break;
-					case "show-images":
-						callbacks.onShowImagesChange(newValue === "true");
-						break;
-					case "image-width-cells":
-						callbacks.onImageWidthCellsChange(parseInt(newValue, 10));
-						break;
-					case "auto-resize-images":
-						callbacks.onAutoResizeImagesChange(newValue === "true");
-						break;
-					case "block-images":
-						callbacks.onBlockImagesChange(newValue === "true");
-						break;
-					case "skill-commands":
-						callbacks.onEnableSkillCommandsChange(newValue === "true");
-						break;
-					case "steering-mode":
-						callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
-						break;
-					case "follow-up-mode":
-						callbacks.onFollowUpModeChange(newValue as "all" | "one-at-a-time");
-						break;
-					case "transport":
-						callbacks.onTransportChange(newValue as Transport);
-						break;
-					case "hide-thinking":
-						callbacks.onHideThinkingBlockChange(newValue === "true");
-						break;
-					case "collapse-changelog":
-						callbacks.onCollapseChangelogChange(newValue === "true");
-						break;
-					case "quiet-startup":
-						callbacks.onQuietStartupChange(newValue === "true");
-						break;
-					case "install-telemetry":
-						callbacks.onEnableInstallTelemetryChange(newValue === "true");
-						break;
-					case "double-escape-action":
-						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
-						break;
-					case "tree-filter-mode":
-						callbacks.onTreeFilterModeChange(
-							newValue as "default" | "no-tools" | "user-only" | "labeled-only" | "all",
-						);
-						break;
-					case "show-hardware-cursor":
-						callbacks.onShowHardwareCursorChange(newValue === "true");
-						break;
-					case "editor-padding":
-						callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
-						break;
-					case "autocomplete-max-visible":
-						callbacks.onAutocompleteMaxVisibleChange(parseInt(newValue, 10));
-						break;
-					case "clear-on-shrink":
-						callbacks.onClearOnShrinkChange(newValue === "true");
-						break;
-					case "terminal-progress":
-						callbacks.onShowTerminalProgressChange(newValue === "true");
-						break;
-				}
-			},
+			applyChange,
 			callbacks.onCancel,
-			{ enableSearch: true },
+			{
+				enableSearch: true,
+			},
 		);
 
 		this.addChild(this.settingsList);
