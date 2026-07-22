@@ -2827,6 +2827,33 @@ export class InteractiveMode {
 			const toolToggleNames = [...new Set([...builtinToolNames, ...disabledToolNames])].sort();
 			const toolToggles = toolToggleNames.map((name) => ({ name, enabled: !disabledToolNames.has(name) }));
 
+			const toolGroups = [
+				{
+					id: "web",
+					label: "Web tools",
+					description: "webfetch + websearch (network access).",
+					enabled: this.settingsManager.getEnableWebTools(),
+				},
+				{
+					id: "browser",
+					label: "Browser tools",
+					description: "browser_run + browser_continue (browsertools engine).",
+					enabled: this.settingsManager.getEnableBrowserTools(),
+				},
+				{
+					id: "file",
+					label: "Document tools",
+					description: "DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary).",
+					enabled: this.settingsManager.getEnableFileTools(),
+				},
+				{
+					id: "embsearch",
+					label: "Semantic search",
+					description: "Semantic index layer fused into the always-on search tool.",
+					enabled: this.settingsManager.getEnableEmbsearchTools(),
+				},
+			];
+
 			const flagDefs = this.session.extensionRunner.getFlags();
 			const flagValues = this.session.extensionRunner.getFlagValues();
 			const flags = [...flagDefs.values()].map((flag) => ({
@@ -2840,6 +2867,7 @@ export class InteractiveMode {
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					tools: toolToggles,
+					toolGroups,
 					flags,
 					toolOutputDisplay: this.toolOutputDisplay,
 					toolOutputMaxBytes: this.settingsManager.getToolOutputMaxBytes(),
@@ -2898,6 +2926,24 @@ export class InteractiveMode {
 						}
 						this.session.setActiveToolsByName([...active]);
 						this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
+					},
+					onToolGroupChange: (id, enabled) => {
+						// Master switches for tool availability. These gate tool creation at
+						// session build, so they persist and take effect on the next session.
+						switch (id) {
+							case "web":
+								this.settingsManager.setEnableWebTools(enabled);
+								break;
+							case "browser":
+								this.settingsManager.setEnableBrowserTools(enabled);
+								break;
+							case "file":
+								this.settingsManager.setEnableFileTools(enabled);
+								break;
+							case "embsearch":
+								this.settingsManager.setEnableEmbsearchTools(enabled);
+								break;
+						}
 					},
 					onToolOutputDisplayChange: (level) => {
 						this.toolOutputDisplay = level;

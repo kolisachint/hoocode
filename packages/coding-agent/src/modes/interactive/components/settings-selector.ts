@@ -47,9 +47,19 @@ export interface FlagInfo {
 	value: boolean | string;
 }
 
+export interface ToolGroupInfo {
+	/** Group identifier (e.g. "web", "browser", "file", "embsearch"). */
+	id: string;
+	label: string;
+	description: string;
+	/** Whether the group is currently enabled (its tools are available). */
+	enabled: boolean;
+}
+
 export interface SettingsConfig {
 	autoCompact: boolean;
 	tools: ToolToggleInfo[];
+	toolGroups: ToolGroupInfo[];
 	flags: FlagInfo[];
 	toolOutputDisplay: "collapsed" | "peek" | "standard";
 	toolOutputMaxBytes: number;
@@ -84,6 +94,7 @@ export interface SettingsConfig {
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onToolEnabledChange: (name: string, enabled: boolean) => void;
+	onToolGroupChange: (id: string, enabled: boolean) => void;
 	onToolOutputDisplayChange: (level: "collapsed" | "peek" | "standard") => void;
 	onToolOutputMaxBytesChange: (bytes: number) => void;
 	onToolOutputMaxLinesChange: (lines: number) => void;
@@ -161,22 +172,42 @@ class WarningSettingsSubmenu extends Container {
 }
 
 /**
- * Submenu listing every toggleable tool with an on/off switch. Editing a row
- * flips the tool in the persisted disabled set (and live for this session).
- * A minimum core (read/bash/edit/write) is guarded so the agent can never be
- * left with no way to act.
+ * Submenu for tool availability. The first rows are group switches (web,
+ * browser, document, semantic search) that decide whether a group's tools
+ * exist at all — this is the same master switch that governs, e.g., the
+ * webfetch/websearch tools. Below them are per-tool on/off toggles for the
+ * tools that are currently available.
+ *
+ * Group switches change tool availability and apply on the next session;
+ * per-tool toggles apply live and persist. A minimum core (read/bash/edit/
+ * write) is guarded so the agent can never be left with no way to act.
  */
 class ToolsSubmenu extends Container {
 	private settingsList: SettingsList;
 	private enabled: Map<string, boolean>;
 	private static readonly CORE = new Set(["read", "bash", "edit", "write"]);
+	private static readonly GROUP_PREFIX = "group:";
 
-	constructor(tools: ToolToggleInfo[], onChange: (name: string, enabled: boolean) => void, onCancel: () => void) {
+	constructor(
+		tools: ToolToggleInfo[],
+		groups: ToolGroupInfo[],
+		onChange: (name: string, enabled: boolean) => void,
+		onGroupChange: (id: string, enabled: boolean) => void,
+		onCancel: () => void,
+	) {
 		super();
 
 		this.enabled = new Map(tools.map((t) => [t.name, t.enabled]));
 
-		const items: SettingItem[] = tools.map((tool) => ({
+		const groupItems: SettingItem[] = groups.map((group) => ({
+			id: `${ToolsSubmenu.GROUP_PREFIX}${group.id}`,
+			label: `[group] ${group.label}`,
+			description: `${group.description} Governs whether these tools exist; applies on the next session.`,
+			currentValue: group.enabled ? "on" : "off",
+			values: ["on", "off"],
+		}));
+
+		const toolItems: SettingItem[] = tools.map((tool) => ({
 			id: tool.name,
 			label: tool.name,
 			description: ToolsSubmenu.CORE.has(tool.name)
@@ -186,12 +217,18 @@ class ToolsSubmenu extends Container {
 			values: ["on", "off"],
 		}));
 
+		const items = [...groupItems, ...toolItems];
+
 		this.settingsList = new SettingsList(
 			items,
 			Math.min(items.length, 12),
 			getSettingsListTheme(),
 			(id, newValue) => {
 				const wantEnabled = newValue === "on";
+				if (id.startsWith(ToolsSubmenu.GROUP_PREFIX)) {
+					onGroupChange(id.slice(ToolsSubmenu.GROUP_PREFIX.length), wantEnabled);
+					return;
+				}
 				// Guard: never let the last core tool be turned off.
 				if (!wantEnabled && ToolsSubmenu.CORE.has(id)) {
 					const remainingCore = [...ToolsSubmenu.CORE].filter((n) => n !== id && this.enabled.get(n));
@@ -477,46 +514,6 @@ export class SettingsSelectorComponent extends Container {
 				values: ["true", "false"],
 			},
 			{
-				id: "tools",
-				label: "Tools",
-				description: "Enable or disable individual tools (read, write, bash, …). Changes persist across sessions.",
-				currentValue: toolsOff > 0 ? `${toolsOn} on · ${toolsOff} off` : `${toolsOn} on`,
-				submenu: (_currentValue, done) =>
-					new ToolsSubmenu(
-						config.tools,
-						(name, enabled) => callbacks.onToolEnabledChange(name, enabled),
-						() => done(),
-					),
-			},
-			{
-				id: "tool-output-display",
-				label: "Tool output display",
-				description:
-					"How tool results render. 'standard': shown (expandable). 'collapsed': hidden. 'peek': hidden with a ▸ reveal caret (press the expand key to reveal).",
-				currentValue: config.toolOutputDisplay,
-				values: ["standard", "collapsed", "peek"],
-			},
-			{
-				id: "tool-settings",
-				label: "Tool settings",
-				description: "Per-tool runtime settings: output truncation caps and context garbage collection.",
-				currentValue: "configure",
-				submenu: (_currentValue, done) =>
-					new ToolSettingsSubmenu(
-						{
-							toolOutputMaxBytes: config.toolOutputMaxBytes,
-							toolOutputMaxLines: config.toolOutputMaxLines,
-							contextGc: config.contextGc,
-						},
-						{
-							onToolOutputMaxBytesChange: callbacks.onToolOutputMaxBytesChange,
-							onToolOutputMaxLinesChange: callbacks.onToolOutputMaxLinesChange,
-							onContextGcChange: callbacks.onContextGcChange,
-						},
-						() => done(),
-					),
-			},
-			{
 				id: "steering-mode",
 				label: "Steering mode",
 				description:
@@ -648,22 +645,6 @@ export class SettingsSelectorComponent extends Container {
 			},
 		];
 
-		// Flags row: only shown when extensions have registered flags.
-		if (config.flags.length > 0) {
-			items.push({
-				id: "flags",
-				label: "Flags",
-				description: "Set flags registered by extensions. Changes persist across sessions.",
-				currentValue: `${config.flags.length} flag${config.flags.length === 1 ? "" : "s"}`,
-				submenu: (_currentValue, done) =>
-					new FlagsSubmenu(
-						config.flags,
-						(name, value) => callbacks.onFlagChange(name, value),
-						() => done(),
-					),
-			});
-		}
-
 		// Only show image toggle if terminal supports it
 		if (supportsImages) {
 			// Insert after autocompact
@@ -761,6 +742,69 @@ export class SettingsSelectorComponent extends Container {
 			currentValue: config.showTerminalProgress ? "true" : "false",
 			values: ["true", "false"],
 		});
+
+		// Keep the tool/flag controls together as one block near the top, inserted
+		// after the image/terminal splices above so they aren't leapfrogged.
+		const toolFlagGroup: SettingItem[] = [
+			{
+				id: "tools",
+				label: "Tools",
+				description:
+					"Enable/disable tools and tool groups (web, browser, document, semantic search). Changes persist across sessions.",
+				currentValue: toolsOff > 0 ? `${toolsOn} on · ${toolsOff} off` : `${toolsOn} on`,
+				submenu: (_currentValue, done) =>
+					new ToolsSubmenu(
+						config.tools,
+						config.toolGroups,
+						(name, enabled) => callbacks.onToolEnabledChange(name, enabled),
+						(id, enabled) => callbacks.onToolGroupChange(id, enabled),
+						() => done(),
+					),
+			},
+			{
+				id: "tool-output-display",
+				label: "Tool output display",
+				description:
+					"How tool results render. 'standard': shown (expandable). 'collapsed': hidden. 'peek': hidden with a ▸ reveal caret (press the expand key to reveal).",
+				currentValue: config.toolOutputDisplay,
+				values: ["standard", "collapsed", "peek"],
+			},
+			{
+				id: "tool-settings",
+				label: "Tool settings",
+				description: "Per-tool runtime settings: output truncation caps and context garbage collection.",
+				currentValue: "configure",
+				submenu: (_currentValue, done) =>
+					new ToolSettingsSubmenu(
+						{
+							toolOutputMaxBytes: config.toolOutputMaxBytes,
+							toolOutputMaxLines: config.toolOutputMaxLines,
+							contextGc: config.contextGc,
+						},
+						{
+							onToolOutputMaxBytesChange: callbacks.onToolOutputMaxBytesChange,
+							onToolOutputMaxLinesChange: callbacks.onToolOutputMaxLinesChange,
+							onContextGcChange: callbacks.onContextGcChange,
+						},
+						() => done(),
+					),
+			},
+		];
+		if (config.flags.length > 0) {
+			toolFlagGroup.push({
+				id: "flags",
+				label: "Flags",
+				description: "Set flags registered by extensions. Changes persist across sessions.",
+				currentValue: `${config.flags.length} flag${config.flags.length === 1 ? "" : "s"}`,
+				submenu: (_currentValue, done) =>
+					new FlagsSubmenu(
+						config.flags,
+						(name, value) => callbacks.onFlagChange(name, value),
+						() => done(),
+					),
+			});
+		}
+		items.splice(1, 0, ...toolFlagGroup);
 
 		// Add borders
 		this.addChild(new DynamicBorder());
