@@ -417,6 +417,13 @@ function buildSessionOptions(
 	if (parsed.disallowedTools) {
 		options.disallowedTools = [...parsed.disallowedTools];
 	}
+	// Persisted per-tool disables from the TUI (/settings → Tools). These compose
+	// with any CLI denylist and always subtract from the active tool set: a tool
+	// listed here stays off even if it also appears in the --tools allowlist.
+	const disabledTools = settingsManager.getDisabledTools();
+	if (disabledTools.length > 0) {
+		options.disallowedTools = [...new Set([...(options.disallowedTools ?? []), ...disabledTools])];
+	}
 	// Light preset: restrict to the four core tools unless the user passed an
 	// explicit allowlist or suppression flag (explicit flags win over the preset).
 	// The allowlist also blocks Task/TodoWrite/plugin tools from becoming active.
@@ -854,6 +861,7 @@ export async function main(args: string[], options?: MainOptions) {
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
 			noTools: sessionOptions.noTools,
+			disallowedTools: sessionOptions.disallowedTools,
 			customTools: sessionOptions.customTools,
 			enableWebTools: sessionOptions.enableWebTools,
 			enableBrowserTools: sessionOptions.enableBrowserTools,

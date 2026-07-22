@@ -541,6 +541,17 @@ export class SettingsManager {
 		return this.settings.contextGc?.enabled ?? DEFAULT_SETTINGS.contextGc!.enabled;
 	}
 
+	/** Tool names disabled from the TUI; removed from the agent in every session. */
+	getDisabledTools(): string[] {
+		return [...(this.settings.disabledTools ?? DEFAULT_SETTINGS.disabledTools!)];
+	}
+
+	setDisabledTools(names: string[]): void {
+		this.globalSettings.disabledTools = [...names];
+		this.markModified("disabledTools");
+		this.save();
+	}
+
 	getBranchSummarySettings(): Required<BranchSummarySettings> {
 		return { ...DEFAULT_SETTINGS.branchSummary, ...this.settings.branchSummary };
 	}

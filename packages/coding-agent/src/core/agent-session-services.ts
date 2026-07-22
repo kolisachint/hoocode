@@ -54,6 +54,7 @@ export interface CreateAgentSessionFromServicesOptions {
 	scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
 	tools?: string[];
 	noTools?: CreateAgentSessionOptions["noTools"];
+	disallowedTools?: string[];
 	customTools?: ToolDefinition[];
 	enableWebTools?: boolean;
 	enableBrowserTools?: boolean;
@@ -197,6 +198,7 @@ export async function createAgentSessionFromServices(
 		scopedModels: options.scopedModels,
 		tools: options.tools,
 		noTools: options.noTools,
+		disallowedTools: options.disallowedTools,
 		customTools: options.customTools,
 		sessionStartEvent: options.sessionStartEvent,
 		enableWebTools: options.enableWebTools,

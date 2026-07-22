@@ -127,6 +127,7 @@ export interface Settings {
 	compaction?: CompactionSettings;
 	toolOutput?: ToolOutputSettings; // caps on a single read/bash result (bounds per-turn transcript growth)
 	contextGc?: ContextGcSettings; // garbage-collect superseded read results from the outgoing context
+	disabledTools?: string[]; // Tool names disabled from the TUI; removed from the agent in every session (composes with the --tools allowlist / --disallowed-tools denylist)
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
