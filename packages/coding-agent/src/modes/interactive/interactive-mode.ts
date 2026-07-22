@@ -2809,9 +2809,20 @@ export class InteractiveMode {
 
 	private showSettingsSelector(): void {
 		this.showSelector((done) => {
+			const disabledToolNames = new Set(this.settingsManager.getDisabledTools());
+			const builtinToolNames = this.session
+				.getAllTools()
+				.filter((t) => t.sourceInfo?.source === "builtin")
+				.map((t) => t.name);
+			// Union so tools disabled at startup (absent from the live registry) still
+			// appear and can be re-enabled for the next session.
+			const toolToggleNames = [...new Set([...builtinToolNames, ...disabledToolNames])].sort();
+			const toolToggles = toolToggleNames.map((name) => ({ name, enabled: !disabledToolNames.has(name) }));
+
 			const selector = new SettingsSelectorComponent(
 				{
 					autoCompact: this.session.autoCompactionEnabled,
+					tools: toolToggles,
 					showImages: this.settingsManager.getShowImages(),
 					imageWidthCells: this.settingsManager.getImageWidthCells(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
@@ -2841,6 +2852,30 @@ export class InteractiveMode {
 					onAutoCompactChange: (enabled) => {
 						this.session.setAutoCompactionEnabled(enabled);
 						this.footer.setAutoCompactEnabled(enabled);
+					},
+					onToolEnabledChange: (name, enabled) => {
+						// Persist for future sessions (feeds the startup denylist).
+						const disabled = new Set(this.settingsManager.getDisabledTools());
+						if (enabled) {
+							disabled.delete(name);
+						} else {
+							disabled.add(name);
+						}
+						this.settingsManager.setDisabledTools([...disabled]);
+
+						// Apply live for the current session. Re-enabling only works for
+						// tools still in the registry (i.e. not removed at startup); tools
+						// disabled before launch take effect on the next session.
+						const active = new Set(this.session.getActiveToolNames());
+						if (enabled) {
+							if (this.session.getToolDefinition(name)) {
+								active.add(name);
+							}
+						} else {
+							active.delete(name);
+						}
+						this.session.setActiveToolsByName([...active]);
+						this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);

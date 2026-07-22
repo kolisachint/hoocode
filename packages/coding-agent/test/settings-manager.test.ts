@@ -110,6 +110,41 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("disabledTools", () => {
+		it("defaults to an empty list", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getDisabledTools()).toEqual([]);
+		});
+
+		it("round-trips through settings.json", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setDisabledTools(["bash", "write"]);
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.disabledTools).toEqual(["bash", "write"]);
+
+			// A fresh manager reads the persisted value.
+			const reloaded = SettingsManager.create(projectDir, agentDir);
+			expect(reloaded.getDisabledTools()).toEqual(["bash", "write"]);
+		});
+
+		it("preserves unrelated settings when updating the disabled list", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark", defaultModel: "claude-sonnet" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setDisabledTools(["bash"]);
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.disabledTools).toEqual(["bash"]);
+			expect(savedSettings.theme).toBe("dark");
+			expect(savedSettings.defaultModel).toBe("claude-sonnet");
+		});
+	});
+
 	describe("packages migration", () => {
 		it("should keep local-only extensions in extensions array", () => {
 			const settingsPath = join(agentDir, "settings.json");

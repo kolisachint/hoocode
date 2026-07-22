@@ -30,8 +30,16 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 	xhigh: "Maximum reasoning (~32k tokens)",
 };
 
+export interface ToolToggleInfo {
+	/** Tool name (e.g. "read", "bash"). */
+	name: string;
+	/** Whether the tool is currently enabled (not in the persisted disabled set). */
+	enabled: boolean;
+}
+
 export interface SettingsConfig {
 	autoCompact: boolean;
+	tools: ToolToggleInfo[];
 	showImages: boolean;
 	imageWidthCells: number;
 	autoResizeImages: boolean;
@@ -60,6 +68,7 @@ export interface SettingsConfig {
 
 export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
+	onToolEnabledChange: (name: string, enabled: boolean) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onImageWidthCellsChange: (width: number) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
@@ -121,6 +130,61 @@ class WarningSettingsSubmenu extends Container {
 				}
 			},
 			onCancel,
+		);
+
+		this.addChild(this.settingsList);
+	}
+
+	handleInput(data: string): void {
+		this.settingsList.handleInput(data);
+	}
+}
+
+/**
+ * Submenu listing every toggleable tool with an on/off switch. Editing a row
+ * flips the tool in the persisted disabled set (and live for this session).
+ * A minimum core (read/bash/edit/write) is guarded so the agent can never be
+ * left with no way to act.
+ */
+class ToolsSubmenu extends Container {
+	private settingsList: SettingsList;
+	private enabled: Map<string, boolean>;
+	private static readonly CORE = new Set(["read", "bash", "edit", "write"]);
+
+	constructor(tools: ToolToggleInfo[], onChange: (name: string, enabled: boolean) => void, onCancel: () => void) {
+		super();
+
+		this.enabled = new Map(tools.map((t) => [t.name, t.enabled]));
+
+		const items: SettingItem[] = tools.map((tool) => ({
+			id: tool.name,
+			label: tool.name,
+			description: ToolsSubmenu.CORE.has(tool.name)
+				? "Core tool. Disabling leaves the agent unable to perform this action in every session."
+				: "Disable to remove this tool from the agent this session and every future session.",
+			currentValue: tool.enabled ? "on" : "off",
+			values: ["on", "off"],
+		}));
+
+		this.settingsList = new SettingsList(
+			items,
+			Math.min(items.length, 12),
+			getSettingsListTheme(),
+			(id, newValue) => {
+				const wantEnabled = newValue === "on";
+				// Guard: never let the last core tool be turned off.
+				if (!wantEnabled && ToolsSubmenu.CORE.has(id)) {
+					const remainingCore = [...ToolsSubmenu.CORE].filter((n) => n !== id && this.enabled.get(n));
+					if (remainingCore.length === 0) {
+						this.settingsList.updateValue(id, "on");
+						return;
+					}
+				}
+				this.enabled.set(id, wantEnabled);
+				onChange(id, wantEnabled);
+			},
+			onCancel,
+			{ enableSearch: true },
 		);
 
 		this.addChild(this.settingsList);
@@ -208,6 +272,9 @@ export class SettingsSelectorComponent extends Container {
 		const followUpKey = keyDisplayText("app.message.followUp");
 		let currentWarnings = { ...config.warnings };
 
+		const toolsOn = config.tools.filter((t) => t.enabled).length;
+		const toolsOff = config.tools.length - toolsOn;
+
 		const items: SettingItem[] = [
 			{
 				id: "autocompact",
@@ -215,6 +282,18 @@ export class SettingsSelectorComponent extends Container {
 				description: "Automatically compact context when it gets too large",
 				currentValue: config.autoCompact ? "true" : "false",
 				values: ["true", "false"],
+			},
+			{
+				id: "tools",
+				label: "Tools",
+				description: "Enable or disable individual tools (read, write, bash, …). Changes persist across sessions.",
+				currentValue: toolsOff > 0 ? `${toolsOn} on · ${toolsOff} off` : `${toolsOn} on`,
+				submenu: (_currentValue, done) =>
+					new ToolsSubmenu(
+						config.tools,
+						(name, enabled) => callbacks.onToolEnabledChange(name, enabled),
+						() => done(),
+					),
 			},
 			{
 				id: "steering-mode",
