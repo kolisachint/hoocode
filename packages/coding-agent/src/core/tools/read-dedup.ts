@@ -103,6 +103,11 @@ interface MessageLike {
 const READ_TOOL = "read";
 const MUTATE_TOOLS = new Set(["edit", "write"]);
 
+/** A session compaction entry — the boundary that trims the live context. */
+function isCompactionEntry(entry: unknown): boolean {
+	return !!entry && typeof entry === "object" && (entry as { type?: unknown }).type === "compaction";
+}
+
 /** Accept either raw `AgentMessage`s or session entries wrapping `.message`. */
 function toMessage(entry: unknown): MessageLike | null {
 	if (!entry || typeof entry !== "object") return null;
@@ -130,14 +135,18 @@ function resultText(m: MessageLike): string {
  * was delivered in full — so it falls through to `declared`.
  */
 function deliveredRange(text: string, declared: ReadRange): ReadRange {
-	const showing = text.match(/\[Showing lines (\d+)-(\d+) of \d+/);
+	// The truncation notice is always the trailing `\n\n[Showing lines A-B of N ...]`
+	// clause the read tool appends. Anchor to the end so a `[Showing lines ...]`
+	// string that merely appears *inside* the file's content can't spoof it.
+	const showing = text.match(/\n\n\[Showing lines (\d+)-(\d+) of \d+[^\]]*\]\s*$/);
 	if (showing) {
 		const a = Number(showing[1]);
 		const b = Number(showing[2]);
 		if (Number.isFinite(a) && Number.isFinite(b) && b >= a) return { start: a, end: b + 1 };
 	}
-	// First line exceeded the byte limit: nothing usable was delivered.
-	if (/\[Line \d+ is .+ exceeds .+ limit\./.test(text)) return { start: 1, end: 1 };
+	// First line alone exceeded the byte limit: the whole result *is* that notice,
+	// so it must start the text. Nothing usable was delivered.
+	if (/^\[Line \d+ is .+ exceeds .+ limit\./.test(text)) return { start: 1, end: 1 };
 	return declared;
 }
 
@@ -155,64 +164,95 @@ function deliveredRange(text: string, declared: ReadRange): ReadRange {
  * the candidate and the supersession side.
  */
 export function findCoveringRead(entries: readonly unknown[], opts: FindCoveringReadOptions): CoveringRead | null {
-	const messages: MessageLike[] = [];
-	for (const e of entries) {
-		const m = toMessage(e);
-		if (m) messages.push(m);
+	// `declared` mirrors the range the GC uses for supersession (straight from the
+	// call args); `delivered` is what the result text shows was actually returned,
+	// used for coverage. The current call has no result yet, so it never appears.
+	interface PriorRead {
+		index: number;
+		declared: ReadRange;
+		delivered: ReadRange;
+		display: string;
 	}
 
-	// Pass 1: map each tool call id to the path/range it operated on.
+	// Resolve each distinct raw path once — the resolver may hit the filesystem.
+	const resolveCache = new Map<string, string>();
+	const resolvePath = (raw: string): string => {
+		const hit = resolveCache.get(raw);
+		if (hit !== undefined) return hit;
+		const resolved = opts.resolvePath(raw);
+		resolveCache.set(raw, resolved);
+		return resolved;
+	};
+
+	// Single ordered pass. `readCall`/`mutateCallPath` map a call id to its path as
+	// the call is seen (a toolCall always precedes its result); `reads` collects
+	// the target path's reads and `lastMutateIndex` its last mutate. `order` gives
+	// live-context position for the supersession/mutate comparisons.
 	const readCall = new Map<string, { resolved: string; display: string; declared: ReadRange }>();
 	const mutateCallPath = new Map<string, string>();
-	for (const m of messages) {
-		if (m.role !== "assistant" || !Array.isArray(m.content)) continue;
-		for (const b of m.content) {
-			if (b.type !== "toolCall" || !b.id) continue;
-			const raw = b.arguments?.path;
-			if (typeof raw !== "string" || raw.length === 0) continue;
-			const resolved = opts.resolvePath(raw);
-			if (b.name === READ_TOOL) {
-				readCall.set(b.id, { resolved, display: raw, declared: readRangeFromArgs(b.arguments) });
-			} else if (b.name && MUTATE_TOOLS.has(b.name)) {
-				mutateCallPath.set(b.id, resolved);
+	const reads: PriorRead[] = [];
+	let lastMutateIndex = -1;
+	let order = 0;
+
+	for (const entry of entries) {
+		// Compaction boundary: everything before it is replaced by a summary in the
+		// live context, so drop the state accumulated so far. Conservative — the
+		// kept tail before the boundary is dropped too — which can only miss a
+		// dedup, never point at content that is no longer in context.
+		if (isCompactionEntry(entry)) {
+			readCall.clear();
+			mutateCallPath.clear();
+			reads.length = 0;
+			lastMutateIndex = -1;
+			order = 0;
+			continue;
+		}
+		const m = toMessage(entry);
+		if (!m) continue;
+		const i = order++;
+		if (m.role === "assistant" && Array.isArray(m.content)) {
+			for (const b of m.content) {
+				if (b.type !== "toolCall" || !b.id) continue;
+				const raw = b.arguments?.path;
+				if (typeof raw !== "string" || raw.length === 0) continue;
+				const resolved = resolvePath(raw);
+				if (b.name === READ_TOOL) {
+					readCall.set(b.id, { resolved, display: raw, declared: readRangeFromArgs(b.arguments) });
+				} else if (b.name && MUTATE_TOOLS.has(b.name)) {
+					mutateCallPath.set(b.id, resolved);
+				}
+			}
+		} else if (m.role === "toolResult" && !m.isError && m.toolCallId) {
+			if (m.toolName === READ_TOOL) {
+				if (m.toolCallId === opts.currentCallId) continue;
+				const info = readCall.get(m.toolCallId);
+				if (!info || info.resolved !== opts.resolvedPath) continue;
+				const text = resultText(m);
+				// A pointer fetched nothing: the GC excludes it from supersession, so we
+				// must too (both as a candidate and as a superseder).
+				if (isDedupPointerText(text)) continue;
+				reads.push({
+					index: i,
+					declared: info.declared,
+					delivered: deliveredRange(text, info.declared),
+					display: info.display,
+				});
+			} else if (m.toolName && MUTATE_TOOLS.has(m.toolName)) {
+				if (mutateCallPath.get(m.toolCallId) === opts.resolvedPath) lastMutateIndex = i;
 			}
 		}
 	}
 
-	// Pass 2: collect successful results for the target path.
-	interface PriorRead {
-		index: number;
-		delivered: ReadRange;
-		display: string;
-	}
-	const priorReads: PriorRead[] = [];
-	// Every content-bearing read of the target path (for the supersession check),
-	// mirroring what the GC counts when it decides to stub an earlier read.
-	const contentReads: Array<{ index: number; range: ReadRange }> = [];
-	let lastMutateIndex = -1;
-	messages.forEach((m, i) => {
-		if (m.role !== "toolResult" || m.isError || !m.toolCallId) return;
-		if (m.toolName === READ_TOOL) {
-			const info = readCall.get(m.toolCallId);
-			if (!info || info.resolved !== opts.resolvedPath) return;
-			const text = resultText(m);
-			if (isDedupPointerText(text)) return; // a pointer fetched nothing: not content, never supersedes
-			const delivered = deliveredRange(text, info.declared);
-			const hasContent = delivered.end > delivered.start;
-			if (hasContent) contentReads.push({ index: i, range: delivered });
-			if (m.toolCallId === opts.currentCallId || !hasContent) return;
-			priorReads.push({ index: i, delivered, display: info.display });
-		} else if (m.toolName && MUTATE_TOOLS.has(m.toolName)) {
-			if (mutateCallPath.get(m.toolCallId) === opts.resolvedPath) lastMutateIndex = Math.max(lastMutateIndex, i);
-		}
-	});
+	// A read survives the GC iff no later mutate and no later read overlaps its
+	// *declared* range — exactly the GC's own test — so predict it the same way.
+	const survivesGc = (r: PriorRead): boolean =>
+		lastMutateIndex <= r.index && !reads.some((o) => o.index > r.index && rangesOverlap(o.declared, r.declared));
 
 	let best: PriorRead | null = null;
-	for (const r of priorReads) {
+	for (const r of reads) {
+		// Coverage uses the *delivered* range: a truncated read only holds what it returned.
 		if (!rangeContains(r.delivered, opts.requestedRange)) continue;
-		if (lastMutateIndex > r.index) continue; // file changed after this read
-		const supersededByRead = contentReads.some((o) => o.index > r.index && rangesOverlap(o.range, r.delivered));
-		if (supersededByRead) continue; // GC will have stubbed this read
+		if (!survivesGc(r)) continue;
 		if (!best || r.index > best.index) best = r;
 	}
 	if (!best) return null;

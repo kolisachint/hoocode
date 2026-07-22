@@ -12,8 +12,10 @@
   way out) by preventing the redundant re-fetch up front. The guard is
   deliberately conservative: a cap-truncated earlier read only covers what it
   actually delivered, a whole-file read must have been delivered untruncated to
-  count, and any read superseded by a later edit/write or overlapping read is
-  never treated as covering. Its pointer results are excluded from the GC's
+  count, reads before a compaction boundary (summarized out of the live
+  context) are ignored, and any read superseded by a later edit/write or
+  overlapping read — predicted with the same declared-range test the GC uses —
+  is never treated as covering. Its pointer results are excluded from the GC's
   supersession bookkeeping so they never stub the read they point at.
 
 ### Changed

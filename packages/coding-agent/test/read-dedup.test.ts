@@ -103,9 +103,52 @@ describe("findCoveringRead", () => {
 		expect(covering?.end).toBe(Number.POSITIVE_INFINITY);
 	});
 
+	it("is not spoofed by a [Showing lines ...] string inside the file content", () => {
+		// A full, untruncated read of a file that happens to contain the truncation
+		// notice text must still be treated as delivering the whole file.
+		const body = "intro\n[Showing lines 1-5 of 9999] appears in this doc\nmore body\nconclusion";
+		const entries = [readCall("r1", "/f.txt"), readResult("r1", body)];
+		const covering = cover(entries, "/f.txt");
+		expect(covering).not.toBeNull();
+		expect(covering?.end).toBe(Number.POSITIVE_INFINITY);
+	});
+
+	it("predicts GC supersession by declared range, not delivered range", () => {
+		// r1 declared whole-file but was truncated to lines 1-400. r2 reads lines
+		// 500-560. The GC stubs r1 because their DECLARED ranges overlap, even
+		// though the delivered ranges are disjoint — so the guard must not point at r1.
+		const entries = [
+			readCall("r1", "/f.txt"),
+			readResult("r1", "head\n\n[Showing lines 1-400 of 1000. Use offset=401 to continue.]"),
+			readCall("r2", "/f.txt", { offset: 500, limit: 60 }),
+			readResult("r2", "tail"),
+		];
+		expect(cover(entries, "/f.txt", { offset: 1, limit: 50 })).toBeNull();
+	});
+
 	it("does not match a different file", () => {
 		const entries = [readCall("r1", "/a.txt"), readResult("r1", "content")];
 		expect(cover(entries, "/b.txt")).toBeNull();
+	});
+
+	it("ignores reads before a compaction boundary (summarized away from live context)", () => {
+		const entries = [
+			readCall("r0", "/f.txt"),
+			readResult("r0", "pre-compaction content"),
+			{ type: "compaction", id: "c1", summary: "..." },
+		];
+		expect(cover(entries, "/f.txt")).toBeNull();
+	});
+
+	it("covers a read that follows the last compaction boundary", () => {
+		const entries = [
+			readCall("r0", "/f.txt"),
+			readResult("r0", "pre-compaction content"),
+			{ type: "compaction", id: "c1", summary: "..." },
+			readCall("r1", "/f.txt"),
+			readResult("r1", "fresh content"),
+		];
+		expect(cover(entries, "/f.txt")).not.toBeNull();
 	});
 
 	it("ignores error results", () => {
