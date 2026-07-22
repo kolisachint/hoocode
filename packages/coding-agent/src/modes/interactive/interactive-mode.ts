@@ -2832,6 +2832,9 @@ export class InteractiveMode {
 					autoCompact: this.session.autoCompactionEnabled,
 					tools: toolToggles,
 					toolOutputDisplay: this.toolOutputDisplay,
+					toolOutputMaxBytes: this.settingsManager.getToolOutputMaxBytes(),
+					toolOutputMaxLines: this.settingsManager.getToolOutputMaxLines(),
+					contextGc: this.settingsManager.getContextGcEnabled(),
 					showImages: this.settingsManager.getShowImages(),
 					imageWidthCells: this.settingsManager.getImageWidthCells(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
@@ -2895,6 +2898,15 @@ export class InteractiveMode {
 							}
 						}
 						this.ui.requestRender();
+					},
+					onToolOutputMaxBytesChange: (bytes) => {
+						this.settingsManager.setToolOutputMaxBytes(bytes);
+					},
+					onToolOutputMaxLinesChange: (lines) => {
+						this.settingsManager.setToolOutputMaxLines(lines);
+					},
+					onContextGcChange: (enabled) => {
+						this.settingsManager.setContextGcEnabled(enabled);
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);

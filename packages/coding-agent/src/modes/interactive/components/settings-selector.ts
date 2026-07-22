@@ -41,6 +41,9 @@ export interface SettingsConfig {
 	autoCompact: boolean;
 	tools: ToolToggleInfo[];
 	toolOutputDisplay: "collapsed" | "peek" | "standard";
+	toolOutputMaxBytes: number;
+	toolOutputMaxLines: number;
+	contextGc: boolean;
 	showImages: boolean;
 	imageWidthCells: number;
 	autoResizeImages: boolean;
@@ -71,6 +74,9 @@ export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onToolEnabledChange: (name: string, enabled: boolean) => void;
 	onToolOutputDisplayChange: (level: "collapsed" | "peek" | "standard") => void;
+	onToolOutputMaxBytesChange: (bytes: number) => void;
+	onToolOutputMaxLinesChange: (lines: number) => void;
+	onContextGcChange: (enabled: boolean) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onImageWidthCellsChange: (width: number) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
@@ -197,6 +203,97 @@ class ToolsSubmenu extends Container {
 	}
 }
 
+/** Byte-cap presets shown as human labels; mapped back to raw byte counts. */
+const TOOL_OUTPUT_BYTE_PRESETS: ReadonlyArray<[label: string, bytes: number]> = [
+	["8 KB", 8 * 1024],
+	["16 KB", 16 * 1024],
+	["32 KB", 32 * 1024],
+	["64 KB", 64 * 1024],
+	["128 KB", 128 * 1024],
+];
+
+function bytesToLabel(bytes: number): string {
+	const match = TOOL_OUTPUT_BYTE_PRESETS.find(([, b]) => b === bytes);
+	return match ? match[0] : `${Math.round(bytes / 1024)} KB`;
+}
+
+export interface ToolSettingsConfig {
+	toolOutputMaxBytes: number;
+	toolOutputMaxLines: number;
+	contextGc: boolean;
+}
+
+export interface ToolSettingsCallbacks {
+	onToolOutputMaxBytesChange: (bytes: number) => void;
+	onToolOutputMaxLinesChange: (lines: number) => void;
+	onContextGcChange: (enabled: boolean) => void;
+}
+
+/**
+ * Submenu for per-tool runtime settings. These feed the tool runtime the next
+ * time it is built (next session / rebuild), so changes apply to future tool
+ * calls rather than retroactively.
+ */
+class ToolSettingsSubmenu extends Container {
+	private settingsList: SettingsList;
+
+	constructor(config: ToolSettingsConfig, callbacks: ToolSettingsCallbacks, onCancel: () => void) {
+		super();
+
+		const items: SettingItem[] = [
+			{
+				id: "output-max-bytes",
+				label: "Output max bytes",
+				description: "Byte cap on a single read/bash result before truncation. Applies to future tool calls.",
+				currentValue: bytesToLabel(config.toolOutputMaxBytes),
+				values: TOOL_OUTPUT_BYTE_PRESETS.map(([label]) => label),
+			},
+			{
+				id: "output-max-lines",
+				label: "Output max lines",
+				description: "Line cap on a single read/bash result before truncation. Applies to future tool calls.",
+				currentValue: String(config.toolOutputMaxLines),
+				values: ["200", "400", "800", "1600", "3200"],
+			},
+			{
+				id: "context-gc",
+				label: "Context GC",
+				description: "Stub superseded read results (files later edited/re-read) out of the outgoing context.",
+				currentValue: config.contextGc ? "true" : "false",
+				values: ["true", "false"],
+			},
+		];
+
+		this.settingsList = new SettingsList(
+			items,
+			Math.min(items.length, 10),
+			getSettingsListTheme(),
+			(id, newValue) => {
+				switch (id) {
+					case "output-max-bytes": {
+						const preset = TOOL_OUTPUT_BYTE_PRESETS.find(([label]) => label === newValue);
+						if (preset) callbacks.onToolOutputMaxBytesChange(preset[1]);
+						break;
+					}
+					case "output-max-lines":
+						callbacks.onToolOutputMaxLinesChange(parseInt(newValue, 10));
+						break;
+					case "context-gc":
+						callbacks.onContextGcChange(newValue === "true");
+						break;
+				}
+			},
+			onCancel,
+		);
+
+		this.addChild(this.settingsList);
+	}
+
+	handleInput(data: string): void {
+		this.settingsList.handleInput(data);
+	}
+}
+
 class SelectSubmenu extends Container {
 	private selectList: SelectList;
 
@@ -304,6 +401,26 @@ export class SettingsSelectorComponent extends Container {
 					"How tool results render. 'standard': shown (expandable). 'collapsed': hidden. 'peek': hidden with a ▸ reveal caret (press the expand key to reveal).",
 				currentValue: config.toolOutputDisplay,
 				values: ["standard", "collapsed", "peek"],
+			},
+			{
+				id: "tool-settings",
+				label: "Tool settings",
+				description: "Per-tool runtime settings: output truncation caps and context garbage collection.",
+				currentValue: "configure",
+				submenu: (_currentValue, done) =>
+					new ToolSettingsSubmenu(
+						{
+							toolOutputMaxBytes: config.toolOutputMaxBytes,
+							toolOutputMaxLines: config.toolOutputMaxLines,
+							contextGc: config.contextGc,
+						},
+						{
+							onToolOutputMaxBytesChange: callbacks.onToolOutputMaxBytesChange,
+							onToolOutputMaxLinesChange: callbacks.onToolOutputMaxLinesChange,
+							onContextGcChange: callbacks.onContextGcChange,
+						},
+						() => done(),
+					),
 			},
 			{
 				id: "steering-mode",

@@ -530,15 +530,42 @@ export class SettingsManager {
 		return Number.isFinite(v) && v >= 1024 ? Math.floor(v) : DEFAULT_SETTINGS.toolOutput!.maxBytes;
 	}
 
+	setToolOutputMaxBytes(bytes: number): void {
+		if (!this.globalSettings.toolOutput) {
+			this.globalSettings.toolOutput = {};
+		}
+		this.globalSettings.toolOutput.maxBytes = Math.max(1024, Math.floor(bytes));
+		this.markModified("toolOutput", "maxBytes");
+		this.save();
+	}
+
 	/** Line cap on a single read/bash tool result before truncation. Clamped to >= 1. */
 	getToolOutputMaxLines(): number {
 		const v = this.settings.toolOutput?.maxLines ?? DEFAULT_SETTINGS.toolOutput!.maxLines;
 		return Number.isFinite(v) && v >= 1 ? Math.floor(v) : DEFAULT_SETTINGS.toolOutput!.maxLines;
 	}
 
+	setToolOutputMaxLines(lines: number): void {
+		if (!this.globalSettings.toolOutput) {
+			this.globalSettings.toolOutput = {};
+		}
+		this.globalSettings.toolOutput.maxLines = Math.max(1, Math.floor(lines));
+		this.markModified("toolOutput", "maxLines");
+		this.save();
+	}
+
 	/** Whether to stub superseded read results out of the outgoing context. */
 	getContextGcEnabled(): boolean {
 		return this.settings.contextGc?.enabled ?? DEFAULT_SETTINGS.contextGc!.enabled;
+	}
+
+	setContextGcEnabled(enabled: boolean): void {
+		if (!this.globalSettings.contextGc) {
+			this.globalSettings.contextGc = {};
+		}
+		this.globalSettings.contextGc.enabled = enabled;
+		this.markModified("contextGc", "enabled");
+		this.save();
 	}
 
 	/** Tool names disabled from the TUI; removed from the agent in every session. */

@@ -166,6 +166,46 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("tool settings (output caps + context GC)", () => {
+		it("round-trips maxBytes/maxLines/contextGc and clamps invalid caps", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setToolOutputMaxBytes(65536);
+			manager.setToolOutputMaxLines(1600);
+			manager.setContextGcEnabled(false);
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			const saved = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(saved.toolOutput.maxBytes).toBe(65536);
+			expect(saved.toolOutput.maxLines).toBe(1600);
+			expect(saved.contextGc.enabled).toBe(false);
+
+			const reloaded = SettingsManager.create(projectDir, agentDir);
+			expect(reloaded.getToolOutputMaxBytes()).toBe(65536);
+			expect(reloaded.getToolOutputMaxLines()).toBe(1600);
+			expect(reloaded.getContextGcEnabled()).toBe(false);
+
+			// Caps below the floors are clamped on write.
+			reloaded.setToolOutputMaxBytes(10);
+			reloaded.setToolOutputMaxLines(0);
+			expect(reloaded.getToolOutputMaxBytes()).toBe(1024);
+			expect(reloaded.getToolOutputMaxLines()).toBe(1);
+		});
+
+		it("preserves unrelated toolOutput keys when updating one cap", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ toolOutput: { maxBytes: 32768, maxLines: 800 } }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setToolOutputMaxLines(400);
+			await manager.flush();
+
+			const saved = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(saved.toolOutput.maxLines).toBe(400);
+			expect(saved.toolOutput.maxBytes).toBe(32768);
+		});
+	});
+
 	describe("packages migration", () => {
 		it("should keep local-only extensions in extensions array", () => {
 			const settingsPath = join(agentDir, "settings.json");
