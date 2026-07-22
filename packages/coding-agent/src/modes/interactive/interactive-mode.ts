@@ -2827,10 +2827,20 @@ export class InteractiveMode {
 			const toolToggleNames = [...new Set([...builtinToolNames, ...disabledToolNames])].sort();
 			const toolToggles = toolToggleNames.map((name) => ({ name, enabled: !disabledToolNames.has(name) }));
 
+			const flagDefs = this.session.extensionRunner.getFlags();
+			const flagValues = this.session.extensionRunner.getFlagValues();
+			const flags = [...flagDefs.values()].map((flag) => ({
+				name: flag.name,
+				description: flag.description,
+				type: flag.type,
+				value: flagValues.get(flag.name) ?? flag.default ?? (flag.type === "boolean" ? false : ""),
+			}));
+
 			const selector = new SettingsSelectorComponent(
 				{
 					autoCompact: this.session.autoCompactionEnabled,
 					tools: toolToggles,
+					flags,
 					toolOutputDisplay: this.toolOutputDisplay,
 					toolOutputMaxBytes: this.settingsManager.getToolOutputMaxBytes(),
 					toolOutputMaxLines: this.settingsManager.getToolOutputMaxLines(),
@@ -2907,6 +2917,12 @@ export class InteractiveMode {
 					},
 					onContextGcChange: (enabled) => {
 						this.settingsManager.setContextGcEnabled(enabled);
+					},
+					onFlagChange: (name, value) => {
+						// Persist for future launches; apply live best-effort (extensions
+						// that read a flag only at load time pick it up on next launch).
+						this.settingsManager.setFlagOverride(name, value);
+						this.session.extensionRunner.setFlagValue(name, value);
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);

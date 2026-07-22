@@ -206,6 +206,43 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("flag overrides", () => {
+		it("round-trips flag overrides and clears them", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setFlagOverride("plan", true);
+			manager.setFlagOverride("endpoint", "https://example.test");
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).flags).toEqual({
+				plan: true,
+				endpoint: "https://example.test",
+			});
+
+			const reloaded = SettingsManager.create(projectDir, agentDir);
+			expect(reloaded.getFlagOverrides()).toEqual({ plan: true, endpoint: "https://example.test" });
+
+			reloaded.clearFlagOverride("plan");
+			await reloaded.flush();
+			const afterClear = JSON.parse(readFileSync(settingsPath, "utf-8")).flags;
+			expect(afterClear).toEqual({ endpoint: "https://example.test" });
+		});
+
+		it("preserves externally added flag keys when updating one", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ flags: { external: "keep-me" } }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setFlagOverride("plan", true);
+			await manager.flush();
+
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).flags).toEqual({
+				external: "keep-me",
+				plan: true,
+			});
+		});
+	});
+
 	describe("packages migration", () => {
 		it("should keep local-only extensions in extensions array", () => {
 			const settingsPath = join(agentDir, "settings.json");

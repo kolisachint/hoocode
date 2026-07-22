@@ -3,6 +3,7 @@ import type { Transport } from "@kolisachint/hoocode-ai";
 import {
 	Container,
 	getCapabilities,
+	Input,
 	type SelectItem,
 	SelectList,
 	type SelectListLayoutOptions,
@@ -37,9 +38,19 @@ export interface ToolToggleInfo {
 	enabled: boolean;
 }
 
+export interface FlagInfo {
+	/** Flag name (without the leading --). */
+	name: string;
+	description?: string;
+	type: "boolean" | "string";
+	/** Current effective value. */
+	value: boolean | string;
+}
+
 export interface SettingsConfig {
 	autoCompact: boolean;
 	tools: ToolToggleInfo[];
+	flags: FlagInfo[];
 	toolOutputDisplay: "collapsed" | "peek" | "standard";
 	toolOutputMaxBytes: number;
 	toolOutputMaxLines: number;
@@ -77,6 +88,7 @@ export interface SettingsCallbacks {
 	onToolOutputMaxBytesChange: (bytes: number) => void;
 	onToolOutputMaxLinesChange: (lines: number) => void;
 	onContextGcChange: (enabled: boolean) => void;
+	onFlagChange: (name: string, value: boolean | string) => void;
 	onShowImagesChange: (enabled: boolean) => void;
 	onImageWidthCellsChange: (width: number) => void;
 	onAutoResizeImagesChange: (enabled: boolean) => void;
@@ -284,6 +296,88 @@ class ToolSettingsSubmenu extends Container {
 				}
 			},
 			onCancel,
+		);
+
+		this.addChild(this.settingsList);
+	}
+
+	handleInput(data: string): void {
+		this.settingsList.handleInput(data);
+	}
+}
+
+/** Single-line text editor for a string flag value. */
+class FlagStringEditSubmenu extends Container {
+	private input: Input;
+
+	constructor(flagName: string, currentValue: string, done: (value?: string) => void) {
+		super();
+
+		this.addChild(new Text(theme.bold(theme.fg("accent", `Flag: --${flagName}`)), 0, 0));
+		this.addChild(new Spacer(1));
+		this.addChild(new Text(theme.fg("muted", "Enter a value · Enter to save · Esc to cancel"), 0, 0));
+		this.addChild(new Spacer(1));
+
+		this.input = new Input();
+		this.input.setValue(currentValue);
+		this.input.onSubmit = (value: string) => done(value);
+		this.input.onEscape = () => done();
+		this.addChild(this.input);
+	}
+
+	handleInput(data: string): void {
+		this.input.handleInput(data);
+	}
+}
+
+/**
+ * Submenu listing extension-registered flags. Boolean flags toggle on/off;
+ * string flags open a text editor. Changes persist to settings.json and are
+ * applied live best-effort — extensions that read a flag only at load time
+ * pick up the new value on the next launch.
+ */
+class FlagsSubmenu extends Container {
+	private settingsList: SettingsList;
+
+	constructor(flags: FlagInfo[], onChange: (name: string, value: boolean | string) => void, onCancel: () => void) {
+		super();
+
+		const items: SettingItem[] = flags.map((flag) => {
+			const baseDescription = flag.description ?? "Extension-registered flag.";
+			const description = `${baseDescription} Persists across sessions; some flags need a restart to fully apply.`;
+			if (flag.type === "boolean") {
+				return {
+					id: flag.name,
+					label: flag.name,
+					description,
+					currentValue: flag.value ? "on" : "off",
+					values: ["on", "off"],
+				};
+			}
+			return {
+				id: flag.name,
+				label: flag.name,
+				description,
+				currentValue: String(flag.value ?? ""),
+				submenu: (currentValue, done) => new FlagStringEditSubmenu(flag.name, currentValue, done),
+			};
+		});
+
+		const typeByName = new Map(flags.map((f) => [f.name, f.type]));
+
+		this.settingsList = new SettingsList(
+			items,
+			Math.min(items.length, 12),
+			getSettingsListTheme(),
+			(id, newValue) => {
+				if (typeByName.get(id) === "boolean") {
+					onChange(id, newValue === "on");
+				} else {
+					onChange(id, newValue);
+				}
+			},
+			onCancel,
+			{ enableSearch: true },
 		);
 
 		this.addChild(this.settingsList);
@@ -553,6 +647,22 @@ export class SettingsSelectorComponent extends Container {
 					),
 			},
 		];
+
+		// Flags row: only shown when extensions have registered flags.
+		if (config.flags.length > 0) {
+			items.push({
+				id: "flags",
+				label: "Flags",
+				description: "Set flags registered by extensions. Changes persist across sessions.",
+				currentValue: `${config.flags.length} flag${config.flags.length === 1 ? "" : "s"}`,
+				submenu: (_currentValue, done) =>
+					new FlagsSubmenu(
+						config.flags,
+						(name, value) => callbacks.onFlagChange(name, value),
+						() => done(),
+					),
+			});
+		}
 
 		// Only show image toggle if terminal supports it
 		if (supportsImages) {

@@ -591,6 +591,28 @@ export class SettingsManager {
 		this.save();
 	}
 
+	/** Persisted overrides for extension-registered flags (name -> value). */
+	getFlagOverrides(): Record<string, boolean | string> {
+		return { ...(this.settings.flags ?? {}) };
+	}
+
+	setFlagOverride(name: string, value: boolean | string): void {
+		if (!this.globalSettings.flags) {
+			this.globalSettings.flags = {};
+		}
+		this.globalSettings.flags[name] = value;
+		this.markModified("flags", name);
+		this.save();
+	}
+
+	clearFlagOverride(name: string): void {
+		if (this.globalSettings.flags && name in this.globalSettings.flags) {
+			delete this.globalSettings.flags[name];
+			this.markModified("flags", name);
+			this.save();
+		}
+	}
+
 	getBranchSummarySettings(): Required<BranchSummarySettings> {
 		return { ...DEFAULT_SETTINGS.branchSummary, ...this.settings.branchSummary };
 	}

@@ -82,11 +82,8 @@ export interface AgentSessionServices {
 function applyExtensionFlagValues(
 	resourceLoader: ResourceLoader,
 	extensionFlagValues: Map<string, boolean | string> | undefined,
+	persistedFlags?: Record<string, boolean | string>,
 ): AgentSessionRuntimeDiagnostic[] {
-	if (!extensionFlagValues) {
-		return [];
-	}
-
 	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
 	const extensionsResult = resourceLoader.getExtensions();
 	const registeredFlags = new Map<string, { type: "boolean" | "string" }>();
@@ -94,6 +91,25 @@ function applyExtensionFlagValues(
 		for (const [name, flag] of extension.flags) {
 			registeredFlags.set(name, { type: flag.type });
 		}
+	}
+
+	// Seed persisted overrides first, so an explicit CLI --flag still wins below.
+	// Unknown (stale) or type-mismatched entries are ignored silently — a removed
+	// extension's leftover setting must not surface as a startup error.
+	if (persistedFlags) {
+		for (const [name, value] of Object.entries(persistedFlags)) {
+			const flag = registeredFlags.get(name);
+			if (!flag) continue;
+			if (flag.type === "boolean" && typeof value === "boolean") {
+				extensionsResult.runtime.flagValues.set(name, value);
+			} else if (flag.type === "string" && typeof value === "string") {
+				extensionsResult.runtime.flagValues.set(name, value);
+			}
+		}
+	}
+
+	if (!extensionFlagValues) {
+		return diagnostics;
 	}
 
 	const unknownFlags: string[] = [];
@@ -162,7 +178,9 @@ export async function createAgentSessionServices(
 		}
 	}
 	extensionsResult.runtime.pendingProviderRegistrations = [];
-	diagnostics.push(...applyExtensionFlagValues(resourceLoader, options.extensionFlagValues));
+	diagnostics.push(
+		...applyExtensionFlagValues(resourceLoader, options.extensionFlagValues, settingsManager.getFlagOverrides()),
+	);
 
 	return {
 		cwd,
