@@ -44,6 +44,7 @@ The agent works through a small, deterministic tool set. Available by default:
 |---|---|
 | `read` · `write` · `edit` | Read files, create new ones, and make exact-text edits. One `edit` call can apply several replacements at once, and an edit can set `replaceAll` to replace every occurrence instead of requiring a unique match. |
 | `bash` | Run shell commands — each one gated by the `Yes / No / Always` permission prompt. |
+| `search` | Ranked "find where code lives" — fuses exact-text and semantic (local embedding index) retrieval, returning `file:line-range` hits. Always available: it degrades to grep-backed lexical retrieval when no semantic index is present, so `--enable-embsearchtools` only controls whether the semantic index is built and fused in, not whether the tool exists. Use `search` to locate a concept or behavior; use `grep` for exact matching lines. |
 | `grep` · `find` · `ls` | Search file contents (ripgrep), find files by glob pattern (fd — one or more patterns, optional type/depth/exclude filters), and list directories. `grep`/`find` respect `.gitignore`; `ls` lists a single directory and takes an optional `ignore` list to skip noise like `node_modules`. |
 | **Task** (subagents) · **TodoWrite** | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer, and maintain a live todo list shown in the task panel. Both are **on by default** — disable with `"enableSubagent": false` / `"enableTodoWrite": false`. |
 

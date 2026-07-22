@@ -1,10 +1,9 @@
 /**
- * Shared helpers for the fd-backed file search tools (find, glob).
- *
- * These are pure functions extracted to remove duplication between find.ts and
- * glob.ts. The tools keep their own control flow (find streams a single fd run;
- * glob fans out one fd run per pattern), but path normalization and fd glob
- * argument handling are identical and live here.
+ * Shared helpers for the fd-backed `find` tool: path normalization and fd glob
+ * argument handling. `find` runs one fd invocation per pattern (OR logic across
+ * an array). These are pure functions; `toPosixPath` is also reused for stable
+ * forward-slash output elsewhere in the codebase (native-search, skills, read,
+ * package resource discovery).
  */
 
 import path from "path";
