@@ -25,6 +25,10 @@ type IgnoreMatcher = ReturnType<typeof ignore>;
 /** Default request timeout (seconds) passed to the binary. */
 export const WEBTOOLS_DEFAULT_TIMEOUT_SECS = 15;
 
+/** Lower/upper bounds on the effective request timeout (seconds). */
+const WEBTOOLS_MIN_TIMEOUT_SECS = 1;
+const WEBTOOLS_MAX_TIMEOUT_SECS = 120;
+
 /** How long a successful result stays cached, mirroring the documented 15-min TTL. */
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
@@ -113,6 +117,33 @@ export function resolveWebtoolsTLSConfig(overrides?: WebtoolsTLSConfig): Webtool
 	const caCertPath = overrides?.caCertPath ?? (envCaCert && envCaCert.length > 0 ? envCaCert : undefined);
 	const insecure = overrides?.insecure ?? isTruthyEnv(process.env.HOOCODE_WEBTOOLS_INSECURE);
 	return { caCertPath, insecure };
+}
+
+/** Clamp a request timeout to the supported range, flooring to whole seconds. */
+function clampTimeoutSecs(secs: number): number {
+	return Math.min(WEBTOOLS_MAX_TIMEOUT_SECS, Math.max(WEBTOOLS_MIN_TIMEOUT_SECS, Math.floor(secs)));
+}
+
+/**
+ * Resolve the effective webtools request timeout (seconds) from an explicit
+ * override (e.g. settings.json passed down from the tool factories) falling back
+ * to the environment (`HOOCODE_WEBTOOLS_TIMEOUT`) and finally the default. Mirrors
+ * {@link resolveWebtoolsTLSConfig}: resolve once, thread in, never hardcode. A
+ * malformed or out-of-range env value falls back to the default; every result is
+ * clamped to [1, 120].
+ */
+export function resolveWebtoolsTimeoutSecs(override?: number): number {
+	if (override !== undefined && Number.isFinite(override)) {
+		return clampTimeoutSecs(override);
+	}
+	const envRaw = process.env.HOOCODE_WEBTOOLS_TIMEOUT?.trim();
+	if (envRaw) {
+		const envValue = Number(envRaw);
+		if (Number.isFinite(envValue) && envValue > 0) {
+			return clampTimeoutSecs(envValue);
+		}
+	}
+	return WEBTOOLS_DEFAULT_TIMEOUT_SECS;
 }
 
 // Warn at most once per distinct message for the life of the process.

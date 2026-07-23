@@ -8,9 +8,9 @@ import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import {
 	blockedHostForUrl,
+	resolveWebtoolsTimeoutSecs,
 	resolveWebtoolsTLSConfig,
 	runWebtools,
-	WEBTOOLS_DEFAULT_TIMEOUT_SECS,
 	type WebFetchResult,
 	WebToolsCache,
 	type WebtoolsTLSConfig,
@@ -55,6 +55,8 @@ export interface WebFetchToolDetails {
 export interface WebFetchToolOptions extends WebtoolsTLSConfig {
 	/** Override the result cache (mainly for tests). */
 	cache?: WebToolsCache<WebFetchResult>;
+	/** Effective per-request timeout (seconds); falls back to env/default when unset. */
+	timeoutSecs?: number;
 }
 
 function formatWebfetchCall(args: { url?: string; output?: string } | undefined): string {
@@ -93,9 +95,10 @@ export function createWebFetchToolDefinition(
 	options?: WebFetchToolOptions,
 ): ToolDefinition<typeof webfetchSchema, WebFetchToolDetails | undefined> {
 	const cache = options?.cache ?? new WebToolsCache<WebFetchResult>();
-	// Resolve CA/insecure plumbing once (settings overrides, else env) and thread
-	// it into every spawn; not hardcoded.
+	// Resolve CA/insecure plumbing and the request timeout once (settings
+	// overrides, else env) and thread them into every spawn; not hardcoded.
 	const tlsConfig = resolveWebtoolsTLSConfig(options);
+	const timeoutSecs = resolveWebtoolsTimeoutSecs(options?.timeoutSecs);
 	return {
 		name: "webfetch",
 		label: "webfetch",
@@ -122,7 +125,7 @@ export function createWebFetchToolDefinition(
 
 			const args = ["--url", url, "--max-tokens", String(effectiveMaxTokens), "--output", format];
 			const result = await cache.getOrCompute(cacheKey, signal, (sig) =>
-				runWebtools<WebFetchResult>("fetch", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS, tlsConfig),
+				runWebtools<WebFetchResult>("fetch", args, cwd, sig, timeoutSecs, tlsConfig),
 			);
 
 			const header = result.title ? `${result.title}\n${result.final_url}\n\n` : `${result.final_url}\n\n`;

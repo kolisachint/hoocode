@@ -2025,6 +2025,7 @@ export class AgentSession {
 		const browserLivePreview = this.settingsManager.getEnableBrowserLivePreview();
 		const toolMaxOutputBytes = this.settingsManager.getToolOutputMaxBytes();
 		const toolMaxOutputLines = this.settingsManager.getToolOutputMaxLines();
+		const webtoolsTimeoutSecs = this.settingsManager.getWebtoolsTimeoutSecs();
 		const baseToolDefinitions = this._baseToolsOverride
 			? Object.fromEntries(
 					Object.entries(this._baseToolsOverride).map(([name, tool]) => [
@@ -2047,6 +2048,8 @@ export class AgentSession {
 					},
 					browser_run: { liveView: browserLivePreview },
 					search: { getService: () => getEmbsearchService(this._cwd) },
+					webfetch: { timeoutSecs: webtoolsTimeoutSecs },
+					websearch: { timeoutSecs: webtoolsTimeoutSecs },
 				});
 
 		this._baseToolDefinitions = new Map(

@@ -24,6 +24,14 @@ export interface ContextGcSettings {
 	enabled?: boolean; // default: true - stub out superseded read results (file later edited/re-read) from the outgoing context
 }
 
+export interface VoiceSettings {
+	silenceMs?: number; // default: 800 - trailing-silence window (ms) tolerated before voice capture auto-stops; clamped to 300-10000. Env VOICETOOLS_SILENCE_MS overrides this setting.
+}
+
+export interface WebtoolsSettings {
+	timeoutSecs?: number; // default: 15 - per-request timeout (seconds) for the webfetch/websearch binary; clamped to 1-120. This setting wins over env HOOCODE_WEBTOOLS_TIMEOUT, which wins over the default.
+}
+
 export interface BranchSummarySettings {
 	reserveTokens?: number; // default: 16384 (tokens reserved for prompt + LLM response)
 	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
@@ -127,6 +135,8 @@ export interface Settings {
 	compaction?: CompactionSettings;
 	toolOutput?: ToolOutputSettings; // caps on a single read/bash result (bounds per-turn transcript growth)
 	contextGc?: ContextGcSettings; // garbage-collect superseded read results from the outgoing context
+	voice?: VoiceSettings; // voice-to-text capture tuning (trailing-silence window)
+	webtools?: WebtoolsSettings; // webfetch/websearch binary tuning (request timeout)
 	disabledTools?: string[]; // Tool names disabled from the TUI; removed from the agent in every session (composes with the --tools allowlist / --disallowed-tools denylist)
 	toolOutputDisplay?: "collapsed" | "peek" | "standard"; // default: "standard" - how tool result bodies render in the TUI. "collapsed": hidden; "peek": hidden with a ▸ reveal affordance; "standard": shown (truncated, expandable)
 	flags?: Record<string, boolean | string>; // Persisted overrides for extension-registered flags, applied at startup for known flags (CLI --flag still wins). Unknown/stale entries are ignored.

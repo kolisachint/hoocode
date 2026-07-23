@@ -65,7 +65,9 @@ export type {
 	TerminalSettings,
 	ThinkingBudgetsSettings,
 	TransportSetting,
+	VoiceSettings,
 	WarningSettings,
+	WebtoolsSettings,
 } from "./settings-types.js";
 
 export class SettingsManager {
@@ -565,6 +567,54 @@ export class SettingsManager {
 		}
 		this.globalSettings.contextGc.enabled = enabled;
 		this.markModified("contextGc", "enabled");
+		this.save();
+	}
+
+	/** Trailing-silence window (ms) before voice capture auto-stops. Clamped to 300-10000. */
+	getVoiceSilenceMs(): number {
+		const fallback = DEFAULT_SETTINGS.voice!.silenceMs;
+		const v = this.settings.voice?.silenceMs ?? fallback;
+		return Number.isFinite(v) ? Math.min(10000, Math.max(300, Math.floor(v))) : fallback;
+	}
+
+	setVoiceSilenceMs(ms: number): void {
+		if (!this.globalSettings.voice) {
+			this.globalSettings.voice = {};
+		}
+		this.globalSettings.voice.silenceMs = Math.min(10000, Math.max(300, Math.floor(ms)));
+		this.markModified("voice", "silenceMs");
+		this.save();
+	}
+
+	/**
+	 * Per-request timeout (seconds) for the webfetch/websearch binary. Settings
+	 * takes precedence, then the `HOOCODE_WEBTOOLS_TIMEOUT` env var, then the
+	 * default 15 (mirrors {@link getClearOnShrink}). Clamped to 1-120; a
+	 * non-finite settings value or malformed env falls through to the next tier.
+	 */
+	getWebtoolsTimeoutSecs(): number {
+		const fallback = DEFAULT_SETTINGS.webtools!.timeoutSecs;
+		const clamp = (n: number): number => Math.min(120, Math.max(1, Math.floor(n)));
+		const configured = this.settings.webtools?.timeoutSecs;
+		if (configured !== undefined && Number.isFinite(configured)) {
+			return clamp(configured);
+		}
+		const envRaw = process.env.HOOCODE_WEBTOOLS_TIMEOUT?.trim();
+		if (envRaw) {
+			const envValue = Number(envRaw);
+			if (Number.isFinite(envValue) && envValue > 0) {
+				return clamp(envValue);
+			}
+		}
+		return fallback;
+	}
+
+	setWebtoolsTimeoutSecs(secs: number): void {
+		if (!this.globalSettings.webtools) {
+			this.globalSettings.webtools = {};
+		}
+		this.globalSettings.webtools.timeoutSecs = Math.min(120, Math.max(1, Math.floor(secs)));
+		this.markModified("webtools", "timeoutSecs");
 		this.save();
 	}
 
