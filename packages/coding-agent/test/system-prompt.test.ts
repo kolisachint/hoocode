@@ -115,4 +115,24 @@ describe("buildSystemPrompt", () => {
 			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
 		});
 	});
+
+	describe("search/grep routing", () => {
+		test("emits the routing guideline only when both search and grep are active", () => {
+			const both = buildSystemPrompt({
+				selectedTools: ["search", "grep"],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+			expect(both).toContain("Between search and grep:");
+
+			const grepOnly = buildSystemPrompt({
+				selectedTools: ["grep"],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+			expect(grepOnly).not.toContain("Between search and grep:");
+		});
+	});
 });

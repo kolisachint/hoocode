@@ -136,6 +136,16 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		addGuideline("Use bash for file exploration (ls, rg/grep, find)");
 	}
 
+	// Single source of truth for the search↔grep decision. Gated on both tools
+	// being active so we never reference a tool that isn't registered — grep.ts
+	// and search.ts intentionally no longer cross-reference each other, since a
+	// tool factory can't know what else is in the bundle.
+	if (hasSearch && hasGrep) {
+		addGuideline(
+			"Between search and grep: search finds where code lives by concept, behavior, or half-known name (ranked results); grep enumerates exact matching lines, regexes, and counts (output proportional to matches)",
+		);
+	}
+
 	for (const guideline of promptGuidelines ?? []) {
 		const normalized = guideline.trim();
 		if (normalized.length > 0) {
