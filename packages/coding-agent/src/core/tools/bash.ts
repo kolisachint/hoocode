@@ -288,7 +288,8 @@ export function createBashToolDefinition(
 		name: "bash",
 		label: "bash",
 		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${maxLines} lines or ${Math.round(maxBytes / 1024)}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
-		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
+		promptSnippet:
+			"Run builds, tests, linters, git, and package managers. For reading, searching, or editing files, use the dedicated tools instead.",
 		parameters: bashSchema,
 		async execute(
 			_toolCallId,
