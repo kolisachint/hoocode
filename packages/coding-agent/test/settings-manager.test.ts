@@ -206,6 +206,60 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("voice silence window", () => {
+		it("defaults to 800 and round-trips within range", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getVoiceSilenceMs()).toBe(800);
+
+			manager.setVoiceSilenceMs(1500);
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).voice.silenceMs).toBe(1500);
+			expect(SettingsManager.create(projectDir, agentDir).getVoiceSilenceMs()).toBe(1500);
+		});
+
+		it("clamps to 300-5000 on write and read", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setVoiceSilenceMs(50);
+			expect(manager.getVoiceSilenceMs()).toBe(300);
+			manager.setVoiceSilenceMs(999999);
+			expect(manager.getVoiceSilenceMs()).toBe(5000);
+
+			// An externally written out-of-range value is clamped on read.
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ voice: { silenceMs: 100 } }));
+			expect(SettingsManager.create(projectDir, agentDir).getVoiceSilenceMs()).toBe(300);
+		});
+	});
+
+	describe("webtools timeout", () => {
+		it("defaults to 15 and round-trips within range", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getWebtoolsTimeoutSecs()).toBe(15);
+
+			manager.setWebtoolsTimeoutSecs(45);
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).webtools.timeoutSecs).toBe(45);
+			expect(SettingsManager.create(projectDir, agentDir).getWebtoolsTimeoutSecs()).toBe(45);
+		});
+
+		it("clamps to 1-120 on write and read", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setWebtoolsTimeoutSecs(0);
+			expect(manager.getWebtoolsTimeoutSecs()).toBe(1);
+			manager.setWebtoolsTimeoutSecs(999);
+			expect(manager.getWebtoolsTimeoutSecs()).toBe(120);
+
+			// An externally written non-finite value falls back to the default.
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ webtools: { timeoutSecs: "nope" } }));
+			expect(SettingsManager.create(projectDir, agentDir).getWebtoolsTimeoutSecs()).toBe(15);
+		});
+	});
+
 	describe("flag overrides", () => {
 		it("round-trips flag overrides and clears them", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);

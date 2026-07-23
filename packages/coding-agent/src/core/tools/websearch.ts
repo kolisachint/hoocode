@@ -10,9 +10,9 @@ import {
 	hostnameOf,
 	isHostBlocked,
 	loadWebtoolsIgnore,
+	resolveWebtoolsTimeoutSecs,
 	resolveWebtoolsTLSConfig,
 	runWebtools,
-	WEBTOOLS_DEFAULT_TIMEOUT_SECS,
 	type WebSearchOutput,
 	type WebSearchResultItem,
 	WebToolsCache,
@@ -47,6 +47,8 @@ export interface WebSearchToolDetails {
 export interface WebSearchToolOptions extends WebtoolsTLSConfig {
 	/** Override the result cache (mainly for tests). */
 	cache?: WebToolsCache<WebSearchOutput>;
+	/** Effective per-request timeout (seconds); falls back to env/default when unset. */
+	timeoutSecs?: number;
 }
 
 /**
@@ -108,9 +110,10 @@ export function createWebSearchToolDefinition(
 	options?: WebSearchToolOptions,
 ): ToolDefinition<typeof websearchSchema, WebSearchToolDetails | undefined> {
 	const cache = options?.cache ?? new WebToolsCache<WebSearchOutput>();
-	// Resolve CA/insecure plumbing once (settings overrides, else env) and thread
-	// it into every spawn; not hardcoded.
+	// Resolve CA/insecure plumbing and the request timeout once (settings
+	// overrides, else env) and thread them into every spawn; not hardcoded.
 	const tlsConfig = resolveWebtoolsTLSConfig(options);
+	const timeoutSecs = resolveWebtoolsTimeoutSecs(options?.timeoutSecs);
 	return {
 		name: "websearch",
 		label: "websearch",
@@ -130,7 +133,7 @@ export function createWebSearchToolDefinition(
 			const args = ["--query", query, "--max-results", String(effectiveMax)];
 			if (safeSearch) args.push("--safe-search", safeSearch);
 			const output = await cache.getOrCompute(cacheKey, signal, (sig) =>
-				runWebtools<WebSearchOutput>("search", args, cwd, sig, WEBTOOLS_DEFAULT_TIMEOUT_SECS, tlsConfig),
+				runWebtools<WebSearchOutput>("search", args, cwd, sig, timeoutSecs, tlsConfig),
 			);
 
 			// Filter result links through .webtoolsignore policy.

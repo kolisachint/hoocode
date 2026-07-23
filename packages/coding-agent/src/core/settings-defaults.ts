@@ -17,6 +17,12 @@ export const DEFAULT_SETTINGS = {
 	contextGc: {
 		enabled: true,
 	},
+	voice: {
+		silenceMs: 800,
+	},
+	webtools: {
+		timeoutSecs: 15,
+	},
 	disabledTools: [],
 	toolOutputDisplay: "standard",
 	branchSummary: {

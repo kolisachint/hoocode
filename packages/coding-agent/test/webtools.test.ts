@@ -4,7 +4,11 @@ import { join } from "path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { clampMaxTokens, createWebFetchTool } from "../src/core/tools/webfetch.js";
 import { createWebSearchTool } from "../src/core/tools/websearch.js";
-import { resolveWebtoolsTLSConfig, WebToolsCache } from "../src/core/tools/webtools-shared.js";
+import {
+	resolveWebtoolsTimeoutSecs,
+	resolveWebtoolsTLSConfig,
+	WebToolsCache,
+} from "../src/core/tools/webtools-shared.js";
 
 // A fake `webtools` binary placed on PATH. It echoes canned --json output for
 // the fetch/search subcommands so the tools' spawn + parse + filter paths are
@@ -216,6 +220,40 @@ describe("web tools", () => {
 				insecure: false,
 			});
 		});
+	});
+});
+
+describe("resolveWebtoolsTimeoutSecs", () => {
+	const saved = process.env.HOOCODE_WEBTOOLS_TIMEOUT;
+	afterEach(() => {
+		if (saved === undefined) delete process.env.HOOCODE_WEBTOOLS_TIMEOUT;
+		else process.env.HOOCODE_WEBTOOLS_TIMEOUT = saved;
+	});
+
+	it("defaults to 15 when nothing is configured", () => {
+		delete process.env.HOOCODE_WEBTOOLS_TIMEOUT;
+		expect(resolveWebtoolsTimeoutSecs()).toBe(15);
+	});
+
+	it("reads the env override and clamps it to 1-120", () => {
+		process.env.HOOCODE_WEBTOOLS_TIMEOUT = "30";
+		expect(resolveWebtoolsTimeoutSecs()).toBe(30);
+		process.env.HOOCODE_WEBTOOLS_TIMEOUT = "999";
+		expect(resolveWebtoolsTimeoutSecs()).toBe(120);
+		process.env.HOOCODE_WEBTOOLS_TIMEOUT = "0";
+		expect(resolveWebtoolsTimeoutSecs()).toBe(15); // non-positive env falls back to default
+	});
+
+	it("prefers an explicit override over env, still clamped", () => {
+		process.env.HOOCODE_WEBTOOLS_TIMEOUT = "30";
+		expect(resolveWebtoolsTimeoutSecs(45)).toBe(45);
+		expect(resolveWebtoolsTimeoutSecs(500)).toBe(120);
+		expect(resolveWebtoolsTimeoutSecs(-1)).toBe(1);
+	});
+
+	it("falls back to default on a malformed env value", () => {
+		process.env.HOOCODE_WEBTOOLS_TIMEOUT = "not-a-number";
+		expect(resolveWebtoolsTimeoutSecs()).toBe(15);
 	});
 });
 

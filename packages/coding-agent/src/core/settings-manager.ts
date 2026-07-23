@@ -65,7 +65,9 @@ export type {
 	TerminalSettings,
 	ThinkingBudgetsSettings,
 	TransportSetting,
+	VoiceSettings,
 	WarningSettings,
+	WebtoolsSettings,
 } from "./settings-types.js";
 
 export class SettingsManager {
@@ -565,6 +567,38 @@ export class SettingsManager {
 		}
 		this.globalSettings.contextGc.enabled = enabled;
 		this.markModified("contextGc", "enabled");
+		this.save();
+	}
+
+	/** Trailing-silence window (ms) before voice capture auto-stops. Clamped to 300-5000. */
+	getVoiceSilenceMs(): number {
+		const fallback = DEFAULT_SETTINGS.voice!.silenceMs;
+		const v = this.settings.voice?.silenceMs ?? fallback;
+		return Number.isFinite(v) ? Math.min(5000, Math.max(300, Math.floor(v))) : fallback;
+	}
+
+	setVoiceSilenceMs(ms: number): void {
+		if (!this.globalSettings.voice) {
+			this.globalSettings.voice = {};
+		}
+		this.globalSettings.voice.silenceMs = Math.min(5000, Math.max(300, Math.floor(ms)));
+		this.markModified("voice", "silenceMs");
+		this.save();
+	}
+
+	/** Per-request timeout (seconds) for the webfetch/websearch binary. Clamped to 1-120. */
+	getWebtoolsTimeoutSecs(): number {
+		const fallback = DEFAULT_SETTINGS.webtools!.timeoutSecs;
+		const v = this.settings.webtools?.timeoutSecs ?? fallback;
+		return Number.isFinite(v) ? Math.min(120, Math.max(1, Math.floor(v))) : fallback;
+	}
+
+	setWebtoolsTimeoutSecs(secs: number): void {
+		if (!this.globalSettings.webtools) {
+			this.globalSettings.webtools = {};
+		}
+		this.globalSettings.webtools.timeoutSecs = Math.min(120, Math.max(1, Math.floor(secs)));
+		this.markModified("webtools", "timeoutSecs");
 		this.save();
 	}
 

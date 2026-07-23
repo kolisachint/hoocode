@@ -52,6 +52,7 @@ import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.j
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
+import type { SettingsManager } from "../../core/settings-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
 import { startupProgress } from "../../core/startup-progress.js";
@@ -118,6 +119,23 @@ import { VoiceController } from "./voice/voice-controller.js";
 /** Interface for components that can be expanded/collapsed */
 
 const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
+
+/**
+ * Resolve the effective voice trailing-silence window (ms): env
+ * `VOICETOOLS_SILENCE_MS` wins (like `VOICETOOLS_BIN`), otherwise the settings
+ * value. Both paths are clamped to 300-5000; a malformed env value falls back to
+ * the settings value.
+ */
+function resolveVoiceSilenceMs(settingsManager: SettingsManager): number {
+	const envRaw = process.env.VOICETOOLS_SILENCE_MS?.trim();
+	if (envRaw) {
+		const envValue = Number(envRaw);
+		if (Number.isFinite(envValue) && envValue > 0) {
+			return Math.min(5000, Math.max(300, Math.floor(envValue)));
+		}
+	}
+	return settingsManager.getVoiceSilenceMs();
+}
 
 function isDeadTerminalError(error: unknown): boolean {
 	if (!error || typeof error !== "object" || !("code" in error)) {
@@ -464,6 +482,7 @@ export class InteractiveMode {
 			statusContainer: this.statusContainer,
 			sendEditorInput: (data) => this.editor.handleInput(data),
 			showError: (message) => this.showError(message),
+			silenceMs: resolveVoiceSilenceMs(this.settingsManager),
 		});
 		const self = this;
 		this.bashExecution = new BashExecutionController({
@@ -2931,6 +2950,8 @@ export class InteractiveMode {
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
 					warnings: this.settingsManager.getWarnings(),
+					voiceSilenceMs: this.settingsManager.getVoiceSilenceMs(),
+					webtoolsTimeoutSecs: this.settingsManager.getWebtoolsTimeoutSecs(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -3113,6 +3134,15 @@ export class InteractiveMode {
 					},
 					onWarningsChange: (warnings) => {
 						this.settingsManager.setWarnings(warnings);
+					},
+					onVoiceSilenceMsChange: (ms) => {
+						this.settingsManager.setVoiceSilenceMs(ms);
+						// Env override still wins; re-resolve so the live value stays consistent.
+						this.voice.setSilenceMs(resolveVoiceSilenceMs(this.settingsManager));
+					},
+					onWebtoolsTimeoutSecsChange: (secs) => {
+						// Persisted; webfetch/websearch pick it up when tools rebuild next session.
+						this.settingsManager.setWebtoolsTimeoutSecs(secs);
 					},
 					onCancel: () => {
 						done();

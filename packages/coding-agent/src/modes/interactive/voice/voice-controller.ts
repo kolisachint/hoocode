@@ -15,14 +15,6 @@ import { keyHint } from "../components/keybinding-hints.js";
 import { VoicePanel } from "./voice-panel.js";
 import { startVoiceTranscribe, VoiceDaemon, type VoiceDaemonHandlers, type VoiceSession } from "./voice-transcribe.js";
 
-// Trailing-silence window: how long a pause while speaking lasts before the
-// capture auto-stops. Passed to `voicetools serve` via `--silence-ms` (see
-// VoiceDaemon.spawn) so the binary's real cutoff matches the on-screen
-// countdown this same value drives. Every utterance pays this in full before
-// finalization can start, so keep it close to the binary's 600ms default —
-// a slightly longer window tolerates brief mid-sentence pauses without
-// taxing every dictation with seconds of dead air.
-const VOICE_SILENCE_MS = 800;
 /** How long to keep the warm voice model in memory after the last capture
  * completes. The daemon auto-shuts down after this window, releasing the
  * ~900 MB resident model; the next ctrl+r pays a cold-start respawn cost.
@@ -43,6 +35,16 @@ export interface VoiceControllerDeps {
 	/** Feed raw input (bracketed paste) to the prompt editor. */
 	sendEditorInput(data: string): void;
 	showError(message: string): void;
+	/**
+	 * Trailing-silence window (ms): how long a pause while speaking lasts before
+	 * the capture auto-stops. Resolved once by the caller (env `VOICETOOLS_SILENCE_MS`
+	 * → settings → default 800, clamped 300-5000) and used for both the binary
+	 * cutoff — passed to `voicetools serve` via `--silence-ms` (see
+	 * VoiceDaemon.spawn) — and the on-screen countdown, so the two stay in sync.
+	 * A longer window tolerates brief mid-sentence pauses without taxing every
+	 * dictation with dead air.
+	 */
+	silenceMs: number;
 }
 
 export class VoiceController {
@@ -130,7 +132,7 @@ export class VoiceController {
 					return;
 				}
 				const result = await VoiceDaemon.spawn(bin, this.buildDaemonHandlers(), {
-					silenceMs: VOICE_SILENCE_MS,
+					silenceMs: this.deps.silenceMs,
 					idleTimeoutMs: VOICE_IDLE_TIMEOUT_MS,
 				});
 				if (!result.ok) {
@@ -162,6 +164,21 @@ export class VoiceController {
 				this.resetUI();
 				this.deps.showError(`Voice input failed: ${err instanceof Error ? err.message : String(err)}`);
 			});
+	}
+
+	/**
+	 * Update the trailing-silence window live (e.g. from the settings selector).
+	 * The daemon's `--silence-ms` is fixed at spawn, so drop any idle warm daemon
+	 * and let the next capture respawn — that keeps the binary cutoff matched to
+	 * the countdown, which reads the same value. A drop is skipped while a capture
+	 * is active so the in-flight session keeps its own spawn-time value.
+	 */
+	setSilenceMs(ms: number): void {
+		this.deps.silenceMs = ms;
+		if (!this.active && this.daemon) {
+			this.daemon.shutdown();
+			this.daemon = undefined;
+		}
 	}
 
 	/** Stop any capture, shut down the daemon, and drop the panel. */
@@ -229,7 +246,7 @@ export class VoiceController {
 			onPhase: (phase) => {
 				if (!this.active) return;
 				if (phase === "silence") {
-					this.panel?.beginSilence(VOICE_SILENCE_MS);
+					this.panel?.beginSilence(this.deps.silenceMs);
 				} else {
 					this.panel?.endSilence();
 				}

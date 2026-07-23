@@ -89,6 +89,8 @@ export interface SettingsConfig {
 	clearOnShrink: boolean;
 	showTerminalProgress: boolean;
 	warnings: WarningSettings;
+	voiceSilenceMs: number;
+	webtoolsTimeoutSecs: number;
 }
 
 export interface SettingsCallbacks {
@@ -123,6 +125,8 @@ export interface SettingsCallbacks {
 	onClearOnShrinkChange: (enabled: boolean) => void;
 	onShowTerminalProgressChange: (enabled: boolean) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
+	onVoiceSilenceMsChange: (ms: number) => void;
+	onWebtoolsTimeoutSecsChange: (secs: number) => void;
 	onCancel: () => void;
 }
 
@@ -772,6 +776,26 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Voice silence window (insert after terminal-progress)
+		const terminalProgressIndex = items.findIndex((item) => item.id === "terminal-progress");
+		items.splice(terminalProgressIndex + 1, 0, {
+			id: "voice-silence-ms",
+			label: "Voice silence window",
+			description: "Trailing-silence (ms) before voice capture auto-stops (300-5000). Env: VOICETOOLS_SILENCE_MS.",
+			currentValue: String(config.voiceSilenceMs),
+			values: ["300", "500", "800", "1200", "2000", "3000", "5000"],
+		});
+
+		// Webtools request timeout (insert after voice-silence-ms)
+		const voiceSilenceIndex = items.findIndex((item) => item.id === "voice-silence-ms");
+		items.splice(voiceSilenceIndex + 1, 0, {
+			id: "webtools-timeout-secs",
+			label: "Web tools timeout",
+			description: "Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
+			currentValue: String(config.webtoolsTimeoutSecs),
+			values: ["5", "10", "15", "30", "60", "120"],
+		});
+
 		// Keep the tool/flag controls together as one block near the top, inserted
 		// after the image/terminal splices above so they aren't leapfrogged.
 		const toolFlagGroup: SettingItem[] = [
@@ -905,6 +929,12 @@ export class SettingsSelectorComponent extends Container {
 				case "terminal-progress":
 					callbacks.onShowTerminalProgressChange(newValue === "true");
 					break;
+				case "voice-silence-ms":
+					callbacks.onVoiceSilenceMsChange(parseInt(newValue, 10));
+					break;
+				case "webtools-timeout-secs":
+					callbacks.onWebtoolsTimeoutSecsChange(parseInt(newValue, 10));
+					break;
 			}
 		};
 
@@ -953,12 +983,14 @@ export class SettingsSelectorComponent extends Container {
 				"auto-resize-images",
 				"block-images",
 			]),
-			categoryRow("cat-advanced", "Advanced", "Startup, telemetry, skills, and warnings.", [
+			categoryRow("cat-advanced", "Advanced", "Startup, telemetry, skills, warnings, voice, and web tools.", [
 				"quiet-startup",
 				"collapse-changelog",
 				"install-telemetry",
 				"skill-commands",
 				"warnings",
+				"voice-silence-ms",
+				"webtools-timeout-secs",
 			]),
 		];
 
