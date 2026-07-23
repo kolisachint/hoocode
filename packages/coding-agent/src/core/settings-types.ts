@@ -127,6 +127,9 @@ export interface Settings {
 	compaction?: CompactionSettings;
 	toolOutput?: ToolOutputSettings; // caps on a single read/bash result (bounds per-turn transcript growth)
 	contextGc?: ContextGcSettings; // garbage-collect superseded read results from the outgoing context
+	disabledTools?: string[]; // Tool names disabled from the TUI; removed from the agent in every session (composes with the --tools allowlist / --disallowed-tools denylist)
+	toolOutputDisplay?: "collapsed" | "peek" | "standard"; // default: "standard" - how tool result bodies render in the TUI. "collapsed": hidden; "peek": hidden with a ▸ reveal affordance; "standard": shown (truncated, expandable)
+	flags?: Record<string, boolean | string>; // Persisted overrides for extension-registered flags, applied at startup for known flags (CLI --flag still wins). Unknown/stale entries are ignored.
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;

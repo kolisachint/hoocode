@@ -110,6 +110,139 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("disabledTools", () => {
+		it("defaults to an empty list", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getDisabledTools()).toEqual([]);
+		});
+
+		it("round-trips through settings.json", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setDisabledTools(["bash", "write"]);
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.disabledTools).toEqual(["bash", "write"]);
+
+			// A fresh manager reads the persisted value.
+			const reloaded = SettingsManager.create(projectDir, agentDir);
+			expect(reloaded.getDisabledTools()).toEqual(["bash", "write"]);
+		});
+
+		it("preserves unrelated settings when updating the disabled list", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ theme: "dark", defaultModel: "claude-sonnet" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setDisabledTools(["bash"]);
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(savedSettings.disabledTools).toEqual(["bash"]);
+			expect(savedSettings.theme).toBe("dark");
+			expect(savedSettings.defaultModel).toBe("claude-sonnet");
+		});
+	});
+
+	describe("toolOutputDisplay", () => {
+		it("defaults to standard", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getToolOutputDisplay()).toBe("standard");
+		});
+
+		it("round-trips a valid value and rejects an invalid one", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setToolOutputDisplay("peek");
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).toolOutputDisplay).toBe("peek");
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputDisplay()).toBe("peek");
+
+			// An externally written bogus value falls back to the default.
+			writeFileSync(settingsPath, JSON.stringify({ toolOutputDisplay: "bogus" }));
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputDisplay()).toBe("standard");
+		});
+	});
+
+	describe("tool settings (output caps + context GC)", () => {
+		it("round-trips maxBytes/maxLines/contextGc and clamps invalid caps", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setToolOutputMaxBytes(65536);
+			manager.setToolOutputMaxLines(1600);
+			manager.setContextGcEnabled(false);
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			const saved = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(saved.toolOutput.maxBytes).toBe(65536);
+			expect(saved.toolOutput.maxLines).toBe(1600);
+			expect(saved.contextGc.enabled).toBe(false);
+
+			const reloaded = SettingsManager.create(projectDir, agentDir);
+			expect(reloaded.getToolOutputMaxBytes()).toBe(65536);
+			expect(reloaded.getToolOutputMaxLines()).toBe(1600);
+			expect(reloaded.getContextGcEnabled()).toBe(false);
+
+			// Caps below the floors are clamped on write.
+			reloaded.setToolOutputMaxBytes(10);
+			reloaded.setToolOutputMaxLines(0);
+			expect(reloaded.getToolOutputMaxBytes()).toBe(1024);
+			expect(reloaded.getToolOutputMaxLines()).toBe(1);
+		});
+
+		it("preserves unrelated toolOutput keys when updating one cap", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ toolOutput: { maxBytes: 32768, maxLines: 800 } }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setToolOutputMaxLines(400);
+			await manager.flush();
+
+			const saved = JSON.parse(readFileSync(settingsPath, "utf-8"));
+			expect(saved.toolOutput.maxLines).toBe(400);
+			expect(saved.toolOutput.maxBytes).toBe(32768);
+		});
+	});
+
+	describe("flag overrides", () => {
+		it("round-trips flag overrides and clears them", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setFlagOverride("plan", true);
+			manager.setFlagOverride("endpoint", "https://example.test");
+			await manager.flush();
+
+			const settingsPath = join(agentDir, "settings.json");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).flags).toEqual({
+				plan: true,
+				endpoint: "https://example.test",
+			});
+
+			const reloaded = SettingsManager.create(projectDir, agentDir);
+			expect(reloaded.getFlagOverrides()).toEqual({ plan: true, endpoint: "https://example.test" });
+
+			reloaded.clearFlagOverride("plan");
+			await reloaded.flush();
+			const afterClear = JSON.parse(readFileSync(settingsPath, "utf-8")).flags;
+			expect(afterClear).toEqual({ endpoint: "https://example.test" });
+		});
+
+		it("preserves externally added flag keys when updating one", async () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ flags: { external: "keep-me" } }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setFlagOverride("plan", true);
+			await manager.flush();
+
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).flags).toEqual({
+				external: "keep-me",
+				plan: true,
+			});
+		});
+	});
+
 	describe("packages migration", () => {
 		it("should keep local-only extensions in extensions array", () => {
 			const settingsPath = join(agentDir, "settings.json");

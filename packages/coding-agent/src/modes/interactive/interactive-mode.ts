@@ -241,6 +241,8 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
+	// Persisted tool-output display level (collapsed / peek / standard).
+	private toolOutputDisplay: "collapsed" | "peek" | "standard" = "standard";
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -514,6 +516,9 @@ export class InteractiveMode {
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
+
+		// Load tool-output display level
+		this.toolOutputDisplay = this.settingsManager.getToolOutputDisplay();
 
 		// Completion chime: rings the terminal bell when a long turn finishes or the
 		// agent blocks awaiting input. Enable is read fresh so a live toggle applies.
@@ -1929,6 +1934,7 @@ export class InteractiveMode {
 									{
 										showImages: this.settingsManager.getShowImages(),
 										imageWidthCells: this.settingsManager.getImageWidthCells(),
+										displayLevel: this.toolOutputDisplay,
 									},
 									this.getRegisteredToolDefinition(content.name),
 									this.ui,
@@ -2003,6 +2009,7 @@ export class InteractiveMode {
 						{
 							showImages: this.settingsManager.getShowImages(),
 							imageWidthCells: this.settingsManager.getImageWidthCells(),
+							displayLevel: this.toolOutputDisplay,
 						},
 						this.getRegisteredToolDefinition(event.toolName),
 						this.ui,
@@ -2357,6 +2364,7 @@ export class InteractiveMode {
 							{
 								showImages: this.settingsManager.getShowImages(),
 								imageWidthCells: this.settingsManager.getImageWidthCells(),
+								displayLevel: this.toolOutputDisplay,
 							},
 							this.getRegisteredToolDefinition(content.name),
 							this.ui,
@@ -2809,9 +2817,62 @@ export class InteractiveMode {
 
 	private showSettingsSelector(): void {
 		this.showSelector((done) => {
+			const disabledToolNames = new Set(this.settingsManager.getDisabledTools());
+			const builtinToolNames = this.session
+				.getAllTools()
+				.filter((t) => t.sourceInfo?.source === "builtin")
+				.map((t) => t.name);
+			// Union so tools disabled at startup (absent from the live registry) still
+			// appear and can be re-enabled for the next session.
+			const toolToggleNames = [...new Set([...builtinToolNames, ...disabledToolNames])].sort();
+			const toolToggles = toolToggleNames.map((name) => ({ name, enabled: !disabledToolNames.has(name) }));
+
+			const toolGroups = [
+				{
+					id: "web",
+					label: "Web tools",
+					description: "webfetch + websearch (network access).",
+					enabled: this.settingsManager.getEnableWebTools(),
+				},
+				{
+					id: "browser",
+					label: "Browser tools",
+					description: "browser_run + browser_continue (browsertools engine).",
+					enabled: this.settingsManager.getEnableBrowserTools(),
+				},
+				{
+					id: "file",
+					label: "Document tools",
+					description: "DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary).",
+					enabled: this.settingsManager.getEnableFileTools(),
+				},
+				{
+					id: "embsearch",
+					label: "Semantic search",
+					description: "Semantic index layer fused into the always-on search tool.",
+					enabled: this.settingsManager.getEnableEmbsearchTools(),
+				},
+			];
+
+			const flagDefs = this.session.extensionRunner.getFlags();
+			const flagValues = this.session.extensionRunner.getFlagValues();
+			const flags = [...flagDefs.values()].map((flag) => ({
+				name: flag.name,
+				description: flag.description,
+				type: flag.type,
+				value: flagValues.get(flag.name) ?? flag.default ?? (flag.type === "boolean" ? false : ""),
+			}));
+
 			const selector = new SettingsSelectorComponent(
 				{
 					autoCompact: this.session.autoCompactionEnabled,
+					tools: toolToggles,
+					toolGroups,
+					flags,
+					toolOutputDisplay: this.toolOutputDisplay,
+					toolOutputMaxBytes: this.settingsManager.getToolOutputMaxBytes(),
+					toolOutputMaxLines: this.settingsManager.getToolOutputMaxLines(),
+					contextGc: this.settingsManager.getContextGcEnabled(),
 					showImages: this.settingsManager.getShowImages(),
 					imageWidthCells: this.settingsManager.getImageWidthCells(),
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
@@ -2841,6 +2902,73 @@ export class InteractiveMode {
 					onAutoCompactChange: (enabled) => {
 						this.session.setAutoCompactionEnabled(enabled);
 						this.footer.setAutoCompactEnabled(enabled);
+					},
+					onToolEnabledChange: (name, enabled) => {
+						// Persist for future sessions (feeds the startup denylist).
+						const disabled = new Set(this.settingsManager.getDisabledTools());
+						if (enabled) {
+							disabled.delete(name);
+						} else {
+							disabled.add(name);
+						}
+						this.settingsManager.setDisabledTools([...disabled]);
+
+						// Apply live for the current session. Re-enabling only works for
+						// tools still in the registry (i.e. not removed at startup); tools
+						// disabled before launch take effect on the next session.
+						const active = new Set(this.session.getActiveToolNames());
+						if (enabled) {
+							if (this.session.getToolDefinition(name)) {
+								active.add(name);
+							}
+						} else {
+							active.delete(name);
+						}
+						this.session.setActiveToolsByName([...active]);
+						this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
+					},
+					onToolGroupChange: (id, enabled) => {
+						// Master switches for tool availability. These gate tool creation at
+						// session build, so they persist and take effect on the next session.
+						switch (id) {
+							case "web":
+								this.settingsManager.setEnableWebTools(enabled);
+								break;
+							case "browser":
+								this.settingsManager.setEnableBrowserTools(enabled);
+								break;
+							case "file":
+								this.settingsManager.setEnableFileTools(enabled);
+								break;
+							case "embsearch":
+								this.settingsManager.setEnableEmbsearchTools(enabled);
+								break;
+						}
+					},
+					onToolOutputDisplayChange: (level) => {
+						this.toolOutputDisplay = level;
+						this.settingsManager.setToolOutputDisplay(level);
+						for (const child of this.chatContainer.children) {
+							if (child instanceof ToolExecutionComponent) {
+								child.setDisplayLevel(level);
+							}
+						}
+						this.ui.requestRender();
+					},
+					onToolOutputMaxBytesChange: (bytes) => {
+						this.settingsManager.setToolOutputMaxBytes(bytes);
+					},
+					onToolOutputMaxLinesChange: (lines) => {
+						this.settingsManager.setToolOutputMaxLines(lines);
+					},
+					onContextGcChange: (enabled) => {
+						this.settingsManager.setContextGcEnabled(enabled);
+					},
+					onFlagChange: (name, value) => {
+						// Persist for future launches; apply live best-effort (extensions
+						// that read a flag only at load time pick it up on next launch).
+						this.settingsManager.setFlagOverride(name, value);
+						this.session.extensionRunner.setFlagValue(name, value);
 					},
 					onShowImagesChange: (enabled) => {
 						this.settingsManager.setShowImages(enabled);

@@ -467,6 +467,64 @@ describe("ToolExecutionComponent parity", () => {
 	}
 });
 
+describe("ToolExecutionComponent display levels", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	function build(displayLevel: "collapsed" | "peek" | "standard") {
+		const toolDefinition: ToolDefinition = {
+			...createBaseToolDefinition(),
+			renderCall: () => new Text("custom call", 0, 0),
+			renderResult: () => new Text("RESULT BODY", 0, 0),
+		};
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			`level-${displayLevel}`,
+			{},
+			{ displayLevel },
+			toolDefinition,
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({ content: [{ type: "text", text: "done" }], details: {}, isError: false }, false);
+		return component;
+	}
+
+	test("standard shows the result body", () => {
+		const rendered = stripAnsi(build("standard").render(120).join("\n"));
+		expect(rendered).toContain("custom call");
+		expect(rendered).toContain("RESULT BODY");
+	});
+
+	test("collapsed hides the result body but keeps the call line", () => {
+		const rendered = stripAnsi(build("collapsed").render(120).join("\n"));
+		expect(rendered).toContain("custom call");
+		expect(rendered).not.toContain("RESULT BODY");
+	});
+
+	test("peek hides the body with a ▸ caret and reveals it (▾) on expand", () => {
+		const component = build("peek");
+		const collapsed = stripAnsi(component.render(120).join("\n"));
+		expect(collapsed).toContain("▸"); // ▸
+		expect(collapsed).not.toContain("RESULT BODY");
+
+		component.setExpanded(true);
+		const revealed = stripAnsi(component.render(120).join("\n"));
+		expect(revealed).toContain("▾"); // ▾
+		expect(revealed).toContain("RESULT BODY");
+	});
+
+	test("setDisplayLevel switches an existing block live", () => {
+		const component = build("standard");
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
+		component.setDisplayLevel("collapsed");
+		expect(stripAnsi(component.render(120).join("\n"))).not.toContain("RESULT BODY");
+		component.setDisplayLevel("standard");
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
+	});
+});
+
 describe("ToolExecutionComponent freeze (memory trimming)", () => {
 	beforeAll(() => {
 		initTheme("dark");

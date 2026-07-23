@@ -17,6 +17,8 @@ export const DEFAULT_SETTINGS = {
 	contextGc: {
 		enabled: true,
 	},
+	disabledTools: [],
+	toolOutputDisplay: "standard",
 	branchSummary: {
 		reserveTokens: 16384,
 		skipPrompt: false,
