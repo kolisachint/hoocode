@@ -54,6 +54,7 @@ import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../cor
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
 import type { SourceInfo } from "../../core/source-info.js";
+import { startupProgress } from "../../core/startup-progress.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
@@ -254,6 +255,8 @@ export class InteractiveMode {
 	private unsubscribe?: () => void;
 	// Task store subscription unsubscribe function (task panel)
 	private taskStoreUnsubscribe?: () => void;
+	// Startup-progress subscription unsubscribe function (footer download/index bars)
+	private startupProgressUnsubscribe?: () => void;
 	private signalCleanupHandlers: Array<() => void> = [];
 
 	// Track if editor is in bash mode (text starts with !)
@@ -700,6 +703,11 @@ export class InteractiveMode {
 		this.chatContainer.addChild(new DynamicBorder());
 	}
 
+	/** Feed a first-run tool-binary download into the footer's startup-progress line. */
+	private reportToolDownload(key: string, label: string, receivedBytes: number, totalBytes: number | null): void {
+		startupProgress.set({ key, kind: "download", label, receivedBytes, totalBytes });
+	}
+
 	async init(): Promise<void> {
 		if (this.isInitialized) return;
 
@@ -715,18 +723,30 @@ export class InteractiveMode {
 		// Both help — fd for autocomplete, rg for the grep tool — but neither is required
 		// to start: resolving them can hit a slow or failing network in restricted
 		// environments, and awaiting here froze first paint. Resolve in the background
-		// (silently, so download notices never corrupt the TUI) and wire fd in when ready;
-		// the grep/find tools resolve rg/fd on demand with a native fallback regardless.
+		// (never awaited, so a first-run download never blocks first paint) and wire fd
+		// in when ready; the grep/find tools resolve rg/fd on demand with a native
+		// fallback regardless. embsearch is intentionally NOT preloaded here: when the
+		// semantic index is enabled, EmbsearchService (main.ts) owns its download and
+		// build, reporting through the same startupProgress channel — preloading it too
+		// would fetch the binary twice and race.
+		//
+		// First-run download progress streams into the footer's startupProgress line
+		// via ensureTool's byte-count callback; the line clears when the download
+		// settles (path resolved) or is dropped if it fails.
 		void Promise.all([
-			ensureTool("fd", true),
-			ensureTool("rg", true),
-			this.settingsManager.getEnableEmbsearchTools() ? ensureTool("embsearch", true) : Promise.resolve(null),
+			ensureTool("fd", true, (received, total) => this.reportToolDownload("fd", "fd", received, total)),
+			ensureTool("rg", true, (received, total) => this.reportToolDownload("rg", "ripgrep", received, total)),
 		])
 			.then(([fdPath]) => {
 				this.fdPath = fdPath;
 			})
 			.catch(() => {
 				// Non-fatal: autocomplete simply stays disabled until/unless fd resolves.
+			})
+			.finally(() => {
+				// Downloads settled (resolved or failed): drop any lingering bars.
+				startupProgress.remove("fd");
+				startupProgress.remove("rg");
 			});
 
 		// Add header container as first child
@@ -835,6 +855,15 @@ export class InteractiveMode {
 		// tasks). Throttled: subagent progress mutates the store in bursts, and
 		// each resulting render reassembles the entire component tree.
 		this.taskStoreUnsubscribe = taskStore.subscribe(
+			throttled(TASK_RENDER_THROTTLE_MS, () => {
+				this.ui.requestRender();
+			}),
+		);
+
+		// Re-render the footer as startup progress updates (tool downloads stream
+		// byte counts in bursts, the index build ticks per batch). Throttled like the
+		// task panel so a fast download doesn't drive a render per chunk.
+		this.startupProgressUnsubscribe = startupProgress.subscribe(
 			throttled(TASK_RENDER_THROTTLE_MS, () => {
 				this.ui.requestRender();
 			}),
@@ -1901,6 +1930,10 @@ export class InteractiveMode {
 					// glanceable for the whole turn. Active tasks are kept: a follow-up/steer
 					// message can arrive while a subagent is still running.
 					taskStore.reset();
+					// Startup progress is transient startup status: once the user starts a
+					// turn, drop any lingering bars/notices (e.g. an unavailable-index line)
+					// so they don't sit in the footer for the rest of the session.
+					startupProgress.clear();
 					this.chimeTurnAborted = false;
 					this.addMessageToChat(event.message);
 					this.messageQueue.updatePendingMessagesDisplay();
@@ -2477,6 +2510,7 @@ export class InteractiveMode {
 		await this.ui.terminal.drainInput(1000);
 
 		this.taskStoreUnsubscribe?.();
+		this.startupProgressUnsubscribe?.();
 		this.teamFocus.closeAttach();
 		this.taskPanel.dispose();
 		this.stop();

@@ -42,6 +42,7 @@ const MOCK_MODEL_ID = "mock-hash-v1";
 export type EmbsearchState =
 	| { phase: "idle" }
 	| { phase: "skipped"; reason: string }
+	| { phase: "downloading"; receivedBytes: number; totalBytes: number | null }
 	| { phase: "indexing"; done: number; total: number }
 	| { phase: "ready"; chunkCount: number }
 	| { phase: "unavailable"; reason: string };
@@ -97,7 +98,12 @@ export class EmbsearchService {
 		if (this.options.binaryPath) {
 			return this.options.binaryPath;
 		}
-		return await ensureTool("embsearch", true);
+		// Surface the on-demand binary download through the same progress channel as
+		// indexing, so the first-run fetch renders a progress bar instead of a stall.
+		// A cached binary resolves without ever invoking this callback.
+		return await ensureTool("embsearch", true, (receivedBytes, totalBytes) => {
+			this.setState({ phase: "downloading", receivedBytes, totalBytes });
+		});
 	}
 
 	/**

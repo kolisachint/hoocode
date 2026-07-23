@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added
+
+- Startup progress bars for external tool binaries. First-run downloads of `fd`
+  and `ripgrep`, and the semantic-search index (its binary download **and** the
+  index build), now render a determinate progress bar as a transient line in
+  the footer — `received MB / total MB` with a percent, matching the voice
+  download bar — with an indeterminate byte count when the server sends no
+  `Content-Length`. The bars are fed by `ensureTool`'s existing byte-count
+  callback, run in the background so a slow first-run download never blocks
+  first paint, and each clears as its work settles. They live in a dedicated
+  `startupProgress` store, never as task-panel plan rows.
+
+### Changed
+
+- The startup semantic-search index no longer surfaces as a task-panel row. It
+  was created via `taskStore.create()` — indistinguishable from a main-agent
+  `TodoWrite` plan item — so its finished row lingered above the prompt for the
+  whole first turn. It now reports through the shared `startupProgress` footer
+  channel alongside the tool-download bars, dropped on `ready`/`skipped` and
+  shown as a transient notice on failure. The non-interactive stderr log path
+  is unchanged.
+- Renamed the user-facing semantic-index startup messages from `embsearch`
+  jargon to plain language (e.g. `Building semantic search index –
+  {done}/{total} files ({pct}%)`, `Semantic search index ready ({chunkCount}
+  chunks)`, `... skipped`/`unavailable ({reason})`). Flags, settings, and
+  module paths are unchanged.
+- The interactive startup preload no longer fetches the semantic-index binary:
+  when the index is enabled, `EmbsearchService` already downloads and builds it
+  through the same progress channel, so preloading it separately only fetched
+  the binary twice and raced.
+
 ## [0.4.152] - 2026-07-23
 
 ## [0.4.151] - 2026-07-23
