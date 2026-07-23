@@ -38,7 +38,7 @@ export interface VoiceControllerDeps {
 	/**
 	 * Trailing-silence window (ms): how long a pause while speaking lasts before
 	 * the capture auto-stops. Resolved once by the caller (env `VOICETOOLS_SILENCE_MS`
-	 * → settings → default 800, clamped 300-5000) and used for both the binary
+	 * → settings → default 800, clamped 300-10000) and used for both the binary
 	 * cutoff — passed to `voicetools serve` via `--silence-ms` (see
 	 * VoiceDaemon.spawn) — and the on-screen countdown, so the two stay in sync.
 	 * A longer window tolerates brief mid-sentence pauses without taxing every

@@ -25,11 +25,11 @@ export interface ContextGcSettings {
 }
 
 export interface VoiceSettings {
-	silenceMs?: number; // default: 800 - trailing-silence window (ms) tolerated before voice capture auto-stops; clamped to 300-5000. Env override: VOICETOOLS_SILENCE_MS.
+	silenceMs?: number; // default: 800 - trailing-silence window (ms) tolerated before voice capture auto-stops; clamped to 300-10000. Env VOICETOOLS_SILENCE_MS overrides this setting.
 }
 
 export interface WebtoolsSettings {
-	timeoutSecs?: number; // default: 15 - per-request timeout (seconds) for the webfetch/websearch binary; clamped to 1-120. Env override: HOOCODE_WEBTOOLS_TIMEOUT.
+	timeoutSecs?: number; // default: 15 - per-request timeout (seconds) for the webfetch/websearch binary; clamped to 1-120. This setting wins over env HOOCODE_WEBTOOLS_TIMEOUT, which wins over the default.
 }
 
 export interface BranchSummarySettings {

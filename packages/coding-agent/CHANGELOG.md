@@ -6,20 +6,20 @@
 
 - Configurable voice trailing-silence window. The pause length tolerated before
   voice capture auto-stops was a hardcoded 800 ms; it's now the `voice.silenceMs`
-  setting (default 800, clamped 300–5000) with a `VOICETOOLS_SILENCE_MS` env
+  setting (default 800, clamped 300–10000) with a `VOICETOOLS_SILENCE_MS` env
   override (env wins, like `VOICETOOLS_BIN`) and a picker under Settings →
   Advanced. The effective value is resolved once and drives both the binary
   cutoff (`voicetools serve --silence-ms`) and the on-screen countdown, so the
   two stay in sync; changing it live drops any idle warm daemon so the next
   capture respawns with the matching cutoff. Someone who pauses to think can
-  lengthen the window without editing code.
+  lengthen the window — up to 10 s — without editing code.
 - Configurable web-tools request timeout. The `webfetch`/`websearch` binary
   timeout was a hardcoded 15 s; it's now the `webtools.timeoutSecs` setting
-  (default 15, clamped 1–120) resolved via `resolveWebtoolsTimeoutSecs`
-  (explicit override → settings → `HOOCODE_WEBTOOLS_TIMEOUT` env → default,
-  mirroring the existing TLS resolver), with a picker under Settings → Advanced.
-  The value is resolved once next to the TLS config in each tool factory and
-  threaded into `runWebtools` (whose spawn headroom already scales with it).
+  (default 15, clamped 1–120) with precedence settings → `HOOCODE_WEBTOOLS_TIMEOUT`
+  env → default (mirroring the TLS resolver, where the setting wins over env),
+  and a picker under Settings → Advanced. The effective value is resolved once
+  next to the TLS config in each tool factory and threaded into `runWebtools`
+  (whose spawn headroom already scales with it).
 
 ## [0.4.153] - 2026-07-23
 

@@ -219,12 +219,12 @@ describe("SettingsManager", () => {
 			expect(SettingsManager.create(projectDir, agentDir).getVoiceSilenceMs()).toBe(1500);
 		});
 
-		it("clamps to 300-5000 on write and read", () => {
+		it("clamps to 300-10000 on write and read", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 			manager.setVoiceSilenceMs(50);
 			expect(manager.getVoiceSilenceMs()).toBe(300);
 			manager.setVoiceSilenceMs(999999);
-			expect(manager.getVoiceSilenceMs()).toBe(5000);
+			expect(manager.getVoiceSilenceMs()).toBe(10000);
 
 			// An externally written out-of-range value is clamped on read.
 			const settingsPath = join(agentDir, "settings.json");
@@ -234,6 +234,15 @@ describe("SettingsManager", () => {
 	});
 
 	describe("webtools timeout", () => {
+		const savedEnv = process.env.HOOCODE_WEBTOOLS_TIMEOUT;
+		beforeEach(() => {
+			delete process.env.HOOCODE_WEBTOOLS_TIMEOUT;
+		});
+		afterEach(() => {
+			if (savedEnv === undefined) delete process.env.HOOCODE_WEBTOOLS_TIMEOUT;
+			else process.env.HOOCODE_WEBTOOLS_TIMEOUT = savedEnv;
+		});
+
 		it("defaults to 15 and round-trips within range", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 			expect(manager.getWebtoolsTimeoutSecs()).toBe(15);
@@ -256,6 +265,22 @@ describe("SettingsManager", () => {
 			// An externally written non-finite value falls back to the default.
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ webtools: { timeoutSecs: "nope" } }));
+			expect(SettingsManager.create(projectDir, agentDir).getWebtoolsTimeoutSecs()).toBe(15);
+		});
+
+		it("honors HOOCODE_WEBTOOLS_TIMEOUT when unset, but the setting wins over env", () => {
+			// Env used (clamped) when the setting is absent.
+			process.env.HOOCODE_WEBTOOLS_TIMEOUT = "999";
+			expect(SettingsManager.create(projectDir, agentDir).getWebtoolsTimeoutSecs()).toBe(120);
+
+			// An explicit setting takes precedence over env.
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ webtools: { timeoutSecs: 30 } }));
+			expect(SettingsManager.create(projectDir, agentDir).getWebtoolsTimeoutSecs()).toBe(30);
+
+			// A malformed env value falls through to the default.
+			rmSync(settingsPath, { force: true });
+			process.env.HOOCODE_WEBTOOLS_TIMEOUT = "not-a-number";
 			expect(SettingsManager.create(projectDir, agentDir).getWebtoolsTimeoutSecs()).toBe(15);
 		});
 	});

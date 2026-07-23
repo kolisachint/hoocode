@@ -123,7 +123,7 @@ const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
 /**
  * Resolve the effective voice trailing-silence window (ms): env
  * `VOICETOOLS_SILENCE_MS` wins (like `VOICETOOLS_BIN`), otherwise the settings
- * value. Both paths are clamped to 300-5000; a malformed env value falls back to
+ * value. Both paths are clamped to 300-10000; a malformed env value falls back to
  * the settings value.
  */
 function resolveVoiceSilenceMs(settingsManager: SettingsManager): number {
@@ -131,7 +131,7 @@ function resolveVoiceSilenceMs(settingsManager: SettingsManager): number {
 	if (envRaw) {
 		const envValue = Number(envRaw);
 		if (Number.isFinite(envValue) && envValue > 0) {
-			return Math.min(5000, Math.max(300, Math.floor(envValue)));
+			return Math.min(10000, Math.max(300, Math.floor(envValue)));
 		}
 	}
 	return settingsManager.getVoiceSilenceMs();
@@ -2950,7 +2950,9 @@ export class InteractiveMode {
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
 					warnings: this.settingsManager.getWarnings(),
-					voiceSilenceMs: this.settingsManager.getVoiceSilenceMs(),
+					// Show the effective value: env VOICETOOLS_SILENCE_MS wins for voice;
+					// getWebtoolsTimeoutSecs already folds in HOOCODE_WEBTOOLS_TIMEOUT.
+					voiceSilenceMs: resolveVoiceSilenceMs(this.settingsManager),
 					webtoolsTimeoutSecs: this.settingsManager.getWebtoolsTimeoutSecs(),
 				},
 				{

@@ -781,9 +781,9 @@ export class SettingsSelectorComponent extends Container {
 		items.splice(terminalProgressIndex + 1, 0, {
 			id: "voice-silence-ms",
 			label: "Voice silence window",
-			description: "Trailing-silence (ms) before voice capture auto-stops (300-5000). Env: VOICETOOLS_SILENCE_MS.",
+			description: "Trailing-silence (ms) before voice capture auto-stops (300-10000). Env: VOICETOOLS_SILENCE_MS.",
 			currentValue: String(config.voiceSilenceMs),
-			values: ["300", "500", "800", "1200", "2000", "3000", "5000"],
+			values: ["300", "500", "800", "1200", "2000", "3000", "5000", "8000", "10000"],
 		});
 
 		// Webtools request timeout (insert after voice-silence-ms)
