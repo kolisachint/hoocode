@@ -25,6 +25,7 @@ import {
 } from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { reportEmbsearchProgress } from "./core/embsearch/embsearch-progress.js";
 import {
 	EmbsearchService,
 	registerEmbsearchService,
@@ -62,7 +63,6 @@ import {
 	resolveNestedConcurrency,
 	SUBAGENT_MAX_DEPTH_ENV,
 } from "./core/subagent-depth.js";
-import { taskStore } from "./core/task-store.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
 import { createPluginLifecycleToolDefinitions } from "./core/tools/plugins.js";
 import { createProposePluginToolDefinitions } from "./core/tools/propose-plugin.js";
@@ -965,51 +965,14 @@ export async function main(args: string[], options?: MainOptions) {
 	// reports available.
 	let embsearchService: EmbsearchService | undefined;
 	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
-		let indexTask: ReturnType<typeof taskStore.create> | undefined;
 		const isInteractive = appMode === "interactive";
 		embsearchService = new EmbsearchService({
 			cwd: sessionManager.getCwd(),
 			binaryPath: settingsManager.getEmbsearchBinaryPath(),
 			thresholdBytes: settingsManager.getEmbsearchThresholdBytes(),
-			onProgress: (state) => {
-				if (state.phase === "indexing") {
-					const pct = Math.round((state.done / state.total) * 100);
-					const text = `embsearch: indexing ${state.done}/${state.total} chunks (${pct}%)`;
-					if (isInteractive) {
-						indexTask ??= taskStore.create(text);
-						taskStore.update(indexTask.id, { title: text });
-					} else {
-						console.error(chalk.dim(text));
-					}
-				} else if (state.phase === "ready") {
-					if (isInteractive && indexTask) {
-						taskStore.update(indexTask.id, {
-							title: `embsearch: ready (${state.chunkCount} chunks)`,
-							status: "done",
-						});
-					} else {
-						console.error(chalk.dim(`embsearch: ready (${state.chunkCount} chunks)`));
-					}
-				} else if (state.phase === "skipped") {
-					if (isInteractive && indexTask) {
-						taskStore.update(indexTask.id, {
-							title: `embsearch: skipped (${state.reason})`,
-							status: "done",
-						});
-					} else {
-						console.error(chalk.dim(`embsearch: skipped (${state.reason})`));
-					}
-				} else if (state.phase === "unavailable") {
-					if (isInteractive && indexTask) {
-						taskStore.update(indexTask.id, {
-							title: `embsearch: unavailable (${state.reason})`,
-							status: "failed",
-						});
-					} else {
-						console.error(chalk.dim(`embsearch: unavailable (${state.reason})`));
-					}
-				}
-			},
+			// Interactive routes to the footer's startupProgress store; non-interactive
+			// logs to stderr. See reportEmbsearchProgress for the per-phase mapping.
+			onProgress: (state) => reportEmbsearchProgress(state, { interactive: isInteractive }),
 		});
 		registerEmbsearchService(sessionManager.getCwd(), embsearchService);
 		embsearchService.start().catch(() => {

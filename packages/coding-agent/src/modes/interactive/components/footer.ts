@@ -1,6 +1,7 @@
 import { type Component, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
+import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
 import { taskStore } from "../../../core/task-store.js";
 import { BRAND_MARK, GIT_BRANCH_GLYPH } from "../brand.js";
 import { theme } from "../theme/theme.js";
@@ -54,6 +55,47 @@ function formatTokens(count: number): string {
 	if (count < 1000000) return `${Math.round(count / 1000)}k`;
 	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
 	return `${Math.round(count / 1000000)}M`;
+}
+
+/** Cells in a startup-progress bar; compact so several tools fit the footer. */
+const STARTUP_BAR_CELLS = 12;
+
+function formatMb(bytes: number): string {
+	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * One footer line for a transient startup-progress entry (tool download or
+ * index build), styled like the voice download bar: a `·` fill over a dim
+ * track with percent and a `received / total` (or `done/total`) detail. An
+ * indeterminate download (no Content-Length) drops the bar for a running byte
+ * count; an error entry renders as a dim message. Returns a styled string; the
+ * caller width-clamps it.
+ */
+function renderStartupLine(entry: StartupProgress): string {
+	if (entry.kind === "error") {
+		return theme.fg("dim", `${entry.label}: ${entry.message}`);
+	}
+	const label = theme.fg("text", entry.label);
+	if (entry.kind === "download") {
+		if (entry.totalBytes === null || entry.totalBytes <= 0) {
+			return `${label} ${theme.fg("dim", `${formatMb(entry.receivedBytes)}…`)}`;
+		}
+		const detail = `${formatMb(entry.receivedBytes)} / ${formatMb(entry.totalBytes)}`;
+		return `${label} ${determinateBar(entry.receivedBytes / entry.totalBytes, detail)}`;
+	}
+	const detail = `${entry.done}/${entry.total} ${entry.unit}`;
+	const ratio = entry.total > 0 ? entry.done / entry.total : 0;
+	return `${label} ${determinateBar(ratio, detail)}`;
+}
+
+/** `·`-fill bar + percent + trailing detail, matching the voice download bar. */
+function determinateBar(ratio: number, detail: string): string {
+	const clamped = Math.max(0, Math.min(1, ratio));
+	const filled = Math.round(clamped * STARTUP_BAR_CELLS);
+	const bar = theme.fg("accent", "·".repeat(filled)) + theme.fg("dim", "·".repeat(STARTUP_BAR_CELLS - filled));
+	const pct = `${Math.round(clamped * 100)}%`;
+	return `${bar} ${theme.fg("muted", pct)} ${theme.fg("dim", `· ${detail}`)}`;
 }
 
 /**
@@ -230,6 +272,13 @@ export class FooterComponent implements Component {
 			const statusLine = sortedStatuses.join(" ");
 			// Truncate to terminal width with dim ellipsis for consistency with footer style
 			lines.push(truncateToWidth(statusLine, width, theme.fg("dim", "...")));
+		}
+
+		// Transient startup progress (first-run tool downloads, index build): one
+		// determinate bar per entry, cleared as each settles. Width-clamped like the
+		// status line so the footer never overflows.
+		for (const entry of startupProgress.list()) {
+			lines.push(truncateToWidth(renderStartupLine(entry), width, theme.fg("dim", "…")));
 		}
 
 		return lines;
