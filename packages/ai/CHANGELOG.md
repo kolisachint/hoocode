@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### Added
+
+- Claude Opus 5 for the `anthropic` and `github-copilot` providers, so it shows
+  up in `/model` for both. The generated catalog predated the model's release,
+  and `/model` only ever lists what `ModelRegistry` holds, so the model was
+  simply absent rather than filtered out. Both entries use the upstream
+  models.dev metadata — 1M context, $5/$25 per MTok with $0.50/$6.25 cache
+  read/write — with a 128K output cap on Anthropic and Copilot's lower 64K cap.
+
+### Fixed
+
+- GitHub Copilot routed every Claude model that isn't 4.x through the
+  OpenAI-compatible endpoint. The API selector matched a hardcoded
+  `claude-*-4*`, so `claude-opus-5` would have fallen through to
+  `openai-completions` and sent an OpenAI-shaped payload to a Claude model. The
+  major version is now parsed and compared numerically (4 and newer → Anthropic
+  Messages), which also covers future Claude families without another edit.
+- Claude Opus 5 now uses adaptive thinking. `supportsAdaptiveThinking()` matched
+  an explicit list ending at Opus 4.8, so Opus 5 would have been sent
+  budget-based `thinking: { type: "enabled", budget_tokens }` — which
+  adaptive-thinking models reject — instead of `thinking: { type: "adaptive" }`
+  with `output_config.effort`. It also picks up the `xhigh` thinking level
+  (upstream lists effort low/medium/high/xhigh/max) and, like Opus 4.8, defaults
+  to the `omitted` thinking display for faster tool-use turns.
+
+### Changed
+
+- `generate-models` no longer wipes a provider's catalog when an upstream source
+  is unreachable. Every source (models.dev, OpenRouter, Vercel AI Gateway) has
+  at least one tool-capable model, so an empty result always means the fetch
+  failed; the generator now reuses the previously generated entries for that
+  source's providers and warns that the catalog is stale, instead of silently
+  emitting a near-empty `models.generated.ts`.
+
 ## [0.4.154] - 2026-07-23
 
 ## [0.4.153] - 2026-07-23

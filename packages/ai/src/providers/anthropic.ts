@@ -663,7 +663,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 };
 
 /**
- * Check if a model supports adaptive thinking (Opus 4.6+, Sonnet 4.6)
+ * Check if a model supports adaptive thinking (Opus 4.6+, Opus 5, Sonnet 4.6)
  */
 function supportsAdaptiveThinking(modelId: string): boolean {
 	// Adaptive-thinking model IDs (with or without date suffix)
@@ -674,6 +674,7 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 		modelId.includes("opus-4.7") ||
 		modelId.includes("opus-4-8") ||
 		modelId.includes("opus-4.8") ||
+		modelId.includes("opus-5") ||
 		modelId.includes("sonnet-4-6") ||
 		modelId.includes("sonnet-4.6")
 	);
@@ -681,13 +682,14 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 
 /**
  * Default thinking display for adaptive-thinking models when the caller does
- * not specify one. Opus 4.8 defaults to "omitted" (matching Anthropic's own
- * API default for Opus 4.7+): the model still reasons at full effort, but
- * skipping the streamed thinking summary lowers time-to-first-token and speeds
- * up tool-use turns. Other models keep "summarized" for visible reasoning.
+ * not specify one. Opus 4.8 and Opus 5 default to "omitted" (matching
+ * Anthropic's own API default for Opus 4.7+): the model still reasons at full
+ * effort, but skipping the streamed thinking summary lowers time-to-first-token
+ * and speeds up tool-use turns. Other models keep "summarized" for visible
+ * reasoning.
  */
 function defaultThinkingDisplay(modelId: string): AnthropicThinkingDisplay {
-	if (modelId.includes("opus-4-8") || modelId.includes("opus-4.8")) {
+	if (modelId.includes("opus-4-8") || modelId.includes("opus-4.8") || modelId.includes("opus-5")) {
 		return "omitted";
 	}
 	return "summarized";

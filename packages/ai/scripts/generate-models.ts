@@ -3,6 +3,7 @@
 import { writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
+import { MODELS } from "../src/models.generated.js";
 import {
 	Api,
 	type AnthropicMessagesCompat,
@@ -216,6 +217,10 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.id.includes("opus-4-8") || model.id.includes("opus-4.8")) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
+	// models.dev lists Opus 5 reasoning_options as effort low/medium/high/xhigh/max.
+	if (model.id.includes("opus-5")) {
+		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
+	}
 	if (model.api === "openai-completions" && model.id.includes("deepseek-v4")) {
 		mergeThinkingLevelMap(model, DEEPSEEK_V4_THINKING_LEVEL_MAP);
 	}
@@ -237,6 +242,18 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.provider === "openai-codex" && model.id === "gpt-5.1-codex-mini") {
 		mergeThinkingLevelMap(model, { minimal: "medium", low: "medium", medium: "medium", high: "high" });
 	}
+}
+
+// Copilot exposes Claude 4 and newer over the Anthropic Messages API; earlier
+// Claude releases are only reachable through the OpenAI-compatible endpoint.
+// Matching the major version numerically keeps new families (e.g. claude-opus-5,
+// claude-sonnet-5) on the native API instead of silently falling back to
+// openai-completions the way a hardcoded "-4" check did.
+const COPILOT_CLAUDE_MODEL_ID = /^claude-(?:haiku|sonnet|opus)-(\d+)(?:[.\-]|$)/;
+
+function isCopilotAnthropicMessagesModel(modelId: string): boolean {
+	const major = COPILOT_CLAUDE_MODEL_ID.exec(modelId)?.[1];
+	return major !== undefined && Number(major) >= 4;
 }
 
 function getAnthropicMessagesCompat(provider: string, modelId: string): AnthropicMessagesCompat | undefined {
@@ -763,12 +780,12 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 				if (m.tool_call !== true) continue;
 				if (m.status === "deprecated") continue;
 
-				// Claude 4.x models route to Anthropic Messages API
-				const isCopilotClaude4 = /^claude-(haiku|sonnet|opus)-4([.\-]|$)/.test(modelId);
+				// Claude 4.x and newer route to Anthropic Messages API
+				const isCopilotClaude = isCopilotAnthropicMessagesModel(modelId);
 				// gpt-5 models require responses API, others use completions
 				const needsResponsesApi = modelId.startsWith("gpt-5") || modelId.startsWith("oswe");
 
-				const api: Api = isCopilotClaude4
+				const api: Api = isCopilotClaude
 					? "anthropic-messages"
 					: needsResponsesApi
 						? "openai-responses"
@@ -969,14 +986,79 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 	}
 }
 
+// Providers whose entries come exclusively from loadModelsDevData(). Providers
+// built from hardcoded lists (openai-codex, deepseek, google-vertex) or derived
+// from other entries (azure-openai-responses) are intentionally absent.
+const MODELS_DEV_PROVIDERS = [
+	"anthropic",
+	"cerebras",
+	"fireworks",
+	"github-copilot",
+	"google",
+	"groq",
+	"huggingface",
+	"kimi-coding",
+	"minimax",
+	"minimax-cn",
+	"moonshotai",
+	"moonshotai-cn",
+	"nvidia",
+	"openai",
+	"opencode",
+	"opencode-go",
+	"together",
+	"xai",
+	"xiaomi",
+	"xiaomi-token-plan-ams",
+	"xiaomi-token-plan-cn",
+	"xiaomi-token-plan-sgp",
+	"zai",
+] as const;
+
+function previouslyGeneratedModels(providers: readonly string[]): Model<any>[] {
+	const catalog = MODELS as unknown as Record<string, Record<string, Model<any>> | undefined>;
+	const models: Model<any>[] = [];
+	for (const provider of providers) {
+		const entries = catalog[provider];
+		if (!entries) continue;
+		for (const model of Object.values(entries)) {
+			models.push(structuredClone(model));
+		}
+	}
+	return models;
+}
+
+/**
+ * Every upstream source has at least one tool-capable model, so an empty result
+ * always means the fetch failed (network, DNS, egress policy, upstream outage).
+ * Reuse the previously generated entries for that source's providers so a
+ * transient failure degrades to a stale catalog instead of silently deleting
+ * every model those providers offer.
+ */
+function withPreviousModelsOnFailure(
+	source: string,
+	fetched: Model<any>[],
+	providers: readonly string[],
+): Model<any>[] {
+	if (fetched.length > 0) return fetched;
+	const previous = previouslyGeneratedModels(providers);
+	console.warn(
+		`WARNING: ${source} returned no models - reusing ${previous.length} previously generated entries. ` +
+			`The catalog for these providers is stale: ${providers.join(", ")}`,
+	);
+	return previous;
+}
+
 async function generateModels() {
 	// Fetch models from both sources
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
 	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
 	// AI Gateway: OpenAI-compatible catalog with tool-capable models
-	const modelsDevModels = await loadModelsDevData();
-	const openRouterModels = await fetchOpenRouterModels();
-	const aiGatewayModels = await fetchAiGatewayModels();
+	const modelsDevModels = withPreviousModelsOnFailure("models.dev", await loadModelsDevData(), MODELS_DEV_PROVIDERS);
+	const openRouterModels = withPreviousModelsOnFailure("OpenRouter", await fetchOpenRouterModels(), ["openrouter"]);
+	const aiGatewayModels = withPreviousModelsOnFailure("Vercel AI Gateway", await fetchAiGatewayModels(), [
+		"vercel-ai-gateway",
+	]);
 
 	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels].filter(
@@ -1064,6 +1146,29 @@ async function generateModels() {
 		allModels.push({
 			id: "claude-opus-4-7",
 			name: "Claude Opus 4.7",
+			api: "anthropic-messages",
+			baseUrl: "https://api.anthropic.com",
+			provider: "anthropic",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 25,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
+			},
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		});
+	}
+
+	// Add missing Claude Opus 5.
+	// Metadata mirrors models.dev anthropic/claude-opus-5: 1M context, 128K output,
+	// $5/$25 per MTok with $0.5/$6.25 cache read/write.
+	if (!allModels.some(m => m.provider === "anthropic" && m.id === "claude-opus-5")) {
+		allModels.push({
+			id: "claude-opus-5",
+			name: "Claude Opus 5",
 			api: "anthropic-messages",
 			baseUrl: "https://api.anthropic.com",
 			provider: "anthropic",
@@ -1215,6 +1320,30 @@ async function generateModels() {
 				name: "GPT-5.3 Codex",
 			});
 		}
+	}
+
+	// Add missing GitHub Copilot Claude Opus 5.
+	// Metadata mirrors models.dev github-copilot/claude-opus-5: 1M context and a
+	// 64K output cap (Copilot caps output below Anthropic's direct 128K).
+	if (!allModels.some((m) => m.provider === "github-copilot" && m.id === "claude-opus-5")) {
+		allModels.push({
+			id: "claude-opus-5",
+			name: "Claude Opus 5",
+			api: "anthropic-messages",
+			baseUrl: "https://api.individual.githubcopilot.com",
+			provider: "github-copilot",
+			headers: { ...COPILOT_STATIC_HEADERS },
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 5,
+				output: 25,
+				cacheRead: 0.5,
+				cacheWrite: 6.25,
+			},
+			contextWindow: 1000000,
+			maxTokens: 64000,
+		});
 	}
 
 	if (!allModels.some((m) => m.provider === "openai" && m.id === "gpt-5.4")) {
