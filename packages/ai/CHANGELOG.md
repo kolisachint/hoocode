@@ -15,22 +15,23 @@
 
 - GitHub Copilot routed every Claude model that isn't 4.x through the
   OpenAI-compatible endpoint. The API selector matched a hardcoded
-  `claude-*-4*`, so `claude-sonnet-5` was generated as `openai-completions` and
-  `claude-opus-5` would have been too — an OpenAI-shaped payload aimed at a
-  Claude model. The major version is now parsed and compared numerically (4 and
-  newer → Anthropic Messages), which also covers future Claude families without
-  another edit. The rule is applied as a normalization pass over the assembled
-  catalog rather than only at fetch time, so entries carried over from an
-  earlier generation get repaired too.
-- Claude Opus 5 and Claude Sonnet 5 now use adaptive thinking.
+  `claude-*-4*`, so `claude-sonnet-5` and `claude-fable-5` were generated as
+  `openai-completions` and `claude-opus-5` would have been too — an
+  OpenAI-shaped payload aimed at a Claude model. The major version is now parsed
+  and compared numerically (4 and newer → Anthropic Messages) across the
+  haiku/sonnet/opus/fable families, which also covers future Claude releases
+  without another edit. The rule is applied as a normalization pass over the
+  assembled catalog rather than only at fetch time, so entries carried over from
+  an earlier generation get repaired too.
+- Claude Opus 5, Sonnet 5, and Fable 5 now use adaptive thinking.
   `supportsAdaptiveThinking()` matched an explicit list that ended at Opus 4.8
-  and Sonnet 4.6, so both would have been sent budget-based
+  and Sonnet 4.6, so all three would have been sent budget-based
   `thinking: { type: "enabled", budget_tokens }` — which adaptive-thinking
   models reject — instead of `thinking: { type: "adaptive" }` with
-  `output_config.effort`. Both also pick up the `xhigh` thinking level (upstream
-  lists effort low/medium/high/xhigh/max for each). Opus 5 defaults to the
-  `omitted` thinking display like Opus 4.8; Sonnet 5 keeps the visible
-  `summarized` default, matching Sonnet 4.6.
+  `output_config.effort`. All three also pick up the `xhigh` thinking level
+  (upstream lists effort low/medium/high/xhigh/max for each). Opus 5 defaults to
+  the `omitted` thinking display like Opus 4.8; Sonnet 5 and Fable 5 keep the
+  visible `summarized` default, matching Sonnet 4.6.
 
 ### Changed
 

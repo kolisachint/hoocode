@@ -217,9 +217,9 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.id.includes("opus-4-8") || model.id.includes("opus-4.8")) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
-	// models.dev lists Opus 5 and Sonnet 5 reasoning_options as effort
+	// models.dev lists Opus 5, Sonnet 5, and Fable 5 reasoning_options as effort
 	// low/medium/high/xhigh/max.
-	if (model.id.includes("opus-5") || model.id.includes("sonnet-5")) {
+	if (model.id.includes("opus-5") || model.id.includes("sonnet-5") || model.id.includes("fable-5")) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
 	if (model.api === "openai-completions" && model.id.includes("deepseek-v4")) {
@@ -250,7 +250,7 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 // Matching the major version numerically keeps new families (e.g. claude-opus-5,
 // claude-sonnet-5) on the native API instead of silently falling back to
 // openai-completions the way a hardcoded "-4" check did.
-const COPILOT_CLAUDE_MODEL_ID = /^claude-(?:haiku|sonnet|opus)-(\d+)(?:[.\-]|$)/;
+const COPILOT_CLAUDE_MODEL_ID = /^claude-(?:haiku|sonnet|opus|fable)-(\d+)(?:[.\-]|$)/;
 
 function isCopilotAnthropicMessagesModel(modelId: string): boolean {
 	const major = COPILOT_CLAUDE_MODEL_ID.exec(modelId)?.[1];

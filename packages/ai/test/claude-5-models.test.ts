@@ -156,6 +156,55 @@ describe("Claude Sonnet 5 catalog", () => {
 	});
 });
 
+describe("Claude Fable 5 catalog", () => {
+	it("registers Claude Fable 5 on the Anthropic provider", () => {
+		const model = getModel("anthropic", "claude-fable-5");
+
+		expect(model).toBeDefined();
+		expect(model.api).toBe("anthropic-messages");
+		expect(model.provider).toBe("anthropic");
+		expect(model.baseUrl).toBe("https://api.anthropic.com");
+		expect(model.reasoning).toBe(true);
+		expect(model.input).toEqual(["text", "image"]);
+		expect(model.contextWindow).toBe(1000000);
+		expect(model.maxTokens).toBe(128000);
+		expect(model.cost).toEqual({
+			input: 10,
+			output: 50,
+			cacheRead: 1,
+			cacheWrite: 12.5,
+		});
+	});
+
+	it("registers Claude Fable 5 on GitHub Copilot via the Anthropic Messages API", () => {
+		// Regression: `fable` was missing from the Copilot API router's family
+		// list, so this entry was generated as openai-completions.
+		const model = getModel("github-copilot", "claude-fable-5");
+
+		expect(model).toBeDefined();
+		expect(model.api).toBe("anthropic-messages");
+		expect(model.provider).toBe("github-copilot");
+		expect(model.baseUrl).toBe("https://api.individual.githubcopilot.com");
+		expect(model.reasoning).toBe(true);
+		expect(model.input).toEqual(["text", "image"]);
+		expect(model.contextWindow).toBe(1000000);
+		expect(model.maxTokens).toBe(128000);
+		expect(model.cost).toEqual({
+			input: 10,
+			output: 50,
+			cacheRead: 1,
+			cacheWrite: 12.5,
+		});
+		expect(model.headers?.["Copilot-Integration-Id"]).toBe("vscode-chat");
+		expect(model.compat).toBeUndefined();
+	});
+
+	it("exposes xhigh thinking for Claude Fable 5 on both providers", () => {
+		expect(getSupportedThinkingLevels(getModel("anthropic", "claude-fable-5"))).toContain("xhigh");
+		expect(getSupportedThinkingLevels(getModel("github-copilot", "claude-fable-5"))).toContain("xhigh");
+	});
+});
+
 describe("Claude Opus 5 request format", () => {
 	it("uses adaptive thinking instead of a thinking budget on Anthropic", async () => {
 		const model = getModel("anthropic", "claude-opus-5");
@@ -198,23 +247,25 @@ describe("Claude Opus 5 request format", () => {
 		expect(params.output_config).toEqual({ effort: "high" });
 	});
 
-	it.each(["anthropic", "github-copilot"] as const)(
-		"uses adaptive thinking for Claude Sonnet 5 on %s",
-		async (provider) => {
-			const model = getModel(provider, "claude-sonnet-5");
-			const { streamSimpleAnthropic } = await import("../src/providers/anthropic.js");
+	it.each([
+		["anthropic", "claude-sonnet-5"],
+		["github-copilot", "claude-sonnet-5"],
+		["anthropic", "claude-fable-5"],
+		["github-copilot", "claude-fable-5"],
+	] as const)("uses adaptive thinking for %s %s", async (provider, modelId) => {
+		const model = getModel(provider, modelId);
+		const { streamSimpleAnthropic } = await import("../src/providers/anthropic.js");
 
-			const s = streamSimpleAnthropic(model, context, { apiKey: "test-token", reasoning: "xhigh" });
-			for await (const event of s) {
-				if (event.type === "error") break;
-			}
+		const s = streamSimpleAnthropic(model, context, { apiKey: "test-token", reasoning: "xhigh" });
+		for await (const event of s) {
+			if (event.type === "error") break;
+		}
 
-			const params = mockState.createParams as Record<string, unknown>;
-			expect(params.model).toBe("claude-sonnet-5");
-			// Sonnet 5 keeps the visible "summarized" display; only the Opus tier
-			// defaults to "omitted".
-			expect(params.thinking).toEqual({ type: "adaptive", display: "summarized" });
-			expect(params.output_config).toEqual({ effort: "xhigh" });
-		},
-	);
+		const params = mockState.createParams as Record<string, unknown>;
+		expect(params.model).toBe(modelId);
+		// Sonnet 5 and Fable 5 keep the visible "summarized" display; only the
+		// Opus tier defaults to "omitted".
+		expect(params.thinking).toEqual({ type: "adaptive", display: "summarized" });
+		expect(params.output_config).toEqual({ effort: "xhigh" });
+	});
 });
