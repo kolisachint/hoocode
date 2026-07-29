@@ -13,6 +13,12 @@
 
 ### Fixed
 
+- OpenRouter's rolling `~anthropic/claude-<family>-latest` aliases were missing
+  the `xhigh` thinking level. The rule that grants it matched the pinned ids
+  (`opus-5`, `sonnet-5`, `fable-5`), so the aliases — whose pricing and limits
+  match those same releases exactly — were capped at `high`. All three now
+  resolve the level correctly. `~anthropic/claude-haiku-latest` is deliberately
+  excluded: its current release is Haiku 4.5, which has no `xhigh` tier.
 - GitHub Copilot routed every Claude model that isn't 4.x through the
   OpenAI-compatible endpoint. The API selector matched a hardcoded
   `claude-*-4*`, so `claude-sonnet-5` and `claude-fable-5` were generated as

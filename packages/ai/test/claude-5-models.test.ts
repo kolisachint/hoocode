@@ -269,3 +269,24 @@ describe("Claude Opus 5 request format", () => {
 		expect(params.output_config).toEqual({ effort: "xhigh" });
 	});
 });
+
+describe("OpenRouter rolling Claude aliases", () => {
+	// The `~anthropic/claude-<family>-latest` aliases resolve to the Claude 5
+	// releases (their pricing and limits match exactly), so they need the same
+	// xhigh thinking level as the pinned ids.
+	it.each([
+		"~anthropic/claude-opus-latest",
+		"~anthropic/claude-sonnet-latest",
+		"~anthropic/claude-fable-latest",
+	] as const)("exposes xhigh thinking for %s", (modelId) => {
+		const model = getModel("openrouter", modelId);
+		expect(model).toBeDefined();
+		expect(getSupportedThinkingLevels(model)).toContain("xhigh");
+	});
+
+	it("does not expose xhigh for the Haiku alias, whose current release is 4.5", () => {
+		const model = getModel("openrouter", "~anthropic/claude-haiku-latest");
+		expect(model).toBeDefined();
+		expect(getSupportedThinkingLevels(model)).not.toContain("xhigh");
+	});
+});
