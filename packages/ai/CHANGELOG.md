@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Added
+
+- Claude Opus 5 for the `anthropic` and `github-copilot` providers, so it shows
+  up in `/model` for both. The generated catalog predated the model's release,
+  and `/model` only ever lists what `ModelRegistry` holds, so the model was
+  simply absent rather than filtered out. Both entries use the upstream
+  models.dev metadata — 1M context, $5/$25 per MTok with $0.50/$6.25 cache
+  read/write — with a 128K output cap on Anthropic and Copilot's lower 64K cap.
+
+### Fixed
+
+- GitHub Copilot routed every Claude model that isn't 4.x through the
+  OpenAI-compatible endpoint. The API selector matched a hardcoded
+  `claude-*-4*`, so `claude-sonnet-5` and `claude-fable-5` were generated as
+  `openai-completions` and `claude-opus-5` would have been too — an
+  OpenAI-shaped payload aimed at a Claude model. The major version is now parsed
+  and compared numerically (4 and newer → Anthropic Messages) across the
+  haiku/sonnet/opus/fable families, which also covers future Claude releases
+  without another edit. The rule is applied as a normalization pass over the
+  assembled catalog rather than only at fetch time, so entries carried over from
+  an earlier generation get repaired too.
+- Claude Opus 5, Sonnet 5, and Fable 5 now use adaptive thinking.
+  `supportsAdaptiveThinking()` matched an explicit list that ended at Opus 4.8
+  and Sonnet 4.6, so all three would have been sent budget-based
+  `thinking: { type: "enabled", budget_tokens }` — which adaptive-thinking
+  models reject — instead of `thinking: { type: "adaptive" }` with
+  `output_config.effort`. All three also pick up the `xhigh` thinking level
+  (upstream lists effort low/medium/high/xhigh/max for each). Opus 5 defaults to
+  the `omitted` thinking display like Opus 4.8; Sonnet 5 and Fable 5 keep the
+  visible `summarized` default, matching Sonnet 4.6.
+
+### Changed
+
+- `generate-models` no longer wipes a provider's catalog when an upstream source
+  is unreachable. Every source (models.dev, OpenRouter, Vercel AI Gateway) has
+  at least one tool-capable model, so an empty result always means the fetch
+  failed; the generator now reuses the previously generated entries for that
+  source's providers and warns that the catalog is stale, instead of silently
+  emitting a near-empty `models.generated.ts`.
+
 ## [0.4.154] - 2026-07-23
 
 ## [0.4.153] - 2026-07-23
