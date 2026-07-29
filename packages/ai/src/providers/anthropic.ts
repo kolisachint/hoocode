@@ -663,7 +663,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 };
 
 /**
- * Check if a model supports adaptive thinking (Opus 4.6+, Opus 5, Sonnet 4.6)
+ * Check if a model supports adaptive thinking (Opus 4.6+, Opus 5, Sonnet 4.6+)
  */
 function supportsAdaptiveThinking(modelId: string): boolean {
 	// Adaptive-thinking model IDs (with or without date suffix)
@@ -676,7 +676,8 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 		modelId.includes("opus-4.8") ||
 		modelId.includes("opus-5") ||
 		modelId.includes("sonnet-4-6") ||
-		modelId.includes("sonnet-4.6")
+		modelId.includes("sonnet-4.6") ||
+		modelId.includes("sonnet-5")
 	);
 }
 

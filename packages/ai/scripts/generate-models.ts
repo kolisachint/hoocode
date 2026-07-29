@@ -217,8 +217,9 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.id.includes("opus-4-8") || model.id.includes("opus-4.8")) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
-	// models.dev lists Opus 5 reasoning_options as effort low/medium/high/xhigh/max.
-	if (model.id.includes("opus-5")) {
+	// models.dev lists Opus 5 and Sonnet 5 reasoning_options as effort
+	// low/medium/high/xhigh/max.
+	if (model.id.includes("opus-5") || model.id.includes("sonnet-5")) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
 	if (model.api === "openai-completions" && model.id.includes("deepseek-v4")) {
@@ -1065,6 +1066,25 @@ async function generateModels() {
 		(model) =>
 			!((model.provider === "opencode" || model.provider === "opencode-go") && model.id === "gpt-5.3-codex-spark"),
 	);
+
+	// Which API a Copilot Claude model speaks is a property of its id, not of
+	// where the entry came from, so normalize after assembly rather than only at
+	// fetch time. This also repairs entries carried over from an earlier
+	// generation that predates the current routing rule.
+	for (const candidate of allModels) {
+		if (candidate.provider !== "github-copilot") continue;
+		if (!isCopilotAnthropicMessagesModel(candidate.id)) continue;
+		if (candidate.api === "anthropic-messages") continue;
+
+		candidate.api = "anthropic-messages";
+		const anthropicCompat = getAnthropicMessagesCompat("github-copilot", candidate.id);
+		if (anthropicCompat) {
+			candidate.compat = anthropicCompat;
+		} else {
+			// Drop openai-completions compat; it is meaningless on this API.
+			delete candidate.compat;
+		}
+	}
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)
