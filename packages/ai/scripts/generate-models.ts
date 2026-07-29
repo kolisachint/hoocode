@@ -191,6 +191,19 @@ function isGemma4Model(modelId: string): boolean {
 	return /gemma-?4/.test(modelId.toLowerCase());
 }
 
+// models.dev lists reasoning_options low/medium/high/xhigh/max for Opus 5,
+// Sonnet 5, and Fable 5. OpenRouter also publishes rolling
+// `~anthropic/claude-<family>-latest` aliases whose pricing and limits match
+// those same releases, so they need the same thinking metadata. Haiku is
+// deliberately absent: its current release is 4.5, which has no xhigh tier.
+// The `claude-` prefix keeps older date-style aliases such as
+// `claude-3-5-sonnet-latest` from matching.
+const CLAUDE_XHIGH_MODEL_ID = /claude-(?:opus|sonnet|fable)-(?:5|latest)(?:[.\-]|$)/;
+
+function supportsClaudeXhigh(modelId: string): boolean {
+	return CLAUDE_XHIGH_MODEL_ID.test(modelId);
+}
+
 function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (
 		(model.api === "openai-responses" || model.api === "azure-openai-responses") &&
@@ -217,9 +230,7 @@ function applyThinkingLevelMetadata(model: Model<any>): void {
 	if (model.id.includes("opus-4-8") || model.id.includes("opus-4.8")) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
-	// models.dev lists Opus 5, Sonnet 5, and Fable 5 reasoning_options as effort
-	// low/medium/high/xhigh/max.
-	if (model.id.includes("opus-5") || model.id.includes("sonnet-5") || model.id.includes("fable-5")) {
+	if (supportsClaudeXhigh(model.id)) {
 		mergeThinkingLevelMap(model, { xhigh: "xhigh" });
 	}
 	if (model.api === "openai-completions" && model.id.includes("deepseek-v4")) {
