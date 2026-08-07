@@ -36,6 +36,23 @@ hoocode /mode plan    # or draft a plan first
 hoocode /approve      # review .hoocode/plan.md, then execute it
 ```
 
+### From plan to execution
+
+A plan does not have to go straight to `/approve`. Three commands sit on that path:
+
+| Command | What it does |
+|---|---|
+| `/grill [me\|plan]` | Stress-tests the current plan. `/grill me` interrogates the *request* — it surfaces assumptions nobody confirmed and puts the consequential ones to you as questions. `/grill plan` attacks the *plan*, verifying its claims against the codebase and revising it where it is weak. Bare `/grill` runs both, asking first: underspecification sits upstream of plan weakness, so critiquing a plan built on a misread request only yields a well-reviewed plan for the wrong job. |
+| `/approve` | Switches to build mode and executes the plan step by step, gating each edit and command as usual. |
+| `/goal [--max-turns N] [objective]` | Works toward the goal autonomously, iterating until it reports completion or spends its turn budget. With no argument it takes the objective from the plan's **Goal** section; the plan's **Verification** section becomes the completion condition. Stop a run at any time with `/loop stop`. |
+
+`/goal` is deliberately linear — one thread of execution, no task graph and no
+subtask fan-out. It runs under whatever the active mode already permits
+(`enabled_tools`, `allowed_bash_commands`, `allowed_write_paths`, `auto_allow`),
+so how much rope an unattended run gets is a mode-config decision. Note that it
+asks the agent to run the verification and trusts its report of completion;
+nothing checks an exit code on your behalf.
+
 ## Tools
 
 The agent works through a small, deterministic tool set. Available by default:

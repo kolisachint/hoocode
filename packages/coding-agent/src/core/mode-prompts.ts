@@ -25,7 +25,9 @@ Cite specific file paths and line numbers in your answers.`,
 Explore the codebase thoroughly. Understand the current structure.
 Draft a complete plan with sections: Goal, Files to modify, New files, Tests, Verification.
 Write the plan to {{PLAN_PATH}}.
-When the plan is complete, tell the user to run /approve to execute it.`,
+When the plan is complete, tell the user their options: /grill to stress-test it
+first, then /approve to execute it step by step or /goal to work toward it
+autonomously. Recommend /grill when the plan carries real risk.`,
 
 	build: `You are in BUILD mode — careful implementation.
 Read files before editing them. Show diffs before non-trivial changes.

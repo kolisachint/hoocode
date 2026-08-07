@@ -29,6 +29,11 @@
 
 ### Changed
 
+- Plan mode now points at the whole path out of a plan rather than only
+  `/approve`: it offers `/grill` to stress-test first, then `/approve` to execute
+  step by step or `/goal` to work toward the plan autonomously, and recommends
+  grilling whenever the plan carries real risk. Previously the two new commands
+  were reachable only if you already knew to type them.
 - The autonomous loop can now be started over the event bus. `LOOP_AUTO_START`
   mirrors the existing `LOOP_HALT` channel in the opposite direction, letting an
   extension drive a run without reaching into state private to `/loop`, and its

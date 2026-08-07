@@ -10,6 +10,9 @@ Steps:
    - **New files** — path, purpose.
    - **Tests** — what to add or update.
    - **Verification** — commands to confirm correctness.
-3. After writing the plan, tell the user: "Plan written to `{{PLAN_PATH}}`. Run `/approve` to begin execution."
+3. After writing the plan, tell the user: "Plan written to `{{PLAN_PATH}}`. Run
+   `/grill` to stress-test it, then `/approve` to execute it step by step or
+   `/goal` to work toward it autonomously." Recommend `/grill` first whenever the
+   plan carries real risk — it surfaces weak assumptions before any code changes.
 
 Forbidden: edit any source file. Only `{{PLAN_PATH}}` may be written.
