@@ -8,6 +8,8 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import { type Container, Spacer, Text, visibleWidth } from "@kolisachint/hoocode-tui";
+import type { AgentDefinition } from "../../core/agent-frontmatter.js";
+import { summarizeAgentDescription } from "../../core/agent-registry.js";
 import type { ContextFile } from "../../core/context-files.js";
 import type { ExtensionRunner } from "../../core/extensions/index.js";
 import { formatTokens } from "../../core/format-tokens.js";
@@ -457,6 +459,8 @@ export interface ResourceDisplayDeps {
 	getSubagentEnabled(): boolean;
 	/** Dispatchable subagents in this cwd (0 when the Task tool is off). */
 	getAgentCount(): number;
+	/** Dispatchable agents for this cwd (empty when Task tool is off). */
+	getAgents(): AgentDefinition[];
 	/**
 	 * One-line session state (model, thinking level, auth caveats) shown under the
 	 * summary. Undefined when there is nothing worth stating.
@@ -566,8 +570,6 @@ export function showLoadedResources(
 		const pluginCount = extensions.filter((e) => displayNameOf(e)?.startsWith("plugin:")).length;
 		const codeExtensionCount = extensions.length - pluginCount;
 
-		const rawMode = deps.getActiveMode();
-
 		// ── Counted capability grid ──────────────────────────────────────────────
 		// One cell per loaded capability class (glyph + count + label), so "what
 		// can this session do" reads at a glance; names/paths sit one keypress
@@ -642,30 +644,7 @@ export function showLoadedResources(
 		// just the hint line, so a resource-heavy project no longer buries the
 		// prompt under a wall of names at launch.
 		const detailSections: string[] = [];
-		const metaItems = [`mode/${rawMode}`];
-		if (deps.getSubagentEnabled()) metaItems.push("subagent_system_prompt");
-		detailSections.push(`${sectionHeader("Resources")}\n${formatCompactList(metaItems)}`);
-
-		if (contextFiles.length > 0) {
-			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${formatDisplayPath(f.path)}`)).join("\n");
-			detailSections.push(`${sectionHeader("Context")}\n${contextList}`);
-		}
-		if (mcpStatuses.length > 0) {
-			const mcpList = mcpStatuses
-				.map((server) => {
-					const facts =
-						server.state === "authorizing"
-							? ["awaiting authorization"]
-							: [
-									`${server.toolCount} ${plural(server.toolCount, "tool")}`,
-									server.background ? "background" : "foreground",
-									...(server.deferred ? ["schemas deferred"] : []),
-								];
-					return theme.fg("dim", `  ${server.name} ${facts.join(` ${SEGMENT_SEP} `)}`);
-				})
-				.join("\n");
-			detailSections.push(`${sectionHeader("MCP")}\n${mcpList}`);
-		}
+		// Skills
 		if (skills.length > 0) {
 			const groups = buildScopeGroups(
 				skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
@@ -692,8 +671,47 @@ export function showLoadedResources(
 				formatPackagePath: formatTemplate,
 			});
 			detailSections.push(
-				`${sectionHeader("Prompts")}\n${formatCompactList(templates.map((t) => `/${t.name}`))}\n${templateList}`,
+				`${sectionHeader("Commands")}\n${formatCompactList(templates.map((t) => `/${t.name}`))}\n${templateList}`,
 			);
+		}
+		// Agents
+		const agents = deps.getAgents();
+		if (agents.length > 0) {
+			const agentList = agents
+				.map((agent) => {
+					const desc = summarizeAgentDescription(agent.description);
+					return theme.fg("dim", `  ${agent.name} ${SEGMENT_SEP} ${desc}`);
+				})
+				.join("\n");
+			detailSections.push(`${sectionHeader("Agents")}\n${agentList}`);
+		}
+		// MCP
+		if (mcpStatuses.length > 0) {
+			const mcpList = mcpStatuses
+				.map((server) => {
+					const facts =
+						server.state === "authorizing"
+							? ["awaiting authorization"]
+							: [
+									`${server.toolCount} ${plural(server.toolCount, "tool")}`,
+									server.background ? "background" : "foreground",
+									...(server.deferred ? ["schemas deferred"] : []),
+								];
+					return theme.fg("dim", `  ${server.name} ${facts.join(` ${SEGMENT_SEP} `)}`);
+				})
+				.join("\n");
+			detailSections.push(`${sectionHeader("MCP")}\n${mcpList}`);
+		}
+		// Plugins
+		const plugins = extensions.filter((e) => displayNameOf(e)?.startsWith("plugin:"));
+		if (plugins.length > 0) {
+			const groups = buildScopeGroups(plugins);
+			const pluginList = formatScopeGroups(groups, {
+				formatPath: (item) => item.displayName ?? formatExtensionDisplayPath(item.path),
+				formatPackagePath: (item) =>
+					item.displayName ?? formatExtensionDisplayPath(getShortPath(item.path, item.sourceInfo)),
+			});
+			detailSections.push(`${sectionHeader("Plugins")}\n${pluginList}`);
 		}
 		if (extensions.length > 0) {
 			const groups = buildScopeGroups(extensions);

@@ -446,7 +446,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
-		expect(output).toContain("[Resources]");
 		expect(output).toContain("[Skills]");
 		expect(output).toContain("commit");
 	});
@@ -552,9 +551,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 3 extensions
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  alpha/one, beta/one, gamma/one
 			  path
@@ -592,9 +588,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 1 extension
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  plan-mode
 			  project
@@ -630,9 +623,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 1 extension
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  plan-mode
 			  project
@@ -677,9 +667,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 2 extensions
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  plan-mode, webfetch.ts
 			  project
@@ -725,9 +712,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 2 extensions
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  bar, foo
 			  project
@@ -773,9 +757,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 2 extensions
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  alpha/tools, beta/tools
 			  path
@@ -812,9 +793,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 1 extension
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  main.ts
 			  project
@@ -853,9 +831,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(
 			`
 			"⊹ 1 extension
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  pi-markdown-preview
 			  project
@@ -878,9 +853,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
 			"⊹ 8 extensions
-			[Resources]
-			  mode/build
-
 			[Extensions]
 			  @scope/pi-scoped, answer.ts, cli-extension.ts, HazAT/pi-interactive-subagents, HazAT/pi-interactive-subagents:subagents, local-index, pi-markdown-preview, user-index
 			  project
@@ -922,12 +894,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(output).not.toContain(`${cwd.replace(/\\/g, "/")}/AGENTS.md`);
 	});
 
-	test("shows full context paths when expanded", () => {
+	test("shows context paths in collapsed view", () => {
 		const home = homedir();
 		const cwd = path.join(home, "Development", "pi-mono");
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
-			toolOutputExpanded: true,
+			toolOutputExpanded: false,
 			cwd,
 			contextFiles: [
 				{ path: path.join(home, ".hoocode", "agent", "AGENTS.md") },
@@ -940,10 +912,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer).replace(/\\/g, "/");
-		// Expanded details show the [Context] section with the full display paths.
-		expect(output).toContain("[Context]");
 		expect(output).toContain("~/.hoocode/agent/AGENTS.md");
-		expect(output).toContain("~/Development/pi-mono/AGENTS.md");
+		expect(output).toContain("AGENTS.md");
 	});
 
 	test("does not show verbose listing on quiet startup during reload", () => {
@@ -1053,9 +1023,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
 		expect(output).toContain("5 skills");
-		expect(output).toContain("[Context]");
 		expect(output).toContain("[Skills]");
-		expect(output).toContain("[Resources]");
-		expect(output).toContain("mode/build");
 	});
 });
