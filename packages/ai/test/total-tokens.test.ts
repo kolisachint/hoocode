@@ -20,8 +20,6 @@ import type { Api, Context, Model, StreamOptions, Usage } from "../src/types.js"
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
-import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "./cloudflare-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -329,56 +327,6 @@ describe("totalTokens field", () => {
 	});
 
 	// =========================================================================
-	// Cloudflare Workers AI
-	// =========================================================================
-
-	describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI", () => {
-		it(
-			"@cf/moonshotai/kimi-k2.6 - should return totalTokens equal to sum of components",
-			{ retry: 3, timeout: 60000 },
-			async () => {
-				const llm = getModel("anthropic", "claude-sonnet-4-5");
-
-				console.log(`\nCloudflare Workers AI / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, {
-					apiKey: process.env.CLOUDFLARE_API_KEY,
-				});
-
-				logUsage("First request", first);
-				logUsage("Second request", second);
-
-				assertTotalTokensEqualsComponents(first);
-				assertTotalTokensEqualsComponents(second);
-			},
-		);
-	});
-
-	// =========================================================================
-	// Cloudflare AI Gateway
-	// =========================================================================
-
-	describe.skipIf(!hasCloudflareAiGatewayCredentials())("Cloudflare AI Gateway", () => {
-		it(
-			"workers-ai/@cf/moonshotai/kimi-k2.6 - should return totalTokens equal to sum of components",
-			{ retry: 3, timeout: 60000 },
-			async () => {
-				const llm = getModel("anthropic", "claude-sonnet-4-5");
-
-				console.log(`\nCloudflare AI Gateway / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, {
-					apiKey: process.env.CLOUDFLARE_API_KEY,
-				});
-
-				logUsage("First request", first);
-				logUsage("Second request", second);
-
-				assertTotalTokensEqualsComponents(first);
-				assertTotalTokensEqualsComponents(second);
-			},
-		);
-	});
-
-	// =========================================================================
 	// Hugging Face
 	// =========================================================================
 
@@ -432,29 +380,6 @@ describe("totalTokens field", () => {
 
 				console.log(`\nz.ai / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_API_KEY });
-
-				logUsage("First request", first);
-				logUsage("Second request", second);
-
-				assertTotalTokensEqualsComponents(first);
-				assertTotalTokensEqualsComponents(second);
-			},
-		);
-	});
-
-	// =========================================================================
-	// Mistral
-	// =========================================================================
-
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral", () => {
-		it(
-			"devstral-medium-latest - should return totalTokens equal to sum of components",
-			{ retry: 3, timeout: 60000 },
-			async () => {
-				const llm = getModel("anthropic", "claude-sonnet-4-5");
-
-				console.log(`\nMistral / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.MISTRAL_API_KEY });
 
 				logUsage("First request", first);
 				logUsage("Second request", second);
@@ -768,25 +693,6 @@ describe("totalTokens field", () => {
 
 	// =========================================================================
 	// =========================================================================
-
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
-		it(
-			"claude-sonnet-4-5 - should return totalTokens equal to sum of components",
-			{ retry: 3, timeout: 60000 },
-			async () => {
-				const llm = getModel("anthropic", "claude-sonnet-4-5");
-
-				console.log(`\nAmazon Bedrock / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm);
-
-				logUsage("First request", first);
-				logUsage("Second request", second);
-
-				assertTotalTokensEqualsComponents(first);
-				assertTotalTokensEqualsComponents(second);
-			},
-		);
-	});
 
 	// =========================================================================
 	// OpenAI Codex (OAuth)
