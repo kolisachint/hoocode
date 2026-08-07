@@ -97,8 +97,6 @@ The shipped CLI. Largest package.
   - `tools/` - built-in tools (`read`, `bash`, `edit`, `write`, `subagent.ts` = the `Task`
     tool, etc.). `tools/index.ts` holds the single `TOOL_FACTORIES` registry table that
     everything (name union, option lookups, bundles) derives from. Optional feature tools
-    live in subdirectories: `tools/browser/` (browser_run/browser_continue) and
-    `tools/doc/` (DocRead/DocEdit/…).
   - `subagent-pool.ts` - spawns subagents as child processes (concurrency, retries,
     inherited-model fallback).
   - `agent-registry.ts` - loads agent definitions; built-ins come from

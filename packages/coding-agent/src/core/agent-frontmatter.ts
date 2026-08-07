@@ -48,12 +48,6 @@ export const HOOCODE_TOOL_NAMES: readonly string[] = [
 	"webfetch",
 	"websearch",
 	"write",
-	"DocRead",
-	"DocEdit",
-	"DocWrite",
-	"DocScan",
-	"DocGrep",
-	"DocPeek",
 ];
 
 /**

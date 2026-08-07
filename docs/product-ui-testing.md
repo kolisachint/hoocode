@@ -241,7 +241,7 @@ reference [`ui-map.md`](./ui-map.md).
 ### 3.10 Off-by-default tool groups — Web · Browser · Documents · Plugins
 
 - **Action:** confirm each group is **absent** by default, then enable via flag
-  (`--enable-webtools`, `--enable-browsertools`, `--enable-filetools`,
+  (`--enable-webtools`,
   `--enable-plugintools`) and confirm it appears.
 - **Outcome (evidence):** paired "off" / "on" frames of the resource/tool
   listing (`resource-display.ts`).

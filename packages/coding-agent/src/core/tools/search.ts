@@ -102,11 +102,15 @@ export function createSearchToolDefinition(
 	return {
 		name: "search",
 		label: "search",
+		// The search-vs-grep split is stated once, by buildSystemPrompt, whenever both
+		// tools are registered — so it is deliberately absent here and from grep's
+		// description. What stays is what only this tool knows: that the query is not
+		// a regex, and that it degrades to exact-text when the index is missing.
 		description:
-			"Find where code lives: ranked file:line-range results from exact-text and semantic (local embedding index) retrieval, fused by rank when both are available. Use search when you want to locate something — a concept, a behavior, or an identifier. Use grep when you want exact matching lines (call sites, counts, context). The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the semantic index is unavailable.",
+			"Find where code lives: ranked file:line-range results from exact-text and semantic (local embedding index) retrieval, fused by rank when both are available. The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the semantic index is unavailable.",
 		promptSnippet: "Ranked code search (exact + semantic, rank-fused)",
 		promptGuidelines: [
-			"The default mode (auto) is almost always right — only force lexical/semantic/hybrid deliberately. Use limit=3 for very targeted lookups; raise limit to 10–20 when exploring a broad topic.",
+			"search defaults to mode=auto, which is almost always right. Use limit=3 for targeted lookups, 10–20 when exploring a broad topic.",
 		],
 		parameters: searchSchema,
 		async execute(_toolCallId, { query, mode, glob, limit }: SearchToolInput, signal?: AbortSignal) {

@@ -979,35 +979,11 @@ export class SettingsManager {
 		return this.settings.embsearchThresholdBytes ?? DEFAULT_SETTINGS.embsearchThresholdBytes!;
 	}
 
-	getEnableBrowserTools(): boolean {
-		return this.settings.enableBrowserTools ?? DEFAULT_SETTINGS.enableBrowserTools!;
-	}
 
-	setEnableBrowserTools(enabled: boolean): void {
-		this.globalSettings.enableBrowserTools = enabled;
-		this.markModified("enableBrowserTools");
-		this.save();
-	}
 
-	getEnableBrowserLivePreview(): boolean {
-		return this.settings.enableBrowserLivePreview ?? DEFAULT_SETTINGS.enableBrowserLivePreview!;
-	}
 
-	setEnableBrowserLivePreview(enabled: boolean): void {
-		this.globalSettings.enableBrowserLivePreview = enabled;
-		this.markModified("enableBrowserLivePreview");
-		this.save();
-	}
 
-	getEnableFileTools(): boolean {
-		return this.settings.enableFileTools ?? DEFAULT_SETTINGS.enableFileTools!;
-	}
 
-	setEnableFileTools(enabled: boolean): void {
-		this.globalSettings.enableFileTools = enabled;
-		this.markModified("enableFileTools");
-		this.save();
-	}
 
 	getLight(): boolean {
 		return this.settings.light ?? DEFAULT_SETTINGS.light!;

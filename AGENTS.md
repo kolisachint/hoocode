@@ -12,6 +12,19 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Browser + document tools removed**: `browser_run`/`browser_continue` and the
+  six `Doc*` tools are gone, along with `src/core/tools/browser/`,
+  `src/core/tools/doc/`, `src/core/tools/filetools-shared.ts`, the
+  `--enable-browsertools` / `--enable-browser-live-preview` / `--enable-filetools`
+  flags, the matching `enableBrowserTools` / `enableBrowserLivePreview` /
+  `enableFileTools` settings, the `browsertools` + `filetools` entries in
+  `src/utils/tools-manager.ts`, and their rows in the interactive tool-group
+  picker. `TOOL_FACTORIES` in `src/core/tools/index.ts` is down to 10 built-ins.
+  `read` still refuses to dump OOXML/PDF bytes, but now points at `bash` rather
+  than `DocRead`.
+- **Fixed per-turn surface trimmed ~402 tokens (~8.8%)**: see the rules in
+  "Prompt token surface" below — the savings came almost entirely from deleting
+  guidance that was being sent twice, not from dropping information.
 - **Provider trim (step 1 of 2 done)**: `packages/ai/scripts/generate-models.ts` no
   longer emits `amazon-bedrock`, `mistral`, `cloudflare-workers-ai`, or
   `cloudflare-ai-gateway` models. Step 2 (needs network access to models.dev):
@@ -33,6 +46,56 @@ Before searching, check these maps:
   - `~/.config/claude/mcp.json` (Claude Desktop)
   - Existing per-server JSON files in `mcp-servers/` still work as fallback
   - First-wins deduplication across all sources
+
+## Prompt token surface
+
+Everything in the system prompt and in an active tool's schema is re-sent on
+**every** request. Measure before and after any change to either:
+
+```bash
+hoocode --print-token-surface   # src/main.ts -> measurePromptSurface (core/light.ts)
+```
+
+It reports the assembled system prompt plus each active tool's serialized
+`{name, description, parameters}`, estimated at chars/4. Treat it as a floor:
+providers add their own envelope, and schema JSON tokenizes worse than prose.
+
+Current baseline (default tools, no context files): **~4,140 tokens** — ~1,430
+system prompt, ~2,710 tool schemas. Adding this repo's `AGENTS.md` as a context
+file costs another ~3,600, which makes it the single largest line item.
+
+**A tool's guidance belongs in exactly one place.** A tool contributes text
+through four channels, and it is easy to pay for the same sentence twice:
+
+| Channel | Ships in | Use it for |
+|---|---|---|
+| `description` | tool schema | what the tool does, its contract, its limits |
+| `parameters` descriptions | tool schema | per-argument semantics |
+| `promptSnippet` | system prompt, `Available tools:` | one line, for picking between tools |
+| `promptGuidelines` | system prompt, `Guidelines:` | behavior the schema cannot express |
+
+Rules that follow from that:
+
+- **Never restate a parameter's semantics in `promptGuidelines`.** Both ship on
+  every turn. `edit` carried five guidelines, four of which repeated its own
+  `oldText`/`edits`/`replaceAll` descriptions verbatim.
+- **Never restate a cross-tool routing rule in a tool.** `buildSystemPrompt`
+  already emits the canonical search-vs-grep and file-exploration guidelines
+  whenever the relevant tools are registered. `grep`, `search`, `read`, and
+  `bash` each carried their own copy; that rule was shipping three times.
+- **Don't spell out what the schema already encodes.** An enum of `f`/`d`/`l`
+  does not need prose naming all three.
+- **Examples are the most expensive thing in a schema.** One is usually enough;
+  `find`'s `pattern` had three and was the priciest built-in schema in the repo.
+- Keep per-tool `promptGuidelines` under ~200 chars, and prefer adding to a
+  tool's `description` over adding a guideline — descriptions at least stay next
+  to the contract they describe.
+
+When adding a tool, budget it: a built-in should land under ~250 tokens
+serialized. Anything materially above that needs a reason, and the
+when-to-use guidance probably belongs in a system-prompt block instead — that
+is why `Task` keeps its mechanics in `description` and its 2.5KB of
+when-to-delegate guidance in `buildTaskMainPrompt`.
 
 ## Conversational Style
 
