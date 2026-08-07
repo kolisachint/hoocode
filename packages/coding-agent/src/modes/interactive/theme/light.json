@@ -81,7 +81,8 @@
 		"agent3": "#d9480f",
 		"agent4": "#c2255c",
 		"agent5": "#087f5b",
-		"agent6": "#3b5bdb"
+		"agent6": "#3b5bdb",
+		"mcp": "#8f6b9a"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

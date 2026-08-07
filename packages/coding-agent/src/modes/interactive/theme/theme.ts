@@ -158,7 +158,8 @@ export type ThemeColor =
 	| "agent3"
 	| "agent4"
 	| "agent5"
-	| "agent6";
+	| "agent6"
+	| "mcp";
 
 /** The agent identity palette, in hash order. */
 export const AGENT_COLOR_TOKENS = [

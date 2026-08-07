@@ -315,11 +315,15 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Agent identity palette slot 5 (optional; subagent types hash into agent1-agent6, falls back to accent)"
 				},
-				"agent6": {
-					"$ref": "#/$defs/colorValue",
-					"description": "Agent identity palette slot 6 (optional; subagent types hash into agent1-agent6, falls back to accent)"
-				}
+			"agent6": {
+				"$ref": "#/$defs/colorValue",
+				"description": "Agent identity palette slot 6 (optional; subagent types hash into agent1-agent6, falls back to accent)"
 			},
+			"mcp": {
+				"$ref": "#/$defs/colorValue",
+				"description": "MCP server identity color"
+			}
+		},
 			"additionalProperties": false
 		},
 		"export": {
