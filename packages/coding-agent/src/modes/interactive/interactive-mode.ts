@@ -1034,6 +1034,14 @@ export class InteractiveMode {
 				getActiveMode: () => this.footerDataProvider.getActiveMode(),
 				getSubagentEnabled: () => this.footerDataProvider.getSubagentEnabled(),
 				getAgentCount: () => this.getDispatchableAgentCount(),
+				getAgents: () => {
+					if (!this.footerDataProvider.getSubagentEnabled()) return [];
+					try {
+						return loadAgentRegistry({ cwd: this.sessionManager.getCwd() }).list();
+					} catch {
+						return [];
+					}
+				},
 				getStateLine: () => this.buildSessionStateLine(),
 				quietStartup: () => this.settingsManager.getQuietStartup(),
 				verbose: this.options.verbose ?? false,
