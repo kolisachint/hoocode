@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/grill` — stress-tests the current plan before `/approve` executes it. Two
+  phases: `/grill me` surfaces the request's unconfirmed assumptions as
+  `ask_options` questions, and `/grill plan` attacks the plan file itself,
+  verifying its claims against the codebase and revising it where it is weak.
+  Bare `/grill` runs both, in that order: underspecification sits upstream of
+  plan weakness, so critiquing a plan built on a misread request only produces a
+  well-reviewed plan for the wrong job — the user's answers are folded into the
+  critique instead. Unlike `/approve` the command only injects a follow-up
+  message, so there is no session switch, no mode change, and no config write.
+  While a `/loop auto` run is active nobody is present to answer a question, so
+  the interrogation phase is dropped and the plan critique runs on its own.
+
 ## [0.4.155] - 2026-07-29
 
 ## [0.4.154] - 2026-07-23

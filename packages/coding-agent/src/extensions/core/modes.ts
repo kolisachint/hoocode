@@ -1,7 +1,7 @@
 /**
  * Mode system — resolves the active mode (ask/plan/build/debug), loads the
  * mode's system prompt, filters active tools, and exposes the /mode, /plan,
- * and /approve commands.
+ * /grill, and /approve commands.
  *
  * Mode prompt search order (first hit wins):
  *   - `./.hoocode/modes/{mode}/system.md`
@@ -24,6 +24,7 @@ import type {
 import { isLightModeEnv } from "../../core/light.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
 import { mergeSearchPaths, readConfig, readMergedConfig, writeConfig } from "./config.js";
+import { LOOP_AUTO_CHANGED } from "./loop.js";
 
 const HOOCODE_DIR = getHooCodeDir();
 
@@ -48,6 +49,30 @@ function tryReadFile(path: string): string | undefined {
 	} catch {
 		return undefined;
 	}
+}
+
+/** Outcome of reading the first usable plan file out of a candidate list. */
+type PlanLoadResult =
+	| { status: "loaded"; sections: PlanSections }
+	| { status: "missing" }
+	| { status: "error"; path: string };
+
+/**
+ * Reads the first candidate plan file that exists and is non-empty, parsed into
+ * sections. Missing and blank files fall through to the next candidate; an
+ * unreadable one stops the walk so the caller can report the specific path.
+ */
+function loadPlanSections(candidatePaths: string[]): PlanLoadResult {
+	for (const planPath of candidatePaths) {
+		if (!existsSync(planPath)) continue;
+		try {
+			const raw = readFileSync(planPath, "utf8").trim();
+			if (raw) return { status: "loaded", sections: parsePlanSections(raw) };
+		} catch {
+			return { status: "error", path: planPath };
+		}
+	}
+	return { status: "missing" };
 }
 
 /**
@@ -170,6 +195,81 @@ export function buildApproveMessage(sections: PlanSections): string {
 }
 
 // ============================================================================
+// Grill: plan interrogation
+// ============================================================================
+
+/** Which half (or both) of the grill flow to run. */
+export type GrillTarget = "both" | "me" | "plan";
+
+/**
+ * Parses the `/grill` argument into a target.
+ *
+ * Bare `/grill` runs both phases, `/grill me` only questions the user, and
+ * `/grill plan` only critiques the plan. Anything else returns undefined so the
+ * caller shows usage rather than guessing at intent.
+ */
+export function parseGrillTarget(args: string): GrillTarget | undefined {
+	const arg = args.trim().toLowerCase();
+	if (!arg) return "both";
+	if (arg === "me" || arg === "plan") return arg;
+	return undefined;
+}
+
+/**
+ * Renders the parsed plan back into the message so the agent reviews a concrete
+ * artifact rather than whatever it remembers writing. Falls back to the raw plan
+ * text when no sections were recognised.
+ */
+function renderPlanForReview(sections: PlanSections): string {
+	const parts: string[] = [];
+	if (sections.goal) parts.push(`**Goal**\n${sections.goal}`);
+	if (sections.filesToModify) parts.push(`**Files to modify**\n${sections.filesToModify}`);
+	if (sections.newFiles) parts.push(`**New files**\n${sections.newFiles}`);
+	if (sections.tests) parts.push(`**Tests**\n${sections.tests}`);
+	if (sections.verification) parts.push(`**Verification**\n${sections.verification}`);
+	return parts.length > 0 ? parts.join("\n\n") : sections.raw;
+}
+
+/** Phase 1 — interrogate the request, surfacing unknowns as ask_options questions. */
+const GRILL_ME_PROMPT = `You are interrogating the *request*, not writing code.
+
+Re-read the plan below and find where it rests on assumptions nobody confirmed: ambiguous requirements, unstated constraints, decisions you made silently because the request did not specify them, and places where a different reasonable reading of the request would produce a materially different plan.
+
+Put the most consequential of those to the user with the ask_options tool. Ask only what would actually change the plan — settle anything you can from the codebase or from convention yourself. Prefer two to four sharp questions over an exhaustive list, and mark a recommended option wherever you have a genuine preference.
+
+Do not edit files and do not revise the plan yet.`;
+
+/** Phase 2 — adversarial self-critique of the plan file. */
+const GRILL_PLAN_PROMPT = `You are attacking the plan below, not executing it.
+
+Review it as a skeptical reviewer would:
+- Which steps rest on assumptions you have not verified in the codebase? Read the relevant files and verify them now.
+- Where could this fail silently — wrong-but-plausible behaviour rather than a loud error?
+- What does the goal require that the plan does not cover? What does the plan cover that the goal does not need?
+- Does the verification section prove the goal is met, or only that the code runs?
+
+Report what you find. Where a weakness is real, revise the plan file and state what changed. Where the plan holds up, say so plainly rather than inventing criticism. Do not implement anything.`;
+
+/**
+ * Builds the follow-up message injected by `/grill`.
+ *
+ * The two phases are ordered rather than alternative: underspecification sits
+ * upstream of plan weakness, so critiquing a plan built on a misread request
+ * produces a well-reviewed plan for the wrong job. Bare `/grill` therefore asks
+ * first and folds the answers into the critique.
+ */
+export function buildGrillMessage(sections: PlanSections, target: GrillTarget): string {
+	const plan = renderPlanForReview(sections);
+	if (target === "me") return `${GRILL_ME_PROMPT}\n\n---\n\n${plan}`;
+	if (target === "plan") return `${GRILL_PLAN_PROMPT}\n\n---\n\n${plan}`;
+	return (
+		`${GRILL_ME_PROMPT}\n\n` +
+		`Once the user has answered, fold their answers into the plan and immediately continue with this review:\n\n` +
+		`${GRILL_PLAN_PROMPT}\n\n---\n\n${plan}`
+	);
+}
+
+// ============================================================================
 // setupMode
 // ============================================================================
 
@@ -177,6 +277,14 @@ export function setupMode(pi: ExtensionAPI): void {
 	let cachedMode = DEFAULT_MODE;
 	let cachedSystemPrompt: string | undefined;
 	let cachedPlanPath: string | undefined;
+
+	// `/grill me` asks the user a question via ask_options, which an unattended
+	// `/loop auto` run has nobody to answer. Track the loop's broadcast state so
+	// the command can drop its interrogation phase instead of stalling the run.
+	let autoLoopActive = false;
+	pi.events.on(LOOP_AUTO_CHANGED, (data) => {
+		autoLoopActive = (data as { active?: boolean } | undefined)?.active === true;
+	});
 
 	// ── session_start ─────────────────────────────────────────────────────────
 	// Config resolution order:
@@ -267,6 +375,48 @@ export function setupMode(pi: ExtensionAPI): void {
 		},
 	});
 
+	// ── /grill command ────────────────────────────────────────────────────────
+	// Stress-tests the current plan in two phases: `me` surfaces the request's
+	// unconfirmed assumptions as ask_options questions, `plan` critiques the plan
+	// file itself. Unlike /approve this only injects a follow-up message — no
+	// session switch, no mode change, no config write.
+
+	pi.registerCommand("grill", {
+		description: "Stress-test the current plan. Usage: /grill [me|plan]",
+		getArgumentCompletions: (prefix: string) =>
+			["me", "plan"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
+		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			const requested = parseGrillTarget(args);
+			if (!requested) {
+				ctx.ui.notify("Usage: /grill [me|plan]", "warning");
+				return;
+			}
+
+			// Same lookup as /approve: per-session plan first, legacy file second.
+			const sessionPlanPath = cachedPlanPath ?? getPlanPath(ctx.cwd, ctx.sessionManager.getSessionId());
+			const loaded = loadPlanSections([sessionPlanPath, getLegacyPlanPath(ctx.cwd)]);
+			if (loaded.status === "error") {
+				ctx.ui.notify(`Could not read ${relative(ctx.cwd, loaded.path) || loaded.path}`, "error");
+				return;
+			}
+			if (loaded.status === "missing") {
+				const relPlan = relative(ctx.cwd, sessionPlanPath) || sessionPlanPath;
+				ctx.ui.notify(`No plan to grill — ${relPlan} not found. Run /plan first.`, "warning");
+				return;
+			}
+
+			// Nobody is present to answer during an autonomous loop, so keep the
+			// half of the flow that still works rather than blocking on a question.
+			let target = requested;
+			if (autoLoopActive && target !== "plan") {
+				target = "plan";
+				ctx.ui.notify("Autonomous loop active — grilling the plan only, skipping questions.", "info");
+			}
+
+			pi.sendUserMessage(buildGrillMessage(loaded.sections, target), { deliverAs: "followUp" });
+		},
+	});
+
 	// ── /approve command ──────────────────────────────────────────────────────
 	// Reads .hoocode/plan.md, parses it into named sections (Goal, Files to
 	// modify, New files, Tests, Verification), switches to build mode, then
@@ -283,23 +433,12 @@ export function setupMode(pi: ExtensionAPI): void {
 
 			// Prefer the per-session plan file, fall back to the legacy single file.
 			const sessionPlanPath = cachedPlanPath ?? getPlanPath(ctx.cwd, ctx.sessionManager.getSessionId());
-			const candidatePaths = [sessionPlanPath, getLegacyPlanPath(ctx.cwd)];
-			let approveMessage: string | undefined;
-
-			for (const planPath of candidatePaths) {
-				if (!existsSync(planPath)) continue;
-				try {
-					const raw = readFileSync(planPath, "utf8").trim();
-					if (raw) {
-						const sections = parsePlanSections(raw);
-						approveMessage = buildApproveMessage(sections);
-						break;
-					}
-				} catch {
-					ctx.ui.notify(`Could not read ${relative(ctx.cwd, planPath) || planPath}`, "error");
-					return;
-				}
+			const loaded = loadPlanSections([sessionPlanPath, getLegacyPlanPath(ctx.cwd)]);
+			if (loaded.status === "error") {
+				ctx.ui.notify(`Could not read ${relative(ctx.cwd, loaded.path) || loaded.path}`, "error");
+				return;
 			}
+			const approveMessage = loaded.status === "loaded" ? buildApproveMessage(loaded.sections) : undefined;
 
 			// Switch global config to build mode
 			const config = readConfig();
