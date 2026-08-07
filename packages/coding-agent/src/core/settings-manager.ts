@@ -979,12 +979,6 @@ export class SettingsManager {
 		return this.settings.embsearchThresholdBytes ?? DEFAULT_SETTINGS.embsearchThresholdBytes!;
 	}
 
-
-
-
-
-
-
 	getLight(): boolean {
 		return this.settings.light ?? DEFAULT_SETTINGS.light!;
 	}

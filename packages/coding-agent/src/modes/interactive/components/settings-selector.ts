@@ -48,7 +48,7 @@ export interface FlagInfo {
 }
 
 export interface ToolGroupInfo {
-	/** Group identifier (e.g. "web", "browser", "file", "embsearch"). */
+	/** Group identifier (e.g. "web", "embsearch"). */
 	id: string;
 	label: string;
 	description: string;
@@ -179,7 +179,7 @@ class WarningSettingsSubmenu extends Container {
 
 /**
  * Submenu for tool availability. The first rows are group switches (web,
- * browser, document, semantic search) that decide whether a group's tools
+ * semantic search) that decide whether a group's tools
  * exist at all — this is the same master switch that governs, e.g., the
  * webfetch/websearch tools. Below them are per-tool on/off toggles for the
  * tools that are currently available.
@@ -815,7 +815,7 @@ export class SettingsSelectorComponent extends Container {
 				id: "tools",
 				label: "Tools",
 				description:
-					"Enable/disable tools and tool groups (web, browser, document, semantic search). Changes persist across sessions.",
+					"Enable/disable tools and tool groups (web, semantic search). Changes persist across sessions.",
 				currentValue: toolsOff > 0 ? `${toolsOn} on · ${toolsOff} off` : `${toolsOn} on`,
 				submenu: (_currentValue, done) =>
 					new ToolsSubmenu(
