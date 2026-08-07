@@ -266,6 +266,8 @@ describe("InteractiveMode.showLoadedResources", () => {
 					getAgentPaths: () => [],
 				},
 			},
+			getDispatchableAgentCount: () => (InteractiveMode as any).prototype.getDispatchableAgentCount.call(fakeThis),
+			buildSessionStateLine: () => (InteractiveMode as any).prototype.buildSessionStateLine.call(fakeThis),
 			formatDisplayPath: (p: string) => (InteractiveMode as any).prototype.formatDisplayPath.call(fakeThis, p),
 			formatExtensionDisplayPath: (p: string) =>
 				(InteractiveMode as any).prototype.formatExtensionDisplayPath.call(fakeThis, p),
@@ -976,16 +978,14 @@ describe("InteractiveMode.showLoadedResources", () => {
 		expect(output).not.toContain("[Skills]");
 	});
 
-	test("shows context file warnings in the TUI", () => {
+	test("annotates an oversized context file on the context row", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			contextFiles: [{ path: "/tmp/AGENTS.md" }],
 		});
 		fakeThis.session.resourceLoader.getAgentsFiles = () => ({
-			agentsFiles: [{ path: "/tmp/AGENTS.md", content: "large" }],
-			warnings: [
-				"/tmp/AGENTS.md is 9000 bytes (~2250 tokens). It is injected into the system prompt on every turn — consider trimming.",
-			],
+			agentsFiles: [{ path: "/tmp/AGENTS.md", content: "large", tokens: 3624, size: "large" }],
+			warnings: [],
 		});
 
 		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
@@ -993,7 +993,26 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("~3.6k tokens");
 		expect(output).toContain("consider trimming");
+	});
+
+	test("shows context file read failures as warnings", () => {
+		const fakeThis = createShowLoadedResourcesThis({
+			quietStartup: false,
+			contextFiles: [{ path: "/tmp/AGENTS.md" }],
+		});
+		fakeThis.session.resourceLoader.getAgentsFiles = () => ({
+			agentsFiles: [],
+			warnings: ["Could not read /tmp/AGENTS.md: EACCES"],
+		});
+
+		(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, {
+			force: false,
+		});
+
+		const output = renderAll(fakeThis.chatContainer);
+		expect(output).toContain("Could not read");
 	});
 
 	test("summary shows counts and context names; sections stay collapsed", () => {

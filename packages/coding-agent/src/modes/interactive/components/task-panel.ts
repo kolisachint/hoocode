@@ -1,6 +1,7 @@
 import type { Component, Focusable, TUI } from "@kolisachint/hoocode-tui";
 import { getKeybindings, matchesKey, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import { formatDurationSecs } from "../../../core/format-duration.js";
+import { formatTokens } from "../../../core/format-tokens.js";
 import type { Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskStatus } from "../../../core/task-store.js";
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
@@ -325,13 +326,6 @@ function formatHeader(
 		return leftFull + " ".repeat(width - visibleWidth(leftFullPlain));
 	}
 	return truncateToWidth(leftMin, width, "…");
-}
-
-function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
 }
 
 function formatTaskLine(

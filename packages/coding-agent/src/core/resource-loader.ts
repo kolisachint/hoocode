@@ -5,12 +5,13 @@ import { CONFIG_DIR_NAME } from "../config.js";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
 
+export type { ContextFile } from "./context-files.js";
 export { loadProjectContextFiles } from "./context-files.js";
 export type { ResourceCollision, ResourceDiagnostic } from "./diagnostics.js";
 
 import { canonicalizePath, collectAgentsAncestorDirs, isLocalPath } from "../utils/paths.js";
 import { setAgentManifestPaths } from "./agent-manifest-paths.js";
-import { loadProjectContextFiles, resolvePromptInput } from "./context-files.js";
+import { type ContextFile, loadProjectContextFiles, resolvePromptInput } from "./context-files.js";
 import { createEventBus, type EventBus } from "./event-bus.js";
 import {
 	createExtensionRuntime,
@@ -52,7 +53,7 @@ export interface ResourceLoader {
 	getAgentPaths(): string[];
 	getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] };
 	getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] };
-	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] };
+	getAgentsFiles(): { agentsFiles: ContextFile[]; warnings: string[] };
 	getSystemPrompt(): string | undefined;
 	getAppendSystemPrompt(): string[];
 	addAppendSystemPrompt(text: string): void;
@@ -92,8 +93,8 @@ export interface DefaultResourceLoaderOptions {
 		themes: Theme[];
 		diagnostics: ResourceDiagnostic[];
 	};
-	agentsFilesOverride?: (base: { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] }) => {
-		agentsFiles: Array<{ path: string; content: string }>;
+	agentsFilesOverride?: (base: { agentsFiles: ContextFile[]; warnings: string[] }) => {
+		agentsFiles: ContextFile[];
 		warnings?: string[];
 	};
 	systemPromptOverride?: (base: string | undefined) => string | undefined;
@@ -133,11 +134,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 		themes: Theme[];
 		diagnostics: ResourceDiagnostic[];
 	};
-	private agentsFilesOverride?: (base: {
-		agentsFiles: Array<{ path: string; content: string }>;
-		warnings: string[];
-	}) => {
-		agentsFiles: Array<{ path: string; content: string }>;
+	private agentsFilesOverride?: (base: { agentsFiles: ContextFile[]; warnings: string[] }) => {
+		agentsFiles: ContextFile[];
 		warnings?: string[];
 	};
 	private systemPromptOverride?: (base: string | undefined) => string | undefined;
@@ -150,7 +148,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private promptDiagnostics: ResourceDiagnostic[];
 	private themes: Theme[];
 	private themeDiagnostics: ResourceDiagnostic[];
-	private agentsFiles: Array<{ path: string; content: string }>;
+	private agentsFiles: ContextFile[];
 	private agentsFileWarnings: string[];
 	private systemPrompt?: string;
 	private appendSystemPrompt: string[];
@@ -239,7 +237,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		return { themes: this.themes, diagnostics: this.themeDiagnostics };
 	}
 
-	getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }>; warnings: string[] } {
+	getAgentsFiles(): { agentsFiles: ContextFile[]; warnings: string[] } {
 		return { agentsFiles: this.agentsFiles, warnings: this.agentsFileWarnings };
 	}
 
@@ -520,7 +518,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		setAgentManifestPaths(enabledAgents);
 
 		const contextResult = this.noContextFiles
-			? { agentsFiles: [] as Array<{ path: string; content: string }>, warnings: [] }
+			? { agentsFiles: [] as ContextFile[], warnings: [] }
 			: loadProjectContextFiles({ cwd: this.cwd, agentDir: this.agentDir });
 		const resolvedAgentsFiles = this.agentsFilesOverride ? this.agentsFilesOverride(contextResult) : contextResult;
 		this.agentsFiles = resolvedAgentsFiles.agentsFiles;

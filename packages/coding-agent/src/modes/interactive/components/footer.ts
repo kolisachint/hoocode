@@ -1,6 +1,7 @@
 import { type Component, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
+import { formatTokens } from "../../../core/format-tokens.js";
 import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
 import { taskStore } from "../../../core/task-store.js";
 import { BRAND_MARK, GIT_BRANCH_GLYPH } from "../brand.js";
@@ -47,14 +48,6 @@ function sanitizeStatusText(text: string): string {
 		.replace(/[\r\n\t]/g, " ")
 		.replace(/ +/g, " ")
 		.trim();
-}
-
-function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-	return `${Math.round(count / 1000000)}M`;
 }
 
 /** Cells in a startup-progress bar; compact so several tools fit the footer. */

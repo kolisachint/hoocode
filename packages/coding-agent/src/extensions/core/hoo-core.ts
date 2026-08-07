@@ -44,4 +44,7 @@ function hooCore(pi: ExtensionAPI): void {
 }
 
 hooCore.displayName = "hoo-core";
+// Built-in plumbing, not a user-installed extension: it is always present, so
+// listing it in the startup resource summary is noise, not information.
+hooCore.internal = true;
 export default hooCore;
