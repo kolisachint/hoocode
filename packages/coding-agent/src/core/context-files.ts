@@ -8,8 +8,22 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import chalk from "chalk";
+
+/**
+ * A loaded context file plus the recurring-cost metadata the UI surfaces.
+ * `tokens`/`size` are optional so callers that synthesize context files (SDK
+ * overrides, tests) can keep passing plain `{ path, content }`.
+ */
+export interface ContextFile {
+	path: string;
+	content: string;
+	/** Rough token estimate (bytes / 4) of the content as loaded. */
+	tokens?: number;
+	/** Set only past the soft limit; "truncated" means the hard limit clipped it. */
+	size?: "large" | "truncated";
+}
 
 /**
  * Resolve a prompt input that is either an inline string or a path to a file.
@@ -40,7 +54,7 @@ export function resolvePromptInput(input: string | undefined, description: strin
 const CONTEXT_FILE_WARN_BYTES = 8 * 1024;
 const CONTEXT_FILE_MAX_BYTES = 40 * 1024;
 
-function loadContextFileFromDir(dir: string): { file: { path: string; content: string } | null; warnings: string[] } {
+function loadContextFileFromDir(dir: string): { file: ContextFile | null; warnings: string[] } {
 	const warnings: string[] = [];
 	const candidates = ["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"];
 	for (const filename of candidates) {
@@ -49,17 +63,18 @@ function loadContextFileFromDir(dir: string): { file: { path: string; content: s
 			try {
 				let content = readFileSync(filePath, "utf-8");
 				const bytes = Buffer.byteLength(content, "utf-8");
+				// Size is reported structurally (not as a warning string) so the UI can
+				// annotate the file where it is already listed instead of repeating it.
+				let size: ContextFile["size"];
 				if (bytes > CONTEXT_FILE_MAX_BYTES) {
 					content =
 						content.slice(0, CONTEXT_FILE_MAX_BYTES) +
 						`\n\n[truncated: file exceeded ${CONTEXT_FILE_MAX_BYTES} bytes (~10k tokens); keep context files brief — large specs belong in linked files, not in the system prompt]`;
-					warnings.push(`${basename(filePath)} ${bytes} bytes, truncated.`);
+					size = "truncated";
 				} else if (bytes > CONTEXT_FILE_WARN_BYTES) {
-					warnings.push(
-						`${basename(filePath)} ~${Math.round(bytes / 4)} tokens, injected every turn — consider trimming.`,
-					);
+					size = "large";
 				}
-				return { file: { path: filePath, content }, warnings };
+				return { file: { path: filePath, content, tokens: Math.round(bytes / 4), size }, warnings };
 			} catch (error) {
 				warnings.push(`Could not read ${filePath}: ${error}`);
 			}
@@ -69,13 +84,13 @@ function loadContextFileFromDir(dir: string): { file: { path: string; content: s
 }
 
 export function loadProjectContextFiles(options: { cwd: string; agentDir: string }): {
-	agentsFiles: Array<{ path: string; content: string }>;
+	agentsFiles: ContextFile[];
 	warnings: string[];
 } {
 	const resolvedCwd = options.cwd;
 	const resolvedAgentDir = options.agentDir;
 
-	const contextFiles: Array<{ path: string; content: string }> = [];
+	const contextFiles: ContextFile[] = [];
 	const warnings: string[] = [];
 	const seenPaths = new Set<string>();
 
@@ -86,7 +101,7 @@ export function loadProjectContextFiles(options: { cwd: string; agentDir: string
 	}
 	warnings.push(...globalResult.warnings);
 
-	const ancestorContextFiles: Array<{ path: string; content: string }> = [];
+	const ancestorContextFiles: ContextFile[] = [];
 
 	let currentDir = resolvedCwd;
 	const root = resolve("/");

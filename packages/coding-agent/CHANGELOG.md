@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The startup page is one column and states the session instead of narrating it.
+  Everything on it now sits on a single left rail under the banner, and the model,
+  thinking level, and Anthropic subscription-billing caveat collapse into one
+  state line (`claude-sonnet-4-5 · thinking high · anthropic sub — billed as extra
+  usage`) rather than three separate status/warning lines that the footer already
+  carries for the rest of the session.
+- MCP servers are reported as a capability, not as boot chatter. A successful
+  connect no longer prints a line above the summary; live servers get an `⧉` cell
+  in the counted grid and a `[MCP]` details row with tool count, background mode,
+  and schema deferral. Failures and authorization prompts still surface inline,
+  since those need action. The count now covers every source (`mcp.json`,
+  per-server files, plugins) instead of only plugin-contributed servers.
+- The agents cell counts dispatchable subagents from the agent registry (and is
+  hidden when the Task tool is off). It previously counted only agents contributed
+  by package manifests, so a session with five usable agents could show none.
+- Context files are priced where they are listed: an oversized `AGENTS.md` is
+  annotated inline (`~3.6k tokens · consider trimming`) instead of repeating the
+  file on a separate warning line. Size is now structural data on the loaded file
+  (`tokens`, `size`), and `warnings` carries only real failures.
+- The banner tagline is `coding agent`.
+
+### Removed
+
+- `hoo-core` no longer appears in the loaded-resources summary or details. It is
+  built-in plumbing that is always present, so listing it as "1 extension" said
+  nothing about the session.
+
 ## [0.4.156] - 2026-08-07
 
 ### Added

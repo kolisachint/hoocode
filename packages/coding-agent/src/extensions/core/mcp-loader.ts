@@ -25,6 +25,7 @@ import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
 import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
+import { clearMcpServerStatuses, setMcpServerStatus } from "../../core/mcp-status.js";
 import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
 import { type DeferredMcpToolEntry, formatDeferredCatalog, selectResolvable } from "./mcp-deferred.js";
@@ -435,6 +436,9 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 		if (subagentSkipMcp()) return;
 
 		installMcpExitCleanup();
+		// Rebuild the status registry from scratch: a reload or session switch runs
+		// this pass again and the startup summary must not double-count.
+		clearMcpServerStatuses();
 		const allServerConfigs: McpServerConfig[] = [];
 		const seenNames = new Set<string>();
 
@@ -544,6 +548,13 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 						try {
 							const { tools } = await connectMcpServer(serverConfig);
 							for (const tool of tools) pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
+							setMcpServerStatus({
+								name: serverConfig.name,
+								toolCount: tools.length,
+								background: serverConfig.background !== false,
+								deferred: false,
+								state: "connected",
+							});
 							ctx.ui.notify(
 								`MCP: connected "${serverConfig.name}" after authorization (${tools.length} tool${tools.length === 1 ? "" : "s"})`,
 								"info",
@@ -580,14 +591,24 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 					}
 				}
 
-				const bgMode = serverConfig.background !== false ? "background" : "foreground";
-				const suffix = defer ? ", schemas deferred" : "";
-				ctx.ui.notify(
-					`MCP: connected "${serverConfig.name}" (${tools.length} tool${tools.length === 1 ? "" : "s"}, ${bgMode}${suffix})`,
-					"info",
-				);
+				// A successful connect is reported by the startup resource summary (one
+				// `mcp` cell plus a details row), not as a transient line above it.
+				setMcpServerStatus({
+					name: serverConfig.name,
+					toolCount: tools.length,
+					background: serverConfig.background !== false,
+					deferred: defer,
+					state: "connected",
+				});
 			} catch (err) {
 				if (mcpAuthPending.has(serverConfig.name)) {
+					setMcpServerStatus({
+						name: serverConfig.name,
+						toolCount: 0,
+						background: serverConfig.background !== false,
+						deferred: defer,
+						state: "authorizing",
+					});
 					ctx.ui.notify(
 						`MCP: "${serverConfig.name}" is waiting for browser authorization; tools will register once it completes`,
 						"info",

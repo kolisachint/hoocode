@@ -89,7 +89,11 @@ Rendered in order as the conversation scrolls:
 - `../voice/voice-controller.ts` (`VoiceController`) - voice-to-text capture
   (daemon + legacy paths) and the voice panel lifecycle.
 - `../resource-display.ts` - the startup/reload resource listing and diagnostics
-  formatting. `../startup-checks.ts` - update/tmux/changelog startup probes.
+  formatting. Owns the counted capability grid (glyphs from `brand.ts`), the
+  context row with its inline size note, the collapsible details, and the
+  one-line session state. Live MCP servers come from `core/mcp-status.ts`, which
+  the hoo-core `mcp-loader` fills on connect. `../startup-checks.ts` -
+  update/tmux/changelog startup probes.
 - `task-panel.ts` - the task ledger shown above the prompt (status icons, usage
   stamps, and the warning cue). Owns `formatTaskLine`. Has three views cycled with
   `app.tasks.cycleView` (ctrl+n; the cycle and the header switcher skip lenses

@@ -437,20 +437,22 @@ Content`,
 			expect(agentsFiles).toEqual([]);
 		});
 
-		it("should warn when AGENTS.md exceeds warn size", async () => {
+		it("should flag AGENTS.md that exceeds warn size as large", async () => {
 			const largeContent = "x".repeat(9 * 1024);
 			writeFileSync(join(cwd, "AGENTS.md"), largeContent);
 
 			const loader = new DefaultResourceLoader({ cwd, agentDir });
 			await loader.reload();
 
-			const { warnings } = loader.getAgentsFiles();
-			expect(warnings.length).toBe(1);
-			expect(warnings[0]).toContain("tokens");
-			expect(warnings[0]).toContain("consider trimming");
+			const { agentsFiles, warnings } = loader.getAgentsFiles();
+			expect(agentsFiles.length).toBe(1);
+			expect(agentsFiles[0]!.size).toBe("large");
+			expect(agentsFiles[0]!.tokens).toBe(Math.round((9 * 1024) / 4));
+			// Size is structural, not a warning string: the UI prices it on the row.
+			expect(warnings.length).toBe(0);
 		});
 
-		it("should warn and truncate when AGENTS.md exceeds max size", async () => {
+		it("should flag and truncate AGENTS.md that exceeds max size", async () => {
 			const largeContent = "x".repeat(41 * 1024);
 			writeFileSync(join(cwd, "AGENTS.md"), largeContent);
 
@@ -460,8 +462,8 @@ Content`,
 			const { agentsFiles, warnings } = loader.getAgentsFiles();
 			expect(agentsFiles.length).toBe(1);
 			expect(agentsFiles[0]!.content).toContain("[truncated:");
-			expect(warnings.length).toBe(1);
-			expect(warnings[0]).toContain("truncated");
+			expect(agentsFiles[0]!.size).toBe("truncated");
+			expect(warnings.length).toBe(0);
 		});
 	});
 

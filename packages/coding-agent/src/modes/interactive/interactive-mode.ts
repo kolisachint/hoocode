@@ -37,6 +37,7 @@ import {
 } from "@kolisachint/hoocode-tui";
 import { spawnSync } from "child_process";
 import { APP_NAME, APP_TITLE, VERSION } from "../../config.js";
+import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
@@ -66,6 +67,7 @@ import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { BashExecutionController } from "./bash-execution-controller.js";
+import { SEGMENT_SEP } from "./brand.js";
 import { type CommandContext, CommandExecutor } from "./command-executor.js";
 import { BELL, CompletionChime } from "./completion-chime.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -96,6 +98,7 @@ import {
 	formatDisplayPath,
 	isExpandable,
 	showLoadedResources as renderLoadedResources,
+	willShowResourceListing,
 } from "./resource-display.js";
 import { checkForPackageUpdates, checkTmuxKeyboardSetup, getChangelogForDisplay } from "./startup-checks.js";
 import { TeamFocusController } from "./team-focus.js";
@@ -236,6 +239,8 @@ export class InteractiveMode {
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
+	/** Billing caveat folded into the startup state line, once resolved. */
+	private startupAuthNote: string | undefined = undefined;
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
@@ -1014,6 +1019,8 @@ export class InteractiveMode {
 				getExtensionRunner: () => this.session.extensionRunner,
 				getActiveMode: () => this.footerDataProvider.getActiveMode(),
 				getSubagentEnabled: () => this.footerDataProvider.getSubagentEnabled(),
+				getAgentCount: () => this.getDispatchableAgentCount(),
+				getStateLine: () => this.buildSessionStateLine(),
 				quietStartup: () => this.settingsManager.getQuietStartup(),
 				verbose: this.options.verbose ?? false,
 				isExpanded: () => this.getStartupExpansionState(),
@@ -1021,6 +1028,40 @@ export class InteractiveMode {
 			},
 			options,
 		);
+	}
+
+	/**
+	 * Agents the model can actually dispatch. Zero when the Task tool is off, so
+	 * the summary never advertises a capability the session cannot use.
+	 */
+	private getDispatchableAgentCount(): number {
+		if (!this.footerDataProvider.getSubagentEnabled()) return 0;
+		try {
+			return loadAgentRegistry({ cwd: this.sessionManager.getCwd() }).list().length;
+		} catch {
+			return 0;
+		}
+	}
+
+	/**
+	 * One line of session state for the startup summary: the model, its thinking
+	 * level, and any billing caveat. The footer carries the same facts for the
+	 * rest of the session, so this replaces the separate status lines that used
+	 * to be emitted for each of them.
+	 */
+	private buildSessionStateLine(): string | undefined {
+		const model = this.session.model;
+		if (!model) return undefined;
+
+		const segments = [theme.fg("muted", model.id)];
+		const thinkingLevel = this.session.thinkingLevel;
+		if (model.reasoning && thinkingLevel && thinkingLevel !== "off") {
+			segments.push(theme.fg("dim", `thinking ${thinkingLevel}`));
+		}
+		if (this.startupAuthNote) {
+			segments.push(theme.fg("warning", this.startupAuthNote));
+		}
+		return segments.join(theme.fg("muted", ` ${SEGMENT_SEP} `));
 	}
 
 	/**
@@ -1105,6 +1146,17 @@ export class InteractiveMode {
 
 		const extensionRunner = this.session.extensionRunner;
 		this.setupExtensionShortcuts(extensionRunner);
+		// Resolved before the summary renders so the billing caveat lands on the
+		// state line instead of arriving as a late, separate warning. Skipped on a
+		// quiet startup, where the full warning still fires from run().
+		if (
+			willShowResourceListing({
+				verbose: this.options.verbose ?? false,
+				quietStartup: () => this.settingsManager.getQuietStartup(),
+			})
+		) {
+			this.startupAuthNote = await this.modelController.getAnthropicSubscriptionNote();
+		}
 		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
 		this.showStartupNoticesIfNeeded();
 	}

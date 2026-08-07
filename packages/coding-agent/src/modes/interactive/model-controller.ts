@@ -18,6 +18,9 @@ import { ScopedModelsSelectorComponent } from "./components/scoped-models-select
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
 	"Anthropic subscription auth: billed per token as extra usage, not plan limits.";
 
+/** Compact form of the same caveat, for the startup state line. */
+const ANTHROPIC_SUBSCRIPTION_AUTH_NOTE = "anthropic sub — billed as extra usage";
+
 function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
 	return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
 }
@@ -70,34 +73,53 @@ export class ModelController {
 		this.deps.setAvailableProviderCount(uniqueProviders.size);
 	}
 
-	async maybeWarnAboutAnthropicSubscriptionAuth(model: Model<any> | undefined = this.session.model): Promise<void> {
+	/** Whether the model bills through Anthropic subscription auth (extra usage). */
+	private async usesAnthropicSubscriptionAuth(model: Model<any> | undefined): Promise<boolean> {
 		if (this.session.settingsManager.getWarnings().anthropicExtraUsage === false) {
-			return;
-		}
-		if (this.anthropicSubscriptionWarningShown) {
-			return;
+			return false;
 		}
 		if (!model || model.provider !== "anthropic") {
-			return;
+			return false;
 		}
 
 		const storedCredential = this.session.modelRegistry.authStorage.get("anthropic");
 		if (storedCredential?.type === "oauth") {
-			this.anthropicSubscriptionWarningShown = true;
-			this.deps.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
-			return;
+			return true;
 		}
 
 		try {
 			const apiKey = await this.session.modelRegistry.getApiKeyForProvider(model.provider);
-			if (!isAnthropicSubscriptionAuthKey(apiKey)) {
-				return;
-			}
-			this.anthropicSubscriptionWarningShown = true;
-			this.deps.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
+			return isAnthropicSubscriptionAuthKey(apiKey);
 		} catch {
 			// Ignore auth lookup failures for warning-only checks.
+			return false;
 		}
+	}
+
+	/**
+	 * Compact caveat for the startup state line, or undefined when it does not
+	 * apply. Claims the once-per-session slot so the full warning is not repeated.
+	 */
+	async getAnthropicSubscriptionNote(model: Model<any> | undefined = this.session.model): Promise<string | undefined> {
+		if (this.anthropicSubscriptionWarningShown) {
+			return undefined;
+		}
+		if (!(await this.usesAnthropicSubscriptionAuth(model))) {
+			return undefined;
+		}
+		this.anthropicSubscriptionWarningShown = true;
+		return ANTHROPIC_SUBSCRIPTION_AUTH_NOTE;
+	}
+
+	async maybeWarnAboutAnthropicSubscriptionAuth(model: Model<any> | undefined = this.session.model): Promise<void> {
+		if (this.anthropicSubscriptionWarningShown) {
+			return;
+		}
+		if (!(await this.usesAnthropicSubscriptionAuth(model))) {
+			return;
+		}
+		this.anthropicSubscriptionWarningShown = true;
+		this.deps.showWarning(ANTHROPIC_SUBSCRIPTION_AUTH_WARNING);
 	}
 
 	async cycleModel(direction: "forward" | "backward"): Promise<void> {

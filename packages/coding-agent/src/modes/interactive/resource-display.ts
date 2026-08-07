@@ -8,14 +8,16 @@
 import * as os from "node:os";
 import * as path from "node:path";
 import { type Container, Spacer, Text, visibleWidth } from "@kolisachint/hoocode-tui";
-import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
+import type { ContextFile } from "../../core/context-files.js";
 import type { ExtensionRunner } from "../../core/extensions/index.js";
+import { formatTokens } from "../../core/format-tokens.js";
+import { getMcpServerStatuses } from "../../core/mcp-status.js";
 import type { PromptTemplate } from "../../core/prompt-templates.js";
 import type { ResourceDiagnostic, ResourceLoader } from "../../core/resource-loader.js";
 import type { SourceInfo } from "../../core/source-info.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
-import { CATEGORY_GLYPH, type CategoryKey } from "./brand.js";
+import { CATEGORY_GLYPH, type CategoryKey, SEGMENT_SEP } from "./brand.js";
 import { appKeyLabel } from "./components/keybinding-hints.js";
 import { type ThemeColor, theme } from "./theme/theme.js";
 
@@ -26,6 +28,12 @@ import { type ThemeColor, theme } from "./theme/theme.js";
 export interface Expandable {
 	setExpanded(expanded: boolean): void;
 }
+
+/**
+ * Left rail for the startup summary. Lines up under the banner's owl glyph so
+ * the whole first page reads as one column instead of three stray indents.
+ */
+const RAIL = "    ";
 
 export function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj;
@@ -78,6 +86,18 @@ export function formatContextPath(p: string, cwd: string): string {
 	}
 
 	return formatDisplayPath(absolutePath);
+}
+
+/**
+ * Inline cost note for a context file: these are injected into the system prompt
+ * on every turn, so an oversized one is priced where it is listed instead of in
+ * a separate warning line.
+ */
+export function contextSizeNote(file: ContextFile): string {
+	if (!file.size) return "";
+	const advice = file.size === "truncated" ? "truncated" : "consider trimming";
+	const tokens = file.tokens === undefined ? undefined : `~${formatTokens(file.tokens)} tokens`;
+	return theme.fg("warning", ` ${tokens ? `${tokens} ${SEGMENT_SEP} ` : ""}${advice}`);
 }
 
 /**
@@ -435,11 +455,30 @@ export interface ResourceDisplayDeps {
 	getExtensionRunner(): ExtensionRunner;
 	getActiveMode(): string;
 	getSubagentEnabled(): boolean;
+	/** Dispatchable subagents in this cwd (0 when the Task tool is off). */
+	getAgentCount(): number;
+	/**
+	 * One-line session state (model, thinking level, auth caveats) shown under the
+	 * summary. Undefined when there is nothing worth stating.
+	 */
+	getStateLine?(): string | undefined;
 	quietStartup(): boolean;
 	verbose: boolean;
 	/** Startup expansion state for the collapsible sections. */
 	isExpanded(): boolean;
 	getBuiltInCommandConflictDiagnostics(extensionRunner: ExtensionRunner): ResourceDiagnostic[];
+}
+
+/**
+ * Whether a `showLoadedResources` call renders the full summary rather than
+ * diagnostics only. Exported so callers can skip preparing summary-only data
+ * (and claiming once-per-session notices) on a quiet startup.
+ */
+export function willShowResourceListing(
+	deps: Pick<ResourceDisplayDeps, "verbose" | "quietStartup">,
+	options?: { force?: boolean },
+): boolean {
+	return options?.force === true || deps.verbose || !deps.quietStartup();
 }
 
 export function showLoadedResources(
@@ -450,7 +489,7 @@ export function showLoadedResources(
 		showDiagnosticsWhenQuiet?: boolean;
 	},
 ): void {
-	const showListing = options?.force || deps.verbose || !deps.quietStartup();
+	const showListing = willShowResourceListing(deps, options);
 	const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
 	if (!showListing && !showDiagnostics) {
 		return;
@@ -511,8 +550,11 @@ export function showLoadedResources(
 		const templates = deps.getPromptTemplates();
 		const loadedThemes = themesResult.themes;
 		const customThemes = loadedThemes.filter((t) => t.sourcePath);
-		const agentPaths = resourceLoader.getAgentPaths();
-		const mcpServerCount = getExtensionMcpServers().reduce((n, e) => n + Object.keys(e.mcpServers).length, 0);
+		const agentCount = deps.getAgentCount();
+		// Live servers, whatever their source (mcp.json, per-server files, plugins) —
+		// the loader records each connect outcome, so this is what the session can
+		// actually call, not what was merely configured.
+		const mcpStatuses = getMcpServerStatuses();
 		// Plugins register their synthetic extension factory as `plugin:<id>`;
 		// split them out so plugins and code extensions each get their own count.
 		// (displayName is absent from the options-provided extension shape, so read
@@ -536,10 +578,12 @@ export function showLoadedResources(
 		if (templates.length > 0) {
 			cells.push({ key: "commands", count: templates.length, label: plural(templates.length, "command") });
 		}
-		if (agentPaths.length > 0) {
-			cells.push({ key: "agents", count: agentPaths.length, label: plural(agentPaths.length, "agent") });
+		if (agentCount > 0) {
+			cells.push({ key: "agents", count: agentCount, label: plural(agentCount, "agent") });
 		}
-		if (mcpServerCount > 0) cells.push({ key: "mcp", count: mcpServerCount, label: "MCP" });
+		if (mcpStatuses.length > 0) {
+			cells.push({ key: "mcp", count: mcpStatuses.length, label: plural(mcpStatuses.length, "mcp server") });
+		}
 		if (pluginCount > 0) cells.push({ key: "plugins", count: pluginCount, label: plural(pluginCount, "plugin") });
 		if (codeExtensionCount > 0) {
 			cells.push({
@@ -566,7 +610,7 @@ export function showLoadedResources(
 			const rows: string[] = [];
 			for (let i = 0; i < cells.length; i += PER_ROW) {
 				rows.push(
-					`  ${cells
+					`${RAIL}${cells
 						.slice(i, i + PER_ROW)
 						.map(styledCell)
 						.join("")}`.trimEnd(),
@@ -574,14 +618,22 @@ export function showLoadedResources(
 			}
 			chatContainer.addChild(new Text(rows.join("\n"), 0, 0));
 		} else {
-			chatContainer.addChild(new Text(theme.fg("dim", "  no project resources loaded"), 0, 0));
+			chatContainer.addChild(new Text(theme.fg("dim", `${RAIL}no project resources loaded`), 0, 0));
 		}
 
-		// Context files stay visible in the summary — they shape every reply.
+		// Context files stay visible in the summary — they shape every reply. Their
+		// recurring cost is annotated in place rather than repeated as a warning
+		// line below, so the file and its price stay in one spot.
 		if (contextFiles.length > 0) {
-			const names = contextFiles.map((f) => formatContextPath(f.path, deps.getCwd())).join(", ");
+			const names = contextFiles
+				.map((f) => formatContextPath(f.path, deps.getCwd()) + contextSizeNote(f))
+				.join(", ");
 			chatContainer.addChild(
-				new Text(`  ${theme.fg("accent", CATEGORY_GLYPH.context)} ${theme.fg("muted", "context")} ${names}`, 0, 0),
+				new Text(
+					`${RAIL}${theme.fg("accent", CATEGORY_GLYPH.context)} ${theme.fg("muted", "context")} ${names}`,
+					0,
+					0,
+				),
 			);
 		}
 
@@ -597,6 +649,22 @@ export function showLoadedResources(
 		if (contextFiles.length > 0) {
 			const contextList = contextFiles.map((f) => theme.fg("dim", `  ${formatDisplayPath(f.path)}`)).join("\n");
 			detailSections.push(`${sectionHeader("Context")}\n${contextList}`);
+		}
+		if (mcpStatuses.length > 0) {
+			const mcpList = mcpStatuses
+				.map((server) => {
+					const facts =
+						server.state === "authorizing"
+							? ["awaiting authorization"]
+							: [
+									`${server.toolCount} ${plural(server.toolCount, "tool")}`,
+									server.background ? "background" : "foreground",
+									...(server.deferred ? ["schemas deferred"] : []),
+								];
+					return theme.fg("dim", `  ${server.name} ${facts.join(` ${SEGMENT_SEP} `)}`);
+				})
+				.join("\n");
+			detailSections.push(`${sectionHeader("MCP")}\n${mcpList}`);
 		}
 		if (skills.length > 0) {
 			const groups = buildScopeGroups(
@@ -653,7 +721,7 @@ export function showLoadedResources(
 		}
 
 		if (detailSections.length > 0) {
-			const expandHint = theme.fg("dim", `  ${appKeyLabel("app.tools.expand")} details`);
+			const expandHint = theme.fg("dim", `${RAIL}${appKeyLabel("app.tools.expand")} details`);
 			chatContainer.addChild(
 				new ExpandableText(
 					() => expandHint,
@@ -665,10 +733,19 @@ export function showLoadedResources(
 			);
 		}
 
+		// Remaining context warnings are failures (unreadable files), not sizing
+		// advice — size is reported inline on the context row above.
 		if (contextWarnings.length > 0) {
 			for (const warning of contextWarnings) {
-				chatContainer.addChild(new Text(theme.fg("warning", warning), 0, 0));
+				chatContainer.addChild(new Text(theme.fg("warning", `${RAIL}${warning}`), 0, 0));
 			}
+		}
+
+		// Session state last: what the next turn will actually cost and run with.
+		const stateLine = deps.getStateLine?.();
+		if (stateLine) {
+			chatContainer.addChild(new Spacer(1));
+			chatContainer.addChild(new Text(`${RAIL}${stateLine}`, 0, 0));
 		}
 	}
 

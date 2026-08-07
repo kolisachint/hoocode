@@ -13,11 +13,11 @@ export const WORDMARK = [
 	"                / __  / /_/ / /_/ / /___/ /_/ / /_/ /  __/",
 	"               /_/ /_/\\____/\\____/\\____/\\____/\\__,_/\\___/",
 	"",
-	"               deterministic terminal coding agent   >  hoo",
+	"               coding agent   >  hoo",
 ].join("\n");
 
 /** Compact one-line logo for tight spaces. */
-export const WORDMARK_COMPACT = "hoo — deterministic terminal coding agent";
+export const WORDMARK_COMPACT = "hoo — coding agent";
 
 /**
  * Colored half-block owl symbol, indented to sit centered above the ASCII
@@ -59,12 +59,12 @@ export interface CompactWordmarkOptions {
  * tagline + version, and the working directory.
  *
  *     ▟▀▀▀▀▀▙  hoocode
- *     ▌▟▙ ▟▙▐  agentic coding agent · v0.1.0
+ *     ▌▟▙ ▟▙▐  coding agent · v0.1.0
  *     ▜▄▄▄▄▄▛  ~/project
  */
 export function buildCompactWordmark(options: CompactWordmarkOptions): string {
 	const { appName, version, cwd, accent, dim, muted } = options;
-	const tagline = options.tagline ?? "agentic coding agent";
+	const tagline = options.tagline ?? "coding agent";
 
 	// Highlight the "hoo" prefix when present, otherwise accent the whole name.
 	const name = appName.startsWith("hoo") ? accent("hoo") + muted("│") + appName.slice(3) : accent(appName);
