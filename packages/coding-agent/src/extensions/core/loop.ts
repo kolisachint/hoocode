@@ -22,7 +22,8 @@ import type {
 import { defineTool } from "../../core/extensions/types.js";
 import { TaskScheduler } from "../../core/scheduler.js";
 
-const AUTO_LOOP_DONE_TOKEN = "LOOP_DONE";
+/** Sentinel the agent replies with to declare the autonomous loop finished. */
+export const AUTO_LOOP_DONE_TOKEN = "LOOP_DONE";
 const DEFAULT_AUTO_MAX_TURNS = 10;
 
 /**
@@ -38,6 +39,28 @@ export const LOOP_AUTO_CHANGED = "loop:auto-changed";
  * blocker that requires a human decision the loop cannot safely make on its own.
  */
 export const LOOP_HALT = "loop:halt";
+
+/**
+ * Event-bus channel: start the autonomous loop.
+ * Payload: {@link LoopAutoStartPayload}. Mirrors LOOP_HALT in the opposite
+ * direction, letting another extension (e.g. `/goal`) drive the loop without
+ * reaching into state that lives inside this module's closure.
+ */
+export const LOOP_AUTO_START = "loop:auto-start";
+
+/** Payload for {@link LOOP_AUTO_START}. */
+export interface LoopAutoStartPayload {
+	/** The task to work toward, delivered as the loop's first user message. */
+	task: string;
+	/** Turn budget before the loop stops itself. Defaults to 10. */
+	maxTurns?: number;
+	/**
+	 * Message re-sent on each continuation. Callers with a concrete completion
+	 * condition should restate it here, so the target does not drift out of view
+	 * as the transcript grows. Defaults to a generic nudge.
+	 */
+	continuePrompt?: string;
+}
 
 /** Convert a simple interval token ("5m", "2h", "1d") to a 5-field cron, or null. */
 function intervalToCron(token: string): string | null {
@@ -73,15 +96,44 @@ function assistantText(message: { content: unknown }): string {
 
 export function setupLoop(pi: ExtensionAPI): void {
 	let scheduler: TaskScheduler | undefined;
-	let auto: { remaining: number } | null = null;
+	let auto: { remaining: number; continuePrompt?: string } | null = null;
 	let activeCtx: ExtensionContext | undefined;
 
 	/** Set the autonomous-loop state and broadcast the active flag on the bus. */
-	function setAuto(next: { remaining: number } | null): void {
+	function setAuto(next: { remaining: number; continuePrompt?: string } | null): void {
 		const was = auto !== null;
 		auto = next;
 		if (was !== (next !== null)) pi.events.emit(LOOP_AUTO_CHANGED, { active: next !== null });
 	}
+
+	/**
+	 * Arms the turn budget and delivers the task. Shared by `/loop auto` and the
+	 * LOOP_AUTO_START channel so both start from identical state. Returns the
+	 * budget actually applied, for the caller's notification.
+	 *
+	 * A caller-supplied 0 is honoured (the loop stops at the first continuation);
+	 * only a missing or nonsensical budget falls back to the default.
+	 */
+	function startAuto({ task, maxTurns, continuePrompt }: LoopAutoStartPayload): number {
+		const budget =
+			typeof maxTurns === "number" && Number.isFinite(maxTurns) && maxTurns >= 0 ? maxTurns : DEFAULT_AUTO_MAX_TURNS;
+		setAuto({ remaining: budget, continuePrompt });
+		pi.sendUserMessage(
+			`${task}\n\n(Autonomous loop: keep working until the task is fully complete, then reply with ${AUTO_LOOP_DONE_TOKEN}.)`,
+			{ deliverAs: "followUp" },
+		);
+		return budget;
+	}
+
+	// Another extension asked for an autonomous run. Ignore payloads without a
+	// task rather than arming a loop with nothing to work on.
+	pi.events.on(LOOP_AUTO_START, (data) => {
+		const payload = (data ?? {}) as Partial<LoopAutoStartPayload>;
+		const task = payload.task?.trim();
+		if (!task) return;
+		const budget = startAuto({ task, maxTurns: payload.maxTurns, continuePrompt: payload.continuePrompt });
+		activeCtx?.ui.notify(`Autonomous loop started (max ${budget} turns). Stop with /loop stop.`, "info");
+	});
 
 	// Another extension (e.g. ask_options) hit a decision it cannot safely make
 	// while unattended. Stop iterating and let the model report the blocker.
@@ -135,9 +187,11 @@ export function setupLoop(pi: ExtensionAPI): void {
 			return;
 		}
 		auto.remaining -= 1;
-		pi.sendUserMessage(`Continue working toward the goal. Reply with ${AUTO_LOOP_DONE_TOKEN} when fully complete.`, {
-			deliverAs: "followUp",
-		});
+		pi.sendUserMessage(
+			auto.continuePrompt ??
+				`Continue working toward the goal. Reply with ${AUTO_LOOP_DONE_TOKEN} when fully complete.`,
+			{ deliverAs: "followUp" },
+		);
 	});
 
 	// ── Cron* tools (agent-callable) ──────────────────────────────────────────
@@ -256,11 +310,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 					ctx.ui.notify("Usage: /loop auto [--max-turns N] <task>", "warning");
 					return;
 				}
-				setAuto({ remaining: maxTurns });
-				pi.sendUserMessage(
-					`${rest}\n\n(Autonomous loop: keep working until the task is fully complete, then reply with ${AUTO_LOOP_DONE_TOKEN}.)`,
-					{ deliverAs: "followUp" },
-				);
+				startAuto({ task: rest, maxTurns });
 				ctx.ui.notify(`Autonomous loop started (max ${maxTurns} turns). Stop with /loop stop.`, "info");
 				return;
 			}

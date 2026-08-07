@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/goal` — works autonomously toward a completion condition. `/goal <objective>`
+  takes the objective directly; bare `/goal` reads it from the plan's Goal
+  section, and the plan's Verification section becomes the completion condition
+  either way, which is the difference between a run that stops when it feels
+  finished and one that stops when something it can execute says so. Accepts
+  `--max-turns N` for the turn budget. Deliberately linear: a single thread of
+  execution that iterates until it reports done or exhausts its budget, with no
+  task graph and no subtask fan-out. The run inherits whatever the active mode
+  already permits (`enabled_tools`, `allowed_bash_commands`,
+  `allowed_write_paths`, `auto_allow`), so how much rope an unattended goal gets
+  stays a mode-config decision.
+- `/grill` — stress-tests the current plan before `/approve` executes it. Two
+  phases: `/grill me` surfaces the request's unconfirmed assumptions as
+  `ask_options` questions, and `/grill plan` attacks the plan file itself,
+  verifying its claims against the codebase and revising it where it is weak.
+  Bare `/grill` runs both, in that order: underspecification sits upstream of
+  plan weakness, so critiquing a plan built on a misread request only produces a
+  well-reviewed plan for the wrong job — the user's answers are folded into the
+  critique instead. Unlike `/approve` the command only injects a follow-up
+  message, so there is no session switch, no mode change, and no config write.
+  While a `/loop auto` run is active nobody is present to answer a question, so
+  the interrogation phase is dropped and the plan critique runs on its own.
+
+### Changed
+
+- Plan mode now points at the whole path out of a plan rather than only
+  `/approve`: it offers `/grill` to stress-test first, then `/approve` to execute
+  step by step or `/goal` to work toward the plan autonomously, and recommends
+  grilling whenever the plan carries real risk. Previously the two new commands
+  were reachable only if you already knew to type them.
+- The autonomous loop can now be started over the event bus. `LOOP_AUTO_START`
+  mirrors the existing `LOOP_HALT` channel in the opposite direction, letting an
+  extension drive a run without reaching into state private to `/loop`, and its
+  payload carries an optional `continuePrompt` so a caller with a concrete
+  completion condition can restate it on every continuation instead of relying
+  on the generic nudge. `/loop auto` now shares that same starter; its behaviour
+  is unchanged.
+
 ## [0.4.155] - 2026-07-29
 
 ## [0.4.154] - 2026-07-23
