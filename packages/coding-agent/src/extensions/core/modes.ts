@@ -1,7 +1,7 @@
 /**
  * Mode system — resolves the active mode (ask/plan/build/debug), loads the
  * mode's system prompt, filters active tools, and exposes the /mode, /plan,
- * /grill, and /approve commands.
+ * /grill, /goal, and /approve commands.
  *
  * Mode prompt search order (first hit wins):
  *   - `./.hoocode/modes/{mode}/system.md`
@@ -24,7 +24,7 @@ import type {
 import { isLightModeEnv } from "../../core/light.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
 import { mergeSearchPaths, readConfig, readMergedConfig, writeConfig } from "./config.js";
-import { LOOP_AUTO_CHANGED } from "./loop.js";
+import { AUTO_LOOP_DONE_TOKEN, LOOP_AUTO_CHANGED, LOOP_AUTO_START, type LoopAutoStartPayload } from "./loop.js";
 
 const HOOCODE_DIR = getHooCodeDir();
 
@@ -270,6 +270,70 @@ export function buildGrillMessage(sections: PlanSections, target: GrillTarget): 
 }
 
 // ============================================================================
+// Goal: autonomous execution toward a completion condition
+// ============================================================================
+
+/** A parsed `/goal` invocation. */
+export interface GoalInvocation {
+	/** Explicit objective; falls back to the plan's Goal section when absent. */
+	objective?: string;
+	/** Turn budget passed through to the autonomous loop. */
+	maxTurns?: number;
+}
+
+/**
+ * Parses `/goal [--max-turns N] [objective]`.
+ *
+ * Returns undefined when `--max-turns` is present but not followed by a
+ * non-negative integer, so the caller shows usage instead of silently running
+ * with the default budget.
+ */
+export function parseGoalArgs(args: string): GoalInvocation | undefined {
+	let rest = args.trim();
+	let maxTurns: number | undefined;
+
+	const flag = /^--max-turns(?:\s+(\S+))?([\s\S]*)$/.exec(rest);
+	if (flag) {
+		const raw = flag[1];
+		if (!raw || !/^\d+$/.test(raw)) return undefined;
+		maxTurns = Number(raw);
+		rest = flag[2].trim();
+	}
+
+	return { objective: rest || undefined, maxTurns };
+}
+
+/** The two messages `/goal` hands to the autonomous loop. */
+export interface GoalMessages {
+	/** Delivered once, to start the run. */
+	task: string;
+	/** Re-sent on each continuation to keep the target in view. */
+	continuePrompt: string;
+}
+
+/**
+ * Builds the messages for a `/goal` run.
+ *
+ * When the plan carries a Verification section it becomes the completion
+ * condition, which is the difference between a loop that stops when it feels
+ * finished and one that stops when something it can run says so. Both messages
+ * restate the objective, because the loop's continuation prompt is all that
+ * holds the target in place as the transcript grows.
+ */
+export function buildGoalMessages(objective: string, verification?: string): GoalMessages {
+	const condition = verification
+		? `\n\nThe goal counts as complete only once this verification passes. Run it, and if it fails, fix what it reports and run it again:\n\n${verification}`
+		: "";
+
+	return {
+		task: `Work autonomously toward this goal:\n\n${objective}${condition}`,
+		continuePrompt:
+			`Keep working toward the goal:\n\n${objective}${condition}\n\n` +
+			`Reply with ${AUTO_LOOP_DONE_TOKEN} only when it is genuinely complete — not when it is merely close.`,
+	};
+}
+
+// ============================================================================
 // setupMode
 // ============================================================================
 
@@ -414,6 +478,56 @@ export function setupMode(pi: ExtensionAPI): void {
 			}
 
 			pi.sendUserMessage(buildGrillMessage(loaded.sections, target), { deliverAs: "followUp" });
+		},
+	});
+
+	// ── /goal command ─────────────────────────────────────────────────────────
+	// Works autonomously toward a completion condition by driving the loop in
+	// loop.ts over the LOOP_AUTO_START channel. Linear by design: a single thread
+	// of execution that iterates until it reports done or exhausts its budget —
+	// there is no task graph here, and no subtask fan-out.
+	//
+	// The run inherits whatever the active mode already permits (enabled_tools,
+	// allowed_bash_commands, allowed_write_paths, auto_allow), so how much rope
+	// an unattended goal gets is a mode-config decision, not one made here.
+
+	pi.registerCommand("goal", {
+		description: "Work autonomously toward a goal. Usage: /goal [--max-turns N] [objective]",
+		getArgumentCompletions: () => [],
+		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			const parsed = parseGoalArgs(args);
+			if (!parsed) {
+				ctx.ui.notify("Usage: /goal [--max-turns N] [objective]", "warning");
+				return;
+			}
+
+			// The plan supplies the objective when none was typed, and its
+			// verification section becomes the completion condition either way.
+			const sessionPlanPath = cachedPlanPath ?? getPlanPath(ctx.cwd, ctx.sessionManager.getSessionId());
+			const loaded = loadPlanSections([sessionPlanPath, getLegacyPlanPath(ctx.cwd)]);
+			if (loaded.status === "error") {
+				ctx.ui.notify(`Could not read ${relative(ctx.cwd, loaded.path) || loaded.path}`, "error");
+				return;
+			}
+			const sections = loaded.status === "loaded" ? loaded.sections : undefined;
+
+			const objective = parsed.objective ?? sections?.goal;
+			if (!objective) {
+				const relPlan = relative(ctx.cwd, sessionPlanPath) || sessionPlanPath;
+				ctx.ui.notify(
+					`No objective — pass one as /goal <objective>, or write a Goal section in ${relPlan}.`,
+					"warning",
+				);
+				return;
+			}
+
+			const { task, continuePrompt } = buildGoalMessages(objective, sections?.verification);
+			// The loop announces itself on start, so nothing to notify here.
+			pi.events.emit(LOOP_AUTO_START, {
+				task,
+				maxTurns: parsed.maxTurns,
+				continuePrompt,
+			} satisfies LoopAutoStartPayload);
 		},
 	});
 

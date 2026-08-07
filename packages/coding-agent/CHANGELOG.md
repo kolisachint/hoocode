@@ -4,6 +4,17 @@
 
 ### Added
 
+- `/goal` — works autonomously toward a completion condition. `/goal <objective>`
+  takes the objective directly; bare `/goal` reads it from the plan's Goal
+  section, and the plan's Verification section becomes the completion condition
+  either way, which is the difference between a run that stops when it feels
+  finished and one that stops when something it can execute says so. Accepts
+  `--max-turns N` for the turn budget. Deliberately linear: a single thread of
+  execution that iterates until it reports done or exhausts its budget, with no
+  task graph and no subtask fan-out. The run inherits whatever the active mode
+  already permits (`enabled_tools`, `allowed_bash_commands`,
+  `allowed_write_paths`, `auto_allow`), so how much rope an unattended goal gets
+  stays a mode-config decision.
 - `/grill` — stress-tests the current plan before `/approve` executes it. Two
   phases: `/grill me` surfaces the request's unconfirmed assumptions as
   `ask_options` questions, and `/grill plan` attacks the plan file itself,
@@ -15,6 +26,16 @@
   message, so there is no session switch, no mode change, and no config write.
   While a `/loop auto` run is active nobody is present to answer a question, so
   the interrogation phase is dropped and the plan critique runs on its own.
+
+### Changed
+
+- The autonomous loop can now be started over the event bus. `LOOP_AUTO_START`
+  mirrors the existing `LOOP_HALT` channel in the opposite direction, letting an
+  extension drive a run without reaching into state private to `/loop`, and its
+  payload carries an optional `continuePrompt` so a caller with a concrete
+  completion condition can restate it on every continuation instead of relying
+  on the generic nudge. `/loop auto` now shares that same starter; its behaviour
+  is unchanged.
 
 ## [0.4.155] - 2026-07-29
 
