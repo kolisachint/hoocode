@@ -36,7 +36,7 @@ const websearchSchema = Type.Object({
 	),
 });
 
-export type WebSearchToolInput = Static<typeof websearchSchema>;
+type WebSearchToolInput = Static<typeof websearchSchema>;
 
 export interface WebSearchToolDetails {
 	resultCount?: number;

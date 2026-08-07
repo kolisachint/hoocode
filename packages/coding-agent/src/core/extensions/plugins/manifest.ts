@@ -20,13 +20,6 @@ import type { ProviderConfig } from "../types.js";
 import { parsePluginWithFormats } from "./formats/index.js";
 import type { MarketplacePlatform } from "./formats/types.js";
 
-/** Marker subdirectory + manifest filename for each supported format. */
-export const NATIVE_MANIFEST_DIR = ".agents-plugin";
-export const CLAUDE_MANIFEST_DIR = ".claude-plugin";
-export const COPILOT_MANIFEST_DIR = ".github";
-export const MANIFEST_FILE = "plugin.json";
-export const COPILOT_MANIFEST_FILE = "copilot-plugin.json";
-
 /** A single shell command invoked by a hook. */
 export interface PluginHookCommand {
 	type?: "command";

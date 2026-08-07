@@ -276,7 +276,7 @@ export function normalizeTerminalOutput(str: string): string {
 /**
  * Extract ANSI escape sequences from a string at the given position.
  */
-export function extractAnsiCode(str: string, pos: number): { code: string; length: number } | null {
+function extractAnsiCode(str: string, pos: number): { code: string; length: number } | null {
 	if (pos >= str.length || str[pos] !== "\x1b") return null;
 
 	const next = str[pos + 1];

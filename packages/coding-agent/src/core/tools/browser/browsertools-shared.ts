@@ -34,7 +34,7 @@ import { ensureTool } from "../../../utils/tools-manager.js";
 export type ResumeToken = string;
 
 /** Reference to bytes (e.g. a screenshot) the parent can fetch via `get_resource`. */
-export type ResourceId = string;
+type ResourceId = string;
 
 /**
  * A typed request the engine yields when replay hits ambiguity only an LLM can
@@ -68,17 +68,17 @@ export interface GetResourceResult {
 
 /** Default per-request RPC timeout. Flow steps drive a real browser, so this is
  *  generous relative to webtools' 15s. */
-export const BROWSERTOOLS_REQUEST_TIMEOUT_MS = 120_000;
+const BROWSERTOOLS_REQUEST_TIMEOUT_MS = 120_000;
 
 /** Default idle window a paused flow may sit in the registry before it is reaped
  *  (killing its serve process + Chromium). Reset on every resume round. The
  *  parent may reason / look at a screenshot / make other tool calls between
  *  rounds, so this is minutes, not seconds. */
-export const BROWSERTOOLS_DEFAULT_IDLE_MS = 5 * 60 * 1000;
+const BROWSERTOOLS_DEFAULT_IDLE_MS = 5 * 60 * 1000;
 
 /** Default hard cap on `NeedsParent` rounds for a single flow, bounding a runaway
  *  suspend/resume loop. */
-export const BROWSERTOOLS_DEFAULT_MAX_ROUNDS = 12;
+const BROWSERTOOLS_DEFAULT_MAX_ROUNDS = 12;
 
 /** Options threaded into the browser tools by their factories (tests/overrides). */
 export interface BrowsertoolsToolOptions {
@@ -474,7 +474,7 @@ export function parkIdleClient(
 }
 
 /** Dispose the shared idle client. Called on session shutdown. */
-export function disposeIdleClient(): void {
+function disposeIdleClient(): void {
 	if (sharedIdleClient) {
 		clearTimeout(sharedIdleClient.idleTimer);
 		sharedIdleClient.client.dispose();

@@ -21,7 +21,7 @@ const docGrepSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Stop after N matches. Default: all matches." })),
 });
 
-export type DocGrepToolInput = Static<typeof docGrepSchema>;
+type DocGrepToolInput = Static<typeof docGrepSchema>;
 
 export interface DocGrepToolDetails {
 	pattern?: string;

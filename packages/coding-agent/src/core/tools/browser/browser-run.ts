@@ -85,7 +85,7 @@ const browserRunSchema = Type.Object({
 	),
 });
 
-export type BrowserRunInput = Static<typeof browserRunSchema>;
+type BrowserRunInput = Static<typeof browserRunSchema>;
 
 /** Structured details surfaced alongside the model-facing content. */
 export interface BrowserRunDetails {

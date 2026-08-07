@@ -49,7 +49,7 @@ export function sanitizeForDir(s: string): string {
 }
 
 /** Absolute path to the curated default marketplace bundled with hoocode. */
-export function defaultMarketplaceDir(): string {
+function defaultMarketplaceDir(): string {
 	return fileURLToPath(new URL("./default-marketplace/", import.meta.url));
 }
 

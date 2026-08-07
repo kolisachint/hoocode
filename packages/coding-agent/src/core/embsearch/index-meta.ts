@@ -12,7 +12,7 @@
 
 import { createHash } from "crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
-import { homedir } from "os";
+
 import path, { join } from "path";
 import { getAgentDir } from "../../config.js";
 import { CHUNKER_VERSION } from "./chunker.js";
@@ -97,10 +97,4 @@ export function saveIndexMeta(storeDir: string, meta: IndexMeta): void {
 
 export function hashContent(content: string): string {
 	return createHash("sha256").update(content).digest("hex");
-}
-
-/** Display helper: `~/.hoocode/embsearch/<hash>` instead of the absolute path. */
-export function shortenStoreDir(storeDir: string): string {
-	const home = homedir();
-	return storeDir.startsWith(home) ? `~${storeDir.slice(home.length)}` : storeDir;
 }

@@ -30,7 +30,7 @@ const browserContinueSchema = Type.Object({
 	}),
 });
 
-export type BrowserContinueInput = Static<typeof browserContinueSchema>;
+type BrowserContinueInput = Static<typeof browserContinueSchema>;
 
 export interface BrowserContinueToolOptions extends BrowsertoolsToolOptions {}
 

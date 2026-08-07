@@ -124,7 +124,7 @@ function readMcpFile(mcpFile: string): Record<string, unknown> | undefined {
 // ============================================================================
 
 /** Serialize a small set of frontmatter fields to YAML. Values are strings only. */
-export function emitFrontmatter(fields: Record<string, string | undefined>): string {
+function emitFrontmatter(fields: Record<string, string | undefined>): string {
 	const lines: string[] = ["---"];
 	for (const [key, value] of Object.entries(fields)) {
 		if (value === undefined || value === "") continue;

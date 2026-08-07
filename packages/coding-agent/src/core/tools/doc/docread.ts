@@ -29,7 +29,7 @@ const docReadSchema = Type.Object({
 	),
 });
 
-export type DocReadToolInput = Static<typeof docReadSchema>;
+type DocReadToolInput = Static<typeof docReadSchema>;
 
 export interface DocReadToolDetails {
 	type?: string;

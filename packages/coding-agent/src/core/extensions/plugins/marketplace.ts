@@ -51,7 +51,7 @@ export function normalizePlatforms(value: unknown): MarketplacePlatform[] {
 }
 
 /** Structured source pointing at an entire git repository. */
-export interface MarketplacePluginSourceUrl {
+interface MarketplacePluginSourceUrl {
 	source: "url";
 	url: string;
 	ref?: string;
@@ -59,7 +59,7 @@ export interface MarketplacePluginSourceUrl {
 }
 
 /** Structured source pointing at a subdirectory within a git repository. */
-export interface MarketplacePluginSourceGitSubdir {
+interface MarketplacePluginSourceGitSubdir {
 	source: "git-subdir";
 	url: string;
 	/** Subdirectory path inside the repository. */
@@ -71,7 +71,7 @@ export interface MarketplacePluginSourceGitSubdir {
 /** Source value authored in a marketplace manifest. */
 export type MarketplacePluginSource = string | MarketplacePluginSourceUrl | MarketplacePluginSourceGitSubdir;
 
-export interface MarketplacePluginEntry {
+interface MarketplacePluginEntry {
 	name: string;
 	/** Relative path, git URL, `npm:<spec>`, or structured source object. */
 	source: MarketplacePluginSource;

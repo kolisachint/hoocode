@@ -42,7 +42,7 @@ const webfetchSchema = Type.Object({
 	),
 });
 
-export type WebFetchToolInput = Static<typeof webfetchSchema>;
+type WebFetchToolInput = Static<typeof webfetchSchema>;
 
 export interface WebFetchToolDetails {
 	finalUrl?: string;

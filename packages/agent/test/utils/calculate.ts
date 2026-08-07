@@ -1,12 +1,12 @@
 import { type Static, Type } from "typebox";
 import type { AgentTool, AgentToolResult } from "../../src/types.js";
 
-export interface CalculateResult extends AgentToolResult<undefined> {
+interface CalculateResult extends AgentToolResult<undefined> {
 	content: Array<{ type: "text"; text: string }>;
 	details: undefined;
 }
 
-export function calculate(expression: string): CalculateResult {
+function calculate(expression: string): CalculateResult {
 	try {
 		const result = new Function(`return ${expression}`)();
 		return { content: [{ type: "text", text: `${expression} = ${result}` }], details: undefined };

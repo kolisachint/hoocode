@@ -2,12 +2,11 @@
  * Shared test utilities for coding-agent tests.
  */
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Agent } from "@kolisachint/hoocode-agent-core";
-import { getModel, type OAuthCredentials, type OAuthProvider } from "@kolisachint/hoocode-ai";
-import { getOAuthApiKey } from "@kolisachint/hoocode-ai/oauth";
+import { getModel } from "@kolisachint/hoocode-ai";
 import { AgentSession } from "../src/core/agent-session.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { createEventBus } from "../src/core/event-bus.js";
@@ -24,105 +23,6 @@ import { createCodingTools } from "../src/index.js";
  * describe.skipIf(!API_KEY)
  */
 export const API_KEY = process.env.ANTHROPIC_OAUTH_TOKEN || process.env.ANTHROPIC_API_KEY;
-
-// ============================================================================
-// OAuth API key resolution from ~/.hoocode/agent/auth.json
-// ============================================================================
-
-const AUTH_PATH = join(homedir(), ".hoocode", "agent", "auth.json");
-
-type ApiKeyCredential = {
-	type: "api_key";
-	key: string;
-};
-
-type OAuthCredentialEntry = {
-	type: "oauth";
-} & OAuthCredentials;
-
-type AuthCredential = ApiKeyCredential | OAuthCredentialEntry;
-
-type AuthStorageData = Record<string, AuthCredential>;
-
-function loadAuthStorage(): AuthStorageData {
-	if (!existsSync(AUTH_PATH)) {
-		return {};
-	}
-	try {
-		const content = readFileSync(AUTH_PATH, "utf-8");
-		return JSON.parse(content);
-	} catch {
-		return {};
-	}
-}
-
-function saveAuthStorage(storage: AuthStorageData): void {
-	const configDir = dirname(AUTH_PATH);
-	if (!existsSync(configDir)) {
-		mkdirSync(configDir, { recursive: true, mode: 0o700 });
-	}
-	writeFileSync(AUTH_PATH, JSON.stringify(storage, null, 2), "utf-8");
-	chmodSync(AUTH_PATH, 0o600);
-}
-
-/**
- * Resolve API key for a provider from ~/.hoocode/agent/auth.json
- *
- * For API key credentials, returns the key directly.
- * For OAuth credentials, returns the access token (refreshing if expired and saving back).
- *
- */
-export async function resolveApiKey(provider: string): Promise<string | undefined> {
-	const storage = loadAuthStorage();
-	const entry = storage[provider];
-
-	if (!entry) return undefined;
-
-	if (entry.type === "api_key") {
-		return entry.key;
-	}
-
-	if (entry.type === "oauth") {
-		// Build OAuthCredentials record for getOAuthApiKey
-		const oauthCredentials: Record<string, OAuthCredentials> = {};
-		for (const [key, value] of Object.entries(storage)) {
-			if (value.type === "oauth") {
-				const { type: _, ...creds } = value;
-				oauthCredentials[key] = creds;
-			}
-		}
-
-		const result = await getOAuthApiKey(provider as OAuthProvider, oauthCredentials);
-		if (!result) return undefined;
-
-		// Save refreshed credentials back to auth.json
-		storage[provider] = { type: "oauth", ...result.newCredentials };
-		saveAuthStorage(storage);
-
-		return result.apiKey;
-	}
-
-	return undefined;
-}
-
-/**
- * Check if a provider has credentials in ~/.hoocode/agent/auth.json
- */
-export function hasAuthForProvider(provider: string): boolean {
-	const storage = loadAuthStorage();
-	return provider in storage;
-}
-
-/** Path to the real hoocode agent config directory */
-export const HOOCODE_AGENT_DIR = join(homedir(), ".hoocode", "agent");
-
-/**
- * Get an AuthStorage instance backed by ~/.hoocode/agent/auth.json
- * Use this for tests that need real OAuth credentials.
- */
-export function getRealAuthStorage(): AuthStorage {
-	return AuthStorage.create(AUTH_PATH);
-}
 
 /**
  * Create a minimal user message for testing.
@@ -280,41 +180,4 @@ export function createTestSession(options: TestSessionOptions = {}): TestSession
 	};
 
 	return { session, sessionManager, tempDir, cleanup };
-}
-
-/**
- * Build a session tree for testing using SessionManager.
- * Returns the IDs of all created entries.
- *
- * Example tree structure:
- * ```
- * u1 -> a1 -> u2 -> a2
- *          -> u3 -> a3  (branch from a1)
- * u4 -> a4              (another root)
- * ```
- */
-export function buildTestTree(
-	session: SessionManager,
-	structure: {
-		messages: Array<{ role: "user" | "assistant"; text: string; branchFrom?: string }>;
-	},
-): Map<string, string> {
-	const ids = new Map<string, string>();
-
-	for (const msg of structure.messages) {
-		if (msg.branchFrom) {
-			const branchFromId = ids.get(msg.branchFrom);
-			if (!branchFromId) {
-				throw new Error(`Cannot branch from unknown entry: ${msg.branchFrom}`);
-			}
-			session.branch(branchFromId);
-		}
-
-		const id =
-			msg.role === "user" ? session.appendMessage(userMsg(msg.text)) : session.appendMessage(assistantMsg(msg.text));
-
-		ids.set(msg.text, id);
-	}
-
-	return ids;
 }

@@ -47,7 +47,7 @@ export function rangesOverlap(a: ReadRange, b: ReadRange): boolean {
 }
 
 /** Whether `outer` fully contains `inner` (every line of inner lies within outer). */
-export function rangeContains(outer: ReadRange, inner: ReadRange): boolean {
+function rangeContains(outer: ReadRange, inner: ReadRange): boolean {
 	return outer.start <= inner.start && outer.end >= inner.end;
 }
 

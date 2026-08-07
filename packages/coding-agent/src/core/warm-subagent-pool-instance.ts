@@ -52,15 +52,3 @@ export function updateWarmSubagentSkillPaths(paths: string[]): void {
 	latestSkillPaths = paths;
 	pool?.updateSkillPaths(paths);
 }
-
-/** Dispose and clear the shared warm pool. Intended for test isolation and shutdown. */
-export function disposeWarmSubagentPool(): void {
-	void pool?.dispose();
-	pool = undefined;
-	latestSkillPaths = [];
-}
-
-/** Inject a pool instance for tests, bypassing real child-process spawning. */
-export function setWarmSubagentPoolForTesting(testPool: WarmSubagentPool | undefined): void {
-	override = testPool;
-}

@@ -17,7 +17,7 @@ const docScanSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Maximum number of blocks to return. Default: all remaining." })),
 });
 
-export type DocScanToolInput = Static<typeof docScanSchema>;
+type DocScanToolInput = Static<typeof docScanSchema>;
 
 export interface DocScanToolDetails {
 	fileType?: string;

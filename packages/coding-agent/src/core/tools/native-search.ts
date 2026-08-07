@@ -25,7 +25,7 @@ import { minimatch } from "minimatch";
 import path from "path";
 import { toPosixPath } from "./fd-utils.js";
 
-export type EntryType = "f" | "d" | "l";
+type EntryType = "f" | "d" | "l";
 
 /** Hard cap on entries enumerated during a single walk, so a pathological tree
  *  can never hang the fallback. Well above any tool's own result limit. */
@@ -242,7 +242,7 @@ export function nativeFind(root: string, opts: NativeFindOptions): string[] {
 	return results;
 }
 
-export interface NativeGrepMatch {
+interface NativeGrepMatch {
 	filePath: string;
 	lineNumber: number;
 	lineText: string;
