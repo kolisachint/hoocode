@@ -20,7 +20,7 @@ export const isBunBinary =
 	import.meta.url.includes("$bunfs") || import.meta.url.includes("~BUN") || import.meta.url.includes("%7EBUN");
 
 /** Detect if Bun is the runtime (compiled binary or bun run) */
-export const isBunRuntime = !!process.versions.bun;
+const isBunRuntime = !!process.versions.bun;
 
 // =============================================================================
 // Install Method Detection
@@ -300,7 +300,7 @@ export function getUpdateInstruction(packageName: string): string {
  * - For Node.js (dist/): returns __dirname (the dist/ directory)
  * - For tsx (src/): returns parent directory (the package root)
  */
-export function getPackageDir(): string {
+function getPackageDir(): string {
 	// Allow override via environment variable (useful for Nix/Guix where store paths tokenize poorly)
 	const envDir = process.env.HOOCODE_PACKAGE_DIR;
 	if (envDir) {
@@ -357,7 +357,7 @@ export function getExportTemplateDir(): string {
 }
 
 /** Get path to package.json */
-export function getPackageJsonPath(): string {
+function getPackageJsonPath(): string {
 	return join(getPackageDir(), "package.json");
 }
 
@@ -371,34 +371,9 @@ export function getDocsPath(): string {
 	return resolve(join(getPackageDir(), "docs"));
 }
 
-/** Get path to examples directory */
-export function getExamplesPath(): string {
-	return resolve(join(getPackageDir(), "examples"));
-}
-
 /** Get path to CHANGELOG.md */
 export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));
-}
-
-/**
- * Get path to built-in interactive assets directory.
- * - For Bun binary: assets/ next to executable
- * - For Node.js (dist/): dist/modes/interactive/assets/
- * - For tsx (src/): src/modes/interactive/assets/
- */
-export function getInteractiveAssetsDir(): string {
-	if (isBunBinary) {
-		return join(getPackageDir(), "assets");
-	}
-	const packageDir = getPackageDir();
-	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
-	return join(packageDir, srcOrDist, "modes", "interactive", "assets");
-}
-
-/** Get path to a bundled interactive asset */
-export function getBundledInteractiveAssetPath(name: string): string {
-	return join(getInteractiveAssetsDir(), name);
 }
 
 /**
@@ -421,15 +396,6 @@ export function getSubagentSpawnCommand(): { executable: string; prefixArgs: str
 	const prefixArgs = [...process.execArgv];
 	if (entry) prefixArgs.push(entry);
 	return { executable: process.execPath, prefixArgs };
-}
-
-/**
- * Get path to bundled init templates (default modes/profiles seeded into HOOCODE_DIR on first run).
- * - For Bun binary: templates/ next to executable
- * - For Node.js (dist/) and tsx (src/): templates/ at the package root
- */
-export function getTemplatesDir(): string {
-	return join(getPackageDir(), "templates");
 }
 
 // =============================================================================
@@ -491,7 +457,7 @@ export function getAgentDir(): string {
 /** Subdirectory under the project config dir holding subagent runtime state
  *  (result.json, output.json, dispatch-log.json, budget.json) per dispatch.
  *  Kept separate from the `agents/` directory, which holds agent definitions. */
-export const DISPATCH_DIR_NAME = "dispatch";
+const DISPATCH_DIR_NAME = "dispatch";
 
 /** Root directory for subagent runtime state within a project. */
 export function getDispatchRoot(cwd: string): string {
@@ -513,34 +479,14 @@ export function getCustomThemesDir(): string {
 	return join(getAgentDir(), "themes");
 }
 
-/** Get path to models.json */
-export function getModelsPath(): string {
-	return join(getAgentDir(), "models.json");
-}
-
 /** Get path to auth.json */
 export function getAuthPath(): string {
 	return join(getAgentDir(), "auth.json");
 }
 
-/** Get path to settings.json */
-export function getSettingsPath(): string {
-	return join(getAgentDir(), "settings.json");
-}
-
-/** Get path to tools directory */
-export function getToolsDir(): string {
-	return join(getAgentDir(), "tools");
-}
-
 /** Get path to managed binaries directory (fd, rg) */
 export function getBinDir(): string {
 	return join(getAgentDir(), "bin");
-}
-
-/** Get path to prompt templates directory */
-export function getPromptsDir(): string {
-	return join(getAgentDir(), "prompts");
 }
 
 /** Get path to sessions directory */

@@ -20,10 +20,10 @@
 import type { SubagentPool, TaskResult } from "./subagent-pool.js";
 import type { SubagentResultFile } from "./subagent-result.js";
 
-export type TaskLifecycle = "running" | "done" | "failed" | "stalled" | "timeout" | "cancelled" | "collected";
+type TaskLifecycle = "running" | "done" | "failed" | "stalled" | "timeout" | "cancelled" | "collected";
 
 /** A non-terminal task is still doing work; the rest have settled. */
-export function isOutstanding(lifecycle: TaskLifecycle): boolean {
+function isOutstanding(lifecycle: TaskLifecycle): boolean {
 	return lifecycle === "running";
 }
 

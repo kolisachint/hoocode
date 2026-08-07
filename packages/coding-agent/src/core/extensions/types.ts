@@ -96,7 +96,7 @@ export interface ExtensionUIDialogOptions {
 }
 
 /** A single selectable option in an {@link AskQuestion}. */
-export interface AskOption {
+interface AskOption {
 	/** The option text shown to the user and returned when chosen. */
 	label: string;
 	/** Optional secondary description shown next to the label. */
@@ -697,7 +697,7 @@ export interface BeforeProviderRequestEvent {
 }
 
 /** Fired after a provider response is received and before the response stream is consumed. */
-export interface AfterProviderResponseEvent {
+interface AfterProviderResponseEvent {
 	type: "after_provider_response";
 	status: number;
 	headers: Record<string, string>;
@@ -791,10 +791,10 @@ export interface ToolExecutionEndEvent {
 // Model Events
 // ============================================================================
 
-export type ModelSelectSource = "set" | "cycle" | "restore";
+type ModelSelectSource = "set" | "cycle" | "restore";
 
 /** Fired when a new model is selected */
-export interface ModelSelectEvent {
+interface ModelSelectEvent {
 	type: "model_select";
 	model: Model<any>;
 	previousModel: Model<any> | undefined;
@@ -802,7 +802,7 @@ export interface ModelSelectEvent {
 }
 
 /** Fired when a new thinking level is selected */
-export interface ThinkingLevelSelectEvent {
+interface ThinkingLevelSelectEvent {
 	type: "thinking_level_select";
 	level: ThinkingLevel;
 	previousLevel: ThinkingLevel;
@@ -920,42 +920,42 @@ interface ToolResultEventBase {
 	isError: boolean;
 }
 
-export interface BashToolResultEvent extends ToolResultEventBase {
+interface BashToolResultEvent extends ToolResultEventBase {
 	toolName: "bash";
 	details: BashToolDetails | undefined;
 }
 
-export interface ReadToolResultEvent extends ToolResultEventBase {
+interface ReadToolResultEvent extends ToolResultEventBase {
 	toolName: "read";
 	details: ReadToolDetails | undefined;
 }
 
-export interface EditToolResultEvent extends ToolResultEventBase {
+interface EditToolResultEvent extends ToolResultEventBase {
 	toolName: "edit";
 	details: EditToolDetails | undefined;
 }
 
-export interface WriteToolResultEvent extends ToolResultEventBase {
+interface WriteToolResultEvent extends ToolResultEventBase {
 	toolName: "write";
 	details: undefined;
 }
 
-export interface GrepToolResultEvent extends ToolResultEventBase {
+interface GrepToolResultEvent extends ToolResultEventBase {
 	toolName: "grep";
 	details: GrepToolDetails | undefined;
 }
 
-export interface FindToolResultEvent extends ToolResultEventBase {
+interface FindToolResultEvent extends ToolResultEventBase {
 	toolName: "find";
 	details: FindToolDetails | undefined;
 }
 
-export interface LsToolResultEvent extends ToolResultEventBase {
+interface LsToolResultEvent extends ToolResultEventBase {
 	toolName: "ls";
 	details: LsToolDetails | undefined;
 }
 
-export interface CustomToolResultEvent extends ToolResultEventBase {
+interface CustomToolResultEvent extends ToolResultEventBase {
 	toolName: string;
 	details: unknown;
 }
@@ -1505,50 +1505,50 @@ export interface ExtensionShortcut {
 
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
-export type SendMessageHandler = <T = unknown>(
+type SendMessageHandler = <T = unknown>(
 	message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
 	options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
 ) => void;
 
-export type SendUserMessageHandler = (
+type SendUserMessageHandler = (
 	content: string | (TextContent | ImageContent)[],
 	options?: { deliverAs?: "steer" | "followUp" },
 ) => void;
 
-export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
+type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
 
-export type SetSessionNameHandler = (name: string) => void;
+type SetSessionNameHandler = (name: string) => void;
 
-export type GetSessionNameHandler = () => string | undefined;
+type GetSessionNameHandler = () => string | undefined;
 
-export type GetActiveToolsHandler = () => string[];
+type GetActiveToolsHandler = () => string[];
 
 /** Tool info with name, description, parameter schema, and source metadata */
 export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters"> & {
 	sourceInfo: SourceInfo;
 };
 
-export type GetAllToolsHandler = () => ToolInfo[];
+type GetAllToolsHandler = () => ToolInfo[];
 
-export type GetCommandsHandler = () => SlashCommandInfo[];
+type GetCommandsHandler = () => SlashCommandInfo[];
 
-export type SetActiveToolsHandler = (toolNames: string[]) => void;
+type SetActiveToolsHandler = (toolNames: string[]) => void;
 
-export type RefreshToolsHandler = () => void;
+type RefreshToolsHandler = () => void;
 
-export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
+type SetModelHandler = (model: Model<any>) => Promise<boolean>;
 
-export type GetThinkingLevelHandler = () => ThinkingLevel;
+type GetThinkingLevelHandler = () => ThinkingLevel;
 
-export type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
+type SetThinkingLevelHandler = (level: ThinkingLevel) => void;
 
-export type SetLabelHandler = (entryId: string, label: string | undefined) => void;
+type SetLabelHandler = (entryId: string, label: string | undefined) => void;
 
 /**
  * Shared state created by loader, used during registration and runtime.
  * Contains flag values (defaults set during registration, CLI values set after).
  */
-export interface ExtensionRuntimeState {
+interface ExtensionRuntimeState {
 	flagValues: Map<string, boolean | string>;
 	/** Provider registrations queued during extension loading, processed when runner binds */
 	pendingProviderRegistrations: Array<{ name: string; config: ProviderConfig; extensionPath: string }>;

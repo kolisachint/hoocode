@@ -10,7 +10,7 @@
  */
 
 /** How long an exhaustion signal stays active before it self-expires. */
-export const PROVIDER_EXHAUSTION_TTL_MS = 45_000;
+const PROVIDER_EXHAUSTION_TTL_MS = 45_000;
 
 export interface ProviderExhaustion {
 	provider: string;

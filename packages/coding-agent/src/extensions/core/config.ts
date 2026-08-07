@@ -14,7 +14,7 @@ import { getHooCodeDir } from "../../config.js";
 const HOOCODE_DIR = getHooCodeDir();
 const GLOBAL_CONFIG_PATH = join(HOOCODE_DIR, "hoo-config.json");
 
-export interface ModeConfig {
+interface ModeConfig {
 	/** Tool names that bypass the permission gate in this mode */
 	auto_allow?: string[];
 	/** Tool names available in this mode (if set, only these tools are active) */
@@ -45,7 +45,7 @@ export interface ModeConfig {
  * ends. If a run is interrupted mid-window, the escalated level may persist until
  * the next change.
  */
-export interface ThinkingEscalationConfig {
+interface ThinkingEscalationConfig {
 	/** Master switch. Default: true (set to false to disable). */
 	enabled?: boolean;
 	/** Level to escalate to after a tool error. Default: "high". */
@@ -57,7 +57,7 @@ export interface ThinkingEscalationConfig {
 }
 
 /** LLM defaults seeded in hoo-config.json and honoured during model selection. */
-export interface HooLlmConfig {
+interface HooLlmConfig {
 	/** Preferred provider when the pi-layer settings.json has no saved default. */
 	default_provider?: string;
 	/** Preferred model id for `default_provider` (otherwise the provider's built-in default). */

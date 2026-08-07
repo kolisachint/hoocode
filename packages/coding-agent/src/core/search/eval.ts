@@ -42,7 +42,7 @@ export interface EvalConfig {
 
 /** The sweep from the design doc — single retrievers, hybrid across k, the
  *  routed auto mode — plus reranked (`+rr`) variants for the step 7 gate. */
-export const EVAL_CONFIGS: readonly EvalConfig[] = [
+const EVAL_CONFIGS: readonly EvalConfig[] = [
 	{ label: "lexical", mode: "lexical" },
 	{ label: "semantic", mode: "semantic" },
 	{ label: "hybrid k=0", mode: "hybrid", rrfK: 0 },

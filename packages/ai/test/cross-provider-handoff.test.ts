@@ -29,7 +29,6 @@ import { getModel } from "../src/models.js";
 import { completeSimple, getEnvApiKey } from "../src/stream.js";
 import type { Api, AssistantMessage, Message, Model, Tool, ToolResultMessage } from "../src/types.js";
 import { hasAzureOpenAICredentials } from "./azure-utils.js";
-import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "./cloudflare-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Simple tool for testing
@@ -73,38 +72,12 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "github-copilot", model: "gpt-5.1-codex", label: "copilot-gpt-5.1-codex" },
 	{ provider: "github-copilot", model: "gemini-3-flash-preview", label: "copilot-gemini-3-flash-preview" },
 	{ provider: "github-copilot", model: "grok-code-fast-1", label: "copilot-grok-code-fast-1" },
-	// Amazon Bedrock
-	{
-		provider: "amazon-bedrock",
-		model: "global.anthropic.claude-sonnet-4-5-20250929-v1:0",
-		label: "bedrock-claude-sonnet-4-5",
-	},
 	// xAI
 	{ provider: "xai", model: "grok-code-fast-1", label: "xai-grok-code-fast-1" },
 	// Cerebras
 	{ provider: "cerebras", model: "zai-glm-4.7", label: "cerebras-zai-glm-4.7" },
 	// NVIDIA
 	{ provider: "nvidia", model: "meta/llama-3.3-70b-instruct", label: "nvidia-llama-3.3-70b" },
-	// Cloudflare Workers AI
-	{ provider: "cloudflare-workers-ai", model: "@cf/moonshotai/kimi-k2.6", label: "cloudflare-kimi-k2.6" },
-	// Cloudflare AI Gateway
-	{
-		provider: "cloudflare-ai-gateway",
-		model: "workers-ai/@cf/moonshotai/kimi-k2.6",
-		label: "cloudflare-gateway-kimi-k2.6",
-	},
-	{
-		provider: "cloudflare-ai-gateway",
-		model: "claude-sonnet-4-5",
-		label: "cloudflare-gateway-claude-sonnet-4-5",
-		upstreamApiKeyEnv: "ANTHROPIC_API_KEY",
-	},
-	{
-		provider: "cloudflare-ai-gateway",
-		model: "gpt-5.1",
-		label: "cloudflare-gateway-gpt-5.1",
-		upstreamApiKeyEnv: "OPENAI_API_KEY",
-	},
 	// Groq
 	{ provider: "groq", model: "openai/gpt-oss-120b", label: "groq-gpt-oss-120b" },
 	// Hugging Face
@@ -113,8 +86,6 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "together", model: "moonshotai/Kimi-K2.6", label: "together-kimi-k2.6" },
 	// Kimi For Coding
 	{ provider: "kimi-coding", model: "kimi-k2-thinking", label: "kimi-coding-k2-thinking" },
-	// Mistral
-	{ provider: "mistral", model: "devstral-medium-latest", label: "mistral-devstral-medium" },
 	// MiniMax
 	{ provider: "minimax", model: "MiniMax-M2.7", label: "minimax-m2.7" },
 	{ provider: "minimax-cn", model: "MiniMax-M2.7", label: "minimax-m2.7" },
@@ -160,13 +131,6 @@ async function getApiKey(provider: string): Promise<string | undefined> {
 function hasApiKey(pair: ProviderModelPair): boolean {
 	if (pair.provider === "azure-openai-responses") {
 		return hasAzureOpenAICredentials();
-	}
-	if (pair.provider === "cloudflare-workers-ai") {
-		return hasCloudflareWorkersAICredentials();
-	}
-	if (pair.provider === "cloudflare-ai-gateway") {
-		if (!hasCloudflareAiGatewayCredentials()) return false;
-		return pair.upstreamApiKeyEnv ? !!process.env[pair.upstreamApiKeyEnv] : true;
 	}
 	return !!getEnvApiKey(pair.provider);
 }

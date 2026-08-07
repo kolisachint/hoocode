@@ -26,7 +26,7 @@ import { type NormalizedPlugin, type PluginHooksConfig, parsePluginDir } from ".
 
 // Re-exported so existing importers keep one vocabulary; the resolution chain
 // (explicit → session --support-platform → default) lives in platform-targets.
-export { DEFAULT_AUTHORING_PLATFORMS, resolveAuthoringPlatforms } from "./formats/platform-targets.js";
+export { resolveAuthoringPlatforms } from "./formats/platform-targets.js";
 
 /** hoocode tool names that only read (no mutation, no exec). Grants limited to these are low-risk. */
 const READONLY_TOOLS = new Set(["read", "grep", "find", "ls", "webfetch", "websearch"]);
@@ -277,7 +277,7 @@ export function mergePluginDraft(
 }
 
 /** A hook to remove: `event` is required; `matcher`/`command` narrow the match when provided. */
-export interface HookRemovalSpec {
+interface HookRemovalSpec {
 	event: string;
 	matcher?: string;
 	command?: string;

@@ -73,13 +73,13 @@ export function formatDisplayPath(p: string): string {
 	return result;
 }
 
-export function formatExtensionDisplayPath(extensionPath: string): string {
+function formatExtensionDisplayPath(extensionPath: string): string {
 	let result = formatDisplayPath(extensionPath);
 	result = result.replace(/\/index\.ts$/, "").replace(/\/index\.js$/, "");
 	return result;
 }
 
-export function formatContextPath(p: string, cwd: string): string {
+function formatContextPath(p: string, cwd: string): string {
 	const resolvedCwd = path.resolve(cwd);
 	const absolutePath = path.isAbsolute(p) ? path.resolve(p) : path.resolve(resolvedCwd, p);
 	const relativePath = getCwdRelativePath(absolutePath, resolvedCwd);
@@ -95,7 +95,7 @@ export function formatContextPath(p: string, cwd: string): string {
  * on every turn, so an oversized one is priced where it is listed instead of in
  * a separate warning line.
  */
-export function contextSizeNote(file: ContextFile): string {
+function contextSizeNote(file: ContextFile): string {
 	if (!file.size) return "";
 	const advice = file.size === "truncated" ? "truncated" : "consider trimming";
 	const tokens = file.tokens === undefined ? undefined : `~${formatTokens(file.tokens)} tokens`;
@@ -105,7 +105,7 @@ export function contextSizeNote(file: ContextFile): string {
 /**
  * Get a short path relative to the package root for display.
  */
-export function getShortPath(fullPath: string, sourceInfo?: SourceInfo): string {
+function getShortPath(fullPath: string, sourceInfo?: SourceInfo): string {
 	const baseDir = sourceInfo?.baseDir;
 	if (baseDir && isPackageSource(sourceInfo)) {
 		const relativePath = path.relative(path.resolve(baseDir), path.resolve(fullPath));
@@ -134,7 +134,7 @@ export function getShortPath(fullPath: string, sourceInfo?: SourceInfo): string 
 	return formatDisplayPath(fullPath);
 }
 
-export function getCompactPathLabel(resourcePath: string, sourceInfo?: SourceInfo): string {
+function getCompactPathLabel(resourcePath: string, sourceInfo?: SourceInfo): string {
 	const shortPath = getShortPath(resourcePath, sourceInfo);
 	const normalizedPath = shortPath.replace(/\\/g, "/");
 	const segments = normalizedPath.split("/").filter((segment) => segment.length > 0 && segment !== "~");
@@ -213,7 +213,7 @@ function getCompactNonPackageExtensionLabel(
 	return segments.join("/");
 }
 
-export function getCompactExtensionLabels(
+function getCompactExtensionLabels(
 	extensions: Array<{ path: string; sourceInfo?: SourceInfo; displayName?: string }>,
 ): string[] {
 	const nonPackageExtensions = extensions
@@ -388,10 +388,7 @@ function formatPathWithSource(p: string, sourceInfo?: SourceInfo): string {
 	return formatDisplayPath(p);
 }
 
-export function formatDiagnostics(
-	diagnostics: readonly ResourceDiagnostic[],
-	sourceInfos: Map<string, SourceInfo>,
-): string {
+function formatDiagnostics(diagnostics: readonly ResourceDiagnostic[], sourceInfos: Map<string, SourceInfo>): string {
 	const lines: string[] = [];
 
 	// Group collision diagnostics by name

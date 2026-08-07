@@ -16,7 +16,7 @@ import { createServer } from "node:net";
 import path from "node:path";
 
 /** Config locations probed at each directory level, in priority order. */
-export const TEAM_CONFIG_CANDIDATES = [path.join(".agents", "teams", "default.json"), "hooteams.config.json"];
+const TEAM_CONFIG_CANDIDATES = [path.join(".agents", "teams", "default.json"), "hooteams.config.json"];
 
 /**
  * Walk up from startDir to the filesystem root, returning the first config

@@ -28,7 +28,7 @@ const docPeekSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Pagination size when no ids are given. Default: all remaining." })),
 });
 
-export type DocPeekToolInput = Static<typeof docPeekSchema>;
+type DocPeekToolInput = Static<typeof docPeekSchema>;
 
 export interface DocPeekToolDetails {
 	returned?: number;

@@ -3,9 +3,9 @@
  * Parses .hoocode/plan.md files with completion tracking.
  */
 
-export type Status = "pending" | "in-progress" | "success" | "failed" | "skipped";
+type Status = "pending" | "in-progress" | "success" | "failed" | "skipped";
 
-export interface ChecklistItem {
+interface ChecklistItem {
 	text: string;
 	completed: boolean;
 }
@@ -19,13 +19,13 @@ export interface Step {
 	completedAt?: string;
 }
 
-export interface Stage {
+interface Stage {
 	id: string;
 	title: string;
 	steps: Step[];
 }
 
-export interface Phase {
+interface Phase {
 	id: string;
 	title: string;
 	stages: Stage[];

@@ -5,16 +5,10 @@
  */
 
 export {
-	type BrowserContinueInput,
 	type BrowserContinueToolOptions,
-	createBrowserContinueTool,
 	createBrowserContinueToolDefinition,
 } from "./browser-continue.js";
 export {
-	advanceFlow,
-	type BrowserRunDetails,
-	type BrowserRunInput,
 	type BrowserRunToolOptions,
-	createBrowserRunTool,
 	createBrowserRunToolDefinition,
 } from "./browser-run.js";

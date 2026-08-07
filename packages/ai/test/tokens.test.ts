@@ -6,8 +6,6 @@ import type { Api, Context, Model, StreamOptions } from "../src/types.js";
 type StreamOptionsWithExtras = StreamOptions & Record<string, unknown>;
 
 import { hasAzureOpenAICredentials, resolveAzureDeploymentName } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
-import { hasCloudflareAiGatewayCredentials, hasCloudflareWorkersAICredentials } from "./cloudflare-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -49,17 +47,15 @@ async function testTokensOnAbort<TApi extends Api>(llm: Model<TApi>, options: St
 
 	expect(msg.stopReason).toBe("aborted");
 
-	// OpenAI providers, OpenAI Codex, zai, and Amazon Bedrock only send usage in the final chunk,
+	// OpenAI providers, OpenAI Codex, and zai only send usage in the final chunk,
 	// so when aborted they have no token stats. Anthropic and Google send usage information early in the stream.
 	// MiniMax and Kimi report input tokens but not output tokens differently on aborted requests.
 	if (
 		llm.api === "openai-completions" ||
-		llm.api === "mistral-conversations" ||
 		llm.api === "openai-responses" ||
 		llm.api === "azure-openai-responses" ||
 		llm.api === "openai-codex-responses" ||
 		llm.provider === "zai" ||
-		llm.provider === "amazon-bedrock" ||
 		llm.provider === "vercel-ai-gateway"
 	) {
 		expect(msg.usage.input).toBe(0);
@@ -164,22 +160,6 @@ describe("Token Statistics on Abort", () => {
 		});
 	});
 
-	describe.skipIf(!hasCloudflareWorkersAICredentials())("Cloudflare Workers AI Provider", () => {
-		const llm = getModel("anthropic", "claude-sonnet-4-5");
-
-		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
-	describe.skipIf(!hasCloudflareAiGatewayCredentials())("Cloudflare AI Gateway Provider", () => {
-		const llm = getModel("anthropic", "claude-sonnet-4-5");
-
-		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
 	describe.skipIf(!process.env.HF_TOKEN)("Hugging Face Provider", () => {
 		const llm = getModel("huggingface", "moonshotai/Kimi-K2.5");
 
@@ -198,14 +178,6 @@ describe("Token Statistics on Abort", () => {
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
 		const llm = getModel("zai", "glm-4.5-air");
-
-		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
-	});
-
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral Provider", () => {
-		const llm = getModel("anthropic", "claude-sonnet-4-5");
 
 		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
 			await testTokensOnAbort(llm);
@@ -324,13 +296,5 @@ describe("Token Statistics on Abort", () => {
 				await testTokensOnAbort(llm, { apiKey: openaiCodexToken });
 			},
 		);
-	});
-
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock Provider", () => {
-		const llm = getModel("anthropic", "claude-sonnet-4-5");
-
-		it("should include token stats when aborted mid-stream", { retry: 3, timeout: 30000 }, async () => {
-			await testTokensOnAbort(llm);
-		});
 	});
 });

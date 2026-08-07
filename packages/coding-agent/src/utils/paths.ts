@@ -57,7 +57,7 @@ export function formatPathRelativeToCwdOrAbsolute(filePath: string, cwd: string)
 }
 
 /** Find the nearest ancestor directory containing a `.git` entry, or null. */
-export function findGitRepoRoot(startDir: string): string | null {
+function findGitRepoRoot(startDir: string): string | null {
 	let dir = resolvePath(startDir);
 	while (true) {
 		if (existsSync(join(dir, ".git"))) return dir;

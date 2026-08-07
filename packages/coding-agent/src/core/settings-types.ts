@@ -15,20 +15,20 @@ export interface CompactionSettings {
 	maxContextRatio?: number; // default: 0.75 - compact once context exceeds this fraction of the window, even before the reserveTokens rule fires (bounds transcript growth on large windows)
 }
 
-export interface ToolOutputSettings {
+interface ToolOutputSettings {
 	maxBytes?: number; // default: 32768 (32KB) - byte cap on a single read/bash tool result before truncation
 	maxLines?: number; // default: 800 - line cap on a single read/bash tool result before truncation
 }
 
-export interface ContextGcSettings {
+interface ContextGcSettings {
 	enabled?: boolean; // default: true - stub out superseded read results (file later edited/re-read) from the outgoing context
 }
 
-export interface VoiceSettings {
+interface VoiceSettings {
 	silenceMs?: number; // default: 800 - trailing-silence window (ms) tolerated before voice capture auto-stops; clamped to 300-10000. Env VOICETOOLS_SILENCE_MS overrides this setting.
 }
 
-export interface WebtoolsSettings {
+interface WebtoolsSettings {
 	timeoutSecs?: number; // default: 15 - per-request timeout (seconds) for the webfetch/websearch binary; clamped to 1-120. This setting wins over env HOOCODE_WEBTOOLS_TIMEOUT, which wins over the default.
 }
 
@@ -37,7 +37,7 @@ export interface BranchSummarySettings {
 	skipPrompt?: boolean; // default: false - when true, skips "Summarize branch?" prompt and defaults to no summary
 }
 
-export interface ProviderRetrySettings {
+interface ProviderRetrySettings {
 	timeoutMs?: number; // SDK/provider request timeout in milliseconds
 	maxRetries?: number; // SDK/provider retry attempts
 	maxRetryDelayMs?: number; // default: 60000 (max server-requested delay before failing)
@@ -50,7 +50,7 @@ export interface RetrySettings {
 	provider?: ProviderRetrySettings;
 }
 
-export interface TerminalSettings {
+interface TerminalSettings {
 	showImages?: boolean; // default: true (only relevant if terminal supports images)
 	imageWidthCells?: number; // default: 60 (preferred inline image width in terminal cells)
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
@@ -70,7 +70,7 @@ export interface ThinkingBudgetsSettings {
 	high?: number;
 }
 
-export interface MarkdownSettings {
+interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
 
@@ -96,7 +96,7 @@ export interface WarningSettings {
  * yield the same mapping. When no models are available, tiers stay unresolved and
  * the agent's or parent's default model is used.
  */
-export interface ModelCategories {
+interface ModelCategories {
 	/** Quick, cheap models for read-only exploration (grep, find, file discovery) */
 	fast?: string;
 	/** Balanced models for general work (planning, moderate complexity) */

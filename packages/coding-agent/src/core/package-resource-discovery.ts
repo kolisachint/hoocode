@@ -32,7 +32,7 @@ export const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts"
 export type SettingsResourceType = Exclude<ResourceType, "agents">;
 export const SETTINGS_RESOURCE_TYPES: SettingsResourceType[] = ["extensions", "skills", "prompts", "themes"];
 
-export const FILE_PATTERNS: Record<ResourceType, RegExp> = {
+const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 	extensions: /\.(ts|js)$/,
 	skills: /\.md$/,
 	prompts: /\.md$/,
@@ -95,7 +95,7 @@ function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
 	}
 }
 
-export function isPattern(s: string): boolean {
+function isPattern(s: string): boolean {
 	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-") || s.includes("*") || s.includes("?");
 }
 
@@ -120,7 +120,7 @@ export function splitPatterns(entries: string[]): { plain: string[]; patterns: s
 	return { plain, patterns };
 }
 
-export function collectFiles(
+function collectFiles(
 	dir: string,
 	filePattern: RegExp,
 	skipNodeModules = true,
@@ -173,7 +173,7 @@ export function collectFiles(
 
 export type SkillDiscoveryMode = "pi" | "agents";
 
-export function collectSkillEntries(
+function collectSkillEntries(
 	dir: string,
 	mode: SkillDiscoveryMode,
 	ignoreMatcher?: IgnoreMatcher,
@@ -360,7 +360,7 @@ export function collectAutoThemeEntries(dir: string): string[] {
 	return entries;
 }
 
-export function readHooCodeManifestFile(packageJsonPath: string): HooCodeManifest | null {
+function readHooCodeManifestFile(packageJsonPath: string): HooCodeManifest | null {
 	try {
 		const content = readFileSync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content) as { hoocode?: HooCodeManifest; pi?: HooCodeManifest };
@@ -370,7 +370,7 @@ export function readHooCodeManifestFile(packageJsonPath: string): HooCodeManifes
 	}
 }
 
-export function resolveExtensionEntries(dir: string): string[] | null {
+function resolveExtensionEntries(dir: string): string[] | null {
 	const packageJsonPath = join(dir, "package.json");
 	if (existsSync(packageJsonPath)) {
 		const manifest = readHooCodeManifestFile(packageJsonPath);
@@ -521,7 +521,7 @@ function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: s
 	});
 }
 
-export function getOverridePatterns(entries: string[]): string[] {
+function getOverridePatterns(entries: string[]): string[] {
 	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
 }
 

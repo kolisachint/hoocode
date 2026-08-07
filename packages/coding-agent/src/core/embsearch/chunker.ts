@@ -32,7 +32,7 @@ export interface Chunk {
 }
 
 /** Heuristic binary sniff: NUL byte in the first 8KB. */
-export function looksBinary(content: string): boolean {
+function looksBinary(content: string): boolean {
 	const probe = content.slice(0, 8192);
 	return probe.includes("\u0000");
 }

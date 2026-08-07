@@ -32,7 +32,7 @@ export function getFormatByPlatform(platform: MarketplacePlatform): PluginFormat
 }
 
 /** Every platform present in a plugin directory, precedence winner first. */
-export function detectPlatforms(root: string): MarketplacePlatform[] {
+function detectPlatforms(root: string): MarketplacePlatform[] {
 	const platforms: MarketplacePlatform[] = [];
 	for (const format of PLUGIN_FORMATS) {
 		if (format.detectPlugin(root) && !platforms.includes(format.platform)) platforms.push(format.platform);
@@ -79,21 +79,11 @@ export function emitForPlatforms(draft: PluginDraft, platforms?: MarketplacePlat
 	return files;
 }
 
-export { agentsFormat, claudeFormat, copilotFormat };
-export {
-	DEFAULT_AUTHORING_PLATFORMS,
-	getSupportPlatforms,
-	normalizePlatformToken,
-	parseSupportPlatforms,
-	resolveAuthoringPlatforms,
-	type SupportPlatformParse,
-	setSupportPlatforms,
-} from "./platform-targets.js";
+export { claudeFormat, copilotFormat };
 export type {
 	EmittedFile,
 	MarketplacePlatform,
 	PluginDraft,
 	PluginFormatAdapter,
 	PluginFormatId,
-	WorkspaceLayout,
 } from "./types.js";

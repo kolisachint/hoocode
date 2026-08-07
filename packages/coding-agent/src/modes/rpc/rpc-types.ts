@@ -259,5 +259,3 @@ export type RpcExtensionUIResponse =
 // ============================================================================
 // Helper type for extracting command types
 // ============================================================================
-
-export type RpcCommandType = RpcCommand["type"];

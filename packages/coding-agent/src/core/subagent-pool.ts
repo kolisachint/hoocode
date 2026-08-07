@@ -160,14 +160,14 @@ export const FORWARDED_SUBAGENT_EVENTS = SUBAGENT_PROGRESS_EVENTS;
  * most recent tail is enough; without a cap a chatty child could grow the
  * parent's memory without bound across a long swarm.
  */
-export const MAX_CAPTURED_STREAM_CHARS = 256 * 1024;
+const MAX_CAPTURED_STREAM_CHARS = 256 * 1024;
 
 /**
  * Cap on a single un-terminated JSONL line buffered from a child's stdout. The
  * forwarded events are small; anything approaching this is a runaway writer,
  * and the reader drops the line rather than buffering toward OOM.
  */
-export const MAX_SUBAGENT_EVENT_LINE_CHARS = 8 * 1024 * 1024;
+const MAX_SUBAGENT_EVENT_LINE_CHARS = 8 * 1024 * 1024;
 
 /** Append a chunk to a capped capture buffer, keeping the most recent tail. */
 function appendTail(current: string, chunk: string, cap: number = MAX_CAPTURED_STREAM_CHARS): string {

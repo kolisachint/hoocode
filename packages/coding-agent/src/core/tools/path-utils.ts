@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 /**
  * Check if a string is a file URL (starts with "file:///").
  */
-export function isFileUrl(filePath: string): boolean {
+function isFileUrl(filePath: string): boolean {
 	return filePath.startsWith("file:///");
 }
 
@@ -15,7 +15,7 @@ export function isFileUrl(filePath: string): boolean {
  * Handles both Unix-style (file:///path) and Windows-style (file:///C:/path) file URLs.
  * Returns the original path if it's not a file URL.
  */
-export function normalizeFileUrl(filePath: string): string {
+function normalizeFileUrl(filePath: string): string {
 	if (!isFileUrl(filePath)) {
 		return filePath;
 	}

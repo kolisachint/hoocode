@@ -5,7 +5,7 @@ export type SortMode = "threaded" | "recent" | "relevance";
 
 export type NameFilter = "all" | "named";
 
-export interface ParsedSearchQuery {
+interface ParsedSearchQuery {
 	mode: "tokens" | "regex";
 	tokens: { kind: "fuzzy" | "phrase"; value: string }[];
 	regex: RegExp | null;
@@ -13,7 +13,7 @@ export interface ParsedSearchQuery {
 	error?: string;
 }
 
-export interface MatchResult {
+interface MatchResult {
 	matches: boolean;
 	/** Lower is better; only meaningful when matches === true */
 	score: number;
@@ -36,7 +36,7 @@ function matchesNameFilter(session: SessionInfo, filter: NameFilter): boolean {
 	return hasSessionName(session);
 }
 
-export function parseSearchQuery(query: string): ParsedSearchQuery {
+function parseSearchQuery(query: string): ParsedSearchQuery {
 	const trimmed = query.trim();
 	if (!trimmed) {
 		return { mode: "tokens", tokens: [], regex: null };
@@ -113,7 +113,7 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
 	return { mode: "tokens", tokens, regex: null };
 }
 
-export function matchSession(session: SessionInfo, parsed: ParsedSearchQuery): MatchResult {
+function matchSession(session: SessionInfo, parsed: ParsedSearchQuery): MatchResult {
 	const text = getSessionSearchText(session);
 
 	if (parsed.mode === "regex") {

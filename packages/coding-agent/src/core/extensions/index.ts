@@ -7,36 +7,26 @@ export type { SourceInfo } from "../source-info.js";
 export {
 	createExtensionRuntime,
 	discoverAndLoadExtensions,
-	loadExtensionFromFactory,
-	loadExtensions,
 } from "./loader.js";
 export type {
 	ExtensionErrorListener,
-	ForkHandler,
-	NavigateTreeHandler,
-	NewSessionHandler,
 	ShutdownHandler,
-	SwitchSessionHandler,
 } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
 export type {
 	// Live plugin activation
 	ActivatedCapability,
-	AfterProviderResponseEvent,
 	AgentEndEvent,
 	AgentStartEvent,
 	// Re-exports
 	AgentToolResult,
 	AgentToolUpdateCallback,
-	AppendEntryHandler,
 	// App keybindings (for custom editors)
 	AppKeybinding,
-	AskOption,
 	AskQuestion,
 	AutocompleteProviderFactory,
 	// Events - Tool (ToolCallEvent types)
 	BashToolCallEvent,
-	BashToolResultEvent,
 	BeforeAgentStartEvent,
 	BeforeAgentStartEventResult,
 	BeforeProviderRequestEvent,
@@ -46,14 +36,10 @@ export type {
 	CompactOptions,
 	// Events - Agent
 	ContextEvent,
-	// Event Results
-	ContextEventResult,
 	ContextUsage,
 	CustomToolCallEvent,
-	CustomToolResultEvent,
 	EditorFactory,
 	EditToolCallEvent,
-	EditToolResultEvent,
 	ExecOptions,
 	ExecResult,
 	Extension,
@@ -77,13 +63,7 @@ export type {
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
 	FindToolCallEvent,
-	FindToolResultEvent,
-	GetActiveToolsHandler,
-	GetAllToolsHandler,
-	GetCommandsHandler,
-	GetThinkingLevelHandler,
 	GrepToolCallEvent,
-	GrepToolResultEvent,
 	// Events - Input
 	InputEvent,
 	InputEventResult,
@@ -91,7 +71,6 @@ export type {
 	KeybindingsManager,
 	LoadExtensionsResult,
 	LsToolCallEvent,
-	LsToolResultEvent,
 	// Events - Message
 	MessageEndEvent,
 	// Message Rendering
@@ -99,30 +78,20 @@ export type {
 	MessageRenderOptions,
 	MessageStartEvent,
 	MessageUpdateEvent,
-	ModelSelectEvent,
-	ModelSelectSource,
 	PluginActivationResult,
 	// Provider Registration
 	ProviderConfig,
 	ProviderModelConfig,
 	ReadToolCallEvent,
-	ReadToolResultEvent,
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
 	ReplacedSessionContext,
 	ResolvedCommand,
-	// Events - Resources
-	ResourcesDiscoverEvent,
-	ResourcesDiscoverResult,
-	SendMessageHandler,
-	SendUserMessageHandler,
 	SessionBeforeCompactEvent,
 	SessionBeforeCompactResult,
 	SessionBeforeForkEvent,
-	SessionBeforeForkResult,
 	SessionBeforeSwitchEvent,
-	SessionBeforeSwitchResult,
 	SessionBeforeTreeEvent,
 	SessionBeforeTreeResult,
 	SessionCompactEvent,
@@ -131,10 +100,6 @@ export type {
 	// Events - Session
 	SessionStartEvent,
 	SessionTreeEvent,
-	SetActiveToolsHandler,
-	SetLabelHandler,
-	SetModelHandler,
-	SetThinkingLevelHandler,
 	TerminalInputHandler,
 	// Events - Tool
 	ToolCallEvent,
@@ -150,7 +115,6 @@ export type {
 	ToolInfo,
 	ToolRenderResultOptions,
 	ToolResultEvent,
-	ToolResultEventResult,
 	TreePreparation,
 	TurnEndEvent,
 	TurnStartEvent,
@@ -160,7 +124,6 @@ export type {
 	WidgetPlacement,
 	WorkingIndicatorOptions,
 	WriteToolCallEvent,
-	WriteToolResultEvent,
 } from "./types.js";
 // Type guards
 export {

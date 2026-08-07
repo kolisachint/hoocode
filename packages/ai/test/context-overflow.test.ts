@@ -19,7 +19,6 @@ import { complete } from "../src/stream.js";
 import type { AssistantMessage, Context, Model, Usage } from "../src/types.js";
 import { isContextOverflow } from "../src/utils/overflow.js";
 import { hasAzureOpenAICredentials } from "./azure-utils.js";
-import { hasBedrockCredentials } from "./bedrock-utils.js";
 import { resolveApiKey } from "./oauth.js";
 
 // Resolve OAuth tokens at module level (async, runs before tests)
@@ -242,22 +241,6 @@ describe("Context overflow error handling", () => {
 	});
 
 	// =============================================================================
-	// Amazon Bedrock
-	// Expected pattern: "Input is too long for requested model"
-	// =============================================================================
-
-	describe.skipIf(!hasBedrockCredentials())("Amazon Bedrock", () => {
-		it("claude-sonnet-4-5 - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("anthropic", "claude-sonnet-4-5");
-			const result = await testContextOverflow(model, "");
-			logResult(result);
-
-			expect(result.stopReason).toBe("error");
-			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
-		}, 120000);
-	});
-
-	// =============================================================================
 	// xAI
 	// Expected pattern: "maximum prompt length is X but the request contains Y"
 	// =============================================================================
@@ -385,22 +368,6 @@ describe("Context overflow error handling", () => {
 					console.log("  z.ai returned stop without overflow usage data, skipping overflow detection");
 				}
 			}
-		}, 120000);
-	});
-
-	// =============================================================================
-	// Mistral
-	// =============================================================================
-
-	describe.skipIf(!process.env.MISTRAL_API_KEY)("Mistral", () => {
-		it("devstral-medium-latest - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("anthropic", "claude-sonnet-4-5");
-			const result = await testContextOverflow(model, process.env.MISTRAL_API_KEY!);
-			logResult(result);
-
-			expect(result.stopReason).toBe("error");
-			expect(result.errorMessage).toMatch(/too large for model with \d+ maximum context length/i);
-			expect(isContextOverflow(result.response, model.contextWindow)).toBe(true);
 		}, 120000);
 	});
 

@@ -32,7 +32,7 @@ const docEditSchema = Type.Object({
 	patch: patchOpsSchema,
 });
 
-export type DocEditToolInput = Static<typeof docEditSchema>;
+type DocEditToolInput = Static<typeof docEditSchema>;
 
 export interface DocEditToolDetails {
 	ops?: number;

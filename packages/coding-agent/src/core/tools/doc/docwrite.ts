@@ -22,7 +22,7 @@ const docWriteSchema = Type.Object({
 	patch: patchOpsSchema,
 });
 
-export type DocWriteToolInput = Static<typeof docWriteSchema>;
+type DocWriteToolInput = Static<typeof docWriteSchema>;
 
 export interface DocWriteToolDetails {
 	ops?: number;

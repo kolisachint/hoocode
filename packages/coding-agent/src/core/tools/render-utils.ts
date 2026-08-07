@@ -1,5 +1,4 @@
 import * as os from "node:os";
-import type { ImageContent, TextContent } from "@kolisachint/hoocode-ai";
 import { getCapabilities, getImageDimensions, imageFallback } from "@kolisachint/hoocode-tui";
 import stripAnsi from "strip-ansi";
 import { sanitizeBinaryOutput } from "../../utils/shell.js";
@@ -58,11 +57,6 @@ export function getTextOutput(
 
 	return output;
 }
-
-export type ToolRenderResultLike<TDetails> = {
-	content: (TextContent | ImageContent)[];
-	details: TDetails;
-};
 
 export function invalidArgText(theme: { fg: (name: any, text: string) => string }): string {
 	return theme.fg("error", "[invalid arg]");

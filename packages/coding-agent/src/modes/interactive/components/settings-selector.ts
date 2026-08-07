@@ -31,14 +31,14 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 	xhigh: "Maximum reasoning (~32k tokens)",
 };
 
-export interface ToolToggleInfo {
+interface ToolToggleInfo {
 	/** Tool name (e.g. "read", "bash"). */
 	name: string;
 	/** Whether the tool is currently enabled (not in the persisted disabled set). */
 	enabled: boolean;
 }
 
-export interface FlagInfo {
+interface FlagInfo {
 	/** Flag name (without the leading --). */
 	name: string;
 	description?: string;
@@ -47,7 +47,7 @@ export interface FlagInfo {
 	value: boolean | string;
 }
 
-export interface ToolGroupInfo {
+interface ToolGroupInfo {
 	/** Group identifier (e.g. "web", "browser", "file", "embsearch"). */
 	id: string;
 	label: string;
@@ -272,13 +272,13 @@ function bytesToLabel(bytes: number): string {
 	return match ? match[0] : `${Math.round(bytes / 1024)} KB`;
 }
 
-export interface ToolSettingsConfig {
+interface ToolSettingsConfig {
 	toolOutputMaxBytes: number;
 	toolOutputMaxLines: number;
 	contextGc: boolean;
 }
 
-export interface ToolSettingsCallbacks {
+interface ToolSettingsCallbacks {
 	onToolOutputMaxBytesChange: (bytes: number) => void;
 	onToolOutputMaxLinesChange: (lines: number) => void;
 	onContextGcChange: (enabled: boolean) => void;

@@ -35,7 +35,7 @@ export interface EmittedFile {
 }
 
 /** An authored skill: passive instructions loaded lazily (SKILL.md-style). */
-export interface AuthoredSkill {
+interface AuthoredSkill {
 	name: string;
 	description?: string;
 	/** Instruction body (markdown). */
@@ -43,7 +43,7 @@ export interface AuthoredSkill {
 }
 
 /** An authored slash command: a passive prompt template. */
-export interface AuthoredCommand {
+interface AuthoredCommand {
 	name: string;
 	description?: string;
 	/** Prompt template body (markdown). */
@@ -51,7 +51,7 @@ export interface AuthoredCommand {
 }
 
 /** An authored subagent definition. `tools` is a comma-separated allowlist (Claude Code convention). */
-export interface AuthoredAgent {
+interface AuthoredAgent {
 	name: string;
 	description?: string;
 	/** Comma-separated `allowed-tools` string, e.g. "read, grep, glob". */

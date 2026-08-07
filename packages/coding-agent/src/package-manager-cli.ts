@@ -15,7 +15,7 @@ import { SettingsManager } from "./core/settings-manager.js";
 import { shouldUseWindowsShell } from "./utils/child-process.js";
 import { getLatestHooCodeRelease, isNewerPackageVersion } from "./utils/version-check.js";
 
-export type PackageCommand = "install" | "remove" | "update" | "list";
+type PackageCommand = "install" | "remove" | "update" | "list";
 
 type UpdateTarget = { type: "all" } | { type: "self" } | { type: "extensions"; source?: string };
 

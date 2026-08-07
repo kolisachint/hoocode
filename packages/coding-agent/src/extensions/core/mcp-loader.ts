@@ -47,7 +47,7 @@ interface McpToolDef {
 	};
 }
 
-export interface McpServerConfig {
+interface McpServerConfig {
 	/** Unique server identifier used as prefix for registered tool names */
 	name: string;
 	/** Executable to spawn (stdio transport). One of command/url is required. */

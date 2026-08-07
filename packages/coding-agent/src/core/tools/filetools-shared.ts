@@ -27,7 +27,7 @@ import { ensureTool } from "../../utils/tools-manager.js";
 import { execCommand } from "../exec.js";
 
 /** Default timeout (seconds) for a single filetools invocation. */
-export const FILETOOLS_DEFAULT_TIMEOUT_SECS = 30;
+const FILETOOLS_DEFAULT_TIMEOUT_SECS = 30;
 
 /**
  * Soft token ceiling for a single DocRead render. The filetools binary has no
@@ -74,9 +74,9 @@ export function truncateRenderToTokenBudget(
 // ============================================================================
 
 /** How faithfully a handler can reconstruct a file after edits. */
-export type Fidelity = "lossless" | "in_place_text" | "read_only";
+type Fidelity = "lossless" | "in_place_text" | "read_only";
 
-export interface DocSource {
+interface DocSource {
 	path: string;
 	/** Logical format, e.g. "xml", "drawio". */
 	type: string;
@@ -84,7 +84,7 @@ export interface DocSource {
 	hash: string;
 }
 
-export interface DocAttr {
+interface DocAttr {
 	name: string;
 	value: string;
 }
@@ -108,7 +108,7 @@ export interface Envelope {
 }
 
 /** A new element for an `add` op (text-only content, v1). */
-export interface NewElement {
+interface NewElement {
 	tag: string;
 	attrs?: DocAttr[];
 	text?: string;
@@ -382,7 +382,7 @@ function readEnvelope(envelopePath: string): Envelope {
 }
 
 /** Look up a cached extraction for `absolutePath`, if one is still valid. */
-export function getExtractRecord(absolutePath: string): ExtractRecord | undefined {
+function getExtractRecord(absolutePath: string): ExtractRecord | undefined {
 	const record = records.get(absolutePath);
 	if (!record) return undefined;
 	// Drop a stale record if the source changed since extract; reconstruct would
@@ -498,7 +498,7 @@ export async function reconstructDocument(
 // the filetools `ScanView` / `GrepView` / `ReadView` serializers.
 
 /** One block in a `scan` manifest: structure + a short preview, no full content. */
-export interface BlockManifest {
+interface BlockManifest {
 	id: string;
 	block_type: string;
 	preview: string;
@@ -521,7 +521,7 @@ export interface ScanView {
 }
 
 /** One `grep` hit: the block id, the matching line number, and a snippet. */
-export interface GrepMatch {
+interface GrepMatch {
 	block_id: string;
 	line: number;
 	snippet: string;

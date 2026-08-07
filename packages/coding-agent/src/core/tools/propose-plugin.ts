@@ -46,12 +46,6 @@ import {
 	UPDATE_PLUGIN_TOOL_NAME,
 } from "./plugin-tool-names.js";
 
-export {
-	PROPOSE_PLUGIN_TOOL_NAME,
-	REMOVE_PLUGIN_CAPABILITY_TOOL_NAME,
-	UPDATE_PLUGIN_TOOL_NAME,
-} from "./plugin-tool-names.js";
-
 const skillSchema = Type.Object(
 	{
 		name: Type.String({ description: "Skill name." }),
@@ -222,7 +216,7 @@ function summarizeWrite(
 	);
 }
 
-export interface AuthorPluginDetails {
+interface AuthorPluginDetails {
 	id: string;
 	authored: boolean;
 	/** Whether an executable-capability confirmation gate ran (and was accepted). */
@@ -442,7 +436,7 @@ const removeParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-export interface RemovePluginCapabilityDetails {
+interface RemovePluginCapabilityDetails {
 	id: string;
 	removed: string[];
 	missing: string[];

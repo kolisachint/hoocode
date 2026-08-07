@@ -49,7 +49,7 @@ export interface ReuseNudge {
  * specific — first-hit arming (see nudges.ts) only stays safe if the cue is
  * unambiguous.
  */
-export const REUSE_NUDGES: readonly ReuseNudge[] = [
+const REUSE_NUDGES: readonly ReuseNudge[] = [
 	{
 		id: "style-active-voice",
 		category: "writing-style",
