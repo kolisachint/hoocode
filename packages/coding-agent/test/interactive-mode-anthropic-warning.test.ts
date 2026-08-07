@@ -11,8 +11,23 @@ function createSettingsManager(warnings: { anthropicExtraUsage?: boolean } = {})
 // controller resolves `this.session` via a prototype getter (returning
 // `this.deps.session`); the fake supplies `session` as an own property, which
 // the method reads the same way, plus `deps.showWarning` for the warning sink.
+// The auth predicate is a sibling prototype method, so it has to be wired onto
+// the fake explicitly.
+function withPrototype(controller: any): any {
+	controller.usesAnthropicSubscriptionAuth = (model: unknown) =>
+		(ModelController as any).prototype.usesAnthropicSubscriptionAuth.call(controller, model);
+	return controller;
+}
+
 function warn(controller: any, model: unknown): Promise<void> {
-	return (ModelController as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(controller, model);
+	return (ModelController as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(
+		withPrototype(controller),
+		model,
+	);
+}
+
+function note(controller: any, model: unknown): Promise<string | undefined> {
+	return (ModelController as any).prototype.getAnthropicSubscriptionNote.call(withPrototype(controller), model);
 }
 
 describe("ModelController.maybeWarnAboutAnthropicSubscriptionAuth", () => {
@@ -108,5 +123,51 @@ describe("ModelController.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 		expect(showWarning).not.toHaveBeenCalled();
 		expect(session.modelRegistry.authStorage.get).not.toHaveBeenCalled();
 		expect(session.modelRegistry.getApiKeyForProvider).not.toHaveBeenCalled();
+	});
+});
+
+describe("ModelController.getAnthropicSubscriptionNote", () => {
+	test("returns the compact note and claims the once-per-session slot", async () => {
+		const session = {
+			settingsManager: createSettingsManager(),
+			modelRegistry: {
+				authStorage: {
+					get: vi.fn().mockReturnValue({ type: "oauth" }),
+				},
+				getApiKeyForProvider: vi.fn(),
+			},
+		};
+		const showWarning = vi.fn();
+		const controller: any = {
+			anthropicSubscriptionWarningShown: false,
+			session,
+			deps: { showWarning },
+		};
+
+		expect(await note(controller, { provider: "anthropic" })).toContain("extra usage");
+		// Claimed: neither a second note nor the long warning repeats it.
+		expect(await note(controller, { provider: "anthropic" })).toBeUndefined();
+		await warn(controller, { provider: "anthropic" });
+		expect(showWarning).not.toHaveBeenCalled();
+	});
+
+	test("returns undefined for non-subscription auth", async () => {
+		const session = {
+			settingsManager: createSettingsManager(),
+			modelRegistry: {
+				authStorage: {
+					get: vi.fn().mockReturnValue(undefined),
+				},
+				getApiKeyForProvider: vi.fn().mockResolvedValue("sk-ant-api03-test"),
+			},
+		};
+		const controller: any = {
+			anthropicSubscriptionWarningShown: false,
+			session,
+			deps: { showWarning: vi.fn() },
+		};
+
+		expect(await note(controller, { provider: "anthropic" })).toBeUndefined();
+		expect(controller.anthropicSubscriptionWarningShown).toBe(false);
 	});
 });
