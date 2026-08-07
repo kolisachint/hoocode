@@ -40,6 +40,7 @@ import { APP_NAME, APP_TITLE, VERSION } from "../../config.js";
 import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
+import { type AssistantUsageTotals, sumAssistantUsage } from "../../core/agent-session-stats.js";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -49,6 +50,8 @@ import type {
 	ExtensionUIContext,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
+import { formatDurationSecs } from "../../core/format-duration.js";
+import { formatTokens } from "../../core/format-tokens.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
@@ -59,6 +62,7 @@ import type { SourceInfo } from "../../core/source-info.js";
 import { startupProgress } from "../../core/startup-progress.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
+import { settleDanglingMainTasks } from "../../core/tools/todo.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
@@ -299,9 +303,18 @@ export class InteractiveMode {
 	// True between auto_retry_start and the next agent_start: the turn is not done,
 	// it is about to re-run, so the deferred completion check must not fire the chime.
 	private chimePendingRetry = false;
-	// Whether the current turn's final assistant message was user-aborted (Ctrl+C /
-	// Esc). An aborted turn means the user is present, so no chime.
-	private chimeTurnAborted = false;
+	// Stop reason of the request's latest assistant message, reset when the user
+	// starts a new one. Read at settle time by two consumers that ask the same
+	// question — did this request end cleanly? An "aborted" turn means the user is
+	// present, so no chime; anything other than a clean "stop" means dangling plan
+	// items must not be claimed as completed.
+	private turnStopReason: AssistantMessage["stopReason"] | undefined = undefined;
+
+	// Cumulative usage + wall clock captured at the first agent_start of a request,
+	// diffed at agent_end to print that request's own cost into the transcript.
+	// Anchored on the FIRST start so a retried request reports one span, not one
+	// per attempt (same reason the chime anchors its duration there).
+	private turnCostAnchor: { totals: AssistantUsageTotals; at: number } | undefined;
 
 	// Shutdown state
 	private shutdownRequested = false;
@@ -444,11 +457,12 @@ export class InteractiveMode {
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
 		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
 		this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, {
+			border: this.settingsManager.getEditorBorder(),
 			paddingX: editorPaddingX,
 			autocompleteMaxVisible,
 		});
 		this.editor = this.defaultEditor;
-		this.editor.promptPrefix = ">";
+		this.editor.promptPrefix = "❯";
 		this.editorContainer = new Container();
 		this.editorContainer.addChild(this.editor as Component);
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
@@ -1168,11 +1182,14 @@ export class InteractiveMode {
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+		const editorBorder = this.settingsManager.getEditorBorder();
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
 		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
+		this.defaultEditor.setBorder(editorBorder);
 		this.defaultEditor.setPaddingX(editorPaddingX);
 		this.defaultEditor.setAutocompleteMaxVisible(autocompleteMaxVisible);
 		if (this.editor !== this.defaultEditor) {
+			this.editor.setBorder?.(editorBorder);
 			this.editor.setPaddingX?.(editorPaddingX);
 			this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
 		}
@@ -1919,19 +1936,94 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Deferred completion chime. Called from the agent_end handler, it waits one
-	 * tick so the streaming flag settles and any retry has had a chance to arm, then
-	 * rings only when the session is genuinely idle (not streaming, not compacting)
-	 * and no retry is pending. The chime itself enforces the enable/threshold/debounce
-	 * rules; here we only decide whether the turn has truly ended.
+	 * Deferred end-of-request settle. Called from the agent_end handler, it waits
+	 * one tick so the streaming flag settles and any retry has had a chance to arm,
+	 * then acts only when the session is genuinely idle (not streaming, not
+	 * compacting) and no retry is pending — so a retried or auto-continued request
+	 * neither rings a premature "it's done" nor prints a partial cost line.
+	 *
+	 * The completion chime, the transcript cost line, and settling dangling plan
+	 * items all hang off this single check because they answer the same question:
+	 * has the request actually ended?
 	 */
-	private maybeChimeOnIdle(): void {
+	private settleRequestOnIdle(): void {
 		setTimeout(() => {
 			if (this.chimePendingRetry || this.session.isStreaming || this.session.isCompacting) {
 				return;
 			}
-			this.chime?.onTurnComplete({ aborted: this.chimeTurnAborted });
+			this.showTurnCost();
+			this.settleDanglingPlanItems();
+			this.chime?.onTurnComplete({ aborted: this.turnStopReason === "aborted" });
 		}, 0);
+	}
+
+	/**
+	 * Flip main-plan rows the model left at in_progress to a settled status now the
+	 * request is over, instead of letting them claim live work until the next user
+	 * message wipes the pane.
+	 *
+	 * The model marks its own TodoWrite items and routinely drops the final call
+	 * that completes the last one, so the row outlives the work. A clean "stop" is
+	 * taken as the model believing it was finished — it chose to stop talking, and
+	 * its closing message is the report — so those items settle to done. An abort,
+	 * error, or length cutoff says the opposite, so they settle to cancelled: an
+	 * honest "never finished" rather than a fabricated completion.
+	 *
+	 * Skipped while messages are queued: a follow-up/steer arriving during the run
+	 * means the request continues, and the plan with it.
+	 */
+	private settleDanglingPlanItems(): void {
+		if (this.session.pendingMessageCount > 0) return;
+		const settled = settleDanglingMainTasks(this.turnStopReason === "stop" ? "done" : "cancelled");
+		if (settled > 0) this.ui.requestRender();
+	}
+
+	/**
+	 * Append this request's own token/time/cost to the transcript.
+	 *
+	 * This is the honest home for the number. The task panel is a live instrument —
+	 * present tense, wiped on the next user message — and the footer carries
+	 * cumulative session vitals, so after the fact neither can answer "what did that
+	 * request cost". Fired at agent_end rather than turn_end because one request is
+	 * commonly tens of turns; per-turn would wedge a number between every tool block.
+	 *
+	 * Delegated runs are reported separately rather than folded into the totals:
+	 * subagents bill against their own sessions, so their tokens never appear in this
+	 * session's entries and adding them to ↑/↓ would misreport what the parent spent.
+	 */
+	private showTurnCost(): void {
+		const anchor = this.turnCostAnchor;
+		this.turnCostAnchor = undefined;
+		if (!anchor) return;
+
+		const now = sumAssistantUsage(this.session.sessionManager.getEntries());
+		const input = now.input - anchor.totals.input;
+		const output = now.output - anchor.totals.output;
+		const cost = now.cost - anchor.totals.cost;
+		// Nothing was accounted (e.g. aborted before the first response landed): stay
+		// silent rather than print a row of zeroes.
+		if (input <= 0 && output <= 0) return;
+
+		const segs: string[] = [
+			theme.fg("dim", "↑") +
+				theme.fg("muted", formatTokens(input)) +
+				theme.fg("dim", " ↓") +
+				theme.fg("muted", formatTokens(output)),
+			theme.fg("muted", formatDurationSecs((Date.now() - anchor.at) / 1000)),
+		];
+		if (cost > 0) segs.push(theme.fg("muted", `$${cost.toFixed(3)}`));
+
+		const runs = taskStore.list().filter((task) => task.source === "subagent");
+		if (runs.length > 0) {
+			const delegatedTokens = runs.reduce((sum, r) => sum + (r.usage ? r.usage.input + r.usage.output : 0), 0);
+			const label = runs.length === 1 ? (runs[0]?.subagentMode ?? "subagent") : "subagents";
+			const text = `◇${runs.length} ${label}${delegatedTokens > 0 ? ` ${formatTokens(delegatedTokens)}` : ""}`;
+			segs.push(theme.fg("dim", text));
+		}
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(segs.join(theme.fg("dim", " · ")), 1, 0));
+		this.ui.requestRender();
 	}
 
 	private async handleEvent(event: AgentSessionEvent): Promise<void> {
@@ -1948,6 +2040,10 @@ export class InteractiveMode {
 				// first start and clear the pending-retry gate now that it has resumed.
 				this.chime?.onTurnStart();
 				this.chimePendingRetry = false;
+				this.turnCostAnchor ??= {
+					totals: sumAssistantUsage(this.session.sessionManager.getEntries()),
+					at: Date.now(),
+				};
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -2005,7 +2101,7 @@ export class InteractiveMode {
 					// turn, drop any lingering bars/notices (e.g. an unavailable-index line)
 					// so they don't sit in the footer for the rest of the session.
 					startupProgress.clear();
-					this.chimeTurnAborted = false;
+					this.turnStopReason = undefined;
 					this.addMessageToChat(event.message);
 					this.messageQueue.updatePendingMessagesDisplay();
 					this.ui.requestRender();
@@ -2062,9 +2158,9 @@ export class InteractiveMode {
 			case "message_end":
 				if (event.message.role === "user") break;
 				if (event.message.role === "assistant") {
-					// Remember whether the turn's latest assistant message was user-aborted,
-					// so the completion chime stays silent when the user is clearly present.
-					this.chimeTurnAborted = event.message.stopReason === "aborted";
+					// Remember how the turn's latest assistant message ended, so the deferred
+					// settle can tell a clean finish from an abort/error.
+					this.turnStopReason = event.message.stopReason;
 				}
 				if (this.streamingComponent && event.message.role === "assistant") {
 					this.streamingMessage = event.message;
@@ -2168,10 +2264,10 @@ export class InteractiveMode {
 
 				// agent_end fires before the streaming flag clears and before the retry
 				// decision is made (both happen after this listener returns), so defer a
-				// tick and re-check: only chime once the session is genuinely idle and no
+				// tick and re-check: only settle once the session is genuinely idle and no
 				// retry is pending — otherwise a retried or auto-continued turn would ring
-				// a premature "it's done".
-				this.maybeChimeOnIdle();
+				// a premature "it's done" and print a partial cost line.
+				this.settleRequestOnIdle();
 
 				this.ui.requestRender();
 				break;
@@ -2738,7 +2834,7 @@ export class InteractiveMode {
 			this.editor.promptPrefix = "!";
 			this.editor.promptColor = theme.getBashModeBorderColor();
 		} else {
-			this.editor.promptPrefix = ">";
+			this.editor.promptPrefix = "❯";
 			this.editor.promptColor = (s: string) => s;
 		}
 		this.ui.requestRender();
@@ -2996,6 +3092,7 @@ export class InteractiveMode {
 					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					treeFilterMode: this.settingsManager.getTreeFilterMode(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
+					editorBorder: this.settingsManager.getEditorBorder(),
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
@@ -3164,6 +3261,13 @@ export class InteractiveMode {
 					onShowHardwareCursorChange: (enabled) => {
 						this.settingsManager.setShowHardwareCursor(enabled);
 						this.ui.setShowHardwareCursor(enabled);
+					},
+					onEditorBorderChange: (border) => {
+						this.settingsManager.setEditorBorder(border);
+						this.defaultEditor.setBorder(border);
+						if (this.editor !== this.defaultEditor && this.editor.setBorder !== undefined) {
+							this.editor.setBorder(border);
+						}
 					},
 					onEditorPaddingXChange: (padding) => {
 						this.settingsManager.setEditorPaddingX(padding);
@@ -3508,11 +3612,14 @@ export class InteractiveMode {
 			if (!themeResult.success) {
 				this.showError(`Failed to load theme "${themeName}": ${themeResult.error}\nFell back to dark theme.`);
 			}
+			const editorBorder = this.settingsManager.getEditorBorder();
 			const editorPaddingX = this.settingsManager.getEditorPaddingX();
 			const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
+			this.defaultEditor.setBorder(editorBorder);
 			this.defaultEditor.setPaddingX(editorPaddingX);
 			this.defaultEditor.setAutocompleteMaxVisible(autocompleteMaxVisible);
 			if (this.editor !== this.defaultEditor) {
+				this.editor.setBorder?.(editorBorder);
 				this.editor.setPaddingX?.(editorPaddingX);
 				this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
 			}

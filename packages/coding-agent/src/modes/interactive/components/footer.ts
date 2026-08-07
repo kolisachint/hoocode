@@ -1,5 +1,6 @@
 import { type Component, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
+import { sumAssistantUsage } from "../../../core/agent-session-stats.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import { formatTokens } from "../../../core/format-tokens.js";
 import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
@@ -130,22 +131,17 @@ export class FooterComponent implements Component {
 	render(width: number): string[] {
 		const state = this.session.state;
 
-		// Calculate cumulative usage from ALL session entries (not just post-compaction messages)
-		let totalInput = 0;
-		let totalOutput = 0;
-		let totalCacheRead = 0;
-		let totalCacheWrite = 0;
-		let totalCost = 0;
-
-		for (const entry of this.session.sessionManager.getEntries()) {
-			if (entry.type === "message" && entry.message.role === "assistant") {
-				totalInput += entry.message.usage.input;
-				totalOutput += entry.message.usage.output;
-				totalCacheRead += entry.message.usage.cacheRead;
-				totalCacheWrite += entry.message.usage.cacheWrite;
-				totalCost += entry.message.usage.cost.total;
-			}
-		}
+		// Cumulative usage across ALL session entries (not just post-compaction
+		// messages). Shares sumAssistantUsage with the per-request cost line the
+		// transcript prints at agent_end, so the footer total and that line are always
+		// derived from the same accounting.
+		const {
+			input: totalInput,
+			output: totalOutput,
+			cacheRead: totalCacheRead,
+			cacheWrite: totalCacheWrite,
+			cost: totalCost,
+		} = sumAssistantUsage(this.session.sessionManager.getEntries());
 
 		// Calculate context usage from session (handles compaction correctly).
 		// After compaction, tokens are unknown until the next LLM response.

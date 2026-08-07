@@ -69,7 +69,8 @@ export const DEFAULT_SETTINGS = {
 	},
 	doubleEscapeAction: "tree",
 	treeFilterMode: "default",
-	editorPaddingX: 0,
+	editorBorder: "box",
+	editorPaddingX: 1,
 	autocompleteMaxVisible: 5,
 	markdown: {
 		codeBlockIndent: "  ",

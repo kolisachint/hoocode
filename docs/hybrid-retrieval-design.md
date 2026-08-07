@@ -37,8 +37,8 @@ diagnostics off the token path, and an eval gate before any reranker.
   line matches with regex, globs, context lines — that doesn't map onto a
   ranked-retrieval interface. Lexical retrieval *inside* `search` uses grep
   as a backend anyway. Revisit full unification only with eval data.
-- **RRF with explicit `k = 60`**, rank-only, deterministic. Raw BM25/cosine
-  scores are retriever-local diagnostics, never fused.
+- **RRF with `k = 2` default** (eval-gated), rank-only, deterministic. Raw
+  BM25/cosine scores are retriever-local diagnostics, never fused.
 - **The real correctness risk is the grep→chunk adapter**, not the fusion
   math: map, collapse, re-rank, *then* fuse — and never silently drop hits
   from files the embedding index doesn't cover.
@@ -105,7 +105,7 @@ export interface FusedHit {
   rawScores: Partial<Record<RetrieverSource, number>>;
 }
 
-export function rrfFuse(lists: readonly RankedHit[][], k = 60): FusedHit[];
+export function rrfFuse(lists: readonly RankedHit[][], k = DEFAULT_RRF_K /* = 2 */): FusedHit[];
 ```
 
 Requirements (each caught in review of the first sketch):
@@ -181,7 +181,7 @@ Resolution rules:
 
 | Requested | Embed available | Resolved |
 |-----------|-----------------|----------|
-| `auto` | yes | `hybrid` — unless strong lexical signals (regex metacharacters, quoted strings, explicit paths) → `lexical` |
+| `auto` | yes | `hybrid` — unless strong lexical signals (regex metacharacters or quoted strings) → `lexical` |
 | `auto` | no | `lexical` |
 | `hybrid` / `semantic` | no | degrade to `lexical`, reason recorded in trace — **never throw** (unlike today's `semantic_search`) |
 | `lexical` | — | `lexical` |

@@ -85,17 +85,59 @@ function displayTitle(item: TodoWriteParams["todos"][number]): string {
 }
 
 /**
- * Current main-agent tasks, in stable creation order. Filters to root tasks the
- * main agent itself owns: no `source` (excludes "subagent"/MCP rows), no `agent`
- * (excludes delegated rows), and no `parentTaskId` (excludes merged child trees).
- * `taskOwnerId()` would fold MCP-sourced and delegated rows under "main", so
- * reconciling against it could overwrite or drop those rows when the TodoWrite
- * list is shorter than the combined count.
+ * A root task the main agent itself owns, i.e. a TodoWrite plan item: no
+ * `source` (excludes "subagent"/MCP rows), no `agent` (excludes delegated rows),
+ * and no `parentTaskId` (excludes merged child trees). `taskOwnerId()` would
+ * fold MCP-sourced and delegated rows under "main", so reconciling against it
+ * could overwrite or drop those rows when the TodoWrite list is shorter than the
+ * combined count.
  */
+function isMainPlanTask(task: Task): boolean {
+	return task.source === undefined && task.agent === undefined && task.parentTaskId === undefined;
+}
+
+/** Current main-agent plan tasks, in stable creation order. */
 function mainTasks(): Task[] {
-	return taskStore
-		.list()
-		.filter((t) => t.source === undefined && t.agent === undefined && t.parentTaskId === undefined);
+	return taskStore.list().filter(isMainPlanTask);
+}
+
+function isActive(task: Task): boolean {
+	return task.status === "pending" || task.status === "in_progress";
+}
+
+/**
+ * Settle plan items the model left pinned at `in_progress` when a request ends.
+ *
+ * TodoWrite is bookkeeping the model performs by hand, and even strong models
+ * routinely drop the final call that flips the last item to completed. Nothing
+ * else writes main-plan rows, so without this the panel would keep claiming the
+ * work is in flight until the next user message triggers `taskStore.reset()`.
+ * The request is over, so the row is wrong either way — settle it to the honest
+ * outcome instead of leaving it lying.
+ *
+ * Scope is deliberately narrow:
+ * - Only `in_progress` main-plan items. `pending` rows are left alone: "never
+ *   started" is already an accurate reading of an item the model skipped.
+ * - Only main-plan items. Subagent- and MCP-sourced rows settle through their
+ *   own lifecycles (subagent.ts, mcp-loader.ts) and must not be second-guessed
+ *   here.
+ * - Nothing settles while any delegated task is still pending/in_progress: a
+ *   subagent outliving the parent's agent_end is still working the plan, so its
+ *   plan item is genuinely in progress.
+ *
+ * Returns the number of tasks settled.
+ */
+export function settleDanglingMainTasks(outcome: Extract<TaskStatus, "done" | "cancelled">): number {
+	const all = taskStore.list();
+	if (all.some((t) => !isMainPlanTask(t) && isActive(t))) return 0;
+	const dangling = all.filter((t) => isMainPlanTask(t) && t.status === "in_progress");
+	if (dangling.length === 0) return 0;
+	taskStore.batch(() => {
+		for (const task of dangling) {
+			taskStore.update(task.id, { status: outcome });
+		}
+	});
+	return dangling.length;
 }
 
 /** Create the TodoWrite tool definition. Registered as a customTool when enabled. */

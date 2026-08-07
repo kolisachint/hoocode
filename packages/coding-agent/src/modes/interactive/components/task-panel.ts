@@ -6,7 +6,7 @@ import type { Task, TaskAgent, TaskAgentKind, TaskAgentState, TaskStatus } from 
 import { taskOwnerId, taskStore } from "../../../core/task-store.js";
 import type { ThemeColor } from "../theme/theme.js";
 import { agentColorFor, theme } from "../theme/theme.js";
-import { appKeyLabel, matchesAppKey, rawKeyHint } from "./keybinding-hints.js";
+import { appKeyLabel, formatKeyText, matchesAppKey, rawKeyHint } from "./keybinding-hints.js";
 
 const TASK_STATUS_ICON: Record<TaskStatus, string> = {
 	// Hollow = not started, matching the hollow-means-lighter logic of ◇ and the
@@ -40,18 +40,20 @@ const SELECTED_GLYPH = "▶︎";
  */
 const MCP_SOURCE_GLYPH = "⧉";
 
-/** Braille spinner frames + cadence, matched to the TUI Loader so the active
- * row animates in step. Every tick re-renders the whole component tree, so the
- * cadence is a direct tax on long sessions — 120ms stays smooth while cutting
- * a third of the render load the old 80ms cadence generated. */
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
-const SPINNER_INTERVAL_MS = 120;
+/**
+ * Cadence of the delegated-row run clock. The pane used to animate a braille
+ * spinner at 120ms, duplicating the transcript Loader's own spinner (same
+ * frames, independent timer, permanently out of phase) and re-rendering the
+ * whole component tree eight times a second. The in-progress glyph is now the
+ * static ◐ the design's glyph table specifies, and the only motion left is this
+ * clock — the same 1s tick the bash block's `Elapsed Ns` uses. It runs only
+ * while a subagent/MCP row is live, because those are the only rows that carry
+ * a clock at all.
+ */
+const RUN_CLOCK_INTERVAL_MS = 1000;
 
 /** A thin colored left rail groups the pane without a box, the way the design's `border-left` does. */
 const RAIL = "▎";
-
-/** Cells in the deterministic progress bar (matches the design's 14-cell track). */
-const PROGRESS_CELLS = 14;
 
 /**
  * How the same task list is presented:
@@ -74,6 +76,16 @@ function isMainTask(task: Task): boolean {
 	// "main", so check source directly), not owned by a role agent, and a forest
 	// root (not a child merged in from a subagent's subtree).
 	return task.source === undefined && task.agent === undefined && task.parentTaskId === undefined;
+}
+
+/**
+ * Delegated work: a dispatched subagent run or an MCP call. These are the only
+ * rows that carry a run clock and the only rows that ever report token usage —
+ * both need an attribution boundary, and a TodoWrite plan item has none (see
+ * taskElapsedSecs, and note that todo.ts never writes `usage`).
+ */
+function isDelegated(task: Task): boolean {
+	return task.source === "subagent" || task.source === "mcp";
 }
 
 /**
@@ -123,16 +135,15 @@ const GROUP_INDENT_PLAIN = "│ ";
 /** Overall pane state, derived from the task statuses. Drives the rail color + header stamp. */
 type PanelState = "working" | "reviewed" | "stopped";
 
-interface StatePresentation {
-	readonly icon: string;
-	readonly label: string;
-	readonly color: "warning" | "success" | "error";
-}
-
-const STATE_PRESENTATION: Record<PanelState, StatePresentation> = {
-	working: { icon: "◐", label: "working", color: "warning" },
-	reviewed: { icon: "✓", label: "reviewed", color: "success" },
-	stopped: { icon: "✗", label: "stopped", color: "error" },
+/**
+ * Rail color per panel state. State used to be encoded five times over — rail,
+ * stamp glyph, stamp word, progress-bar fill and done/total — so the stamp and
+ * the bar are gone and the rail is the single channel.
+ */
+const PANEL_STATE_COLOR: Record<PanelState, "warning" | "success" | "error"> = {
+	working: "warning",
+	reviewed: "success",
+	stopped: "error",
 };
 
 function panelState(tasks: readonly Task[]): PanelState {
@@ -161,31 +172,18 @@ function taskStatusColor(status: TaskStatus): "dim" | "warning" | "success" | "e
  * span; a task still in progress is measured against the clock so its elapsed
  * time advances while it runs (updatedAt barely moves during a run, which used
  * to freeze the display at ~0s until completion).
+ *
+ * Only meaningful for delegated rows, and only they call it. A TodoWrite plan
+ * item shares its createdAt with every other item in the plan — the tool creates
+ * the whole list in one taskStore.batch() — so this would report the age of the
+ * PLAN, not of the task: item #3 would include all the time spent on #1 and #2,
+ * and the numbers would read as an ascending series of per-item durations that
+ * are in fact cumulative. A dispatched run's createdAt is its dispatch time, so
+ * its clock is real.
  */
 function taskElapsedSecs(task: Task, now: number = Date.now()): number {
 	const end = task.status === "in_progress" ? now : task.updatedAt;
 	return Math.max(0, (end - task.createdAt) / 1000);
-}
-
-/**
- * Wall-clock span of the whole visible batch: earliest creation → now (while
- * anything is still running) or the latest settle time. NOT the sum of
- * per-task spans — summing made the header clock tick at 2× with two
- * concurrent subagents and 3× with three, a nonsense "double time" display.
- * Per-run timers live on the individual rows.
- */
-function turnElapsedSecs(tasks: readonly Task[], now: number = Date.now()): number {
-	if (tasks.length === 0) return 0;
-	let earliest = Number.POSITIVE_INFINITY;
-	let latestEnd = 0;
-	let anyRunning = false;
-	for (const task of tasks) {
-		earliest = Math.min(earliest, task.createdAt);
-		if (task.status === "in_progress") anyRunning = true;
-		else latestEnd = Math.max(latestEnd, task.updatedAt);
-	}
-	const end = anyRunning ? now : latestEnd;
-	return Math.max(0, (end - earliest) / 1000);
 }
 
 /** The agent-type key a roster entry colors by: "explore#2" → "explore". */
@@ -194,151 +192,81 @@ function agentTypeOfName(name: string): string {
 	return idx > 0 ? name.slice(0, idx) : name;
 }
 
-/** Sum the token + cost usage reported by the tasks shown this turn. */
-function sumTurnUsage(tasks: readonly Task[]): { input: number; output: number; cost: number } | null {
-	let input = 0;
-	let output = 0;
-	let cost = 0;
-	for (const task of tasks) {
-		if (!task.usage) continue;
-		input += task.usage.input;
-		output += task.usage.output;
-		cost += task.usage.cost;
-	}
-	if (input === 0 && output === 0 && cost === 0) return null;
-	return { input, output, cost };
-}
-
 /**
- * Deterministic block-glyph progress bar: a heavy run (━) for the completed
- * fraction over a dim track. In-progress tasks count as half, so the bar moves
- * the moment work starts. Fraction is the only input — no animation, no guess.
+ * Ledger header — one tab per lens that has content, each carrying that lens's
+ * own done/total. The counts of the lenses you are NOT looking at stay visible,
+ * so a `subagents 0/2` tab reports unfinished delegated work while you read the
+ * plan.
+ *
+ * The selected tab fills with `selectedBg` only while its lens has live work,
+ * and drops to a flat bold-accent label once everything settles — the fill means
+ * "running", not merely "here". Padding cells are identical filled or not, so
+ * cycling never shifts the strip. `dim` muddies against `selectedBg` (#666666 on
+ * #3a3a4a), so a selected tab's count steps up to `muted`.
+ *
+ * The header IS the switcher: with a single lens there is nothing to switch to
+ * and the pane renders rows only (see render()). The navigable teams roster is
+ * the one exception and keeps its anchor.
  */
-function progressBar(done: number, active: number, total: number): { plain: string; styled: string } {
-	const ratio = total > 0 ? Math.max(0, Math.min(1, (done + active * 0.5) / total)) : 0;
-	const filled = Math.round(ratio * PROGRESS_CELLS);
-	const fill = "━".repeat(filled);
-	const track = "━".repeat(PROGRESS_CELLS - filled);
-	return {
-		plain: fill + track,
-		styled: theme.fg("success", fill) + theme.fg("dim", track),
-	};
-}
-
-/**
- * View switcher rendered at the right edge of the ledger header: the labels
- * of the lenses that have content joined by `·`, the active one in bold
- * accent. Hidden entirely when only one lens is available. Purely an
- * indicator in the TUI — the bound key cycles it (see app.tasks.cycleView).
- */
-function formatViewSwitcher(
-	view: TaskPanelView,
-	available: readonly TaskPanelView[],
-): { plain: string; styled: string } {
-	if (available.length < 2) return { plain: "", styled: "" };
-	const plain = available.map((v) => VIEW_LABEL[v]).join(" · ");
-	const styled = available
-		.map((v) => (v === view ? theme.bold(theme.fg("accent", VIEW_LABEL[v])) : theme.fg("dim", VIEW_LABEL[v])))
-		.join(theme.fg("dim", " · "));
-	return { plain, styled };
-}
-
-/**
- * Ledger header: a state stamp (◐ working / ✓ reviewed / ✗ stopped) + a
- * deterministic progress bar and done/total count on the left, and the per-turn
- * token + elapsed + cost delta (summed across the tasks below) plus the view
- * switcher on the right.
- */
-function formatHeader(
+function formatLensTabs(
 	tasks: readonly Task[],
+	agents: readonly TaskAgent[],
 	width: number,
-	state: PanelState,
-	totalSecs: number,
 	view: TaskPanelView,
-	available: readonly TaskPanelView[],
+	tabViews: readonly TaskPanelView[],
+	showCycleHint: boolean,
 ): string {
-	const total = tasks.length;
-	const done = tasks.filter((t) => t.status === "done").length;
-	const active = tasks.filter((t) => t.status === "in_progress").length;
+	const tabs = tabViews.map((v) => {
+		const lensTasks = filterTasksForLens(tasks, agents, v);
+		const done = lensTasks.filter((t) => t.status === "done").length;
+		const label = VIEW_LABEL[v];
+		const count = `${done}/${lensTasks.length}`;
+		const plain = ` ${label} ${count} `;
+		if (v !== view) return { plain, styled: theme.fg("dim", plain) };
+		const body = ` ${theme.bold(theme.fg("accent", label))} ${theme.fg("muted", count)} `;
+		const live = lensTasks.some((t) => t.status === "in_progress");
+		return { plain, styled: live ? theme.bg("selectedBg", body) : body };
+	});
 
-	const { icon, label, color } = STATE_PRESENTATION[state];
-	const stampPlain = `${icon} ${label.toUpperCase()}`;
-	const stamp = `${theme.fg(color, icon)} ${theme.bold(theme.fg(color, label.toUpperCase()))}`;
+	const selected = tabs[tabViews.indexOf(view)] ?? tabs[0];
+	// Joined without a separator: each tab already carries a pad cell on both
+	// sides, so neighbours sit two cells apart and two fills never touch.
+	const strip = {
+		plain: tabs.map((t) => t.plain).join(""),
+		styled: tabs.map((t) => t.styled).join(""),
+	};
 
-	const bar = progressBar(done, active, total);
-	const countPlain = `${done}/${total}`;
-	const count = theme.fg("muted", `${done}`) + theme.fg("dim", "/") + theme.fg("muted", `${total}`);
-
-	// Left cluster has a full form (stamp · bar · count) and a compact fallback
-	// (stamp · count) that drops the bar when the terminal is too narrow.
-	const leftFullPlain = `${stampPlain}  ${bar.plain} ${countPlain}`;
-	const leftFull = `${stamp}  ${bar.styled} ${count}`;
-	const leftMinPlain = `${stampPlain} ${countPlain}`;
-	const leftMin = `${stamp} ${count}`;
-
-	const turn = sumTurnUsage(tasks);
-	let turnPlain = "";
-	let turnText = "";
-	if (turn) {
-		const inTok = formatTokens(turn.input);
-		const outTok = formatTokens(turn.output);
-		const elapsed = formatDurationSecs(totalSecs);
-		const showCost = turn.cost > 0;
-		const costStr = showCost ? `$${turn.cost.toFixed(3)}` : "";
-		turnPlain = `turn ↑${inTok} ↓${outTok} · ${elapsed}${showCost ? ` · ${costStr}` : ""}`;
-		// Turn delta: muted framing, numbers one step brighter (bold), separators dim.
-		turnText =
-			theme.fg("muted", "turn ↑") +
-			theme.bold(inTok) +
-			theme.fg("muted", " ↓") +
-			theme.bold(outTok) +
-			theme.fg("dim", " · ") +
-			theme.fg("muted", elapsed) +
-			(showCost ? theme.fg("dim", " · ") + theme.bold(costStr) : "");
+	let hintPlain = "";
+	let hintStyled = "";
+	if (showCycleHint) {
+		const key = appKeyLabel("app.tasks.cycleView");
+		hintPlain = `${formatKeyText(key)} cycle`;
+		hintStyled = rawKeyHint(key, "cycle");
 	}
 
-	// Right cluster: turn delta, then the view switcher at the far edge. The
-	// switcher is the first thing dropped when the terminal narrows; the turn
-	// delta next; the stamp/count survive to the end. Either piece may be
-	// absent (no usage reported / only one lens available).
-	const switcher = formatViewSwitcher(view, available);
-	const rightVariants: Array<{ plain: string; styled: string }> = [];
-	if (turnPlain && switcher.plain) {
-		rightVariants.push({
-			plain: `${turnPlain}  ${switcher.plain}`,
-			styled: `${turnText}  ${switcher.styled}`,
-		});
+	// Narrowing order: drop the cycle hint, then the unselected tabs. Each tab
+	// closes its own background, so a variant is never cut mid-escape; only the
+	// final unstyled fallback truncates. This inverts the old priority, where the
+	// switcher was the FIRST thing dropped — the pane's only navigation affordance
+	// used to lose the line to a token counter.
+	if (hintPlain && visibleWidth(strip.plain) + 2 + visibleWidth(hintPlain) <= width) {
+		const pad = width - visibleWidth(strip.plain) - visibleWidth(hintPlain);
+		return strip.styled + " ".repeat(pad) + hintStyled;
 	}
-	if (turnPlain) rightVariants.push({ plain: turnPlain, styled: turnText });
-	else if (switcher.plain) rightVariants.push(switcher);
-
-	for (const right of rightVariants) {
-		if (visibleWidth(leftFullPlain) + 2 + visibleWidth(right.plain) <= width) {
-			const pad = Math.max(2, width - visibleWidth(leftFullPlain) - visibleWidth(right.plain));
-			return leftFull + " ".repeat(pad) + right.styled;
-		}
-		if (visibleWidth(leftMinPlain) + 2 + visibleWidth(right.plain) <= width) {
-			const pad = Math.max(2, width - visibleWidth(leftMinPlain) - visibleWidth(right.plain));
-			return leftMin + " ".repeat(pad) + right.styled;
+	for (const variant of [strip, selected]) {
+		if (variant && visibleWidth(variant.plain) <= width) {
+			return variant.styled + " ".repeat(width - visibleWidth(variant.plain));
 		}
 	}
-	if (visibleWidth(leftFullPlain) <= width) {
-		return leftFull + " ".repeat(width - visibleWidth(leftFullPlain));
-	}
-	return truncateToWidth(leftMin, width, "…");
+	return truncateToWidth(selected?.plain ?? "", width, "…");
 }
 
 function formatTaskLine(
 	task: Task,
 	width: number,
-	frame: number,
 	options: { grouped?: boolean; owner?: TaskAgent; treePrefix?: string } = {},
 ): string {
-	const isProgress = task.status === "in_progress";
-	const iconGlyph = isProgress
-		? (SPINNER_FRAMES[frame] ?? TASK_STATUS_ICON.in_progress)
-		: TASK_STATUS_ICON[task.status];
-	const icon = theme.fg(taskStatusColor(task.status), iconGlyph);
+	const icon = theme.fg(taskStatusColor(task.status), TASK_STATUS_ICON[task.status]);
 
 	// In grouped views the group header already carries the row's origin, so the
 	// owner glyph and tag are suppressed; the rows sit on a faint indent guide.
@@ -409,8 +337,12 @@ function formatTaskLine(
 			styledTitle = title;
 	}
 
-	// Right column: settled rows carry their token usage; the
-	// active row reads `running…`, pending rows read `queued`.
+	// Right column: settled rows carry their token usage; an active row carries the
+	// owning agent's live tool activity (fed by the pool's task_progress events) so
+	// a delegated row reads "⋯ grep" rather than looking stuck. Only delegated rows
+	// add a run clock — see taskElapsedSecs for why a plan item has no honest one.
+	// Pending and cancelled rows say nothing: ○ and a struck ⊘ title already do,
+	// and "queued"/"cancelled" only repeated the glyph in words.
 	let rightPlain = "";
 	let rightStyled = "";
 	if (task.status === "done" || task.status === "failed") {
@@ -423,26 +355,19 @@ function formatTaskLine(
 			rightPlain = tokenText;
 			rightStyled = theme.fg("muted", tokenText);
 		}
-	} else if (task.status === "cancelled") {
-		rightPlain = "cancelled";
-		rightStyled = theme.fg("dim", rightPlain);
 	} else if (task.status === "in_progress") {
-		// Surface the owning agent's live activity (the tool it's currently running,
-		// fed by the pool's task_progress events) so a delegated row reads "⋯ grep"
-		// rather than a static "running…" — the difference between looking busy and
-		// looking stuck. Falls back to "running…" between tools (activity cleared) or
-		// when no owner is resolved. Each running row carries its own live timer —
-		// the per-run clock the header (a single wall-clock span) deliberately
-		// doesn't show. Ticks smoothly because active rows re-render per spinner
-		// frame anyway.
-		const liveActivity = options.owner?.activity;
-		const runFor = formatDurationSecs(taskElapsedSecs(task));
-		rightPlain = `${liveActivity ? `⋯ ${liveActivity}` : "running…"} · ${runFor}`;
-		rightStyled =
-			theme.fg("warning", liveActivity ? `⋯ ${liveActivity}` : "running…") + theme.fg("dim", ` · ${runFor}`);
-	} else if (task.status === "pending") {
-		rightPlain = "queued";
-		rightStyled = theme.fg("dim", rightPlain);
+		const activity = options.owner?.activity ? `⋯ ${options.owner.activity}` : "";
+		const runFor = isDelegated(task) ? formatDurationSecs(taskElapsedSecs(task)) : "";
+		if (activity && runFor) {
+			rightPlain = `${activity} · ${runFor}`;
+			rightStyled = theme.fg("warning", activity) + theme.fg("dim", ` · ${runFor}`);
+		} else if (activity) {
+			rightPlain = activity;
+			rightStyled = theme.fg("warning", activity);
+		} else if (runFor) {
+			rightPlain = runFor;
+			rightStyled = theme.fg("dim", runFor);
+		}
 	}
 
 	// A warning note (e.g. inherited-model fallback, exhaustion skip) takes over the
@@ -704,10 +629,12 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *
  * - A state-colored left rail groups the pane (working=warning, reviewed=success,
  *   stopped=error) without drawing a box.
- * - A ledger header tops the list: a state stamp + deterministic progress bar +
- *   done/total count on the left, the per-turn token/elapsed/cost delta on the right.
+ * - A tab strip tops the list — one tab per lens with content, each carrying its
+ *   own done/total — but only when there is more than one lens to switch to (or
+ *   the navigable teams roster is showing). A single-lens pane is rows only.
  * - Shows all tasks with all statuses (pending / in_progress / done / failed).
- *   The active row animates a braille spinner; pending rows read `queued`.
+ *   The active row carries the static ◐ of the design's glyph table; only
+ *   delegated rows animate, and only their 1s run clock.
  * - A single-cell owner glyph (◇ subagent / ▸ team role / ⧉ MCP) sits before
  *   the id where it disambiguates; main-owned rows carry no glyph in the flat
  *   lens (the rail already attributes the pane to the main agent). A text
@@ -740,17 +667,16 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  */
 export class TaskPanelComponent implements Component, Focusable {
 	private readonly ui: TUI | null;
-	private frame = 0;
-	private animationTimer: ReturnType<typeof setInterval> | null = null;
+	private runClockTimer: ReturnType<typeof setInterval> | null = null;
 	private view: TaskPanelView = "flat";
 	private disposed = false;
 
-	// Render memoization. The spinner re-renders the whole pane every 80ms, but
-	// between store mutations only the in-progress rows actually change (spinner
-	// frame + live activity). Settled/pending row strings and derived structures
-	// (agentById, the subagents tree walk) are cached and invalidated by the
-	// store's mutation version + pane width, so a frame tick reuses them instead
-	// of rebuilding every string.
+	// Render memoization. Row strings and derived structures (agentById, the
+	// subagents tree walk) are cached and invalidated by the store's mutation
+	// version + pane width. Live tool activity arrives via patchAgent, which bumps
+	// that version, so an in-progress row is refreshed by the same mechanism as
+	// everything else — only the delegated run clock moves between mutations and
+	// has to bypass the cache (see taskLine).
 	private memoVersion = -1;
 	private memoWidth = -1;
 	private lineMemo = new Map<string, string>();
@@ -792,23 +718,25 @@ export class TaskPanelComponent implements Component, Focusable {
 	}
 
 	/**
-	 * formatTaskLine with caching for rows that don't animate. In-progress rows
-	 * depend on the spinner frame and the owner's live activity, so they render
-	 * fresh every frame; everything else is stable until the next store mutation
-	 * or width change (handled by syncMemo).
+	 * formatTaskLine with caching for rows that are stable between store mutations.
+	 * Only a live delegated row is not: its run clock advances against Date.now()
+	 * with no mutation to invalidate the entry, so it renders fresh on every tick.
+	 * Everything else — including a live main-plan row, whose activity text arrives
+	 * through a store mutation — is cached until the next mutation or width change
+	 * (handled by syncMemo).
 	 */
 	private taskLine(
 		task: Task,
 		width: number,
 		options: { grouped?: boolean; owner?: TaskAgent; treePrefix?: string } = {},
 	): string {
-		if (task.status === "in_progress") {
-			return formatTaskLine(task, width, this.frame, options);
+		if (task.status === "in_progress" && isDelegated(task)) {
+			return formatTaskLine(task, width, options);
 		}
 		const key = `${task.id}:${options.grouped ? 1 : 0}:${options.treePrefix ?? ""}:${options.owner?.kind ?? ""}`;
 		const hit = this.lineMemo.get(key);
 		if (hit !== undefined) return hit;
-		const line = formatTaskLine(task, width, this.frame, options);
+		const line = formatTaskLine(task, width, options);
 		this.lineMemo.set(key, line);
 		return line;
 	}
@@ -895,34 +823,36 @@ export class TaskPanelComponent implements Component, Focusable {
 		return this.view;
 	}
 
-	/** Run the spinner timer only while a task is active, ticking re-renders. */
-	private ensureAnimation(active: boolean): void {
+	/**
+	 * Tick the run clock only while a delegated row is live. Nothing else in the
+	 * pane moves, so with no subagent or MCP call running there is no timer at all
+	 * — a stale in-progress plan item can no longer pin the process to a render
+	 * loop the way the old 120ms spinner did.
+	 */
+	private ensureRunClock(active: boolean): void {
 		if (this.disposed) {
-			if (this.animationTimer) {
-				clearInterval(this.animationTimer);
-				this.animationTimer = null;
-				this.frame = 0;
+			if (this.runClockTimer) {
+				clearInterval(this.runClockTimer);
+				this.runClockTimer = null;
 			}
 			return;
 		}
-		if (active && this.ui && !this.animationTimer) {
-			this.animationTimer = setInterval(() => {
-				this.frame = (this.frame + 1) % SPINNER_FRAMES.length;
+		if (active && this.ui && !this.runClockTimer) {
+			this.runClockTimer = setInterval(() => {
 				this.ui?.requestRender();
-			}, SPINNER_INTERVAL_MS);
-			this.animationTimer.unref?.();
-		} else if (!active && this.animationTimer) {
-			clearInterval(this.animationTimer);
-			this.animationTimer = null;
-			this.frame = 0;
+			}, RUN_CLOCK_INTERVAL_MS);
+			this.runClockTimer.unref?.();
+		} else if (!active && this.runClockTimer) {
+			clearInterval(this.runClockTimer);
+			this.runClockTimer = null;
 		}
 	}
 
-	/** Stop the spinner timer. Call on teardown. */
+	/** Stop the run clock. Call on teardown. */
 	dispose(): void {
-		if (this.animationTimer) {
-			clearInterval(this.animationTimer);
-			this.animationTimer = null;
+		if (this.runClockTimer) {
+			clearInterval(this.runClockTimer);
+			this.runClockTimer = null;
 		}
 		this.disposed = true;
 	}
@@ -953,7 +883,7 @@ export class TaskPanelComponent implements Component, Focusable {
 		const hasRoleRoster = view === "teams" && allAgents.some((a) => a.kind === "role");
 
 		if (tasks.length === 0 && !hasRoleRoster) {
-			this.ensureAnimation(false);
+			this.ensureRunClock(false);
 			return [];
 		}
 
@@ -967,16 +897,22 @@ export class TaskPanelComponent implements Component, Focusable {
 				: view === "flat"
 					? this.flatRows(tasks).map((row) => row.task)
 					: filterTasksForLens(tasks, allAgents, view);
-		const hasActive = lensTasks.some((t) => t.status === "in_progress");
-		this.ensureAnimation(hasActive);
+		this.ensureRunClock(lensTasks.some((t) => t.status === "in_progress" && isDelegated(t)));
 
-		const state = panelState(lensTasks);
-		const totalSecs = turnElapsedSecs(lensTasks);
-		const railColor = STATE_PRESENTATION[state].color;
+		const railColor = PANEL_STATE_COLOR[panelState(lensTasks)];
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
 
-		const lines: string[] = [gutter + formatHeader(lensTasks, inner, state, totalSecs, view, available)];
+		// The header IS the switcher, so a single-lens pane renders rows only. The
+		// teams roster is the exception: it is navigable (app.team.focus), so it keeps
+		// an anchor even alone. The cycle hint is suppressed when there is nothing to
+		// cycle to, and in team focus, which locks the view to teams.
+		const lines: string[] = [];
+		if (available.length >= 2 || view === "teams") {
+			const tabViews = available.includes(view) ? available : [...available, view];
+			const showCycleHint = available.length >= 2 && !this.focused;
+			lines.push(gutter + formatLensTabs(tasks, allAgents, inner, view, tabViews, showCycleHint));
+		}
 
 		if (view === "flat") {
 			// The main agent's TodoWrite plan, with each dispatched run nested under

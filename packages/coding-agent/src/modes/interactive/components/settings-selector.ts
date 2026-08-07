@@ -83,6 +83,7 @@ export interface SettingsConfig {
 	doubleEscapeAction: "fork" | "tree" | "none";
 	treeFilterMode: "default" | "no-tools" | "user-only" | "labeled-only" | "all";
 	showHardwareCursor: boolean;
+	editorBorder: "rule" | "box";
 	editorPaddingX: number;
 	autocompleteMaxVisible: number;
 	quietStartup: boolean;
@@ -119,6 +120,7 @@ export interface SettingsCallbacks {
 	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onTreeFilterModeChange: (mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
+	onEditorBorderChange: (border: "rule" | "box") => void;
 	onEditorPaddingXChange: (padding: number) => void;
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
@@ -736,9 +738,19 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Editor padding toggle (insert after show-hardware-cursor)
+		// Editor border toggle (insert after show-hardware-cursor)
 		const hardwareCursorIndex = items.findIndex((item) => item.id === "show-hardware-cursor");
 		items.splice(hardwareCursorIndex + 1, 0, {
+			id: "editor-border",
+			label: "Editor border",
+			description: "Box draws side borders, rule draws horizontal lines only",
+			currentValue: config.editorBorder,
+			values: ["box", "rule"],
+		});
+
+		// Editor padding toggle (insert after editor-border)
+		const editorBorderIndex = items.findIndex((item) => item.id === "editor-border");
+		items.splice(editorBorderIndex + 1, 0, {
 			id: "editor-padding",
 			label: "Editor padding",
 			description: "Horizontal padding for input editor (0-3)",
@@ -917,6 +929,9 @@ export class SettingsSelectorComponent extends Container {
 				case "show-hardware-cursor":
 					callbacks.onShowHardwareCursorChange(newValue === "true");
 					break;
+				case "editor-border":
+					callbacks.onEditorBorderChange(newValue as "rule" | "box");
+					break;
 				case "editor-padding":
 					callbacks.onEditorPaddingXChange(parseInt(newValue, 10));
 					break;
@@ -966,11 +981,12 @@ export class SettingsSelectorComponent extends Container {
 			categoryRow(
 				"cat-interface",
 				"Interface",
-				"Appearance and editor: theme, thinking visibility, cursor, padding, autocomplete, terminal.",
+				"Appearance and editor: theme, thinking visibility, cursor, border, padding, autocomplete, terminal.",
 				[
 					"theme",
 					"hide-thinking",
 					"show-hardware-cursor",
+					"editor-border",
 					"editor-padding",
 					"autocomplete-max-visible",
 					"clear-on-shrink",

@@ -179,7 +179,8 @@ export interface Settings {
 	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening /tree
 	thinkingBudgets?: ThinkingBudgetsSettings; // Custom token budgets for thinking levels
 	thinkingDisplay?: "summarized" | "omitted"; // How adaptive-thinking models return thinking content. Opus 4.8 defaults to "omitted" (faster tool use); set "summarized" to surface thinking text.
-	editorPaddingX?: number; // Horizontal padding for input editor (default: 0)
+	editorBorder?: "rule" | "box"; // Border drawn around the input editor (default: "box")
+	editorPaddingX?: number; // Horizontal padding for input editor (default: 1)
 	autocompleteMaxVisible?: number; // Max visible items in autocomplete dropdown (default: 5)
 	showHardwareCursor?: boolean; // Show terminal cursor while still positioning it for IME
 	markdown?: MarkdownSettings;

@@ -2,6 +2,64 @@
 
 ## [Unreleased]
 
+### Added
+
+- The input editor is now a bordered box by default, replacing the two horizontal
+  rules. The rules were ambiguous at more than one line: a wrapped prompt read as
+  loose text between two dividers, with nothing tying the continuation lines to the
+  input. Side borders make the field's extent explicit, and the scroll indicators
+  now close (`┌─── ↑ 3 more ───┐`) instead of reading as section rules. The box
+  costs two columns of text width, so `editorBorder: "rule"` (also under
+  `/settings` → Interface → Editor border) restores the previous rendering.
+  `editorPaddingX` now defaults to `1` to match.
+- The input prompt is now `❯` (U+276F) instead of `>`. Inside the box the ASCII
+  `>` read as a quote marker rather than a prompt; the ornament is unambiguous,
+  is one cell wide in every terminal (it is not East Asian ambiguous and has no
+  emoji presentation, so it cannot desync the box borders), and is the glyph most
+  shell prompts already use. Bash mode keeps its green `!`.
+
+- Each request now ends with its own cost in the transcript (`↑3.9k ↓450 · 1.1s ·
+  $0.015 · ◇1 explore 12.4k`). This is where a retrospective number belongs: the
+  task panel is a live instrument that resets on the next message, and the footer
+  carries cumulative session vitals, so neither could answer what a given request
+  cost after the fact. Delegated runs are reported separately because subagents
+  bill against their own sessions.
+
+### Changed
+
+- The task panel header is now a lens tab strip on the left, replacing the state
+  stamp, progress bar and turn delta on the right. Each tab carries its own
+  `done/total`, so unfinished work in the lens you are *not* viewing stays visible
+  (`tasks 1/3  subagents 0/2`), and the selected tab fills only while its lens has
+  live work. With a single lens there is nothing to switch to and the header
+  disappears entirely — a plain TodoWrite session is now just its rows. The cycle
+  hint reads from the configured keybinding rather than a hardcoded key, and the
+  tab strip now survives narrowing instead of being the first thing dropped.
+- An in-progress task renders the static `◐` its glyph table specifies. The panel
+  used to animate a braille spinner that duplicated the transcript loader's own
+  spinner — same frames, independent timer, permanently out of phase — and
+  re-rendered the whole component tree eight times a second. The only motion left
+  is a 1s run clock on delegated rows, and it runs only while one is live.
+- Rows no longer restate their glyph in words (`queued`, `running…`, `cancelled`).
+
+### Fixed
+
+- TodoWrite rows no longer sit at `in_progress` after the request that owned them
+  has ended. The model marks its own plan items and routinely drops the final call
+  that completes the last one, so the panel kept claiming live work until the next
+  user message wiped it. Dangling items now settle when the agent goes idle: a
+  clean stop means the model believed it was finished, so they settle to done; an
+  abort, error or length cutoff settles them to cancelled (`⊘`) rather than
+  fabricating a completion. Only main-plan items are touched, and nothing settles
+  while a subagent is still running or a follow-up message is queued.
+- A live TodoWrite row no longer shows an elapsed time. Every item in a plan shares
+  a `createdAt` (the tool creates the whole list in one batch), so the timer was
+  reporting the age of the *plan*, not of the task — item #3 included all the time
+  spent on #1 and #2. Delegated rows keep their clock, where `createdAt` is the
+  dispatch time and the number is real.
+- The footer and the new per-request cost line share one usage sum, so they can no
+  longer disagree about what a session has spent.
+
 ## [0.4.157] - 2026-08-07
 
 ### Changed

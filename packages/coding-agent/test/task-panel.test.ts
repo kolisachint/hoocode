@@ -1,8 +1,9 @@
 import { visibleWidth } from "@kolisachint/hoocode-tui";
 import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { taskStore } from "../src/core/task-store.js";
+import { appKeyLabel } from "../src/modes/interactive/components/keybinding-hints.js";
 import { TaskPanelComponent } from "../src/modes/interactive/components/task-panel.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 import { createHarness, type Harness } from "./suite/harness.js";
 
 describe("task panel rendering", () => {
@@ -47,7 +48,9 @@ describe("task panel rendering", () => {
 		taskStore.update(plain.id, { status: "in_progress" });
 
 		const lines = renderPanel();
-		expect(lines.length).toBe(4); // 3 tasks + 1 header
+		// Only the flat lens has content, so there is nothing to switch to and the
+		// header (which IS the switcher) collapses: 3 rows, no header.
+		expect(lines.length).toBe(3);
 
 		const text = lines.join("\n");
 		expect(text).toContain("SSE watch endpoint");
@@ -56,16 +59,17 @@ describe("task panel rendering", () => {
 		// In the flat view, the origin tag precedes the title (design: .mode tag).
 		expect(text).toContain("[explore]");
 		expect(text).toContain("[edit]");
-		// Active work shows the WORKING stamp (◐) and a hollow pending marker (○ —
-		// ● stays exclusive to the chat's tool status dot).
+		// In-progress is the static ◐ of the design's glyph table (never a spinner
+		// frame); pending is a hollow ○ — ● stays exclusive to the chat's tool dot.
 		expect(text).toContain("◐");
 		expect(text).toContain("○");
 		expect(text).not.toContain("●");
-		// A pending task is tagged queued.
-		expect(text).toContain("queued");
-		// The active row reads running…. Main-owned rows carry NO owner glyph in the
-		// flat lens (the rail already attributes the pane to the main agent).
-		expect(text).toContain("running…");
+		expect(text).not.toContain("⠋");
+		// The glyphs carry the status, so no row restates it in words.
+		expect(text).not.toContain("queued");
+		expect(text).not.toContain("running…");
+		// Main-owned rows carry NO owner glyph in the flat lens (the rail already
+		// attributes the pane to the main agent).
 		expect(text).not.toContain("◆");
 	});
 
@@ -147,13 +151,13 @@ describe("task panel rendering", () => {
 		const row = renderPanel()
 			.map(stripAnsi)
 			.find((l) => l.includes("trace the auth flow"));
-		// The live tool the subagent is running replaces the static "running…", so the
-		// row reads as busy rather than stuck.
+		// The live tool the subagent is running keeps the row reading as busy rather
+		// than stuck, and a delegated row also carries its own run clock.
 		expect(row).toContain("⋯ grep");
-		expect(row).not.toContain("running…");
+		expect(row).toMatch(/⋯ grep · \d/);
 	});
 
-	test("an in-progress subagent row falls back to running… when the owner is idle between tools", () => {
+	test("an idle in-progress subagent row keeps its run clock so a wedged run is visible", () => {
 		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent", state: "running", activity: "" });
 		const sub = taskStore.create("trace the auth flow", {
 			source: "subagent",
@@ -166,8 +170,24 @@ describe("task panel rendering", () => {
 		const row = renderPanel()
 			.map(stripAnsi)
 			.find((l) => l.includes("trace the auth flow"));
-		expect(row).toContain("running…");
+		// No activity to show, but the clock stays: it is the only signal that a
+		// subagent which stopped reporting tools is still nominally running.
+		expect(row).toMatch(/\d+(\.\d+)?s\s*$/);
 		expect(row).not.toContain("⋯");
+		expect(row).not.toContain("running…");
+	});
+
+	test("an in-progress main-plan row carries no run clock", () => {
+		const t = taskStore.create("Patch the warning threshold");
+		taskStore.update(t.id, { status: "in_progress" });
+
+		const row = renderPanel()
+			.map(stripAnsi)
+			.find((l) => l.includes("Patch the warning threshold")) as string;
+		// A TodoWrite item shares its createdAt with every other item in the plan, so
+		// an elapsed time here would report the age of the PLAN, not of the task.
+		expect(row).not.toMatch(/\ds/);
+		expect(row.trimEnd()).toMatch(/threshold$/);
 	});
 
 	test("title column stays aligned across single- and double-digit ids", () => {
@@ -196,7 +216,7 @@ describe("task panel rendering", () => {
 		taskStore.update(failedTask.id, { status: "failed" });
 
 		const lines = renderPanel();
-		expect(lines.length).toBe(4); // 3 tasks + 1 header
+		expect(lines.length).toBe(3); // 3 rows, single lens so no header
 
 		const text = lines.join("\n");
 		expect(text).toContain("Still running");
@@ -254,74 +274,71 @@ describe("task panel rendering", () => {
 		const lines = renderPanel();
 		const row = lines.find((l) => l.includes("Investigate flaky test"));
 		expect(row).toBeDefined();
-		// 9000 + 1100 = 10100 → "10k". Elapsed is summed in the header, not per row.
+		// 9000 + 1100 = 10100 → "10k".
 		expect(row).toContain("10k");
 		// The per-row stamp uses a single combined total, not split ↑/↓ arrows.
 		expect(row).not.toContain("↑");
 		expect(row).not.toContain("↓");
 	});
 
-	test("header shows the per-turn token and cost delta summed across tasks", () => {
-		const a = taskStore.create("Explore module");
+	test("the pane carries no turn token/cost delta — that lives in the transcript", () => {
+		const a = taskStore.create("Explore module", { source: "subagent", subagentMode: "explore" });
 		taskStore.update(a.id, {
 			status: "done",
 			usage: { input: 3000, output: 500, cacheRead: 0, cacheWrite: 0, cost: 0.01 },
 		});
 		const b = taskStore.create("Run tests");
-		taskStore.update(b.id, {
-			status: "done",
-			usage: { input: 2000, output: 700, cacheRead: 0, cacheWrite: 0, cost: 0.02 },
-		});
+		taskStore.update(b.id, { status: "done" });
 
-		const header = renderPanel()[0];
-		expect(header).toContain("turn");
-		expect(header).toContain("↑");
-		expect(header).toContain("↓");
-		// 3000+2000=5000 → "5.0k"; 500+700=1200 → "1.2k"; cost 0.03 → "$0.030".
-		expect(header).toContain("5.0k");
-		expect(header).toContain("1.2k");
-		expect(header).toContain("$0.030");
-		// Both tasks done → REVIEWED stamp + a full progress bar.
-		expect(stripAnsi(header)).toContain("REVIEWED");
-		expect(header).toContain("━");
-		expect(stripAnsi(header)).toContain("2/2");
-	});
-
-	test("header omits the turn delta when no task reported usage", () => {
-		const t = taskStore.create("Plain work");
-		taskStore.update(t.id, { status: "in_progress" });
-
-		const header = renderPanel()[0];
-		expect(header).not.toContain("turn ↑");
-		// Active task → WORKING stamp + 0/1 count.
-		expect(stripAnsi(header)).toContain("WORKING");
-		expect(stripAnsi(header)).toContain("0/1");
-	});
-
-	test("header turn delta omits cost when it is zero (e.g. subscription)", () => {
-		const t = taskStore.create("Explore on subscription");
-		taskStore.update(t.id, {
-			status: "done",
-			usage: { input: 4000, output: 600, cacheRead: 0, cacheWrite: 0, cost: 0 },
-		});
-
-		const header = renderPanel()[0];
-		expect(header).toContain("turn ↑");
-		expect(header).toContain("4.0k");
+		const header = stripAnsi(renderPanel()[0] as string);
+		// Header is the tab strip and nothing else: no turn delta, no state stamp,
+		// no progress bar, no wall-clock.
+		expect(header).not.toContain("turn");
 		expect(header).not.toContain("$");
+		expect(header).not.toContain("━");
+		expect(header).not.toContain("WORKING");
+		expect(header).not.toContain("REVIEWED");
 	});
 
-	test("header degrades to stamp + count on a very narrow terminal", () => {
-		const t = taskStore.create("Explore module");
-		taskStore.update(t.id, {
-			status: "done",
-			usage: { input: 3000, output: 500, cacheRead: 0, cacheWrite: 0, cost: 0.01 },
-		});
+	test("each tab carries its own lens count so unfinished work elsewhere stays visible", () => {
+		const plan = taskStore.create("Plain work");
+		taskStore.update(plan.id, { status: "in_progress" });
+		const sub = taskStore.create("trace the auth flow", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(sub.id, { status: "done" });
 
-		const header = renderPanel(20)[0];
+		const header = stripAnsi(renderPanel()[0] as string);
+		expect(header).toContain("tasks 0/1");
+		expect(header).toContain("subagents 1/1");
+	});
+
+	test("a filled tab marks the selected lens only while it has live work", () => {
+		const plan = taskStore.create("Plain work");
+		taskStore.update(plan.id, { status: "in_progress" });
+		const sub = taskStore.create("trace the auth flow", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(sub.id, { status: "done" });
+
+		const bgAnsi = theme.getBgAnsi("selectedBg");
+		// flat lens is live → the selected tab fills.
+		expect(renderPanel()[0]).toContain(bgAnsi);
+
+		// Settle it: the tab keeps its bold accent label but drops the fill, so the
+		// background means "running", not merely "here".
+		taskStore.update(plan.id, { status: "done" });
+		expect(renderPanel()[0]).not.toContain(bgAnsi);
+	});
+
+	test("header keeps the tab strip and drops the cycle hint on a narrow terminal", () => {
+		const plan = taskStore.create("Explore module");
+		taskStore.update(plan.id, { status: "done" });
+		const sub = taskStore.create("trace the auth flow", { source: "subagent", subagentMode: "explore" });
+		taskStore.update(sub.id, { status: "done" });
+
+		const header = renderPanel(20)[0] as string;
 		expect(visibleWidth(header)).toBeLessThanOrEqual(20);
-		// The turn delta is dropped; the stamp/count survive (possibly truncated).
-		expect(header).not.toContain("turn ↑");
+		// The hint goes first; the tabs survive. This inverts the old priority, where
+		// the switcher was dropped before the token counter.
+		expect(stripAnsi(header)).not.toContain("cycle");
+		expect(stripAnsi(header)).toContain("tasks");
 	});
 
 	test("reset clears finished tasks and restarts numbering from #1", () => {
@@ -369,28 +386,34 @@ describe("task panel rendering", () => {
 		}
 
 		const lines = renderPanel();
-		expect(lines.length).toBe(7); // 6 tasks + 1 header
+		expect(lines.length).toBe(6); // 6 rows, single lens so no header
 
 		const text = lines.join("\n");
 		expect(text).toContain("Task 0");
 		expect(text).toContain("Task 5");
 	});
 
-	test("header shows the view switcher only when more than one lens has content", () => {
+	test("the header exists only when there is more than one lens to switch to", () => {
 		const t = taskStore.create("Plain work");
 		taskStore.update(t.id, { status: "in_progress" });
 
-		// Plain session: only the flat lens has content → no switcher.
-		expect(stripAnsi(renderPanel()[0] as string)).not.toContain("subagents");
+		// Plain session: only the flat lens has content. The header IS the switcher,
+		// so with nothing to switch to the pane is rows only.
+		expect(stripAnsi(renderPanel()[0] as string)).toContain("Plain work");
+		expect(renderPanel().length).toBe(1);
 
-		// Subagent work appears: the switcher lists flat + subagents, not teams.
+		// Subagent work appears: the strip lists tasks + subagents, not teams, and a
+		// cycle hint resolved from the configured keybinding sits at the right edge.
 		taskStore.create("find the bug", { source: "subagent", subagentMode: "explore" });
-		expect(stripAnsi(renderPanel()[0] as string)).toContain("tasks · subagents");
-		expect(stripAnsi(renderPanel()[0] as string)).not.toContain("teams");
+		const two = stripAnsi(renderPanel()[0] as string);
+		expect(two).toContain("tasks 0/1");
+		expect(two).toContain("subagents 0/1");
+		expect(two).not.toContain("teams");
+		expect(two).toContain(`${appKeyLabel("app.tasks.cycleView")} cycle`);
 
-		// A role agent registers (hooteams): the full switcher shows.
+		// A role agent registers (hooteams): the full strip shows.
 		taskStore.upsertAgent({ id: "planner", name: "planner", kind: "role" });
-		expect(stripAnsi(renderPanel()[0] as string)).toContain("tasks · subagents · teams");
+		expect(stripAnsi(renderPanel()[0] as string)).toContain("teams 0/0");
 	});
 
 	test("cycleView advances through the lenses that have content", () => {
@@ -420,11 +443,12 @@ describe("task panel rendering", () => {
 		const t = taskStore.create("Plain work");
 		taskStore.update(t.id, { status: "in_progress" });
 
-		// teams was selected but no role agents exist → rows render flat.
+		// teams was selected but no role agents exist, so the lens resolves back to
+		// flat — which leaves one lens and therefore no header at all.
 		panel.setView("teams");
 		const lines = renderPanel().map(stripAnsi);
 		expect(lines.join("\n")).toContain("Plain work");
-		expect(lines.length).toBe(2); // header + the flat task row
+		expect(lines.length).toBe(1);
 
 		// The next cycle press lands on a real lens, not a dead one.
 		expect(panel.cycleView()).toBe("flat");
@@ -444,8 +468,9 @@ describe("task panel rendering", () => {
 
 		panel.setView("subagents");
 		const lines = renderPanel().map(stripAnsi);
-		// header + 2 task rows; no group headers in the tree.
-		expect(lines.length).toBe(3);
+		// 2 task rows, no group headers in the tree, and no pane header: every task
+		// here is delegated, so subagents is the only lens with content.
+		expect(lines.length).toBe(2);
 
 		const exploreRow = lines.find((l) => l.includes("Explore module")) as string;
 		const reviewRow = lines.find((l) => l.includes("Review findings")) as string;
@@ -493,7 +518,7 @@ describe("task panel rendering", () => {
 
 		panel.setView("subagents");
 		const lines = renderPanel().map(stripAnsi);
-		expect(lines.length).toBe(3); // header + 2 roots
+		expect(lines.length).toBe(2); // 2 roots, single lens so no header
 		const rowA = lines.find((l) => l.includes("Explore A")) as string;
 		const rowB = lines.find((l) => l.includes("Explore B")) as string;
 		// Roots carry no tree connectors: they read exactly like flat rows.
@@ -528,7 +553,7 @@ describe("task panel rendering", () => {
 		expect(sa).toContain("Fetch the spec");
 	});
 
-	test("header count is scoped to the current lens, not all tasks", () => {
+	test("each tab's count is scoped to its own lens, not all tasks", () => {
 		const plan = taskStore.create("Write the plan");
 		taskStore.update(plan.id, { status: "in_progress" });
 		const sub = taskStore.create("Explore the API", { source: "subagent", subagentMode: "explore" });
@@ -536,19 +561,19 @@ describe("task panel rendering", () => {
 		const mcp = taskStore.create("Fetch the spec", { source: "mcp", subagentMode: "web" });
 		taskStore.update(mcp.id, { status: "done" });
 
-		// 3 total tasks: 1 main (in_progress) + 2 delegated (done).
-		// flat lens: header should show 0/1 (only the main task), not 2/3.
+		// 3 total tasks: 1 main (in_progress) + 2 delegated (done). Both counts are
+		// present at once, whichever lens is selected — that is the point of the
+		// per-tab count: unfinished work in the other lens stays visible.
 		panel.setView("flat");
 		const flatHeader = stripAnsi(renderPanel()[0]);
-		expect(flatHeader).toContain("0/1");
+		expect(flatHeader).toContain("tasks 0/1");
+		expect(flatHeader).toContain("subagents 2/2");
 		expect(flatHeader).not.toContain("0/3");
-		expect(flatHeader).toContain("WORKING");
 
-		// subagents lens: header should show 2/2 (only the delegated tasks), not 2/3.
 		panel.setView("subagents");
 		const saHeader = stripAnsi(renderPanel()[0]);
-		expect(saHeader).toContain("2/2");
-		expect(saHeader).toContain("REVIEWED");
+		expect(saHeader).toContain("tasks 0/1");
+		expect(saHeader).toContain("subagents 2/2");
 	});
 
 	test("an empty flat lens falls through to the subagents tree", () => {
@@ -709,11 +734,12 @@ describe("task panel rendering", () => {
 
 		panel.setView("subagents");
 		const lines = renderPanel().map(stripAnsi);
-		// header + the one delegated root; no group headers, no roster needed.
-		expect(lines.length).toBe(2);
-		expect(lines[1]).toContain("find the bug");
-		expect(lines[1]).toContain("[explore]");
-		expect(lines[1]).toContain("◇");
+		// The one delegated root; no group headers, no roster needed, and no pane
+		// header — subagents is the only lens with content.
+		expect(lines.length).toBe(1);
+		expect(lines[0]).toContain("find the bug");
+		expect(lines[0]).toContain("[explore]");
+		expect(lines[0]).toContain("◇");
 	});
 
 	test("reset drops the roster with the tasks but keeps owners of live tasks", () => {

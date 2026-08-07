@@ -2,7 +2,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
 import { type AutocompleteProvider, CombinedAutocompleteProvider } from "../src/autocomplete.js";
-import { Editor, wordWrapLine } from "../src/components/editor.js";
+import { Editor, type EditorTheme, wordWrapLine } from "../src/components/editor.js";
 import { TUI } from "../src/tui.js";
 import { visibleWidth } from "../src/utils.js";
 import { defaultEditorTheme } from "./test-themes.js";
@@ -3872,6 +3872,174 @@ describe("Editor component", () => {
 			editor.handleInput("\r");
 
 			assert.strictEqual(submitted, pastedText);
+		});
+	});
+
+	describe("Oversized graphemes", () => {
+		it("does not recurse forever on a grapheme wider than the wrap width", () => {
+			// A double-width grapheme cannot be split any further, so re-wrapping it
+			// at grapheme granularity used to re-enter with identical arguments.
+			for (const text of ["好", "🎉", "ab好cd"]) {
+				const chunks = wordWrapLine(text, 1);
+				assert.strictEqual(chunks.map((c) => c.text).join(""), text, `lossy wrap of ${text}`);
+				assert.ok(
+					chunks.every((c) => c.text.length > 0),
+					`empty chunk in ${JSON.stringify(chunks.map((c) => c.text))}`,
+				);
+			}
+		});
+
+		it("renders a double-width character in a very narrow editor without throwing", () => {
+			for (const border of ["rule", "box"] as const) {
+				const editor = new Editor(createTestTUI(), defaultEditorTheme, { border, paddingX: 1 });
+				editor.promptPrefix = "❯";
+				editor.setText("好");
+				for (let width = 1; width <= 20; width++) {
+					assert.doesNotThrow(() => editor.render(width), `${border} border at width ${width}`);
+				}
+			}
+		});
+	});
+
+	describe("Box border", () => {
+		it("draws corners and side borders at the exact render width", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { border: "box", paddingX: 1 });
+			const width = 24;
+
+			editor.setText("hello");
+			const lines = editor.render(width);
+
+			for (const line of lines) {
+				assert.strictEqual(visibleWidth(line), width, `line width drift: ${JSON.stringify(line)}`);
+			}
+			const plain = lines.map((l) => stripVTControlCharacters(l));
+			assert.strictEqual(plain[0], `┌${"─".repeat(width - 2)}┐`);
+			assert.strictEqual(plain[plain.length - 1], `└${"─".repeat(width - 2)}┘`);
+			for (const line of plain.slice(1, -1)) {
+				assert.ok(line.startsWith("│") && line.endsWith("│"), `missing side border: ${JSON.stringify(line)}`);
+			}
+		});
+
+		it("reserves two columns of content for the side borders", () => {
+			const width = 20;
+			const text = "a".repeat(18); // fits rule layout (19), overflows box layout (17)
+
+			const ruleEditor = new Editor(createTestTUI(), defaultEditorTheme);
+			ruleEditor.setText(text);
+			assert.strictEqual(ruleEditor.render(width).length - 2, 1);
+
+			const boxEditor = new Editor(createTestTUI(), defaultEditorTheme, { border: "box" });
+			boxEditor.setText(text);
+			assert.strictEqual(boxEditor.render(width).length - 2, 2);
+		});
+
+		it("keeps the cursor inside the right border when the line is full", () => {
+			const width = 20;
+			for (const paddingX of [0, 1]) {
+				const editor = new Editor(createTestTUI(), defaultEditorTheme, { border: "box", paddingX });
+				const layoutWidth = width - 2 - paddingX * 2 - 1;
+
+				for (const ch of "a".repeat(layoutWidth)) editor.handleInput(ch);
+				const lines = editor.render(width);
+
+				const contentLines = lines.slice(1, -1);
+				assert.strictEqual(contentLines.length, 1, `paddingX ${paddingX}: should not wrap`);
+				for (const line of lines) {
+					assert.strictEqual(visibleWidth(line), width, `paddingX ${paddingX}: ${JSON.stringify(line)}`);
+				}
+				const plain = stripVTControlCharacters(contentLines[0]!);
+				assert.ok(plain.endsWith("│"), `cursor overwrote the border: ${JSON.stringify(plain)}`);
+			}
+		});
+
+		it("keeps corners on scroll indicator borders", () => {
+			const width = 40;
+			const editor = new Editor(createTestTUI(80, 20), defaultEditorTheme, { border: "box" });
+			editor.setText(Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n"));
+
+			// Cursor sits on the last line, so content is hidden above.
+			let plain = editor.render(width).map((l) => stripVTControlCharacters(l));
+			assert.ok(plain[0]!.startsWith("┌─── ↑ "), `top indicator lost its corner: ${JSON.stringify(plain[0])}`);
+			assert.ok(plain[0]!.endsWith("┐"));
+			assert.strictEqual(visibleWidth(plain[0]!), width);
+
+			// Move to the first line, so content is hidden below instead.
+			for (let i = 0; i < 19; i++) editor.handleInput("\x1b[A");
+			plain = editor.render(width).map((l) => stripVTControlCharacters(l));
+			const bottom = plain[plain.length - 1]!;
+			assert.ok(bottom.startsWith("└─── ↓ "), `bottom indicator lost its corner: ${JSON.stringify(bottom)}`);
+			assert.ok(bottom.endsWith("┘"));
+			assert.strictEqual(visibleWidth(bottom), width);
+		});
+
+		it("aligns the autocomplete dropdown to the inner text edge, outside the box", async () => {
+			const width = 40;
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { border: "box", paddingX: 1 });
+			const mockProvider: AutocompleteProvider = {
+				getSuggestions: async () => ({
+					items: [
+						{ value: "/model", label: "model" },
+						{ value: "/models", label: "models" },
+					],
+					prefix: "/m",
+				}),
+				applyCompletion,
+			};
+			editor.setAutocompleteProvider(mockProvider);
+
+			editor.handleInput("/");
+			editor.handleInput("m");
+			await flushAutocomplete();
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+			const lines = editor.render(width);
+			const bottomIndex = lines.findIndex((l) => stripVTControlCharacters(l).startsWith("└"));
+			assert.ok(bottomIndex > 0, "box should be closed before the dropdown");
+
+			const dropdown = lines.slice(bottomIndex + 1);
+			assert.ok(dropdown.length > 0, "dropdown should render below the box");
+			for (const line of dropdown) {
+				const plain = stripVTControlCharacters(line);
+				assert.ok(!plain.startsWith("│"), `dropdown should sit outside the box: ${JSON.stringify(plain)}`);
+				// borderWidth (1) + paddingX (1) => aligned with the inner text edge
+				assert.strictEqual(plain.slice(0, 2), "  ", `dropdown misaligned: ${JSON.stringify(plain)}`);
+				assert.strictEqual(visibleWidth(line), width);
+			}
+		});
+
+		it("degrades to rule mode when the width cannot fit the borders", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { border: "box" });
+			editor.setText("x");
+
+			for (const width of [1, 2, 3]) {
+				for (const line of editor.render(width)) {
+					const plain = stripVTControlCharacters(line);
+					assert.ok(!plain.includes("┌"), `width ${width} should not draw corners: ${JSON.stringify(plain)}`);
+					assert.ok(!plain.includes("│"), `width ${width} should not draw side borders: ${JSON.stringify(plain)}`);
+				}
+			}
+		});
+
+		it("uses themed border characters", () => {
+			const theme: EditorTheme = {
+				...defaultEditorTheme,
+				borderChars: { topLeft: "╭", topRight: "╮", bottomLeft: "╰", bottomRight: "╯" },
+			};
+			const editor = new Editor(createTestTUI(), theme, { border: "box" });
+
+			const plain = editor.render(12).map((l) => stripVTControlCharacters(l));
+			assert.strictEqual(plain[0], `╭${"─".repeat(10)}╮`);
+			assert.strictEqual(plain[plain.length - 1], `╰${"─".repeat(10)}╯`);
+		});
+
+		it("switches border style at runtime", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			assert.strictEqual(editor.getBorder(), "rule");
+			assert.strictEqual(stripVTControlCharacters(editor.render(12)[0]!), "─".repeat(12));
+
+			editor.setBorder("box");
+			assert.strictEqual(editor.getBorder(), "box");
+			assert.strictEqual(stripVTControlCharacters(editor.render(12)[0]!), `┌${"─".repeat(10)}┐`);
 		});
 	});
 });
