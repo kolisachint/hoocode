@@ -8,6 +8,7 @@ import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";
 import { getReadmePath } from "../../config.js";
 import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.js";
+import { renderReadOutput } from "../../modes/interactive/components/read-output.js";
 import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.js";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
@@ -217,7 +218,11 @@ function formatReadResult(
 	const maxLines = options.expanded ? lines.length : 10;
 	const displayLines = lines.slice(0, maxLines);
 	const remaining = lines.length - maxLines;
-	let text = `\n${displayLines.map((line) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line)))).join("\n")}`;
+	// Calculate starting line number from args
+	const startLine = (args?.offset as number) ?? 1;
+	// Use the new renderReadOutput function for line numbers
+	const numberedLines = renderReadOutput(displayLines.join("\n"), { startLine });
+	let text = `\n${numberedLines.join("\n")}`;
 	if (remaining > 0) {
 		text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")})`;
 	}
