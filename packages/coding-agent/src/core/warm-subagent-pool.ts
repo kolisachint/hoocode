@@ -434,7 +434,11 @@ function buildWorkerArgs(
 	const rawModel = explicitModel ?? options.model;
 	const modelToUse = rawModel ? resolveModelReference(rawModel, settings, availableModels) : undefined;
 	if (modelToUse) args.push("--model", modelToUse);
-	if (options.provider) args.push("--provider", options.provider);
+	// Only pass --provider when the model doesn't already encode the provider
+	// (e.g. "anthropic/claude-sonnet-4-5"). When both --model and --provider are
+	// present, --provider wins and filters candidates to that provider, which
+	// breaks models whose IDs contain a provider prefix from a different provider.
+	if (options.provider && (!modelToUse || !modelToUse.includes("/"))) args.push("--provider", options.provider);
 
 	const maxTurns = def?.maxTurns && def.maxTurns > 0 ? def.maxTurns : DEFAULT_SUBAGENT_MAX_TURNS;
 	args.push("--max-turns", String(maxTurns));

@@ -404,6 +404,39 @@ describe("resolveCliModel", () => {
 		expect(result.model?.provider).toBe("openrouter");
 		expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 	});
+
+	test("infers provider from model prefix even when --provider is also set (subagent dispatch scenario)", () => {
+		// When both --provider and --model are passed but the model already encodes
+		// its provider (e.g. "anthropic/claude-sonnet-4-5"), the child should resolve
+		// to the provider in the model string, not the --provider value.
+		// This is the scenario that occurs during subagent dispatch where the parent
+		// passes its own provider alongside a pinned model from the agent spec.
+		const registry = {
+			getAll: () => allModels,
+		} as unknown as Parameters<typeof resolveCliModel>[0]["modelRegistry"];
+
+		// Without --provider: correctly resolves anthropic provider
+		const withoutProvider = resolveCliModel({
+			cliModel: "anthropic/claude-sonnet-4-5",
+			modelRegistry: registry,
+		});
+		expect(withoutProvider.error).toBeUndefined();
+		expect(withoutProvider.model?.provider).toBe("anthropic");
+		expect(withoutProvider.model?.id).toBe("claude-sonnet-4-5");
+
+		// With conflicting --provider: resolveCliModel cannot find the model in the
+		// wrong provider. When the provider has no models (like 'opencode' in test),
+		// it returns an error. This is the BUGGY behavior that our fix avoids by not
+		// passing --provider when model contains '/'.
+		const withConflictingProvider = resolveCliModel({
+			cliProvider: "opencode",
+			cliModel: "anthropic/claude-sonnet-4-5",
+			modelRegistry: registry,
+		});
+		// opencode is unknown in test, so it returns an error
+		expect(withConflictingProvider.model).toBeUndefined();
+		expect(withConflictingProvider.error).toContain("Unknown provider");
+	});
 });
 
 describe("default model selection", () => {

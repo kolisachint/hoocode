@@ -723,7 +723,11 @@ export class SubagentPool extends EventEmitter {
 		if (modelToUse) {
 			args.push("--model", modelToUse);
 		}
-		if (task.provider) {
+		// Only pass --provider when the model doesn't already encode the provider
+		// (e.g. "anthropic/claude-sonnet-4-5"). When both --model and --provider are
+		// present, --provider wins and filters candidates to that provider, which
+		// breaks models whose IDs contain a provider prefix from a different provider.
+		if (task.provider && (!modelToUse || !modelToUse.includes("/"))) {
 			args.push("--provider", task.provider);
 		}
 
