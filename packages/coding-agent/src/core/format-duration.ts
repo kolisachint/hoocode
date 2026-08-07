@@ -7,7 +7,12 @@ export function formatDurationSecs(secs: number): string {
 	const s = Math.max(0, secs);
 	if (s < 10) return `${s.toFixed(1)}s`;
 	if (s < 60) return `${Math.round(s)}s`;
-	const mins = Math.floor(s / 60);
-	const rem = Math.round(s % 60);
-	return `${mins}m${rem.toString().padStart(2, "0")}s`;
+	if (s < 3600) {
+		const mins = Math.floor(s / 60);
+		const rem = Math.round(s % 60);
+		return `${mins}m${rem.toString().padStart(2, "0")}s`;
+	}
+	const hrs = Math.floor(s / 3600);
+	const remMins = Math.round((s % 3600) / 60);
+	return `${hrs}h${remMins.toString().padStart(2, "0")}m`;
 }

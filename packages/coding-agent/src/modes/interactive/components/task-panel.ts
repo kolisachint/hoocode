@@ -302,8 +302,10 @@ function formatTaskLine(
 	// which group under main without being main's own work.
 	let tag = "";
 	let tagColor: ThemeColor = "accent";
-	if (isMcp) tag = `[${task.subagentMode ?? "MCP"}]`;
-	else if (!grouped) {
+	if (isMcp) {
+		tag = `[${task.subagentMode ?? "MCP"}]`;
+		tagColor = "mcp";
+	} else if (!grouped) {
 		if (task.subagentMode) {
 			tag = `[${task.subagentMode}]`;
 			tagColor = agentColorFor(task.subagentMode);

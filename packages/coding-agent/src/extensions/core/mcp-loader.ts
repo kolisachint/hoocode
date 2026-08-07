@@ -25,12 +25,17 @@ import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
 import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
+import { formatDurationSecs } from "../../core/format-duration.js";
 import { clearMcpServerStatuses, setMcpServerStatus } from "../../core/mcp-status.js";
 import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
 import { type DeferredMcpToolEntry, formatDeferredCatalog, selectResolvable } from "./mcp-deferred.js";
 
 const HOOCODE_DIR = getHooCodeDir();
+
+interface McpToolDetails {
+	elapsed?: number;
+}
 
 interface McpToolDef {
 	name: string;
@@ -372,7 +377,7 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 			const summary = summarizeArgs((args ?? {}) as Record<string, unknown>);
 			const text =
 				theme.fg("toolTitle", theme.bold("MCP ")) +
-				theme.fg("accent", `[${capturedServer} › ${capturedTool}]`) +
+				theme.fg("mcp", `[${capturedServer} › ${capturedTool}]`) +
 				(summary ? theme.fg("dim", ` ${summary}`) : "");
 			return new Text(text, 0, 0);
 		},
@@ -381,7 +386,8 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 			params: Static<typeof schema>,
 			signal: AbortSignal,
 			_onUpdate: AgentToolUpdateCallback,
-		): Promise<AgentToolResult<undefined>> {
+		): Promise<AgentToolResult<McpToolDetails>> {
+			const startTime = Date.now();
 			// Background MCP tools get a task store entry so they appear in the task pane.
 			// Foreground tools skip this (their result is awaited inline). The server
 			// name rides in subagentMode and becomes the row's `[server]` origin tag;
@@ -401,7 +407,7 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 					content: [
 						{ type: "text", text: `MCP server "${capturedServer}" is not connected (reconnect attempt failed)` },
 					],
-					details: undefined,
+					details: { elapsed: Date.now() - startTime } as McpToolDetails,
 				};
 			}
 
@@ -416,11 +422,43 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 				]);
 
 				if (task) taskStore.update(task.id, { status: "done" });
-				return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }], details: undefined };
+				return {
+					content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+					details: { elapsed: Date.now() - startTime } as McpToolDetails,
+				};
 			} catch (error) {
 				if (task) taskStore.update(task.id, { status: "failed" });
 				throw error;
 			}
+		},
+		renderResult(result, _options, theme, context) {
+			const text = result.content
+				.map((c) => (c.type === "text" ? c.text : ""))
+				.filter(Boolean)
+				.join("\n");
+			if (!text) return new Text("", 0, 0);
+
+			const details = result.details as McpToolDetails | undefined;
+			const elapsed = details?.elapsed;
+			const elapsedText = elapsed ? ` ${formatDurationSecs(elapsed / 1000)}` : "";
+			const identity = `${capturedServer} › ${capturedTool}`;
+
+			// Use context.isError to determine status (framework sets this when tools throw)
+			const isError = context.isError;
+			const statusGlyph = isError ? "✗" : "✓";
+			const statusLabel = isError ? "failed" : "done";
+			const statusColor = isError ? "error" : "success";
+
+			const spine = (s: string) => theme.fg("borderMuted", s);
+			const header =
+				`${spine("╭")} ${theme.fg(statusColor, statusGlyph)} ` +
+				`${theme.bold(theme.fg(statusColor, statusLabel))} ` +
+				`${theme.fg("mcp", identity)}${elapsedText}`;
+			const body = text
+				.split("\n")
+				.map((line) => `${spine("│")} ${theme.fg("toolOutput", line)}`)
+				.join("\n");
+			return new Text(`${header}\n${body}\n${spine("╰")}`, 0, 0);
 		},
 	} as ToolDefinition;
 }

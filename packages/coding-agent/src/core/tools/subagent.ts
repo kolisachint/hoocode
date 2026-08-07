@@ -22,6 +22,7 @@ import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
 import { formatDurationSecs } from "../format-duration.js";
+import { formatTokens } from "../format-tokens.js";
 import { getProviderExhaustion } from "../provider-health.js";
 import { SessionManager } from "../session-manager.js";
 import { delegateAllowList, isDelegateAllowed } from "../subagent-depth.js";
@@ -924,10 +925,21 @@ export function createTaskOutputToolDefinition(): ToolDefinition {
 				const label = details?.task_id ?? "";
 				const hashIdx = label.indexOf("#");
 				const labelColor = hashIdx > 0 ? agentColorFor(label.slice(0, hashIdx)) : "accent";
+
+				// Look up inbox record for elapsed time
+				const inboxRecord = subagentInbox.get(label);
+				const elapsed = inboxRecord ? (inboxRecord.endedAt ?? Date.now()) - inboxRecord.startedAt : undefined;
+				const elapsedText = elapsed ? ` ${formatDurationSecs(elapsed / 1000)}` : "";
+
+				// Look up task for token count
+				const task = inboxRecord ? taskStore.list().find((t) => t.agent === inboxRecord.taskId) : undefined;
+				const totalTokens = task?.usage ? task.usage.input + task.usage.output : undefined;
+				const tokenText = totalTokens !== undefined ? ` ${formatTokens(totalTokens)}` : "";
+
 				const spine = (s: string) => theme.fg("borderMuted", s);
 				const header =
 					`${spine("╭")} ${theme.fg(color, glyph)} ` +
-					`${theme.bold(theme.fg(color, cardStatus))} ${theme.fg(labelColor, label)}`;
+					`${theme.bold(theme.fg(color, cardStatus))} ${theme.fg(labelColor, label)}${tokenText}${elapsedText}`;
 				const body = text
 					.split("\n")
 					.map((line) => `${spine("│")} ${theme.fg("toolOutput", line)}`)
