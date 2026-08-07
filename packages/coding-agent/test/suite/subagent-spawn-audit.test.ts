@@ -185,26 +185,34 @@ describe("task panel audit fixes", () => {
 		initTheme("dark");
 	});
 
-	it("advances a running task's elapsed time from the wall clock", () => {
+	it("advances a running delegated task's elapsed time from the wall clock", () => {
 		vi.useFakeTimers();
 		const panel = new TaskPanelComponent();
-		const task = taskStore.create("long build");
+		const task = taskStore.create("long build", { source: "subagent", subagentMode: "explore" });
 		taskStore.update(task.id, {
 			status: "in_progress",
 			usage: { input: 1000, output: 100, cacheRead: 0, cacheWrite: 0, cost: 0 },
 		});
 
 		vi.advanceTimersByTime(90_000);
-		const header = stripAnsi(panel.render(120)[0] as string);
-		// updatedAt is still ≈ createdAt, but the task is running: elapsed is
-		// measured against the clock, not frozen at ~0s.
-		expect(header).toContain("1m30s");
+		const row = panel
+			.render(120)
+			.map(stripAnsi)
+			.find((l) => l.includes("long build")) as string;
+		// updatedAt is still ≈ createdAt, but the run is live: elapsed is measured
+		// against the clock, not frozen at ~0s. Only delegated rows carry this clock —
+		// a TodoWrite item shares its createdAt with every other item in the plan, so
+		// the same number there would report the age of the plan.
+		expect(row).toContain("1m30s");
 		panel.dispose();
 	});
 
-	it("renders orphaned children as roots so the header count matches the rows", () => {
+	it("renders orphaned children as roots so the tab count matches the rows", () => {
 		const panel = new TaskPanelComponent();
 		panel.setView("subagents");
+		// A main task keeps a second lens alive, so the tab strip renders and its
+		// per-lens count is observable at all (a single-lens pane has no header).
+		taskStore.create("plan the work");
 		const parent = taskStore.create("parent run", { source: "subagent", subagentMode: "explore" });
 		const child = taskStore.create("orphaned child", {
 			source: "subagent",
@@ -217,7 +225,7 @@ describe("task panel audit fixes", () => {
 		const lines = panel.render(120).map(stripAnsi);
 		// The orphan is both counted and rendered (previously: counted, never drawn).
 		expect(lines.some((l) => l.includes("orphaned child"))).toBe(true);
-		expect(lines[0]).toContain("1/1");
+		expect(lines[0]).toContain("subagents 1/1");
 		panel.dispose();
 	});
 

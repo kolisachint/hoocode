@@ -153,7 +153,23 @@ export function wordWrapLine(line: string, maxWidth: number, preSegmented?: Intl
 
 			// The segment remains logically atomic for cursor
 			// movement / editing — the split is purely visual for word-wrap layout.
-			const subChunks = wordWrapLine(grapheme, maxWidth);
+			const subSegments = [...baseSegmenter.segment(grapheme)];
+			if (subSegments.length <= 1) {
+				// Nothing left to split: a single grapheme wider than the editor
+				// (a double-width character or emoji in a very narrow terminal).
+				// Emit it on its own chunk and let it overflow — recursing here
+				// would re-enter with identical arguments and never terminate.
+				const end = charIndex + grapheme.length;
+				if (chunkStart < charIndex) {
+					chunks.push({ text: line.slice(chunkStart, charIndex), startIndex: chunkStart, endIndex: charIndex });
+				}
+				chunks.push({ text: grapheme, startIndex: charIndex, endIndex: end });
+				chunkStart = end;
+				currentWidth = 0;
+				wrapOppIndex = -1;
+				continue;
+			}
+			const subChunks = wordWrapLine(grapheme, maxWidth, subSegments);
 			for (let j = 0; j < subChunks.length - 1; j++) {
 				const sc = subChunks[j]!;
 				chunks.push({ text: sc.text, startIndex: charIndex + sc.startIndex, endIndex: charIndex + sc.endIndex });
@@ -178,8 +194,11 @@ export function wordWrapLine(line: string, maxWidth: number, preSegmented?: Intl
 		}
 	}
 
-	// Push final chunk.
-	chunks.push({ text: line.slice(chunkStart), startIndex: chunkStart, endIndex: line.length });
+	// Push final chunk, unless the line was already fully consumed (an atomic
+	// oversized grapheme ends exactly on the line end and needs no empty tail).
+	if (chunkStart < line.length || chunks.length === 0) {
+		chunks.push({ text: line.slice(chunkStart), startIndex: chunkStart, endIndex: line.length });
+	}
 
 	return chunks;
 }
@@ -197,14 +216,36 @@ interface LayoutLine {
 	cursorPos?: number;
 }
 
+export type EditorBorderStyle = "rule" | "box";
+
+export interface EditorBorderChars {
+	horizontal: string;
+	vertical: string;
+	topLeft: string;
+	topRight: string;
+	bottomLeft: string;
+	bottomRight: string;
+}
+
+export const DEFAULT_EDITOR_BORDER_CHARS: EditorBorderChars = {
+	horizontal: "─",
+	vertical: "│",
+	topLeft: "┌",
+	topRight: "┐",
+	bottomLeft: "└",
+	bottomRight: "┘",
+};
+
 export interface EditorTheme {
 	borderColor: (str: string) => string;
+	borderChars?: Partial<EditorBorderChars>;
 	selectList: SelectListTheme;
 }
 
 export interface EditorOptions {
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
+	border?: EditorBorderStyle;
 }
 
 const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -227,6 +268,8 @@ export class Editor implements Component, Focusable {
 	protected tui: TUI;
 	private theme: EditorTheme;
 	private paddingX: number = 0;
+	private border: EditorBorderStyle = "rule";
+	private borderChars: EditorBorderChars;
 
 	// Store last render width for cursor navigation
 	private lastWidth: number = 80;
@@ -294,6 +337,8 @@ export class Editor implements Component, Focusable {
 		this.tui = tui;
 		this.theme = theme;
 		this.borderColor = theme.borderColor;
+		this.borderChars = { ...DEFAULT_EDITOR_BORDER_CHARS, ...theme.borderChars };
+		this.border = options.border ?? "rule";
 		const paddingX = options.paddingX ?? 0;
 		this.paddingX = Number.isFinite(paddingX) ? Math.max(0, Math.floor(paddingX)) : 0;
 		const maxVisible = options.autocompleteMaxVisible ?? 5;
@@ -318,6 +363,17 @@ export class Editor implements Component, Focusable {
 		const newPadding = Number.isFinite(padding) ? Math.max(0, Math.floor(padding)) : 0;
 		if (this.paddingX !== newPadding) {
 			this.paddingX = newPadding;
+			this.tui.requestRender();
+		}
+	}
+
+	getBorder(): EditorBorderStyle {
+		return this.border;
+	}
+
+	setBorder(border: EditorBorderStyle): void {
+		if (this.border !== border) {
+			this.border = border;
 			this.tui.requestRender();
 		}
 	}
@@ -411,23 +467,58 @@ export class Editor implements Component, Focusable {
 		// No cached state to invalidate currently
 	}
 
+	/**
+	 * Render a horizontal border, optionally carrying a scroll indicator.
+	 * In box mode the bar is flanked by corners and padded so they stay aligned.
+	 * @param edge - Which border to draw (selects arrow direction and corners)
+	 * @param hidden - Number of layout lines hidden past this edge (0 = no indicator)
+	 * @param barWidth - Width of the horizontal bar, excluding corners
+	 * @param box - Whether to draw corners
+	 */
+	private renderBorder(edge: "top" | "bottom", hidden: number, barWidth: number, box: boolean): string {
+		const chars = this.borderChars;
+		let bar: string;
+		if (hidden > 0) {
+			const arrow = edge === "top" ? "↑" : "↓";
+			const indicator = `${chars.horizontal.repeat(3)} ${arrow} ${hidden} more `;
+			const remaining = barWidth - visibleWidth(indicator);
+			bar = remaining >= 0 ? indicator + chars.horizontal.repeat(remaining) : truncateToWidth(indicator, barWidth);
+		} else {
+			bar = chars.horizontal.repeat(barWidth);
+		}
+		if (!box) return this.borderColor(bar);
+		// Corners must stay aligned, so pad back any width lost to truncation.
+		bar += chars.horizontal.repeat(Math.max(0, barWidth - visibleWidth(bar)));
+		const left = edge === "top" ? chars.topLeft : chars.bottomLeft;
+		const right = edge === "top" ? chars.topRight : chars.bottomRight;
+		return this.borderColor(`${left}${bar}${right}`);
+	}
+
 	render(width: number): string[] {
-		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+		// Box mode needs 2 columns for the side borders plus at least 1 content
+		// column; below that it degrades to rule mode rather than overflowing.
+		const box = this.border === "box" && width >= 4;
+		const borderWidth = box ? 1 : 0;
+		const innerWidth = Math.max(1, width - borderWidth * 2);
+		const maxPadding = Math.max(0, Math.floor((innerWidth - 1) / 2));
 		const paddingX = Math.min(this.paddingX, maxPadding);
-		const contentWidth = Math.max(1, width - paddingX * 2);
+		const contentWidth = Math.max(1, innerWidth - paddingX * 2);
 
 		// Prompt prefix reserves space on the first line
 		const promptPrefixWidth = this.promptPrefix ? visibleWidth(`${this.promptPrefix} `) : 0;
 
-		// Layout width: with padding the cursor can overflow into it,
-		// without padding we reserve 1 column for the cursor.
+		// Layout width: in rule mode with padding the cursor can overflow into the
+		// padding, so no column is reserved. Without padding, or in box mode where
+		// the cursor must never overwrite the side border, we reserve one.
 		// Also reserve space for prompt prefix on the first line.
-		const layoutWidth = Math.max(1, contentWidth - (paddingX ? 0 : 1) - promptPrefixWidth);
+		const cursorColumn = box || !paddingX ? 1 : 0;
+		const layoutWidth = Math.max(1, contentWidth - cursorColumn - promptPrefixWidth);
 
 		// Store for cursor navigation (must match wrapping width)
 		this.lastWidth = layoutWidth;
 
-		const horizontal = this.borderColor("─");
+		const barWidth = box ? width - 2 : width;
+		const vertical = box ? this.borderColor(this.borderChars.vertical) : "";
 
 		// Layout the text
 		const layoutLines = this.layoutText(layoutWidth);
@@ -459,17 +550,7 @@ export class Editor implements Component, Focusable {
 		const rightPadding = leftPadding;
 
 		// Render top border (with scroll indicator if scrolled down)
-		if (this.scrollOffset > 0) {
-			const indicator = `─── ↑ ${this.scrollOffset} more `;
-			const remaining = width - visibleWidth(indicator);
-			if (remaining >= 0) {
-				result.push(this.borderColor(indicator + "─".repeat(remaining)));
-			} else {
-				result.push(this.borderColor(truncateToWidth(indicator, width)));
-			}
-		} else {
-			result.push(horizontal.repeat(width));
-		}
+		result.push(this.renderBorder("top", this.scrollOffset, barWidth, box));
 
 		// Render each visible layout line
 		// Emit hardware cursor marker only when focused and not showing autocomplete
@@ -504,7 +585,7 @@ export class Editor implements Component, Focusable {
 					displayText = before + marker + cursor;
 					lineVisibleWidth = lineVisibleWidth + 1;
 					// If cursor overflows content width into the padding, flag it
-					if (lineVisibleWidth > contentWidth && paddingX > 0) {
+					if (!box && lineVisibleWidth > contentWidth && paddingX > 0) {
 						cursorInPadding = true;
 					}
 				}
@@ -521,27 +602,23 @@ export class Editor implements Component, Focusable {
 			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
-			// Render the line (no side borders, just horizontal lines above and below)
-			result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+			// Render the line (side borders only in box mode)
+			result.push(`${vertical}${leftPadding}${displayText}${padding}${lineRightPadding}${vertical}`);
 		}
 
 		// Render bottom border (with scroll indicator if more content below)
 		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
-		if (linesBelow > 0) {
-			const indicator = `─── ↓ ${linesBelow} more `;
-			const remaining = width - visibleWidth(indicator);
-			result.push(this.borderColor(indicator + "─".repeat(Math.max(0, remaining))));
-		} else {
-			result.push(horizontal.repeat(width));
-		}
+		result.push(this.renderBorder("bottom", linesBelow, barWidth, box));
 
 		// Add autocomplete list if active
 		if (this.autocompleteState && this.autocompleteList) {
 			const autocompleteResult = this.autocompleteList.render(contentWidth);
+			// Align the dropdown to the inner text edge, not the outer box edge.
+			const acPadding = " ".repeat(borderWidth + paddingX);
 			for (const line of autocompleteResult) {
 				const lineWidth = visibleWidth(line);
 				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
-				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+				result.push(`${acPadding}${line}${linePadding}${acPadding}`);
 			}
 		}
 

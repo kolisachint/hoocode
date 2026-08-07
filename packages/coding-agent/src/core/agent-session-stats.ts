@@ -13,7 +13,7 @@ import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import { calculateContextTokens, estimateContextTokens } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage, Model } from "@kolisachint/hoocode-ai";
 import type { ContextUsage } from "./extensions/index.js";
-import type { SessionManager } from "./session-manager.js";
+import type { SessionEntry, SessionManager } from "./session-manager.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
 
 /** Session statistics for /session command */
@@ -34,6 +34,35 @@ export interface SessionStats {
 	};
 	cost: number;
 	contextUsage?: ContextUsage;
+}
+
+/** Token + cost totals accumulated across a session's assistant messages. */
+export interface AssistantUsageTotals {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	cost: number;
+}
+
+/**
+ * Sum token + cost usage over every assistant message in a set of session
+ * entries. Shared by the footer (cumulative session vitals) and the per-request
+ * cost line the transcript emits at agent_end, which diffs two snapshots of this
+ * against each other — one source of truth, so the two can never disagree about
+ * what a request cost.
+ */
+export function sumAssistantUsage(entries: readonly SessionEntry[]): AssistantUsageTotals {
+	const totals: AssistantUsageTotals = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0 };
+	for (const entry of entries) {
+		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+		totals.input += entry.message.usage.input;
+		totals.output += entry.message.usage.output;
+		totals.cacheRead += entry.message.usage.cacheRead;
+		totals.cacheWrite += entry.message.usage.cacheWrite;
+		totals.cost += entry.message.usage.cost.total;
+	}
+	return totals;
 }
 
 /** Extract concatenated text from a user message content value. */

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Editor` can draw a full box instead of the two horizontal rules, via
+  `EditorOptions.border` (`"rule"` default, `"box"`) or `setBorder()` at runtime.
+  Box mode frames the input with corners and side borders, so wrapped and scrolled
+  input reads as one field rather than as loose lines between two dividers; scroll
+  indicators keep their corners (`┌─── ↑ 3 more ───┐`) and the autocomplete
+  dropdown stays below the box, aligned to the inner text edge. The six box-drawing
+  characters are themeable through `EditorTheme.borderChars`.
+
+### Fixed
+
+- The bottom scroll indicator no longer renders wider than the editor when the
+  `↓ N more` label exceeds the render width; it is truncated like the top one
+  instead of overflowing into a wrapped terminal line.
+- `wordWrapLine()` no longer recurses forever on a grapheme wider than the wrap
+  width. A double-width character or emoji in a very narrow editor re-entered
+  the grapheme-granularity split with identical arguments and took down the
+  process with a stack overflow; an atomic grapheme is now emitted as its own
+  chunk and allowed to overflow, since it cannot be split. Wrapping a line that
+  ends exactly on a chunk boundary no longer appends an empty trailing chunk.
+
 ## [0.4.157] - 2026-08-07
 
 ## [0.4.156] - 2026-08-07

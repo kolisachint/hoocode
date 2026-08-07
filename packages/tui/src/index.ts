@@ -11,7 +11,14 @@ export {
 // Components
 export { Box } from "./components/box.js";
 export { CancellableLoader } from "./components/cancellable-loader.js";
-export { Editor, type EditorOptions, type EditorTheme } from "./components/editor.js";
+export {
+	DEFAULT_EDITOR_BORDER_CHARS,
+	Editor,
+	type EditorBorderChars,
+	type EditorBorderStyle,
+	type EditorOptions,
+	type EditorTheme,
+} from "./components/editor.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
 export { Loader, type LoaderIndicatorOptions } from "./components/loader.js";

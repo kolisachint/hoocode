@@ -1,4 +1,5 @@
 import type { AutocompleteProvider } from "./autocomplete.js";
+import type { EditorBorderStyle } from "./components/editor.js";
 import type { Component } from "./tui.js";
 
 /**
@@ -77,4 +78,7 @@ export interface EditorComponent extends Component {
 
 	/** Set max visible items in autocomplete dropdown */
 	setAutocompleteMaxVisible?(maxVisible: number): void;
+
+	/** Set the border style drawn around the editor */
+	setBorder?(border: EditorBorderStyle): void;
 }

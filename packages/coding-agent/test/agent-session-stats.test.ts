@@ -2,6 +2,7 @@ import { Agent } from "@kolisachint/hoocode-agent-core";
 import { type AssistantMessage, getModel, type Usage } from "@kolisachint/hoocode-ai";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.js";
+import { sumAssistantUsage } from "../src/core/agent-session-stats.js";
 import { AuthStorage } from "../src/core/auth-storage.js";
 import { ModelRegistry } from "../src/core/model-registry.js";
 import { SessionManager } from "../src/core/session-manager.js";
@@ -10,7 +11,7 @@ import { createTestResourceLoader } from "./utilities.js";
 
 const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
-function createUsage(totalTokens: number): Usage {
+function createUsage(totalTokens: number, overrides: Partial<Usage> = {}): Usage {
 	return {
 		input: totalTokens,
 		output: 0,
@@ -24,6 +25,7 @@ function createUsage(totalTokens: number): Usage {
 			cacheWrite: 0,
 			total: 0,
 		},
+		...overrides,
 	};
 }
 
@@ -139,5 +141,66 @@ describe("AgentSession.getSessionStats", () => {
 		} finally {
 			session.dispose();
 		}
+	});
+});
+
+describe("sumAssistantUsage", () => {
+	it("sums only assistant messages and ignores user turns", () => {
+		const { sessionManager } = createSession();
+		sessionManager.appendMessage(createUserMessage("hello", 1));
+		sessionManager.appendMessage(createAssistantMessage("hi", 200, 2));
+		sessionManager.appendMessage(createUserMessage("more", 3));
+		sessionManager.appendMessage(createAssistantMessage("sure", 300, 4));
+
+		expect(sumAssistantUsage(sessionManager.getEntries())).toEqual({
+			input: 500,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+			cost: 0,
+		});
+	});
+
+	it("carries every usage field, so a snapshot diff reports one request's own cost", () => {
+		const { sessionManager } = createSession();
+		const withUsage = (text: string, usage: Usage, timestamp: number) => {
+			const message = createAssistantMessage(text, 0, timestamp);
+			sessionManager.appendMessage({ ...message, usage });
+		};
+
+		withUsage(
+			"first request",
+			createUsage(0, {
+				input: 1000,
+				output: 200,
+				cacheRead: 50,
+				cacheWrite: 10,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.01 },
+			}),
+			1,
+		);
+		// Anchor taken here — this is what agent_start captures.
+		const anchor = sumAssistantUsage(sessionManager.getEntries());
+
+		withUsage(
+			"second request",
+			createUsage(0, {
+				input: 3000,
+				output: 450,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.015 },
+			}),
+			2,
+		);
+		const after = sumAssistantUsage(sessionManager.getEntries());
+
+		expect(after.input - anchor.input).toBe(3000);
+		expect(after.output - anchor.output).toBe(450);
+		expect(after.cost - anchor.cost).toBeCloseTo(0.015, 6);
+		// The anchor keeps the first request out of the delta entirely.
+		expect(anchor.input).toBe(1000);
+		expect(anchor.cacheRead).toBe(50);
+		expect(anchor.cacheWrite).toBe(10);
 	});
 });

@@ -1168,6 +1168,16 @@ export class SettingsManager {
 		this.save();
 	}
 
+	getEditorBorder(): "rule" | "box" {
+		return this.settings.editorBorder ?? DEFAULT_SETTINGS.editorBorder!;
+	}
+
+	setEditorBorder(border: "rule" | "box"): void {
+		this.globalSettings.editorBorder = border;
+		this.markModified("editorBorder");
+		this.save();
+	}
+
 	getEditorPaddingX(): number {
 		return this.settings.editorPaddingX ?? DEFAULT_SETTINGS.editorPaddingX!;
 	}
