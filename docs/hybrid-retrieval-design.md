@@ -420,6 +420,159 @@ does — seeing files the index has not indexed, including edits made during
 the session. Measuring that needs a corpus that diverges from the index,
 which the harness cannot currently build.
 
+### Live edits: what the clean-checkout sweep cannot see
+
+`bun run search-eval -- --live-edits` writes files into the corpus **after**
+indexing and scores queries only that content can answer — standing in for
+the files an agent creates and edits while it works. The daemon has no file
+watcher, so anything written during a session is invisible to dense and BM25
+until the next index build.
+
+| config | R@1 | R@10 | MRR |
+|---|---|---|---|
+| lexical (grep) | 100% | 100% | 1.000 |
+| semantic | 0% | 0% | 0.000 |
+| daemon-hybrid +rr | 0% | 0% | 0.000 |
+| bm25+dense +rr | 0% | 0% | 0.000 |
+| hybrid k=60 +rr (grep + dense) | 100% | 100% | 1.000 |
+| 3-way +rr (grep + dense + BM25) | 100% | 100% | 1.000 |
+
+**Every index-backed configuration scores zero, by construction.** Any
+configuration containing the grep leg scores perfectly. This is the
+comparison the main sweep structurally could not make, and it settles the
+question the BM25 work opened.
+
+### Why the default stays grep + dense
+
+Putting both halves together, for the three candidate defaults:
+
+| configuration | clean corpus (MRR) | live edits (MRR) |
+|---|---|---|
+| **grep + dense — current default** | **0.464** | **1.000** |
+| bm25 + dense | 0.468 | 0.000 |
+| 3-way (grep + dense + BM25) | 0.404 | 1.000 |
+
+BM25's advantage over grep on indexed content is **not significant** (R@10
+7 better / 3 worse, p = 0.34; R@50 7 / 1, p = 0.07; MRR 12 / 16, p = 0.57),
+and switching to it would make the agent blind to its own edits. Adding BM25
+*alongside* grep costs 0.060 MRR on the clean corpus and buys nothing on
+live edits, since grep already covers them.
+
+So the shipped default is already the best available configuration, and the
+earlier reading — "the grep leg is a significant regression once BM25 is
+present" — was true only of the half of reality the eval could see. Grep is
+not a stand-in for a real lexical index; it is the only retriever that sees
+the working tree.
+
+`bm25Leg` stays available for callers who want the depth-50 recall (85% vs
+77%) and can tolerate an index-lagged view.
+
+### Cross-encoder reranking: measured, and rejected as a replacement
+
+embsearch 0.3.0 bundles `ms-marco-MiniLM-L-6-v2` and serves a `rerank` op, so
+the fused shortlist can be reordered by a model that reads query and candidate
+together. Scored against the same retrieval each deterministic `+rr` row uses,
+so the delta is the reranker alone.
+
+| config | R@1 | R@10 | MRR |
+|---|---|---|---|
+| semantic +rr | **39%** | 56% | **0.444** |
+| semantic +ce | 21% | 48% | 0.295 |
+| auto +rr | **34%** | **66%** | **0.466** |
+| auto +ce | 18% | 60% | 0.316 |
+| bm25+dense +rr | **34%** | **70%** | **0.468** |
+| bm25+dense +ce | 16% | 56% | 0.304 |
+
+**The cross-encoder loses, significantly.** R@1 is worse on all three
+(2/13, 4/14, 4/15 better/worse, p<=0.05) and MRR on two of three. It still
+beats *no* reranking (semantic 0.228 -> 0.295), so it is doing something —
+just far less than a small amount of code-aware structure.
+
+The per-class MRR says why, and it is not a close call:
+
+| class | n | semantic +rr | semantic +ce |
+|---|---|---|---|
+| exact-symbol | 22 | **0.742** | 0.555 |
+| error-fragment | 10 | **0.500** | 0.267 |
+| path | 6 | **0.667** | 0.080 |
+| conceptual | 14 | 0.106 | **0.179** |
+| cross-file | 6 | **0.087** | 0.052 |
+| boundary | 4 | **0.042** | 0.025 |
+
+`ms-marco-MiniLM` is trained to rank web passages against natural-language
+questions. Conceptual queries are exactly that, and it wins there. Everything
+else in this gold set is an *exact-match* problem — an identifier, a quoted
+error string, a filename — which is out of distribution for a passage ranker
+and precisely what the deterministic signals were built for. On path queries
+it collapses (0.667 -> 0.080): the reranker has an exact-path bonus, and the
+model has no notion that the query *is* a filename.
+
+### The more interesting finding: deterministic reranking hurts conceptual queries
+
+Reading down the conceptual column: plain `semantic` scores MRR 0.230,
+`semantic +rr` scores **0.106**. Reranking makes conceptual queries
+*materially worse than not reranking at all*, and `auto` is the same story
+(0.239 -> 0.072). The declaration bonus and path affinity are identifier
+signals; applied to a natural-language query they promote whatever happens to
+contain a matching token.
+
+That is a live regression in the shipped default, worth more than the
+cross-encoder question that surfaced it.
+
+Nothing adopts the cross-encoder as a default on this evidence. It stays
+opt-in (`crossEncoder`), and the ~23 MB it adds to the binary is not yet
+earned.
+
+#### Fix: gate the declaration bonus on query shape
+
+Two candidate fixes were on the table — suppress the identifier signals on
+non-identifier queries, or route conceptual queries to the cross-encoder. The
+first was tried, because it costs nothing at run time and does not depend on
+a model that has not earned its place in the binary.
+
+A query counts as prose when it contains two or more function words
+(`queryIsProse` in `rerank.ts`). On this gold set that classifier is exact:
+all 24 exact-symbol / error-fragment / path queries are names, all 24
+conceptual / cross-file / boundary queries are prose.
+
+Two variants were measured against the same corpus, index and gold set
+(62 queries, corpus `974bf58d`, embsearch 0.3.0), differing only in which
+signals the gate suppresses. Per-class MRR, `A` = today's shipped scoring:
+
+| class | n | A | B: gate declaration | C: gate declaration + path |
+|---|---|---|---|---|
+| exact-symbol | 22 | 0.742 | 0.742 | 0.742 |
+| error-fragment | 10 | 0.500 | 0.500 | 0.500 |
+| path | 6 | 0.667 | 0.667 | 0.667 |
+| conceptual | 14 | 0.124 | **0.170** | 0.170 |
+| cross-file | 6 | 0.089 | 0.057 | 0.032 |
+| boundary | 4 | 0.104 | **0.188** | 0.175 |
+
+(`semantic +rr`; `auto +rr` and `bm25+dense +rr` show the same shape, with
+conceptual +0.040 and +0.056 respectively.)
+
+**B ships.** The three name-shaped classes are bit-identical under both
+variants — by construction, since the gate never fires on them — so the
+comparison is confined to the classes it targets. B takes conceptual up
++0.046 and boundary +0.083 for a cross-file cost of −0.032; C buys no extra
+conceptual gain and doubles the cross-file loss. Path affinity is a *topic*
+signal, not a name signal: "how does a grep line number become an embedding
+chunk id" genuinely wants files with `grep` and `chunk` in the path, so
+gating it throws away evidence that prose queries can use.
+
+Overall MRR moves +0.007 to +0.013 depending on config, which the paired sign
+test does **not** call significant (best p = 0.109, 8 better / 2 worse on
+`auto +rr`). The justification is not the aggregate — it is that the change
+is free for three of six classes and directionally right for the other three.
+
+**This halves the regression rather than removing it.** Reranked conceptual
+is still below un-reranked conceptual (0.170 against 0.246). The remaining
+gap is the open question: for prose queries the deterministic reranker has
+nothing left but term coverage, and term coverage is not what orders a
+behavioural question correctly. This is the one class where the cross-encoder
+won (0.106 -> 0.179), so a query-shape router between the two rerankers is
+the obvious next experiment.
+
 ### What is still open
 
 - **Hybrid and semantic are now indistinguishable on rank.** Reranked

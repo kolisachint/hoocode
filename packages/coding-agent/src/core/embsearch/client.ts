@@ -20,6 +20,19 @@ export interface EmbSearchDaemonInfo {
 	count: number;
 }
 
+/** One candidate sent for cross-encoder scoring. */
+export interface EmbSearchRerankPassage {
+	id: string;
+	text: string;
+}
+
+/** A cross-encoder relevance logit. Higher is more relevant, but the scale is
+ *  unnormalized and comparable only within one call. */
+export interface EmbSearchRerankResult {
+	id: string;
+	score: number;
+}
+
 export interface EmbSearchBulkResult {
 	inserted: number;
 	updated: number;
@@ -55,6 +68,9 @@ interface EmbSearchRawResponse {
 	updated_count?: number;
 	model_id?: string;
 	dim?: number;
+	/** Cross-encoder scores. Separate from `results` because the daemon's
+	 *  logits are not comparable to retrieval scores. */
+	reranked?: EmbSearchRerankResult[];
 }
 
 export class EmbSearchClient {
@@ -153,6 +169,20 @@ export class EmbSearchClient {
 			retriever === "dense" ? { op: "query", text, k } : { op: "query", text, k, retriever },
 		);
 		return res.results ?? [];
+	}
+
+	/**
+	 * Score `passages` against `query` with the daemon's cross-encoder and
+	 * return the best `k`, best first.
+	 *
+	 * Passages are sent inline rather than referenced by id: the caller has the
+	 * exact spans it intends to show the model, and a cross-encoder scores the
+	 * text it is given, so sending anything else would score the wrong thing.
+	 * Requires an onnx build with reranker weights (embsearch >= 0.3.0).
+	 */
+	async rerank(query: string, passages: EmbSearchRerankPassage[], k: number): Promise<EmbSearchRerankResult[]> {
+		const res = await this.send({ op: "rerank", query, passages, k });
+		return res.reranked ?? [];
 	}
 
 	/**

@@ -38,6 +38,7 @@ import {
 	runEvalSuite,
 	summarizeGoldSet,
 } from "../src/core/search/eval-harness.js";
+import { applyLiveEdits, loadLiveEditFixture } from "../src/core/search/eval-live.js";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const packageRoot = path.resolve(scriptDir, "..");
@@ -59,9 +60,26 @@ const embsearchBinary = flag("embsearch-binary");
 // enabling the `daemon-hybrid` configs. Separate store dir because hybrid-ness
 // is fixed at store creation; costs a full re-index the first time.
 const withDaemonHybrid = has("daemon-hybrid");
+// Applies edits to the corpus AFTER indexing and scores queries only those
+// edits can answer — the grep leg's unique contribution, which the main sweep
+// cannot see because its corpus matches the index exactly.
+const withLiveEdits = has("live-edits");
+// Scores only the named configs. Iterating on the reranker means re-running
+// five rows, not nineteen; the record still says which configs it holds, so a
+// filtered run can never be mistaken for a full sweep.
+const configFilter = flag("configs")
+	?.split(",")
+	.map((s) => s.trim())
+	.filter(Boolean);
 
 const fixturePath = path.join(packageRoot, "test", "fixtures", "search-eval.json");
 const dataset = loadGoldSet(fixturePath);
+
+const configs = configFilter ? EVAL_CONFIGS.filter((c) => configFilter.includes(c.label)) : EVAL_CONFIGS;
+if (configs.length === 0) {
+	console.error(`--configs matched nothing. Known labels:\n  ${EVAL_CONFIGS.map((c) => c.label).join("\n  ")}`);
+	process.exit(1);
+}
 
 const corpus = pinCorpus(repoRoot, corpusRef);
 try {
@@ -133,7 +151,7 @@ try {
 	const { aggregates, perQuery } = await runEvalSuite({
 		cwd: corpus.cwd,
 		dataset,
-		configs: EVAL_CONFIGS,
+		configs,
 		service,
 		hybridService,
 		onQuery: (index, query) => {
@@ -141,7 +159,7 @@ try {
 		},
 	});
 
-	const record: EvalRunRecord = {
+	const record: EvalRunRecord & { liveEdits?: unknown } = {
 		provenance: collectProvenance(
 			repoRoot,
 			corpus,
@@ -151,10 +169,35 @@ try {
 			hybridService,
 		),
 		goldSet: summarizeGoldSet(dataset),
-		configs: EVAL_CONFIGS,
+		configs,
 		aggregates,
 		perQuery,
 	};
+
+	if (withLiveEdits) {
+		const livePath = path.join(packageRoot, "test", "fixtures", "search-eval-live.json");
+		const fixture = loadLiveEditFixture(livePath);
+		const applied = applyLiveEdits(corpus.cwd, fixture);
+		if (applied.issues.length > 0) {
+			console.error(`\nlive-edit gold did not resolve:\n  ${applied.issues.join("\n  ")}`);
+			process.exit(1);
+		}
+		// Indexing already ran, so these files exist on disk but not in any
+		// index — exactly the state an agent's own edits leave behind.
+		const live = await runEvalSuite({
+			cwd: corpus.cwd,
+			dataset: applied.queries,
+			configs,
+			service,
+			hybridService,
+		});
+		console.log(
+			`\nlive-edit queries (${applied.queries.length}), written after indexing — ` +
+				"index-backed retrievers score 0 by construction:",
+		);
+		console.log(formatAggregateTable(live.aggregates));
+		record.liveEdits = { queryCount: applied.queries.length, aggregates: live.aggregates, perQuery: live.perQuery };
+	}
 
 	await service?.dispose();
 	await hybridService?.dispose();

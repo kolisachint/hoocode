@@ -14,7 +14,9 @@
  *     depresses every recall number.
  */
 
-import path from "node:path";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -26,8 +28,9 @@ import {
 	spanMatchesGold,
 } from "../src/core/search/eval.js";
 import { comparePaired, signTestPValue } from "../src/core/search/eval-compare.js";
-import { loadGoldSet, validateGoldSet } from "../src/core/search/eval-gold.js";
-import { hashRetrievalSource, summarizeGoldSet } from "../src/core/search/eval-harness.js";
+import { loadGoldSet, resolveGoldSet, validateGoldSet } from "../src/core/search/eval-gold.js";
+import { hashRetrievalSource, runEvalSuite, summarizeGoldSet } from "../src/core/search/eval-harness.js";
+import { applyLiveEdits, loadLiveEditFixture } from "../src/core/search/eval-live.js";
 import type { CandidateSpan } from "../src/core/search/types.js";
 
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -161,6 +164,82 @@ describe("eval harness provenance", () => {
 		const hash = hashRetrievalSource(repoRoot);
 		expect(hash).toMatch(/^[0-9a-f]{16}$/);
 		expect(hashRetrievalSource(repoRoot)).toBe(hash);
+	});
+});
+
+describe("harness end-to-end", () => {
+	/**
+	 * Runs the real pipeline — gold set, ripgrep retrieval, fusion, reranking,
+	 * metrics — over a subset of queries.
+	 *
+	 * This is the CI gate. The harness previously stopped working and nothing
+	 * noticed for weeks, because the only thing that ran it was a command a
+	 * human had to remember to type. A dedicated CI job would be tidier, but it
+	 * needs a workflow change; this rides the test job that already runs on
+	 * every PR and catches the same failure.
+	 *
+	 * Subset, not the full sweep: the point is "the gate still executes", and a
+	 * 62-query run costs minutes. `bun run search-eval` remains the real
+	 * measurement.
+	 */
+	const dataset = loadGoldSet(fixturePath);
+	// Exact-symbol queries: the class ripgrep alone can actually answer, so a
+	// zero here means the pipeline is broken rather than merely weak.
+	const subset = dataset.filter((q) => q.class === "exact-symbol").slice(0, 6);
+	const configs = EVAL_CONFIGS.filter((c) => c.label === "lexical" || c.label === "lexical +rr");
+
+	it("scores real queries end-to-end without an embedding index", async () => {
+		expect(subset.length).toBe(6);
+		const { aggregates, perQuery } = await runEvalSuite({ cwd: repoRoot, dataset: subset, configs });
+
+		expect(perQuery).toHaveLength(subset.length);
+		expect(aggregates.map((a) => a.label).sort()).toEqual(["lexical", "lexical +rr"]);
+		for (const aggregate of aggregates) {
+			expect(aggregate.n).toBe(subset.length);
+			expect(aggregate.degraded).toBe(0);
+			// Retrieval actually returned gold spans. A silently-broken pipeline
+			// scores 0 here while every other assertion still passes.
+			expect(aggregate.recallAt50, `${aggregate.label} found nothing`).toBeGreaterThan(0);
+			expect(aggregate.recallAt50).toBeLessThanOrEqual(1);
+			expect(aggregate.recallAt1).toBeLessThanOrEqual(aggregate.recallAt50);
+		}
+	}, 60_000);
+});
+
+describe("live-edit fixture", () => {
+	const livePath = path.join(packageRoot, "test", "fixtures", "search-eval-live.json");
+
+	it("resolves its gold only after the edits are applied", () => {
+		const fixture = loadLiveEditFixture(livePath);
+		const corpus = mkdtempSync(join(tmpdir(), "live-edit-"));
+		try {
+			// Before: the anchors describe content that does not exist yet.
+			const before = resolveGoldSet(corpus, fixture.queries);
+			expect(before.issues.length).toBeGreaterThan(0);
+
+			const applied = applyLiveEdits(corpus, fixture);
+			expect(applied.issues, applied.issues.join("; ")).toEqual([]);
+			for (const query of applied.queries) {
+				for (const gold of query.gold) {
+					expect(gold.startLine, `${query.id} unresolved`).toBeGreaterThan(0);
+				}
+			}
+		} finally {
+			rmSync(corpus, { recursive: true, force: true });
+		}
+	});
+
+	it("targets content no index could hold", () => {
+		const fixture = loadLiveEditFixture(livePath);
+		const editPaths = new Set(fixture.edits.map((e) => e.path));
+		expect(fixture.queries.length).toBeGreaterThan(0);
+		// Every gold span must live in an edited file, or the query would be
+		// answerable from the index and would measure nothing.
+		for (const query of fixture.queries) {
+			for (const gold of query.gold) {
+				expect(editPaths.has(gold.path), `${query.id} points outside the edits`).toBe(true);
+			}
+		}
 	});
 });
 

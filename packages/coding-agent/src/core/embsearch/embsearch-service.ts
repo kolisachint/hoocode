@@ -19,7 +19,12 @@ import { readFileSync } from "fs";
 import { minimatch } from "minimatch";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { chunkFile } from "./chunker.js";
-import { type DaemonRetriever, EmbSearchClient } from "./client.js";
+import {
+	type DaemonRetriever,
+	EmbSearchClient,
+	type EmbSearchRerankPassage,
+	type EmbSearchRerankResult,
+} from "./client.js";
 import {
 	emptyIndexMeta,
 	type FileMeta,
@@ -48,6 +53,8 @@ const MOCK_MODEL_ID = "mock-hash-v1";
  * corrupt the ranking with no error anywhere — so refuse instead of degrading.
  */
 const MIN_LEXICAL_RETRIEVER_VERSION = [0, 2, 0] as const;
+/** First embsearch release bundling cross-encoder reranker weights. */
+const MIN_RERANK_VERSION = [0, 3, 0] as const;
 
 /** `embsearch 0.2.0` -> [0, 2, 0]; undefined when it cannot be parsed. */
 function parseBinaryVersion(output: string): number[] | undefined {
@@ -112,6 +119,8 @@ export class EmbsearchService {
 	private disposed = false;
 	/** Whether the resolved binary serves `retriever: "lexical"`. */
 	private lexicalRetriever = false;
+	/** Whether the resolved binary serves the cross-encoder `rerank` op. */
+	private crossEncoder = false;
 
 	constructor(options: EmbsearchServiceOptions) {
 		this.options = options;
@@ -136,13 +145,36 @@ export class EmbsearchService {
 		return this.lexicalRetriever;
 	}
 
-	private probeLexicalRetrieverSupport(binary: string): boolean {
+	/** Whether the running daemon can score with a cross-encoder. */
+	supportsCrossEncoder(): boolean {
+		return this.crossEncoder;
+	}
+
+	/**
+	 * Cross-encoder rerank of caller-supplied passages.
+	 *
+	 * Unlike the retrievers this does not consult the index at all — it scores
+	 * exactly the text passed in, which is why the caller sends its expanded
+	 * windows rather than chunk ids.
+	 */
+	async rerank(query: string, passages: EmbSearchRerankPassage[], k: number): Promise<EmbSearchRerankResult[]> {
+		if (!this.client || this.client.isClosed) {
+			throw new Error("semantic index is not available");
+		}
+		if (!this.crossEncoder) {
+			throw new Error(
+				`embsearch is too old to rerank (needs >= ${MIN_RERANK_VERSION.join(".")}); ` +
+					"an older daemon has no cross-encoder weights",
+			);
+		}
+		return await this.client.rerank(query, passages, k);
+	}
+
+	private probeBinaryVersion(binary: string): number[] | undefined {
 		try {
-			const out = execFileSync(binary, ["--version"], { encoding: "utf-8", timeout: 10_000 });
-			const version = parseBinaryVersion(out);
-			return version !== undefined && atLeast(version, MIN_LEXICAL_RETRIEVER_VERSION);
+			return parseBinaryVersion(execFileSync(binary, ["--version"], { encoding: "utf-8", timeout: 10_000 }));
 		} catch {
-			return false;
+			return undefined;
 		}
 	}
 
@@ -191,7 +223,9 @@ export class EmbsearchService {
 			return;
 		}
 
-		this.lexicalRetriever = this.probeLexicalRetrieverSupport(binary);
+		const binaryVersion = this.probeBinaryVersion(binary);
+		this.lexicalRetriever = binaryVersion !== undefined && atLeast(binaryVersion, MIN_LEXICAL_RETRIEVER_VERSION);
+		this.crossEncoder = binaryVersion !== undefined && atLeast(binaryVersion, MIN_RERANK_VERSION);
 
 		const storeDir = this.options.storeDir ?? getEmbsearchStoreDir(this.options.cwd);
 		this.client = new EmbSearchClient({

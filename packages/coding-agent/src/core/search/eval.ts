@@ -72,6 +72,9 @@ export interface EvalConfig {
 	 * skipped when the harness has no hybrid service.
 	 */
 	bm25Leg?: boolean;
+	/** Rerank with the daemon's cross-encoder rather than the deterministic
+	 *  scorer. Needs a service, so it is skipped without one. */
+	crossEncoder?: boolean;
 }
 
 /**
@@ -109,6 +112,11 @@ export const EVAL_CONFIGS: readonly EvalConfig[] = [
 	// grep leg still contributes once BM25 is present.
 	{ label: "bm25+dense +rr", mode: "semantic", rerank: true, bm25Leg: true },
 	{ label: "3-way +rr", mode: "hybrid", rerank: true, bm25Leg: true },
+	// Cross-encoder reranking, against the same retrieval each deterministic
+	// `+rr` row uses — so the delta is the reranker and nothing else.
+	{ label: "semantic +ce", mode: "semantic", crossEncoder: true },
+	{ label: "auto +ce", mode: "auto", crossEncoder: true },
+	{ label: "bm25+dense +ce", mode: "semantic", bm25Leg: true, crossEncoder: true },
 ];
 
 /** Candidates fetched per eval query — deep enough for the reranker gate. */
@@ -174,6 +182,9 @@ export async function evaluateQuery(
 		// A daemon-hybrid config against the plain store would error in the
 		// daemon (`query_hybrid requires a hybrid store`); omit the row instead.
 		if ((config.daemonHybrid || config.bm25Leg) && !hybridService) continue;
+		// Cross-encoder rows need a live daemon; omit rather than silently
+		// falling back to the deterministic reranker under a "+ce" label.
+		if (config.crossEncoder && !(config.bm25Leg ? hybridService : service)?.supportsCrossEncoder()) continue;
 		const retrieved = await retrieveCandidates({
 			cwd,
 			query: evalQuery.query,
@@ -184,6 +195,7 @@ export async function evaluateQuery(
 			service: config.daemonHybrid || config.bm25Leg ? hybridService : service,
 			daemonHybrid: config.daemonHybrid,
 			bm25Leg: config.bm25Leg,
+			crossEncoder: config.crossEncoder,
 		});
 		results.push({
 			label: config.label,
