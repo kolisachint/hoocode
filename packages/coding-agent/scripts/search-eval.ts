@@ -27,6 +27,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { EmbsearchService } from "../src/core/embsearch/embsearch-service.js";
+import { getEmbsearchStoreDir } from "../src/core/embsearch/index-meta.js";
 import { EVAL_CONFIGS } from "../src/core/search/eval.js";
 import { loadGoldSet, validateGoldSet } from "../src/core/search/eval-gold.js";
 import {
@@ -54,6 +55,10 @@ const skipEmbed = has("no-embed");
 // Explicit binary beats the on-demand release download, so a semantic run is
 // reproducible from a known artifact rather than "whatever latest resolved to".
 const embsearchBinary = flag("embsearch-binary");
+// Builds a SECOND index whose store carries the daemon's BM25 lexical index,
+// enabling the `daemon-hybrid` configs. Separate store dir because hybrid-ness
+// is fixed at store creation; costs a full re-index the first time.
+const withDaemonHybrid = has("daemon-hybrid");
 
 const fixturePath = path.join(packageRoot, "test", "fixtures", "search-eval.json");
 const dataset = loadGoldSet(fixturePath);
@@ -78,6 +83,7 @@ try {
 
 	const PROGRESS_STEP = 2000;
 	let nextProgressAt = 0;
+	let nextHybridProgressAt = 0;
 	let service: EmbsearchService | undefined;
 	if (!skipEmbed) {
 		service = new EmbsearchService({
@@ -100,18 +106,50 @@ try {
 		console.error("  embsearch: skipped (--no-embed)");
 	}
 
+	let hybridService: EmbsearchService | undefined;
+	if (withDaemonHybrid && !skipEmbed) {
+		hybridService = new EmbsearchService({
+			cwd: corpus.cwd,
+			thresholdBytes: 0,
+			binaryPath: embsearchBinary,
+			storeDir: `${getEmbsearchStoreDir(corpus.cwd)}-bm25`,
+			hybridStore: true,
+			onProgress: (state) => {
+				if (state.phase === "indexing" && state.done >= nextHybridProgressAt) {
+					nextHybridProgressAt = state.done + PROGRESS_STEP;
+					console.error(`  embsearch(bm25): indexing ${state.done}/${state.total}`);
+				}
+			},
+		});
+		await hybridService.start();
+		const hs = hybridService.getState();
+		console.error(`  embsearch(bm25): ${hs.phase}${"reason" in hs ? ` (${hs.reason})` : ""}`);
+		if (!hybridService.isAvailable()) {
+			console.error("  daemon-hybrid rows will be omitted: BM25 store did not come up");
+			hybridService = undefined;
+		}
+	}
+
 	const { aggregates, perQuery } = await runEvalSuite({
 		cwd: corpus.cwd,
 		dataset,
 		configs: EVAL_CONFIGS,
 		service,
+		hybridService,
 		onQuery: (index, query) => {
 			if (index % 10 === 0) console.error(`  query ${index + 1}/${dataset.length} (${query.id})`);
 		},
 	});
 
 	const record: EvalRunRecord = {
-		provenance: collectProvenance(repoRoot, corpus, corpusRef ?? "(working tree)", service, embsearchBinary),
+		provenance: collectProvenance(
+			repoRoot,
+			corpus,
+			corpusRef ?? "(working tree)",
+			service,
+			embsearchBinary,
+			hybridService,
+		),
 		goldSet: summarizeGoldSet(dataset),
 		configs: EVAL_CONFIGS,
 		aggregates,
@@ -119,6 +157,7 @@ try {
 	};
 
 	await service?.dispose();
+	await hybridService?.dispose();
 
 	console.log(`\n${formatAggregateTable(aggregates)}`);
 	if (!record.provenance.embedder.available) {

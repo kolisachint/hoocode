@@ -47,6 +47,13 @@ export interface RetrieveOptions {
 	rrfK?: number;
 	/** Rerank the fused top-50 before slicing to `limit`. Default: true. */
 	rerank?: boolean;
+	/**
+	 * Ask the daemon to fuse its own BM25 index with the vectors and return one
+	 * already-fused ranking, instead of taking a dense-only list. Eval-only:
+	 * it needs a store built with `--hybrid`, and the fused list arrives as a
+	 * single "embed" leg because the daemon exposes no BM25-only op.
+	 */
+	daemonHybrid?: boolean;
 	service?: EmbsearchService;
 	signal?: AbortSignal;
 }
@@ -142,7 +149,9 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 			// The flat index pads top-k with whatever exists; with the cosine
 			// metric the store uses, score <= 0 means "no relation at all", so
 			// those padding hits would cast RRF votes on pure noise.
-			const chunkHits = (await service!.searchChunks(query, EMBED_TOP_K, glob)).filter((hit) => hit.score > 0);
+			const chunkHits = (await service!.searchChunks(query, EMBED_TOP_K, glob, options.daemonHybrid)).filter(
+				(hit) => hit.score > 0,
+			);
 			const hits: RankedHit[] = chunkHits.map((hit, i) => ({
 				id: hit.id,
 				rank: i + 1,

@@ -53,6 +53,17 @@ export interface EmbsearchServiceOptions {
 	binaryPath?: string;
 	/** Minimum indexable bytes before indexing kicks in. */
 	thresholdBytes: number;
+	/**
+	 * Override the store location. Only the eval harness sets this, so a
+	 * second index (e.g. a BM25-hybrid store) can exist for the same repo
+	 * without colliding with the primary one.
+	 */
+	storeDir?: string;
+	/**
+	 * Create the store with the daemon's BM25 lexical index. Fixed at store
+	 * creation, so this must pair with a distinct `storeDir`.
+	 */
+	hybridStore?: boolean;
 	/** Progress callback for UI (footer / stderr lines). */
 	onProgress?: (state: EmbsearchState) => void;
 }
@@ -139,8 +150,12 @@ export class EmbsearchService {
 			return;
 		}
 
-		const storeDir = getEmbsearchStoreDir(this.options.cwd);
-		this.client = new EmbSearchClient({ binaryPath: binary, storePath: getVectorStoreDir(storeDir) });
+		const storeDir = this.options.storeDir ?? getEmbsearchStoreDir(this.options.cwd);
+		this.client = new EmbSearchClient({
+			binaryPath: binary,
+			storePath: getVectorStoreDir(storeDir),
+			hybrid: this.options.hybridStore,
+		});
 		await this.client.ready();
 
 		const info = await this.client.info();
@@ -252,11 +267,11 @@ export class EmbsearchService {
 	}
 
 	/** Top-`k` semantic hits including their chunk ids, for rank fusion. */
-	async searchChunks(query: string, k = 10, glob?: string): Promise<SemanticChunkHit[]> {
+	async searchChunks(query: string, k = 10, glob?: string, daemonHybrid = false): Promise<SemanticChunkHit[]> {
 		if (!this.client || this.client.isClosed || !this.meta) {
 			throw new Error("semantic index is not available");
 		}
-		const results = await this.client.query(query, k);
+		const results = await this.client.query(query, k, daemonHybrid);
 		const hits: SemanticChunkHit[] = [];
 		const matchGlob = (rel: string): boolean => {
 			if (!glob) return true;

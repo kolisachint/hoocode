@@ -59,6 +59,13 @@ export interface EvalConfig {
 	mode: SearchMode;
 	rrfK?: number;
 	rerank?: boolean;
+	/**
+	 * Score this config against a daemon-side hybrid store (BM25 fused with
+	 * vectors inside the Rust daemon) instead of the dense-only index. Skipped
+	 * when the harness has no hybrid service, so records without one simply
+	 * omit the row rather than silently scoring it as plain semantic.
+	 */
+	daemonHybrid?: boolean;
 }
 
 /**
@@ -85,6 +92,12 @@ export const EVAL_CONFIGS: readonly EvalConfig[] = [
 	{ label: "hybrid k=2 +rr", mode: "hybrid", rrfK: 2, rerank: true },
 	{ label: "hybrid k=60 +rr", mode: "hybrid", rrfK: 60, rerank: true },
 	{ label: "auto +rr", mode: "auto", rerank: true },
+	// Is BM25 a better lexical leg than ripgrep? These two run the daemon's own
+	// vector+BM25 fusion and no ripgrep at all, so comparing them against
+	// "semantic" isolates what BM25 adds, and against "hybrid k=2" compares the
+	// two lexical legs at the system level.
+	{ label: "daemon-hybrid", mode: "semantic", daemonHybrid: true },
+	{ label: "daemon-hybrid +rr", mode: "semantic", rerank: true, daemonHybrid: true },
 ];
 
 /** Candidates fetched per eval query — deep enough for the reranker gate. */
@@ -143,9 +156,13 @@ export async function evaluateQuery(
 	evalQuery: EvalQuery,
 	configs: readonly EvalConfig[] = EVAL_CONFIGS,
 	service?: EmbsearchService,
+	hybridService?: EmbsearchService,
 ): Promise<EvalQueryResult[]> {
 	const results: EvalQueryResult[] = [];
 	for (const config of configs) {
+		// A daemon-hybrid config against the plain store would error in the
+		// daemon (`query_hybrid requires a hybrid store`); omit the row instead.
+		if (config.daemonHybrid && !hybridService) continue;
 		const retrieved = await retrieveCandidates({
 			cwd,
 			query: evalQuery.query,
@@ -153,7 +170,8 @@ export async function evaluateQuery(
 			rrfK: config.rrfK,
 			rerank: config.rerank ?? false,
 			limit: EVAL_FETCH_LIMIT,
-			service,
+			service: config.daemonHybrid ? hybridService : service,
+			daemonHybrid: config.daemonHybrid,
 		});
 		results.push({
 			label: config.label,

@@ -17,7 +17,14 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { EVAL_CONFIGS, type EvalGoldSpan, mrr, recallAtK, spanMatchesGold } from "../src/core/search/eval.js";
+import {
+	EVAL_CONFIGS,
+	type EvalGoldSpan,
+	evaluateQuery,
+	mrr,
+	recallAtK,
+	spanMatchesGold,
+} from "../src/core/search/eval.js";
 import { comparePaired, signTestPValue } from "../src/core/search/eval-compare.js";
 import { loadGoldSet, validateGoldSet } from "../src/core/search/eval-gold.js";
 import { hashRetrievalSource, summarizeGoldSet } from "../src/core/search/eval-harness.js";
@@ -133,6 +140,21 @@ describe("eval harness provenance", () => {
 		expect(labels).toContain("auto");
 		expect(EVAL_CONFIGS.some((c) => c.rerank === true)).toBe(true);
 		expect(new Set(labels).size).toBe(labels.length);
+	});
+
+	it("omits daemon-hybrid rows rather than scoring them against the plain store", async () => {
+		// No hybrid service passed: the configs must be skipped, not silently run
+		// against the dense-only index (which would duplicate "semantic" under a
+		// label claiming BM25 was involved) and not sent to the daemon (which
+		// errors with "query_hybrid requires a hybrid store").
+		const daemonConfigs = EVAL_CONFIGS.filter((c) => c.daemonHybrid);
+		expect(daemonConfigs.length).toBeGreaterThan(0);
+		const results = await evaluateQuery(
+			repoRoot,
+			{ id: "t", class: "c", query: "rrfFuse", gold: [{ path: "x.ts", startLine: 1, endLine: 2 }] },
+			daemonConfigs,
+		);
+		expect(results).toEqual([]);
 	});
 
 	it("hashes retrieval source so a tuning change invalidates old numbers", () => {

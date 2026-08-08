@@ -26,6 +26,8 @@ export interface EmbSearchBulkResult {
 }
 
 export interface EmbSearchClientOptions {
+	/** Open/create the store with a BM25 lexical index alongside the vectors. */
+	hybrid?: boolean;
 	/** Path to the `embsearch` binary. */
 	binaryPath: string;
 	/** Store directory passed as `--path`. */
@@ -62,6 +64,10 @@ export class EmbSearchClient {
 	constructor(opts: EmbSearchClientOptions) {
 		const args = ["serve", "--path", opts.storePath];
 		if (opts.metric) args.push("--metric", opts.metric);
+		// Hybrid-ness is fixed when a store is created: passing --hybrid against
+		// an existing non-hybrid store warns and is ignored daemon-side, so a
+		// hybrid store needs its own directory.
+		if (opts.hybrid) args.push("--hybrid");
 
 		this.proc = spawn(opts.binaryPath, args, { stdio: ["pipe", "pipe", "pipe"] });
 
@@ -126,9 +132,16 @@ export class EmbSearchClient {
 		});
 	}
 
-	/** Search for the top-`k` matches for `text`. */
-	async query(text: string, k = 10): Promise<EmbSearchResult[]> {
-		const res = await this.send({ op: "query", text, k });
+	/**
+	 * Search for the top-`k` matches for `text`.
+	 *
+	 * `hybrid` asks the daemon to fuse its BM25 lexical index with the dense
+	 * vectors and return one already-fused ranking (the daemon's own RRF, with
+	 * its own constant). It requires a store created with `--hybrid`, and there
+	 * is no BM25-only op — the lexical side cannot be retrieved separately.
+	 */
+	async query(text: string, k = 10, hybrid = false): Promise<EmbSearchResult[]> {
+		const res = await this.send(hybrid ? { op: "query", text, k, hybrid: true } : { op: "query", text, k });
 		return res.results ?? [];
 	}
 

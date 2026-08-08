@@ -82,6 +82,9 @@ export interface EvalProvenance {
 		binaryPath?: string;
 		binaryVersion?: string;
 	};
+	/** Daemon-side BM25 hybrid store, when the run included one. Absent means
+	 *  the record has no `daemon-hybrid` rows. */
+	daemonHybrid?: { available: boolean; phase: string };
 	runtime: { node: string; platform: string; arch: string };
 }
 
@@ -208,6 +211,7 @@ export function collectProvenance(
 	corpusRef: string,
 	service: EmbsearchService | undefined,
 	embsearchBinary?: string,
+	hybridService?: EmbsearchService,
 ): EvalProvenance {
 	const state = service?.getState();
 	const phase = state?.phase ?? "absent";
@@ -230,6 +234,9 @@ export function collectProvenance(
 			binaryPath: embsearchBinary,
 			binaryVersion: probeBinaryVersion(embsearchBinary),
 		},
+		daemonHybrid: hybridService
+			? { available: hybridService.isAvailable(), phase: hybridService.getState().phase }
+			: undefined,
 		runtime: { node: process.version, platform: process.platform, arch: process.arch },
 	};
 }
@@ -249,6 +256,9 @@ export interface RunEvalSuiteOptions {
 	dataset: readonly EvalQuery[];
 	configs: readonly EvalConfig[];
 	service?: EmbsearchService;
+	/** Second service backed by a daemon-side BM25 hybrid store, for the
+	 *  `daemon-hybrid` configs. Absent means those rows are omitted. */
+	hybridService?: EmbsearchService;
 	onQuery?: (index: number, query: EvalQuery) => void;
 }
 
@@ -262,7 +272,7 @@ export async function runEvalSuite(options: RunEvalSuiteOptions): Promise<{
 
 	for (const [index, evalQuery] of dataset.entries()) {
 		options.onQuery?.(index, evalQuery);
-		const results = await evaluateQuery(cwd, evalQuery, configs, service);
+		const results = await evaluateQuery(cwd, evalQuery, configs, service, options.hybridService);
 		perQuery.push({ id: evalQuery.id, class: evalQuery.class, results });
 		for (const result of results) {
 			const total = totals.get(result.label) ?? {
