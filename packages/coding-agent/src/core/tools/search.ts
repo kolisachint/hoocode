@@ -29,7 +29,7 @@ const searchSchema = Type.Object({
 	mode: Type.Optional(
 		Type.Union([Type.Literal("auto"), Type.Literal("lexical"), Type.Literal("semantic"), Type.Literal("hybrid")], {
 			description:
-				"Retrieval mode (default: auto). auto picks hybrid when the semantic index is available; lexical = exact-text only; semantic = embedding index only; hybrid = both, fused by rank.",
+				"Retrieval mode (default: auto, which is almost always right). auto = hybrid when the index is available, else lexical; hybrid = keyword and meaning over the index plus exact text for anything indexed later; semantic = index only, skipping exact text; lexical = exact text only, the one mode that works with no index.",
 		}),
 	),
 	glob: Type.Optional(
