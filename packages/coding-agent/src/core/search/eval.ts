@@ -110,6 +110,13 @@ export const EVAL_CONFIGS: readonly EvalConfig[] = [
 	// Three-way fusion: dense + BM25 + grep, all fused here so `k` is ours and
 	// the per-leg ranks survive into the trace. `bm25+dense` isolates what the
 	// grep leg still contributes once BM25 is present.
+	//
+	// `3-way` used to lose badly to `bm25+dense` (MRR 0.608 -> 0.552, 18 of 62
+	// queries worse) because two lexical views of the same corpus dilute each
+	// other in fusion. Its grep leg is now scoped to files the index has not
+	// read, so the two rows are identical on this corpus by construction —
+	// the difference only appears under `--live-edits`, where `3-way` scores
+	// 1.000 and `bm25+dense` scores 0.000.
 	{ label: "bm25+dense +rr", mode: "semantic", rerank: true, bm25Leg: true },
 	{ label: "3-way +rr", mode: "hybrid", rerank: true, bm25Leg: true },
 	// Cross-encoder reranking, against the same retrieval each deterministic

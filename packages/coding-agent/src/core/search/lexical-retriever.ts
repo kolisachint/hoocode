@@ -78,6 +78,14 @@ export interface RunLexicalOptions {
 	limit: number;
 	glob?: string;
 	signal?: AbortSignal;
+	/**
+	 * Restrict the search to these repo-relative files instead of walking `cwd`.
+	 *
+	 * Used to scope the grep leg to files the embedding index does not have
+	 * current content for. An empty array means "no files to search", which is
+	 * a real answer — not "search everything".
+	 */
+	paths?: readonly string[];
 }
 
 /**
@@ -96,11 +104,14 @@ function normalizeSearchGlob(glob: string | undefined): string | undefined {
 }
 
 export async function runLexicalRetriever(options: RunLexicalOptions): Promise<GrepLineHit[]> {
-	const { cwd, query, limit, glob: rawGlob, signal } = options;
+	const { cwd, query, limit, glob: rawGlob, signal, paths } = options;
 	const glob = normalizeSearchGlob(rawGlob);
 	const plan = buildLexicalQueryPlan(query);
 	if (!plan) return [];
 	const { pattern } = plan;
+	// Scoped to an empty set: nothing to search, and handing rg no paths would
+	// make it read stdin and hang.
+	if (paths?.length === 0) return [];
 
 	const toRel = (filePath: string): string => {
 		const rel = path.relative(cwd, filePath);
@@ -109,20 +120,27 @@ export async function runLexicalRetriever(options: RunLexicalOptions): Promise<G
 
 	const rgPath = isNativeSearchForced() ? undefined : await ensureTool("rg", true);
 	if (!rgPath) {
-		const result = await nativeGrep(cwd, {
-			pattern,
-			isDirectory: true,
-			ignoreCase: true,
-			limit,
-			glob,
-			signal,
-			readFile: (p) => readFileSync(p, "utf-8"),
-		});
-		return result.matches.map((m) => ({
-			rel: toRel(m.filePath),
-			line: m.lineNumber,
-			terms: termsOnLine(plan, m.lineText),
-		}));
+		// nativeGrep takes one root, so a scoped run visits each file directly.
+		// The scoped set is small by construction — it is what changed since the
+		// last index pass — so this stays bounded.
+		const roots = paths ? paths.map((rel) => path.resolve(cwd, rel)) : [cwd];
+		const hits: GrepLineHit[] = [];
+		for (const root of roots) {
+			if (hits.length >= limit) break;
+			const result = await nativeGrep(root, {
+				pattern,
+				isDirectory: paths === undefined,
+				ignoreCase: true,
+				limit: limit - hits.length,
+				glob,
+				signal,
+				readFile: (p) => readFileSync(p, "utf-8"),
+			});
+			for (const m of result.matches) {
+				hits.push({ rel: toRel(m.filePath), line: m.lineNumber, terms: termsOnLine(plan, m.lineText) });
+			}
+		}
+		return hits;
 	}
 
 	return new Promise<GrepLineHit[]>((resolve, reject) => {
@@ -144,7 +162,7 @@ export async function runLexicalRetriever(options: RunLexicalOptions): Promise<G
 			"!**/.git/**",
 		];
 		if (glob) args.push("--glob", glob);
-		args.push("--", pattern, cwd);
+		args.push("--", pattern, ...(paths ? paths.map((rel) => path.resolve(cwd, rel)) : [cwd]));
 		const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
 		const rl = createInterface({ input: child.stdout });
 		const hits: GrepLineHit[] = [];
