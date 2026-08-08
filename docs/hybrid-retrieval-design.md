@@ -301,40 +301,82 @@ binomial standard error is ~14pp, which is wider than every gap in it —
 including the ones that set `k = 2`, `LEXICAL_FUSION_CAP = 20`, and
 rerank-on. Those defaults are unchanged here (this work touches no retrieval
 behaviour), but they should be treated as unvalidated until re-measured on
-the current harness, not as settled results.
+the current harness, not as settled results. The baseline immediately below
+is that re-measurement, and it reverses the `k` decision.
 
-## Baseline (2026-08-08, corpus `5d89b1c`, lexical only)
+## Baseline (2026-08-08, corpus `bde442b`, embsearch 0.1.7 / MiniLM int8)
 
-`bun run search-eval -- --corpus-ref 5d89b1c --out test/fixtures/search-eval-baseline.json`
+```
+bun run search-eval -- --corpus-ref bde442b \
+  --embsearch-binary ./embsearch --out test/fixtures/search-eval-baseline.json
+```
+
+62 queries, 68 gold spans, 17,053 chunks indexed, `all-MiniLM-L6-v2-int8`,
+flat index. Two independent runs produced byte-identical aggregates and
+per-query results.
 
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
-| lexical | 2% | 34% | 45% | 52% | 0.160 |
+| lexical | 2% | 35% | 44% | 52% | 0.163 |
+| semantic | 11% | 41% | 48% | 72% | 0.245 |
+| hybrid k=0 | 6% | 48% | 56% | 77% | 0.218 |
+| hybrid k=2 | 10% | 48% | 56% | 77% | 0.249 |
+| hybrid k=10 | 8% | 46% | 57% | 77% | 0.237 |
+| **hybrid k=60** | 11% | 48% | **59%** | 77% | **0.263** |
+| auto | 8% | 48% | 56% | 77% | 0.261 |
+| lexical +rr | 2% | 35% | 44% | 52% | 0.163 |
+| semantic +rr | 27% | 48% | 55% | 72% | 0.377 |
+| hybrid k=2 +rr | 24% | 52% | 60% | 77% | 0.364 |
+| **hybrid k=60 +rr** | 26% | **52%** | **62%** | **77%** | **0.378** |
+| auto +rr | 15% | 52% | 60% | 77% | 0.315 |
 
-**All twelve rows are identical, and none of them is a semantic result.**
-The recording environment could reach neither the embsearch release (GitHub
-API blocked) nor the MiniLM weights (HuggingFace blocked), so
-`embedder.available` is `false`. The eight semantic and hybrid rows are
-marked `degraded`; the other four (`lexical`, `auto`, and their `+rr`
-variants) are honestly lexical, because `auto` resolves to lexical when no
-index exists. That every row matches exactly is the design's own invariant
-holding: a degraded row must equal the lexical row.
+R@10 by query class, the part the aggregate hides:
 
-This is a **lexical-only baseline**. The semantic and hybrid rows still need
-a run on a machine with an ONNX embsearch build; the record's `embedder`
-block is what distinguishes that future run from this one.
+| class | n | lexical | semantic | hybrid k=60 | semantic +rr | hybrid k=60 +rr |
+|---|---|---|---|---|---|---|
+| exact-symbol | 22 | 77% | 64% | 86% | 73% | **91%** |
+| error-fragment | 10 | 100% | 50% | 100% | 50% | **100%** |
+| path | 6 | 0% | 50% | 33% | **67%** | **67%** |
+| conceptual | 14 | 0% | 43% | 36% | **50%** | 29% |
+| cross-file | 6 | 0% | **33%** | 8% | **33%** | 8% |
+| boundary | 4 | 0% | 0% | 0% | 0% | 0% |
 
-Two things the lexical numbers already show, on a metric that can now see
-them:
+### What the larger gold set changes
 
-- **R@1 of 2% against R@10 of 45%.** The right span is often retrieved but
-  almost never first. Ordering, not recall, is the lexical leg's weak point
-  — invisible under the old file-level R@5.
-- **Reranking changes nothing at all here.** For single-term identifier
-  queries every candidate contains the term, so term coverage saturates at
-  1.0 and path affinity is 0, leaving the fused prior to decide. The
-  reranker does reorder multi-term queries; it simply has no signal to work
-  with on the ones lexical retrieval is otherwise best at.
+- **Hybrid beats semantic, which the 12-query table did not show.** There,
+  semantic matched or beat hybrid on every row. Here hybrid leads on R@5
+  (48% vs 41%), R@10 (59% vs 48%) and R@50 (77% vs 72%). The lexical leg is
+  contributing recall the embedding leg does not have; the earlier reading
+  that it was pure dilution was an artifact of 12 queries scored at file
+  level.
+- **`k = 60` is now at least as good as `k = 2`, reversing the decision
+  below.** k=60 leads on R@10 (59% vs 56%) and MRR (0.263 vs 0.249) without
+  reranking, and on R@10 (62% vs 60%) with it. The shipped default is still
+  `k = 2` — this note is the evidence for changing it, not the change.
+- **Reranking is worth much more than the old table suggested**, and it acts
+  on rank rather than recall: semantic R@1 11% → 27%, hybrid k=2 R@1 10% →
+  24%, with R@50 unmoved. That is exactly the shape a reranker should have.
+- **`auto` is the weakest reranked config** (R@1 15% against 24–26% for
+  explicit hybrid). It routes quoted and regex-metacharacter queries to
+  lexical, which lands all ten error-fragment queries on a leg with 2% R@1.
+  Recall survives (100% R@10) but rank does not.
+
+### Where hybrid actively hurts
+
+Fusion is not a free win, and the per-class table is where that shows:
+
+- **conceptual**: semantic +rr 50% against hybrid k=60 +rr 29%.
+- **cross-file**: semantic 33% against hybrid 8%.
+
+On queries with no exact term to anchor on, the lexical leg contributes
+noise that displaces correct embedding hits — the dilution the design note
+already identified and capped at 20 candidates, still present at the classes
+where lexical has nothing useful to say. Hybrid wins overall because
+exact-symbol and error-fragment are 32 of 62 queries; it is not uniformly
+better, and a per-class routing rule is the obvious follow-up.
+
+**boundary is 0% everywhere, in every config.** Four queries that no
+retriever reaches — worth treating as a separate problem from tuning.
 
 ## Eval results (2026-07-18, full index: 16.5k chunks over this repo)
 

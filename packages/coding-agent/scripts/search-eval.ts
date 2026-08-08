@@ -10,6 +10,7 @@
  * Usage:
  *   bun scripts/search-eval.ts --corpus-ref HEAD --out runs/baseline.json
  *   bun scripts/search-eval.ts --no-embed          # fast lexical-only check
+ *   bun scripts/search-eval.ts --embsearch-binary ./embsearch --corpus-ref HEAD
  *
  * `--corpus-ref` checks the corpus out into a detached worktree so the run is
  * reproducible. Without it the live working tree is used and the record is
@@ -50,6 +51,9 @@ const has = (name: string): boolean => process.argv.includes(`--${name}`);
 const corpusRef = flag("corpus-ref");
 const outPath = flag("out");
 const skipEmbed = has("no-embed");
+// Explicit binary beats the on-demand release download, so a semantic run is
+// reproducible from a known artifact rather than "whatever latest resolved to".
+const embsearchBinary = flag("embsearch-binary");
 
 const fixturePath = path.join(packageRoot, "test", "fixtures", "search-eval.json");
 const dataset = loadGoldSet(fixturePath);
@@ -72,13 +76,19 @@ try {
 		process.exit(1);
 	}
 
+	const PROGRESS_STEP = 2000;
+	let nextProgressAt = 0;
 	let service: EmbsearchService | undefined;
 	if (!skipEmbed) {
 		service = new EmbsearchService({
 			cwd: corpus.cwd,
 			thresholdBytes: 0,
+			binaryPath: embsearchBinary,
+			// `done` advances by the bulk batch size, so a modulo test on a
+			// non-multiple silently never fires — track a threshold instead.
 			onProgress: (state) => {
-				if (state.phase === "indexing" && state.done % 2000 === 0) {
+				if (state.phase === "indexing" && state.done >= nextProgressAt) {
+					nextProgressAt = state.done + PROGRESS_STEP;
 					console.error(`  embsearch: indexing ${state.done}/${state.total}`);
 				}
 			},
@@ -101,7 +111,7 @@ try {
 	});
 
 	const record: EvalRunRecord = {
-		provenance: collectProvenance(repoRoot, corpus, corpusRef ?? "(working tree)", service),
+		provenance: collectProvenance(repoRoot, corpus, corpusRef ?? "(working tree)", service, embsearchBinary),
 		goldSet: summarizeGoldSet(dataset),
 		configs: EVAL_CONFIGS,
 		aggregates,

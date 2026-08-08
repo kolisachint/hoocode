@@ -22,9 +22,9 @@
  */
 
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { execFileSync } from "child_process";
-import { mkdtempSync, rmSync } from "fs";
+import { rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
 import type { EmbsearchService } from "../embsearch/embsearch-service.js";
@@ -76,6 +76,11 @@ export interface EvalProvenance {
 		/** Indexed chunk count when the index reached `ready`. */
 		chunkCount?: number;
 		phase: string;
+		/** Binary that served the embeddings, and its self-reported version.
+		 *  The embedding model is baked into the binary at build time, so this
+		 *  is the only thing that identifies which model produced a score. */
+		binaryPath?: string;
+		binaryVersion?: string;
 	};
 	runtime: { node: string; platform: string; arch: string };
 }
@@ -157,7 +162,20 @@ export function pinCorpus(repoRoot: string, ref: string | undefined): PinnedCorp
 	}
 
 	const sha = git(repoRoot, ["rev-parse", ref]);
-	const dir = mkdtempSync(path.join(tmpdir(), "hoocode-search-eval-"));
+	// Deterministic path, not mkdtemp: the embedding store is keyed by a hash of
+	// the corpus directory, so a fresh temp path every run would re-embed all
+	// ~17k chunks (minutes) instead of reusing the store built for this exact
+	// SHA. The worktree is still removed afterwards; only the store persists.
+	const dir = path.join(tmpdir(), `hoocode-search-eval-${sha.slice(0, 12)}`);
+	if (existsSync(dir)) {
+		// Left behind by an interrupted run — drop it so `worktree add` succeeds.
+		try {
+			git(repoRoot, ["worktree", "remove", "--force", dir]);
+		} catch {
+			rmSync(dir, { recursive: true, force: true });
+			git(repoRoot, ["worktree", "prune"]);
+		}
+	}
 	git(repoRoot, ["worktree", "add", "--detach", dir, sha]);
 	return {
 		cwd: dir,
@@ -174,11 +192,22 @@ export function pinCorpus(repoRoot: string, ref: string | undefined): PinnedCorp
 	};
 }
 
+/** `<binary> --version`, or undefined when it cannot be run. */
+function probeBinaryVersion(binaryPath: string | undefined): string | undefined {
+	if (!binaryPath) return undefined;
+	try {
+		return execFileSync(binaryPath, ["--version"], { encoding: "utf-8" }).trim();
+	} catch {
+		return undefined;
+	}
+}
+
 export function collectProvenance(
 	repoRoot: string,
 	corpus: PinnedCorpus,
 	corpusRef: string,
 	service: EmbsearchService | undefined,
+	embsearchBinary?: string,
 ): EvalProvenance {
 	const state = service?.getState();
 	const phase = state?.phase ?? "absent";
@@ -198,6 +227,8 @@ export function collectProvenance(
 			reason: state && "reason" in state ? state.reason : undefined,
 			chunkCount: state?.phase === "ready" ? state.chunkCount : undefined,
 			phase,
+			binaryPath: embsearchBinary,
+			binaryVersion: probeBinaryVersion(embsearchBinary),
 		},
 		runtime: { node: process.version, platform: process.platform, arch: process.arch },
 	};
