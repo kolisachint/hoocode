@@ -201,8 +201,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
-        "startLine": 497,
-        "endLine": 501,
+        "startLine": 453,
+        "endLine": 457,
         "anchor": "export async function ensureTool"
       }
     ]
@@ -305,8 +305,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/tools/bash.ts",
-        "startLine": 330,
-        "endLine": 334,
+        "startLine": 331,
+        "endLine": 335,
         "anchor": "\"Command blocked: does not match any allowed command pattern\""
       }
     ]
@@ -488,7 +488,7 @@
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
         "startLine": 1,
-        "endLine": 545,
+        "endLine": 501,
         "scope": "file"
       }
     ]
@@ -552,8 +552,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/tools/bash.ts",
-        "startLine": 330,
-        "endLine": 334,
+        "startLine": 331,
+        "endLine": 335,
         "anchor": "\"Command blocked: does not match any allowed command pattern\""
       }
     ]
@@ -669,8 +669,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
-        "startLine": 497,
-        "endLine": 501,
+        "startLine": 453,
+        "endLine": 457,
         "anchor": "export async function ensureTool"
       }
     ]
@@ -720,8 +720,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
-        "startLine": 497,
-        "endLine": 501,
+        "startLine": 453,
+        "endLine": 457,
         "anchor": "export async function ensureTool"
       },
       {
