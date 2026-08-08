@@ -15,13 +15,14 @@
  */
 
 import { execFileSync } from "child_process";
-import { readFileSync } from "fs";
+import { readFileSync, rmSync } from "fs";
 import { minimatch } from "minimatch";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { chunkFile } from "./chunker.js";
 import {
 	type DaemonRetriever,
 	EmbSearchClient,
+	type EmbSearchDaemonInfo,
 	type EmbSearchRerankPassage,
 	type EmbSearchRerankResult,
 } from "./client.js";
@@ -100,8 +101,12 @@ export interface EmbsearchServiceOptions {
 	 */
 	storeDir?: string;
 	/**
-	 * Create the store with the daemon's BM25 lexical index. Fixed at store
-	 * creation, so this must pair with a distinct `storeDir`.
+	 * Create the store with the daemon's BM25 lexical index.
+	 *
+	 * Defaults to whatever the daemon can serve. Fixed at store creation, so an
+	 * existing store that disagrees is rebuilt once; when overriding this to
+	 * hold two different stores for one repo, pair it with a distinct
+	 * `storeDir` so they do not fight over the same directory.
 	 */
 	hybridStore?: boolean;
 	/** Progress callback for UI (footer / stderr lines). */
@@ -128,6 +133,8 @@ export class EmbsearchService {
 	private disposed = false;
 	/** Whether the resolved binary serves `retriever: "lexical"`. */
 	private lexicalRetriever = false;
+	/** Whether the store actually opened carries a BM25 index. */
+	private hybridStore = false;
 	/** Whether the resolved binary serves the cross-encoder `rerank` op. */
 	private crossEncoder = false;
 
@@ -149,9 +156,12 @@ export class EmbsearchService {
 		this.options.onProgress?.(state);
 	}
 
-	/** Whether the running daemon can serve a BM25-only query. */
+	/**
+	 * Whether a BM25-only query will work: the daemon has to understand the
+	 * `lexical` retriever *and* the open store has to carry a BM25 index.
+	 */
 	supportsLexicalRetriever(): boolean {
-		return this.lexicalRetriever;
+		return this.lexicalRetriever && this.hybridStore;
 	}
 
 	/**
@@ -277,14 +287,36 @@ export class EmbsearchService {
 		this.crossEncoder = binaryVersion !== undefined && atLeast(binaryVersion, MIN_RERANK_VERSION);
 
 		const storeDir = this.options.storeDir ?? getEmbsearchStoreDir(this.options.cwd);
-		this.client = new EmbSearchClient({
-			binaryPath: binary,
-			storePath: getVectorStoreDir(storeDir),
-			hybrid: this.options.hybridStore,
-		});
-		await this.client.ready();
+		// A hybrid store carries a BM25 index next to its vectors, which is what
+		// lets search use BM25 as its lexical leg instead of ripgrep. Callers may
+		// force it either way; by default it follows what the daemon can serve.
+		const wantHybrid = this.options.hybridStore ?? this.lexicalRetriever;
 
-		const info = await this.client.info();
+		const openClient = async (): Promise<EmbSearchDaemonInfo> => {
+			this.client = new EmbSearchClient({
+				binaryPath: binary,
+				storePath: getVectorStoreDir(storeDir),
+				hybrid: wantHybrid,
+			});
+			await this.client.ready();
+			return await this.client.info();
+		};
+
+		let info = await openClient();
+
+		// Hybrid-ness is fixed when a store is created and `--hybrid` against an
+		// existing plain store only warns, so an index built before this was the
+		// default would silently stay dense-only and every BM25 query against it
+		// would fail. Ask the store itself rather than trusting the sidecar, and
+		// rebuild once when it disagrees. `info.hybrid` is undefined on daemons
+		// too old to report it — those cannot serve BM25 anyway, so leave them be.
+		if (wantHybrid && info.hybrid === false) {
+			this.setState({ phase: "indexing", done: 0, total: 0 });
+			await this.closeClient();
+			rmSync(storeDir, { recursive: true, force: true });
+			info = await openClient();
+		}
+		this.hybridStore = info.hybrid === true;
 		// A daemon old enough to omit the field is left on the version verdict —
 		// back then the weights were bundled, so version did imply capability.
 		if (info.rerank === false) this.crossEncoder = false;

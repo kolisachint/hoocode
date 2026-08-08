@@ -108,6 +108,11 @@ try {
 			cwd: corpus.cwd,
 			thresholdBytes: 0,
 			binaryPath: embsearchBinary,
+			// Dense-only on purpose. Production now builds a hybrid store by
+			// default; here that would silently make this the same store as the
+			// `-bm25` one below, index the corpus twice, and leave no dense-only
+			// baseline to compare the BM25 rows against.
+			hybridStore: false,
 			// `done` advances by the bulk batch size, so a modulo test on a
 			// non-multiple silently never fires — track a threshold instead.
 			onProgress: (state) => {

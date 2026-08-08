@@ -49,6 +49,7 @@ const readyService = {
 	getState: () => ({ phase: "ready", chunkCount: 3 }),
 	isAvailable: () => true,
 	supportsCrossEncoder: () => false,
+	supportsLexicalRetriever: () => false,
 	searchChunks: async () => [
 		{ id: "src/indexed.ts#0", path: "src/indexed.ts", startLine: 1, endLine: 10, score: 0.9 },
 		{ id: "src/other.ts#0", path: "src/other.ts", startLine: 1, endLine: 1, score: 0.5 },
@@ -65,6 +66,7 @@ const downService = {
 	getState: () => ({ phase: "unavailable", reason: "binary not found" }),
 	isAvailable: () => false,
 	supportsCrossEncoder: () => false,
+	supportsLexicalRetriever: () => false,
 } as unknown as EmbsearchService;
 
 describe("retrieveCandidates (stubbed service)", () => {
@@ -122,6 +124,7 @@ describe("retrieveCandidates (stubbed service)", () => {
 				getState: () => ({ phase: "ready", chunkCount: 3 }),
 				isAvailable: () => true,
 				supportsCrossEncoder: () => false,
+				supportsLexicalRetriever: () => false,
 				findEnclosingChunk: readyService.findEnclosingChunk,
 				searchChunks: async (_q: string, _k: number, _g: string | undefined, retriever = "dense") =>
 					retriever === "lexical"
@@ -175,6 +178,7 @@ describe("retrieveCandidates (stubbed service)", () => {
 				getState: () => ({ phase: "ready", chunkCount: 3 }),
 				isAvailable: () => true,
 				supportsCrossEncoder: () => false,
+				supportsLexicalRetriever: () => false,
 				searchChunks: async () => [
 					{ id: "src/indexed.ts#0", path: "src/indexed.ts", startLine: 1, endLine: 10, score: 0.9 },
 					{ id: "src/other.ts#0", path: "src/other.ts", startLine: 1, endLine: 1, score: 0 },
