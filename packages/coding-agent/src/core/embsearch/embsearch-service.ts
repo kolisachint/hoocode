@@ -14,11 +14,12 @@
  * blocks session startup or affects grep/find.
  */
 
+import { execFileSync } from "child_process";
 import { readFileSync } from "fs";
 import { minimatch } from "minimatch";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { chunkFile } from "./chunker.js";
-import { EmbSearchClient } from "./client.js";
+import { type DaemonRetriever, EmbSearchClient } from "./client.js";
 import {
 	emptyIndexMeta,
 	type FileMeta,
@@ -38,6 +39,29 @@ const BULK_BATCH_SIZE = 48;
 const BATCH_YIELD_MS = 15;
 /** The Rust mock backend's model id — semantically meaningless, never index with it. */
 const MOCK_MODEL_ID = "mock-hash-v1";
+/**
+ * First embsearch release serving `retriever: "lexical"`.
+ *
+ * The guard matters because the daemon does not reject unknown request fields:
+ * an older binary silently ignores `retriever` and answers with dense results.
+ * Fusing that list a second time as a "bm25" leg would double-count it and
+ * corrupt the ranking with no error anywhere — so refuse instead of degrading.
+ */
+const MIN_LEXICAL_RETRIEVER_VERSION = [0, 2, 0] as const;
+
+/** `embsearch 0.2.0` -> [0, 2, 0]; undefined when it cannot be parsed. */
+function parseBinaryVersion(output: string): number[] | undefined {
+	const match = output.match(/(\d+)\.(\d+)\.(\d+)/);
+	return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : undefined;
+}
+
+function atLeast(version: readonly number[], minimum: readonly number[]): boolean {
+	for (let i = 0; i < minimum.length; i++) {
+		const part = version[i] ?? 0;
+		if (part !== minimum[i]) return part > minimum[i];
+	}
+	return true;
+}
 
 export type EmbsearchState =
 	| { phase: "idle" }
@@ -53,6 +77,17 @@ export interface EmbsearchServiceOptions {
 	binaryPath?: string;
 	/** Minimum indexable bytes before indexing kicks in. */
 	thresholdBytes: number;
+	/**
+	 * Override the store location. Only the eval harness sets this, so a
+	 * second index (e.g. a BM25-hybrid store) can exist for the same repo
+	 * without colliding with the primary one.
+	 */
+	storeDir?: string;
+	/**
+	 * Create the store with the daemon's BM25 lexical index. Fixed at store
+	 * creation, so this must pair with a distinct `storeDir`.
+	 */
+	hybridStore?: boolean;
 	/** Progress callback for UI (footer / stderr lines). */
 	onProgress?: (state: EmbsearchState) => void;
 }
@@ -75,6 +110,8 @@ export class EmbsearchService {
 	private meta: IndexMeta | undefined;
 	private state: EmbsearchState = { phase: "idle" };
 	private disposed = false;
+	/** Whether the resolved binary serves `retriever: "lexical"`. */
+	private lexicalRetriever = false;
 
 	constructor(options: EmbsearchServiceOptions) {
 		this.options = options;
@@ -92,6 +129,21 @@ export class EmbsearchService {
 	private setState(state: EmbsearchState): void {
 		this.state = state;
 		this.options.onProgress?.(state);
+	}
+
+	/** Whether the running daemon can serve a BM25-only query. */
+	supportsLexicalRetriever(): boolean {
+		return this.lexicalRetriever;
+	}
+
+	private probeLexicalRetrieverSupport(binary: string): boolean {
+		try {
+			const out = execFileSync(binary, ["--version"], { encoding: "utf-8", timeout: 10_000 });
+			const version = parseBinaryVersion(out);
+			return version !== undefined && atLeast(version, MIN_LEXICAL_RETRIEVER_VERSION);
+		} catch {
+			return false;
+		}
 	}
 
 	private async resolveBinary(): Promise<string | undefined> {
@@ -139,8 +191,14 @@ export class EmbsearchService {
 			return;
 		}
 
-		const storeDir = getEmbsearchStoreDir(this.options.cwd);
-		this.client = new EmbSearchClient({ binaryPath: binary, storePath: getVectorStoreDir(storeDir) });
+		this.lexicalRetriever = this.probeLexicalRetrieverSupport(binary);
+
+		const storeDir = this.options.storeDir ?? getEmbsearchStoreDir(this.options.cwd);
+		this.client = new EmbSearchClient({
+			binaryPath: binary,
+			storePath: getVectorStoreDir(storeDir),
+			hybrid: this.options.hybridStore,
+		});
 		await this.client.ready();
 
 		const info = await this.client.info();
@@ -252,11 +310,22 @@ export class EmbsearchService {
 	}
 
 	/** Top-`k` semantic hits including their chunk ids, for rank fusion. */
-	async searchChunks(query: string, k = 10, glob?: string): Promise<SemanticChunkHit[]> {
+	async searchChunks(
+		query: string,
+		k = 10,
+		glob?: string,
+		retriever: DaemonRetriever = "dense",
+	): Promise<SemanticChunkHit[]> {
 		if (!this.client || this.client.isClosed || !this.meta) {
 			throw new Error("semantic index is not available");
 		}
-		const results = await this.client.query(query, k);
+		if (retriever === "lexical" && !this.lexicalRetriever) {
+			throw new Error(
+				`embsearch is too old for retriever "lexical" (needs >= ${MIN_LEXICAL_RETRIEVER_VERSION.join(".")}); ` +
+					"an older daemon ignores the field and answers with dense results",
+			);
+		}
+		const results = await this.client.query(query, k, retriever);
 		const hits: SemanticChunkHit[] = [];
 		const matchGlob = (rel: string): boolean => {
 			if (!glob) return true;

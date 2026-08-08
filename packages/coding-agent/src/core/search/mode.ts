@@ -18,15 +18,30 @@ export interface ModeResolution {
 	degradedReason?: string;
 }
 
-/** Regex metacharacters or quoted strings — queries where exact matching is
- *  clearly what the caller wants. Path-like queries deliberately do NOT
- *  count: the eval gate showed them scoring 0% lexically (content grep
- *  cannot find a file by its own name) and 100% in hybrid, where the
- *  embedding side and the reranker's path-affinity signal carry them. */
+/**
+ * Regex metacharacters *outside* any quoted segment — the only remaining
+ * signal that the caller wants exact matching rather than ranked discovery.
+ *
+ * Being quoted is deliberately NOT such a signal any more. It used to route
+ * every quoted query to lexical-only, which is where all ten error-fragment
+ * queries in the gold set land, and lexical is the worst leg for them: R@1
+ * 0.000 and MRR 0.483, against 0.600 and 0.800 for the same queries in
+ * hybrid. Recall survived the routing but rank did not, and rank is what an
+ * agent reads.
+ *
+ * Metacharacters inside a quoted segment carry no information either, because
+ * `buildLexicalQueryPlan` searches a quoted segment verbatim — it escapes the
+ * content, so `"initTheme() first."` is matched literally and its parentheses
+ * say nothing about the caller's intent. Strip quoted spans before looking.
+ *
+ * Path-like queries also do NOT count: the eval gate showed them scoring 0%
+ * lexically (content grep cannot find a file by its own name) and far better
+ * in hybrid, where the embedding side and the reranker's path-affinity signal
+ * carry them.
+ */
 export function hasStrongLexicalSignals(query: string): boolean {
-	if (/["'`]/.test(query)) return true;
-	if (/[\\^$|()[\]{}*+?]/.test(query)) return true;
-	return false;
+	const unquoted = query.replace(/["'`][^"'`]*["'`]/g, " ");
+	return /[\\^$|()[\]{}*+?]/.test(unquoted);
 }
 
 export function resolveSearchMode(

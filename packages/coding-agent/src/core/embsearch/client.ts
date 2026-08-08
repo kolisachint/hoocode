@@ -25,7 +25,12 @@ export interface EmbSearchBulkResult {
 	updated: number;
 }
 
+/** Which daemon-side retriever answers a query (embsearch >= 0.2.0). */
+export type DaemonRetriever = "dense" | "lexical" | "hybrid";
+
 export interface EmbSearchClientOptions {
+	/** Open/create the store with a BM25 lexical index alongside the vectors. */
+	hybrid?: boolean;
 	/** Path to the `embsearch` binary. */
 	binaryPath: string;
 	/** Store directory passed as `--path`. */
@@ -62,6 +67,10 @@ export class EmbSearchClient {
 	constructor(opts: EmbSearchClientOptions) {
 		const args = ["serve", "--path", opts.storePath];
 		if (opts.metric) args.push("--metric", opts.metric);
+		// Hybrid-ness is fixed when a store is created: passing --hybrid against
+		// an existing non-hybrid store warns and is ignored daemon-side, so a
+		// hybrid store needs its own directory.
+		if (opts.hybrid) args.push("--hybrid");
 
 		this.proc = spawn(opts.binaryPath, args, { stdio: ["pipe", "pipe", "pipe"] });
 
@@ -126,9 +135,23 @@ export class EmbSearchClient {
 		});
 	}
 
-	/** Search for the top-`k` matches for `text`. */
-	async query(text: string, k = 10): Promise<EmbSearchResult[]> {
-		const res = await this.send({ op: "query", text, k });
+	/**
+	 * Search for the top-`k` matches for `text`.
+	 *
+	 * `retriever` selects which leg answers:
+	 *  - `dense` (default) — vector search, the historical behaviour;
+	 *  - `lexical` — BM25 only, raw scores, no embedding computed;
+	 *  - `hybrid` — both, pre-fused by the daemon's own RRF constant.
+	 *
+	 * `lexical` and `hybrid` need a store created with `--hybrid`. Prefer
+	 * `lexical` over `hybrid` when fusing here: `hybrid` collapses both legs
+	 * into one RRF score, discarding the per-retriever ranks the trace records
+	 * and preventing n-way fusion with the grep leg.
+	 */
+	async query(text: string, k = 10, retriever: DaemonRetriever = "dense"): Promise<EmbSearchResult[]> {
+		const res = await this.send(
+			retriever === "dense" ? { op: "query", text, k } : { op: "query", text, k, retriever },
+		);
 		return res.results ?? [];
 	}
 

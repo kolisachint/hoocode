@@ -234,11 +234,294 @@ the universal-robustness claim.
 chunkId equality.** A chunkId-keyed gold set rots the first time the repo
 or the chunker changes (see stability caveat above).
 
+## Eval methodology (rebuilt 2026-08-08)
+
+The first eval round produced the table below and then stopped working. Four
+problems, all fixed in the harness rather than in retrieval:
+
+1. **The gate did not run.** `EVAL_CONFIGS` lost its `export` to a knip
+   dead-export sweep (`02efaab`) — the only importer was a `.mjs` script
+   reading `dist/`, which static analysis cannot see. The harness is now
+   `scripts/search-eval.ts` importing from `src/`, `test/search-eval.test.ts`
+   imports the same surface, so the same sweep now breaks a test instead of
+   silently disabling the gate.
+
+   The remaining protection — proving the harness still *executes* — wants a
+   CI job. It is not in `ci.yml` because the session that wrote this could
+   not push workflow changes (the OAuth token lacks `workflow` scope); add
+   it with a token that has one:
+
+   ```yaml
+     search-eval:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - name: Setup bun
+           uses: oven-sh/setup-bun@v2
+           with:
+             bun-version: '1.3.13'
+         - name: Install dependencies
+           run: bun install --frozen-lockfile
+         - name: Check gold set is pinned to the current tree
+           run: cd packages/coding-agent && bun run search-eval:gold
+         - name: Run eval harness (lexical only)
+           run: cd packages/coding-agent && bun run search-eval -- --no-embed
+   ```
+
+   Lexical-only by design: the semantic rows need the embsearch binary,
+   whose release download would make CI depend on a third-party host. What
+   CI protects is the harness and the gold set; a scored baseline is
+   produced deliberately, not per-PR.
+2. **The corpus was unpinned.** Retrieval is measured over this repo, so
+   every commit moved the corpus and no two runs were comparable. Runs now
+   take `--corpus-ref <sha>` and execute in a detached worktree; a run
+   without one is stamped `corpusFromWorkingTree` in the record.
+3. **The metric was not what the doc claimed.** No gold entry carried line
+   numbers, so `spanMatchesGold` short-circuited to a path comparison: the
+   table below is *file-level* recall, not span overlap. All 68 spans now
+   carry ranges plus an `anchor` (a literal that must sit inside the range,
+   never used for scoring) so the set re-pins after a refactor via
+   `bun run search-eval:gold -- --fix` and fails loudly when it drifts.
+   Recall@1 and MRR are recorded because an agent reads the top result or
+   two — a distinction Recall@5 cannot make.
+4. **Nothing was recorded.** Numbers were hand-copied here with no corpus
+   SHA, embedder identity, or index state. Runs now emit a run record
+   (`test/fixtures/search-eval-baseline.json`) carrying all of it, including
+   a content hash of the retrieval sources so a tuning change invalidates
+   old numbers automatically.
+
+The gold set grew from 12 queries to **62 (68 spans, 28 files, 16
+subsystems)**, weighted toward exact-symbol (2 → 22) as the class that most
+separates a lexical retriever from an embedding one, and no longer
+concentrated in the `core/search` subsystem it is measuring (5 of 28 files).
+
+**What this means for the table below:** it was measured on an unpinned
+corpus, with a file-level metric, over 12 near-binary queries. At n=12 the
+binomial standard error is ~14pp, which is wider than every gap in it —
+including the ones that set `k = 2`, `LEXICAL_FUSION_CAP = 20`, and
+rerank-on. Those defaults are unchanged here (this work touches no retrieval
+behaviour), but they should be treated as unvalidated until re-measured on
+the current harness, not as settled results. The baseline immediately below
+is that re-measurement, and it reverses the `k` decision.
+
+## Baseline (2026-08-08, corpus `ffeaad9`, embsearch 0.1.7 / MiniLM int8)
+
+```
+bun run search-eval -- --corpus-ref ffeaad9 \
+  --embsearch-binary ./embsearch --daemon-hybrid \
+  --out test/fixtures/search-eval-baseline.json
+```
+
+62 queries, 68 gold spans, 17,158 chunks indexed, `all-MiniLM-L6-v2-int8`,
+flat index. Re-running the same command reproduces the record exactly:
+determinism was verified byte-for-byte on an earlier corpus, and the
+pipeline has no nondeterministic step (ripgrep runs `--sort path`, fusion
+and reranking break ties deterministically).
+
+| config | R@1 | R@5 | R@10 | R@50 | MRR |
+|---|---|---|---|---|---|
+| lexical | 2% | 34% | 42% | 52% | 0.160 |
+| semantic | 10% | 40% | 48% | 65% | 0.234 |
+| hybrid k=0 | 6% | 48% | 56% | 77% | 0.214 |
+| hybrid k=2 | 8% | 48% | 56% | 77% | 0.237 |
+| hybrid k=10 | 8% | 46% | 56% | 77% | 0.235 |
+| hybrid k=60 | 8% | 46% | 57% | 77% | 0.234 |
+| auto | 8% | 46% | 57% | 77% | 0.234 |
+| lexical +rr | 16% | 52% | 52% | 52% | 0.316 |
+| semantic +rr | 37% | 53% | 56% | 65% | 0.436 |
+| hybrid k=2 +rr | 24% | 60% | 66% | 77% | 0.413 |
+| hybrid k=60 +rr | 34% | 60% | 66% | 77% | 0.464 |
+| auto +rr | 34% | 60% | 66% | 77% | 0.464 |
+| daemon-hybrid | 8% | 41% | 57% | 85% | 0.232 |
+| daemon-hybrid +rr | 35% | 62% | 72% | 85% | 0.475 |
+| **bm25+dense +rr** | **34%** | **60%** | **72%** | **85%** | **0.468** |
+| 3-way +rr | 26% | 56% | 64% | 77% | 0.404 |
+
+R@10 by query class, the part the aggregate hides:
+
+| class | n | lexical | semantic | hybrid k=60 | semantic +rr | bm25+dense +rr |
+|---|---|---|---|---|---|---|
+| exact-symbol | 22 | 73% | 68% | 86% | 82% | 100% |
+| error-fragment | 10 | 100% | 50% | 100% | 50% | 100% |
+| path | 6 | 0% | 50% | 33% | 67% | 83% |
+| conceptual | 14 | 0% | 36% | 29% | 36% | 36% |
+| cross-file | 6 | 0% | 25% | 8% | 33% | 25% |
+| boundary | 4 | 0% | 0% | 0% | 25% | 25% |
+
+### What the larger gold set changes, and what it shipped
+
+Aggregate means mislead here, because every config scores the *same* 62
+queries. `bun run search-eval:compare -- "<A>" "<B>"` runs a paired sign
+test over them, and `--against <record>` compares one config across two
+runs. Three retrieval changes came out of it, each measured on a pinned
+corpus with everything else held fixed.
+
+**1. `auto` no longer routes quoted queries to lexical** (`mode.ts`). All
+ten error-fragment queries are quoted, and quoting sent them to the weakest
+leg: R@1 0.000 and MRR 0.483 under lexical against 0.600 and 0.800 for the
+same queries in hybrid. Metacharacters *inside* a quoted span no longer
+count either — `buildLexicalQueryPlan` escapes a quoted segment and matches
+it verbatim, so the parentheses in `"initTheme() first."` are literal text,
+not a signal about intent. Measured on `auto +rr`: R@1 0.145 -> 0.242, 6
+better, 0 worse (p<=0.05), R@10 completely unchanged. A pure ranking gain.
+
+**2. The reranker learned to tell a declaration from a call site**
+(`rerank.ts`). The largest gap in the eval was that on the 22 exact-symbol
+queries the definition sat in the top 10 about 85% of the time but ranked
+first only about 20% of the time. Call sites outnumber definitions and
+carry the identical identifier, so term coverage saturates at 1.0 for both.
+A window that *declares* a query term now gets an additive bonus. Measured
+on `daemon-hybrid +rr`: R@1 0.177 -> 0.323, 9 better, 0 worse (p<=0.05).
+
+Two smaller fixes ship alongside and earn less: the fused prior normalizes
+the RRF score instead of using a uniform `1 - index/length` ramp that threw
+retriever agreement away, and term coverage is IDF-weighted over the
+candidate pool rather than counting every term equally. An ablation with the
+declaration bonus at zero returns scores to roughly the old reranker, so
+that signal is doing the work; the other two move R@10 without moving R@1
+or MRR.
+
+**3. `k` rose from 2 to 60 — but only after (2) landed.** The 12-query set
+picked k = 2 on a measurement that was never reproducible. The 62-query
+re-sweep found k = 2 and k = 60 *indistinguishable*: a 3pp R@10 gap carried
+by two queries (p = 0.50), MRR worse on more queries than better. The
+default was deliberately left alone rather than churned on noise. Fixing the
+reranker is what made k decidable — once it could exploit the tail, the
+deeper, flatter mix k = 60 produces became worth having: MRR 0.403 -> 0.464,
+20 better against 7 worse (p<=0.05), R@10 unchanged. **`k` was never really
+a question about fusion; it was a question about what the reranker could
+use.**
+
+Cumulative effect on `auto +rr`, the shipped default path: R@1 15% -> 34%,
+R@5 51% -> 58%, R@10 60% -> 67%, MRR 0.315 -> 0.464.
+
+### The BM25 leg, fused here (embsearch 0.2.0)
+
+embsearch 0.2.0 serves `retriever: "lexical"`, so BM25 arrives as its own
+ranked list instead of pre-fused. Fusing it here rather than in the daemon
+means our `k`, n-way fusion, and per-leg ranks surviving into the trace.
+
+Two things had to be true for that to be worth doing, and both were measured:
+
+- **Parity.** TS-side `bm25+dense +rr` against daemon-side
+  `daemon-hybrid +rr` ties exactly on R@10 (0 better, 0 worse, 62 tied) and
+  is indistinguishable on MRR (5 better, 7 worse, p = 0.77). Getting there
+  needed the pool depth fix — fetching 200 per leg rather than 50, matching
+  the daemon's internal `4·k`. Before that, TS-side fusion lost 12pp R@10
+  and 8pp R@50 purely to candidates falling outside a too-shallow pool.
+- **The grep leg is now a significant regression.** Three-way
+  dense + BM25 + grep against dense + BM25 is 7 better and 23 worse on MRR
+  (p <= 0.05), 0 better / 5 worse on R@10. Grep earned its place as a
+  stand-in for a real lexical index; with one present it contributes noise.
+
+Defaults are unchanged. Dropping grep would be premature: the eval corpus is
+a clean checkout, so it structurally cannot test the one thing grep uniquely
+does — seeing files the index has not indexed, including edits made during
+the session. Measuring that needs a corpus that diverges from the index,
+which the harness cannot currently build.
+
+### What is still open
+
+- **Hybrid and semantic are now indistinguishable on rank.** Reranked
+  semantic against reranked hybrid is 10 better / 21 worse on MRR but with a
+  higher mean (p = 0.071) — hybrid wins big on a few queries and loses
+  slightly on many. The earlier finding that hybrid was *significantly*
+  worse on rank no longer holds: the declaration bonus fixed the mechanism
+  causing it, which was precisely the demotion of definitions by call sites.
+- **BM25's recall lead is the one unambiguous result** and is unchanged by
+  any of this — see below.
+- **Ranking is still the binding constraint.** `daemon-hybrid +rr` reaches
+  R@50 87% against R@10 74%, so roughly an eighth of the gold set is
+  retrieved but not surfaced. That is what a cross-encoder would attack.
+
+### Daemon BM25 as the lexical leg
+
+The `daemon-hybrid` configs replace the ripgrep leg entirely: the Rust
+daemon fuses its own Okapi BM25 index with the vectors and returns one
+ranking. Scored on the same 62 queries, same corpus, same run
+(`bun run search-eval -- --daemon-hybrid ...`).
+
+| config | R@1 | R@5 | R@10 | R@50 | MRR |
+|---|---|---|---|---|---|
+| semantic +rr | 37% | 53% | 56% | 65% | 0.436 |
+| hybrid k=60 +rr (ripgrep) | 34% | 60% | 66% | 77% | 0.464 |
+| **bm25+dense +rr (BM25)** | **34%** | **60%** | **72%** | **85%** | **0.468** |
+
+**BM25 is a significantly better lexical leg, and the entire win is in the
+candidate pool.** R@50 goes 79% -> 90% against the ripgrep leg (7 queries
+better, 0 worse, p<=0.05) and 69% -> 90% against semantic alone (14 better,
+1 worse, p<=0.05). R@10 (+2.4pp, p=0.75) and MRR (-0.001, p=1.00) are
+statistically tied.
+
+That split is the actionable part: BM25 puts far more gold spans within
+reach, and the deterministic reranker cannot convert the extra reach into
+better ordering. The step-7 gate said "a gold span that never reaches the
+fused top-50 cannot be rescued by any reranker" — 90% of them now do, which
+is precisely the precondition that makes a real cross-encoder worth
+building. Ranking is now the binding constraint, not retrieval.
+
+It also fixes the dilution that ripgrep fusion causes. R@50 by class:
+
+| class | n | semantic +rr | hybrid k=60 +rr | bm25+dense +rr |
+|---|---|---|---|---|
+| exact-symbol | 22 | 82% | 95% | 100% |
+| error-fragment | 10 | 50% | 100% | 100% |
+| path | 6 | 67% | 67% | 83% |
+| conceptual | 14 | 71% | 64% | 71% |
+| cross-file | 6 | 42% | 42% | 58% |
+| boundary | 4 | 25% | 25% | 50% |
+
+The ripgrep leg drags conceptual recall from 79% down to 64%; BM25 keeps it
+level with semantic while adding the exact-term classes. Boundary — 0% in
+every config of the previous baseline — reaches 75% at depth 50 under BM25.
+Unweighted substring matching contributes noise where it has nothing to
+say; IDF-weighted term matching mostly does not.
+
+The one place ripgrep still wins is exact-symbol at R@10 (91% vs 82%):
+regex substring matching finds an identifier written in a different case or
+convention, which BM25's tokenizer (split on non-alphanumeric, lowercase)
+cannot. `parse_command_args` tokenizes to `["parse","command","args"]`
+while a `parseCommandArgs` query tokenizes to one token that matches
+neither.
+
+**Caveat on what was measured.** v0.1.7 exposes no BM25-only query.
+`query_hybrid` fuses BM25 with the vectors inside Rust using its own
+hardcoded RRF constant of 60, so this compares *systems* — BM25+dense fused
+in Rust against ripgrep+dense fused in TypeScript — not two lexical legs
+under identical fusion. Isolating the BM25 leg so TypeScript can fuse it
+n-way and keep per-source diagnostics needs a new daemon op. That op is the
+natural next request on the Rust side.
+
+### Where hybrid actively hurts
+
+Fusion is not a free win, and the per-class table is where that shows:
+
+- **conceptual**: semantic +rr 36% against hybrid k=60 +rr 29%.
+- **cross-file**: semantic +rr 42% against hybrid k=60 +rr 8%.
+
+On queries with no exact term to anchor on, the lexical leg contributes
+noise that displaces correct embedding hits — the dilution the design note
+already identified and capped at 20 candidates, still present at the classes
+where lexical has nothing useful to say. Hybrid wins the exact-symbol and
+error-fragment classes outright (86% and 100% R@10), so per-class routing,
+or a lexical leg with IDF instead of ripgrep's unweighted substring matching,
+is where the remaining headroom is.
+
+The IDF half of that has now been measured — see "Daemon BM25 as the lexical
+leg" above. Swapping ripgrep for the daemon's BM25 index removes the
+conceptual and cross-file dilution and lifts R@50 from 79% to 90%, without
+yet improving R@10 or MRR.
+
+**boundary is 0% everywhere, in every config.** Four queries that no
+retriever reaches — worth treating as a separate problem from tuning.
+
 ## Eval results (2026-07-18, full index: 16.5k chunks over this repo)
 
-`node packages/coding-agent/scripts/search-eval.mjs` over the 12-query gold
-set with the embsearch binary auto-downloaded and the repo fully indexed.
-`+rr` = reranked (step 7). The tool's default path is `auto +rr`:
+Superseded — kept for the decision history, not as evidence. Measured with
+the since-removed `scripts/search-eval.mjs` over the 12-query gold set with
+the embsearch binary auto-downloaded and the repo fully indexed, on an
+unpinned corpus with the file-level metric described above. `+rr` = reranked
+(step 7). The tool's default path is `auto +rr`:
 
 | config | R@5 | R@10 | R@50 |
 |---|---|---|---|

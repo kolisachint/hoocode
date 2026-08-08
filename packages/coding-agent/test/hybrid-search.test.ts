@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { EmbsearchService } from "../src/core/embsearch/embsearch-service.js";
 import { evaluateQuery, recallAtK, spanMatchesGold } from "../src/core/search/eval.js";
 import { retrieveCandidates, runSearch } from "../src/core/search/hybrid-search.js";
+import { DEFAULT_RRF_K } from "../src/core/search/rrf.js";
 import { getSearchTracePath } from "../src/core/search/trace.js";
 
 // Hermetic setup: native grep (no rg binary dependency) and a temp agent dir
@@ -68,10 +69,15 @@ describe("retrieveCandidates (stubbed service)", () => {
 	it("hybrid ranks the grep+embed consensus chunk first", async () => {
 		const root = makeRepo();
 		try {
+			// Reranking off: this asserts what *fusion* does. With reranking on,
+			// chunk #1 correctly wins instead — it declares `tokenBudget`, while
+			// chunk #0 only contains it as a substring of `spendTokenBudget`.
+			// That case is covered by the test below.
 			const { candidates, resolvedMode } = await retrieveCandidates({
 				cwd: root,
 				query: "tokenBudget",
 				mode: "hybrid",
+				rerank: false,
 				service: readyService,
 			});
 			expect(resolvedMode).toBe("hybrid");
@@ -80,6 +86,79 @@ describe("retrieveCandidates (stubbed service)", () => {
 			// Embed-only and grep-only candidates both survive fusion.
 			expect(candidates.map((c) => c.id)).toContain("src/other.ts#0");
 			expect(candidates.map((c) => c.id)).toContain("src/unindexed.ts#L3");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("reranks the declaring chunk above a consensus substring match", async () => {
+		const root = makeRepo();
+		try {
+			// Chunk #0 wins fusion (grep + embed agree) but only contains
+			// `tokenBudget` inside the unrelated identifier `spendTokenBudget`.
+			// Chunk #1 holds `const tokenBudget = 2000;` — the actual
+			// declaration, and the answer to the query.
+			const { candidates } = await retrieveCandidates({
+				cwd: root,
+				query: "tokenBudget",
+				mode: "hybrid",
+				service: readyService,
+			});
+			expect(candidates[0].id).toBe("src/indexed.ts#1");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("fuses the daemon BM25 leg as its own source, separable in the trace", async () => {
+		const root = makeRepo();
+		try {
+			// Distinct results per retriever, so a leg that silently answered with
+			// another retriever's list would fail rather than look plausible.
+			const bm25Service = {
+				...readyService,
+				getState: () => ({ phase: "ready", chunkCount: 3 }),
+				isAvailable: () => true,
+				findEnclosingChunk: readyService.findEnclosingChunk,
+				searchChunks: async (_q: string, _k: number, _g: string | undefined, retriever = "dense") =>
+					retriever === "lexical"
+						? [{ id: "src/indexed.ts#1", path: "src/indexed.ts", startLine: 11, endLine: 20, score: 3.7 }]
+						: [{ id: "src/other.ts#0", path: "src/other.ts", startLine: 1, endLine: 1, score: 0.9 }],
+			} as unknown as EmbsearchService;
+
+			const { candidates } = await retrieveCandidates({
+				cwd: root,
+				query: "tokenBudget",
+				mode: "semantic",
+				bm25Leg: true,
+				rerank: false,
+				service: bm25Service,
+			});
+			const bm25Hit = candidates.find((c) => c.id === "src/indexed.ts#1");
+			expect(bm25Hit, "the BM25-only chunk must survive fusion").toBeDefined();
+			expect(bm25Hit!.ranks.bm25).toBe(1);
+			// Raw BM25 sums are kept as diagnostics, not folded into the score.
+			expect(bm25Hit!.rawScores.bm25).toBe(3.7);
+			// The dense leg is still its own source.
+			expect(candidates.find((c) => c.id === "src/other.ts#0")!.ranks.embed).toBe(1);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("omits the BM25 leg when the index is unavailable", async () => {
+		const root = makeRepo();
+		try {
+			const { candidates, resolvedMode } = await retrieveCandidates({
+				cwd: root,
+				query: "tokenBudget",
+				mode: "hybrid",
+				bm25Leg: true,
+				rerank: false,
+				service: downService,
+			});
+			expect(resolvedMode).toBe("lexical");
+			expect(candidates.every((c) => c.ranks.bm25 === undefined)).toBe(true);
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -162,10 +241,14 @@ describe("runSearch (stubbed service)", () => {
 			const lines = readFileSync(tracePath, "utf-8").trim().split("\n");
 			const trace = JSON.parse(lines[lines.length - 1]);
 			expect(trace.resolvedMode).toBe("hybrid");
-			expect(trace.rrfK).toBe(2);
+			expect(trace.rrfK).toBe(DEFAULT_RRF_K);
 			expect(trace.retrievers.grep.hitCount).toBeGreaterThan(0);
 			expect(trace.retrievers.embed.hitCount).toBe(2);
-			expect(trace.fused[0].id).toBe("src/indexed.ts#0");
+			// The trace records the order the model sees, i.e. post-rerank: the
+			// chunk that declares `tokenBudget` leads, and the consensus chunk
+			// that merely contains it inside `spendTokenBudget` follows.
+			expect(trace.fused[0].id).toBe("src/indexed.ts#1");
+			expect(trace.fused.map((f: { id: string }) => f.id)).toContain("src/indexed.ts#0");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

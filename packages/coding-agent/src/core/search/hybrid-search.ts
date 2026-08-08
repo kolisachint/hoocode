@@ -30,8 +30,29 @@ const LEXICAL_MATCH_LIMIT = 200;
  *  precision is front-loaded by the adapter's term-evidence ranking, while
  *  RRF weighs a rank-30 lexical candidate like a rank-30 embedding hit. */
 const LEXICAL_FUSION_CAP = 20;
-/** Embedding hits fetched per query — deep enough for fusion to matter. */
+/**
+ * Embedding hits fetched per query when fusing with the grep leg.
+ *
+ * Deliberately shallow. The grep list is capped at {@link LEXICAL_FUSION_CAP}
+ * because its tail is unranked noise, so a deep dense pool here simply
+ * outnumbers it: raising this to 200 alongside a 20-candidate grep list cost
+ * `auto +rr` 0.472 -> 0.450 MRR.
+ */
 const EMBED_TOP_K = 50;
+/**
+ * Per-leg depth when both retrievers are ranked ones (dense + BM25).
+ *
+ * Four times {@link FUSED_WINDOW}, matching what the daemon's `query_hybrid`
+ * does internally (`pool = 4·k`). Fusing at the same depth as the window loses
+ * any candidate ranked well by one retriever but just outside the other's
+ * top-50 — worth 12pp R@10 and 8pp R@50 for `bm25+dense`, which is exactly
+ * what closed the gap to daemon-side fusion.
+ */
+const FUSION_POOL_TOP_K = 200;
+/** BM25 depth, matching {@link FUSION_POOL_TOP_K} so neither ranked leg is
+ *  structurally advantaged by pool size. The daemon returns only documents
+ *  sharing a query term, so this is an upper bound, not a fill. */
+const BM25_TOP_K = FUSION_POOL_TOP_K;
 /** Fused candidates kept for reranking / final slicing. */
 const FUSED_WINDOW = 50;
 
@@ -47,6 +68,22 @@ export interface RetrieveOptions {
 	rrfK?: number;
 	/** Rerank the fused top-50 before slicing to `limit`. Default: true. */
 	rerank?: boolean;
+	/**
+	 * Ask the daemon to fuse its own BM25 index with the vectors and return one
+	 * already-fused ranking, instead of taking a dense-only list. Needs a store
+	 * built with `--hybrid`. The fused list arrives as a single "embed" leg,
+	 * because a pre-fused ranking has no per-retriever structure left to record.
+	 *
+	 * Prefer {@link bm25Leg}: fusing here keeps the legs separable in the trace
+	 * and lets the grep leg participate.
+	 */
+	daemonHybrid?: boolean;
+	/**
+	 * Fetch the daemon's BM25 index as its own ranked list and fuse it here,
+	 * alongside dense and grep. Needs a store built with `--hybrid` and an
+	 * embsearch new enough to serve `retriever: "lexical"`.
+	 */
+	bm25Leg?: boolean;
 	service?: EmbsearchService;
 	signal?: AbortSignal;
 }
@@ -142,7 +179,12 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 			// The flat index pads top-k with whatever exists; with the cosine
 			// metric the store uses, score <= 0 means "no relation at all", so
 			// those padding hits would cast RRF votes on pure noise.
-			const chunkHits = (await service!.searchChunks(query, EMBED_TOP_K, glob)).filter((hit) => hit.score > 0);
+			// A BM25 leg is itself ranked, so the pair can afford — and needs — the
+			// deeper pool; the grep leg cannot (see EMBED_TOP_K).
+			const topK = options.bm25Leg ? FUSION_POOL_TOP_K : EMBED_TOP_K;
+			const chunkHits = (
+				await service!.searchChunks(query, topK, glob, options.daemonHybrid ? "hybrid" : "dense")
+			).filter((hit) => hit.score > 0);
 			const hits: RankedHit[] = chunkHits.map((hit, i) => ({
 				id: hit.id,
 				rank: i + 1,
@@ -160,9 +202,36 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 		}
 	};
 
+	const runBm25 = async (): Promise<void> => {
+		const startedMs = Date.now();
+		try {
+			// Raw BM25 sums; only the ordering enters fusion, the score is a
+			// diagnostic. Unlike the dense leg there is no zero-score padding to
+			// filter — the daemon omits documents sharing no query term.
+			const chunkHits = await service!.searchChunks(query, BM25_TOP_K, glob, "lexical");
+			const hits: RankedHit[] = chunkHits.map((hit, i) => ({
+				id: hit.id,
+				rank: i + 1,
+				score: hit.score,
+				source: "bm25",
+			}));
+			for (const hit of chunkHits) {
+				if (!spans.has(hit.id)) {
+					spans.set(hit.id, { path: hit.path, startLine: hit.startLine, endLine: hit.endLine });
+				}
+			}
+			lists.push(hits);
+			retrieverStats.bm25 = { latencyMs: Date.now() - startedMs, hitCount: hits.length };
+		} catch (e) {
+			errors.push(e instanceof Error ? e : new Error(String(e)));
+			retrieverStats.bm25 = { latencyMs: Date.now() - startedMs, hitCount: 0 };
+		}
+	};
+
 	const runs: Promise<void>[] = [];
 	if (mode === "lexical" || mode === "hybrid") runs.push(runLexical());
 	if (mode === "semantic" || mode === "hybrid") runs.push(runEmbed());
+	if (options.bm25Leg && embedAvailable && mode !== "lexical") runs.push(runBm25());
 	await Promise.all(runs);
 	if (signal?.aborted) throw new Error("Operation aborted");
 	// A partial failure in hybrid degrades to whichever retriever survived;

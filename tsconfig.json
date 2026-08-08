@@ -21,6 +21,7 @@
 	"include": [
 		"packages/*/src/**/*",
 		"packages/*/test/**/*",
+		"packages/coding-agent/scripts/**/*.ts",
 		"packages/coding-agent/examples/**/*"
 	],
 	"exclude": ["**/dist/**"]
