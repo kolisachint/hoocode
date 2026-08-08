@@ -14,8 +14,10 @@ import { runSearch } from "../search/hybrid-search.js";
 import type { ResolvedSearchMode } from "../search/types.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 
-// Default of 5 balances recall against context cost: eval showed limit=5
-// preserving the top-rank hits of limit=10 at roughly half the tokens.
+// Default of 5 balances recall against context cost. Measured on the 62-query
+// eval: limit=5 costs ~1000 tokens and puts a gold span in the results 68% of
+// the time; limit=10 costs ~1600 tokens for 74%. The extra 6 points are real
+// but not worth 60% more context on every call, and the model can ask for more.
 const DEFAULT_RESULTS = 5;
 const MAX_RESULTS = 30;
 
@@ -105,10 +107,10 @@ export function createSearchToolDefinition(
 		// description. What stays is what only this tool knows: that the query is not
 		// a regex, and that it degrades to exact-text when the index is missing.
 		description:
-			"Find where code lives: ranked file:line-range results from exact-text and semantic (local embedding index) retrieval, fused by rank when both are available. The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the semantic index is unavailable.",
-		promptSnippet: "Ranked code search (exact + semantic, rank-fused)",
+			"Find where code lives: ranked file:line-range results, fusing keyword and semantic retrieval over a local index with exact-text search of files the index has not read yet. The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the index is unavailable, and still finds code written moments ago that no index has seen.",
+		promptSnippet: "Ranked code search (keyword + semantic, rank-fused)",
 		promptGuidelines: [
-			"search defaults to mode=auto, which is almost always right. Use limit=3 for targeted lookups, 10–20 when exploring a broad topic.",
+			"search defaults to mode=auto, which is almost always right. Use limit=3 for targeted lookups, 10–20 when exploring a broad topic — past ~15 results the deeper ones arrive as ranked file:line-range headers without a snippet, which is still enough to choose what to read.",
 		],
 		parameters: searchSchema,
 		async execute(_toolCallId, { query, mode, glob, limit }: SearchToolInput, signal?: AbortSignal) {

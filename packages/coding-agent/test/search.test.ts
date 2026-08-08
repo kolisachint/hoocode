@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { adaptGrepHits, type ChunkLookup } from "../src/core/search/adapter.js";
 import { assembleContext } from "../src/core/search/context-assembler.js";
-import { hoistStaleCandidates } from "../src/core/search/hybrid-search.js";
+import { hoistStaleCandidates, mergeOverlappingSpans } from "../src/core/search/hybrid-search.js";
 import { buildLexicalPattern, runLexicalRetriever } from "../src/core/search/lexical-retriever.js";
 import { hasStrongLexicalSignals, resolveSearchMode } from "../src/core/search/mode.js";
 import { queryIsProse, rerankCandidates } from "../src/core/search/rerank.js";
@@ -472,6 +472,59 @@ describe("hoistStaleCandidates", () => {
 		const out = hoistStaleCandidates(input, all);
 		expect(out.map((c) => c.id)).toEqual(input.map((c) => c.id));
 		expect(out).toHaveLength(12);
+	});
+});
+
+describe("mergeOverlappingSpans", () => {
+	const cand = (id: string, p: string, startLine: number, endLine: number, ranks = {}): FusedCandidate => ({
+		id,
+		path: p,
+		startLine,
+		endLine,
+		rrfScore: 0.1,
+		ranks,
+		rawScores: {},
+	});
+
+	it("folds an overlapping span into the better-ranked one", () => {
+		const out = mergeOverlappingSpans([cand("a", "x.ts", 10, 40), cand("b", "x.ts", 30, 60)]);
+		expect(out).toHaveLength(1);
+		expect(out[0].id, "the survivor keeps the better-ranked identity").toBe("a");
+		expect([out[0].startLine, out[0].endLine]).toEqual([10, 60]);
+	});
+
+	it("folds abutting spans, which describe one continuous region", () => {
+		const out = mergeOverlappingSpans([cand("a", "x.ts", 1, 20), cand("b", "x.ts", 21, 40)]);
+		expect(out).toHaveLength(1);
+		expect([out[0].startLine, out[0].endLine]).toEqual([1, 40]);
+	});
+
+	it("keeps disjoint spans of one file apart", () => {
+		const out = mergeOverlappingSpans([cand("a", "x.ts", 1, 20), cand("b", "x.ts", 40, 60)]);
+		expect(out.map((c) => c.id)).toEqual(["a", "b"]);
+	});
+
+	it("never merges across files", () => {
+		const out = mergeOverlappingSpans([cand("a", "x.ts", 10, 40), cand("b", "y.ts", 10, 40)]);
+		expect(out.map((c) => c.id)).toEqual(["a", "b"]);
+	});
+
+	it("unions the retrievers that found any part of the region", () => {
+		// The merged span really was reached by both legs, so the source label
+		// the model sees has to say so; best rank per source wins.
+		const out = mergeOverlappingSpans([
+			cand("a", "x.ts", 10, 40, { embed: 3 }),
+			cand("b", "x.ts", 30, 60, { grep: 1, embed: 9 }),
+		]);
+		expect(out).toHaveLength(1);
+		expect(out[0].ranks).toEqual({ embed: 3, grep: 1 });
+	});
+
+	it("does not mutate its input", () => {
+		const input = [cand("a", "x.ts", 10, 40, { embed: 1 }), cand("b", "x.ts", 30, 60)];
+		mergeOverlappingSpans(input);
+		expect([input[0].startLine, input[0].endLine]).toEqual([10, 40]);
+		expect(input[0].ranks).toEqual({ embed: 1 });
 	});
 });
 

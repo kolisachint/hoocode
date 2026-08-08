@@ -39,6 +39,15 @@ export interface FusedHit {
 	ranks: Partial<Record<RetrieverSource, number>>;
 	/** Raw score at the best rank per retriever. Diagnostics only. */
 	rawScores: Partial<Record<RetrieverSource, number>>;
+	/**
+	 * Ids folded into this one by span merging, if any.
+	 *
+	 * The model sees one result per continuous region, but a trace that only
+	 * listed survivors would hide that a chunk was retrieved at all — which is
+	 * exactly what you need when working out why something ranked where it did.
+	 * Diagnostics only.
+	 */
+	mergedFrom?: string[];
 }
 
 /** Line-span identity a candidate id resolves to, for post-fusion expansion. */
