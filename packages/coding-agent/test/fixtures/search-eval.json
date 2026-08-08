@@ -513,8 +513,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/search/mode.ts",
-        "startLine": 32,
-        "endLine": 37,
+        "startLine": 47,
+        "endLine": 52,
         "anchor": "export function resolveSearchMode"
       }
     ]
@@ -682,8 +682,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/search/mode.ts",
-        "startLine": 32,
-        "endLine": 37,
+        "startLine": 47,
+        "endLine": 52,
         "anchor": "export function resolveSearchMode"
       },
       {

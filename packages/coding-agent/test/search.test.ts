@@ -6,6 +6,7 @@ import { adaptGrepHits, type ChunkLookup } from "../src/core/search/adapter.js";
 import { assembleContext } from "../src/core/search/context-assembler.js";
 import { buildLexicalPattern, runLexicalRetriever } from "../src/core/search/lexical-retriever.js";
 import { hasStrongLexicalSignals, resolveSearchMode } from "../src/core/search/mode.js";
+import { rerankCandidates } from "../src/core/search/rerank.js";
 import { rrfFuse } from "../src/core/search/rrf.js";
 import type { FusedCandidate, RankedHit } from "../src/core/search/types.js";
 
@@ -119,9 +120,12 @@ describe("resolveSearchMode", () => {
 		expect(resolveSearchMode("how does compaction work", "auto", true)).toEqual({ mode: "hybrid" });
 	});
 
-	it("resolves auto to lexical on strong lexical signals", () => {
-		expect(resolveSearchMode('"token budget exceeded"', "auto", true).mode).toBe("lexical");
+	it("resolves auto to lexical only on an unquoted regex", () => {
 		expect(resolveSearchMode("foo\\.bar\\(", "auto", true).mode).toBe("lexical");
+		// A quoted phrase is no longer a lexical-only signal: it is searched
+		// verbatim either way, and routing it away from hybrid cost the whole
+		// error-fragment class its ranking (R@1 0.000 lexical vs 0.600 hybrid).
+		expect(resolveSearchMode('"token budget exceeded"', "auto", true).mode).toBe("hybrid");
 	});
 
 	it("routes path-like queries to hybrid (eval: 0% lexical, 100% hybrid)", () => {
@@ -148,6 +152,26 @@ describe("resolveSearchMode", () => {
 	it("detects strong lexical signals without false-positives on prose", () => {
 		expect(hasStrongLexicalSignals("where is retrieval mode selected")).toBe(false);
 		expect(hasStrongLexicalSignals("parseTokenStream overflow behavior")).toBe(false);
+	});
+
+	it("does not treat a quoted error string as a lexical-only signal", () => {
+		// Quoted fragments used to route to lexical, the worst leg for them:
+		// R@1 0.000 there against 0.600 in hybrid on the error-fragment class.
+		expect(hasStrongLexicalSignals('"pattern must not be empty"')).toBe(false);
+		expect(resolveSearchMode('"pattern must not be empty"', "auto", true)).toEqual({ mode: "hybrid" });
+	});
+
+	it("ignores metacharacters inside a quoted segment, which is matched verbatim", () => {
+		// buildLexicalQueryPlan escapes a quoted segment, so its parentheses are
+		// literal text and say nothing about the caller wanting a regex.
+		expect(hasStrongLexicalSignals('"Theme not initialized. Call initTheme() first."')).toBe(false);
+		expect(hasStrongLexicalSignals('"Nothing to compact (session too small)"')).toBe(false);
+	});
+
+	it("still routes an unquoted regex to lexical", () => {
+		expect(hasStrongLexicalSignals("parse.*Args\\(")).toBe(true);
+		expect(hasStrongLexicalSignals("foo|bar")).toBe(true);
+		expect(resolveSearchMode("foo|bar", "auto", true)).toEqual({ mode: "lexical" });
 	});
 });
 
@@ -307,6 +331,66 @@ describe("assembleContext", () => {
 			expect(text).not.toContain("  2:");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("rerankCandidates", () => {
+	/** Two candidates in one file: a call site, then the declaration. */
+	function fixture(): { cwd: string; candidates: FusedCandidate[] } {
+		const cwd = mkdtempSync(join(tmpdir(), "rerank-test-"));
+		const lines = [
+			"import { parseArgs } from './args.js';", // 1
+			"const result = parseArgs(input);", // 2
+			"log(parseArgs);", // 3
+			"", // 4
+			"export function parseArgs(input: string): string[] {", // 5
+			"\treturn input.split(' ');", // 6
+			"}", // 7
+		];
+		writeFileSync(join(cwd, "a.ts"), lines.join("\n"));
+		const candidate = (startLine: number, endLine: number, rrfScore: number): FusedCandidate => ({
+			id: `a.ts#${startLine}`,
+			path: "a.ts",
+			startLine,
+			endLine,
+			rrfScore,
+			ranks: {},
+			rawScores: {},
+		});
+		// Call sites arrive first, as they do in practice: they outnumber the
+		// declaration and carry the identical identifier.
+		return { cwd, candidates: [candidate(1, 3, 0.5), candidate(5, 7, 0.4)] };
+	}
+
+	it("promotes the declaration over call sites carrying the same term", () => {
+		const { cwd, candidates } = fixture();
+		try {
+			const { candidates: ranked } = rerankCandidates("parseArgs", candidates, cwd);
+			expect(ranked[0].startLine, "the declaration should rank first").toBe(5);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("is deterministic", () => {
+		const { cwd, candidates } = fixture();
+		try {
+			const first = rerankCandidates("parseArgs", candidates, cwd).candidates.map((c) => c.id);
+			const second = rerankCandidates("parseArgs", candidates, cwd).candidates.map((c) => c.id);
+			expect(first).toEqual(second);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("leaves a single candidate untouched", () => {
+		const { cwd, candidates } = fixture();
+		try {
+			const one = [candidates[0]];
+			expect(rerankCandidates("parseArgs", one, cwd).candidates).toEqual(one);
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
 		}
 	});
 });

@@ -59,6 +59,34 @@ export function signTestPValue(better: number, worse: number): number {
 	return Math.min(1, (cumulative / 2 ** n) * 2);
 }
 
+/**
+ * Pair the *same* config across two run records, so "did my change help?" is
+ * answerable at all. `comparePaired` compares two configs inside one run;
+ * this compares one config before and after a retrieval change.
+ *
+ * Only sound when both runs scored the same corpus and the same gold set —
+ * otherwise the delta includes corpus drift. The caller checks provenance.
+ */
+export function mergeRunsForComparison(before: ComparableRun, after: ComparableRun, label: string): ComparableRun {
+	const afterById = new Map(after.perQuery.map((q) => [q.id, q]));
+	const perQuery: ComparableRun["perQuery"] = [];
+	for (const q of before.perQuery) {
+		const other = afterById.get(q.id);
+		const a = q.results.find((r) => r.label === label);
+		const b = other?.results.find((r) => r.label === label);
+		if (!a || !b) continue;
+		perQuery.push({
+			id: q.id,
+			class: q.class,
+			results: [
+				{ ...a, label: "before" },
+				{ ...b, label: "after" },
+			],
+		});
+	}
+	return { perQuery };
+}
+
 export function comparePaired(
 	run: ComparableRun,
 	before: string,

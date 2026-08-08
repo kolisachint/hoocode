@@ -68,10 +68,15 @@ describe("retrieveCandidates (stubbed service)", () => {
 	it("hybrid ranks the grep+embed consensus chunk first", async () => {
 		const root = makeRepo();
 		try {
+			// Reranking off: this asserts what *fusion* does. With reranking on,
+			// chunk #1 correctly wins instead — it declares `tokenBudget`, while
+			// chunk #0 only contains it as a substring of `spendTokenBudget`.
+			// That case is covered by the test below.
 			const { candidates, resolvedMode } = await retrieveCandidates({
 				cwd: root,
 				query: "tokenBudget",
 				mode: "hybrid",
+				rerank: false,
 				service: readyService,
 			});
 			expect(resolvedMode).toBe("hybrid");
@@ -80,6 +85,25 @@ describe("retrieveCandidates (stubbed service)", () => {
 			// Embed-only and grep-only candidates both survive fusion.
 			expect(candidates.map((c) => c.id)).toContain("src/other.ts#0");
 			expect(candidates.map((c) => c.id)).toContain("src/unindexed.ts#L3");
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("reranks the declaring chunk above a consensus substring match", async () => {
+		const root = makeRepo();
+		try {
+			// Chunk #0 wins fusion (grep + embed agree) but only contains
+			// `tokenBudget` inside the unrelated identifier `spendTokenBudget`.
+			// Chunk #1 holds `const tokenBudget = 2000;` — the actual
+			// declaration, and the answer to the query.
+			const { candidates } = await retrieveCandidates({
+				cwd: root,
+				query: "tokenBudget",
+				mode: "hybrid",
+				service: readyService,
+			});
+			expect(candidates[0].id).toBe("src/indexed.ts#1");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
@@ -165,7 +189,11 @@ describe("runSearch (stubbed service)", () => {
 			expect(trace.rrfK).toBe(2);
 			expect(trace.retrievers.grep.hitCount).toBeGreaterThan(0);
 			expect(trace.retrievers.embed.hitCount).toBe(2);
-			expect(trace.fused[0].id).toBe("src/indexed.ts#0");
+			// The trace records the order the model sees, i.e. post-rerank: the
+			// chunk that declares `tokenBudget` leads, and the consensus chunk
+			// that merely contains it inside `spendTokenBudget` follows.
+			expect(trace.fused[0].id).toBe("src/indexed.ts#1");
+			expect(trace.fused.map((f: { id: string }) => f.id)).toContain("src/indexed.ts#0");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}

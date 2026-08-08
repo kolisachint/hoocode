@@ -34,6 +34,48 @@ const WEIGHT_PATH_AFFINITY = 0.25;
  *  the caller named the file, so no amount of content evidence elsewhere
  *  should outrank it. */
 const EXACT_PATH_BONUS = 0.5;
+/**
+ * Additive bonus when the window *declares* a query term rather than merely
+ * mentioning it.
+ *
+ * This targets the largest measured gap in the eval: on the 22 exact-symbol
+ * queries the definition is in the top 10 about 85% of the time but ranked
+ * first only about 20% of the time. Call sites outnumber definitions and
+ * contain the identical identifier, so term coverage — which saturates at 1.0
+ * for both — cannot separate them. Structure can.
+ */
+const DECLARATION_BONUS = 0.3;
+
+/** Keywords that introduce a definition across the languages this indexes.
+ *  Matched against lowercased text, so the term is lowercased too. */
+const DECLARATION_KEYWORDS =
+	"function|class|interface|type|enum|struct|impl|trait|fn|def|const|let|var|namespace|module";
+
+/** Does `window` declare `term`, as opposed to referencing it? */
+function declaresTerm(window: string, term: string): boolean {
+	const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	// `function foo(`, `class Foo {`, `const foo =` ...
+	if (new RegExp(`\\b(?:${DECLARATION_KEYWORDS})\\s+${escaped}\\b`).test(window)) return true;
+	// `foo(...) {` at the start of a line — methods, Go/Rust receivers, Python defs
+	// already covered above, but this catches object-literal and class members.
+	if (
+		new RegExp(`^\\s*(?:(?:async|public|private|protected|static|export)\\s+)*${escaped}\\s*[(<]`, "m").test(window)
+	) {
+		return true;
+	}
+	return false;
+}
+
+/** Inverse document frequency over the candidate pool.
+ *
+ * True corpus IDF lives in the BM25 index and is not exposed over the daemon
+ * protocol, so this approximates it with the candidate set: a term present in
+ * every candidate discriminates nothing, one present in three carries the
+ * signal. That is the comparison the reranker actually needs to make, since it
+ * only ever orders candidates against each other. */
+function inverseDocumentFrequency(documentFrequency: number, total: number): number {
+	return Math.log(1 + total / Math.max(1, documentFrequency));
+}
 
 export interface RerankResult {
 	candidates: FusedCandidate[];
@@ -62,17 +104,42 @@ export function rerankCandidates(query: string, candidates: readonly FusedCandid
 		return fileCache.get(rel);
 	};
 
-	const scored = candidates.map((candidate, index) => {
-		// Fused prior: normalized RRF ordering, 1 for the top candidate.
-		const fusedPrior = 1 - index / candidates.length;
-
+	// Read every candidate window once: the term/declaration signals and the
+	// candidate-pool IDF all need them, and files repeat across candidates.
+	const windows = candidates.map((candidate) => {
 		const lines = readLines(candidate.path);
+		if (!lines) return undefined;
+		return lines.slice(Math.max(0, candidate.startLine - 1), Math.min(lines.length, candidate.endLine)).join("\n");
+	});
+
+	// Candidate-pool document frequency per term, for the IDF weighting below.
+	const documentFrequency = new Map<string, number>();
+	for (const term of terms) {
+		documentFrequency.set(term, windows.filter((w) => w?.includes(term)).length);
+	}
+	const termWeight = new Map(
+		terms.map((t) => [t, inverseDocumentFrequency(documentFrequency.get(t) ?? 0, candidates.length)]),
+	);
+	const totalTermWeight = terms.reduce((sum, t) => sum + (termWeight.get(t) ?? 0), 0);
+
+	// Fused prior normalized by score, not by position: a candidate both
+	// retrievers agreed on should outrank one that squeaked in, and a uniform
+	// 1 - index/length ramp throws that magnitude away.
+	const maxRrfScore = Math.max(...candidates.map((c) => c.rrfScore), Number.MIN_VALUE);
+
+	const scored = candidates.map((candidate, index) => {
+		const fusedPrior = candidate.rrfScore / maxRrfScore;
+
+		const window = windows[index];
 		let termCoverage = 0;
-		if (lines && terms.length > 0) {
-			const window = lines
-				.slice(Math.max(0, candidate.startLine - 1), Math.min(lines.length, candidate.endLine))
-				.join("\n");
-			termCoverage = terms.filter((t) => window.includes(t)).length / terms.length;
+		let declaresAnyTerm = false;
+		if (window && terms.length > 0) {
+			const present = terms.filter((t) => window.includes(t));
+			termCoverage =
+				totalTermWeight > 0
+					? present.reduce((sum, t) => sum + (termWeight.get(t) ?? 0), 0) / totalTermWeight
+					: present.length / terms.length;
+			declaresAnyTerm = present.some((t) => declaresTerm(window, t));
 		}
 
 		const lowerPath = candidate.path.toLowerCase();
@@ -89,7 +156,8 @@ export function rerankCandidates(query: string, candidates: readonly FusedCandid
 			WEIGHT_FUSED_PRIOR * fusedPrior +
 			WEIGHT_TERM_COVERAGE * termCoverage +
 			WEIGHT_PATH_AFFINITY * pathAffinity +
-			EXACT_PATH_BONUS * exactPath;
+			EXACT_PATH_BONUS * exactPath +
+			(declaresAnyTerm ? DECLARATION_BONUS : 0);
 		return { candidate, index, score };
 	});
 
