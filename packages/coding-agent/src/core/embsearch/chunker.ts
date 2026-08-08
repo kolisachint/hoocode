@@ -11,9 +11,19 @@
  * sidecar triggers a clean rebuild of the store.
  */
 
-export const CHUNKER_VERSION = 1;
+export const CHUNKER_VERSION = 2;
 
-/** Target lines per chunk. */
+/**
+ * Target lines per chunk.
+ *
+ * Halving this (30 lines / 500 chars) was measured and rejected. The theory
+ * was dilution — a four-line answer sharing one vector with five neighbouring
+ * methods — but sharper chunks cost reach: Recall@50 fell 79% -> 69% on
+ * `auto +rr` and the boundary class went from 2 of 4 findable to 0 of 4.
+ * A fixed top-k over smaller chunks retrieves less *content*: 50 chunks at
+ * ~460 chars sees half the corpus that 50 at ~930 does. Recall@1 ticked up
+ * (53% -> 55%), which is the sharpening, and it did not pay for the loss.
+ */
 const CHUNK_LINES = 60;
 /** Overlapping lines between consecutive chunks, for context continuity. */
 const CHUNK_OVERLAP_LINES = 10;
@@ -57,7 +67,17 @@ export function chunkFile(relPath: string, content: string): Chunk[] {
 			chars += lineLen;
 			end++;
 		}
-		let text = lines.slice(start, end).join("\n").trim();
+		// Trim whole blank lines off both ends, and narrow the recorded range to
+		// match. Trimming the joined string instead left `startLine`/`endLine`
+		// claiming lines whose text was never embedded — 31% of chunks in this
+		// repo, up to 3 lines each. Those lines were unfindable by the vector
+		// leg while still being handed to the context assembler as if they were
+		// part of the chunk.
+		let from = start;
+		let to = end; // exclusive
+		while (from < to && lines[from].trim() === "") from++;
+		while (to > from && lines[to - 1].trim() === "") to--;
+		let text = lines.slice(from, to).join("\n").trim();
 		if (text.length > CHUNK_MAX_CHARS) {
 			// Oversized chunk (e.g. long minified line): keep the prefix. The
 			// underlying model would truncate anyway, so this stays bounded.
@@ -67,8 +87,8 @@ export function chunkFile(relPath: string, content: string): Chunk[] {
 			chunks.push({
 				id: `${relPath}#${index}`,
 				text,
-				startLine: start + 1,
-				endLine: end,
+				startLine: from + 1,
+				endLine: to,
 			});
 			index++;
 		}
