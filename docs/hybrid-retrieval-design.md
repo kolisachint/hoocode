@@ -304,10 +304,10 @@ behaviour), but they should be treated as unvalidated until re-measured on
 the current harness, not as settled results. The baseline immediately below
 is that re-measurement, and it reverses the `k` decision.
 
-## Baseline (2026-08-08, corpus `8a1df21`, embsearch 0.1.7 / MiniLM int8)
+## Baseline (2026-08-08, corpus `8a7743b`, embsearch 0.1.7 / MiniLM int8)
 
 ```
-bun run search-eval -- --corpus-ref 8a1df21 \
+bun run search-eval -- --corpus-ref 8a7743b \
   --embsearch-binary ./embsearch --daemon-hybrid \
   --out test/fixtures/search-eval-baseline.json
 ```
@@ -321,61 +321,91 @@ and reranking break ties deterministically).
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
 | lexical | 2% | 34% | 42% | 52% | 0.160 |
-| semantic | 10% | 43% | 48% | 69% | 0.228 |
-| hybrid k=0 | 6% | 44% | 56% | 78% | 0.207 |
-| hybrid k=2 | 8% | 44% | 56% | 78% | 0.230 |
-| hybrid k=10 | 8% | 43% | 57% | 78% | 0.231 |
-| hybrid k=60 | 10% | 44% | 59% | 78% | 0.244 |
-| auto | 8% | 44% | 56% | 78% | 0.230 |
-| lexical +rr | 8% | 50% | 52% | 52% | 0.265 |
-| semantic +rr | 35% | 50% | 59% | 69% | 0.433 |
-| hybrid k=2 +rr | 23% | 60% | 63% | 78% | 0.403 |
+| semantic | 11% | 43% | 49% | 69% | 0.245 |
+| hybrid k=0 | 8% | 48% | 57% | 78% | 0.224 |
+| hybrid k=2 | 10% | 48% | 57% | 78% | 0.246 |
+| hybrid k=10 | 8% | 46% | 57% | 78% | 0.239 |
+| hybrid k=60 | 10% | 46% | 59% | 78% | 0.246 |
+| auto | 10% | 46% | 59% | 78% | 0.246 |
+| lexical +rr | 16% | 52% | 52% | 52% | 0.316 |
+| semantic +rr | 37% | 51% | 59% | 69% | 0.439 |
+| hybrid k=2 +rr | 24% | 60% | 65% | 78% | 0.414 |
 | hybrid k=60 +rr | 34% | 58% | 67% | 78% | 0.464 |
-| auto +rr | 23% | 60% | 63% | 78% | 0.403 |
+| auto +rr | 34% | 58% | 67% | 78% | 0.464 |
 | daemon-hybrid | 6% | 40% | 56% | 87% | 0.228 |
-| **daemon-hybrid +rr** | **31%** | **60%** | **71%** | **87%** | **0.456** |
+| **daemon-hybrid +rr** | **34%** | **62%** | **74%** | **87%** | **0.472** |
 
 R@10 by query class, the part the aggregate hides:
 
-| class | n | lexical | semantic | hybrid k=60 | semantic +rr | hybrid k=60 +rr |
+| class | n | lexical | semantic | hybrid k=60 | semantic +rr | daemon-hybrid +rr |
 |---|---|---|---|---|---|---|
-| exact-symbol | 22 | 73% | 64% | 86% | 82% | 95% |
+| exact-symbol | 22 | 73% | 68% | 86% | 82% | 100% |
 | error-fragment | 10 | 100% | 50% | 100% | 50% | 100% |
-| path | 6 | 0% | 50% | 33% | 67% | 67% |
-| conceptual | 14 | 0% | 43% | 36% | 43% | 21% |
-| cross-file | 6 | 0% | 25% | 8% | 42% | 42% |
-| boundary | 4 | 0% | 0% | 0% | 25% | 25% |
+| path | 6 | 0% | 50% | 33% | 67% | 83% |
+| conceptual | 14 | 0% | 43% | 36% | 43% | 36% |
+| cross-file | 6 | 0% | 25% | 8% | 42% | 33% |
+| boundary | 4 | 0% | 0% | 0% | 25% | 50% |
 
-### What the larger gold set changes
+### What the larger gold set changes, and what it shipped
 
 Aggregate means mislead here, because every config scores the *same* 62
 queries. `bun run search-eval:compare -- "<A>" "<B>"` runs a paired sign
-test over them, and it overturns two readings taken from the means:
+test over them, and `--against <record>` compares one config across two
+runs. Three retrieval changes came out of it, each measured on a pinned
+corpus with everything else held fixed.
 
-- **Reranking is the one robust win.** hybrid R@1 0.097 -> 0.242, with 10
-  queries better and 1 worse (p<=0.05). Large, consistent, and it moves
-  rank without moving R@50 — exactly the shape a reranker should have.
-  Keep it on.
-- **`k = 2` and `k = 60` are indistinguishable.** The 3pp R@10 gap that
-  looked like a reversal is *two queries out of 62* (p=0.50), and on MRR
-  k=60 is worse on more queries than it is better (8 better, 10 worse,
-  p=0.82). The earlier 12-query table could not justify choosing k=2 over
-  k=60; this 62-query one cannot justify choosing either. Leave the default
-  alone and spend the effort elsewhere.
-- **Hybrid does not clearly beat semantic, and on rank it is worse.**
-  Hybrid's R@10 (+7.3pp) and R@50 (+4.8pp) leads are not significant
-  (p=0.42, p=0.58). Against that, reranked semantic beats reranked hybrid
-  on MRR with 31 queries worse and 10 better (p<=0.05). The per-query
-  detail shows why: the lexical leg demotes definitions that semantic
-  ranked first, because call sites outnumber definitions and carry the same
-  term. `symbol-chunk-file`, `symbol-scan-repo` and `symbol-parse-plan-sections`
-  all go from MRR 1.0 under semantic to 0.2-0.5 under hybrid.
+**1. `auto` no longer routes quoted queries to lexical** (`mode.ts`). All
+ten error-fragment queries are quoted, and quoting sent them to the weakest
+leg: R@1 0.000 and MRR 0.483 under lexical against 0.600 and 0.800 for the
+same queries in hybrid. Metacharacters *inside* a quoted span no longer
+count either — `buildLexicalQueryPlan` escapes a quoted segment and matches
+it verbatim, so the parentheses in `"initTheme() first."` are literal text,
+not a signal about intent. Measured on `auto +rr`: R@1 0.145 -> 0.242, 6
+better, 0 worse (p<=0.05), R@10 completely unchanged. A pure ranking gain.
 
-So the strongest configuration measured here is **`semantic +rr`** for rank
-quality, with hybrid buying a little extra depth-50 recall at a significant
-cost to ordering. That is close to the original 12-query reading, arrived at
-for better reasons — and it is a question about *fusion inputs*, not about
-`k`.
+**2. The reranker learned to tell a declaration from a call site**
+(`rerank.ts`). The largest gap in the eval was that on the 22 exact-symbol
+queries the definition sat in the top 10 about 85% of the time but ranked
+first only about 20% of the time. Call sites outnumber definitions and
+carry the identical identifier, so term coverage saturates at 1.0 for both.
+A window that *declares* a query term now gets an additive bonus. Measured
+on `daemon-hybrid +rr`: R@1 0.177 -> 0.323, 9 better, 0 worse (p<=0.05).
+
+Two smaller fixes ship alongside and earn less: the fused prior normalizes
+the RRF score instead of using a uniform `1 - index/length` ramp that threw
+retriever agreement away, and term coverage is IDF-weighted over the
+candidate pool rather than counting every term equally. An ablation with the
+declaration bonus at zero returns scores to roughly the old reranker, so
+that signal is doing the work; the other two move R@10 without moving R@1
+or MRR.
+
+**3. `k` rose from 2 to 60 — but only after (2) landed.** The 12-query set
+picked k = 2 on a measurement that was never reproducible. The 62-query
+re-sweep found k = 2 and k = 60 *indistinguishable*: a 3pp R@10 gap carried
+by two queries (p = 0.50), MRR worse on more queries than better. The
+default was deliberately left alone rather than churned on noise. Fixing the
+reranker is what made k decidable — once it could exploit the tail, the
+deeper, flatter mix k = 60 produces became worth having: MRR 0.403 -> 0.464,
+20 better against 7 worse (p<=0.05), R@10 unchanged. **`k` was never really
+a question about fusion; it was a question about what the reranker could
+use.**
+
+Cumulative effect on `auto +rr`, the shipped default path: R@1 15% -> 34%,
+R@5 51% -> 58%, R@10 60% -> 67%, MRR 0.315 -> 0.464.
+
+### What is still open
+
+- **Hybrid and semantic are now indistinguishable on rank.** Reranked
+  semantic against reranked hybrid is 10 better / 21 worse on MRR but with a
+  higher mean (p = 0.071) — hybrid wins big on a few queries and loses
+  slightly on many. The earlier finding that hybrid was *significantly*
+  worse on rank no longer holds: the declaration bonus fixed the mechanism
+  causing it, which was precisely the demotion of definitions by call sites.
+- **BM25's recall lead is the one unambiguous result** and is unchanged by
+  any of this — see below.
+- **Ranking is still the binding constraint.** `daemon-hybrid +rr` reaches
+  R@50 87% against R@10 74%, so roughly an eighth of the gold set is
+  retrieved but not surfaced. That is what a cross-encoder would attack.
 
 ### Daemon BM25 as the lexical leg
 
@@ -386,9 +416,9 @@ ranking. Scored on the same 62 queries, same corpus, same run
 
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
-| semantic +rr | 35% | 50% | 59% | 69% | 0.433 |
+| semantic +rr | 37% | 51% | 59% | 69% | 0.439 |
 | hybrid k=60 +rr (ripgrep) | 34% | 58% | 67% | 78% | 0.464 |
-| **daemon-hybrid +rr (BM25)** | **31%** | **60%** | **71%** | **87%** | **0.456** |
+| **daemon-hybrid +rr (BM25)** | **34%** | **62%** | **74%** | **87%** | **0.472** |
 
 **BM25 is a significantly better lexical leg, and the entire win is in the
 candidate pool.** R@50 goes 79% -> 90% against the ripgrep leg (7 queries
