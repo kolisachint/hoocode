@@ -10,18 +10,26 @@
 import type { FusedHit, RankedHit } from "./types.js";
 
 /**
- * Default RRF constant. The literature folklore default is 60; the eval gate
- * measured k ∈ {0, 2} beating k = 60 on every differing query, twice, with
- * reranking on top of either — small k keeps fusion top-heavy toward each
- * retriever's best hits, and the reranker corrects the tail.
+ * Default RRF constant, re-swept on the 62-query harness.
  *
- * That measurement is not currently reproducible: it ran on a 12-query gold
- * set over an unpinned corpus with a file-level metric, where the sampling
- * noise was wider than the gap it decided (docs/hybrid-retrieval-design.md,
- * "Eval methodology"). Re-sweep on the 62-query harness
- * (`bun run search-eval`) before treating this value as settled.
+ * History matters here, because the answer changed twice. The original
+ * 12-query gold set picked k = 2 over k = 60; that measurement ran on an
+ * unpinned corpus with a file-level metric and was never reproducible. The
+ * 62-query re-sweep then found the two *indistinguishable* — a 3pp R@10 gap
+ * carried by two queries (p = 0.50), with MRR worse on more queries than it
+ * was better.
+ *
+ * What made k decidable was fixing the reranker. Once it could tell a
+ * declaration from a call site, the deeper, flatter candidate mix that k = 60
+ * produces became worth having: MRR 0.403 -> 0.464, 20 queries better against
+ * 7 worse (p <= 0.05), with R@10 unchanged. Small k keeps fusion top-heavy
+ * toward each retriever's best hits, which only pays when the reranker cannot
+ * exploit the tail — and it now can.
+ *
+ * Re-sweep again (`bun run search-eval:compare`) after any reranker change,
+ * since that is what this value trades against.
  */
-export const DEFAULT_RRF_K = 2;
+export const DEFAULT_RRF_K = 60;
 
 /**
  * Fuse ranked lists into one deterministic ordering by summed `1/(k + rank)`.

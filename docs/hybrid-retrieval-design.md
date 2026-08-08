@@ -304,15 +304,15 @@ behaviour), but they should be treated as unvalidated until re-measured on
 the current harness, not as settled results. The baseline immediately below
 is that re-measurement, and it reverses the `k` decision.
 
-## Baseline (2026-08-08, corpus `7fdb916`, embsearch 0.1.7 / MiniLM int8)
+## Baseline (2026-08-08, corpus `8a1df21`, embsearch 0.1.7 / MiniLM int8)
 
 ```
-bun run search-eval -- --corpus-ref 7fdb916 \
+bun run search-eval -- --corpus-ref 8a1df21 \
   --embsearch-binary ./embsearch --daemon-hybrid \
   --out test/fixtures/search-eval-baseline.json
 ```
 
-62 queries, 68 gold spans, 17,085 chunks indexed, `all-MiniLM-L6-v2-int8`,
+62 queries, 68 gold spans, 17,158 chunks indexed, `all-MiniLM-L6-v2-int8`,
 flat index. Re-running the same command reproduces the record exactly:
 determinism was verified byte-for-byte on an earlier corpus, and the
 pipeline has no nondeterministic step (ripgrep runs `--sort path`, fusion
@@ -320,31 +320,31 @@ and reranking break ties deterministically).
 
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
-| lexical | 2% | 34% | 44% | 52% | 0.162 |
-| semantic | 10% | 43% | 48% | 69% | 0.230 |
-| hybrid k=0 | 6% | 46% | 56% | 79% | 0.211 |
-| hybrid k=2 | 10% | 46% | 57% | 79% | 0.244 |
-| hybrid k=10 | 10% | 46% | 57% | 79% | 0.243 |
-| hybrid k=60 | 11% | 48% | 59% | 79% | 0.254 |
-| auto | 8% | 46% | 57% | 79% | 0.256 |
-| lexical +rr | 2% | 34% | 44% | 52% | 0.162 |
-| semantic +rr | 27% | 47% | 52% | 69% | 0.374 |
-| hybrid k=2 +rr | 24% | 51% | 60% | 79% | 0.363 |
-| hybrid k=60 +rr | 26% | 51% | 62% | 79% | 0.373 |
-| auto +rr | 15% | 51% | 60% | 79% | 0.315 |
-| daemon-hybrid | 8% | 40% | 56% | 90% | 0.239 |
-| **daemon-hybrid +rr** | **21%** | **56%** | **65%** | **90%** | **0.372** |
+| lexical | 2% | 34% | 42% | 52% | 0.160 |
+| semantic | 10% | 43% | 48% | 69% | 0.228 |
+| hybrid k=0 | 6% | 44% | 56% | 78% | 0.207 |
+| hybrid k=2 | 8% | 44% | 56% | 78% | 0.230 |
+| hybrid k=10 | 8% | 43% | 57% | 78% | 0.231 |
+| hybrid k=60 | 10% | 44% | 59% | 78% | 0.244 |
+| auto | 8% | 44% | 56% | 78% | 0.230 |
+| lexical +rr | 8% | 50% | 52% | 52% | 0.265 |
+| semantic +rr | 35% | 50% | 59% | 69% | 0.433 |
+| hybrid k=2 +rr | 23% | 60% | 63% | 78% | 0.403 |
+| hybrid k=60 +rr | 34% | 58% | 67% | 78% | 0.464 |
+| auto +rr | 23% | 60% | 63% | 78% | 0.403 |
+| daemon-hybrid | 6% | 40% | 56% | 87% | 0.228 |
+| **daemon-hybrid +rr** | **31%** | **60%** | **71%** | **87%** | **0.456** |
 
 R@10 by query class, the part the aggregate hides:
 
 | class | n | lexical | semantic | hybrid k=60 | semantic +rr | hybrid k=60 +rr |
 |---|---|---|---|---|---|---|
-| exact-symbol | 22 | 77% | 64% | 86% | 73% | 91% |
+| exact-symbol | 22 | 73% | 64% | 86% | 82% | 95% |
 | error-fragment | 10 | 100% | 50% | 100% | 50% | 100% |
 | path | 6 | 0% | 50% | 33% | 67% | 67% |
-| conceptual | 14 | 0% | 43% | 36% | 36% | 29% |
-| cross-file | 6 | 0% | 25% | 8% | 42% | 8% |
-| boundary | 4 | 0% | 0% | 0% | 0% | 0% |
+| conceptual | 14 | 0% | 43% | 36% | 43% | 21% |
+| cross-file | 6 | 0% | 25% | 8% | 42% | 42% |
+| boundary | 4 | 0% | 0% | 0% | 25% | 25% |
 
 ### What the larger gold set changes
 
@@ -386,9 +386,9 @@ ranking. Scored on the same 62 queries, same corpus, same run
 
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
-| semantic +rr | 27% | 47% | 52% | 69% | 0.374 |
-| hybrid k=60 +rr (ripgrep) | 26% | 51% | 62% | 79% | 0.373 |
-| **daemon-hybrid +rr (BM25)** | 21% | **56%** | **65%** | **90%** | 0.372 |
+| semantic +rr | 35% | 50% | 59% | 69% | 0.433 |
+| hybrid k=60 +rr (ripgrep) | 34% | 58% | 67% | 78% | 0.464 |
+| **daemon-hybrid +rr (BM25)** | **31%** | **60%** | **71%** | **87%** | **0.456** |
 
 **BM25 is a significantly better lexical leg, and the entire win is in the
 candidate pool.** R@50 goes 79% -> 90% against the ripgrep leg (7 queries
@@ -407,12 +407,12 @@ It also fixes the dilution that ripgrep fusion causes. R@50 by class:
 
 | class | n | semantic +rr | hybrid k=60 +rr | daemon-hybrid +rr |
 |---|---|---|---|---|
-| exact-symbol | 22 | 82% | 95% | **100%** |
-| error-fragment | 10 | 50% | 100% | **100%** |
-| path | 6 | 67% | 67% | **83%** |
-| conceptual | 14 | **79%** | 64% | **79%** |
-| cross-file | 6 | 67% | 67% | **75%** |
-| boundary | 4 | 25% | 25% | **75%** |
+| exact-symbol | 22 | 82% | 95% | 100% |
+| error-fragment | 10 | 50% | 100% | 100% |
+| path | 6 | 67% | 67% | 83% |
+| conceptual | 14 | 79% | 64% | 79% |
+| cross-file | 6 | 58% | 58% | 67% |
+| boundary | 4 | 25% | 25% | 50% |
 
 The ripgrep leg drags conceptual recall from 79% down to 64%; BM25 keeps it
 level with semantic while adding the exact-term classes. Boundary — 0% in

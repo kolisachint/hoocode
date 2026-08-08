@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { EmbsearchService } from "../src/core/embsearch/embsearch-service.js";
 import { evaluateQuery, recallAtK, spanMatchesGold } from "../src/core/search/eval.js";
 import { retrieveCandidates, runSearch } from "../src/core/search/hybrid-search.js";
+import { DEFAULT_RRF_K } from "../src/core/search/rrf.js";
 import { getSearchTracePath } from "../src/core/search/trace.js";
 
 // Hermetic setup: native grep (no rg binary dependency) and a temp agent dir
@@ -186,7 +187,7 @@ describe("runSearch (stubbed service)", () => {
 			const lines = readFileSync(tracePath, "utf-8").trim().split("\n");
 			const trace = JSON.parse(lines[lines.length - 1]);
 			expect(trace.resolvedMode).toBe("hybrid");
-			expect(trace.rrfK).toBe(2);
+			expect(trace.rrfK).toBe(DEFAULT_RRF_K);
 			expect(trace.retrievers.grep.hitCount).toBeGreaterThan(0);
 			expect(trace.retrievers.embed.hitCount).toBe(2);
 			// The trace records the order the model sees, i.e. post-rerank: the
