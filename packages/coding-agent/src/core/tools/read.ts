@@ -40,10 +40,9 @@ interface CompactReadClassification {
 const COMPACT_RESOURCE_FILE_NAMES = new Set(["AGENTS.md", "AGENTS.MD", "CLAUDE.md", "CLAUDE.MD"]);
 
 /**
- * Structured/binary document formats that the filetools-backed DocRead tool can
- * project into editable JSON. These are container/binary formats (OOXML is a zip,
- * PDF is binary), so a plain utf-8 read yields garbage — read short-circuits with
- * a pointer to DocRead instead of dumping bytes.
+ * Structured/binary document formats. These are container/binary formats (OOXML
+ * is a zip, PDF is binary), so a plain utf-8 read yields garbage — read
+ * short-circuits with a note instead of dumping bytes into the context.
  */
 const DOC_FORMAT_EXTENSIONS = new Map<string, string>([
 	[".docx", "Word (OOXML)"],
@@ -254,7 +253,9 @@ export function createReadToolDefinition(
 		label: "read",
 		description: `Read the contents of a file. Supports text files and images (jpg, png, gif, webp). Images are sent as attachments. For text files, output is truncated to ${maxLines} lines or ${Math.round(maxBytes / 1024)}KB (whichever is hit first). Use offset/limit for large files. When you need the full file, continue with offset until complete.`,
 		promptSnippet: "Read file contents",
-		promptGuidelines: ["Use read to examine files instead of cat or sed."],
+		// No promptGuidelines: "use read instead of cat/sed" is already covered by the
+		// file-exploration guideline buildSystemPrompt emits, and again by bash's own
+		// snippet. Three copies of one rule.
 		parameters: readSchema,
 		async execute(
 			toolCallId,
@@ -330,13 +331,14 @@ export function createReadToolDefinition(
 									];
 								}
 							} else if (getDocFormatHint(absolutePath)) {
-								// Structured/binary document: a utf-8 read is meaningless. Point the
-								// model at DocRead, which extracts it to editable, id-addressed JSON.
+								// Structured/binary document: a utf-8 read is meaningless, and dumping
+								// the bytes would burn context for nothing. Stop here and let the model
+								// choose an extraction path (bash + an appropriate converter).
 								const label = getDocFormatHint(absolutePath);
 								content = [
 									{
 										type: "text",
-										text: `[${label} document — not plain text. Use DocRead on ${path} to extract editable, id-addressed structure (then DocEdit/DocWrite to modify it losslessly). DocRead requires --enable-filetools.]`,
+										text: `[${label} document — not plain text; read cannot show it. Extract it with a converter via bash if you need its contents.]`,
 									},
 								];
 							} else {

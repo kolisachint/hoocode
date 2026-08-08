@@ -2022,7 +2022,6 @@ export class AgentSession {
 		const autoResizeImages = this.settingsManager.getImageAutoResize();
 		const shellCommandPrefix = this.settingsManager.getShellCommandPrefix();
 		const shellPath = this.settingsManager.getShellPath();
-		const browserLivePreview = this.settingsManager.getEnableBrowserLivePreview();
 		const toolMaxOutputBytes = this.settingsManager.getToolOutputMaxBytes();
 		const toolMaxOutputLines = this.settingsManager.getToolOutputMaxLines();
 		const webtoolsTimeoutSecs = this.settingsManager.getWebtoolsTimeoutSecs();
@@ -2046,7 +2045,6 @@ export class AgentSession {
 						maxOutputBytes: toolMaxOutputBytes,
 						maxOutputLines: toolMaxOutputLines,
 					},
-					browser_run: { liveView: browserLivePreview },
 					search: { getService: () => getEmbsearchService(this._cwd) },
 					webfetch: { timeoutSecs: webtoolsTimeoutSecs },
 					websearch: { timeoutSecs: webtoolsTimeoutSecs },

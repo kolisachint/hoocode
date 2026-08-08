@@ -165,9 +165,6 @@ export interface Settings {
 	supportPlatform?: string | string[]; // Platform layout(s) hoocode targets when writing artifacts (authored plugins, /new-* scaffolds). Tokens: claude, copilot|github|gh, agents|native. Same as the --support-platform CLI flag (which overrides this).
 	deferMcpSchemas?: boolean; // default: true - defer MCP tool schemas (inject names only + ResolveMcpTools on demand) instead of registering every schema up front; set false to eagerly register every schema
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
-	enableBrowserTools?: boolean; // default: false - enable the browser_run + browser_continue tools (browsertools engine)
-	enableBrowserLivePreview?: boolean; // default: false - default the live viewer on for browser_run runs and auto-open it
-	enableFileTools?: boolean; // default: false - enable the document tools: DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary)
 	enableEmbsearchTools?: boolean; // default: true - enable the semantic index layer for the always-on `search` tool: index the repo with the embsearch binary so search can fuse semantic hits. Set false to run search lexical-only. grep/find are unchanged.
 	embsearchBinaryPath?: string; // Path to the embsearch binary. Default: resolve "embsearch" from PATH.
 	embsearchThresholdBytes?: number; // default: 0 - minimum indexable source bytes before a repo is embedded; 0 means index every repo regardless of size. Raise it to skip embedding for repos under N bytes.

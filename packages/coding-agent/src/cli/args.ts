@@ -46,12 +46,6 @@ export interface Args {
 	todoWrite?: boolean;
 	/** Enable the webfetch + websearch tools (off by default). */
 	enableWebTools?: boolean;
-	/** Enable the browser_run + browser_continue tools (browsertools engine, off by default). */
-	enableBrowserTools?: boolean;
-	/** Default the streamed live viewer on for browser_run runs and auto-open it (off by default). */
-	enableBrowserLivePreview?: boolean;
-	/** Enable the document tools — DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (off by default). */
-	enableFileTools?: boolean;
 	/** Enable the autonomous plugin system — plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin (off by default). */
 	enablePluginTools?: boolean;
 	/** Enable ranked code search: register the unified search tool (lexical + semantic hybrid) and index the repo with the embsearch binary (off by default). */
@@ -177,14 +171,8 @@ export function parseArgs(args: string[]): Args {
 			result.todoWrite = true;
 		} else if (arg === "--enable-webtools") {
 			result.enableWebTools = true;
-		} else if (arg === "--enable-browsertools") {
-			result.enableBrowserTools = true;
 		} else if (arg === "--enable-search-tool" || arg === "--enable-embsearchtools") {
 			result.enableEmbsearchTools = true;
-		} else if (arg === "--enable-browser-live-preview") {
-			result.enableBrowserLivePreview = true;
-		} else if (arg === "--enable-filetools") {
-			result.enableFileTools = true;
 		} else if (arg === "--enable-plugintools") {
 			result.enablePluginTools = true;
 		} else if (arg === "--light") {
@@ -367,19 +355,6 @@ ${chalk.bold("Options:")}
   --enable-webtools              Enable the webfetch + websearch tools (network access, off by default)
                                   Can also be enabled via the "enableWebTools" setting
                                   Block hosts with a .webtoolsignore file (gitignore syntax)
-  --enable-browsertools          Enable the browser_run + browser_continue tools (off by default)
-                                  Deterministic browser automation via the browsertools engine,
-                                  pausing for LLM decisions (NeedsParent) mid-flow
-                                  Can also be enabled via the "enableBrowserTools" setting
-  --enable-browser-live-preview  Default the live viewer on for browser_run runs and auto-open it
-                                  Streams the page + the agent's tool-call log over a local WebSocket
-                                  Set HOOCODE_BROWSERTOOLS_NO_OPEN=1 to print the URL without opening
-                                  Can also be enabled via the "enableBrowserLivePreview" setting
-  --enable-filetools             Enable the document tools (off by default)
-                                  DocRead/DocEdit/DocWrite (extract + lossless id-based edit) and
-                                  DocScan/DocGrep/DocPeek (cheap outline/search/partial read) for
-                                  XML, drawio, docx/xlsx/pptx, PDF via the filetools binary
-                                  Can also be enabled via the "enableFileTools" setting
   --enable-search-tool           Enable the semantic index for the search tool (on by default)
                                   The unified search tool (lexical, semantic, hybrid rank-fused
                                   modes) is always available. The semantic layer is now ON by

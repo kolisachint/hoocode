@@ -72,8 +72,6 @@ Four tool groups are **off by default** — turn them on per session with a flag
 | Tool group | Enable | What it does |
 |---|---|---|
 | **Web** (`webfetch` · `websearch`) | `--enable-webtools` or `"enableWebTools": true` | Fetch a URL as text and run web searches. |
-| **Browser** (`browser_run` · `browser_continue`) | `--enable-browsertools` or `"enableBrowserTools": true` | Drive a real browser to load pages, interact, and capture results. |
-| **Documents** (`DocRead` · `DocEdit` · `DocWrite` · `DocScan` · `DocGrep` · `DocPeek`) | `--enable-filetools` or `"enableFileTools": true` | Read, search, and edit structured documents — OOXML (docx/xlsx/pptx), PDF, XML, drawio. |
 | **Plugins** (`SearchPlugins` · `InstallPlugin` · `ProposePlugin` · ...) | `--enable-plugintools` or `"enablePluginTools": true` | The autonomous plugin lifecycle system — discover, install, and propose plugins, plus a runtime reuse nudge. |
 
 ## Extensibility

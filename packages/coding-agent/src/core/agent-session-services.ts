@@ -57,8 +57,6 @@ export interface CreateAgentSessionFromServicesOptions {
 	disallowedTools?: string[];
 	customTools?: ToolDefinition[];
 	enableWebTools?: boolean;
-	enableBrowserTools?: boolean;
-	enableFileTools?: boolean;
 	enableEmbsearchTools?: boolean;
 	baseToolsOverride?: Record<string, AgentTool>;
 }
@@ -220,8 +218,6 @@ export async function createAgentSessionFromServices(
 		customTools: options.customTools,
 		sessionStartEvent: options.sessionStartEvent,
 		enableWebTools: options.enableWebTools,
-		enableBrowserTools: options.enableBrowserTools,
-		enableFileTools: options.enableFileTools,
 		enableEmbsearchTools: options.enableEmbsearchTools,
 		baseToolsOverride: options.baseToolsOverride,
 	});

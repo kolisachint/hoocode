@@ -17,8 +17,7 @@ const lsSchema = Type.Object({
 	limit: Type.Optional(Type.Number({ description: "Maximum number of entries to return (default: 500)" })),
 	ignore: Type.Optional(
 		Type.Array(Type.String(), {
-			description:
-				"Glob patterns matched against entry names to exclude, e.g. ['node_modules', '*.log', '.git']. Matching is on the entry name only (ls is non-recursive); dotfiles are matched.",
+			description: "Globs matched against entry names to exclude, e.g. ['node_modules', '*.log'].",
 		}),
 	),
 });
@@ -122,7 +121,7 @@ export function createLsToolDefinition(
 	return {
 		name: "ls",
 		label: "ls",
-		description: `List directory contents. Returns entries sorted alphabetically, with '/' suffix for directories. Includes dotfiles. Lists a single directory (not recursive) and shows everything on disk; pass 'ignore' glob patterns to skip entries like node_modules or .git. Output is truncated to ${DEFAULT_LIMIT} entries or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
+		description: `List one directory (not recursive), sorted alphabetically, '/' suffix for directories. Shows everything on disk including dotfiles and ignored paths; pass 'ignore' globs to skip entries. Truncates at ${DEFAULT_LIMIT} entries / ${DEFAULT_MAX_BYTES / 1024}KB.`,
 		promptSnippet: "List directory contents",
 		parameters: lsSchema,
 		async execute(
