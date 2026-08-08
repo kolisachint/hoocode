@@ -18,6 +18,16 @@ export interface EmbSearchDaemonInfo {
 	modelId: string;
 	dim: number;
 	count: number;
+	/**
+	 * Whether this daemon can actually serve `rerank`, or `undefined` from a
+	 * daemon too old to say.
+	 *
+	 * Reported separately from the version because the two came apart:
+	 * released binaries carry the `rerank` op but no longer bundle the ~23 MB
+	 * cross-encoder weights, so a version check alone would advertise a
+	 * reranker that fails on first call.
+	 */
+	rerank?: boolean;
 }
 
 /** One candidate sent for cross-encoder scoring. */
@@ -71,6 +81,9 @@ interface EmbSearchRawResponse {
 	/** Cross-encoder scores. Separate from `results` because the daemon's
 	 *  logits are not comparable to retrieval scores. */
 	reranked?: EmbSearchRerankResult[];
+	/** `info` only: whether `rerank` will work. Absent on daemons too old to
+	 *  report it. */
+	rerank?: boolean;
 }
 
 export class EmbSearchClient {
@@ -198,7 +211,7 @@ export class EmbSearchClient {
 	/** Model id, dimensionality, and live vector count of the daemon. */
 	async info(): Promise<EmbSearchDaemonInfo> {
 		const res = await this.send({ op: "info" });
-		return { modelId: res.model_id ?? "", dim: res.dim ?? 0, count: res.count ?? 0 };
+		return { modelId: res.model_id ?? "", dim: res.dim ?? 0, count: res.count ?? 0, rerank: res.rerank };
 	}
 
 	/** Remove a record. Resolves to `true` if it existed. */

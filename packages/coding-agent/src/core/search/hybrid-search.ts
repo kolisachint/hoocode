@@ -54,6 +54,10 @@ const FUSION_POOL_TOP_K = 200;
  *  structurally advantaged by pool size. The daemon returns only documents
  *  sharing a query term, so this is an upper bound, not a fill. */
 const BM25_TOP_K = FUSION_POOL_TOP_K;
+/** Candidates from unindexed/stale files moved ahead of the fused window.
+ *  Small on purpose: this answers "what did I just write", not "search the
+ *  working tree". */
+const STALE_HOIST_CAP = 5;
 /** Fused candidates kept for reranking / final slicing. */
 const FUSED_WINDOW = 50;
 
@@ -131,6 +135,35 @@ function normalizeSearchGlob(glob: string | undefined): string | undefined {
 	return glob;
 }
 
+/**
+ * Move candidates from files the index has not read to the front.
+ *
+ * They are there because grep found them and nothing else could: the index is
+ * ranking a stale copy of the file, or has never seen it. Left to fuse, they
+ * lose — RRF rewards agreement, and one leg reporting a single document is
+ * outvoted by two legs agreeing on hundreds. Measured: scoping grep to stale
+ * files without this hoist scored 25% on the live-edit set where unscoped grep
+ * scored 100%, because the fused window filled with consensus hits about the
+ * indexed copy.
+ *
+ * Capped, because "stale" scales with how far behind the index is. A few
+ * edited files is the case this exists for; a fresh checkout makes everything
+ * stale, and hoisting all of it would quietly turn hybrid search back into
+ * grep. Past the cap the remainder keeps its fused position.
+ */
+export function hoistStaleCandidates(
+	candidates: readonly FusedCandidate[],
+	staleFiles: ReadonlySet<string>,
+): FusedCandidate[] {
+	if (staleFiles.size === 0) return [...candidates];
+	const hoisted: FusedCandidate[] = [];
+	const rest: FusedCandidate[] = [];
+	for (const candidate of candidates) {
+		(staleFiles.has(candidate.path) && hoisted.length < STALE_HOIST_CAP ? hoisted : rest).push(candidate);
+	}
+	return [...hoisted, ...rest];
+}
+
 export async function retrieveCandidates(options: RetrieveOptions): Promise<RetrieveResult> {
 	const { cwd, query, service, signal } = options;
 	const glob = normalizeSearchGlob(options.glob);
@@ -159,14 +192,23 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 		: undefined;
 
 	const spans = new Map<string, CandidateSpan>();
+	/** Files the index does not have current content for, when grep is scoped
+	 *  to them. Read again after fusion — see the hoist below. */
+	const staleSet = new Set<string>();
 	const lists: RankedHit[][] = [];
 	const retrieverStats: SearchTrace["retrievers"] = {};
 	const errors: Error[] = [];
 
-	const runLexical = async (): Promise<void> => {
+	const runLexical = async (scopeToStale = false): Promise<void> => {
 		const startedMs = Date.now();
 		try {
-			const lineHits = await runLexicalRetriever({ cwd, query, limit: LEXICAL_MATCH_LIMIT, glob, signal });
+			// Scoped run: grep covers only what the index has not read yet, so it
+			// adds the one thing BM25 cannot see without re-voting on documents
+			// BM25 already ranked. Fusing two lexical views of the same corpus is
+			// what made the three-leg configuration lose (18 of 62 queries worse).
+			const paths = scopeToStale ? service?.staleFiles(signal) : undefined;
+			if (paths) for (const rel of paths) staleSet.add(rel);
+			const lineHits = await runLexicalRetriever({ cwd, query, limit: LEXICAL_MATCH_LIMIT, glob, signal, paths });
 			const adapted = adaptGrepHits(lineHits, lookupChunk);
 			// In single-retriever lexical mode the full list is the result; in
 			// hybrid, only the front-loaded head is trustworthy enough to vote.
@@ -235,10 +277,20 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 		}
 	};
 
+	// BM25 is the better lexical leg where the index is current: it beats grep
+	// on Recall@50 (0.790 -> 0.879, 6 queries better and 0 worse, p <= 0.05)
+	// because it ranks the whole corpus rather than truncating a match stream.
+	// It is also blind to anything indexed later than it was written, which is
+	// precisely where grep still wins — so grep runs scoped to that set instead
+	// of being dropped or left to duplicate BM25 over the whole tree.
+	const bm25AsLexicalLeg = options.bm25Leg && embedAvailable && mode !== "lexical";
+
 	const runs: Promise<void>[] = [];
-	if (mode === "lexical" || mode === "hybrid") runs.push(runLexical());
+	if (mode === "lexical" || mode === "hybrid") runs.push(runLexical(bm25AsLexicalLeg));
 	if (mode === "semantic" || mode === "hybrid") runs.push(runEmbed());
-	if (options.bm25Leg && embedAvailable && mode !== "lexical") runs.push(runBm25());
+	// `semantic` gets the BM25 leg too: the caller asked for the index, and
+	// BM25 is part of it. Only an explicit `lexical` request excludes it.
+	if (bm25AsLexicalLeg) runs.push(runBm25());
 	await Promise.all(runs);
 	if (signal?.aborted) throw new Error("Operation aborted");
 	// A partial failure in hybrid degrades to whichever retriever survived;
@@ -262,7 +314,11 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 		rerankInfo = { applied: true, candidateCount: candidates.length, latencyMs: reranked.latencyMs };
 		candidates = reranked.candidates;
 	}
-	candidates = candidates.slice(0, limit);
+	// After reranking, not before: both rerankers weight the fused prior, and a
+	// lone grep hit from an unindexed file has the lowest prior there is, so
+	// hoisting first would simply be undone. The reranker still orders the
+	// hoisted set against itself.
+	candidates = hoistStaleCandidates(candidates, staleSet).slice(0, limit);
 
 	return {
 		candidates,

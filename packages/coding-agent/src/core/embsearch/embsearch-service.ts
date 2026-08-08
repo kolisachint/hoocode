@@ -53,7 +53,16 @@ const MOCK_MODEL_ID = "mock-hash-v1";
  * corrupt the ranking with no error anywhere — so refuse instead of degrading.
  */
 const MIN_LEXICAL_RETRIEVER_VERSION = [0, 2, 0] as const;
-/** First embsearch release bundling cross-encoder reranker weights. */
+/**
+ * First embsearch release serving the `rerank` op.
+ *
+ * Necessary but no longer sufficient. Releases from 0.3.1 carry the op without
+ * the ~23 MB cross-encoder weights — they measured worse than the
+ * deterministic reranker on five of six query classes, so they are no longer
+ * bundled — and such a daemon answers `rerank` with an error. The version is
+ * therefore only the floor for *asking*; `info.rerank` is the answer, and
+ * {@link EmbsearchService.supportsCrossEncoder} needs both.
+ */
 const MIN_RERANK_VERSION = [0, 3, 0] as const;
 
 /** `embsearch 0.2.0` -> [0, 2, 0]; undefined when it cannot be parsed. */
@@ -145,6 +154,43 @@ export class EmbsearchService {
 		return this.lexicalRetriever;
 	}
 
+	/**
+	 * Repo files whose on-disk content the index does not have — unknown to it,
+	 * or changed since it last read them.
+	 *
+	 * This is the set BM25 is structurally blind to, and the only place the
+	 * grep leg still earns its keep once BM25 is available. An agent that edits
+	 * a file and immediately searches for what it wrote is asking about exactly
+	 * these files; the index cannot answer until the next pass.
+	 *
+	 * Compares mtime and size only, never hashing: the check runs per query, and
+	 * a false positive merely lets grep cover a file BM25 already covers, while
+	 * a false negative would lose the edit.
+	 *
+	 * Deliberately uncached. A cache here caches the *absence* of an edit, which
+	 * is the one thing this must never do — an agent writes a file and searches
+	 * for it in the same breath. A 1s TTL was tried and cost the live-edit set
+	 * 75% to 100% of its score depending on how the timing fell, which is worse
+	 * than wrong: it was non-deterministic. One scan is ~25ms over ~1k files and
+	 * happens once per search, against retrieval that already costs more.
+	 */
+	staleFiles(signal?: AbortSignal): string[] {
+		if (!this.meta) return [];
+		const meta = this.meta;
+		const files: string[] = [];
+		try {
+			for (const file of scanRepo(this.options.cwd, signal).files) {
+				const known = meta.files[file.rel];
+				if (!known || known.mtimeMs !== file.mtimeMs || known.size !== file.size) files.push(file.rel);
+			}
+		} catch {
+			// A failed scan must not silently narrow the grep leg to nothing;
+			// report no staleness and let the indexed legs answer.
+			return [];
+		}
+		return files;
+	}
+
 	/** Whether the running daemon can score with a cross-encoder. */
 	supportsCrossEncoder(): boolean {
 		return this.crossEncoder;
@@ -163,8 +209,9 @@ export class EmbsearchService {
 		}
 		if (!this.crossEncoder) {
 			throw new Error(
-				`embsearch is too old to rerank (needs >= ${MIN_RERANK_VERSION.join(".")}); ` +
-					"an older daemon has no cross-encoder weights",
+				`this embsearch daemon cannot rerank (needs >= ${MIN_RERANK_VERSION.join(".")} reporting ` +
+					"`rerank: true`); released binaries ship without cross-encoder weights — start the daemon " +
+					"with --reranker-model <dir>",
 			);
 		}
 		return await this.client.rerank(query, passages, k);
@@ -225,6 +272,8 @@ export class EmbsearchService {
 
 		const binaryVersion = this.probeBinaryVersion(binary);
 		this.lexicalRetriever = binaryVersion !== undefined && atLeast(binaryVersion, MIN_LEXICAL_RETRIEVER_VERSION);
+		// Provisional: the version says the daemon understands `rerank`. Whether
+		// it can serve one is answered by `info` below, once the client is up.
 		this.crossEncoder = binaryVersion !== undefined && atLeast(binaryVersion, MIN_RERANK_VERSION);
 
 		const storeDir = this.options.storeDir ?? getEmbsearchStoreDir(this.options.cwd);
@@ -236,6 +285,9 @@ export class EmbsearchService {
 		await this.client.ready();
 
 		const info = await this.client.info();
+		// A daemon old enough to omit the field is left on the version verdict —
+		// back then the weights were bundled, so version did imply capability.
+		if (info.rerank === false) this.crossEncoder = false;
 		if (info.modelId === MOCK_MODEL_ID) {
 			throw new Error("embsearch binary uses the mock embedder (not semantic); install an onnx build");
 		}

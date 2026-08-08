@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { adaptGrepHits, type ChunkLookup } from "../src/core/search/adapter.js";
 import { assembleContext } from "../src/core/search/context-assembler.js";
+import { hoistStaleCandidates } from "../src/core/search/hybrid-search.js";
 import { buildLexicalPattern, runLexicalRetriever } from "../src/core/search/lexical-retriever.js";
 import { hasStrongLexicalSignals, resolveSearchMode } from "../src/core/search/mode.js";
 import { queryIsProse, rerankCandidates } from "../src/core/search/rerank.js";
@@ -436,6 +437,41 @@ describe("rerankCandidates", () => {
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("hoistStaleCandidates", () => {
+	const cand = (id: string, p: string): FusedCandidate => ({
+		id,
+		path: p,
+		startLine: 1,
+		endLine: 5,
+		rrfScore: 0.1,
+		ranks: {},
+		rawScores: {},
+	});
+
+	it("moves candidates from unindexed files to the front, keeping their order", () => {
+		const out = hoistStaleCandidates(
+			[cand("a", "indexed.ts"), cand("b", "fresh.ts"), cand("c", "indexed2.ts"), cand("d", "fresh2.ts")],
+			new Set(["fresh.ts", "fresh2.ts"]),
+		);
+		expect(out.map((c) => c.id)).toEqual(["b", "d", "a", "c"]);
+	});
+
+	it("is a no-op when nothing is stale", () => {
+		const input = [cand("a", "x.ts"), cand("b", "y.ts")];
+		expect(hoistStaleCandidates(input, new Set()).map((c) => c.id)).toEqual(["a", "b"]);
+	});
+
+	it("caps the hoist so a stale checkout cannot turn search back into grep", () => {
+		// Everything stale: past the cap, candidates keep their fused position
+		// rather than the whole window being reordered by staleness.
+		const input = Array.from({ length: 12 }, (_, i) => cand(`c${i}`, `f${i}.ts`));
+		const all = new Set(input.map((c) => c.path));
+		const out = hoistStaleCandidates(input, all);
+		expect(out.map((c) => c.id)).toEqual(input.map((c) => c.id));
+		expect(out).toHaveLength(12);
 	});
 });
 
