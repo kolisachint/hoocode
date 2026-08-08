@@ -288,8 +288,9 @@ export function createBashToolDefinition(
 		name: "bash",
 		label: "bash",
 		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${maxLines} lines or ${Math.round(maxBytes / 1024)}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
-		promptSnippet:
-			"Run builds, tests, linters, git, and package managers. For reading, searching, or editing files, use the dedicated tools instead.",
+		// The "use dedicated tools for files" half of this snippet duplicated the
+		// file-exploration guideline buildSystemPrompt already emits; dropped.
+		promptSnippet: "Run builds, tests, linters, git, and package managers",
 		parameters: bashSchema,
 		async execute(
 			_toolCallId,

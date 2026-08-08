@@ -10,9 +10,6 @@ export {
 	createBashToolDefinition,
 	createLocalBashOperations,
 } from "./bash.js";
-// Optional feature tools, grouped by feature (off by default or enabled per session).
-export * from "./browser/index.js";
-export * from "./doc/index.js";
 export {
 	createEditTool,
 	createEditToolDefinition,
@@ -83,26 +80,6 @@ export {
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
 import { type BashToolOptions, createBashToolDefinition } from "./bash.js";
-import {
-	type BrowserContinueToolOptions,
-	type BrowserRunToolOptions,
-	createBrowserContinueToolDefinition,
-	createBrowserRunToolDefinition,
-} from "./browser/index.js";
-import {
-	createDocEditToolDefinition,
-	createDocGrepToolDefinition,
-	createDocPeekToolDefinition,
-	createDocReadToolDefinition,
-	createDocScanToolDefinition,
-	createDocWriteToolDefinition,
-	type DocEditToolOptions,
-	type DocGrepToolOptions,
-	type DocPeekToolOptions,
-	type DocReadToolOptions,
-	type DocScanToolOptions,
-	type DocWriteToolOptions,
-} from "./doc/index.js";
 import { createEditToolDefinition, type EditToolOptions } from "./edit.js";
 import { createFindToolDefinition, type FindToolOptions } from "./find.js";
 import { createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
@@ -128,14 +105,6 @@ export interface ToolsOptions {
 	search?: SearchToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
-	browser_run?: BrowserRunToolOptions;
-	browser_continue?: BrowserContinueToolOptions;
-	DocRead?: DocReadToolOptions;
-	DocEdit?: DocEditToolOptions;
-	DocWrite?: DocWriteToolOptions;
-	DocScan?: DocScanToolOptions;
-	DocGrep?: DocGrepToolOptions;
-	DocPeek?: DocPeekToolOptions;
 }
 
 /**
@@ -155,14 +124,6 @@ const TOOL_FACTORIES = {
 	search: createSearchToolDefinition,
 	webfetch: createWebFetchToolDefinition,
 	websearch: createWebSearchToolDefinition,
-	browser_run: createBrowserRunToolDefinition,
-	browser_continue: createBrowserContinueToolDefinition,
-	DocRead: createDocReadToolDefinition,
-	DocEdit: createDocEditToolDefinition,
-	DocWrite: createDocWriteToolDefinition,
-	DocScan: createDocScanToolDefinition,
-	DocGrep: createDocGrepToolDefinition,
-	DocPeek: createDocPeekToolDefinition,
 } satisfies { [K in keyof ToolsOptions]-?: (cwd: string, options?: ToolsOptions[K]) => ToolDef };
 
 export type ToolName = keyof typeof TOOL_FACTORIES;

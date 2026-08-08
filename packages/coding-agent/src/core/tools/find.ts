@@ -17,24 +17,21 @@ import { DEFAULT_MAX_BYTES, formatSize, type TruncationResult, truncateHead } fr
 
 const findSchema = Type.Object({
 	pattern: Type.Union([Type.String(), Type.Array(Type.String())], {
-		description:
-			"Glob pattern(s) to match files. Pass one pattern or an array for OR logic, e.g. '*.ts', 'src/**/*.spec.ts', or ['src/**/*.ts', 'test/**/*.ts'].",
+		description: "Glob(s) to match, e.g. 'src/**/*.spec.ts'. An array is OR'd.",
 	}),
-	path: Type.Optional(Type.String({ description: "Directory to search in (default: current directory)" })),
+	path: Type.Optional(Type.String({ description: "Directory to search in (default: cwd)" })),
 	exclude: Type.Optional(
-		Type.Union([Type.String(), Type.Array(Type.String())], {
-			description: "Additional exclusion glob(s), e.g. '**/*.test.ts' or ['**/dist/**', '**/build/**'].",
-		}),
+		Type.Union([Type.String(), Type.Array(Type.String())], { description: "Extra exclusion glob(s)." }),
 	),
 	type: Type.Optional(
 		Type.Union([Type.Literal("f"), Type.Literal("d"), Type.Literal("l")], {
-			description: "Filter by entry type: 'f' files, 'd' directories, 'l' symlinks (default: 'f').",
+			description: "f=files, d=directories, l=symlinks (default: f).",
 		}),
 	),
-	depth: Type.Optional(Type.Number({ description: "Maximum directory depth to search." })),
-	limit: Type.Optional(Type.Number({ description: "Maximum number of results (default: 1000)." })),
+	depth: Type.Optional(Type.Number({ description: "Maximum directory depth." })),
+	limit: Type.Optional(Type.Number({ description: "Maximum results (default: 1000)." })),
 	compress: Type.Optional(
-		Type.Boolean({ description: "Group files in the same directory to shorten output (default: false)." }),
+		Type.Boolean({ description: "Group files by directory to shorten output (default: false)." }),
 	),
 });
 
@@ -212,7 +209,7 @@ export function createFindToolDefinition(
 	return {
 		name: "find",
 		label: "find",
-		description: `Search for files by one or more glob patterns (OR logic across an array). Optionally filter by entry type (files/dirs/symlinks), directory depth, and extra exclusions. Returns matching paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
+		description: `Locate files by glob. Returns paths relative to the search directory. Respects .gitignore. Truncates at ${DEFAULT_LIMIT} results / ${DEFAULT_MAX_BYTES / 1024}KB.`,
 		promptSnippet: "Find files by glob pattern (supports multiple patterns, respects .gitignore)",
 		parameters: findSchema,
 		async execute(

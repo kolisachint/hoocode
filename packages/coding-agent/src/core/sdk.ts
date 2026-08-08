@@ -87,22 +87,6 @@ export interface CreateAgentSessionOptions {
 	 */
 	enableWebTools?: boolean;
 	/**
-	 * Enable the built-in `browser_run` + `browser_continue` tools, which drive the
-	 * `browsertools` deterministic browser engine (parent-in-the-loop). Defined but
-	 * inactive by default. Ignored when an explicit `tools` allowlist is provided
-	 * (list them there instead).
-	 */
-	enableBrowserTools?: boolean;
-	/**
-	 * Enable the built-in document tools — `DocRead`/`DocEdit`/`DocWrite` (extract
-	 * and lossless id-based editing) plus `DocScan`/`DocGrep`/`DocPeek` (the
-	 * token-sensitive discovery loop: outline, search, partial read). Defined but
-	 * inactive by default. Ignored when an explicit `tools` allowlist is provided
-	 * (list them there instead). They shell out to the `filetools` binary to
-	 * losslessly extract/edit structured/binary documents.
-	 */
-	enableFileTools?: boolean;
-	/**
 	 * Enable the semantic index layer for the built-in `search` tool (ranked
 	 * lexical + semantic retrieval, rank-fused). The search tool is active by
 	 * default; this flag only toggles the optional embedding index. When false,
@@ -322,8 +306,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// fully, so callers must list them there to enable in that mode.
 	const optInActiveToolNames: ToolName[] = [
 		...(options.enableWebTools ? ["webfetch", "websearch"] : []),
-		...(options.enableBrowserTools ? ["browser_run", "browser_continue"] : []),
-		...(options.enableFileTools ? ["DocRead", "DocEdit", "DocWrite", "DocScan", "DocGrep", "DocPeek"] : []),
 	] as ToolName[];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const initialActiveToolNames: string[] = options.tools

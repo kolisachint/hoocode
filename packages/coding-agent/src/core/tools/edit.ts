@@ -306,12 +306,12 @@ export function createEditToolDefinition(
 			"Edit a single file using exact text replacement. Every edits[].oldText must match a unique, non-overlapping region of the original file, unless that edit sets replaceAll: true to replace all of its occurrences. If two changes affect the same block or nearby lines, merge them into one edit instead of emitting overlapping edits. Do not include large unchanged regions just to connect distant changes.",
 		promptSnippet:
 			"Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
+		// Only the batching preference lives here. The matching semantics
+		// (original-file matching, no overlaps, replaceAll) are already stated in the
+		// `edits`/`oldText`/`replaceAll` schema descriptions, which ship on every turn
+		// alongside these — repeating them spent the tokens twice.
 		promptGuidelines: [
-			"Use edit for precise changes (edits[].oldText must match exactly)",
-			"When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
-			"Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
-			"Keep edits[].oldText as small as possible while still being unique in the file. Do not pad with large unchanged regions.",
-			"To rename or replace every occurrence of a string in the file, set edits[].replaceAll: true on that edit instead of requiring oldText to be unique.",
+			"When changing several separate locations in one file, send one edit call with multiple entries in edits[] rather than several edit calls. Keep each oldText as small as it can be while staying unique.",
 		],
 		parameters: editSchema,
 		renderShell: "self",

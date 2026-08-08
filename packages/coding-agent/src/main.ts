@@ -466,35 +466,6 @@ function buildSessionOptions(
 	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
 		options.enableEmbsearchTools = true;
 	}
-	// Browser tools (browser_run + browser_continue): opt-in via --enable-browsertools
-	// flag or the enableBrowserTools setting. Registered as base tools but inactive by
-	// default; this adds them to the default active set.
-	if (parsed.enableBrowserTools ?? settingsManager.getEnableBrowserTools()) {
-		options.enableBrowserTools = true;
-	}
-	// Live preview for browser_run: defaults the streamed viewer on and auto-opens
-	// it. Applied as a runtime settings override so the session's tool factory reads
-	// it via the shared settingsManager (no extra option plumbing).
-	if (parsed.enableBrowserLivePreview) {
-		settingsManager.applyOverrides({ enableBrowserLivePreview: true });
-	}
-	// Document tools (DocRead/DocEdit/DocWrite + the DocScan/DocGrep/DocPeek
-	// discovery loop): opt-in via --enable-filetools flag or the enableFileTools
-	// setting. Registered as base tools but inactive by default; this adds them to
-	// the default active set.
-	if (parsed.enableFileTools ?? settingsManager.getEnableFileTools()) {
-		options.enableFileTools = true;
-		// DocRead/DocEdit/DocWrite drive a lossless id-based extract -> patch ->
-		// reconstruct flow that depends on precise, well-formed tool calls. Models
-		// that are weak at tool calling tend to mangle the id-based patches and
-		// corrupt documents, so surface a one-time heads-up when these are enabled.
-		diagnostics.push({
-			type: "warning",
-			message:
-				"Document tools (DocRead/DocEdit/DocWrite) are enabled. They require precise, id-based patches; " +
-				"use a model that is strong at tool calling, or these edits can corrupt files.",
-		});
-	}
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
 	// Registered as a custom tool; respects --tools/--no-tools allowlists like any other tool.
@@ -864,8 +835,6 @@ export async function main(args: string[], options?: MainOptions) {
 			disallowedTools: sessionOptions.disallowedTools,
 			customTools: sessionOptions.customTools,
 			enableWebTools: sessionOptions.enableWebTools,
-			enableBrowserTools: sessionOptions.enableBrowserTools,
-			enableFileTools: sessionOptions.enableFileTools,
 			enableEmbsearchTools: sessionOptions.enableEmbsearchTools,
 			baseToolsOverride: sessionOptions.baseToolsOverride,
 		});

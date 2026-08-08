@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+## [0.4.164] - 2026-08-08
+
+### Removed
+
+- **Browser tools and document tools are gone.** `browser_run`/`browser_continue`
+  and `DocRead`/`DocEdit`/`DocWrite`/`DocScan`/`DocGrep`/`DocPeek` have been
+  removed along with the `--enable-browsertools`, `--enable-browser-live-preview`
+  and `--enable-filetools` flags, the `enableBrowserTools`,
+  `enableBrowserLivePreview` and `enableFileTools` settings, the `browsertools`
+  and `filetools` managed-binary downloads, and their entries in the interactive
+  tool-group picker. Both groups were off by default, so sessions that never
+  enabled them are unaffected; sessions that did will now see the tools absent.
+  `read` still short-circuits on OOXML/PDF rather than dumping binary, but now
+  says to extract via `bash` instead of pointing at `DocRead`.
+
+### Changed
+
+- Trimmed ~402 tokens off the fixed per-turn surface (~8.8%) by removing text
+  that was being sent twice. The `edit`, `grep`, and `read` tools each restated,
+  in `promptGuidelines`, rules already carried by their own parameter schemas or
+  by the canonical search-vs-grep and file-exploration guidelines that
+  `buildSystemPrompt` emits — so both copies shipped on every request. Also
+  compressed the `find` and `ls` schemas (`find` was the single most expensive
+  built-in schema at 1,154 chars) and dropped the duplicated half of `bash`'s
+  prompt snippet. No capability change: every rule that was removed is still
+  stated exactly once. Verify with `--print-token-surface`.
+
 ## [0.4.163] - 2026-08-07
 
 ## [0.4.162] - 2026-08-07

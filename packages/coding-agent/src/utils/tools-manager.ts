@@ -30,7 +30,7 @@ function isOfflineModeEnabled(): boolean {
 }
 
 /** Tools whose binaries hoocode can resolve from PATH or download on demand. */
-export type ManagedTool = "fd" | "rg" | "webtools" | "filetools" | "browsertools" | "voicetools" | "embsearch";
+export type ManagedTool = "fd" | "rg" | "webtools" | "voicetools" | "embsearch";
 
 interface ToolConfig {
 	name: string;
@@ -103,27 +103,6 @@ const TOOLS: Record<string, ToolConfig> = {
 			return null;
 		},
 	},
-	browsertools: {
-		name: "browsertools",
-		repo: "kolisachint/browsertools",
-		binaryName: "browsertools",
-		tagPrefix: "v",
-		// Release archives follow Rust target triples: browsertools-<arch>-<target>.<ext>
-		// (release.yml builds gnu + musl for linux; we prefer the gnu variant to match
-		// webtools/filetools). A missing platform asset 404s and ensureTool degrades
-		// gracefully (returns undefined; the browser tools then surface an error).
-		getAssetName: (_version, plat, architecture) => {
-			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-			if (plat === "darwin") {
-				return `browsertools-${archStr}-apple-darwin.tar.gz`;
-			} else if (plat === "linux") {
-				return `browsertools-${archStr}-unknown-linux-gnu.tar.gz`;
-			} else if (plat === "win32") {
-				return `browsertools-${archStr}-pc-windows-msvc.zip`;
-			}
-			return null;
-		},
-	},
 	voicetools: {
 		name: "voicetools",
 		repo: "kolisachint/voicetools",
@@ -140,27 +119,6 @@ const TOOLS: Record<string, ToolConfig> = {
 				return `voicetools-${archStr}-unknown-linux-gnu.tar.gz`;
 			} else if (plat === "win32") {
 				return `voicetools-${archStr}-pc-windows-msvc.zip`;
-			}
-			return null;
-		},
-	},
-	filetools: {
-		name: "filetools",
-		repo: "kolisachint/filetools",
-		binaryName: "filetools",
-		tagPrefix: "v",
-		// Release archives are named `filetools-<target-triple>.<ext>` (see the repo's
-		// release.yml `archive: filetools-$target`). A missing platform asset 404s and
-		// ensureTool degrades gracefully (returns undefined; the doc tools then surface
-		// an error result).
-		getAssetName: (_version, plat, architecture) => {
-			const archStr = architecture === "arm64" ? "aarch64" : "x86_64";
-			if (plat === "darwin") {
-				return `filetools-${archStr}-apple-darwin.tar.gz`;
-			} else if (plat === "linux") {
-				return `filetools-${archStr}-unknown-linux-gnu.tar.gz`;
-			} else if (plat === "win32") {
-				return `filetools-${archStr}-pc-windows-msvc.zip`;
 			}
 			return null;
 		},
@@ -209,7 +167,7 @@ function getToolPath(tool: ManagedTool): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 
-	// Explicit binary override (per-tool env var, e.g. HOOCODE_BROWSERTOOLS_BINARY).
+	// Explicit binary override (per-tool env var, e.g. HOOCODE_WEBTOOLS_BINARY).
 	// Lets a developer point at a locally built binary that predates a release,
 	// bypassing the tools-dir/PATH resolution and download. Authoritative when set
 	// and the path exists.
@@ -485,8 +443,6 @@ const TERMUX_PACKAGES: Record<string, string> = {
 	fd: "fd",
 	rg: "ripgrep",
 	webtools: "webtools",
-	filetools: "filetools",
-	browsertools: "browsertools",
 	voicetools: "voicetools",
 	embsearch: "embsearch",
 };

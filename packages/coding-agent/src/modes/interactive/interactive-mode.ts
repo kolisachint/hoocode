@@ -3044,18 +3044,6 @@ export class InteractiveMode {
 					enabled: this.settingsManager.getEnableWebTools(),
 				},
 				{
-					id: "browser",
-					label: "Browser tools",
-					description: "browser_run + browser_continue (browsertools engine).",
-					enabled: this.settingsManager.getEnableBrowserTools(),
-				},
-				{
-					id: "file",
-					label: "Document tools",
-					description: "DocRead/DocEdit/DocWrite + DocScan/DocGrep/DocPeek (filetools binary).",
-					enabled: this.settingsManager.getEnableFileTools(),
-				},
-				{
 					id: "embsearch",
 					label: "Semantic search",
 					description: "Semantic index layer fused into the always-on search tool.",
@@ -3147,12 +3135,6 @@ export class InteractiveMode {
 						switch (id) {
 							case "web":
 								this.settingsManager.setEnableWebTools(enabled);
-								break;
-							case "browser":
-								this.settingsManager.setEnableBrowserTools(enabled);
-								break;
-							case "file":
-								this.settingsManager.setEnableFileTools(enabled);
 								break;
 							case "embsearch":
 								this.settingsManager.setEnableEmbsearchTools(enabled);
