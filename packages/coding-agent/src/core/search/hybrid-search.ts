@@ -16,6 +16,7 @@
 import type { EmbsearchService } from "../embsearch/embsearch-service.js";
 import { adaptGrepHits, type ChunkLookup } from "./adapter.js";
 import { assembleContext } from "./context-assembler.js";
+import { crossEncoderRerank } from "./cross-rerank.js";
 import { runLexicalRetriever } from "./lexical-retriever.js";
 import { resolveSearchMode } from "./mode.js";
 import { rerankCandidates } from "./rerank.js";
@@ -84,6 +85,12 @@ export interface RetrieveOptions {
 	 * embsearch new enough to serve `retriever: "lexical"`.
 	 */
 	bm25Leg?: boolean;
+	/**
+	 * Reorder the fused shortlist with the daemon's cross-encoder instead of
+	 * the deterministic reranker. Needs embsearch >= 0.3.0; costs one model
+	 * pass per scored candidate.
+	 */
+	crossEncoder?: boolean;
 	service?: EmbsearchService;
 	signal?: AbortSignal;
 }
@@ -246,7 +253,11 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 	}
 
 	let rerankInfo: SearchTrace["rerank"];
-	if (options.rerank !== false) {
+	if (options.crossEncoder && service?.supportsCrossEncoder()) {
+		const reranked = await crossEncoderRerank(query, candidates, cwd, service);
+		rerankInfo = { applied: true, candidateCount: reranked.scored, latencyMs: reranked.latencyMs };
+		candidates = reranked.candidates;
+	} else if (options.rerank !== false) {
 		const reranked = rerankCandidates(query, candidates, cwd);
 		rerankInfo = { applied: true, candidateCount: candidates.length, latencyMs: reranked.latencyMs };
 		candidates = reranked.candidates;

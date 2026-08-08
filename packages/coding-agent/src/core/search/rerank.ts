@@ -82,6 +82,32 @@ export interface RerankResult {
 	latencyMs: number;
 }
 
+/**
+ * The exact source text each candidate stands for, as the model should see it.
+ *
+ * Shared with the cross-encoder path so both rerankers score identical text —
+ * otherwise a comparison between them would partly measure which one got a
+ * better view of the candidate.
+ */
+export function readCandidateWindows(candidates: readonly FusedCandidate[], cwd: string): Array<string | undefined> {
+	const fileCache = new Map<string, string[] | undefined>();
+	const read = (rel: string): string[] | undefined => {
+		if (!fileCache.has(rel)) {
+			try {
+				fileCache.set(rel, readFileSync(path.resolve(cwd, rel), "utf-8").split("\n"));
+			} catch {
+				fileCache.set(rel, undefined);
+			}
+		}
+		return fileCache.get(rel);
+	};
+	return candidates.map((candidate) => {
+		const lines = read(candidate.path);
+		if (!lines) return undefined;
+		return lines.slice(Math.max(0, candidate.startLine - 1), Math.min(lines.length, candidate.endLine)).join("\n");
+	});
+}
+
 export function rerankCandidates(query: string, candidates: readonly FusedCandidate[], cwd: string): RerankResult {
 	const startedMs = Date.now();
 	const plan = buildLexicalQueryPlan(query);
