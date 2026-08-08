@@ -423,7 +423,7 @@
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
         "startLine": 1,
-        "endLine": 274,
+        "endLine": 294,
         "scope": "file"
       }
     ]
@@ -688,8 +688,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
-        "startLine": 110,
-        "endLine": 125,
+        "startLine": 127,
+        "endLine": 142,
         "anchor": "export async function retrieveCandidates"
       }
     ]

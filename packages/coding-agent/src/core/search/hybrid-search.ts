@@ -30,12 +30,29 @@ const LEXICAL_MATCH_LIMIT = 200;
  *  precision is front-loaded by the adapter's term-evidence ranking, while
  *  RRF weighs a rank-30 lexical candidate like a rank-30 embedding hit. */
 const LEXICAL_FUSION_CAP = 20;
-/** Embedding hits fetched per query — deep enough for fusion to matter. */
+/**
+ * Embedding hits fetched per query when fusing with the grep leg.
+ *
+ * Deliberately shallow. The grep list is capped at {@link LEXICAL_FUSION_CAP}
+ * because its tail is unranked noise, so a deep dense pool here simply
+ * outnumbers it: raising this to 200 alongside a 20-candidate grep list cost
+ * `auto +rr` 0.472 -> 0.450 MRR.
+ */
 const EMBED_TOP_K = 50;
-/** BM25 hits fetched per query. Matches the embedding depth so neither leg is
+/**
+ * Per-leg depth when both retrievers are ranked ones (dense + BM25).
+ *
+ * Four times {@link FUSED_WINDOW}, matching what the daemon's `query_hybrid`
+ * does internally (`pool = 4·k`). Fusing at the same depth as the window loses
+ * any candidate ranked well by one retriever but just outside the other's
+ * top-50 — worth 12pp R@10 and 8pp R@50 for `bm25+dense`, which is exactly
+ * what closed the gap to daemon-side fusion.
+ */
+const FUSION_POOL_TOP_K = 200;
+/** BM25 depth, matching {@link FUSION_POOL_TOP_K} so neither ranked leg is
  *  structurally advantaged by pool size. The daemon returns only documents
  *  sharing a query term, so this is an upper bound, not a fill. */
-const BM25_TOP_K = 50;
+const BM25_TOP_K = FUSION_POOL_TOP_K;
 /** Fused candidates kept for reranking / final slicing. */
 const FUSED_WINDOW = 50;
 
@@ -162,8 +179,11 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 			// The flat index pads top-k with whatever exists; with the cosine
 			// metric the store uses, score <= 0 means "no relation at all", so
 			// those padding hits would cast RRF votes on pure noise.
+			// A BM25 leg is itself ranked, so the pair can afford — and needs — the
+			// deeper pool; the grep leg cannot (see EMBED_TOP_K).
+			const topK = options.bm25Leg ? FUSION_POOL_TOP_K : EMBED_TOP_K;
 			const chunkHits = (
-				await service!.searchChunks(query, EMBED_TOP_K, glob, options.daemonHybrid ? "hybrid" : "dense")
+				await service!.searchChunks(query, topK, glob, options.daemonHybrid ? "hybrid" : "dense")
 			).filter((hit) => hit.score > 0);
 			const hits: RankedHit[] = chunkHits.map((hit, i) => ({
 				id: hit.id,
