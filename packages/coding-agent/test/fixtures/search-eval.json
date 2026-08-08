@@ -1,80 +1,844 @@
 [
-	{
-		"id": "symbol-rrffuse",
-		"class": "exact-symbol",
-		"query": "rrfFuse",
-		"gold": [{ "path": "packages/coding-agent/src/core/search/rrf.ts" }]
-	},
-	{
-		"id": "symbol-embsearch-service",
-		"class": "exact-symbol",
-		"query": "EmbsearchService",
-		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts" }]
-	},
-	{
-		"id": "path-hybrid-search",
-		"class": "path",
-		"query": "core/search/hybrid-search.ts",
-		"gold": [{ "path": "packages/coding-agent/src/core/search/hybrid-search.ts" }]
-	},
-	{
-		"id": "error-rrf-rank",
-		"class": "error-fragment",
-		"query": "\"RRF rank must be a positive integer\"",
-		"gold": [{ "path": "packages/coding-agent/src/core/search/rrf.ts" }]
-	},
-	{
-		"id": "error-daemon-exit",
-		"class": "error-fragment",
-		"query": "\"embsearch daemon exited\"",
-		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/client.ts" }]
-	},
-	{
-		"id": "concept-token-budget-expansion",
-		"class": "conceptual",
-		"query": "where are search results expanded into line window snippets under a token budget",
-		"gold": [{ "path": "packages/coding-agent/src/core/search/context-assembler.ts" }]
-	},
-	{
-		"id": "concept-mode-choice",
-		"class": "conceptual",
-		"query": "how does the agent decide between lexical and semantic retrieval",
-		"gold": [{ "path": "packages/coding-agent/src/core/search/mode.ts" }]
-	},
-	{
-		"id": "concept-chunk-overlap",
-		"class": "conceptual",
-		"query": "overlapping line windows when splitting files for embedding",
-		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/chunker.ts" }]
-	},
-	{
-		"id": "crossfile-mode-propagation",
-		"class": "cross-file",
-		"query": "where is the search mode resolved and then used to pick retrievers",
-		"gold": [
-			{ "path": "packages/coding-agent/src/core/search/mode.ts" },
-			{ "path": "packages/coding-agent/src/core/search/hybrid-search.ts" }
-		]
-	},
-	{
-		"id": "boundary-daemon-protocol",
-		"class": "boundary",
-		"query": "where does TypeScript talk newline-delimited JSON to the embedding daemon",
-		"gold": [{ "path": "packages/coding-agent/src/core/embsearch/client.ts" }]
-	},
-	{
-		"id": "concept-index-freshness",
-		"class": "conceptual",
-		"query": "how does the index know which files changed since the last build",
-		"gold": [
-			{ "path": "packages/coding-agent/src/core/embsearch/index-meta.ts" },
-			{ "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts" }
-		]
-	},
-	{
-		"id": "symbol-grep-hint",
-		"class": "error-fragment",
-		"query": "\"No matches found\"",
-		"gold": [{ "path": "packages/coding-agent/src/core/tools/grep.ts" }]
-	}
+  {
+    "id": "symbol-shorten-path",
+    "class": "exact-symbol",
+    "query": "shortenPath",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/render-utils.ts",
+        "startLine": 6,
+        "endLine": 13,
+        "anchor": "export function shortenPath"
+      }
+    ]
+  },
+  {
+    "id": "symbol-normalize-display-text",
+    "class": "exact-symbol",
+    "query": "normalizeDisplayText",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/render-utils.ts",
+        "startLine": 25,
+        "endLine": 27,
+        "anchor": "export function normalizeDisplayText"
+      }
+    ]
+  },
+  {
+    "id": "symbol-create-extension-runtime",
+    "class": "exact-symbol",
+    "query": "createExtensionRuntime",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/extensions/loader.ts",
+        "startLine": 141,
+        "endLine": 188,
+        "anchor": "export function createExtensionRuntime"
+      }
+    ]
+  },
+  {
+    "id": "symbol-load-extensions",
+    "class": "exact-symbol",
+    "query": "loadExtensions",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/extensions/loader.ts",
+        "startLine": 454,
+        "endLine": 478,
+        "anchor": "export async function loadExtensions"
+      }
+    ]
+  },
+  {
+    "id": "symbol-clamp-subagent-depth",
+    "class": "exact-symbol",
+    "query": "clampMaxSubagentDepth",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/subagent-depth.ts",
+        "startLine": 65,
+        "endLine": 68,
+        "anchor": "export function clampMaxSubagentDepth"
+      }
+    ]
+  },
+  {
+    "id": "symbol-can-spawn-subagent",
+    "class": "exact-symbol",
+    "query": "canSpawnSubagent",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/subagent-depth.ts",
+        "startLine": 94,
+        "endLine": 96,
+        "anchor": "export function canSpawnSubagent"
+      }
+    ]
+  },
+  {
+    "id": "symbol-parse-plan-sections",
+    "class": "exact-symbol",
+    "query": "parsePlanSections",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/extensions/core/modes.ts",
+        "startLine": 130,
+        "endLine": 157,
+        "anchor": "export function parsePlanSections"
+      }
+    ]
+  },
+  {
+    "id": "symbol-build-approve-message",
+    "class": "exact-symbol",
+    "query": "buildApproveMessage",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/extensions/core/modes.ts",
+        "startLine": 171,
+        "endLine": 195,
+        "anchor": "export function buildApproveMessage"
+      }
+    ]
+  },
+  {
+    "id": "symbol-substitute-args",
+    "class": "exact-symbol",
+    "query": "substituteArgs",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/prompt-templates.ts",
+        "startLine": 72,
+        "endLine": 106,
+        "anchor": "export function substituteArgs"
+      }
+    ]
+  },
+  {
+    "id": "symbol-parse-command-args",
+    "class": "exact-symbol",
+    "query": "parseCommandArgs",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/prompt-templates.ts",
+        "startLine": 28,
+        "endLine": 59,
+        "anchor": "export function parseCommandArgs"
+      }
+    ]
+  },
+  {
+    "id": "symbol-detect-install-method",
+    "class": "exact-symbol",
+    "query": "detectInstallMethod",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/config.ts",
+        "startLine": 61,
+        "endLine": 82,
+        "anchor": "export function detectInstallMethod"
+      }
+    ]
+  },
+  {
+    "id": "symbol-self-update-command",
+    "class": "exact-symbol",
+    "query": "getSelfUpdateCommand",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/config.ts",
+        "startLine": 252,
+        "endLine": 256,
+        "anchor": "export function getSelfUpdateCommand"
+      }
+    ]
+  },
+  {
+    "id": "symbol-attach-jsonl-reader",
+    "class": "exact-symbol",
+    "query": "attachJsonlLineReader",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/modes/rpc/jsonl.ts",
+        "startLine": 37,
+        "endLine": 41,
+        "anchor": "export function attachJsonlLineReader"
+      }
+    ]
+  },
+  {
+    "id": "symbol-serialize-json-line",
+    "class": "exact-symbol",
+    "query": "serializeJsonLine",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/modes/rpc/jsonl.ts",
+        "startLine": 10,
+        "endLine": 12,
+        "anchor": "export function serializeJsonLine"
+      }
+    ]
+  },
+  {
+    "id": "symbol-native-grep",
+    "class": "exact-symbol",
+    "query": "nativeGrep",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/native-search.ts",
+        "startLine": 291,
+        "endLine": 354,
+        "anchor": "export async function nativeGrep"
+      }
+    ]
+  },
+  {
+    "id": "symbol-ensure-tool",
+    "class": "exact-symbol",
+    "query": "ensureTool",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/utils/tools-manager.ts",
+        "startLine": 497,
+        "endLine": 501,
+        "anchor": "export async function ensureTool"
+      }
+    ]
+  },
+  {
+    "id": "symbol-chunk-file",
+    "class": "exact-symbol",
+    "query": "chunkFile",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
+        "startLine": 44,
+        "endLine": 80,
+        "anchor": "export function chunkFile"
+      }
+    ]
+  },
+  {
+    "id": "symbol-scan-repo",
+    "class": "exact-symbol",
+    "query": "scanRepo",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/repo-scan.ts",
+        "startLine": 92,
+        "endLine": 114,
+        "anchor": "export function scanRepo"
+      }
+    ]
+  },
+  {
+    "id": "symbol-hash-content",
+    "class": "exact-symbol",
+    "query": "hashContent",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/index-meta.ts",
+        "startLine": 98,
+        "endLine": 100,
+        "anchor": "export function hashContent"
+      }
+    ]
+  },
+  {
+    "id": "symbol-embsearch-store-dir",
+    "class": "exact-symbol",
+    "query": "getEmbsearchStoreDir",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/index-meta.ts",
+        "startLine": 44,
+        "endLine": 48,
+        "anchor": "export function getEmbsearchStoreDir"
+      }
+    ]
+  },
+  {
+    "id": "symbol-rrffuse",
+    "class": "exact-symbol",
+    "query": "rrfFuse",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/rrf.ts",
+        "startLine": 31,
+        "endLine": 76,
+        "anchor": "export function rrfFuse"
+      }
+    ]
+  },
+  {
+    "id": "symbol-adapt-grep-hits",
+    "class": "exact-symbol",
+    "query": "adaptGrepHits",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/adapter.ts",
+        "startLine": 62,
+        "endLine": 148,
+        "anchor": "export function adaptGrepHits"
+      }
+    ]
+  },
+  {
+    "id": "error-grep-empty-pattern",
+    "class": "error-fragment",
+    "query": "\"pattern must not be empty\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/grep.ts",
+        "startLine": 191,
+        "endLine": 195,
+        "anchor": "\"pattern must not be empty\""
+      }
+    ]
+  },
+  {
+    "id": "error-bash-blocked",
+    "class": "error-fragment",
+    "query": "\"Command blocked: does not match any allowed command pattern\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/bash.ts",
+        "startLine": 330,
+        "endLine": 334,
+        "anchor": "\"Command blocked: does not match any allowed command pattern\""
+      }
+    ]
+  },
+  {
+    "id": "error-theme-not-initialized",
+    "class": "error-fragment",
+    "query": "\"Theme not initialized. Call initTheme() first.\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
+        "startLine": 732,
+        "endLine": 736,
+        "anchor": "\"Theme not initialized. Call initTheme() first.\""
+      }
+    ]
+  },
+  {
+    "id": "error-nothing-to-compact",
+    "class": "error-fragment",
+    "query": "\"Nothing to compact (session too small)\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/agent-session-compaction.ts",
+        "startLine": 197,
+        "endLine": 201,
+        "anchor": "\"Nothing to compact (session too small)\""
+      }
+    ]
+  },
+  {
+    "id": "error-free-port",
+    "class": "error-fragment",
+    "query": "\"could not determine a free port\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/team-auto.ts",
+        "startLine": 45,
+        "endLine": 49,
+        "anchor": "\"could not determine a free port\""
+      }
+    ]
+  },
+  {
+    "id": "error-settings-lock",
+    "class": "error-fragment",
+    "query": "\"Failed to acquire settings lock\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/settings-storage.ts",
+        "startLine": 57,
+        "endLine": 61,
+        "anchor": "\"Failed to acquire settings lock\""
+      }
+    ]
+  },
+  {
+    "id": "error-extension-runtime",
+    "class": "error-fragment",
+    "query": "\"Extension runtime not initialized\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/extensions/loader.ts",
+        "startLine": 163,
+        "endLine": 167,
+        "anchor": "\"Extension runtime not initialized\""
+      }
+    ]
+  },
+  {
+    "id": "error-output-accumulator",
+    "class": "error-fragment",
+    "query": "\"Cannot append to a finished output accumulator\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/output-accumulator.ts",
+        "startLine": 73,
+        "endLine": 77,
+        "anchor": "\"Cannot append to a finished output accumulator\""
+      }
+    ]
+  },
+  {
+    "id": "error-npm-view",
+    "class": "error-fragment",
+    "query": "\"Empty response from npm view\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/package-manager.ts",
+        "startLine": 888,
+        "endLine": 892,
+        "anchor": "\"Empty response from npm view\""
+      }
+    ]
+  },
+  {
+    "id": "error-clipboard-copy",
+    "class": "error-fragment",
+    "query": "\"Failed to copy to clipboard\"",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/utils/clipboard.ts",
+        "startLine": 123,
+        "endLine": 127,
+        "anchor": "\"Failed to copy to clipboard\""
+      }
+    ]
+  },
+  {
+    "id": "path-hybrid-search",
+    "class": "path",
+    "query": "core/search/hybrid-search.ts",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
+        "startLine": 1,
+        "endLine": 225,
+        "scope": "file"
+      }
+    ]
+  },
+  {
+    "id": "path-chunker",
+    "class": "path",
+    "query": "core/embsearch/chunker.ts",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
+        "startLine": 1,
+        "endLine": 81,
+        "scope": "file"
+      }
+    ]
+  },
+  {
+    "id": "path-grep-tool",
+    "class": "path",
+    "query": "core/tools/grep.ts",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/grep.ts",
+        "startLine": 1,
+        "endLine": 499,
+        "scope": "file"
+      }
+    ]
+  },
+  {
+    "id": "path-jsonl",
+    "class": "path",
+    "query": "modes/rpc/jsonl.ts",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/modes/rpc/jsonl.ts",
+        "startLine": 1,
+        "endLine": 121,
+        "scope": "file"
+      }
+    ]
+  },
+  {
+    "id": "path-subagent-depth",
+    "class": "path",
+    "query": "core/subagent-depth.ts",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/subagent-depth.ts",
+        "startLine": 1,
+        "endLine": 160,
+        "scope": "file"
+      }
+    ]
+  },
+  {
+    "id": "path-tools-manager",
+    "class": "path",
+    "query": "utils/tools-manager.ts",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/utils/tools-manager.ts",
+        "startLine": 1,
+        "endLine": 545,
+        "scope": "file"
+      }
+    ]
+  },
+  {
+    "id": "concept-token-budget-expansion",
+    "class": "conceptual",
+    "query": "where are search results expanded into line window snippets under a token budget",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/context-assembler.ts",
+        "startLine": 42,
+        "endLine": 99,
+        "anchor": "export function assembleContext"
+      }
+    ]
+  },
+  {
+    "id": "concept-mode-choice",
+    "class": "conceptual",
+    "query": "how does the agent decide between lexical and semantic retrieval",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/mode.ts",
+        "startLine": 32,
+        "endLine": 37,
+        "anchor": "export function resolveSearchMode"
+      }
+    ]
+  },
+  {
+    "id": "concept-chunk-overlap",
+    "class": "conceptual",
+    "query": "overlapping line windows when splitting files for embedding",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
+        "startLine": 44,
+        "endLine": 80,
+        "anchor": "export function chunkFile"
+      }
+    ]
+  },
+  {
+    "id": "concept-subagent-depth-limit",
+    "class": "conceptual",
+    "query": "how is the maximum nesting depth of spawned subagents enforced",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/subagent-depth.ts",
+        "startLine": 94,
+        "endLine": 96,
+        "anchor": "export function canSpawnSubagent"
+      }
+    ]
+  },
+  {
+    "id": "concept-bash-allowlist",
+    "class": "conceptual",
+    "query": "where does the shell tool refuse a command that is not on the allow list",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/bash.ts",
+        "startLine": 330,
+        "endLine": 334,
+        "anchor": "\"Command blocked: does not match any allowed command pattern\""
+      }
+    ]
+  },
+  {
+    "id": "concept-template-args",
+    "class": "conceptual",
+    "query": "how are arguments substituted into a slash command template body",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/prompt-templates.ts",
+        "startLine": 72,
+        "endLine": 106,
+        "anchor": "export function substituteArgs"
+      }
+    ]
+  },
+  {
+    "id": "concept-install-detection",
+    "class": "conceptual",
+    "query": "how does the CLI figure out how it was installed so it can update itself",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/config.ts",
+        "startLine": 61,
+        "endLine": 82,
+        "anchor": "export function detectInstallMethod"
+      }
+    ]
+  },
+  {
+    "id": "concept-ndjson-stream",
+    "class": "conceptual",
+    "query": "reading newline delimited json messages incrementally from a stream",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/modes/rpc/jsonl.ts",
+        "startLine": 37,
+        "endLine": 41,
+        "anchor": "export function attachJsonlLineReader"
+      }
+    ]
+  },
+  {
+    "id": "concept-repo-scan-ignore",
+    "class": "conceptual",
+    "query": "which files are skipped when scanning the repository for indexing",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/repo-scan.ts",
+        "startLine": 92,
+        "endLine": 114,
+        "anchor": "export function scanRepo"
+      }
+    ]
+  },
+  {
+    "id": "concept-ripgrep-fallback",
+    "class": "conceptual",
+    "query": "pure javascript search fallback used when the ripgrep binary is missing",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/tools/native-search.ts",
+        "startLine": 291,
+        "endLine": 354,
+        "anchor": "export async function nativeGrep"
+      }
+    ]
+  },
+  {
+    "id": "concept-duplicate-votes",
+    "class": "conceptual",
+    "query": "preventing one retriever from voting twice for the same result",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/rrf.ts",
+        "startLine": 44,
+        "endLine": 48,
+        "anchor": "const dedupeKey"
+      }
+    ]
+  },
+  {
+    "id": "concept-plan-approval",
+    "class": "conceptual",
+    "query": "where is the plan approval message assembled from plan sections",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/extensions/core/modes.ts",
+        "startLine": 171,
+        "endLine": 195,
+        "anchor": "export function buildApproveMessage"
+      }
+    ]
+  },
+  {
+    "id": "concept-incremental-index",
+    "class": "conceptual",
+    "query": "how does indexing skip files whose contents have not changed",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
+        "startLine": 173,
+        "endLine": 177,
+        "anchor": "const hash = hashContent"
+      }
+    ]
+  },
+  {
+    "id": "concept-managed-binary-download",
+    "class": "conceptual",
+    "query": "downloading and caching a platform specific helper binary release",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/utils/tools-manager.ts",
+        "startLine": 497,
+        "endLine": 501,
+        "anchor": "export async function ensureTool"
+      }
+    ]
+  },
+  {
+    "id": "crossfile-mode-propagation",
+    "class": "cross-file",
+    "query": "where is the search mode resolved and then used to pick retrievers",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/mode.ts",
+        "startLine": 32,
+        "endLine": 37,
+        "anchor": "export function resolveSearchMode"
+      },
+      {
+        "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
+        "startLine": 90,
+        "endLine": 197,
+        "anchor": "export async function retrieveCandidates"
+      }
+    ]
+  },
+  {
+    "id": "crossfile-grep-to-chunk",
+    "class": "cross-file",
+    "query": "how does a grep line number become an embedding chunk id",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/search/adapter.ts",
+        "startLine": 62,
+        "endLine": 148,
+        "anchor": "export function adaptGrepHits"
+      },
+      {
+        "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
+        "startLine": 284,
+        "endLine": 324,
+        "anchor": "findEnclosingChunk"
+      }
+    ]
+  },
+  {
+    "id": "crossfile-binary-to-daemon",
+    "class": "cross-file",
+    "query": "how is the helper binary resolved and then spawned as a long lived daemon",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/utils/tools-manager.ts",
+        "startLine": 497,
+        "endLine": 501,
+        "anchor": "export async function ensureTool"
+      },
+      {
+        "path": "packages/coding-agent/src/core/embsearch/client.ts",
+        "startLine": 61,
+        "endLine": 65,
+        "anchor": "const args = [\"serve\""
+      }
+    ]
+  },
+  {
+    "id": "crossfile-index-meta-roundtrip",
+    "class": "cross-file",
+    "query": "where is index metadata saved to disk and later loaded back",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/index-meta.ts",
+        "startLine": 90,
+        "endLine": 96,
+        "anchor": "export function saveIndexMeta"
+      },
+      {
+        "path": "packages/coding-agent/src/core/embsearch/index-meta.ts",
+        "startLine": 70,
+        "endLine": 87,
+        "anchor": "export function loadIndexMeta"
+      }
+    ]
+  },
+  {
+    "id": "crossfile-extension-load-register",
+    "class": "cross-file",
+    "query": "how does an extension get loaded from disk and registered in the runtime",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/extensions/loader.ts",
+        "startLine": 454,
+        "endLine": 478,
+        "anchor": "export async function loadExtensions"
+      },
+      {
+        "path": "packages/coding-agent/src/core/extensions/loader.ts",
+        "startLine": 141,
+        "endLine": 188,
+        "anchor": "export function createExtensionRuntime"
+      }
+    ]
+  },
+  {
+    "id": "crossfile-chunk-to-span",
+    "class": "cross-file",
+    "query": "how is a chunk id turned back into a file path with line numbers",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/index-meta.ts",
+        "startLine": 44,
+        "endLine": 48,
+        "anchor": "export function getEmbsearchStoreDir"
+      },
+      {
+        "path": "packages/coding-agent/src/core/search/context-assembler.ts",
+        "startLine": 42,
+        "endLine": 99,
+        "anchor": "export function assembleContext"
+      }
+    ]
+  },
+  {
+    "id": "boundary-daemon-protocol",
+    "class": "boundary",
+    "query": "where does TypeScript talk newline-delimited JSON to the embsearch daemon",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/client.ts",
+        "startLine": 121,
+        "endLine": 173,
+        "anchor": "private send("
+      }
+    ]
+  },
+  {
+    "id": "boundary-bulk-index",
+    "class": "boundary",
+    "query": "how is the rust daemon told to index a batch of chunks at once",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/client.ts",
+        "startLine": 140,
+        "endLine": 173,
+        "anchor": "async bulk"
+      }
+    ]
+  },
+  {
+    "id": "boundary-daemon-info",
+    "class": "boundary",
+    "query": "which protocol operation reports the model id and the vector count",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/client.ts",
+        "startLine": 146,
+        "endLine": 173,
+        "anchor": "async info"
+      }
+    ]
+  },
+  {
+    "id": "boundary-mock-embedder",
+    "class": "boundary",
+    "query": "how does the typescript side detect and reject the mock embedding backend",
+    "gold": [
+      {
+        "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
+        "startLine": 147,
+        "endLine": 162,
+        "anchor": "if (info.modelId === MOCK_MODEL_ID)"
+      }
+    ]
+  }
 ]
