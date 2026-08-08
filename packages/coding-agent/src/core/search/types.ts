@@ -8,7 +8,17 @@
  * across edits or rebuilds — never persist them as durable references.
  */
 
-type RetrieverSource = "grep" | "embed";
+/**
+ * A retriever whose ranked list can enter fusion.
+ *
+ * `bm25` is the daemon's Okapi lexical index, fetched as its own leg via the
+ * `retriever: "lexical"` op rather than pre-fused by `query_hybrid`. Keeping
+ * it separate from `grep` matters: they are both "lexical" but they fail
+ * differently — BM25 has IDF and misses identifiers written in another naming
+ * convention, ripgrep has neither IDF nor an index but sees the working tree,
+ * including edits made this session.
+ */
+type RetrieverSource = "grep" | "embed" | "bm25";
 
 export type SearchMode = "auto" | "lexical" | "semantic" | "hybrid";
 export type ResolvedSearchMode = Exclude<SearchMode, "auto">;

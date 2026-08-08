@@ -25,6 +25,9 @@ export interface EmbSearchBulkResult {
 	updated: number;
 }
 
+/** Which daemon-side retriever answers a query (embsearch >= 0.2.0). */
+export type DaemonRetriever = "dense" | "lexical" | "hybrid";
+
 export interface EmbSearchClientOptions {
 	/** Open/create the store with a BM25 lexical index alongside the vectors. */
 	hybrid?: boolean;
@@ -135,13 +138,20 @@ export class EmbSearchClient {
 	/**
 	 * Search for the top-`k` matches for `text`.
 	 *
-	 * `hybrid` asks the daemon to fuse its BM25 lexical index with the dense
-	 * vectors and return one already-fused ranking (the daemon's own RRF, with
-	 * its own constant). It requires a store created with `--hybrid`, and there
-	 * is no BM25-only op — the lexical side cannot be retrieved separately.
+	 * `retriever` selects which leg answers:
+	 *  - `dense` (default) — vector search, the historical behaviour;
+	 *  - `lexical` — BM25 only, raw scores, no embedding computed;
+	 *  - `hybrid` — both, pre-fused by the daemon's own RRF constant.
+	 *
+	 * `lexical` and `hybrid` need a store created with `--hybrid`. Prefer
+	 * `lexical` over `hybrid` when fusing here: `hybrid` collapses both legs
+	 * into one RRF score, discarding the per-retriever ranks the trace records
+	 * and preventing n-way fusion with the grep leg.
 	 */
-	async query(text: string, k = 10, hybrid = false): Promise<EmbSearchResult[]> {
-		const res = await this.send(hybrid ? { op: "query", text, k, hybrid: true } : { op: "query", text, k });
+	async query(text: string, k = 10, retriever: DaemonRetriever = "dense"): Promise<EmbSearchResult[]> {
+		const res = await this.send(
+			retriever === "dense" ? { op: "query", text, k } : { op: "query", text, k, retriever },
+		);
 		return res.results ?? [];
 	}
 

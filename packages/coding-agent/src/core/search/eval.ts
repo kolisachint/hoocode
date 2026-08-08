@@ -66,6 +66,12 @@ export interface EvalConfig {
 	 * omit the row rather than silently scoring it as plain semantic.
 	 */
 	daemonHybrid?: boolean;
+	/**
+	 * Fetch the daemon's BM25 index as a separate leg and fuse it here with
+	 * dense and grep. Like `daemonHybrid` it needs a hybrid store, so it is
+	 * skipped when the harness has no hybrid service.
+	 */
+	bm25Leg?: boolean;
 }
 
 /**
@@ -98,6 +104,11 @@ export const EVAL_CONFIGS: readonly EvalConfig[] = [
 	// two lexical legs at the system level.
 	{ label: "daemon-hybrid", mode: "semantic", daemonHybrid: true },
 	{ label: "daemon-hybrid +rr", mode: "semantic", rerank: true, daemonHybrid: true },
+	// Three-way fusion: dense + BM25 + grep, all fused here so `k` is ours and
+	// the per-leg ranks survive into the trace. `bm25+dense` isolates what the
+	// grep leg still contributes once BM25 is present.
+	{ label: "bm25+dense +rr", mode: "semantic", rerank: true, bm25Leg: true },
+	{ label: "3-way +rr", mode: "hybrid", rerank: true, bm25Leg: true },
 ];
 
 /** Candidates fetched per eval query — deep enough for the reranker gate. */
@@ -162,7 +173,7 @@ export async function evaluateQuery(
 	for (const config of configs) {
 		// A daemon-hybrid config against the plain store would error in the
 		// daemon (`query_hybrid requires a hybrid store`); omit the row instead.
-		if (config.daemonHybrid && !hybridService) continue;
+		if ((config.daemonHybrid || config.bm25Leg) && !hybridService) continue;
 		const retrieved = await retrieveCandidates({
 			cwd,
 			query: evalQuery.query,
@@ -170,8 +181,9 @@ export async function evaluateQuery(
 			rrfK: config.rrfK,
 			rerank: config.rerank ?? false,
 			limit: EVAL_FETCH_LIMIT,
-			service: config.daemonHybrid ? hybridService : service,
+			service: config.daemonHybrid || config.bm25Leg ? hybridService : service,
 			daemonHybrid: config.daemonHybrid,
+			bm25Leg: config.bm25Leg,
 		});
 		results.push({
 			label: config.label,

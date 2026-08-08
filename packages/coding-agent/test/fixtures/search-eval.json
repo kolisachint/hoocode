@@ -423,7 +423,7 @@
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
         "startLine": 1,
-        "endLine": 234,
+        "endLine": 274,
         "scope": "file"
       }
     ]
@@ -656,8 +656,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 188,
-        "endLine": 192,
+        "startLine": 231,
+        "endLine": 235,
         "anchor": "const hash = hashContent"
       }
     ]
@@ -688,8 +688,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
-        "startLine": 97,
-        "endLine": 206,
+        "startLine": 110,
+        "endLine": 125,
         "anchor": "export async function retrieveCandidates"
       }
     ]
@@ -707,8 +707,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 299,
-        "endLine": 339,
+        "startLine": 353,
+        "endLine": 393,
         "anchor": "findEnclosingChunk"
       }
     ]
@@ -726,8 +726,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 63,
-        "endLine": 67,
+        "startLine": 66,
+        "endLine": 70,
         "anchor": "const args = [\"serve\""
       }
     ]
@@ -796,8 +796,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 127,
-        "endLine": 186,
+        "startLine": 130,
+        "endLine": 196,
         "anchor": "private send("
       }
     ]
@@ -809,8 +809,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 153,
-        "endLine": 186,
+        "startLine": 163,
+        "endLine": 196,
         "anchor": "async bulk"
       }
     ]
@@ -822,8 +822,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 159,
-        "endLine": 186,
+        "startLine": 169,
+        "endLine": 196,
         "anchor": "async info"
       }
     ]
@@ -835,8 +835,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 162,
-        "endLine": 177,
+        "startLine": 205,
+        "endLine": 220,
         "anchor": "if (info.modelId === MOCK_MODEL_ID)"
       }
     ]

@@ -110,6 +110,60 @@ describe("retrieveCandidates (stubbed service)", () => {
 		}
 	});
 
+	it("fuses the daemon BM25 leg as its own source, separable in the trace", async () => {
+		const root = makeRepo();
+		try {
+			// Distinct results per retriever, so a leg that silently answered with
+			// another retriever's list would fail rather than look plausible.
+			const bm25Service = {
+				...readyService,
+				getState: () => ({ phase: "ready", chunkCount: 3 }),
+				isAvailable: () => true,
+				findEnclosingChunk: readyService.findEnclosingChunk,
+				searchChunks: async (_q: string, _k: number, _g: string | undefined, retriever = "dense") =>
+					retriever === "lexical"
+						? [{ id: "src/indexed.ts#1", path: "src/indexed.ts", startLine: 11, endLine: 20, score: 3.7 }]
+						: [{ id: "src/other.ts#0", path: "src/other.ts", startLine: 1, endLine: 1, score: 0.9 }],
+			} as unknown as EmbsearchService;
+
+			const { candidates } = await retrieveCandidates({
+				cwd: root,
+				query: "tokenBudget",
+				mode: "semantic",
+				bm25Leg: true,
+				rerank: false,
+				service: bm25Service,
+			});
+			const bm25Hit = candidates.find((c) => c.id === "src/indexed.ts#1");
+			expect(bm25Hit, "the BM25-only chunk must survive fusion").toBeDefined();
+			expect(bm25Hit!.ranks.bm25).toBe(1);
+			// Raw BM25 sums are kept as diagnostics, not folded into the score.
+			expect(bm25Hit!.rawScores.bm25).toBe(3.7);
+			// The dense leg is still its own source.
+			expect(candidates.find((c) => c.id === "src/other.ts#0")!.ranks.embed).toBe(1);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("omits the BM25 leg when the index is unavailable", async () => {
+		const root = makeRepo();
+		try {
+			const { candidates, resolvedMode } = await retrieveCandidates({
+				cwd: root,
+				query: "tokenBudget",
+				mode: "hybrid",
+				bm25Leg: true,
+				rerank: false,
+				service: downService,
+			});
+			expect(resolvedMode).toBe("lexical");
+			expect(candidates.every((c) => c.ranks.bm25 === undefined)).toBe(true);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("drops zero-score embedding hits (flat-index top-k padding)", async () => {
 		const root = makeRepo();
 		try {
