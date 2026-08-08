@@ -243,7 +243,35 @@ problems, all fixed in the harness rather than in retrieval:
    dead-export sweep (`02efaab`) — the only importer was a `.mjs` script
    reading `dist/`, which static analysis cannot see. The harness is now
    `scripts/search-eval.ts` importing from `src/`, `test/search-eval.test.ts`
-   imports the same surface, and CI runs it lexical-only on every PR.
+   imports the same surface, so the same sweep now breaks a test instead of
+   silently disabling the gate.
+
+   The remaining protection — proving the harness still *executes* — wants a
+   CI job. It is not in `ci.yml` because the session that wrote this could
+   not push workflow changes (the OAuth token lacks `workflow` scope); add
+   it with a token that has one:
+
+   ```yaml
+     search-eval:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - name: Setup bun
+           uses: oven-sh/setup-bun@v2
+           with:
+             bun-version: '1.3.13'
+         - name: Install dependencies
+           run: bun install --frozen-lockfile
+         - name: Check gold set is pinned to the current tree
+           run: cd packages/coding-agent && bun run search-eval:gold
+         - name: Run eval harness (lexical only)
+           run: cd packages/coding-agent && bun run search-eval -- --no-embed
+   ```
+
+   Lexical-only by design: the semantic rows need the embsearch binary,
+   whose release download would make CI depend on a third-party host. What
+   CI protects is the harness and the gold set; a scored baseline is
+   produced deliberately, not per-PR.
 2. **The corpus was unpinned.** Retrieval is measured over this repo, so
    every commit moved the corpus and no two runs were comparable. Runs now
    take `--corpus-ref <sha>` and execute in a detached worktree; a run
