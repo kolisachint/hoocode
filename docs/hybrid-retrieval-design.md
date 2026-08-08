@@ -755,6 +755,40 @@ A span that well described and still unreachable points at chunking or
 embedding, not at fusion or ranking. That is the next thing to look at, and the
 first retrieval question in this document that the reranker work cannot answer.
 
+## Shipped: BM25 is the default lexical leg
+
+The store now carries a BM25 index by default, and search fuses BM25 + dense +
+grep-scoped-to-stale-files. Measured at HEAD, `--daemon-hybrid --live-edits`:
+
+| config | R@1 | R@10 | R@50 | MRR | live edits |
+|---|---|---|---|---|---|
+| `auto +rr` (grep + dense, the old default) | 53% | 63% | 77% | 0.566 | 1.000 |
+| `bm25+dense +rr` (no grep at all) | 55% | 69% | 83% | 0.599 | **0.000** |
+| `3-way +rr` (**the new default**) | **55%** | **69%** | **83%** | **0.599** | **1.000** |
+
+The new default matches BM25-only on the indexed corpus and grep-only on files
+written after indexing. Neither is traded, because the legs no longer overlap:
+grep narrows to what `staleFiles()` reports the index has not read.
+
+One of the two stuck boundary queries fell out of this. `boundary-daemon-info`
+— "which protocol operation reports the model id and the vector count" — goes
+from 0% to 100%, because its answer sits under a doc comment that paraphrases
+the query almost word for word. That is a lexical match BM25 catches and the
+bi-encoder never placed. It is a useful reminder of what the two legs are for:
+the remaining failure, `boundary-mock-embedder`, has no such literal overlap.
+
+### The migration
+
+Hybrid-ness is fixed when a store is created, and passing `--hybrid` at an
+existing plain store only warns — so an index built before this would silently
+stay dense-only while every BM25 query against it failed. `EmbsearchService`
+therefore asks the store itself (`info.hybrid`) rather than trusting the
+sidecar, and rebuilds once when it disagrees. Verified end to end: a dense-only
+store reopens, rebuilds, serves BM25, and stays stable on the next open.
+
+Users pay one full re-index. The chunker line-range fix rides along with it,
+since it needed a `CHUNKER_VERSION` bump it could not justify on its own.
+
 ## Chunking: two hypotheses, both rejected
 
 The two boundary queries that survived decontamination are absent from the top
