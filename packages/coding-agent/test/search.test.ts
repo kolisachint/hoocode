@@ -6,7 +6,7 @@ import { adaptGrepHits, type ChunkLookup } from "../src/core/search/adapter.js";
 import { assembleContext } from "../src/core/search/context-assembler.js";
 import { buildLexicalPattern, runLexicalRetriever } from "../src/core/search/lexical-retriever.js";
 import { hasStrongLexicalSignals, resolveSearchMode } from "../src/core/search/mode.js";
-import { rerankCandidates } from "../src/core/search/rerank.js";
+import { queryIsProse, rerankCandidates } from "../src/core/search/rerank.js";
 import { rrfFuse } from "../src/core/search/rrf.js";
 import type { FusedCandidate, RankedHit } from "../src/core/search/types.js";
 
@@ -392,5 +392,79 @@ describe("rerankCandidates", () => {
 		} finally {
 			rmSync(cwd, { recursive: true, force: true });
 		}
+	});
+
+	/**
+	 * Two candidates carrying identical query terms in identical paths, so term
+	 * coverage and path affinity are equal by construction and the declaration
+	 * bonus is the only thing that can reorder them. The lower-ranked one is
+	 * the declaration, so the bonus firing is visible as an inversion.
+	 */
+	function declarationOnlyFixture(): { cwd: string; candidates: FusedCandidate[] } {
+		const cwd = mkdtempSync(join(tmpdir(), "rerank-prose-"));
+		writeFileSync(join(cwd, "a.ts"), "// computed request budget for\nbudget = 1;\n");
+		writeFileSync(join(cwd, "b.ts"), "// computed request budget for\nconst budget = 1;\n");
+		const candidate = (path: string, rrfScore: number): FusedCandidate => ({
+			id: `${path}#1`,
+			path,
+			startLine: 1,
+			endLine: 2,
+			rrfScore,
+			ranks: {},
+			rawScores: {},
+		});
+		return { cwd, candidates: [candidate("a.ts", 0.5), candidate("b.ts", 0.4)] };
+	}
+
+	it("promotes the declaration for a query that names something", () => {
+		const { cwd, candidates } = declarationOnlyFixture();
+		try {
+			expect(rerankCandidates("budget", candidates, cwd).candidates[0].path).toBe("b.ts");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+
+	it("leaves fused order standing for a prose query", () => {
+		const { cwd, candidates } = declarationOnlyFixture();
+		try {
+			// Same corpus, same candidates — only the query's shape differs. A
+			// sentence has no name to match, so the declaration bonus must not
+			// outvote the retrievers that agreed on a.ts.
+			const ranked = rerankCandidates("how is the budget computed for a request", candidates, cwd).candidates;
+			expect(ranked[0].path, "fused order should stand for a prose query").toBe("a.ts");
+		} finally {
+			rmSync(cwd, { recursive: true, force: true });
+		}
+	});
+});
+
+describe("queryIsProse", () => {
+	it("treats sentences as prose", () => {
+		for (const query of [
+			"how does the agent decide between lexical and semantic retrieval",
+			"where is the plan approval message assembled from plan sections",
+			"which files are skipped when scanning the repository for indexing",
+		]) {
+			expect(queryIsProse(query), query).toBe(true);
+		}
+	});
+
+	it("treats identifiers, paths and quoted literals as names", () => {
+		for (const query of [
+			"rerankCandidates",
+			"core/search/hybrid-search.ts",
+			"hybrid search fusion",
+			'"Theme not initialized. Call initTheme() first."',
+		]) {
+			expect(queryIsProse(query), query).toBe(false);
+		}
+	});
+
+	it("needs two function words, so camelCase never trips it", () => {
+		// `isFor` lowercases to one token, not to `is` + `for`.
+		expect(queryIsProse("isForwardedRequest")).toBe(false);
+		expect(queryIsProse("the index")).toBe(false);
+		expect(queryIsProse("the index is stale")).toBe(true);
 	});
 });

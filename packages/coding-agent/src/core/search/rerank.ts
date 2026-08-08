@@ -14,6 +14,10 @@
  *     file itself first, which content grep alone cannot do;
  *   - fused prior: the RRF ordering, so retriever consensus still counts.
  *
+ * Not every signal suits every query. A query that names something and a query
+ * that describes behaviour want different evidence, so the name-matching
+ * signal is gated on {@link queryIsProse} — see its comment for the numbers.
+ *
  * Purely lexical-statistical and deterministic — no model, no I/O beyond
  * reading candidate windows. A cross-encoder can later replace the scoring
  * function behind the same signature; that model work belongs to
@@ -45,6 +49,110 @@ const EXACT_PATH_BONUS = 0.5;
  * for both — cannot separate them. Structure can.
  */
 const DECLARATION_BONUS = 0.3;
+
+/**
+ * Sentence glue. Identifiers and paths never contain these words, so two or
+ * more of them means the query is a sentence rather than a name.
+ *
+ * This gates {@link DECLARATION_BONUS} because that bonus is a *name-matching*
+ * signal and a prose query has no name to match. Its plan terms are ordinary
+ * words — "results", "search", "index" — so it fires on whichever candidate
+ * happens to declare a variable by one of them, at a weight larger than the
+ * entire path-affinity term, and buries the fused ordering that did know the
+ * answer. On the conceptual class reranking was scoring *below not reranking
+ * at all* (MRR 0.246 un-reranked vs 0.124 reranked on `semantic`).
+ *
+ * Measured on the 62-query gold set, gating it moved conceptual MRR +0.046
+ * (`semantic +rr`), +0.040 (`auto +rr`), +0.056 (`bm25+dense +rr`) and left
+ * exact-symbol, error-fragment and path bit-identical — the gate never fires
+ * on those, by construction. Overall MRR +0.007 to +0.013, which the paired
+ * sign test does not call significant (p = 0.11 to 0.29); the classes it
+ * protects are what justify it, not the aggregate.
+ *
+ * Path affinity is deliberately *not* gated. It is a topic signal, not a name
+ * signal: "how does a grep line number become an embedding chunk id" wants
+ * files with `grep` and `chunk` in the path. Gating it too was measured and
+ * was strictly worse — same conceptual gain, roughly double the cross-file
+ * loss (−0.058 vs −0.032 on `semantic +rr`).
+ *
+ * Deliberately conservative: two hits, not one, so a terse query like
+ * `hybrid search fusion` keeps today's scoring untouched.
+ */
+const PROSE_FUNCTION_WORDS = new Set([
+	"a",
+	"after",
+	"all",
+	"an",
+	"and",
+	"any",
+	"are",
+	"as",
+	"at",
+	"be",
+	"been",
+	"before",
+	"between",
+	"but",
+	"by",
+	"can",
+	"does",
+	"do",
+	"each",
+	"for",
+	"from",
+	"had",
+	"has",
+	"have",
+	"how",
+	"if",
+	"in",
+	"into",
+	"is",
+	"it",
+	"its",
+	"of",
+	"on",
+	"one",
+	"or",
+	"should",
+	"so",
+	"than",
+	"that",
+	"the",
+	"then",
+	"this",
+	"to",
+	"under",
+	"was",
+	"were",
+	"what",
+	"when",
+	"where",
+	"which",
+	"why",
+	"with",
+	"would",
+]);
+/** Function words needed before a query counts as prose. */
+const PROSE_WORD_THRESHOLD = 2;
+
+/**
+ * Is `query` a sentence rather than a name?
+ *
+ * A quoted segment is never prose regardless of its words: the plan collapses
+ * it to one literal term, so the declaration bonus cannot fire on it anyway,
+ * and its path-token split is what lets `"Theme not initialized…"` find
+ * `core/theme.ts`.
+ */
+export function queryIsProse(query: string): boolean {
+	if (/["'`][^"'`]+["'`]/.test(query)) return false;
+	const words = query.toLowerCase().match(/[a-z]+/g) ?? [];
+	let hits = 0;
+	for (const word of words) {
+		if (PROSE_FUNCTION_WORDS.has(word) && ++hits >= PROSE_WORD_THRESHOLD) return true;
+	}
+	return false;
+}
 
 /** Keywords that introduce a definition across the languages this indexes.
  *  Matched against lowercased text, so the term is lowercased too. */
@@ -116,6 +224,9 @@ export function rerankCandidates(query: string, candidates: readonly FusedCandid
 	}
 	const terms = plan.terms;
 	const queryPath = query.trim().toLowerCase();
+	// Prose asks about behaviour, not about a name, so the one signal that reads
+	// candidates *as names* is switched off.
+	const prose = queryIsProse(query);
 
 	const fileCache = new Map<string, string[] | undefined>();
 	const readLines = (rel: string): string[] | undefined => {
@@ -165,7 +276,7 @@ export function rerankCandidates(query: string, candidates: readonly FusedCandid
 				totalTermWeight > 0
 					? present.reduce((sum, t) => sum + (termWeight.get(t) ?? 0), 0) / totalTermWeight
 					: present.length / terms.length;
-			declaresAnyTerm = present.some((t) => declaresTerm(window, t));
+			declaresAnyTerm = !prose && present.some((t) => declaresTerm(window, t));
 		}
 
 		const lowerPath = candidate.path.toLowerCase();

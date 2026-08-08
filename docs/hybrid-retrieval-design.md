@@ -517,17 +517,61 @@ signals; applied to a natural-language query they promote whatever happens to
 contain a matching token.
 
 That is a live regression in the shipped default, worth more than the
-cross-encoder question that surfaced it. Two candidate fixes, both cheap to
-test on this harness:
-
-1. Suppress the identifier-oriented signals when the query has no
-   identifier-ish shape, letting fusion order stand.
-2. Route conceptual queries to the cross-encoder, which is the one class
-   where it wins (0.106 -> 0.179 semantic, 0.072 -> 0.173 auto).
+cross-encoder question that surfaced it.
 
 Nothing adopts the cross-encoder as a default on this evidence. It stays
 opt-in (`crossEncoder`), and the ~23 MB it adds to the binary is not yet
 earned.
+
+#### Fix: gate the declaration bonus on query shape
+
+Two candidate fixes were on the table — suppress the identifier signals on
+non-identifier queries, or route conceptual queries to the cross-encoder. The
+first was tried, because it costs nothing at run time and does not depend on
+a model that has not earned its place in the binary.
+
+A query counts as prose when it contains two or more function words
+(`queryIsProse` in `rerank.ts`). On this gold set that classifier is exact:
+all 24 exact-symbol / error-fragment / path queries are names, all 24
+conceptual / cross-file / boundary queries are prose.
+
+Two variants were measured against the same corpus, index and gold set
+(62 queries, corpus `974bf58d`, embsearch 0.3.0), differing only in which
+signals the gate suppresses. Per-class MRR, `A` = today's shipped scoring:
+
+| class | n | A | B: gate declaration | C: gate declaration + path |
+|---|---|---|---|---|
+| exact-symbol | 22 | 0.742 | 0.742 | 0.742 |
+| error-fragment | 10 | 0.500 | 0.500 | 0.500 |
+| path | 6 | 0.667 | 0.667 | 0.667 |
+| conceptual | 14 | 0.124 | **0.170** | 0.170 |
+| cross-file | 6 | 0.089 | 0.057 | 0.032 |
+| boundary | 4 | 0.104 | **0.188** | 0.175 |
+
+(`semantic +rr`; `auto +rr` and `bm25+dense +rr` show the same shape, with
+conceptual +0.040 and +0.056 respectively.)
+
+**B ships.** The three name-shaped classes are bit-identical under both
+variants — by construction, since the gate never fires on them — so the
+comparison is confined to the classes it targets. B takes conceptual up
++0.046 and boundary +0.083 for a cross-file cost of −0.032; C buys no extra
+conceptual gain and doubles the cross-file loss. Path affinity is a *topic*
+signal, not a name signal: "how does a grep line number become an embedding
+chunk id" genuinely wants files with `grep` and `chunk` in the path, so
+gating it throws away evidence that prose queries can use.
+
+Overall MRR moves +0.007 to +0.013 depending on config, which the paired sign
+test does **not** call significant (best p = 0.109, 8 better / 2 worse on
+`auto +rr`). The justification is not the aggregate — it is that the change
+is free for three of six classes and directionally right for the other three.
+
+**This halves the regression rather than removing it.** Reranked conceptual
+is still below un-reranked conceptual (0.170 against 0.246). The remaining
+gap is the open question: for prose queries the deterministic reranker has
+nothing left but term coverage, and term coverage is not what orders a
+behavioural question correctly. This is the one class where the cross-encoder
+won (0.106 -> 0.179), so a query-shape router between the two rerankers is
+the obvious next experiment.
 
 ### What is still open
 

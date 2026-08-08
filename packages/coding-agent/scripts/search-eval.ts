@@ -64,9 +64,22 @@ const withDaemonHybrid = has("daemon-hybrid");
 // edits can answer — the grep leg's unique contribution, which the main sweep
 // cannot see because its corpus matches the index exactly.
 const withLiveEdits = has("live-edits");
+// Scores only the named configs. Iterating on the reranker means re-running
+// five rows, not nineteen; the record still says which configs it holds, so a
+// filtered run can never be mistaken for a full sweep.
+const configFilter = flag("configs")
+	?.split(",")
+	.map((s) => s.trim())
+	.filter(Boolean);
 
 const fixturePath = path.join(packageRoot, "test", "fixtures", "search-eval.json");
 const dataset = loadGoldSet(fixturePath);
+
+const configs = configFilter ? EVAL_CONFIGS.filter((c) => configFilter.includes(c.label)) : EVAL_CONFIGS;
+if (configs.length === 0) {
+	console.error(`--configs matched nothing. Known labels:\n  ${EVAL_CONFIGS.map((c) => c.label).join("\n  ")}`);
+	process.exit(1);
+}
 
 const corpus = pinCorpus(repoRoot, corpusRef);
 try {
@@ -138,7 +151,7 @@ try {
 	const { aggregates, perQuery } = await runEvalSuite({
 		cwd: corpus.cwd,
 		dataset,
-		configs: EVAL_CONFIGS,
+		configs,
 		service,
 		hybridService,
 		onQuery: (index, query) => {
@@ -156,7 +169,7 @@ try {
 			hybridService,
 		),
 		goldSet: summarizeGoldSet(dataset),
-		configs: EVAL_CONFIGS,
+		configs,
 		aggregates,
 		perQuery,
 	};
@@ -174,7 +187,7 @@ try {
 		const live = await runEvalSuite({
 			cwd: corpus.cwd,
 			dataset: applied.queries,
-			configs: EVAL_CONFIGS,
+			configs,
 			service,
 			hybridService,
 		});
