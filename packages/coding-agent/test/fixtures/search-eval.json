@@ -214,8 +214,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
-        "startLine": 44,
-        "endLine": 80,
+        "startLine": 54,
+        "endLine": 100,
         "anchor": "export function chunkFile"
       }
     ]
@@ -423,7 +423,7 @@
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
         "startLine": 1,
-        "endLine": 369,
+        "endLine": 420,
         "scope": "file"
       }
     ]
@@ -436,7 +436,7 @@
       {
         "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
         "startLine": 1,
-        "endLine": 81,
+        "endLine": 101,
         "scope": "file"
       }
     ]
@@ -526,8 +526,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
-        "startLine": 44,
-        "endLine": 80,
+        "startLine": 54,
+        "endLine": 100,
         "anchor": "export function chunkFile"
       }
     ]
@@ -688,8 +688,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
-        "startLine": 174,
-        "endLine": 189,
+        "startLine": 223,
+        "endLine": 238,
         "anchor": "export async function retrieveCandidates"
       }
     ]

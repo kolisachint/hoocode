@@ -242,7 +242,12 @@ describe("runSearch (stubbed service)", () => {
 		try {
 			const result = await runSearch({ cwd: root, query: "tokenBudget", mode: "hybrid", service: readyService });
 			expect(result.resolvedMode).toBe("hybrid");
-			expect(result.text).toContain("src/indexed.ts:1-10 [embed+grep]");
+			// `indexed.ts` is two adjacent chunks (1-10 and 11-20). They describe
+			// one continuous region, so the model gets one result spanning both
+			// rather than two results re-showing the same file — and the label
+			// carries every retriever that reached any part of it.
+			expect(result.text).toContain("src/indexed.ts:1-20 [embed+grep]");
+			expect(result.text, "adjacent chunks must not each take a slot").not.toContain("src/indexed.ts:11-");
 
 			const tracePath = getSearchTracePath(root);
 			expect(existsSync(tracePath)).toBe(true);
@@ -256,7 +261,10 @@ describe("runSearch (stubbed service)", () => {
 			// chunk that declares `tokenBudget` leads, and the consensus chunk
 			// that merely contains it inside `spendTokenBudget` follows.
 			expect(trace.fused[0].id).toBe("src/indexed.ts#1");
-			expect(trace.fused.map((f: { id: string }) => f.id)).toContain("src/indexed.ts#0");
+			// #0 abuts #1 and was folded into it for the model, but the trace still
+			// records that retrieval found it — otherwise a merged result would be
+			// indistinguishable from a miss when diagnosing a ranking.
+			expect(trace.fused[0].mergedFrom).toContain("src/indexed.ts#0");
 		} finally {
 			rmSync(root, { recursive: true, force: true });
 		}
