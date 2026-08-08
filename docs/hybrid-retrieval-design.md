@@ -467,6 +467,68 @@ the working tree.
 `bm25Leg` stays available for callers who want the depth-50 recall (85% vs
 77%) and can tolerate an index-lagged view.
 
+### Cross-encoder reranking: measured, and rejected as a replacement
+
+embsearch 0.3.0 bundles `ms-marco-MiniLM-L-6-v2` and serves a `rerank` op, so
+the fused shortlist can be reordered by a model that reads query and candidate
+together. Scored against the same retrieval each deterministic `+rr` row uses,
+so the delta is the reranker alone.
+
+| config | R@1 | R@10 | MRR |
+|---|---|---|---|
+| semantic +rr | **39%** | 56% | **0.444** |
+| semantic +ce | 21% | 48% | 0.295 |
+| auto +rr | **34%** | **66%** | **0.466** |
+| auto +ce | 18% | 60% | 0.316 |
+| bm25+dense +rr | **34%** | **70%** | **0.468** |
+| bm25+dense +ce | 16% | 56% | 0.304 |
+
+**The cross-encoder loses, significantly.** R@1 is worse on all three
+(2/13, 4/14, 4/15 better/worse, p<=0.05) and MRR on two of three. It still
+beats *no* reranking (semantic 0.228 -> 0.295), so it is doing something —
+just far less than a small amount of code-aware structure.
+
+The per-class MRR says why, and it is not a close call:
+
+| class | n | semantic +rr | semantic +ce |
+|---|---|---|---|
+| exact-symbol | 22 | **0.742** | 0.555 |
+| error-fragment | 10 | **0.500** | 0.267 |
+| path | 6 | **0.667** | 0.080 |
+| conceptual | 14 | 0.106 | **0.179** |
+| cross-file | 6 | **0.087** | 0.052 |
+| boundary | 4 | **0.042** | 0.025 |
+
+`ms-marco-MiniLM` is trained to rank web passages against natural-language
+questions. Conceptual queries are exactly that, and it wins there. Everything
+else in this gold set is an *exact-match* problem — an identifier, a quoted
+error string, a filename — which is out of distribution for a passage ranker
+and precisely what the deterministic signals were built for. On path queries
+it collapses (0.667 -> 0.080): the reranker has an exact-path bonus, and the
+model has no notion that the query *is* a filename.
+
+### The more interesting finding: deterministic reranking hurts conceptual queries
+
+Reading down the conceptual column: plain `semantic` scores MRR 0.230,
+`semantic +rr` scores **0.106**. Reranking makes conceptual queries
+*materially worse than not reranking at all*, and `auto` is the same story
+(0.239 -> 0.072). The declaration bonus and path affinity are identifier
+signals; applied to a natural-language query they promote whatever happens to
+contain a matching token.
+
+That is a live regression in the shipped default, worth more than the
+cross-encoder question that surfaced it. Two candidate fixes, both cheap to
+test on this harness:
+
+1. Suppress the identifier-oriented signals when the query has no
+   identifier-ish shape, letting fusion order stand.
+2. Route conceptual queries to the cross-encoder, which is the one class
+   where it wins (0.106 -> 0.179 semantic, 0.072 -> 0.173 auto).
+
+Nothing adopts the cross-encoder as a default on this evidence. It stays
+opt-in (`crossEncoder`), and the ~23 MB it adds to the binary is not yet
+earned.
+
 ### What is still open
 
 - **Hybrid and semantic are now indistinguishable on rank.** Reranked
