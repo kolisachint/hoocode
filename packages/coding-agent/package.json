@@ -1,6 +1,6 @@
 {
 	"name": "@kolisachint/hoocode-agent",
-	"version": "0.4.162",
+	"version": "0.4.163",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"hoocodeConfig": {
@@ -45,9 +45,9 @@
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@kolisachint/hoocode-agent-core": "^0.4.162",
-		"@kolisachint/hoocode-ai": "^0.4.162",
-		"@kolisachint/hoocode-tui": "^0.4.162",
+		"@kolisachint/hoocode-agent-core": "^0.4.163",
+		"@kolisachint/hoocode-ai": "^0.4.163",
+		"@kolisachint/hoocode-tui": "^0.4.163",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
@@ -58,7 +58,6 @@
 		"hosted-git-info": "^9.0.2",
 		"ignore": "^7.0.5",
 		"jiti": "^2.7.0",
-		"marked": "^15.0.12",
 		"minimatch": "^10.2.3",
 		"proper-lockfile": "^4.1.2",
 		"strip-ansi": "^7.1.0",
@@ -77,9 +76,7 @@
 		"@mariozechner/clipboard": "^0.3.5"
 	},
 	"devDependencies": {
-		"@types/diff": "^7.0.2",
 		"@types/hosted-git-info": "^3.0.5",
-		"@types/ms": "^2.1.0",
 		"@types/node": "^24.3.0",
 		"@types/proper-lockfile": "^4.1.4",
 		"shx": "^0.4.0",

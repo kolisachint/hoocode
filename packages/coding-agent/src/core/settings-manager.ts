@@ -50,24 +50,17 @@ function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 	return result;
 }
 
-export { FileSettingsStorage, InMemorySettingsStorage };
 export type { SettingsError, SettingsScope, SettingsStorage };
 export type {
 	BranchSummarySettings,
 	CompactionSettings,
 	ImageSettings,
-	MarkdownSettings,
-	ModelCategories,
 	PackageSource,
-	ProviderRetrySettings,
 	RetrySettings,
 	Settings,
-	TerminalSettings,
 	ThinkingBudgetsSettings,
 	TransportSetting,
-	VoiceSettings,
 	WarningSettings,
-	WebtoolsSettings,
 } from "./settings-types.js";
 
 export class SettingsManager {

@@ -25,21 +25,11 @@ Before searching, check these maps:
 - **Fixed per-turn surface trimmed ~402 tokens (~8.8%)**: see the rules in
   "Prompt token surface" below — the savings came almost entirely from deleting
   guidance that was being sent twice, not from dropping information.
-- **Provider trim (step 1 of 2 done)**: `packages/ai/scripts/generate-models.ts` no
-  longer emits `amazon-bedrock`, `mistral`, `cloudflare-workers-ai`, or
-  `cloudflare-ai-gateway` models. Step 2 (needs network access to models.dev):
-  1. `cd packages/ai && bun run generate-models` (purges those entries from
-     `models.generated.ts`)
-  2. Delete the now-unreferenced implementations: `src/providers/mistral.ts`,
-     `src/providers/cloudflare.ts`, `src/providers/amazon-bedrock.ts`,
-     `src/bedrock-provider.ts`, their registrations in
-     `src/providers/register-builtins.ts`, the `mistral-conversations` /
-     `bedrock-converse-stream` Api entries and `mistral` / `cloudflare-*` /
-     `amazon-bedrock` providers in `src/types.ts`, their env keys in
-     `src/env-api-keys.ts`, the cloudflare branches in `anthropic.ts` /
-     `openai-completions.ts` / `openai-responses.ts`, and
-     `packages/coding-agent/src/bun/register-bedrock.ts`.
-  3. `bun run check` from the repo root, then run the ai + coding-agent suites.
+- **Provider trim (complete)**: `amazon-bedrock`, `mistral`,
+  `cloudflare-workers-ai`, and `cloudflare-ai-gateway` are fully removed —
+  implementations, registrations, `Api`/`KnownProvider` entries, env keys,
+  generated models, and test scaffolding. `mistralai/*` model ids served
+  through OpenRouter are unrelated and remain supported.
 - **MCP Standard Config Support**: Now reads standard `mcp.json` format from:
   - `~/.agents/mcp.json` (user-level)
   - `.agents/mcp.json` (project-level)

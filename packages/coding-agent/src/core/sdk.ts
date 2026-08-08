@@ -38,7 +38,6 @@ import {
 	createReadTool,
 	createWriteTool,
 	type ToolName,
-	withFileMutationQueue,
 } from "./tools/index.js";
 
 export interface CreateAgentSessionOptions {
@@ -128,24 +127,11 @@ export interface CreateAgentSessionResult {
 
 // Re-exports
 
-export type { AgentDefinition, AgentSource } from "./agent-frontmatter.js";
-export { AgentRegistry, formatAgentsForPrompt, loadAgentRegistry } from "./agent-registry.js";
 export * from "./agent-session-runtime.js";
-export type {
-	ExtensionAPI,
-	ExtensionCommandContext,
-	ExtensionContext,
-	ExtensionFactory,
-	SlashCommandInfo,
-	SlashCommandSource,
-	ToolDefinition,
-} from "./extensions/index.js";
+export type { ExtensionFactory } from "./extensions/index.js";
 export type { PromptTemplate } from "./prompt-templates.js";
-export type { Skill } from "./skills.js";
-export type { Tool } from "./tools/index.js";
 
 export {
-	withFileMutationQueue,
 	// Tool factories (for custom cwd)
 	createCodingTools,
 	createReadOnlyTools,

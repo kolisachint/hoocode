@@ -23,7 +23,7 @@ import { execCommand } from "../exec.js";
 type IgnoreMatcher = ReturnType<typeof ignore>;
 
 /** Default request timeout (seconds) passed to the binary. */
-export const WEBTOOLS_DEFAULT_TIMEOUT_SECS = 15;
+const WEBTOOLS_DEFAULT_TIMEOUT_SECS = 15;
 
 /** Lower/upper bounds on the effective request timeout (seconds). */
 const WEBTOOLS_MIN_TIMEOUT_SECS = 1;
@@ -36,13 +36,13 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 // Result types (locked against `webtools <cmd> --json`)
 // ============================================================================
 
-export interface WebFetchReference {
+interface WebFetchReference {
 	index: number;
 	url: string;
 	text?: string;
 }
 
-export interface WebFetchMetadata {
+interface WebFetchMetadata {
 	description?: string;
 	author?: string;
 	published?: string;
@@ -69,7 +69,7 @@ export interface WebSearchResultItem {
 	ref_index: number;
 }
 
-export interface WebSearchReference {
+interface WebSearchReference {
 	index: number;
 	url: string;
 }

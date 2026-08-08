@@ -2,7 +2,7 @@
  * Auth / login flows for the interactive mode (/login, /logout).
  *
  * Owns the provider auth-type selector, the OAuth and API-key login dialogs,
- * the Bedrock setup notice, and post-login model selection. Extracted from
+ * and post-login model selection. Extracted from
  * interactive-mode.ts behind a narrow LoginControllerDeps interface; the
  * `/login` and `/logout` commands call `showOAuthSelector`.
  */

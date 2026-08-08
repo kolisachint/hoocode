@@ -40,14 +40,7 @@ import {
 } from "./plugin-tool-names.js";
 
 // Re-export the shared name constants (defined in plugin-tool-names.ts to avoid import cycles).
-export {
-	INSTALL_PLUGIN_TOOL_NAME,
-	LIST_PLUGINS_TOOL_NAME,
-	PLUGIN_SYSTEM_TOOL_NAMES,
-	SEARCH_PLUGINS_TOOL_NAME,
-	SUGGEST_PLUGIN_INSTALL_TOOL_NAME,
-	UNINSTALL_PLUGIN_TOOL_NAME,
-} from "./plugin-tool-names.js";
+export { PLUGIN_SYSTEM_TOOL_NAMES } from "./plugin-tool-names.js";
 
 const platformSchema = Type.Union([Type.Literal("agents"), Type.Literal("claude"), Type.Literal("github")], {
 	description: "Platform filter: agents (native), claude (Claude Code), or github (GitHub Copilot).",
@@ -76,7 +69,7 @@ const searchParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-export interface SearchPluginsDetails {
+interface SearchPluginsDetails {
 	count: number;
 }
 
@@ -132,7 +125,7 @@ const listParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-export interface ListPluginsDetails {
+interface ListPluginsDetails {
 	count: number;
 }
 
@@ -181,12 +174,12 @@ const suggestParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-export interface SuggestPluginInstallDetails {
+interface SuggestPluginInstallDetails {
 	name: string;
 	found: boolean;
 }
 
-export function createSuggestPluginInstallToolDefinition(): ToolDefinition {
+function createSuggestPluginInstallToolDefinition(): ToolDefinition {
 	return defineTool<typeof suggestParams, SuggestPluginInstallDetails>({
 		name: SUGGEST_PLUGIN_INSTALL_TOOL_NAME,
 		label: SUGGEST_PLUGIN_INSTALL_TOOL_NAME,
@@ -225,7 +218,7 @@ const installParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-export interface InstallPluginDetails {
+interface InstallPluginDetails {
 	name: string;
 	installed: boolean;
 }
@@ -269,7 +262,7 @@ const uninstallParams = Type.Object(
 	{ additionalProperties: false },
 );
 
-export interface UninstallPluginDetails {
+interface UninstallPluginDetails {
 	name: string;
 	removed: boolean;
 }

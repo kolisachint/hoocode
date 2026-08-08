@@ -43,7 +43,6 @@ export {
 	type LsToolInput,
 	type LsToolOptions,
 } from "./ls.js";
-export { expandPath, resolveReadPath, resolveToCwd } from "./path-utils.js";
 export {
 	createReadTool,
 	createReadToolDefinition,
@@ -52,16 +51,6 @@ export {
 	type ReadToolInput,
 	type ReadToolOptions,
 } from "./read.js";
-// Search: always active. It degrades to grep-backed lexical retrieval when no
-// semantic index is present; the `--enable-embsearchtools` flag only gates
-// whether the semantic index is built and fused in, not whether the tool exists.
-export {
-	createSearchTool,
-	createSearchToolDefinition,
-	type SearchToolDetails,
-	type SearchToolInput,
-	type SearchToolOptions,
-} from "./search.js";
 export {
 	buildTaskMainPrompt,
 	createTaskOutputToolDefinition,
@@ -80,20 +69,6 @@ export {
 	truncateLine,
 	truncateTail,
 } from "./truncate.js";
-export {
-	createWebFetchTool,
-	createWebFetchToolDefinition,
-	type WebFetchToolDetails,
-	type WebFetchToolInput,
-	type WebFetchToolOptions,
-} from "./webfetch.js";
-export {
-	createWebSearchTool,
-	createWebSearchToolDefinition,
-	type WebSearchToolDetails,
-	type WebSearchToolInput,
-	type WebSearchToolOptions,
-} from "./websearch.js";
 export {
 	createWriteTool,
 	createWriteToolDefinition,

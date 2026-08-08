@@ -9,13 +9,7 @@ const tsxLoader = require.resolve("tsx/esm");
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const aiEntryUrl = new URL("../src/index.ts", import.meta.url).href;
 
-const SDK_SPECIFIERS = [
-	"@anthropic-ai/sdk",
-	"openai",
-	"@google/genai",
-	"@mistralai/mistralai",
-	"@aws-sdk/client-bedrock-runtime",
-] as const;
+const SDK_SPECIFIERS = ["@anthropic-ai/sdk", "openai", "@google/genai"] as const;
 
 type ProbeResult = {
 	loadedSpecifiers: string[];

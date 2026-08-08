@@ -47,7 +47,7 @@ const FAUX_PROVIDER = "faux";
 const FAUX_MODEL_ID = "faux-1";
 const FAUX_API = "anthropic-messages" as const;
 
-export const fauxModel: Model<typeof FAUX_API> = {
+const fauxModel: Model<typeof FAUX_API> = {
 	id: FAUX_MODEL_ID,
 	name: "Faux Model",
 	api: FAUX_API,
@@ -64,7 +64,7 @@ export const fauxModel: Model<typeof FAUX_API> = {
 // Response description
 // ============================================================================
 
-export interface FauxResponse {
+interface FauxResponse {
 	/** Text content blocks. String shorthand becomes a single text block. */
 	text?: string;
 	/** Tool calls to include in the response. */
@@ -84,7 +84,7 @@ export interface FauxResponse {
 }
 
 /** Shorthand: a string becomes a simple text response. */
-export type FauxResponseInput = FauxResponse | string;
+type FauxResponseInput = FauxResponse | string;
 
 // ============================================================================
 // Faux stream function
@@ -263,7 +263,7 @@ function makeEvent(
 // Stream function factory
 // ============================================================================
 
-export interface FauxStreamFnState {
+interface FauxStreamFnState {
 	/** Number of times the stream function has been called. */
 	callCount: number;
 	/** The context passed to each call, in order. */
@@ -278,7 +278,7 @@ export interface FauxStreamFnState {
  *
  * Returns the stream function and a state object for inspection.
  */
-export function createFauxStreamFn(responses: FauxResponseInput[]): {
+function createFauxStreamFn(responses: FauxResponseInput[]): {
 	streamFn: (model: Model<any>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
 	state: FauxStreamFnState;
 } {

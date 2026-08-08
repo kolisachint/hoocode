@@ -32,15 +32,6 @@ import type {
 	RpcSlashCommand,
 } from "./rpc-types.js";
 
-// Re-export types for consumers
-export type {
-	RpcCommand,
-	RpcExtensionUIRequest,
-	RpcExtensionUIResponse,
-	RpcResponse,
-	RpcSessionState,
-} from "./rpc-types.js";
-
 /**
  * Run in RPC mode.
  * Listens for JSON commands on stdin, outputs events and responses on stdout.

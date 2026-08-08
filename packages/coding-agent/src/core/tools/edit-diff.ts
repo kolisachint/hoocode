@@ -38,7 +38,7 @@ export function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string 
  * - Normalize Unicode dashes/hyphens to ASCII hyphen
  * - Normalize special Unicode spaces to regular space
  */
-export function normalizeForFuzzyMatch(text: string): string {
+function normalizeForFuzzyMatch(text: string): string {
 	// Check cache first
 	const cached = normalizeCache.get(text);
 	if (cached !== undefined) return cached;
@@ -87,7 +87,7 @@ export function normalizeForFuzzyMatch(text: string): string {
 	return normalized;
 }
 
-export interface FuzzyMatchResult {
+interface FuzzyMatchResult {
 	/** Whether a match was found */
 	found: boolean;
 	/** The index where the match starts (in the content that should be used for replacement) */
@@ -131,7 +131,7 @@ export interface AppliedEditsResult {
  * fuzzy-normalized version of the content (trailing whitespace stripped,
  * Unicode quotes/dashes normalized to ASCII).
  */
-export function fuzzyFindText(content: string, oldText: string): FuzzyMatchResult {
+function fuzzyFindText(content: string, oldText: string): FuzzyMatchResult {
 	// Try exact match first
 	const exactIndex = content.indexOf(oldText);
 	if (exactIndex !== -1) {
@@ -568,17 +568,4 @@ export async function computeEditsDiff(
 	} catch (err) {
 		return { error: err instanceof Error ? err.message : String(err) };
 	}
-}
-
-/**
- * Compute the diff for a single edit operation without applying it.
- * Kept as a convenience wrapper for single-edit callers.
- */
-export async function computeEditDiff(
-	path: string,
-	oldText: string,
-	newText: string,
-	cwd: string,
-): Promise<EditDiffResult | EditDiffError> {
-	return computeEditsDiff(path, [{ oldText, newText }], cwd);
 }

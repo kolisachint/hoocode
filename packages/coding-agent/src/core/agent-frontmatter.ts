@@ -81,7 +81,7 @@ export const CLAUDE_TOOL_ALIASES: Readonly<Record<string, string>> = {
 };
 
 /** Raw frontmatter shape before validation/normalization. */
-export interface AgentFrontmatter {
+interface AgentFrontmatter {
 	name?: string;
 	description?: string;
 	/** Claude Code uses a comma-separated string; a YAML list is also accepted. */

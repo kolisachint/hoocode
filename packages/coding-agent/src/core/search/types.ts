@@ -8,7 +8,7 @@
  * across edits or rebuilds — never persist them as durable references.
  */
 
-export type RetrieverSource = "grep" | "embed";
+type RetrieverSource = "grep" | "embed";
 
 export type SearchMode = "auto" | "lexical" | "semantic" | "hybrid";
 export type ResolvedSearchMode = Exclude<SearchMode, "auto">;

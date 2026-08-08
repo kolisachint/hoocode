@@ -1,6 +1,6 @@
 {
 	"name": "@kolisachint/hoocode-ai",
-	"version": "0.4.162",
+	"version": "0.4.163",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
 	"type": "module",
 	"main": "./dist/index.js",
@@ -66,12 +66,8 @@
 		"@anthropic-ai/sdk": "^0.91.1",
 		"@google/genai": "^1.40.0",
 		"typebox": "^1.1.24",
-		"chalk": "^5.6.2",
 		"openai": "6.26.0",
-		"partial-json": "^0.1.7",
-		"proxy-agent": "^6.5.0",
-		"undici": "^7.19.1",
-		"zod-to-json-schema": "^3.24.6"
+		"partial-json": "^0.1.7"
 	},
 	"keywords": [
 		"ai",

@@ -163,7 +163,7 @@ function commandExists(cmd: string): boolean {
 const resolvedToolPathCache = new Map<ManagedTool, string>();
 
 // Get the path to a tool (system-wide or in our tools dir)
-export function getToolPath(tool: ManagedTool): string | null {
+function getToolPath(tool: ManagedTool): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 

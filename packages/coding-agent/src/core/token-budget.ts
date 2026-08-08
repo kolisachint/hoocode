@@ -3,12 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getDispatchTaskDir } from "../config.js";
 
-export interface TokenBudgetConfig {
-	/** Budget limit in tokens. */
-	limit: number;
-}
-
-export interface TokenBudgetState {
+interface TokenBudgetState {
 	task_id: string;
 	agent_type: string;
 	budget: number;

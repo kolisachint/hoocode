@@ -5,7 +5,6 @@
  * exact line-level mechanics; this tool answers "find where X lives".
  */
 
-import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
@@ -14,7 +13,6 @@ import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/type
 import { runSearch } from "../search/hybrid-search.js";
 import type { ResolvedSearchMode } from "../search/types.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
-import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 
 // Default of 5 balances recall against context cost: eval showed limit=5
 // preserving the top-rank hits of limit=10 at roughly half the tokens.
@@ -43,7 +41,7 @@ const searchSchema = Type.Object({
 	),
 });
 
-export type SearchToolInput = Static<typeof searchSchema>;
+type SearchToolInput = Static<typeof searchSchema>;
 
 export interface SearchToolDetails {
 	resultCount?: number;
@@ -166,8 +164,4 @@ export function createSearchToolDefinition(
 			return text;
 		},
 	};
-}
-
-export function createSearchTool(cwd: string, options?: SearchToolOptions): AgentTool<typeof searchSchema> {
-	return wrapToolDefinition(createSearchToolDefinition(cwd, options));
 }

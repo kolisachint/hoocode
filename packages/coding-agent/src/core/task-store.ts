@@ -118,7 +118,7 @@ export interface Task {
 	};
 }
 
-export interface CreateTaskOptions {
+interface CreateTaskOptions {
 	source?: TaskSource;
 	subagentMode?: string;
 	agent?: string;
@@ -126,7 +126,7 @@ export interface CreateTaskOptions {
 	linkedTaskId?: number;
 }
 
-export type TaskPatch = Partial<
+type TaskPatch = Partial<
 	Pick<
 		Task,
 		| "title"
@@ -142,7 +142,7 @@ export type TaskPatch = Partial<
 	>
 >;
 
-export type TaskAgentPatch = Partial<Omit<TaskAgent, "id">>;
+type TaskAgentPatch = Partial<Omit<TaskAgent, "id">>;
 
 /**
  * Owner group for a task when no explicit agent is set: subagent-sourced work

@@ -27,6 +27,10 @@
   prompt snippet. No capability change: every rule that was removed is still
   stated exactly once. Verify with `--print-token-surface`.
 
+## [0.4.163] - 2026-08-07
+
+## [0.4.162] - 2026-08-07
+
 ## [0.4.161] - 2026-08-07
 
 ## [0.4.160] - 2026-08-07

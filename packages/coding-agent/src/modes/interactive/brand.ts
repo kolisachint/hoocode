@@ -16,9 +16,6 @@
 /** The HooCode mark — a filled hexagon, rendered in the accent colour. */
 export const BRAND_MARK = "⬢";
 
-/** Product name, for splashes and headers. */
-export const BRAND_NAME = "HooCode";
-
 /**
  * Glyphs for the capability classes a session can load. Used by the startup
  * "resources ready" summary and reusable anywhere a class needs a label. Each is
@@ -39,9 +36,6 @@ export type CategoryKey = keyof typeof CATEGORY_GLYPH;
 
 /** A soft dot separator used between footer/summary segments. */
 export const SEGMENT_SEP = "·";
-
-/** Marker appended to a git branch when the working tree is dirty. */
-export const GIT_DIRTY_MARK = "*";
 
 /** Fork glyph preceding a git branch. */
 export const GIT_BRANCH_GLYPH = "⑂";
