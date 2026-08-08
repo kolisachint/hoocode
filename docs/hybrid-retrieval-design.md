@@ -306,6 +306,13 @@ is that re-measurement, and it reverses the `k` decision.
 
 ## Baseline (2026-08-08, corpus `ffeaad9`, embsearch 0.1.7 / MiniLM int8)
 
+> **Every absolute rate in this section is depressed.** The corpus included
+> the eval's own gold fixture, which contains all 62 query strings verbatim,
+> so a fifth of the top-10 window was spent on the eval reading itself. See
+> [The eval was reading its own fixture](#the-eval-was-reading-its-own-fixture)
+> for what it cost and the corrected numbers. The *comparisons* below stand:
+> both arms of each faced the same corpus.
+
 ```
 bun run search-eval -- --corpus-ref ffeaad9 \
   --embsearch-binary ./embsearch --daemon-hybrid \
@@ -667,6 +674,86 @@ yet improving R@10 or MRR.
 
 **boundary is 0% everywhere, in every config.** Four queries that no
 retriever reaches — worth treating as a separate problem from tuning.
+
+## The eval was reading its own fixture
+
+Two boundary-class queries sat at 0% Recall@10 in every configuration ever
+measured. Probing them showed the gold span was absent from the top **50**, not
+merely buried — a recall failure no reranker can reach. The top result for
+"which protocol operation reports the model id and the vector count" was
+`test/fixtures/search-eval.json` itself.
+
+The gold fixture lives in the repository the eval searches, and it contains all
+62 query strings verbatim, so every query is a perfect lexical match against
+its own entry. The design note you are reading has the same problem: it quotes
+the queries while discussing the classes they belong to.
+
+Measured across the 62 queries, before any exclusion existed:
+
+| | |
+|---|---|
+| queries with a self-referential file in the top 10 | **56 / 62** |
+| queries whose #1 result is self-referential | **27 / 62** |
+| top-10 slots consumed by self-referential files | **133 / 620** |
+
+`pinCorpus` now removes those files from the pinned worktree before indexing
+(`CORPUS_EXCLUSIONS`), records the list in the run's provenance, and never
+touches the live working tree — a measurement is not worth deleting a file
+from someone's checkout. `search-eval-compare` warns when two records carry
+different exclusion lists, because that delta is not a retrieval delta.
+
+### What it was costing: ranking, not recall
+
+Same corpus SHA (`974bf58d`), same index, same gold, embsearch 0.3.0 — the
+only difference is the four excluded files:
+
+| config | R@1 | R@10 | MRR |
+|---|---|---|---|
+| semantic +rr | 40% → **44%** | 60% → 63% | 0.465 → **0.497** |
+| auto +rr | 35% → **53%** | 68% → 69% | 0.478 → **0.583** |
+| bm25+dense +rr | 35% → **56%** | 69% → 69% | 0.479 → **0.608** |
+
+Recall@10 barely moves — the right answers were already being retrieved. What
+the fixture was taking is the *top of the window*. On `bm25+dense +rr`, MRR
+improves on 30 of 62 queries and worsens on 1 (p < 0.0001) while Recall@10
+changes on **zero**; Recall@1 gains 13 queries and loses none (p = 0.0002).
+
+Per class on `auto +rr` (MRR): exact-symbol 0.701 → 0.888, error-fragment
+0.783 → 0.950, boundary 0.146 → 0.250, conceptual 0.118 → 0.133, cross-file
+0.029 → 0.041, path unchanged at 0.667.
+
+The comparative conclusions in this document survive — both arms of every
+comparison faced the same contaminated corpus, so the paired tests measured
+what they claimed. The headline rates were not the system's true rates.
+
+### A gold-set bug found on the way, which changed nothing
+
+`resolveExtent` closed a block at the first bracket in *column 0*, which is the
+shape of a top-level declaration and wrong for every class member: a method's
+own indented `}` was skipped, so the span ran to the end of the enclosing
+class. Three boundary gold spans resolved to 80, 34 and 28 lines for methods
+that are 7, 4 and 4 lines long, all ending on the class's closing brace.
+
+Re-pinned against a resolver that matches the closer to the opener's
+indentation, five spans narrowed — and **every score was identical to three
+decimal places**. Retrieval chunks are coarse enough (~48 lines) that a chunk
+overlapping the narrow span overlapped the wide one too. The bug was real, the
+distortion was not. Fixed anyway, with a regression test; the next gold set may
+not be so lucky.
+
+### What is left in the boundary class
+
+Decontamination did not rescue the two stuck queries. `boundary-daemon-info`
+and `boundary-mock-embedder` are still 0% at Recall@10 in every config, and
+still absent from the top 50 rather than buried in it. Their gold spans are
+four- and three-line method bodies whose surrounding text paraphrases the query
+almost exactly — `/** Model id, dimensionality, and live vector count of the
+daemon. */` sits one line above the `async info` gold span, and the query is
+"which protocol operation reports the model id and the vector count".
+
+A span that well described and still unreachable points at chunking or
+embedding, not at fusion or ranking. That is the next thing to look at, and the
+first retrieval question in this document that the reranker work cannot answer.
 
 ## Eval results (2026-07-18, full index: 16.5k chunks over this repo)
 

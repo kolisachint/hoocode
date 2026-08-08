@@ -54,13 +54,27 @@ if (againstPath) {
 	run = mergeRunsForComparison(baseline, run, before);
 	labelA = `${before} (baseline)`;
 	labelB = `${before} (this run)`;
-	// Guard the one way this comparison lies: different corpora.
-	const prov = (r: unknown): string | undefined =>
-		(r as { provenance?: { corpusSha?: string } }).provenance?.corpusSha;
-	const a = prov(JSON.parse(readFileSync(againstPath, "utf-8")));
-	const b = prov(JSON.parse(readFileSync(runPath, "utf-8")));
-	if (a && b && a !== b) {
-		console.error(`WARNING: corpus differs (${a.slice(0, 12)} vs ${b.slice(0, 12)}) — delta includes corpus drift\n`);
+	// Guard the one way this comparison lies: different corpora. Two things
+	// make a corpus different — the commit it came from, and what was removed
+	// from it before indexing. The exclusion list matters as much as the SHA:
+	// dropping the eval's own fixture moved MRR by more than any retrieval
+	// change measured here, so comparing across it would read as a huge win
+	// for whatever happened to run second.
+	type Prov = { provenance?: { corpusSha?: string; corpusExcluded?: string[] } };
+	const load = (f: string) => (JSON.parse(readFileSync(f, "utf-8")) as Prov).provenance ?? {};
+	const a = load(againstPath);
+	const b = load(runPath);
+	if (a.corpusSha && b.corpusSha && a.corpusSha !== b.corpusSha) {
+		console.error(
+			`WARNING: corpus differs (${a.corpusSha.slice(0, 12)} vs ${b.corpusSha.slice(0, 12)}) — delta includes corpus drift\n`,
+		);
+	}
+	const exclusions = (p: typeof a) => [...(p.corpusExcluded ?? [])].sort().join(",");
+	if (exclusions(a) !== exclusions(b)) {
+		console.error(
+			"WARNING: corpus exclusions differ — the two runs searched different corpora, " +
+				`so this delta is not a retrieval delta\n  baseline: [${exclusions(a) || "none"}]\n  this run: [${exclusions(b) || "none"}]\n`,
+		);
 	}
 }
 

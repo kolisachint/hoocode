@@ -14,7 +14,7 @@
  *     depresses every recall number.
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,7 +28,7 @@ import {
 	spanMatchesGold,
 } from "../src/core/search/eval.js";
 import { comparePaired, signTestPValue } from "../src/core/search/eval-compare.js";
-import { loadGoldSet, resolveGoldSet, validateGoldSet } from "../src/core/search/eval-gold.js";
+import { loadGoldSet, resolveGoldSet, resolveGoldSpan, validateGoldSet } from "../src/core/search/eval-gold.js";
 import { hashRetrievalSource, runEvalSuite, summarizeGoldSet } from "../src/core/search/eval-harness.js";
 import { applyLiveEdits, loadLiveEditFixture } from "../src/core/search/eval-live.js";
 import type { CandidateSpan } from "../src/core/search/types.js";
@@ -58,6 +58,37 @@ describe("search eval gold set", () => {
 		const issues = validateGoldSet(repoRoot, dataset);
 		const rendered = issues.map((i) => `${i.queryId} [${i.path}]: ${i.problem}`).join("\n");
 		expect(rendered, "re-pin with: bun scripts/search-eval-gold.ts --fix").toBe("");
+	});
+
+	it("resolves a class method to the method, not to the whole class", () => {
+		// The resolver used to close a block only on a bracket at column 0, so a
+		// method's own indented `}` was skipped and the span ran to the end of
+		// the enclosing class. Gold that wide scores a hit for retrieving a
+		// neighbouring method.
+		const dir = mkdtempSync(join(tmpdir(), "gold-extent-"));
+		try {
+			writeFileSync(
+				join(dir, "c.ts"),
+				[
+					"export class Client {", // 1
+					"\tasync info(): Promise<void> {", // 2
+					"\t\tawait this.send({ op: 'info' });", // 3
+					"\t}", // 4
+					"", // 5
+					"\tasync close(): Promise<void> {", // 6
+					"\t\tthis.proc.kill();", // 7
+					"\t}", // 8
+					"}", // 9
+					"", // 10
+				].join("\n"),
+			);
+			const { span: resolved, problem } = resolveGoldSpan(dir, { path: "c.ts", anchor: "async info(" });
+			expect(problem).toBeUndefined();
+			expect(resolved.startLine).toBe(2);
+			expect(resolved.endLine, "should stop at the method's own brace, not the class's").toBe(4);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 
 	it("is large enough and spread across query classes", () => {

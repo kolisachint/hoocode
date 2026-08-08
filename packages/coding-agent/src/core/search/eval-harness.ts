@@ -57,6 +57,10 @@ export interface EvalProvenance {
 	/** Uncommitted changes present at run time. Only meaningful (and only
 	 *  possible) when `corpusFromWorkingTree` is true. */
 	corpusDirty: boolean;
+	/** Files removed from the corpus before indexing — see
+	 *  {@link CORPUS_EXCLUSIONS}. A score against a different exclusion list is
+	 *  a score against a different corpus, so it is recorded, not assumed. */
+	corpusExcluded: string[];
 	/** SHA of the tree whose retrieval code ran. Usually equals `corpusSha`,
 	 *  but differs when pinning an old corpus with today's code. */
 	harnessSha: string;
@@ -141,9 +145,38 @@ export interface PinnedCorpus {
 	sha: string;
 	fromWorkingTree: boolean;
 	dirty: boolean;
+	/** Files removed from the corpus before indexing. Empty when the corpus is
+	 *  the live working tree, which is never mutated. */
+	excluded: string[];
 	/** Removes the worktree, if one was created. */
 	dispose: () => void;
 }
+
+/**
+ * Files that describe this eval rather than being searched by it.
+ *
+ * The fixtures hold all 62 query strings verbatim, so every query is a perfect
+ * lexical match against its own entry, and the design note quotes the same
+ * queries while discussing the classes they belong to. Measured before this
+ * exclusion existed: **56 of 62 queries had one of these files in the top 10,
+ * 27 of 62 had one as the #1 result, and they consumed 133 of the 620
+ * top-10 slots** — a fifth of the window, spent on the eval reading itself.
+ *
+ * That is not a ranking artifact a reranker can fix: it displaces real answers
+ * out of the window entirely, which is why two boundary-class queries were
+ * absent from the top *50* rather than merely buried. Retrieving your own
+ * question is not retrieval, so the corpus is scored without them.
+ *
+ * Removed from the pinned worktree before indexing, never from the repo — and
+ * recorded in the run's provenance so a score is never silently taken against
+ * a different corpus than it claims.
+ */
+export const CORPUS_EXCLUSIONS: readonly string[] = [
+	"packages/coding-agent/test/fixtures/search-eval.json",
+	"packages/coding-agent/test/fixtures/search-eval-live.json",
+	"packages/coding-agent/test/fixtures/search-eval-baseline.json",
+	"docs/hybrid-retrieval-design.md",
+];
 
 /**
  * Materialize the corpus to evaluate.
@@ -155,11 +188,15 @@ export interface PinnedCorpus {
 export function pinCorpus(repoRoot: string, ref: string | undefined): PinnedCorpus {
 	const dirty = git(repoRoot, ["status", "--porcelain"]).length > 0;
 	if (!ref) {
+		// The live working tree is the user's checkout; deleting files from it to
+		// tidy a measurement would be an unforgivable trade. Working-tree runs
+		// are already stamped non-reproducible, so they carry the contamination.
 		return {
 			cwd: repoRoot,
 			sha: git(repoRoot, ["rev-parse", "HEAD"]),
 			fromWorkingTree: true,
 			dirty,
+			excluded: [],
 			dispose: () => {},
 		};
 	}
@@ -180,11 +217,22 @@ export function pinCorpus(repoRoot: string, ref: string | undefined): PinnedCorp
 		}
 	}
 	git(repoRoot, ["worktree", "add", "--detach", dir, sha]);
+
+	const excluded: string[] = [];
+	for (const rel of CORPUS_EXCLUSIONS) {
+		const target = path.join(dir, rel);
+		if (existsSync(target)) {
+			rmSync(target, { force: true });
+			excluded.push(rel);
+		}
+	}
+
 	return {
 		cwd: dir,
 		sha,
 		fromWorkingTree: false,
 		dirty: false,
+		excluded,
 		dispose: () => {
 			try {
 				git(repoRoot, ["worktree", "remove", "--force", dir]);
@@ -221,6 +269,7 @@ export function collectProvenance(
 		corpusRef,
 		corpusFromWorkingTree: corpus.fromWorkingTree,
 		corpusDirty: corpus.dirty,
+		corpusExcluded: corpus.excluded,
 		harnessSha: git(repoRoot, ["rev-parse", "HEAD"]),
 		retrievalSourceHash: hashRetrievalSource(repoRoot),
 		embedder: {

@@ -53,12 +53,28 @@ function findAnchorLines(lines: readonly string[], anchor: string): number[] {
 	return found;
 }
 
+/** Leading-whitespace width of a line, for matching a block's closer to its
+ *  opener. Tabs count as one; this only ever compares lines in one file, which
+ *  is consistently indented. */
+function indentWidth(line: string): number {
+	return /^[\t ]*/.exec(line)?.[0].length ?? 0;
+}
+
 /**
  * Extent of the declaration an anchor names.
  *
  * A line ending in an opener (`{`, `(`, `[`) starts a block, which runs to the
- * first line closing at column 0 — the shape every top-level declaration in
- * this codebase has. Anything else is a statement, scored with a small pad.
+ * first closing bracket indented no deeper than the opener. Anything else is a
+ * statement, scored with a small pad.
+ *
+ * The indentation test is load-bearing. This used to close only on a bracket
+ * at *column 0*, which is right for a top-level declaration and wrong for
+ * every class member: a method's own `}` is indented, so the scan walked past
+ * it to the end of the enclosing class. Three of the four boundary-class gold
+ * spans were resolving to 80, 34 and 28 lines for methods that are 7, 4 and 4
+ * lines long, all ending on the same line — the class's closing brace. Gold
+ * that wide scores a hit for retrieving a neighbouring method, which is not
+ * what the query asked for.
  */
 function resolveExtent(lines: readonly string[], anchorIndex: number): { startLine: number; endLine: number } {
 	const head = lines[anchorIndex];
@@ -69,10 +85,13 @@ function resolveExtent(lines: readonly string[], anchorIndex: number): { startLi
 			endLine: Math.min(lines.length, anchorIndex + 1 + LINE_ANCHOR_PAD),
 		};
 	}
+	const anchorIndent = indentWidth(head);
 	const limit = Math.min(lines.length, anchorIndex + 1 + MAX_BLOCK_LINES);
 	for (let i = anchorIndex + 1; i < limit; i++) {
-		// Column-0 close: `}`, `};`, `});`, `];` — the end of a top-level block.
-		if (/^[}\])]/.test(lines[i])) return { startLine: anchorIndex + 1, endLine: i + 1 };
+		// `}`, `};`, `});`, `];` at or outside the opener's indentation.
+		if (/^[\t ]*[}\])]/.test(lines[i]) && indentWidth(lines[i]) <= anchorIndent) {
+			return { startLine: anchorIndex + 1, endLine: i + 1 };
+		}
 	}
 	return { startLine: anchorIndex + 1, endLine: Math.min(lines.length, anchorIndex + 1 + UNCLOSED_BLOCK_LINES) };
 }
