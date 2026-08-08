@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { chunkFile } from "../src/core/embsearch/chunker.js";
+import { CHUNKER_VERSION, chunkFile } from "../src/core/embsearch/chunker.js";
 import { hashContent, loadIndexMeta, saveIndexMeta } from "../src/core/embsearch/index-meta.js";
 import { scanRepo } from "../src/core/embsearch/repo-scan.js";
 
@@ -74,7 +74,10 @@ describe("index-meta", () => {
 		try {
 			const meta = {
 				formatVersion: 1,
-				chunkerVersion: 1,
+				// From the source, not a literal: a hardcoded version turns every
+				// future CHUNKER_VERSION bump into a failure of this test rather
+				// than of whatever the bump broke.
+				chunkerVersion: CHUNKER_VERSION,
 				modelId: "all-MiniLM-L6-v2-int8",
 				repoRoot: "/repo",
 				lastUsedMs: Date.now(),

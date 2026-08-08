@@ -85,8 +85,15 @@ export interface RetrieveOptions {
 	daemonHybrid?: boolean;
 	/**
 	 * Fetch the daemon's BM25 index as its own ranked list and fuse it here,
-	 * alongside dense and grep. Needs a store built with `--hybrid` and an
-	 * embsearch new enough to serve `retriever: "lexical"`.
+	 * alongside dense and grep.
+	 *
+	 * Defaults to on wherever the daemon can serve it, because BM25 is the
+	 * better lexical leg on the indexed corpus: Recall@50 0.790 -> 0.879, 6 of
+	 * 62 queries better and 0 worse (p <= 0.05). When it is on, the grep leg
+	 * narrows to files the index has not read — see `staleFiles`.
+	 *
+	 * Set `false` to force ripgrep as the only lexical leg; the eval harness
+	 * does this to keep measuring what the old rows measured.
 	 */
 	bm25Leg?: boolean;
 	/**
@@ -283,7 +290,8 @@ export async function retrieveCandidates(options: RetrieveOptions): Promise<Retr
 	// It is also blind to anything indexed later than it was written, which is
 	// precisely where grep still wins — so grep runs scoped to that set instead
 	// of being dropped or left to duplicate BM25 over the whole tree.
-	const bm25AsLexicalLeg = options.bm25Leg && embedAvailable && mode !== "lexical";
+	const bm25AsLexicalLeg =
+		(options.bm25Leg ?? service?.supportsLexicalRetriever() ?? false) && embedAvailable && mode !== "lexical";
 
 	const runs: Promise<void>[] = [];
 	if (mode === "lexical" || mode === "hybrid") runs.push(runLexical(bm25AsLexicalLeg));

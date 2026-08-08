@@ -19,6 +19,14 @@ export interface EmbSearchDaemonInfo {
 	dim: number;
 	count: number;
 	/**
+	 * Whether the open store carries a BM25 index alongside its vectors.
+	 *
+	 * Fixed when the store is created — passing `--hybrid` at a non-hybrid
+	 * store only warns — so this is the only reliable way to find out, and the
+	 * signal that an existing store has to be rebuilt rather than reused.
+	 */
+	hybrid?: boolean;
+	/**
 	 * Whether this daemon can actually serve `rerank`, or `undefined` from a
 	 * daemon too old to say.
 	 *
@@ -81,6 +89,8 @@ interface EmbSearchRawResponse {
 	/** Cross-encoder scores. Separate from `results` because the daemon's
 	 *  logits are not comparable to retrieval scores. */
 	reranked?: EmbSearchRerankResult[];
+	/** `info` only: whether the open store has a BM25 index. */
+	hybrid?: boolean;
 	/** `info` only: whether `rerank` will work. Absent on daemons too old to
 	 *  report it. */
 	rerank?: boolean;
@@ -211,7 +221,13 @@ export class EmbSearchClient {
 	/** Model id, dimensionality, and live vector count of the daemon. */
 	async info(): Promise<EmbSearchDaemonInfo> {
 		const res = await this.send({ op: "info" });
-		return { modelId: res.model_id ?? "", dim: res.dim ?? 0, count: res.count ?? 0, rerank: res.rerank };
+		return {
+			modelId: res.model_id ?? "",
+			dim: res.dim ?? 0,
+			count: res.count ?? 0,
+			hybrid: res.hybrid,
+			rerank: res.rerank,
+		};
 	}
 
 	/** Remove a record. Resolves to `true` if it existed. */

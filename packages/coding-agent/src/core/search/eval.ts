@@ -118,6 +118,8 @@ export const EVAL_CONFIGS: readonly EvalConfig[] = [
 	// the difference only appears under `--live-edits`, where `3-way` scores
 	// 1.000 and `bm25+dense` scores 0.000.
 	{ label: "bm25+dense +rr", mode: "semantic", rerank: true, bm25Leg: true },
+	// The shipped default: BM25 over the indexed corpus, grep narrowed to what
+	// the index has not read, dense alongside both.
 	{ label: "3-way +rr", mode: "hybrid", rerank: true, bm25Leg: true },
 	// Cross-encoder reranking, against the same retrieval each deterministic
 	// `+rr` row uses — so the delta is the reranker and nothing else.
@@ -201,7 +203,11 @@ export async function evaluateQuery(
 			limit: EVAL_FETCH_LIMIT,
 			service: config.daemonHybrid || config.bm25Leg ? hybridService : service,
 			daemonHybrid: config.daemonHybrid,
-			bm25Leg: config.bm25Leg,
+			// Explicit, never inherited: `bm25Leg` now defaults to on in production,
+			// and letting that leak in would silently give every historical row a
+			// BM25 leg it never had — the numbers would stop meaning what their
+			// labels say.
+			bm25Leg: config.bm25Leg ?? false,
 			crossEncoder: config.crossEncoder,
 		});
 		results.push({

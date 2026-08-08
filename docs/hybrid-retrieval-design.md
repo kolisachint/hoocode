@@ -755,6 +755,93 @@ A span that well described and still unreachable points at chunking or
 embedding, not at fusion or ranking. That is the next thing to look at, and the
 first retrieval question in this document that the reranker work cannot answer.
 
+## Shipped: BM25 is the default lexical leg
+
+The store now carries a BM25 index by default, and search fuses BM25 + dense +
+grep-scoped-to-stale-files. Measured at HEAD, `--daemon-hybrid --live-edits`:
+
+| config | R@1 | R@10 | R@50 | MRR | live edits |
+|---|---|---|---|---|---|
+| `auto +rr` (grep + dense, the old default) | 53% | 63% | 77% | 0.566 | 1.000 |
+| `bm25+dense +rr` (no grep at all) | 55% | 69% | 83% | 0.599 | **0.000** |
+| `3-way +rr` (**the new default**) | **55%** | **69%** | **83%** | **0.599** | **1.000** |
+
+The new default matches BM25-only on the indexed corpus and grep-only on files
+written after indexing. Neither is traded, because the legs no longer overlap:
+grep narrows to what `staleFiles()` reports the index has not read.
+
+One of the two stuck boundary queries fell out of this. `boundary-daemon-info`
+— "which protocol operation reports the model id and the vector count" — goes
+from 0% to 100%, because its answer sits under a doc comment that paraphrases
+the query almost word for word. That is a lexical match BM25 catches and the
+bi-encoder never placed. It is a useful reminder of what the two legs are for:
+the remaining failure, `boundary-mock-embedder`, has no such literal overlap.
+
+### The migration
+
+Hybrid-ness is fixed when a store is created, and passing `--hybrid` at an
+existing plain store only warns — so an index built before this would silently
+stay dense-only while every BM25 query against it failed. `EmbsearchService`
+therefore asks the store itself (`info.hybrid`) rather than trusting the
+sidecar, and rebuilds once when it disagrees. Verified end to end: a dense-only
+store reopens, rebuilds, serves BM25, and stays stable on the next open.
+
+Users pay one full re-index. The chunker line-range fix rides along with it,
+since it needed a `CHUNKER_VERSION` bump it could not justify on its own.
+
+## Chunking: two hypotheses, both rejected
+
+The two boundary queries that survived decontamination are absent from the top
+50, not buried in it. The covering chunk for `boundary-daemon-info` holds
+`async info()` *and* its doc comment — "Model id, dimensionality, and live
+vector count of the daemon", which paraphrases the query almost word for word
+— alongside `bulk`, `remove` and their comments. One vector for six methods.
+Dilution was the obvious suspect.
+
+**Halving the chunk (30 lines / 500 chars, overlap 5) made it worse.** Measured
+at the same corpus with a full re-index, `auto +rr`:
+
+| | R@1 | R@10 | R@50 | MRR |
+|---|---|---|---|---|
+| 60 lines / 1000 chars | 53% | 66% | **77%** | 0.577 |
+| 30 lines / 500 chars | **55%** | 62% | 69% | 0.577 |
+
+Recall@1 ticks up — that is the sharpening working — and reach falls off a
+cliff. The boundary class went from 2 of 4 findable to **0 of 4**. The reason
+is mechanical: a fixed top-k over smaller chunks retrieves less *content*. 50
+chunks at ~460 characters sees half the corpus that 50 at ~930 does. Sharper
+chunks need a deeper k to break even, and that is a different experiment.
+
+Overlap has to scale with chunk size, incidentally: leaving it at 10 lines
+against 30-line chunks advanced the window three lines at a time and grew the
+index 5x, to 85k chunks.
+
+### A real chunker bug worth exactly nothing
+
+`chunkFile` trimmed the *joined* chunk text but recorded the *untrimmed* line
+range, so a window with blank lines at either end claimed lines whose text was
+never embedded. It affected **31% of chunks** in this repo, by up to 3 lines
+each — 5,848 lines claimed but not indexed.
+
+Fixing it (trim whole blank lines off both ends, narrow the range to match) is
+unambiguously correct and measured **0 better, 0 worse on all four metrics**,
+every query tied. Blank lines carry no embedding signal, and 1–3 lines against
+a 48-line chunk rarely changes an overlap decision.
+
+That leaves it a fix that costs every user a full re-index — `CHUNKER_VERSION`
+must bump — for no measured gain. It should ride along the next time something
+else earns the rebuild, which the hybrid BM25 store will.
+
+### What this leaves
+
+Neither chunk size nor chunk metadata explains the boundary failures. The
+answer text is present, well described, and in the index; the bi-encoder simply
+does not place it near this query. That points at the embedder — a 384-dim
+MiniLM asked to relate "which protocol operation reports…" to a method
+signature — rather than at anything the retrieval pipeline controls. Testing it
+means swapping the embedding model, which is the first open question here that
+neither fusion, reranking, nor chunking can reach.
+
 ## Eval results (2026-07-18, full index: 16.5k chunks over this repo)
 
 Superseded — kept for the decision history, not as evidence. Measured with
