@@ -234,11 +234,85 @@ the universal-robustness claim.
 chunkId equality.** A chunkId-keyed gold set rots the first time the repo
 or the chunker changes (see stability caveat above).
 
+## Eval methodology (rebuilt 2026-08-08)
+
+The first eval round produced the table below and then stopped working. Four
+problems, all fixed in the harness rather than in retrieval:
+
+1. **The gate did not run.** `EVAL_CONFIGS` lost its `export` to a knip
+   dead-export sweep (`02efaab`) — the only importer was a `.mjs` script
+   reading `dist/`, which static analysis cannot see. The harness is now
+   `scripts/search-eval.ts` importing from `src/`, `test/search-eval.test.ts`
+   imports the same surface, and CI runs it lexical-only on every PR.
+2. **The corpus was unpinned.** Retrieval is measured over this repo, so
+   every commit moved the corpus and no two runs were comparable. Runs now
+   take `--corpus-ref <sha>` and execute in a detached worktree; a run
+   without one is stamped `corpusFromWorkingTree` in the record.
+3. **The metric was not what the doc claimed.** No gold entry carried line
+   numbers, so `spanMatchesGold` short-circuited to a path comparison: the
+   table below is *file-level* recall, not span overlap. All 68 spans now
+   carry ranges plus an `anchor` (a literal that must sit inside the range,
+   never used for scoring) so the set re-pins after a refactor via
+   `bun run search-eval:gold -- --fix` and fails loudly when it drifts.
+   Recall@1 and MRR are recorded because an agent reads the top result or
+   two — a distinction Recall@5 cannot make.
+4. **Nothing was recorded.** Numbers were hand-copied here with no corpus
+   SHA, embedder identity, or index state. Runs now emit a run record
+   (`test/fixtures/search-eval-baseline.json`) carrying all of it, including
+   a content hash of the retrieval sources so a tuning change invalidates
+   old numbers automatically.
+
+The gold set grew from 12 queries to **62 (68 spans, 28 files, 16
+subsystems)**, weighted toward exact-symbol (2 → 22) as the class that most
+separates a lexical retriever from an embedding one, and no longer
+concentrated in the `core/search` subsystem it is measuring (5 of 28 files).
+
+**What this means for the table below:** it was measured on an unpinned
+corpus, with a file-level metric, over 12 near-binary queries. At n=12 the
+binomial standard error is ~14pp, which is wider than every gap in it —
+including the ones that set `k = 2`, `LEXICAL_FUSION_CAP = 20`, and
+rerank-on. Those defaults are unchanged here (this work touches no retrieval
+behaviour), but they should be treated as unvalidated until re-measured on
+the current harness, not as settled results.
+
+## Baseline (2026-08-08, corpus `83f99cc`, lexical only)
+
+`bun run search-eval -- --corpus-ref 83f99cc --out test/fixtures/search-eval-baseline.json`
+
+| config | R@1 | R@5 | R@10 | R@50 | MRR |
+|---|---|---|---|---|---|
+| lexical | 2% | 34% | 45% | 52% | 0.160 |
+
+**Every other row in this record is a degraded lexical run.** The recording
+environment could reach neither the embsearch release (GitHub API blocked)
+nor the MiniLM weights (HuggingFace blocked), so `embedder.available` is
+`false` and the semantic and hybrid configs all fell back to lexical — which
+is why all twelve rows are identical. That identity is also the design's own
+invariant holding: a degraded row must equal the lexical row exactly.
+
+This is a **lexical-only baseline**. The semantic and hybrid rows still need
+a run on a machine with an ONNX embsearch build; the record's `embedder`
+block is what distinguishes that future run from this one.
+
+Two things the lexical numbers already show, on a metric that can now see
+them:
+
+- **R@1 of 2% against R@10 of 45%.** The right span is often retrieved but
+  almost never first. Ordering, not recall, is the lexical leg's weak point
+  — invisible under the old file-level R@5.
+- **Reranking changes nothing at all here.** For single-term identifier
+  queries every candidate contains the term, so term coverage saturates at
+  1.0 and path affinity is 0, leaving the fused prior to decide. The
+  reranker does reorder multi-term queries; it simply has no signal to work
+  with on the ones lexical retrieval is otherwise best at.
+
 ## Eval results (2026-07-18, full index: 16.5k chunks over this repo)
 
-`node packages/coding-agent/scripts/search-eval.mjs` over the 12-query gold
-set with the embsearch binary auto-downloaded and the repo fully indexed.
-`+rr` = reranked (step 7). The tool's default path is `auto +rr`:
+Superseded — kept for the decision history, not as evidence. Measured with
+the since-removed `scripts/search-eval.mjs` over the 12-query gold set with
+the embsearch binary auto-downloaded and the repo fully indexed, on an
+unpinned corpus with the file-level metric described above. `+rr` = reranked
+(step 7). The tool's default path is `auto +rr`:
 
 | config | R@5 | R@10 | R@50 |
 |---|---|---|---|

@@ -11,10 +11,15 @@ import type { FusedHit, RankedHit } from "./types.js";
 
 /**
  * Default RRF constant. The literature folklore default is 60; the eval gate
- * (scripts/search-eval.mjs, 12-query gold set) measured k ∈ {0, 2} beating
- * k = 60 on every differing query, twice, with reranking on top of either —
- * small k keeps fusion top-heavy toward each retriever's best hits, and the
- * reranker corrects the tail. Small sample: re-sweep when the gold set grows.
+ * measured k ∈ {0, 2} beating k = 60 on every differing query, twice, with
+ * reranking on top of either — small k keeps fusion top-heavy toward each
+ * retriever's best hits, and the reranker corrects the tail.
+ *
+ * That measurement is not currently reproducible: it ran on a 12-query gold
+ * set over an unpinned corpus with a file-level metric, where the sampling
+ * noise was wider than the gap it decided (docs/hybrid-retrieval-design.md,
+ * "Eval methodology"). Re-sweep on the 62-query harness
+ * (`bun run search-eval`) before treating this value as settled.
  */
 export const DEFAULT_RRF_K = 2;
 

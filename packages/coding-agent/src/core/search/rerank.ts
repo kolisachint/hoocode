@@ -25,8 +25,8 @@ import path from "path";
 import { buildLexicalQueryPlan } from "./lexical-retriever.js";
 import type { FusedCandidate } from "./types.js";
 
-/** Weights of the scoring blend. The eval harness (scripts/search-eval.mjs)
- *  is the instrument for changing them — don't tune blind. */
+/** Weights of the scoring blend. The eval harness (`bun run search-eval`) is
+ *  the instrument for changing them — don't tune blind. */
 const WEIGHT_FUSED_PRIOR = 0.4;
 const WEIGHT_TERM_COVERAGE = 0.35;
 const WEIGHT_PATH_AFFINITY = 0.25;

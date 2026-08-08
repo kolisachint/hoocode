@@ -266,8 +266,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/search/rrf.ts",
-        "startLine": 31,
-        "endLine": 76,
+        "startLine": 36,
+        "endLine": 81,
         "anchor": "export function rrfFuse"
       }
     ]
@@ -630,8 +630,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/search/rrf.ts",
-        "startLine": 44,
-        "endLine": 48,
+        "startLine": 49,
+        "endLine": 53,
         "anchor": "const dedupeKey"
       }
     ]
