@@ -708,7 +708,7 @@
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
         "startLine": 387,
-        "endLine": 427,
+        "endLine": 390,
         "anchor": "findEnclosingChunk"
       }
     ]
@@ -797,7 +797,7 @@
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
         "startLine": 146,
-        "endLine": 226,
+        "endLine": 152,
         "anchor": "private send("
       }
     ]
@@ -810,7 +810,7 @@
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
         "startLine": 193,
-        "endLine": 226,
+        "endLine": 196,
         "anchor": "async bulk"
       }
     ]
@@ -823,7 +823,7 @@
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
         "startLine": 199,
-        "endLine": 226,
+        "endLine": 202,
         "anchor": "async info"
       }
     ]
@@ -836,7 +836,7 @@
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
         "startLine": 239,
-        "endLine": 254,
+        "endLine": 241,
         "anchor": "if (info.modelId === MOCK_MODEL_ID)"
       }
     ]
