@@ -18,6 +18,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { EVAL_CONFIGS, type EvalGoldSpan, mrr, recallAtK, spanMatchesGold } from "../src/core/search/eval.js";
+import { comparePaired, signTestPValue } from "../src/core/search/eval-compare.js";
 import { loadGoldSet, validateGoldSet } from "../src/core/search/eval-gold.js";
 import { hashRetrievalSource, summarizeGoldSet } from "../src/core/search/eval-harness.js";
 import type { CandidateSpan } from "../src/core/search/types.js";
@@ -27,6 +28,18 @@ const repoRoot = path.resolve(packageRoot, "..", "..");
 const fixturePath = path.join(packageRoot, "test", "fixtures", "search-eval.json");
 
 const span = (p: string, startLine: number, endLine: number): CandidateSpan => ({ path: p, startLine, endLine });
+
+/** Minimal per-config result row for the paired-comparison tests. */
+const res = (label: string, value: number) => ({
+	label,
+	resolvedMode: "hybrid" as const,
+	degraded: false,
+	recallAt1: value,
+	recallAt5: value,
+	recallAt10: value,
+	recallAt50: value,
+	mrr: value,
+});
 
 describe("search eval gold set", () => {
 	const dataset = loadGoldSet(fixturePath);
@@ -126,5 +139,37 @@ describe("eval harness provenance", () => {
 		const hash = hashRetrievalSource(repoRoot);
 		expect(hash).toMatch(/^[0-9a-f]{16}$/);
 		expect(hashRetrievalSource(repoRoot)).toBe(hash);
+	});
+});
+
+describe("paired comparison", () => {
+	const run = {
+		perQuery: [
+			{ id: "q1", class: "c", results: [res("A", 1), res("B", 0)] },
+			{ id: "q2", class: "c", results: [res("A", 1), res("B", 0)] },
+			{ id: "q3", class: "c", results: [res("A", 0), res("B", 1)] },
+			{ id: "q4", class: "c", results: [res("A", 0.5), res("B", 0.5)] },
+		],
+	};
+
+	it("counts wins and losses per query rather than comparing means", () => {
+		const c = comparePaired(run, "A", "B", "mrr");
+		expect({ better: c.better, worse: c.worse, tied: c.tied }).toEqual({ better: 1, worse: 2, tied: 1 });
+	});
+
+	it("treats a small mean gap over few moved queries as not significant", () => {
+		// 1 vs 2 is exactly the shape of the k=2/k=60 comparison: a mean gap
+		// carried by a couple of queries, which the sign test refuses to call.
+		expect(comparePaired(run, "A", "B", "mrr").pValue).toBeGreaterThan(0.05);
+	});
+
+	it("reports p=1 when every query ties, rather than dividing by zero", () => {
+		const tiedRun = { perQuery: [{ id: "q", class: "c", results: [res("A", 1), res("B", 1)] }] };
+		expect(comparePaired(tiedRun, "A", "B", "mrr").pValue).toBe(1);
+	});
+
+	it("calls a lopsided split significant", () => {
+		expect(signTestPValue(10, 0)).toBeLessThanOrEqual(0.05);
+		expect(signTestPValue(5, 5)).toBe(1);
 	});
 });

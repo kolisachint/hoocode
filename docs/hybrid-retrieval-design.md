@@ -343,23 +343,34 @@ R@10 by query class, the part the aggregate hides:
 
 ### What the larger gold set changes
 
-- **Hybrid beats semantic, which the 12-query table did not show.** There,
-  semantic matched or beat hybrid on every row. Here hybrid leads on R@5
-  (48% vs 41%), R@10 (59% vs 48%) and R@50 (77% vs 72%). The lexical leg is
-  contributing recall the embedding leg does not have; the earlier reading
-  that it was pure dilution was an artifact of 12 queries scored at file
-  level.
-- **`k = 60` is now at least as good as `k = 2`, reversing the decision
-  below.** k=60 leads on R@10 (59% vs 56%) and MRR (0.263 vs 0.249) without
-  reranking, and on R@10 (62% vs 60%) with it. The shipped default is still
-  `k = 2` — this note is the evidence for changing it, not the change.
-- **Reranking is worth much more than the old table suggested**, and it acts
-  on rank rather than recall: semantic R@1 11% → 27%, hybrid k=2 R@1 10% →
-  24%, with R@50 unmoved. That is exactly the shape a reranker should have.
-- **`auto` is the weakest reranked config** (R@1 15% against 24–26% for
-  explicit hybrid). It routes quoted and regex-metacharacter queries to
-  lexical, which lands all ten error-fragment queries on a leg with 2% R@1.
-  Recall survives (100% R@10) but rank does not.
+Aggregate means mislead here, because every config scores the *same* 62
+queries. `bun run search-eval:compare -- "<A>" "<B>"` runs a paired sign
+test over them, and it overturns two readings taken from the means:
+
+- **Reranking is the one robust win.** hybrid R@1 0.097 -> 0.242, with 10
+  queries better and 1 worse (p<=0.05). Large, consistent, and it moves
+  rank without moving R@50 — exactly the shape a reranker should have.
+  Keep it on.
+- **`k = 2` and `k = 60` are indistinguishable.** The 3pp R@10 gap that
+  looked like a reversal is *two queries out of 62* (p=0.50), and on MRR
+  k=60 is worse on more queries than it is better (8 better, 10 worse,
+  p=0.82). The earlier 12-query table could not justify choosing k=2 over
+  k=60; this 62-query one cannot justify choosing either. Leave the default
+  alone and spend the effort elsewhere.
+- **Hybrid does not clearly beat semantic, and on rank it is worse.**
+  Hybrid's R@10 (+7.3pp) and R@50 (+4.8pp) leads are not significant
+  (p=0.42, p=0.58). Against that, reranked semantic beats reranked hybrid
+  on MRR with 31 queries worse and 10 better (p<=0.05). The per-query
+  detail shows why: the lexical leg demotes definitions that semantic
+  ranked first, because call sites outnumber definitions and carry the same
+  term. `symbol-chunk-file`, `symbol-scan-repo` and `symbol-parse-plan-sections`
+  all go from MRR 1.0 under semantic to 0.2-0.5 under hybrid.
+
+So the strongest configuration measured here is **`semantic +rr`** for rank
+quality, with hybrid buying a little extra depth-50 recall at a significant
+cost to ordering. That is close to the original 12-query reading, arrived at
+for better reasons — and it is a question about *fusion inputs*, not about
+`k`.
 
 ### Where hybrid actively hurts
 
@@ -371,9 +382,10 @@ Fusion is not a free win, and the per-class table is where that shows:
 On queries with no exact term to anchor on, the lexical leg contributes
 noise that displaces correct embedding hits — the dilution the design note
 already identified and capped at 20 candidates, still present at the classes
-where lexical has nothing useful to say. Hybrid wins overall because
-exact-symbol and error-fragment are 32 of 62 queries; it is not uniformly
-better, and a per-class routing rule is the obvious follow-up.
+where lexical has nothing useful to say. Hybrid wins the exact-symbol and
+error-fragment classes outright (86% and 100% R@10), so per-class routing,
+or a lexical leg with IDF instead of ripgrep's unweighted substring matching,
+is where the remaining headroom is.
 
 **boundary is 0% everywhere, in every config.** Four queries that no
 retriever reaches — worth treating as a separate problem from tuning.
