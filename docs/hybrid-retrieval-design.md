@@ -275,20 +275,22 @@ rerank-on. Those defaults are unchanged here (this work touches no retrieval
 behaviour), but they should be treated as unvalidated until re-measured on
 the current harness, not as settled results.
 
-## Baseline (2026-08-08, corpus `83f99cc`, lexical only)
+## Baseline (2026-08-08, corpus `5d89b1c`, lexical only)
 
-`bun run search-eval -- --corpus-ref 83f99cc --out test/fixtures/search-eval-baseline.json`
+`bun run search-eval -- --corpus-ref 5d89b1c --out test/fixtures/search-eval-baseline.json`
 
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
 | lexical | 2% | 34% | 45% | 52% | 0.160 |
 
-**Every other row in this record is a degraded lexical run.** The recording
-environment could reach neither the embsearch release (GitHub API blocked)
-nor the MiniLM weights (HuggingFace blocked), so `embedder.available` is
-`false` and the semantic and hybrid configs all fell back to lexical — which
-is why all twelve rows are identical. That identity is also the design's own
-invariant holding: a degraded row must equal the lexical row exactly.
+**All twelve rows are identical, and none of them is a semantic result.**
+The recording environment could reach neither the embsearch release (GitHub
+API blocked) nor the MiniLM weights (HuggingFace blocked), so
+`embedder.available` is `false`. The eight semantic and hybrid rows are
+marked `degraded`; the other four (`lexical`, `auto`, and their `+rr`
+variants) are honestly lexical, because `auto` resolves to lexical when no
+index exists. That every row matches exactly is the design's own invariant
+holding: a degraded row must equal the lexical row.
 
 This is a **lexical-only baseline**. The semantic and hybrid rows still need
 a run on a machine with an ONNX embsearch build; the record's `embedder`
