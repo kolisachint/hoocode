@@ -1,0 +1,60 @@
+{
+  "edits": [
+    {
+      "path": "packages/coding-agent/src/core/search/live-probe-new-file.ts",
+      "content": "/**\n * Written into the corpus by the live-edit eval AFTER indexing, to stand in\n * for a file the agent created during a session. Nothing imports it.\n */\n\nexport interface QuarantinedSpanLedger {\n\tspanId: string;\n\tquarantinedAtMs: number;\n}\n\n/** Records a span the retriever should not surface again this session. */\nexport function quarantineRetrievalSpan(ledger: QuarantinedSpanLedger[], spanId: string): QuarantinedSpanLedger[] {\n\treturn [...ledger, { spanId, quarantinedAtMs: Date.now() }];\n}\n",
+      "note": "a file created during the session; the index has never seen it"
+    },
+    {
+      "path": "packages/coding-agent/src/core/search/live-probe-edited-file.ts",
+      "content": "/**\n * Written into the corpus by the live-edit eval AFTER indexing, to stand in\n * for an edit the agent made to an existing file during a session.\n */\n\n/** Threshold above which a fused candidate is considered stale. */\nexport const STALE_CANDIDATE_THRESHOLD_MS = 900_000;\n\nexport function isCandidateStale(observedAtMs: number, nowMs: number): boolean {\n\treturn nowMs - observedAtMs > STALE_CANDIDATE_THRESHOLD_MS;\n}\n",
+      "note": "a symbol added during the session; the indexed copy lacks it"
+    }
+  ],
+  "queries": [
+    {
+      "id": "live-symbol-quarantine-span",
+      "class": "live-edit",
+      "query": "quarantineRetrievalSpan",
+      "gold": [
+        {
+          "path": "packages/coding-agent/src/core/search/live-probe-new-file.ts",
+          "anchor": "export function quarantineRetrievalSpan"
+        }
+      ]
+    },
+    {
+      "id": "live-symbol-ledger-type",
+      "class": "live-edit",
+      "query": "QuarantinedSpanLedger",
+      "gold": [
+        {
+          "path": "packages/coding-agent/src/core/search/live-probe-new-file.ts",
+          "anchor": "export interface QuarantinedSpanLedger"
+        }
+      ]
+    },
+    {
+      "id": "live-symbol-is-candidate-stale",
+      "class": "live-edit",
+      "query": "isCandidateStale",
+      "gold": [
+        {
+          "path": "packages/coding-agent/src/core/search/live-probe-edited-file.ts",
+          "anchor": "export function isCandidateStale"
+        }
+      ]
+    },
+    {
+      "id": "live-const-stale-threshold",
+      "class": "live-edit",
+      "query": "STALE_CANDIDATE_THRESHOLD_MS",
+      "gold": [
+        {
+          "path": "packages/coding-agent/src/core/search/live-probe-edited-file.ts",
+          "anchor": "export const STALE_CANDIDATE_THRESHOLD_MS"
+        }
+      ]
+    }
+  ]
+}

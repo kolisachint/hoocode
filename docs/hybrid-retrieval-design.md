@@ -420,6 +420,53 @@ does — seeing files the index has not indexed, including edits made during
 the session. Measuring that needs a corpus that diverges from the index,
 which the harness cannot currently build.
 
+### Live edits: what the clean-checkout sweep cannot see
+
+`bun run search-eval -- --live-edits` writes files into the corpus **after**
+indexing and scores queries only that content can answer — standing in for
+the files an agent creates and edits while it works. The daemon has no file
+watcher, so anything written during a session is invisible to dense and BM25
+until the next index build.
+
+| config | R@1 | R@10 | MRR |
+|---|---|---|---|
+| lexical (grep) | 100% | 100% | 1.000 |
+| semantic | 0% | 0% | 0.000 |
+| daemon-hybrid +rr | 0% | 0% | 0.000 |
+| bm25+dense +rr | 0% | 0% | 0.000 |
+| hybrid k=60 +rr (grep + dense) | 100% | 100% | 1.000 |
+| 3-way +rr (grep + dense + BM25) | 100% | 100% | 1.000 |
+
+**Every index-backed configuration scores zero, by construction.** Any
+configuration containing the grep leg scores perfectly. This is the
+comparison the main sweep structurally could not make, and it settles the
+question the BM25 work opened.
+
+### Why the default stays grep + dense
+
+Putting both halves together, for the three candidate defaults:
+
+| configuration | clean corpus (MRR) | live edits (MRR) |
+|---|---|---|
+| **grep + dense — current default** | **0.464** | **1.000** |
+| bm25 + dense | 0.468 | 0.000 |
+| 3-way (grep + dense + BM25) | 0.404 | 1.000 |
+
+BM25's advantage over grep on indexed content is **not significant** (R@10
+7 better / 3 worse, p = 0.34; R@50 7 / 1, p = 0.07; MRR 12 / 16, p = 0.57),
+and switching to it would make the agent blind to its own edits. Adding BM25
+*alongside* grep costs 0.060 MRR on the clean corpus and buys nothing on
+live edits, since grep already covers them.
+
+So the shipped default is already the best available configuration, and the
+earlier reading — "the grep leg is a significant regression once BM25 is
+present" — was true only of the half of reality the eval could see. Grep is
+not a stand-in for a real lexical index; it is the only retriever that sees
+the working tree.
+
+`bm25Leg` stays available for callers who want the depth-50 recall (85% vs
+77%) and can tolerate an index-lagged view.
+
 ### What is still open
 
 - **Hybrid and semantic are now indistinguishable on rank.** Reranked
