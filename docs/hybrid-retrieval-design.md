@@ -304,10 +304,10 @@ behaviour), but they should be treated as unvalidated until re-measured on
 the current harness, not as settled results. The baseline immediately below
 is that re-measurement, and it reverses the `k` decision.
 
-## Baseline (2026-08-08, corpus `8a7743b`, embsearch 0.1.7 / MiniLM int8)
+## Baseline (2026-08-08, corpus `ffeaad9`, embsearch 0.1.7 / MiniLM int8)
 
 ```
-bun run search-eval -- --corpus-ref 8a7743b \
+bun run search-eval -- --corpus-ref ffeaad9 \
   --embsearch-binary ./embsearch --daemon-hybrid \
   --out test/fixtures/search-eval-baseline.json
 ```
@@ -321,30 +321,32 @@ and reranking break ties deterministically).
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
 | lexical | 2% | 34% | 42% | 52% | 0.160 |
-| semantic | 11% | 43% | 49% | 69% | 0.245 |
-| hybrid k=0 | 8% | 48% | 57% | 78% | 0.224 |
-| hybrid k=2 | 10% | 48% | 57% | 78% | 0.246 |
-| hybrid k=10 | 8% | 46% | 57% | 78% | 0.239 |
-| hybrid k=60 | 10% | 46% | 59% | 78% | 0.246 |
-| auto | 10% | 46% | 59% | 78% | 0.246 |
+| semantic | 10% | 40% | 48% | 65% | 0.234 |
+| hybrid k=0 | 6% | 48% | 56% | 77% | 0.214 |
+| hybrid k=2 | 8% | 48% | 56% | 77% | 0.237 |
+| hybrid k=10 | 8% | 46% | 56% | 77% | 0.235 |
+| hybrid k=60 | 8% | 46% | 57% | 77% | 0.234 |
+| auto | 8% | 46% | 57% | 77% | 0.234 |
 | lexical +rr | 16% | 52% | 52% | 52% | 0.316 |
-| semantic +rr | 37% | 51% | 59% | 69% | 0.439 |
-| hybrid k=2 +rr | 24% | 60% | 65% | 78% | 0.414 |
-| hybrid k=60 +rr | 34% | 58% | 67% | 78% | 0.464 |
-| auto +rr | 34% | 58% | 67% | 78% | 0.464 |
-| daemon-hybrid | 6% | 40% | 56% | 87% | 0.228 |
-| **daemon-hybrid +rr** | **34%** | **62%** | **74%** | **87%** | **0.472** |
+| semantic +rr | 37% | 53% | 56% | 65% | 0.436 |
+| hybrid k=2 +rr | 24% | 60% | 66% | 77% | 0.413 |
+| hybrid k=60 +rr | 34% | 60% | 66% | 77% | 0.464 |
+| auto +rr | 34% | 60% | 66% | 77% | 0.464 |
+| daemon-hybrid | 8% | 41% | 57% | 85% | 0.232 |
+| daemon-hybrid +rr | 35% | 62% | 72% | 85% | 0.475 |
+| **bm25+dense +rr** | **34%** | **60%** | **72%** | **85%** | **0.468** |
+| 3-way +rr | 26% | 56% | 64% | 77% | 0.404 |
 
 R@10 by query class, the part the aggregate hides:
 
-| class | n | lexical | semantic | hybrid k=60 | semantic +rr | daemon-hybrid +rr |
+| class | n | lexical | semantic | hybrid k=60 | semantic +rr | bm25+dense +rr |
 |---|---|---|---|---|---|---|
 | exact-symbol | 22 | 73% | 68% | 86% | 82% | 100% |
 | error-fragment | 10 | 100% | 50% | 100% | 50% | 100% |
 | path | 6 | 0% | 50% | 33% | 67% | 83% |
-| conceptual | 14 | 0% | 43% | 36% | 43% | 36% |
-| cross-file | 6 | 0% | 25% | 8% | 42% | 33% |
-| boundary | 4 | 0% | 0% | 0% | 25% | 50% |
+| conceptual | 14 | 0% | 36% | 29% | 36% | 36% |
+| cross-file | 6 | 0% | 25% | 8% | 33% | 25% |
+| boundary | 4 | 0% | 0% | 0% | 25% | 25% |
 
 ### What the larger gold set changes, and what it shipped
 
@@ -393,6 +395,31 @@ use.**
 Cumulative effect on `auto +rr`, the shipped default path: R@1 15% -> 34%,
 R@5 51% -> 58%, R@10 60% -> 67%, MRR 0.315 -> 0.464.
 
+### The BM25 leg, fused here (embsearch 0.2.0)
+
+embsearch 0.2.0 serves `retriever: "lexical"`, so BM25 arrives as its own
+ranked list instead of pre-fused. Fusing it here rather than in the daemon
+means our `k`, n-way fusion, and per-leg ranks surviving into the trace.
+
+Two things had to be true for that to be worth doing, and both were measured:
+
+- **Parity.** TS-side `bm25+dense +rr` against daemon-side
+  `daemon-hybrid +rr` ties exactly on R@10 (0 better, 0 worse, 62 tied) and
+  is indistinguishable on MRR (5 better, 7 worse, p = 0.77). Getting there
+  needed the pool depth fix — fetching 200 per leg rather than 50, matching
+  the daemon's internal `4·k`. Before that, TS-side fusion lost 12pp R@10
+  and 8pp R@50 purely to candidates falling outside a too-shallow pool.
+- **The grep leg is now a significant regression.** Three-way
+  dense + BM25 + grep against dense + BM25 is 7 better and 23 worse on MRR
+  (p <= 0.05), 0 better / 5 worse on R@10. Grep earned its place as a
+  stand-in for a real lexical index; with one present it contributes noise.
+
+Defaults are unchanged. Dropping grep would be premature: the eval corpus is
+a clean checkout, so it structurally cannot test the one thing grep uniquely
+does — seeing files the index has not indexed, including edits made during
+the session. Measuring that needs a corpus that diverges from the index,
+which the harness cannot currently build.
+
 ### What is still open
 
 - **Hybrid and semantic are now indistinguishable on rank.** Reranked
@@ -416,9 +443,9 @@ ranking. Scored on the same 62 queries, same corpus, same run
 
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
-| semantic +rr | 37% | 51% | 59% | 69% | 0.439 |
-| hybrid k=60 +rr (ripgrep) | 34% | 58% | 67% | 78% | 0.464 |
-| **daemon-hybrid +rr (BM25)** | **34%** | **62%** | **74%** | **87%** | **0.472** |
+| semantic +rr | 37% | 53% | 56% | 65% | 0.436 |
+| hybrid k=60 +rr (ripgrep) | 34% | 60% | 66% | 77% | 0.464 |
+| **bm25+dense +rr (BM25)** | **34%** | **60%** | **72%** | **85%** | **0.468** |
 
 **BM25 is a significantly better lexical leg, and the entire win is in the
 candidate pool.** R@50 goes 79% -> 90% against the ripgrep leg (7 queries
@@ -435,13 +462,13 @@ building. Ranking is now the binding constraint, not retrieval.
 
 It also fixes the dilution that ripgrep fusion causes. R@50 by class:
 
-| class | n | semantic +rr | hybrid k=60 +rr | daemon-hybrid +rr |
+| class | n | semantic +rr | hybrid k=60 +rr | bm25+dense +rr |
 |---|---|---|---|---|
 | exact-symbol | 22 | 82% | 95% | 100% |
 | error-fragment | 10 | 50% | 100% | 100% |
 | path | 6 | 67% | 67% | 83% |
-| conceptual | 14 | 79% | 64% | 79% |
-| cross-file | 6 | 58% | 58% | 67% |
+| conceptual | 14 | 71% | 64% | 71% |
+| cross-file | 6 | 42% | 42% | 58% |
 | boundary | 4 | 25% | 25% | 50% |
 
 The ripgrep leg drags conceptual recall from 79% down to 64%; BM25 keeps it
