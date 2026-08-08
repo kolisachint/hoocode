@@ -304,41 +304,46 @@ behaviour), but they should be treated as unvalidated until re-measured on
 the current harness, not as settled results. The baseline immediately below
 is that re-measurement, and it reverses the `k` decision.
 
-## Baseline (2026-08-08, corpus `bde442b`, embsearch 0.1.7 / MiniLM int8)
+## Baseline (2026-08-08, corpus `7fdb916`, embsearch 0.1.7 / MiniLM int8)
 
 ```
-bun run search-eval -- --corpus-ref bde442b \
-  --embsearch-binary ./embsearch --out test/fixtures/search-eval-baseline.json
+bun run search-eval -- --corpus-ref 7fdb916 \
+  --embsearch-binary ./embsearch --daemon-hybrid \
+  --out test/fixtures/search-eval-baseline.json
 ```
 
-62 queries, 68 gold spans, 17,053 chunks indexed, `all-MiniLM-L6-v2-int8`,
-flat index. Two independent runs produced byte-identical aggregates and
-per-query results.
+62 queries, 68 gold spans, 17,085 chunks indexed, `all-MiniLM-L6-v2-int8`,
+flat index. Re-running the same command reproduces the record exactly:
+determinism was verified byte-for-byte on an earlier corpus, and the
+pipeline has no nondeterministic step (ripgrep runs `--sort path`, fusion
+and reranking break ties deterministically).
 
 | config | R@1 | R@5 | R@10 | R@50 | MRR |
 |---|---|---|---|---|---|
-| lexical | 2% | 35% | 44% | 52% | 0.163 |
-| semantic | 11% | 41% | 48% | 72% | 0.245 |
-| hybrid k=0 | 6% | 48% | 56% | 77% | 0.218 |
-| hybrid k=2 | 10% | 48% | 56% | 77% | 0.249 |
-| hybrid k=10 | 8% | 46% | 57% | 77% | 0.237 |
-| **hybrid k=60** | 11% | 48% | **59%** | 77% | **0.263** |
-| auto | 8% | 48% | 56% | 77% | 0.261 |
-| lexical +rr | 2% | 35% | 44% | 52% | 0.163 |
-| semantic +rr | 27% | 48% | 55% | 72% | 0.377 |
-| hybrid k=2 +rr | 24% | 52% | 60% | 77% | 0.364 |
-| **hybrid k=60 +rr** | 26% | **52%** | **62%** | **77%** | **0.378** |
-| auto +rr | 15% | 52% | 60% | 77% | 0.315 |
+| lexical | 2% | 34% | 44% | 52% | 0.162 |
+| semantic | 10% | 43% | 48% | 69% | 0.230 |
+| hybrid k=0 | 6% | 46% | 56% | 79% | 0.211 |
+| hybrid k=2 | 10% | 46% | 57% | 79% | 0.244 |
+| hybrid k=10 | 10% | 46% | 57% | 79% | 0.243 |
+| hybrid k=60 | 11% | 48% | 59% | 79% | 0.254 |
+| auto | 8% | 46% | 57% | 79% | 0.256 |
+| lexical +rr | 2% | 34% | 44% | 52% | 0.162 |
+| semantic +rr | 27% | 47% | 52% | 69% | 0.374 |
+| hybrid k=2 +rr | 24% | 51% | 60% | 79% | 0.363 |
+| hybrid k=60 +rr | 26% | 51% | 62% | 79% | 0.373 |
+| auto +rr | 15% | 51% | 60% | 79% | 0.315 |
+| daemon-hybrid | 8% | 40% | 56% | 90% | 0.239 |
+| **daemon-hybrid +rr** | **21%** | **56%** | **65%** | **90%** | **0.372** |
 
 R@10 by query class, the part the aggregate hides:
 
 | class | n | lexical | semantic | hybrid k=60 | semantic +rr | hybrid k=60 +rr |
 |---|---|---|---|---|---|---|
-| exact-symbol | 22 | 77% | 64% | 86% | 73% | **91%** |
-| error-fragment | 10 | 100% | 50% | 100% | 50% | **100%** |
-| path | 6 | 0% | 50% | 33% | **67%** | **67%** |
-| conceptual | 14 | 0% | 43% | 36% | **50%** | 29% |
-| cross-file | 6 | 0% | **33%** | 8% | **33%** | 8% |
+| exact-symbol | 22 | 77% | 64% | 86% | 73% | 91% |
+| error-fragment | 10 | 100% | 50% | 100% | 50% | 100% |
+| path | 6 | 0% | 50% | 33% | 67% | 67% |
+| conceptual | 14 | 0% | 43% | 36% | 36% | 29% |
+| cross-file | 6 | 0% | 25% | 8% | 42% | 8% |
 | boundary | 4 | 0% | 0% | 0% | 0% | 0% |
 
 ### What the larger gold set changes
@@ -372,12 +377,70 @@ cost to ordering. That is close to the original 12-query reading, arrived at
 for better reasons — and it is a question about *fusion inputs*, not about
 `k`.
 
+### Daemon BM25 as the lexical leg
+
+The `daemon-hybrid` configs replace the ripgrep leg entirely: the Rust
+daemon fuses its own Okapi BM25 index with the vectors and returns one
+ranking. Scored on the same 62 queries, same corpus, same run
+(`bun run search-eval -- --daemon-hybrid ...`).
+
+| config | R@1 | R@5 | R@10 | R@50 | MRR |
+|---|---|---|---|---|---|
+| semantic +rr | 27% | 47% | 52% | 69% | 0.374 |
+| hybrid k=60 +rr (ripgrep) | 26% | 51% | 62% | 79% | 0.373 |
+| **daemon-hybrid +rr (BM25)** | 21% | **56%** | **65%** | **90%** | 0.372 |
+
+**BM25 is a significantly better lexical leg, and the entire win is in the
+candidate pool.** R@50 goes 79% -> 90% against the ripgrep leg (7 queries
+better, 0 worse, p<=0.05) and 69% -> 90% against semantic alone (14 better,
+1 worse, p<=0.05). R@10 (+2.4pp, p=0.75) and MRR (-0.001, p=1.00) are
+statistically tied.
+
+That split is the actionable part: BM25 puts far more gold spans within
+reach, and the deterministic reranker cannot convert the extra reach into
+better ordering. The step-7 gate said "a gold span that never reaches the
+fused top-50 cannot be rescued by any reranker" — 90% of them now do, which
+is precisely the precondition that makes a real cross-encoder worth
+building. Ranking is now the binding constraint, not retrieval.
+
+It also fixes the dilution that ripgrep fusion causes. R@50 by class:
+
+| class | n | semantic +rr | hybrid k=60 +rr | daemon-hybrid +rr |
+|---|---|---|---|---|
+| exact-symbol | 22 | 82% | 95% | **100%** |
+| error-fragment | 10 | 50% | 100% | **100%** |
+| path | 6 | 67% | 67% | **83%** |
+| conceptual | 14 | **79%** | 64% | **79%** |
+| cross-file | 6 | 67% | 67% | **75%** |
+| boundary | 4 | 25% | 25% | **75%** |
+
+The ripgrep leg drags conceptual recall from 79% down to 64%; BM25 keeps it
+level with semantic while adding the exact-term classes. Boundary — 0% in
+every config of the previous baseline — reaches 75% at depth 50 under BM25.
+Unweighted substring matching contributes noise where it has nothing to
+say; IDF-weighted term matching mostly does not.
+
+The one place ripgrep still wins is exact-symbol at R@10 (91% vs 82%):
+regex substring matching finds an identifier written in a different case or
+convention, which BM25's tokenizer (split on non-alphanumeric, lowercase)
+cannot. `parse_command_args` tokenizes to `["parse","command","args"]`
+while a `parseCommandArgs` query tokenizes to one token that matches
+neither.
+
+**Caveat on what was measured.** v0.1.7 exposes no BM25-only query.
+`query_hybrid` fuses BM25 with the vectors inside Rust using its own
+hardcoded RRF constant of 60, so this compares *systems* — BM25+dense fused
+in Rust against ripgrep+dense fused in TypeScript — not two lexical legs
+under identical fusion. Isolating the BM25 leg so TypeScript can fuse it
+n-way and keep per-source diagnostics needs a new daemon op. That op is the
+natural next request on the Rust side.
+
 ### Where hybrid actively hurts
 
 Fusion is not a free win, and the per-class table is where that shows:
 
-- **conceptual**: semantic +rr 50% against hybrid k=60 +rr 29%.
-- **cross-file**: semantic 33% against hybrid 8%.
+- **conceptual**: semantic +rr 36% against hybrid k=60 +rr 29%.
+- **cross-file**: semantic +rr 42% against hybrid k=60 +rr 8%.
 
 On queries with no exact term to anchor on, the lexical leg contributes
 noise that displaces correct embedding hits — the dilution the design note
@@ -386,6 +449,11 @@ where lexical has nothing useful to say. Hybrid wins the exact-symbol and
 error-fragment classes outright (86% and 100% R@10), so per-class routing,
 or a lexical leg with IDF instead of ripgrep's unweighted substring matching,
 is where the remaining headroom is.
+
+The IDF half of that has now been measured — see "Daemon BM25 as the lexical
+leg" above. Swapping ripgrep for the daemon's BM25 index removes the
+conceptual and cross-file dilution and lifts R@50 from 79% to 90%, without
+yet improving R@10 or MRR.
 
 **boundary is 0% everywhere, in every config.** Four queries that no
 retriever reaches — worth treating as a separate problem from tuning.

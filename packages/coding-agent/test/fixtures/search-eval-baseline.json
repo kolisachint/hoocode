@@ -1,18 +1,22 @@
 {
   "provenance": {
-    "timestampMs": 1786155571791,
-    "corpusSha": "bde442ba9b9e166757422f4ec7d839f84147f5ec",
-    "corpusRef": "bde442b",
+    "timestampMs": 1786157290136,
+    "corpusSha": "7fdb91675ce9fc2e7611965718a9a965336a65c2",
+    "corpusRef": "7fdb916",
     "corpusFromWorkingTree": false,
     "corpusDirty": false,
-    "harnessSha": "bde442ba9b9e166757422f4ec7d839f84147f5ec",
-    "retrievalSourceHash": "678c86ece53a9a34",
+    "harnessSha": "7fdb91675ce9fc2e7611965718a9a965336a65c2",
+    "retrievalSourceHash": "4abf7cdb07a8ca02",
     "embedder": {
       "available": true,
-      "chunkCount": 17053,
+      "chunkCount": 17085,
       "phase": "ready",
       "binaryPath": "/tmp/claude-0/-home-user-hoocode/c2f6f5e6-21aa-5461-87a6-39cfc480d234/scratchpad/embsearch",
       "binaryVersion": "embsearch 0.1.7"
+    },
+    "daemonHybrid": {
+      "available": true,
+      "phase": "ready"
     },
     "runtime": {
       "node": "v24.3.0",
@@ -91,56 +95,67 @@
       "label": "auto +rr",
       "mode": "auto",
       "rerank": true
+    },
+    {
+      "label": "daemon-hybrid",
+      "mode": "semantic",
+      "daemonHybrid": true
+    },
+    {
+      "label": "daemon-hybrid +rr",
+      "mode": "semantic",
+      "rerank": true,
+      "daemonHybrid": true
     }
   ],
   "aggregates": [
     {
       "label": "lexical",
       "recallAt1": 0.016129032258064516,
-      "recallAt5": 0.3548387096774194,
+      "recallAt5": 0.3387096774193548,
       "recallAt10": 0.43548387096774194,
       "recallAt50": 0.5161290322580645,
-      "mrr": 0.16339538309828677,
+      "mrr": 0.16247372411211167,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "semantic",
-      "recallAt1": 0.11290322580645161,
-      "recallAt5": 0.4112903225806452,
-      "recallAt10": 0.4838709677419355,
-      "recallAt50": 0.717741935483871,
-      "mrr": 0.24532916346472106,
+      "recallAt1": 0.0967741935483871,
+      "recallAt5": 0.4274193548387097,
+      "recallAt10": 0.47580645161290325,
+      "recallAt50": 0.6935483870967742,
+      "mrr": 0.22969209992021364,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "hybrid k=0",
       "recallAt1": 0.06451612903225806,
-      "recallAt5": 0.47580645161290325,
+      "recallAt5": 0.4596774193548387,
       "recallAt10": 0.5564516129032258,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.21835809128147846,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.2110899511098927,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "hybrid k=2",
       "recallAt1": 0.0967741935483871,
-      "recallAt5": 0.47580645161290325,
-      "recallAt10": 0.5564516129032258,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.2491411523064749,
+      "recallAt5": 0.4596774193548387,
+      "recallAt10": 0.5725806451612904,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.24365232601097725,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "hybrid k=10",
-      "recallAt1": 0.08064516129032258,
+      "recallAt1": 0.0967741935483871,
       "recallAt5": 0.4596774193548387,
       "recallAt10": 0.5725806451612904,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.23747611483498585,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.24318102312031958,
       "n": 62,
       "degraded": 0
     },
@@ -149,68 +164,88 @@
       "recallAt1": 0.11290322580645161,
       "recallAt5": 0.47580645161290325,
       "recallAt10": 0.5887096774193549,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.2630329504724667,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.2544905469298434,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "auto",
       "recallAt1": 0.08064516129032258,
-      "recallAt5": 0.47580645161290325,
-      "recallAt10": 0.5564516129032258,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.2612379265000232,
+      "recallAt5": 0.4596774193548387,
+      "recallAt10": 0.5725806451612904,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.2557491002045256,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "lexical +rr",
       "recallAt1": 0.016129032258064516,
-      "recallAt5": 0.3548387096774194,
+      "recallAt5": 0.3387096774193548,
       "recallAt10": 0.43548387096774194,
       "recallAt50": 0.5161290322580645,
-      "mrr": 0.16339538309828677,
+      "mrr": 0.16247372411211167,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "semantic +rr",
       "recallAt1": 0.27419354838709675,
-      "recallAt5": 0.47580645161290325,
-      "recallAt10": 0.5483870967741935,
-      "recallAt50": 0.717741935483871,
-      "mrr": 0.3771856694464775,
+      "recallAt5": 0.46774193548387094,
+      "recallAt10": 0.5241935483870968,
+      "recallAt50": 0.6935483870967742,
+      "mrr": 0.37412952354927176,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "hybrid k=2 +rr",
       "recallAt1": 0.24193548387096775,
-      "recallAt5": 0.5241935483870968,
+      "recallAt5": 0.5080645161290323,
       "recallAt10": 0.6048387096774194,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.3635586525114753,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.36292797277157235,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "hybrid k=60 +rr",
       "recallAt1": 0.25806451612903225,
-      "recallAt5": 0.5241935483870968,
+      "recallAt5": 0.5080645161290323,
       "recallAt10": 0.6209677419354839,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.3778731686405075,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.3730612126032694,
       "n": 62,
       "degraded": 0
     },
     {
       "label": "auto +rr",
       "recallAt1": 0.14516129032258066,
-      "recallAt5": 0.5241935483870968,
+      "recallAt5": 0.5080645161290323,
       "recallAt10": 0.6048387096774194,
-      "recallAt50": 0.7661290322580645,
-      "mrr": 0.31517155573728173,
+      "recallAt50": 0.7903225806451613,
+      "mrr": 0.3145408759973788,
+      "n": 62,
+      "degraded": 0
+    },
+    {
+      "label": "daemon-hybrid",
+      "recallAt1": 0.08064516129032258,
+      "recallAt5": 0.3951612903225806,
+      "recallAt10": 0.5645161290322581,
+      "recallAt50": 0.8951612903225806,
+      "mrr": 0.23905169790198735,
+      "n": 62,
+      "degraded": 0
+    },
+    {
+      "label": "daemon-hybrid +rr",
+      "recallAt1": 0.20967741935483872,
+      "recallAt5": 0.5564516129032258,
+      "recallAt10": 0.6451612903225806,
+      "recallAt50": 0.8951612903225806,
+      "mrr": 0.3720230701863574,
       "n": 62,
       "degraded": 0
     }
@@ -339,6 +374,26 @@
           "recallAt10": 0,
           "recallAt50": 1,
           "mrr": 0.037037037037037035
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.06666666666666667
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.06666666666666667
         }
       ]
     },
@@ -465,6 +520,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
         }
       ]
     },
@@ -585,6 +660,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 1,
@@ -717,6 +812,26 @@
           "recallAt10": 0,
           "recallAt50": 1,
           "mrr": 0.0625
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.16666666666666666
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.16666666666666666
         }
       ]
     },
@@ -843,6 +958,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
         }
       ]
     },
@@ -969,6 +1104,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.125
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.045454545454545456
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.0625
         }
       ]
     },
@@ -994,7 +1149,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.034482758620689655
+          "mrr": 0.058823529411764705
         },
         {
           "label": "hybrid k=0",
@@ -1014,17 +1169,17 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.1111111111111111
+          "mrr": 0.14285714285714285
         },
         {
           "label": "hybrid k=10",
           "resolvedMode": "hybrid",
           "degraded": false,
-          "recallAt1": 0,
+          "recallAt1": 1,
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.3333333333333333
+          "mrr": 1
         },
         {
           "label": "hybrid k=60",
@@ -1044,7 +1199,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.1111111111111111
+          "mrr": 0.14285714285714285
         },
         {
           "label": "lexical +rr",
@@ -1074,7 +1229,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.2
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=60 +rr",
@@ -1094,7 +1249,27 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.2
+          "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
         }
       ]
     },
@@ -1221,6 +1396,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.043478260869565216
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.08333333333333333
         }
       ]
     },
@@ -1347,6 +1542,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.1111111111111111
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.1111111111111111
         }
       ]
     },
@@ -1467,6 +1682,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 1,
@@ -1599,6 +1834,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
         }
       ]
     },
@@ -1719,6 +1974,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 1,
           "recallAt5": 1,
@@ -1851,6 +2126,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
         }
       ]
     },
@@ -1977,6 +2272,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
         }
       ]
     },
@@ -2042,7 +2357,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.5
+          "mrr": 0.3333333333333333
         },
         {
           "label": "auto",
@@ -2092,11 +2407,31 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.5
+          "mrr": 0.3333333333333333
         },
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 1,
@@ -2229,6 +2564,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.02127659574468085
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.03571428571428571
         }
       ]
     },
@@ -2349,6 +2704,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 1,
@@ -2481,6 +2856,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
         }
       ]
     },
@@ -2607,6 +3002,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
         }
       ]
     },
@@ -2619,20 +3034,20 @@
           "resolvedMode": "lexical",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.2
+          "mrr": 0.14285714285714285
         },
         {
           "label": "semantic",
           "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 0,
+          "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.16666666666666666
+          "mrr": 0.2
         },
         {
           "label": "hybrid k=0",
@@ -2662,7 +3077,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.09090909090909091
+          "mrr": 0.08333333333333333
         },
         {
           "label": "hybrid k=60",
@@ -2672,7 +3087,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.09090909090909091
+          "mrr": 0.08333333333333333
         },
         {
           "label": "auto",
@@ -2689,10 +3104,10 @@
           "resolvedMode": "lexical",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.2
+          "mrr": 0.14285714285714285
         },
         {
           "label": "semantic +rr",
@@ -2712,7 +3127,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.16666666666666666
+          "mrr": 0.14285714285714285
         },
         {
           "label": "hybrid k=60 +rr",
@@ -2722,7 +3137,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.16666666666666666
+          "mrr": 0.125
         },
         {
           "label": "auto +rr",
@@ -2732,7 +3147,27 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.16666666666666666
+          "mrr": 0.14285714285714285
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
         }
       ]
     },
@@ -2758,7 +3193,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.05
+          "mrr": 0.06666666666666667
         },
         {
           "label": "hybrid k=0",
@@ -2768,7 +3203,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.07142857142857142
+          "mrr": 0.08333333333333333
         },
         {
           "label": "hybrid k=2",
@@ -2776,19 +3211,19 @@
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
-          "recallAt10": 0,
+          "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.08333333333333333
+          "mrr": 0.1
         },
         {
           "label": "hybrid k=10",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 0,
+          "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.16666666666666666
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=60",
@@ -2806,9 +3241,9 @@
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
-          "recallAt10": 0,
+          "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.08333333333333333
+          "mrr": 0.1
         },
         {
           "label": "lexical +rr",
@@ -2838,7 +3273,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.14285714285714285
+          "mrr": 0.16666666666666666
         },
         {
           "label": "hybrid k=60 +rr",
@@ -2858,7 +3293,27 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.14285714285714285
+          "mrr": 0.16666666666666666
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
         }
       ]
     },
@@ -2979,6 +3434,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 1,
           "recallAt5": 1,
@@ -3111,6 +3586,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.14285714285714285
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
         }
       ]
     },
@@ -3237,6 +3732,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
         }
       ]
     },
@@ -3363,6 +3878,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.16666666666666666
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
         }
       ]
     },
@@ -3483,6 +4018,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "lexical",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.03125
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 1,
@@ -3615,6 +4170,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
         }
       ]
     },
@@ -3650,7 +4225,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.3333333333333333
         },
         {
           "label": "hybrid k=2",
@@ -3660,7 +4235,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.3333333333333333
         },
         {
           "label": "hybrid k=10",
@@ -3670,7 +4245,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.3333333333333333
         },
         {
           "label": "hybrid k=60",
@@ -3680,7 +4255,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.3333333333333333
         },
         {
           "label": "auto",
@@ -3735,6 +4310,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "lexical",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.038461538461538464
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 1,
@@ -3867,6 +4462,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.3333333333333333
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
         }
       ]
     },
@@ -3993,6 +4608,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
         }
       ]
     },
@@ -4028,7 +4663,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.3333333333333333
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=2",
@@ -4038,7 +4673,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.3333333333333333
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=10",
@@ -4048,7 +4683,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.3333333333333333
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=60",
@@ -4058,7 +4693,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.3333333333333333
+          "mrr": 0.25
         },
         {
           "label": "auto",
@@ -4113,6 +4748,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "lexical",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.07692307692307693
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 1,
@@ -4245,11 +4900,177 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.5
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
         }
       ]
     },
     {
       "id": "path-hybrid-search",
+      "class": "path",
+      "results": [
+        {
+          "label": "lexical",
+          "resolvedMode": "lexical",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "semantic",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
+        },
+        {
+          "label": "hybrid k=0",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.2
+        },
+        {
+          "label": "hybrid k=2",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.2
+        },
+        {
+          "label": "hybrid k=10",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.2
+        },
+        {
+          "label": "hybrid k=60",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.2
+        },
+        {
+          "label": "auto",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.2
+        },
+        {
+          "label": "lexical +rr",
+          "resolvedMode": "lexical",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "semantic +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "hybrid k=2 +rr",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "hybrid k=60 +rr",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "auto +rr",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.14285714285714285
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        }
+      ]
+    },
+    {
+      "id": "path-chunker",
       "class": "path",
       "results": [
         {
@@ -4290,7 +5111,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.2
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=10",
@@ -4300,11 +5121,81 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.2
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=60",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
+        },
+        {
+          "label": "auto",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
+        },
+        {
+          "label": "lexical +rr",
+          "resolvedMode": "lexical",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "semantic +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "hybrid k=2 +rr",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "hybrid k=60 +rr",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "auto +rr",
+          "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
@@ -4313,184 +5204,8 @@
           "mrr": 0.16666666666666666
         },
         {
-          "label": "auto",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 0.2
-        },
-        {
-          "label": "lexical +rr",
-          "resolvedMode": "lexical",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 0,
-          "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
-        },
-        {
-          "label": "semantic +rr",
+          "label": "daemon-hybrid +rr",
           "resolvedMode": "semantic",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        },
-        {
-          "label": "hybrid k=2 +rr",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        },
-        {
-          "label": "hybrid k=60 +rr",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        },
-        {
-          "label": "auto +rr",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        }
-      ]
-    },
-    {
-      "id": "path-chunker",
-      "class": "path",
-      "results": [
-        {
-          "label": "lexical",
-          "resolvedMode": "lexical",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 0,
-          "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
-        },
-        {
-          "label": "semantic",
-          "resolvedMode": "semantic",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        },
-        {
-          "label": "hybrid k=0",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 0.5
-        },
-        {
-          "label": "hybrid k=2",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 0.5
-        },
-        {
-          "label": "hybrid k=10",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 0.5
-        },
-        {
-          "label": "hybrid k=60",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 0.5
-        },
-        {
-          "label": "auto",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 0.5
-        },
-        {
-          "label": "lexical +rr",
-          "resolvedMode": "lexical",
-          "degraded": false,
-          "recallAt1": 0,
-          "recallAt5": 0,
-          "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
-        },
-        {
-          "label": "semantic +rr",
-          "resolvedMode": "semantic",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        },
-        {
-          "label": "hybrid k=2 +rr",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        },
-        {
-          "label": "hybrid k=60 +rr",
-          "resolvedMode": "hybrid",
-          "degraded": false,
-          "recallAt1": 1,
-          "recallAt5": 1,
-          "recallAt10": 1,
-          "recallAt50": 1,
-          "mrr": 1
-        },
-        {
-          "label": "auto +rr",
-          "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 1,
           "recallAt5": 1,
@@ -4623,6 +5338,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.020833333333333332
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
         }
       ]
     },
@@ -4749,6 +5484,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.021739130434782608
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
         }
       ]
     },
@@ -4869,6 +5624,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.25
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 1,
           "recallAt5": 1,
@@ -5001,6 +5776,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
         }
       ]
     },
@@ -5026,7 +5821,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.05
+          "mrr": 0.047619047619047616
         },
         {
           "label": "hybrid k=0",
@@ -5036,7 +5831,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.025
+          "mrr": 0.024390243902439025
         },
         {
           "label": "hybrid k=2",
@@ -5046,7 +5841,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.025
+          "mrr": 0.024390243902439025
         },
         {
           "label": "hybrid k=10",
@@ -5056,7 +5851,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.025
+          "mrr": 0.024390243902439025
         },
         {
           "label": "hybrid k=60",
@@ -5066,7 +5861,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.025
+          "mrr": 0.024390243902439025
         },
         {
           "label": "auto",
@@ -5076,7 +5871,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.025
+          "mrr": 0.024390243902439025
         },
         {
           "label": "lexical +rr",
@@ -5094,9 +5889,9 @@
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
-          "recallAt10": 1,
+          "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.1
+          "mrr": 0.09090909090909091
         },
         {
           "label": "hybrid k=2 +rr",
@@ -5127,6 +5922,26 @@
           "recallAt10": 0,
           "recallAt50": 1,
           "mrr": 0.03333333333333333
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.02127659574468085
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.02702702702702703
         }
       ]
     },
@@ -5247,6 +6062,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
@@ -5379,6 +6214,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.16666666666666666
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.2
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.125
         }
       ]
     },
@@ -5499,6 +6354,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
@@ -5631,6 +6506,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.038461538461538464
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.09090909090909091
         }
       ]
     },
@@ -5751,6 +6646,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 1,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 1
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 1,
           "recallAt5": 1,
@@ -5883,6 +6798,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
         }
       ]
     },
@@ -6009,6 +6944,26 @@
           "recallAt10": 0,
           "recallAt50": 1,
           "mrr": 0.027777777777777776
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.14285714285714285
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.05
         }
       ]
     },
@@ -6135,6 +7090,26 @@
           "recallAt10": 1,
           "recallAt50": 1,
           "mrr": 0.1
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.045454545454545456
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.041666666666666664
         }
       ]
     },
@@ -6160,7 +7135,7 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.3333333333333333
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=0",
@@ -6170,7 +7145,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.16666666666666666
+          "mrr": 0.1111111111111111
         },
         {
           "label": "hybrid k=2",
@@ -6180,7 +7155,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.14285714285714285
+          "mrr": 0.1111111111111111
         },
         {
           "label": "hybrid k=10",
@@ -6190,7 +7165,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.14285714285714285
+          "mrr": 0.1111111111111111
         },
         {
           "label": "hybrid k=60",
@@ -6200,7 +7175,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.14285714285714285
+          "mrr": 0.1111111111111111
         },
         {
           "label": "auto",
@@ -6210,7 +7185,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.14285714285714285
+          "mrr": 0.1111111111111111
         },
         {
           "label": "lexical +rr",
@@ -6228,9 +7203,9 @@
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
-          "recallAt10": 1,
+          "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.1
+          "mrr": 0.09090909090909091
         },
         {
           "label": "hybrid k=2 +rr",
@@ -6240,7 +7215,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.058823529411764705
+          "mrr": 0.05263157894736842
         },
         {
           "label": "hybrid k=60 +rr",
@@ -6250,7 +7225,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.058823529411764705
+          "mrr": 0.05263157894736842
         },
         {
           "label": "auto +rr",
@@ -6260,7 +7235,27 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.058823529411764705
+          "mrr": 0.05263157894736842
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.030303030303030304
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.024390243902439025
         }
       ]
     },
@@ -6387,6 +7382,26 @@
           "recallAt10": 0,
           "recallAt50": 1,
           "mrr": 0.045454545454545456
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.1
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.047619047619047616
         }
       ]
     },
@@ -6513,6 +7528,26 @@
           "recallAt10": 0,
           "recallAt50": 1,
           "mrr": 0.034482758620689655
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.16666666666666666
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.2
         }
       ]
     },
@@ -6538,57 +7573,57 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.5
+          "mrr": 0.25
         },
         {
           "label": "hybrid k=0",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.125
         },
         {
           "label": "hybrid k=2",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.125
         },
         {
           "label": "hybrid k=10",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.125
         },
         {
           "label": "hybrid k=60",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.125
         },
         {
           "label": "auto",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.125
         },
         {
           "label": "lexical +rr",
@@ -6608,37 +7643,57 @@
           "recallAt5": 1,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.5
+          "mrr": 0.3333333333333333
         },
         {
           "label": "hybrid k=2 +rr",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.14285714285714285
         },
         {
           "label": "hybrid k=60 +rr",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.14285714285714285
         },
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.25
+          "mrr": 0.14285714285714285
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.041666666666666664
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.05555555555555555
         }
       ]
     },
@@ -6664,7 +7719,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.02
+          "mrr": 0.02040816326530612
         },
         {
           "label": "hybrid k=0",
@@ -6734,7 +7789,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.023809523809523808
+          "mrr": 0.024390243902439025
         },
         {
           "label": "hybrid k=2 +rr",
@@ -6765,6 +7820,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.1111111111111111
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.16666666666666666
         }
       ]
     },
@@ -6790,7 +7865,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.037241379310344824
+          "mrr": 0.04423076923076923
         },
         {
           "label": "hybrid k=0",
@@ -6800,7 +7875,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.021780303030303032
+          "mrr": 0.02361111111111111
         },
         {
           "label": "hybrid k=2",
@@ -6810,7 +7885,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.021780303030303032
+          "mrr": 0.02361111111111111
         },
         {
           "label": "hybrid k=10",
@@ -6820,7 +7895,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.021780303030303032
+          "mrr": 0.02361111111111111
         },
         {
           "label": "hybrid k=60",
@@ -6830,7 +7905,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.021780303030303032
+          "mrr": 0.02361111111111111
         },
         {
           "label": "auto",
@@ -6840,7 +7915,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.021780303030303032
+          "mrr": 0.02361111111111111
         },
         {
           "label": "lexical +rr",
@@ -6857,10 +7932,10 @@
           "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 0,
-          "recallAt10": 0.5,
+          "recallAt5": 0.5,
+          "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.10795454545454546
+          "mrr": 0.15555555555555556
         },
         {
           "label": "hybrid k=2 +rr",
@@ -6870,7 +7945,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.04583333333333334
+          "mrr": 0.04805491990846682
         },
         {
           "label": "hybrid k=60 +rr",
@@ -6880,7 +7955,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.04583333333333334
+          "mrr": 0.04714912280701754
         },
         {
           "label": "auto +rr",
@@ -6890,7 +7965,27 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.04583333333333334
+          "mrr": 0.04805491990846682
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0.5,
+          "recallAt50": 1,
+          "mrr": 0.07168458781362007
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0.5,
+          "recallAt10": 0.5,
+          "recallAt50": 1,
+          "mrr": 0.19444444444444442
         }
       ]
     },
@@ -6915,8 +8010,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.016666666666666666
+          "recallAt50": 1,
+          "mrr": 0.04047619047619047
         },
         {
           "label": "hybrid k=0",
@@ -6925,8 +8020,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.01
+          "recallAt50": 1,
+          "mrr": 0.02219512195121951
         },
         {
           "label": "hybrid k=2",
@@ -6935,8 +8030,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.01
+          "recallAt50": 1,
+          "mrr": 0.02219512195121951
         },
         {
           "label": "hybrid k=10",
@@ -6945,8 +8040,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.01
+          "recallAt50": 1,
+          "mrr": 0.02219512195121951
         },
         {
           "label": "hybrid k=60",
@@ -6955,8 +8050,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.01
+          "recallAt50": 1,
+          "mrr": 0.02219512195121951
         },
         {
           "label": "auto",
@@ -6965,8 +8060,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.01
+          "recallAt50": 1,
+          "mrr": 0.02219512195121951
         },
         {
           "label": "lexical +rr",
@@ -6985,8 +8080,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.022727272727272728
+          "recallAt50": 1,
+          "mrr": 0.05606060606060606
         },
         {
           "label": "hybrid k=2 +rr",
@@ -6995,8 +8090,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.011627906976744186
+          "recallAt50": 1,
+          "mrr": 0.026333789329685362
         },
         {
           "label": "hybrid k=60 +rr",
@@ -7005,8 +8100,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.011627906976744186
+          "recallAt50": 1,
+          "mrr": 0.026333789329685362
         },
         {
           "label": "auto +rr",
@@ -7015,8 +8110,28 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0.5,
-          "mrr": 0.011627906976744186
+          "recallAt50": 1,
+          "mrr": 0.026333789329685362
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.05964912280701754
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.06203007518796992
         }
       ]
     },
@@ -7143,6 +8258,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
         }
       ]
     },
@@ -7168,7 +8303,7 @@
           "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.125
+          "mrr": 0.1
         },
         {
           "label": "hybrid k=0",
@@ -7178,7 +8313,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.0625
+          "mrr": 0.05
         },
         {
           "label": "hybrid k=2",
@@ -7188,7 +8323,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.0625
+          "mrr": 0.05
         },
         {
           "label": "hybrid k=10",
@@ -7198,7 +8333,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.0625
+          "mrr": 0.05
         },
         {
           "label": "hybrid k=60",
@@ -7208,7 +8343,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.0625
+          "mrr": 0.05
         },
         {
           "label": "auto",
@@ -7218,7 +8353,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.0625
+          "mrr": 0.05
         },
         {
           "label": "lexical +rr",
@@ -7235,10 +8370,10 @@
           "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
-          "recallAt5": 1,
+          "recallAt5": 0,
           "recallAt10": 1,
           "recallAt50": 1,
-          "mrr": 0.2
+          "mrr": 0.16666666666666666
         },
         {
           "label": "hybrid k=2 +rr",
@@ -7248,7 +8383,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.09090909090909091
+          "mrr": 0.06666666666666667
         },
         {
           "label": "hybrid k=60 +rr",
@@ -7258,7 +8393,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.09090909090909091
+          "mrr": 0.06666666666666667
         },
         {
           "label": "auto +rr",
@@ -7268,7 +8403,27 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.09090909090909091
+          "mrr": 0.06666666666666667
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.023809523809523808
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.03225806451612903
         }
       ]
     },
@@ -7395,6 +8550,26 @@
           "recallAt10": 0.5,
           "recallAt50": 0.5,
           "mrr": 0.16666666666666666
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0.5,
+          "recallAt10": 0.5,
+          "recallAt50": 1,
+          "mrr": 0.2763157894736842
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0.5,
+          "recallAt50": 1,
+          "mrr": 0.09642857142857142
         }
       ]
     },
@@ -7418,9 +8593,9 @@
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
-          "recallAt10": 0.5,
+          "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.05
+          "mrr": 0.041666666666666664
         },
         {
           "label": "hybrid k=0",
@@ -7430,7 +8605,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.025
+          "mrr": 0.020833333333333332
         },
         {
           "label": "hybrid k=2",
@@ -7440,7 +8615,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.025
+          "mrr": 0.020833333333333332
         },
         {
           "label": "hybrid k=10",
@@ -7450,7 +8625,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.025
+          "mrr": 0.020833333333333332
         },
         {
           "label": "hybrid k=60",
@@ -7460,7 +8635,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.025
+          "mrr": 0.020833333333333332
         },
         {
           "label": "auto",
@@ -7470,7 +8645,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.025
+          "mrr": 0.020833333333333332
         },
         {
           "label": "lexical +rr",
@@ -7490,7 +8665,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.045454545454545456
+          "mrr": 0.038461538461538464
         },
         {
           "label": "hybrid k=2 +rr",
@@ -7500,7 +8675,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.025
+          "mrr": 0.020833333333333332
         },
         {
           "label": "hybrid k=60 +rr",
@@ -7510,7 +8685,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
-          "mrr": 0.025
+          "mrr": 0.020833333333333332
         },
         {
           "label": "auto +rr",
@@ -7520,7 +8695,27 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 0.5,
+          "mrr": 0.020833333333333332
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0.5,
           "mrr": 0.025
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0.5,
+          "mrr": 0.021739130434782608
         }
       ]
     },
@@ -7647,6 +8842,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.022222222222222223
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.037037037037037035
         }
       ]
     },
@@ -7672,7 +8887,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.02857142857142857
+          "mrr": 0.03571428571428571
         },
         {
           "label": "hybrid k=0",
@@ -7681,8 +8896,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.02127659574468085
         },
         {
           "label": "hybrid k=2",
@@ -7691,8 +8906,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.02127659574468085
         },
         {
           "label": "hybrid k=10",
@@ -7701,8 +8916,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.02127659574468085
         },
         {
           "label": "hybrid k=60",
@@ -7711,8 +8926,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.02127659574468085
         },
         {
           "label": "auto",
@@ -7721,8 +8936,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.02127659574468085
         },
         {
           "label": "lexical +rr",
@@ -7742,7 +8957,7 @@
           "recallAt5": 0,
           "recallAt10": 0,
           "recallAt50": 1,
-          "mrr": 0.07142857142857142
+          "mrr": 0.07692307692307693
         },
         {
           "label": "hybrid k=2 +rr",
@@ -7751,8 +8966,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.03571428571428571
         },
         {
           "label": "hybrid k=60 +rr",
@@ -7761,8 +8976,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.03571428571428571
         },
         {
           "label": "auto +rr",
@@ -7771,8 +8986,28 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 0,
-          "mrr": 0
+          "recallAt50": 1,
+          "mrr": 0.03571428571428571
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.09090909090909091
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 1,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.3333333333333333
         }
       ]
     },
@@ -7797,8 +9032,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 1,
-          "mrr": 0.020833333333333332
+          "recallAt50": 0,
+          "mrr": 0
         },
         {
           "label": "hybrid k=0",
@@ -7867,8 +9102,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 1,
-          "mrr": 0.02631578947368421
+          "recallAt50": 0,
+          "mrr": 0
         },
         {
           "label": "hybrid k=2 +rr",
@@ -7899,6 +9134,26 @@
           "recallAt10": 0,
           "recallAt50": 0,
           "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 1,
+          "mrr": 0.09090909090909091
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 1,
+          "recallAt50": 1,
+          "mrr": 0.1
         }
       ]
     },
@@ -7923,8 +9178,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 1,
-          "mrr": 0.02564102564102564
+          "recallAt50": 0,
+          "mrr": 0
         },
         {
           "label": "hybrid k=0",
@@ -7993,8 +9248,8 @@
           "recallAt1": 0,
           "recallAt5": 0,
           "recallAt10": 0,
-          "recallAt50": 1,
-          "mrr": 0.025
+          "recallAt50": 0,
+          "mrr": 0
         },
         {
           "label": "hybrid k=2 +rr",
@@ -8019,6 +9274,26 @@
         {
           "label": "auto +rr",
           "resolvedMode": "hybrid",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid",
+          "resolvedMode": "semantic",
+          "degraded": false,
+          "recallAt1": 0,
+          "recallAt5": 0,
+          "recallAt10": 0,
+          "recallAt50": 0,
+          "mrr": 0
+        },
+        {
+          "label": "daemon-hybrid +rr",
+          "resolvedMode": "semantic",
           "degraded": false,
           "recallAt1": 0,
           "recallAt5": 0,
