@@ -21,6 +21,7 @@ import * as path from "node:path";
 import { type ExtensionMcpServerConfig, registerExtensionMcpServers } from "../../extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionFactory } from "../types.js";
 import { installPluginHooks } from "./hooks-bridge.js";
+import { ensurePluginDataDir, pluginDataDir } from "./locations.js";
 import { type NormalizedPlugin, parsePluginDir } from "./manifest.js";
 
 /** Extension path a plugin is loaded under: `<plugin:my-tool>`. */
@@ -34,15 +35,36 @@ export function pluginIdFromExtensionPath(extensionPath: string): string | undef
 	return match?.[1];
 }
 
-/** Substitute ${CLAUDE_PLUGIN_ROOT} / ${AGENTS_PLUGIN_ROOT} with the plugin root in a string. */
-function substituteRoot(value: string, root: string): string {
-	return value.replace(/\$\{(?:CLAUDE|AGENTS)_PLUGIN_ROOT\}/g, root);
+/**
+ * The template variables a plugin may use, mapped to their values.
+ *
+ * All vendor spellings are honored rather than only the ones hoocode invented.
+ * A plugin does not know which agent is loading it: a Copilot plugin writes
+ * `${PLUGIN_ROOT}`, a Claude one `${CLAUDE_PLUGIN_ROOT}`, and either may use
+ * `${*_PLUGIN_DATA}` for runtime state. Supporting one spelling means the others
+ * reach the shell or the MCP client as literal text.
+ */
+export function pluginVariables(root: string, dataDir: string): Record<string, string> {
+	return {
+		PLUGIN_ROOT: root,
+		CLAUDE_PLUGIN_ROOT: root,
+		AGENTS_PLUGIN_ROOT: root,
+		COPILOT_PLUGIN_ROOT: root,
+		CLAUDE_PLUGIN_DATA: dataDir,
+		COPILOT_PLUGIN_DATA: dataDir,
+		AGENTS_PLUGIN_DATA: dataDir,
+	};
+}
+
+/** Expand every `${VAR}` in {@link pluginVariables}. Unknown `${...}` is left alone. */
+function substituteVars(value: string, vars: Record<string, string>): string {
+	return value.replace(/\$\{([A-Z_]+)\}/g, (whole, name: string) => vars[name] ?? whole);
 }
 
 /** Coerce parsed mcpServers into the standard config shape, substituting root vars. */
 function resolveMcpServers(
 	mcpServers: Record<string, unknown>,
-	root: string,
+	vars: Record<string, string>,
 ): Record<string, ExtensionMcpServerConfig> {
 	const out: Record<string, ExtensionMcpServerConfig> = {};
 	for (const [name, raw] of Object.entries(mcpServers)) {
@@ -55,7 +77,7 @@ function resolveMcpServers(
 				type: cfg.type === "sse" ? "sse" : "http",
 				url: cfg.url,
 				headers: cfg.headers
-					? Object.fromEntries(Object.entries(cfg.headers).map(([k, v]) => [k, substituteRoot(String(v), root)]))
+					? Object.fromEntries(Object.entries(cfg.headers).map(([k, v]) => [k, substituteVars(String(v), vars)]))
 					: undefined,
 				background: cfg.background,
 			};
@@ -63,10 +85,10 @@ function resolveMcpServers(
 		}
 		if (typeof cfg.command !== "string") continue;
 		out[name] = {
-			command: substituteRoot(cfg.command, root),
-			args: cfg.args?.map((a) => substituteRoot(String(a), root)),
+			command: substituteVars(cfg.command, vars),
+			args: cfg.args?.map((a) => substituteVars(String(a), vars)),
 			env: cfg.env
-				? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, substituteRoot(String(v), root)]))
+				? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, substituteVars(String(v), vars)]))
 				: undefined,
 			background: cfg.background,
 		};
@@ -144,6 +166,14 @@ export function withheldCapabilities(plugin: NormalizedPlugin): string[] {
 /** Build a synthetic extension factory that wires one normalized plugin. */
 export function buildPluginFactory(plugin: NormalizedPlugin, options?: PluginFactoryOptions): ExtensionFactory {
 	const passiveOnly = options?.passiveOnly === true;
+	// Only the executable capabilities can reference the data dir, so it is
+	// created only when one of them is actually wired — no empty directory per
+	// installed plugin.
+	const wiresExecutables = !passiveOnly && !!(plugin.hooks || plugin.mcpServers);
+	const vars = pluginVariables(
+		plugin.root,
+		wiresExecutables ? ensurePluginDataDir(plugin.id) : pluginDataDir(plugin.id),
+	);
 	const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		// Resources: contribute the plugin's capability directories. Commands map to
 		// the slash-command surface (`.agents/commands`) and agents to subagent
@@ -165,7 +195,7 @@ export function buildPluginFactory(plugin: NormalizedPlugin, options?: PluginFac
 		// Hooks: true-parity shell bridge. Executable, so withheld from a
 		// project-scoped plugin (see PluginFactoryOptions.passiveOnly).
 		if (plugin.hooks && !passiveOnly) {
-			installPluginHooks(pi, plugin.hooks, plugin.root, () => {
+			installPluginHooks(pi, plugin.hooks, plugin.root, vars, () => {
 				// Non-blocking hook failures are intentionally quiet (Claude Code parity).
 			});
 		}
@@ -173,7 +203,7 @@ export function buildPluginFactory(plugin: NormalizedPlugin, options?: PluginFac
 		// MCP servers: register for the hoo-core mcp-loader to connect on session_start.
 		// Executable, so withheld from a project-scoped plugin.
 		if (plugin.mcpServers && !passiveOnly) {
-			registerExtensionMcpServers(plugin.id, resolveMcpServers(plugin.mcpServers, plugin.root));
+			registerExtensionMcpServers(plugin.id, resolveMcpServers(plugin.mcpServers, vars));
 		}
 	};
 

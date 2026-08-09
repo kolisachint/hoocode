@@ -20,7 +20,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearExtensionMcpServers, getExtensionMcpServers } from "../src/core/extension-mcp-servers.js";
 import { isProjectSuppliedPlugin } from "../src/core/extensions/loader.js";
 import { emitForPlatforms, isPluginRoot } from "../src/core/extensions/plugins/formats/index.js";
-import { buildPluginFactory, parsePluginDir, withheldCapabilities } from "../src/core/extensions/plugins/index.js";
+import {
+	buildPluginFactory,
+	parsePluginDir,
+	pluginVariables,
+	withheldCapabilities,
+} from "../src/core/extensions/plugins/index.js";
+import { pluginDataDir } from "../src/core/extensions/plugins/locations.js";
 import { loadSkills, loadSkillsFromDir } from "../src/core/skills.js";
 
 function writeJson(file: string, data: unknown): void {
@@ -223,5 +229,60 @@ describe("adapter catch-up (step 4)", () => {
 		const manifest = files.find((f) => f.path === "plugin.json");
 		expect(manifest).toBeDefined();
 		expect(JSON.parse(manifest!.content)).toMatchObject({ name: "rich", lspServers: "./lsp.json" });
+	});
+});
+
+describe("plugin runtime variables (step 4b / D9)", () => {
+	it("maps every vendor spelling of root and data", () => {
+		const vars = pluginVariables("/plugins/x", "/data/x");
+		// A plugin does not know which agent is loading it, so all spellings resolve.
+		expect(vars.PLUGIN_ROOT).toBe("/plugins/x");
+		expect(vars.CLAUDE_PLUGIN_ROOT).toBe("/plugins/x");
+		expect(vars.COPILOT_PLUGIN_ROOT).toBe("/plugins/x");
+		expect(vars.AGENTS_PLUGIN_ROOT).toBe("/plugins/x");
+		expect(vars.CLAUDE_PLUGIN_DATA).toBe("/data/x");
+		expect(vars.COPILOT_PLUGIN_DATA).toBe("/data/x");
+	});
+
+	it("keeps the data dir outside every plugin home, so a reinstall cannot wipe it", () => {
+		const data = pluginDataDir("x");
+		expect(data).not.toContain(path.join(".claude", "skills"));
+		expect(data).not.toContain(path.join(".agents", "plugins"));
+		expect(data).toContain(path.join(".agents", "plugin-data"));
+	});
+
+	it("substitutes both root and data into an MCP server config", () => {
+		const dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-vars-"));
+		try {
+			const root = path.join(dir, "varplug");
+			writeJson(path.join(root, ".agents-plugin", "plugin.json"), {
+				name: "varplug",
+				mcpServers: {
+					demo: {
+						command: "${PLUGIN_ROOT}/bin/server",
+						args: ["--state", "${COPILOT_PLUGIN_DATA}/db"],
+						env: { LEGACY: "${CLAUDE_PLUGIN_ROOT}/x", UNKNOWN: "${NOT_A_VAR}" },
+					},
+				},
+			});
+			const plugin = parsePluginDir(root);
+			expect(plugin).not.toBeNull();
+			if (!plugin) return;
+
+			clearExtensionMcpServers();
+			buildPluginFactory(plugin)({ on: () => {}, registerProvider: () => {} } as never);
+			const entry = getExtensionMcpServers().find((e) => e.source === "varplug");
+			const demo = entry?.mcpServers.demo as { command: string; args?: string[]; env?: Record<string, string> };
+
+			expect(demo.command).toBe(path.join(root, "bin", "server").replace(/\\/g, "/"));
+			expect(demo.args?.[0]).toBe("--state");
+			expect(demo.args?.[1]).toContain(path.join(".agents", "plugin-data", "varplug"));
+			expect(demo.env?.LEGACY).toContain(root);
+			// An unrecognized ${...} is left alone rather than blanked.
+			expect(demo.env?.UNKNOWN).toBe("${NOT_A_VAR}");
+			clearExtensionMcpServers();
+		} finally {
+			fs.rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

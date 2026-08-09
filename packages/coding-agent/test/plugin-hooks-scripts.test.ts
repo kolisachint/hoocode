@@ -14,7 +14,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { installPluginHooks } from "../src/core/extensions/plugins/hooks-bridge.js";
+import { pluginVariables } from "../src/core/extensions/plugins/index.js";
 import { installAvailablePlugin } from "../src/core/extensions/plugins/install.js";
+import { ensurePluginDataDir } from "../src/core/extensions/plugins/locations.js";
 import { parsePluginDir } from "../src/core/extensions/plugins/manifest.js";
 import { writeMarketplaceStore } from "../src/core/extensions/plugins/marketplace.js";
 
@@ -97,7 +99,10 @@ describe("plugin hooks + bundled scripts (install → parse → bridge → run)"
 
 		const { pi, handlers } = makePi();
 		const errors: string[] = [];
-		installPluginHooks(pi, parsed!.hooks!, parsed!.root, (m) => errors.push(m));
+		const dataDir = ensurePluginDataDir(parsed!.id);
+		installPluginHooks(pi, parsed!.hooks!, parsed!.root, pluginVariables(parsed!.root, dataDir), (m: string) =>
+			errors.push(m),
+		);
 
 		// Stop → agent_end: the script runs from the INSTALLED root and receives
 		// the event JSON on stdin.

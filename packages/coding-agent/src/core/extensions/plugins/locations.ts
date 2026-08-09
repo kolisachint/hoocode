@@ -30,7 +30,7 @@
  * See docs/plugin-system-architecture.md §5.3 and §8.3.
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { getAgentDir } from "../../../config.js";
@@ -107,6 +107,27 @@ export function candidatePluginDirs(cwd: string, id: string, agentDir: string = 
 		path.join(consumptionPluginsDir(agentDir), slug),
 		path.join(legacyProjectPluginsDir(cwd), slug),
 	];
+}
+
+/**
+ * Persistent, writable directory unique to an installed plugin — the target of
+ * `${CLAUDE_PLUGIN_DATA}` / `${COPILOT_PLUGIN_DATA}`, which both vendors document
+ * as the place for plugin runtime state.
+ *
+ * Deliberately outside every plugin home. A plugin's own directory is replaced
+ * wholesale on promote and deleted on uninstall, and the vendors are explicit
+ * that this must not live "inside the installed-plugins cache directory" — state
+ * that vanishes on reinstall is not state.
+ */
+export function pluginDataDir(id: string, agentDir: string = getAgentDir()): string {
+	return path.join(homeRoot(agentDir), ".agents", "plugin-data", sanitizeForDir(id));
+}
+
+/** {@link pluginDataDir}, created if absent. */
+export function ensurePluginDataDir(id: string, agentDir: string = getAgentDir()): string {
+	const dir = pluginDataDir(id, agentDir);
+	mkdirSync(dir, { recursive: true });
+	return dir;
 }
 
 /** Create an ephemeral draft directory. The caller must promote or {@link discardDraftDir} it. */
