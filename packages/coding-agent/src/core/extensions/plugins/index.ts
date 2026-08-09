@@ -81,12 +81,22 @@ export { parsePluginDir } from "./manifest.js";
  * Discover plugins across the given `plugins/` directories.
  * First-wins on duplicate ids (project dirs should be listed before global).
  */
+/**
+ * A skills directory holds plain skills and plugins side by side, and the
+ * manifest is the only thing separating them. Everywhere else the manifest is
+ * optional and components in their default locations are enough.
+ */
+function isSkillsDirectory(dir: string): boolean {
+	return path.basename(dir) === "skills";
+}
+
 export function discoverPlugins(pluginDirs: string[]): NormalizedPlugin[] {
 	const plugins: NormalizedPlugin[] = [];
 	const seen = new Set<string>();
 
 	for (const dir of pluginDirs) {
 		if (!fs.existsSync(dir)) continue;
+		const requireManifest = isSkillsDirectory(dir);
 		let entries: fs.Dirent[];
 		try {
 			entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -95,7 +105,7 @@ export function discoverPlugins(pluginDirs: string[]): NormalizedPlugin[] {
 		}
 		for (const entry of entries) {
 			if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-			const plugin = parsePluginDir(path.join(dir, entry.name));
+			const plugin = parsePluginDir(path.join(dir, entry.name), { requireManifest });
 			if (plugin && !seen.has(plugin.id)) {
 				seen.add(plugin.id);
 				plugins.push(plugin);

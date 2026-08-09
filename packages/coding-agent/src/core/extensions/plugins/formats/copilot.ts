@@ -47,6 +47,7 @@ import * as path from "node:path";
 import type { NormalizedPlugin } from "../manifest.js";
 import {
 	authoredHooksToConfig,
+	detectUnsupportedSurfaces,
 	dirIfExists,
 	emitJson,
 	emitMarkdown,
@@ -58,26 +59,34 @@ import {
 	resolveCapabilityDir,
 	slug,
 	toolsYamlList,
+	unknownManifestFields,
 } from "./shared.js";
 import type { EmittedFile, PluginDraft, PluginFormatAdapter } from "./types.js";
 
 const MARKER_DIR = ".github";
 /**
- * Manifest probe order: `.github/plugin/plugin.json` first — hoocode's
- * preferred Copilot home, matching the real-world plugins indexed by
- * github/copilot-plugins (e.g. microsoft/work-iq) — then the Copilot CLI
- * reference's other locations (root `plugin.json`, `.plugin/plugin.json`) and
- * hoocode's legacy `.github/copilot-plugin.json`. (`.claude-plugin/plugin.json`,
- * also probed by the CLI, belongs to the Claude adapter.)
+ * Manifest probe order, matching the Copilot CLI reference exactly:
+ * `.plugin/` → root → `.github/plugin/` → (`.claude-plugin/`, which belongs to
+ * the Claude adapter), with hoocode's legacy `.github/copilot-plugin.json` last.
+ *
+ * The order is the vendor's, not ours: a plugin carrying more than one manifest
+ * must resolve to the same one under hoocode as under Copilot CLI, or the two
+ * read different metadata from the same directory.
  */
 const MANIFEST_REL_PATHS = [
-	path.join(MARKER_DIR, "plugin", "plugin.json"),
-	"plugin.json",
 	path.join(".plugin", "plugin.json"),
+	"plugin.json",
+	path.join(MARKER_DIR, "plugin", "plugin.json"),
 	path.join(MARKER_DIR, "copilot-plugin.json"),
 ] as const;
-/** Authored manifest location: the preferred `.github/plugin/` home. */
-const emitManifestRelPath = path.join(MARKER_DIR, "plugin", "plugin.json");
+/**
+ * Authored manifest location: root `plugin.json`, which is what the Copilot CLI
+ * plugin-creating guide teaches and probe position #2. An earlier version emitted
+ * `.github/plugin/plugin.json` while the comment here claimed root was canonical;
+ * the comment was right. (`.github/plugin/` is still *read*, third in the probe
+ * order above, since real marketplace-indexed plugins use it.)
+ */
+const emitManifestRelPath = "plugin.json";
 
 /**
  * Copilot prompt-file home. `.github/prompts/<name>.prompt.md` is the current
@@ -86,9 +95,12 @@ const emitManifestRelPath = path.join(MARKER_DIR, "plugin", "plugin.json");
  * commands — not merely a legacy fallback.
  */
 const PROMPTS_DIR = path.join(MARKER_DIR, "prompts");
-// Legacy authored layout (read-only fallbacks).
+// Legacy authored layout (read-only fallback).
 const LEGACY_CHATMODES_DIR = path.join(MARKER_DIR, "chatmodes");
-const LEGACY_MCP_FILE = path.join(MARKER_DIR, "mcp.json");
+// Documented alternates, not legacy: the reference lists both locations for each.
+const ALT_MCP_FILE = path.join(MARKER_DIR, "mcp.json");
+const ALT_HOOKS_FILE = path.join("hooks", "hooks.json");
+// hoocode's own older authored layout, still read so those plugins keep loading.
 const LEGACY_HOOKS_FILE = path.join(MARKER_DIR, "hooks", "hooks.json");
 
 /** Read a hooks JSON file (either `{ hooks: {...} }` or a bare event map). */
@@ -146,6 +158,10 @@ export const copilotFormat: PluginFormatAdapter = {
 		}),
 	},
 
+	hasManifest(root: string): boolean {
+		return manifestPathFor(root) !== undefined;
+	},
+
 	detectPlugin(root: string): boolean {
 		return manifestPathFor(root) !== undefined;
 	},
@@ -177,15 +193,20 @@ export const copilotFormat: PluginFormatAdapter = {
 			commandsDir: resolveCapabilityDir(root, raw.commands, "commands") ?? dirIfExists(root, PROMPTS_DIR),
 			agentsDir: resolveCapabilityDir(root, raw.agents, "agents") ?? dirIfExists(root, LEGACY_CHATMODES_DIR),
 			themesDir: resolveCapabilityDir(root, raw.themes, "themes"),
-			// Copilot CLI plugins put hooks config at root `hooks.json`; normalizeHooks
-			// covers the Claude-mirror `hooks/hooks.json`, then the legacy location.
+			// Manifest first, then the reference's two locations (root `hooks.json`
+			// and `hooks/hooks.json`), then hoocode's legacy `.github/hooks/`.
 			hooks:
 				normalizeHooks(raw.hooks, root) ??
 				readHooksFile(root, "hooks.json") ??
+				readHooksFile(root, ALT_HOOKS_FILE) ??
 				readHooksFile(root, LEGACY_HOOKS_FILE),
-			mcpServers: normalizeMcp(raw.mcpServers, root) ?? normalizeMcp(undefined, root, LEGACY_MCP_FILE),
+			mcpServers: normalizeMcp(raw.mcpServers, root) ?? normalizeMcp(undefined, root, ALT_MCP_FILE),
 			// Providers are a native-only concept.
 			providers: undefined,
+			// `extensions` and `lspServers` are real Copilot manifest keys we do not
+			// model; carried here so an edit cannot drop them.
+			unknownFields: unknownManifestFields(raw),
+			unsupportedSurfaces: detectUnsupportedSurfaces(root),
 		};
 	},
 
@@ -199,6 +220,7 @@ export const copilotFormat: PluginFormatAdapter = {
 		files.push({
 			path: emitManifestRelPath,
 			content: emitJson({
+				...(draft.unknownFields ?? {}),
 				name: draft.id,
 				...(draft.version ? { version: draft.version } : {}),
 				...(draft.description ? { description: draft.description } : {}),

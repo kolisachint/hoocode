@@ -32,21 +32,54 @@ export function getFormatByPlatform(platform: MarketplacePlatform): PluginFormat
 }
 
 /**
- * Whether `root` is a plugin directory in any supported format.
- *
- * Cheap (manifest existence only, no parse) because the skill scanner calls it
- * for every directory it walks: a plugin's inner `skills/<name>/SKILL.md` belongs
- * to that plugin and must not also surface as a loose top-level skill.
+ * Whether `root` carries an actual manifest file, in any supported format.
+ * Cheap: existence only, no parse.
  */
-export function isPluginRoot(root: string): boolean {
-	return PLUGIN_FORMATS.some((format) => format.detectPlugin(root));
+export function hasAnyManifest(root: string): boolean {
+	return PLUGIN_FORMATS.some((format) => format.hasManifest(root));
 }
 
-/** Every platform present in a plugin directory, precedence winner first. */
+/**
+ * Whether the skill scanner should treat `root` as a plugin and stop descending.
+ *
+ * Keyed on the **manifest**, deliberately not on `detectPlugin`. Claude's
+ * manifest-optional rule counts a bare `SKILL.md` as enough to make a directory a
+ * plugin — true inside a plugins directory, catastrophic inside a skills
+ * directory, where it describes every plain skill folder there is. Using
+ * `detectPlugin` here would make the scanner skip all of them.
+ */
+export function isPluginRoot(root: string): boolean {
+	return hasAnyManifest(root);
+}
+
+/**
+ * Formats that recognize `root`, manifest-bearing ones first.
+ *
+ * The two-pass order matters. Claude's manifest-optional rule means its adapter
+ * recognizes any directory with components in default locations — including a
+ * Copilot plugin, which has its own manifest and a lower precedence number. A
+ * single precedence-ordered pass would therefore hand every Copilot plugin to
+ * the Claude adapter. An explicit manifest always beats an inferred match.
+ */
+function matchingFormats(root: string): PluginFormatAdapter[] {
+	const withManifest = PLUGIN_FORMATS.filter((f) => f.hasManifest(root));
+	const inferred = PLUGIN_FORMATS.filter((f) => !f.hasManifest(root) && f.detectPlugin(root));
+	return [...withManifest, ...inferred];
+}
+
+/**
+ * Every platform a plugin directory *offers*, precedence winner first.
+ *
+ * Manifest-bearing formats only: an inferred match means "Claude would also load
+ * this", not "this directory ships a Claude layout", and reporting it would make
+ * a Copilot-only plugin claim `["github", "claude"]`. When nothing has a manifest
+ * the inferred winner is all there is, so it stands alone.
+ */
 function detectPlatforms(root: string): MarketplacePlatform[] {
+	const declared = PLUGIN_FORMATS.filter((f) => f.hasManifest(root));
 	const platforms: MarketplacePlatform[] = [];
-	for (const format of PLUGIN_FORMATS) {
-		if (format.detectPlugin(root) && !platforms.includes(format.platform)) platforms.push(format.platform);
+	for (const format of declared.length > 0 ? declared : matchingFormats(root).slice(0, 1)) {
+		if (!platforms.includes(format.platform)) platforms.push(format.platform);
 	}
 	return platforms;
 }
@@ -58,15 +91,17 @@ function detectPlatforms(root: string): MarketplacePlatform[] {
  * `supportPlatform` records *every* format present (not just the winner), so a
  * directory carrying more than one vendor layout reports all of them.
  */
-export function parsePluginWithFormats(root: string): NormalizedPlugin | null {
-	for (const format of PLUGIN_FORMATS) {
-		if (format.detectPlugin(root)) {
-			const parsed = format.parsePlugin(root);
-			if (parsed) {
-				// Winner's platform is already first via precedence order; fold in the rest.
-				const supportPlatform = detectPlatforms(root);
-				return { ...parsed, supportPlatform };
-			}
+export function parsePluginWithFormats(root: string, options?: { requireManifest?: boolean }): NormalizedPlugin | null {
+	// Inside a skills directory the manifest is what promotes a folder from plain
+	// skill to plugin, so manifest-less detection must be switched off there or
+	// every skill folder becomes a plugin. See §1.6.
+	if (options?.requireManifest && !hasAnyManifest(root)) return null;
+	for (const format of matchingFormats(root)) {
+		const parsed = format.parsePlugin(root);
+		if (parsed) {
+			// Winner's platform is already first; fold in the rest.
+			const supportPlatform = detectPlatforms(root);
+			return { ...parsed, supportPlatform };
 		}
 	}
 	return null;

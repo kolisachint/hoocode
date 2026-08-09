@@ -28,6 +28,59 @@ export interface RawManifest {
 	mcpServers?: Record<string, unknown> | string;
 	/** Native-only. */
 	providers?: unknown;
+	/** Copilot: extension directories, `{ paths, exclusive }`. Parsed for preservation only. */
+	extensions?: unknown;
+	/** Copilot: LSP config path or inline definitions. Parsed for preservation only. */
+	lspServers?: unknown;
+	/** Any key the adapter does not model. */
+	[key: string]: unknown;
+}
+
+/** Manifest keys every adapter models; anything else is preserved via `unknownFields`. */
+const MODELLED_MANIFEST_KEYS = new Set([
+	"name",
+	"version",
+	"description",
+	"author",
+	"skills",
+	"commands",
+	"agents",
+	"themes",
+	"hooks",
+	"mcpServers",
+	"providers",
+	"$schema",
+]);
+
+/** Manifest keys not modelled here, preserved verbatim so a re-emit cannot drop them. */
+export function unknownManifestFields(raw: RawManifest): Record<string, unknown> | undefined {
+	const out: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(raw)) {
+		if (!MODELLED_MANIFEST_KEYS.has(key)) out[key] = value;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * On-disk component surfaces hoocode does not load, checked against both vendors'
+ * file-location tables. The files are left alone; naming them is what makes the
+ * gap visible (see NormalizedPlugin.unsupportedSurfaces).
+ */
+const UNSUPPORTED_SURFACES: ReadonlyArray<{ rel: string; label: string }> = [
+	{ rel: "workflows", label: "workflows/" },
+	{ rel: "output-styles", label: "output-styles/" },
+	{ rel: "monitors/monitors.json", label: "monitors/" },
+	{ rel: "bin", label: "bin/" },
+	{ rel: "settings.json", label: "settings.json" },
+	{ rel: ".lsp.json", label: ".lsp.json" },
+	{ rel: "lsp.json", label: "lsp.json" },
+	{ rel: path.join(".github", "lsp.json"), label: ".github/lsp.json" },
+];
+
+/** Which unsupported surfaces are present under `root`. */
+export function detectUnsupportedSurfaces(root: string): string[] | undefined {
+	const found = UNSUPPORTED_SURFACES.filter((s) => fs.existsSync(path.join(root, s.rel))).map((s) => s.label);
+	return found.length > 0 ? found : undefined;
 }
 
 export function readJson<T>(file: string): T | null {

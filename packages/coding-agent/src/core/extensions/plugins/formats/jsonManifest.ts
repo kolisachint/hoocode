@@ -7,11 +7,13 @@
  * from this factory so the shared reader/writer lives in one place.
  */
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { NormalizedPlugin, PluginProvider } from "../manifest.js";
 import {
 	authoredHooksToConfig,
 	claudeStyleWorkspace,
+	detectUnsupportedSurfaces,
 	emitJson,
 	emitMarkdown,
 	normalizeHooks,
@@ -21,13 +23,27 @@ import {
 	readJson,
 	resolveCapabilityDir,
 	slug,
+	unknownManifestFields,
 } from "./shared.js";
 import type { EmittedFile, PluginDraft, PluginFormatAdapter, PluginFormatId } from "./types.js";
 
 const MANIFEST_FILE = "plugin.json";
 
+/** Component locations that make a directory a plugin even with no manifest. */
+const CONVENTIONAL_COMPONENTS = ["skills", "commands", "agents", "hooks", ".mcp.json", "SKILL.md"];
+
+/** True when `root` carries any component in its default location. */
+function hasConventionalComponents(root: string): boolean {
+	return CONVENTIONAL_COMPONENTS.some((rel) => fs.existsSync(path.join(root, rel)));
+}
+
 interface JsonManifestOptions {
 	id: Extract<PluginFormatId, "agents" | "claude">;
+	/**
+	 * Honor the vendor's manifest-optional rule. True for Claude, whose reference
+	 * states the manifest is optional for marketplace and `--plugin-dir` plugins.
+	 */
+	allowManifestless?: boolean;
 	/** Marker subdirectory, e.g. ".agents-plugin". */
 	manifestDir: string;
 	/** Workspace-level artifact root, e.g. ".agents" / ".claude" (skills/, agents/, commands/ live under it). */
@@ -49,13 +65,26 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 		marketplaceFiles: [path.join(opts.manifestDir, "marketplace.json")],
 		workspace: claudeStyleWorkspace(opts.workspaceRoot),
 
-		detectPlugin(root: string): boolean {
+		hasManifest(root: string): boolean {
 			return readJson(path.join(root, manifestRelPath)) != null;
+		},
+
+		detectPlugin(root: string): boolean {
+			if (this.hasManifest(root)) return true;
+			// Manifest-optional: a directory whose components sit in the default
+			// locations is a plugin, with the name derived from the directory.
+			//
+			// Deliberately NOT applied inside a skills directory: there the manifest
+			// is precisely what promotes a folder from plain skill to plugin, so
+			// `discoverPlugins` passes `requireManifest` for those roots. Two vendor
+			// rules that look contradictory until you notice they describe different
+			// containers. See docs/plugin-system-architecture.md §1.6 and §2.1.
+			return opts.allowManifestless === true && hasConventionalComponents(root);
 		},
 
 		parsePlugin(root: string): NormalizedPlugin | null {
 			const manifestPath = path.join(root, manifestRelPath);
-			const raw = readJson<RawManifest>(manifestPath);
+			const raw = readJson<RawManifest>(manifestPath) ?? (this.detectPlugin(root) ? {} : null);
 			if (!raw) return null;
 
 			const id = (raw.name ?? path.basename(root)).trim();
@@ -74,13 +103,19 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 				format: opts.id,
 				// Single-format view; the registry widens this to every format present.
 				supportPlatform: [opts.id],
-				skillsDir: resolveCapabilityDir(root, raw.skills, "skills"),
+				// A plugin shipping exactly one skill may put SKILL.md at its root
+				// instead of creating skills/ (Claude reference, "Skills").
+				skillsDir:
+					resolveCapabilityDir(root, raw.skills, "skills") ??
+					(fs.existsSync(path.join(root, "SKILL.md")) ? root : undefined),
 				commandsDir: resolveCapabilityDir(root, raw.commands, "commands"),
 				agentsDir: resolveCapabilityDir(root, raw.agents, "agents"),
 				themesDir: resolveCapabilityDir(root, raw.themes, "themes"),
 				hooks: normalizeHooks(raw.hooks, root),
 				mcpServers: normalizeMcp(raw.mcpServers, root),
 				providers,
+				unknownFields: unknownManifestFields(raw),
+				unsupportedSurfaces: detectUnsupportedSurfaces(root),
 			};
 		},
 
@@ -98,6 +133,7 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 			files.push({
 				path: manifestRelPath,
 				content: emitJson({
+					...(draft.unknownFields ?? {}),
 					name: draft.id,
 					...(draft.version ? { version: draft.version } : {}),
 					...(draft.description ? { description: draft.description } : {}),

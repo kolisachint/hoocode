@@ -140,7 +140,7 @@ describe("plugin authoring honors the session targets", () => {
 		});
 
 		expect(result.dest).toBe(destFor("gh-only", "github"));
-		expect(fs.existsSync(path.join(result.dest, ".github", "plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(result.dest, "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin"))).toBe(false);
 		expect(fs.existsSync(path.join(result.dest, "skills", "helper", "SKILL.md"))).toBe(true);
 
@@ -217,7 +217,7 @@ describe("plugin authoring honors the session targets", () => {
 		writePluginDraft({ id: "dual", skills: [{ name: "s", body: "S." }] });
 
 		expect(fs.existsSync(path.join(destFor("dual", "claude"), ".claude-plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(destFor("dual", "github"), ".github", "plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(destFor("dual", "github"), "plugin.json"))).toBe(true);
 	});
 });
 

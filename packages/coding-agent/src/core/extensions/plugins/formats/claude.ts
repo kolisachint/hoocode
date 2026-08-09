@@ -16,4 +16,9 @@ export const claudeFormat = createJsonManifestAdapter({
 	precedence: 1,
 	label: "Claude Code (.claude-plugin)",
 	supportsProviders: false,
+	// The Claude reference makes the manifest optional for marketplace and
+	// --plugin-dir plugins; components are auto-discovered and the name comes
+	// from the directory. Skills-directory plugins are the exception and are
+	// handled by discoverPlugins, not here.
+	allowManifestless: true,
 });

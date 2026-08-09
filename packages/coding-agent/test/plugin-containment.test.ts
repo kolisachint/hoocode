@@ -19,7 +19,7 @@ import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearExtensionMcpServers, getExtensionMcpServers } from "../src/core/extension-mcp-servers.js";
 import { isProjectSuppliedPlugin } from "../src/core/extensions/loader.js";
-import { isPluginRoot } from "../src/core/extensions/plugins/formats/index.js";
+import { emitForPlatforms, isPluginRoot } from "../src/core/extensions/plugins/formats/index.js";
 import { buildPluginFactory, parsePluginDir, withheldCapabilities } from "../src/core/extensions/plugins/index.js";
 import { loadSkills, loadSkillsFromDir } from "../src/core/skills.js";
 
@@ -153,5 +153,75 @@ describe("plugin content containment (step 3)", () => {
 		expect(gated.events).not.toContain("tool_call");
 		expect(gated.mcp).toEqual([]);
 		clearExtensionMcpServers();
+	});
+});
+
+describe("adapter catch-up (step 4)", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-adapter-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("treats a manifest-less directory with default components as a plugin", () => {
+		const root = path.join(dir, "inferred");
+		fs.mkdirSync(path.join(root, "skills", "s"), { recursive: true });
+		fs.writeFileSync(path.join(root, "skills", "s", "SKILL.md"), "---\nname: s\ndescription: d\n---\n\nB.\n");
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.id).toBe("inferred");
+		expect(plugin?.skillsDir).toBe(path.join(root, "skills"));
+		// …but not when a manifest is what's being tested for (a skills directory).
+		expect(parsePluginDir(root, { requireManifest: true })).toBeNull();
+	});
+
+	it("loads a single SKILL.md at the plugin root as that plugin's one skill", () => {
+		const root = path.join(dir, "one-skill");
+		writeJson(path.join(root, ".claude-plugin", "plugin.json"), { name: "one-skill" });
+		fs.writeFileSync(path.join(root, "SKILL.md"), "---\nname: solo\ndescription: d\n---\n\nB.\n");
+		expect(parsePluginDir(root)?.skillsDir).toBe(root);
+	});
+
+	it("an explicit manifest beats an inferred match from another format", () => {
+		// A Copilot plugin also looks manifest-less-Claude-ish (it has skills/), and
+		// claude sorts first by precedence. Without preferring declared manifests it
+		// would be misreported as a Claude plugin.
+		const root = path.join(dir, "copilot-only");
+		writeJson(path.join(root, "plugin.json"), { name: "copilot-only" });
+		fs.mkdirSync(path.join(root, "skills", "s"), { recursive: true });
+		fs.writeFileSync(path.join(root, "skills", "s", "SKILL.md"), "---\nname: s\ndescription: d\n---\n\nB.\n");
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.format).toBe("copilot");
+		expect(plugin?.supportPlatform).toEqual(["github"]);
+	});
+
+	it("preserves manifest keys it does not model, and reports unsupported surfaces", () => {
+		const root = path.join(dir, "rich");
+		writeJson(path.join(root, "plugin.json"), {
+			name: "rich",
+			lspServers: "./lsp.json",
+			extensions: { paths: ["./ext"], exclusive: true },
+		});
+		fs.mkdirSync(path.join(root, "bin"), { recursive: true });
+		writeJson(path.join(root, "monitors", "monitors.json"), []);
+
+		const plugin = parsePluginDir(root);
+		expect(plugin?.unknownFields).toMatchObject({ lspServers: "./lsp.json" });
+		expect(plugin?.unsupportedSurfaces).toEqual(expect.arrayContaining(["bin/", "monitors/"]));
+	});
+
+	it("carries unknown manifest keys back out through the emitter", () => {
+		const files = emitForPlatforms(
+			{ id: "rich", supportPlatform: ["github"], unknownFields: { lspServers: "./lsp.json" } },
+			["github"],
+		);
+		const manifest = files.find((f) => f.path === "plugin.json");
+		expect(manifest).toBeDefined();
+		expect(JSON.parse(manifest!.content)).toMatchObject({ name: "rich", lspServers: "./lsp.json" });
 	});
 });

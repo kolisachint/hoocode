@@ -354,6 +354,8 @@ export function mergePluginDraft(
 		description: delta.description ?? existing.description,
 		author: delta.author ?? existing.author,
 		supportPlatform: targets,
+		// Keys we do not model survive the manifest rewrite.
+		unknownFields: existing.unknownFields,
 		// Directory-scanned capabilities: delta-only; existing files stay on disk.
 		skills: delta.skills,
 		commands: delta.commands,
@@ -491,6 +493,7 @@ export function removeFromPlugin(cwd: string, id: string, spec: RemovalSpec): Re
 				description: existing.description,
 				author: existing.author,
 				supportPlatform: targets,
+				unknownFields: existing.unknownFields,
 				hooks: remainingHooks.length ? remainingHooks : undefined,
 				mcpServers: remainingMcp.length ? remainingMcp : undefined,
 			},

@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–3 landed, steps 4+ not started (§8.5)
+**Status:** agreed plan; steps 0–4 landed, steps 4b+ not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -910,10 +910,10 @@ where authored plugins are half-live.
 | 1 | ~~Split the resolver; `--platform` (D4 scope); reject `agents` for plugins~~ **done** | Everything reads from this |
 | 2 | ~~Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path, draft-then-promote (§4.2)~~ **done** — new `plugins/locations.ts` owns all three roles | Same decision as step 1. The mechanism shipped here, not with the gates, so that by the time G1 exists there is already somewhere safe to run it |
 | 3 | ~~`.claude/skills` discovery, stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9)~~ **done** | Without this the D3 target is half-live |
-| 4 | Adapter catch-up, both vendors (§2.1): Claude surfaces; Copilot probe order, `extensions`, `lspServers`, root-manifest emit (D8) | Now a production blocker: we emit into these ecosystems |
+| 4 | ~~Adapter catch-up, both vendors (§2.1)~~ **done** — plus `unknownFields`/`unsupportedSurfaces`, which step 6 had scheduled separately | Now a production blocker: we emit into these ecosystems |
 | 4b | Runtime variables + per-plugin data dir (D9), both platforms | Small, self-contained, and unblocks any plugin that uses them |
 | 5 | G1 + G2, delegating to `claude plugin validate` (no Copilot equivalent exists) | Cheapest real green signal; step 4 makes it pass for the right reasons, step 2 gave it somewhere safe to run |
-| 6 | Tier 1 lenient reader + `unsupportedSurfaces` | Turns the *next* drift into a signal |
+| 6 | ~~Tier 1 lenient reader + `unsupportedSurfaces`~~ **done in step 4** — a re-emit drops any manifest key the reader does not carry, so preservation could not wait | Turns the *next* drift into a signal |
 | 7 | G3 sandboxed smoke | Makes the executable confirm gate meaningful |
 | 8 | Marketplace index TTL + explicit refresh (§3.1) | Small; the inherit story goes stale silently without it |
 | 9 | `PackagePlugin` + publish lane, GitHub flow primary | Needs eval green-signal-capable; the only GitHub route |

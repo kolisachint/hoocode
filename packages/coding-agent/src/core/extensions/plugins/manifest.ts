@@ -79,6 +79,24 @@ export interface NormalizedPlugin {
 	mcpServers?: Record<string, unknown>;
 	/** Native-only: providers to register. */
 	providers?: PluginProvider[];
+	/**
+	 * Manifest keys this adapter does not model, preserved verbatim.
+	 *
+	 * Load-bearing, not diagnostic: an edit re-emits the manifest, so anything not
+	 * carried here is silently dropped from a plugin we did not write in full.
+	 * Vendor schemas grow independently of ours (Copilot has `extensions` and
+	 * `lspServers`; Claude keeps adding component keys), and losing one on a
+	 * plugin destined for someone else's ecosystem is worse than failing to read
+	 * it.
+	 */
+	unknownFields?: Record<string, unknown>;
+	/**
+	 * On-disk surfaces present but unhandled, e.g. `[".lsp.json", "monitors/"]`.
+	 * Reported rather than implemented: the files stay on disk untouched, and
+	 * `ListPlugins` says so, which turns the next round of vendor drift into a
+	 * visible signal instead of a silent gap.
+	 */
+	unsupportedSurfaces?: string[];
 }
 
 /**
@@ -87,6 +105,6 @@ export interface NormalizedPlugin {
  *
  * Delegates to the format registry; see {@link ./formats/index.ts}.
  */
-export function parsePluginDir(root: string): NormalizedPlugin | null {
-	return parsePluginWithFormats(root);
+export function parsePluginDir(root: string, options?: { requireManifest?: boolean }): NormalizedPlugin | null {
+	return parsePluginWithFormats(root, options);
 }

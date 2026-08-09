@@ -18,6 +18,7 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { getAgentDir } from "../../../config.js";
 import { defaultPluginDirs } from "../loader.js";
+import { hasAnyManifest } from "./formats/index.js";
 import type { MarketplacePlatform } from "./formats/types.js";
 import { discoverPlugins } from "./index.js";
 import {
@@ -305,10 +306,13 @@ export async function installAvailablePlugin(
 	}
 
 	let parsed = parsePluginDir(dest);
-	if (!parsed) {
+	if (!hasAnyManifest(dest)) {
 		// Manifest-less plugin dir (some marketplaces index bare capability trees,
-		// e.g. a plugin that is just a `skills/` directory): synthesize a native
-		// manifest from the marketplace entry so the standard loader can carry it.
+		// e.g. a plugin that is just a `skills/` directory). Such a directory now
+		// *parses* on its own — the vendors make the manifest optional — but the
+		// entry's name and description live only in the marketplace index, and the
+		// derived id would be the sanitized directory name. Synthesize a native
+		// manifest so both survive the install.
 		const manifestDir = path.join(dest, ".agents-plugin");
 		mkdirSync(manifestDir, { recursive: true });
 		writeFileSync(
