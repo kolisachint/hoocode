@@ -2130,7 +2130,13 @@ export class AgentSession {
 			return { activated: false, message: `No recognizable plugin manifest at ${pluginDir}.` };
 		}
 
-		const metadata: PathMetadata = { source: "plugin", scope: "project", origin: "top-level" };
+		// Scope follows where the plugin actually lives: a project plugin sits under
+		// the workspace, anything else (the global plugin dirs, a vendor drop-in) is
+		// user scope. Reported verbatim in the config selector, so a hardcoded
+		// "project" would mislabel every globally installed plugin.
+		const scope: PathMetadata["scope"] =
+			plugin.root === this._cwd || plugin.root.startsWith(`${this._cwd}${sep}`) ? "project" : "user";
+		const metadata: PathMetadata = { source: "plugin", scope, origin: "top-level" };
 		const paths: ResourceExtensionPaths = {
 			skillPaths: plugin.skillsDir ? [{ path: plugin.skillsDir, metadata }] : undefined,
 			slashCommandPaths: plugin.commandsDir ? [{ path: plugin.commandsDir, metadata }] : undefined,

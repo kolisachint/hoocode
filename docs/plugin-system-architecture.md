@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** proposal (nothing here is implemented yet)
+**Status:** agreed plan; step 0 landed, steps 1+ not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -835,14 +835,16 @@ rather than a constant. `UpdatePlugin` and `RemovePluginCapability` need to know
 **Two pre-existing defects sitting in the blast radius**, both worth fixing
 first because the location change touches them anyway:
 
-- `extensions/core/marketplace.ts:48-50` defines its own `storePath` and
-  `cacheDir`, and lines 38-40 a private copy of `sanitizeForDir`. Its own
-  docstring claims the shared mechanics live in `install.ts` "so this command and
-  the model-facing lifecycle tools never drift" — they already have. Delete the
-  duplicates before moving anything.
-- `activatePlugin` hardcodes `metadata: { source: "plugin", scope: "project" }`
-  (`agent-session.ts:2133`) for every plugin including global ones. Under
-  user-scoped plugins this mislabels provenance everywhere it surfaces.
+- ~~`extensions/core/marketplace.ts` defined its own `storePath`, `cacheDir` and
+  `sanitizeForDir`, while its docstring claimed the shared mechanics live in
+  `install.ts` "so this command and the model-facing lifecycle tools never
+  drift".~~ **Fixed in step 0**: `marketplaceStorePath` and a new
+  `marketplaceCacheRoot` are exported from `install.ts` and the three local
+  copies are gone, so the docstring is now true.
+- ~~`activatePlugin` hardcoded `scope: "project"` for every plugin including
+  global ones, mislabelling provenance in the config selector
+  (`config-selector.ts:77` renders it verbatim).~~ **Fixed in step 0**: scope is
+  derived from whether the plugin root sits under the workspace.
 
 **Tests that move:** `plugin-authoring.test.ts` (11 hardcoded
 `.agents/plugins` paths), `plugin-lifecycle.test.ts`, `plugin-e2e-official.test.ts`,
@@ -876,7 +878,7 @@ where authored plugins are half-live.
 
 | Step | Work | Why here |
 |---|---|---|
-| 0 | Delete the `/plugin` duplicates; fix `activatePlugin` scope metadata | Pre-existing defects directly under the later steps |
+| 0 | ~~Delete the `/plugin` duplicates; fix `activatePlugin` scope metadata~~ **done** | Pre-existing defects directly under the later steps |
 | 1 | Split the resolver; `--platform` (D4 scope); reject `agents` for plugins | Everything reads from this |
 | 2 | Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path. **Includes the draft-then-promote contract (§4.2)** | Same decision as step 1. The mechanism ships here, not with the gates, so that by the time G1 exists there is already somewhere safe to run it |
 | 3 | `~/.claude/skills` + `<cwd>/.claude/skills` discovery, stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9) | Without this the D3 target is half-live |

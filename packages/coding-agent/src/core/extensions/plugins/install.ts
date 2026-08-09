@@ -35,7 +35,8 @@ export function installedPluginsDir(cwd: string): string {
 	return path.join(cwd, ".agents", "plugins");
 }
 
-function marketplaceStorePath(cwd: string): string {
+/** `.agents/marketplaces.json` — the added-marketplace registry. Shared with the `/plugin` command. */
+export function marketplaceStorePath(cwd: string): string {
 	return path.join(cwd, ".agents", "marketplaces.json");
 }
 
@@ -74,9 +75,14 @@ export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string 
 	{ name: "copilot-plugins", url: "https://github.com/github/copilot-plugins" },
 ];
 
+/** Root of the local marketplace clone cache. Shared with the `/plugin` command. */
+export function marketplaceCacheRoot(cwd: string): string {
+	return path.join(cwd, ".agents", "marketplace-cache");
+}
+
 /** Local cache directory for a marketplace fetched from `url` (same convention as `/plugin marketplace add`). */
 export function marketplaceCacheDir(cwd: string, url: string): string {
-	return path.join(cwd, ".agents", "marketplace-cache", sanitizeForDir(url));
+	return path.join(marketplaceCacheRoot(cwd), sanitizeForDir(url));
 }
 
 /**

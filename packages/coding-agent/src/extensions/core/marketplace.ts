@@ -25,6 +25,9 @@ import {
 	findAvailablePlugin,
 	installAvailablePlugin,
 	listAvailablePlugins,
+	marketplaceCacheDir,
+	marketplaceCacheRoot,
+	marketplaceStorePath,
 	readMarketplaceRecords,
 	uninstallPlugin,
 } from "../../core/extensions/plugins/install.js";
@@ -36,19 +39,11 @@ import {
 } from "../../core/extensions/plugins/marketplace.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 
-function sanitizeForDir(s: string): string {
-	return s.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
-}
-
 function isGitSource(loc: string): boolean {
 	return /^https?:\/\//.test(loc) || loc.startsWith("git@") || loc.endsWith(".git");
 }
 
 export function setupMarketplace(pi: ExtensionAPI): void {
-	// `.agents/` is the primary, cross-vendor home for the added-marketplace registry.
-	const storePath = (cwd: string) => join(cwd, ".agents", "marketplaces.json");
-	const cacheDir = (cwd: string) => join(cwd, ".agents", "marketplace-cache");
-
 	pi.registerCommand("plugin", {
 		description:
 			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin list | /plugin install <name> | /plugin remove <name>",
@@ -89,9 +84,9 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 
 					let dir: string;
 					if (isGitSource(loc)) {
-						dir = join(cacheDir(cwd), sanitizeForDir(loc));
+						dir = marketplaceCacheDir(cwd, loc);
 						rmSync(dir, { recursive: true, force: true });
-						mkdirSync(cacheDir(cwd), { recursive: true });
+						mkdirSync(marketplaceCacheRoot(cwd), { recursive: true });
 						const res = await pi.exec("git", ["clone", "--depth", "1", loc, dir]);
 						if (res.code !== 0) {
 							ctx.ui.notify(`Clone failed: ${res.stderr || res.stdout}`, "error");
@@ -114,9 +109,9 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 						return;
 					}
 
-					const records = readMarketplaceStore(storePath(cwd)).filter((r) => r.location !== loc);
+					const records = readMarketplaceStore(marketplaceStorePath(cwd)).filter((r) => r.location !== loc);
 					records.push({ location: loc, dir });
-					writeMarketplaceStore(storePath(cwd), records);
+					writeMarketplaceStore(marketplaceStorePath(cwd), records);
 					ctx.ui.notify(`Added marketplace "${market.name}" (${market.plugins.length} plugin(s)).`, "info");
 					return;
 				}
