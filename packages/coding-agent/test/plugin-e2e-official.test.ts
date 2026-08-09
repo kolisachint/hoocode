@@ -70,8 +70,14 @@ describe("E2E: search → install → use in a single turn (official marketplace
 			sessionManager: SessionManager.inMemory(),
 		});
 
-		// The skill must not be known before install.
-		expect(session.resourceLoader.getSkills().skills.some((s) => s.name === PLUGIN)).toBe(false);
+		// The plugin's skills must not be known before install. Checked by the
+		// namespace prefix, not the bare name: plugin skills load as
+		// `<plugin>:<skill>`, and a developer may well have a same-named plain
+		// skill in their own ~/.claude/skills (which loadSkills reads from the real
+		// home, independent of the agent dir).
+		const namespaced = <T extends { name: string }>(skills: T[]): T[] =>
+			skills.filter((s) => s.name.startsWith(`${PLUGIN}:`));
+		expect(namespaced(session.resourceLoader.getSkills().skills)).toHaveLength(0);
 
 		const notifications: string[] = [];
 		const ctx = {
@@ -99,10 +105,10 @@ describe("E2E: search → install → use in a single turn (official marketplace
 		expect(text).toContain("Active NOW");
 		expect(text).toContain(PLUGIN);
 
-		// The capability is registered in the running session…
+		// The capability is registered in the running session, under the plugin's
+		// namespace…
 		const skills = session.resourceLoader.getSkills().skills;
-		const skill = skills.find((s) => s.name === PLUGIN);
-		expect(skill).toBeDefined();
+		expect(namespaced(skills).length).toBeGreaterThan(0);
 
 		// …injected into the system prompt the model sees…
 		expect(session.systemPrompt).toContain(PLUGIN);
@@ -116,7 +122,7 @@ describe("E2E: search → install → use in a single turn (official marketplace
 		expect(refreshed?.context?.systemPrompt).toContain(PLUGIN);
 
 		// "Use" the capability the way the model does: read the skill body on demand.
-		const body = readFileSync(skill!.filePath, "utf8");
+		const body = readFileSync(namespaced(skills)[0].filePath, "utf8");
 		expect(body.length).toBeGreaterThan(100);
 
 		// Reversibility: uninstall removes it from disk.

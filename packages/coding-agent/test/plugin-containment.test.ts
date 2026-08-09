@@ -18,6 +18,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { clearExtensionMcpServers, getExtensionMcpServers } from "../src/core/extension-mcp-servers.js";
+import { isProjectSuppliedPlugin } from "../src/core/extensions/loader.js";
 import { isPluginRoot } from "../src/core/extensions/plugins/formats/index.js";
 import { buildPluginFactory, parsePluginDir, withheldCapabilities } from "../src/core/extensions/plugins/index.js";
 import { loadSkills, loadSkillsFromDir } from "../src/core/skills.js";
@@ -100,6 +101,18 @@ describe("plugin content containment (step 3)", () => {
 			includeClaude: false,
 		});
 		expect(skills.map((s) => s.name)).toEqual(["solo"]);
+	});
+
+	it("scopes the passive gate to .claude/skills, not to every project path", () => {
+		// `<cwd>/.agents/plugins` and `<cwd>/.hoocode/plugins` are hoocode's own
+		// former install homes: they hold plugins the user installed deliberately,
+		// so gating them would break existing setups. Only the vendor convention
+		// for repo-committed, collaborator-shared plugins is withheld.
+		const cwd = path.join(dir, "repo");
+		expect(isProjectSuppliedPlugin(path.join(cwd, ".claude", "skills", "shared"), cwd)).toBe(true);
+		expect(isProjectSuppliedPlugin(path.join(cwd, ".agents", "plugins", "installed"), cwd)).toBe(false);
+		expect(isProjectSuppliedPlugin(path.join(cwd, ".hoocode", "plugins", "installed"), cwd)).toBe(false);
+		expect(isProjectSuppliedPlugin(path.join(dir, "elsewhere", "global"), cwd)).toBe(false);
 	});
 
 	it("withholds hooks and mcp servers from a project-scoped plugin", () => {

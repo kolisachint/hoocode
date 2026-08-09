@@ -37,8 +37,13 @@ import {
 	resolvePluginSource,
 } from "./marketplace.js";
 
-function legacyStorePath(cwd: string): string {
-	return path.join(cwd, ".hoocode", "marketplaces.json");
+/**
+ * Marketplace registries older versions wrote into the working tree, newest
+ * convention first. Still read so a user who added a marketplace before the
+ * registry moved to the agent dir does not silently lose it; nothing writes here.
+ */
+function legacyStorePaths(cwd: string): string[] {
+	return [path.join(cwd, ".agents", "marketplaces.json"), path.join(cwd, ".hoocode", "marketplaces.json")];
 }
 
 /** Absolute path to the curated default marketplace bundled with hoocode. */
@@ -107,11 +112,12 @@ export function readMarketplaceRecords(cwd: string, agentDir: string = getAgentD
 		}
 	}
 
-	const primary = readMarketplaceStore(marketplaceStorePath(agentDir));
-	const user =
-		primary.length > 0 || existsSync(marketplaceStorePath(agentDir))
-			? primary
-			: readMarketplaceStore(legacyStorePath(cwd));
+	// The registry lives in the agent dir. Project-local ones are a migration
+	// read-path: merged in, never written back, so an older setup keeps working.
+	const user = [
+		...readMarketplaceStore(marketplaceStorePath(agentDir)),
+		...legacyStorePaths(cwd).flatMap((p) => readMarketplaceStore(p)),
+	];
 	for (const r of user) {
 		if (!records.some((x) => x.dir === r.dir)) records.push(r);
 	}

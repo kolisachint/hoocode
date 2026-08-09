@@ -18,12 +18,14 @@ import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import { ensureWellKnownMarketplaces } from "../src/core/extensions/plugins/install.js";
 import { createAgentSession } from "../src/core/sdk.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import { createInstallPluginToolDefinition, createSearchPluginsToolDefinition } from "../src/core/tools/plugins.js";
 
 let tempDir: string;
+let priorAgentDir: string | undefined;
 let online = false;
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
@@ -32,11 +34,18 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 
 beforeAll(async () => {
 	tempDir = join(tmpdir(), `hoo-e2e-copilot-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-	const errors = await ensureWellKnownMarketplaces(tempDir);
+	// The marketplace cache and the install home hang off the agent dir, so the
+	// clone and the tools that read it must agree on one — and it must not be the
+	// real home.
+	priorAgentDir = process.env[ENV_AGENT_DIR];
+	process.env[ENV_AGENT_DIR] = join(tempDir, ".hoocode");
+	const errors = await ensureWellKnownMarketplaces();
 	online = errors.length === 0;
 }, 120_000);
 
 afterAll(() => {
+	if (priorAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+	else process.env[ENV_AGENT_DIR] = priorAgentDir;
 	if (tempDir) rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -86,8 +95,11 @@ describe("E2E: Copilot marketplace (github/copilot-plugins)", () => {
 		expect(text).toContain("spark-app-template");
 
 		// Manifest was synthesized (spark ships as a bare skills tree) and the
-		// skill is live in the running session's system prompt.
-		const skill = session.resourceLoader.getSkills().skills.find((s) => s.name === "spark-app-template");
+		// skill is live in the running session's system prompt — namespaced to its
+		// plugin, as plugin skills now are.
+		const skill = session.resourceLoader
+			.getSkills()
+			.skills.find((s) => s.name.endsWith(":spark-app-template") || s.name === "spark-app-template");
 		expect(skill).toBeDefined();
 		expect(session.systemPrompt).toContain("spark-app-template");
 		expect(readFileSync(skill!.filePath, "utf8")).toContain("Spark");

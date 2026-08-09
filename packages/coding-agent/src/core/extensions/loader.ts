@@ -649,6 +649,19 @@ export async function discoverAndLoadExtensions(
 	return result;
 }
 
+/**
+ * Whether a discovered plugin came with the repository rather than from the user.
+ *
+ * Scoped to `<cwd>/.claude/skills` — the vendor convention for repo-committed,
+ * collaborator-shared plugins, which Claude Code puts behind a workspace trust
+ * dialog. The other project paths (`.agents/plugins`, `.hoocode/plugins`) are
+ * hoocode's own former install homes, holding plugins the user installed
+ * deliberately, so treating those as untrusted would break existing setups.
+ */
+export function isProjectSuppliedPlugin(pluginRoot: string, cwd: string): boolean {
+	return isUnderDir(pluginRoot, path.join(cwd, ".claude", "skills"));
+}
+
 /** True when `target` is `root` or sits inside it. */
 function isUnderDir(target: string, root: string): boolean {
 	const normalized = path.resolve(root);
@@ -710,10 +723,15 @@ export async function loadPlugins(
 
 	for (const plugin of discoverPlugins(pluginDirs)) {
 		try {
-			// A plugin discovered under the workspace came with the repository, not
-			// from the user, so its executable half is withheld — we have no trust
-			// gate to approve it with. See PluginFactoryOptions.passiveOnly.
-			const passiveOnly = isUnderDir(plugin.root, cwd);
+			// Withhold the executable half of a plugin that came with the repository
+			// rather than from the user. Scoped to `<cwd>/.claude/skills` — the
+			// vendor convention for repo-committed, collaborator-shared plugins,
+			// which Claude Code itself puts behind a workspace trust dialog. The
+			// other project paths (`.agents/plugins`, `.hoocode/plugins`) are
+			// hoocode's own former install homes, holding plugins the user installed
+			// deliberately, so gating those would break existing setups.
+			// See PluginFactoryOptions.passiveOnly.
+			const passiveOnly = isProjectSuppliedPlugin(plugin.root, cwd);
 			const withheld = passiveOnly ? withheldCapabilities(plugin) : [];
 			const extension = await loadExtensionFromFactory(
 				buildPluginFactory(plugin, { passiveOnly }),

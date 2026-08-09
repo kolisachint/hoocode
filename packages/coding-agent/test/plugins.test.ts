@@ -347,7 +347,10 @@ describe("plugin directory precedence (.agents first)", () => {
 		expect(dirs).toEqual([
 			path.join(cwd, ".agents", "plugins"),
 			path.join(cwd, ".hoocode", "plugins"),
+			path.join(cwd, ".claude", "skills"),
 			path.join(tempDir, "home", ".agents", "plugins"),
+			path.join(tempDir, "home", ".agents", "publish", "github"),
+			path.join(tempDir, "home", ".claude", "skills"),
 			path.join(agentDir, "plugins"),
 		]);
 	});

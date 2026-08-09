@@ -192,7 +192,7 @@ describe("plugin install engine", () => {
 		const outcome = await installAvailablePlugin(cwd, "widget");
 		expect(outcome.installed).toBe(true);
 		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
-		expect(listInstalledPlugins(cwd, cwd).some((p) => p.id === "widget")).toBe(true);
+		expect(listInstalledPlugins(cwd).some((p) => p.id === "widget")).toBe(true);
 
 		const removed = uninstallPlugin(cwd, "widget");
 		expect(removed.removed).toBe(true);
@@ -249,7 +249,7 @@ describe("plugin install engine", () => {
 		const outcome = await installAvailablePlugin(cwd, "widget");
 		expect(outcome.installed).toBe(true);
 		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
-		expect(listInstalledPlugins(cwd, cwd).some((p) => p.id === "widget")).toBe(true);
+		expect(listInstalledPlugins(cwd).some((p) => p.id === "widget")).toBe(true);
 	});
 });
 

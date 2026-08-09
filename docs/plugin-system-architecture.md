@@ -936,9 +936,16 @@ where authored plugins are half-live.
    itself, and with a user's hand-written skill of the same name. Needs a
    pre-write check; `UninstallPlugin` must never delete a directory it did not
    author (the `.authored.json` marker already distinguishes them).
-4. **Migration policy for `<cwd>/.agents/plugins/`.** `defaultPluginDirs` already
-   reads it, so a read-only grace period costs nothing — but the plan does not
-   say whether existing plugins are ever *moved*, or left in place indefinitely
-   while new writes go elsewhere. Leaving them means `git status` stays dirty for
-   anyone who already hit the §5.4 bug. Recommend: keep reading indefinitely,
-   offer a one-shot `/plugin migrate`, never move silently.
+4. **Migration policy for `<cwd>/.agents/plugins/`.** Settled in part: the
+   directory is still read, and `<cwd>/.agents/marketplaces.json` is still merged
+   into the registry, so an older setup keeps working and nothing is moved
+   silently. Still open is whether to offer a one-shot `/plugin migrate` — until
+   then `git status` stays dirty for anyone who already hit the §5.4 bug.
+
+5. **Test isolation is only partial.** `ENV_AGENT_DIR` relocates every path in
+   `locations.ts`, but `skills.ts:485` and the agent registry read
+   `homedir()/.claude` directly, so a test cannot fully sandbox the Claude
+   surfaces. In production the two agree (the agent dir's parent *is* the home);
+   they diverge only under the override. A test asserting "this skill is not
+   present" against `~/.claude/skills` is therefore reading the developer's real
+   home — see the namespace-prefix workaround in `plugin-e2e-official.test.ts`.
