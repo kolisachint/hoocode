@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–5 landed, steps 7+ not started (§8.5)
+**Status:** agreed plan; steps 0–7 landed, steps 8+ not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -470,11 +470,32 @@ command resolves. Subagent allowlists run through `classifyAllowlist`
 (`authoring.ts:51`), which today only *picks a gate* and should also be a line in
 the record.
 
-**G3 — Behavioral smoke** (executable capabilities only, seconds). Hook: run in a
-sandboxed temp cwd against a synthetic event payload; require exit 0 and no
-writes outside the sandbox. MCP: spawn, complete `initialize` + `tools/list`,
-kill. Catches the most common real failure — a plugin that installs cleanly and
-breaks the session at the next tool call.
+**G3 — Behavioral smoke** (executable capabilities only, seconds). Hook: run
+against a synthetic event payload with `cwd`, `HOME`, `TMPDIR` and the data dir
+redirected into a throwaway directory, under a hard timeout. MCP: spawn,
+complete `initialize` + `tools/list`, kill. Catches the most common real failure
+— a plugin that installs cleanly and breaks the session at the next tool call.
+
+**Redirected, not contained.** An earlier draft of this section promised "no
+writes outside the sandbox". We cannot enforce that without OS-level sandboxing,
+and a confirmation prompt that overstates its guarantees is worse than one that
+says less — the entire value of showing gate results to a human rests on their
+being true. Redirection shrinks the blast radius; a shell command can still write
+where it likes.
+
+**It runs before the human confirms**, which does mean executing not-yet-approved
+code. The trade is deliberate: the code was authored in-session from the user's
+own request, G2 has already screened it, and without the smoke test the same
+command runs moments later anyway — unscreened, unredirected, in the real working
+directory. G3 is therefore authored-only, never applied to a marketplace plugin,
+where the code is someone else's and pre-consent execution would not be
+defensible.
+
+Severity is calibrated to match G2: a missing binary is a *warning* on both, since
+a plugin may honestly document a prerequisite. A hook that hangs, or a server that
+starts and then fails its handshake, is an error — those break a session. A check
+that passes is recorded as `info`, so `strict` does not read "the hook ran fine"
+as grounds to refuse.
 
 **G4 — Trigger eval** (passive capabilities, one model call, opt-in). Whether an
 authored skill is worth anything comes down to whether its `description` fires on
@@ -922,7 +943,7 @@ where authored plugins are half-live.
 | 4b | ~~Runtime variables + per-plugin data dir (D9), both platforms~~ **done** | Small, self-contained, and unblocks any plugin that uses them |
 | 5 | ~~G1 + G2, delegating to `claude plugin validate`~~ **done** | Cheapest real green signal; step 4 made it pass for the right reasons, step 2 gave it somewhere safe to run |
 | 6 | ~~Tier 1 lenient reader + `unsupportedSurfaces`~~ **done in step 4** — a re-emit drops any manifest key the reader does not carry, so preservation could not wait | Turns the *next* drift into a signal |
-| 7 | G3 sandboxed smoke | Makes the executable confirm gate meaningful |
+| 7 | ~~G3 sandboxed smoke~~ **done** — redirected, not contained; see §4.2 | Makes the executable confirm gate meaningful |
 | 8 | Marketplace index TTL + explicit refresh (§3.1) | Small; the inherit story goes stale silently without it |
 | 9 | `PackagePlugin` + publish lane, GitHub flow primary | Needs eval green-signal-capable; the only GitHub route |
 | 10 | Capability index + MCP retrieval (§6) | Independent — can run in parallel from step 1 |

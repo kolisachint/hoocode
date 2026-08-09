@@ -39,8 +39,9 @@ import {
 	writePluginDraft,
 } from "../extensions/plugins/authoring.js";
 import type { MarketplacePlatform, PluginDraft } from "../extensions/plugins/formats/types.js";
-import { formatGateFindings, runStaticGates } from "../extensions/plugins/gates.js";
+import { formatGateFindings, runStaticGates, withFindings } from "../extensions/plugins/gates.js";
 import { discardDraftDir } from "../extensions/plugins/locations.js";
+import { runSmokeGate } from "../extensions/plugins/smoke.js";
 import type { ExtensionContext } from "../extensions/types.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
 import {
@@ -332,7 +333,12 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 			// ~/.claude/skills on its next session), so nothing may land there until
 			// the checks pass and — for executable content — the human agrees.
 			const draft = writePluginDraft(draftFrom(params.id, params, platforms), platforms, { promote: false });
-			const evaluation = runStaticGates(draft.dest, { platform: platforms[0] });
+			let evaluation = runStaticGates(draft.dest, { platform: platforms[0] });
+			// G3 only for executable content, and only once the cheap gates are
+			// happy: no point running a hook whose command G2 already rejected.
+			if (evaluation.ok && evaluation.plugin && hasExecutable(params)) {
+				evaluation = withFindings(evaluation, await runSmokeGate(evaluation.plugin));
+			}
 			if (!evaluation.ok) {
 				discardDraftDir(draft.dest);
 				return reject(

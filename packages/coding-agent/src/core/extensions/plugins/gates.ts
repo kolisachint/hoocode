@@ -32,9 +32,14 @@ import type { PluginPlatform } from "./formats/platform-targets.js";
 import { type NormalizedPlugin, parsePluginDir } from "./manifest.js";
 
 export interface GateFinding {
-	gate: "G1" | "G2";
-	/** `error` fails the gate; `warning` is reported and passes (unless `strict`). */
-	severity: "error" | "warning";
+	gate: "G1" | "G2" | "G3";
+	/**
+	 * `error` fails the gate. `warning` is reported and passes, unless `strict`.
+	 * `info` always passes — it exists so a *successful* check can be shown to the
+	 * human in the confirmation prompt without `strict` treating "the hook ran
+	 * fine" as a reason to refuse.
+	 */
+	severity: "error" | "warning" | "info";
 	message: string;
 }
 
@@ -304,12 +309,22 @@ function readToolsFrontmatter(file: string): string | undefined {
 	}
 }
 
+/** Whether a set of findings fails the gate. `info` never does. */
+export function findingsFail(findings: readonly GateFinding[], strict = false): boolean {
+	return findings.some((f) => f.severity === "error" || (strict && f.severity === "warning"));
+}
+
 /** Run G1 and G2 over a plugin directory. */
 export function runStaticGates(dir: string, opts: GateOptions = {}): GateResult {
 	const { findings: g1, conformance, plugin } = structural(dir, opts);
 	const findings = [...g1, ...safety(plugin)];
-	const failed = findings.some((f) => f.severity === "error" || (opts.strict === true && f.severity === "warning"));
-	return { ok: !failed, findings, conformance, plugin };
+	return { ok: !findingsFail(findings, opts.strict === true), findings, conformance, plugin };
+}
+
+/** Fold additional findings (G3) into an existing result. */
+export function withFindings(result: GateResult, extra: readonly GateFinding[], strict = false): GateResult {
+	const findings = [...result.findings, ...extra];
+	return { ...result, findings, ok: !findingsFail(findings, strict) };
 }
 
 /** Render findings for a tool result or a confirmation prompt. */

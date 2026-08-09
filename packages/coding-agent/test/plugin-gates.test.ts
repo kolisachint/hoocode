@@ -11,8 +11,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writePluginDraft } from "../src/core/extensions/plugins/authoring.js";
-import { commandBinary, runStaticGates } from "../src/core/extensions/plugins/gates.js";
+import { commandBinary, findingsFail, runStaticGates } from "../src/core/extensions/plugins/gates.js";
 import { discardDraftDir } from "../src/core/extensions/plugins/locations.js";
+import { parsePluginDir } from "../src/core/extensions/plugins/manifest.js";
+import { runSmokeGate } from "../src/core/extensions/plugins/smoke.js";
 
 function writeJson(file: string, data: unknown): void {
 	fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -165,4 +167,100 @@ describe("plugin eval gates", () => {
 		},
 		60_000,
 	);
+});
+
+describe("G3 behavioral smoke", () => {
+	let dir: string;
+	let priorTimeout: string | undefined;
+
+	beforeEach(() => {
+		dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-smoke-t-"));
+		// Exercise the timeout path without waiting the production budget for it.
+		priorTimeout = process.env.HOOCODE_PLUGIN_SMOKE_TIMEOUT_MS;
+		process.env.HOOCODE_PLUGIN_SMOKE_TIMEOUT_MS = "1500";
+	});
+
+	afterEach(() => {
+		if (priorTimeout === undefined) delete process.env.HOOCODE_PLUGIN_SMOKE_TIMEOUT_MS;
+		else process.env.HOOCODE_PLUGIN_SMOKE_TIMEOUT_MS = priorTimeout;
+		fs.rmSync(dir, { recursive: true, force: true });
+	});
+
+	function pluginWith(id: string, manifest: Record<string, unknown>): NonNullable<ReturnType<typeof parsePluginDir>> {
+		const root = path.join(dir, id);
+		writeJson(path.join(root, ".agents-plugin", "plugin.json"), { name: id, ...manifest });
+		const parsed = parsePluginDir(root);
+		if (!parsed) throw new Error("fixture did not parse");
+		return parsed;
+	}
+
+	it("is a no-op for a plugin with nothing executable", async () => {
+		expect(await runSmokeGate(pluginWith("passive", {}))).toEqual([]);
+	});
+
+	it("reports a hook that runs cleanly as info, so strict does not reject it", async () => {
+		const plugin = pluginWith("okhook", {
+			hooks: { Stop: [{ hooks: [{ type: "command", command: "exit 0" }] }] },
+		});
+		const findings = await runSmokeGate(plugin);
+		expect(findings).toHaveLength(1);
+		expect(findings[0].gate).toBe("G3");
+		expect(findings[0].severity).toBe("info");
+		expect(findingsFail(findings, true)).toBe(false);
+	});
+
+	it("fails a hook that hangs — it would stall every matching tool call", async () => {
+		const plugin = pluginWith("hanger", {
+			hooks: { Stop: [{ hooks: [{ type: "command", command: "sleep 30" }] }] },
+		});
+		const findings = await runSmokeGate(plugin);
+		expect(findings.some((f) => f.severity === "error" && /did not finish/.test(f.message))).toBe(true);
+	}, 15_000);
+
+	it("warns rather than fails when a hook's binary is missing", async () => {
+		const plugin = pluginWith("absent", {
+			hooks: { Stop: [{ hooks: [{ type: "command", command: "definitely-not-a-real-binary-xyz" }] }] },
+		});
+		const findings = await runSmokeGate(plugin);
+		// Matches G2's calibration: a documented prerequisite is not a broken plugin.
+		expect(findings.every((f) => f.severity !== "error")).toBe(true);
+	});
+
+	it("feeds the hook its event payload on stdin, from a redirected cwd", async () => {
+		const plugin = pluginWith("reader", {
+			hooks: { Stop: [{ hooks: [{ type: "command", command: "cat > payload.json && pwd > where.txt" }] }] },
+		});
+		const findings = await runSmokeGate(plugin);
+		expect(findings.some((f) => f.severity === "info")).toBe(true);
+		// The sandbox is torn down afterwards, so the artifacts must NOT be in cwd
+		// or in the plugin itself — that redirection is the point.
+		expect(fs.existsSync(path.join(plugin.root, "payload.json"))).toBe(false);
+		expect(fs.existsSync(path.join(process.cwd(), "payload.json"))).toBe(false);
+	});
+
+	it("fails an MCP server that starts but never completes the handshake", async () => {
+		const plugin = pluginWith("mute", { mcpServers: { mute: { command: "sleep", args: ["30"] } } });
+		const findings = await runSmokeGate(plugin);
+		expect(findings.some((f) => f.severity === "error" && /mcp server "mute"/.test(f.message))).toBe(true);
+	}, 15_000);
+
+	it("passes an MCP server that completes initialize and tools/list", async () => {
+		// A minimal stdio MCP server: enough of the protocol to answer the probe.
+		const server = path.join(dir, "server.js");
+		fs.writeFileSync(
+			server,
+			[
+				"const rl = require('readline').createInterface({ input: process.stdin });",
+				"rl.on('line', (l) => {",
+				"  let m; try { m = JSON.parse(l); } catch { return; }",
+				"  if (m.method === 'initialize') process.stdout.write(JSON.stringify({ jsonrpc:'2.0', id:m.id, result:{ protocolVersion:'2024-11-05', capabilities:{}, serverInfo:{name:'t',version:'1'} } }) + '\\n');",
+				"  if (m.method === 'tools/list') process.stdout.write(JSON.stringify({ jsonrpc:'2.0', id:m.id, result:{ tools:[{name:'ping'}] } }) + '\\n');",
+				"});",
+			].join("\n"),
+			"utf8",
+		);
+		const plugin = pluginWith("live", { mcpServers: { live: { command: process.execPath, args: [server] } } });
+		const findings = await runSmokeGate(plugin);
+		expect(findings.some((f) => f.severity === "info" && /1 tool\(s\)/.test(f.message))).toBe(true);
+	}, 15_000);
 });
