@@ -105,18 +105,53 @@ actually closes.
 | Local dev loop | `--plugin-dir`, `--plugin-url`, or the skills-dir path above | `--plugin-dir` only; direct installs from local paths are **deprecated** ("only `plugin@marketplace` installs will be supported in a future release") |
 | Route into the ecosystem | drop-in, or submission form + review | marketplace publish, increasingly the only route |
 
-Sources: `code.claude.com/docs/en/plugins`;
+Sources: `code.claude.com/docs/en/plugins`,
+`code.claude.com/docs/en/plugins-reference`;
 `docs.github.com/.../copilot-cli-reference/cli-config-dir-reference`;
 `github.com/github/copilot-cli/discussions/3685`. All fetched 2026-08-09.
-The GitHub rows are second-hand — `docs.github.com` is blocked by this
-environment's egress proxy, so they came via search results and the upstream
-discussion. **Re-verify against the primary reference before implementing.**
+The Claude rows are first-hand. **The GitHub rows are second-hand** —
+`docs.github.com` is blocked by this environment's egress proxy, so they came via
+search results and the upstream discussion. Re-verify before implementing.
 
-Consequence for the plan: for `claude`, authoring produces a plugin that is live
-in Claude Code on its next session. For `github`, there is no such path, so
-"production" means the publish lane in §3.2 and nothing shorter. That asymmetry
-is upstream reality, not a design choice, and the plan should not pretend
-otherwise.
+Consequence: for `claude`, authoring produces a plugin live in Claude Code on its
+next session. For `github` there is no such path, so "production" means the
+publish lane in §3.2 and nothing shorter. That asymmetry is upstream reality, not
+a design choice.
+
+### 1.6 Skills-directory plugins — the verified contract
+
+Verified against `plugins-reference` §"Skills-directory plugins" (2026-08-09),
+because the whole `claude` production target rests on it.
+
+> "Any folder under a skills directory that contains a `.claude-plugin/plugin.json`
+> manifest is loaded as a plugin named `<name>@skills-dir` on the next session,
+> with no marketplace and no install step … discovered in place rather than
+> copied into the plugin cache."
+
+A skills tree holds three distinct things:
+
+| On disk | What it is |
+|---|---|
+| `<skills-dir>/foo/SKILL.md`, no manifest | plain skill `foo` |
+| `<skills-dir>/foo/.claude-plugin/plugin.json` | plugin `foo@skills-dir` |
+| `<plugin>/skills/bar/SKILL.md` | skill `bar` **packaged inside** a plugin |
+
+Three consequences that shape §5.3 and §5.7:
+
+1. **The manifest is the promoter.** That is exactly `parsePluginDir` returning
+   null for a manifest-less directory, so adding `~/.claude/skills` to
+   `defaultPluginDirs` reproduces Claude's rule with no special-casing.
+2. **Row 3 does not surface as a top-level skill.** hoocode's scanner recurses
+   without bound (`skills.ts:277`), so today it would. See §5.7.
+3. **Scope differs in kind, not just path.** `~/.claude/skills/` (personal) has
+   no restrictions. `<cwd>/.claude/skills/` (project) loads only after the
+   workspace trust dialog; its MCP servers need per-server approval, LSP needs
+   trust, and monitors do not load at all. Project-scope skills-dir plugins also
+   **do not walk up to the repo root** the way plain skills do.
+
+Removal is "delete its folder" (or `claude plugin disable <name>@skills-dir`) —
+there is no uninstall step, which is already what `uninstallPlugin` does
+(`install.ts:339-348`). No change needed there.
 
 ---
 
@@ -131,18 +166,28 @@ all four documented manifest locations (`formats/copilot.ts:73-77`).
 The Claude adapter is not. Reading `code.claude.com/docs/en/plugins` (fetched
 2026-08-09) against `formats/claude.ts` + `formats/jsonManifest.ts`:
 
+Component list taken from the reference's authoritative "File locations
+reference" table, not inferred.
+
 | Claude Code convention | hoocode today |
 |---|---|
-| Manifest is **optional** — a directory with `skills/` alone is a plugin | `detectPlugin` requires `.claude-plugin/plugin.json` (`jsonManifest.ts:52-54`) |
+| Manifest optional **for marketplace / `--plugin-dir` plugins** — components auto-discovered, name derived from the directory | `detectPlugin` requires a manifest (`jsonManifest.ts:52-54`) |
 | A single `SKILL.md` at plugin root = a one-skill plugin | not detected |
+| `workflows/` — workflow scripts | not parsed |
+| `output-styles/` — output style definitions | not parsed |
 | `.lsp.json` — LSP servers | not parsed |
 | `monitors/monitors.json` — background monitors | not parsed |
-| `bin/` — added to Bash `PATH` while enabled | not parsed |
-| plugin-root `settings.json` (`agent`, `subagentStatusLine`) | not parsed |
-| Skills namespaced `/plugin-name:skill-name` | not applied |
+| `bin/` — added to the Bash tool's `PATH` while enabled | not parsed |
+| plugin-root `settings.json` (`agent`, `subagentStatusLine` only) | not parsed |
+| Skills namespaced `plugin-name:skill-name` | flat namespace, first-wins + collision diagnostic |
+
+`themes/` we do support. Note the manifest row is **scope-dependent** and an
+earlier draft of this doc got it wrong: the manifest is optional for marketplace
+and `--plugin-dir` plugins, but for skills-directory plugins it is precisely what
+promotes a folder from skill to plugin (§1.6). Two different rules.
 
 "If the standard changes" is not hypothetical — it already changed in at least
-seven places and nothing noticed. The defect is the missing *signal*, not a
+nine places and nothing noticed. The defect is the missing *signal*, not a
 missing doc-fetcher.
 
 **§1 raises the stakes on this table.** Under a vendor-neutral production model
@@ -371,8 +416,14 @@ consumption and production.
 | Role | Location | Why |
 |---|---|---|
 | **Consumption home** (marketplace installs) | `~/.agents/plugins/<id>/` | hoocode installing for itself. Format-agnostic. Must not leak into a vendor's directory — installing a plugin for hoocode should not silently add it to Claude Code. |
-| **Production, `--platform claude`** | `~/.claude/skills/<id>/` | The documented drop-in. Live in Claude Code next session, and hoocode reads it back through the claude adapter. |
+| **Production, `--platform claude`** | `~/.claude/skills/<id>/` | The documented drop-in (§1.6). Live in Claude Code next session, and live in hoocode once §5.7 lands. |
 | **Production, `--platform github`** | `~/.agents/staged-plugins/<id>/` | No vendor drop-in exists (§1.5). Staging feeds `PackagePlugin` → publish, and `copilot --plugin-dir <path>` for local testing. |
+
+**Id collisions are checked per target location, not globally.** The same id may
+exist as a `claude` artifact and a `github` artifact — they are separate
+ecosystem artifacts, not duplicates. `pluginExists` therefore takes the resolved
+target rather than scanning everywhere, and `ListPlugins` must show the location
+so two same-named entries are distinguishable.
 
 ### 5.4 The bug this replaces
 
@@ -414,6 +465,63 @@ documented user-plugin path rather than arbitrary `$HOME`, and Claude Code's own
 `plugin init` writes exactly there. Against it, today's behavior silently edits
 the one directory the user is definitely about to `git add`. Both are widenings;
 the current one is worse and less visible.
+
+### 5.7 Making `~/.claude/skills/<id>/` actually work
+
+Writing there is not sufficient on its own. `defaultPluginDirs`
+(`loader.ts:662-670`) does not include `~/.claude/skills`, so hoocode would never
+parse the artifact as a plugin — while `loadSkills` *does* scan that path
+(`skills.ts:485`) and recurses without bound (`skills.ts:277`). The result is an
+artifact that is fully live in Claude Code and, in hoocode, loads its skills as
+loose top-level entries while **hooks, MCP servers, subagents and commands
+silently do not load at all**. Two changes fix it:
+
+1. **Add `~/.claude/skills` to `defaultPluginDirs`.** Manifest-less directories
+   still return null from `parsePluginDir` and stay plain skills, which is
+   Claude's own rule (§1.6). This implements skills-directory plugins.
+2. **Stop the plain-skill scan descending into a plugin root.** Otherwise a
+   plugin's inner `skills/bar/SKILL.md` is picked up as a loose skill `bar`,
+   contradicting row 3 of §1.6. Without this, change 1 makes things *worse*: the
+   skill loads on both paths, `realPath` dedup lets the plain-scan copy win, and
+   it is never attributed to its plugin.
+
+### 5.8 Namespacing plugin skills
+
+Once §5.7 lands, plugin skills arrive only through the plugin path, so they can
+carry their origin. Adopt Claude's `plugin-name:skill-name`.
+
+Today plugin skills land flat in `skillMap` keyed by bare name
+(`plugins/index.ts:104-111` → `skills.ts` `addSkills`), first-wins with a
+collision diagnostic. Two plugins shipping a `review` skill silently lose one.
+Namespacing removes the entire collision class and matches the vendor.
+
+This is a breaking change to how plugin skills are referenced, which
+`AGENTS.md` permits ("do not preserve backward compatibility unless the user
+explicitly asks"). No bare-name alias: it would double the catalog entries in the
+prompt surface, which the token budget rules care about.
+
+### 5.9 Project scope: read both, gate executables
+
+Consumption reads every format, so `<cwd>/.claude/skills/` is discovered as a
+plugin source too — but only its **passive** capabilities (skills, commands,
+subagents) load. Hooks and MCP servers from project scope are skipped and
+reported.
+
+The reason is a capability gap, not a preference: **hoocode has no workspace
+trust mechanism.** Every `trust` reference in the source is TLS CA trust
+(`utils/tls-ca.ts`), marketplace source trust (a curated list, not a per-folder
+gate), or prose. There is no trusted-directories setting in `settings-types.ts`,
+and `ui.confirm` is called in exactly one place in the entire codebase
+(`propose-plugin.ts:261`). Claude gates project-scope skills-dir plugins behind a
+workspace trust dialog, restricts their MCP servers to per-server approval, and
+refuses to load their monitors at all (§1.6). Loading project-scope hooks and MCP
+ungated would mean a cloned repo can register shell hooks and spawn servers with
+no confirmation — a real escalation over reading skill text, which is all
+`.claude/skills/` gets today.
+
+Upgrade path when someone wants it: `ctx.ui.confirm` is already the primitive,
+and `propose-plugin.ts:252-260` sets the headless precedent — no UI means refuse,
+not proceed.
 
 ---
 
@@ -542,52 +650,95 @@ blockers, not just read-side gaps.
 
 ---
 
-## 8. End-to-end review, and the revised order
+## 8. Agreed plan
 
-### 8.1 What the production-model correction changed
+### 8.1 Decisions
 
-| Area | Before | After |
-|---|---|---|
-| Write target | `agents` default, vendor opt-in | platform-only, default `claude`, `agents` rejected |
-| Resolver | one shared `resolveAuthoringPlatforms` | split plugin vs workspace |
-| Flag | `--support-platform` | `--platform` |
-| Location | one global home | consumption home + per-platform production target (§5.3) |
-| G1 | round-trip through our parser | target-platform conformance, delegating to `claude plugin validate` |
-| Claude adapter | step 4, read-side nicety | near-front, production blocker |
-| Publish lane | optional flywheel endpoint | the *only* GitHub route |
-| §7 divergence #3 | a deliberate difference | retired; now alignment |
+Settled in review. Each row is a fork that was actually open.
 
-Two things the correction did **not** change: §6 (retrieval is orthogonal to
-format), and the §5.1 scope rule (plugins were already user-scoped; only the
-destination moved).
+| # | Decision | Chosen | Rationale |
+|---|---|---|---|
+| D1 | Production format | Platform-specific; `agents` rejected for plugins | §1.2 — a distribution unit must belong to an ecosystem |
+| D2 | Default when `--platform` is absent | `claude` | Keeps the autonomous gap-fill unbroken; the only platform where the local loop closes (§1.5) |
+| D3 | Authored-plugin location | Vendor auto-load path (§5.3) | Producing in a vendor format and hiding it from that vendor defeats the purpose |
+| D4 | Flag rename scope | Session flag only | `supportPlatform` names two things; the manifest/marketplace data field is vendor on-disk data we do not own (§8.2) |
+| D5 | Id collision | Per target location | A `claude` `foo` and a `github` `foo` are separate ecosystem artifacts, not duplicates |
+| D6 | Plugin skill namespacing | `plugin-name:skill-name` | Claude parity; removes the collision class outright (§5.8) |
+| D7 | Project-scope skills-dir plugins | Read, but load passive capabilities only | We have no trust gate to honor the vendor's restrictions with (§5.9) |
 
-### 8.2 Open items before scoping
+### 8.2 Blast radius
 
-1. **Verify the GitHub rows** in §1.5 and §5.3 against the primary Copilot CLI
-   reference from an unblocked network. The whole `github` branch of the plan
-   rests on second-hand sourcing.
-2. **Migration.** Plugins already installed at `<cwd>/.agents/plugins/` need a
-   one-time move or a deprecation read-path. `defaultPluginDirs` already reads
-   both, so a read-only grace period is nearly free.
-3. **Does `--platform` accept multiple values?** `github/copilot-plugins` ships
-   both a `.github/plugin/` and a `.claude-plugin/` index, so dual-emission is a
-   real shape. Recommend allowing it but never defaulting to it.
-4. **`~/.claude/skills/<id>/` collision** with a plugin the user installed
-   through Claude Code itself. Needs a namespace convention or a pre-write check.
+Measured, not estimated.
 
-### 8.3 Revised order
+**`supportPlatform` is two things sharing a name.** D4 renames only the first:
 
-Resequenced so each step unblocks the next; the first three are now one coherent
-change rather than three independent ones.
+| Renamed — session write-target flag | Untouched — on-disk vendor data |
+|---|---|
+| `main.ts:433-452`, `cli/args.ts`, `settings-manager.ts`, `settings-types.ts` | `NormalizedPlugin.supportPlatform` (`manifest.ts`) |
+| `platform-targets.ts`, `scaffold.ts:121,182,253` | `NormalizedMarketplace.supportPlatform` (`marketplace.ts`, 16 refs) |
+| `propose-plugin.ts:132-137` | `marketplace.json` `supportPlatform` field, `formats/types.ts` |
+
+A blind rename across all 25 files corrupts the parsed data model.
+`support-platform.test.ts` (29 refs) covers both halves and has to be split the
+same way.
+
+**Location coupling.** `installedPluginsDir(cwd)` is the single assumed home for
+five roles in `authoring.ts` — `isAuthoredPlugin`, `writePluginDraft`,
+`pluginExists`, `getPlugin`, `removeFromPlugin`. All five must resolve a target
+rather than a constant. `UpdatePlugin` and `RemovePluginCapability` need to know
+*which* location holds the plugin.
+
+**Two pre-existing defects sitting in the blast radius**, both worth fixing
+first because the location change touches them anyway:
+
+- `extensions/core/marketplace.ts:48-50` defines its own `storePath` and
+  `cacheDir`, and lines 38-40 a private copy of `sanitizeForDir`. Its own
+  docstring claims the shared mechanics live in `install.ts` "so this command and
+  the model-facing lifecycle tools never drift" — they already have. Delete the
+  duplicates before moving anything.
+- `activatePlugin` hardcodes `metadata: { source: "plugin", scope: "project" }`
+  (`agent-session.ts:2133`) for every plugin including global ones. Under
+  user-scoped plugins this mislabels provenance everywhere it surfaces.
+
+**Tests that move:** `plugin-authoring.test.ts` (11 hardcoded
+`.agents/plugins` paths), `plugin-lifecycle.test.ts`, `plugin-e2e-official.test.ts`,
+`plugins.test.ts`, `marketplace.test.ts`, `support-platform.test.ts`.
+
+### 8.3 What the review did not change
+
+`§6` (retrieval) is untouched — format and location are orthogonal to it, and it
+can be built in parallel from day one. The `§5.1` scope rule also survived:
+plugins were already user-scoped, only the destination moved.
+
+### 8.4 Order
+
+Steps 1–3 are one coherent change; splitting them leaves the tree in a state
+where authored plugins are half-live.
 
 | Step | Work | Why here |
 |---|---|---|
-| 1 | Split the resolver; add `--platform`; reject `agents` for plugins | Everything else reads from this. Small and mechanical. |
-| 2 | Production + consumption locations (§5.3), migration read-path | Same change in practice as step 1 — format and destination are one decision |
-| 3 | Claude adapter catch-up (§2.1 table) | Now a production blocker. Emitting non-conforming Claude plugins is worse than failing to read them |
-| 4 | G1 + G2, delegating to `claude plugin validate` | Cheapest real green signal; step 3 makes it pass for the right reasons |
-| 5 | Tier 1 lenient reader + `unsupportedSurfaces` | Turns the *next* drift into a signal instead of a silent gap |
-| 6 | G3 sandboxed smoke | Makes the executable confirm gate meaningful |
-| 7 | `PackagePlugin` + publish lane, GitHub flow primary | Depends on eval being green-signal-capable; load-bearing for GitHub |
-| 8 | Capability index + MCP retrieval (§6) | Largest build, fully independent — can run in parallel from step 1 |
-| 9 | G4 trigger eval, Tier 2 drift CI | Ongoing quality, not blocking |
+| 0 | Delete the `/plugin` duplicates; fix `activatePlugin` scope metadata | Pre-existing defects directly under the later steps |
+| 1 | Split the resolver; `--platform` (D4 scope); reject `agents` for plugins | Everything reads from this |
+| 2 | Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path | Same decision as step 1 — format and destination are inseparable |
+| 3 | `~/.claude/skills` discovery + stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9) | Without this the D3 target is half-live |
+| 4 | Claude adapter catch-up (§2.1) | Now a production blocker: we emit into this ecosystem |
+| 5 | G1 + G2, delegating to `claude plugin validate` | Cheapest real green signal; step 4 makes it pass for the right reasons |
+| 6 | Tier 1 lenient reader + `unsupportedSurfaces` | Turns the *next* drift into a signal |
+| 7 | G3 sandboxed smoke | Makes the executable confirm gate meaningful |
+| 8 | `PackagePlugin` + publish lane, GitHub flow primary | Needs eval green-signal-capable; the only GitHub route |
+| 9 | Capability index + MCP retrieval (§6) | Independent — can run in parallel from step 1 |
+| 10 | G4 trigger eval; Tier 2 drift CI | Ongoing quality, not blocking |
+
+### 8.5 Still open
+
+1. **Verify the GitHub rows** (§1.5, §5.3) against the primary Copilot CLI
+   reference from an unblocked network. The whole `github` branch rests on
+   second-hand sourcing.
+2. **Does `--platform` accept multiple values?** `emitForPlatforms` already
+   handles it and dedupes by path (`formats/index.ts:69-80`), and
+   `github/copilot-plugins` ships both index formats, so dual-emission is a real
+   shape. Recommend allowing it, never defaulting to it.
+3. **`~/.claude/skills/<id>/` collision** with a plugin Claude Code installed
+   itself, and with a user's hand-written skill of the same name. Needs a
+   pre-write check; `UninstallPlugin` must never delete a directory it did not
+   author (the `.authored.json` marker already distinguishes them).
