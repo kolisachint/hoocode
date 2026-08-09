@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–9 landed, steps 10–11 not started (§8.5)
+**Status:** agreed plan; steps 0–10 landed, step 11 not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -748,6 +748,9 @@ not proceed.
 
 ## 6. Embed search behind ToolSearch
 
+*Built in step 10: `core/capabilities/` (registry, BM25, optional dense, RRF
+fusion), wired into the MCP resolver and `SearchPlugins`.*
+
 ### 6.1 Current state
 
 Deferral (`plugin-system-spec.md` §2) is implemented, but only half the cost is
@@ -796,6 +799,20 @@ strictly more deterministic. `plugin-system-spec.md` already reasons this way fo
 subagents; this generalizes it and makes the threshold measurable via
 `hoocode --print-token-surface`.
 
+**As built**, the threshold applies to the *catalog rendering*, not yet to
+per-capability deferral: `CATALOG_EAGER_LIMIT = 30` picks between the full
+listing and a per-server summary. `deferred` is carried on every document and is
+a filter retrieval can key on (`deferredOnly`), so the policy has somewhere to
+live — but deferral itself is still the one global flag. Making it
+per-capability needs the measured token cost §6.3 asks for, and inventing a
+policy before the measurement exists is how you get a threshold nobody can
+defend.
+
+One thing the summary must not do is truncate. A list cut off at thirty entries
+hides its tail completely; the summary instead names every server and its tool
+count, so the model knows the whole surface exists and only has to ask for the
+part it wants.
+
 ### 6.4 Retrieval is a determinism regression
 
 A flat catalog guarantees the model can see every capability. A retrieval tool
@@ -805,6 +822,26 @@ call should stand until skill count forces it. Rollout: build the index, wire
 **MCP tools first** (already deferred, exact-match already a known limitation, so
 strictly an improvement), leave skills/commands/agents eager, promote by
 measurement.
+
+**As built**, that rollout held, with one addition the rule permits. MCP tools
+went first. Skills, commands, and subagents are *not* registered — no producer,
+no retrieval, no change. The addition is `SearchPlugins`, which was already a
+search tool doing substring matching: giving it the index costs no determinism
+it had, and the semantic hits are **appended** under a separate heading rather
+than merged, so every result that matched before still matches, in the same
+order, with the same `count`.
+
+Two guarantees hold the regression down where retrieval *is* used:
+
+- **Exact stays exact.** The MCP resolver keeps `names` (exact, unchanged) and
+  adds `query` (retrieval) as a separate parameter. Collapsing them would make
+  "resolve exactly this tool" fuzzy, which is the one thing a caller naming a
+  tool it already knows does not want.
+- **The lexical leg is the floor.** BM25 is in-process and dependency-free; the
+  dense leg needs an embedding binary that may not be installed. If retrieval
+  depended on it, "find me a tool that sends email" would work on some machines
+  and not others. Results say which legs answered, so "lexical only" is
+  reported rather than silently returned.
 
 ---
 
@@ -988,7 +1025,7 @@ where authored plugins are half-live.
 | 7 | ~~G3 sandboxed smoke~~ **done** — redirected, not contained; see §4.2 | Makes the executable confirm gate meaningful |
 | 8 | ~~Marketplace index TTL + explicit refresh (§3.1)~~ **done** | Small; the inherit story went stale silently without it |
 | 9 | ~~`PackagePlugin` + publish lane, GitHub flow primary~~ **done** — plus `/plugin publish [--to]`, which moved the automation line (§3.3) | Needs eval green-signal-capable; the only GitHub route |
-| 10 | Capability index + MCP retrieval (§6) | Independent — can run in parallel from step 1 |
+| 10 | ~~Capability index + MCP retrieval (§6)~~ **done** — plus `SearchPlugins`, which was already a search tool | Independent — can run in parallel from step 1 |
 | 11 | G4 trigger eval; Tier 2 drift CI | Ongoing quality, not blocking |
 
 ### 8.6 Still open

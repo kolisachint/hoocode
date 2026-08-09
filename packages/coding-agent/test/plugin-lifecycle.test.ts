@@ -299,6 +299,38 @@ describe("plugin lifecycle tools", () => {
 		expect((gh.details as { count: number }).count).toBe(1);
 	});
 
+	it("SearchPlugins adds capability matches without disturbing the substring ones", async () => {
+		// Named nothing like "send mail", but described as doing it. Substring
+		// matching cannot reach this; the capability index can.
+		const market = path.join(cwd, "market2");
+		writeJson(path.join(market, ".agents-plugin", "marketplace.json"), {
+			name: "second",
+			plugins: [{ name: "postbox", source: "./p", description: "Send messages by electronic mail." }],
+		});
+		writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+			marketplaces: [
+				{ location: path.join(cwd, "market"), dir: path.join(cwd, "market") },
+				{ location: market, dir: market },
+			],
+		});
+
+		const { ctx } = makeCtx(cwd);
+		const res = await createSearchPluginsToolDefinition().execute(
+			"1",
+			{ query: "send mail" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		const text = (res.content[0] as { text: string }).text;
+
+		// `count` stays the substring count, so nothing that depended on the old
+		// behavior shifts; the semantic hits are additive and labelled as such.
+		expect((res.details as { count: number }).count).toBe(0);
+		expect(text).toContain("Related (matched by capability, not name)");
+		expect(text).toContain("postbox");
+	});
+
 	it("InstallPlugin installs and announces, ListPlugins reflects it, UninstallPlugin reverses it", async () => {
 		const { ctx, notifications } = makeCtx(cwd);
 		const install = createInstallPluginToolDefinition();

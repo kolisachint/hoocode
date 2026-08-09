@@ -165,8 +165,14 @@ function commandExists(cmd: string): boolean {
 // commandExists() on every grep/find/glob invocation, which blocks the event loop.
 const resolvedToolPathCache = new Map<ManagedTool, string>();
 
-// Get the path to a tool (system-wide or in our tools dir)
-function getToolPath(tool: ManagedTool): string | null {
+/**
+ * Path to an already-available tool (system-wide or in our tools dir), or null.
+ *
+ * Exported as the never-downloads counterpart to {@link ensureTool}: a caller
+ * that wants a capability *if it happens to be installed* — and must not spend a
+ * download to get it — asks here and degrades when the answer is null.
+ */
+export function getToolPath(tool: ManagedTool): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 
