@@ -30,7 +30,15 @@ import type { EmittedFile, PluginDraft, PluginFormatAdapter, PluginFormatId } fr
 const MANIFEST_FILE = "plugin.json";
 
 /** Component locations that make a directory a plugin even with no manifest. */
-const CONVENTIONAL_COMPONENTS = ["skills", "commands", "agents", "hooks", ".mcp.json", "SKILL.md"];
+export const CONVENTIONAL_COMPONENTS = ["skills", "commands", "agents", "hooks", ".mcp.json", "SKILL.md"];
+
+/**
+ * Everything this adapter resolves, including surfaces that are read from the
+ * manifest rather than auto-discovered. Distinct from
+ * {@link CONVENTIONAL_COMPONENTS}, which drives *detection* — `themes` is parsed
+ * but has never made a directory a plugin on its own.
+ */
+export const JSON_MANIFEST_READ_PATHS = [...CONVENTIONAL_COMPONENTS, "themes", "hooks/hooks.json"];
 
 /** True when `root` carries any component in its default location. */
 function hasConventionalComponents(root: string): boolean {

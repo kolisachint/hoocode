@@ -13,7 +13,9 @@
 import type { NormalizedPlugin } from "../manifest.js";
 import { agentsFormat } from "./agents.js";
 import { claudeFormat } from "./claude.js";
-import { copilotFormat } from "./copilot.js";
+import { copilotFormat, copilotReadPaths } from "./copilot.js";
+import { JSON_MANIFEST_READ_PATHS } from "./jsonManifest.js";
+import { knownUnsupportedSurfaces, modelledManifestKeys } from "./shared.js";
 import type { EmittedFile, MarketplacePlatform, PluginDraft, PluginFormatAdapter, PluginFormatId } from "./types.js";
 
 /** All registered formats, in precedence order (lower `precedence` first). */
@@ -133,3 +135,43 @@ export type {
 	PluginFormatAdapter,
 	PluginFormatId,
 } from "./types.js";
+
+/**
+ * Everything the adapters claim to understand: manifest keys, plugin-relative
+ * paths they read, marketplace index locations, and the surfaces they knowingly
+ * skip.
+ *
+ * This is the input to the Tier 2 drift check (§2.2), and it is a *declaration*
+ * on purpose. A checker that inferred coverage by reading the parsers would be
+ * validating its own inference; a declared set is a claim the codebase makes,
+ * which a vendor reference can falsify.
+ *
+ * `unsupportedSurfaces` is not a gap list. Those paths are known and
+ * deliberately unhandled, so re-flagging them every run would bury the one
+ * finding that matters: a vendor path in neither set.
+ */
+export function declaredVocabulary(): {
+	manifestKeys: string[];
+	marketplaceKeys: string[];
+	readPaths: string[];
+	marketplaceFiles: string[];
+	unsupportedSurfaces: string[];
+} {
+	const readPaths = new Set<string>([...JSON_MANIFEST_READ_PATHS, ...copilotReadPaths()]);
+	for (const format of PLUGIN_FORMATS) {
+		readPaths.add(
+			`${format.id === "copilot" ? ".github" : format.id === "claude" ? ".claude-plugin" : ".agents-plugin"}/plugin.json`,
+		);
+	}
+	return {
+		manifestKeys: modelledManifestKeys(),
+		// Marketplace *index* keys, modelled by `parseMarketplaceDir`. Declared
+		// separately from plugin-manifest keys but checked together: a reference
+		// page documents both, and a drift check that knew only one of the two
+		// vocabularies would report the other's fields as unknown every run.
+		marketplaceKeys: ["name", "owner", "metadata", "pluginRoot", "plugins", "source", "supportPlatform", "strict"],
+		readPaths: [...readPaths].sort(),
+		marketplaceFiles: [...new Set(PLUGIN_FORMATS.flatMap((f) => f.marketplaceFiles))].sort(),
+		unsupportedSurfaces: knownUnsupportedSurfaces(),
+	};
+}

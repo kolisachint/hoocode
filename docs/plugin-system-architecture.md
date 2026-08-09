@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–10 landed, step 11 not started (§8.5)
+**Status:** agreed plan; steps 0–11 landed (§8.5). Open items in §8.6.
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -314,6 +314,35 @@ adapter's declared sets, opens a report. Same discipline `AGENTS.md` mandates fo
 `packages/ai/src/models.generated.ts`: the network informs the codegen input,
 never the runtime.
 
+**As built**: `plugins/drift.ts` (pure, testable) plus
+`bun run plugin-drift-check` (fetches, exits three ways). The diff needs
+something to diff *against*, so the adapters now declare their vocabulary
+(`declaredVocabulary()`) rather than having it inferred — a checker that inferred
+coverage by reading the parsers would be validating its own inference.
+
+Three things the first live run taught, all of them about noise:
+
+1. **Manifest keys come from parsed JSON fences, paths from prose.** The first
+   version accepted anything path-shaped and returned twenty findings against
+   the live Claude reference, of which zero were real: protocol method names
+   (`roots/list`), repo slugs, workspace paths, `.zip`. A report with that ratio
+   gets muted, and a muted report is worse than none. The filter now errs toward
+   missing a real surface, and the manifest-key half carries the precision.
+2. **Compare paths by suffix.** References write paths from an example plugin
+   root (`my-plugin/hooks/hooks.json`); adapters declare them plugin-relative.
+   Literal comparison reports every documented example as new.
+3. **Declare real paths, not display labels.** `UNSUPPORTED_SURFACES` labels are
+   written for humans (`"monitors/"`); the reference writes
+   `monitors/monitors.json`. The check reported a known surface as drift until
+   the declaration used the path.
+
+Exit codes are three-way — clean / drift / **unreachable** — because a network
+failure reported as a clean sweep is how a check silently stops checking.
+
+It works: against all four live reference pages it returns exactly two findings,
+`lspServers` and `lsp-config/servers.json`, with no false positives. That is
+precisely the Copilot gap §2.1 documented by hand, rediscovered independently.
+
 **Tier 3 — model fallback, quarantined.** When a directory parses to nothing and
 Tier 1 found unmodeled surfaces, the model may read the vendor docs and draft an
 *adapter patch*. It lands as a proposal for human review, never a live parse.
@@ -541,6 +570,32 @@ G4 must **reuse `core/search/eval-harness.ts`** rather than re-implement it. Tha
 module already solved the three problems any second eval subsystem rediscovers:
 the corpus moves under you, nothing gets recorded, and a degraded run reads like
 a real one (`search/eval-harness.ts:1-22`).
+
+**As built** (`plugins/trigger-eval.ts`), with one deviation and two decisions
+the plan did not anticipate:
+
+- **The reuse is of the rules, not the code.** That harness pins a corpus by
+  checking out a detached git worktree and stamps provenance with embsearch
+  daemon state. G4's corpus is a handful of description strings — no repo, no
+  embedder — so calling it would have meant a git worktree per skill eval. All
+  three rules are honored: the record pins a content hash of exactly what was
+  judged, it is machine-readable, and a run that could not happen is `not-run`,
+  never a pass. The mechanism differs because the corpus does.
+- **Gold prompts are supplied, never generated.** Generating test prompts from
+  the description and then checking the description against them measures
+  self-consistency and always passes. Cases live in `eval/triggers.json`.
+- **Negatives come from real siblings.** A prompt whose right answer is another
+  capability is a negative for this one, and the judge sees those siblings as
+  candidates. "Does it fire" is easy; "does it fire instead of the wrong thing"
+  is the question worth asking, and it needs competition to be asked at all.
+
+The model call is **injected** (`TriggerJudge`), which is what makes the scoring,
+the gold-set handling and the gate mapping testable without a model — and what
+makes "no judge configured" produce an honest `not-run` instead of a gate that
+quietly passes. Severity follows §4.3: recall below 80% is an error (a skill that
+does not fire is not a capability), specificity below 75% is a warning
+(over-firing costs context but breaks nothing), `not-run` is `info` so a machine
+without a model is never blocked by a check it could not perform.
 
 ### 4.3 Where the gate binds
 
@@ -1026,7 +1081,7 @@ where authored plugins are half-live.
 | 8 | ~~Marketplace index TTL + explicit refresh (§3.1)~~ **done** | Small; the inherit story went stale silently without it |
 | 9 | ~~`PackagePlugin` + publish lane, GitHub flow primary~~ **done** — plus `/plugin publish [--to]`, which moved the automation line (§3.3) | Needs eval green-signal-capable; the only GitHub route |
 | 10 | ~~Capability index + MCP retrieval (§6)~~ **done** — plus `SearchPlugins`, which was already a search tool | Independent — can run in parallel from step 1 |
-| 11 | G4 trigger eval; Tier 2 drift CI | Ongoing quality, not blocking |
+| 11 | ~~G4 trigger eval; Tier 2 drift CI~~ **done** — G4 with an injected judge, drift as `bun run plugin-drift-check` | Ongoing quality, not blocking |
 
 ### 8.6 Still open
 

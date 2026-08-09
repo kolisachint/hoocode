@@ -36,7 +36,15 @@ export interface RawManifest {
 	[key: string]: unknown;
 }
 
-/** Manifest keys every adapter models; anything else is preserved via `unknownFields`. */
+/**
+ * Manifest keys every adapter models; anything else is preserved via
+ * `unknownFields`.
+ *
+ * Surfaced through {@link declaredVocabulary} so the Tier 2 drift check has
+ * something to diff the vendor references against. A checker that inferred our
+ * coverage by reading the parser would be checking its own inference; a declared
+ * set is a claim the codebase makes and the check can falsify.
+ */
 const MODELLED_MANIFEST_KEYS = new Set([
 	"name",
 	"version",
@@ -266,4 +274,22 @@ export function claudeStyleWorkspace(root: string): WorkspaceLayout {
 			content: emitMarkdown({ name: c.name, description: c.description }, c.body),
 		}),
 	};
+}
+
+/** The manifest keys the adapters model, as a sorted list. Input to the drift check (§2.2). */
+export function modelledManifestKeys(): string[] {
+	return [...MODELLED_MANIFEST_KEYS].sort();
+}
+
+/**
+ * Surfaces we know about and deliberately do not load, as the **relative paths**
+ * they actually occupy rather than their display labels.
+ *
+ * The distinction bit once already: the labels are written for humans
+ * (`"monitors/"`), the vendor reference writes the real path
+ * (`monitors/monitors.json`), and a drift check comparing the two reported a
+ * known surface as a new finding.
+ */
+export function knownUnsupportedSurfaces(): string[] {
+	return UNSUPPORTED_SURFACES.map((s) => s.rel.replace(/\\/g, "/")).sort();
 }

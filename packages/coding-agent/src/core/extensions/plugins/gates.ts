@@ -32,7 +32,7 @@ import type { PluginPlatform } from "./formats/platform-targets.js";
 import { type NormalizedPlugin, parsePluginDir } from "./manifest.js";
 
 export interface GateFinding {
-	gate: "G1" | "G2" | "G3";
+	gate: "G1" | "G2" | "G3" | "G4";
 	/**
 	 * `error` fails the gate. `warning` is reported and passes, unless `strict`.
 	 * `info` always passes — it exists so a *successful* check can be shown to the

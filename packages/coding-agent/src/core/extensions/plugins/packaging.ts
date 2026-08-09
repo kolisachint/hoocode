@@ -25,11 +25,20 @@
 import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
+import type { CapabilityDoc } from "../../capabilities/registry.js";
 import { isPluginPlatform, type PluginPlatform, resolvePluginPlatforms } from "./formats/platform-targets.js";
 import { formatGateFindings, type GateFinding, type GateResult, runStaticGates, withFindings } from "./gates.js";
 import { productionRoot } from "./locations.js";
 import type { NormalizedPlugin } from "./manifest.js";
 import { runSmokeGate } from "./smoke.js";
+import {
+	distractorCandidates,
+	loadTriggerCases,
+	ownCandidates,
+	runTriggerEval,
+	type TriggerJudge,
+	triggerFindings,
+} from "./trigger-eval.js";
 
 /**
  * Where packaging records what it produced, at the plugin root.
@@ -230,6 +239,7 @@ function publishSteps(plugin: NormalizedPlugin, platform: PluginPlatform): strin
 export async function packagePlugin(
 	plugin: NormalizedPlugin,
 	platformOverride?: PluginPlatform,
+	options: { judge?: TriggerJudge; distractors?: readonly CapabilityDoc[] } = {},
 ): Promise<PackageResult> {
 	const platform = platformOverride ?? resolvePackagePlatform(plugin);
 
@@ -264,6 +274,23 @@ export async function packagePlugin(
 	let evaluation = runStaticGates(plugin.root, { platform, strict: true });
 	if (evaluation.plugin) {
 		evaluation = withFindings(evaluation, await runSmokeGate(evaluation.plugin), true);
+	}
+
+	// G4 is the publish path's gate (§4.3) and nothing else's: it costs a model
+	// call, and the question it asks — is this description actually worth the
+	// context it occupies — only becomes other people's problem at publication.
+	// With no judge or no gold set it reports `not-run`, which is `info`, so a
+	// machine without a model is never blocked from publishing by a check it
+	// could not perform.
+	const own = ownCandidates(plugin);
+	if (own.length > 0) {
+		const outcome = await runTriggerEval(
+			plugin.id,
+			[...own, ...distractorCandidates(plugin.id, options.distractors ?? [])],
+			loadTriggerCases(plugin.root),
+			options.judge,
+		);
+		evaluation = withFindings(evaluation, triggerFindings(outcome), true);
 	}
 
 	const written: string[] = [];

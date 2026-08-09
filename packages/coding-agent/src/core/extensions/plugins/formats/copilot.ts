@@ -120,6 +120,29 @@ function manifestPathFor(root: string): string | undefined {
 	return undefined;
 }
 
+/**
+ * Every plugin-relative path this adapter reads, for the Tier 2 drift check
+ * (§2.2). Assembled from the constants above rather than restated, so a path
+ * added to the reader cannot be missing from the declaration.
+ */
+export function copilotReadPaths(): string[] {
+	return [
+		...MANIFEST_REL_PATHS,
+		PROMPTS_DIR,
+		LEGACY_CHATMODES_DIR,
+		ALT_MCP_FILE,
+		ALT_HOOKS_FILE,
+		LEGACY_HOOKS_FILE,
+		"skills",
+		"agents",
+		// The `<name>.agent.md` subagent convention, which the reference writes as
+		// a suffix rather than a path.
+		".agent.md",
+		"hooks.json",
+		".mcp.json",
+	].map((p) => p.replace(/\\/g, "/"));
+}
+
 export const copilotFormat: PluginFormatAdapter = {
 	id: "copilot",
 	platform: "github",
