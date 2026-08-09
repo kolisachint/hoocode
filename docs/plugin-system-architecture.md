@@ -34,7 +34,8 @@ fetched, because they are the thing most likely to go stale.
 
 Reading is already right: `parseMarketplaceDir` and `parsePluginWithFormats`
 accept native, Claude, and Copilot layouts with a documented precedence
-(`marketplace.ts:188-244`, `formats/types.ts:124-152`). Nothing there changes.
+(`plugins/marketplace.ts:188-244`, `formats/types.ts:124-152`). Nothing there
+changes.
 
 Writing is wrong. `DEFAULT_AUTHORING_PLATFORMS = ["agents"]`
 (`platform-targets.ts:30`) makes the portable native layout the default
@@ -818,7 +819,7 @@ Measured, not estimated.
 | Renamed — session write-target flag | Untouched — on-disk vendor data |
 |---|---|
 | `main.ts:433-452`, `cli/args.ts`, `settings-manager.ts`, `settings-types.ts` | `NormalizedPlugin.supportPlatform` (`manifest.ts`) |
-| `platform-targets.ts`, `scaffold.ts:121,182,253` | `NormalizedMarketplace.supportPlatform` (`marketplace.ts`, 16 refs) |
+| `platform-targets.ts`, `scaffold.ts:121,182,253` | `NormalizedMarketplace.supportPlatform` (`plugins/marketplace.ts`, 16 refs) |
 | `propose-plugin.ts:132-137` | `marketplace.json` `supportPlatform` field, `formats/types.ts` |
 
 A blind rename across all 25 files corrupts the parsed data model.
