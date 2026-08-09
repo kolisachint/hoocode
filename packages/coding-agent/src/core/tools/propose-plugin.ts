@@ -38,6 +38,7 @@ import {
 	resolvePluginPlatforms,
 	writePluginDraft,
 } from "../extensions/plugins/authoring.js";
+import type { PluginPlatform } from "../extensions/plugins/formats/platform-targets.js";
 import type { MarketplacePlatform, PluginDraft } from "../extensions/plugins/formats/types.js";
 import { formatGateFindings, runStaticGates, withFindings } from "../extensions/plugins/gates.js";
 import { discardDraftDir } from "../extensions/plugins/locations.js";
@@ -133,7 +134,7 @@ interface CapabilityInput {
 	mcpServers?: Static<typeof mcpServerSchema>[];
 }
 
-function resolvePlatforms(): MarketplacePlatform[] {
+function resolvePlatforms(): PluginPlatform[] {
 	// No model-facing platform selection: the human picks the target ecosystem
 	// with --platform, defaulting to claude. A plugin is a distribution unit, so
 	// there is no vendor-neutral option here. See resolvePluginPlatforms.

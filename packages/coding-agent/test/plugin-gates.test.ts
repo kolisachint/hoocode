@@ -5,6 +5,9 @@
  * a production home. See docs/plugin-system-architecture.md §4.
  */
 
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: `${CLAUDE_PLUGIN_ROOT}`
+// is a vendor plugin template variable in a plugin manifest, not JS interpolation.
+
 import { execFileSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";

@@ -18,10 +18,21 @@
  *   /plugin list                     list available plugins across marketplaces
  *   /plugin install <name>
  *   /plugin remove <name>
+ *   /plugin publish <name> [--to <marketplace-dir>]
+ *
+ * `publish` is the human end of the publish lane (§3.2). The model can package a
+ * plugin — gates, README, index entry — but never publish it, because an agent
+ * that can push executable code into a marketplace other agents install from
+ * unattended is a supply-chain compromise primitive. So the last step is a
+ * command a person types, and even then it stops at the machine boundary: with
+ * `--to` it copies the plugin into a local marketplace checkout and updates that
+ * index, leaving an uncommitted diff to review. Committing and opening the PR
+ * stay manual.
  */
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { getPlugin } from "../../core/extensions/plugins/authoring.js";
 import {
 	findAvailablePlugin,
 	installAvailablePlugin,
@@ -41,6 +52,7 @@ import {
 	resolvePluginSource,
 	writeMarketplaceStore,
 } from "../../core/extensions/plugins/marketplace.js";
+import { entryNeedsSource, packagePlugin, stageIntoMarketplace } from "../../core/extensions/plugins/packaging.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 
 function isGitSource(loc: string): boolean {
@@ -50,9 +62,9 @@ function isGitSource(loc: string): boolean {
 export function setupMarketplace(pi: ExtensionAPI): void {
 	pi.registerCommand("plugin", {
 		description:
-			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> | /plugin remove <name>",
+			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> | /plugin remove <name> | /plugin publish <name> [--to <dir>]",
 		getArgumentCompletions: (prefix: string) =>
-			["marketplace", "list", "install", "remove", "refresh"]
+			["marketplace", "list", "install", "remove", "refresh", "publish"]
 				.filter((s) => s.startsWith(prefix))
 				.map((s) => ({ value: s, label: s })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -174,6 +186,52 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 				return;
 			}
 
+			// ── publish <name> [--to <marketplace-dir>] ─────────────────────────
+			if (trimmed.startsWith("publish")) {
+				const rest = trimmed.slice("publish".length).trim();
+				const toMatch = /(?:^|\s)--to\s+(\S+)/.exec(rest);
+				const name = rest.replace(/(?:^|\s)--to\s+\S+/, "").trim();
+				if (!name) {
+					ctx.ui.notify("Usage: /plugin publish <name> [--to <marketplace-dir>]", "warning");
+					return;
+				}
+				const plugin = getPlugin(cwd, name);
+				if (!plugin) {
+					ctx.ui.notify(`No plugin named "${name}" is installed or authored here.`, "error");
+					return;
+				}
+
+				ctx.ui.notify(`Packaging "${name}" — running publish checks…`, "info");
+				const result = await packagePlugin(plugin);
+				if (!result.ok) {
+					// A red gate blocks staging too: the point of the strict run is that a
+					// plugin other people install has passed it, and staging is the step
+					// that puts it on the path to them.
+					ctx.ui.notify(`Not publishable yet.\n${result.instructions}`, "error");
+					return;
+				}
+
+				if (!toMatch) {
+					const hint = entryNeedsSource(result.entry)
+						? "\nRe-run with --to <marketplace-dir> to vendor it into a local marketplace checkout (which fills `source` in)."
+						: "";
+					ctx.ui.notify(`${result.instructions}${hint}`, "info");
+					return;
+				}
+
+				const staged = stageIntoMarketplace(plugin, result.platform, toMatch[1]);
+				if (!staged.ok) {
+					ctx.ui.notify(staged.message, "error");
+					return;
+				}
+				ctx.ui.notify(
+					`${staged.message}\n\nReview the diff, then commit and open the pull request yourself — ` +
+						"hoocode deliberately stops short of pushing a plugin into a marketplace.",
+					"info",
+				);
+				return;
+			}
+
 			// ── remove <name> ───────────────────────────────────────────────────
 			if (trimmed.startsWith("remove")) {
 				const name = trimmed.slice("remove".length).trim();
@@ -192,7 +250,8 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 			}
 
 			ctx.ui.notify(
-				"Usage: /plugin marketplace add|list | /plugin list | /plugin install <name> | /plugin remove <name>",
+				"Usage: /plugin marketplace add|list|refresh | /plugin list | /plugin install <name> | " +
+					"/plugin remove <name> | /plugin publish <name> [--to <marketplace-dir>]",
 				"warning",
 			);
 		},

@@ -267,7 +267,11 @@ describe("plugin lifecycle tools", () => {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	});
 
-	it("exposes the capability-acquisition tool names (lifecycle + authoring) for the guardrail", () => {
+	it("exposes the capability-acquisition tool names (lifecycle + authoring + publish lane) for the guardrail", () => {
+		// Exhaustive on purpose: a new plugin-system tool that is not in this set is
+		// a tool an authored subagent could be granted, which is the whole
+		// privilege-amplification hole the guardrail exists to close. Adding one
+		// here should be a deliberate line in a diff, not a silent widening.
 		expect(PLUGIN_SYSTEM_TOOL_NAMES).toEqual([
 			"SearchPlugins",
 			"ListPlugins",
@@ -277,6 +281,7 @@ describe("plugin lifecycle tools", () => {
 			"ProposePlugin",
 			"UpdatePlugin",
 			"RemovePluginCapability",
+			"PackagePlugin",
 		]);
 	});
 

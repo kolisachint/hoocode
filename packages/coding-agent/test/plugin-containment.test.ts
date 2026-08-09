@@ -13,6 +13,11 @@
  * See docs/plugin-system-architecture.md §5.7–§5.9.
  */
 
+// biome-ignore-all lint/suspicious/noTemplateCurlyInString: `${PLUGIN_ROOT}` and
+// friends are the vendors' plugin template variables — plain strings substituted
+// at load time, not JS interpolation. Writing them as template literals is
+// exactly the bug these tests exist to catch.
+
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";

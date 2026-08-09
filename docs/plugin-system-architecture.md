@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–8 landed, steps 9+ not started (§8.5)
+**Status:** agreed plan; steps 0–9 landed, steps 10–11 not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -355,7 +355,10 @@ Working today: curated indices clone lazily on first search
 Consumption is format-agnostic and stays that way: hoocode installs Claude,
 Copilot, and native plugins alike, into its own home (§5.3).
 
-### 3.2 Produce / publish — absent, and now the only GitHub route
+### 3.2 Produce / publish — was absent, and is the only GitHub route
+
+*Built in step 9: `core/extensions/plugins/packaging.ts`, the `PackagePlugin`
+tool, and `/plugin publish`.*
 
 No packaging, no index-entry generation, no validation, no publish path. But
 "publishing is a human act" does not mean "no tooling" — Claude Code ships
@@ -368,9 +371,21 @@ Pipeline, autonomous until the last step:
    `marketplace.json` entry stanza *in the plugin's production home* (§5.3). No
    third location and no copy: the artifact is already in its final layout by the
    time it gets here. Touches no remote.
-2. **`PluginEval`** (autonomous) — §4. Must be green.
-3. **Publish** (human) — opens the PR against the marketplace repo, or prepares
-   the Claude community submission.
+2. **The gates** (autonomous) — §4, at `strict`. Folded into step 1 rather than
+   built as a separate `PluginEval` tool: a package result that does not carry
+   its own verdict invites publishing an ungated artifact, and there was no
+   second caller wanting the eval alone.
+3. **Publish** (human) — `/plugin publish <id>`, which prints the entry and the
+   platform's submission steps; with `--to <dir>` it also vendors the plugin into
+   a local marketplace checkout and updates that index. It stops there: no
+   commit, no push, no PR.
+
+One check exists that the plan did not anticipate: packaging refuses a plugin
+that carries no manifest for the target ecosystem. A `.agents-plugin`-only plugin
+is not a Claude artifact, and `claude plugin validate` says so — but as a wall of
+output about a missing file, when the real answer is one sentence ("re-author it
+with `--platform claude`"). It is the §1 consumption/production split showing up
+at the last possible moment, which is the wrong moment to discover it.
 
 The two platforms diverge at step 3, and the pipeline must model that rather than
 paper over it:
@@ -398,6 +413,23 @@ Claude Code holds the same line with more machinery than we have — submission
 form, review pipeline, safety screening, SHA pinning. We have none of it, so our
 line has to be at least as conservative. Everything before the button is
 automatable, and should be.
+
+**Where the line actually fell, once built.** "The last step is human" turned out
+to under-specify the interesting part, because *publish* is several steps. As
+implemented, the boundary is the machine, not the command:
+
+| Action | Who | Why |
+|---|---|---|
+| Gate, README, index entry (`PackagePlugin`) | model, autonomous | Writes only inside the plugin's own directory; reversible; produces the evidence the human's decision needs |
+| Copy into a marketplace checkout + update its index (`/plugin publish --to`) | human command, local | A person typed it, and the result is an uncommitted diff in a repo they own. Reviewable, revertable, and visible in `git status` |
+| Commit, push, open the PR | human, manual | The step that makes the plugin installable by other people's agents. Nothing in hoocode does it |
+
+Two consequences worth naming. Staging is deliberately *not* reachable from a
+tool even though it is mechanical — the reason to automate it is convenience, and
+the reason not to is that "the model prepared a marketplace commit" and "the model
+published" differ by one `git push` that some later automation could supply.
+And a red gate blocks staging, not just the final submit: the point of the strict
+run is that anything on the path to other people has passed it.
 
 ---
 
@@ -923,6 +955,13 @@ directory in code.
 | **Draft dir** | temp | Ephemeral. Holds an authored plugin while the gates run; deleted on any failure (§4.2) |
 | **Consumption home** | `~/.agents/plugins/<id>/` | Persistent. Marketplace installs, format-agnostic |
 | **Production home** | `~/.claude/skills/<id>/` or `~/.agents/publish/github/<id>/` | Persistent. Where an authored plugin lives, per platform (§5.3) |
+| **Marketplace checkout** | wherever the user cloned it | Not hoocode's. `/plugin publish --to` writes into it and stops (§3.3) |
+
+Packaging adds no fourth location. It leaves two files in the production home:
+the generated `README.md`, and `.hoocode-publish.json` — a build record beside
+the existing `.authored.json` provenance marker. Both dotfiles are stripped when
+the plugin is staged into a marketplace, because a build record is not part of
+the artifact.
 
 ### 8.4 What survived every review round
 
@@ -948,7 +987,7 @@ where authored plugins are half-live.
 | 6 | ~~Tier 1 lenient reader + `unsupportedSurfaces`~~ **done in step 4** — a re-emit drops any manifest key the reader does not carry, so preservation could not wait | Turns the *next* drift into a signal |
 | 7 | ~~G3 sandboxed smoke~~ **done** — redirected, not contained; see §4.2 | Makes the executable confirm gate meaningful |
 | 8 | ~~Marketplace index TTL + explicit refresh (§3.1)~~ **done** | Small; the inherit story went stale silently without it |
-| 9 | `PackagePlugin` + publish lane, GitHub flow primary | Needs eval green-signal-capable; the only GitHub route |
+| 9 | ~~`PackagePlugin` + publish lane, GitHub flow primary~~ **done** — plus `/plugin publish [--to]`, which moved the automation line (§3.3) | Needs eval green-signal-capable; the only GitHub route |
 | 10 | Capability index + MCP retrieval (§6) | Independent — can run in parallel from step 1 |
 | 11 | G4 trigger eval; Tier 2 drift CI | Ongoing quality, not blocking |
 

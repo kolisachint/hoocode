@@ -64,6 +64,7 @@ import {
 	SUBAGENT_MAX_DEPTH_ENV,
 } from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
+import { createPackagePluginToolDefinition } from "./core/tools/package-plugin.js";
 import { createPluginLifecycleToolDefinitions } from "./core/tools/plugins.js";
 import { createProposePluginToolDefinitions } from "./core/tools/propose-plugin.js";
 import {
@@ -540,6 +541,7 @@ function buildSessionOptions(
 			...(options.customTools ?? []),
 			...createPluginLifecycleToolDefinitions(),
 			...createProposePluginToolDefinitions(),
+			createPackagePluginToolDefinition(),
 		];
 	}
 
