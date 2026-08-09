@@ -25,6 +25,7 @@ import {
 } from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { analyzeDeferral, formatDeferral } from "./core/capabilities/deferral.js";
 import { reportEmbsearchProgress } from "./core/embsearch/embsearch-progress.js";
 import {
 	EmbsearchService,
@@ -883,6 +884,26 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 		console.log(`  tool schemas total: ${surface.toolSchemaTokens} tokens`);
 		console.log(`  total: ${surface.totalTokens} tokens`);
+
+		// The surface above says what the schemas cost; this says whether
+		// withholding them is worth what a resolve costs (§6.3, §8.6 item 6).
+		const deferrable = surface.tools.filter((t) => t.name.startsWith("mcp_"));
+		const deferredTokens = deferrable.reduce((sum, t) => sum + t.tokens, 0);
+		console.log(`\nDeferrable (MCP) tools: ${deferrable.length}, ${deferredTokens} tokens`);
+		if (session.model) {
+			console.log(
+				formatDeferral(
+					analyzeDeferral({
+						deferredTokens,
+						prefixTokens: surface.totalTokens,
+						prices: session.model.cost,
+					}),
+					{ prefixIsFloor: true },
+				),
+			);
+		} else {
+			console.log("  deferral: no model resolved, so the trade-off cannot be costed");
+		}
 		process.exit(0);
 	}
 

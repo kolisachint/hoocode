@@ -859,6 +859,26 @@ strictly more deterministic. `plugin-system-spec.md` already reasons this way fo
 subagents; this generalizes it and makes the threshold measurable via
 `hoocode --print-token-surface`.
 
+**Now measurable, and the answer is unflattering.** `--print-token-surface`
+reports the deferral trade-off using the session model's real cache pricing
+(`core/capabilities/deferral.ts`). The term nobody had priced is that deferred
+schemas would otherwise sit in the *cached* prefix, so withholding them saves `D`
+tokens at the **cache-read** rate — a tenth of what it looks like — while a
+resolve invalidates the whole prefix `P` and pays it at the **cache-write** rate:
+
+```
+N = P x (cacheWrite - cacheRead) / (D x cacheRead)
+```
+
+Measured on this repo (system prompt + 15 tools = 11,135 tokens at startup) with
+Opus pricing, 5K of MCP schema breaks even at **~26 requests before the first
+resolve**. The counterintuitive part: `P` grows with the conversation and `D`
+does not, so the same session at 100K of context needs ~230. **Deferral gets
+worse the longer a session runs** — the opposite of the intuition that motivated
+it. Two escapes: a provider that doesn't price caching has no prefix to lose (the
+analyzer says so explicitly), and native `defer_loading` removes the penalty
+entirely by making loading append-only (§8.6 item 6).
+
 **As built**, the threshold applies to the *catalog rendering*, not yet to
 per-capability deferral: `CATALOG_EAGER_LIMIT = 30` picks between the full
 listing and a per-server summary. `deferred` is carried on every document and is
