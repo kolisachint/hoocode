@@ -33,11 +33,14 @@ import {
 	isAuthoredPlugin,
 	mergePluginDraft,
 	pluginExists,
+	promoteDraft,
 	removeFromPlugin,
 	resolvePluginPlatforms,
 	writePluginDraft,
 } from "../extensions/plugins/authoring.js";
 import type { MarketplacePlatform, PluginDraft } from "../extensions/plugins/formats/types.js";
+import { formatGateFindings, runStaticGates } from "../extensions/plugins/gates.js";
+import { discardDraftDir } from "../extensions/plugins/locations.js";
 import type { ExtensionContext } from "../extensions/types.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
 import {
@@ -243,10 +246,14 @@ async function passExecutableGate(
 	id: string,
 	params: CapabilityInput,
 	ctx: ExtensionContext,
+	evidence?: string,
 ): Promise<{ ok: true; gated: boolean } | { ok: false; result: ReturnType<typeof reject> }> {
 	if (!hasExecutable(params)) return { ok: true, gated: false };
 
-	const review = buildReview(id, params);
+	// The gate results go in the prompt, not just the tool result. A human shown a
+	// bare shell command has no basis to approve it; "ran the checks, here is what
+	// they found" is what makes the confirmation a decision rather than a formality.
+	const review = evidence ? `${buildReview(id, params)}\n\n${evidence}` : buildReview(id, params);
 	ctx.ui.notify(review, "warning");
 	if (!ctx.hasUI) {
 		return {
@@ -320,14 +327,34 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 				);
 			}
 
-			const gate = await passExecutableGate(params.id, params, ctx);
-			if (!gate.ok) return gate.result;
+			// Emit to an ephemeral draft first: the gates need something real to run
+			// against, and a production home is live (Claude Code loads
+			// ~/.claude/skills on its next session), so nothing may land there until
+			// the checks pass and — for executable content — the human agrees.
+			const draft = writePluginDraft(draftFrom(params.id, params, platforms), platforms, { promote: false });
+			const evaluation = runStaticGates(draft.dest, { platform: platforms[0] });
+			if (!evaluation.ok) {
+				discardDraftDir(draft.dest);
+				return reject(
+					params.id,
+					`Plugin "${params.id}" was not authored — it failed its checks.\n` +
+						`${formatGateFindings(evaluation)}\nFix the issues and try again.`,
+				);
+			}
 
-			const result = writePluginDraft(draftFrom(params.id, params, platforms), platforms);
+			const gate = await passExecutableGate(params.id, params, ctx, formatGateFindings(evaluation));
+			if (!gate.ok) {
+				discardDraftDir(draft.dest);
+				return gate.result;
+			}
+
+			const dest = promoteDraft(draft.dest, params.id, platforms);
 			// Passive capabilities activate live — usable on the very next model request,
 			// this same turn; hooks/MCP servers activate via the reload once the turn ends.
-			const activation = ctx.activatePlugin(result.dest);
-			const text = `${summarizeWrite(params.id, platforms, result.files, result.dest, "Authored")}\n${activation.message}`;
+			const activation = ctx.activatePlugin(dest);
+			const text =
+				`${summarizeWrite(params.id, platforms, draft.files, dest, "Authored")}\n` +
+				`${formatGateFindings(evaluation)}\n${activation.message}`;
 			ctx.ui.notify(`Authored plugin "${params.id}" (${platforms.join(", ")}).`, "info");
 			return {
 				content: [{ type: "text" as const, text }],

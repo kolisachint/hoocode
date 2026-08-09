@@ -202,7 +202,15 @@ export function writePluginDraft(
  */
 export function promoteDraft(draftDir: string, id: string, targets: readonly MarketplacePlatform[]): string {
 	const platform = targets.filter(isPluginPlatform)[0] ?? resolvePluginPlatforms()[0];
-	const dest = productionPluginDir(platform, id);
+	return promoteDraftTo(draftDir, productionPluginDir(platform, id));
+}
+
+/**
+ * Replace `dest` with the contents of a draft. Used when the destination is
+ * already known — an edit stays wherever the plugin lives, which may be the
+ * consumption home or a legacy directory rather than a production home.
+ */
+export function promoteDraftTo(draftDir: string, dest: string): string {
 	rmSync(dest, { recursive: true, force: true });
 	mkdirSync(path.dirname(dest), { recursive: true });
 	try {

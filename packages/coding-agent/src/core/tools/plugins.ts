@@ -22,6 +22,7 @@
 
 import { type Static, Type } from "typebox";
 import { getArmedReuseNudges } from "../../extensions/core/prompt-reactive/policy.js";
+import { formatGateFindings, runStaticGates } from "../extensions/plugins/gates.js";
 import {
 	type AvailablePlugin,
 	ensureWellKnownMarketplaces,
@@ -241,6 +242,24 @@ export function createInstallPluginToolDefinition(): ToolDefinition {
 			const outcome = await installAvailablePlugin(ctx.cwd, params.name);
 			let text = outcome.message;
 			if (outcome.installed && outcome.dest) {
+				// Source trust is not content trust: the marketplace boundary vouches
+				// for where the code came from, not for what it does. The vendor
+				// validator is skipped here — the plugin is someone else's artifact in
+				// their own layout, and failing an install on their conformance is not
+				// ours to enforce — so this is round-trip plus the safety checks.
+				const evaluation = runStaticGates(outcome.dest, { skipVendorValidator: true });
+				if (!evaluation.ok) {
+					uninstallPlugin(ctx.cwd, params.name);
+					const failure =
+						`Installed "${params.name}" but removed it again — it failed its checks.\n` +
+						formatGateFindings(evaluation);
+					ctx.ui.notify(failure, "warning");
+					return {
+						content: [{ type: "text" as const, text: failure }],
+						details: { name: params.name, installed: false },
+					};
+				}
+				if (evaluation.findings.length > 0) text += `\n${formatGateFindings(evaluation)}`;
 				// Live activation: skills/commands/subagents become usable on the very
 				// next model request (same turn); hooks/MCP servers reload once idle.
 				const activation = ctx.activatePlugin(outcome.dest);

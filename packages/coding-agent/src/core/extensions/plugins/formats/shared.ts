@@ -177,21 +177,30 @@ function readMcpFile(mcpFile: string): Record<string, unknown> | undefined {
 // ============================================================================
 
 /** Serialize a small set of frontmatter fields to YAML. Values are strings only. */
+/**
+ * Render frontmatter, or nothing at all when every field is empty.
+ *
+ * Emitting bare `---\n---` looks harmless and is not: YAML parses an empty
+ * document as `null`, and Claude Code rejects a component whose frontmatter is
+ * not a mapping. A command authored without a description hit exactly that, and
+ * the artifact was invalid in the ecosystem it was written for while
+ * round-tripping happily through our own reader.
+ */
 function emitFrontmatter(fields: Record<string, string | undefined>): string {
-	const lines: string[] = ["---"];
+	const lines: string[] = [];
 	for (const [key, value] of Object.entries(fields)) {
 		if (value === undefined || value === "") continue;
 		// Quote values that could be misparsed as YAML (contain a colon-space or start punctuation).
 		const needsQuote = /[:#]|^[\s>|@`&*!%]/.test(value) || value.includes("\n");
 		lines.push(`${key}: ${needsQuote ? JSON.stringify(value) : value}`);
 	}
-	lines.push("---");
-	return lines.join("\n");
+	return lines.length > 0 ? ["---", ...lines, "---"].join("\n") : "";
 }
 
 /** A markdown capability file: frontmatter block + body. */
 export function emitMarkdown(fields: Record<string, string | undefined>, body: string): string {
-	return `${emitFrontmatter(fields)}\n\n${body.trimEnd()}\n`;
+	const frontmatter = emitFrontmatter(fields);
+	return frontmatter ? `${frontmatter}\n\n${body.trimEnd()}\n` : `${body.trimEnd()}\n`;
 }
 
 /** Pretty-print a JSON manifest with a trailing newline (matches repo convention). */

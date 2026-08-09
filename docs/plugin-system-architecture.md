@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–4b landed, steps 5+ not started (§8.5)
+**Status:** agreed plan; steps 0–5 landed, steps 7+ not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -506,6 +506,14 @@ say yes or no. The confirmation is a formality.
 that confirmation mean something. The eval is not primarily a quality gate — it
 is what converts the existing human trust gate from theater into a decision.
 
+**Vindicated on first run.** Delegating G1 to `claude plugin validate` found a
+conformance bug within minutes of being wired up: a command authored without a
+description emitted bare `---\n---`, which YAML reads as `null`, and Claude Code
+rejects a component whose frontmatter is not a mapping. Every such artifact was
+invalid in the ecosystem it was written for while round-tripping perfectly
+through our own reader — which is exactly the class of failure that argued for
+using the vendor's validator instead of inventing a second opinion.
+
 ---
 
 ## 5. Scope and location
@@ -912,7 +920,7 @@ where authored plugins are half-live.
 | 3 | ~~`.claude/skills` discovery, stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9)~~ **done** | Without this the D3 target is half-live |
 | 4 | ~~Adapter catch-up, both vendors (§2.1)~~ **done** — plus `unknownFields`/`unsupportedSurfaces`, which step 6 had scheduled separately | Now a production blocker: we emit into these ecosystems |
 | 4b | ~~Runtime variables + per-plugin data dir (D9), both platforms~~ **done** | Small, self-contained, and unblocks any plugin that uses them |
-| 5 | G1 + G2, delegating to `claude plugin validate` (no Copilot equivalent exists) | Cheapest real green signal; step 4 makes it pass for the right reasons, step 2 gave it somewhere safe to run |
+| 5 | ~~G1 + G2, delegating to `claude plugin validate`~~ **done** | Cheapest real green signal; step 4 made it pass for the right reasons, step 2 gave it somewhere safe to run |
 | 6 | ~~Tier 1 lenient reader + `unsupportedSurfaces`~~ **done in step 4** — a re-emit drops any manifest key the reader does not carry, so preservation could not wait | Turns the *next* drift into a signal |
 | 7 | G3 sandboxed smoke | Makes the executable confirm gate meaningful |
 | 8 | Marketplace index TTL + explicit refresh (§3.1) | Small; the inherit story goes stale silently without it |
