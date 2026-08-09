@@ -204,8 +204,8 @@ inside the installed-plugins cache directory."
 **Local loop, confirmed:** `copilot plugin install ./my-plugin` works today but
 *copies* into `~/.copilot/installed-plugins/_direct/<source-id>/`; component
 changes require a reinstall. Combined with the CLI's own deprecation warning on
-direct installs, there is no in-place drop-in — which is what makes the staging
-directory in §5.3 the right target rather than a workaround.
+direct installs, there is no in-place drop-in — which is what makes the
+hoocode-owned production home in §5.3 the right target rather than a workaround.
 `copilot plugin uninstall <name>` keys off the manifest `name`, not the path.
 
 ---
@@ -348,9 +348,10 @@ the *approval*, not the mechanics.
 
 Pipeline, autonomous until the last step:
 
-1. **`PackagePlugin`** (autonomous) — take the authored plugin, emit the target
-   platform's layout, generate `README.md`, produce the `marketplace.json` entry
-   stanza. Writes to staging. Touches no remote.
+1. **`PackagePlugin`** (autonomous) — generate `README.md` and the
+   `marketplace.json` entry stanza *in the plugin's production home* (§5.3). No
+   third location and no copy: the artifact is already in its final layout by the
+   time it gets here. Touches no remote.
 2. **`PluginEval`** (autonomous) — §4. Must be green.
 3. **Publish** (human) — opens the PR against the marketplace repo, or prepares
    the Claude community submission.
@@ -423,7 +424,7 @@ For `--platform github` there is **no** equivalent validator — confirmed absen
 from the reference (§1.7), not merely unknown — so G1 there is round-trip plus
 schema.
 
-#### G1 forces staged writes
+#### G1 forces a draft-then-promote write
 
 Today `writePluginDraft` writes straight to the destination and
 `ProposePlugin` activates it (`propose-plugin.ts:323-326`). Under D3 that
@@ -431,19 +432,24 @@ destination is `~/.claude/skills/<id>/` — a **live vendor directory**. Writing
 there and validating afterwards means a failed G1 leaves a broken plugin loading
 in Claude Code, and a declined confirm gate leaves one that was never approved.
 
-So authoring becomes write → validate → promote:
+So authoring becomes draft → validate → promote:
 
 ```
-1. emit into a temp staging dir
-2. G1 (+ G2, + G3 for executables) run against staging
+1. emit into an ephemeral draft dir (temp; never a configured location)
+2. G1 (+ G2, + G3 for executables) run against the draft
 3. executable content: confirm gate, showing the eval result
-4. only then: atomic move into the resolved target
+4. only then: atomic move into the resolved production home
 5. activate
 ```
 
-This is a change to `writePluginDraft`'s contract, not just an extra call, and
-it is why the location work (step 2) and the first gates (step 5) cannot be
-fully separated — see §8.4.
+"Draft dir" is deliberately a third term: it is neither the **consumption home**
+nor a **production home** (§5.3), it is ephemeral and is deleted on any failure.
+
+This changes `writePluginDraft`'s contract rather than adding a call, so the
+draft-and-promote mechanism ships with the location work in §8.5 step 2 — ahead
+of the gates that need it. Until the gates land, step 2 promotes unconditionally;
+the point is that by the time G1 exists there is already somewhere safe to run
+it.
 
 **G2 — Static safety** (always, ~ms). Hook commands parse; `argv[0]` resolves on
 `PATH`; reject `rm -rf`, `curl | sh`, writes outside the workspace. MCP server
@@ -471,8 +477,8 @@ a real one (`search/eval-harness.ts:1-22`).
 
 | Path | Gates | On failure |
 |---|---|---|
-| Authored, passive only | G1, G2 | Do not activate. Return the failure to the model — this is the loop that makes autonomous authoring converge instead of emitting silent garbage. |
-| Authored, executable | G1–G3 **before** the confirm prompt | Never reach the human with a draft that does not run. |
+| Authored, passive only | G1, G2 | Discard the draft — nothing reaches a production home. Return the failure to the model: this is the loop that makes autonomous authoring converge instead of emitting silent garbage. |
+| Authored, executable | G1–G3 against the draft, **before** the confirm prompt | Never reach the human with a draft that does not run; a decline discards it. |
 | Marketplace install | G1 (round-trip only), G2 post-clone, pre-activate | Source trust is not content trust. |
 | Publish | G1–G4, `--strict` | No green, no PR. |
 
@@ -518,7 +524,7 @@ consumption and production.
 |---|---|---|
 | **Consumption home** (marketplace installs) | `~/.agents/plugins/<id>/` | hoocode installing for itself. Format-agnostic. Must not leak into a vendor's directory — installing a plugin for hoocode should not silently add it to Claude Code. |
 | **Production, `--platform claude`** | `~/.claude/skills/<id>/` | The documented drop-in (§1.6). Live in Claude Code next session, and live in hoocode once §5.7 lands. |
-| **Production, `--platform github`** | `~/.agents/staged-plugins/<id>/` | No vendor drop-in exists — `copilot plugin install ./dir` copies into a cache and needs a reinstall per change (§1.7). Staging feeds `PackagePlugin` → publish, and `copilot plugin install <staging-dir>` for local testing. |
+| **Production, `--platform github`** | `~/.agents/publish/github/<id>/` | No vendor drop-in exists — `copilot plugin install ./dir` copies into a cache and needs a reinstall per change (§1.7). This is a real home, not a scratch area: `PackagePlugin` works in it, publish reads from it, and `copilot plugin install <that path>` is the local test loop. |
 
 A `github` artifact writes its manifest to **root `plugin.json`** — probe
 position #2 and the layout GitHub's own plugin-creating guide teaches. Today we
@@ -793,7 +799,7 @@ Settled in review. Each row is a fork that was actually open.
 |---|---|---|---|
 | D1 | Production format | Platform-specific; `agents` rejected for plugins | §1.2 — a distribution unit must belong to an ecosystem |
 | D2 | Default when `--platform` is absent | `claude` | Keeps the autonomous gap-fill unbroken; the only platform where the local loop closes (§1.5) |
-| D3 | Authored-plugin location | Per platform (§5.3): Claude's drop-in; a staging dir for GitHub, which has none | Producing in a vendor format and hiding it from that vendor defeats the purpose |
+| D3 | Authored-plugin location | Per platform (§5.3): Claude's drop-in; a hoocode-owned production home for GitHub, which has no drop-in | Producing in a vendor format and hiding it from that vendor defeats the purpose |
 | D4 | Flag rename scope | Session flag only | `supportPlatform` names two things; the manifest/marketplace data field is vendor on-disk data we do not own (§8.2) |
 | D5 | Id collision | Per target location | A `claude` `foo` and a `github` `foo` are separate ecosystem artifacts, not duplicates |
 | D6 | Plugin skill namespacing | `plugin-name:skill-name` | Claude parity; removes the collision class outright (§5.8) |
@@ -801,7 +807,7 @@ Settled in review. Each row is a fork that was actually open.
 | D8 | `github` manifest home | Root `plugin.json` | Probe #2 and what the vendor's plugin-creating guide teaches; our code emits `.github/plugin/` while its own comment says root is canonical |
 | D9 | Plugin runtime variables + data dir | In scope, both platforms | `*_PLUGIN_DATA` is documented by both vendors and provided by neither of our adapters; plugins using it get an unexpanded literal today |
 | D10 | Project-scope plugin *production* | Dropped — authored plugins are user-scoped, full stop | Resolved during final review, not in discussion: the earlier `scope: "project"` opt-in had no destination under §5.3 and would have produced artifacts that §5.9 refuses to fully load. Overridable, but it needs a coherent answer to both before it comes back (§5.5) |
-| D11 | When authoring validates | Staged write → validate → atomic promote | D3 makes the destination a live vendor directory; writing first and validating after leaves broken or unapproved plugins loading in Claude Code (§4.2) |
+| D11 | When authoring validates | Draft dir → validate → atomic promote | D3 makes the destination a live vendor directory; writing first and validating after leaves broken or unapproved plugins loading in Claude Code (§4.2) |
 
 ### 8.2 Blast radius
 
@@ -843,13 +849,26 @@ first because the location change touches them anyway:
 `plugin-e2e-copilot.test.ts` — the last breaks on D8 alone, since the emitted
 manifest path changes.
 
-### 8.3 What the review did not change
+### 8.3 Vocabulary
+
+Three locations, deliberately named apart — an earlier draft called all three
+"staging" and that is exactly the kind of collision that produces the wrong
+directory in code.
+
+| Term | Path | Lifetime |
+|---|---|---|
+| **Draft dir** | temp | Ephemeral. Holds an authored plugin while the gates run; deleted on any failure (§4.2) |
+| **Consumption home** | `~/.agents/plugins/<id>/` | Persistent. Marketplace installs, format-agnostic |
+| **Production home** | `~/.claude/skills/<id>/` or `~/.agents/publish/github/<id>/` | Persistent. Where an authored plugin lives, per platform (§5.3) |
+
+### 8.4 What survived every review round
 
 `§6` (retrieval) is untouched — format and location are orthogonal to it, and it
-can be built in parallel from day one. The `§5.1` scope rule also survived:
-plugins were already user-scoped, only the destination moved.
+can be built in parallel from day one. The `§5.1` scope rule also held: plugins
+were already user-scoped, only the destination moved. Everything else in §5 was
+revised at least once.
 
-### 8.4 Order
+### 8.5 Order
 
 Steps 1–3 are one coherent change; splitting them leaves the tree in a state
 where authored plugins are half-live.
@@ -858,7 +877,7 @@ where authored plugins are half-live.
 |---|---|---|
 | 0 | Delete the `/plugin` duplicates; fix `activatePlugin` scope metadata | Pre-existing defects directly under the later steps |
 | 1 | Split the resolver; `--platform` (D4 scope); reject `agents` for plugins | Everything reads from this |
-| 2 | Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path. **Includes staged write → promote (§4.2)** | Same decision as step 1. The staging contract ships here, not with the gates, so nothing unvalidated ever lands in a live vendor directory |
+| 2 | Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path. **Includes the draft-then-promote contract (§4.2)** | Same decision as step 1. The mechanism ships here, not with the gates, so that by the time G1 exists there is already somewhere safe to run it |
 | 3 | `~/.claude/skills` + `<cwd>/.claude/skills` discovery, stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9) | Without this the D3 target is half-live |
 | 4 | Adapter catch-up, both vendors (§2.1): Claude surfaces; Copilot probe order, `extensions`, `lspServers`, root-manifest emit (D8) | Now a production blocker: we emit into these ecosystems |
 | 4b | Runtime variables + per-plugin data dir (D9), both platforms | Small, self-contained, and unblocks any plugin that uses them |
@@ -870,7 +889,7 @@ where authored plugins are half-live.
 | 10 | Capability index + MCP retrieval (§6) | Independent — can run in parallel from step 1 |
 | 11 | G4 trigger eval; Tier 2 drift CI | Ongoing quality, not blocking |
 
-### 8.5 Still open
+### 8.6 Still open
 
 1. **MCP last-wins precedence for Copilot plugins** (§1.7). Copilot resolves
    agents/skills first-found-wins but MCP servers last-wins, so a plugin's MCP
