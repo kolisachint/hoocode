@@ -29,7 +29,7 @@ import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import { clearExtensionMcpServers } from "../extension-mcp-servers.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
-import { buildPluginFactory, discoverPlugins } from "./plugins/index.js";
+import { buildPluginFactory, discoverPlugins, withheldCapabilities } from "./plugins/index.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -649,6 +649,13 @@ export async function discoverAndLoadExtensions(
 	return result;
 }
 
+/** True when `target` is `root` or sits inside it. */
+function isUnderDir(target: string, root: string): boolean {
+	const normalized = path.resolve(root);
+	if (path.resolve(target) === normalized) return true;
+	return path.resolve(target).startsWith(normalized.endsWith(path.sep) ? normalized : `${normalized}${path.sep}`);
+}
+
 /**
  * Standard plugin discovery directories, highest precedence first.
  *
@@ -703,8 +710,13 @@ export async function loadPlugins(
 
 	for (const plugin of discoverPlugins(pluginDirs)) {
 		try {
+			// A plugin discovered under the workspace came with the repository, not
+			// from the user, so its executable half is withheld — we have no trust
+			// gate to approve it with. See PluginFactoryOptions.passiveOnly.
+			const passiveOnly = isUnderDir(plugin.root, cwd);
+			const withheld = passiveOnly ? withheldCapabilities(plugin) : [];
 			const extension = await loadExtensionFromFactory(
-				buildPluginFactory(plugin),
+				buildPluginFactory(plugin, { passiveOnly }),
 				cwd,
 				eventBus,
 				runtime,
@@ -712,6 +724,15 @@ export async function loadPlugins(
 				`plugin:${plugin.id}`,
 			);
 			extensions.push(extension);
+			if (withheld.length > 0) {
+				errors.push({
+					path: plugin.manifestPath,
+					error:
+						`Project-scoped plugin "${plugin.id}": ${withheld.join(" and ")} not loaded. ` +
+						"Executable capabilities from a project directory require a trust gate hoocode does not have; " +
+						"install the plugin for your user instead if you trust it.",
+				});
+			}
 		} catch (err) {
 			errors.push({
 				path: plugin.manifestPath,

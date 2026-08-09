@@ -95,8 +95,34 @@ export function discoverPlugins(pluginDirs: string[]): NormalizedPlugin[] {
 	return plugins;
 }
 
+export interface PluginFactoryOptions {
+	/**
+	 * Load only capabilities that cannot execute: skills, commands, subagents,
+	 * themes. Hooks and MCP servers are skipped and reported.
+	 *
+	 * Set for **project-scoped** plugins — those discovered under the workspace,
+	 * chiefly `<cwd>/.claude/skills/`. That content arrives with a cloned
+	 * repository rather than from the user, and registering shell hooks or
+	 * spawning MCP servers from it with no confirmation is a real escalation over
+	 * reading skill text, which is all a project skills directory gets today.
+	 *
+	 * Claude Code gates the same content behind a workspace trust dialog and
+	 * per-server MCP approval. hoocode has no trust mechanism at all, so it
+	 * withholds the executable half instead of pretending to gate it. If a trust
+	 * gate is ever added, this is the flag it replaces.
+	 * See docs/plugin-system-architecture.md §5.9.
+	 */
+	passiveOnly?: boolean;
+}
+
+/** Capabilities withheld from a passive-only plugin, for reporting. */
+export function withheldCapabilities(plugin: NormalizedPlugin): string[] {
+	return [plugin.hooks && "hooks", plugin.mcpServers && "mcp servers"].filter((x): x is string => !!x);
+}
+
 /** Build a synthetic extension factory that wires one normalized plugin. */
-export function buildPluginFactory(plugin: NormalizedPlugin): ExtensionFactory {
+export function buildPluginFactory(plugin: NormalizedPlugin, options?: PluginFactoryOptions): ExtensionFactory {
+	const passiveOnly = options?.passiveOnly === true;
 	const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		// Resources: contribute the plugin's capability directories. Commands map to
 		// the slash-command surface (`.agents/commands`) and agents to subagent
@@ -115,15 +141,17 @@ export function buildPluginFactory(plugin: NormalizedPlugin): ExtensionFactory {
 			pi.registerProvider(provider.name, provider.config);
 		}
 
-		// Hooks: true-parity shell bridge.
-		if (plugin.hooks) {
+		// Hooks: true-parity shell bridge. Executable, so withheld from a
+		// project-scoped plugin (see PluginFactoryOptions.passiveOnly).
+		if (plugin.hooks && !passiveOnly) {
 			installPluginHooks(pi, plugin.hooks, plugin.root, () => {
 				// Non-blocking hook failures are intentionally quiet (Claude Code parity).
 			});
 		}
 
 		// MCP servers: register for the hoo-core mcp-loader to connect on session_start.
-		if (plugin.mcpServers) {
+		// Executable, so withheld from a project-scoped plugin.
+		if (plugin.mcpServers && !passiveOnly) {
 			registerExtensionMcpServers(plugin.id, resolveMcpServers(plugin.mcpServers, plugin.root));
 		}
 	};

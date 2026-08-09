@@ -7,6 +7,7 @@ import { parseFrontmatter } from "../utils/frontmatter.js";
 import { canonicalizePath } from "../utils/paths.js";
 import { normalizeTools } from "./agent-frontmatter.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
+import { isPluginRoot } from "./extensions/plugins/formats/index.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
 
 /** Max name length per spec */
@@ -275,6 +276,15 @@ function loadSkillsFromDirInternal(
 			}
 
 			if (isDirectory) {
+				// A plugin directory is not a skill tree. Its `skills/<name>/SKILL.md`
+				// files belong to the plugin and are contributed through the plugin
+				// loader (namespaced to it); descending here would additionally
+				// surface them as loose top-level skills under their bare names.
+				// This matters most under `.claude/skills/`, which legitimately holds
+				// both plain skills and skills-directory plugins side by side.
+				if (isPluginRoot(fullPath)) {
+					continue;
+				}
 				const subResult = loadSkillsFromDirInternal(fullPath, source, false, ig, root);
 				skills.push(...subResult.skills);
 				diagnostics.push(...subResult.diagnostics);

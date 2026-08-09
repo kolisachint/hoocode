@@ -31,6 +31,17 @@ export function getFormatByPlatform(platform: MarketplacePlatform): PluginFormat
 	return PLUGIN_FORMATS.find((f) => f.platform === platform);
 }
 
+/**
+ * Whether `root` is a plugin directory in any supported format.
+ *
+ * Cheap (manifest existence only, no parse) because the skill scanner calls it
+ * for every directory it walks: a plugin's inner `skills/<name>/SKILL.md` belongs
+ * to that plugin and must not also surface as a loose top-level skill.
+ */
+export function isPluginRoot(root: string): boolean {
+	return PLUGIN_FORMATS.some((format) => format.detectPlugin(root));
+}
+
 /** Every platform present in a plugin directory, precedence winner first. */
 function detectPlatforms(root: string): MarketplacePlatform[] {
 	const platforms: MarketplacePlatform[] = [];
