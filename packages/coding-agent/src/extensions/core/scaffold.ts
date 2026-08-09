@@ -1,13 +1,13 @@
 /**
  * Scaffold commands — /new-skill, /new-agent, and /new-command.
  *
- * Without `--support-platform`, each creates a ready-to-edit resource file
+ * Without `--platform`, each creates a ready-to-edit resource file
  * under `.hoocode/` (hoocode's private surface), picked up on the next /reload.
  *
- * With `--support-platform` (or the `supportPlatform` setting), the scaffold
+ * With `--platform` (or the `platform` setting), the scaffold
  * instead lands in each target platform's *workspace* conventions via the
  * format registry's per-adapter {@link WorkspaceLayout} — e.g.
- * `--support-platform copilot` writes `.github/skills/<name>/SKILL.md`,
+ * `--platform copilot` writes `.github/skills/<name>/SKILL.md`,
  * `.github/agents/<name>.agent.md`, and `.github/prompts/<name>.prompt.md`,
  * while `claude` writes `.claude/skills|agents|commands/`. hoocode reads all
  * of these back, so the scaffold is live after /reload either way.
@@ -16,7 +16,7 @@
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getFormatByPlatform } from "../../core/extensions/plugins/formats/index.js";
-import { getSupportPlatforms } from "../../core/extensions/plugins/formats/platform-targets.js";
+import { getWorkspacePlatforms } from "../../core/extensions/plugins/formats/platform-targets.js";
 import type { EmittedFile, MarketplacePlatform, WorkspaceLayout } from "../../core/extensions/plugins/formats/types.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 
@@ -30,7 +30,7 @@ function validateResourceName(name: string): string | null {
 }
 
 /**
- * Write one scaffolded artifact into every `--support-platform` target's
+ * Write one scaffolded artifact into every `--platform` target's
  * workspace layout. Existing files are never clobbered — they are reported and
  * skipped. Returns true when the platform-targeted path handled the command.
  */
@@ -105,7 +105,7 @@ const COMMAND_BODY_TEMPLATE = (name: string) =>
 export function setupScaffold(pi: ExtensionAPI): void {
 	// ── /new-skill <name> ─────────────────────────────────────────────────────
 	// Creates a SKILL.md with valid Agent Skills frontmatter — under .hoocode/ by
-	// default, or under each --support-platform target's skills directory.
+	// default, or under each --platform target's skills directory.
 
 	pi.registerCommand("new-skill", {
 		description: "Scaffold a new skill. Usage: /new-skill <name>",
@@ -118,7 +118,7 @@ export function setupScaffold(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const platforms = getSupportPlatforms();
+			const platforms = getWorkspacePlatforms();
 			if (platforms) {
 				scaffoldForPlatforms(ctx, "new-skill", platforms, (ws) =>
 					ws.emitSkill({
@@ -179,7 +179,7 @@ export function setupScaffold(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const platforms = getSupportPlatforms();
+			const platforms = getWorkspacePlatforms();
 			if (platforms) {
 				scaffoldForPlatforms(ctx, "new-agent", platforms, (ws) =>
 					ws.emitAgent({
@@ -250,7 +250,7 @@ export function setupScaffold(pi: ExtensionAPI): void {
 				return;
 			}
 
-			const platforms = getSupportPlatforms();
+			const platforms = getWorkspacePlatforms();
 			if (platforms) {
 				scaffoldForPlatforms(ctx, "new-command", platforms, (ws) =>
 					ws.emitCommand({

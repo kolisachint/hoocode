@@ -21,17 +21,50 @@ import * as path from "node:path";
 import { type ExtensionMcpServerConfig, registerExtensionMcpServers } from "../../extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionFactory } from "../types.js";
 import { installPluginHooks } from "./hooks-bridge.js";
+import { ensurePluginDataDir, pluginDataDir } from "./locations.js";
 import { type NormalizedPlugin, parsePluginDir } from "./manifest.js";
 
-/** Substitute ${CLAUDE_PLUGIN_ROOT} / ${AGENTS_PLUGIN_ROOT} with the plugin root in a string. */
-function substituteRoot(value: string, root: string): string {
-	return value.replace(/\$\{(?:CLAUDE|AGENTS)_PLUGIN_ROOT\}/g, root);
+/** Extension path a plugin is loaded under: `<plugin:my-tool>`. */
+export function pluginExtensionPath(id: string): string {
+	return `<plugin:${id}>`;
+}
+
+/** Recover the plugin id from {@link pluginExtensionPath}, or undefined for a non-plugin extension. */
+export function pluginIdFromExtensionPath(extensionPath: string): string | undefined {
+	const match = /^<plugin:(.+)>$/.exec(extensionPath);
+	return match?.[1];
+}
+
+/**
+ * The template variables a plugin may use, mapped to their values.
+ *
+ * All vendor spellings are honored rather than only the ones hoocode invented.
+ * A plugin does not know which agent is loading it: a Copilot plugin writes
+ * `${PLUGIN_ROOT}`, a Claude one `${CLAUDE_PLUGIN_ROOT}`, and either may use
+ * `${*_PLUGIN_DATA}` for runtime state. Supporting one spelling means the others
+ * reach the shell or the MCP client as literal text.
+ */
+export function pluginVariables(root: string, dataDir: string): Record<string, string> {
+	return {
+		PLUGIN_ROOT: root,
+		CLAUDE_PLUGIN_ROOT: root,
+		AGENTS_PLUGIN_ROOT: root,
+		COPILOT_PLUGIN_ROOT: root,
+		CLAUDE_PLUGIN_DATA: dataDir,
+		COPILOT_PLUGIN_DATA: dataDir,
+		AGENTS_PLUGIN_DATA: dataDir,
+	};
+}
+
+/** Expand every `${VAR}` in {@link pluginVariables}. Unknown `${...}` is left alone. */
+function substituteVars(value: string, vars: Record<string, string>): string {
+	return value.replace(/\$\{([A-Z_]+)\}/g, (whole, name: string) => vars[name] ?? whole);
 }
 
 /** Coerce parsed mcpServers into the standard config shape, substituting root vars. */
 function resolveMcpServers(
 	mcpServers: Record<string, unknown>,
-	root: string,
+	vars: Record<string, string>,
 ): Record<string, ExtensionMcpServerConfig> {
 	const out: Record<string, ExtensionMcpServerConfig> = {};
 	for (const [name, raw] of Object.entries(mcpServers)) {
@@ -44,7 +77,7 @@ function resolveMcpServers(
 				type: cfg.type === "sse" ? "sse" : "http",
 				url: cfg.url,
 				headers: cfg.headers
-					? Object.fromEntries(Object.entries(cfg.headers).map(([k, v]) => [k, substituteRoot(String(v), root)]))
+					? Object.fromEntries(Object.entries(cfg.headers).map(([k, v]) => [k, substituteVars(String(v), vars)]))
 					: undefined,
 				background: cfg.background,
 			};
@@ -52,10 +85,10 @@ function resolveMcpServers(
 		}
 		if (typeof cfg.command !== "string") continue;
 		out[name] = {
-			command: substituteRoot(cfg.command, root),
-			args: cfg.args?.map((a) => substituteRoot(String(a), root)),
+			command: substituteVars(cfg.command, vars),
+			args: cfg.args?.map((a) => substituteVars(String(a), vars)),
 			env: cfg.env
-				? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, substituteRoot(String(v), root)]))
+				? Object.fromEntries(Object.entries(cfg.env).map(([k, v]) => [k, substituteVars(String(v), vars)]))
 				: undefined,
 			background: cfg.background,
 		};
@@ -70,12 +103,22 @@ export { parsePluginDir } from "./manifest.js";
  * Discover plugins across the given `plugins/` directories.
  * First-wins on duplicate ids (project dirs should be listed before global).
  */
+/**
+ * A skills directory holds plain skills and plugins side by side, and the
+ * manifest is the only thing separating them. Everywhere else the manifest is
+ * optional and components in their default locations are enough.
+ */
+function isSkillsDirectory(dir: string): boolean {
+	return path.basename(dir) === "skills";
+}
+
 export function discoverPlugins(pluginDirs: string[]): NormalizedPlugin[] {
 	const plugins: NormalizedPlugin[] = [];
 	const seen = new Set<string>();
 
 	for (const dir of pluginDirs) {
 		if (!fs.existsSync(dir)) continue;
+		const requireManifest = isSkillsDirectory(dir);
 		let entries: fs.Dirent[];
 		try {
 			entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -84,7 +127,7 @@ export function discoverPlugins(pluginDirs: string[]): NormalizedPlugin[] {
 		}
 		for (const entry of entries) {
 			if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-			const plugin = parsePluginDir(path.join(dir, entry.name));
+			const plugin = parsePluginDir(path.join(dir, entry.name), { requireManifest });
 			if (plugin && !seen.has(plugin.id)) {
 				seen.add(plugin.id);
 				plugins.push(plugin);
@@ -95,8 +138,42 @@ export function discoverPlugins(pluginDirs: string[]): NormalizedPlugin[] {
 	return plugins;
 }
 
+export interface PluginFactoryOptions {
+	/**
+	 * Load only capabilities that cannot execute: skills, commands, subagents,
+	 * themes. Hooks and MCP servers are skipped and reported.
+	 *
+	 * Set for **project-scoped** plugins — those discovered under the workspace,
+	 * chiefly `<cwd>/.claude/skills/`. That content arrives with a cloned
+	 * repository rather than from the user, and registering shell hooks or
+	 * spawning MCP servers from it with no confirmation is a real escalation over
+	 * reading skill text, which is all a project skills directory gets today.
+	 *
+	 * Claude Code gates the same content behind a workspace trust dialog and
+	 * per-server MCP approval. hoocode has no trust mechanism at all, so it
+	 * withholds the executable half instead of pretending to gate it. If a trust
+	 * gate is ever added, this is the flag it replaces.
+	 * See docs/plugin-system-architecture.md §5.9.
+	 */
+	passiveOnly?: boolean;
+}
+
+/** Capabilities withheld from a passive-only plugin, for reporting. */
+export function withheldCapabilities(plugin: NormalizedPlugin): string[] {
+	return [plugin.hooks && "hooks", plugin.mcpServers && "mcp servers"].filter((x): x is string => !!x);
+}
+
 /** Build a synthetic extension factory that wires one normalized plugin. */
-export function buildPluginFactory(plugin: NormalizedPlugin): ExtensionFactory {
+export function buildPluginFactory(plugin: NormalizedPlugin, options?: PluginFactoryOptions): ExtensionFactory {
+	const passiveOnly = options?.passiveOnly === true;
+	// Only the executable capabilities can reference the data dir, so it is
+	// created only when one of them is actually wired — no empty directory per
+	// installed plugin.
+	const wiresExecutables = !passiveOnly && !!(plugin.hooks || plugin.mcpServers);
+	const vars = pluginVariables(
+		plugin.root,
+		wiresExecutables ? ensurePluginDataDir(plugin.id) : pluginDataDir(plugin.id),
+	);
 	const factory: ExtensionFactory = (pi: ExtensionAPI) => {
 		// Resources: contribute the plugin's capability directories. Commands map to
 		// the slash-command surface (`.agents/commands`) and agents to subagent
@@ -115,16 +192,18 @@ export function buildPluginFactory(plugin: NormalizedPlugin): ExtensionFactory {
 			pi.registerProvider(provider.name, provider.config);
 		}
 
-		// Hooks: true-parity shell bridge.
-		if (plugin.hooks) {
-			installPluginHooks(pi, plugin.hooks, plugin.root, () => {
+		// Hooks: true-parity shell bridge. Executable, so withheld from a
+		// project-scoped plugin (see PluginFactoryOptions.passiveOnly).
+		if (plugin.hooks && !passiveOnly) {
+			installPluginHooks(pi, plugin.hooks, plugin.root, vars, () => {
 				// Non-blocking hook failures are intentionally quiet (Claude Code parity).
 			});
 		}
 
 		// MCP servers: register for the hoo-core mcp-loader to connect on session_start.
-		if (plugin.mcpServers) {
-			registerExtensionMcpServers(plugin.id, resolveMcpServers(plugin.mcpServers, plugin.root));
+		// Executable, so withheld from a project-scoped plugin.
+		if (plugin.mcpServers && !passiveOnly) {
+			registerExtensionMcpServers(plugin.id, resolveMcpServers(plugin.mcpServers, vars));
 		}
 	};
 

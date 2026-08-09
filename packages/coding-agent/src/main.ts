@@ -25,6 +25,7 @@ import {
 } from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { analyzeDeferral, formatDeferral } from "./core/capabilities/deferral.js";
 import { reportEmbsearchProgress } from "./core/embsearch/embsearch-progress.js";
 import {
 	EmbsearchService,
@@ -32,7 +33,7 @@ import {
 	unregisterEmbsearchService,
 } from "./core/embsearch/embsearch-service.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { parseSupportPlatforms, setSupportPlatforms } from "./core/extensions/plugins/formats/platform-targets.js";
+import { parsePlatforms, setPlatforms } from "./core/extensions/plugins/formats/platform-targets.js";
 import type { ExtensionAPI, ExtensionFactory } from "./core/extensions/types.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import {
@@ -64,6 +65,7 @@ import {
 	SUBAGENT_MAX_DEPTH_ENV,
 } from "./core/subagent-depth.js";
 import { printTimings, resetTimings, time } from "./core/timings.js";
+import { createPackagePluginToolDefinition } from "./core/tools/package-plugin.js";
 import { createPluginLifecycleToolDefinitions } from "./core/tools/plugins.js";
 import { createProposePluginToolDefinitions } from "./core/tools/propose-plugin.js";
 import {
@@ -435,21 +437,21 @@ function buildSessionOptions(
 	// it produces artifacts — authored plugins (ProposePlugin) and the /new-skill
 	// //new-agent //new-command scaffolds. Stored as process-wide state next to
 	// the format registry; readers of every format stay unaffected.
-	const supportPlatformTokens = parsed.supportPlatform ?? settingsManager.getSupportPlatform();
-	if (supportPlatformTokens && supportPlatformTokens.length > 0) {
-		const { platforms, invalid } = parseSupportPlatforms(supportPlatformTokens);
+	const platformTokens = parsed.platform ?? settingsManager.getPlatform();
+	if (platformTokens && platformTokens.length > 0) {
+		const { platforms, invalid } = parsePlatforms(platformTokens);
 		for (const token of invalid) {
 			diagnostics.push({
 				type: "warning",
-				message: `Unknown --support-platform "${token}" (valid: claude, copilot|github|gh, agents|native)`,
+				message: `Unknown --platform "${token}" (valid: claude, copilot|github|gh, agents|native)`,
 			});
 		}
 		if (platforms.length > 0) {
-			setSupportPlatforms(platforms);
+			setPlatforms(platforms);
 		} else {
 			diagnostics.push({
 				type: "warning",
-				message: "--support-platform resolved no valid platforms; using the default targets",
+				message: "--platform resolved no valid platforms; using the default targets",
 			});
 		}
 	}
@@ -540,6 +542,7 @@ function buildSessionOptions(
 			...(options.customTools ?? []),
 			...createPluginLifecycleToolDefinitions(),
 			...createProposePluginToolDefinitions(),
+			createPackagePluginToolDefinition(),
 		];
 	}
 
@@ -881,6 +884,26 @@ export async function main(args: string[], options?: MainOptions) {
 		}
 		console.log(`  tool schemas total: ${surface.toolSchemaTokens} tokens`);
 		console.log(`  total: ${surface.totalTokens} tokens`);
+
+		// The surface above says what the schemas cost; this says whether
+		// withholding them is worth what a resolve costs (§6.3, §8.6 item 6).
+		const deferrable = surface.tools.filter((t) => t.name.startsWith("mcp_"));
+		const deferredTokens = deferrable.reduce((sum, t) => sum + t.tokens, 0);
+		console.log(`\nDeferrable (MCP) tools: ${deferrable.length}, ${deferredTokens} tokens`);
+		if (session.model) {
+			console.log(
+				formatDeferral(
+					analyzeDeferral({
+						deferredTokens,
+						prefixTokens: surface.totalTokens,
+						prices: session.model.cost,
+					}),
+					{ prefixIsFloor: true },
+				),
+			);
+		} else {
+			console.log("  deferral: no model resolved, so the trade-off cannot be costed");
+		}
 		process.exit(0);
 	}
 

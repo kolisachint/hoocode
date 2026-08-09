@@ -65,6 +65,12 @@ export interface PathMetadata {
 	scope: SourceScope;
 	origin: "package" | "top-level" | "claude-code";
 	baseDir?: string;
+	/**
+	 * Plugin id owning the resources under this path. Skills loaded from it are
+	 * namespaced `<namespace>:<name>`, matching Claude Code, so two plugins
+	 * shipping a `review` skill do not silently collide.
+	 */
+	namespace?: string;
 }
 
 export interface ResolvedResource {

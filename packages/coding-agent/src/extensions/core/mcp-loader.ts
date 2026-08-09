@@ -23,13 +23,21 @@ import { connectHttpMcpServer, summarizeArgs } from "@kolisachint/hoocode-agent-
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
+import { ensureDenseIndex } from "../../core/capabilities/dense.js";
+import { registerCapabilities } from "../../core/capabilities/registry.js";
+import { resetCapabilitySearch, searchCapabilities } from "../../core/capabilities/search.js";
 import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
 import { formatDurationSecs } from "../../core/format-duration.js";
 import { clearMcpServerStatuses, setMcpServerStatus } from "../../core/mcp-status.js";
 import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
-import { type DeferredMcpToolEntry, formatDeferredCatalog, selectResolvable } from "./mcp-deferred.js";
+import {
+	type DeferredMcpToolEntry,
+	formatDeferredCatalog,
+	selectResolvable,
+	toCapabilityDocs,
+} from "./mcp-deferred.js";
 
 const HOOCODE_DIR = getHooCodeDir();
 
@@ -659,11 +667,31 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 
 		// 4. In deferred mode, register the single resolver that materializes schemas on demand.
 		if (defer && deferredCatalog.length > 0) {
+			// Feed the capability index. This is what lets the catalog above be
+			// summarized instead of dumped: a tool the model cannot see in the
+			// description is still reachable by describing what it needs.
+			registerCapabilities("mcp-tool", toCapabilityDocs(deferredCatalog, true));
+			resetCapabilitySearch();
+			// Fire-and-forget: the lexical leg answers immediately, and the dense one
+			// joins when (and if) it is ready. Awaiting here would put an embedding
+			// model's startup in front of the session's.
+			void ensureDenseIndex(toCapabilityDocs(deferredCatalog, true)).catch(() => {});
+
 			const resolveParams = Type.Object(
 				{
-					names: Type.Array(Type.String(), {
-						description: "MCP tool names to make callable (e.g. 'mcp_github_create_pr' or 'create_pr').",
-					}),
+					names: Type.Optional(
+						Type.Array(Type.String(), {
+							description: "Exact MCP tool names to make callable (e.g. 'mcp_github_create_pr' or 'create_pr').",
+						}),
+					),
+					query: Type.Optional(
+						Type.String({
+							description:
+								"Describe the capability you need ('open a pull request', 'send a message') to find tools by " +
+								"meaning when you do not know their names. Matching tools are resolved and become callable.",
+						}),
+					),
+					limit: Type.Optional(Type.Number({ description: "Maximum tools to resolve from a query. Default 5." })),
 				},
 				{ additionalProperties: false },
 			);
@@ -671,12 +699,40 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 				name: RESOLVE_MCP_TOOLS_NAME,
 				label: RESOLVE_MCP_TOOLS_NAME,
 				description:
-					"MCP tools are connected but their schemas are loaded on demand to keep context small. Call this with the tool name(s) you need to make them callable, then call the tool(s). Available MCP tools:\n" +
+					"MCP tools are connected but their schemas are loaded on demand to keep context small. Name the tool(s) " +
+					"you need in `names`, or describe the capability in `query` to find them, then call the tool(s). " +
+					"Available MCP tools:\n" +
 					formatDeferredCatalog(deferredCatalog),
-				promptSnippet: "Resolve deferred MCP tool schemas by name before calling them.",
+				promptSnippet: "Resolve deferred MCP tool schemas by name, or find them by describing the capability.",
 				parameters: resolveParams,
 				async execute(_toolCallId: string, params: Static<typeof resolveParams>) {
-					const matched = selectResolvable(deferredCatalog, params.names ?? []);
+					const names = params.names ?? [];
+					const query = params.query?.trim();
+					const matched = selectResolvable(deferredCatalog, names);
+					const seen = new Set(matched.map((m) => m.toolName));
+
+					// Both parameters may be given: name what you know, describe the rest.
+					let searchNote = "";
+					if (query) {
+						const { hits, legs } = await searchCapabilities(query, {
+							kinds: ["mcp-tool"],
+							limit: params.limit ?? 5,
+						});
+						for (const hit of hits) {
+							const entry = deferredCatalog.find((e) => e.toolName === hit.doc.id);
+							if (entry && !seen.has(entry.toolName)) {
+								matched.push(entry);
+								seen.add(entry.toolName);
+							}
+						}
+						// Say which legs answered: a lexical-only result set on a
+						// conceptual query is a weaker answer, and the caller should be
+						// able to tell that from the result rather than guess.
+						searchNote = hits.length
+							? `\nMatched by ${legs.join("+") || "none"} search for "${query}".`
+							: `\nNothing matched "${query}".`;
+					}
+
 					const newlyResolved: string[] = [];
 					for (const entry of matched) {
 						if (resolvedNames.has(entry.toolName)) continue;
@@ -687,8 +743,8 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 						newlyResolved.push(entry.toolName);
 					}
 					const text = matched.length
-						? `Resolved ${newlyResolved.length} MCP tool(s): ${matched.map((m) => m.toolName).join(", ")}. They are now callable.`
-						: `No MCP tools matched: ${(params.names ?? []).join(", ") || "(none)"}. See ResolveMcpTools for the catalog.`;
+						? `Resolved ${newlyResolved.length} MCP tool(s): ${matched.map((m) => m.toolName).join(", ")}. They are now callable.${searchNote}`
+						: `No MCP tools matched: ${[...names, query].filter(Boolean).join(", ") || "(none)"}.${searchNote}`;
 					return { content: [{ type: "text" as const, text }], details: undefined };
 				},
 			} as ToolDefinition);

@@ -102,6 +102,13 @@ export interface PluginDraft {
 	agents?: AuthoredAgent[];
 	hooks?: AuthoredHook[];
 	mcpServers?: AuthoredMcpServer[];
+	/**
+	 * Manifest keys carried through from an existing plugin that this codebase
+	 * does not model (see {@link NormalizedPlugin.unknownFields}). Emitters write
+	 * them back verbatim so editing a plugin never strips a vendor key we happen
+	 * not to understand. Never set when authoring from scratch.
+	 */
+	unknownFields?: Record<string, unknown>;
 }
 
 /**
@@ -141,8 +148,10 @@ export interface PluginFormatAdapter {
 	 */
 	readonly marketplaceFiles: readonly string[];
 
-	/** True if `root` carries this format's plugin manifest. */
+	/** True if `root` is a plugin of this format — including, where the vendor allows it, without a manifest. */
 	detectPlugin(root: string): boolean;
+	/** True only if `root` carries this format's manifest *file*, ignoring manifest-optional rules. */
+	hasManifest(root: string): boolean;
 	/** Parse `root` as a plugin of this format. Returns null when unparseable. */
 	parsePlugin(root: string): NormalizedPlugin | null;
 	/** Render `draft` into this format's on-disk layout (paths relative to the plugin root). */

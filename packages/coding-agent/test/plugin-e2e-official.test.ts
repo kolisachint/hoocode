@@ -14,7 +14,9 @@ import { existsSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { ensureWellKnownMarketplaces, installedPluginsDir } from "../src/core/extensions/plugins/install.js";
+import { ENV_AGENT_DIR } from "../src/config.js";
+import { ensureWellKnownMarketplaces } from "../src/core/extensions/plugins/install.js";
+import { consumptionPluginsDir } from "../src/core/extensions/plugins/locations.js";
 import { createAgentSession } from "../src/core/sdk.js";
 import { SessionManager } from "../src/core/session-manager.js";
 import {
@@ -26,6 +28,7 @@ import {
 const PLUGIN = "skill-creator"; // official, skills-only, sourced locally within the marketplace repo
 
 let tempDir: string;
+let priorAgentDir: string | undefined;
 let online = false;
 
 function textOf(result: { content: Array<{ type: string; text?: string }> }): string {
@@ -34,11 +37,17 @@ function textOf(result: { content: Array<{ type: string; text?: string }> }): st
 
 beforeAll(async () => {
 	tempDir = join(tmpdir(), `hoo-e2e-official-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-	const errors = await ensureWellKnownMarketplaces(tempDir);
+	// The marketplace cache and the install home are user-scoped, so point the
+	// agent dir at the temp tree — this test must not touch a real ~/.agents.
+	priorAgentDir = process.env[ENV_AGENT_DIR];
+	process.env[ENV_AGENT_DIR] = join(tempDir, ".hoocode");
+	const errors = await ensureWellKnownMarketplaces();
 	online = errors.length === 0;
 }, 120_000);
 
 afterAll(() => {
+	if (priorAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+	else process.env[ENV_AGENT_DIR] = priorAgentDir;
 	if (tempDir) rmSync(tempDir, { recursive: true, force: true });
 });
 
@@ -61,8 +70,14 @@ describe("E2E: search → install → use in a single turn (official marketplace
 			sessionManager: SessionManager.inMemory(),
 		});
 
-		// The skill must not be known before install.
-		expect(session.resourceLoader.getSkills().skills.some((s) => s.name === PLUGIN)).toBe(false);
+		// The plugin's skills must not be known before install. Checked by the
+		// namespace prefix, not the bare name: plugin skills load as
+		// `<plugin>:<skill>`, and a developer may well have a same-named plain
+		// skill in their own ~/.claude/skills (which loadSkills reads from the real
+		// home, independent of the agent dir).
+		const namespaced = <T extends { name: string }>(skills: T[]): T[] =>
+			skills.filter((s) => s.name.startsWith(`${PLUGIN}:`));
+		expect(namespaced(session.resourceLoader.getSkills().skills)).toHaveLength(0);
 
 		const notifications: string[] = [];
 		const ctx = {
@@ -90,10 +105,10 @@ describe("E2E: search → install → use in a single turn (official marketplace
 		expect(text).toContain("Active NOW");
 		expect(text).toContain(PLUGIN);
 
-		// The capability is registered in the running session…
+		// The capability is registered in the running session, under the plugin's
+		// namespace…
 		const skills = session.resourceLoader.getSkills().skills;
-		const skill = skills.find((s) => s.name === PLUGIN);
-		expect(skill).toBeDefined();
+		expect(namespaced(skills).length).toBeGreaterThan(0);
 
 		// …injected into the system prompt the model sees…
 		expect(session.systemPrompt).toContain(PLUGIN);
@@ -107,13 +122,13 @@ describe("E2E: search → install → use in a single turn (official marketplace
 		expect(refreshed?.context?.systemPrompt).toContain(PLUGIN);
 
 		// "Use" the capability the way the model does: read the skill body on demand.
-		const body = readFileSync(skill!.filePath, "utf8");
+		const body = readFileSync(namespaced(skills)[0].filePath, "utf8");
 		expect(body.length).toBeGreaterThan(100);
 
 		// Reversibility: uninstall removes it from disk.
 		const uninstall = createUninstallPluginToolDefinition();
 		const unResult = await uninstall.execute("t3", { name: PLUGIN }, undefined as never, undefined as never, ctx);
 		expect((unResult as { details: { removed: boolean } }).details.removed).toBe(true);
-		expect(existsSync(join(installedPluginsDir(tempDir), PLUGIN))).toBe(false);
+		expect(existsSync(join(consumptionPluginsDir(), PLUGIN))).toBe(false);
 	}, 120_000);
 });

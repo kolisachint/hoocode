@@ -81,7 +81,7 @@ import {
 	type TurnStartEvent,
 	wrapRegisteredTools,
 } from "./extensions/index.js";
-import { parsePluginDir } from "./extensions/plugins/index.js";
+import { parsePluginDir, pluginIdFromExtensionPath } from "./extensions/plugins/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import type { ModelRegistry } from "./model-registry.js";
 import type { PathMetadata } from "./package-manager.js";
@@ -1762,7 +1762,7 @@ export class AgentSession {
 
 	private buildExtensionResourcePaths(entries: Array<{ path: string; extensionPath: string }>): Array<{
 		path: string;
-		metadata: { source: string; scope: "temporary"; origin: "top-level"; baseDir?: string };
+		metadata: { source: string; scope: "temporary"; origin: "top-level"; baseDir?: string; namespace?: string };
 	}> {
 		return entries.map((entry) => {
 			const source = this.getExtensionSourceLabel(entry.extensionPath);
@@ -1774,6 +1774,9 @@ export class AgentSession {
 					scope: "temporary",
 					origin: "top-level",
 					baseDir,
+					// Plugins are loaded as synthetic extensions under `<plugin:id>`
+					// (see loadPlugins), which is where the namespace comes from.
+					namespace: pluginIdFromExtensionPath(entry.extensionPath),
 				},
 			};
 		});
@@ -2130,7 +2133,13 @@ export class AgentSession {
 			return { activated: false, message: `No recognizable plugin manifest at ${pluginDir}.` };
 		}
 
-		const metadata: PathMetadata = { source: "plugin", scope: "project", origin: "top-level" };
+		// Scope follows where the plugin actually lives: a project plugin sits under
+		// the workspace, anything else (the global plugin dirs, a vendor drop-in) is
+		// user scope. Reported verbatim in the config selector, so a hardcoded
+		// "project" would mislabel every globally installed plugin.
+		const scope: PathMetadata["scope"] =
+			plugin.root === this._cwd || plugin.root.startsWith(`${this._cwd}${sep}`) ? "project" : "user";
+		const metadata: PathMetadata = { source: "plugin", scope, origin: "top-level", namespace: plugin.id };
 		const paths: ResourceExtensionPaths = {
 			skillPaths: plugin.skillsDir ? [{ path: plugin.skillsDir, metadata }] : undefined,
 			slashCommandPaths: plugin.commandsDir ? [{ path: plugin.commandsDir, metadata }] : undefined,

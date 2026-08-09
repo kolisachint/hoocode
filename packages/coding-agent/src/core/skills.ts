@@ -7,6 +7,7 @@ import { parseFrontmatter } from "../utils/frontmatter.js";
 import { canonicalizePath } from "../utils/paths.js";
 import { normalizeTools } from "./agent-frontmatter.js";
 import type { ResourceDiagnostic } from "./diagnostics.js";
+import { isPluginRoot } from "./extensions/plugins/formats/index.js";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.js";
 
 /** Max name length per spec */
@@ -275,6 +276,15 @@ function loadSkillsFromDirInternal(
 			}
 
 			if (isDirectory) {
+				// A plugin directory is not a skill tree. Its `skills/<name>/SKILL.md`
+				// files belong to the plugin and are contributed through the plugin
+				// loader (namespaced to it); descending here would additionally
+				// surface them as loose top-level skills under their bare names.
+				// This matters most under `.claude/skills/`, which legitimately holds
+				// both plain skills and skills-directory plugins side by side.
+				if (isPluginRoot(fullPath)) {
+					continue;
+				}
 				const subResult = loadSkillsFromDirInternal(fullPath, source, false, ig, root);
 				skills.push(...subResult.skills);
 				diagnostics.push(...subResult.diagnostics);
@@ -418,6 +428,15 @@ export interface LoadSkillsOptions {
 	 * Defaults to true. Set false in tests or when explicit path control is needed.
 	 */
 	includeClaude?: boolean;
+	/**
+	 * Contributed skill directory -> owning plugin id. Skills loaded from such a
+	 * directory are named `<plugin>:<skill>`, matching Claude Code.
+	 *
+	 * Applied here rather than by the caller because the name map below is
+	 * first-wins by name: two plugins shipping a `review` skill would collide and
+	 * lose one *before* any later rename could tell them apart.
+	 */
+	namespaces?: Map<string, string>;
 }
 
 function normalizePath(input: string): string {
@@ -438,7 +457,7 @@ function resolveSkillPath(p: string, cwd: string): string {
  * Returns skills and any validation diagnostics.
  */
 export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
-	const { cwd, agentDir, skillPaths, includeDefaults, includeClaude = true } = options;
+	const { cwd, agentDir, skillPaths, includeDefaults, includeClaude = true, namespaces } = options;
 
 	// Resolve agentDir - if not provided, use default from config
 	const resolvedAgentDir = agentDir ?? getAgentDir();
@@ -510,8 +529,18 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 		return "path";
 	};
 
+	/** Prefix a batch of skills with `namespace:` before they enter the name map. */
+	const addNamespaced = (result: LoadSkillsResult, namespace: string | undefined) => {
+		if (!namespace) return addSkills(result);
+		addSkills({
+			...result,
+			skills: result.skills.map((skill) => ({ ...skill, name: `${namespace}:${skill.name}` })),
+		});
+	};
+
 	for (const rawPath of skillPaths) {
 		const resolvedPath = resolveSkillPath(rawPath, cwd);
+		const namespace = namespaces?.get(rawPath) ?? namespaces?.get(resolvedPath);
 		if (!existsSync(resolvedPath)) {
 			allDiagnostics.push({ type: "warning", message: "skill path does not exist", path: resolvedPath });
 			continue;
@@ -521,11 +550,11 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 			const stats = statSync(resolvedPath);
 			const source = getSource(resolvedPath);
 			if (stats.isDirectory()) {
-				addSkills(loadSkillsFromDirInternal(resolvedPath, source, true));
+				addNamespaced(loadSkillsFromDirInternal(resolvedPath, source, true), namespace);
 			} else if (stats.isFile() && resolvedPath.endsWith(".md")) {
 				const result = loadSkillFromFile(resolvedPath, source);
 				if (result.skill) {
-					addSkills({ skills: [result.skill], diagnostics: result.diagnostics });
+					addNamespaced({ skills: [result.skill], diagnostics: result.diagnostics }, namespace);
 				} else {
 					allDiagnostics.push(...result.diagnostics);
 				}

@@ -29,7 +29,7 @@ import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import { clearExtensionMcpServers } from "../extension-mcp-servers.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
-import { buildPluginFactory, discoverPlugins } from "./plugins/index.js";
+import { buildPluginFactory, discoverPlugins, pluginExtensionPath, withheldCapabilities } from "./plugins/index.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -650,21 +650,58 @@ export async function discoverAndLoadExtensions(
 }
 
 /**
+ * Whether a discovered plugin came with the repository rather than from the user.
+ *
+ * Scoped to `<cwd>/.claude/skills` — the vendor convention for repo-committed,
+ * collaborator-shared plugins, which Claude Code puts behind a workspace trust
+ * dialog. The other project paths (`.agents/plugins`, `.hoocode/plugins`) are
+ * hoocode's own former install homes, holding plugins the user installed
+ * deliberately, so treating those as untrusted would break existing setups.
+ */
+export function isProjectSuppliedPlugin(pluginRoot: string, cwd: string): boolean {
+	return isUnderDir(pluginRoot, path.join(cwd, ".claude", "skills"));
+}
+
+/** True when `target` is `root` or sits inside it. */
+function isUnderDir(target: string, root: string): boolean {
+	const normalized = path.resolve(root);
+	if (path.resolve(target) === normalized) return true;
+	return path.resolve(target).startsWith(normalized.endsWith(path.sep) ? normalized : `${normalized}${path.sep}`);
+}
+
+/**
  * Standard plugin discovery directories, highest precedence first.
  *
  * `.agents/plugins/` is the cross-vendor, primary home and is listed ahead of the
  * `.hoocode/plugins/` fallback at each scope, so an `.agents`-installed plugin
  * wins over a same-id `.hoocode` one (discoverPlugins is first-wins by id).
- * Project scope beats global. The global `.agents` sibling lives next to the
- * agent dir (`~/.agents` alongside `~/.hoocode`), so it stays parameterized on
- * `agentDir` rather than hardcoding the home directory.
+ * Project scope beats global. The global surfaces live next to the agent dir
+ * (`~/.agents`, `~/.claude` alongside `~/.hoocode`), so they stay parameterized
+ * on `agentDir` rather than hardcoding the home directory.
+ *
+ * Two of these are *production homes* for plugins hoocode authored, and two are
+ * skills directories:
+ *
+ * - `<cwd>/.agents/plugins` is the legacy project-local install home. Nothing
+ *   writes there any more; it is read so plugins installed by older versions
+ *   keep working.
+ * - `.claude/skills` (project and personal) implements Claude Code's
+ *   skills-directory plugins: a folder there carrying `.claude-plugin/plugin.json`
+ *   is a plugin, and a folder with only a `SKILL.md` stays a plain skill —
+ *   `parsePluginDir` returns null for the latter, which is exactly the vendor's
+ *   own rule, so no special-casing is needed here.
+ *
+ * See docs/plugin-system-architecture.md §5.3 and §5.7.
  */
 export function defaultPluginDirs(cwd: string, agentDir: string = getAgentDir()): string[] {
-	const globalAgentsPlugins = path.join(path.dirname(agentDir), ".agents", "plugins");
+	const home = path.dirname(agentDir);
 	return [
 		path.join(cwd, ".agents", "plugins"),
 		path.join(cwd, CONFIG_DIR_NAME, "plugins"),
-		globalAgentsPlugins,
+		path.join(cwd, ".claude", "skills"),
+		path.join(home, ".agents", "plugins"),
+		path.join(home, ".agents", "publish", "github"),
+		path.join(home, ".claude", "skills"),
 		path.join(agentDir, "plugins"),
 	];
 }
@@ -686,15 +723,34 @@ export async function loadPlugins(
 
 	for (const plugin of discoverPlugins(pluginDirs)) {
 		try {
+			// Withhold the executable half of a plugin that came with the repository
+			// rather than from the user. Scoped to `<cwd>/.claude/skills` — the
+			// vendor convention for repo-committed, collaborator-shared plugins,
+			// which Claude Code itself puts behind a workspace trust dialog. The
+			// other project paths (`.agents/plugins`, `.hoocode/plugins`) are
+			// hoocode's own former install homes, holding plugins the user installed
+			// deliberately, so gating those would break existing setups.
+			// See PluginFactoryOptions.passiveOnly.
+			const passiveOnly = isProjectSuppliedPlugin(plugin.root, cwd);
+			const withheld = passiveOnly ? withheldCapabilities(plugin) : [];
 			const extension = await loadExtensionFromFactory(
-				buildPluginFactory(plugin),
+				buildPluginFactory(plugin, { passiveOnly }),
 				cwd,
 				eventBus,
 				runtime,
-				`<plugin:${plugin.id}>`,
+				pluginExtensionPath(plugin.id),
 				`plugin:${plugin.id}`,
 			);
 			extensions.push(extension);
+			if (withheld.length > 0) {
+				errors.push({
+					path: plugin.manifestPath,
+					error:
+						`Project-scoped plugin "${plugin.id}": ${withheld.join(" and ")} not loaded. ` +
+						"Executable capabilities from a project directory require a trust gate hoocode does not have; " +
+						"install the plugin for your user instead if you trust it.",
+				});
+			}
 		} catch (err) {
 			errors.push({
 				path: plugin.manifestPath,

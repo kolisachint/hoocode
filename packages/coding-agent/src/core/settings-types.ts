@@ -162,7 +162,7 @@ export interface Settings {
 	nestedSubagentConcurrency?: number; // default: 2 - max concurrent subagents per pool at nesting depth >= 1
 	enableTodoWrite?: boolean; // default: true - enable the TodoWrite tool (maintain a live todo list in the task panel)
 	enablePluginTools?: boolean; // default: false - master switch for the whole autonomous plugin system: the plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin on the top-level agent AND the runtime plugin-reuse nudge. Off by default; set true to opt in.
-	supportPlatform?: string | string[]; // Platform layout(s) hoocode targets when writing artifacts (authored plugins, /new-* scaffolds). Tokens: claude, copilot|github|gh, agents|native. Same as the --support-platform CLI flag (which overrides this).
+	platform?: string | string[]; // Platform layout(s) hoocode targets when writing artifacts. Authored plugins take claude|github only (agents is filtered out - a plugin needs an ecosystem); /new-* scaffolds also accept agents|native. Same as the --platform CLI flag (which overrides this).
 	deferMcpSchemas?: boolean; // default: true - defer MCP tool schemas (inject names only + ResolveMcpTools on demand) instead of registering every schema up front; set false to eagerly register every schema
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
 	enableEmbsearchTools?: boolean; // default: true - enable the semantic index layer for the always-on `search` tool: index the repo with the embsearch binary so search can fuse semantic hits. Set false to run search lexical-only. grep/find are unchanged.

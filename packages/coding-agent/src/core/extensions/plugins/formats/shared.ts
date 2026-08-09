@@ -28,6 +28,67 @@ export interface RawManifest {
 	mcpServers?: Record<string, unknown> | string;
 	/** Native-only. */
 	providers?: unknown;
+	/** Copilot: extension directories, `{ paths, exclusive }`. Parsed for preservation only. */
+	extensions?: unknown;
+	/** Copilot: LSP config path or inline definitions. Parsed for preservation only. */
+	lspServers?: unknown;
+	/** Any key the adapter does not model. */
+	[key: string]: unknown;
+}
+
+/**
+ * Manifest keys every adapter models; anything else is preserved via
+ * `unknownFields`.
+ *
+ * Surfaced through {@link declaredVocabulary} so the Tier 2 drift check has
+ * something to diff the vendor references against. A checker that inferred our
+ * coverage by reading the parser would be checking its own inference; a declared
+ * set is a claim the codebase makes and the check can falsify.
+ */
+const MODELLED_MANIFEST_KEYS = new Set([
+	"name",
+	"version",
+	"description",
+	"author",
+	"skills",
+	"commands",
+	"agents",
+	"themes",
+	"hooks",
+	"mcpServers",
+	"providers",
+	"$schema",
+]);
+
+/** Manifest keys not modelled here, preserved verbatim so a re-emit cannot drop them. */
+export function unknownManifestFields(raw: RawManifest): Record<string, unknown> | undefined {
+	const out: Record<string, unknown> = {};
+	for (const [key, value] of Object.entries(raw)) {
+		if (!MODELLED_MANIFEST_KEYS.has(key)) out[key] = value;
+	}
+	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * On-disk component surfaces hoocode does not load, checked against both vendors'
+ * file-location tables. The files are left alone; naming them is what makes the
+ * gap visible (see NormalizedPlugin.unsupportedSurfaces).
+ */
+const UNSUPPORTED_SURFACES: ReadonlyArray<{ rel: string; label: string }> = [
+	{ rel: "workflows", label: "workflows/" },
+	{ rel: "output-styles", label: "output-styles/" },
+	{ rel: "monitors/monitors.json", label: "monitors/" },
+	{ rel: "bin", label: "bin/" },
+	{ rel: "settings.json", label: "settings.json" },
+	{ rel: ".lsp.json", label: ".lsp.json" },
+	{ rel: "lsp.json", label: "lsp.json" },
+	{ rel: path.join(".github", "lsp.json"), label: ".github/lsp.json" },
+];
+
+/** Which unsupported surfaces are present under `root`. */
+export function detectUnsupportedSurfaces(root: string): string[] | undefined {
+	const found = UNSUPPORTED_SURFACES.filter((s) => fs.existsSync(path.join(root, s.rel))).map((s) => s.label);
+	return found.length > 0 ? found : undefined;
 }
 
 export function readJson<T>(file: string): T | null {
@@ -124,21 +185,30 @@ function readMcpFile(mcpFile: string): Record<string, unknown> | undefined {
 // ============================================================================
 
 /** Serialize a small set of frontmatter fields to YAML. Values are strings only. */
+/**
+ * Render frontmatter, or nothing at all when every field is empty.
+ *
+ * Emitting bare `---\n---` looks harmless and is not: YAML parses an empty
+ * document as `null`, and Claude Code rejects a component whose frontmatter is
+ * not a mapping. A command authored without a description hit exactly that, and
+ * the artifact was invalid in the ecosystem it was written for while
+ * round-tripping happily through our own reader.
+ */
 function emitFrontmatter(fields: Record<string, string | undefined>): string {
-	const lines: string[] = ["---"];
+	const lines: string[] = [];
 	for (const [key, value] of Object.entries(fields)) {
 		if (value === undefined || value === "") continue;
 		// Quote values that could be misparsed as YAML (contain a colon-space or start punctuation).
 		const needsQuote = /[:#]|^[\s>|@`&*!%]/.test(value) || value.includes("\n");
 		lines.push(`${key}: ${needsQuote ? JSON.stringify(value) : value}`);
 	}
-	lines.push("---");
-	return lines.join("\n");
+	return lines.length > 0 ? ["---", ...lines, "---"].join("\n") : "";
 }
 
 /** A markdown capability file: frontmatter block + body. */
 export function emitMarkdown(fields: Record<string, string | undefined>, body: string): string {
-	return `${emitFrontmatter(fields)}\n\n${body.trimEnd()}\n`;
+	const frontmatter = emitFrontmatter(fields);
+	return frontmatter ? `${frontmatter}\n\n${body.trimEnd()}\n` : `${body.trimEnd()}\n`;
 }
 
 /** Pretty-print a JSON manifest with a trailing newline (matches repo convention). */
@@ -204,4 +274,22 @@ export function claudeStyleWorkspace(root: string): WorkspaceLayout {
 			content: emitMarkdown({ name: c.name, description: c.description }, c.body),
 		}),
 	};
+}
+
+/** The manifest keys the adapters model, as a sorted list. Input to the drift check (§2.2). */
+export function modelledManifestKeys(): string[] {
+	return [...MODELLED_MANIFEST_KEYS].sort();
+}
+
+/**
+ * Surfaces we know about and deliberately do not load, as the **relative paths**
+ * they actually occupy rather than their display labels.
+ *
+ * The distinction bit once already: the labels are written for humans
+ * (`"monitors/"`), the vendor reference writes the real path
+ * (`monitors/monitors.json`), and a drift check comparing the two reported a
+ * known surface as a new finding.
+ */
+export function knownUnsupportedSurfaces(): string[] {
+	return UNSUPPORTED_SURFACES.map((s) => s.rel.replace(/\\/g, "/")).sort();
 }

@@ -29,11 +29,20 @@ interface HookRunResult {
 }
 
 /** Run one shell hook command, piping `input` as JSON on stdin. */
-function runHookCommand(cmd: PluginHookCommand, input: unknown, root: string): Promise<HookRunResult> {
+function runHookCommand(
+	cmd: PluginHookCommand,
+	input: unknown,
+	root: string,
+	vars: Record<string, string>,
+): Promise<HookRunResult> {
 	return new Promise((resolve) => {
 		const child = spawn(cmd.command, {
 			shell: true,
-			env: { ...process.env, CLAUDE_PLUGIN_ROOT: root, AGENTS_PLUGIN_ROOT: root },
+			// Every vendor spelling, so a hook written for either agent resolves:
+			// the shell expands these, which is the hook-side equivalent of the
+			// string substitution MCP configs get.
+			env: { ...process.env, ...vars },
+			cwd: root,
 		});
 
 		let stdout = "";
@@ -104,6 +113,7 @@ export function installPluginHooks(
 	pi: ExtensionAPI,
 	hooks: PluginHooksConfig,
 	root: string,
+	vars: Record<string, string>,
 	onError: (message: string) => void,
 ): void {
 	// ── PreToolUse → tool_call (blocking) ────────────────────────────────────
@@ -116,6 +126,7 @@ export function installPluginHooks(
 					cmd,
 					{ hook_event_name: "PreToolUse", tool_name: event.toolName, tool_input: event.input },
 					root,
+					vars,
 				);
 				const decision = res.json?.decision ?? res.json?.permissionDecision;
 				if (res.exitCode === 2 || decision === "block" || decision === "deny") {
@@ -141,6 +152,7 @@ export function installPluginHooks(
 						tool_response: event.content,
 					},
 					root,
+					vars,
 				);
 				if (res.exitCode === 2 || res.json?.decision === "block") {
 					const reason = res.json?.reason || res.stderr.trim() || "Flagged by plugin hook";
@@ -160,7 +172,12 @@ export function installPluginHooks(
 		pi.on("before_agent_start", async (event) => {
 			let systemPrompt = event.systemPrompt;
 			for (const cmd of allCommands(promptGroups)) {
-				const res = await runHookCommand(cmd, { hook_event_name: "UserPromptSubmit", prompt: event.prompt }, root);
+				const res = await runHookCommand(
+					cmd,
+					{ hook_event_name: "UserPromptSubmit", prompt: event.prompt },
+					root,
+					vars,
+				);
 				if (res.exitCode !== 0 && res.exitCode !== 2) {
 					onError(`UserPromptSubmit hook failed (${res.exitCode}): ${res.stderr.trim()}`);
 					continue;
@@ -177,7 +194,12 @@ export function installPluginHooks(
 	if (sessionGroups?.length) {
 		pi.on("session_start", async (event) => {
 			for (const cmd of allCommands(sessionGroups)) {
-				const res = await runHookCommand(cmd, { hook_event_name: "SessionStart", source: event.reason }, root);
+				const res = await runHookCommand(
+					cmd,
+					{ hook_event_name: "SessionStart", source: event.reason },
+					root,
+					vars,
+				);
 				if (res.exitCode !== 0) onError(`SessionStart hook failed (${res.exitCode}): ${res.stderr.trim()}`);
 			}
 		});
@@ -188,7 +210,7 @@ export function installPluginHooks(
 	if (stopGroups?.length) {
 		pi.on("agent_end", async () => {
 			for (const cmd of allCommands(stopGroups)) {
-				const res = await runHookCommand(cmd, { hook_event_name: "Stop" }, root);
+				const res = await runHookCommand(cmd, { hook_event_name: "Stop" }, root, vars);
 				if (res.exitCode !== 0) onError(`Stop hook failed (${res.exitCode}): ${res.stderr.trim()}`);
 			}
 		});

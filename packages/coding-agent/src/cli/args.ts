@@ -60,7 +60,7 @@ export interface Args {
 	 * given (comma-separated and/or repeated); normalized downstream:
 	 * agents|native, claude, github|copilot|gh.
 	 */
-	supportPlatform?: string[];
+	platform?: string[];
 	/** Path to an explicit PEM CA bundle to trust additively for hoocode's own TLS traffic. */
 	caCert?: string;
 	/** Trust the OS/system CA store additively (opt-in) for hoocode's own TLS traffic. */
@@ -179,9 +179,9 @@ export function parseArgs(args: string[]): Args {
 			result.light = true;
 		} else if (arg === "--print-token-surface") {
 			result.printTokenSurface = true;
-		} else if (arg === "--support-platform" && i + 1 < args.length) {
-			result.supportPlatform = [
-				...(result.supportPlatform ?? []),
+		} else if (arg === "--platform" && i + 1 < args.length) {
+			result.platform = [
+				...(result.platform ?? []),
 				...args[++i]
 					.split(",")
 					.map((s) => s.trim())
@@ -379,15 +379,18 @@ ${chalk.bold("Options:")}
                                   Can also be enabled via the "light" setting
   --print-token-surface          Print the fixed per-turn surface (system prompt + serialized
                                   tool schema token estimate) and exit
-  --support-platform <list>      Platform layout(s) hoocode targets when it writes artifacts:
+  --platform <list>              Platform layout(s) hoocode targets when it writes artifacts:
                                   authored plugins (ProposePlugin) and the /new-skill /new-agent
                                   /new-command scaffolds. Comma-separated and/or repeated.
                                   Tokens: claude, copilot (alias: github, gh), agents (alias: native)
-                                  e.g. --support-platform copilot writes .github/skills/<name>/SKILL.md,
+                                  e.g. --platform copilot writes .github/skills/<name>/SKILL.md,
                                   .github/agents/<name>.agent.md, .github/prompts/<name>.prompt.md and
                                   a .github/plugin/plugin.json manifest for authored plugins
-                                  Default: claude + copilot for authored plugins; .hoocode/ for scaffolds
-                                  Can also be set via the "supportPlatform" setting
+                                  Plugins are only ever produced for claude or github: they are
+                                  distribution units and the native agents layout belongs to no
+                                  marketplace, so agents is ignored for them (scaffolds still use it)
+                                  Default: claude for plugins; .hoocode/ for scaffolds
+                                  Can also be set via the "platform" setting
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)

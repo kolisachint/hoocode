@@ -3,9 +3,9 @@
  *
  * `/plugin` installs plugins from marketplaces (a git repo or local dir with a
  * native `.agents-plugin/marketplace.json`, Claude `.claude-plugin/marketplace.json`,
- * or Copilot-style `.github/marketplace.json` index). Installed plugins are placed in
- * `.agents/plugins/<name>` (the primary, cross-vendor home) and loaded by the plugin
- * loader after a reload.
+ * or Copilot-style `.github/marketplace.json` index). Installed plugins are placed
+ * in the global consumption home (`~/.agents/plugins/<name>`) and loaded by the
+ * plugin loader after a reload.
  *
  * Adding a marketplace is the human trust boundary and stays here; the shared
  * mechanics (discovery, install, remove, the bundled default marketplace) live in
@@ -14,46 +14,57 @@
  *
  *   /plugin marketplace add <git-url|path>
  *   /plugin marketplace list
+ *   /plugin marketplace refresh     re-fetch every cached index now
  *   /plugin list                     list available plugins across marketplaces
  *   /plugin install <name>
  *   /plugin remove <name>
+ *   /plugin publish <name> [--to <marketplace-dir>]
+ *
+ * `publish` is the human end of the publish lane (§3.2). The model can package a
+ * plugin — gates, README, index entry — but never publish it, because an agent
+ * that can push executable code into a marketplace other agents install from
+ * unattended is a supply-chain compromise primitive. So the last step is a
+ * command a person types, and even then it stops at the machine boundary: with
+ * `--to` it copies the plugin into a local marketplace checkout and updates that
+ * index, leaving an uncommitted diff to review. Committing and opening the PR
+ * stay manual.
  */
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { getPlugin } from "../../core/extensions/plugins/authoring.js";
 import {
 	findAvailablePlugin,
 	installAvailablePlugin,
 	listAvailablePlugins,
 	readMarketplaceRecords,
+	refreshMarketplaces,
 	uninstallPlugin,
 } from "../../core/extensions/plugins/install.js";
+import {
+	marketplaceCacheDir,
+	marketplaceCacheRoot,
+	marketplaceStorePath,
+} from "../../core/extensions/plugins/locations.js";
 import {
 	parseMarketplaceDir,
 	readMarketplaceStore,
 	resolvePluginSource,
 	writeMarketplaceStore,
 } from "../../core/extensions/plugins/marketplace.js";
+import { entryNeedsSource, packagePlugin, stageIntoMarketplace } from "../../core/extensions/plugins/packaging.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
-
-function sanitizeForDir(s: string): string {
-	return s.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
-}
 
 function isGitSource(loc: string): boolean {
 	return /^https?:\/\//.test(loc) || loc.startsWith("git@") || loc.endsWith(".git");
 }
 
 export function setupMarketplace(pi: ExtensionAPI): void {
-	// `.agents/` is the primary, cross-vendor home for the added-marketplace registry.
-	const storePath = (cwd: string) => join(cwd, ".agents", "marketplaces.json");
-	const cacheDir = (cwd: string) => join(cwd, ".agents", "marketplace-cache");
-
 	pi.registerCommand("plugin", {
 		description:
-			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin list | /plugin install <name> | /plugin remove <name>",
+			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> | /plugin remove <name> | /plugin publish <name> [--to <dir>]",
 		getArgumentCompletions: (prefix: string) =>
-			["marketplace", "list", "install", "remove"]
+			["marketplace", "list", "install", "remove", "refresh", "publish"]
 				.filter((s) => s.startsWith(prefix))
 				.map((s) => ({ value: s, label: s })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -89,9 +100,9 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 
 					let dir: string;
 					if (isGitSource(loc)) {
-						dir = join(cacheDir(cwd), sanitizeForDir(loc));
+						dir = marketplaceCacheDir(loc);
 						rmSync(dir, { recursive: true, force: true });
-						mkdirSync(cacheDir(cwd), { recursive: true });
+						mkdirSync(marketplaceCacheRoot(), { recursive: true });
 						const res = await pi.exec("git", ["clone", "--depth", "1", loc, dir]);
 						if (res.code !== 0) {
 							ctx.ui.notify(`Clone failed: ${res.stderr || res.stdout}`, "error");
@@ -114,14 +125,27 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 						return;
 					}
 
-					const records = readMarketplaceStore(storePath(cwd)).filter((r) => r.location !== loc);
+					const records = readMarketplaceStore(marketplaceStorePath()).filter((r) => r.location !== loc);
 					records.push({ location: loc, dir });
-					writeMarketplaceStore(storePath(cwd), records);
+					writeMarketplaceStore(marketplaceStorePath(), records);
 					ctx.ui.notify(`Added marketplace "${market.name}" (${market.plugins.length} plugin(s)).`, "info");
 					return;
 				}
 
-				ctx.ui.notify("Usage: /plugin marketplace add <git-url|path> | /plugin marketplace list", "warning");
+				if (sub === "refresh") {
+					ctx.ui.notify("Refreshing marketplace indices…", "info");
+					const { refreshed, errors } = await refreshMarketplaces(cwd);
+					const lines: string[] = [];
+					if (refreshed.length > 0) lines.push(`Refreshed: ${refreshed.join(", ")}`);
+					if (errors.length > 0) lines.push(`Could not refresh: ${errors.join("; ")}`);
+					ctx.ui.notify(lines.join("\n") || "Nothing to refresh.", errors.length > 0 ? "warning" : "info");
+					return;
+				}
+
+				ctx.ui.notify(
+					"Usage: /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh",
+					"warning",
+				);
 				return;
 			}
 
@@ -162,6 +186,52 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 				return;
 			}
 
+			// ── publish <name> [--to <marketplace-dir>] ─────────────────────────
+			if (trimmed.startsWith("publish")) {
+				const rest = trimmed.slice("publish".length).trim();
+				const toMatch = /(?:^|\s)--to\s+(\S+)/.exec(rest);
+				const name = rest.replace(/(?:^|\s)--to\s+\S+/, "").trim();
+				if (!name) {
+					ctx.ui.notify("Usage: /plugin publish <name> [--to <marketplace-dir>]", "warning");
+					return;
+				}
+				const plugin = getPlugin(cwd, name);
+				if (!plugin) {
+					ctx.ui.notify(`No plugin named "${name}" is installed or authored here.`, "error");
+					return;
+				}
+
+				ctx.ui.notify(`Packaging "${name}" — running publish checks…`, "info");
+				const result = await packagePlugin(plugin);
+				if (!result.ok) {
+					// A red gate blocks staging too: the point of the strict run is that a
+					// plugin other people install has passed it, and staging is the step
+					// that puts it on the path to them.
+					ctx.ui.notify(`Not publishable yet.\n${result.instructions}`, "error");
+					return;
+				}
+
+				if (!toMatch) {
+					const hint = entryNeedsSource(result.entry)
+						? "\nRe-run with --to <marketplace-dir> to vendor it into a local marketplace checkout (which fills `source` in)."
+						: "";
+					ctx.ui.notify(`${result.instructions}${hint}`, "info");
+					return;
+				}
+
+				const staged = stageIntoMarketplace(plugin, result.platform, toMatch[1]);
+				if (!staged.ok) {
+					ctx.ui.notify(staged.message, "error");
+					return;
+				}
+				ctx.ui.notify(
+					`${staged.message}\n\nReview the diff, then commit and open the pull request yourself — ` +
+						"hoocode deliberately stops short of pushing a plugin into a marketplace.",
+					"info",
+				);
+				return;
+			}
+
 			// ── remove <name> ───────────────────────────────────────────────────
 			if (trimmed.startsWith("remove")) {
 				const name = trimmed.slice("remove".length).trim();
@@ -180,7 +250,8 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 			}
 
 			ctx.ui.notify(
-				"Usage: /plugin marketplace add|list | /plugin list | /plugin install <name> | /plugin remove <name>",
+				"Usage: /plugin marketplace add|list|refresh | /plugin list | /plugin install <name> | " +
+					"/plugin remove <name> | /plugin publish <name> [--to <marketplace-dir>]",
 				"warning",
 			);
 		},

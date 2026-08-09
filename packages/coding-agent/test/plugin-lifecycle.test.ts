@@ -3,19 +3,19 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import {
 	defaultMarketplaceRecord,
 	findAvailablePlugin,
 	installAvailablePlugin,
-	installedPluginsDir,
 	isPluginInstalled,
 	listAvailablePlugins,
 	listInstalledPlugins,
-	marketplaceCacheDir,
 	readMarketplaceRecords,
 	uninstallPlugin,
 	WELL_KNOWN_MARKETPLACES,
 } from "../src/core/extensions/plugins/install.js";
+import { consumptionPluginsDir, marketplaceCacheDir } from "../src/core/extensions/plugins/locations.js";
 import { parseMarketplaceDir, resolvePluginSource } from "../src/core/extensions/plugins/marketplace.js";
 import {
 	createInstallPluginToolDefinition,
@@ -63,9 +63,9 @@ function makeCtx(cwd: string) {
  * marketplace so SearchPlugins' lazy fetch no-ops (no network) and the empty
  * dir parses to no manifest (skipped from results).
  */
-function stubWellKnownMarketplaces(cwd: string): void {
+function stubWellKnownMarketplaces(_cwd: string): void {
 	for (const wk of WELL_KNOWN_MARKETPLACES) {
-		fs.mkdirSync(marketplaceCacheDir(cwd, wk.url), { recursive: true });
+		fs.mkdirSync(marketplaceCacheDir(wk.url), { recursive: true });
 	}
 }
 
@@ -135,8 +135,30 @@ function seedGitSubdirMarketplace(cwd: string): { marketDir: string; repoDir: st
 	return { marketDir, repoDir };
 }
 
+/**
+ * Redirect every global plugin location into a temp home for the duration of a
+ * test. The consumption home and the marketplace cache are user-scoped now, so
+ * without this a test run would write into the developer's real ~/.agents.
+ */
+function useTempHome(): { home: () => string } {
+	let home = "";
+	let prior: string | undefined;
+	beforeEach(() => {
+		home = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-home-"));
+		prior = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = path.join(home, ".hoocode");
+	});
+	afterEach(() => {
+		if (prior === undefined) delete process.env[ENV_AGENT_DIR];
+		else process.env[ENV_AGENT_DIR] = prior;
+		fs.rmSync(home, { recursive: true, force: true });
+	});
+	return { home: () => home };
+}
+
 describe("plugin install engine", () => {
 	let cwd: string;
+	useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-lifecycle-"));
@@ -169,12 +191,12 @@ describe("plugin install engine", () => {
 
 		const outcome = await installAvailablePlugin(cwd, "widget");
 		expect(outcome.installed).toBe(true);
-		expect(fs.existsSync(path.join(installedPluginsDir(cwd), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
-		expect(listInstalledPlugins(cwd, cwd).some((p) => p.id === "widget")).toBe(true);
+		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
+		expect(listInstalledPlugins(cwd).some((p) => p.id === "widget")).toBe(true);
 
 		const removed = uninstallPlugin(cwd, "widget");
 		expect(removed.removed).toBe(true);
-		expect(fs.existsSync(path.join(installedPluginsDir(cwd), "widget"))).toBe(false);
+		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget"))).toBe(false);
 	});
 
 	it("reports a helpful message when installing an unknown plugin", async () => {
@@ -226,13 +248,14 @@ describe("plugin install engine", () => {
 
 		const outcome = await installAvailablePlugin(cwd, "widget");
 		expect(outcome.installed).toBe(true);
-		expect(fs.existsSync(path.join(installedPluginsDir(cwd), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
-		expect(listInstalledPlugins(cwd, cwd).some((p) => p.id === "widget")).toBe(true);
+		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
+		expect(listInstalledPlugins(cwd).some((p) => p.id === "widget")).toBe(true);
 	});
 });
 
 describe("plugin lifecycle tools", () => {
 	let cwd: string;
+	useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-lifecycle-tools-"));
@@ -244,7 +267,11 @@ describe("plugin lifecycle tools", () => {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	});
 
-	it("exposes the capability-acquisition tool names (lifecycle + authoring) for the guardrail", () => {
+	it("exposes the capability-acquisition tool names (lifecycle + authoring + publish lane) for the guardrail", () => {
+		// Exhaustive on purpose: a new plugin-system tool that is not in this set is
+		// a tool an authored subagent could be granted, which is the whole
+		// privilege-amplification hole the guardrail exists to close. Adding one
+		// here should be a deliberate line in a diff, not a silent widening.
 		expect(PLUGIN_SYSTEM_TOOL_NAMES).toEqual([
 			"SearchPlugins",
 			"ListPlugins",
@@ -254,6 +281,7 @@ describe("plugin lifecycle tools", () => {
 			"ProposePlugin",
 			"UpdatePlugin",
 			"RemovePluginCapability",
+			"PackagePlugin",
 		]);
 	});
 
@@ -269,6 +297,38 @@ describe("plugin lifecycle tools", () => {
 		const gh = await tool.execute("3", { platform: "github" }, undefined, undefined, ctx);
 		// hello-world (default marketplace) supports github; widget (agents) does not.
 		expect((gh.details as { count: number }).count).toBe(1);
+	});
+
+	it("SearchPlugins adds capability matches without disturbing the substring ones", async () => {
+		// Named nothing like "send mail", but described as doing it. Substring
+		// matching cannot reach this; the capability index can.
+		const market = path.join(cwd, "market2");
+		writeJson(path.join(market, ".agents-plugin", "marketplace.json"), {
+			name: "second",
+			plugins: [{ name: "postbox", source: "./p", description: "Send messages by electronic mail." }],
+		});
+		writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+			marketplaces: [
+				{ location: path.join(cwd, "market"), dir: path.join(cwd, "market") },
+				{ location: market, dir: market },
+			],
+		});
+
+		const { ctx } = makeCtx(cwd);
+		const res = await createSearchPluginsToolDefinition().execute(
+			"1",
+			{ query: "send mail" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		const text = (res.content[0] as { text: string }).text;
+
+		// `count` stays the substring count, so nothing that depended on the old
+		// behavior shifts; the semantic hits are additive and labelled as such.
+		expect((res.details as { count: number }).count).toBe(0);
+		expect(text).toContain("Related (matched by capability, not name)");
+		expect(text).toContain("postbox");
 	});
 
 	it("InstallPlugin installs and announces, ListPlugins reflects it, UninstallPlugin reverses it", async () => {

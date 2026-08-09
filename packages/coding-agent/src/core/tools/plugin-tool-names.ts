@@ -28,6 +28,12 @@ export const PROPOSE_PLUGIN_TOOL_NAME = "ProposePlugin";
 export const UPDATE_PLUGIN_TOOL_NAME = "UpdatePlugin";
 export const REMOVE_PLUGIN_CAPABILITY_TOOL_NAME = "RemovePluginCapability";
 
+// Publish lane (spec §3.2). Packaging is autonomous — it gates the plugin,
+// writes a README and produces the marketplace index entry — but it stops at the
+// trust boundary: nothing here contacts a remote or publishes anything. The
+// publish itself is `/plugin publish`, a human command.
+export const PACKAGE_PLUGIN_TOOL_NAME = "PackagePlugin";
+
 /** Every capability-acquisition tool — the guardrail set stripped from authored allowlists. */
 export const PLUGIN_SYSTEM_TOOL_NAMES: readonly string[] = [
 	SEARCH_PLUGINS_TOOL_NAME,
@@ -38,4 +44,5 @@ export const PLUGIN_SYSTEM_TOOL_NAMES: readonly string[] = [
 	PROPOSE_PLUGIN_TOOL_NAME,
 	UPDATE_PLUGIN_TOOL_NAME,
 	REMOVE_PLUGIN_CAPABILITY_TOOL_NAME,
+	PACKAGE_PLUGIN_TOOL_NAME,
 ];

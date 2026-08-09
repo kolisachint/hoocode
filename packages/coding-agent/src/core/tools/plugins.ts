@@ -22,6 +22,9 @@
 
 import { type Static, Type } from "typebox";
 import { getArmedReuseNudges } from "../../extensions/core/prompt-reactive/policy.js";
+import { registerCapabilities } from "../capabilities/registry.js";
+import { resetCapabilitySearch, searchCapabilities } from "../capabilities/search.js";
+import { formatGateFindings, runStaticGates } from "../extensions/plugins/gates.js";
 import {
 	type AvailablePlugin,
 	ensureWellKnownMarketplaces,
@@ -91,14 +94,42 @@ export function createSearchPluginsToolDefinition(): ToolDefinition {
 			// offline is non-fatal — search degrades to what is already available.
 			const fetchErrors = await ensureWellKnownMarketplaces(ctx.cwd);
 			const q = params.query?.trim().toLowerCase();
-			const results = listAvailablePlugins(ctx.cwd).filter((p) => {
-				if (params.platform && !p.supportPlatform.includes(params.platform)) return false;
-				if (q && !`${p.name} ${p.description ?? ""}`.toLowerCase().includes(q)) return false;
-				return true;
-			});
+			const inScope = listAvailablePlugins(ctx.cwd).filter(
+				(p) => !params.platform || p.supportPlatform.includes(params.platform),
+			);
+			const results = inScope.filter((p) => !q || `${p.name} ${p.description ?? ""}`.toLowerCase().includes(q));
+
+			// Substring matching answers "I know roughly what it is called" and nothing
+			// else — an entry described as "compose and send mail" is invisible to a
+			// search for "email". Retrieval is appended rather than substituted so every
+			// result that matched before still matches, in the same order: the semantic
+			// leg only ever adds.
+			let related: AvailablePlugin[] = [];
+			if (q) {
+				registerCapabilities(
+					"plugin-available",
+					inScope.map((p) => ({
+						id: `plugin-available:${p.marketplaceName}/${p.name}`,
+						kind: "plugin-available" as const,
+						name: p.name,
+						description: p.description ?? "",
+						source: p.marketplaceName,
+						deferred: true,
+					})),
+				);
+				resetCapabilitySearch();
+				const found = new Set(results.map((p) => p.name));
+				const { hits } = await searchCapabilities(q, { kinds: ["plugin-available"], limit: 5 });
+				related = hits
+					.map((h) => inScope.find((p) => p.name === h.doc.name))
+					.filter((p): p is AvailablePlugin => !!p && !found.has(p.name));
+			}
 			let text = results.length
 				? `Found ${results.length} plugin(s):\n${results.map(describeAvailable).join("\n")}`
 				: "No matching plugins in the registered marketplaces.";
+			if (related.length > 0) {
+				text += `\n\nRelated (matched by capability, not name):\n${related.map(describeAvailable).join("\n")}`;
+			}
 			if (fetchErrors.length > 0) {
 				text += `\n(Some well-known marketplaces could not be fetched: ${fetchErrors.join("; ")})`;
 			}
@@ -241,6 +272,24 @@ export function createInstallPluginToolDefinition(): ToolDefinition {
 			const outcome = await installAvailablePlugin(ctx.cwd, params.name);
 			let text = outcome.message;
 			if (outcome.installed && outcome.dest) {
+				// Source trust is not content trust: the marketplace boundary vouches
+				// for where the code came from, not for what it does. The vendor
+				// validator is skipped here — the plugin is someone else's artifact in
+				// their own layout, and failing an install on their conformance is not
+				// ours to enforce — so this is round-trip plus the safety checks.
+				const evaluation = runStaticGates(outcome.dest, { skipVendorValidator: true });
+				if (!evaluation.ok) {
+					uninstallPlugin(ctx.cwd, params.name);
+					const failure =
+						`Installed "${params.name}" but removed it again — it failed its checks.\n` +
+						formatGateFindings(evaluation);
+					ctx.ui.notify(failure, "warning");
+					return {
+						content: [{ type: "text" as const, text: failure }],
+						details: { name: params.name, installed: false },
+					};
+				}
+				if (evaluation.findings.length > 0) text += `\n${formatGateFindings(evaluation)}`;
 				// Live activation: skills/commands/subagents become usable on the very
 				// next model request (same turn); hooks/MCP servers reload once idle.
 				const activation = ctx.activatePlugin(outcome.dest);

@@ -201,8 +201,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
-        "startLine": 453,
-        "endLine": 457,
+        "startLine": 462,
+        "endLine": 466,
         "anchor": "export async function ensureTool"
       }
     ]
@@ -396,8 +396,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/package-manager.ts",
-        "startLine": 888,
-        "endLine": 892,
+        "startLine": 894,
+        "endLine": 898,
         "anchor": "\"Empty response from npm view\""
       }
     ]
@@ -423,7 +423,7 @@
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
         "startLine": 1,
-        "endLine": 420,
+        "endLine": 430,
         "scope": "file"
       }
     ]
@@ -488,7 +488,7 @@
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
         "startLine": 1,
-        "endLine": 501,
+        "endLine": 510,
         "scope": "file"
       }
     ]
@@ -669,8 +669,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
-        "startLine": 453,
-        "endLine": 457,
+        "startLine": 462,
+        "endLine": 466,
         "anchor": "export async function ensureTool"
       }
     ]
@@ -688,8 +688,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/search/hybrid-search.ts",
-        "startLine": 223,
-        "endLine": 238,
+        "startLine": 227,
+        "endLine": 242,
         "anchor": "export async function retrieveCandidates"
       }
     ]
@@ -720,8 +720,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
-        "startLine": 453,
-        "endLine": 457,
+        "startLine": 462,
+        "endLine": 466,
         "anchor": "export async function ensureTool"
       },
       {
