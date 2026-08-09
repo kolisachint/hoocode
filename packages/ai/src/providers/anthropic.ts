@@ -155,6 +155,7 @@ function getAnthropicCompat(model: Model<"anthropic-messages">): Required<Anthro
 	return {
 		supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? true,
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
+		supportsToolSearch: model.compat?.supportsToolSearch ?? true,
 	};
 }
 
@@ -899,6 +900,7 @@ function buildParams(
 			context.tools,
 			isOAuthToken,
 			getAnthropicCompat(model).supportsEagerToolInputStreaming,
+			getAnthropicCompat(model).supportsToolSearch,
 			cacheControl,
 		);
 	}
@@ -1134,29 +1136,68 @@ function shouldUseFineGrainedToolStreamingBeta(model: Model<"anthropic-messages"
  * intentionally ignored here and the tolerant streaming JSON parser remains
  * the only guard.
  */
+/**
+ * The BM25 variant of the server-side tool-search tool. Chosen over the regex
+ * variant because the query it has to serve is "a capability described in
+ * words", not "a name matching a pattern" — and the regex matcher cannot answer
+ * the first at all.
+ */
+const TOOL_SEARCH_TOOL = { type: "tool_search_tool_bm25_20251119", name: "tool_search_tool_bm25" } as const;
+
+/**
+ * Convert tools, honoring per-tool {@link Tool.deferLoading}.
+ *
+ * Deferral is what makes tool loading *cache-preserving*: schemas the model
+ * later needs are appended to the request by the server rather than added to
+ * the `tools` array by us. Tools render at position 0 of the prompt, so a tool
+ * we add ourselves mid-conversation invalidates the entire prefix — tools,
+ * system, and messages alike. Deferring instead keeps the prefix stable.
+ *
+ * Two invariants the API enforces, both handled here: the search tool must not
+ * itself be deferred, and at least one tool must be non-deferred (a request
+ * where everything is deferred returns 400 `All tools have defer_loading set`).
+ * Appending the search tool satisfies the second by construction.
+ */
 function convertTools(
 	tools: Tool[],
 	isOAuthToken: boolean,
 	supportsEagerToolInputStreaming: boolean,
+	supportsToolSearch: boolean,
 	cacheControl?: CacheControlEphemeral,
-): Anthropic.Messages.Tool[] {
+): Anthropic.Messages.ToolUnion[] {
 	if (!tools) return [];
 
-	return tools.map((tool, index) => {
+	// Ignore the flag rather than failing when the endpoint cannot honor it: a
+	// caller who asked for deferral should get a working request with eager
+	// schemas, not a 400 from a field the endpoint has never heard of.
+	const deferring = supportsToolSearch && tools.some((t) => t.deferLoading);
+
+	const converted: Anthropic.Messages.ToolUnion[] = tools.map((tool) => {
 		const schema = tool.parameters as { properties?: unknown; required?: string[] };
 
 		return {
 			name: isOAuthToken ? toClaudeCodeName(tool.name) : tool.name,
 			description: tool.description,
 			...(supportsEagerToolInputStreaming ? { eager_input_streaming: true } : {}),
+			...(deferring && tool.deferLoading ? { defer_loading: true } : {}),
 			input_schema: {
 				type: "object",
 				properties: schema.properties ?? {},
 				required: schema.required ?? [],
 			},
-			...(cacheControl && index === tools.length - 1 ? { cache_control: cacheControl } : {}),
 		};
 	});
+
+	if (deferring) converted.push({ ...TOOL_SEARCH_TOOL });
+
+	// Breakpoint goes on the last entry of the *final* array, which is the
+	// search tool when one was appended — placing it on the last user tool
+	// would leave the search tool outside the cached prefix and re-process it
+	// on every request.
+	const last = converted[converted.length - 1];
+	if (cacheControl && last) Object.assign(last, { cache_control: cacheControl });
+
+	return converted;
 }
 
 function mapStopReason(reason: Anthropic.Messages.StopReason | string): StopReason {

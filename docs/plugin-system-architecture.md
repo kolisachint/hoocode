@@ -821,6 +821,11 @@ Those two are locked together: because the matcher is exact-only, the catalog
 *must* be dumped in full for the resolver to be usable. Fix the matcher and the
 dump becomes optional.
 
+A third cost went unnoticed until after step 10: resolving a tool **invalidates
+the entire prompt cache**, because `pi.registerTool()` changes `tools`, which
+renders at position 0. Deferral therefore trades schema tokens up front for a
+full prefix re-process on first resolve. See §8.6 item 6.
+
 Meanwhile `core/embsearch/` and `core/search/hybrid-search.ts` (dense + BM25 +
 RRF + cross-encoder rerank) exist and point only at repo files.
 
@@ -1112,3 +1117,39 @@ where authored plugins are half-live.
    they diverge only under the override. A test asserting "this skill is not
    present" against `~/.claude/skills` is therefore reading the developer's real
    home — see the namespace-prefix workaround in `plugin-e2e-official.test.ts`.
+
+6. **`ResolveMcpTools` invalidates the prompt cache on every resolve.** Found
+   after step 10 shipped, and it undercuts the feature step 10 improved. Tools
+   render at position 0 of the prompt, so adding one mid-conversation
+   invalidates *all three* cache tiers — tools, system, and messages. Our
+   resolver adds tools via `pi.registerTool()`, so each resolve forces a full
+   prefix re-process at full input price.
+
+   That inverts deferral's economics: it saves schema tokens on every request
+   until the model resolves once, then pays to re-process everything. On a long
+   session with an early resolve it can cost *more* than never deferring. Which
+   way it nets out depends on resolve frequency — precisely the measurement
+   §6.3 defers, and the reason that measurement is now load-bearing rather than
+   nice-to-have. Blast radius is limited: deferral is opt-in
+   (`HOOCODE_DEFER_MCP_SCHEMAS=1`) and top-level-agent only.
+
+   The vendor's answer is to make loading *append-only* rather than a mutation
+   of `tools`, in two forms: the server-side **tool-search tool** with per-tool
+   `defer_loading` (the model discovers what it needs; schemas are appended
+   server-side), and **mid-conversation tool changes**
+   (`mid-conversation-tool-changes-2026-07-01`, Opus 5+), where the *application*
+   adds a pre-declared deferred tool via a `tool_addition` block. The second is
+   the closer analogue of what our resolver actually is — we decide the tool set
+   changed, the model doesn't discover it.
+
+   **Half-built.** `packages/ai` now carries `Tool.deferLoading`, and the
+   Anthropic provider emits per-tool `defer_loading` plus the BM25 tool-search
+   tool when anything opts in (`supportsToolSearch` compat flag; ignored rather
+   than fatal where unsupported). Nothing sets the flag yet — the MCP loader
+   still withholds deferred tools entirely instead of registering them *with* it,
+   and that rework is the actual behavior change. Two things to weigh before
+   making it: the native path is Anthropic-only, and the server-side searcher
+   only sees `tools[]`, so it cannot reach the skills, commands, and plugins our
+   capability index spans. A hybrid — native `defer_loading` for cache
+   preservation, our index for retrieval across every capability kind — is
+   probably the right shape, and is untested against a live API either way.

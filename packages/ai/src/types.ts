@@ -346,6 +346,18 @@ export interface Tool<TParameters extends TSchema = TSchema> {
 	name: string;
 	description: string;
 	parameters: TParameters;
+	/**
+	 * Withhold this tool's JSON schema from the request until the model asks for
+	 * it, keeping it out of the context window until it is needed.
+	 *
+	 * A declaration of intent, not a provider feature. Any provider may honor it
+	 * however it can — natively where the API supports deferral, or by the
+	 * harness withholding the tool and offering a resolver. Providers that do
+	 * neither ignore the field and send the schema as usual, which is why it is
+	 * safe on the shared type: opting a tool in never changes the request for a
+	 * provider that cannot act on it.
+	 */
+	deferLoading?: boolean;
 }
 
 export interface Context {
@@ -454,6 +466,17 @@ export interface AnthropicMessagesCompat {
 	supportsEagerToolInputStreaming?: boolean;
 	/** Whether the provider supports Anthropic long cache retention (`cache_control.ttl: "1h"`). Default: true. */
 	supportsLongCacheRetention?: boolean;
+	/**
+	 * Whether the provider accepts per-tool `defer_loading` and the server-side
+	 * tool-search tool.
+	 *
+	 * Defaults to true, which is safe despite the feature being newer than the
+	 * rest of this interface: deferral is opt-in per tool, so a request that
+	 * defers nothing is byte-identical either way. An endpoint that rejects
+	 * `defer_loading` — Bedrock's Converse API, for one — sets this false and
+	 * gets every schema sent eagerly rather than a 400.
+	 */
+	supportsToolSearch?: boolean;
 }
 
 /**
