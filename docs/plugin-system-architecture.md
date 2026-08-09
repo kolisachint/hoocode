@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–1 landed, steps 2+ not started (§8.5)
+**Status:** agreed plan; steps 0–2 landed, steps 3+ not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -551,11 +551,11 @@ ecosystem artifacts, not duplicates. `pluginExists` therefore takes the resolved
 target rather than scanning everywhere, and `ListPlugins` must show the location
 so two same-named entries are distinguishable.
 
-### 5.4 The bug this replaces
+### 5.4 The bug this replaced
 
-`installedPluginsDir(cwd)` returns `<cwd>/.agents/plugins` (`install.ts:34-36`),
-and `writePluginDraft` inherits it. **Every install and every autonomous
-authoring writes into the user's repo working tree.** Three consequences:
+**Fixed in step 2.** `installedPluginsDir(cwd)` returned `<cwd>/.agents/plugins`
+and `writePluginDraft` inherited it, so **every install and every autonomous
+authoring wrote into the user's repo working tree.** Three consequences:
 
 1. The agent dirties `git status` with content unrelated to the change it was
    asked to make.
@@ -566,10 +566,18 @@ authoring writes into the user's repo working tree.** Three consequences:
    `<cwd>/.agents/marketplace-cache/` (`install.ts:79`) — clones inside the
    user's clone.
 
-The read side is already right: `defaultPluginDirs` searches project *and* global
-scopes (`loader.ts:662-670`). Only the write side is wrong, which keeps the fix
-small. `marketplace-cache/` and `marketplaces.json` move to the agent dir
-unconditionally — a cache is never repo content.
+The read side was already right: `defaultPluginDirs` searched project *and*
+global scopes, so only the write side needed changing. `marketplace-cache/` and
+`marketplaces.json` moved to the agent dir unconditionally — a cache is never
+repo content — and `<cwd>/.agents/plugins` is still *read*, so plugins installed
+by older versions keep loading (§8.6 item 4).
+
+One thing the plan did not anticipate: `mergePluginDraft` and `removeFromPlugin`
+share the writer with creation, so promoting on every write would have silently
+relocated a legacy plugin into a production home the first time it was edited —
+the same hazard `existingLayout` guards in step 1. The writer now separates
+*creation* (draft → promote) from an *in-place edit* (write over the plugin
+wherever it already lives).
 
 ### 5.5 Project scope, and the authoring decision rule
 
@@ -892,7 +900,7 @@ where authored plugins are half-live.
 |---|---|---|
 | 0 | ~~Delete the `/plugin` duplicates; fix `activatePlugin` scope metadata~~ **done** | Pre-existing defects directly under the later steps |
 | 1 | ~~Split the resolver; `--platform` (D4 scope); reject `agents` for plugins~~ **done** | Everything reads from this |
-| 2 | Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path. **Includes the draft-then-promote contract (§4.2)** | Same decision as step 1. The mechanism ships here, not with the gates, so that by the time G1 exists there is already somewhere safe to run it |
+| 2 | ~~Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path, draft-then-promote (§4.2)~~ **done** — new `plugins/locations.ts` owns all three roles | Same decision as step 1. The mechanism shipped here, not with the gates, so that by the time G1 exists there is already somewhere safe to run it |
 | 3 | `~/.claude/skills` + `<cwd>/.claude/skills` discovery, stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9) | Without this the D3 target is half-live |
 | 4 | Adapter catch-up, both vendors (§2.1): Claude surfaces; Copilot probe order, `extensions`, `lspServers`, root-manifest emit (D8) | Now a production blocker: we emit into these ecosystems |
 | 4b | Runtime variables + per-plugin data dir (D9), both platforms | Small, self-contained, and unblocks any plugin that uses them |

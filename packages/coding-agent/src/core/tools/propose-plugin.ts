@@ -309,18 +309,21 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 				return reject(params.id, "Nothing to author. Provide skills, commands, subagents, hooks, or mcpServers.");
 			}
 
-			if (pluginExists(ctx.cwd, params.id)) {
+			const platforms = resolvePlatforms();
+			// Scoped to the target platform's home: the same id on another platform is
+			// a separate ecosystem artifact, not a duplicate.
+			if (pluginExists(params.id, platforms)) {
 				return reject(
 					params.id,
-					`A plugin named "${params.id}" already exists. Use UpdatePlugin to change it, or pick another id.`,
+					`A ${platforms.join("/")} plugin named "${params.id}" already exists. ` +
+						"Use UpdatePlugin to change it, or pick another id.",
 				);
 			}
 
 			const gate = await passExecutableGate(params.id, params, ctx);
 			if (!gate.ok) return gate.result;
 
-			const platforms = resolvePlatforms();
-			const result = writePluginDraft(ctx.cwd, draftFrom(params.id, params, platforms), platforms);
+			const result = writePluginDraft(draftFrom(params.id, params, platforms), platforms);
 			// Passive capabilities activate live — usable on the very next model request,
 			// this same turn; hooks/MCP servers activate via the reload once the turn ends.
 			const activation = ctx.activatePlugin(result.dest);

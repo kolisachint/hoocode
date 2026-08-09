@@ -18,6 +18,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { parseArgs } from "../src/cli/args.js";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import { writePluginDraft } from "../src/core/extensions/plugins/authoring.js";
 import { claudeFormat, copilotFormat, getFormatByPlatform } from "../src/core/extensions/plugins/formats/index.js";
 import {
@@ -28,6 +29,7 @@ import {
 	resolvePluginPlatforms,
 	setPlatforms,
 } from "../src/core/extensions/plugins/formats/platform-targets.js";
+import { productionPluginDir } from "../src/core/extensions/plugins/locations.js";
 import { parsePluginDir } from "../src/core/extensions/plugins/manifest.js";
 import { setupScaffold } from "../src/extensions/core/scaffold.js";
 
@@ -110,24 +112,34 @@ describe("workspace platform resolution", () => {
 });
 
 describe("plugin authoring honors the session targets", () => {
-	let cwd: string;
+	// Authored plugins land in a global production home, so the whole home root is
+	// redirected into a temp dir — a test must never write into a real ~/.claude.
+	let home: string;
+	let priorAgentDir: string | undefined;
+
+	const destFor = (id: string, platform: "claude" | "github" = "claude") => productionPluginDir(platform, id);
 
 	beforeEach(() => {
-		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-platform-"));
+		home = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-home-"));
+		priorAgentDir = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = path.join(home, ".hoocode");
 	});
 
 	afterEach(() => {
-		fs.rmSync(cwd, { recursive: true, force: true });
+		if (priorAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+		else process.env[ENV_AGENT_DIR] = priorAgentDir;
+		fs.rmSync(home, { recursive: true, force: true });
 	});
 
 	it("--platform copilot writes only the Copilot manifest, and round-trips", () => {
 		setPlatforms(["github"]);
-		const result = writePluginDraft(cwd, {
+		const result = writePluginDraft({
 			id: "gh-only",
 			description: "copilot-targeted",
 			skills: [{ name: "helper", description: "helps", body: "Help." }],
 		});
 
+		expect(result.dest).toBe(destFor("gh-only", "github"));
 		expect(fs.existsSync(path.join(result.dest, ".github", "plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin"))).toBe(false);
 		expect(fs.existsSync(path.join(result.dest, "skills", "helper", "SKILL.md"))).toBe(true);
@@ -137,42 +149,34 @@ describe("plugin authoring honors the session targets", () => {
 		expect(parsed?.supportPlatform).toEqual(["github"]);
 	});
 
-	it("--platform claude writes only the Claude manifest, and round-trips", () => {
+	it("--platform claude writes into the skills-directory drop-in Claude Code reads", () => {
 		setPlatforms(["claude"]);
-		const result = writePluginDraft(cwd, {
-			id: "claude-only",
-			commands: [{ name: "go", body: "Go." }],
-		});
+		const result = writePluginDraft({ id: "claude-only", commands: [{ name: "go", body: "Go." }] });
 
+		// The documented drop-in: ~/.claude/skills/<id>/, discovered in place.
+		expect(result.dest).toBe(path.join(home, ".claude", "skills", "claude-only"));
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(result.dest, ".github"))).toBe(false);
 
-		const parsed = parsePluginDir(result.dest);
-		expect(parsed?.supportPlatform).toEqual(["claude"]);
+		expect(parsePluginDir(result.dest)?.supportPlatform).toEqual(["claude"]);
 	});
 
 	it("defaults to claude — never the native layout — when no target is configured", () => {
-		const result = writePluginDraft(cwd, { id: "defaulted", skills: [{ name: "s", body: "S." }] });
+		const result = writePluginDraft({ id: "defaulted", skills: [{ name: "s", body: "S." }] });
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(result.dest, ".agents-plugin"))).toBe(false);
-		expect(fs.existsSync(path.join(result.dest, ".github"))).toBe(false);
-		expect(fs.existsSync(path.join(result.dest, "skills", "s", "SKILL.md"))).toBe(true);
-
-		const parsed = parsePluginDir(result.dest);
-		expect(parsed?.supportPlatform).toEqual(["claude"]);
+		expect(parsePluginDir(result.dest)?.supportPlatform).toEqual(["claude"]);
 	});
 
 	it("never emits the native layout, even when the session asked for agents", () => {
 		setPlatforms(["agents"]);
-		const result = writePluginDraft(cwd, { id: "no-native", skills: [{ name: "s", body: "S." }] });
+		const result = writePluginDraft({ id: "no-native", skills: [{ name: "s", body: "S." }] });
 		expect(fs.existsSync(path.join(result.dest, ".agents-plugin"))).toBe(false);
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin", "plugin.json"))).toBe(true);
 	});
 
 	it("filters a stale `agents` carried on the draft rather than refusing the write", () => {
-		// A draft rebuilt from a plugin authored before production became
-		// platform-specific still carries supportPlatform: ["agents"].
-		const result = writePluginDraft(cwd, {
+		const result = writePluginDraft({
 			id: "legacy-draft",
 			supportPlatform: ["agents"],
 			skills: [{ name: "s", body: "S." }],
@@ -181,9 +185,39 @@ describe("plugin authoring honors the session targets", () => {
 	});
 
 	it("refuses an explicit `agents` target outright", () => {
-		expect(() => writePluginDraft(cwd, { id: "nope", skills: [{ name: "s", body: "S." }] }, ["agents"])).toThrow(
+		expect(() => writePluginDraft({ id: "nope", skills: [{ name: "s", body: "S." }] }, ["agents"])).toThrow(
 			/belongs to no marketplace/,
 		);
+	});
+
+	it("promote: false stops at an ephemeral draft, leaving the production home untouched", () => {
+		const result = writePluginDraft({ id: "held", skills: [{ name: "s", body: "S." }] }, undefined, {
+			promote: false,
+		});
+		expect(result.promoted).toBe(false);
+		expect(result.dest).not.toBe(destFor("held"));
+		// The draft parses, so the gates have something real to run against...
+		expect(parsePluginDir(result.dest)?.id).toBe("held");
+		// ...but nothing is live yet.
+		expect(fs.existsSync(destFor("held"))).toBe(false);
+	});
+
+	it("promotes over an existing plugin rather than merging into it", () => {
+		writePluginDraft({ id: "replaced", skills: [{ name: "old", body: "Old." }] });
+		writePluginDraft({ id: "replaced", skills: [{ name: "new", body: "New." }] });
+		const dest = destFor("replaced");
+		expect(fs.existsSync(path.join(dest, "skills", "new", "SKILL.md"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, "skills", "old", "SKILL.md"))).toBe(false);
+	});
+
+	it("keeps the two platforms' artifacts apart — same id is not a collision", () => {
+		setPlatforms(["claude"]);
+		writePluginDraft({ id: "dual", skills: [{ name: "s", body: "S." }] });
+		setPlatforms(["github"]);
+		writePluginDraft({ id: "dual", skills: [{ name: "s", body: "S." }] });
+
+		expect(fs.existsSync(path.join(destFor("dual", "claude"), ".claude-plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(destFor("dual", "github"), ".github", "plugin", "plugin.json"))).toBe(true);
 	});
 });
 

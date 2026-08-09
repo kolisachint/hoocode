@@ -13,7 +13,7 @@
  * GitHub Copilot by default) and round-trips back through {@link parsePluginDir}.
  */
 
-import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { CLAUDE_TOOL_ALIASES } from "../../agent-frontmatter.js";
 import { PLUGIN_SYSTEM_TOOL_NAMES } from "../../tools/plugin-tool-names.js";
@@ -21,7 +21,7 @@ import { emitForPlatforms } from "./formats/index.js";
 import { isPluginPlatform, resolvePluginPlatforms } from "./formats/platform-targets.js";
 import { slug } from "./formats/shared.js";
 import type { AuthoredHook, AuthoredMcpServer, MarketplacePlatform, PluginDraft } from "./formats/types.js";
-import { installedPluginsDir, sanitizeForDir } from "./install.js";
+import { candidatePluginDirs, discardDraftDir, makeDraftDir, productionPluginDir } from "./locations.js";
 import { type NormalizedPlugin, type PluginHooksConfig, parsePluginDir } from "./manifest.js";
 
 // Re-exported so existing importers keep one vocabulary; the resolution chain
@@ -104,7 +104,12 @@ export function classifyAllowlist(tools: string | undefined): AllowlistClassific
 }
 
 export interface WriteResult {
+	/** Where the plugin ended up: a production home, or the draft dir when not promoted. */
 	dest: string;
+	/** False when the caller asked to stop at the draft (gates still to run). */
+	promoted: boolean;
+	/** Platforms the draft was emitted for. */
+	targets: MarketplacePlatform[];
 	/** Written file paths, relative to the plugin root. */
 	files: string[];
 	/** Re-parsed plugin (confirms the scaffold round-trips). */
@@ -112,53 +117,122 @@ export interface WriteResult {
 }
 
 /**
- * Provenance marker written at the root of every authored plugin. Authored and
- * marketplace-installed plugins land in the same `.agents/plugins/` directory,
- * and only authored ones round-trip losslessly through our emitters — so
- * UpdatePlugin (which re-emits manifests and hook/MCP files) is gated on this
- * marker's presence. Existence is the signal; the content is informational.
+ * Provenance marker written at the root of every authored plugin. A production
+ * home can also hold artifacts hoocode did not write — `~/.claude/skills/` is a
+ * directory Claude Code and the user both write into — so this marker is what
+ * separates "ours to re-emit or delete" from "someone else's". UpdatePlugin
+ * (which rewrites manifests and hook/MCP files) is gated on it. Existence is the
+ * signal; the content is informational.
  */
 const AUTHORED_MARKER_FILE = ".authored.json";
 
-/** Whether the plugin at `id` was authored here (carries the provenance marker), vs. installed from a marketplace. */
+/** Locate an existing plugin by id across every home, or undefined. */
+export function findPluginDir(cwd: string, id: string): string | undefined {
+	return candidatePluginDirs(cwd, id).find((dir) => existsSync(dir));
+}
+
+/** Whether the plugin at `id` was authored here (carries the provenance marker), vs. installed or hand-written. */
 export function isAuthoredPlugin(cwd: string, id: string): boolean {
-	return existsSync(path.join(installedPluginsDir(cwd), sanitizeForDir(id), AUTHORED_MARKER_FILE));
+	const dir = findPluginDir(cwd, id);
+	return !!dir && existsSync(path.join(dir, AUTHORED_MARKER_FILE));
 }
 
 /**
- * Render `draft` into the requested platform layouts and write it under
- * `.agents/plugins/<id>/`. Returns the destination, the emitted files, and the
- * re-parsed plugin so callers can confirm the round-trip.
+ * Render `draft` into the requested platform layouts and write it out.
+ *
+ * Two modes, and the distinction matters:
+ *
+ * - **Creation** (default): emit into an ephemeral draft dir, then promote into
+ *   the target platform's production home, replacing whatever was there. A
+ *   production home is live — `~/.claude/skills/<id>/` is loaded by Claude Code
+ *   on its next session — so writing there directly would mean a plugin that
+ *   failed validation, or whose confirmation was declined, is already running.
+ *   Pass `promote: false` to stop at the draft and promote later with
+ *   {@link promoteDraft}.
+ * - **In-place edit** (`dest` given): write the emitted files over an existing
+ *   plugin directory, wherever it already lives. An edit must never relocate the
+ *   plugin — a merge or a removal on a plugin sitting in the consumption home or
+ *   the legacy project home would otherwise silently move it into a production
+ *   home. Files not named by the emit are left alone, which is what makes the
+ *   directory-scanned merge semantics work.
  */
-export function writePluginDraft(cwd: string, draft: PluginDraft, platforms?: MarketplacePlatform[]): WriteResult {
+export function writePluginDraft(
+	draft: PluginDraft,
+	platforms?: MarketplacePlatform[],
+	options?: { promote?: boolean; dest?: string },
+): WriteResult {
 	// Creation picks a platform; `agents` is refused here (see resolvePluginPlatforms).
 	const targets = resolvePluginPlatforms(platforms ?? draft.supportPlatform?.filter(isPluginPlatform));
-	const dest = path.join(installedPluginsDir(cwd), sanitizeForDir(draft.id));
 	const files = emitForPlatforms({ ...draft, supportPlatform: targets }, targets);
 
 	// Formats share the capability tree (only marker manifests differ), so
 	// dedupe by path — later formats overwrite with identical content.
 	const byPath = new Map(files.map((f) => [f.path, f]));
-	mkdirSync(dest, { recursive: true });
-	for (const f of byPath.values()) {
-		const abs = path.join(dest, f.path);
-		mkdirSync(path.dirname(abs), { recursive: true });
-		writeFileSync(abs, f.content);
+	const writeInto = (root: string) => {
+		for (const f of byPath.values()) {
+			const abs = path.join(root, f.path);
+			mkdirSync(path.dirname(abs), { recursive: true });
+			writeFileSync(abs, f.content);
+		}
+		writeFileSync(path.join(root, AUTHORED_MARKER_FILE), `${JSON.stringify({ authored: true }, null, 2)}\n`);
+	};
+	const written = { files: [...byPath.keys(), AUTHORED_MARKER_FILE], targets };
+
+	if (options?.dest) {
+		mkdirSync(options.dest, { recursive: true });
+		writeInto(options.dest);
+		return { dest: options.dest, promoted: true, ...written, plugin: parsePluginDir(options.dest) };
 	}
-	writeFileSync(path.join(dest, AUTHORED_MARKER_FILE), `${JSON.stringify({ authored: true }, null, 2)}\n`);
 
-	return { dest, files: [...byPath.keys(), AUTHORED_MARKER_FILE], plugin: parsePluginDir(dest) };
+	const draftDir = makeDraftDir();
+	writeInto(draftDir);
+	if (options?.promote === false) {
+		return { dest: draftDir, promoted: false, ...written, plugin: parsePluginDir(draftDir) };
+	}
+	const dest = promoteDraft(draftDir, draft.id, targets);
+	return { dest, promoted: true, ...written, plugin: parsePluginDir(dest) };
 }
 
-/** Whether a plugin id already exists on disk (so authoring never silently clobbers). */
-export function pluginExists(cwd: string, id: string): boolean {
-	return existsSync(path.join(installedPluginsDir(cwd), sanitizeForDir(id)));
+/**
+ * Move a draft into the production home of its first target platform, replacing
+ * whatever is there. The draft directory is consumed either way.
+ *
+ * A cross-device rename fails when temp and home sit on different filesystems,
+ * so this falls back to copy-then-delete rather than assuming `rename` works.
+ */
+export function promoteDraft(draftDir: string, id: string, targets: readonly MarketplacePlatform[]): string {
+	const platform = targets.filter(isPluginPlatform)[0] ?? resolvePluginPlatforms()[0];
+	const dest = productionPluginDir(platform, id);
+	rmSync(dest, { recursive: true, force: true });
+	mkdirSync(path.dirname(dest), { recursive: true });
+	try {
+		renameSync(draftDir, dest);
+	} catch {
+		cpSync(draftDir, dest, { recursive: true });
+		discardDraftDir(draftDir);
+	}
+	return dest;
 }
 
-/** Load an installed/authored plugin by id, or null if it isn't on disk / doesn't parse. */
+/**
+ * Whether authoring this id would clobber something **in the target platform's
+ * production home**.
+ *
+ * Scoped to the target rather than every home on purpose: a `claude` `foo` and a
+ * `github` `foo` are artifacts for two different ecosystems, not duplicates of
+ * each other, and a marketplace-installed `foo` in the consumption home is a
+ * third unrelated thing. Only a collision in the directory this write would
+ * actually land in is a collision.
+ */
+export function pluginExists(id: string, platforms?: readonly MarketplacePlatform[]): boolean {
+	const target = resolvePluginPlatforms(platforms?.filter(isPluginPlatform))[0];
+	return existsSync(productionPluginDir(target, id));
+}
+
+/** Load an installed/authored plugin by id from whichever home holds it, or null. */
 export function getPlugin(cwd: string, id: string): NormalizedPlugin | null {
-	const dir = path.join(installedPluginsDir(cwd), sanitizeForDir(id));
-	return existsSync(dir) ? parsePluginDir(dir) : null;
+	const dir = findPluginDir(cwd, id);
+	return dir ? parsePluginDir(dir) : null;
 }
 
 /** Reverse of {@link authoredHooksToConfig}: flatten a parsed hook event-map back to authored hooks. */
@@ -288,7 +362,8 @@ export function mergePluginDraft(
 		hooks: mergedHooks.length ? mergedHooks : undefined,
 		mcpServers: mcpByName.size ? [...mcpByName.values()] : undefined,
 	};
-	return writePluginDraft(cwd, merged, targets);
+	// An edit stays where the plugin already lives; it never relocates it.
+	return writePluginDraft(merged, targets, { dest: findPluginDir(cwd, id) });
 }
 
 /** A hook to remove: `event` is required; `matcher`/`command` narrow the match when provided. */
@@ -345,7 +420,8 @@ export function removeFromPlugin(cwd: string, id: string, spec: RemovalSpec): Re
 				"Only locally authored plugins can be edited.",
 		);
 	}
-	const dest = path.join(installedPluginsDir(cwd), sanitizeForDir(id));
+	const dest = findPluginDir(cwd, id);
+	if (!dest) throw new Error(`Cannot remove from plugin "${id}": it is not on disk.`);
 	const removed: string[] = [];
 	const missing: string[] = [];
 
@@ -409,7 +485,6 @@ export function removeFromPlugin(cwd: string, id: string, spec: RemovalSpec): Re
 	if (singleFileChanged) {
 		const targets = existingLayout(existing);
 		writePluginDraft(
-			cwd,
 			{
 				id,
 				version: existing.version,
@@ -420,6 +495,7 @@ export function removeFromPlugin(cwd: string, id: string, spec: RemovalSpec): Re
 				mcpServers: remainingMcp.length ? remainingMcp : undefined,
 			},
 			targets,
+			{ dest },
 		);
 		// Emit skips empty sets, so a stale file from the previous emit survives
 		// and the parser's on-disk fallback would resurrect it — delete explicitly.

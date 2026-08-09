@@ -20,6 +20,13 @@ import { getAgentDir } from "../../../config.js";
 import { defaultPluginDirs } from "../loader.js";
 import type { MarketplacePlatform } from "./formats/types.js";
 import { discoverPlugins } from "./index.js";
+import {
+	candidatePluginDirs,
+	consumptionPluginsDir,
+	marketplaceCacheDir,
+	marketplaceStorePath,
+	sanitizeForDir,
+} from "./locations.js";
 import type { NormalizedPlugin } from "./manifest.js";
 import { parsePluginDir } from "./manifest.js";
 import {
@@ -30,23 +37,8 @@ import {
 	resolvePluginSource,
 } from "./marketplace.js";
 
-/** `.agents/` is the primary, cross-vendor home for installed plugins and the added-marketplace registry. */
-export function installedPluginsDir(cwd: string): string {
-	return path.join(cwd, ".agents", "plugins");
-}
-
-/** `.agents/marketplaces.json` — the added-marketplace registry. Shared with the `/plugin` command. */
-export function marketplaceStorePath(cwd: string): string {
-	return path.join(cwd, ".agents", "marketplaces.json");
-}
-
 function legacyStorePath(cwd: string): string {
 	return path.join(cwd, ".hoocode", "marketplaces.json");
-}
-
-/** Filesystem-safe directory name derived from a plugin name (matches the `/plugin` command). */
-export function sanitizeForDir(s: string): string {
-	return s.replace(/[^a-zA-Z0-9._-]+/g, "_").slice(0, 80);
 }
 
 /** Absolute path to the curated default marketplace bundled with hoocode. */
@@ -75,26 +67,16 @@ export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string 
 	{ name: "copilot-plugins", url: "https://github.com/github/copilot-plugins" },
 ];
 
-/** Root of the local marketplace clone cache. Shared with the `/plugin` command. */
-export function marketplaceCacheRoot(cwd: string): string {
-	return path.join(cwd, ".agents", "marketplace-cache");
-}
-
-/** Local cache directory for a marketplace fetched from `url` (same convention as `/plugin marketplace add`). */
-export function marketplaceCacheDir(cwd: string, url: string): string {
-	return path.join(marketplaceCacheRoot(cwd), sanitizeForDir(url));
-}
-
 /**
  * Clone any well-known marketplace index that is not in the local cache yet.
  * No-op (and no network) when every index is already cached. Returns one error
  * string per marketplace that could not be fetched (offline is non-fatal —
  * search degrades to the marketplaces already available).
  */
-export async function ensureWellKnownMarketplaces(cwd: string): Promise<string[]> {
+export async function ensureWellKnownMarketplaces(agentDir: string = getAgentDir()): Promise<string[]> {
 	const errors: string[] = [];
 	for (const wk of WELL_KNOWN_MARKETPLACES) {
-		const dir = marketplaceCacheDir(cwd, wk.url);
+		const dir = marketplaceCacheDir(wk.url, agentDir);
 		if (existsSync(dir)) continue;
 		mkdirSync(path.dirname(dir), { recursive: true });
 		const res = await cloneGitRepo(wk.url, dir);
@@ -111,7 +93,7 @@ export async function ensureWellKnownMarketplaces(cwd: string): Promise<string[]
  * trusted), then user-added ones from `.agents/` (falling back to legacy
  * `.hoocode/`). Deduplicated by directory.
  */
-export function readMarketplaceRecords(cwd: string): MarketplaceRecord[] {
+export function readMarketplaceRecords(cwd: string, agentDir: string = getAgentDir()): MarketplaceRecord[] {
 	const records: MarketplaceRecord[] = [];
 	const def = defaultMarketplaceRecord();
 	if (existsSync(def.dir)) records.push(def);
@@ -119,15 +101,15 @@ export function readMarketplaceRecords(cwd: string): MarketplaceRecord[] {
 	// Well-known marketplaces participate once their index is cached locally
 	// (see ensureWellKnownMarketplaces; SearchPlugins fetches lazily).
 	for (const wk of WELL_KNOWN_MARKETPLACES) {
-		const dir = marketplaceCacheDir(cwd, wk.url);
+		const dir = marketplaceCacheDir(wk.url, agentDir);
 		if (existsSync(dir) && !records.some((x) => x.dir === dir)) {
 			records.push({ location: wk.url, dir });
 		}
 	}
 
-	const primary = readMarketplaceStore(marketplaceStorePath(cwd));
+	const primary = readMarketplaceStore(marketplaceStorePath(agentDir));
 	const user =
-		primary.length > 0 || existsSync(marketplaceStorePath(cwd))
+		primary.length > 0 || existsSync(marketplaceStorePath(agentDir))
 			? primary
 			: readMarketplaceStore(legacyStorePath(cwd));
 	for (const r of user) {
@@ -151,10 +133,10 @@ export interface AvailablePlugin {
 }
 
 /** Every plugin offered across all registered marketplaces (first marketplace wins on name clash). */
-export function listAvailablePlugins(cwd: string): AvailablePlugin[] {
+export function listAvailablePlugins(cwd: string, agentDir: string = getAgentDir()): AvailablePlugin[] {
 	const out: AvailablePlugin[] = [];
 	const seen = new Set<string>();
-	for (const rec of readMarketplaceRecords(cwd)) {
+	for (const rec of readMarketplaceRecords(cwd, agentDir)) {
 		const market = parseMarketplaceDir(rec.dir);
 		if (!market) continue;
 		for (const entry of market.plugins) {
@@ -175,8 +157,12 @@ export function listAvailablePlugins(cwd: string): AvailablePlugin[] {
 }
 
 /** Find a single available plugin by exact name. */
-export function findAvailablePlugin(cwd: string, name: string): AvailablePlugin | undefined {
-	return listAvailablePlugins(cwd).find((p) => p.name === name);
+export function findAvailablePlugin(
+	cwd: string,
+	name: string,
+	agentDir: string = getAgentDir(),
+): AvailablePlugin | undefined {
+	return listAvailablePlugins(cwd, agentDir).find((p) => p.name === name);
 }
 
 /** All currently installed plugins (project + global plugin dirs). */
@@ -267,20 +253,29 @@ export interface InstallOutcome {
 }
 
 /**
- * Install an available plugin by name into `.agents/plugins`. Copies local
- * sources; clones git sources. Transparent + reversible by construction — the
- * plugin lands in a named directory and {@link uninstallPlugin} removes it.
- * Callers activate the result (live activation via AgentSession.activatePlugin,
- * or a reload).
+ * Install an available plugin by name into the **consumption home** — the global
+ * `~/.agents/plugins/`, not the working tree. A plugin is portable and reusable
+ * across projects, so installing into the repo would both dirty `git status` and
+ * hide the capability from every other checkout.
+ *
+ * Copies local sources; clones git sources. Transparent + reversible by
+ * construction — the plugin lands in a named directory and
+ * {@link uninstallPlugin} removes it. Callers activate the result (live
+ * activation via AgentSession.activatePlugin, or a reload).
  */
-export async function installAvailablePlugin(cwd: string, name: string): Promise<InstallOutcome> {
-	const found = findAvailablePlugin(cwd, name);
+export async function installAvailablePlugin(
+	cwd: string,
+	name: string,
+	agentDir: string = getAgentDir(),
+): Promise<InstallOutcome> {
+	const found = findAvailablePlugin(cwd, name, agentDir);
 	if (!found) return { installed: false, message: `Plugin "${name}" not found in any registered marketplace.` };
 
 	const resolved = resolvePluginSource(found.source, found.marketplaceRoot);
-	const dest = path.join(installedPluginsDir(cwd), sanitizeForDir(name));
+	const home = consumptionPluginsDir(agentDir);
+	const dest = path.join(home, sanitizeForDir(name));
 	rmSync(dest, { recursive: true, force: true });
-	mkdirSync(installedPluginsDir(cwd), { recursive: true });
+	mkdirSync(home, { recursive: true });
 
 	if (resolved.kind === "local") {
 		if (!existsSync(resolved.path)) {
@@ -331,7 +326,7 @@ export async function installAvailablePlugin(cwd: string, name: string): Promise
 		supportPlatform: parsed.supportPlatform,
 		message:
 			`Installed "${name}" from marketplace "${found.marketplaceName}" ` +
-			`(${parsed.supportPlatform.join(", ")}) to ${path.relative(cwd, dest) || dest}. ` +
+			`(${parsed.supportPlatform.join(", ")}) to ${dest}. ` +
 			`Remove it with UninstallPlugin.`,
 	};
 }
@@ -341,10 +336,14 @@ export interface UninstallOutcome {
 	message: string;
 }
 
-/** Remove an installed plugin from `.agents/plugins` (and the legacy `.hoocode/plugins`). */
-export function uninstallPlugin(cwd: string, name: string): UninstallOutcome {
+/**
+ * Remove an installed or authored plugin from every location it could occupy:
+ * the consumption home, both production homes, and the legacy project-local
+ * directories that older versions wrote into.
+ */
+export function uninstallPlugin(cwd: string, name: string, agentDir: string = getAgentDir()): UninstallOutcome {
 	const candidates = [
-		path.join(installedPluginsDir(cwd), sanitizeForDir(name)),
+		...candidatePluginDirs(cwd, name, agentDir),
 		path.join(cwd, ".hoocode", "plugins", sanitizeForDir(name)),
 	];
 	const present = candidates.filter((p) => existsSync(p));

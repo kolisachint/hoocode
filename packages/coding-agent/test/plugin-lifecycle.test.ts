@@ -3,19 +3,19 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import {
 	defaultMarketplaceRecord,
 	findAvailablePlugin,
 	installAvailablePlugin,
-	installedPluginsDir,
 	isPluginInstalled,
 	listAvailablePlugins,
 	listInstalledPlugins,
-	marketplaceCacheDir,
 	readMarketplaceRecords,
 	uninstallPlugin,
 	WELL_KNOWN_MARKETPLACES,
 } from "../src/core/extensions/plugins/install.js";
+import { consumptionPluginsDir, marketplaceCacheDir } from "../src/core/extensions/plugins/locations.js";
 import { parseMarketplaceDir, resolvePluginSource } from "../src/core/extensions/plugins/marketplace.js";
 import {
 	createInstallPluginToolDefinition,
@@ -63,9 +63,9 @@ function makeCtx(cwd: string) {
  * marketplace so SearchPlugins' lazy fetch no-ops (no network) and the empty
  * dir parses to no manifest (skipped from results).
  */
-function stubWellKnownMarketplaces(cwd: string): void {
+function stubWellKnownMarketplaces(_cwd: string): void {
 	for (const wk of WELL_KNOWN_MARKETPLACES) {
-		fs.mkdirSync(marketplaceCacheDir(cwd, wk.url), { recursive: true });
+		fs.mkdirSync(marketplaceCacheDir(wk.url), { recursive: true });
 	}
 }
 
@@ -135,8 +135,30 @@ function seedGitSubdirMarketplace(cwd: string): { marketDir: string; repoDir: st
 	return { marketDir, repoDir };
 }
 
+/**
+ * Redirect every global plugin location into a temp home for the duration of a
+ * test. The consumption home and the marketplace cache are user-scoped now, so
+ * without this a test run would write into the developer's real ~/.agents.
+ */
+function useTempHome(): { home: () => string } {
+	let home = "";
+	let prior: string | undefined;
+	beforeEach(() => {
+		home = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-home-"));
+		prior = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = path.join(home, ".hoocode");
+	});
+	afterEach(() => {
+		if (prior === undefined) delete process.env[ENV_AGENT_DIR];
+		else process.env[ENV_AGENT_DIR] = prior;
+		fs.rmSync(home, { recursive: true, force: true });
+	});
+	return { home: () => home };
+}
+
 describe("plugin install engine", () => {
 	let cwd: string;
+	useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-lifecycle-"));
@@ -169,12 +191,12 @@ describe("plugin install engine", () => {
 
 		const outcome = await installAvailablePlugin(cwd, "widget");
 		expect(outcome.installed).toBe(true);
-		expect(fs.existsSync(path.join(installedPluginsDir(cwd), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
 		expect(listInstalledPlugins(cwd, cwd).some((p) => p.id === "widget")).toBe(true);
 
 		const removed = uninstallPlugin(cwd, "widget");
 		expect(removed.removed).toBe(true);
-		expect(fs.existsSync(path.join(installedPluginsDir(cwd), "widget"))).toBe(false);
+		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget"))).toBe(false);
 	});
 
 	it("reports a helpful message when installing an unknown plugin", async () => {
@@ -226,13 +248,14 @@ describe("plugin install engine", () => {
 
 		const outcome = await installAvailablePlugin(cwd, "widget");
 		expect(outcome.installed).toBe(true);
-		expect(fs.existsSync(path.join(installedPluginsDir(cwd), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
 		expect(listInstalledPlugins(cwd, cwd).some((p) => p.id === "widget")).toBe(true);
 	});
 });
 
 describe("plugin lifecycle tools", () => {
 	let cwd: string;
+	useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-lifecycle-tools-"));

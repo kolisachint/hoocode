@@ -3,9 +3,9 @@
  *
  * `/plugin` installs plugins from marketplaces (a git repo or local dir with a
  * native `.agents-plugin/marketplace.json`, Claude `.claude-plugin/marketplace.json`,
- * or Copilot-style `.github/marketplace.json` index). Installed plugins are placed in
- * `.agents/plugins/<name>` (the primary, cross-vendor home) and loaded by the plugin
- * loader after a reload.
+ * or Copilot-style `.github/marketplace.json` index). Installed plugins are placed
+ * in the global consumption home (`~/.agents/plugins/<name>`) and loaded by the
+ * plugin loader after a reload.
  *
  * Adding a marketplace is the human trust boundary and stays here; the shared
  * mechanics (discovery, install, remove, the bundled default marketplace) live in
@@ -25,12 +25,14 @@ import {
 	findAvailablePlugin,
 	installAvailablePlugin,
 	listAvailablePlugins,
-	marketplaceCacheDir,
-	marketplaceCacheRoot,
-	marketplaceStorePath,
 	readMarketplaceRecords,
 	uninstallPlugin,
 } from "../../core/extensions/plugins/install.js";
+import {
+	marketplaceCacheDir,
+	marketplaceCacheRoot,
+	marketplaceStorePath,
+} from "../../core/extensions/plugins/locations.js";
 import {
 	parseMarketplaceDir,
 	readMarketplaceStore,
@@ -84,9 +86,9 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 
 					let dir: string;
 					if (isGitSource(loc)) {
-						dir = marketplaceCacheDir(cwd, loc);
+						dir = marketplaceCacheDir(loc);
 						rmSync(dir, { recursive: true, force: true });
-						mkdirSync(marketplaceCacheRoot(cwd), { recursive: true });
+						mkdirSync(marketplaceCacheRoot(), { recursive: true });
 						const res = await pi.exec("git", ["clone", "--depth", "1", loc, dir]);
 						if (res.code !== 0) {
 							ctx.ui.notify(`Clone failed: ${res.stderr || res.stdout}`, "error");
@@ -109,9 +111,9 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 						return;
 					}
 
-					const records = readMarketplaceStore(marketplaceStorePath(cwd)).filter((r) => r.location !== loc);
+					const records = readMarketplaceStore(marketplaceStorePath()).filter((r) => r.location !== loc);
 					records.push({ location: loc, dir });
-					writeMarketplaceStore(marketplaceStorePath(cwd), records);
+					writeMarketplaceStore(marketplaceStorePath(), records);
 					ctx.ui.notify(`Added marketplace "${market.name}" (${market.plugins.length} plugin(s)).`, "info");
 					return;
 				}

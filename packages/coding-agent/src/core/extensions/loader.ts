@@ -655,16 +655,33 @@ export async function discoverAndLoadExtensions(
  * `.agents/plugins/` is the cross-vendor, primary home and is listed ahead of the
  * `.hoocode/plugins/` fallback at each scope, so an `.agents`-installed plugin
  * wins over a same-id `.hoocode` one (discoverPlugins is first-wins by id).
- * Project scope beats global. The global `.agents` sibling lives next to the
- * agent dir (`~/.agents` alongside `~/.hoocode`), so it stays parameterized on
- * `agentDir` rather than hardcoding the home directory.
+ * Project scope beats global. The global surfaces live next to the agent dir
+ * (`~/.agents`, `~/.claude` alongside `~/.hoocode`), so they stay parameterized
+ * on `agentDir` rather than hardcoding the home directory.
+ *
+ * Two of these are *production homes* for plugins hoocode authored, and two are
+ * skills directories:
+ *
+ * - `<cwd>/.agents/plugins` is the legacy project-local install home. Nothing
+ *   writes there any more; it is read so plugins installed by older versions
+ *   keep working.
+ * - `.claude/skills` (project and personal) implements Claude Code's
+ *   skills-directory plugins: a folder there carrying `.claude-plugin/plugin.json`
+ *   is a plugin, and a folder with only a `SKILL.md` stays a plain skill —
+ *   `parsePluginDir` returns null for the latter, which is exactly the vendor's
+ *   own rule, so no special-casing is needed here.
+ *
+ * See docs/plugin-system-architecture.md §5.3 and §5.7.
  */
 export function defaultPluginDirs(cwd: string, agentDir: string = getAgentDir()): string[] {
-	const globalAgentsPlugins = path.join(path.dirname(agentDir), ".agents", "plugins");
+	const home = path.dirname(agentDir);
 	return [
 		path.join(cwd, ".agents", "plugins"),
 		path.join(cwd, CONFIG_DIR_NAME, "plugins"),
-		globalAgentsPlugins,
+		path.join(cwd, ".claude", "skills"),
+		path.join(home, ".agents", "plugins"),
+		path.join(home, ".agents", "publish", "github"),
+		path.join(home, ".claude", "skills"),
 		path.join(agentDir, "plugins"),
 	];
 }
