@@ -12,14 +12,17 @@ import {
 
 // A fake `webtools` binary placed on PATH. It echoes canned --json output for
 // the fetch/search subcommands so the tools' spawn + parse + filter paths are
-// exercised without real network access or the real Rust binary.
+// exercised without real network access or the real Rust binary. The payloads
+// mirror the real `webtools <cmd> --json` schema, including the `status` and
+// `provider` fields; WEBTOOLS_FAKE_*_STATUS drives the non-"ok" paths, and a
+// blocked search exits non-zero with its JSON on stdout, exactly like the binary.
 const FAKE_BIN = `#!/bin/sh
 sub="$1"
 if [ -n "$WEBTOOLS_ARGV_LOG" ]; then
   echo "$@" >> "$WEBTOOLS_ARGV_LOG"
 fi
 if [ "$sub" = "fetch" ]; then
-  cat <<'JSON'
+  cat <<JSON
 {
   "title": "Example Domain",
   "final_url": "https://example.com/",
@@ -27,13 +30,15 @@ if [ "$sub" = "fetch" ]; then
   "content_type": "text",
   "media": "html",
   "token_estimate": 42,
+  "status": "\${WEBTOOLS_FAKE_FETCH_STATUS:-ok}",
   "references": [{ "index": 1, "url": "https://iana.org/domains/example", "text": "See more" }],
   "metadata": { "lang": "en" },
-  "source": "https://example.com/"
+  "source": "https://example.com"
 }
 JSON
 elif [ "$sub" = "search" ]; then
-  cat <<'JSON'
+  status="\${WEBTOOLS_FAKE_SEARCH_STATUS:-ok}"
+  cat <<JSON
 {
   "query": "rust async",
   "results": [
@@ -45,9 +50,13 @@ elif [ "$sub" = "search" ]; then
     { "index": 2, "url": "https://blocked.example/page" }
   ],
   "token_estimate": 50,
-  "result_count": 2
+  "result_count": 2,
+  "status": "$status",
+  "provider": "\${WEBTOOLS_FAKE_SEARCH_PROVIDER:-duckduckgo}"
 }
 JSON
+  if [ "$status" = "blocked" ]; then exit 1; fi
+  exit 0
 else
   echo "unknown subcommand" 1>&2
   exit 1
@@ -113,6 +122,25 @@ describe("web tools", () => {
 			const result = await tool.execute("call-3", { url: "https://example.com" });
 			expect(getText(result)).toContain("Example Domain");
 		});
+
+		it("reports a JavaScript-rendered page instead of returning it as empty", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_STATUS = "needs_js";
+			try {
+				const tool = createWebFetchTool(cwd);
+				const result = await tool.execute("call-status-1", { url: "https://example.com" });
+				expect(getText(result)).toContain("renders its body with JavaScript");
+				expect((result.details as { status?: string }).status).toBe("needs_js");
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_STATUS;
+			}
+		});
+
+		it("adds no status note when extraction succeeded", async () => {
+			const tool = createWebFetchTool(cwd);
+			const result = await tool.execute("call-status-2", { url: "https://example.com" });
+			expect(getText(result)).not.toContain("[webtools:");
+			expect((result.details as { status?: string }).status).toBe("ok");
+		});
 	});
 
 	describe("websearch", () => {
@@ -134,6 +162,29 @@ describe("web tools", () => {
 			expect(text).not.toContain("blocked.example");
 			expect(text).toContain("1 result hidden");
 			expect((result.details as { hiddenCount?: number }).hiddenCount).toBe(1);
+		});
+
+		it("surfaces which provider answered", async () => {
+			process.env.WEBTOOLS_FAKE_SEARCH_PROVIDER = "brave";
+			try {
+				const tool = createWebSearchTool(cwd);
+				const result = await tool.execute("call-provider", { query: "rust async" });
+				expect((result.details as { provider?: string }).provider).toBe("brave");
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_SEARCH_PROVIDER;
+			}
+		});
+
+		it("distinguishes a blocked search from one with no results", async () => {
+			process.env.WEBTOOLS_FAKE_SEARCH_STATUS = "blocked";
+			try {
+				const tool = createWebSearchTool(cwd);
+				// The binary exits non-zero with nothing on stderr and its JSON on
+				// stdout, so the status has to be read back off stdout.
+				await expect(tool.execute("call-blocked", { query: "rust async" })).rejects.toThrow(/blocked/i);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_SEARCH_STATUS;
+			}
 		});
 	});
 
@@ -162,6 +213,18 @@ describe("web tools", () => {
 		function loggedArgs(): string {
 			return existsSync(argvLog) ? readFileSync(argvLog, "utf8") : "";
 		}
+
+		it("forwards the resolved --timeout so the setting reaches the request", async () => {
+			const tool = createWebFetchTool(cwd, { timeoutSecs: 42 });
+			await tool.execute("timeout-1", { url: "https://example.com" });
+			expect(loggedArgs()).toContain("--timeout 42");
+		});
+
+		it("forwards --timeout on search too", async () => {
+			const tool = createWebSearchTool(cwd, { timeoutSecs: 30 });
+			await tool.execute("timeout-2", { query: "rust async" });
+			expect(loggedArgs()).toContain("--timeout 30");
+		});
 
 		it("does not forward --ca-cert or --insecure when nothing is configured", async () => {
 			const tool = createWebFetchTool(cwd);

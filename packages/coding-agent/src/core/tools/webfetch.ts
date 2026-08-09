@@ -8,9 +8,11 @@ import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import {
 	blockedHostForUrl,
+	fetchStatusNote,
 	resolveWebtoolsTimeoutSecs,
 	resolveWebtoolsTLSConfig,
 	runWebtools,
+	type WebFetchContentStatus,
 	type WebFetchResult,
 	WebToolsCache,
 	type WebtoolsTLSConfig,
@@ -50,6 +52,8 @@ export interface WebFetchToolDetails {
 	tokenEstimate?: number;
 	contentType?: string;
 	media?: string;
+	/** Non-"ok" means extraction produced nothing usable; see {@link WebFetchContentStatus}. */
+	status?: WebFetchContentStatus;
 }
 
 export interface WebFetchToolOptions extends WebtoolsTLSConfig {
@@ -129,14 +133,20 @@ export function createWebFetchToolDefinition(
 			);
 
 			const header = result.title ? `${result.title}\n${result.final_url}\n\n` : `${result.final_url}\n\n`;
+			// An empty body and a JavaScript-rendered shell look identical in the
+			// content alone. Say which it was, so the page is not read as "nothing
+			// to say" when it simply needs a browser.
+			const note = fetchStatusNote(result.status);
+			const body = note ? `${result.content}\n\n[webtools: ${note}]`.trimStart() : result.content;
 			return {
-				content: [{ type: "text" as const, text: header + result.content }],
+				content: [{ type: "text" as const, text: header + body }],
 				details: {
 					finalUrl: result.final_url,
 					title: result.title,
 					tokenEstimate: result.token_estimate,
 					contentType: result.content_type,
 					media: result.media,
+					status: result.status,
 				},
 			};
 		},

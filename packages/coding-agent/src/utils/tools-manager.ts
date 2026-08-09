@@ -96,7 +96,10 @@ const TOOLS: Record<string, ToolConfig> = {
 			if (plat === "darwin") {
 				return `webtools-${archStr}-apple-darwin.tar.gz`;
 			} else if (plat === "linux") {
-				return `webtools-${archStr}-unknown-linux-gnu.tar.gz`;
+				// The upstream release matrix publishes aarch64 Linux as a musl
+				// build and x86_64 as gnu; asking for aarch64-gnu only ever 404s.
+				const libc = architecture === "arm64" ? "musl" : "gnu";
+				return `webtools-${archStr}-unknown-linux-${libc}.tar.gz`;
 			} else if (plat === "win32") {
 				return `webtools-${archStr}-pc-windows-msvc.zip`;
 			}

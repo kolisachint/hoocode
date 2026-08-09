@@ -271,6 +271,17 @@ hoocode warns once per run when it is active — prefer `HOOCODE_WEBTOOLS_CA_CER
 export HOOCODE_WEBTOOLS_INSECURE=1   # disables webtools TLS verification
 ```
 
+The per-request timeout is configurable too, via `settings.json`
+(`"webtools": { "timeoutSecs": N }`) or the environment; it is clamped to
+1–120 seconds and forwarded to the binary as `--timeout`:
+
+```bash
+export HOOCODE_WEBTOOLS_TIMEOUT=30   # seconds per request (default 15)
+```
+
+Note that the binary bounds a whole fetch — including redirects and retries — at
+three times this value, so a 30s timeout permits a fetch of up to 90s.
+
 ## Resolution Order
 
 When resolving credentials for a provider:
