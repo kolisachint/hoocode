@@ -109,9 +109,9 @@ Sources: `code.claude.com/docs/en/plugins`,
 `code.claude.com/docs/en/plugins-reference`;
 `docs.github.com/.../copilot-cli-reference/cli-config-dir-reference`;
 `github.com/github/copilot-cli/discussions/3685`. All fetched 2026-08-09.
-The Claude rows are first-hand. **The GitHub rows are second-hand** —
-`docs.github.com` is blocked by this environment's egress proxy, so they came via
-search results and the upstream discussion. Re-verify before implementing.
+All rows are first-hand. `docs.github.com` is blocked by this environment's
+egress proxy, so the GitHub rows were verified against the `github/docs` source
+repo instead — see §1.7 for the full contract and the exact files.
 
 Consequence: for `claude`, authoring produces a plugin live in Claude Code on its
 next session. For `github` there is no such path, so "production" means the
@@ -153,6 +153,51 @@ Removal is "delete its folder" (or `claude plugin disable <name>@skills-dir`) �
 there is no uninstall step, which is already what `uninstallPlugin` does
 (`install.ts:339-348`). No change needed there.
 
+### 1.7 GitHub Copilot — the verified contract
+
+Verified against `github/docs` at
+`content/copilot/reference/copilot-cli-reference/cli-plugin-reference.md` and
+`content/copilot/how-tos/copilot-cli/customize-copilot/plugins-creating.md`
+(2026-08-09). Fetched from the docs source repo because `docs.github.com` is
+blocked by this environment's egress proxy — **this supersedes the second-hand
+sourcing flagged in §1.5.**
+
+**Manifest probe order** (first match wins):
+`.plugin/plugin.json` → `plugin.json` → `.github/plugin/plugin.json` →
+`.claude-plugin/plugin.json`.
+
+**Manifest component fields:** `agents`, `skills`, `commands`, `hooks`,
+`extensions`, `mcpServers`, `lspServers`. No `themes`.
+
+| Component | Location |
+|---|---|
+| Agents | `agents/<name>.agent.md` (frontmatter `tools` as a YAML list) |
+| Skills | `skills/<name>/SKILL.md` |
+| Hooks | `hooks.json` **or** `hooks/hooks.json` |
+| MCP | `.mcp.json` **or** `.github/mcp.json` |
+| LSP | `lsp.json` **or** `.github/lsp.json` |
+| Installed plugins | `~/.copilot/installed-plugins/<marketplace>/<name>` or `.../_direct/<source-id>/` |
+| Marketplace cache | `~/.cache/copilot/marketplaces/` (Linux), `~/Library/Caches/copilot/marketplaces/` (macOS) |
+
+**Loading precedence** is not uniform: agents and skills are *first-found-wins*
+(project/personal override plugins), while MCP servers are *last-wins* (plugins
+override user config). hoocode is first-wins throughout.
+
+**Runtime variables:** `${PLUGIN_ROOT}` for paths inside the plugin directory,
+and `${COPILOT_PLUGIN_DATA}` (also spelled `${CLAUDE_PLUGIN_DATA}`) — "a
+persistent, writable directory unique to each installed plugin … instead of paths
+inside the installed-plugins cache directory."
+
+**There is no `copilot plugin validate`.** This confirms rather than assumes the
+§4.2 fallback for `github`.
+
+**Local loop, confirmed:** `copilot plugin install ./my-plugin` works today but
+*copies* into `~/.copilot/installed-plugins/_direct/<source-id>/`; component
+changes require a reinstall. Combined with the CLI's own deprecation warning on
+direct installs, there is no in-place drop-in — which is what makes the staging
+directory in §5.3 the right target rather than a workaround.
+`copilot plugin uninstall <name>` keys off the manifest `name`, not the path.
+
 ---
 
 ## 2. Standard drift
@@ -160,14 +205,11 @@ there is no uninstall step, which is already what `uninstallPlugin` does
 ### 2.1 The seam exists; the contents are stale
 
 `PluginFormatAdapter` (`formats/types.ts:124-152`) is the right seam: tracking a
-vendor means editing one adapter file. The Copilot adapter is current — it probes
-all four documented manifest locations (`formats/copilot.ts:73-77`).
+vendor means editing one adapter file. Both adapters have drifted, the Claude one
+much further. Component lists are taken from each vendor's authoritative file
+-locations table, not inferred.
 
-The Claude adapter is not. Reading `code.claude.com/docs/en/plugins` (fetched
-2026-08-09) against `formats/claude.ts` + `formats/jsonManifest.ts`:
-
-Component list taken from the reference's authoritative "File locations
-reference" table, not inferred.
+#### Claude Code (`formats/claude.ts` + `formats/jsonManifest.ts`)
 
 | Claude Code convention | hoocode today |
 |---|---|
@@ -186,9 +228,35 @@ earlier draft of this doc got it wrong: the manifest is optional for marketplace
 and `--plugin-dir` plugins, but for skills-directory plugins it is precisely what
 promotes a folder from skill to plugin (§1.6). Two different rules.
 
+#### GitHub Copilot (`formats/copilot.ts`)
+
+Materially closer to spec. Correct today: hooks at both `hooks.json` and
+`hooks/hooks.json` (`copilot.ts:183-185`); MCP at both `.mcp.json` and
+`.github/mcp.json` (`shared.ts:111`, `copilot.ts:186`); `<name>.agent.md` with a
+YAML-list `tools`; marketplace index locations; and components emitted at the
+plugin root rather than under `.github/` — that prefix is for *workspace*
+artifacts, and the adapter gets the distinction right.
+
+| Copilot CLI convention | hoocode today |
+|---|---|
+| Probe order `.plugin/` → `plugin.json` → `.github/plugin/` → `.claude-plugin/` | reordered: `.github/plugin/` first, `.plugin/` third (`copilot.ts:73-78`) |
+| `extensions` field — `{ paths, exclusive }`, can suppress built-ins | not modeled |
+| `lspServers` field; `lsp.json` / `.github/lsp.json` | not parsed |
+| `${PLUGIN_ROOT}` | only `CLAUDE_`/`AGENTS_PLUGIN_ROOT` (`plugins/index.ts:28`, `hooks-bridge.ts:36`) |
+| `${COPILOT_PLUGIN_DATA}` / `${CLAUDE_PLUGIN_DATA}` | not provided **on either platform** |
+| MCP servers resolve *last-wins*; agents/skills *first-found-wins* | first-wins throughout |
+
+Two notes. `.github/mcp.json` is labelled a legacy fallback in our source
+(`copilot.ts:91`) but the reference lists it as a current location — a comment
+fix, not a functional one. And `themes` is read for Copilot (`copilot.ts:179`)
+though it is not in the Copilot schema: a harmless dead read.
+
+The `*_PLUGIN_DATA` row is the one that spans both vendors. A plugin using it
+today gets an unexpanded literal under hoocode regardless of platform.
+
 "If the standard changes" is not hypothetical — it already changed in at least
-nine places and nothing noticed. The defect is the missing *signal*, not a
-missing doc-fetcher.
+fifteen places across the two adapters and nothing noticed. The defect is the
+missing *signal*, not a missing doc-fetcher.
 
 **§1 raises the stakes on this table.** Under a vendor-neutral production model
 the Claude adapter only had to *read* well. As a production target it has to
@@ -417,7 +485,13 @@ consumption and production.
 |---|---|---|
 | **Consumption home** (marketplace installs) | `~/.agents/plugins/<id>/` | hoocode installing for itself. Format-agnostic. Must not leak into a vendor's directory — installing a plugin for hoocode should not silently add it to Claude Code. |
 | **Production, `--platform claude`** | `~/.claude/skills/<id>/` | The documented drop-in (§1.6). Live in Claude Code next session, and live in hoocode once §5.7 lands. |
-| **Production, `--platform github`** | `~/.agents/staged-plugins/<id>/` | No vendor drop-in exists (§1.5). Staging feeds `PackagePlugin` → publish, and `copilot --plugin-dir <path>` for local testing. |
+| **Production, `--platform github`** | `~/.agents/staged-plugins/<id>/` | No vendor drop-in exists — `copilot plugin install ./dir` copies into a cache and needs a reinstall per change (§1.7). Staging feeds `PackagePlugin` → publish, and `copilot plugin install <staging-dir>` for local testing. |
+
+A `github` artifact writes its manifest to **root `plugin.json`** — probe
+position #2 and the layout GitHub's own plugin-creating guide teaches. Today we
+emit `.github/plugin/plugin.json` (`copilot.ts:80`) while the adjacent comment
+claims root "is the canonical location (Copilot CLI spec)"; the code and its
+comment disagree and the comment is right.
 
 **Id collisions are checked per target location, not globally.** The same id may
 exist as a `claude` artifact and a `github` artifact — they are separate
@@ -587,19 +661,21 @@ measurement.
 
 ## 7. Comparison — Claude Code, Copilot CLI, hoocode
 
-Claude rows from `code.claude.com/docs/en/plugins`; Copilot rows via search and
-`github/copilot-cli` discussions (primary docs proxy-blocked here). Both
-2026-08-09.
+Both vendor columns are now first-hand: Claude from
+`code.claude.com/docs/en/{plugins,plugins-reference}`, Copilot from the
+`github/docs` source repo (§1.7). Fetched 2026-08-09.
 
 | | Claude Code | Copilot CLI | hoocode (proposed) |
 |---|---|---|---|
 | Formats read | Claude | 4 locations incl. `.claude-plugin/` | **all three** |
 | Format written | Claude | Copilot | **target platform only, never `agents`** |
+| Manifest home | `.claude-plugin/plugin.json` | root `plugin.json` | per target platform |
 | Who installs | human | human | **model**, within trusted marketplaces |
 | Who authors | human (`plugin init`) | human | **model** (`ProposePlugin`) |
-| Validation | `claude plugin validate` | — | G1–G4, delegating to `claude plugin validate` |
-| Plugin scope | user | user | user (consumption + production split, §5.3) |
-| Local drop-in | `~/.claude/skills/<id>/` | none; local installs deprecated | follows the platform |
+| Validation | `claude plugin validate` | none | G1–G4, delegating to `claude plugin validate` where it exists |
+| Plugin scope | user | user (project scoping is an open upstream request) | user (consumption + production split, §5.3) |
+| Local drop-in | `~/.claude/skills/<id>/`, discovered in place | none — install copies to cache, reinstall per change | follows the platform |
+| Precedence | n/a | skills/agents first-wins, MCP last-wins | first-wins throughout |
 | MCP schema loading | eager | eager | **deferred** |
 
 ### 7.1 Where we align, and why alignment is the default
@@ -643,10 +719,17 @@ the write target." §1 replaces it with alignment.
 
 ### 7.4 Compatibility gaps to close
 
-From §2.1: `.lsp.json`, `monitors/monitors.json`, `bin/` on `PATH`, plugin-root
-`settings.json`, manifest-less directories, single-`SKILL.md` plugins, skill
-namespacing, and a `--plugin-dir` equivalent. These are now **production**
-blockers, not just read-side gaps.
+**Claude:** `workflows/`, `output-styles/`, `.lsp.json`, `monitors/monitors.json`,
+`bin/` on `PATH`, plugin-root `settings.json`, manifest-less directories,
+single-`SKILL.md` plugins, skill namespacing, a `--plugin-dir` equivalent.
+
+**Copilot:** documented probe order, `extensions`, `lspServers` + `lsp.json`,
+`${PLUGIN_ROOT}`, MCP last-wins precedence.
+
+**Both:** `${COPILOT_PLUGIN_DATA}` / `${CLAUDE_PLUGIN_DATA}`.
+
+These are now **production** blockers, not read-side gaps: we emit into these
+ecosystems, so an unmodeled surface is an unemittable one.
 
 ---
 
@@ -665,6 +748,8 @@ Settled in review. Each row is a fork that was actually open.
 | D5 | Id collision | Per target location | A `claude` `foo` and a `github` `foo` are separate ecosystem artifacts, not duplicates |
 | D6 | Plugin skill namespacing | `plugin-name:skill-name` | Claude parity; removes the collision class outright (§5.8) |
 | D7 | Project-scope skills-dir plugins | Read, but load passive capabilities only | We have no trust gate to honor the vendor's restrictions with (§5.9) |
+| D8 | `github` manifest home | Root `plugin.json` | Probe #2 and what the vendor's plugin-creating guide teaches; our code emits `.github/plugin/` while its own comment says root is canonical |
+| D9 | Plugin runtime variables + data dir | In scope, both platforms | `*_PLUGIN_DATA` is documented by both vendors and provided by neither of our adapters; plugins using it get an unexpanded literal today |
 
 ### 8.2 Blast radius
 
@@ -721,8 +806,9 @@ where authored plugins are half-live.
 | 1 | Split the resolver; `--platform` (D4 scope); reject `agents` for plugins | Everything reads from this |
 | 2 | Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path | Same decision as step 1 — format and destination are inseparable |
 | 3 | `~/.claude/skills` discovery + stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9) | Without this the D3 target is half-live |
-| 4 | Claude adapter catch-up (§2.1) | Now a production blocker: we emit into this ecosystem |
-| 5 | G1 + G2, delegating to `claude plugin validate` | Cheapest real green signal; step 4 makes it pass for the right reasons |
+| 4 | Adapter catch-up, both vendors (§2.1): Claude surfaces; Copilot probe order, `extensions`, `lspServers`, root-manifest emit (D8) | Now a production blocker: we emit into these ecosystems |
+| 4b | Runtime variables + per-plugin data dir (D9), both platforms | Small, self-contained, and unblocks any plugin that uses them |
+| 5 | G1 + G2, delegating to `claude plugin validate` (no Copilot equivalent exists) | Cheapest real green signal; step 4 makes it pass for the right reasons |
 | 6 | Tier 1 lenient reader + `unsupportedSurfaces` | Turns the *next* drift into a signal |
 | 7 | G3 sandboxed smoke | Makes the executable confirm gate meaningful |
 | 8 | `PackagePlugin` + publish lane, GitHub flow primary | Needs eval green-signal-capable; the only GitHub route |
@@ -731,9 +817,12 @@ where authored plugins are half-live.
 
 ### 8.5 Still open
 
-1. **Verify the GitHub rows** (§1.5, §5.3) against the primary Copilot CLI
-   reference from an unblocked network. The whole `github` branch rests on
-   second-hand sourcing.
+1. **MCP last-wins precedence for Copilot plugins** (§1.7). Copilot resolves
+   agents/skills first-found-wins but MCP servers last-wins, so a plugin's MCP
+   server overrides user config. We are first-wins throughout. Adopting the
+   asymmetry is a consumption-side behavior change with real blast radius
+   (`registerExtensionMcpServers`), so it is deliberately *not* in the plan
+   above — decide it separately.
 2. **Does `--platform` accept multiple values?** `emitForPlatforms` already
    handles it and dedupes by path (`formats/index.ts:69-80`), and
    `github/copilot-plugins` ships both index formats, so dual-emission is a real
