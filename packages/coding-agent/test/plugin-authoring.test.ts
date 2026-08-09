@@ -88,16 +88,18 @@ describe("ProposePlugin (scaffold path)", () => {
 		expect((res.details as { authored: boolean }).authored).toBe(true);
 
 		const dest = path.join(cwd, ".agents", "plugins", "myhelper");
-		// Default target is the portable native format only — no vendor forks.
-		expect(fs.existsSync(path.join(dest, ".agents-plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(dest, ".claude-plugin"))).toBe(false);
+		// A plugin is a distribution unit, so production targets a platform
+		// ecosystem — claude by default, never the native `agents` layout, which
+		// belongs to no marketplace. See docs/plugin-system-architecture.md §1.
+		expect(fs.existsSync(path.join(dest, ".claude-plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(dest, ".agents-plugin"))).toBe(false);
 		expect(fs.existsSync(path.join(dest, ".github"))).toBe(false);
 		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, "agents", "scout.md"))).toBe(true);
 
 		const parsed = parsePluginDir(dest);
 		expect(parsed?.id).toBe("myhelper");
-		expect(parsed?.supportPlatform).toEqual(["agents"]);
+		expect(parsed?.supportPlatform).toEqual(["claude"]);
 	});
 
 	it("routes a mutating subagent through the confirm gate (fails closed with no UI)", async () => {

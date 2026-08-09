@@ -18,15 +18,29 @@ import * as path from "node:path";
 import { CLAUDE_TOOL_ALIASES } from "../../agent-frontmatter.js";
 import { PLUGIN_SYSTEM_TOOL_NAMES } from "../../tools/plugin-tool-names.js";
 import { emitForPlatforms } from "./formats/index.js";
-import { resolveAuthoringPlatforms } from "./formats/platform-targets.js";
+import { isPluginPlatform, resolvePluginPlatforms } from "./formats/platform-targets.js";
 import { slug } from "./formats/shared.js";
 import type { AuthoredHook, AuthoredMcpServer, MarketplacePlatform, PluginDraft } from "./formats/types.js";
 import { installedPluginsDir, sanitizeForDir } from "./install.js";
 import { type NormalizedPlugin, type PluginHooksConfig, parsePluginDir } from "./manifest.js";
 
 // Re-exported so existing importers keep one vocabulary; the resolution chain
-// (explicit → session --support-platform → default) lives in platform-targets.
-export { resolveAuthoringPlatforms } from "./formats/platform-targets.js";
+// (explicit → session --platform → default) lives in platform-targets.
+export { resolvePluginPlatforms } from "./formats/platform-targets.js";
+
+/**
+ * Layout for an *edit* of an existing plugin. Unlike creation, this never
+ * re-resolves against the session's `--platform`: a merge or a removal must keep
+ * the plugin in whatever layout it already has on disk, or it would move the
+ * manifest out from under a plugin the user (or an older hoocode) already
+ * published. Plugins authored before plugin production became platform-specific
+ * carry the native `agents` layout, and those must keep working.
+ */
+function existingLayout(existing: NormalizedPlugin, explicit?: readonly MarketplacePlatform[]): MarketplacePlatform[] {
+	if (explicit && explicit.length > 0) return [...explicit];
+	if (existing.supportPlatform.length > 0) return [...existing.supportPlatform];
+	return resolvePluginPlatforms();
+}
 
 /** hoocode tool names that only read (no mutation, no exec). Grants limited to these are low-risk. */
 const READONLY_TOOLS = new Set(["read", "grep", "find", "ls", "webfetch", "websearch"]);
@@ -117,7 +131,8 @@ export function isAuthoredPlugin(cwd: string, id: string): boolean {
  * re-parsed plugin so callers can confirm the round-trip.
  */
 export function writePluginDraft(cwd: string, draft: PluginDraft, platforms?: MarketplacePlatform[]): WriteResult {
-	const targets = resolveAuthoringPlatforms(platforms ?? draft.supportPlatform);
+	// Creation picks a platform; `agents` is refused here (see resolvePluginPlatforms).
+	const targets = resolvePluginPlatforms(platforms ?? draft.supportPlatform?.filter(isPluginPlatform));
 	const dest = path.join(installedPluginsDir(cwd), sanitizeForDir(draft.id));
 	const files = emitForPlatforms({ ...draft, supportPlatform: targets }, targets);
 
@@ -258,7 +273,7 @@ export function mergePluginDraft(
 	for (const s of existing.mcpServers ? mcpRecordToAuthored(existing.mcpServers) : []) mcpByName.set(s.name, s);
 	for (const s of delta.mcpServers ?? []) mcpByName.set(s.name, s);
 
-	const targets = resolveAuthoringPlatforms(platforms ?? existing.supportPlatform);
+	const targets = existingLayout(existing, platforms);
 	const merged: PluginDraft = {
 		id,
 		version: delta.version ?? existing.version,
@@ -392,7 +407,7 @@ export function removeFromPlugin(cwd: string, id: string, spec: RemovalSpec): Re
 	}
 
 	if (singleFileChanged) {
-		const targets = resolveAuthoringPlatforms(existing.supportPlatform);
+		const targets = existingLayout(existing);
 		writePluginDraft(
 			cwd,
 			{

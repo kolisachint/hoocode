@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; step 0 landed, steps 1+ not started (§8.5)
+**Status:** agreed plan; steps 0–1 landed, steps 2+ not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -37,10 +37,11 @@ accept native, Claude, and Copilot layouts with a documented precedence
 (`plugins/marketplace.ts:188-244`, `formats/types.ts:124-152`). Nothing there
 changes.
 
-Writing is wrong. `DEFAULT_AUTHORING_PLATFORMS = ["agents"]`
-(`platform-targets.ts:30`) makes the portable native layout the default
-production target for authored plugins, with vendor layouts as opt-in interop.
-That inverts the actual relationship.
+Writing was wrong. `DEFAULT_AUTHORING_PLATFORMS = ["agents"]` made the portable
+native layout the default production target for authored plugins, with vendor
+layouts as opt-in interop — inverting the actual relationship. **Fixed in step 1**:
+`DEFAULT_PLUGIN_PLATFORMS = ["claude"]` and `agents` is no longer reachable as a
+plugin target.
 
 ### 1.2 Why plugins cannot be vendor-neutral
 
@@ -74,25 +75,36 @@ The split, stated once:
 
 ### 1.4 `--platform`, and splitting the resolver
 
-One flag, `--platform claude|github`, replaces `--support-platform`
-(`main.ts:433-452`). Per `AGENTS.md` ("do not preserve backward compatibility
+One flag, `--platform claude|github`, replaces `--support-platform`. Per `AGENTS.md` ("do not preserve backward compatibility
 unless the user explicitly asks") this is a rename, not an alias.
 
-The resolver must split, because the two consumers now have opposite rules and
-today share one function (`platform-targets.ts:88`, consumed by
-`propose-plugin.ts:136` and `scaffold.ts:121,182,253`):
+The resolver had to split, because the two consumers have opposite rules and
+shared one function (`resolveAuthoringPlatforms`, consumed by plugin authoring
+and by `scaffold.ts`):
 
 ```ts
 /** Plugin production. Never returns "agents". Defaults to claude. */
-resolvePluginPlatforms(explicit?): ("claude" | "github")[]
+resolvePluginPlatforms(explicit?): PluginPlatform[]
 
-/** Workspace scaffolds (/new-skill, /new-agent, /new-command). "agents" allowed. */
-resolveWorkspacePlatforms(explicit?): MarketplacePlatform[]
+/** Workspace scaffolds. Session value or undefined — callers keep their own
+ *  fallback (scaffolds fall back to `.hoocode/`, not to a platform). */
+getWorkspacePlatforms(): MarketplacePlatform[] | undefined
 ```
 
+As built, the workspace side needed no resolver at all: `resolveAuthoringPlatforms`
+turned out to have exactly one consumer group — plugin authoring — while the
+scaffolds read the raw session value and supply their own `.hoocode/` fallback.
+So the "split" is one renamed-and-narrowed function plus one accessor.
+
 `resolvePluginPlatforms` resolution order: explicit per-call → session
-`--platform` → `["claude"]`. Passing `agents` to it is an error, not a silent
-drop — a caller asking for an unpublishable artifact should hear about it.
+`--platform` → `["claude"]`.
+
+`agents` is handled two ways, deliberately. An **explicit** `agents` throws — a
+caller asking for an unpublishable artifact should hear about it. A
+**session-level** `agents` is filtered instead, because `--platform` also drives
+workspace scaffolds where `agents` is a perfectly good choice; a user who set it
+for that reason should not have plugin authoring blow up. If filtering leaves
+nothing, the default applies.
 
 Default `claude` rather than erroring keeps the autonomous capability-gap flow
 unbroken, and §1.5 shows it is also the only platform where the local loop
@@ -843,7 +855,7 @@ first because the location change touches them anyway:
   copies are gone, so the docstring is now true.
 - ~~`activatePlugin` hardcoded `scope: "project"` for every plugin including
   global ones, mislabelling provenance in the config selector
-  (`config-selector.ts:77` renders it verbatim).~~ **Fixed in step 0**: scope is
+  (`components/config-selector.ts:77` renders it verbatim).~~ **Fixed in step 0**: scope is
   derived from whether the plugin root sits under the workspace.
 
 **Tests that move:** `plugin-authoring.test.ts` (11 hardcoded
@@ -879,7 +891,7 @@ where authored plugins are half-live.
 | Step | Work | Why here |
 |---|---|---|
 | 0 | ~~Delete the `/plugin` duplicates; fix `activatePlugin` scope metadata~~ **done** | Pre-existing defects directly under the later steps |
-| 1 | Split the resolver; `--platform` (D4 scope); reject `agents` for plugins | Everything reads from this |
+| 1 | ~~Split the resolver; `--platform` (D4 scope); reject `agents` for plugins~~ **done** | Everything reads from this |
 | 2 | Locations (§5.3): consumption home, per-platform production, per-target `pluginExists`, migration read-path. **Includes the draft-then-promote contract (§4.2)** | Same decision as step 1. The mechanism ships here, not with the gates, so that by the time G1 exists there is already somewhere safe to run it |
 | 3 | `~/.claude/skills` + `<cwd>/.claude/skills` discovery, stop the plain scan at plugin roots (§5.7); namespace plugin skills (§5.8); project scope passive-only (§5.9) | Without this the D3 target is half-live |
 | 4 | Adapter catch-up, both vendors (§2.1): Claude surfaces; Copilot probe order, `extensions`, `lspServers`, root-manifest emit (D8) | Now a production blocker: we emit into these ecosystems |

@@ -32,7 +32,7 @@ import {
 	unregisterEmbsearchService,
 } from "./core/embsearch/embsearch-service.js";
 import { exportFromFile } from "./core/export-html/index.js";
-import { parseSupportPlatforms, setSupportPlatforms } from "./core/extensions/plugins/formats/platform-targets.js";
+import { parsePlatforms, setPlatforms } from "./core/extensions/plugins/formats/platform-targets.js";
 import type { ExtensionAPI, ExtensionFactory } from "./core/extensions/types.js";
 import { KeybindingsManager } from "./core/keybindings.js";
 import {
@@ -435,21 +435,21 @@ function buildSessionOptions(
 	// it produces artifacts — authored plugins (ProposePlugin) and the /new-skill
 	// //new-agent //new-command scaffolds. Stored as process-wide state next to
 	// the format registry; readers of every format stay unaffected.
-	const supportPlatformTokens = parsed.supportPlatform ?? settingsManager.getSupportPlatform();
-	if (supportPlatformTokens && supportPlatformTokens.length > 0) {
-		const { platforms, invalid } = parseSupportPlatforms(supportPlatformTokens);
+	const platformTokens = parsed.platform ?? settingsManager.getPlatform();
+	if (platformTokens && platformTokens.length > 0) {
+		const { platforms, invalid } = parsePlatforms(platformTokens);
 		for (const token of invalid) {
 			diagnostics.push({
 				type: "warning",
-				message: `Unknown --support-platform "${token}" (valid: claude, copilot|github|gh, agents|native)`,
+				message: `Unknown --platform "${token}" (valid: claude, copilot|github|gh, agents|native)`,
 			});
 		}
 		if (platforms.length > 0) {
-			setSupportPlatforms(platforms);
+			setPlatforms(platforms);
 		} else {
 			diagnostics.push({
 				type: "warning",
-				message: "--support-platform resolved no valid platforms; using the default targets",
+				message: "--platform resolved no valid platforms; using the default targets",
 			});
 		}
 	}

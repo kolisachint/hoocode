@@ -1,10 +1,16 @@
 /**
- * `--support-platform` — session-wide artifact platform targeting.
+ * `--platform` — session-wide artifact platform targeting.
  *
- * Covers the full path: CLI token parsing → normalization/session state →
- * plugin authoring targets (writePluginDraft) → workspace scaffolds
- * (/new-skill //new-agent //new-command) for BOTH vendor platforms, plus the
- * per-adapter workspace layouts (Claude `.claude/…`, Copilot `.github/…`).
+ * Covers the full path: CLI token parsing → normalization/session state → the
+ * two resolvers → plugin authoring targets (writePluginDraft) → workspace
+ * scaffolds (/new-skill //new-agent //new-command), plus the per-adapter
+ * workspace layouts (Claude `.claude/…`, Copilot `.github/…`, native `.agents/…`).
+ *
+ * The central invariant: **plugins are never produced for `agents`**. A plugin is
+ * a distribution unit and the native layout belongs to no marketplace, so it
+ * could never be published or installed. Workspace scaffolds are consumed in
+ * place and keep `agents` as a first-class target.
+ * See docs/plugin-system-architecture.md §1.
  */
 
 import * as fs from "node:fs";
@@ -15,30 +21,30 @@ import { parseArgs } from "../src/cli/args.js";
 import { writePluginDraft } from "../src/core/extensions/plugins/authoring.js";
 import { claudeFormat, copilotFormat, getFormatByPlatform } from "../src/core/extensions/plugins/formats/index.js";
 import {
-	DEFAULT_AUTHORING_PLATFORMS,
-	getSupportPlatforms,
+	DEFAULT_PLUGIN_PLATFORMS,
+	getWorkspacePlatforms,
 	normalizePlatformToken,
-	parseSupportPlatforms,
-	resolveAuthoringPlatforms,
-	setSupportPlatforms,
+	parsePlatforms,
+	resolvePluginPlatforms,
+	setPlatforms,
 } from "../src/core/extensions/plugins/formats/platform-targets.js";
 import { parsePluginDir } from "../src/core/extensions/plugins/manifest.js";
 import { setupScaffold } from "../src/extensions/core/scaffold.js";
 
-afterEach(() => setSupportPlatforms(undefined));
+afterEach(() => setPlatforms(undefined));
 
-describe("--support-platform CLI parsing", () => {
+describe("--platform CLI parsing", () => {
 	it("collects a single token", () => {
-		expect(parseArgs(["--support-platform", "copilot"]).supportPlatform).toEqual(["copilot"]);
+		expect(parseArgs(["--platform", "copilot"]).platform).toEqual(["copilot"]);
 	});
 
 	it("splits comma-separated lists and merges repeats", () => {
-		const parsed = parseArgs(["--support-platform", "copilot, claude", "--support-platform", "agents"]);
-		expect(parsed.supportPlatform).toEqual(["copilot", "claude", "agents"]);
+		const parsed = parseArgs(["--platform", "copilot, claude", "--platform", "agents"]);
+		expect(parsed.platform).toEqual(["copilot", "claude", "agents"]);
 	});
 
-	it("leaves supportPlatform unset when the flag is absent", () => {
-		expect(parseArgs(["hello"]).supportPlatform).toBeUndefined();
+	it("leaves platform unset when the flag is absent", () => {
+		expect(parseArgs(["hello"]).platform).toBeUndefined();
 	});
 });
 
@@ -53,30 +59,53 @@ describe("platform token normalization", () => {
 		expect(normalizePlatformToken("vscode")).toBeUndefined();
 	});
 
-	it("parseSupportPlatforms dedupes and reports invalid tokens", () => {
-		const { platforms, invalid } = parseSupportPlatforms(["copilot", "github", "bogus", "claude"]);
+	it("parsePlatforms dedupes and reports invalid tokens", () => {
+		const { platforms, invalid } = parsePlatforms(["copilot", "github", "bogus", "claude"]);
 		expect(platforms).toEqual(["github", "claude"]);
 		expect(invalid).toEqual(["bogus"]);
 	});
 });
 
-describe("session target resolution", () => {
-	it("defaults to the portable native format (agents) when nothing is configured", () => {
-		expect(getSupportPlatforms()).toBeUndefined();
-		expect(resolveAuthoringPlatforms()).toEqual([...DEFAULT_AUTHORING_PLATFORMS]);
-		expect(resolveAuthoringPlatforms()).toEqual(["agents"]);
+describe("plugin platform resolution", () => {
+	it("defaults to claude when nothing is configured", () => {
+		expect(resolvePluginPlatforms()).toEqual([...DEFAULT_PLUGIN_PLATFORMS]);
+		expect(resolvePluginPlatforms()).toEqual(["claude"]);
 	});
 
-	it("session targets replace the default; an explicit set still wins (internal callers only)", () => {
-		setSupportPlatforms(["github"]);
-		expect(resolveAuthoringPlatforms()).toEqual(["github"]);
-		expect(resolveAuthoringPlatforms(["claude"])).toEqual(["claude"]);
+	it("session targets replace the default; an explicit set still wins", () => {
+		setPlatforms(["github"]);
+		expect(resolvePluginPlatforms()).toEqual(["github"]);
+		expect(resolvePluginPlatforms(["claude"])).toEqual(["claude"]);
 	});
 
-	it("clears back to defaults", () => {
-		setSupportPlatforms(["agents"]);
-		setSupportPlatforms(undefined);
-		expect(resolveAuthoringPlatforms()).toEqual([...DEFAULT_AUTHORING_PLATFORMS]);
+	it("throws on an explicit `agents` rather than silently dropping it", () => {
+		expect(() => resolvePluginPlatforms(["agents"])).toThrow(/belongs to no marketplace/);
+		expect(() => resolvePluginPlatforms(["claude", "agents"])).toThrow(/agents/);
+	});
+
+	it("filters a session-level `agents` instead of throwing, since it also drives scaffolds", () => {
+		setPlatforms(["agents"]);
+		expect(resolvePluginPlatforms()).toEqual(["claude"]);
+
+		setPlatforms(["agents", "github"]);
+		expect(resolvePluginPlatforms()).toEqual(["github"]);
+	});
+
+	it("clears back to the default", () => {
+		setPlatforms(["github"]);
+		setPlatforms(undefined);
+		expect(resolvePluginPlatforms()).toEqual([...DEFAULT_PLUGIN_PLATFORMS]);
+	});
+});
+
+describe("workspace platform resolution", () => {
+	it("is undefined until configured, so scaffolds keep their hoocode-native location", () => {
+		expect(getWorkspacePlatforms()).toBeUndefined();
+	});
+
+	it("keeps `agents` — a scaffolded artifact is consumed in place, not distributed", () => {
+		setPlatforms(["agents"]);
+		expect(getWorkspacePlatforms()).toEqual(["agents"]);
 	});
 });
 
@@ -84,22 +113,21 @@ describe("plugin authoring honors the session targets", () => {
 	let cwd: string;
 
 	beforeEach(() => {
-		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-support-"));
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-platform-"));
 	});
 
 	afterEach(() => {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	});
 
-	it("--support-platform copilot writes only the Copilot manifest, and round-trips", () => {
-		setSupportPlatforms(["github"]);
+	it("--platform copilot writes only the Copilot manifest, and round-trips", () => {
+		setPlatforms(["github"]);
 		const result = writePluginDraft(cwd, {
 			id: "gh-only",
 			description: "copilot-targeted",
 			skills: [{ name: "helper", description: "helps", body: "Help." }],
 		});
 
-		// Preferred Copilot manifest location: .github/plugin/plugin.json.
 		expect(fs.existsSync(path.join(result.dest, ".github", "plugin", "plugin.json"))).toBe(true);
 		expect(fs.existsSync(path.join(result.dest, ".claude-plugin"))).toBe(false);
 		expect(fs.existsSync(path.join(result.dest, "skills", "helper", "SKILL.md"))).toBe(true);
@@ -109,8 +137,8 @@ describe("plugin authoring honors the session targets", () => {
 		expect(parsed?.supportPlatform).toEqual(["github"]);
 	});
 
-	it("--support-platform claude writes only the Claude manifest, and round-trips", () => {
-		setSupportPlatforms(["claude"]);
+	it("--platform claude writes only the Claude manifest, and round-trips", () => {
+		setPlatforms(["claude"]);
 		const result = writePluginDraft(cwd, {
 			id: "claude-only",
 			commands: [{ name: "go", body: "Go." }],
@@ -123,15 +151,39 @@ describe("plugin authoring honors the session targets", () => {
 		expect(parsed?.supportPlatform).toEqual(["claude"]);
 	});
 
-	it("without session targets the portable native default (agents only) applies", () => {
-		const result = writePluginDraft(cwd, { id: "native", skills: [{ name: "s", body: "S." }] });
-		expect(fs.existsSync(path.join(result.dest, ".agents-plugin", "plugin.json"))).toBe(true);
-		expect(fs.existsSync(path.join(result.dest, ".claude-plugin"))).toBe(false);
+	it("defaults to claude — never the native layout — when no target is configured", () => {
+		const result = writePluginDraft(cwd, { id: "defaulted", skills: [{ name: "s", body: "S." }] });
+		expect(fs.existsSync(path.join(result.dest, ".claude-plugin", "plugin.json"))).toBe(true);
+		expect(fs.existsSync(path.join(result.dest, ".agents-plugin"))).toBe(false);
 		expect(fs.existsSync(path.join(result.dest, ".github"))).toBe(false);
 		expect(fs.existsSync(path.join(result.dest, "skills", "s", "SKILL.md"))).toBe(true);
 
 		const parsed = parsePluginDir(result.dest);
-		expect(parsed?.supportPlatform).toEqual(["agents"]);
+		expect(parsed?.supportPlatform).toEqual(["claude"]);
+	});
+
+	it("never emits the native layout, even when the session asked for agents", () => {
+		setPlatforms(["agents"]);
+		const result = writePluginDraft(cwd, { id: "no-native", skills: [{ name: "s", body: "S." }] });
+		expect(fs.existsSync(path.join(result.dest, ".agents-plugin"))).toBe(false);
+		expect(fs.existsSync(path.join(result.dest, ".claude-plugin", "plugin.json"))).toBe(true);
+	});
+
+	it("filters a stale `agents` carried on the draft rather than refusing the write", () => {
+		// A draft rebuilt from a plugin authored before production became
+		// platform-specific still carries supportPlatform: ["agents"].
+		const result = writePluginDraft(cwd, {
+			id: "legacy-draft",
+			supportPlatform: ["agents"],
+			skills: [{ name: "s", body: "S." }],
+		});
+		expect(parsePluginDir(result.dest)?.supportPlatform).toEqual(["claude"]);
+	});
+
+	it("refuses an explicit `agents` target outright", () => {
+		expect(() => writePluginDraft(cwd, { id: "nope", skills: [{ name: "s", body: "S." }] }, ["agents"])).toThrow(
+			/belongs to no marketplace/,
+		);
 	});
 });
 
@@ -197,8 +249,8 @@ describe("scaffold commands (/new-skill //new-agent //new-command)", () => {
 		expect(fs.existsSync(path.join(cwd, ".hoocode", "skills", "my-skill", "SKILL.md"))).toBe(true);
 	});
 
-	it("--support-platform copilot scaffolds into the Copilot workspace directories", async () => {
-		setSupportPlatforms(["github"]);
+	it("--platform copilot scaffolds into the Copilot workspace directories", async () => {
+		setPlatforms(["github"]);
 		await commands.get("new-skill")?.handler("my-skill", ctx);
 		await commands.get("new-agent")?.handler("my-agent", ctx);
 		await commands.get("new-command")?.handler("my-cmd", ctx);
@@ -213,15 +265,21 @@ describe("scaffold commands (/new-skill //new-agent //new-command)", () => {
 		expect(agent).toContain("tools: ['read', 'bash']");
 	});
 
-	it("--support-platform claude,copilot scaffolds into both workspaces", async () => {
-		setSupportPlatforms(["claude", "github"]);
+	it("--platform claude,copilot scaffolds into both workspaces", async () => {
+		setPlatforms(["claude", "github"]);
 		await commands.get("new-skill")?.handler("dual", ctx);
 		expect(fs.existsSync(path.join(cwd, ".claude", "skills", "dual", "SKILL.md"))).toBe(true);
 		expect(fs.existsSync(path.join(cwd, ".github", "skills", "dual", "SKILL.md"))).toBe(true);
 	});
 
+	it("--platform agents scaffolds into .agents/ — unlike plugins, this target is valid here", async () => {
+		setPlatforms(["agents"]);
+		await commands.get("new-skill")?.handler("portable", ctx);
+		expect(fs.existsSync(path.join(cwd, ".agents", "skills", "portable", "SKILL.md"))).toBe(true);
+	});
+
 	it("never clobbers an existing artifact", async () => {
-		setSupportPlatforms(["github"]);
+		setPlatforms(["github"]);
 		const file = path.join(cwd, ".github", "skills", "kept", "SKILL.md");
 		fs.mkdirSync(path.dirname(file), { recursive: true });
 		fs.writeFileSync(file, "original", "utf8");

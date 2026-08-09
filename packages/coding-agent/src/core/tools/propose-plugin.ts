@@ -34,7 +34,7 @@ import {
 	mergePluginDraft,
 	pluginExists,
 	removeFromPlugin,
-	resolveAuthoringPlatforms,
+	resolvePluginPlatforms,
 	writePluginDraft,
 } from "../extensions/plugins/authoring.js";
 import type { MarketplacePlatform, PluginDraft } from "../extensions/plugins/formats/types.js";
@@ -130,10 +130,10 @@ interface CapabilityInput {
 }
 
 function resolvePlatforms(): MarketplacePlatform[] {
-	// No model-facing platform selection: authored artifacts default to the
-	// portable native format, unless the human set --support-platform for the
-	// session (interop). See resolveAuthoringPlatforms.
-	return resolveAuthoringPlatforms();
+	// No model-facing platform selection: the human picks the target ecosystem
+	// with --platform, defaulting to claude. A plugin is a distribution unit, so
+	// there is no vendor-neutral option here. See resolvePluginPlatforms.
+	return resolvePluginPlatforms();
 }
 
 function draftFrom(id: string, params: CapabilityInput, platforms: MarketplacePlatform[]): PluginDraft {
@@ -287,15 +287,15 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 		label: PROPOSE_PLUGIN_TOOL_NAME,
 		description:
 			"Author a NEW portable, reusable plugin to fill a capability gap when no marketplace plugin fits. Accepts any " +
-			"capability mix — skills, slash commands, subagents, hooks, MCP servers. Authored as one self-contained, " +
-			"vendor-neutral artifact usable across sessions and projects. Passive content (skills, commands, read-only " +
+			"capability mix — skills, slash commands, subagents, hooks, MCP servers. Authored as one self-contained " +
+			"artifact usable across sessions and projects. Passive content (skills, commands, read-only " +
 			"subagents) is authored autonomously; executable content (hooks, MCP servers, mutating subagents) is shown " +
 			"and requires human confirmation before it activates. To change an existing plugin, use UpdatePlugin.",
 		promptSnippet:
 			"Author a new portable, reusable plugin to fill a capability gap (passive is autonomous; executable asks to confirm).",
 		promptGuidelines: [
 			"Sense reusability proactively: when you complete a multi-step recipe you'd plausibly repeat (or repeat the same pattern twice in one session) and SearchPlugins finds nothing that covers it, author it with ProposePlugin. Name and describe it by the capability, not the one-off task that prompted it, so it triggers again in other contexts. Passive skills/commands activate immediately and are reversible with UninstallPlugin — announce what you created and why.",
-			"Author for portability: write self-contained, vendor-neutral content — no absolute or machine-specific paths, no embedded secrets or environment-specific values, no assumptions about the current repo unless that is the capability's point. Prefer relative paths and runtime discovery, and state any prerequisites in the body. The artifact is written in the portable native layout; you never choose a vendor format.",
+			"Author for portability: write self-contained content — no absolute or machine-specific paths, no embedded secrets or environment-specific values, no assumptions about the current repo unless that is the capability's point. Prefer relative paths and runtime discovery, and state any prerequisites in the body. The layout is the session's target platform; you never choose it.",
 			"One tool for the whole plugin: put skills + a hook in a single call. The risk gate is computed from content — you don't pre-classify. Read-only subagents and skills/commands go straight through; hooks, MCP servers, or a subagent needing Bash/Write/Edit/MCP or tools:* pause for human confirmation.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
 			"Publishing a proven-useful plugin to a marketplace stays a human action — do not do it autonomously.",
@@ -349,14 +349,14 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 			"Merge inline-authored capabilities into an EXISTING locally AUTHORED plugin (marketplace-installed plugins " +
 			"are refused). Skills/commands/subagents are added or replaced by name; hooks and MCP servers are unioned " +
 			"with what's already there; metadata is overwritten only where you supply it. Additive only — remove a " +
-			"capability with RemovePluginCapability. Nothing is fetched from a remote. Keep additions as portable and " +
-			"vendor-neutral as the original. Passive additions apply autonomously; executable additions (hooks, MCP " +
+			"capability with RemovePluginCapability. Nothing is fetched from a remote. Keep additions as portable as " +
+			"the original, and in its existing layout. Passive additions apply autonomously; executable additions (hooks, MCP " +
 			"servers, mutating subagents) require human confirmation. Use ProposePlugin to create.",
 		promptSnippet:
 			"Add/replace capabilities in a portable plugin you authored (additive; executable additions ask to confirm).",
 		promptGuidelines: [
 			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one). It cannot remove a capability — use RemovePluginCapability for that.",
-			"Keep additions portable: same vendor-neutral content rules as ProposePlugin — no absolute paths, no secrets, capability-not-task naming.",
+			"Keep additions portable: same content rules as ProposePlugin — no absolute paths, no secrets, capability-not-task naming.",
 			"Hooks cannot be modified in place: they have no name, so supplying a changed command ADDS a second hook alongside the old one (both fire). To change a hook, RemovePluginCapability the old one first, then add the new one here.",
 			"Only executable *additions* trigger confirmation — adding a passive skill to an already-executable plugin does not re-prompt.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
