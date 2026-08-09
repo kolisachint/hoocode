@@ -42,6 +42,8 @@ export interface WebSearchToolDetails {
 	resultCount?: number;
 	hiddenCount?: number;
 	tokenEstimate?: number;
+	/** Which backend answered — a fallback from a keyed provider is otherwise silent. */
+	provider?: string;
 }
 
 export interface WebSearchToolOptions extends WebtoolsTLSConfig {
@@ -118,7 +120,7 @@ export function createWebSearchToolDefinition(
 		name: "websearch",
 		label: "websearch",
 		description:
-			"Search the web (DuckDuckGo, no API key) and return ranked results as titles + snippets with reference-style [N] links. Use to discover URLs, then webfetch to read a result in full. Off by default; enabled with --enable-webtools.",
+			"Search the web and return ranked results as titles + snippets with reference-style [N] links. Defaults to keyless DuckDuckGo; Brave, Tavily and SearXNG are used instead when credentials are configured for the webtools binary. Use to discover URLs, then webfetch to read a result in full. Off by default; enabled with --enable-webtools.",
 		promptSnippet: "Search the web and return ranked results with links",
 		promptGuidelines: [
 			"Use websearch to discover URLs when you do not already have one, then webfetch the most relevant result to read it in full.",
@@ -153,6 +155,7 @@ export function createWebSearchToolDefinition(
 					resultCount: kept.length,
 					hiddenCount,
 					tokenEstimate: output.token_estimate,
+					provider: output.provider,
 				},
 			};
 		},

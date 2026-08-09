@@ -2,6 +2,33 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The webtools request timeout never reached the binary.** `webtools.timeoutSecs`
+  and `HOOCODE_WEBTOOLS_TIMEOUT` were resolved and clamped, then used only to size
+  the subprocess kill timer — `--timeout` was never passed, so every request ran on
+  the binary's own default regardless of the setting. It is now forwarded. The kill
+  timer also accounts for the binary's whole-run budget (a fetch is bounded at three
+  times `--timeout`, a search may try a fallback provider), so hoocode no longer kills
+  a request the binary would have completed.
+- **A blocked search was reported as an unexplained exit code.** `webtools search`
+  signals a bot challenge or rate limit by exiting non-zero with its JSON on stdout
+  and nothing on stderr, which surfaced as `webtools search exited with code 1`. The
+  status is now read back off stdout and reported as a blocked search.
+- **A JavaScript-rendered page was indistinguishable from an empty one.** `webfetch`
+  now reads the `status` field the binary reports (`ok` / `empty` / `needs_js` /
+  `too_complex`) and appends a one-line note when extraction produced nothing, so an
+  HTML shell that needs a browser is no longer read as a page with nothing to say.
+- **webtools could never be downloaded on ARM Linux.** The asset name was built as
+  `aarch64-unknown-linux-gnu`, but the upstream release matrix publishes aarch64
+  Linux as a musl build, so the download 404'd on every arm64 Linux host.
+
+### Changed
+
+- `websearch` reports which backend answered (`provider`), so a silent fallback from
+  a keyed provider to DuckDuckGo is visible, and its description no longer claims
+  DuckDuckGo is the only backend — Brave, Tavily and SearXNG are used when configured.
+
 ## [0.5.2] - 2026-08-08
 
 ## [0.5.1] - 2026-08-08

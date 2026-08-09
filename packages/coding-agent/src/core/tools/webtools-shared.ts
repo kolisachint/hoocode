@@ -36,6 +36,33 @@ const CACHE_TTL_MS = 15 * 60 * 1000;
 // Result types (locked against `webtools <cmd> --json`)
 // ============================================================================
 
+/**
+ * Whether the binary actually extracted content (`FetchResult.status`).
+ *
+ * Optional here because an older `webtools` on PATH predates the field; absent
+ * is treated as `ok`. Without this, a JavaScript-rendered shell and a genuinely
+ * blank page are both "empty content, exit 0" and the model reads either as
+ * "this page has nothing to say".
+ */
+export type WebFetchContentStatus = "ok" | "empty" | "needs_js" | "too_complex";
+
+/** Whether the search answered (`SearchOutput.status`). See {@link WebFetchContentStatus} on optionality. */
+export type WebSearchStatus = "ok" | "empty" | "blocked";
+
+/** One-line explanation for a non-`ok` fetch status, mirroring the binary's own note. */
+export function fetchStatusNote(status: WebFetchContentStatus | undefined): string | undefined {
+	switch (status) {
+		case "empty":
+			return "the page parsed but contains no text";
+		case "needs_js":
+			return "no text content: the page renders its body with JavaScript, which webtools does not execute";
+		case "too_complex":
+			return "the document is too deeply nested to parse safely and was refused";
+		default:
+			return undefined;
+	}
+}
+
 interface WebFetchReference {
 	index: number;
 	url: string;
@@ -57,8 +84,11 @@ export interface WebFetchResult {
 	content_type: string;
 	media: string;
 	token_estimate: number;
+	/** Absent on binaries older than the status field; treated as "ok". */
+	status?: WebFetchContentStatus;
 	references: WebFetchReference[];
 	metadata?: WebFetchMetadata;
+	/** The URL that was requested, before any redirect (`final_url` is post-redirect). */
 	source: string;
 }
 
@@ -80,6 +110,10 @@ export interface WebSearchOutput {
 	references: WebSearchReference[];
 	token_estimate: number;
 	result_count: number;
+	/** Absent on binaries older than the status field; treated as "ok". */
+	status?: WebSearchStatus;
+	/** Which backend answered, so a silent fallback to DuckDuckGo stays visible. */
+	provider?: string;
 }
 
 // ============================================================================
@@ -188,10 +222,49 @@ function buildTLSArgs(config: WebtoolsTLSConfig | undefined): string[] {
 }
 
 /**
+ * The binary bounds a whole fetch (redirects + retries) at this multiple of the
+ * per-request `--timeout`, so the spawn must outlive that or we kill a fetch the
+ * binary would have finished. Search has no such budget, but it may try a
+ * fallback provider after the primary fails, so it gets two requests' worth.
+ */
+const WHOLE_RUN_TIMEOUT_MULTIPLIER: Record<"fetch" | "search", number> = {
+	fetch: 3,
+	search: 2,
+};
+
+/** Extra wall-clock headroom (seconds) so the binary reports its own timeout before we kill it. */
+const SPAWN_TIMEOUT_HEADROOM_SECS = 5;
+
+/**
+ * Turn a non-zero exit into the most specific message available. `search` exits
+ * non-zero on a blocked provider but writes its JSON (carrying `status`) to
+ * stdout with nothing on stderr, so the generic "exited with code 1" would throw
+ * away the only useful detail.
+ */
+function describeFailedRun(subcommand: "fetch" | "search", stdout: string, stderr: string, code: number): string {
+	const trimmedStderr = stderr.trim();
+	if (trimmedStderr) return trimmedStderr;
+
+	try {
+		const parsed = JSON.parse(stdout) as { status?: string };
+		if (parsed?.status === "blocked") {
+			return (
+				"web search was blocked by the provider (bot challenge or rate limit) rather than returning no results — " +
+				"retry later, or configure a different search provider"
+			);
+		}
+	} catch {
+		// Not JSON: fall through to the generic message.
+	}
+	return `webtools ${subcommand} exited with code ${code}`;
+}
+
+/**
  * Run a `webtools` subcommand with `--json` and return parsed stdout.
  *
- * Throws on missing binary, non-zero exit (surfacing the binary's stderr), or
- * unparseable output. Callers convert thrown errors into tool error results.
+ * Throws on missing binary, non-zero exit (surfacing the binary's stderr, or the
+ * status carried on stdout when stderr is empty), or unparseable output. Callers
+ * convert thrown errors into tool error results.
  */
 export async function runWebtools<T>(
 	subcommand: "fetch" | "search",
@@ -206,20 +279,27 @@ export async function runWebtools<T>(
 	const binaryPath = await ensureTool("webtools", true);
 	if (!binaryPath) throw new Error(BINARY_MISSING_MESSAGE);
 
-	// Give the spawn a little headroom over the binary's own request timeout so
-	// the binary reports the timeout itself rather than being killed mid-flight.
-	const spawnTimeoutMs = (timeoutSecs + 5) * 1000;
+	// Give the spawn headroom over the binary's own worst-case runtime so the
+	// binary reports the timeout itself rather than being killed mid-flight.
+	const wholeRunSecs = timeoutSecs * WHOLE_RUN_TIMEOUT_MULTIPLIER[subcommand];
+	const spawnTimeoutMs = (wholeRunSecs + SPAWN_TIMEOUT_HEADROOM_SECS) * 1000;
 	const tlsArgs = buildTLSArgs(tlsConfig);
-	const result = await execCommand(binaryPath, [subcommand, ...args, ...tlsArgs, "--json"], cwd, {
-		signal,
-		timeout: spawnTimeoutMs,
-	});
+	// `--timeout` must be forwarded: without it the binary falls back to its own
+	// default and the resolved setting/env value would never reach the request.
+	const result = await execCommand(
+		binaryPath,
+		[subcommand, ...args, "--timeout", String(timeoutSecs), ...tlsArgs, "--json"],
+		cwd,
+		{
+			signal,
+			timeout: spawnTimeoutMs,
+		},
+	);
 
 	if (signal?.aborted) throw new Error("Operation aborted");
-	if (result.killed) throw new Error(`webtools ${subcommand} timed out after ${timeoutSecs}s`);
+	if (result.killed) throw new Error(`webtools ${subcommand} timed out after ${wholeRunSecs}s`);
 	if (result.code !== 0) {
-		const stderr = result.stderr.trim();
-		throw new Error(stderr || `webtools ${subcommand} exited with code ${result.code}`);
+		throw new Error(describeFailedRun(subcommand, result.stdout, result.stderr, result.code));
 	}
 
 	try {
