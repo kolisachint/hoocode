@@ -14,6 +14,7 @@
  *
  *   /plugin marketplace add <git-url|path>
  *   /plugin marketplace list
+ *   /plugin marketplace refresh     re-fetch every cached index now
  *   /plugin list                     list available plugins across marketplaces
  *   /plugin install <name>
  *   /plugin remove <name>
@@ -26,6 +27,7 @@ import {
 	installAvailablePlugin,
 	listAvailablePlugins,
 	readMarketplaceRecords,
+	refreshMarketplaces,
 	uninstallPlugin,
 } from "../../core/extensions/plugins/install.js";
 import {
@@ -48,9 +50,9 @@ function isGitSource(loc: string): boolean {
 export function setupMarketplace(pi: ExtensionAPI): void {
 	pi.registerCommand("plugin", {
 		description:
-			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin list | /plugin install <name> | /plugin remove <name>",
+			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> | /plugin remove <name>",
 		getArgumentCompletions: (prefix: string) =>
-			["marketplace", "list", "install", "remove"]
+			["marketplace", "list", "install", "remove", "refresh"]
 				.filter((s) => s.startsWith(prefix))
 				.map((s) => ({ value: s, label: s })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -118,7 +120,20 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 					return;
 				}
 
-				ctx.ui.notify("Usage: /plugin marketplace add <git-url|path> | /plugin marketplace list", "warning");
+				if (sub === "refresh") {
+					ctx.ui.notify("Refreshing marketplace indices…", "info");
+					const { refreshed, errors } = await refreshMarketplaces(cwd);
+					const lines: string[] = [];
+					if (refreshed.length > 0) lines.push(`Refreshed: ${refreshed.join(", ")}`);
+					if (errors.length > 0) lines.push(`Could not refresh: ${errors.join("; ")}`);
+					ctx.ui.notify(lines.join("\n") || "Nothing to refresh.", errors.length > 0 ? "warning" : "info");
+					return;
+				}
+
+				ctx.ui.notify(
+					"Usage: /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh",
+					"warning",
+				);
 				return;
 			}
 

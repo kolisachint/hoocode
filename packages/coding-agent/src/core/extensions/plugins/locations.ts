@@ -94,6 +94,17 @@ export function marketplaceCacheDir(url: string, agentDir: string = getAgentDir(
 }
 
 /**
+ * Records when each cached marketplace index was last fetched.
+ *
+ * Kept beside the caches rather than inferred from directory mtimes: a clone's
+ * mtime moves for reasons that have nothing to do with freshness, and "when did
+ * we last talk to the remote" is the only question the TTL is asking.
+ */
+export function marketplaceCacheMetaPath(agentDir: string = getAgentDir()): string {
+	return path.join(marketplaceCacheRoot(agentDir), ".fetched.json");
+}
+
+/**
  * Every directory a plugin with `id` could occupy, in the order a lookup should
  * try them: the platform production homes, then the consumption home, then the
  * legacy project home. Used to find an existing plugin without knowing which

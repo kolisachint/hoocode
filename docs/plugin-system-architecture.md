@@ -1,6 +1,6 @@
 # Plugin System Architecture — production model, drift, automation, eval, scope, retrieval
 
-**Status:** agreed plan; steps 0–7 landed, steps 8+ not started (§8.5)
+**Status:** agreed plan; steps 0–8 landed, steps 9+ not started (§8.5)
 **Scope:** `packages/coding-agent` plugin + capability subsystem
 **Companions:** `docs/plugin-system-spec.md` (what shipped),
 `docs/plugin-format-mapping.md` (format tables),
@@ -342,10 +342,13 @@ Working today: curated indices clone lazily on first search
 (`propose-plugin.ts:326`), and the runtime arms reuse cues into `SearchPlugins`
 (`tools/plugins.ts:108-111`).
 
-- **Indices clone once and never refresh** (`install.ts:91-92` skips when the
-  directory exists), so inheritance goes stale silently. Add a TTL plus explicit
-  refresh. Refreshing an *index* is read-only — it changes what is discoverable,
-  not what is installed. The no-auto-update rule for installed plugins stands.
+- ~~**Indices clone once and never refresh**, so inheritance goes stale
+  silently.~~ **Fixed in step 8**: a 24h TTL (`HOOCODE_MARKETPLACE_TTL_MS`) plus
+  `/plugin marketplace refresh`. Refreshing an *index* is read-only — it changes
+  what is discoverable, not what is installed — so the no-auto-update rule for
+  installed plugins is untouched. A failed refresh keeps the stale copy: the
+  re-clone stages to a temp directory and is swapped in only on success, because
+  an out-of-date index beats none and the network may simply be down.
 - **Discovery is substring matching** (`tools/plugins.ts:96`). Fine for two
   curated marketplaces; fails at community-catalog scale. That is §6's job.
 
@@ -944,7 +947,7 @@ where authored plugins are half-live.
 | 5 | ~~G1 + G2, delegating to `claude plugin validate`~~ **done** | Cheapest real green signal; step 4 made it pass for the right reasons, step 2 gave it somewhere safe to run |
 | 6 | ~~Tier 1 lenient reader + `unsupportedSurfaces`~~ **done in step 4** — a re-emit drops any manifest key the reader does not carry, so preservation could not wait | Turns the *next* drift into a signal |
 | 7 | ~~G3 sandboxed smoke~~ **done** — redirected, not contained; see §4.2 | Makes the executable confirm gate meaningful |
-| 8 | Marketplace index TTL + explicit refresh (§3.1) | Small; the inherit story goes stale silently without it |
+| 8 | ~~Marketplace index TTL + explicit refresh (§3.1)~~ **done** | Small; the inherit story went stale silently without it |
 | 9 | `PackagePlugin` + publish lane, GitHub flow primary | Needs eval green-signal-capable; the only GitHub route |
 | 10 | Capability index + MCP retrieval (§6) | Independent — can run in parallel from step 1 |
 | 11 | G4 trigger eval; Tier 2 drift CI | Ongoing quality, not blocking |

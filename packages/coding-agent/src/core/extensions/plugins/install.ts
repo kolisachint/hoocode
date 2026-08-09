@@ -12,7 +12,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +25,8 @@ import {
 	candidatePluginDirs,
 	consumptionPluginsDir,
 	marketplaceCacheDir,
+	marketplaceCacheMetaPath,
+	marketplaceCacheRoot,
 	marketplaceStorePath,
 	sanitizeForDir,
 } from "./locations.js";
@@ -62,8 +64,9 @@ export function defaultMarketplaceRecord(): MarketplaceRecord {
  * here is a maintainer-level trust decision (the human half of the "adding a
  * marketplace is the human trust boundary" rule) — keep this list short and
  * high-trust. Indices are cloned lazily into the marketplace cache on first
- * search and never auto-updated afterwards (plugin sources inside the official
- * index are sha-pinned).
+ * search and refreshed on a TTL thereafter. Refreshing the *index* only changes
+ * what is discoverable; installed plugins are still never auto-updated, and
+ * plugin sources inside the official index are sha-pinned.
  */
 export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string }> = [
 	{ name: "claude-plugins-official", url: "https://github.com/anthropics/claude-plugins-official" },
@@ -74,24 +77,148 @@ export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string 
 ];
 
 /**
- * Clone any well-known marketplace index that is not in the local cache yet.
- * No-op (and no network) when every index is already cached. Returns one error
- * string per marketplace that could not be fetched (offline is non-fatal —
- * search degrades to the marketplaces already available).
+ * How long a cached marketplace index is considered fresh.
+ *
+ * Refreshing an *index* is safe to automate: it changes what is discoverable,
+ * not what is installed. The rule that an installed plugin is never auto-updated
+ * from a remote is untouched — that is the supply-chain boundary, and this is a
+ * catalog listing.
  */
-export async function ensureWellKnownMarketplaces(agentDir: string = getAgentDir()): Promise<string[]> {
+const MARKETPLACE_TTL_MS = 24 * 60 * 60 * 1000;
+
+function marketplaceTtlMs(): number {
+	const raw = Number(process.env.HOOCODE_MARKETPLACE_TTL_MS);
+	return Number.isFinite(raw) && raw >= 0 ? raw : MARKETPLACE_TTL_MS;
+}
+
+type CacheMeta = Record<string, string>;
+
+function readCacheMeta(agentDir: string): CacheMeta {
+	const parsed = readJsonFile<CacheMeta>(marketplaceCacheMetaPath(agentDir));
+	return parsed && typeof parsed === "object" ? parsed : {};
+}
+
+function recordFetch(agentDir: string, url: string): void {
+	const meta = readCacheMeta(agentDir);
+	meta[url] = new Date().toISOString();
+	const file = marketplaceCacheMetaPath(agentDir);
+	mkdirSync(path.dirname(file), { recursive: true });
+	writeFileSync(file, `${JSON.stringify(meta, null, 2)}\n`, "utf8");
+}
+
+function isStale(agentDir: string, url: string): boolean {
+	const ttl = marketplaceTtlMs();
+	if (ttl === 0) return true;
+	const at = readCacheMeta(agentDir)[url];
+	if (!at) return true;
+	const age = Date.now() - Date.parse(at);
+	return !Number.isFinite(age) || age > ttl;
+}
+
+function readJsonFile<T>(file: string): T | null {
+	try {
+		return JSON.parse(readFileSync(file, "utf8")) as T;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Bring an existing clone up to date, falling back to a fresh clone when the pull
+ * cannot fast-forward (a force-pushed remote, or a corrupt cache).
+ *
+ * The re-clone goes to a temp directory and is swapped in only on success. An
+ * earlier version deleted the cache first, which meant a refresh attempted while
+ * offline destroyed a perfectly good index — the opposite of the "offline is
+ * non-fatal" property the caller depends on.
+ */
+async function refreshClone(url: string, dir: string): Promise<{ code: number; stdout: string; stderr: string }> {
+	const pulled = await execGit(["-C", dir, "pull", "--ff-only"]);
+	if (pulled.code === 0) return pulled;
+
+	const staging = mkdtempSync(path.join(os.tmpdir(), "hoo-market-refresh-"));
+	const target = path.join(staging, "clone");
+	const cloned = await cloneGitRepo(url, target);
+	if (cloned.code !== 0) {
+		rmSync(staging, { recursive: true, force: true });
+		return cloned;
+	}
+	rmSync(dir, { recursive: true, force: true });
+	mkdirSync(path.dirname(dir), { recursive: true });
+	try {
+		renameSync(target, dir);
+	} catch {
+		cpSync(target, dir, { recursive: true });
+	}
+	rmSync(staging, { recursive: true, force: true });
+	return cloned;
+}
+
+export interface EnsureMarketplacesOptions {
+	/** Refresh regardless of the TTL. */
+	force?: boolean;
+}
+
+/**
+ * Make sure every well-known marketplace index is cached and reasonably fresh.
+ *
+ * Clones what is missing and pulls what has gone stale. Without the TTL the
+ * indices were fetched exactly once and never again, so a plugin added upstream
+ * stayed permanently invisible — the inherit half of the system quietly stopped
+ * inheriting. Offline is non-fatal: each failure is returned and search degrades
+ * to whatever is already on disk.
+ */
+export async function ensureWellKnownMarketplaces(
+	agentDir: string = getAgentDir(),
+	options: EnsureMarketplacesOptions = {},
+): Promise<string[]> {
 	const errors: string[] = [];
 	for (const wk of WELL_KNOWN_MARKETPLACES) {
 		const dir = marketplaceCacheDir(wk.url, agentDir);
-		if (existsSync(dir)) continue;
+		const present = existsSync(dir);
+		if (present && !options.force && !isStale(agentDir, wk.url)) continue;
+
 		mkdirSync(path.dirname(dir), { recursive: true });
-		const res = await cloneGitRepo(wk.url, dir);
+		const res = present ? await refreshClone(wk.url, dir) : await cloneGitRepo(wk.url, dir);
 		if (res.code !== 0) {
-			rmSync(dir, { recursive: true, force: true });
+			// A failed *refresh* keeps the stale copy: an out-of-date index is far
+			// more useful than none, and the network may simply be down.
+			if (!present) rmSync(dir, { recursive: true, force: true });
 			errors.push(`${wk.name}: ${(res.stderr || res.stdout).trim()}`);
+			continue;
 		}
+		recordFetch(agentDir, wk.url);
 	}
 	return errors;
+}
+
+/**
+ * Refresh every cached index — well-known and user-added — ignoring the TTL.
+ * The explicit half of the freshness story, for when a user knows the upstream
+ * changed and does not want to wait out the interval.
+ */
+export async function refreshMarketplaces(
+	cwd: string,
+	agentDir: string = getAgentDir(),
+): Promise<{ refreshed: string[]; errors: string[] }> {
+	const errors = await ensureWellKnownMarketplaces(agentDir, { force: true });
+	const refreshed = WELL_KNOWN_MARKETPLACES.filter((wk) => existsSync(marketplaceCacheDir(wk.url, agentDir))).map(
+		(wk) => wk.name,
+	);
+
+	// User-added marketplaces are cached the same way when they came from git; a
+	// local-path marketplace is read in place and has nothing to refresh.
+	for (const record of readMarketplaceRecords(cwd, agentDir)) {
+		const isCachedClone = record.dir.startsWith(marketplaceCacheRoot(agentDir));
+		if (!isCachedClone || WELL_KNOWN_MARKETPLACES.some((wk) => wk.url === record.location)) continue;
+		const res = await refreshClone(record.location, record.dir);
+		if (res.code !== 0) errors.push(`${record.location}: ${(res.stderr || res.stdout).trim()}`);
+		else {
+			recordFetch(agentDir, record.location);
+			refreshed.push(record.location);
+		}
+	}
+	return { refreshed, errors };
 }
 
 /**
