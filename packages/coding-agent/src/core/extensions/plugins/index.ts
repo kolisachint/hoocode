@@ -23,6 +23,17 @@ import type { ExtensionAPI, ExtensionFactory } from "../types.js";
 import { installPluginHooks } from "./hooks-bridge.js";
 import { type NormalizedPlugin, parsePluginDir } from "./manifest.js";
 
+/** Extension path a plugin is loaded under: `<plugin:my-tool>`. */
+export function pluginExtensionPath(id: string): string {
+	return `<plugin:${id}>`;
+}
+
+/** Recover the plugin id from {@link pluginExtensionPath}, or undefined for a non-plugin extension. */
+export function pluginIdFromExtensionPath(extensionPath: string): string | undefined {
+	const match = /^<plugin:(.+)>$/.exec(extensionPath);
+	return match?.[1];
+}
+
 /** Substitute ${CLAUDE_PLUGIN_ROOT} / ${AGENTS_PLUGIN_ROOT} with the plugin root in a string. */
 function substituteRoot(value: string, root: string): string {
 	return value.replace(/\$\{(?:CLAUDE|AGENTS)_PLUGIN_ROOT\}/g, root);

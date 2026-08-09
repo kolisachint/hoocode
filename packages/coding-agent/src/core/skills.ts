@@ -428,6 +428,15 @@ export interface LoadSkillsOptions {
 	 * Defaults to true. Set false in tests or when explicit path control is needed.
 	 */
 	includeClaude?: boolean;
+	/**
+	 * Contributed skill directory -> owning plugin id. Skills loaded from such a
+	 * directory are named `<plugin>:<skill>`, matching Claude Code.
+	 *
+	 * Applied here rather than by the caller because the name map below is
+	 * first-wins by name: two plugins shipping a `review` skill would collide and
+	 * lose one *before* any later rename could tell them apart.
+	 */
+	namespaces?: Map<string, string>;
 }
 
 function normalizePath(input: string): string {
@@ -448,7 +457,7 @@ function resolveSkillPath(p: string, cwd: string): string {
  * Returns skills and any validation diagnostics.
  */
 export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
-	const { cwd, agentDir, skillPaths, includeDefaults, includeClaude = true } = options;
+	const { cwd, agentDir, skillPaths, includeDefaults, includeClaude = true, namespaces } = options;
 
 	// Resolve agentDir - if not provided, use default from config
 	const resolvedAgentDir = agentDir ?? getAgentDir();
@@ -520,8 +529,18 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 		return "path";
 	};
 
+	/** Prefix a batch of skills with `namespace:` before they enter the name map. */
+	const addNamespaced = (result: LoadSkillsResult, namespace: string | undefined) => {
+		if (!namespace) return addSkills(result);
+		addSkills({
+			...result,
+			skills: result.skills.map((skill) => ({ ...skill, name: `${namespace}:${skill.name}` })),
+		});
+	};
+
 	for (const rawPath of skillPaths) {
 		const resolvedPath = resolveSkillPath(rawPath, cwd);
+		const namespace = namespaces?.get(rawPath) ?? namespaces?.get(resolvedPath);
 		if (!existsSync(resolvedPath)) {
 			allDiagnostics.push({ type: "warning", message: "skill path does not exist", path: resolvedPath });
 			continue;
@@ -531,11 +550,11 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 			const stats = statSync(resolvedPath);
 			const source = getSource(resolvedPath);
 			if (stats.isDirectory()) {
-				addSkills(loadSkillsFromDirInternal(resolvedPath, source, true));
+				addNamespaced(loadSkillsFromDirInternal(resolvedPath, source, true), namespace);
 			} else if (stats.isFile() && resolvedPath.endsWith(".md")) {
 				const result = loadSkillFromFile(resolvedPath, source);
 				if (result.skill) {
-					addSkills({ skills: [result.skill], diagnostics: result.diagnostics });
+					addNamespaced({ skills: [result.skill], diagnostics: result.diagnostics }, namespace);
 				} else {
 					allDiagnostics.push(...result.diagnostics);
 				}

@@ -155,6 +155,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private lastSkillPaths: string[];
 	private lastAgentPaths: string[];
 	private extensionSkillSourceInfos: Map<string, SourceInfo>;
+	/** Contributed skill dir -> owning plugin id, for `<plugin>:<skill>` namespacing. */
+	private skillNamespaces: Map<string, string>;
 	private extensionPromptSourceInfos: Map<string, SourceInfo>;
 	private extensionThemeSourceInfos: Map<string, SourceInfo>;
 	private lastPromptPaths: string[];
@@ -206,6 +208,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.lastSkillPaths = [];
 		this.lastAgentPaths = [];
 		this.extensionSkillSourceInfos = new Map();
+		this.skillNamespaces = new Map();
 		this.extensionPromptSourceInfos = new Map();
 		this.extensionThemeSourceInfos = new Map();
 		this.lastPromptPaths = [];
@@ -255,6 +258,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	extendResources(paths: ResourceExtensionPaths): void {
 		const skillPaths = this.normalizeExtensionPaths(paths.skillPaths ?? []);
+		for (const entry of skillPaths) {
+			if (entry.metadata.namespace) this.skillNamespaces.set(entry.path, entry.metadata.namespace);
+		}
 		const promptPaths = this.normalizeExtensionPaths(paths.promptPaths ?? []);
 		const themePaths = this.normalizeExtensionPaths(paths.themePaths ?? []);
 
@@ -347,6 +353,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const metadataByPath = new Map<string, PathMetadata>();
 
 		this.extensionSkillSourceInfos = new Map();
+		this.skillNamespaces = new Map();
 		this.extensionPromptSourceInfos = new Map();
 		this.extensionThemeSourceInfos = new Map();
 
@@ -554,7 +561,13 @@ export class DefaultResourceLoader implements ResourceLoader {
 				agentDir: this.agentDir,
 				skillPaths,
 				includeDefaults: false,
+				namespaces: this.skillNamespaces,
 			});
+		}
+		if (metadataByPath) {
+			for (const [dir, metadata] of metadataByPath.entries()) {
+				if (metadata.namespace) this.skillNamespaces.set(dir, metadata.namespace);
+			}
 		}
 		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
 		this.skills = resolvedSkills.skills.map((skill) => ({

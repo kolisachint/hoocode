@@ -29,7 +29,7 @@ import type { ExecOptions } from "../exec.js";
 import { execCommand } from "../exec.js";
 import { clearExtensionMcpServers } from "../extension-mcp-servers.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
-import { buildPluginFactory, discoverPlugins, withheldCapabilities } from "./plugins/index.js";
+import { buildPluginFactory, discoverPlugins, pluginExtensionPath, withheldCapabilities } from "./plugins/index.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -720,7 +720,7 @@ export async function loadPlugins(
 				cwd,
 				eventBus,
 				runtime,
-				`<plugin:${plugin.id}>`,
+				pluginExtensionPath(plugin.id),
 				`plugin:${plugin.id}`,
 			);
 			extensions.push(extension);

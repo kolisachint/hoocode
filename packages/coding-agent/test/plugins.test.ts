@@ -14,11 +14,18 @@ import {
 	emitForPlatforms,
 	getFormat,
 	getFormatByPlatform,
+	isPluginRoot,
 	PLUGIN_FORMATS,
 	parsePluginWithFormats,
 } from "../src/core/extensions/plugins/formats/index.js";
 import type { PluginDraft } from "../src/core/extensions/plugins/formats/types.js";
-import { buildPluginFactory, discoverPlugins, parsePluginDir } from "../src/core/extensions/plugins/index.js";
+import {
+	buildPluginFactory,
+	discoverPlugins,
+	parsePluginDir,
+	withheldCapabilities,
+} from "../src/core/extensions/plugins/index.js";
+import { loadSkills, loadSkillsFromDir } from "../src/core/skills.js";
 
 /** Write a set of emitted files (paths relative to `root`) to disk. */
 function writeEmitted(root: string, files: { path: string; content: string }[]): void {
@@ -580,5 +587,121 @@ describe("plugin MCP servers", () => {
 
 		const entries = getExtensionMcpServers();
 		expect(entries.flatMap((e) => Object.keys(e.mcpServers))).toEqual([]);
+	});
+});
+
+describe("plugin content containment (step 3)", () => {
+	let dir: string;
+
+	beforeEach(() => {
+		dir = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-contain-"));
+	});
+
+	afterEach(() => {
+		fs.rmSync(dir, { recursive: true, force: true });
+	});
+
+	function writeSkill(file: string, name: string): void {
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.writeFileSync(file, `---\nname: ${name}\ndescription: does ${name} things\n---\n\nBody.\n`, "utf8");
+	}
+
+	it("isPluginRoot recognizes every format, and ignores a plain skill dir", () => {
+		const plain = path.join(dir, "plain");
+		writeSkill(path.join(plain, "SKILL.md"), "plain");
+		expect(isPluginRoot(plain)).toBe(false);
+
+		const asPlugin = path.join(dir, "as-plugin");
+		writeJson(path.join(asPlugin, ".claude-plugin", "plugin.json"), { name: "as-plugin" });
+		expect(isPluginRoot(asPlugin)).toBe(true);
+	});
+
+	it("the plain-skill scan does not descend into a plugin root", () => {
+		// A skills directory holding both a plain skill and a skills-dir plugin,
+		// which is exactly what ~/.claude/skills/ looks like in practice.
+		writeSkill(path.join(dir, "loose", "SKILL.md"), "loose");
+		const plugin = path.join(dir, "my-tool");
+		writeJson(path.join(plugin, ".claude-plugin", "plugin.json"), { name: "my-tool" });
+		writeSkill(path.join(plugin, "skills", "inner", "SKILL.md"), "inner");
+
+		const { skills } = loadSkillsFromDir({ dir, source: "test" });
+		const names = skills.map((s) => s.name).sort();
+		expect(names).toEqual(["loose"]);
+		// `inner` belongs to the plugin and is contributed through the plugin
+		// loader instead — it must not also appear as a loose top-level skill.
+		expect(names).not.toContain("inner");
+	});
+
+	it("namespaces plugin skills so two plugins shipping the same name both survive", () => {
+		const a = path.join(dir, "a", "skills");
+		const b = path.join(dir, "b", "skills");
+		writeSkill(path.join(a, "review", "SKILL.md"), "review");
+		writeSkill(path.join(b, "review", "SKILL.md"), "review");
+
+		const { skills } = loadSkills({
+			cwd: dir,
+			agentDir: path.join(dir, "agentdir"),
+			skillPaths: [a, b],
+			includeDefaults: false,
+			includeClaude: false,
+			namespaces: new Map([
+				[a, "alpha"],
+				[b, "beta"],
+			]),
+		});
+		expect(skills.map((s) => s.name).sort()).toEqual(["alpha:review", "beta:review"]);
+	});
+
+	it("leaves non-plugin skill paths unnamespaced", () => {
+		const plain = path.join(dir, "plain");
+		writeSkill(path.join(plain, "solo", "SKILL.md"), "solo");
+		const { skills } = loadSkills({
+			cwd: dir,
+			agentDir: path.join(dir, "agentdir"),
+			skillPaths: [plain],
+			includeDefaults: false,
+			includeClaude: false,
+		});
+		expect(skills.map((s) => s.name)).toEqual(["solo"]);
+	});
+
+	it("withholds hooks and mcp servers from a project-scoped plugin", () => {
+		const root = path.join(dir, "proj");
+		writeJson(path.join(root, ".agents-plugin", "plugin.json"), {
+			name: "proj",
+			mcpServers: { thing: { command: "run-thing" } },
+		});
+		writeJson(path.join(root, "hooks", "hooks.json"), {
+			hooks: { PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "echo hi" }] }] },
+		});
+		const plugin = parsePluginDir(root);
+		expect(plugin).not.toBeNull();
+		if (!plugin) return;
+
+		expect(withheldCapabilities(plugin).sort()).toEqual(["hooks", "mcp servers"]);
+
+		// The hooks bridge wires itself through pi.on(...), and MCP servers go to
+		// the module-level extension registry — so record both, and compare the
+		// gated run against the ungated one. Asserting only "nothing registered"
+		// would pass even if the gate did nothing.
+		const run = (passiveOnly: boolean) => {
+			clearExtensionMcpServers();
+			const events: string[] = [];
+			const pi = {
+				on: (event: string) => events.push(event),
+				registerProvider: () => {},
+			} as never;
+			buildPluginFactory(plugin, { passiveOnly })(pi);
+			return { events, mcp: getExtensionMcpServers().map((e) => e.source) };
+		};
+
+		const ungated = run(false);
+		expect(ungated.events).toContain("tool_call");
+		expect(ungated.mcp).toContain("proj");
+
+		const gated = run(true);
+		expect(gated.events).not.toContain("tool_call");
+		expect(gated.mcp).toEqual([]);
+		clearExtensionMcpServers();
 	});
 });
