@@ -2,7 +2,9 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import { classifyAllowlist } from "../src/core/extensions/plugins/authoring.js";
+import { productionPluginDir } from "../src/core/extensions/plugins/locations.js";
 import { parsePluginDir } from "../src/core/extensions/plugins/manifest.js";
 import {
 	createProposePluginToolDefinition,
@@ -38,6 +40,27 @@ function makeCtx(cwd: string, opts: { hasUI?: boolean; confirm?: boolean } = {})
 	return { ctx, notifications, activations };
 }
 
+/**
+ * Authored plugins land in a global production home, so redirect the whole home
+ * root into a temp dir — these tests must never write into a real ~/.claude.
+ * Returns the resolved production directory for an id.
+ */
+function useTempHome(): (id: string) => string {
+	let prior: string | undefined;
+	let home = "";
+	beforeEach(() => {
+		home = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-home-"));
+		prior = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = path.join(home, ".hoocode");
+	});
+	afterEach(() => {
+		if (prior === undefined) delete process.env[ENV_AGENT_DIR];
+		else process.env[ENV_AGENT_DIR] = prior;
+		fs.rmSync(home, { recursive: true, force: true });
+	});
+	return (id: string) => productionPluginDir("claude", id);
+}
+
 describe("allowlist classification", () => {
 	it("treats read-only grants as low risk", () => {
 		expect(classifyAllowlist("read, grep, glob").risk).toBe("read-only");
@@ -61,6 +84,7 @@ describe("allowlist classification", () => {
 
 describe("ProposePlugin (scaffold path)", () => {
 	let cwd: string;
+	const homeDir = useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-author-"));
@@ -87,7 +111,7 @@ describe("ProposePlugin (scaffold path)", () => {
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(true);
 
-		const dest = path.join(cwd, ".agents", "plugins", "myhelper");
+		const dest = homeDir("myhelper");
 		// A plugin is a distribution unit, so production targets a platform
 		// ecosystem — claude by default, never the native `agents` layout, which
 		// belongs to no marketplace. See docs/plugin-system-architecture.md §1.
@@ -114,7 +138,7 @@ describe("ProposePlugin (scaffold path)", () => {
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
 		expect((res.content[0] as { text: string }).text).toContain("human confirmation");
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "bad"))).toBe(false);
+		expect(fs.existsSync(homeDir("bad"))).toBe(false);
 	});
 
 	it("authors a mixed skill + mutating subagent in one call once confirmed", async () => {
@@ -133,7 +157,7 @@ describe("ProposePlugin (scaffold path)", () => {
 		);
 		expect((res.details as { authored: boolean; confirmed: boolean }).authored).toBe(true);
 		expect((res.details as { confirmed: boolean }).confirmed).toBe(true);
-		const dest = path.join(cwd, ".agents", "plugins", "mixed");
+		const dest = homeDir("mixed");
 		expect(fs.existsSync(path.join(dest, "skills", "assist", "SKILL.md"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, "agents", "worker.md"))).toBe(true);
 	});
@@ -150,12 +174,13 @@ describe("ProposePlugin (scaffold path)", () => {
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
 		expect((res.content[0] as { text: string }).text).toContain("capability-acquisition");
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "evil"))).toBe(false);
+		expect(fs.existsSync(homeDir("evil"))).toBe(false);
 	});
 });
 
 describe("ProposePlugin (executable path — computed risk gate)", () => {
 	let cwd: string;
+	const homeDir = useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-author-exec-"));
@@ -176,7 +201,7 @@ describe("ProposePlugin (executable path — computed risk gate)", () => {
 			ctx,
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "hooky"))).toBe(false);
+		expect(fs.existsSync(homeDir("hooky"))).toBe(false);
 	});
 
 	it("does not author when the human declines", async () => {
@@ -190,7 +215,7 @@ describe("ProposePlugin (executable path — computed risk gate)", () => {
 			ctx,
 		);
 		expect((res.details as { authored: boolean; confirmed: boolean }).confirmed).toBe(false);
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "mcpy"))).toBe(false);
+		expect(fs.existsSync(homeDir("mcpy"))).toBe(false);
 	});
 
 	it("authors a hook + MCP plugin once confirmed, and round-trips", async () => {
@@ -209,7 +234,7 @@ describe("ProposePlugin (executable path — computed risk gate)", () => {
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(true);
 
-		const dest = path.join(cwd, ".agents", "plugins", "power");
+		const dest = homeDir("power");
 		const parsed = parsePluginDir(dest);
 		expect(parsed?.hooks?.PreToolUse).toHaveLength(1);
 		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
@@ -240,7 +265,7 @@ describe("ProposePlugin (executable path — computed risk gate)", () => {
 			ctx,
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "sneaky"))).toBe(false);
+		expect(fs.existsSync(homeDir("sneaky"))).toBe(false);
 	});
 
 	it("rejects an empty draft (no capabilities at all)", async () => {
@@ -249,14 +274,14 @@ describe("ProposePlugin (executable path — computed risk gate)", () => {
 		const res = await tool.execute("1", { id: "hollow", description: "nothing inside" }, undefined, undefined, ctx);
 		expect((res.details as { authored: boolean }).authored).toBe(false);
 		expect((res.content[0] as { text: string }).text).toContain("Nothing to author");
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "hollow"))).toBe(false);
+		expect(fs.existsSync(homeDir("hollow"))).toBe(false);
 	});
 
 	it("stamps the authored provenance marker", async () => {
 		const { ctx } = makeCtx(cwd);
 		const tool = createProposePluginToolDefinition();
 		await tool.execute("1", { id: "marked", commands: [{ name: "go", body: "Go." }] }, undefined, undefined, ctx);
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "marked", ".authored.json"))).toBe(true);
+		expect(fs.existsSync(path.join(homeDir("marked"), ".authored.json"))).toBe(true);
 	});
 
 	it("refuses to author over an existing plugin (points at UpdatePlugin)", async () => {
@@ -277,6 +302,7 @@ describe("ProposePlugin (executable path — computed risk gate)", () => {
 
 describe("UpdatePlugin (merge into an existing local plugin)", () => {
 	let cwd: string;
+	const homeDir = useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-update-"));
@@ -302,7 +328,7 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 
 	it("refuses a plugin without the authored marker (e.g. a marketplace install)", async () => {
 		// Simulate a marketplace install: a valid plugin dir with no .authored.json.
-		const dest = path.join(cwd, ".agents", "plugins", "thirdparty");
+		const dest = homeDir("thirdparty");
 		fs.mkdirSync(path.join(dest, ".claude-plugin"), { recursive: true });
 		fs.writeFileSync(
 			path.join(dest, ".claude-plugin", "plugin.json"),
@@ -345,7 +371,7 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(true);
 
-		const dest = path.join(cwd, ".agents", "plugins", "grow");
+		const dest = homeDir("grow");
 		// Both the original and the added skill are present.
 		expect(fs.existsSync(path.join(dest, "skills", "first", "SKILL.md"))).toBe(true);
 		expect(fs.existsSync(path.join(dest, "skills", "second", "SKILL.md"))).toBe(true);
@@ -374,7 +400,7 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 		// Both hooks fire: hooks have no identity, so a changed command is a new
 		// hook. Changing this to replacement-by-event/matcher would silently drop
 		// legitimate sibling hooks — see mergePluginDraft's doc comment first.
-		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "hookdup"));
+		const parsed = parsePluginDir(homeDir("hookdup"));
 		const commands = (parsed?.hooks?.PreToolUse ?? []).flatMap((g) => g.hooks.map((h) => h.command));
 		expect(commands.sort()).toEqual(["echo new", "echo old"]);
 	});
@@ -399,7 +425,7 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 			ctx,
 		);
 
-		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "hookgrow"));
+		const parsed = parsePluginDir(homeDir("hookgrow"));
 		expect(parsed?.hooks?.PreToolUse).toHaveLength(1);
 		expect(parsed?.hooks?.PostToolUse).toHaveLength(1);
 	});
@@ -427,7 +453,7 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 			noUi.ctx,
 		);
 		expect((res.details as { authored: boolean }).authored).toBe(true);
-		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "exec"));
+		const parsed = parsePluginDir(homeDir("exec"));
 		// The original MCP server survived the merge.
 		expect(parsed?.mcpServers).toMatchObject({ svc: { command: "svc-bin" } });
 	});
@@ -435,6 +461,7 @@ describe("UpdatePlugin (merge into an existing local plugin)", () => {
 
 describe("RemovePluginCapability (subtract from an authored plugin)", () => {
 	let cwd: string;
+	const homeDir = useTempHome();
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-remove-"));
@@ -465,7 +492,7 @@ describe("RemovePluginCapability (subtract from an authored plugin)", () => {
 		const res = await remove.execute("2", { id: "trim", skills: ["drop"] }, undefined, undefined, ctx);
 		expect((res.details as { removed: string[] }).removed).toEqual(['skill "drop"']);
 
-		const dest = path.join(cwd, ".agents", "plugins", "trim");
+		const dest = homeDir("trim");
 		expect(fs.existsSync(path.join(dest, "skills", "drop"))).toBe(false);
 		expect(fs.existsSync(path.join(dest, "skills", "keep", "SKILL.md"))).toBe(true);
 	});
@@ -495,7 +522,7 @@ describe("RemovePluginCapability (subtract from an authored plugin)", () => {
 			undefined,
 			ctx,
 		);
-		const dest = path.join(cwd, ".agents", "plugins", "dehook");
+		const dest = homeDir("dehook");
 		let parsed = parsePluginDir(dest);
 		const commands = (parsed?.hooks?.PreToolUse ?? []).flatMap((g) => g.hooks.map((h) => h.command));
 		expect(commands).toEqual(["echo b"]);
@@ -527,7 +554,7 @@ describe("RemovePluginCapability (subtract from an authored plugin)", () => {
 
 		const remove = createRemovePluginCapabilityToolDefinition();
 		await remove.execute("2", { id: "demcp", mcpServers: ["drop"] }, undefined, undefined, ctx);
-		const dest = path.join(cwd, ".agents", "plugins", "demcp");
+		const dest = homeDir("demcp");
 		let parsed = parsePluginDir(dest);
 		expect(parsed?.mcpServers).toMatchObject({ keep: { command: "keep-bin" } });
 		expect(parsed?.mcpServers?.drop).toBeUndefined();
@@ -566,7 +593,7 @@ describe("RemovePluginCapability (subtract from an authored plugin)", () => {
 			ctx,
 		);
 
-		const parsed = parsePluginDir(path.join(cwd, ".agents", "plugins", "rehook"));
+		const parsed = parsePluginDir(homeDir("rehook"));
 		const commands = (parsed?.hooks?.PreToolUse ?? []).flatMap((g) => g.hooks.map((h) => h.command));
 		// Exactly the new hook — no duplicate, no leftover.
 		expect(commands).toEqual(["echo new"]);
@@ -581,11 +608,11 @@ describe("RemovePluginCapability (subtract from an authored plugin)", () => {
 		const res = await remove.execute("2", { id: "misses", skills: ["ghost"] }, undefined, undefined, ctx);
 		expect((res.details as { removed: string[]; missing: string[] }).removed).toEqual([]);
 		expect((res.details as { missing: string[] }).missing).toEqual(['skill "ghost"']);
-		expect(fs.existsSync(path.join(cwd, ".agents", "plugins", "misses", "commands", "go.md"))).toBe(true);
+		expect(fs.existsSync(path.join(homeDir("misses"), "commands", "go.md"))).toBe(true);
 	});
 
 	it("refuses a plugin without the authored marker", async () => {
-		const dest = path.join(cwd, ".agents", "plugins", "thirdparty");
+		const dest = homeDir("thirdparty");
 		fs.mkdirSync(path.join(dest, ".claude-plugin"), { recursive: true });
 		fs.writeFileSync(path.join(dest, ".claude-plugin", "plugin.json"), `${JSON.stringify({ name: "thirdparty" })}\n`);
 
