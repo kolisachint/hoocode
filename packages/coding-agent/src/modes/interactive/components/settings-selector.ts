@@ -13,7 +13,7 @@ import {
 	Text,
 } from "@kolisachint/hoocode-tui";
 import type { WarningSettings } from "../../../core/settings-manager.js";
-import { getSelectListTheme, getSettingsListTheme, theme } from "../theme/theme.js";
+import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyDisplayText } from "./keybinding-hints.js";
 
@@ -661,6 +661,7 @@ export class SettingsSelectorComponent extends Container {
 						config.availableThemes.map((t) => ({
 							value: t,
 							label: t,
+							description: getThemeDescription(t),
 						})),
 						currentValue,
 						(value) => {
