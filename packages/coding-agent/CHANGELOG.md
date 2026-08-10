@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Six built-in themes for low vision**, three light and three dark:
+  `high-contrast-dark` / `high-contrast-light` (maximum contrast),
+  `warm-dark` / `warm-light` (low-glare warm palettes), and
+  `colorsafe-dark` / `colorsafe-light` (Okabe-Ito hues, no red/green pairs).
+  Every token in all six clears WCAG AAA (7:1) against every surface the TUI
+  paints — page, selected row, user message, and the three tool-box states —
+  and none of them fall back to the terminal's default foreground, so contrast
+  does not depend on the terminal's own palette. `test/theme-contrast.test.ts`
+  enforces the floor.
+- Themes may declare an optional `description`, shown next to the name in the
+  `/settings` theme picker. All built-in themes now carry one.
+- `test/test-theme-colors.ts theme <name>` previews any theme by name, not just
+  `light` and `dark`.
+
+### Changed
+
+- Built-in themes are discovered by scanning the shipped theme directory instead
+  of loading `dark.json` and `light.json` by name, and are validated against the
+  theme schema on load.
+
+### Fixed
+
+- HTML export picked its fallback text color by checking whether the theme was
+  literally named `light`, so any other light-background theme exported dark text
+  on a light card. It now derives the choice from the theme's own background
+  luminance.
+- The theme file watcher treated only `dark` and `light` as built-in, so it would
+  try to watch the custom-themes directory for any other shipped theme.
+
 ## [0.5.4] - 2026-08-09
 
 ## [0.5.3] - 2026-08-09

@@ -23,6 +23,7 @@ type ColorValue = Static<typeof ColorValueSchema>;
 const ThemeJsonSchema = Type.Object({
 	$schema: Type.Optional(Type.String()),
 	name: Type.String(),
+	description: Type.Optional(Type.String()),
 	vars: Type.Optional(Type.Record(Type.String(), ColorValueSchema)),
 	colors: Type.Object({
 		// Core UI (10 colors)
@@ -507,17 +508,29 @@ export class Theme {
 
 let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;
 
+/** Files in the built-in theme directory that are not themes. */
+const NON_THEME_FILES = new Set(["theme-schema.json"]);
+
 function getBuiltinThemes(): Record<string, ThemeJson> {
 	if (!BUILTIN_THEMES) {
+		// Every *.json in the shipped theme directory is a built-in, so adding a
+		// theme is a matter of dropping the file in (both build steps copy the
+		// whole directory). `dark` and `light` are still the detection defaults.
 		const themesDir = getThemesDir();
-		const darkPath = path.join(themesDir, "dark.json");
-		const lightPath = path.join(themesDir, "light.json");
-		BUILTIN_THEMES = {
-			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
-			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
-		};
+		const themes: Record<string, ThemeJson> = {};
+		for (const file of fs.readdirSync(themesDir).sort()) {
+			if (!file.endsWith(".json") || NON_THEME_FILES.has(file)) continue;
+			const name = file.slice(0, -5);
+			themes[name] = parseThemeJsonContent(file, fs.readFileSync(path.join(themesDir, file), "utf-8"));
+		}
+		BUILTIN_THEMES = themes;
 	}
 	return BUILTIN_THEMES;
+}
+
+/** True for themes shipped with the package, which live outside the custom themes dir. */
+function isBuiltinTheme(name: string): boolean {
+	return name in getBuiltinThemes();
 }
 
 export function getAvailableThemes(): string[] {
@@ -535,6 +548,19 @@ export function getAvailableThemes(): string[] {
 		themes.add(name);
 	}
 	return Array.from(themes).sort();
+}
+
+/**
+ * One-line description from a theme file, shown next to the name in the theme
+ * picker. Undefined for themes that don't declare one, and for themes
+ * registered as instances by extensions.
+ */
+export function getThemeDescription(name: string): string | undefined {
+	try {
+		return loadThemeJson(name).description;
+	} catch {
+		return undefined;
+	}
 }
 
 export interface ThemeInfo {
@@ -811,7 +837,7 @@ function startThemeWatcher(): void {
 	stopThemeWatcher();
 
 	// Only watch if it's a custom theme (not built-in)
-	if (!currentThemeName || currentThemeName === "dark" || currentThemeName === "light") {
+	if (!currentThemeName || isBuiltinTheme(currentThemeName)) {
 		return;
 	}
 
@@ -939,15 +965,50 @@ function ansi256ToHex(index: number): string {
 	return `#${grayHex}${grayHex}${grayHex}`;
 }
 
+/** WCAG relative luminance (0-1) of a resolved color, or undefined if unparseable. */
+function relativeLuminance(color: string | number): number | undefined {
+	const hex = typeof color === "number" ? ansi256ToHex(color) : color;
+	if (!hex.startsWith("#")) return undefined;
+	let rgb: { r: number; g: number; b: number };
+	try {
+		rgb = hexToRgb(hex);
+	} catch {
+		return undefined;
+	}
+	const toLinear = (c: number) => {
+		const s = c / 255;
+		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	};
+	return 0.2126 * toLinear(rgb.r) + 0.7152 * toLinear(rgb.g) + 0.0722 * toLinear(rgb.b);
+}
+
+/**
+ * Whether a theme sits on a light backdrop, judged by its own colors rather
+ * than its name — `light` is no longer the only light-background theme.
+ */
+function hasLightBackdrop(themeJson: ThemeJson, resolved: Record<string, string | number>): boolean {
+	const pageBg = themeJson.export?.pageBg;
+	const candidates = [
+		pageBg === undefined ? undefined : resolveVarRefs(pageBg, themeJson.vars ?? {}),
+		resolved.userMessageBg,
+	];
+	for (const candidate of candidates) {
+		if (candidate === undefined || candidate === "") continue;
+		const luminance = relativeLuminance(candidate);
+		if (luminance !== undefined) return luminance > 0.5;
+	}
+	return false;
+}
+
 /**
  * Get resolved theme colors as CSS-compatible hex strings.
  * Used by HTML export to generate CSS custom properties.
  */
 export function getResolvedThemeColors(themeName?: string): Record<string, string> {
 	const name = themeName ?? currentThemeName ?? getDefaultTheme();
-	const isLight = name === "light";
 	const themeJson = loadThemeJson(name);
 	const resolved = resolveThemeColors(themeJson.colors, themeJson.vars);
+	const isLight = hasLightBackdrop(themeJson, resolved);
 
 	// Default text color for empty values (terminal uses default fg color)
 	const defaultText = isLight ? "#000000" : "#e5e5e7";

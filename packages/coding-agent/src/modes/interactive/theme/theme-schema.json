@@ -16,6 +16,10 @@
 			"type": "string",
 			"description": "Theme name"
 		},
+		"description": {
+			"type": "string",
+			"description": "One-line summary shown next to the name in the theme picker"
+		},
 		"vars": {
 			"type": "object",
 			"description": "Reusable color variables",

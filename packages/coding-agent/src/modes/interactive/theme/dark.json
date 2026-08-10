@@ -1,6 +1,7 @@
 {
 	"$schema": "https://raw.githubusercontent.com/kolisachint/hoocode/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
 	"name": "dark",
+	"description": "Default dark theme",
 	"vars": {
 		"cyan": "#00d7ff",
 		"blue": "#5f87ff",

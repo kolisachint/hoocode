@@ -7,6 +7,7 @@ Themes are JSON files that define colors for the TUI.
 ## Table of Contents
 
 - [Locations](#locations)
+- [Built-in Themes](#built-in-themes)
 - [Selecting a Theme](#selecting-a-theme)
 - [Creating a Custom Theme](#creating-a-custom-theme)
 - [Theme Format](#theme-format)
@@ -18,7 +19,7 @@ Themes are JSON files that define colors for the TUI.
 
 HooCode loads themes from:
 
-- Built-in: `dark`, `light`
+- Built-in: every `*.json` in the shipped theme directory (see [Built-in Themes](#built-in-themes))
 - Global: `~/.hoocode/agent/themes/*.json`
 - Project: `.hoocode/themes/*.json`
 - Packages: `themes/` directories or `pi.themes` entries in `package.json`
@@ -26,6 +27,39 @@ HooCode loads themes from:
 - CLI: `--theme <path>` (repeatable)
 
 Disable discovery with `--no-themes`.
+
+## Built-in Themes
+
+| Theme | Background | Notes |
+|-------|------------|-------|
+| `dark` | dark | Default dark theme |
+| `light` | light | Default light theme |
+| `high-contrast-dark` | black | Maximum contrast, bright saturated hues |
+| `high-contrast-light` | white | Maximum contrast, deep saturated hues |
+| `warm-dark` | warm near-black | Low-glare amber/sand palette, no harsh blues |
+| `warm-light` | warm paper | Dark ink on cream, less glare than pure white |
+| `colorsafe-dark` | dark | Okabe-Ito hues, no red/green pairs |
+| `colorsafe-light` | white | Okabe-Ito hues, no red/green pairs |
+
+The six themes after `dark`/`light` are built for low vision. Every color they
+draw clears **WCAG AAA (7:1)** against every surface the TUI paints behind it —
+the page, selected rows, user messages, and all three tool-box states — and none
+of them defer to the terminal's default foreground, so contrast does not depend
+on your terminal's own palette. `test/theme-contrast.test.ts` enforces this, so
+a future edit cannot quietly wash one of them out.
+
+Picking between them:
+
+- **Contrast above all** → `high-contrast-dark` / `high-contrast-light`.
+- **Bright screens hurt, or you read for long stretches** → `warm-dark` /
+  `warm-light`. Same 7:1 floor, warmer and less glaring.
+- **Red/green are hard to tell apart** → `colorsafe-dark` / `colorsafe-light`.
+  Success and error are teal and orange, and no pair of tokens relies on a
+  red-versus-green distinction.
+
+Set the matching terminal background for the theme you pick (black-ish for the
+dark themes, white-ish for the light ones) — hoocode colors the text, but the
+canvas behind it belongs to your terminal.
 
 ## Selecting a Theme
 
@@ -124,6 +158,7 @@ vim ~/.hoocode/agent/themes/my-theme.json
 {
   "$schema": "https://raw.githubusercontent.com/kolisachint/hoocode/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
   "name": "my-theme",
+  "description": "One line shown next to the name in the theme picker",
   "vars": {
     "blue": "#0066cc",
     "gray": 242
@@ -138,6 +173,7 @@ vim ~/.hoocode/agent/themes/my-theme.json
 ```
 
 - `name` is required and must be unique.
+- `description` is optional. `/settings` shows it beside the theme name.
 - `vars` is optional. Define reusable colors here, then reference them in `colors`.
 - `colors` must define all 51 required tokens.
 
@@ -280,7 +316,14 @@ echo $COLORTERM  # Should output "truecolor" or "24bit"
 
 **Dark terminals:** Use bright, saturated colors with higher contrast.
 
-**Light terminals:** Use darker, muted colors with lower contrast.
+**Light terminals:** Use dark, saturated colors. Muting them costs contrast; if
+you want a softer look, warm the background rather than lightening the text.
+
+**Contrast:** Aim for 4.5:1 against your terminal background, or 7:1 if the
+theme has to stay readable for low vision. Check every token against the
+selected-row and tool-box backgrounds too, not just the page — those are where
+themes usually lose contrast. `test/theme-contrast.test.ts` shows how the
+built-in accessible themes are verified.
 
 **Color harmony:** Start with a base palette (Nord, Gruvbox, Tokyo Night), define it in `vars`, and reference consistently.
 
@@ -293,3 +336,15 @@ echo $COLORTERM  # Should output "truecolor" or "24bit"
 See the built-in themes:
 - [dark.json](../src/modes/interactive/theme/dark.json)
 - [light.json](../src/modes/interactive/theme/light.json)
+- [high-contrast-dark.json](../src/modes/interactive/theme/high-contrast-dark.json)
+- [high-contrast-light.json](../src/modes/interactive/theme/high-contrast-light.json)
+- [warm-dark.json](../src/modes/interactive/theme/warm-dark.json)
+- [warm-light.json](../src/modes/interactive/theme/warm-light.json)
+- [colorsafe-dark.json](../src/modes/interactive/theme/colorsafe-dark.json)
+- [colorsafe-light.json](../src/modes/interactive/theme/colorsafe-light.json)
+
+Preview any of them, with per-token contrast ratios:
+
+```bash
+npx tsx test/test-theme-colors.ts theme warm-dark
+```
