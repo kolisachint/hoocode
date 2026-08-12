@@ -105,19 +105,34 @@ export function marketplaceCacheMetaPath(agentDir: string = getAgentDir()): stri
 }
 
 /**
+ * The parent directories hoocode owns and may therefore remove a plugin from:
+ * the two production homes, the consumption home, and the legacy project homes
+ * older versions installed into.
+ *
+ * Deliberately excludes `<cwd>/.claude/skills` and `<cwd>/.agents/skills`. Those
+ * are discovered (loader.ts `defaultPluginDirs`) but are repository content a
+ * team committed, so uninstall must not delete out of them — hoocode installed
+ * nothing there.
+ */
+export function pluginHomeRoots(cwd: string, agentDir: string = getAgentDir()): string[] {
+	return [
+		productionRoot("claude", agentDir),
+		productionRoot("github", agentDir),
+		consumptionPluginsDir(agentDir),
+		legacyProjectPluginsDir(cwd),
+		path.join(cwd, ".hoocode", "plugins"),
+	];
+}
+
+/**
  * Every directory a plugin with `id` could occupy, in the order a lookup should
  * try them: the platform production homes, then the consumption home, then the
- * legacy project home. Used to find an existing plugin without knowing which
+ * legacy project homes. Used to find an existing plugin without knowing which
  * role wrote it.
  */
 export function candidatePluginDirs(cwd: string, id: string, agentDir: string = getAgentDir()): string[] {
 	const slug = sanitizeForDir(id);
-	return [
-		productionPluginDir("claude", id, agentDir),
-		productionPluginDir("github", id, agentDir),
-		path.join(consumptionPluginsDir(agentDir), slug),
-		path.join(legacyProjectPluginsDir(cwd), slug),
-	];
+	return pluginHomeRoots(cwd, agentDir).map((root) => path.join(root, slug));
 }
 
 /**

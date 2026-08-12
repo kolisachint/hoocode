@@ -28,6 +28,7 @@ import {
 	marketplaceCacheMetaPath,
 	marketplaceCacheRoot,
 	marketplaceStorePath,
+	pluginHomeRoots,
 	sanitizeForDir,
 } from "./locations.js";
 import type { NormalizedPlugin } from "./manifest.js";
@@ -304,9 +305,19 @@ export function listInstalledPlugins(cwd: string, agentDir: string = getAgentDir
 	return discoverPlugins(defaultPluginDirs(cwd, agentDir));
 }
 
-/** Whether a plugin with `name` (by id) is already installed. */
+/**
+ * Whether `name` is already installed, by either name it can go by.
+ *
+ * A marketplace entry name and the plugin's own manifest `name` are allowed to
+ * differ — both vendors say so outright — and installs land in a directory named
+ * for the *entry*, while discovery reports the *manifest* id. Matching ids alone
+ * meant a plugin installed as `42crunch-api-security-testing` (manifest id
+ * `api-security-testing`) never counted as installed, so every InstallPlugin
+ * call for the catalog name re-cloned it.
+ */
 export function isPluginInstalled(cwd: string, name: string, agentDir: string = getAgentDir()): boolean {
-	return listInstalledPlugins(cwd, agentDir).some((p) => p.id === name);
+	if (listInstalledPlugins(cwd, agentDir).some((p) => p.id === name)) return true;
+	return candidatePluginDirs(cwd, name, agentDir).some((p) => existsSync(p));
 }
 
 function execGit(args: string[]): Promise<{ code: number; stdout: string; stderr: string }> {
@@ -326,10 +337,56 @@ function execGit(args: string[]): Promise<{ code: number; stdout: string; stderr
 }
 
 /**
- * Clone a git repository into `dest`.
- * If `ref` is provided, does a shallow clone of that branch/tag.
- * If only `sha` is provided, does a full clone and checks out the commit.
- * Returns the clone result; on failure `dest` may be partially created.
+ * Materialize exactly `sha` at `dest`, without cloning the repository's history.
+ *
+ * `git fetch --depth 1 <sha>` is what makes honoring a pin affordable: a pinned
+ * commit is usually not the tip of any branch, so the alternative is a full
+ * clone — 55s on a large plugin repo against ~1s here, on sources where two
+ * thirds of the official Claude marketplace is pinned. Servers that refuse a
+ * by-sha fetch (AWS CodeCommit and other non-GitHub hosts) fall back to a clone
+ * deep enough to reach the commit, then check it out.
+ */
+async function fetchGitCommit(
+	url: string,
+	dest: string,
+	sha: string,
+	ref?: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
+	mkdirSync(dest, { recursive: true });
+	const init = await execGit(["init", "--quiet", dest]);
+	if (init.code === 0) {
+		const remote = await execGit(["-C", dest, "remote", "add", "origin", url]);
+		if (remote.code === 0) {
+			const fetched = await execGit(["-C", dest, "fetch", "--quiet", "--depth", "1", "origin", sha]);
+			if (fetched.code === 0) {
+				const checkout = await execGit(["-C", dest, "checkout", "--quiet", "FETCH_HEAD"]);
+				if (checkout.code === 0) return checkout;
+			}
+		}
+	}
+
+	// Fallback: a full clone (shallow cannot reach an arbitrary commit), then the
+	// pin. `ref` narrows it when the entry named one.
+	rmSync(dest, { recursive: true, force: true });
+	const cloned = ref
+		? await execGit(["clone", "--branch", ref, "--", url, dest])
+		: await execGit(["clone", "--", url, dest]);
+	if (cloned.code !== 0) return cloned;
+	return execGit(["-C", dest, "checkout", "--quiet", sha]);
+}
+
+/**
+ * Clone a git repository into `dest` at the requested pin.
+ *
+ * **`sha` outranks `ref`.** Both vendors define it that way ("when both `ref`
+ * and `sha` are set, the `sha` is the effective pin"), and a marketplace that
+ * ships both is stating the exact commit it vouches for — a tag can be moved or
+ * re-pointed after the catalog pinned it, so preferring `ref` installed a
+ * different commit than the index promised. It is not hypothetical: the official
+ * catalog's `42crunch-api-security-testing` pins `30287f5` while its `v1.5.5`
+ * tag now resolves to `faf5305`.
+ *
+ * Returns the git result; on failure `dest` may be partially created.
  */
 async function cloneGitRepo(
 	url: string,
@@ -337,14 +394,8 @@ async function cloneGitRepo(
 	ref?: string,
 	sha?: string,
 ): Promise<{ code: number; stdout: string; stderr: string }> {
-	if (ref) {
-		return execGit(["clone", "--branch", ref, "--depth", "1", "--", url, dest]);
-	}
-	if (sha) {
-		const cloneRes = await execGit(["clone", "--", url, dest]);
-		if (cloneRes.code !== 0) return cloneRes;
-		return execGit(["-C", dest, "checkout", "--quiet", sha]);
-	}
+	if (sha) return fetchGitCommit(url, dest, sha, ref);
+	if (ref) return execGit(["clone", "--branch", ref, "--depth", "1", "--", url, dest]);
 	return execGit(["clone", "--depth", "1", "--", url, dest]);
 }
 
@@ -380,10 +431,29 @@ export interface InstallOutcome {
 	installed: boolean;
 	/** Install destination directory (when installed). */
 	dest?: string;
+	/**
+	 * The plugin's own manifest id, when it differs from the marketplace entry
+	 * name it was installed by. This is the id `ListPlugins` reports, so the
+	 * caller can name both rather than leaving the model to reconcile them.
+	 */
+	id?: string;
 	/** Platforms the installed plugin supports (read back from disk). */
 	supportPlatform?: MarketplacePlatform[];
 	/** Human-readable summary suitable for a tool result or notification. */
 	message: string;
+}
+
+/** Capability surfaces hoocode can actually load out of an installed plugin. */
+function loadableCapabilities(plugin: NormalizedPlugin): string[] {
+	return [
+		plugin.skillsDir && "skills",
+		plugin.commandsDir && "commands",
+		plugin.agentsDir && "subagents",
+		plugin.themesDir && "themes",
+		plugin.hooks && "hooks",
+		plugin.mcpServers && Object.keys(plugin.mcpServers).length > 0 && "MCP servers",
+		plugin.providers?.length && "providers",
+	].filter((c): c is string => typeof c === "string");
 }
 
 /**
@@ -457,14 +527,34 @@ export async function installAvailablePlugin(
 		rmSync(dest, { recursive: true, force: true });
 		return { installed: false, message: `Installed source for "${name}" has no recognizable plugin manifest.` };
 	}
+	const capabilities = loadableCapabilities(parsed);
+	let message =
+		`Installed "${name}" from marketplace "${found.marketplaceName}" ` +
+		`(${parsed.supportPlatform.join(", ")}) to ${dest}. ` +
+		`Remove it with UninstallPlugin.`;
+	if (parsed.id !== name) {
+		// The entry name and the manifest name are allowed to differ, and the
+		// difference is otherwise invisible until ListPlugins reports an id the
+		// caller never asked for.
+		message += ` Listed by ListPlugins as "${parsed.id}"; either name uninstalls it.`;
+	}
+	if (capabilities.length === 0) {
+		// An install that adds nothing should not read as an install that worked.
+		// Common in github/awesome-copilot, where most entries carry their content
+		// in Copilot UI `extensions/` that hoocode has no analog for.
+		const surfaces = parsed.unsupportedSurfaces?.length
+			? ` Unsupported surfaces present: ${parsed.unsupportedSurfaces.join(", ")}.`
+			: "";
+		message +=
+			" Note: it contributes no capabilities hoocode can load" +
+			` (no skills, commands, subagents, hooks or MCP servers).${surfaces}`;
+	}
 	return {
 		installed: true,
 		dest,
+		...(parsed.id !== name ? { id: parsed.id } : {}),
 		supportPlatform: parsed.supportPlatform,
-		message:
-			`Installed "${name}" from marketplace "${found.marketplaceName}" ` +
-			`(${parsed.supportPlatform.join(", ")}) to ${dest}. ` +
-			`Remove it with UninstallPlugin.`,
+		message,
 	};
 }
 
@@ -473,16 +563,35 @@ export interface UninstallOutcome {
 	message: string;
 }
 
+/** True when `target` is `root` or sits inside it. */
+function isUnderDir(target: string, root: string): boolean {
+	const normalized = path.resolve(root);
+	if (path.resolve(target) === normalized) return true;
+	return path.resolve(target).startsWith(normalized.endsWith(path.sep) ? normalized : `${normalized}${path.sep}`);
+}
+
 /**
  * Remove an installed or authored plugin from every location it could occupy:
  * the consumption home, both production homes, and the legacy project-local
  * directories that older versions wrote into.
+ *
+ * `name` is matched two ways, because a plugin has two names: the marketplace
+ * entry name it was installed under (which is what the directory is called) and
+ * the manifest id `ListPlugins` reports. Resolving only the first left a plugin
+ * whose names differ impossible to remove through the tool surface — the id the
+ * model was shown was the one uninstall did not accept.
+ *
+ * Removal by id stays inside {@link pluginHomeRoots}, so a plugin discovered in
+ * `<cwd>/.claude/skills` — repository content the team committed, which hoocode
+ * did not install — is never deleted out of the working tree.
  */
 export function uninstallPlugin(cwd: string, name: string, agentDir: string = getAgentDir()): UninstallOutcome {
-	const candidates = [
-		...candidatePluginDirs(cwd, name, agentDir),
-		path.join(cwd, ".hoocode", "plugins", sanitizeForDir(name)),
-	];
+	const homes = pluginHomeRoots(cwd, agentDir);
+	const byManifestId = listInstalledPlugins(cwd, agentDir)
+		.filter((p) => p.id === name)
+		.map((p) => p.root)
+		.filter((root) => homes.some((home) => isUnderDir(root, home)));
+	const candidates = [...new Set([...candidatePluginDirs(cwd, name, agentDir), ...byManifestId])];
 	const present = candidates.filter((p) => existsSync(p));
 	if (present.length === 0) return { removed: false, message: `Plugin "${name}" is not installed.` };
 	for (const p of present) rmSync(p, { recursive: true, force: true });

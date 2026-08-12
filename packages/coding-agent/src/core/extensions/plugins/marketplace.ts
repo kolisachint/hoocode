@@ -143,23 +143,34 @@ function normalizeSource(source: unknown): MarketplacePluginSource | null {
 	const obj = source as Record<string, unknown>;
 	const src = obj.source;
 	const url = obj.url;
+	// `commit` is not in the documented schema but appears in the wild alongside
+	// `sha` (anthropics/claude-plugins-official ships two such entries). It names
+	// the same thing, so it stands in as the pin when `sha` is absent rather than
+	// silently leaving the entry unpinned.
+	const shaValue = typeof obj.sha === "string" ? obj.sha : typeof obj.commit === "string" ? obj.commit : undefined;
 	const pin = {
 		...(typeof obj.ref === "string" ? { ref: obj.ref } : {}),
-		...(typeof obj.sha === "string" ? { sha: obj.sha } : {}),
+		...(shaValue ? { sha: shaValue } : {}),
 	};
+	const subdir = typeof obj.path === "string" && obj.path.length > 0 ? obj.path : undefined;
 	if (src === "url" && typeof url === "string") {
+		// A `url` entry carrying `path` means the plugin is a subdirectory of that
+		// repo, exactly like `git-subdir`. Dropping the `path` used to install the
+		// whole repository instead — six entries in the official Claude marketplace
+		// resolve that way, and each produced a plugin directory with none of the
+		// plugin in it.
+		if (subdir) return { source: "git-subdir", url, path: subdir, ...pin };
 		return { source: "url", url, ...pin };
 	}
-	if (src === "git-subdir" && typeof url === "string" && typeof obj.path === "string") {
-		return { source: "git-subdir", url, path: obj.path, ...pin };
+	if (src === "git-subdir" && typeof url === "string" && subdir) {
+		return { source: "git-subdir", url, path: subdir, ...pin };
 	}
 	// Copilot marketplace shorthand: { source: "github", repo: "owner/name", path? }
-	// (used by github/copilot-plugins). Normalize to the equivalent git source.
+	// (used by github/copilot-plugins and github/awesome-copilot). Normalize to the
+	// equivalent git source.
 	if (src === "github" && typeof obj.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(obj.repo)) {
 		const repoUrl = `https://github.com/${obj.repo}.git`;
-		if (typeof obj.path === "string" && obj.path.length > 0) {
-			return { source: "git-subdir", url: repoUrl, path: obj.path, ...pin };
-		}
+		if (subdir) return { source: "git-subdir", url: repoUrl, path: subdir, ...pin };
 		return { source: "url", url: repoUrl, ...pin };
 	}
 	return null;

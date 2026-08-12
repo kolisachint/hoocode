@@ -136,6 +136,60 @@ function seedGitSubdirMarketplace(cwd: string): { marketDir: string; repoDir: st
 }
 
 /**
+ * Seed a git-backed marketplace whose entry pins a sha *and* names a ref that
+ * has since moved past it — the shape 83 entries of the official Claude
+ * marketplace ship. Each commit writes its own name into `VERSION`, so which
+ * one was checked out is visible on disk.
+ */
+function seedMovedTagMarketplace(cwd: string): { pinned: string; marketDir: string } {
+	const repoDir = path.join(cwd, "repo");
+	const marketDir = path.join(cwd, "market");
+
+	fs.mkdirSync(repoDir, { recursive: true });
+	writeJson(path.join(repoDir, ".agents-plugin", "plugin.json"), { name: "widget", version: "1.0.0" });
+	fs.writeFileSync(path.join(repoDir, "VERSION"), "pinned\n");
+	execInDir(repoDir, "git", ["init", "--quiet"]);
+	execInDir(repoDir, "git", ["config", "user.email", "test@example.com"]);
+	execInDir(repoDir, "git", ["config", "user.name", "Test"]);
+	execInDir(repoDir, "git", ["add", "."]);
+	execInDir(repoDir, "git", ["commit", "--quiet", "-m", "pinned"]);
+	const pinnedSha = spawnSync("git", ["rev-parse", "HEAD"], { cwd: repoDir }).stdout.toString().trim();
+
+	// The tag now points at a later commit than the catalog pinned.
+	fs.writeFileSync(path.join(repoDir, "VERSION"), "moved\n");
+	execInDir(repoDir, "git", ["add", "."]);
+	execInDir(repoDir, "git", ["commit", "--quiet", "-m", "moved"]);
+	execInDir(repoDir, "git", ["tag", "v1.0.0"]);
+
+	writeJson(path.join(marketDir, ".agents-plugin", "marketplace.json"), {
+		name: "pinned-market",
+		plugins: [{ name: "widget", source: { source: "url", url: repoDir, ref: "v1.0.0", sha: pinnedSha } }],
+	});
+	writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+		marketplaces: [{ location: marketDir, dir: marketDir }],
+	});
+	return { pinned: "pinned", marketDir };
+}
+
+/** Seed a marketplace whose entry name differs from the plugin's own manifest name. */
+function seedNameMismatchMarketplace(cwd: string): void {
+	const market = path.join(cwd, "market");
+	writeJson(path.join(market, ".agents-plugin", "marketplace.json"), {
+		name: "local",
+		plugins: [{ name: "entry-name", source: "./plugins/thing" }],
+	});
+	writeJson(path.join(market, "plugins", "thing", ".claude-plugin", "plugin.json"), { name: "manifest-id" });
+	fs.mkdirSync(path.join(market, "plugins", "thing", "skills", "s"), { recursive: true });
+	fs.writeFileSync(
+		path.join(market, "plugins", "thing", "skills", "s", "SKILL.md"),
+		"---\nname: s\ndescription: does s\n---\n\nDo s.\n",
+	);
+	writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+		marketplaces: [{ location: market, dir: market }],
+	});
+}
+
+/**
  * Redirect every global plugin location into a temp home for the duration of a
  * test. The consumption home and the marketplace cache are user-scoped now, so
  * without this a test run would write into the developer's real ~/.agents.
@@ -250,6 +304,73 @@ describe("plugin install engine", () => {
 		expect(outcome.installed).toBe(true);
 		expect(fs.existsSync(path.join(consumptionPluginsDir(), "widget", ".agents-plugin", "plugin.json"))).toBe(true);
 		expect(listInstalledPlugins(cwd).some((p) => p.id === "widget")).toBe(true);
+	});
+
+	it("checks out the pinned sha even when the entry also names a ref", async () => {
+		// The failure this pins is silent: a tag that moved after the catalog
+		// pinned it installs different code than the index vouches for, and
+		// nothing in the outcome says so. Both vendors specify sha over ref.
+		const { pinned } = seedMovedTagMarketplace(cwd);
+
+		const outcome = await installAvailablePlugin(cwd, "widget");
+		expect(outcome.installed).toBe(true);
+		const marker = path.join(consumptionPluginsDir(), "widget", "VERSION");
+		expect(fs.readFileSync(marker, "utf8").trim()).toBe(pinned);
+	});
+
+	it("keeps a plugin removable when its manifest id differs from the entry name", async () => {
+		// Vendors allow the two names to differ. Installs are named for the entry
+		// while discovery reports the manifest id, so resolving only one of them
+		// left the plugin stranded: ListPlugins showed an id uninstall rejected.
+		seedNameMismatchMarketplace(cwd);
+		const outcome = await installAvailablePlugin(cwd, "entry-name");
+		expect(outcome.installed).toBe(true);
+		expect(outcome.id).toBe("manifest-id");
+		expect(outcome.message).toContain("manifest-id");
+
+		expect(listInstalledPlugins(cwd).map((p) => p.id)).toContain("manifest-id");
+		// Installed under one name, listed under the other — both must resolve, or
+		// InstallPlugin re-clones what is already there.
+		expect(isPluginInstalled(cwd, "entry-name")).toBe(true);
+		expect(isPluginInstalled(cwd, "manifest-id")).toBe(true);
+
+		const removed = uninstallPlugin(cwd, "manifest-id");
+		expect(removed.removed).toBe(true);
+		expect(fs.existsSync(path.join(consumptionPluginsDir(), "entry-name"))).toBe(false);
+	});
+
+	it("never uninstalls a plugin the repository ships", () => {
+		// `<cwd>/.claude/skills` is discovered but is committed repo content, not
+		// something hoocode installed. Resolving uninstall by manifest id must not
+		// turn UninstallPlugin into a way to delete files out of the working tree.
+		const repoOwned = path.join(cwd, ".claude", "skills", "repo-owned");
+		writeJson(path.join(repoOwned, ".claude-plugin", "plugin.json"), { name: "repo-owned" });
+
+		const removed = uninstallPlugin(cwd, "repo-owned");
+		expect(removed.removed).toBe(false);
+		expect(fs.existsSync(repoOwned)).toBe(true);
+	});
+
+	it("says so when an installed plugin contributes nothing hoocode can load", async () => {
+		// The dominant shape in github/awesome-copilot: a manifest whose content
+		// lives in Copilot UI `extensions/`. Installing it is not a failure, but
+		// reporting a bare success reads as a capability that is not there.
+		const market = path.join(cwd, "market");
+		writeJson(path.join(market, ".agents-plugin", "marketplace.json"), {
+			name: "local",
+			plugins: [{ name: "manifest-only", source: "./plugins/manifest-only" }],
+		});
+		writeJson(path.join(market, "plugins", "manifest-only", "plugin.json"), {
+			name: "manifest-only",
+			extensions: { "com.github.awesome-copilot": { extensions: ["./extensions/manifest-only"] } },
+		});
+		writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+			marketplaces: [{ location: market, dir: market }],
+		});
+
+		const outcome = await installAvailablePlugin(cwd, "manifest-only");
+		expect(outcome.installed).toBe(true);
+		expect(outcome.message).toContain("no capabilities hoocode can load");
 	});
 });
 
