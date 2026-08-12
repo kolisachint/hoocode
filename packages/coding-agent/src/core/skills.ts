@@ -373,6 +373,15 @@ function loadSkillFromFile(
  *
  * Skills with disableModelInvocation=true are excluded from the prompt
  * (they can only be invoked explicitly via /skill:name commands).
+ *
+ * Descriptions are emitted whole, deliberately — unlike `<available_agents>`,
+ * which runs each agent through `summarizeAgentDescription`. The asymmetry is
+ * not an oversight: an agent description is prose about a role, and the
+ * summarizer extracts its positive region before capping, whereas a skill
+ * description *is* the routing signal. Authors pack trigger conditions into it
+ * ("use when the user mentions .docx, 'report', 'memo'…"), and a length cap
+ * would silently amputate the triggers, costing activations to save tokens.
+ * Trim a verbose skill at the source instead of truncating every skill here.
  */
 export function formatSkillsForPrompt(skills: Skill[]): string {
 	const visibleSkills = skills.filter((s) => !s.disableModelInvocation);

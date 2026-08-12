@@ -1,11 +1,11 @@
 import { type Component, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AgentSession } from "../../../core/agent-session.js";
 import { sumAssistantUsage } from "../../../core/agent-session-stats.js";
+import { BRAND_MARK, GIT_BRANCH_GLYPH } from "../../../core/brand.js";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.js";
 import { formatTokens } from "../../../core/format-tokens.js";
 import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
 import { taskStore } from "../../../core/task-store.js";
-import { BRAND_MARK, GIT_BRANCH_GLYPH } from "../brand.js";
 import { theme } from "../theme/theme.js";
 
 /**

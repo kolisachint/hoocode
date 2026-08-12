@@ -32,15 +32,18 @@
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { CATEGORY_GLYPH, SEGMENT_SEP } from "../../core/brand.js";
 import { getPlugin } from "../../core/extensions/plugins/authoring.js";
 import {
 	findAvailablePlugin,
 	installAvailablePlugin,
 	listAvailablePlugins,
+	listInstalledPlugins,
 	readMarketplaceRecords,
 	refreshMarketplaces,
 	uninstallPlugin,
 } from "../../core/extensions/plugins/install.js";
+import { availablePluginGroups } from "../../core/extensions/plugins/listing.js";
 import {
 	marketplaceCacheDir,
 	marketplaceCacheRoot,
@@ -54,9 +57,39 @@ import {
 } from "../../core/extensions/plugins/marketplace.js";
 import { entryNeedsSource, packagePlugin, stageIntoMarketplace } from "../../core/extensions/plugins/packaging.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
+import { type ListStyle, plural, renderList } from "../../core/format-list.js";
 
 function isGitSource(loc: string): boolean {
 	return /^https?:\/\//.test(loc) || loc.startsWith("git@") || loc.endsWith(".git");
+}
+
+/**
+ * Chat styling for a listing.
+ *
+ * The name stays in the terminal's default foreground and everything else steps
+ * down from it, so the column you scan is the brightest thing on the row. Note
+ * this only reaches the screen because `showStatus` passes pre-styled messages
+ * through instead of wrapping them in a blanket dim.
+ */
+function listStyle(theme: ExtensionCommandContext["ui"]["theme"]): ListStyle {
+	return {
+		marker: (text) => theme.fg("success", text),
+		facts: (text) => theme.fg("muted", text),
+		detail: (text) => theme.fg("dim", text),
+		trailer: (text) => theme.fg("dim", text),
+		groupTitle: (text) => theme.fg("mdLink", text),
+	};
+}
+
+/** `⬡ 4 plugins …` — the counted header every listing opens with. */
+function listHeader(
+	theme: ExtensionCommandContext["ui"]["theme"],
+	glyph: string,
+	summary: string,
+	hint?: string,
+): string {
+	const head = `${theme.fg("accent", glyph)} ${theme.fg("muted", summary)}`;
+	return hint ? `${head}\n${theme.fg("dim", `  ${hint}`)}` : head;
 }
 
 export function setupMarketplace(pi: ExtensionAPI): void {
@@ -81,13 +114,27 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 						ctx.ui.notify("No marketplaces. Add one with /plugin marketplace add <git-url|path>.", "info");
 						return;
 					}
-					const lines = records.map((r) => {
+					const theme = ctx.ui.theme;
+					const rows = records.map((r) => {
 						const market = parseMarketplaceDir(r.dir);
-						const platforms =
-							market && market.supportPlatform.length > 1 ? ` · ${market.supportPlatform.join(", ")}` : "";
-						return `${market?.name ?? r.location} — ${market?.plugins.length ?? 0} plugin(s)${platforms} [${r.location}]`;
+						return {
+							name: market?.name ?? r.location,
+							facts: [plural(market?.plugins.length ?? 0, "plugin"), (market?.supportPlatform ?? []).join(", ")],
+							// The location is the longest and least-scanned token on the row;
+							// on its own line it stops forcing the wrap.
+							trailer: r.location,
+						};
 					});
-					ctx.ui.notify(lines.join("\n"), "info");
+					const body = renderList([{ rows }], {
+						columns: ctx.ui.columns,
+						indent: 2,
+						style: listStyle(theme),
+					});
+					const header = listHeader(theme, CATEGORY_GLYPH.marketplaces, plural(records.length, "marketplace"));
+					ctx.ui.notify(
+						`${header}\n${body}\n\n${theme.fg("dim", "  /plugin list to see what they offer")}`,
+						"info",
+					);
 					return;
 				}
 
@@ -152,16 +199,32 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 			// ── list available plugins ──────────────────────────────────────────
 			if (trimmed === "list" || trimmed === "") {
 				const available = listAvailablePlugins(cwd);
-				const lines = available.map((p) => {
-					const src =
-						typeof p.source === "string"
-							? p.source
-							: p.source.source === "url"
-								? p.source.url
-								: `${p.source.url}/${p.source.path}`;
-					return `${p.name} [${p.supportPlatform.join(", ")}] — ${p.description ?? src}`;
+				if (available.length === 0) {
+					ctx.ui.notify("No plugins available. Add a marketplace first.", "info");
+					return;
+				}
+				const theme = ctx.ui.theme;
+				// Installed state is the fact the old listing could not answer: without
+				// it, /plugin install on something already present silently re-clones
+				// over it, discarding any local edits to the plugin directory.
+				const installed = new Set(listInstalledPlugins(cwd).map((p) => p.id));
+				const groups = availablePluginGroups(available, { installed });
+				const body = renderList(groups, {
+					columns: ctx.ui.columns,
+					indent: 2,
+					style: listStyle(theme),
 				});
-				ctx.ui.notify(lines.length ? lines.join("\n") : "No plugins available. Add a marketplace first.", "info");
+				const installedCount = available.filter((p) => installed.has(p.name)).length;
+				const summary =
+					`${plural(available.length, "plugin")} across ${plural(groups.length, "marketplace")}` +
+					(installedCount > 0 ? ` ${SEGMENT_SEP} ${installedCount} installed` : "");
+				const header = listHeader(
+					theme,
+					CATEGORY_GLYPH.plugins,
+					summary,
+					installedCount > 0 ? "✓ already installed" : undefined,
+				);
+				ctx.ui.notify(`${header}\n${body}\n\n${theme.fg("dim", "  /plugin install <name> to add one")}`, "info");
 				return;
 			}
 

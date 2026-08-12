@@ -11,6 +11,11 @@
  * Glyphs are chosen to be single terminal cell, widely supported, and distinct
  * from the task-panel's own status/owner glyphs (◐ ◆ ◇ ▸ ⧉ ✓ ✗ ○) so the two
  * vocabularies never read as the same signal.
+ *
+ * This lives in `core/` rather than `modes/interactive/` because the `/plugin`
+ * command extension labels the same capability classes, and extensions must not
+ * reach into a mode's internals. The module is pure data — no theme, no
+ * rendering — so it is safe for every surface.
  */
 
 /** The HooCode mark — a filled hexagon, rendered in the accent colour. */
@@ -27,6 +32,7 @@ export const CATEGORY_GLYPH = {
 	agents: "◈",
 	mcp: "⧉",
 	plugins: "⬡",
+	marketplaces: "⊞",
 	themes: "◒",
 	context: "❯",
 	extensions: "⊹",

@@ -167,6 +167,16 @@ export interface ExtensionUIContext {
 	/** Show a notification to the user. */
 	notify(message: string, type?: "info" | "warning" | "error"): void;
 
+	/**
+	 * Terminal width in columns, when the surface has one.
+	 *
+	 * Undefined outside a terminal (RPC, print, headless), which is the signal to
+	 * emit unwrapped text and let the consumer lay it out — a listing pre-wrapped
+	 * to someone else's terminal is worse than no wrapping at all. Optional so
+	 * third-party implementations of this interface keep compiling.
+	 */
+	readonly columns?: number;
+
 	/** Listen to raw terminal input (interactive mode only). Returns an unsubscribe function. */
 	onTerminalInput(handler: TerminalInputHandler): () => void;
 
