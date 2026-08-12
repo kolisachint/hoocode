@@ -1,6 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@kolisachint/hoocode-tui";
+import {
+	applyBackgroundToLine,
+	type EditorTheme,
+	type MarkdownTheme,
+	type SelectListTheme,
+} from "@kolisachint/hoocode-tui";
 import chalk from "chalk";
 import { highlight, supportsLanguage } from "cli-highlight";
 import { type Static, Type } from "typebox";
@@ -1250,6 +1255,19 @@ export function getMarkdownTheme(): MarkdownTheme {
 			}
 		},
 	};
+}
+
+/**
+ * Paint a selected row as a filled band, padding it to the full width first so
+ * the highlight reaches the right edge instead of stopping wherever the text
+ * happens to stop. For components that render their own rows; `SelectList` and
+ * `SettingsList` get the same treatment through their `selectedRow` theme hook.
+ *
+ * Pass a row that already fits the width. A row long enough to have been
+ * truncated carries a reset at the cut, which ends the band on the ellipsis.
+ */
+export function paintSelectedRow(line: string, width: number): string {
+	return applyBackgroundToLine(line, width, (text: string) => theme.bg("selectedBg", text));
 }
 
 export function getSelectListTheme(): SelectListTheme {

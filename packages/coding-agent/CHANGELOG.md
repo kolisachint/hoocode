@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The session tree selector's highlight stopped wherever the entry text
+  stopped, because the row was wrapped in `selectedBg` without being padded
+  first — a 17-cell band on a 120-column terminal. It now fills the row, like
+  the `/resume` picker beside it.
+
 ### Changed
 
 - **The selected row is highlighted the same way in more of the app.** Until now
@@ -17,6 +24,11 @@
   is added to the existing marker rather than replacing it. The hand-rolled
   pickers (model, scoped models, oauth, extensions) still build their rows as
   `Text` children with no access to terminal width, and are unchanged.
+- The `/resume` session picker and the session tree selector paint their
+  selected row through a shared `paintSelectedRow` helper rather than each
+  calling `theme.bg` on a row they had padded (or not padded) themselves.
+  `/resume` no longer depends on its right-aligned timestamp column to reach
+  the right edge.
 
 ## [0.5.8] - 2026-08-12
 

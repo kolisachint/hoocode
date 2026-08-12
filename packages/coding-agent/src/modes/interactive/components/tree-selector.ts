@@ -10,7 +10,7 @@ import {
 	truncateToWidth,
 } from "@kolisachint/hoocode-tui";
 import type { SessionTreeNode } from "../../../core/session-manager.js";
-import { theme } from "../theme/theme.js";
+import { paintSelectedRow, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
 
@@ -681,11 +681,11 @@ class TreeList implements Component {
 					: "";
 			const content = this.getEntryDisplayText(flatNode.node, isSelected);
 
-			let line = cursor + theme.fg("dim", prefix) + foldMarker + pathMarker + label + labelTimestamp + content;
-			if (isSelected) {
-				line = theme.bg("selectedBg", line);
-			}
-			lines.push(truncateToWidth(line, width));
+			const line = truncateToWidth(
+				cursor + theme.fg("dim", prefix) + foldMarker + pathMarker + label + labelTimestamp + content,
+				width,
+			);
+			lines.push(isSelected ? paintSelectedRow(line, width) : line);
 		}
 
 		lines.push(

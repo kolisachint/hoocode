@@ -4,6 +4,9 @@
 
 ### Added
 
+- `applyBackgroundToLine` is exported from the package root, so components
+  outside the TUI package can fill a row to the edge the same way `Text`,
+  `Box` and `Markdown` already do internally.
 - `SelectListTheme` and `SettingsListTheme` take an optional `selectedRow`
   background. When a theme defines it, the selected row is padded out to the
   full width before being painted, so the highlight reaches the right edge

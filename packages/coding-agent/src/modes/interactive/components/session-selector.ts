@@ -16,7 +16,7 @@ import {
 import { KeybindingsManager } from "../../../core/keybindings.js";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
-import { theme } from "../theme/theme.js";
+import { paintSelectedRow, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.js";
@@ -488,11 +488,8 @@ class SessionList implements Component, Focusable {
 			const spacing = Math.max(1, width - leftWidth - visibleWidth(rightPart));
 			const styledRight = theme.fg(isConfirmingDelete ? "error" : "dim", rightPart);
 
-			let line = leftPart + " ".repeat(spacing) + styledRight;
-			if (isSelected) {
-				line = theme.bg("selectedBg", line);
-			}
-			lines.push(truncateToWidth(line, width));
+			const line = truncateToWidth(leftPart + " ".repeat(spacing) + styledRight, width);
+			lines.push(isSelected ? paintSelectedRow(line, width) : line);
 		}
 
 		// Add scroll indicator if needed
