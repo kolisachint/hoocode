@@ -72,7 +72,7 @@
 		"syntaxPunctuation": "paleGray",
 
 		"thinkingOff": "dimGray",
-		"thinkingMinimal": "gray",
+		"thinkingMinimal": "#d2dcec",
 		"thinkingLow": "blue",
 		"thinkingMedium": "sky",
 		"thinkingHigh": "orange",
