@@ -1,6 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@kolisachint/hoocode-tui";
+import {
+	applyBackgroundToLine,
+	type EditorTheme,
+	type MarkdownTheme,
+	type SelectListTheme,
+	visibleWidth,
+} from "@kolisachint/hoocode-tui";
 import chalk from "chalk";
 import { highlight, supportsLanguage } from "cli-highlight";
 import { type Static, Type } from "typebox";
@@ -1252,6 +1258,34 @@ export function getMarkdownTheme(): MarkdownTheme {
 	};
 }
 
+/**
+ * The cursor every picker marks its selected row with, trailing space included.
+ * Pickers used to pick their own — `→`, `›` and `>` were all in use, and the
+ * shared `SelectList` hardcoded a fourth — so which glyph you saw depended on
+ * which list you had opened.
+ */
+export const SELECT_CURSOR = "› ";
+
+/**
+ * The blank gutter an unselected row is indented by. Derived from the cursor
+ * rather than hardcoded, so a cursor of a different width keeps the column it
+ * marks in the same place instead of shifting every unselected row by one.
+ */
+export const SELECT_GUTTER = " ".repeat(visibleWidth(SELECT_CURSOR));
+
+/**
+ * Paint a selected row as a filled band, padding it to the full width first so
+ * the highlight reaches the right edge instead of stopping wherever the text
+ * happens to stop. For components that render their own rows; `SelectList` and
+ * `SettingsList` get the same treatment through their `selectedRow` theme hook.
+ *
+ * Pass a row that already fits the width. A row long enough to have been
+ * truncated carries a reset at the cut, which ends the band on the ellipsis.
+ */
+export function paintSelectedRow(line: string, width: number): string {
+	return applyBackgroundToLine(line, width, (text: string) => theme.bg("selectedBg", text));
+}
+
 export function getSelectListTheme(): SelectListTheme {
 	return {
 		selectedPrefix: (text: string) => theme.fg("accent", text),
@@ -1259,6 +1293,10 @@ export function getSelectListTheme(): SelectListTheme {
 		description: (text: string) => theme.fg("muted", text),
 		scrollInfo: (text: string) => theme.fg("muted", text),
 		noMatch: (text: string) => theme.fg("muted", text),
+		// Left unstyled: SelectList passes the cursor through `selectedText`
+		// with the rest of the row.
+		cursor: SELECT_CURSOR,
+		selectedRow: (text: string) => theme.bg("selectedBg", text),
 	};
 }
 
@@ -1274,7 +1312,8 @@ export function getSettingsListTheme(): import("@kolisachint/hoocode-tui").Setti
 		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
 		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
 		description: (text: string) => theme.fg("dim", text),
-		cursor: theme.fg("accent", "→ "),
+		cursor: theme.fg("accent", SELECT_CURSOR),
 		hint: (text: string) => theme.fg("dim", text),
+		selectedRow: (text: string) => theme.bg("selectedBg", text),
 	};
 }

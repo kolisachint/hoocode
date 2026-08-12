@@ -1,4 +1,4 @@
-import { setKeybindings } from "@kolisachint/hoocode-tui";
+import { setKeybindings, visibleWidth } from "@kolisachint/hoocode-tui";
 import { beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import type {
@@ -8,7 +8,7 @@ import type {
 	SessionTreeNode,
 } from "../src/core/session-manager.js";
 import { TreeSelectorComponent } from "../src/modes/interactive/components/tree-selector.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
 beforeAll(() => {
 	initTheme("dark");
@@ -650,6 +650,29 @@ describe("TreeSelectorComponent", () => {
 
 			selector.handleInput(DOWN); // user-3a → asst-3a (not user-3b)
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-3a");
+		});
+	});
+
+	describe("selected row highlight", () => {
+		test("fills the selected row to the full width", () => {
+			const entries = [userMessage("user-1", null, "hello"), assistantMessage("asst-1", "user-1", "hi")];
+			const selector = new TreeSelectorComponent(
+				buildTree(entries),
+				"asst-1",
+				24,
+				() => {},
+				() => {},
+			);
+
+			const width = 120;
+			const rendered = selector.getTreeList().render(width);
+			const bgOpen = theme.getBgAnsi("selectedBg");
+			const banded = rendered.filter((line) => line.includes(bgOpen));
+
+			// Exactly one row is banded, and the band spans the row rather than
+			// stopping where the (much shorter) tree entry text stops.
+			expect(banded).toHaveLength(1);
+			expect(visibleWidth(banded[0])).toBe(width);
 		});
 	});
 });

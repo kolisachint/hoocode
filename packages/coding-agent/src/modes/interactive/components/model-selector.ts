@@ -11,8 +11,9 @@ import {
 } from "@kolisachint/hoocode-tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
-import { theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { keyHint } from "./keybinding-hints.js";
+import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 interface ModelItem {
 	provider: string;
@@ -233,6 +234,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		const endIndex = Math.min(startIndex + maxVisible, this.filteredModels.length);
 
 		// Show visible slice of filtered models
+		const rows: SelectableRow[] = [];
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredModels[i];
 			if (!item) continue;
@@ -240,22 +242,14 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
-			let line = "";
-			if (isSelected) {
-				const prefix = theme.fg("accent", "→ ");
-				const modelText = `${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
-				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = `${prefix + theme.fg("accent", modelText)} ${providerBadge}${checkmark}`;
-			} else {
-				const modelText = `  ${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
-				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = `${modelText} ${providerBadge}${checkmark}`;
-			}
+			const prefix = isSelected ? theme.fg("accent", SELECT_CURSOR) : SELECT_GUTTER;
+			const modelText = isSelected ? theme.fg("accent", item.id) : item.id;
+			const providerBadge = theme.fg("muted", `[${item.provider}]`);
+			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
 
-			this.listContainer.addChild(new Text(line, 0, 0));
+			rows.push({ text: `${prefix}${modelText} ${providerBadge}${checkmark}`, selected: isSelected });
 		}
+		this.listContainer.addChild(new SelectedRowList(rows));
 
 		// Add scroll indicator if needed
 		if (startIndex > 0 || endIndex < this.filteredModels.length) {

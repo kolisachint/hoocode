@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The session tree selector's highlight stopped wherever the entry text
+  stopped, because the row was wrapped in `selectedBg` without being padded
+  first — a 17-cell band on a 120-column terminal. It now fills the row, like
+  the `/resume` picker beside it.
+- The resource picker (`/config`) marked its selected row with bold alone — no
+  accent, no highlight — which on a light theme was close to invisible. It now
+  carries the same accent and band as every other picker.
+
+### Changed
+
+- **The selected row is highlighted the same way in more of the app.** Until now
+  only the `/resume` session picker filled its selected row with `selectedBg`;
+  every other picker marked selection with an arrow and accent text alone, and
+  the band in `/resume` reached the right edge only because that component
+  right-aligns a timestamp column. `getSelectListTheme()` and
+  `getSettingsListTheme()` now supply a `selectedRow` background, so the theme
+  picker, thinking picker, show-images picker, the `/settings` screens and the
+  editor's autocomplete all draw the same full-width highlight. The accent
+  styling stays: `accent` clears 4.6:1 against `selectedBg` in every shipped
+  theme, while `muted` and `dim` fall to 2.8:1 and 1.9:1 on `dark`, so the band
+  is added to the existing marker rather than replacing it. The hand-rolled
+  pickers now do the same, via `SelectedRowList` (below).
+- **Every picker marks its selected row with the same cursor.** `→`, `›` and
+  `>` were all in use — four glyphs counting the one `SelectList` hardcoded —
+  so which one you saw depended on which list you had opened. They all use `›`
+  now, from a single `SELECT_CURSOR`. In the ask-for-input pane this also stops
+  the row cursor colliding with the `>` that prompts its custom-answer field.
+- Unselected rows are indented by `SELECT_GUTTER`, derived from the cursor's
+  visible width, rather than by a hardcoded two columns. The two agreed before
+  only because every cursor in use happened to be two columns wide.
+- The model, scoped models, oauth and extension pickers build their rows
+  through the new `SelectedRowList` component instead of adding a `Text` child
+  per row. Those rows were assembled in an update method that never sees the
+  terminal width — width only arrives later, when the container renders each
+  child — so there was no point at which a row could be padded before being
+  painted. `SelectedRowList` holds the rows and renders them lazily, which puts
+  the width back in reach.
+- The fork-from-message picker highlights the message line the cursor is on
+  (its metadata line stays unpainted) and colors it with `accent`, which it
+  previously left to bold alone.
+- The ask-for-input pane keeps its plain rows: it is a question form with a
+  live text field, not a scrolling list, and a band under an input caret reads
+  as a rendering artifact rather than a selection.
+- The `/resume` session picker and the session tree selector paint their
+  selected row through a shared `paintSelectedRow` helper rather than each
+  calling `theme.bg` on a row they had padded (or not padded) themselves.
+  `/resume` no longer depends on its right-aligned timestamp column to reach
+  the right edge.
+
 ## [0.5.8] - 2026-08-12
 
 ### Changed
