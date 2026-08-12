@@ -41,6 +41,7 @@ import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import { type AssistantUsageTotals, sumAssistantUsage } from "../../core/agent-session-stats.js";
+import { SEGMENT_SEP } from "../../core/brand.js";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -71,7 +72,6 @@ import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { BashExecutionController } from "./bash-execution-controller.js";
-import { SEGMENT_SEP } from "./brand.js";
 import { type CommandContext, CommandExecutor } from "./command-executor.js";
 import { BELL, CompletionChime } from "./completion-chime.js";
 import { AssistantMessageComponent } from "./components/assistant-message.js";
@@ -208,6 +208,20 @@ function throttled(ms: number, fn: () => void): () => void {
 		}
 		run();
 	};
+}
+
+/**
+ * Style a status/notify message for the chat.
+ *
+ * Plain messages are dimmed, as they always were. A message that already
+ * carries escape codes is passed through untouched: `theme.fg` closes with
+ * `\x1b[39m` (reset foreground, not "restore"), so wrapping a pre-styled string
+ * in dim would drop the dim at the first inner span — and the TUI's wrapper
+ * carries that reset state across newlines, so every following line would lose
+ * it too. Passing through is what lets a listing colour its own columns.
+ */
+function styleStatusMessage(message: string): string {
+	return message.includes("\x1b[") ? message : theme.fg("dim", message);
 }
 
 export class InteractiveMode {
@@ -1043,6 +1057,7 @@ export class InteractiveMode {
 					}
 				},
 				getStateLine: () => this.buildSessionStateLine(),
+				getColumns: () => this.ui.terminal.columns,
 				quietStartup: () => this.settingsManager.getQuietStartup(),
 				verbose: this.options.verbose ?? false,
 				isExpanded: () => this.getStartupExpansionState(),
@@ -1421,6 +1436,9 @@ export class InteractiveMode {
 	 * Create the ExtensionUIContext for extensions.
 	 */
 	private createExtensionUIContext(): ExtensionUIContext {
+		// Captured for the `columns` getter: `this` inside a getter on the object
+		// literal below would be the literal, not the mode.
+		const tui = this.ui;
 		return {
 			select: (title, options, opts) => this.dialogs.showSelector(title, options, opts),
 			confirm: (title, message, opts) => this.dialogs.confirm(title, message, opts),
@@ -1432,6 +1450,10 @@ export class InteractiveMode {
 				return this.dialogs.showAskOptions(questions, opts);
 			},
 			notify: (message, type) => this.showExtensionNotify(message, type),
+			get columns() {
+				// Live, not captured: the listing must reflow after a resize.
+				return tui.terminal.columns;
+			},
 			onTerminalInput: (handler) => this.addExtensionTerminalInputListener(handler),
 			setStatus: (key, text) => this.setExtensionStatus(key, text),
 			setMode: (mode) => {
@@ -2434,13 +2456,13 @@ export class InteractiveMode {
 		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;
 
 		if (last && secondLast && last === this.lastStatusText && secondLast === this.lastStatusSpacer) {
-			this.lastStatusText.setText(theme.fg("dim", message));
+			this.lastStatusText.setText(styleStatusMessage(message));
 			this.ui.requestRender();
 			return;
 		}
 
 		const spacer = new Spacer(1);
-		const text = new Text(theme.fg("dim", message), 1, 0);
+		const text = new Text(styleStatusMessage(message), 1, 0);
 		this.chatContainer.addChild(spacer);
 		this.chatContainer.addChild(text);
 		this.lastStatusSpacer = spacer;

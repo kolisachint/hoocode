@@ -10,8 +10,10 @@ import * as path from "node:path";
 import { type Container, Spacer, Text, visibleWidth } from "@kolisachint/hoocode-tui";
 import type { AgentDefinition } from "../../core/agent-frontmatter.js";
 import { summarizeAgentDescription } from "../../core/agent-registry.js";
+import { CATEGORY_GLYPH, type CategoryKey, SEGMENT_SEP } from "../../core/brand.js";
 import type { ContextFile } from "../../core/context-files.js";
 import type { ExtensionRunner } from "../../core/extensions/index.js";
+import { renderCompactRows } from "../../core/format-list.js";
 import { formatTokens } from "../../core/format-tokens.js";
 import { getMcpServerStatuses } from "../../core/mcp-status.js";
 import type { PromptTemplate } from "../../core/prompt-templates.js";
@@ -19,7 +21,6 @@ import type { ResourceDiagnostic, ResourceLoader } from "../../core/resource-loa
 import type { SourceInfo } from "../../core/source-info.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
-import { CATEGORY_GLYPH, type CategoryKey, SEGMENT_SEP } from "./brand.js";
 import { appKeyLabel } from "./components/keybinding-hints.js";
 import { type ThemeColor, theme } from "./theme/theme.js";
 
@@ -463,6 +464,8 @@ export interface ResourceDisplayDeps {
 	 * summary. Undefined when there is nothing worth stating.
 	 */
 	getStateLine?(): string | undefined;
+	/** Terminal width, used to keep one-line-per-item sections to one line. */
+	getColumns?(): number | undefined;
 	quietStartup(): boolean;
 	verbose: boolean;
 	/** Startup expansion state for the collapsible sections. */
@@ -674,12 +677,17 @@ export function showLoadedResources(
 		// Agents
 		const agents = deps.getAgents();
 		if (agents.length > 0) {
-			const agentList = agents
-				.map((agent) => {
-					const desc = summarizeAgentDescription(agent.description);
-					return theme.fg("dim", `  ${agent.name} ${SEGMENT_SEP} ${desc}`);
-				})
-				.join("\n");
+			// One line per agent, truncated to the terminal. `summarizeAgentDescription`
+			// caps at 200 characters — about three wrapped lines here — and the TUI
+			// wrapper has no hanging indent, so an untruncated summary turned each
+			// agent into a paragraph whose continuations read as further agents.
+			const agentList = renderCompactRows(
+				agents.map((agent) => ({ name: agent.name, detail: summarizeAgentDescription(agent.description) })),
+				{
+					columns: deps.getColumns?.(),
+					style: { name: (text) => theme.fg("muted", text), detail: (text) => theme.fg("dim", text) },
+				},
+			);
 			detailSections.push(`${sectionHeader("Agents")}\n${agentList}`);
 		}
 		// MCP

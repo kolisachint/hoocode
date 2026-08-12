@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Capability listings share one layout.** `/plugin list`,
+  `/plugin marketplace list`, `SearchPlugins` and `ListPlugins` each built their
+  own `name [a, b] — description` line, so the same plugin printed three ways
+  and the model's view never matched the user's. They now go through a single
+  row formatter (`core/format-list.ts`, `core/extensions/plugins/listing.ts`):
+  aligned name column, facts beside it, description wrapped with a hanging
+  indent instead of restarting at column 0, and plugins grouped by the
+  marketplace that offers them. `/plugin list` marks what is already installed.
+- `SearchPlugins` takes a `limit` (default 10). With no query it previously
+  returned every plugin in every registered marketplace — dozens of entries,
+  several lines each — into the chat and the context.
+- The five plugin tools define `renderResult`, as every other built-in tool
+  already did. Results are bounded to 20 lines with an expand hint rather than
+  dumped whole.
+- `ListPlugins` reports the manifest format its description already promised,
+  counts `themes` and `providers` as capabilities (a plugin shipping only a
+  theme reported none), and carries the plugin description through.
+- `[Agents]` in the startup summary is one line per agent, truncated to the
+  terminal, instead of a 200-character summary wrapping into a paragraph.
+- `brand.ts` moved to `core/` so non-interactive surfaces can label capability
+  classes; added a `marketplaces` glyph.
+
+### Fixed
+
+- Status messages carrying their own colors are no longer wrapped in a blanket
+  dim. `theme.fg` closes with `\x1b[39m` (reset, not restore), so the dim died
+  at the first inner span and — because the wrapper carries that state across
+  newlines — every line after it lost the dim too.
+- `InstallPlugin` no longer erases its own announcement. It notified "installing
+  X because Y", then notified the outcome; consecutive info notifications
+  coalesce into one chat line, so the second replaced the first and the
+  transparency the tool guidelines require never reached the screen.
+- Truncation in the new listings does not emit escape codes. The TUI's
+  `truncateToWidth` appends `\x1b[0m` even for plain input — a full reset that
+  would both leak into model-facing text and clear any enclosing style mid-line.
+
+### Added
+
+- `ExtensionUIContext.columns` exposes the terminal width to extensions, so a
+  listing can wrap to the actual terminal. Optional, and undefined outside a
+  terminal (RPC, print), which is the signal to emit unwrapped text rather than
+  wrap to someone else's width.
+
 ## [0.5.7] - 2026-08-12
 
 ### Added
