@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `vox-light`'s `ruleMuted` was one point per channel away from `rule`
+  (`#8b8263` against `#8a8062`), so `border` and `borderMuted` rendered as the
+  same colour and the primary-vs-secondary divider distinction never appeared.
+  `rule` also backs `mdCodeBlockBorder`, `mdQuoteBorder` and `mdHr`, so every
+  rule in the theme read at one weight. `ruleMuted` is now `#958b6d`, matching
+  the separation `vox-dark` already had and staying above 3:1 against the
+  theme's cream canvas
+  ([#174](https://github.com/kolisachint/hoocode/issues/174))
+
 ## [0.5.9] - 2026-08-12
 
 ### Fixed
