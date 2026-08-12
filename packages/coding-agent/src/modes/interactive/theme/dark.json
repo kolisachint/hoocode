@@ -17,6 +17,7 @@
 		"toolPendingBg": "#1a1a24",
 		"toolSuccessBg": "#1a241a",
 		"toolErrorBg": "#241a1a",
+		"warningBg": "#3d3d19",
 		"customMsgBg": "#1e1a28"
 	},
 	"colors": {
@@ -41,6 +42,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"warningBg": "warningBg",
 		"toolTitle": "",
 		"toolOutput": "gray",
 

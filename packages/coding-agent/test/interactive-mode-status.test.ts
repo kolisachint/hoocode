@@ -267,7 +267,6 @@ describe("InteractiveMode.showLoadedResources", () => {
 				},
 			},
 			getDispatchableAgentCount: () => (InteractiveMode as any).prototype.getDispatchableAgentCount.call(fakeThis),
-			buildSessionStateLine: () => (InteractiveMode as any).prototype.buildSessionStateLine.call(fakeThis),
 			formatDisplayPath: (p: string) => (InteractiveMode as any).prototype.formatDisplayPath.call(fakeThis, p),
 			formatExtensionDisplayPath: (p: string) =>
 				(InteractiveMode as any).prototype.formatExtensionDisplayPath.call(fakeThis, p),
@@ -429,9 +428,11 @@ describe("InteractiveMode.showLoadedResources", () => {
 
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
 		expect(output).toContain("1 skill");
-		// Names and scope lists live behind the expand hint, not in the summary.
+		// Names and scope lists live behind the expand key, not in the summary. The
+		// collapsed block carries no hint of its own — the banner already has one,
+		// and the same key opens both.
 		expect(output).not.toContain("commit");
-		expect(output).toContain("details");
+		expect(output).not.toContain("details");
 	});
 
 	test("shows the detailed listing when expanded", () => {

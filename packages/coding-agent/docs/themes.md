@@ -319,6 +319,13 @@ themes keep working.
 | `mcp` | MCP server identity color | Falls back to `accent` |
 | `brandBg` | Background of the footer brand chip | Brand mark renders as `accent`-colored text |
 | `brandText` | Text color of the footer brand chip | Brand mark renders as `accent`-colored text |
+| `warningBg` | Fill behind a warning notice (the billing caveat box) | Falls back to `customMessageBg` |
+
+`warningBg` is a surface, not text: `warning` renders the title on it and `muted`
+the body, so it wants a low-chroma tint of the theme's warning hue rather than the
+warning color itself. Every built-in sets it, and all six accessible themes keep
+every foreground at AAA against it (`test/theme-contrast.test.ts` sweeps it with
+the other surfaces).
 
 `brandBg` and `brandText` are honored **only as a pair** — set both, or neither.
 They exist for light themes, where a brand hue vivid enough to be recognizable is

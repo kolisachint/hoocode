@@ -44,6 +44,7 @@ const BG_TOKENS = [
 	"toolPendingBg",
 	"toolSuccessBg",
 	"toolErrorBg",
+	"warningBg",
 ] as const;
 
 const AGENT_TOKENS = ["agent1", "agent2", "agent3", "agent4", "agent5", "agent6"];
@@ -200,7 +201,7 @@ function saturation(hex: string): number {
 	return (max - min) / (1 - Math.abs(max + min - 1));
 }
 
-/** Every surface a theme paints text on: the six message/tool backgrounds plus the export canvases. */
+/** Every surface a theme paints text on: the message/tool/notice backgrounds plus the export canvases. */
 function surfaces(themeName: string): Record<string, string> {
 	const colors = getResolvedThemeColors(themeName);
 	const exported = getThemeExportColors(themeName);

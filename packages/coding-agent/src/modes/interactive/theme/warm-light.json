@@ -19,7 +19,8 @@
 		"customMsgBg": "#f9f0ea",
 		"toolPendingBg": "#fbf6ea",
 		"toolSuccessBg": "#f2f6e6",
-		"toolErrorBg": "#fdefe8"
+		"toolErrorBg": "#fdefe8",
+		"warningBg": "#e4e1d2"
 	},
 	"colors": {
 		"accent": "brown",
@@ -43,6 +44,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"warningBg": "warningBg",
 		"toolTitle": "ink",
 		"toolOutput": "bark",
 

@@ -21,7 +21,6 @@ import type { ResourceDiagnostic, ResourceLoader } from "../../core/resource-loa
 import type { SourceInfo } from "../../core/source-info.js";
 import { parseGitUrl } from "../../utils/git.js";
 import { getCwdRelativePath } from "../../utils/paths.js";
-import { appKeyLabel } from "./components/keybinding-hints.js";
 import { type ThemeColor, theme } from "./theme/theme.js";
 
 // ============================================================================
@@ -459,11 +458,6 @@ export interface ResourceDisplayDeps {
 	getAgentCount(): number;
 	/** Dispatchable agents for this cwd (empty when Task tool is off). */
 	getAgents(): AgentDefinition[];
-	/**
-	 * One-line session state (model, thinking level, auth caveats) shown under the
-	 * summary. Undefined when there is nothing worth stating.
-	 */
-	getStateLine?(): string | undefined;
 	/** Terminal width, used to keep one-line-per-item sections to one line. */
 	getColumns?(): number | undefined;
 	quietStartup(): boolean;
@@ -744,10 +738,12 @@ export function showLoadedResources(
 		}
 
 		if (detailSections.length > 0) {
-			const expandHint = theme.fg("dim", `${RAIL}${appKeyLabel("app.tools.expand")} details`);
+			// No collapsed hint: the banner already carries the one expand hint, and
+			// the same key opens both. Text renders empty content as zero lines, so
+			// the collapsed block costs nothing.
 			chatContainer.addChild(
 				new ExpandableText(
-					() => expandHint,
+					() => "",
 					() => detailSections.join("\n\n"),
 					deps.isExpanded(),
 					0,
@@ -762,13 +758,6 @@ export function showLoadedResources(
 			for (const warning of contextWarnings) {
 				chatContainer.addChild(new Text(theme.fg("warning", `${RAIL}${warning}`), 0, 0));
 			}
-		}
-
-		// Session state last: what the next turn will actually cost and run with.
-		const stateLine = deps.getStateLine?.();
-		if (stateLine) {
-			chatContainer.addChild(new Spacer(1));
-			chatContainer.addChild(new Text(`${RAIL}${stateLine}`, 0, 0));
 		}
 	}
 
