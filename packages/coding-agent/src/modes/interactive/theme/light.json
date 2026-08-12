@@ -65,7 +65,7 @@
 		"syntaxComment": "#2d6b28",
 		"syntaxKeyword": "#0b57d0",
 		"syntaxFunction": "#8c4a00",
-		"syntaxVariable": "#123a9e",
+		"syntaxVariable": "#0d2f80",
 		"syntaxString": "#a31515",
 		"syntaxNumber": "#046b53",
 		"syntaxType": "#0b6e80",
@@ -87,7 +87,7 @@
 		"agent4": "#b01e51",
 		"agent5": "#06694b",
 		"agent6": "#2544c9",
-		"mcp": "#7d3c98"
+		"mcp": "#300c6e"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

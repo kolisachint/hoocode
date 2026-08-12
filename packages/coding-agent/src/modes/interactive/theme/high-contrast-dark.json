@@ -68,7 +68,7 @@
 		"syntaxComment": "lime",
 		"syntaxKeyword": "blue",
 		"syntaxFunction": "#ffe082",
-		"syntaxVariable": "#b3e5fc",
+		"syntaxVariable": "#cfd8ff",
 		"syntaxString": "#ffab91",
 		"syntaxNumber": "lilac",
 		"syntaxType": "mint",
@@ -76,7 +76,7 @@
 		"syntaxPunctuation": "paleGray",
 
 		"thinkingOff": "dimGray",
-		"thinkingMinimal": "gray",
+		"thinkingMinimal": "#d8e2ee",
 		"thinkingLow": "blue",
 		"thinkingMedium": "cyan",
 		"thinkingHigh": "orange",
@@ -90,7 +90,7 @@
 		"agent4": "pink",
 		"agent5": "green",
 		"agent6": "blue",
-		"mcp": "#e0b0ff"
+		"mcp": "#e8dbff"
 	},
 	"export": {
 		"pageBg": "#000000",

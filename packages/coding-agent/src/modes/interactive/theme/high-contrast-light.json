@@ -5,8 +5,8 @@
 	"vars": {
 		"ink": "#000000",
 		"inkSoft": "#1a1a1a",
-		"gray": "#3d3d3d",
-		"dimGray": "#454545",
+		"gray": "#262626",
+		"dimGray": "#4a4a4a",
 		"blue": "#0b3d91",
 		"teal": "#00474a",
 		"green": "#14521a",
@@ -81,13 +81,13 @@
 
 		"bashMode": "green",
 
-		"agent1": "teal",
-		"agent2": "purple",
-		"agent3": "orange",
-		"agent4": "magenta",
-		"agent5": "green",
-		"agent6": "blue",
-		"mcp": "magenta"
+		"agent1": "#003333",
+		"agent2": "#980606",
+		"agent3": "#573d00",
+		"agent4": "#57002b",
+		"agent5": "#084d00",
+		"agent6": "#004080",
+		"mcp": "#7707a6"
 	},
 	"export": {
 		"pageBg": "#ffffff",
