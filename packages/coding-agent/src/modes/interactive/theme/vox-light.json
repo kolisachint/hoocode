@@ -14,9 +14,9 @@
 		"purple": "#6b2d8f",
 		"muted": "#4a4638",
 		"dim": "#6a6555",
-		"rule": "#948a6c",
-		"ruleMuted": "#b9b19a",
-		"selectedBg": "#ffef9e",
+		"rule": "#8a8062",
+		"ruleMuted": "#8b8263",
+		"selectedBg": "#ffe25c",
 		"userMsgBg": "#fdf8e6",
 		"customMsgBg": "#f6f0fa",
 		"toolPendingBg": "#fbf8ee",
@@ -68,17 +68,17 @@
 		"syntaxFunction": "#6b4a00",
 		"syntaxVariable": "#3a2d6b",
 		"syntaxString": "#8f2a10",
-		"syntaxNumber": "#1a5c2e",
+		"syntaxNumber": "#96206b",
 		"syntaxType": "teal",
 		"syntaxOperator": "#2b2822",
 		"syntaxPunctuation": "#2b2822",
 
-		"thinkingOff": "#9a9484",
-		"thinkingMinimal": "#7a7566",
-		"thinkingLow": "#3a5f9f",
+		"thinkingOff": "#87806e",
+		"thinkingMinimal": "#63604f",
+		"thinkingLow": "#2a6480",
 		"thinkingMedium": "#1a4b8f",
 		"thinkingHigh": "#6b2d8f",
-		"thinkingXhigh": "#8f1f7a",
+		"thinkingXhigh": "#a3106b",
 
 		"bashMode": "green",
 
@@ -88,7 +88,7 @@
 		"agent4": "#a3145e",
 		"agent5": "green",
 		"agent6": "blue",
-		"mcp": "#5b2b8a",
+		"mcp": "#3f4a5c",
 
 		"brandBg": "ink",
 		"brandText": "yellow"
@@ -96,6 +96,6 @@
 	"export": {
 		"pageBg": "#fffdf5",
 		"cardBg": "#ffffff",
-		"infoBg": "#fff3a8"
+		"infoBg": "#ffe98a"
 	}
 }

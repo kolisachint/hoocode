@@ -13,9 +13,9 @@
 		"purple": "#d7a8ff",
 		"muted": "#a9a496",
 		"dim": "#8f8b7c",
-		"rule": "#6a6656",
-		"ruleMuted": "#4a4740",
-		"selectedBg": "#332f1c",
+		"rule": "#7d786a",
+		"ruleMuted": "#726d5e",
+		"selectedBg": "#282412",
 		"userMsgBg": "#1c1b17",
 		"customMsgBg": "#221c26",
 		"toolPendingBg": "#1a1915",
@@ -65,15 +65,15 @@
 		"syntaxComment": "#7f9e73",
 		"syntaxKeyword": "#8fb8e8",
 		"syntaxFunction": "#e8d48f",
-		"syntaxVariable": "#bcd9f2",
+		"syntaxVariable": "#d9c6f0",
 		"syntaxString": "#e2a07a",
 		"syntaxNumber": "#b9d3a4",
 		"syntaxType": "teal",
 		"syntaxOperator": "#d8d2c4",
 		"syntaxPunctuation": "#d8d2c4",
 
-		"thinkingOff": "#4a4740",
-		"thinkingMinimal": "#6e6a5e",
+		"thinkingOff": "#726d5e",
+		"thinkingMinimal": "#9a9581",
 		"thinkingLow": "#6a8fbf",
 		"thinkingMedium": "#7fb3d5",
 		"thinkingHigh": "#b294bb",
@@ -87,11 +87,11 @@
 		"agent4": "#ff9ec4",
 		"agent5": "#7fd6a8",
 		"agent6": "#8fb8e8",
-		"mcp": "#b8a3ff"
+		"mcp": "#d0b0a0"
 	},
 	"export": {
 		"pageBg": "#111110",
 		"cardBg": "#191813",
-		"infoBg": "#332f1c"
+		"infoBg": "#282412"
 	}
 }

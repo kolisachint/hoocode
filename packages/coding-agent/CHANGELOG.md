@@ -10,13 +10,65 @@
   and never carries a status, so `warning` is orange rather than the usual
   yellow — a yellow `◐` or context gauge stops reading as a signal when yellow
   is already the accent. Both are AA, not AAA, and are not covered by
-  `test/theme-contrast.test.ts`; see `docs/themes.md` for the one pair that
-  falls below 4.5:1 and why.
+  `test/theme-contrast.test.ts`, but they are held to the same standards the
+  default `light` theme gained in 0.5.6: every text token clears 4.5:1 on every
+  surface it paints, rules and inactive chrome clear 2.8:1, and no two tokens
+  that mean different things sit closer than ΔE 11. Rules stay neutral rather
+  than saturated — a separator carries no meaning through hue — which is the one
+  deliberate departure, documented in `docs/themes.md`.
 - Optional `brandBg` / `brandText` theme tokens, honored only as a pair, paint
   the footer's brand mark as a filled chip instead of accent-colored text.
   Themes that omit them are unchanged. Added for light themes, where a brand
   hue vivid enough to be recognizable is rarely legible as text on a light
   canvas. `vox-light` is the only built-in that sets them.
+
+## [0.5.6] - 2026-08-12
+
+### Changed
+
+- **The default `light` theme now uses saturated, deep hues instead of pastels.**
+  Its colors were pale enough to blur into the grays around them on a light
+  terminal: `success` and `bashMode` were a 20%-saturation sage, `error` a dusty
+  rose, `thinkingHigh` and `mcp` near-gray mauves, and almost every token sat at
+  4.0–4.9:1 against the page. Every hue is now 65%+ saturated, every foreground
+  clears WCAG AA (4.5:1) on all six message/tool surfaces plus the export
+  canvases, and rules and inactive chrome (`borderMuted`, `mdHr`,
+  `thinkingOff`) went from a near-invisible 2.0:1 to 3.0:1. The tool-state
+  backgrounds are tinted far enough apart to tell pending, success, and error
+  apart at a glance, and unlanguaged code blocks render as dark ink rather than
+  green so syntax highlighting carries the color. `test/theme-contrast.test.ts`
+  enforces both the contrast floor and the saturation floor.
+- **The six accessible themes no longer paint different things the same color.**
+  They all cleared AAA, but contrast says nothing about whether two tokens read
+  as the *same* color, and crushing a palette dark enough to clear 7:1 on white
+  is exactly what collapses distinct hues together. Measured with CIEDE2000,
+  `mcp` was byte-identical to an agent color in three themes — an MCP row and a
+  subagent row in the same task panel drew their tags in one color — and the two
+  quietest thinking levels were 2.0-2.6 apart, below the threshold where they
+  read as different at all. Every group a user reads against itself (core UI,
+  the agent palette, syntax, thinking levels, diff) now holds ΔE 11 or better,
+  up from 0.0 at worst.
+- **`colorsafe-light` now delivers what its name promises.** It picked
+  color-blind-safe hues, but those palettes lean on lightness differences and
+  darkening every token for AAA removed exactly that. Simulated, `error` and
+  `warning` were ΔE 2.8 apart under deuteranopia, `syntaxFunction` and
+  `syntaxNumber` were identical, and an added diff line was ΔE 3.1 from
+  unchanged context. Its palette is rebuilt on blue/violet/magenta, where every
+  semantic pair now holds ΔE 12 or better under all three dichromat
+  simulations. The theme's `vars` are renamed to describe the colors they
+  actually hold, and its description no longer claims Okabe-Ito hues.
+
+### Known limitations
+
+- `colorsafe-dark` still shares one color between `mcp` and `agent2`. Six agent
+  identities already spend the color-blind-safe hues available at AAA on a dark
+  ground, and every remaining candidate degenerates to near-white, which reads
+  as plain text. Tracked in `theme-contrast.test.ts` rather than papered over.
+- In 256-color terminals (Apple Terminal, GNU screen), `warm-light` draws
+  `accent` and `warning` with the same palette index. The 6x6x6 cube has almost
+  no resolution below channel value 135, so any palette dark enough for AAA on
+  white loses distinctions there. The default `light` theme is checked against
+  this and stays clear; the AAA themes cannot be.
 
 ## [0.5.5] - 2026-08-10
 

@@ -81,10 +81,20 @@ two places: the selected-row background, and the footer's brand chip (see
 
 These two are **AA, not AAA** — they are not covered by
 `test/theme-contrast.test.ts`. Every text token clears 4.5:1 on every surface it
-renders on, except `dim` (and the two tokens sharing its value, `mdLinkUrl` and
-`toolDiffContext`) on a selected row, which sits at 3.9:1 in `vox-dark`. Lifting
-it further would collapse `dim` into `muted` and flatten the footer's hierarchy.
-If you need a guaranteed 7:1 floor, use one of the six accessible themes.
+paints, rules and inactive chrome clear 2.8:1, no two tokens that mean different
+things are closer than ΔE 11 (CIEDE2000), and the selection tint separates from
+the page. If you need a guaranteed 7:1 floor, use one of the six accessible
+themes.
+
+Two deliberate departures from the standard the default `light` theme is held to:
+
+- **Rules are neutral, not saturated.** `border`, `mdHr`, and the code/quote
+  borders are warm grays rather than a saturated hue. A rule carries no meaning
+  through color, and newsprint separators are the point of the theme. They still
+  have to be *visible* — all of them clear the 2.8:1 decorative floor.
+- **`brandText` is exempt from the surface sweep.** It only ever renders on
+  `brandBg`, never on a page surface, so measuring it against the page is
+  meaningless. On its own chip it sits at 14.8:1.
 
 ## Selecting a Theme
 
