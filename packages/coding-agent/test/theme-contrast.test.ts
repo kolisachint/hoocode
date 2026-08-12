@@ -5,6 +5,7 @@ import {
 	getResolvedThemeColors,
 	getThemeByName,
 	getThemeExportColors,
+	loadThemeFromPath,
 	type ThemeColor,
 } from "../src/modes/interactive/theme/theme.js";
 
@@ -61,6 +62,16 @@ function contrast(a: string, b: string): number {
 	return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
+/** HSL saturation (0-1). How much hue a color actually carries, independent of how dark it is. */
+function saturation(hex: string): number {
+	const value = hex.replace("#", "");
+	const [r, g, b] = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+	const max = Math.max(r, g, b);
+	const min = Math.min(r, g, b);
+	if (max === min) return 0;
+	return (max - min) / (1 - Math.abs(max + min - 1));
+}
+
 /** Every surface a theme paints text on: the six message/tool backgrounds plus the export canvases. */
 function surfaces(themeName: string): Record<string, string> {
 	const colors = getResolvedThemeColors(themeName);
@@ -72,6 +83,127 @@ function surfaces(themeName: string): Record<string, string> {
 	}
 	return result;
 }
+
+/**
+ * Tokens the default light theme draws as rules and inactive chrome — an editor
+ * border, a horizontal rule, the "thinking off" marker. They are meant to
+ * recede, so they answer to a separation bar rather than a text-contrast one.
+ */
+const LIGHT_DECORATIVE_TOKENS = new Set(["borderMuted", "mdHr", "thinkingOff"]);
+
+/**
+ * Tokens the default light theme uses to carry meaning through hue — success vs
+ * error, a link, an agent's identity. On a light backdrop a hue only reads if it
+ * is saturated; the washed-out pastels this theme used to ship blurred into the
+ * neutral grays around them.
+ */
+const LIGHT_HUE_TOKENS = [
+	"accent",
+	"border",
+	"borderAccent",
+	"success",
+	"error",
+	"warning",
+	"customMessageLabel",
+	"mdHeading",
+	"mdLink",
+	"mdCode",
+	"mdQuoteBorder",
+	"mdListBullet",
+	"toolDiffAdded",
+	"toolDiffRemoved",
+	"syntaxComment",
+	"syntaxKeyword",
+	"syntaxFunction",
+	"syntaxVariable",
+	"syntaxString",
+	"syntaxNumber",
+	"syntaxType",
+	"thinkingLow",
+	"thinkingMedium",
+	"thinkingHigh",
+	"thinkingXhigh",
+	"bashMode",
+	...AGENT_TOKENS,
+	"mcp",
+];
+
+describe("default light theme", () => {
+	/** AA for body text. The accessible light themes exist for the AAA bar. */
+	const MIN_TEXT_CONTRAST = 4.5;
+	/** Rules and inactive chrome only have to separate from the surface behind them. */
+	const MIN_DECORATIVE_CONTRAST = 2.8;
+	/** Below this a hue reads as gray once it is dark enough to be legible on white. */
+	const MIN_SATURATION = 0.35;
+
+	it("keeps every foreground legible on every surface it paints", () => {
+		const colors = getResolvedThemeColors("light");
+		const backgrounds = surfaces("light");
+
+		const failures: string[] = [];
+		for (const [token, value] of Object.entries(colors)) {
+			if ((BG_TOKENS as readonly string[]).includes(token)) continue;
+			const minimum = LIGHT_DECORATIVE_TOKENS.has(token) ? MIN_DECORATIVE_CONTRAST : MIN_TEXT_CONTRAST;
+			for (const [surface, background] of Object.entries(backgrounds)) {
+				const ratio = contrast(value, background);
+				if (ratio < minimum) {
+					failures.push(`${token} (${value}) on ${surface} (${background}): ${ratio.toFixed(2)}:1`);
+				}
+			}
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("keeps meaning-carrying tokens saturated enough to read as color", () => {
+		const colors = getResolvedThemeColors("light");
+		const washedOut = LIGHT_HUE_TOKENS.filter((token) => saturation(colors[token]) < MIN_SATURATION).map(
+			(token) => `${token} (${colors[token]}): ${(saturation(colors[token]) * 100).toFixed(0)}% saturation`,
+		);
+		expect(washedOut).toEqual([]);
+	});
+
+	it("keeps colors that mean different things apart after the 256-color downgrade", () => {
+		// Apple Terminal, GNU screen and TERM=linux get the quantized palette, and
+		// two hues that round to the same cube index become the same color there.
+		// These groups are the ones a user reads against each other.
+		const groups = {
+			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
+			"agent identity": [...AGENT_TOKENS, "mcp"],
+			syntax: [
+				"syntaxComment",
+				"syntaxKeyword",
+				"syntaxFunction",
+				"syntaxVariable",
+				"syntaxString",
+				"syntaxNumber",
+				"syntaxType",
+			],
+		};
+		const quantized = loadThemeFromPath(
+			new URL("../src/modes/interactive/theme/light.json", import.meta.url).pathname,
+			"256color",
+		);
+		const indexOf = (token: string) => quantized.getFgAnsi(token as ThemeColor);
+
+		for (const [label, tokens] of Object.entries(groups)) {
+			const byIndex = new Map<string, string[]>();
+			for (const token of tokens) {
+				const index = indexOf(token);
+				byIndex.set(index, [...(byIndex.get(index) ?? []), token]);
+			}
+			const collisions = [...byIndex.values()].filter((members) => members.length > 1).map((m) => m.join(" = "));
+			expect(collisions, label).toEqual([]);
+		}
+	});
+
+	it("marks selection visibly against the page without darkening it into text territory", () => {
+		const colors = getResolvedThemeColors("light");
+		const pageBg = getThemeExportColors("light").pageBg as string;
+		expect(pageBg).toBeDefined();
+		expect(contrast(colors.selectedBg, pageBg)).toBeGreaterThan(1.2);
+		expect(luminance(colors.selectedBg)).toBeGreaterThan(0.5);
+	});
+});
 
 describe("accessible themes", () => {
 	it("ships three light and three dark themes alongside the originals", () => {

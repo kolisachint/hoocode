@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The default `light` theme now uses saturated, deep hues instead of pastels.**
+  Its colors were pale enough to blur into the grays around them on a light
+  terminal: `success` and `bashMode` were a 20%-saturation sage, `error` a dusty
+  rose, `thinkingHigh` and `mcp` near-gray mauves, and almost every token sat at
+  4.0–4.9:1 against the page. Every hue is now 65%+ saturated, every foreground
+  clears WCAG AA (4.5:1) on all six message/tool surfaces plus the export
+  canvases, and rules and inactive chrome (`borderMuted`, `mdHr`,
+  `thinkingOff`) went from a near-invisible 2.0:1 to 3.0:1. The tool-state
+  backgrounds are tinted far enough apart to tell pending, success, and error
+  apart at a glance, and unlanguaged code blocks render as dark ink rather than
+  green so syntax highlighting carries the color. `test/theme-contrast.test.ts`
+  enforces both the contrast floor and the saturation floor.
+
 ## [0.5.5] - 2026-08-10
 
 ### Added
