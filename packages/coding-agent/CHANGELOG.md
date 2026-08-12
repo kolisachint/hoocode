@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added
+
+- Optional `warningBg` theme token: the surface behind a warning notice. Every
+  built-in theme sets it to a low-chroma tint of its own warning hue; themes
+  that omit it fall back to `customMessageBg`. It joins the other surfaces in
+  `test/theme-contrast.test.ts`, so all six accessible themes keep every
+  foreground at AAA against it.
+
+### Fixed
+
+- The Anthropic subscription billing caveat had two renderings behind one
+  once-per-session latch, and the compact one claimed the latch first. On a
+  normal startup you only ever saw the fragment `anthropic sub — billed as
+  extra usage`; the sentence explaining the consequence ("not against plan
+  limits") only appeared on a quiet startup. There is now one message, and it
+  says what it costs.
+- The same caveat was resolved with an `await` in front of the startup summary,
+  so the splash blocked on an auth lookup that can reach the keychain. It now
+  resolves in the background, as it always did on the other code path.
+
+### Changed
+
+- Warnings that cost money if missed render as a `warningBg`-filled block with a
+  bold title, instead of one more coloured line in a startup already full of
+  them. `showWarning` is unchanged for everything else.
+- The startup summary dropped its session state line. Model and thinking level
+  were on it and in the footer, which is on screen for the whole session and
+  also carries the provider.
+- The collapsed details block on the startup summary dropped its `ctrl+o
+  details` hint. The banner already shows `ctrl+o more`, and one keypress
+  expands both.
+
 ## [0.5.10] - 2026-08-12
 
 ### Fixed

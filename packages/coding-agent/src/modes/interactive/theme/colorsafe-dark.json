@@ -19,7 +19,8 @@
 		"customMsgBg": "#171520",
 		"toolPendingBg": "#12151a",
 		"toolSuccessBg": "#0f1a17",
-		"toolErrorBg": "#1c1512"
+		"toolErrorBg": "#1c1512",
+		"warningBg": "#2a291d"
 	},
 	"colors": {
 		"accent": "sky",
@@ -43,6 +44,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"warningBg": "warningBg",
 		"toolTitle": "white",
 		"toolOutput": "gray",
 

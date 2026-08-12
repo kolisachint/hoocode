@@ -54,6 +54,9 @@ const ThemeJsonSchema = Type.Object({
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
+		// OPTIONAL so existing custom themes keep validating; missing entries fall
+		// back to customMessageBg (see createTheme).
+		warningBg: Type.Optional(ColorValueSchema),
 		toolTitle: ColorValueSchema,
 		toolOutput: ColorValueSchema,
 		// Markdown (10 colors)
@@ -209,6 +212,7 @@ export type ThemeBg =
 	| "toolPendingBg"
 	| "toolSuccessBg"
 	| "toolErrorBg"
+	| "warningBg"
 	| "brandBg";
 
 type ColorMode = "truecolor" | "256color";
@@ -706,6 +710,7 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"toolPendingBg",
 		"toolSuccessBg",
 		"toolErrorBg",
+		"warningBg",
 		"brandBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
@@ -721,6 +726,11 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		if (fgColors[token] === undefined) {
 			fgColors[token] = fgColors.accent;
 		}
+	}
+	// Same story for the warning surface: custom themes predate it, and the
+	// billing notice needs *some* fill rather than a second render path.
+	if (bgColors.warningBg === undefined) {
+		bgColors.warningBg = bgColors.customMessageBg;
 	}
 	return new Theme(fgColors, bgColors, colorMode, {
 		name: themeJson.name,

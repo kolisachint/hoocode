@@ -327,6 +327,10 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "MCP server identity color"
 				},
+				"warningBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Warning notice background (optional; falls back to customMessageBg)"
+				},
 				"brandBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Brand chip background (optional; set with brandText to paint the footer mark as a filled chip instead of accent text)"

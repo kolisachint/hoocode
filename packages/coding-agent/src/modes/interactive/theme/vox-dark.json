@@ -20,7 +20,8 @@
 		"customMsgBg": "#221c26",
 		"toolPendingBg": "#1a1915",
 		"toolSuccessBg": "#15201a",
-		"toolErrorBg": "#271512"
+		"toolErrorBg": "#271512",
+		"warningBg": "#2c2111"
 	},
 	"colors": {
 		"accent": "yellow",
@@ -44,6 +45,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"warningBg": "warningBg",
 		"toolTitle": "paper",
 		"toolOutput": "muted",
 
