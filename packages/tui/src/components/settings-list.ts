@@ -1,7 +1,7 @@
 import { fuzzyFilter } from "../fuzzy.js";
 import { getKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
-import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.js";
+import { applyBackgroundToLine, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.js";
 import { Input } from "./input.js";
 
 export interface SettingItem {
@@ -25,6 +25,14 @@ export interface SettingsListTheme {
 	description: (text: string) => string;
 	cursor: string;
 	hint: (text: string) => string;
+	/**
+	 * Optional background for the selected row. When set, the row is padded out
+	 * to the full width before being painted, so the highlight reaches the right
+	 * edge instead of stopping at the value. `label` and `value` still style the
+	 * content, so the band is added to that marker rather than replacing it.
+	 * Themes that leave this undefined keep the cursor-and-accent row as-is.
+	 */
+	selectedRow?: (text: string) => string;
 }
 
 export interface SettingsListOptions {
@@ -140,7 +148,10 @@ export class SettingsList implements Component {
 
 			const valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
 
-			lines.push(truncateToWidth(prefix + labelText + separator + valueText, width));
+			const row = truncateToWidth(prefix + labelText + separator + valueText, width);
+			lines.push(
+				isSelected && this.theme.selectedRow ? applyBackgroundToLine(row, width, this.theme.selectedRow) : row,
+			);
 		}
 
 		// Add scroll indicator if needed

@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The selected row is highlighted the same way in more of the app.** Until now
+  only the `/resume` session picker filled its selected row with `selectedBg`;
+  every other picker marked selection with an arrow and accent text alone, and
+  the band in `/resume` reached the right edge only because that component
+  right-aligns a timestamp column. `getSelectListTheme()` and
+  `getSettingsListTheme()` now supply a `selectedRow` background, so the theme
+  picker, thinking picker, show-images picker, the `/settings` screens and the
+  editor's autocomplete all draw the same full-width highlight. The accent
+  styling stays: `accent` clears 4.6:1 against `selectedBg` in every shipped
+  theme, while `muted` and `dim` fall to 2.8:1 and 1.9:1 on `dark`, so the band
+  is added to the existing marker rather than replacing it. The hand-rolled
+  pickers (model, scoped models, oauth, extensions) still build their rows as
+  `Text` children with no access to terminal width, and are unchanged.
+
 ## [0.5.8] - 2026-08-12
 
 ### Changed

@@ -87,6 +87,45 @@ describe("SelectList", () => {
 		assert.equal(visibleIndexOf(rendered[1], "second"), 22);
 	});
 
+	it("leaves rows unpadded when the theme defines no selected background", () => {
+		const items = [
+			{ value: "first", label: "first" },
+			{ value: "second", label: "second" },
+		];
+
+		const rendered = new SelectList(items, 5, testTheme).render(40);
+
+		assert.equal(visibleWidth(rendered[0]), visibleWidth("→ first"));
+	});
+
+	it("fills the selected row to the full width when the theme paints a band", () => {
+		const items = [
+			{ value: "first", label: "first" },
+			{ value: "second", label: "second" },
+		];
+		const bandTheme = { ...testTheme, selectedRow: (text: string) => `[BG${text}/BG]` };
+
+		const rendered = new SelectList(items, 5, bandTheme).render(40);
+
+		// The band wraps the row, and the row inside it reaches the right edge.
+		assert.ok(rendered[0].startsWith("[BG"));
+		assert.ok(rendered[0].endsWith("/BG]"));
+		assert.equal(visibleWidth(rendered[0].slice(3, -4)), 40);
+		// Unselected rows are untouched.
+		assert.ok(!rendered[1].includes("[BG"));
+		assert.equal(visibleWidth(rendered[1]), visibleWidth("  second"));
+	});
+
+	it("paints the band across the description column too", () => {
+		const items = [{ value: "first", label: "first", description: "does a thing" }];
+		const bandTheme = { ...testTheme, selectedRow: (text: string) => `[BG${text}/BG]` };
+
+		const rendered = new SelectList(items, 5, bandTheme).render(60);
+
+		assert.ok(rendered[0].includes("does a thing"));
+		assert.equal(visibleWidth(rendered[0].slice(3, -4)), 60);
+	});
+
 	it("allows overriding primary truncation while preserving description alignment", () => {
 		const items = [
 			{

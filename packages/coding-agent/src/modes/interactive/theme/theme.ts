@@ -1259,6 +1259,7 @@ export function getSelectListTheme(): SelectListTheme {
 		description: (text: string) => theme.fg("muted", text),
 		scrollInfo: (text: string) => theme.fg("muted", text),
 		noMatch: (text: string) => theme.fg("muted", text),
+		selectedRow: (text: string) => theme.bg("selectedBg", text),
 	};
 }
 
@@ -1276,5 +1277,6 @@ export function getSettingsListTheme(): import("@kolisachint/hoocode-tui").Setti
 		description: (text: string) => theme.fg("dim", text),
 		cursor: theme.fg("accent", "→ "),
 		hint: (text: string) => theme.fg("dim", text),
+		selectedRow: (text: string) => theme.bg("selectedBg", text),
 	};
 }

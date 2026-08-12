@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `SelectListTheme` and `SettingsListTheme` take an optional `selectedRow`
+  background. When a theme defines it, the selected row is padded out to the
+  full width before being painted, so the highlight reaches the right edge
+  instead of stopping at the text. `selectedText`/`label`/`value` still style
+  the content — the band is added to that marker, not a replacement for it.
+  Themes that leave `selectedRow` undefined render exactly as before.
+
 ## [0.5.8] - 2026-08-12
 
 ## [0.5.7] - 2026-08-12
