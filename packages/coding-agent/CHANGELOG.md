@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added
+
+- **`vox-dark` and `vox-light` themes** — explanatory-journalism styling: one
+  loud yellow used sparingly against a newsprint-quiet palette. The yellow is
+  reserved for four roles (`accent`, `mdHeading`, `selectedBg`, `borderAccent`)
+  and never carries a status, so `warning` is orange rather than the usual
+  yellow — a yellow `◐` or context gauge stops reading as a signal when yellow
+  is already the accent. Both are AA, not AAA, and are not covered by
+  `test/theme-contrast.test.ts`; see `docs/themes.md` for the one pair that
+  falls below 4.5:1 and why.
+- Optional `brandBg` / `brandText` theme tokens, honored only as a pair, paint
+  the footer's brand mark as a filled chip instead of accent-colored text.
+  Themes that omit them are unchanged. Added for light themes, where a brand
+  hue vivid enough to be recognizable is rarely legible as text on a light
+  canvas. `vox-light` is the only built-in that sets them.
+
 ## [0.5.5] - 2026-08-10
 
 ### Added

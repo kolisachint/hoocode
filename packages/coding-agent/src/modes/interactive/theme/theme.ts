@@ -94,6 +94,12 @@ const ThemeJsonSchema = Type.Object({
 		agent4: Type.Optional(ColorValueSchema),
 		agent5: Type.Optional(ColorValueSchema),
 		agent6: Type.Optional(ColorValueSchema),
+		// Brand chip (2 colors). OPTIONAL, and only honoured as a pair: a theme
+		// that sets both paints the footer's brand mark as a filled chip instead
+		// of accent-coloured text. Light themes need this — a brand hue bright
+		// enough to read as a chip is rarely legible as text on a light canvas.
+		brandBg: Type.Optional(ColorValueSchema),
+		brandText: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -160,7 +166,8 @@ export type ThemeColor =
 	| "agent4"
 	| "agent5"
 	| "agent6"
-	| "mcp";
+	| "mcp"
+	| "brandText";
 
 /** The agent identity palette, in hash order. */
 export const AGENT_COLOR_TOKENS = [
@@ -195,7 +202,8 @@ export type ThemeBg =
 	| "customMessageBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
-	| "toolErrorBg";
+	| "toolErrorBg"
+	| "brandBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -433,6 +441,16 @@ export class Theme {
 		const ansi = this.bgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme background color: ${color}`);
 		return `${ansi}${text}\x1b[49m`; // Reset only background color
+	}
+
+	/** Whether the theme defines an optional token, so callers can pick a
+	 * fallback rendering instead of letting fg()/bg() throw. */
+	has(color: ThemeColor): boolean {
+		return this.fgColors.has(color);
+	}
+
+	hasBg(color: ThemeBg): boolean {
+		return this.bgColors.has(color);
 	}
 
 	bold(text: string): string {
@@ -682,6 +700,7 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"toolPendingBg",
 		"toolSuccessBg",
 		"toolErrorBg",
+		"brandBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {

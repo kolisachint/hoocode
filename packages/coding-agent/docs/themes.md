@@ -40,8 +40,12 @@ Disable discovery with `--no-themes`.
 | `warm-light` | warm paper | Dark ink on cream, less glare than pure white |
 | `colorsafe-dark` | dark | Okabe-Ito hues, no red/green pairs |
 | `colorsafe-light` | white | Okabe-Ito hues, no red/green pairs |
+| `vox-dark` | newsprint black | Explanatory-journalism yellow; `warning` is orange |
+| `vox-light` | cream | Ink on paper; yellow survives as highlight and brand chip |
 
-The six themes after `dark`/`light` are built for low vision. Every color they
+The six accessible themes are `high-contrast-*`, `warm-*`, and `colorsafe-*`; the
+`vox-*` pair is a style theme and is described separately below. The six are built
+for low vision. Every color they
 draw clears **WCAG AAA (7:1)** against every surface the TUI paints behind it —
 the page, selected rows, user messages, and all three tool-box states — and none
 of them defer to the terminal's default foreground, so contrast does not depend
@@ -60,6 +64,27 @@ Picking between them:
 Set the matching terminal background for the theme you pick (black-ish for the
 dark themes, white-ish for the light ones) — hoocode colors the text, but the
 canvas behind it belongs to your terminal.
+
+### The `vox-*` pair
+
+Explanatory-journalism styling: one loud yellow used sparingly, everything else
+newsprint-quiet. The yellow is reserved for four roles — `accent`, `mdHeading`,
+`selectedBg`, and `borderAccent` — and it never carries a status. That forces one
+departure from the other themes: **`warning` is orange, not yellow**, because a
+yellow `◐` or a yellow context gauge stops reading as a signal when yellow is
+already the accent.
+
+In `vox-light` the accent drops to a deep amber, since a yellow bright enough to
+read as a highlight is not legible as text on cream. The brand yellow survives in
+two places: the selected-row background, and the footer's brand chip (see
+`brandBg`/`brandText` below).
+
+These two are **AA, not AAA** — they are not covered by
+`test/theme-contrast.test.ts`. Every text token clears 4.5:1 on every surface it
+renders on, except `dim` (and the two tokens sharing its value, `mdLinkUrl` and
+`toolDiffContext`) on a selected row, which sits at 3.9:1 in `vox-dark`. Lifting
+it further would collapse `dim` into `muted` and flatten the footer's hierarchy.
+If you need a guaranteed 7:1 floor, use one of the six accessible themes.
 
 ## Selecting a Theme
 
@@ -181,7 +206,9 @@ The `$schema` field enables editor auto-completion and validation.
 
 ## Color Tokens
 
-Every theme must define all 51 color tokens. There are no optional colors.
+Every theme must define all 51 required color tokens. A few further tokens are
+optional — see [Optional Tokens](#optional-tokens) — and a theme that omits them
+falls back to the behavior described there.
 
 ### Core UI (11 colors)
 
@@ -270,6 +297,32 @@ Editor border colors indicating thinking level (visual hierarchy from subtle to 
 | Token | Purpose |
 |-------|---------|
 | `bashMode` | Editor border in bash mode (`!` prefix) |
+
+### Optional Tokens
+
+Omitting any of these is valid — each has a defined fallback, so older custom
+themes keep working.
+
+| Token | Purpose | If omitted |
+|-------|---------|------------|
+| `agent1`–`agent6` | Subagent identity palette; agent types hash into these slots | Falls back to `accent` |
+| `mcp` | MCP server identity color | Falls back to `accent` |
+| `brandBg` | Background of the footer brand chip | Brand mark renders as `accent`-colored text |
+| `brandText` | Text color of the footer brand chip | Brand mark renders as `accent`-colored text |
+
+`brandBg` and `brandText` are honored **only as a pair** — set both, or neither.
+They exist for light themes, where a brand hue vivid enough to be recognizable is
+usually illegible as text on a light canvas but reads well inside a filled chip.
+`vox-light` is the only built-in that sets them.
+
+```json
+{
+  "colors": {
+    "brandBg": "#141209",
+    "brandText": "#ffe600"
+  }
+}
+```
 
 ### HTML Export (optional)
 
