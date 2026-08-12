@@ -319,15 +319,23 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Agent identity palette slot 5 (optional; subagent types hash into agent1-agent6, falls back to accent)"
 				},
-			"agent6": {
-				"$ref": "#/$defs/colorValue",
-				"description": "Agent identity palette slot 6 (optional; subagent types hash into agent1-agent6, falls back to accent)"
+				"agent6": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Agent identity palette slot 6 (optional; subagent types hash into agent1-agent6, falls back to accent)"
+				},
+				"mcp": {
+					"$ref": "#/$defs/colorValue",
+					"description": "MCP server identity color"
+				},
+				"brandBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Brand chip background (optional; set with brandText to paint the footer mark as a filled chip instead of accent text)"
+				},
+				"brandText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Brand chip text (optional; only honoured when brandBg is also set)"
+				}
 			},
-			"mcp": {
-				"$ref": "#/$defs/colorValue",
-				"description": "MCP server identity color"
-			}
-		},
 			"additionalProperties": false
 		},
 		"export": {

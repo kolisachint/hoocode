@@ -166,9 +166,16 @@ export class FooterComponent implements Component {
 		// path, git branch, and session name in descending emphasis. The live
 		// subagent count sits flush right — present only while work is delegated.
 		const modeUp = modeLabel.toUpperCase();
-		const brand = `${BRAND_MARK} ${modeUp}`;
+		// Themes that define the brandBg/brandText pair paint the mark as a filled
+		// chip; the padding lives in the plain string too so width math and
+		// truncation stay honest. Themes without the pair keep accent-coloured text.
+		const chip = theme.hasBg("brandBg") && theme.has("brandText");
+		const brand = chip ? ` ${BRAND_MARK} ${modeUp} ` : `${BRAND_MARK} ${modeUp}`;
 		let l1Plain = `${brand}  ${pwd}`;
-		let l1Styled = `${theme.bold(theme.fg("accent", brand))}  ${theme.fg("muted", pwd)}`;
+		const brandStyled = chip
+			? theme.bg("brandBg", theme.bold(theme.fg("brandText", brand)))
+			: theme.bold(theme.fg("accent", brand));
+		let l1Styled = `${brandStyled}  ${theme.fg("muted", pwd)}`;
 		if (branch) {
 			l1Plain += ` ${GIT_BRANCH_GLYPH} ${branch}`;
 			l1Styled += ` ${theme.fg("dim", GIT_BRANCH_GLYPH)} ${theme.fg("muted", branch)}`;
