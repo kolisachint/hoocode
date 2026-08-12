@@ -10,6 +10,7 @@ import {
 import type { AuthStatus, AuthStorage } from "../../../core/auth-storage.js";
 import { theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { SELECT_CURSOR, type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 export type AuthSelectorProvider = {
 	id: string;
@@ -111,25 +112,19 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		);
 		const endIndex = Math.min(startIndex + maxVisible, this.filteredProviders.length);
 
+		const rows: SelectableRow[] = [];
 		for (let i = startIndex; i < endIndex; i++) {
 			const provider = this.filteredProviders[i];
 			if (!provider) continue;
 
 			const isSelected = i === this.selectedIndex;
-
 			const statusIndicator = this.formatStatusIndicator(provider);
-			let line = "";
-			if (isSelected) {
-				const prefix = theme.fg("accent", "→ ");
-				const text = theme.fg("accent", provider.name);
-				line = prefix + text + statusIndicator;
-			} else {
-				const text = `  ${theme.fg("text", provider.name)}`;
-				line = text + statusIndicator;
-			}
+			const prefix = isSelected ? theme.fg("accent", `${SELECT_CURSOR} `) : "  ";
+			const name = isSelected ? theme.fg("accent", provider.name) : theme.fg("text", provider.name);
 
-			this.listContainer.addChild(new TruncatedText(line, 1, 0));
+			rows.push({ text: prefix + name + statusIndicator, selected: isSelected });
 		}
+		this.listContainer.addChild(new SelectedRowList(rows, 1));
 
 		if (startIndex > 0 || endIndex < this.filteredProviders.length) {
 			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredProviders.length})`);

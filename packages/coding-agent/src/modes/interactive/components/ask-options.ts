@@ -29,6 +29,7 @@ import {
 } from "@kolisachint/hoocode-tui";
 import type { AskQuestion } from "../../../core/extensions/types.js";
 import { theme } from "../theme/theme.js";
+import { SELECT_CURSOR } from "./selected-row-list.js";
 
 export class AskOptionsComponent implements Component, Focusable {
 	private questions: AskQuestion[];
@@ -118,7 +119,7 @@ export class AskOptionsComponent implements Component, Focusable {
 		for (let i = 0; i < cur.options.length; i++) {
 			const o = cur.options[i];
 			const active = i === this.index;
-			const cursor = theme.fg("accent", active ? ">" : " ");
+			const cursor = theme.fg("accent", active ? SELECT_CURSOR : " ");
 			const num = theme.fg(active ? "accent" : "dim", String(i + 1));
 			const label = active ? theme.bold(o.label) : o.label;
 			let line = `${cursor} ${num} ${label}`;
@@ -131,7 +132,7 @@ export class AskOptionsComponent implements Component, Focusable {
 		if (cur.allowCustom) {
 			const customIndex = cur.options.length;
 			const active = this.index === customIndex;
-			const cursor = theme.fg("accent", active ? ">" : " ");
+			const cursor = theme.fg("accent", active ? SELECT_CURSOR : " ");
 			const plus = theme.fg(active ? "accent" : "dim", "+");
 			if (active) {
 				const value = this.customInput.getValue();

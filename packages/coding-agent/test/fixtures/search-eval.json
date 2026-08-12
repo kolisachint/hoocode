@@ -318,8 +318,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
-        "startLine": 777,
-        "endLine": 781,
+        "startLine": 782,
+        "endLine": 786,
         "anchor": "\"Theme not initialized. Call initTheme() first.\""
       }
     ]

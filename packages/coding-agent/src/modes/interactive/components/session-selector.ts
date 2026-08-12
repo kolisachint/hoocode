@@ -19,6 +19,7 @@ import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
 import { paintSelectedRow, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
+import { SELECT_CURSOR } from "./selected-row-list.js";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.js";
 
 type SessionScope = "current" | "all";
@@ -459,7 +460,7 @@ class SessionList implements Component, Focusable {
 			}
 
 			// Cursor
-			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
+			const cursor = isSelected ? theme.fg("accent", `${SELECT_CURSOR} `) : "  ";
 
 			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);

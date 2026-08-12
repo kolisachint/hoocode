@@ -8,6 +8,9 @@
   stopped, because the row was wrapped in `selectedBg` without being padded
   first — a 17-cell band on a 120-column terminal. It now fills the row, like
   the `/resume` picker beside it.
+- The resource picker (`/config`) marked its selected row with bold alone — no
+  accent, no highlight — which on a light theme was close to invisible. It now
+  carries the same accent and band as every other picker.
 
 ### Changed
 
@@ -22,8 +25,24 @@
   styling stays: `accent` clears 4.6:1 against `selectedBg` in every shipped
   theme, while `muted` and `dim` fall to 2.8:1 and 1.9:1 on `dark`, so the band
   is added to the existing marker rather than replacing it. The hand-rolled
-  pickers (model, scoped models, oauth, extensions) still build their rows as
-  `Text` children with no access to terminal width, and are unchanged.
+  pickers now do the same, via `SelectedRowList` (below).
+- **Every picker marks its selected row with the same cursor.** `→`, `›` and
+  `>` were all in use, so which glyph you saw depended on which list you had
+  opened. They all use `→` now. In the ask-for-input pane this also stops the
+  row cursor colliding with the `>` that prompts its custom-answer field.
+- The model, scoped models, oauth and extension pickers build their rows
+  through the new `SelectedRowList` component instead of adding a `Text` child
+  per row. Those rows were assembled in an update method that never sees the
+  terminal width — width only arrives later, when the container renders each
+  child — so there was no point at which a row could be padded before being
+  painted. `SelectedRowList` holds the rows and renders them lazily, which puts
+  the width back in reach.
+- The fork-from-message picker highlights the message line the cursor is on
+  (its metadata line stays unpainted) and colors it with `accent`, which it
+  previously left to bold alone.
+- The ask-for-input pane keeps its plain rows: it is a question form with a
+  live text field, not a scrolling list, and a band under an input caret reads
+  as a rendering artifact rather than a selection.
 - The `/resume` session picker and the session tree selector paint their
   selected row through a shared `paintSelectedRow` helper rather than each
   calling `theme.bg` on a row they had padded (or not padded) themselves.

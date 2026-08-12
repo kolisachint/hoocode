@@ -8,6 +8,7 @@ import { theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, rawKeyHint } from "./keybinding-hints.js";
+import { SELECT_CURSOR, type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
@@ -76,13 +77,16 @@ export class ExtensionSelectorComponent extends Container {
 
 	private updateList(): void {
 		this.listContainer.clear();
-		for (let i = 0; i < this.options.length; i++) {
+		const rows: SelectableRow[] = this.options.map((option, i) => {
 			const isSelected = i === this.selectedIndex;
-			const text = isSelected
-				? theme.fg("accent", "→ ") + theme.fg("accent", this.options[i])
-				: `  ${theme.fg("text", this.options[i])}`;
-			this.listContainer.addChild(new Text(text, 1, 0));
-		}
+			return {
+				text: isSelected
+					? theme.fg("accent", `${SELECT_CURSOR} `) + theme.fg("accent", option)
+					: `  ${theme.fg("text", option)}`,
+				selected: isSelected,
+			};
+		});
+		this.listContainer.addChild(new SelectedRowList(rows, 1));
 	}
 
 	handleInput(keyData: string): void {
