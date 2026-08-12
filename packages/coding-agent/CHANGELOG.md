@@ -27,9 +27,13 @@
   is added to the existing marker rather than replacing it. The hand-rolled
   pickers now do the same, via `SelectedRowList` (below).
 - **Every picker marks its selected row with the same cursor.** `→`, `›` and
-  `>` were all in use, so which glyph you saw depended on which list you had
-  opened. They all use `→` now. In the ask-for-input pane this also stops the
-  row cursor colliding with the `>` that prompts its custom-answer field.
+  `>` were all in use — four glyphs counting the one `SelectList` hardcoded —
+  so which one you saw depended on which list you had opened. They all use `›`
+  now, from a single `SELECT_CURSOR`. In the ask-for-input pane this also stops
+  the row cursor colliding with the `>` that prompts its custom-answer field.
+- Unselected rows are indented by `SELECT_GUTTER`, derived from the cursor's
+  visible width, rather than by a hardcoded two columns. The two agreed before
+  only because every cursor in use happened to be two columns wide.
 - The model, scoped models, oauth and extension pickers build their rows
   through the new `SelectedRowList` component instead of adding a `Text` child
   per row. Those rows were assembled in an update method that never sees the

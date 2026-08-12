@@ -2,6 +2,9 @@ import { getKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, truncateToWidth, visibleWidth } from "../utils.js";
 
+/** Used when a theme does not name its own cursor. */
+export const DEFAULT_SELECT_CURSOR = "→ ";
+
 const DEFAULT_PRIMARY_COLUMN_WIDTH = 32;
 const PRIMARY_COLUMN_GAP = 2;
 const MIN_DESCRIPTION_WIDTH = 10;
@@ -21,6 +24,12 @@ export interface SelectListTheme {
 	description: (text: string) => string;
 	scrollInfo: (text: string) => string;
 	noMatch: (text: string) => string;
+	/**
+	 * Optional marker for the selected row, including any trailing space.
+	 * Defaults to `DEFAULT_SELECT_CURSOR`. Unselected rows are indented by the
+	 * cursor's visible width, so the column stays aligned whatever it is set to.
+	 */
+	cursor?: string;
 	/**
 	 * Optional background for the selected row. When set, the row is padded out
 	 * to the full width before being painted, so the highlight reaches the right
@@ -151,8 +160,11 @@ export class SelectList implements Component {
 		descriptionSingleLine: string | undefined,
 		primaryColumnWidth: number,
 	): string {
-		const prefix = isSelected ? "→ " : "  ";
-		const prefixWidth = visibleWidth(prefix);
+		const cursor = this.theme.cursor ?? DEFAULT_SELECT_CURSOR;
+		const prefixWidth = visibleWidth(cursor);
+		// Indent unselected rows by the cursor's width rather than a fixed two
+		// columns, so the value column stays put whatever cursor a theme names.
+		const prefix = isSelected ? cursor : " ".repeat(prefixWidth);
 
 		if (descriptionSingleLine && width > 40) {
 			const effectivePrimaryColumnWidth = Math.max(1, Math.min(primaryColumnWidth, width - prefixWidth - 4));

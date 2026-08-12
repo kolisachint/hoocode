@@ -1,7 +1,6 @@
 import { type Component, Container, getKeybindings, Spacer, Text, truncateToWidth } from "@kolisachint/hoocode-tui";
-import { paintSelectedRow, theme } from "../theme/theme.js";
+import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
-import { SELECT_CURSOR } from "./selected-row-list.js";
 
 interface UserMessageItem {
 	id: string; // Entry ID in the session
@@ -55,7 +54,7 @@ class UserMessageList implements Component {
 			const normalizedMessage = message.text.replace(/\n/g, " ").trim();
 
 			// First line: cursor + message
-			const cursor = isSelected ? theme.fg("accent", `${SELECT_CURSOR} `) : "  ";
+			const cursor = isSelected ? theme.fg("accent", SELECT_CURSOR) : SELECT_GUTTER;
 			const maxMsgWidth = width - 2; // Account for cursor (2 chars)
 			const truncatedMsg = truncateToWidth(normalizedMessage, maxMsgWidth);
 			const messageLine = cursor + (isSelected ? theme.bold(theme.fg("accent", truncatedMsg)) : truncatedMsg);

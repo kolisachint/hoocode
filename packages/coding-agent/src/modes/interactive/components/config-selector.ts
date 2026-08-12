@@ -18,9 +18,8 @@ import {
 import { CONFIG_DIR_NAME } from "../../../config.js";
 import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../core/package-manager.js";
 import type { PackageSource, SettingsManager } from "../../../core/settings-manager.js";
-import { paintSelectedRow, theme } from "../theme/theme.js";
+import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { rawKeyHint } from "./keybinding-hints.js";
-import { SELECT_CURSOR } from "./selected-row-list.js";
 
 type ResourceType = "extensions" | "skills" | "prompts" | "themes";
 
@@ -362,7 +361,7 @@ class ResourceList implements Component, Focusable {
 			} else {
 				// Resource item (cursor only on items)
 				const item = entry.item;
-				const cursor = isSelected ? theme.fg("accent", `${SELECT_CURSOR} `) : "  ";
+				const cursor = isSelected ? theme.fg("accent", SELECT_CURSOR) : SELECT_GUTTER;
 				const checkbox = item.enabled ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
 				const name = isSelected ? theme.bold(theme.fg("accent", item.displayName)) : item.displayName;
 				const line = truncateToWidth(`${cursor}    ${checkbox} ${name}`, width, "...");

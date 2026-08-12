@@ -1,13 +1,6 @@
 import { type Component, truncateToWidth } from "@kolisachint/hoocode-tui";
 import { paintSelectedRow } from "../theme/theme.js";
 
-/**
- * The cursor every picker marks its selected row with. Pickers used to pick
- * their own — `→`, `›` and `>` were all in use — so which glyph you saw
- * depended on which list you had opened.
- */
-export const SELECT_CURSOR = "→";
-
 export interface SelectableRow {
 	/** The row's already-styled content, without any left margin. */
 	text: string;

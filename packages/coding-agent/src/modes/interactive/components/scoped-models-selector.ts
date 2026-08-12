@@ -10,10 +10,10 @@ import {
 	Spacer,
 	Text,
 } from "@kolisachint/hoocode-tui";
-import { theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyText } from "./keybinding-hints.js";
-import { SELECT_CURSOR, type SelectableRow, SelectedRowList } from "./selected-row-list.js";
+import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 // EnabledIds: null = all enabled (no filter), string[] = explicit ordered list
 type EnabledIds = string[] | null;
@@ -212,7 +212,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredItems[i]!;
 			const isSelected = i === this.selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", `${SELECT_CURSOR} `) : "  ";
+			const prefix = isSelected ? theme.fg("accent", SELECT_CURSOR) : SELECT_GUTTER;
 			const modelText = isSelected ? theme.fg("accent", item.model.id) : item.model.id;
 			const providerBadge = theme.fg("muted", ` [${item.model.provider}]`);
 			const status = allEnabled ? "" : item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");

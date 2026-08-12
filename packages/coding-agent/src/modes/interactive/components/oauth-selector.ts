@@ -8,9 +8,9 @@ import {
 	TruncatedText,
 } from "@kolisachint/hoocode-tui";
 import type { AuthStatus, AuthStorage } from "../../../core/auth-storage.js";
-import { theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
-import { SELECT_CURSOR, type SelectableRow, SelectedRowList } from "./selected-row-list.js";
+import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 export type AuthSelectorProvider = {
 	id: string;
@@ -119,7 +119,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 
 			const isSelected = i === this.selectedIndex;
 			const statusIndicator = this.formatStatusIndicator(provider);
-			const prefix = isSelected ? theme.fg("accent", `${SELECT_CURSOR} `) : "  ";
+			const prefix = isSelected ? theme.fg("accent", SELECT_CURSOR) : SELECT_GUTTER;
 			const name = isSelected ? theme.fg("accent", provider.name) : theme.fg("text", provider.name);
 
 			rows.push({ text: prefix + name + statusIndicator, selected: isSelected });

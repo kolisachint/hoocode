@@ -11,9 +11,9 @@ import {
 } from "@kolisachint/hoocode-tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
-import { theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { keyHint } from "./keybinding-hints.js";
-import { SELECT_CURSOR, type SelectableRow, SelectedRowList } from "./selected-row-list.js";
+import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 interface ModelItem {
 	provider: string;
@@ -242,7 +242,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
-			const prefix = isSelected ? theme.fg("accent", `${SELECT_CURSOR} `) : "  ";
+			const prefix = isSelected ? theme.fg("accent", SELECT_CURSOR) : SELECT_GUTTER;
 			const modelText = isSelected ? theme.fg("accent", item.id) : item.id;
 			const providerBadge = theme.fg("muted", `[${item.provider}]`);
 			const checkmark = isCurrent ? theme.fg("success", " ✓") : "";

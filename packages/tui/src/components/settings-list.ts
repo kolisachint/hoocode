@@ -134,8 +134,10 @@ export class SettingsList implements Component {
 			if (!item) continue;
 
 			const isSelected = i === this.selectedIndex;
-			const prefix = isSelected ? this.theme.cursor : "  ";
-			const prefixWidth = visibleWidth(prefix);
+			// Indent unselected rows by the cursor's width rather than a fixed two
+			// columns, so the label column stays put whatever cursor a theme names.
+			const prefixWidth = visibleWidth(this.theme.cursor);
+			const prefix = isSelected ? this.theme.cursor : " ".repeat(prefixWidth);
 
 			// Pad label to align values
 			const labelPadded = item.label + " ".repeat(Math.max(0, maxLabelWidth - visibleWidth(item.label)));

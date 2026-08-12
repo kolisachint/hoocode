@@ -4,11 +4,11 @@
  */
 
 import { Container, getKeybindings, Spacer, Text, type TUI } from "@kolisachint/hoocode-tui";
-import { theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, rawKeyHint } from "./keybinding-hints.js";
-import { SELECT_CURSOR, type SelectableRow, SelectedRowList } from "./selected-row-list.js";
+import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 export interface ExtensionSelectorOptions {
 	tui?: TUI;
@@ -81,8 +81,8 @@ export class ExtensionSelectorComponent extends Container {
 			const isSelected = i === this.selectedIndex;
 			return {
 				text: isSelected
-					? theme.fg("accent", `${SELECT_CURSOR} `) + theme.fg("accent", option)
-					: `  ${theme.fg("text", option)}`,
+					? theme.fg("accent", SELECT_CURSOR) + theme.fg("accent", option)
+					: SELECT_GUTTER + theme.fg("text", option),
 				selected: isSelected,
 			};
 		});
