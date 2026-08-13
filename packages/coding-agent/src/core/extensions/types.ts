@@ -1665,10 +1665,25 @@ export interface Extension {
 	shortcuts: Map<KeyId, ExtensionShortcut>;
 }
 
+/**
+ * One issue raised while loading an extension or plugin.
+ *
+ * `severity` separates "this did not load" from "this loaded, with something
+ * held back". Startup aborts on the first kind and continues past the second —
+ * a distinction the workspace-trust notice depends on, since the way to resolve
+ * it (`/plugin trust`) only exists inside a session that started.
+ */
+export interface ExtensionLoadIssue {
+	path: string;
+	error: string;
+	/** Defaults to "error" when absent. */
+	severity?: "error" | "warning";
+}
+
 /** Result of loading extensions. */
 export interface LoadExtensionsResult {
 	extensions: Extension[];
-	errors: Array<{ path: string; error: string }>;
+	errors: ExtensionLoadIssue[];
 	/** Shared runtime - actions are throwing stubs until runner.initialize() */
 	runtime: ExtensionRuntime;
 }
