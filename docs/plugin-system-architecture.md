@@ -805,42 +805,54 @@ plugin source too — but only its **passive** capabilities (skills, commands,
 subagents) load. Hooks and MCP servers from project scope are skipped and
 reported.
 
-**Two project paths, and only one is gated.** The gate
-(`loader.ts` `isProjectSuppliedPlugin`) matches `<cwd>/.claude/skills/` alone.
-`<cwd>/.agents/plugins/` — the §5.2 project-scope install destination — loads in
-full, hooks and MCP servers included. The line is provenance, not location:
-`.claude/skills/` is the vendor convention for plugins that *arrive with the
-repository*, while a plugin in `.agents/plugins/` got there because someone on
-this machine ran `/plugin install --scope project`.
+**All three working-tree paths are gated, and the gate is workspace trust.**
+`isProjectSuppliedPlugin` covers `<cwd>/.claude/skills/`, `<cwd>/.agents/plugins/`
+and `<cwd>/.hoocode/plugins/`; `shouldWithholdExecutables` withholds from them
+unless `isWorkspaceTrusted(cwd)`.
 
-That reasoning covers the person who typed the command and stops there. Once the
-plugin is committed, the next person to clone the repo gets its hooks and MCP
-servers loading with no prompt, and for them the provenance argument is simply
-false — they are in exactly the position `.claude/skills/` is gated for. Two
-things keep this from being a regression rather than an inherited gap: the path
-was already read and already ungated (older versions installed everything there,
-§5.4), and the install now says so out loud when the plugin carries executables.
-It is still the strongest argument for the workspace-trust upgrade below, and the
-first thing that upgrade should cover.
+An earlier version gated only `.claude/skills/`, arguing that the hoocode homes
+held plugins "the user installed deliberately". That is true of the person who
+ran the install and false for everyone who clones the result — and **no property
+of a path can distinguish them**, because everything in the working tree travels
+with the repository, including any marker a plugin might carry to claim
+otherwise. The question was unanswerable where it was being asked. Trust moves it
+somewhere the repository cannot reach.
 
-The reason is a capability gap, not a preference: **hoocode has no workspace
-trust mechanism.** Every `trust` reference in the source is TLS CA trust
-(`utils/tls-ca.ts`), marketplace source trust (a curated list, not a per-folder
-gate), or prose. There is no trusted-directories setting in `settings-types.ts`,
-and `ui.confirm` is called in exactly one place in the entire codebase
-(`propose-plugin.ts:261`). Claude gates project-scope skills-dir plugins behind a
-workspace trust dialog, restricts their MCP servers to per-server approval, and
-refuses to load their monitors at all (§1.6). Loading project-scope hooks and MCP
-ungated would mean a cloned repo can register shell hooks and spawn servers with
-no confirmation — a real escalation over reading skill text, which is all
-`.claude/skills/` gets today.
+The reason is the escalation, not a preference. A cloned repo that can register
+shell hooks and spawn MCP servers with no confirmation is running code on the
+strength of `git clone`; reading its skill text is not. Claude draws the same
+line — workspace trust dialog for project-scope skills-dir plugins, per-server
+MCP approval, monitors not loaded at all (§1.6).
 
-Upgrade path when someone wants it: `ctx.ui.confirm` is already the primitive,
-and `propose-plugin.ts:252-260` sets the headless precedent — no UI means refuse,
-not proceed. What is missing is the *record* — a per-machine list of trusted
-workspace directories, kept outside the repo so it cannot travel in the clone.
-Once that exists, both project paths can share one gate and the asymmetry above
-goes away.
+*(This section previously said hoocode had no workspace trust mechanism, which
+was true when written. It has one now; see below.)*
+
+**The record** (`plugins/trust.ts`) is `~/.agents/trusted-workspaces.json`: a
+per-machine list of absolute paths, in the agent dir precisely so repository
+content cannot write it. Matching is exact, not prefix — trusting `~/src` must
+not silently trust every repository ever cloned beneath it.
+
+**Granting is a human act.** `/plugin trust` grants it; so does an explicit
+`/plugin install --scope project`, where a person is demonstrably operating in
+that directory on purpose and would otherwise watch the plugin they just chose
+load with its hooks withheld. The autonomous `InstallPlugin` never grants it: a
+model deciding a workspace may execute repository code is the exact decision the
+record exists to keep with a person. `/plugin untrust` reverses it.
+
+Two consequences worth stating rather than discovering:
+
+- **Trust is about a place, not a commit.** Once a directory is trusted, code
+  pulled into it later is trusted too. That is the same bargain Claude Code's
+  workspace trust and VS Code's trusted folders make, and it is what makes the
+  feature usable — re-prompting per commit would train people to click through.
+- **It changes behavior for existing project-local installs.** A plugin an older
+  hoocode put in `<cwd>/.agents/plugins/` and that carries hooks or MCP servers
+  now loads passive-only until the workspace is trusted. The load error names the
+  plugin and the one command that fixes it. The old behavior was the bug.
+
+Not built: prompting at load time. `loadPlugins` has no UI handle, and the
+`propose-plugin.ts:252-260` precedent (no UI means refuse, not proceed) points
+the same way — withhold and report, with an explicit command to grant.
 
 ---
 

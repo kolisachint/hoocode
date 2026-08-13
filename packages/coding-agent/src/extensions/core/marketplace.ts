@@ -20,6 +20,8 @@
  *   /plugin list                     list available plugins across marketplaces
  *   /plugin install <name> [--scope user|project]
  *   /plugin remove <name>
+ *   /plugin trust [list]             allow repo-committed plugins to run code here
+ *   /plugin untrust
  *   /plugin publish <name> [--to <marketplace-dir>]
  *
  * `publish` is the human end of the publish lane (§3.2). The model can package a
@@ -57,6 +59,12 @@ import {
 	writeMarketplaceStore,
 } from "../../core/extensions/plugins/marketplace.js";
 import { entryNeedsSource, packagePlugin, stageIntoMarketplace } from "../../core/extensions/plugins/packaging.js";
+import {
+	isWorkspaceTrusted,
+	listTrustedWorkspaces,
+	trustWorkspace,
+	untrustWorkspace,
+} from "../../core/extensions/plugins/trust.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 import { SettingsManager } from "../../core/settings-manager.js";
 
@@ -95,9 +103,9 @@ async function promptForScope(
 export function setupMarketplace(pi: ExtensionAPI): void {
 	pi.registerCommand("plugin", {
 		description:
-			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> [--scope user|project] | /plugin remove <name> | /plugin publish <name> [--to <dir>]",
+			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> [--scope user|project] | /plugin remove <name> | /plugin trust [list] | /plugin untrust | /plugin publish <name> [--to <dir>]",
 		getArgumentCompletions: (prefix: string) =>
-			["marketplace", "list", "install", "remove", "refresh", "publish"]
+			["marketplace", "list", "install", "remove", "refresh", "publish", "trust", "untrust"]
 				.filter((s) => s.startsWith(prefix))
 				.map((s) => ({ value: s, label: s })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -189,10 +197,14 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 					const src =
 						typeof p.source === "string"
 							? p.source
-							: p.source.source === "url"
-								? p.source.url
-								: `${p.source.url}/${p.source.path}`;
-					return `${p.name} [${p.supportPlatform.join(", ")}] — ${p.description ?? src}`;
+							: p.source.source === "npm"
+								? p.source.package
+								: p.source.source === "url" || p.source.source === "archive"
+									? p.source.url
+									: `${p.source.url}/${p.source.path}`;
+					const note =
+						p.sourceKind === "npm" || p.sourceKind === "archive" ? ` (${p.sourceKind}, not installable)` : "";
+					return `${p.name} [${p.supportPlatform.join(", ")}] — ${p.description ?? src}${note}`;
 				});
 				ctx.ui.notify(lines.length ? lines.join("\n") : "No plugins available. Add a marketplace first.", "info");
 				return;
@@ -233,7 +245,59 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 					ctx.ui.notify(outcome.message, "error");
 					return;
 				}
-				ctx.ui.notify(`${outcome.message} Reloading…`, "info");
+
+				// A person typing this command in this directory is the human act
+				// workspace trust asks for, so an explicit project-scope install grants
+				// it — otherwise the plugin you just chose to install here would load
+				// with its hooks withheld, which is nobody's idea of what happened.
+				// The autonomous path deliberately does not do this.
+				let trustNote = "";
+				if (scope === "project" && !isWorkspaceTrusted(cwd, getAgentDir())) {
+					trustWorkspace(cwd, getAgentDir());
+					trustNote = ` Trusted this workspace, so its plugins may run hooks and MCP servers here (\`/plugin untrust\` reverses it).`;
+				}
+				ctx.ui.notify(`${outcome.message}${trustNote} Reloading…`, "info");
+				await ctx.reload();
+				return;
+			}
+
+			// ── trust / untrust ─────────────────────────────────────────────────
+			if (trimmed === "trust" || trimmed.startsWith("trust ")) {
+				const sub = trimmed.slice("trust".length).trim();
+				if (sub === "list") {
+					const workspaces = listTrustedWorkspaces(getAgentDir());
+					ctx.ui.notify(
+						workspaces.length
+							? `Trusted workspaces:\n${workspaces.map((w) => `${w.path} (since ${w.at.slice(0, 10)})`).join("\n")}`
+							: "No trusted workspaces. Plugins in a working tree load skills and commands, but not hooks or MCP servers.",
+						"info",
+					);
+					return;
+				}
+				if (sub) {
+					ctx.ui.notify("Usage: /plugin trust | /plugin trust list | /plugin untrust", "warning");
+					return;
+				}
+				if (isWorkspaceTrusted(cwd, getAgentDir())) {
+					ctx.ui.notify(`Already trusted: ${cwd}`, "info");
+					return;
+				}
+				trustWorkspace(cwd, getAgentDir());
+				ctx.ui.notify(
+					`Trusted ${cwd}. Plugins committed to this repository may now run hooks and MCP servers here, ` +
+						"including any added by a later pull. Reverse it with /plugin untrust. Reloading…",
+					"info",
+				);
+				await ctx.reload();
+				return;
+			}
+
+			if (trimmed === "untrust") {
+				if (!untrustWorkspace(cwd, getAgentDir())) {
+					ctx.ui.notify(`Not trusted: ${cwd}`, "info");
+					return;
+				}
+				ctx.ui.notify(`Revoked trust for ${cwd}. Reloading…`, "info");
 				await ctx.reload();
 				return;
 			}
@@ -303,6 +367,7 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 
 			ctx.ui.notify(
 				"Usage: /plugin marketplace add|list|refresh | /plugin list | /plugin install <name> [--scope user|project] | " +
+					"/plugin trust [list] | /plugin untrust | " +
 					"/plugin remove <name> | /plugin publish <name> [--to <marketplace-dir>]",
 				"warning",
 			);

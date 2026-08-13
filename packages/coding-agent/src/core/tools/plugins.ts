@@ -34,6 +34,8 @@ import {
 	listInstalledPlugins,
 	uninstallPlugin,
 } from "../extensions/plugins/install.js";
+import { pluginScopeOf } from "../extensions/plugins/locations.js";
+import { isWorkspaceTrusted } from "../extensions/plugins/trust.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
 import { SettingsManager } from "../settings-manager.js";
 import {
@@ -53,13 +55,18 @@ const platformSchema = Type.Union([Type.Literal("agents"), Type.Literal("claude"
 
 function formatSourceForDisplay(source: AvailablePlugin["source"]): string {
 	if (typeof source === "string") return source;
-	if (source.source === "url") return source.url;
+	if (source.source === "npm") return source.package;
+	if (source.source === "url" || source.source === "archive") return source.url;
 	return `${source.url}/${source.path}`;
 }
 
 function describeAvailable(p: AvailablePlugin): string {
 	const platforms = p.supportPlatform.length ? ` [${p.supportPlatform.join(", ")}]` : "";
-	return `${p.name}${platforms} — ${p.description ?? formatSourceForDisplay(p.source)} (${p.sourceKind}, marketplace: ${p.marketplaceName})`;
+	// npm and archive entries are listed but not installable, and saying so here
+	// is cheaper than an InstallPlugin round trip that only ends in the message.
+	const kind =
+		p.sourceKind === "npm" || p.sourceKind === "archive" ? `${p.sourceKind}, NOT INSTALLABLE` : p.sourceKind;
+	return `${p.name}${platforms} — ${p.description ?? formatSourceForDisplay(p.source)} (${kind}, marketplace: ${p.marketplaceName})`;
 }
 
 // ── SearchPlugins ───────────────────────────────────────────────────────────
@@ -178,6 +185,10 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 				const text = params.id ? `No installed plugin with id "${params.id}".` : "No plugins installed.";
 				return { content: [{ type: "text" as const, text }], details: { count: 0 } };
 			}
+			// Scope is the answer to "why is this loaded, and who else gets it" —
+			// invisible before, though the plugin's own path always knew.
+			const trusted = isWorkspaceTrusted(ctx.cwd);
+			let withheldAny = false;
 			const lines = installed.map((p) => {
 				const caps = [
 					p.skillsDir && "skills",
@@ -189,9 +200,23 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 					.filter(Boolean)
 					.join(", ");
 				const version = p.version ? `@${p.version}` : "";
-				return `${p.id}${version} [${p.supportPlatform.join(", ")}]${caps ? ` — ${caps}` : ""}`;
+				const scope = pluginScopeOf(p.root, ctx.cwd);
+				// A working-tree plugin with executables loads them only in a trusted
+				// workspace, so "hooks" in the capability list would otherwise overstate
+				// what is actually running.
+				const withheld = scope !== "user" && !trusted && (p.hooks || p.mcpServers);
+				if (withheld) withheldAny = true;
+				return (
+					`${p.id}${version} [${p.supportPlatform.join(", ")}] (${scope})${caps ? ` — ${caps}` : ""}` +
+					`${withheld ? " · hooks/mcp withheld (workspace not trusted)" : ""}`
+				);
 			});
-			const text = `Installed plugins (${installed.length}):\n${lines.join("\n")}`;
+			let text = `Installed plugins (${installed.length}):\n${lines.join("\n")}`;
+			if (withheldAny) {
+				text +=
+					"\n\nWorking-tree plugins run their skills and commands but not their hooks or MCP servers " +
+					"until this directory is trusted (`/plugin trust`).";
+			}
 			return { content: [{ type: "text" as const, text }], details: { count: installed.length } };
 		},
 	});

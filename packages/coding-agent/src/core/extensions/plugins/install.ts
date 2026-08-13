@@ -266,8 +266,8 @@ export interface AvailablePlugin {
 	description?: string;
 	/** Relative path, git URL, `npm:<spec>`, or structured source object. */
 	source: MarketplacePluginSource;
-	/** Resolved source kind, for display and gating. */
-	sourceKind: "local" | "git" | "git-subdir" | "npm";
+	/** Resolved source kind, for display and gating. `npm`/`archive` are listed but not installable. */
+	sourceKind: "local" | "git" | "git-subdir" | "npm" | "archive";
 	marketplaceName: string;
 	marketplaceRoot: string;
 	/** Platforms this entry targets (per-entry hint, else the marketplace's). */
@@ -523,8 +523,22 @@ export async function installAvailablePlugin(
 			rmSync(dest, { recursive: true, force: true });
 			return { installed: false, message: res.message };
 		}
+	} else if (resolved.kind === "npm") {
+		return {
+			installed: false,
+			message:
+				`"${name}" is published as an npm package (${resolved.spec}), a source type hoocode cannot install yet. ` +
+				"The entry is listed so you know it exists; install it through the vendor CLI, or ask the marketplace " +
+				"for a git source.",
+		};
 	} else {
-		return { installed: false, message: `npm plugin sources are not supported yet (${resolved.spec}).` };
+		return {
+			installed: false,
+			message:
+				`"${name}" is published as a zip archive (${resolved.url}), a source type hoocode cannot install yet. ` +
+				"The entry is listed so you know it exists; install it through the vendor CLI, or ask the marketplace " +
+				"for a git source.",
+		};
 	}
 
 	// Drop the clone's `.git`. Nothing reads it — an installed plugin is never

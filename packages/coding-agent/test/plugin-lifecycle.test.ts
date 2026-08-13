@@ -445,6 +445,32 @@ describe("plugin install engine", () => {
 		expect(asUser.message).not.toContain("anyone who clones the repository");
 	});
 
+	it("explains an unsupported source type instead of pretending the plugin is missing", async () => {
+		const market = path.join(cwd, "market");
+		writeJson(path.join(market, ".agents-plugin", "marketplace.json"), {
+			name: "local",
+			plugins: [
+				{ name: "zip-plugin", source: { source: "archive", url: "https://ex.com/p.zip" } },
+				{ name: "npm-plugin", source: { source: "npm", package: "@acme/p" } },
+			],
+		});
+		writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+			marketplaces: [{ location: market, dir: market }],
+		});
+
+		// Discoverable, which is the point — the old behavior hid them entirely.
+		const names = listAvailablePlugins(cwd).map((p) => p.name);
+		expect(names).toContain("zip-plugin");
+		expect(names).toContain("npm-plugin");
+
+		const zip = await installAvailablePlugin(cwd, "zip-plugin");
+		expect(zip.installed).toBe(false);
+		expect(zip.message).toContain("zip archive");
+		const npm = await installAvailablePlugin(cwd, "npm-plugin");
+		expect(npm.installed).toBe(false);
+		expect(npm.message).toContain("npm package");
+	});
+
 	it("says so when an installed plugin contributes nothing hoocode can load", async () => {
 		// The dominant shape in github/awesome-copilot: a manifest whose content
 		// lives in Copilot UI `extensions/`. Installing it is not a failure, but

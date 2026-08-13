@@ -94,6 +94,26 @@ export function installHomeForScope(scope: PluginInstallScope, cwd: string, agen
 }
 
 /**
+ * Which scope a plugin already on disk belongs to, derived from where it lives.
+ *
+ * `repo` is the third answer the install scopes do not cover: a plugin under
+ * `<cwd>/.claude/skills` arrived with the repository rather than through an
+ * install, so it is project-*located* but nobody here chose it. Keeping it
+ * distinct from `project` is what lets `ListPlugins` say which plugins are
+ * running because someone installed them and which because they were cloned.
+ */
+export function pluginScopeOf(pluginRoot: string, cwd: string): PluginInstallScope | "repo" {
+	const under = (root: string): boolean => {
+		const normalized = path.resolve(root);
+		const target = path.resolve(pluginRoot);
+		return target === normalized || target.startsWith(`${normalized}${path.sep}`);
+	};
+	if (under(projectPluginsDir(cwd)) || under(path.join(cwd, ".hoocode", "plugins"))) return "project";
+	if (under(path.join(cwd, ".claude", "skills")) || under(path.join(cwd, ".agents", "skills"))) return "repo";
+	return "user";
+}
+
+/**
  * Root of a platform's production home — the parent that {@link productionPluginDir}
  * places plugin directories under.
  */

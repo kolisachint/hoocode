@@ -115,6 +115,32 @@ describe("marketplace manifests", () => {
 		});
 	});
 
+	it("keeps npm and archive entries in the catalog, and still drops malformed ones", () => {
+		// A documented source type hoocode cannot fetch is not the same as a broken
+		// entry. Dropping both made an archive plugin read as "does not exist"
+		// rather than "cannot install that kind yet".
+		const dir = path.join(tempDir, "unsupported-kinds");
+		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), {
+			name: "mixed",
+			plugins: [
+				{ name: "zip-plugin", source: { source: "archive", url: "https://ex.com/p.zip", sha256: "abc" } },
+				{ name: "npm-plugin", source: { source: "npm", package: "@acme/p", version: "2.1.0" } },
+				{ name: "bad-source", source: { source: "unknown", url: "https://ex.com/r.git" } },
+				{ name: "bad-shape", source: 123 },
+			],
+		});
+		const parsed = parseMarketplaceDir(dir);
+		expect(parsed?.plugins.map((p) => p.name)).toEqual(["zip-plugin", "npm-plugin"]);
+
+		expect(resolvePluginSource(parsed!.plugins[0].source, dir)).toEqual({
+			kind: "archive",
+			url: "https://ex.com/p.zip",
+			sha256: "abc",
+		});
+		// The version folds into the spec so the message can name what was asked for.
+		expect(resolvePluginSource(parsed!.plugins[1].source, dir)).toEqual({ kind: "npm", spec: "@acme/p@2.1.0" });
+	});
+
 	it("prefers the native .agents-plugin manifest over Claude and Copilot", () => {
 		const dir = path.join(tempDir, "triple");
 		writeJson(path.join(dir, ".agents-plugin", "marketplace.json"), { name: "from-agents", plugins: [] });
