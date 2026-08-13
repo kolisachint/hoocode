@@ -19,6 +19,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { TextContent, ToolCall } from "@kolisachint/hoocode-ai";
+import { getUserAgentsDir } from "../../config.js";
 import { getDefaultSessionDir } from "../session-manager.js";
 import {
 	contentWords,
@@ -29,6 +30,7 @@ import {
 	normalizeErrorSignature,
 	wordOverlap,
 } from "./normalize.js";
+import { judge, type LearnState } from "./state.js";
 
 /**
  * Prefix on the message `/learn` injects. The digest is persisted like any user
@@ -68,7 +70,15 @@ const MAX_PER_CATEGORY = 8;
  */
 export type DirectiveStatus = "new" | "restated";
 
-export interface DirectiveCluster {
+/** Fields every proposable item shares, so suppression can be applied uniformly. */
+interface Proposable {
+	/** Stable identity across runs — what the state file remembers. */
+	key: string;
+	/** Newest occurrence in the window, ISO. */
+	lastSeen: string;
+}
+
+export interface DirectiveCluster extends Proposable {
 	/** Representative raw text, the longest seen in the cluster. */
 	text: string;
 	normalized: string;
@@ -76,13 +86,18 @@ export interface DirectiveCluster {
 	count: number;
 	/** Distinct sessions it was said in — the stronger of the two counts. */
 	sessions: number;
-	lastSeen: string;
 	status: DirectiveStatus;
 	/** The existing rule line matched, when status is `restated`. */
 	existingRule?: string;
+	/**
+	 * Shown before and still not written down anywhere — you saw this proposal
+	 * and passed on it. Only meaningful for directives, where "is it in a context
+	 * file now" is a real signal.
+	 */
+	previouslyDeclined: boolean;
 }
 
-export interface FixCandidate {
+export interface FixCandidate extends Proposable {
 	/** Normalized failing command. */
 	command: string;
 	/** Normalized error signature, the dedupe key. */
@@ -96,15 +111,13 @@ export interface FixCandidate {
 	/** Times this signature failed and was resolved across the window. */
 	count: number;
 	sessions: number;
-	lastSeen: string;
 }
 
-export interface WorkflowCandidate {
+export interface WorkflowCandidate extends Proposable {
 	/** Tool-call signatures in order. */
 	steps: string[];
 	count: number;
 	sessions: number;
-	lastSeen: string;
 }
 
 export interface LearnDigest {
@@ -117,6 +130,10 @@ export interface LearnDigest {
 	directives: DirectiveCluster[];
 	fixes: FixCandidate[];
 	workflows: WorkflowCandidate[];
+	/** Items held back because nothing new has happened since they were last shown. */
+	suppressed: number;
+	/** Everything this run put on screen, for the caller to persist. */
+	surfaced: Array<{ key: string; lastSeen: string; covered: boolean }>;
 }
 
 export interface ExtractOptions {
@@ -128,6 +145,13 @@ export interface ExtractOptions {
 	maxAgeDays?: number;
 	/** Occurrences a directive needs before it is proposed. The signal/noise dial. */
 	minRepeats?: number;
+	/**
+	 * What previous runs already showed. Items with no new occurrences since are
+	 * held back. Omit (or pass `ignoreState`) to propose everything in the window.
+	 */
+	state?: LearnState;
+	/** Re-propose everything, ignoring what previous runs surfaced (`/learn all`). */
+	ignoreState?: boolean;
 	/** Injectable clock, for tests. */
 	now?: Date;
 }
@@ -287,6 +311,35 @@ function listSessions(options: ExtractOptions): { sessions: ParsedSession[]; ski
 	return { sessions, skipped };
 }
 
+/**
+ * Hold back items already shown that have not recurred since, then cap the rest.
+ *
+ * Order matters: suppression runs *before* the cap, or an item you already
+ * decided on would occupy one of the few slots the digest has and push a live
+ * signal off the list.
+ */
+function applySuppression<T extends Proposable>(
+	items: T[],
+	state: LearnState | undefined,
+	covered: (item: T) => boolean,
+	onDeclined?: (item: T) => void,
+): { kept: T[]; suppressed: number } {
+	if (!state) return { kept: items.slice(0, MAX_PER_CATEGORY), suppressed: 0 };
+
+	const kept: T[] = [];
+	let suppressed = 0;
+	for (const item of items) {
+		const verdict = judge(state, { key: item.key, lastSeen: item.lastSeen, covered: covered(item) });
+		if (verdict.suppressed) {
+			suppressed++;
+			continue;
+		}
+		if (verdict.previouslyDeclined) onDeclined?.(item);
+		kept.push(item);
+	}
+	return { kept: kept.slice(0, MAX_PER_CATEGORY), suppressed };
+}
+
 /** Nearest AGENTS.md walking up from cwd, so proposals can be checked against it. */
 function findAgentsFile(cwd: string): string | undefined {
 	let dir = resolve(cwd);
@@ -404,11 +457,15 @@ function clusterDirectives(
 			}
 		}
 
-		// Everything reaching here cleared the repeat threshold, so a match against
-		// an existing rule means the rule is there and not working — it wants
-		// rewriting, not duplicating.
+		// Everything reaching here cleared the repeat threshold. Suppression handles
+		// the case that used to make this label lie — a rule accepted from a
+		// previous run coming back as "not working" when nothing had happened
+		// since. By the time an item survives that filter, a match against an
+		// existing rule genuinely means you repeated yourself after the rule
+		// existed, so it wants rewriting rather than duplicating.
 		const covered = bestOverlap >= COVERED_OVERLAP;
 		clusters.push({
+			key: `directive:${entry.normalized}`,
 			text: entry.text,
 			normalized: entry.normalized,
 			count: entry.count,
@@ -416,12 +473,11 @@ function clusterDirectives(
 			lastSeen: entry.lastSeen,
 			status: covered ? "restated" : "new",
 			existingRule: covered ? bestLine : undefined,
+			previouslyDeclined: false,
 		});
 	}
 
-	return clusters
-		.sort((a, b) => b.sessions - a.sessions || b.count - a.count || a.text.localeCompare(b.text))
-		.slice(0, MAX_PER_CATEGORY);
+	return clusters.sort((a, b) => b.sessions - a.sessions || b.count - a.count || a.text.localeCompare(b.text));
 }
 
 /** Files a mutating tool touched, for the resolution summary. */
@@ -484,6 +540,7 @@ function extractFixes(perSession: Array<{ session: ParsedSession; events: ToolEv
 				acc.set(key, {
 					sessions: new Set([session.id]),
 					candidate: {
+						key: `fix:${key}`,
 						command: normalized,
 						signature,
 						errorExcerpt: (failure.output ?? "").replace(/\s+/g, " ").trim().slice(0, 240),
@@ -503,9 +560,7 @@ function extractFixes(perSession: Array<{ session: ParsedSession; events: ToolEv
 		candidate.sessions = sessions.size;
 		out.push(candidate);
 	}
-	return out
-		.sort((a, b) => b.count - a.count || b.sessions - a.sessions || a.signature.localeCompare(b.signature))
-		.slice(0, MAX_PER_CATEGORY);
+	return out.sort((a, b) => b.count - a.count || b.sessions - a.sessions || a.signature.localeCompare(b.signature));
 }
 
 /** A tool call reduced to a comparable step: the tool, plus the verb for bash. */
@@ -550,6 +605,7 @@ function extractWorkflows(perSession: Array<{ session: ParsedSession; events: To
 	const candidates = [...acc.values()]
 		.filter((entry) => entry.count >= MIN_WORKFLOW_COUNT)
 		.map((entry) => ({
+			key: `workflow:${entry.steps.join(" > ")}`,
 			steps: entry.steps,
 			count: entry.count,
 			sessions: entry.sessions.size,
@@ -558,11 +614,30 @@ function extractWorkflows(perSession: Array<{ session: ParsedSession; events: To
 
 	// Prefer longer sequences at equal frequency: a five-step workflow is a more
 	// useful skill than the three-step prefix it contains.
-	return candidates
-		.sort(
-			(a, b) => b.count - a.count || b.steps.length - a.steps.length || a.steps.join().localeCompare(b.steps.join()),
-		)
-		.slice(0, MAX_PER_CATEGORY);
+	return candidates.sort(
+		(a, b) => b.count - a.count || b.steps.length - a.steps.length || a.steps.join().localeCompare(b.steps.join()),
+	);
+}
+
+/**
+ * Text a proposal is checked against to decide whether it is already written
+ * down — the nearest repo context file plus both user scopes.
+ *
+ * All three matter for suppression, because `/learn` can route a rule to the
+ * user scope. Checking only the repo file would report a rule you accepted into
+ * `~/.agents/AGENTS.md` as declined.
+ */
+function coverageCorpus(agentDir: string, repoFile: string | undefined): string {
+	const parts: string[] = [];
+	for (const candidate of [repoFile, join(getUserAgentsDir(), "AGENTS.md"), join(agentDir, "AGENTS.md")]) {
+		if (!candidate || !existsSync(candidate)) continue;
+		try {
+			parts.push(readFileSync(candidate, "utf-8"));
+		} catch {
+			// Unreadable context file: treat as absent rather than failing the run.
+		}
+	}
+	return parts.join("\n");
 }
 
 /** Mine the recent sessions for this cwd and return the ranked digest. */
@@ -578,11 +653,35 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 			agentsContent = undefined;
 		}
 	}
+	const corpus = coverageCorpus(options.agentDir, agentsFilePath);
 
 	const withDirectives = sessions.map((session) => ({ session, directives: userDirectives(session.entries) }));
 	const withEvents = sessions.map((session) => ({ session, events: toolEvents(session.entries) }));
 
 	const timestamps = sessions.map((s) => s.timestamp).sort();
+	const state = options.ignoreState ? undefined : options.state;
+
+	// Directives carry a real coverage signal (is this rule in a context file
+	// now?), which is what separates an adopted proposal from a declined one.
+	// Fixes and workflows do not: a fix may have become a rule, a skill, or a
+	// habit, and none of those are checkable here — so they get suppression
+	// only, and are never labelled declined.
+	const directives = applySuppression(
+		clusterDirectives(withDirectives, corpus, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
+		state,
+		(item) => item.status === "restated",
+		(item) => {
+			item.previouslyDeclined = true;
+		},
+	);
+	const fixes = applySuppression(extractFixes(withEvents), state, () => false);
+	const workflows = applySuppression(extractWorkflows(withEvents), state, () => false);
+
+	const surfaced = [
+		...directives.kept.map((d) => ({ key: d.key, lastSeen: d.lastSeen, covered: d.status === "restated" })),
+		...fixes.kept.map((f) => ({ key: f.key, lastSeen: f.lastSeen, covered: false })),
+		...workflows.kept.map((w) => ({ key: w.key, lastSeen: w.lastSeen, covered: false })),
+	];
 
 	return {
 		scannedSessions: sessions.length,
@@ -592,8 +691,10 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 		agentsFilePath,
 		agentsFileTokens:
 			agentsContent === undefined ? undefined : Math.round(Buffer.byteLength(agentsContent, "utf-8") / 4),
-		directives: clusterDirectives(withDirectives, agentsContent, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
-		fixes: extractFixes(withEvents),
-		workflows: extractWorkflows(withEvents),
+		directives: directives.kept,
+		fixes: fixes.kept,
+		workflows: workflows.kept,
+		suppressed: directives.suppressed + fixes.suppressed + workflows.suppressed,
+		surfaced,
 	};
 }

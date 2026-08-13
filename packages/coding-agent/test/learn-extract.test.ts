@@ -11,6 +11,7 @@ import {
 	normalizeDirective,
 	normalizeErrorSignature,
 } from "../src/core/learn/normalize.js";
+import { getLearnStatePath, readLearnState, recordSurfaced, writeLearnState } from "../src/core/learn/state.js";
 
 let tempDir: string;
 
@@ -397,6 +398,151 @@ describe("session selection", () => {
 	it("returns an empty digest when there is nothing to mine", () => {
 		const fixture = createFixture();
 		expect(isEmptyDigest(extract(fixture))).toBe(true);
+	});
+});
+
+describe("suppression across runs", () => {
+	/** Two sessions repeating one directive, timestamped so recurrence can be simulated. */
+	function repeatedDirective(fixture: Fixture, sessionTimes: string[]): void {
+		sessionTimes.forEach((timestamp, index) => {
+			const lines = [
+				JSON.stringify({ type: "session", version: 3, id: `s${index}`, timestamp, cwd: fixture.cwd }),
+				JSON.stringify(userEntry("always run the tests with --coverage")),
+			];
+			writeFileSync(join(fixture.sessionDir, `s${index}.jsonl`), `${lines.join("\n")}\n`);
+		});
+	}
+
+	it("holds back an item already shown that has not recurred since", () => {
+		const fixture = createFixture();
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+
+		const first = extractLearnDigest(base);
+		expect(first.directives).toHaveLength(1);
+
+		// Record the run as happening after the newest session.
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-03T00:00:00.000Z"));
+		const second = extractLearnDigest({ ...base, state });
+
+		expect(second.directives).toEqual([]);
+		expect(second.suppressed).toBe(1);
+	});
+
+	it("shows it again once it recurs after being shown", () => {
+		const fixture = createFixture();
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+
+		const first = extractLearnDigest(base);
+		// Surfaced before the second session, so that session counts as new.
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-01T12:00:00.000Z"));
+
+		expect(extractLearnDigest({ ...base, state }).directives).toHaveLength(1);
+	});
+
+	it("does not flag a rule accepted from a previous run as restated", () => {
+		const fixture = createFixture();
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+
+		const first = extractLearnDigest(base);
+		expect(first.directives[0]!.status).toBe("new");
+
+		// The user accepts it: the rule lands in AGENTS.md, nothing else changes.
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-03T00:00:00.000Z"));
+		writeFileSync(join(fixture.cwd, "AGENTS.md"), "- always run the tests with --coverage\n");
+
+		// Without suppression this would come back as "restated" — accusing a rule
+		// that is working of not working.
+		expect(extractLearnDigest({ ...base, state }).directives).toEqual([]);
+	});
+
+	it("marks an item shown before and still unwritten as previously declined", () => {
+		const fixture = createFixture();
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+
+		const first = extractLearnDigest(base);
+		// Surfaced before the last session, so it recurs and comes back.
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-01T12:00:00.000Z"));
+
+		const second = extractLearnDigest({ ...base, state });
+		expect(second.directives[0]!.previouslyDeclined).toBe(true);
+	});
+
+	it("re-proposes everything under /learn all", () => {
+		const fixture = createFixture();
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+
+		const first = extractLearnDigest(base);
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-03T00:00:00.000Z"));
+
+		expect(extractLearnDigest({ ...base, state }).directives).toEqual([]);
+		expect(extractLearnDigest({ ...base, state, ignoreState: true }).directives).toHaveLength(1);
+	});
+
+	it("counts coverage from the user scope, so a rule routed there is not called declined", () => {
+		const fixture = createFixture();
+		const userAgentsDir = join(tempDir, ".agents");
+		mkdirSync(userAgentsDir, { recursive: true });
+		writeFileSync(join(userAgentsDir, "AGENTS.md"), "- always run the tests with --coverage\n");
+		const prior = process.env.HOOCODE_USER_AGENTS_DIR;
+		process.env.HOOCODE_USER_AGENTS_DIR = userAgentsDir;
+		try {
+			repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+			const digest = extractLearnDigest({
+				cwd: fixture.cwd,
+				agentDir: fixture.agentDir,
+				sessionDir: fixture.sessionDir,
+			});
+			expect(digest.directives[0]!.status).toBe("restated");
+		} finally {
+			if (prior === undefined) delete process.env.HOOCODE_USER_AGENTS_DIR;
+			else process.env.HOOCODE_USER_AGENTS_DIR = prior;
+		}
+	});
+});
+
+describe("learn state file", () => {
+	it("round-trips through disk", () => {
+		const fixture = createFixture();
+		const path = getLearnStatePath(fixture.agentDir, fixture.sessionDir);
+
+		expect(readLearnState(path).surfaced).toEqual({});
+		writeLearnState(
+			path,
+			recordSurfaced(readLearnState(path), [
+				{ key: "directive:x", lastSeen: "2026-08-01T00:00:00.000Z", covered: false },
+			]),
+		);
+		expect(readLearnState(path).surfaced["directive:x"]).toBeDefined();
+	});
+
+	it("treats a corrupt or unknown-version file as empty rather than failing", () => {
+		const fixture = createFixture();
+		const path = getLearnStatePath(fixture.agentDir, fixture.sessionDir);
+		mkdirSync(join(path, ".."), { recursive: true });
+
+		writeFileSync(path, "{ not json");
+		expect(readLearnState(path).surfaced).toEqual({});
+
+		writeFileSync(path, JSON.stringify({ version: 999, surfaced: { "directive:x": {} } }));
+		expect(readLearnState(path).surfaced).toEqual({});
+	});
+
+	it("prunes entries nothing has referenced in a long time", () => {
+		const fixture = createFixture();
+		const path = getLearnStatePath(fixture.agentDir, fixture.sessionDir);
+		const stale = recordSurfaced(
+			readLearnState(path),
+			[{ key: "directive:old", lastSeen: "2020-01-01T00:00:00.000Z", covered: false }],
+			new Date("2020-01-01T00:00:00.000Z"),
+		);
+
+		writeLearnState(path, stale, new Date("2026-08-01T00:00:00.000Z"));
+		expect(readLearnState(path).surfaced).toEqual({});
 	});
 });
 

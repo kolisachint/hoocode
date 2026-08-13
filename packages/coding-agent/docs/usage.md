@@ -130,6 +130,19 @@ habits that travel with you, or as a new skill. Nothing is written without the
 usual edit approval. Because it reads transcripts from disk rather than the live
 conversation, it still works after the session has been compacted.
 
+`/learn` remembers what it has already shown you, per directory. An item comes
+back only once it recurs *after* it was last put in front of you — so a rule you
+accepted is not re-proposed, and one you passed on does not reappear every run
+unchanged. Something you keep saying anyway will return, which is the point: that
+is the case where the existing rule is not working. Run `/learn all` to ignore
+that memory and re-propose everything in the window.
+
+An item shown before that still is not written down anywhere is flagged as
+previously declined, so it is proposed tentatively rather than pressed a second
+time. That inference reads the context files, so a rule you routed to
+`~/.agents/AGENTS.md` counts as adopted; one you turned into a skill is not
+currently detected and will look declined.
+
 ### System Prompt Files
 
 Replace the default system prompt with:

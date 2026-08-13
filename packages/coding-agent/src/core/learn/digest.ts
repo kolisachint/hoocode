@@ -36,6 +36,7 @@ export function renderLearnDigest(digest: LearnDigest, options: { userScopePath:
 		`${LEARN_DIGEST_MARKER} Mined ${digest.scannedSessions} session(s) in this directory` +
 			(digest.skippedSessions > 0 ? ` (${digest.skippedSessions} skipped: out of window or unreadable)` : "") +
 			(digest.oldestSession ? `, ${shortDate(digest.oldestSession)} to ${shortDate(digest.newestSession)}` : "") +
+			(digest.suppressed > 0 ? `. ${digest.suppressed} item(s) held back — already shown and unchanged since` : "") +
 			".",
 	);
 	lines.push("");
@@ -55,6 +56,9 @@ export function renderLearnDigest(digest: LearnDigest, options: { userScopePath:
 			lines.push(`  - ${evidence(cluster.count, cluster.sessions, cluster.lastSeen)}`);
 			if (cluster.existingRule) {
 				lines.push(`  - already covered by: "${cluster.existingRule.slice(0, 160)}"`);
+			}
+			if (cluster.previouslyDeclined) {
+				lines.push("  - proposed before and not written down — you have already passed on this once");
 			}
 		}
 		lines.push("");

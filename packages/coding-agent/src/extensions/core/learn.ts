@@ -24,6 +24,7 @@ import { getHooCodeDir } from "../../config.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 import { isEmptyDigest, renderLearnDigest } from "../../core/learn/digest.js";
 import { extractLearnDigest } from "../../core/learn/extract.js";
+import { getLearnStatePath, readLearnState, recordSurfaced, writeLearnState } from "../../core/learn/state.js";
 import { SettingsManager } from "../../core/settings-manager.js";
 
 /** Guards against double-registration when default extensions load more than once. */
@@ -44,24 +45,37 @@ export function setupLearn(pi: ExtensionAPI): void {
 	guarded[REGISTERED] = true;
 
 	pi.registerCommand("learn", {
-		description: "Mine recent sessions for durable rules and skills, and update AGENTS.md",
-		getArgumentCompletions: () => [],
-		handler: async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
+		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all]",
+		getArgumentCompletions: (prefix: string) =>
+			["all"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: "re-propose everything" })),
+		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			const argument = args.trim().toLowerCase();
+			if (argument && argument !== "all") {
+				ctx.ui.notify("Usage: /learn [all]", "warning");
+				return;
+			}
+			const ignoreState = argument === "all";
+
 			// Read per-invocation so a settings edit takes effect without a reload,
 			// and so a project settings.json can narrow the window for one repo.
-			const window = SettingsManager.create(ctx.cwd, getHooCodeDir()).getLearnSettings();
+			const agentDir = getHooCodeDir();
+			const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
+			const sessionDir = ctx.sessionManager.getSessionDir();
+			const statePath = getLearnStatePath(agentDir, sessionDir);
 
 			let digest: ReturnType<typeof extractLearnDigest>;
 			try {
 				digest = extractLearnDigest({
 					cwd: ctx.cwd,
-					agentDir: getHooCodeDir(),
+					agentDir,
 					// The live session manager already knows where this cwd's sessions
 					// live, which avoids re-deriving (and re-creating) the directory.
-					sessionDir: ctx.sessionManager.getSessionDir(),
+					sessionDir,
 					maxSessions: window.maxSessions,
 					maxAgeDays: window.maxAgeDays,
 					minRepeats: window.minRepeats,
+					state: readLearnState(statePath),
+					ignoreState,
 				});
 			} catch (error) {
 				ctx.ui.notify(`/learn could not read session history: ${error}`, "error");
@@ -75,7 +89,9 @@ export function setupLearn(pi: ExtensionAPI): void {
 
 			if (isEmptyDigest(digest)) {
 				ctx.ui.notify(
-					`Scanned ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
+					digest.suppressed > 0
+						? `Scanned ${digest.scannedSessions} session(s) — nothing new since last time (${digest.suppressed} already shown). Run /learn all to see them again.`
+						: `Scanned ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
 					"info",
 				);
 				return;
@@ -86,7 +102,12 @@ export function setupLearn(pi: ExtensionAPI): void {
 				digest.fixes.length > 0 ? `${digest.fixes.length} fix(es)` : undefined,
 				digest.workflows.length > 0 ? `${digest.workflows.length} workflow(s)` : undefined,
 			].filter((part): part is string => !!part);
-			ctx.ui.notify(`Mined ${digest.scannedSessions} session(s): ${counts.join(", ")}.`, "info");
+			const held = digest.suppressed > 0 ? `, ${digest.suppressed} held back` : "";
+			ctx.ui.notify(`Mined ${digest.scannedSessions} session(s): ${counts.join(", ")}${held}.`, "info");
+
+			// Record before delivering: what matters is that these were put in front
+			// of the user, which is true whether or not they act on the digest.
+			writeLearnState(statePath, recordSurfaced(readLearnState(statePath), digest.surfaced));
 
 			pi.sendUserMessage(renderLearnDigest(digest, { userScopePath: displayPath(USER_SCOPE_PATH) }), {
 				deliverAs: "followUp",
