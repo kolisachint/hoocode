@@ -184,6 +184,30 @@ Normally the package manager's global modules location is queried using `root -g
 
 When multiple sources specify a session directory, precedence is `--session-dir`, `HOOCODE_CODING_AGENT_SESSION_DIR`, then `sessionDir` in settings.json.
 
+### Learning from sessions
+
+The window `/learn` mines when looking for repeated directives, fixes, and workflows.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `learnMaxSessions` | number | `20` | Recent sessions in this directory to scan |
+| `learnMaxAgeDays` | number | `30` | Ignore sessions older than this |
+| `learnMinRepeats` | number | `2` | Times a directive must recur before it is proposed |
+
+```json
+{ "learnMaxSessions": 50, "learnMaxAgeDays": 90, "learnMinRepeats": 3 }
+```
+
+Widen the window on a repo you touch rarely, so a habit spread over months still
+reaches the repeat threshold. Narrow it on one you work in daily, where the last
+few weeks are the only relevant history. `learnMinRepeats` is the signal/noise
+dial: raise it for fewer, better-evidenced proposals.
+
+Non-numeric or non-positive values fall back to the default rather than
+narrowing the window to nothing. As with all settings, a project
+`.hoocode/settings.json` overrides the global one, so a repo can carry its own
+window.
+
 ### Model Cycling
 
 | Setting | Type | Default | Description |

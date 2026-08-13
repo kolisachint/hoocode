@@ -358,6 +358,29 @@ describe("session selection", () => {
 		expect(digest.skippedSessions).toBe(1);
 	});
 
+	it("honours a configured repeat threshold", () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);
+		writeSession(fixture, "s2", [userEntry("always run the tests with --coverage")]);
+
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		expect(extractLearnDigest({ ...base, minRepeats: 2 }).directives).toHaveLength(1);
+		expect(extractLearnDigest({ ...base, minRepeats: 3 }).directives).toEqual([]);
+	});
+
+	it("honours a configured session cap", () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);
+		writeSession(fixture, "s2", [userEntry("always run the tests with --coverage")]);
+
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const capped = extractLearnDigest({ ...base, maxSessions: 1 });
+		expect(capped.scannedSessions).toBe(1);
+		expect(capped.skippedSessions).toBe(1);
+		// One session left in the window no longer clears the default threshold.
+		expect(capped.directives).toEqual([]);
+	});
+
 	it("ignores sessions older than the window", () => {
 		const fixture = createFixture();
 		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);

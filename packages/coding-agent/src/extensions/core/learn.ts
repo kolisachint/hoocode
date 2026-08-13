@@ -24,6 +24,7 @@ import { getHooCodeDir } from "../../config.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 import { isEmptyDigest, renderLearnDigest } from "../../core/learn/digest.js";
 import { extractLearnDigest } from "../../core/learn/extract.js";
+import { SettingsManager } from "../../core/settings-manager.js";
 
 /** Guards against double-registration when default extensions load more than once. */
 const REGISTERED = Symbol.for("hoocode.learn.registered");
@@ -46,6 +47,10 @@ export function setupLearn(pi: ExtensionAPI): void {
 		description: "Mine recent sessions for durable rules and skills, and update AGENTS.md",
 		getArgumentCompletions: () => [],
 		handler: async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
+			// Read per-invocation so a settings edit takes effect without a reload,
+			// and so a project settings.json can narrow the window for one repo.
+			const window = SettingsManager.create(ctx.cwd, getHooCodeDir()).getLearnSettings();
+
 			let digest: ReturnType<typeof extractLearnDigest>;
 			try {
 				digest = extractLearnDigest({
@@ -54,6 +59,9 @@ export function setupLearn(pi: ExtensionAPI): void {
 					// The live session manager already knows where this cwd's sessions
 					// live, which avoids re-deriving (and re-creating) the directory.
 					sessionDir: ctx.sessionManager.getSessionDir(),
+					maxSessions: window.maxSessions,
+					maxAgeDays: window.maxAgeDays,
+					minRepeats: window.minRepeats,
 				});
 			} catch (error) {
 				ctx.ui.notify(`/learn could not read session history: ${error}`, "error");

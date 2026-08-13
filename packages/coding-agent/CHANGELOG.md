@@ -20,6 +20,11 @@
   and what keeps the command working after compaction. Items already covered by
   a rule that you keep restating are flagged as rewrites rather than additions,
   so the file does not only grow.
+- `learnMaxSessions` (default 20), `learnMaxAgeDays` (default 30) and
+  `learnMinRepeats` (default 2) configure the window `/learn` mines. Read
+  per-invocation and project-overridable, so a repo can carry its own window;
+  non-positive values fall back to the default rather than silently mining
+  nothing.
 - Aggregate budget across all loaded context files, on top of the existing
   per-file limits: a warning past ~6k tokens, and trimming of the least specific
   scope first past ~16k. Trimmed files stay visible with a notice rather than

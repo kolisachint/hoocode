@@ -50,7 +50,7 @@ const FIX_LOOKAHEAD = 40;
 /** Word overlap against an existing rule above which a directive counts as covered. */
 const COVERED_OVERLAP = 0.6;
 /** Directives must reach this many occurrences to be reported at all. */
-const MIN_DIRECTIVE_COUNT = 2;
+const DEFAULT_MIN_DIRECTIVE_COUNT = 2;
 /** Tool sequence lengths considered as workflow candidates. */
 const WORKFLOW_MIN_LEN = 3;
 const WORKFLOW_MAX_LEN = 5;
@@ -126,6 +126,8 @@ export interface ExtractOptions {
 	sessionDir?: string;
 	maxSessions?: number;
 	maxAgeDays?: number;
+	/** Occurrences a directive needs before it is proposed. The signal/noise dial. */
+	minRepeats?: number;
 	/** Injectable clock, for tests. */
 	now?: Date;
 }
@@ -349,6 +351,7 @@ function userDirectives(entries: EntryLike[]): string[] {
 function clusterDirectives(
 	perSession: Array<{ session: ParsedSession; directives: string[] }>,
 	agentsContent: string | undefined,
+	minRepeats: number,
 ): DirectiveCluster[] {
 	interface Acc {
 		text: string;
@@ -388,7 +391,7 @@ function clusterDirectives(
 
 	const clusters: DirectiveCluster[] = [];
 	for (const entry of acc.values()) {
-		if (entry.count < MIN_DIRECTIVE_COUNT) continue;
+		if (entry.count < minRepeats) continue;
 
 		const words = contentWords(entry.text);
 		let bestLine: string | undefined;
@@ -401,9 +404,9 @@ function clusterDirectives(
 			}
 		}
 
-		// Everything reaching here was said at least MIN_DIRECTIVE_COUNT times, so
-		// a match against an existing rule means the rule is there and not working
-		// — it wants rewriting, not duplicating.
+		// Everything reaching here cleared the repeat threshold, so a match against
+		// an existing rule means the rule is there and not working — it wants
+		// rewriting, not duplicating.
 		const covered = bestOverlap >= COVERED_OVERLAP;
 		clusters.push({
 			text: entry.text,
@@ -589,7 +592,7 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 		agentsFilePath,
 		agentsFileTokens:
 			agentsContent === undefined ? undefined : Math.round(Buffer.byteLength(agentsContent, "utf-8") / 4),
-		directives: clusterDirectives(withDirectives, agentsContent),
+		directives: clusterDirectives(withDirectives, agentsContent, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
 		fixes: extractFixes(withEvents),
 		workflows: extractWorkflows(withEvents),
 	};
