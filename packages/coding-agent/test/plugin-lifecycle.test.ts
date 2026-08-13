@@ -393,6 +393,20 @@ describe("plugin install engine", () => {
 		expect(fs.existsSync(projectHome)).toBe(false);
 	});
 
+	it("leaves no nested git repository behind, so a project-scoped install can be committed", async () => {
+		// A cloned plugin that keeps its `.git` is an embedded repository once it
+		// lands in the working tree: `git add` writes a gitlink instead of the
+		// files, so the plugin cannot be committed — the one thing project scope is
+		// for. Nothing reads the clone metadata either; installs are never updated
+		// from their remote.
+		seedMovedTagMarketplace(cwd);
+		const outcome = await installAvailablePlugin(cwd, "widget", undefined, { scope: "project" });
+		expect(outcome.installed).toBe(true);
+		expect(fs.existsSync(path.join(outcome.dest as string, ".git"))).toBe(false);
+		// The plugin itself survived the cleanup.
+		expect(listInstalledPlugins(cwd).some((p) => p.id === "widget")).toBe(true);
+	});
+
 	it("lets a project-scoped plugin shadow a user-scoped one with the same id", async () => {
 		seedLocalMarketplace(cwd);
 		await installAvailablePlugin(cwd, "widget", undefined, { scope: "user" });

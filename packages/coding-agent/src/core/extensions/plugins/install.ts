@@ -527,6 +527,14 @@ export async function installAvailablePlugin(
 		return { installed: false, message: `npm plugin sources are not supported yet (${resolved.spec}).` };
 	}
 
+	// Drop the clone's `.git`. Nothing reads it — an installed plugin is never
+	// updated from its remote, by design (that is the supply-chain boundary) — and
+	// keeping it actively breaks project scope: a repository nested inside the
+	// user's repository is an embedded repo, so `git add` writes a gitlink instead
+	// of the plugin's files and the install cannot actually be committed. Which is
+	// the one thing project scope is for. Cheaper installs at user scope too.
+	rmSync(path.join(dest, ".git"), { recursive: true, force: true });
+
 	let parsed = parsePluginDir(dest);
 	if (!hasAnyManifest(dest)) {
 		// Manifest-less plugin dir (some marketplaces index bare capability trees,
