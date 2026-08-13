@@ -51,8 +51,8 @@ surfaces:
   - id: instructions
     support: full
     files: [AGENTS.md, AGENTS.MD, CLAUDE.md, CLAUDE.MD]
-    paths: [~/.hoocode/, "walk cwd -> filesystem root"]
-    src: core/resource-loader.ts:76-128
+    paths: [~/.agents/, ~/.hoocode/, "walk cwd -> filesystem root"]
+    src: core/context-files.ts:116-165
   - id: slash-commands
     support: full
     files: ["*.md"]
@@ -174,12 +174,17 @@ Compatibility locations also scanned:
   ~/.claude/commands/*.md, ./.claude/commands/*.md      (slash commands)
   ~/.claude/skills/,        ./.claude/skills/           (skills)
   ~/.claude/agents/*.md,    ./.claude/agents/*.md       (subagents)
+  ~/.agents/AGENTS.md                                   (user instructions)
   ~/.agents/skills/                                     (skills)
   <git-root..cwd>/.agents/skills/                       (skills, ancestor-walk)
   <git-root..cwd>/.agents/agents/*.md                   (subagents, ancestor-walk)
 
 Project instructions resolved by walking up from cwd to filesystem root, plus
-the global agent dir, matching: AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD.
+both user scopes, matching: AGENTS.md / AGENTS.MD / CLAUDE.md / CLAUDE.MD.
+Load order is least specific first — `~/.agents/`, then `~/.hoocode/`, then the
+ancestor chain root-first — so the native home wins over the cross-vendor one
+and the repo wins over both. The two user scopes are additive: neither shadows
+the other (`core/context-files.ts:127-136`).
 
 Declared via package.json "hoocode" (or legacy "pi") manifest:
   agents[], skills[], extensions[], prompts[], themes[]
@@ -199,7 +204,11 @@ Legend: `[S]` = hoocode-supported surface.
 consume it. Be a good `.agents` citizen.
 
 - **Standard surfaces** (AGENTS.md, `mcp.json`, SKILL.md) -> write in the
-  standard shape. Readable by everyone, no extra annotation needed.
+  standard shape, at the standard location. For instructions that means the
+  repo root `./AGENTS.md`, not `.agents/AGENTS.md`: root is where the accepted
+  convention puts it and where every other tool already looks, and `.agents/` is
+  the home for surfaces that have nowhere standard to live. `/learn` writes
+  there (`extensions/core/learn.ts`).
 - **Non-standard surfaces** (commands, subagents, etc.) -> write under
   `.agents/`, and document them in a single top-level **`.agents/AGENTS.md`** so
   other tools know how to read them. That file describes each non-standard
@@ -215,7 +224,7 @@ standard (read by everyone) or non-standard (needs `.agents/AGENTS.md`).
 
 | Surface | Std? | Write target (policy) | Read `.agents` today | Write `.agents` today | Gap |
 |---|---|---|---|---|---|
-| Instructions (`AGENTS.md`) | Standard | `.agents/AGENTS.md` | No (reads `~/.hoocode`, cwd-walk) | No (writes `.hoocode`) | Read+write `.agents/AGENTS.md` |
+| Instructions (`AGENTS.md`) | Standard | root `./AGENTS.md` (user scope: `~/.agents/AGENTS.md`) | Yes (`~/.agents/AGENTS.md`) | Yes (`/learn` writes root `AGENTS.md` + `~/.agents/AGENTS.md`) | Read project `.agents/AGENTS.md` |
 | Skills (`SKILL.md`) | Standard | `.agents/skills/<n>/SKILL.md` | Yes (`~/.agents/skills`, ancestor) | No (writes `.hoocode`) | Write to `.agents/skills` |
 | MCP (`mcp.json`) | Standard | `.agents/mcp.json` | No (per-server `mcp-servers/*.json`) | No | Read+write standard `.agents/mcp.json` |
 | Commands (`*.md`) | Non-standard | `.agents/commands/` + doc in `.agents/AGENTS.md` | Yes (`.agents/commands` ancestor + `~/.agents/commands`) | No (writes `.hoocode`) | Write `.agents/commands`; document shape |
@@ -243,8 +252,11 @@ Ordered by value-to-effort. Each is small and standards-aligned.
    `~/.agents/mcp.json`, `.agents/mcp.json`, and `~/.config/claude/mcp.json`.
    Standard format desugared into existing per-server config. Closes the [A]
    standard mismatch on format.
-4. **Read `~/.agents/AGENTS.md` (and `.agents/AGENTS.md`) as instructions.**
-   Trivial addition to the instruction scanner; honors the standard location.
+4. ~~**Read `~/.agents/AGENTS.md` as instructions.**~~ **Done.** The user scope
+   now reads `~/.agents/AGENTS.md` alongside `~/.hoocode/AGENTS.md`, additively
+   and cross-vendor-first, so the native home wins on conflict and existing
+   users need no migration. See `core/context-files.ts:127-136`. Still open: the
+   project-level ancestor-walk `.agents/AGENTS.md`.
 5. ~~**Read `.agents/commands/`.**~~ **Done.** Added `.agents/commands` (project
    ancestor-walk via `collectAgentsAncestorDirs`) and `~/.agents/commands`
    (global) to the slash-command search path, so commands written under
@@ -259,8 +271,8 @@ differs; **None** = not scanned.
 
 | Surface (proposal) | Std tag | hoocode | Actual path(s) in hoocode | Format / keys | Source (file:line) |
 |---|---|---|---|---|---|
-| `AGENTS.md` instructions | [A] | **Full** (relocated) | Global `~/.hoocode/`; walk cwd→root | `AGENTS.md`/`CLAUDE.md` (+`.MD`); plain markdown | `core/resource-loader.ts:76-128` |
-| `system-prompt.md` (`~/.claude/CLAUDE.md`) | [D] | **Partial** | Same as above; `--system-prompt` / `--append-system-prompt` flags | `CLAUDE.md` read as instructions; no `system-prompt.md` filename | `core/resource-loader.ts:76-128`, `core/system-prompt.ts` |
+| `AGENTS.md` instructions | [A] | **Full** | Global `~/.agents/` and `~/.hoocode/`; walk cwd→root | `AGENTS.md`/`CLAUDE.md` (+`.MD`); plain markdown; least-specific-first, additive | `core/context-files.ts:116-165` |
+| `system-prompt.md` (`~/.claude/CLAUDE.md`) | [D] | **Partial** | Same as above; `--system-prompt` / `--append-system-prompt` flags | `CLAUDE.md` read as instructions; no `system-prompt.md` filename | `core/context-files.ts:116-165`, `core/system-prompt.ts` |
 | `mcp.json` | [A] | **Full** | `~/.agents/mcp.json`, `.agents/mcp.json`, `~/.config/claude/mcp.json`, `~/.hoocode/mcp-servers/*.json`, `./.hoocode/mcp-servers/*.json` | Standard `{"mcpServers":{...}}` + per-server JSON fallback | `extensions/core/hoo-core.ts:385-600` |
 | `models.json` | [P1] | **Full** (own format) | `~/.hoocode/models.json` | hoocode custom providers/models; not the [P1] schema | `core/model-registry.ts:345`, `core/sdk.ts:202` |
 | `speakmcp-settings.json` | [P1] | **None (equivalent)** | `~/.hoocode/settings.json`, `./.hoocode/settings.json` | hoocode `settings.json` (~40 keys), deep-merged | `core/settings-manager.ts:74-201` |

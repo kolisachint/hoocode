@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added
+
+- `~/.agents/AGENTS.md` is read as user-scope instructions, alongside the
+  existing `~/.hoocode/AGENTS.md`. The two are additive and ordered least
+  specific first, so the native home wins on conflict and nobody has to migrate
+  an existing file. Closes the long-standing gap in `docs/agent-spec-tree-map.md`
+  against the one cross-vendor convention forming at user scope. Override the
+  directory with `HOOCODE_USER_AGENTS_DIR`.
+- `/learn` — promotes what recent sessions actually taught into durable rules
+  and skills. A deterministic extractor reads session transcripts off disk and
+  reports three ranked lists with their evidence: directives you have restated
+  across sessions, failures where a command failed and later succeeded
+  unchanged, and repeated tool sequences. The model then proposes edits to the
+  repo `AGENTS.md`, to `~/.agents/AGENTS.md`, or as a new skill. Reading from
+  disk rather than the live context is what makes cross-session counts possible
+  and what keeps the command working after compaction. Items already covered by
+  a rule that you keep restating are flagged as rewrites rather than additions,
+  so the file does not only grow.
+- Aggregate budget across all loaded context files, on top of the existing
+  per-file limits: a warning past ~6k tokens, and trimming of the least specific
+  scope first past ~16k. Trimmed files stay visible with a notice rather than
+  disappearing. The startup listing now shows the total tokens-per-turn the set
+  costs, which the per-file annotation could not surface.
+
 ## [0.5.13] - 2026-08-13
 
 ## [0.5.12] - 2026-08-12

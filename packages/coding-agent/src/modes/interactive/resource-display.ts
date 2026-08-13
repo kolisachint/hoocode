@@ -624,9 +624,15 @@ export function showLoadedResources(
 			const names = contextFiles
 				.map((f) => formatContextPath(f.path, deps.getCwd()) + contextSizeNote(f))
 				.join(", ");
+			// The per-file note only appears once a file is oversized, which leaves
+			// the cost of several small files invisible. The total is what is
+			// actually re-sent every turn, so it is always shown.
+			const totalTokens = contextFiles.reduce((sum, f) => sum + (f.tokens ?? 0), 0);
+			const total =
+				totalTokens > 0 ? theme.fg("muted", ` ${SEGMENT_SEP} ~${formatTokens(totalTokens)} tokens/turn`) : "";
 			chatContainer.addChild(
 				new Text(
-					`${RAIL}${theme.fg("accent", CATEGORY_GLYPH.context)} ${theme.fg("muted", "context")} ${names}`,
+					`${RAIL}${theme.fg("accent", CATEGORY_GLYPH.context)} ${theme.fg("muted", "context")} ${names}${total}`,
 					0,
 					0,
 				),

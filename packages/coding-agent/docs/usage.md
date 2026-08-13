@@ -47,6 +47,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Manually compact context, optionally with custom instructions |
+| `/learn` | Mine recent sessions for repeated directives, fixes, and workflows, and promote them to `AGENTS.md` or a skill |
 | `/copy` | Copy last assistant message to clipboard |
 | `/export [file]` | Export session to HTML |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
@@ -92,13 +93,42 @@ See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 
 ## Context Files
 
-HooCode loads `AGENTS.md` or `CLAUDE.md` at startup from:
+HooCode loads `AGENTS.md` or `CLAUDE.md` at startup from, least specific first:
 
-- `~/.hoocode/agent/AGENTS.md` for global instructions
+- `~/.agents/AGENTS.md` — the cross-vendor user scope, shared with other agent tools
+- `~/.hoocode/agent/AGENTS.md` — hoocode's own global instructions, which win on conflict
 - parent directories, walking up from the current working directory
 - the current directory
 
+Both user scopes are read additively: neither shadows the other, so an existing
+`~/.hoocode` file keeps working when you add a `~/.agents` one.
+
 Use context files for project conventions, commands, safety rules, and preferences. Disable loading with `--no-context-files` or `-nc`.
+
+Context files are re-sent on **every** request, so their size is a recurring
+cost. HooCode warns when one file grows past ~2k tokens, truncates it past ~10k,
+and warns again when the set as a whole passes ~6k — trimming the least specific
+scope first past ~16k. The startup listing shows the running total.
+
+Long or conditional guidance belongs in a [skill](skills.md) instead: skills load
+on demand, context files load always.
+
+### Learning rules from your sessions
+
+`/learn` reads recent session transcripts for this directory, and reports what
+repeated:
+
+- **Directives you restated** across sessions — candidate rules, with the count
+  that justifies them. An item marked `restated` is already covered by a rule
+  that is not working and wants rewriting, not duplicating.
+- **Failures you resolved** — a command that failed, then later succeeded
+  unchanged, with the work in between.
+- **Repeated tool sequences** — candidate skills.
+
+It then proposes edits to the repo `AGENTS.md`, to `~/.agents/AGENTS.md` for
+habits that travel with you, or as a new skill. Nothing is written without the
+usual edit approval. Because it reads transcripts from disk rather than the live
+conversation, it still works after the session has been compacted.
 
 ### System Prompt Files
 
