@@ -139,9 +139,14 @@ that memory and re-propose everything in the window.
 
 An item shown before that still is not written down anywhere is flagged as
 previously declined, so it is proposed tentatively rather than pressed a second
-time. That inference reads the context files, so a rule you routed to
-`~/.agents/AGENTS.md` counts as adopted; one you turned into a skill is not
-currently detected and will look declined.
+time. That inference reads context files and skills alike, so a proposal you
+routed to `~/.agents/AGENTS.md` or turned into a skill both count as adopted.
+
+When a directive is already covered by a **skill** and you keep asking for it by
+hand, it comes back marked `has-skill` rather than as a new rule. That is a
+triggering problem, not a missing rule: the skill's `description` frontmatter
+probably does not describe the situation you were in, so sharpening it is the fix
+rather than writing a rule that duplicates the skill.
 
 ### System Prompt Files
 

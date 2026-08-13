@@ -57,6 +57,9 @@ export function renderLearnDigest(digest: LearnDigest, options: { userScopePath:
 			if (cluster.existingRule) {
 				lines.push(`  - already covered by: "${cluster.existingRule.slice(0, 160)}"`);
 			}
+			if (cluster.existingSkill) {
+				lines.push(`  - already covered by the \`${cluster.existingSkill}\` skill`);
+			}
 			if (cluster.previouslyDeclined) {
 				lines.push("  - proposed before and not written down — you have already passed on this once");
 			}
@@ -124,6 +127,12 @@ export function renderLearnDigest(digest: LearnDigest, options: { userScopePath:
 		"4. **Restated items are rewrites, not additions.** An item marked `restated` is already covered by a rule " +
 			"that is not working — too vague, buried, or contradicted elsewhere. Rewrite the existing line or delete " +
 			"it in favour of a sharper one. Do not add a second rule saying the same thing.",
+	);
+	lines.push(
+		"5. **`has-skill` items are a triggering problem, not a missing rule.** A skill already covers it and you " +
+			"asked by hand anyway, which usually means the skill's `description` frontmatter does not describe the " +
+			"situation you were in. Sharpen that description so it matches, rather than adding a rule that duplicates " +
+			"what the skill already does.",
 	);
 	lines.push("");
 	lines.push("Then, while you have the file open, audit it:");

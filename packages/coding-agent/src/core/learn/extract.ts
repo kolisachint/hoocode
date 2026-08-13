@@ -21,6 +21,7 @@ import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { TextContent, ToolCall } from "@kolisachint/hoocode-ai";
 import { getUserAgentsDir } from "../../config.js";
 import { getDefaultSessionDir } from "../session-manager.js";
+import { loadSkills } from "../skills.js";
 import {
 	contentWords,
 	isBenignFailure,
@@ -51,6 +52,18 @@ const MAX_TOOL_CALLS_PER_SESSION = 400;
 const FIX_LOOKAHEAD = 40;
 /** Word overlap against an existing rule above which a directive counts as covered. */
 const COVERED_OVERLAP = 0.6;
+/**
+ * The same bar for skills, set higher on purpose.
+ *
+ * A rule is one line, so overlap against it is a sharp signal. A skill is a name
+ * plus a description written to attract matches, which is a far larger haystack
+ * — a short directive's words turn up in it by chance much more readily. The
+ * higher bar and the truncation below keep "you already have a skill for this"
+ * from being said on a coincidence.
+ */
+const SKILL_COVERED_OVERLAP = 0.75;
+/** Description characters considered. The opening says what a skill does; the rest is trigger bait. */
+const SKILL_DESCRIPTION_CHARS = 300;
 /** Directives must reach this many occurrences to be reported at all. */
 const DEFAULT_MIN_DIRECTIVE_COUNT = 2;
 /** Tool sequence lengths considered as workflow candidates. */
@@ -62,13 +75,20 @@ const MIN_WORKFLOW_COUNT = 3;
 const MAX_PER_CATEGORY = 8;
 
 /**
- * Two outcomes, not three. A directive already covered by AGENTS.md and said
- * only once is simply dropped — the rule exists and is working. What survives
- * is either not written down (`new`) or written down *and still being repeated*
- * (`restated`), and only the second one tells you something you could not have
- * learned from reading the file.
+ * Where a repeated directive already lives, if anywhere.
+ *
+ * A directive covered by a rule and said only once is simply dropped — the rule
+ * exists and is working. What survives is one of three cases, and they want
+ * different responses:
+ *
+ * - `new` — not written down anywhere. Propose it.
+ * - `restated` — a context-file rule covers it and you said it anyway, so the
+ *   rule is not working. Rewrite it; do not add a second one.
+ * - `has-skill` — a *skill* covers it and you asked by hand anyway, which
+ *   usually means the skill's `description` is not triggering. Sharpen the
+ *   description rather than writing a rule that duplicates the skill.
  */
-export type DirectiveStatus = "new" | "restated";
+export type DirectiveStatus = "new" | "restated" | "has-skill";
 
 /** Fields every proposable item shares, so suppression can be applied uniformly. */
 interface Proposable {
@@ -89,10 +109,12 @@ export interface DirectiveCluster extends Proposable {
 	status: DirectiveStatus;
 	/** The existing rule line matched, when status is `restated`. */
 	existingRule?: string;
+	/** The skill that already covers this, when status is `has-skill`. */
+	existingSkill?: string;
 	/**
-	 * Shown before and still not written down anywhere — you saw this proposal
-	 * and passed on it. Only meaningful for directives, where "is it in a context
-	 * file now" is a real signal.
+	 * Shown before and still not written down anywhere — neither as a rule nor as
+	 * a skill — so you saw this proposal and passed on it. Only meaningful for
+	 * directives, which are the only items with a real coverage signal.
 	 */
 	previouslyDeclined: boolean;
 }
@@ -152,6 +174,11 @@ export interface ExtractOptions {
 	state?: LearnState;
 	/** Re-propose everything, ignoring what previous runs surfaced (`/learn all`). */
 	ignoreState?: boolean;
+	/**
+	 * Skills a directive can already be covered by. Defaults to the ones loaded
+	 * from disk; injectable so tests do not read the developer's real skills.
+	 */
+	skills?: Array<{ name: string; description: string }>;
 	/** Injectable clock, for tests. */
 	now?: Date;
 }
@@ -404,6 +431,7 @@ function userDirectives(entries: EntryLike[]): string[] {
 function clusterDirectives(
 	perSession: Array<{ session: ParsedSession; directives: string[] }>,
 	agentsContent: string | undefined,
+	skills: Array<{ name: string; description: string }>,
 	minRepeats: number,
 ): DirectiveCluster[] {
 	interface Acc {
@@ -457,13 +485,28 @@ function clusterDirectives(
 			}
 		}
 
+		let bestSkill: string | undefined;
+		let bestSkillOverlap = 0;
+		for (const skill of skills) {
+			const haystack = `${skill.name} ${skill.description.slice(0, SKILL_DESCRIPTION_CHARS)}`;
+			const overlap = wordOverlap(words, haystack);
+			if (overlap > bestSkillOverlap) {
+				bestSkillOverlap = overlap;
+				bestSkill = skill.name;
+			}
+		}
+
 		// Everything reaching here cleared the repeat threshold. Suppression handles
-		// the case that used to make this label lie — a rule accepted from a
+		// the case that used to make these labels lie — a proposal accepted from a
 		// previous run coming back as "not working" when nothing had happened
-		// since. By the time an item survives that filter, a match against an
-		// existing rule genuinely means you repeated yourself after the rule
-		// existed, so it wants rewriting rather than duplicating.
-		const covered = bestOverlap >= COVERED_OVERLAP;
+		// since. By the time an item survives that filter, a match genuinely means
+		// you repeated yourself after the rule or skill already existed.
+		//
+		// A rule wins over a skill when both match: it is the more specific answer,
+		// and its "rewrite this line" advice is more actionable than "sharpen a
+		// description".
+		const coveredByRule = bestOverlap >= COVERED_OVERLAP;
+		const coveredBySkill = !coveredByRule && bestSkillOverlap >= SKILL_COVERED_OVERLAP;
 		clusters.push({
 			key: `directive:${entry.normalized}`,
 			text: entry.text,
@@ -471,8 +514,9 @@ function clusterDirectives(
 			count: entry.count,
 			sessions: entry.sessions.size,
 			lastSeen: entry.lastSeen,
-			status: covered ? "restated" : "new",
-			existingRule: covered ? bestLine : undefined,
+			status: coveredByRule ? "restated" : coveredBySkill ? "has-skill" : "new",
+			existingRule: coveredByRule ? bestLine : undefined,
+			existingSkill: coveredBySkill ? bestSkill : undefined,
 			previouslyDeclined: false,
 		});
 	}
@@ -640,6 +684,27 @@ function coverageCorpus(agentDir: string, repoFile: string | undefined): string 
 	return parts.join("\n");
 }
 
+/**
+ * Skills a proposal could already have become.
+ *
+ * `/learn` routes long or conditional guidance to a skill rather than a rule, so
+ * without this a proposal you adopted *as a skill* would read as declined —
+ * looking only at context files sees an unchanged `AGENTS.md` and concludes you
+ * passed. Reuses the real loader rather than a second SKILL.md scanner so the
+ * set of locations cannot drift from what the session actually loads.
+ */
+function loadSkillIndex(cwd: string, agentDir: string): Array<{ name: string; description: string }> {
+	try {
+		return loadSkills({ cwd, agentDir, skillPaths: [], includeDefaults: true }).skills.map((skill) => ({
+			name: skill.name,
+			description: skill.description ?? "",
+		}));
+	} catch {
+		// Skills are an enrichment here, not the point of the command.
+		return [];
+	}
+}
+
 /** Mine the recent sessions for this cwd and return the ranked digest. */
 export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 	const { sessions, skipped } = listSessions(options);
@@ -661,15 +726,16 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 	const timestamps = sessions.map((s) => s.timestamp).sort();
 	const state = options.ignoreState ? undefined : options.state;
 
-	// Directives carry a real coverage signal (is this rule in a context file
-	// now?), which is what separates an adopted proposal from a declined one.
-	// Fixes and workflows do not: a fix may have become a rule, a skill, or a
-	// habit, and none of those are checkable here — so they get suppression
-	// only, and are never labelled declined.
+	// Directives carry a real coverage signal — is this written down as a rule or
+	// a skill right now? — which is what separates an adopted proposal from a
+	// declined one. Fixes and workflows do not: a fix may have become a rule, a
+	// skill, or a habit, and which one is not recoverable here, so they get
+	// suppression only and are never labelled declined.
+	const skills = options.skills ?? loadSkillIndex(options.cwd, options.agentDir);
 	const directives = applySuppression(
-		clusterDirectives(withDirectives, corpus, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
+		clusterDirectives(withDirectives, corpus, skills, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
 		state,
-		(item) => item.status === "restated",
+		(item) => item.status !== "new",
 		(item) => {
 			item.previouslyDeclined = true;
 		},
@@ -678,7 +744,7 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 	const workflows = applySuppression(extractWorkflows(withEvents), state, () => false);
 
 	const surfaced = [
-		...directives.kept.map((d) => ({ key: d.key, lastSeen: d.lastSeen, covered: d.status === "restated" })),
+		...directives.kept.map((d) => ({ key: d.key, lastSeen: d.lastSeen, covered: d.status !== "new" })),
 		...fixes.kept.map((f) => ({ key: f.key, lastSeen: f.lastSeen, covered: false })),
 		...workflows.kept.map((w) => ({ key: w.key, lastSeen: w.lastSeen, covered: false })),
 	];

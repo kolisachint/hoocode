@@ -26,10 +26,17 @@
   back flagged `restated` — accusing a working rule of not working, because its
   occurrences were still inside the window — and stops a declined proposal from
   reappearing unchanged every run. Items shown before that are still not written
-  down anywhere are marked as previously declined, inferred from the context
-  files rather than by asking. `/learn all` ignores the memory and re-proposes
-  everything. Coverage is checked against the user scopes as well as the repo
-  file, so a rule routed to `~/.agents/AGENTS.md` counts as adopted.
+  down anywhere are marked as previously declined, inferred from what is on disk
+  rather than by asking. `/learn all` ignores the memory and re-proposes
+  everything. Coverage reads both user scopes and loaded skills as well as the
+  repo file, so a proposal routed to `~/.agents/AGENTS.md` or turned into a
+  skill counts as adopted either way.
+- A directive already covered by a skill and still being asked for by hand comes
+  back marked `has-skill` rather than as a candidate rule, with the advice to
+  sharpen the skill's `description` so it triggers — a rule duplicating an
+  existing skill is cost with no benefit. The bar for a skill match is set
+  higher than for a rule line, since a skill description is a much larger
+  haystack and matches a short directive by chance far more easily.
 - `learnMaxSessions` (default 20), `learnMaxAgeDays` (default 30) and
   `learnMinRepeats` (default 2) configure the window `/learn` mines. Read
   per-invocation and project-overridable, so a repo can carry its own window;

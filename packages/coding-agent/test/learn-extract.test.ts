@@ -115,7 +115,14 @@ function writeSession(fixture: Fixture, name: string, entries: Entry[], options:
 }
 
 function extract(fixture: Fixture) {
-	return extractLearnDigest({ cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir });
+	// Skills are injected empty by default: the real loader reads ~/.claude/skills,
+	// so a developer's own skills would otherwise leak into coverage assertions.
+	return extractLearnDigest({
+		cwd: fixture.cwd,
+		agentDir: fixture.agentDir,
+		sessionDir: fixture.sessionDir,
+		skills: [],
+	});
 }
 
 // ── Normalization ───────────────────────────────────────────────────────────
@@ -364,7 +371,7 @@ describe("session selection", () => {
 		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);
 		writeSession(fixture, "s2", [userEntry("always run the tests with --coverage")]);
 
-		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
 		expect(extractLearnDigest({ ...base, minRepeats: 2 }).directives).toHaveLength(1);
 		expect(extractLearnDigest({ ...base, minRepeats: 3 }).directives).toEqual([]);
 	});
@@ -374,7 +381,7 @@ describe("session selection", () => {
 		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);
 		writeSession(fixture, "s2", [userEntry("always run the tests with --coverage")]);
 
-		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
 		const capped = extractLearnDigest({ ...base, maxSessions: 1 });
 		expect(capped.scannedSessions).toBe(1);
 		expect(capped.skippedSessions).toBe(1);
@@ -416,7 +423,7 @@ describe("suppression across runs", () => {
 	it("holds back an item already shown that has not recurred since", () => {
 		const fixture = createFixture();
 		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
-		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
 
 		const first = extractLearnDigest(base);
 		expect(first.directives).toHaveLength(1);
@@ -432,7 +439,7 @@ describe("suppression across runs", () => {
 	it("shows it again once it recurs after being shown", () => {
 		const fixture = createFixture();
 		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
-		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
 
 		const first = extractLearnDigest(base);
 		// Surfaced before the second session, so that session counts as new.
@@ -444,7 +451,7 @@ describe("suppression across runs", () => {
 	it("does not flag a rule accepted from a previous run as restated", () => {
 		const fixture = createFixture();
 		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
-		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
 
 		const first = extractLearnDigest(base);
 		expect(first.directives[0]!.status).toBe("new");
@@ -461,7 +468,7 @@ describe("suppression across runs", () => {
 	it("marks an item shown before and still unwritten as previously declined", () => {
 		const fixture = createFixture();
 		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
-		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
 
 		const first = extractLearnDigest(base);
 		// Surfaced before the last session, so it recurs and comes back.
@@ -474,13 +481,61 @@ describe("suppression across runs", () => {
 	it("re-proposes everything under /learn all", () => {
 		const fixture = createFixture();
 		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
-		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
 
 		const first = extractLearnDigest(base);
 		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-03T00:00:00.000Z"));
 
 		expect(extractLearnDigest({ ...base, state }).directives).toEqual([]);
 		expect(extractLearnDigest({ ...base, state, ignoreState: true }).directives).toHaveLength(1);
+	});
+
+	it("counts an existing skill as coverage, so one routed to a skill is not called declined", () => {
+		const fixture = createFixture();
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+		const base = {
+			cwd: fixture.cwd,
+			agentDir: fixture.agentDir,
+			sessionDir: fixture.sessionDir,
+			skills: [{ name: "coverage-tests", description: "Always run the tests with --coverage before pushing." }],
+		};
+
+		const first = extractLearnDigest(base);
+		expect(first.directives[0]!.status).toBe("has-skill");
+		expect(first.directives[0]!.existingSkill).toBe("coverage-tests");
+
+		// Surfaced before the last session, so it recurs and comes back — but
+		// covered by the skill, so it must not be reported as passed over.
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-01T12:00:00.000Z"));
+		expect(extractLearnDigest({ ...base, state }).directives[0]!.previouslyDeclined).toBe(false);
+	});
+
+	it("prefers a matching rule over a matching skill", () => {
+		const fixture = createFixture();
+		writeFileSync(join(fixture.cwd, "AGENTS.md"), "- always run the tests with --coverage\n");
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+
+		const digest = extractLearnDigest({
+			cwd: fixture.cwd,
+			agentDir: fixture.agentDir,
+			sessionDir: fixture.sessionDir,
+			skills: [{ name: "coverage-tests", description: "Always run the tests with --coverage before pushing." }],
+		});
+		expect(digest.directives[0]!.status).toBe("restated");
+		expect(digest.directives[0]!.existingSkill).toBeUndefined();
+	});
+
+	it("does not call an unrelated skill coverage", () => {
+		const fixture = createFixture();
+		repeatedDirective(fixture, ["2026-08-01T00:00:00.000Z", "2026-08-02T00:00:00.000Z"]);
+
+		const digest = extractLearnDigest({
+			cwd: fixture.cwd,
+			agentDir: fixture.agentDir,
+			sessionDir: fixture.sessionDir,
+			skills: [{ name: "pdf-export", description: "Create and edit PDF documents, fill forms, extract pages." }],
+		});
+		expect(digest.directives[0]!.status).toBe("new");
 	});
 
 	it("counts coverage from the user scope, so a rule routed there is not called declined", () => {
