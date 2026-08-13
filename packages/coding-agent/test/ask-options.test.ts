@@ -69,13 +69,13 @@ describe("AskOptionsComponent", () => {
 
 		c.handleInput(DOWN);
 		let out = stripAnsi(c.render(80).join("\n"));
-		expect(out).toContain("> 2 agent-core");
+		expect(out).toContain("› 2 agent-core");
 		expect(out).toContain("(2/3)");
 
 		// Up from index 1 -> index 0
 		c.handleInput(UP);
 		out = stripAnsi(c.render(80).join("\n"));
-		expect(out).toContain("> 1 hoocode-ai");
+		expect(out).toContain("› 1 hoocode-ai");
 
 		// Up from top wraps to the custom row (last)
 		c.handleInput(UP);

@@ -5,13 +5,13 @@
 	"vars": {
 		"ink": "#2b1d0e",
 		"inkSoft": "#3a2a18",
-		"bark": "#463a2d",
-		"clay": "#4c4032",
-		"brown": "#5a3a12",
-		"rust": "#7d1c0a",
+		"bark": "#241d14",
+		"clay": "#4c4034",
+		"brown": "#6b3a00",
+		"rust": "#8a0f14",
 		"forest": "#224a17",
 		"teal": "#0d4d49",
-		"amber": "#5f3e00",
+		"amber": "#514608",
 		"plum": "#5c2a5e",
 		"indigo": "#1f3f8f",
 		"selectedBg": "#eee0c4",
@@ -19,7 +19,8 @@
 		"customMsgBg": "#f9f0ea",
 		"toolPendingBg": "#fbf6ea",
 		"toolSuccessBg": "#f2f6e6",
-		"toolErrorBg": "#fdefe8"
+		"toolErrorBg": "#fdefe8",
+		"warningBg": "#e4e1d2"
 	},
 	"colors": {
 		"accent": "brown",
@@ -43,6 +44,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"warningBg": "warningBg",
 		"toolTitle": "ink",
 		"toolOutput": "bark",
 
@@ -80,13 +82,13 @@
 
 		"bashMode": "forest",
 
-		"agent1": "brown",
-		"agent2": "plum",
-		"agent3": "rust",
-		"agent4": "teal",
-		"agent5": "forest",
-		"agent6": "indigo",
-		"mcp": "plum"
+		"agent1": "#023636",
+		"agent2": "#8a1c00",
+		"agent3": "#382905",
+		"agent4": "#570038",
+		"agent5": "#1b5303",
+		"agent6": "#004080",
+		"mcp": "#7307a2"
 	},
 	"export": {
 		"pageBg": "#fffdf7",

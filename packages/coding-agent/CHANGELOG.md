@@ -2,6 +2,225 @@
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-08-12
+
+## [0.5.11] - 2026-08-12
+
+### Added
+
+- Optional `warningBg` theme token: the surface behind a warning notice. Every
+  built-in theme sets it to a low-chroma tint of its own warning hue; themes
+  that omit it fall back to `customMessageBg`. It joins the other surfaces in
+  `test/theme-contrast.test.ts`, so all six accessible themes keep every
+  foreground at AAA against it.
+
+### Fixed
+
+- The Anthropic subscription billing caveat had two renderings behind one
+  once-per-session latch, and the compact one claimed the latch first. On a
+  normal startup you only ever saw the fragment `anthropic sub — billed as
+  extra usage`; the sentence explaining the consequence ("not against plan
+  limits") only appeared on a quiet startup. There is now one message, and it
+  says what it costs.
+- The same caveat was resolved with an `await` in front of the startup summary,
+  so the splash blocked on an auth lookup that can reach the keychain. It now
+  resolves in the background, as it always did on the other code path.
+
+### Changed
+
+- Warnings that cost money if missed render as a `warningBg`-filled block with a
+  bold title, instead of one more coloured line in a startup already full of
+  them. `showWarning` is unchanged for everything else.
+- The startup summary dropped its session state line. Model and thinking level
+  were on it and in the footer, which is on screen for the whole session and
+  also carries the provider.
+- The collapsed details block on the startup summary dropped its `ctrl+o
+  details` hint. The banner already shows `ctrl+o more`, and one keypress
+  expands both.
+
+## [0.5.10] - 2026-08-12
+
+### Fixed
+
+- `vox-light`'s `ruleMuted` was one point per channel away from `rule`
+  (`#8b8263` against `#8a8062`), so `border` and `borderMuted` rendered as the
+  same colour and the primary-vs-secondary divider distinction never appeared.
+  `rule` also backs `mdCodeBlockBorder`, `mdQuoteBorder` and `mdHr`, so every
+  rule in the theme read at one weight. `ruleMuted` is now `#958b6d`, matching
+  the separation `vox-dark` already had and staying above 3:1 against the
+  theme's cream canvas
+  ([#174](https://github.com/kolisachint/hoocode/issues/174))
+
+## [0.5.9] - 2026-08-12
+
+### Fixed
+
+- The session tree selector's highlight stopped wherever the entry text
+  stopped, because the row was wrapped in `selectedBg` without being padded
+  first — a 17-cell band on a 120-column terminal. It now fills the row, like
+  the `/resume` picker beside it.
+- The resource picker (`/config`) marked its selected row with bold alone — no
+  accent, no highlight — which on a light theme was close to invisible. It now
+  carries the same accent and band as every other picker.
+
+### Changed
+
+- **The selected row is highlighted the same way in more of the app.** Until now
+  only the `/resume` session picker filled its selected row with `selectedBg`;
+  every other picker marked selection with an arrow and accent text alone, and
+  the band in `/resume` reached the right edge only because that component
+  right-aligns a timestamp column. `getSelectListTheme()` and
+  `getSettingsListTheme()` now supply a `selectedRow` background, so the theme
+  picker, thinking picker, show-images picker, the `/settings` screens and the
+  editor's autocomplete all draw the same full-width highlight. The accent
+  styling stays: `accent` clears 4.6:1 against `selectedBg` in every shipped
+  theme, while `muted` and `dim` fall to 2.8:1 and 1.9:1 on `dark`, so the band
+  is added to the existing marker rather than replacing it. The hand-rolled
+  pickers now do the same, via `SelectedRowList` (below).
+- **Every picker marks its selected row with the same cursor.** `→`, `›` and
+  `>` were all in use — four glyphs counting the one `SelectList` hardcoded —
+  so which one you saw depended on which list you had opened. They all use `›`
+  now, from a single `SELECT_CURSOR`. In the ask-for-input pane this also stops
+  the row cursor colliding with the `>` that prompts its custom-answer field.
+- Unselected rows are indented by `SELECT_GUTTER`, derived from the cursor's
+  visible width, rather than by a hardcoded two columns. The two agreed before
+  only because every cursor in use happened to be two columns wide.
+- The model, scoped models, oauth and extension pickers build their rows
+  through the new `SelectedRowList` component instead of adding a `Text` child
+  per row. Those rows were assembled in an update method that never sees the
+  terminal width — width only arrives later, when the container renders each
+  child — so there was no point at which a row could be padded before being
+  painted. `SelectedRowList` holds the rows and renders them lazily, which puts
+  the width back in reach.
+- The fork-from-message picker highlights the message line the cursor is on
+  (its metadata line stays unpainted) and colors it with `accent`, which it
+  previously left to bold alone.
+- The ask-for-input pane keeps its plain rows: it is a question form with a
+  live text field, not a scrolling list, and a band under an input caret reads
+  as a rendering artifact rather than a selection.
+- The `/resume` session picker and the session tree selector paint their
+  selected row through a shared `paintSelectedRow` helper rather than each
+  calling `theme.bg` on a row they had padded (or not padded) themselves.
+  `/resume` no longer depends on its right-aligned timestamp column to reach
+  the right edge.
+
+## [0.5.8] - 2026-08-12
+
+### Changed
+
+- **Capability listings share one layout.** `/plugin list`,
+  `/plugin marketplace list`, `SearchPlugins` and `ListPlugins` each built their
+  own `name [a, b] — description` line, so the same plugin printed three ways
+  and the model's view never matched the user's. They now go through a single
+  row formatter (`core/format-list.ts`, `core/extensions/plugins/listing.ts`):
+  aligned name column, facts beside it, description wrapped with a hanging
+  indent instead of restarting at column 0, and plugins grouped by the
+  marketplace that offers them. `/plugin list` marks what is already installed.
+- `SearchPlugins` takes a `limit` (default 10). With no query it previously
+  returned every plugin in every registered marketplace — dozens of entries,
+  several lines each — into the chat and the context.
+- The five plugin tools define `renderResult`, as every other built-in tool
+  already did. Results are bounded to 20 lines with an expand hint rather than
+  dumped whole.
+- `ListPlugins` reports the manifest format its description already promised,
+  counts `themes` and `providers` as capabilities (a plugin shipping only a
+  theme reported none), and carries the plugin description through.
+- `[Agents]` in the startup summary is one line per agent, truncated to the
+  terminal, instead of a 200-character summary wrapping into a paragraph.
+- `brand.ts` moved to `core/` so non-interactive surfaces can label capability
+  classes; added a `marketplaces` glyph.
+
+### Fixed
+
+- Status messages carrying their own colors are no longer wrapped in a blanket
+  dim. `theme.fg` closes with `\x1b[39m` (reset, not restore), so the dim died
+  at the first inner span and — because the wrapper carries that state across
+  newlines — every line after it lost the dim too.
+- `InstallPlugin` no longer erases its own announcement. It notified "installing
+  X because Y", then notified the outcome; consecutive info notifications
+  coalesce into one chat line, so the second replaced the first and the
+  transparency the tool guidelines require never reached the screen.
+- Truncation in the new listings does not emit escape codes. The TUI's
+  `truncateToWidth` appends `\x1b[0m` even for plain input — a full reset that
+  would both leak into model-facing text and clear any enclosing style mid-line.
+
+### Added
+
+- `ExtensionUIContext.columns` exposes the terminal width to extensions, so a
+  listing can wrap to the actual terminal. Optional, and undefined outside a
+  terminal (RPC, print), which is the signal to emit unwrapped text rather than
+  wrap to someone else's width.
+
+## [0.5.7] - 2026-08-12
+
+### Added
+
+- **`vox-dark` and `vox-light` themes** — explanatory-journalism styling: one
+  loud yellow used sparingly against a newsprint-quiet palette. The yellow is
+  reserved for four roles (`accent`, `mdHeading`, `selectedBg`, `borderAccent`)
+  and never carries a status, so `warning` is orange rather than the usual
+  yellow — a yellow `◐` or context gauge stops reading as a signal when yellow
+  is already the accent. Both are AA, not AAA, and are not covered by
+  `test/theme-contrast.test.ts`, but they are held to the same standards the
+  default `light` theme gained in 0.5.6: every text token clears 4.5:1 on every
+  surface it paints, rules and inactive chrome clear 2.8:1, and no two tokens
+  that mean different things sit closer than ΔE 11. Rules stay neutral rather
+  than saturated — a separator carries no meaning through hue — which is the one
+  deliberate departure, documented in `docs/themes.md`.
+- Optional `brandBg` / `brandText` theme tokens, honored only as a pair, paint
+  the footer's brand mark as a filled chip instead of accent-colored text.
+  Themes that omit them are unchanged. Added for light themes, where a brand
+  hue vivid enough to be recognizable is rarely legible as text on a light
+  canvas. `vox-light` is the only built-in that sets them.
+
+## [0.5.6] - 2026-08-12
+
+### Changed
+
+- **The default `light` theme now uses saturated, deep hues instead of pastels.**
+  Its colors were pale enough to blur into the grays around them on a light
+  terminal: `success` and `bashMode` were a 20%-saturation sage, `error` a dusty
+  rose, `thinkingHigh` and `mcp` near-gray mauves, and almost every token sat at
+  4.0–4.9:1 against the page. Every hue is now 65%+ saturated, every foreground
+  clears WCAG AA (4.5:1) on all six message/tool surfaces plus the export
+  canvases, and rules and inactive chrome (`borderMuted`, `mdHr`,
+  `thinkingOff`) went from a near-invisible 2.0:1 to 3.0:1. The tool-state
+  backgrounds are tinted far enough apart to tell pending, success, and error
+  apart at a glance, and unlanguaged code blocks render as dark ink rather than
+  green so syntax highlighting carries the color. `test/theme-contrast.test.ts`
+  enforces both the contrast floor and the saturation floor.
+- **The six accessible themes no longer paint different things the same color.**
+  They all cleared AAA, but contrast says nothing about whether two tokens read
+  as the *same* color, and crushing a palette dark enough to clear 7:1 on white
+  is exactly what collapses distinct hues together. Measured with CIEDE2000,
+  `mcp` was byte-identical to an agent color in three themes — an MCP row and a
+  subagent row in the same task panel drew their tags in one color — and the two
+  quietest thinking levels were 2.0-2.6 apart, below the threshold where they
+  read as different at all. Every group a user reads against itself (core UI,
+  the agent palette, syntax, thinking levels, diff) now holds ΔE 11 or better,
+  up from 0.0 at worst.
+- **`colorsafe-light` now delivers what its name promises.** It picked
+  color-blind-safe hues, but those palettes lean on lightness differences and
+  darkening every token for AAA removed exactly that. Simulated, `error` and
+  `warning` were ΔE 2.8 apart under deuteranopia, `syntaxFunction` and
+  `syntaxNumber` were identical, and an added diff line was ΔE 3.1 from
+  unchanged context. Its palette is rebuilt on blue/violet/magenta, where every
+  semantic pair now holds ΔE 12 or better under all three dichromat
+  simulations. The theme's `vars` are renamed to describe the colors they
+  actually hold, and its description no longer claims Okabe-Ito hues.
+
+### Known limitations
+
+- `colorsafe-dark` still shares one color between `mcp` and `agent2`. Six agent
+  identities already spend the color-blind-safe hues available at AAA on a dark
+  ground, and every remaining candidate degenerates to near-white, which reads
+  as plain text. Tracked in `theme-contrast.test.ts` rather than papered over.
+- In 256-color terminals (Apple Terminal, GNU screen), `warm-light` draws
+  `accent` and `warning` with the same palette index. The 6x6x6 cube has almost
+  no resolution below channel value 135, so any palette dark enough for AAA on
+  white loses distinctions there. The default `light` theme is checked against
+  this and stays clear; the AAA themes cannot be.
+
 ## [0.5.5] - 2026-08-10
 
 ### Added

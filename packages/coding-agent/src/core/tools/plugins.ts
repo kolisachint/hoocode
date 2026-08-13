@@ -20,9 +20,11 @@
  * relies on {@link PLUGIN_SYSTEM_TOOL_NAMES}.
  */
 
+import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getAgentDir } from "../../config.js";
 import { getArmedReuseNudges } from "../../extensions/core/prompt-reactive/policy.js";
+import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { registerCapabilities } from "../capabilities/registry.js";
 import { resetCapabilitySearch, searchCapabilities } from "../capabilities/search.js";
 import { formatGateFindings, runStaticGates } from "../extensions/plugins/gates.js";
@@ -34,9 +36,10 @@ import {
 	listInstalledPlugins,
 	uninstallPlugin,
 } from "../extensions/plugins/install.js";
-import { pluginScopeOf } from "../extensions/plugins/locations.js";
+import { availablePluginGroups, installedPluginRows } from "../extensions/plugins/listing.js";
 import { isWorkspaceTrusted } from "../extensions/plugins/trust.js";
-import { defineTool, type ToolDefinition } from "../extensions/types.js";
+import { defineTool, type ToolDefinition, type ToolRenderResultOptions } from "../extensions/types.js";
+import { plural, renderList } from "../format-list.js";
 import { SettingsManager } from "../settings-manager.js";
 import {
 	INSTALL_PLUGIN_TOOL_NAME,
@@ -45,6 +48,7 @@ import {
 	SUGGEST_PLUGIN_INSTALL_TOOL_NAME,
 	UNINSTALL_PLUGIN_TOOL_NAME,
 } from "./plugin-tool-names.js";
+import { getTextOutput } from "./render-utils.js";
 
 // Re-export the shared name constants (defined in plugin-tool-names.ts to avoid import cycles).
 export { PLUGIN_SYSTEM_TOOL_NAMES } from "./plugin-tool-names.js";
@@ -53,23 +57,59 @@ const platformSchema = Type.Union([Type.Literal("agents"), Type.Literal("claude"
 	description: "Platform filter: agents (native), claude (Claude Code), or github (GitHub Copilot).",
 });
 
-function formatSourceForDisplay(source: AvailablePlugin["source"]): string {
-	if (typeof source === "string") return source;
-	if (source.source === "npm") return source.package;
-	if (source.source === "url" || source.source === "archive") return source.url;
-	return `${source.url}/${source.path}`;
+/**
+ * Render available plugins as grouped, aligned rows.
+ *
+ * Plain text on purpose: this is what the model reads and what an RPC client
+ * receives, so it must carry no escape codes. The terminal styling happens in
+ * `renderResult` instead.
+ */
+function describeAvailable(plugins: readonly AvailablePlugin[], installed: ReadonlySet<string>): string {
+	return renderList(availablePluginGroups(plugins, { installed }), { indent: 2 });
 }
 
-function describeAvailable(p: AvailablePlugin): string {
-	const platforms = p.supportPlatform.length ? ` [${p.supportPlatform.join(", ")}]` : "";
-	// npm and archive entries are listed but not installable, and saying so here
-	// is cheaper than an InstallPlugin round trip that only ends in the message.
-	const kind =
-		p.sourceKind === "npm" || p.sourceKind === "archive" ? `${p.sourceKind}, NOT INSTALLABLE` : p.sourceKind;
-	return `${p.name}${platforms} — ${p.description ?? formatSourceForDisplay(p.source)} (${kind}, marketplace: ${p.marketplaceName})`;
+/**
+ * Shared result renderer for the plugin tools.
+ *
+ * Every other built-in tool (`ls`, `grep`, `read`, `search`, …) defines one;
+ * these five did not, so they fell back to dumping the entire result into the
+ * chat uncapped. This gives them the house treatment: bounded height with an
+ * expand hint, and a summary line that stands out from its rows.
+ */
+function formatPluginToolResult(
+	result: { content: Array<{ type: string; text?: string }> },
+	options: ToolRenderResultOptions,
+	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
+): string {
+	const output = getTextOutput(result as never, false).trim();
+	if (!output) return "";
+
+	const lines = output.split("\n");
+	const maxLines = options.expanded ? lines.length : 20;
+	const shown = lines.slice(0, maxLines);
+	const remaining = lines.length - shown.length;
+
+	// The first line is the count summary; the rest are rows.
+	const body = shown
+		.map((line, index) => (index === 0 ? theme.fg("muted", line) : theme.fg("toolOutput", line)))
+		.join("\n");
+	if (remaining <= 0) return body;
+	return `${body}${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")})`;
+}
+
+/** Reuse the previous component so a re-render does not churn the chat. */
+function pluginResultText(context: { lastComponent?: unknown }): Text {
+	return (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 }
 
 // ── SearchPlugins ───────────────────────────────────────────────────────────
+
+// A catalog listing is not a search result set: with no query every plugin in
+// every registered marketplace matched, and the two well-known indices alone run
+// to dozens of entries, each two or three lines. Bound it like the `search` tool
+// does, and say how many were held back so the model can ask for more.
+const DEFAULT_SEARCH_LIMIT = 10;
+const MAX_SEARCH_LIMIT = 50;
 
 const searchParams = Type.Object(
 	{
@@ -77,6 +117,11 @@ const searchParams = Type.Object(
 			Type.String({ description: "Case-insensitive substring matched against plugin name and description." }),
 		),
 		platform: Type.Optional(platformSchema),
+		limit: Type.Optional(
+			Type.Number({
+				description: `Maximum plugins to list (default: ${DEFAULT_SEARCH_LIMIT}, max: ${MAX_SEARCH_LIMIT}).`,
+			}),
+		),
 	},
 	{ additionalProperties: false },
 );
@@ -133,11 +178,18 @@ export function createSearchPluginsToolDefinition(): ToolDefinition {
 					.map((h) => inScope.find((p) => p.name === h.doc.name))
 					.filter((p): p is AvailablePlugin => !!p && !found.has(p.name));
 			}
-			let text = results.length
-				? `Found ${results.length} plugin(s):\n${results.map(describeAvailable).join("\n")}`
+			const limit = Math.min(Math.max(1, Math.trunc(params.limit ?? DEFAULT_SEARCH_LIMIT)), MAX_SEARCH_LIMIT);
+			const shown = results.slice(0, limit);
+			const omitted = results.length - shown.length;
+			// Marked inline so the model can see a duplicate without a second call —
+			// the guidelines tell it to check ListPlugins first, which this answers.
+			const installed = new Set(listInstalledPlugins(ctx.cwd).map((p) => p.id));
+
+			let text = shown.length
+				? `${plural(results.length, "plugin")} available${omitted > 0 ? ` (showing ${shown.length}; pass a higher limit for the rest)` : ""}, ✓ = already installed:\n${describeAvailable(shown, installed)}`
 				: "No matching plugins in the registered marketplaces.";
 			if (related.length > 0) {
-				text += `\n\nRelated (matched by capability, not name):\n${related.map(describeAvailable).join("\n")}`;
+				text += `\n\nRelated (matched by capability, not name):\n${describeAvailable(related, installed)}`;
 			}
 			if (fetchErrors.length > 0) {
 				text += `\n(Some well-known marketplaces could not be fetched: ${fetchErrors.join("; ")})`;
@@ -150,6 +202,11 @@ export function createSearchPluginsToolDefinition(): ToolDefinition {
 				text += `\n\nActive reuse cues from this session:\n${armed.map((n) => `- ${n.snippet}`).join("\n")}`;
 			}
 			return { content: [{ type: "text" as const, text }], details: { count: results.length } };
+		},
+		renderResult(result, options, theme, context) {
+			const text = pluginResultText(context);
+			text.setText(formatPluginToolResult(result, options, theme));
+			return text;
 		},
 	});
 }
@@ -174,7 +231,7 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 		name: LIST_PLUGINS_TOOL_NAME,
 		label: LIST_PLUGINS_TOOL_NAME,
 		description:
-			"List the plugins currently installed (id, version, format, supported platforms, and bundled capabilities). Read-only — check this before installing a duplicate, or pass `id` to look up a single plugin.",
+			"List the plugins currently installed (id, version, supported platforms, manifest format, bundled capabilities, and description). Read-only — check this before installing a duplicate, or pass `id` to look up a single plugin.",
 		promptSnippet: "List installed plugins, or look one up by id (read-only).",
 		parameters: listParams,
 		executionMode: "parallel",
@@ -185,39 +242,19 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 				const text = params.id ? `No installed plugin with id "${params.id}".` : "No plugins installed.";
 				return { content: [{ type: "text" as const, text }], details: { count: 0 } };
 			}
-			// Scope is the answer to "why is this loaded, and who else gets it" —
-			// invisible before, though the plugin's own path always knew.
-			const trusted = isWorkspaceTrusted(ctx.cwd);
-			let withheldAny = false;
-			const lines = installed.map((p) => {
-				const caps = [
-					p.skillsDir && "skills",
-					p.commandsDir && "commands",
-					p.agentsDir && "agents",
-					p.hooks && "hooks",
-					p.mcpServers && "mcp",
-				]
-					.filter(Boolean)
-					.join(", ");
-				const version = p.version ? `@${p.version}` : "";
-				const scope = pluginScopeOf(p.root, ctx.cwd);
-				// A working-tree plugin with executables loads them only in a trusted
-				// workspace, so "hooks" in the capability list would otherwise overstate
-				// what is actually running.
-				const withheld = scope !== "user" && !trusted && (p.hooks || p.mcpServers);
-				if (withheld) withheldAny = true;
-				return (
-					`${p.id}${version} [${p.supportPlatform.join(", ")}] (${scope})${caps ? ` — ${caps}` : ""}` +
-					`${withheld ? " · hooks/mcp withheld (workspace not trusted)" : ""}`
-				);
-			});
-			let text = `Installed plugins (${installed.length}):\n${lines.join("\n")}`;
-			if (withheldAny) {
+			const rows = installedPluginRows(installed, { cwd: ctx.cwd, trusted: isWorkspaceTrusted(ctx.cwd) });
+			let text = `${plural(installed.length, "plugin")} installed:\n${renderList([{ rows }], { indent: 2 })}`;
+			if (rows.some((row) => row.facts?.some((fact) => fact.includes("withheld")))) {
 				text +=
 					"\n\nWorking-tree plugins run their skills and commands but not their hooks or MCP servers " +
 					"until this directory is trusted (`/plugin trust`).";
 			}
 			return { content: [{ type: "text" as const, text }], details: { count: installed.length } };
+		},
+		renderResult(result, options, theme, context) {
+			const text = pluginResultText(context);
+			text.setText(formatPluginToolResult(result, options, theme));
+			return text;
 		},
 	});
 }
@@ -260,6 +297,11 @@ function createSuggestPluginInstallToolDefinition(): ToolDefinition {
 				],
 				details: { name: params.name, found: !!found },
 			};
+		},
+		renderResult(result, options, theme, context) {
+			const text = pluginResultText(context);
+			text.setText(formatPluginToolResult(result, options, theme));
+			return text;
 		},
 	});
 }
@@ -328,11 +370,21 @@ export function createInstallPluginToolDefinition(): ToolDefinition {
 				const activation = ctx.activatePlugin(outcome.dest);
 				text = `${outcome.message}\n${activation.message}`;
 			}
-			ctx.ui.notify(text, outcome.installed ? "info" : "warning");
+			// Only the failure path notifies again. Consecutive info notifications
+			// coalesce into one chat line, so announcing the outcome here overwrote
+			// the "installing X because Y" line above — the very transparency the
+			// guidelines require. The outcome is the tool result, which renders on
+			// its own; a warning appends rather than replacing, so it stays.
+			if (!outcome.installed) ctx.ui.notify(text, "warning");
 			return {
 				content: [{ type: "text" as const, text }],
 				details: { name: params.name, installed: outcome.installed },
 			};
+		},
+		renderResult(result, options, theme, context) {
+			const text = pluginResultText(context);
+			text.setText(formatPluginToolResult(result, options, theme));
+			return text;
 		},
 	});
 }
@@ -367,6 +419,11 @@ export function createUninstallPluginToolDefinition(): ToolDefinition {
 				content: [{ type: "text" as const, text: outcome.message }],
 				details: { name: params.name, removed: outcome.removed },
 			};
+		},
+		renderResult(result, options, theme, context) {
+			const text = pluginResultText(context);
+			text.setText(formatPluginToolResult(result, options, theme));
+			return text;
 		},
 	});
 }

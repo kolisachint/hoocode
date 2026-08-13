@@ -8,7 +8,7 @@
 		"sand": "#d6c8b8",
 		"clay": "#c6b8a8",
 		"amber": "#ffc46b",
-		"honey": "#ffd98a",
+		"honey": "#ffe9a0",
 		"terracotta": "#ffb08a",
 		"rose": "#ff9a8b",
 		"moss": "#b5e07a",
@@ -21,7 +21,8 @@
 		"customMsgBg": "#1d1418",
 		"toolPendingBg": "#1a1410",
 		"toolSuccessBg": "#151a10",
-		"toolErrorBg": "#241411"
+		"toolErrorBg": "#241411",
+		"warningBg": "#2f291d"
 	},
 	"colors": {
 		"accent": "amber",
@@ -45,6 +46,7 @@
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
+		"warningBg": "warningBg",
 		"toolTitle": "paper",
 		"toolOutput": "sand",
 
@@ -74,7 +76,7 @@
 		"syntaxPunctuation": "paperDim",
 
 		"thinkingOff": "clay",
-		"thinkingMinimal": "sand",
+		"thinkingMinimal": "#f4e2c2",
 		"thinkingLow": "teal",
 		"thinkingMedium": "amber",
 		"thinkingHigh": "terracotta",
@@ -88,7 +90,7 @@
 		"agent4": "teal",
 		"agent5": "moss",
 		"agent6": "lilac",
-		"mcp": "lilac"
+		"mcp": "#ffdbed"
 	},
 	"export": {
 		"pageBg": "#100c09",

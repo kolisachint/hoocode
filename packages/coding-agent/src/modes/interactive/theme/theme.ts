@@ -1,6 +1,12 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { EditorTheme, MarkdownTheme, SelectListTheme } from "@kolisachint/hoocode-tui";
+import {
+	applyBackgroundToLine,
+	type EditorTheme,
+	type MarkdownTheme,
+	type SelectListTheme,
+	visibleWidth,
+} from "@kolisachint/hoocode-tui";
 import chalk from "chalk";
 import { highlight, supportsLanguage } from "cli-highlight";
 import { type Static, Type } from "typebox";
@@ -48,6 +54,9 @@ const ThemeJsonSchema = Type.Object({
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
+		// OPTIONAL so existing custom themes keep validating; missing entries fall
+		// back to customMessageBg (see createTheme).
+		warningBg: Type.Optional(ColorValueSchema),
 		toolTitle: ColorValueSchema,
 		toolOutput: ColorValueSchema,
 		// Markdown (10 colors)
@@ -94,6 +103,12 @@ const ThemeJsonSchema = Type.Object({
 		agent4: Type.Optional(ColorValueSchema),
 		agent5: Type.Optional(ColorValueSchema),
 		agent6: Type.Optional(ColorValueSchema),
+		// Brand chip (2 colors). OPTIONAL, and only honoured as a pair: a theme
+		// that sets both paints the footer's brand mark as a filled chip instead
+		// of accent-coloured text. Light themes need this — a brand hue bright
+		// enough to read as a chip is rarely legible as text on a light canvas.
+		brandBg: Type.Optional(ColorValueSchema),
+		brandText: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -160,7 +175,8 @@ export type ThemeColor =
 	| "agent4"
 	| "agent5"
 	| "agent6"
-	| "mcp";
+	| "mcp"
+	| "brandText";
 
 /** The agent identity palette, in hash order. */
 export const AGENT_COLOR_TOKENS = [
@@ -195,7 +211,9 @@ export type ThemeBg =
 	| "customMessageBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
-	| "toolErrorBg";
+	| "toolErrorBg"
+	| "warningBg"
+	| "brandBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -433,6 +451,16 @@ export class Theme {
 		const ansi = this.bgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme background color: ${color}`);
 		return `${ansi}${text}\x1b[49m`; // Reset only background color
+	}
+
+	/** Whether the theme defines an optional token, so callers can pick a
+	 * fallback rendering instead of letting fg()/bg() throw. */
+	has(color: ThemeColor): boolean {
+		return this.fgColors.has(color);
+	}
+
+	hasBg(color: ThemeBg): boolean {
+		return this.bgColors.has(color);
 	}
 
 	bold(text: string): string {
@@ -682,6 +710,8 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"toolPendingBg",
 		"toolSuccessBg",
 		"toolErrorBg",
+		"warningBg",
+		"brandBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {
@@ -696,6 +726,11 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		if (fgColors[token] === undefined) {
 			fgColors[token] = fgColors.accent;
 		}
+	}
+	// Same story for the warning surface: custom themes predate it, and the
+	// billing notice needs *some* fill rather than a second render path.
+	if (bgColors.warningBg === undefined) {
+		bgColors.warningBg = bgColors.customMessageBg;
 	}
 	return new Theme(fgColors, bgColors, colorMode, {
 		name: themeJson.name,
@@ -1233,6 +1268,34 @@ export function getMarkdownTheme(): MarkdownTheme {
 	};
 }
 
+/**
+ * The cursor every picker marks its selected row with, trailing space included.
+ * Pickers used to pick their own — `→`, `›` and `>` were all in use, and the
+ * shared `SelectList` hardcoded a fourth — so which glyph you saw depended on
+ * which list you had opened.
+ */
+export const SELECT_CURSOR = "› ";
+
+/**
+ * The blank gutter an unselected row is indented by. Derived from the cursor
+ * rather than hardcoded, so a cursor of a different width keeps the column it
+ * marks in the same place instead of shifting every unselected row by one.
+ */
+export const SELECT_GUTTER = " ".repeat(visibleWidth(SELECT_CURSOR));
+
+/**
+ * Paint a selected row as a filled band, padding it to the full width first so
+ * the highlight reaches the right edge instead of stopping wherever the text
+ * happens to stop. For components that render their own rows; `SelectList` and
+ * `SettingsList` get the same treatment through their `selectedRow` theme hook.
+ *
+ * Pass a row that already fits the width. A row long enough to have been
+ * truncated carries a reset at the cut, which ends the band on the ellipsis.
+ */
+export function paintSelectedRow(line: string, width: number): string {
+	return applyBackgroundToLine(line, width, (text: string) => theme.bg("selectedBg", text));
+}
+
 export function getSelectListTheme(): SelectListTheme {
 	return {
 		selectedPrefix: (text: string) => theme.fg("accent", text),
@@ -1240,6 +1303,10 @@ export function getSelectListTheme(): SelectListTheme {
 		description: (text: string) => theme.fg("muted", text),
 		scrollInfo: (text: string) => theme.fg("muted", text),
 		noMatch: (text: string) => theme.fg("muted", text),
+		// Left unstyled: SelectList passes the cursor through `selectedText`
+		// with the rest of the row.
+		cursor: SELECT_CURSOR,
+		selectedRow: (text: string) => theme.bg("selectedBg", text),
 	};
 }
 
@@ -1255,7 +1322,8 @@ export function getSettingsListTheme(): import("@kolisachint/hoocode-tui").Setti
 		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
 		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),
 		description: (text: string) => theme.fg("dim", text),
-		cursor: theme.fg("accent", "→ "),
+		cursor: theme.fg("accent", SELECT_CURSOR),
 		hint: (text: string) => theme.fg("dim", text),
+		selectedRow: (text: string) => theme.bg("selectedBg", text),
 	};
 }

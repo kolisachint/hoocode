@@ -28,7 +28,7 @@ import {
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import type { AskQuestion } from "../../../core/extensions/types.js";
-import { theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 
 export class AskOptionsComponent implements Component, Focusable {
 	private questions: AskQuestion[];
@@ -118,10 +118,10 @@ export class AskOptionsComponent implements Component, Focusable {
 		for (let i = 0; i < cur.options.length; i++) {
 			const o = cur.options[i];
 			const active = i === this.index;
-			const cursor = theme.fg("accent", active ? ">" : " ");
+			const cursor = theme.fg("accent", active ? SELECT_CURSOR : SELECT_GUTTER);
 			const num = theme.fg(active ? "accent" : "dim", String(i + 1));
 			const label = active ? theme.bold(o.label) : o.label;
-			let line = `${cursor} ${num} ${label}`;
+			let line = `${cursor}${num} ${label}`;
 			if (o.recommended) line += theme.fg("success", " (recommended)");
 			if (o.description) line += theme.fg("muted", `   ${o.description}`);
 			lines.push(truncateToWidth(line, width, "..."));
@@ -131,7 +131,7 @@ export class AskOptionsComponent implements Component, Focusable {
 		if (cur.allowCustom) {
 			const customIndex = cur.options.length;
 			const active = this.index === customIndex;
-			const cursor = theme.fg("accent", active ? ">" : " ");
+			const cursor = theme.fg("accent", active ? SELECT_CURSOR : SELECT_GUTTER);
 			const plus = theme.fg(active ? "accent" : "dim", "+");
 			if (active) {
 				const value = this.customInput.getValue();
@@ -140,11 +140,11 @@ export class AskOptionsComponent implements Component, Focusable {
 				const body = value
 					? `${theme.fg("text", value)}${caret}`
 					: `${caret}${theme.fg("dim", "type your own answer")}`;
-				lines.push(truncateToWidth(`${cursor} ${plus} ${prompt} ${body}`, width, "..."));
+				lines.push(truncateToWidth(`${cursor}${plus} ${prompt} ${body}`, width, "..."));
 			} else {
 				const label = theme.fg("muted", "custom answer");
 				const desc = theme.fg("dim", "type your own");
-				lines.push(truncateToWidth(`${cursor} ${plus} ${label}   ${desc}`, width, "..."));
+				lines.push(truncateToWidth(`${cursor}${plus} ${label}   ${desc}`, width, "..."));
 			}
 		}
 

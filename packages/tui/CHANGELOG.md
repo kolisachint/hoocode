@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+## [0.5.12] - 2026-08-12
+
+## [0.5.11] - 2026-08-12
+
+## [0.5.10] - 2026-08-12
+
+## [0.5.9] - 2026-08-12
+
+### Added
+
+- `applyBackgroundToLine` is exported from the package root, so components
+  outside the TUI package can fill a row to the edge the same way `Text`,
+  `Box` and `Markdown` already do internally.
+- `SelectListTheme` takes an optional `cursor`. `SelectList` previously
+  hardcoded `"→ "`, so the marker was the one part of a row a theme could not
+  reach. Defaults to `DEFAULT_SELECT_CURSOR`, which is the old literal.
+- `SelectListTheme` and `SettingsListTheme` take an optional `selectedRow`
+  background. When a theme defines it, the selected row is padded out to the
+  full width before being painted, so the highlight reaches the right edge
+  instead of stopping at the text. `selectedText`/`label`/`value` still style
+  the content — the band is added to that marker, not a replacement for it.
+  Themes that leave `selectedRow` undefined render exactly as before.
+
+### Fixed
+
+- `SelectList` and `SettingsList` indented unselected rows by a hardcoded two
+  columns while the selected row was indented by the cursor. The two happened
+  to match, so nothing was visibly wrong — but a theme naming a cursor of any
+  other width would have shifted every unselected row against the selected one.
+  Both now derive the indent from the cursor's visible width.
+
+## [0.5.8] - 2026-08-12
+
+## [0.5.7] - 2026-08-12
+
+## [0.5.6] - 2026-08-12
+
 ## [0.5.5] - 2026-08-10
 
 ## [0.5.4] - 2026-08-09

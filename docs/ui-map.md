@@ -81,7 +81,9 @@ Rendered in order as the conversation scrolls:
   picker, the `/models` scoped-models (enable set) picker, model cycling (the cycle
   keys), exact-match lookup for slash-command arguments, the footer's available-provider
   count, and the Anthropic subscription-auth warning. Extracted from `interactive-mode.ts`
-  behind a narrow `ModelControllerDeps` interface.
+  behind a narrow `ModelControllerDeps` interface. The billing warning fires once per
+  session through `showNotice` (a `warningBg`-filled box, not the flat line `showWarning`
+  paints) and is never awaited - resolving the auth type can hit the keychain.
 - `../login-controller.ts` (`LoginController`) - the `/login` and `/logout` flows:
   provider auth-type selector, OAuth and API-key login dialogs, the Bedrock setup
   notice, and post-login default-model selection. Extracted from `interactive-mode.ts`
@@ -90,8 +92,10 @@ Rendered in order as the conversation scrolls:
   (daemon + legacy paths) and the voice panel lifecycle.
 - `../resource-display.ts` - the startup/reload resource listing and diagnostics
   formatting. Owns the counted capability grid (glyphs from `brand.ts`), the
-  context row with its inline size note, the collapsible details, and the
-  one-line session state. Live MCP servers come from `core/mcp-status.ts`, which
+  context row with its inline size note, and the collapsible details. The details
+  block carries no expand hint of its own - the banner has the only one, and the
+  same key opens both. Model and thinking level are the footer's job, not the
+  splash's. Live MCP servers come from `core/mcp-status.ts`, which
   the hoo-core `mcp-loader` fills on connect. `../startup-checks.ts` -
   update/tmux/changelog startup probes.
 - `task-panel.ts` - the task ledger shown above the prompt (status icons, usage
