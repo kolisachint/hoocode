@@ -23,11 +23,12 @@ import type { MarketplacePlatform } from "./formats/types.js";
 import { discoverPlugins } from "./index.js";
 import {
 	candidatePluginDirs,
-	consumptionPluginsDir,
+	installHomeForScope,
 	marketplaceCacheDir,
 	marketplaceCacheMetaPath,
 	marketplaceCacheRoot,
 	marketplaceStorePath,
+	type PluginInstallScope,
 	pluginHomeRoots,
 	sanitizeForDir,
 } from "./locations.js";
@@ -75,6 +76,12 @@ export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string 
 	// and a `.claude-plugin/marketplace.json`, so it parses with
 	// supportPlatform ["claude", "github"] — the default `github` source.
 	{ name: "copilot-plugins", url: "https://github.com/github/copilot-plugins" },
+	// GitHub's community index, `.github/plugin/marketplace.json`. Same owner as
+	// copilot-plugins, which is what makes it a source-trust decision of the same
+	// kind. Note that most of its in-repo entries carry their content in Copilot
+	// UI `extensions/`, a surface hoocode does not model — those install and load
+	// nothing, and say so.
+	{ name: "awesome-copilot", url: "https://github.com/github/awesome-copilot" },
 ];
 
 /**
@@ -427,10 +434,20 @@ async function installGitSubdir(
 	}
 }
 
+export interface InstallOptions {
+	/**
+	 * Where the plugin lands. Defaults to `user`. The human path (`/plugin
+	 * install`) asks; the autonomous path passes the `pluginInstallScope` setting.
+	 */
+	scope?: PluginInstallScope;
+}
+
 export interface InstallOutcome {
 	installed: boolean;
 	/** Install destination directory (when installed). */
 	dest?: string;
+	/** The scope the plugin was installed at. */
+	scope?: PluginInstallScope;
 	/**
 	 * The plugin's own manifest id, when it differs from the marketplace entry
 	 * name it was installed by. This is the id `ListPlugins` reports, so the
@@ -457,26 +474,34 @@ function loadableCapabilities(plugin: NormalizedPlugin): string[] {
 }
 
 /**
- * Install an available plugin by name into the **consumption home** — the global
- * `~/.agents/plugins/`, not the working tree. A plugin is portable and reusable
- * across projects, so installing into the repo would both dirty `git status` and
- * hide the capability from every other checkout.
+ * Install an available plugin by name into the consumption home for
+ * `options.scope` — `~/.agents/plugins/` for `user` (the default), or
+ * `<cwd>/.agents/plugins/` for `project`.
+ *
+ * `user` is the default for a reason worth keeping in view: a plugin is portable
+ * and reusable across projects, so installing into the repo hides the capability
+ * from every other checkout and puts content into `git status` that has nothing
+ * to do with the change being made. `project` inverts both of those on purpose —
+ * it is how a team pins a plugin to a repository — so it is chosen, never
+ * defaulted into.
  *
  * Copies local sources; clones git sources. Transparent + reversible by
  * construction — the plugin lands in a named directory and
- * {@link uninstallPlugin} removes it. Callers activate the result (live
- * activation via AgentSession.activatePlugin, or a reload).
+ * {@link uninstallPlugin} removes it from either scope. Callers activate the
+ * result (live activation via AgentSession.activatePlugin, or a reload).
  */
 export async function installAvailablePlugin(
 	cwd: string,
 	name: string,
 	agentDir: string = getAgentDir(),
+	options: InstallOptions = {},
 ): Promise<InstallOutcome> {
 	const found = findAvailablePlugin(cwd, name, agentDir);
 	if (!found) return { installed: false, message: `Plugin "${name}" not found in any registered marketplace.` };
 
+	const scope = options.scope ?? "user";
 	const resolved = resolvePluginSource(found.source, found.marketplaceRoot);
-	const home = consumptionPluginsDir(agentDir);
+	const home = installHomeForScope(scope, cwd, agentDir);
 	const dest = path.join(home, sanitizeForDir(name));
 	rmSync(dest, { recursive: true, force: true });
 	mkdirSync(home, { recursive: true });
@@ -530,8 +555,23 @@ export async function installAvailablePlugin(
 	const capabilities = loadableCapabilities(parsed);
 	let message =
 		`Installed "${name}" from marketplace "${found.marketplaceName}" ` +
-		`(${parsed.supportPlatform.join(", ")}) to ${dest}. ` +
+		`(${parsed.supportPlatform.join(", ")}) to ${dest} [${scope} scope]. ` +
 		`Remove it with UninstallPlugin.`;
+	if (scope === "project") {
+		// Project scope puts the plugin in the working tree, which is the point —
+		// but it is also a `git status` entry and, once committed, code that runs
+		// for whoever clones next. Executable capabilities are the half that
+		// matters: hoocode has no workspace-trust gate for `<cwd>/.agents/plugins`
+		// (see docs/plugin-system-architecture.md §5.9), so a committed hook or MCP
+		// server loads for collaborators without a prompt.
+		const executables = [parsed.hooks && "hooks", parsed.mcpServers && "MCP servers"].filter(Boolean);
+		message += ` It is now part of the working tree — commit it to share it with collaborators.`;
+		if (executables.length > 0) {
+			message +=
+				` It carries ${executables.join(" and ")}, which run for anyone who clones the repository;` +
+				` keep it out of version control if that is not what you want.`;
+		}
+	}
 	if (parsed.id !== name) {
 		// The entry name and the manifest name are allowed to differ, and the
 		// difference is otherwise invisible until ListPlugins reports an id the
@@ -552,6 +592,7 @@ export async function installAvailablePlugin(
 	return {
 		installed: true,
 		dest,
+		scope,
 		...(parsed.id !== name ? { id: parsed.id } : {}),
 		supportPlatform: parsed.supportPlatform,
 		message,

@@ -4,8 +4,10 @@
  * `/plugin` installs plugins from marketplaces (a git repo or local dir with a
  * native `.agents-plugin/marketplace.json`, Claude `.claude-plugin/marketplace.json`,
  * or Copilot-style `.github/marketplace.json` index). Installed plugins are placed
- * in the global consumption home (`~/.agents/plugins/<name>`) and loaded by the
- * plugin loader after a reload.
+ * at the chosen scope — `~/.agents/plugins/<name>` for `user`, or
+ * `<cwd>/.agents/plugins/<name>` for `project` — and loaded by the plugin loader
+ * after a reload. `install` asks which, since a human is right here to answer;
+ * the autonomous tool reads the `pluginInstallScope` setting instead.
  *
  * Adding a marketplace is the human trust boundary and stays here; the shared
  * mechanics (discovery, install, remove, the bundled default marketplace) live in
@@ -16,7 +18,7 @@
  *   /plugin marketplace list
  *   /plugin marketplace refresh     re-fetch every cached index now
  *   /plugin list                     list available plugins across marketplaces
- *   /plugin install <name>
+ *   /plugin install <name> [--scope user|project]
  *   /plugin remove <name>
  *   /plugin publish <name> [--to <marketplace-dir>]
  *
@@ -32,6 +34,7 @@
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { getAgentDir } from "../../config.js";
 import { getPlugin } from "../../core/extensions/plugins/authoring.js";
 import {
 	findAvailablePlugin,
@@ -45,6 +48,7 @@ import {
 	marketplaceCacheDir,
 	marketplaceCacheRoot,
 	marketplaceStorePath,
+	type PluginInstallScope,
 } from "../../core/extensions/plugins/locations.js";
 import {
 	parseMarketplaceDir,
@@ -54,15 +58,44 @@ import {
 } from "../../core/extensions/plugins/marketplace.js";
 import { entryNeedsSource, packagePlugin, stageIntoMarketplace } from "../../core/extensions/plugins/packaging.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
+import { SettingsManager } from "../../core/settings-manager.js";
 
 function isGitSource(loc: string): boolean {
 	return /^https?:\/\//.test(loc) || loc.startsWith("git@") || loc.endsWith(".git");
 }
 
+function isInstallScope(value: string): value is PluginInstallScope {
+	return value === "user" || value === "project";
+}
+
+/** Labels carry the consequence, since that is the whole content of the choice. */
+const SCOPE_CHOICES: ReadonlyArray<{ scope: PluginInstallScope; label: string }> = [
+	{ scope: "user", label: "User — ~/.agents/plugins, available in every project (recommended)" },
+	{ scope: "project", label: "Project — <repo>/.agents/plugins, committed and shared with collaborators" },
+];
+
+/**
+ * Ask where the plugin should land. Returns undefined when the user dismisses
+ * the selector, which cancels the install rather than guessing.
+ *
+ * Headless (no UI to ask through) resolves to `fallback` — the standing setting
+ * — so a scripted or `--print` run still installs somewhere predictable.
+ */
+async function promptForScope(
+	ctx: ExtensionCommandContext,
+	fallback: PluginInstallScope,
+): Promise<PluginInstallScope | undefined> {
+	if (!ctx.hasUI) return fallback;
+	const labels = SCOPE_CHOICES.map((c) => c.label);
+	const picked = await ctx.ui.select("Install scope", labels);
+	if (picked === undefined) return undefined;
+	return SCOPE_CHOICES.find((c) => c.label === picked)?.scope ?? fallback;
+}
+
 export function setupMarketplace(pi: ExtensionAPI): void {
 	pi.registerCommand("plugin", {
 		description:
-			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> | /plugin remove <name> | /plugin publish <name> [--to <dir>]",
+			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> [--scope user|project] | /plugin remove <name> | /plugin publish <name> [--to <dir>]",
 		getArgumentCompletions: (prefix: string) =>
 			["marketplace", "list", "install", "remove", "refresh", "publish"]
 				.filter((s) => s.startsWith(prefix))
@@ -165,18 +198,37 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 				return;
 			}
 
-			// ── install <name> ──────────────────────────────────────────────────
+			// ── install <name> [--scope user|project] ───────────────────────────
 			if (trimmed.startsWith("install")) {
-				const name = trimmed.slice("install".length).trim();
+				const rest = trimmed.slice("install".length).trim();
+				const scopeMatch = /(?:^|\s)--scope[= ]\s*(\S+)/.exec(rest);
+				const name = rest.replace(/(?:^|\s)--scope[= ]\s*\S+/, "").trim();
 				if (!name) {
-					ctx.ui.notify("Usage: /plugin install <name>", "warning");
+					ctx.ui.notify("Usage: /plugin install <name> [--scope user|project]", "warning");
+					return;
+				}
+				if (scopeMatch && !isInstallScope(scopeMatch[1])) {
+					ctx.ui.notify(`Unknown scope "${scopeMatch[1]}". Use --scope user or --scope project.`, "warning");
 					return;
 				}
 				if (!findAvailablePlugin(cwd, name)) {
 					ctx.ui.notify(`Plugin "${name}" not found in any marketplace.`, "error");
 					return;
 				}
-				const outcome = await installAvailablePlugin(cwd, name);
+
+				// An explicit --scope wins; otherwise ask, because this is the human
+				// path and the destination is a real choice (portable vs. committed to
+				// the repo). With no UI to ask through there is nobody to ask, so it
+				// falls back to the same setting the autonomous path uses.
+				const scope = scopeMatch
+					? (scopeMatch[1] as PluginInstallScope)
+					: await promptForScope(ctx, SettingsManager.create(cwd, getAgentDir()).getPluginInstallScope());
+				if (!scope) {
+					ctx.ui.notify("Install cancelled.", "info");
+					return;
+				}
+
+				const outcome = await installAvailablePlugin(cwd, name, getAgentDir(), { scope });
 				if (!outcome.installed) {
 					ctx.ui.notify(outcome.message, "error");
 					return;
@@ -250,7 +302,7 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 			}
 
 			ctx.ui.notify(
-				"Usage: /plugin marketplace add|list|refresh | /plugin list | /plugin install <name> | " +
+				"Usage: /plugin marketplace add|list|refresh | /plugin list | /plugin install <name> [--scope user|project] | " +
 					"/plugin remove <name> | /plugin publish <name> [--to <marketplace-dir>]",
 				"warning",
 			);

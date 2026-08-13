@@ -15,7 +15,11 @@ import {
 	uninstallPlugin,
 	WELL_KNOWN_MARKETPLACES,
 } from "../src/core/extensions/plugins/install.js";
-import { consumptionPluginsDir, marketplaceCacheDir } from "../src/core/extensions/plugins/locations.js";
+import {
+	consumptionPluginsDir,
+	marketplaceCacheDir,
+	marketplaceCacheMetaPath,
+} from "../src/core/extensions/plugins/locations.js";
 import { parseMarketplaceDir, resolvePluginSource } from "../src/core/extensions/plugins/marketplace.js";
 import {
 	createInstallPluginToolDefinition,
@@ -62,11 +66,21 @@ function makeCtx(cwd: string) {
  * Keep tool tests hermetic: pre-create an EMPTY cache dir for every well-known
  * marketplace so SearchPlugins' lazy fetch no-ops (no network) and the empty
  * dir parses to no manifest (skipped from results).
+ *
+ * The freshness stamp is the half that makes it actually hermetic. A cache dir
+ * with no recorded fetch is *stale*, not fresh, so without this every test in
+ * this file paid a real network refresh per well-known marketplace — a cost that
+ * grew with the list rather than staying at zero.
  */
 function stubWellKnownMarketplaces(_cwd: string): void {
+	const stamps: Record<string, string> = {};
 	for (const wk of WELL_KNOWN_MARKETPLACES) {
 		fs.mkdirSync(marketplaceCacheDir(wk.url), { recursive: true });
+		stamps[wk.url] = new Date().toISOString();
 	}
+	const meta = marketplaceCacheMetaPath();
+	fs.mkdirSync(path.dirname(meta), { recursive: true });
+	fs.writeFileSync(meta, JSON.stringify(stamps, null, 2));
 }
 
 /** Seed a local marketplace with a single native-format plugin and register it. */
@@ -349,6 +363,72 @@ describe("plugin install engine", () => {
 		const removed = uninstallPlugin(cwd, "repo-owned");
 		expect(removed.removed).toBe(false);
 		expect(fs.existsSync(repoOwned)).toBe(true);
+	});
+
+	it("installs into the user home by default and the working tree at project scope", async () => {
+		seedLocalMarketplace(cwd);
+		const userHome = path.join(consumptionPluginsDir(), "widget");
+		const projectHome = path.join(cwd, ".agents", "plugins", "widget");
+
+		// Default is user scope: an autonomous install must not put content into
+		// the repo unless someone asked for that.
+		const asUser = await installAvailablePlugin(cwd, "widget");
+		expect(asUser.scope).toBe("user");
+		expect(fs.existsSync(userHome)).toBe(true);
+		expect(fs.existsSync(projectHome)).toBe(false);
+		uninstallPlugin(cwd, "widget");
+
+		const asProject = await installAvailablePlugin(cwd, "widget", undefined, { scope: "project" });
+		expect(asProject.scope).toBe("project");
+		expect(fs.existsSync(projectHome)).toBe(true);
+		expect(fs.existsSync(userHome)).toBe(false);
+		// Discovery already covered <cwd>/.agents/plugins, so project scope needs
+		// no loader change to become live.
+		expect(listInstalledPlugins(cwd).some((p) => p.id === "widget")).toBe(true);
+		expect(isPluginInstalled(cwd, "widget")).toBe(true);
+
+		// Uninstall reaches both homes, so a project-scoped plugin is as reversible
+		// as a user-scoped one.
+		expect(uninstallPlugin(cwd, "widget").removed).toBe(true);
+		expect(fs.existsSync(projectHome)).toBe(false);
+	});
+
+	it("lets a project-scoped plugin shadow a user-scoped one with the same id", async () => {
+		seedLocalMarketplace(cwd);
+		await installAvailablePlugin(cwd, "widget", undefined, { scope: "user" });
+		await installAvailablePlugin(cwd, "widget", undefined, { scope: "project" });
+
+		// defaultPluginDirs lists the project home first and discovery is first-wins,
+		// which is what makes "this repo pins its own version" mean anything.
+		const found = listInstalledPlugins(cwd).filter((p) => p.id === "widget");
+		expect(found).toHaveLength(1);
+		expect(found[0].root).toBe(path.join(cwd, ".agents", "plugins", "widget"));
+	});
+
+	it("warns that a project-scoped plugin's hooks run for whoever clones the repo", async () => {
+		// hoocode has no workspace-trust gate for <cwd>/.agents/plugins, so this
+		// is the only place a collaborator's exposure gets stated.
+		const market = path.join(cwd, "market");
+		writeJson(path.join(market, ".agents-plugin", "marketplace.json"), {
+			name: "local",
+			plugins: [{ name: "hooky", source: "./plugins/hooky" }],
+		});
+		writeJson(path.join(market, "plugins", "hooky", ".agents-plugin", "plugin.json"), { name: "hooky" });
+		writeJson(path.join(market, "plugins", "hooky", "hooks", "hooks.json"), {
+			hooks: { PreToolUse: [{ matcher: "Bash", hooks: [{ type: "command", command: "echo hi" }] }] },
+		});
+		writeJson(path.join(cwd, ".agents", "marketplaces.json"), {
+			marketplaces: [{ location: market, dir: market }],
+		});
+
+		const asProject = await installAvailablePlugin(cwd, "hooky", undefined, { scope: "project" });
+		expect(asProject.message).toContain("hooks");
+		expect(asProject.message).toContain("anyone who clones the repository");
+
+		uninstallPlugin(cwd, "hooky");
+		// The same plugin at user scope reaches nobody else, so it says nothing.
+		const asUser = await installAvailablePlugin(cwd, "hooky", undefined, { scope: "user" });
+		expect(asUser.message).not.toContain("anyone who clones the repository");
 	});
 
 	it("says so when an installed plugin contributes nothing hoocode can load", async () => {

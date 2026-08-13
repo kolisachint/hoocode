@@ -21,6 +21,7 @@
  */
 
 import { type Static, Type } from "typebox";
+import { getAgentDir } from "../../config.js";
 import { getArmedReuseNudges } from "../../extensions/core/prompt-reactive/policy.js";
 import { registerCapabilities } from "../capabilities/registry.js";
 import { resetCapabilitySearch, searchCapabilities } from "../capabilities/search.js";
@@ -34,6 +35,7 @@ import {
 	uninstallPlugin,
 } from "../extensions/plugins/install.js";
 import { defineTool, type ToolDefinition } from "../extensions/types.js";
+import { SettingsManager } from "../settings-manager.js";
 import {
 	INSTALL_PLUGIN_TOOL_NAME,
 	LIST_PLUGINS_TOOL_NAME,
@@ -268,8 +270,14 @@ export function createInstallPluginToolDefinition(): ToolDefinition {
 		],
 		parameters: installParams,
 		async execute(_id, params: Static<typeof installParams>, _signal, _onUpdate, ctx) {
-			ctx.ui.notify(`Installing plugin "${params.name}": ${params.reason}`, "info");
-			const outcome = await installAvailablePlugin(ctx.cwd, params.name);
+			// Autonomous installs cannot ask, so the destination is a standing
+			// decision the human made in settings rather than a per-call argument:
+			// putting a scope in the tool schema would let the model choose to write
+			// into the user's working tree, which is exactly the call that should not
+			// be the model's. `/plugin install` asks instead of reading this.
+			const scope = SettingsManager.create(ctx.cwd, getAgentDir()).getPluginInstallScope();
+			ctx.ui.notify(`Installing plugin "${params.name}" (${scope} scope): ${params.reason}`, "info");
+			const outcome = await installAvailablePlugin(ctx.cwd, params.name, getAgentDir(), { scope });
 			let text = outcome.message;
 			if (outcome.installed && outcome.dest) {
 				// Source trust is not content trust: the marketplace boundary vouches

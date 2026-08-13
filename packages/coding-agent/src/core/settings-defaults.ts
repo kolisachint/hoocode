@@ -48,6 +48,7 @@ export const DEFAULT_SETTINGS = {
 	nestedSubagentConcurrency: 2,
 	enableTodoWrite: true,
 	enablePluginTools: false,
+	pluginInstallScope: "user",
 	deferMcpSchemas: true,
 	enableWebTools: false,
 	enableEmbsearchTools: true,

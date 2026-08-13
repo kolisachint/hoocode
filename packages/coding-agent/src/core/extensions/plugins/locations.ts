@@ -8,17 +8,26 @@
  *                      run, and is deleted on any failure. Nothing here is ever
  *                      loaded; it is promoted into a production home or thrown
  *                      away. {@link makeDraftDir}
- *   Consumption home   Persistent, global. Where marketplace installs land, in
- *                      whatever format the marketplace served. hoocode
- *                      installing for itself. {@link consumptionPluginsDir}
+ *   Consumption home   Persistent. Where marketplace installs land, in whatever
+ *                      format the marketplace served. hoocode installing for
+ *                      itself, at the scope the caller chose
+ *                      ({@link installHomeForScope}).
  *   Production home    Persistent, global, per platform. Where a plugin hoocode
  *                      *authored* lives. {@link productionPluginDir}
  *
- * All three are user-scoped. A plugin is portable, versioned and reusable across
- * projects, so writing one into the working tree means the capability is
- * invisible in every other repo and the agent dirties `git status` with content
- * unrelated to the task. The project-local home is still *read* so plugins
- * installed by older versions keep working ({@link legacyProjectPluginsDir}).
+ * Draft and production are user-scoped without exception. Consumption is the one
+ * that takes a scope, and `user` stays the default: a plugin is portable,
+ * versioned and reusable across projects, so the working tree is the wrong place
+ * for it *by default* — the capability would be invisible in every other repo,
+ * and an autonomous install would dirty `git status` with content unrelated to
+ * the task. `project` exists for the other case, where a team wants the plugin
+ * pinned in the repo and shared with collaborators, and is a deliberate choice
+ * someone makes per install or per setting rather than a default anything falls
+ * into.
+ *
+ * Authoring stays user-scoped regardless (architecture doc §5.5): a project
+ * destination for an *authored* plugin has no coherent production home, whereas
+ * an installed plugin has an obvious one.
  *
  * The two production homes are asymmetric because the vendors are. Claude Code
  * discovers `~/.claude/skills/<id>/` in place, with no install step, so an
@@ -50,14 +59,38 @@ function homeRoot(agentDir: string): string {
 	return path.dirname(agentDir);
 }
 
-/** `~/.agents/plugins/` — where marketplace installs land. Format-agnostic. */
+/** `~/.agents/plugins/` — where user-scoped marketplace installs land. Format-agnostic. */
 export function consumptionPluginsDir(agentDir: string = getAgentDir()): string {
 	return path.join(homeRoot(agentDir), ".agents", "plugins");
 }
 
-/** The project-local home older versions installed into. Read-only now; still uninstalled from. */
-export function legacyProjectPluginsDir(cwd: string): string {
+/**
+ * `<cwd>/.agents/plugins/` — where project-scoped installs land.
+ *
+ * Also the home older versions installed *everything* into, back when scope was
+ * not a choice (see docs/plugin-system-architecture.md §5.4). It stayed on the
+ * discovery path the whole time, which is why project scope needs no loader
+ * change: `defaultPluginDirs` already reads it, ahead of the user home, so a
+ * project-scoped plugin shadows a user-scoped one of the same id.
+ */
+export function projectPluginsDir(cwd: string): string {
 	return path.join(cwd, ".agents", "plugins");
+}
+
+/**
+ * Where a marketplace install goes.
+ *
+ * hoocode has no `enabledPlugins`-style registry — a plugin on the discovery
+ * path is enabled — so scope is a *destination*, not a flag written elsewhere:
+ *
+ *   user     `~/.agents/plugins/`   portable across every checkout, invisible to collaborators
+ *   project  `<cwd>/.agents/plugins/` committed with the repo, shared, shadows the user copy
+ */
+export type PluginInstallScope = "user" | "project";
+
+/** Resolve the install home for `scope`. */
+export function installHomeForScope(scope: PluginInstallScope, cwd: string, agentDir: string = getAgentDir()): string {
+	return scope === "project" ? projectPluginsDir(cwd) : consumptionPluginsDir(agentDir);
 }
 
 /**
@@ -106,8 +139,8 @@ export function marketplaceCacheMetaPath(agentDir: string = getAgentDir()): stri
 
 /**
  * The parent directories hoocode owns and may therefore remove a plugin from:
- * the two production homes, the consumption home, and the legacy project homes
- * older versions installed into.
+ * the two production homes, both consumption homes (user and project), and the
+ * `.hoocode/plugins` home older versions installed into.
  *
  * Deliberately excludes `<cwd>/.claude/skills` and `<cwd>/.agents/skills`. Those
  * are discovered (loader.ts `defaultPluginDirs`) but are repository content a
@@ -119,7 +152,7 @@ export function pluginHomeRoots(cwd: string, agentDir: string = getAgentDir()): 
 		productionRoot("claude", agentDir),
 		productionRoot("github", agentDir),
 		consumptionPluginsDir(agentDir),
-		legacyProjectPluginsDir(cwd),
+		projectPluginsDir(cwd),
 		path.join(cwd, ".hoocode", "plugins"),
 	];
 }
