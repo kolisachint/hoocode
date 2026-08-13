@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `/learn` no longer reports "no recent sessions in this directory" while a full
+  history sits in `~/.hoocode/sessions/`. It searched only the directory the
+  live session manager pointed at, which is the right one in the ordinary case
+  and wrong in three: an in-memory session (`--no-session`) reports no directory
+  at all and was taken literally, `--session <path>` points at wherever that
+  file lives, and a custom `sessionDir` setting points at one directory shared
+  by every project. The per-cwd session directory is now always searched
+  alongside it, and a session reachable from both is counted once.
+- `/learn` no longer discards sessions whose recorded working directory is the
+  same directory spelled differently — reached through a symlink, in different
+  case on the case-insensitive filesystems macOS and Windows ship by default, or
+  with a trailing separator. Any of these silently dropped the entire history the
+  command exists to read.
+- `/learn`'s per-directory memory is keyed on the working directory rather than
+  on the live session's directory, so a session with no directory of its own no
+  longer lands every project on one shared state file, and projects configured
+  to share a `sessionDir` no longer share one bookmark.
+- Warnings and errors in the TUI are rendered as one filled block instead of two
+  different shapes. A warning previously had neither the blank line nor the left
+  padding an error had, so it collided with whatever preceded it and hung off the
+  margin, and neither had a background to separate it from ordinary output.
+
+### Added
+
+- `/learn` explains an empty result instead of asserting there is no history. It
+  names the directories it searched, how many transcripts they hold, and why each
+  was passed over — outside the age window, beyond the session cap, or recorded
+  under a different working directory. Those have different fixes, and the single
+  sentence it printed before could not tell them apart.
+- `/learn settings` — the five thresholds with the values in force, the user and
+  project `settings.json` paths to set them in, the session directory being read,
+  and the state file. The settings existed but had no discoverable home; every
+  message that now reports a disappointing result points at them.
+- A **Learning** category in the `/settings` pane holding the same five
+  thresholds. Top level rather than folded into Advanced, since these are what
+  decide whether `/learn` finds anything and burying them is what made them
+  undiscoverable. A value set by hand in `settings.json` that is not one of the
+  presets stays in the cycle, so a keypress cannot silently snap the window
+  down to the first preset.
+
 ## [0.5.15] - 2026-08-13
 
 ### Fixed

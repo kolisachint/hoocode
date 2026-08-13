@@ -19,6 +19,14 @@ import type {
 	WarningSettings,
 } from "./settings-types.js";
 
+/** The `/learn` thresholds, which are flat top-level numeric settings. */
+export type LearnSettingKey =
+	| "learnMaxSessions"
+	| "learnMaxAgeDays"
+	| "learnMinRepeats"
+	| "learnMinWorkflowRepeats"
+	| "learnMaxProposals";
+
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
 function deepMergeSettings(base: Settings, overrides: Settings): Settings {
 	const result: Settings = { ...base };
@@ -542,6 +550,21 @@ export class SettingsManager {
 			minWorkflowRepeats: positive(this.settings.learnMinWorkflowRepeats, DEFAULT_SETTINGS.learnMinWorkflowRepeats),
 			maxProposals: positive(this.settings.learnMaxProposals, DEFAULT_SETTINGS.learnMaxProposals),
 		};
+	}
+
+	/**
+	 * Persist one `/learn` threshold to the user scope.
+	 *
+	 * One keyed setter rather than five identical ones: the settings are flat
+	 * top-level numbers that differ only in name, and the settings pane drives
+	 * them from a table. Values are floored to at least 1, matching the read
+	 * side's refusal to let a zero shrink the window to nothing.
+	 */
+	setLearnSetting(key: LearnSettingKey, value: number): void {
+		const safe = Number.isFinite(value) ? Math.max(1, Math.floor(value)) : DEFAULT_SETTINGS[key];
+		this.globalSettings[key] = safe;
+		this.markModified(key);
+		this.save();
 	}
 
 	/** Byte cap on a single read/bash tool result before truncation. Clamped to >= 1024. */

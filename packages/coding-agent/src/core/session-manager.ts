@@ -277,12 +277,23 @@ export function buildSessionContext(
  * Encodes cwd into a safe directory name under ~/.hoocode/agent/sessions/.
  */
 export function getDefaultSessionDir(cwd: string, agentDir: string = getDefaultAgentDir()): string {
-	const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
-	const sessionDir = join(agentDir, "sessions", safePath);
+	const sessionDir = getSessionDirPath(cwd, agentDir);
 	if (!existsSync(sessionDir)) {
 		mkdirSync(sessionDir, { recursive: true });
 	}
 	return sessionDir;
+}
+
+/**
+ * The same path as {@link getDefaultSessionDir} without creating it.
+ *
+ * Readers that only want to *look* for a directory should use this. Creating it
+ * as a side effect of looking makes a missing directory indistinguishable from
+ * an empty one, which is exactly the distinction `/learn` reports on.
+ */
+export function getSessionDirPath(cwd: string, agentDir: string = getDefaultAgentDir()): string {
+	const safePath = `--${cwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
+	return join(agentDir, "sessions", safePath);
 }
 
 /** Exported for testing */

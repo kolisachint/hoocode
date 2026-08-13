@@ -20,11 +20,18 @@
 
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { getHooCodeDir } from "../../config.js";
+import { CONFIG_DIR_NAME, getHooCodeDir } from "../../config.js";
 import { loadProjectContextFiles } from "../../core/context-files.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 import { isEmptyDigest, renderLearnDigest } from "../../core/learn/digest.js";
-import { buildCoverageIndex, extractLearnDigest, matchCoverage } from "../../core/learn/extract.js";
+import {
+	buildCoverageIndex,
+	extractLearnDigest,
+	type LearnDigest,
+	matchCoverage,
+	type SessionScanReport,
+	scanSessions,
+} from "../../core/learn/extract.js";
 import {
 	getLearnStatePath,
 	readLearnState,
@@ -32,6 +39,7 @@ import {
 	summarizeLearnState,
 	writeLearnState,
 } from "../../core/learn/state.js";
+import { getSessionDirPath } from "../../core/session-manager.js";
 import { SettingsManager } from "../../core/settings-manager.js";
 
 /** Guards against double-registration when default extensions load more than once. */
@@ -52,6 +60,109 @@ function shortDate(iso: string | undefined): string {
 	return Number.isNaN(date.getTime()) ? "unknown" : date.toISOString().slice(0, 10);
 }
 
+/** The settings keys `/learn` reads, paired with the values in force right now. */
+type LearnWindow = ReturnType<SettingsManager["getLearnSettings"]>;
+
+const SETTING_KEYS: Array<{ key: keyof LearnWindow; setting: string; note: string }> = [
+	{ key: "maxSessions", setting: "learnMaxSessions", note: "recent sessions scanned" },
+	{ key: "maxAgeDays", setting: "learnMaxAgeDays", note: "ignore sessions older than this, in days" },
+	{ key: "minRepeats", setting: "learnMinRepeats", note: "times a directive must recur to be proposed" },
+	{
+		key: "minWorkflowRepeats",
+		setting: "learnMinWorkflowRepeats",
+		note: "repeats before a tool sequence is proposed",
+	},
+	{ key: "maxProposals", setting: "learnMaxProposals", note: "cap on each list in the digest" },
+];
+
+/**
+ * Where the knobs live, and what they are set to.
+ *
+ * `/learn` has five settings and no UI, so until this existed the only way to
+ * find them was to already know they were in `settings.json`. Every message that
+ * reports a disappointing result names a threshold, so every one of them ends
+ * with these lines.
+ */
+function settingsPathLines(ctx: ExtensionCommandContext, agentDir: string): string[] {
+	return [
+		"Settings — edit either file, no restart needed",
+		`  user     ${displayPath(join(agentDir, "settings.json"))}`,
+		`  project  ${displayPath(join(ctx.cwd, CONFIG_DIR_NAME, "settings.json"))}  (wins where both set a key)`,
+	];
+}
+
+function settingsLines(ctx: ExtensionCommandContext, agentDir: string, window: LearnWindow): string[] {
+	const lines = settingsPathLines(ctx, agentDir);
+	for (const { key, setting, note } of SETTING_KEYS) {
+		lines.push(`  ${setting.padEnd(24)} ${String(window[key]).padStart(3)}   ${note}`);
+	}
+	return lines;
+}
+
+/**
+ * The directory whose name keys this cwd's bookmark.
+ *
+ * Derived from the cwd, never from the live session manager. An in-memory
+ * session (`--no-session`) reports an empty session directory, which used to key
+ * every such run to the same nameless state file, and a shared custom
+ * `sessionDir` used to make two unrelated projects share one bookmark. The cwd
+ * is what "per directory" means here, so the cwd is what it is keyed on.
+ */
+function stateKeyDir(ctx: ExtensionCommandContext, agentDir: string): string {
+	return getSessionDirPath(ctx.cwd, agentDir);
+}
+
+/** Run the directory scan without ranking anything, for the reports that only need counts. */
+function sessionScanPreview(ctx: ExtensionCommandContext, agentDir: string, window: LearnWindow): SessionScanReport {
+	return scanSessions({
+		cwd: ctx.cwd,
+		agentDir,
+		sessionDir: ctx.sessionManager.getSessionDir(),
+		maxSessions: window.maxSessions,
+		maxAgeDays: window.maxAgeDays,
+	});
+}
+
+/** Where sessions were looked for, and what was passed over — the "why nothing?" answer. */
+function scanLines(scan: SessionScanReport, window: LearnWindow): string[] {
+	const lines: string[] = ["Looked in"];
+	for (const dir of scan.dirs) {
+		const missing = scan.missingDirs.includes(dir) ? "  (does not exist)" : "";
+		lines.push(`  ${displayPath(dir)}${missing}`);
+	}
+	lines.push(`Found ${scan.files} session file(s)`);
+
+	const skips: string[] = [];
+	if (scan.tooOld > 0) skips.push(`${scan.tooOld} older than ${window.maxAgeDays} days (learnMaxAgeDays)`);
+	if (scan.otherCwd > 0) skips.push(`${scan.otherCwd} recorded a different working directory`);
+	if (scan.overLimit > 0) skips.push(`${scan.overLimit} beyond the newest ${window.maxSessions} (learnMaxSessions)`);
+	if (scan.unreadable > 0) skips.push(`${scan.unreadable} empty or unreadable`);
+	for (const skip of skips) lines.push(`  skipped: ${skip}`);
+	return lines;
+}
+
+/**
+ * Explain an empty scan rather than asserting there is no history.
+ *
+ * The old single sentence was wrong as often as it was right: sessions existed,
+ * they were simply all outside the window or recorded under another path. Naming
+ * the directory searched and the reason each file was passed over turns a dead
+ * end into something the reader can fix.
+ */
+function reportNoSessions(ctx: ExtensionCommandContext, agentDir: string, digest: LearnDigest, window: LearnWindow) {
+	const lines: string[] = [];
+	lines.push(
+		digest.scan.files === 0
+			? "/learn found no session transcripts for this directory."
+			: "/learn found session transcripts, but none inside the current window.",
+	);
+	lines.push("");
+	lines.push(...scanLines(digest.scan, window));
+	lines.push("");
+	lines.push(...settingsLines(ctx, agentDir, window));
+	ctx.ui.notify(lines.join("\n"), "warning");
+}
+
 /**
  * `/learn stats` — what became of past proposals.
  *
@@ -61,11 +172,22 @@ function shortDate(iso: string | undefined): string {
  */
 function reportStats(ctx: ExtensionCommandContext): void {
 	const agentDir = getHooCodeDir();
-	const statePath = getLearnStatePath(agentDir, ctx.sessionManager.getSessionDir());
+	const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
+	const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
 	const state = readLearnState(statePath);
 
 	if (Object.keys(state.surfaced).length === 0) {
-		ctx.ui.notify("No /learn history for this directory yet.", "info");
+		// Nothing on record means `/learn` has never proposed anything here — which
+		// is as likely to be "it never found any sessions" as "you never ran it", so
+		// point at both the sessions it can see and the knobs that gate them.
+		const lines = ["No /learn history for this directory yet — nothing has been proposed here."];
+		lines.push(`  State file  ${displayPath(statePath)}  (not created yet)`);
+		lines.push("");
+		lines.push(...scanLines(sessionScanPreview(ctx, agentDir, window), window));
+		lines.push("");
+		lines.push(...settingsPathLines(ctx, agentDir));
+		lines.push("  Run /learn settings for the thresholds in force.");
+		ctx.ui.notify(lines.join("\n"), "info");
 		return;
 	}
 
@@ -106,7 +228,22 @@ function reportStats(ctx: ExtensionCommandContext): void {
 
 	lines.push("");
 	lines.push(`Context files       ~${contextTokens} tokens, re-sent every request`);
+	lines.push(`State file          ${displayPath(statePath)}`);
+	lines.push("");
+	lines.push(...settingsPathLines(ctx, agentDir));
+	lines.push("  Run /learn settings for the thresholds in force.");
 
+	ctx.ui.notify(lines.join("\n"), "info");
+}
+
+/** `/learn settings` — the knobs, their current values, and the files to set them in. */
+function reportSettings(ctx: ExtensionCommandContext): void {
+	const agentDir = getHooCodeDir();
+	const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
+	const lines = settingsLines(ctx, agentDir, window);
+	lines.push("");
+	lines.push(...scanLines(sessionScanPreview(ctx, agentDir, window), window));
+	lines.push(`State file  ${displayPath(getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir)))}`);
 	ctx.ui.notify(lines.join("\n"), "info");
 }
 
@@ -116,24 +253,29 @@ export function setupLearn(pi: ExtensionAPI): void {
 	guarded[REGISTERED] = true;
 
 	pi.registerCommand("learn", {
-		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all|stats]",
+		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all|stats|settings]",
 		getArgumentCompletions: (prefix: string) =>
 			(
 				[
 					{ value: "all", label: "re-propose everything" },
 					{ value: "stats", label: "what happened to past proposals" },
+					{ value: "settings", label: "where sessions are read from, and the knobs" },
 				] as const
 			)
 				.filter((option) => option.value.startsWith(prefix))
 				.map((option) => ({ value: option.value, label: option.label })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 			const argument = args.trim().toLowerCase();
-			if (argument && argument !== "all" && argument !== "stats") {
-				ctx.ui.notify("Usage: /learn [all|stats]", "warning");
+			if (argument && argument !== "all" && argument !== "stats" && argument !== "settings") {
+				ctx.ui.notify("Usage: /learn [all|stats|settings]", "warning");
 				return;
 			}
 			if (argument === "stats") {
 				reportStats(ctx);
+				return;
+			}
+			if (argument === "settings") {
+				reportSettings(ctx);
 				return;
 			}
 			const ignoreState = argument === "all";
@@ -142,17 +284,17 @@ export function setupLearn(pi: ExtensionAPI): void {
 			// and so a project settings.json can narrow the window for one repo.
 			const agentDir = getHooCodeDir();
 			const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
-			const sessionDir = ctx.sessionManager.getSessionDir();
-			const statePath = getLearnStatePath(agentDir, sessionDir);
+			const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
 
-			let digest: ReturnType<typeof extractLearnDigest>;
+			let digest: LearnDigest;
 			try {
 				digest = extractLearnDigest({
 					cwd: ctx.cwd,
 					agentDir,
-					// The live session manager already knows where this cwd's sessions
-					// live, which avoids re-deriving (and re-creating) the directory.
-					sessionDir,
+					// Searched in addition to the per-cwd default directory, so a session
+					// manager pointing elsewhere (`--session`, a custom `sessionDir`, or
+					// an in-memory session reporting none at all) cannot hide the history.
+					sessionDir: ctx.sessionManager.getSessionDir(),
 					maxSessions: window.maxSessions,
 					maxAgeDays: window.maxAgeDays,
 					minRepeats: window.minRepeats,
@@ -167,17 +309,24 @@ export function setupLearn(pi: ExtensionAPI): void {
 			}
 
 			if (digest.scannedSessions === 0) {
-				ctx.ui.notify("No recent sessions in this directory to learn from.", "warning");
+				reportNoSessions(ctx, agentDir, digest, window);
 				return;
 			}
 
 			if (isEmptyDigest(digest)) {
-				ctx.ui.notify(
+				const lines: string[] = [];
+				lines.push(
 					digest.suppressed > 0
 						? `Scanned ${digest.scannedSessions} session(s) — nothing new since last time (${digest.suppressed} already shown). Run /learn all to see them again.`
 						: `Scanned ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
-					"info",
 				);
+				if (digest.suppressed === 0) {
+					// The thresholds are the reason a scan with real sessions in it came
+					// back empty, so this is the moment they are worth knowing about.
+					lines.push("");
+					lines.push(...settingsLines(ctx, agentDir, window));
+				}
+				ctx.ui.notify(lines.join("\n"), "info");
 				return;
 			}
 

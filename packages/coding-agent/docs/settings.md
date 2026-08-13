@@ -188,6 +188,10 @@ When multiple sources specify a session directory, precedence is `--session-dir`
 
 The window `/learn` mines when looking for repeated directives, fixes, and workflows.
 
+All five are editable from `/settings` under **Learning**. `/learn settings`
+prints the same values as text, alongside the paths of both settings files and
+the session directory being read.
+
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `learnMaxSessions` | number | `20` | Recent sessions in this directory to scan |

@@ -2939,31 +2939,55 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	showError(errorMessage: string): void {
-		this.chatContainer.addChild(new Spacer(1));
-		this.chatContainer.addChild(new Text(theme.fg("error", `Error: ${errorMessage}`), 1, 0));
-		this.ui.requestRender();
-	}
-
-	showWarning(warningMessage: string): void {
-		this.chatContainer.addChild(new Text(theme.fg("warning", warningMessage), 0, 0));
-		this.ui.requestRender();
-	}
-
 	/**
-	 * A warning the user pays for if they miss it. `showWarning` paints one more
-	 * coloured line in a startup already full of them, so this fills a `warningBg`
-	 * block instead — the same weight the custom-message box carries.
+	 * Paint a message as a filled block, the shape errors and warnings share.
+	 *
+	 * These two used to render differently for no reason anyone could name: an
+	 * error got a blank line above it and a column of padding, a warning got
+	 * neither, so a warning collided with whatever was printed before it and hung
+	 * off the left margin. Both are the same kind of interruption, so both get the
+	 * same frame, and the fill is what separates them from ordinary chat output —
+	 * a single coloured line is easy to scroll straight past.
 	 */
-	showNotice(title: string, body: string[]): void {
-		const box = new Box(1, 1, (t) => theme.bg("warningBg", t));
-		box.addChild(new Text(theme.bold(theme.fg("warning", title)), 0, 0));
+	private showBlock(bg: "warningBg" | "toolErrorBg", fg: "warning" | "error", title: string, body: string[]): void {
+		const box = new Box(1, 1, (t) => theme.bg(bg, t));
+		box.addChild(new Text(theme.bold(theme.fg(fg, title)), 0, 0));
 		for (const line of body) {
 			box.addChild(new Text(theme.fg("muted", line), 0, 0));
 		}
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(box);
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Split a message into its headline and the rest.
+	 *
+	 * Multi-line notifications — `/learn` reporting where it searched, a settings
+	 * dump — read as a heading over detail, and rendering them as one undifferen-
+	 * tiated coloured block loses that. A single-line message is all headline.
+	 */
+	private splitBlockMessage(message: string): { title: string; body: string[] } {
+		const [first = "", ...rest] = message.split("\n");
+		return { title: first, body: rest };
+	}
+
+	showError(errorMessage: string): void {
+		const { title, body } = this.splitBlockMessage(errorMessage);
+		this.showBlock("toolErrorBg", "error", `Error: ${title}`, body);
+	}
+
+	showWarning(warningMessage: string): void {
+		const { title, body } = this.splitBlockMessage(warningMessage);
+		this.showBlock("warningBg", "warning", title, body);
+	}
+
+	/**
+	 * A warning the user pays for if they miss it — same frame as `showWarning`,
+	 * with an explicit title over its body.
+	 */
+	showNotice(title: string, body: string[]): void {
+		this.showBlock("warningBg", "warning", title, body);
 	}
 
 	showNewVersionNotification(newVersion: string): void {
@@ -3103,6 +3127,18 @@ export class InteractiveMode {
 					// getWebtoolsTimeoutSecs already folds in HOOCODE_WEBTOOLS_TIMEOUT.
 					voiceSilenceMs: resolveVoiceSilenceMs(this.settingsManager),
 					webtoolsTimeoutSecs: this.settingsManager.getWebtoolsTimeoutSecs(),
+					// The effective window, so a project settings.json narrowing it for
+					// this repo shows up here rather than the user-scope value alone.
+					learn: (() => {
+						const learn = this.settingsManager.getLearnSettings();
+						return {
+							learnMaxSessions: learn.maxSessions,
+							learnMaxAgeDays: learn.maxAgeDays,
+							learnMinRepeats: learn.minRepeats,
+							learnMinWorkflowRepeats: learn.minWorkflowRepeats,
+							learnMaxProposals: learn.maxProposals,
+						};
+					})(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -3300,6 +3336,11 @@ export class InteractiveMode {
 					onWebtoolsTimeoutSecsChange: (secs) => {
 						// Persisted; webfetch/websearch pick it up when tools rebuild next session.
 						this.settingsManager.setWebtoolsTimeoutSecs(secs);
+					},
+					onLearnSettingChange: (key, value) => {
+						// /learn reads settings fresh on every invocation, so the next run
+						// picks this up with no restart and nothing to re-wire live.
+						this.settingsManager.setLearnSetting(key, value);
 					},
 					onCancel: () => {
 						done();
