@@ -934,6 +934,22 @@ export class SettingsManager {
 		this.save();
 	}
 
+	/**
+	 * Where an autonomous InstallPlugin puts a plugin. `/plugin install` asks the
+	 * human instead of reading this — the setting exists precisely for the path
+	 * where there is nobody to ask.
+	 */
+	getPluginInstallScope(): "user" | "project" {
+		const value = this.settings.pluginInstallScope;
+		return value === "project" ? "project" : DEFAULT_SETTINGS.pluginInstallScope!;
+	}
+
+	setPluginInstallScope(scope: "user" | "project"): void {
+		this.globalSettings.pluginInstallScope = scope;
+		this.markModified("pluginInstallScope");
+		this.save();
+	}
+
 	getDeferMcpSchemas(): boolean {
 		return this.settings.deferMcpSchemas ?? DEFAULT_SETTINGS.deferMcpSchemas!;
 	}

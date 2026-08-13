@@ -70,6 +70,7 @@ export interface SettingsConfig {
 	autoResizeImages: boolean;
 	blockImages: boolean;
 	enableSkillCommands: boolean;
+	pluginInstallScope: "user" | "project";
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	transport: Transport;
@@ -108,6 +109,7 @@ export interface SettingsCallbacks {
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
 	onEnableSkillCommandsChange: (enabled: boolean) => void;
+	onPluginInstallScopeChange: (scope: "user" | "project") => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onTransportChange: (transport: Transport) => void;
@@ -729,8 +731,19 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Hardware cursor toggle (insert after skill-commands)
-		const skillCommandsIndex = items.findIndex((item) => item.id === "skill-commands");
+		// Plugin install scope (insert after skill-commands). Governs the
+		// autonomous InstallPlugin only — /plugin install asks per install.
+		const skillCommandsIdx = items.findIndex((item) => item.id === "skill-commands");
+		items.splice(skillCommandsIdx + 1, 0, {
+			id: "plugin-install-scope",
+			label: "Plugin install scope",
+			description: "Where autonomous plugin installs go: user (~/.agents) or project (this repo, shared)",
+			currentValue: config.pluginInstallScope,
+			values: ["user", "project"],
+		});
+
+		// Hardware cursor toggle (insert after plugin-install-scope)
+		const skillCommandsIndex = items.findIndex((item) => item.id === "plugin-install-scope");
 		items.splice(skillCommandsIndex + 1, 0, {
 			id: "show-hardware-cursor",
 			label: "Show hardware cursor",
@@ -897,6 +910,9 @@ export class SettingsSelectorComponent extends Container {
 					break;
 				case "skill-commands":
 					callbacks.onEnableSkillCommandsChange(newValue === "true");
+					break;
+				case "plugin-install-scope":
+					callbacks.onPluginInstallScopeChange(newValue as "user" | "project");
 					break;
 				case "steering-mode":
 					callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");

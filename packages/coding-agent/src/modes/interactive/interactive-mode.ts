@@ -3078,6 +3078,7 @@ export class InteractiveMode {
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
 					enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
+					pluginInstallScope: this.settingsManager.getPluginInstallScope(),
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					transport: this.settingsManager.getTransport(),
@@ -3194,6 +3195,11 @@ export class InteractiveMode {
 					onEnableSkillCommandsChange: (enabled) => {
 						this.settingsManager.setEnableSkillCommands(enabled);
 						this.setupAutocompleteProvider();
+					},
+					onPluginInstallScopeChange: (scope) => {
+						// Read per install by InstallPlugin, so it applies immediately with
+						// nothing to reload.
+						this.settingsManager.setPluginInstallScope(scope);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);

@@ -4,8 +4,10 @@
  * `/plugin` installs plugins from marketplaces (a git repo or local dir with a
  * native `.agents-plugin/marketplace.json`, Claude `.claude-plugin/marketplace.json`,
  * or Copilot-style `.github/marketplace.json` index). Installed plugins are placed
- * in the global consumption home (`~/.agents/plugins/<name>`) and loaded by the
- * plugin loader after a reload.
+ * at the chosen scope — `~/.agents/plugins/<name>` for `user`, or
+ * `<cwd>/.agents/plugins/<name>` for `project` — and loaded by the plugin loader
+ * after a reload. `install` asks which, since a human is right here to answer;
+ * the autonomous tool reads the `pluginInstallScope` setting instead.
  *
  * Adding a marketplace is the human trust boundary and stays here; the shared
  * mechanics (discovery, install, remove, the bundled default marketplace) live in
@@ -16,8 +18,10 @@
  *   /plugin marketplace list
  *   /plugin marketplace refresh     re-fetch every cached index now
  *   /plugin list                     list available plugins across marketplaces
- *   /plugin install <name>
+ *   /plugin install <name> [--scope user|project]
  *   /plugin remove <name>
+ *   /plugin trust [list]             allow repo-committed plugins to run code here
+ *   /plugin untrust
  *   /plugin publish <name> [--to <marketplace-dir>]
  *
  * `publish` is the human end of the publish lane (§3.2). The model can package a
@@ -32,6 +36,7 @@
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { getAgentDir } from "../../config.js";
 import { CATEGORY_GLYPH, SEGMENT_SEP } from "../../core/brand.js";
 import { getPlugin } from "../../core/extensions/plugins/authoring.js";
 import {
@@ -48,6 +53,7 @@ import {
 	marketplaceCacheDir,
 	marketplaceCacheRoot,
 	marketplaceStorePath,
+	type PluginInstallScope,
 } from "../../core/extensions/plugins/locations.js";
 import {
 	parseMarketplaceDir,
@@ -56,11 +62,46 @@ import {
 	writeMarketplaceStore,
 } from "../../core/extensions/plugins/marketplace.js";
 import { entryNeedsSource, packagePlugin, stageIntoMarketplace } from "../../core/extensions/plugins/packaging.js";
+import {
+	isWorkspaceTrusted,
+	listTrustedWorkspaces,
+	trustWorkspace,
+	untrustWorkspace,
+} from "../../core/extensions/plugins/trust.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 import { type ListStyle, plural, renderList } from "../../core/format-list.js";
+import { SettingsManager } from "../../core/settings-manager.js";
 
 function isGitSource(loc: string): boolean {
 	return /^https?:\/\//.test(loc) || loc.startsWith("git@") || loc.endsWith(".git");
+}
+
+function isInstallScope(value: string): value is PluginInstallScope {
+	return value === "user" || value === "project";
+}
+
+/** Labels carry the consequence, since that is the whole content of the choice. */
+const SCOPE_CHOICES: ReadonlyArray<{ scope: PluginInstallScope; label: string }> = [
+	{ scope: "user", label: "User — ~/.agents/plugins, available in every project (recommended)" },
+	{ scope: "project", label: "Project — <repo>/.agents/plugins, committed and shared with collaborators" },
+];
+
+/**
+ * Ask where the plugin should land. Returns undefined when the user dismisses
+ * the selector, which cancels the install rather than guessing.
+ *
+ * Headless (no UI to ask through) resolves to `fallback` — the standing setting
+ * — so a scripted or `--print` run still installs somewhere predictable.
+ */
+async function promptForScope(
+	ctx: ExtensionCommandContext,
+	fallback: PluginInstallScope,
+): Promise<PluginInstallScope | undefined> {
+	if (!ctx.hasUI) return fallback;
+	const labels = SCOPE_CHOICES.map((c) => c.label);
+	const picked = await ctx.ui.select("Install scope", labels);
+	if (picked === undefined) return undefined;
+	return SCOPE_CHOICES.find((c) => c.label === picked)?.scope ?? fallback;
 }
 
 /**
@@ -95,9 +136,9 @@ function listHeader(
 export function setupMarketplace(pi: ExtensionAPI): void {
 	pi.registerCommand("plugin", {
 		description:
-			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> | /plugin remove <name> | /plugin publish <name> [--to <dir>]",
+			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> [--scope user|project] | /plugin remove <name> | /plugin trust [list] | /plugin untrust | /plugin publish <name> [--to <dir>]",
 		getArgumentCompletions: (prefix: string) =>
-			["marketplace", "list", "install", "remove", "refresh", "publish"]
+			["marketplace", "list", "install", "remove", "refresh", "publish", "trust", "untrust"]
 				.filter((s) => s.startsWith(prefix))
 				.map((s) => ({ value: s, label: s })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -228,23 +269,94 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 				return;
 			}
 
-			// ── install <name> ──────────────────────────────────────────────────
+			// ── install <name> [--scope user|project] ───────────────────────────
 			if (trimmed.startsWith("install")) {
-				const name = trimmed.slice("install".length).trim();
+				const rest = trimmed.slice("install".length).trim();
+				const scopeMatch = /(?:^|\s)--scope[= ]\s*(\S+)/.exec(rest);
+				const name = rest.replace(/(?:^|\s)--scope[= ]\s*\S+/, "").trim();
 				if (!name) {
-					ctx.ui.notify("Usage: /plugin install <name>", "warning");
+					ctx.ui.notify("Usage: /plugin install <name> [--scope user|project]", "warning");
+					return;
+				}
+				if (scopeMatch && !isInstallScope(scopeMatch[1])) {
+					ctx.ui.notify(`Unknown scope "${scopeMatch[1]}". Use --scope user or --scope project.`, "warning");
 					return;
 				}
 				if (!findAvailablePlugin(cwd, name)) {
 					ctx.ui.notify(`Plugin "${name}" not found in any marketplace.`, "error");
 					return;
 				}
-				const outcome = await installAvailablePlugin(cwd, name);
+
+				// An explicit --scope wins; otherwise ask, because this is the human
+				// path and the destination is a real choice (portable vs. committed to
+				// the repo). With no UI to ask through there is nobody to ask, so it
+				// falls back to the same setting the autonomous path uses.
+				const scope = scopeMatch
+					? (scopeMatch[1] as PluginInstallScope)
+					: await promptForScope(ctx, SettingsManager.create(cwd, getAgentDir()).getPluginInstallScope());
+				if (!scope) {
+					ctx.ui.notify("Install cancelled.", "info");
+					return;
+				}
+
+				const outcome = await installAvailablePlugin(cwd, name, getAgentDir(), { scope });
 				if (!outcome.installed) {
 					ctx.ui.notify(outcome.message, "error");
 					return;
 				}
-				ctx.ui.notify(`${outcome.message} Reloading…`, "info");
+
+				// A person typing this command in this directory is the human act
+				// workspace trust asks for, so an explicit project-scope install grants
+				// it — otherwise the plugin you just chose to install here would load
+				// with its hooks withheld, which is nobody's idea of what happened.
+				// The autonomous path deliberately does not do this.
+				let trustNote = "";
+				if (scope === "project" && !isWorkspaceTrusted(cwd, getAgentDir())) {
+					trustWorkspace(cwd, getAgentDir());
+					trustNote = ` Trusted this workspace, so its plugins may run hooks and MCP servers here (\`/plugin untrust\` reverses it).`;
+				}
+				ctx.ui.notify(`${outcome.message}${trustNote} Reloading…`, "info");
+				await ctx.reload();
+				return;
+			}
+
+			// ── trust / untrust ─────────────────────────────────────────────────
+			if (trimmed === "trust" || trimmed.startsWith("trust ")) {
+				const sub = trimmed.slice("trust".length).trim();
+				if (sub === "list") {
+					const workspaces = listTrustedWorkspaces(getAgentDir());
+					ctx.ui.notify(
+						workspaces.length
+							? `Trusted workspaces:\n${workspaces.map((w) => `${w.path} (since ${w.at.slice(0, 10)})`).join("\n")}`
+							: "No trusted workspaces. Plugins in a working tree load skills and commands, but not hooks or MCP servers.",
+						"info",
+					);
+					return;
+				}
+				if (sub) {
+					ctx.ui.notify("Usage: /plugin trust | /plugin trust list | /plugin untrust", "warning");
+					return;
+				}
+				if (isWorkspaceTrusted(cwd, getAgentDir())) {
+					ctx.ui.notify(`Already trusted: ${cwd}`, "info");
+					return;
+				}
+				trustWorkspace(cwd, getAgentDir());
+				ctx.ui.notify(
+					`Trusted ${cwd}. Plugins committed to this repository may now run hooks and MCP servers here, ` +
+						"including any added by a later pull. Reverse it with /plugin untrust. Reloading…",
+					"info",
+				);
+				await ctx.reload();
+				return;
+			}
+
+			if (trimmed === "untrust") {
+				if (!untrustWorkspace(cwd, getAgentDir())) {
+					ctx.ui.notify(`Not trusted: ${cwd}`, "info");
+					return;
+				}
+				ctx.ui.notify(`Revoked trust for ${cwd}. Reloading…`, "info");
 				await ctx.reload();
 				return;
 			}
@@ -313,7 +425,8 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 			}
 
 			ctx.ui.notify(
-				"Usage: /plugin marketplace add|list|refresh | /plugin list | /plugin install <name> | " +
+				"Usage: /plugin marketplace add|list|refresh | /plugin list | /plugin install <name> [--scope user|project] | " +
+					"/plugin trust [list] | /plugin untrust | " +
 					"/plugin remove <name> | /plugin publish <name> [--to <marketplace-dir>]",
 				"warning",
 			);

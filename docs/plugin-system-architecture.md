@@ -642,10 +642,32 @@ using the vendor's validator instead of inventing a second opinion.
 Both scopes resolve correctly today (`skills.ts:485-494`; `mcp.json` at user and
 project level).
 
-**Plugins — user-scoped.** Portable, versioned, reusable across projects. Claude
-Code draws the same line: standalone `.claude/` for "project-specific
-customizations", plugins for "reusable across projects". Copilot CLI is per-user
-only today (project scoping is an open upstream request).
+**Plugins — user-scoped by default, project-scoped by choice.** Portable,
+versioned and reusable across projects is the common case, so `user` is the
+default and the only scope an autonomous install reaches without a standing
+decision. But "portable" is a claim about the typical plugin, not every plugin,
+and a team that wants one pinned to a repository and shared with collaborators
+has a real need the earlier rule refused outright.
+
+Claude Code offers **four** scopes — user, project (`.claude/settings.json`,
+committed), local (`.claude/settings.local.json`), and managed — with user as the
+default. An earlier version of this section claimed the vendor was user-only and
+leaned on that for support; that was wrong when written and is worth not
+repeating. Copilot CLI *is* per-user only today (project scoping is an open
+upstream request).
+
+hoocode implements two of the four, because the third and fourth need machinery
+it does not have. There is no `enabledPlugins` registry here — a plugin on the
+discovery path is enabled — so scope is a **destination**, not a flag recorded
+elsewhere:
+
+| Scope | Destination | Reaches |
+|---|---|---|
+| `user` (default) | `~/.agents/plugins/<id>/` | every checkout, this machine only |
+| `project` | `<cwd>/.agents/plugins/<id>/` | this repo; collaborators once committed |
+
+`local` has no meaning without a registry (the equivalent is project scope plus a
+`.gitignore` line) and `managed` needs an enterprise policy layer.
 
 ### 5.3 Three locations, not one
 
@@ -654,7 +676,7 @@ consumption and production.
 
 | Role | Location | Why |
 |---|---|---|
-| **Consumption home** (marketplace installs) | `~/.agents/plugins/<id>/` | hoocode installing for itself. Format-agnostic. Must not leak into a vendor's directory — installing a plugin for hoocode should not silently add it to Claude Code. |
+| **Consumption home** (marketplace installs) | `~/.agents/plugins/<id>/` (user) or `<cwd>/.agents/plugins/<id>/` (project) | hoocode installing for itself, at the scope from §5.2. Format-agnostic. Must not leak into a vendor's directory — installing a plugin for hoocode should not silently add it to Claude Code. |
 | **Production, `--platform claude`** | `~/.claude/skills/<id>/` | The documented drop-in (§1.6). Live in Claude Code next session, and live in hoocode once §5.7 lands. |
 | **Production, `--platform github`** | `~/.agents/publish/github/<id>/` | No vendor drop-in exists — `copilot plugin install ./dir` copies into a cache and needs a reinstall per change (§1.7). This is a real home, not a scratch area: `PackagePlugin` works in it, publish reads from it, and `copilot plugin install <that path>` is the local test loop. |
 
@@ -783,21 +805,54 @@ plugin source too — but only its **passive** capabilities (skills, commands,
 subagents) load. Hooks and MCP servers from project scope are skipped and
 reported.
 
-The reason is a capability gap, not a preference: **hoocode has no workspace
-trust mechanism.** Every `trust` reference in the source is TLS CA trust
-(`utils/tls-ca.ts`), marketplace source trust (a curated list, not a per-folder
-gate), or prose. There is no trusted-directories setting in `settings-types.ts`,
-and `ui.confirm` is called in exactly one place in the entire codebase
-(`propose-plugin.ts:261`). Claude gates project-scope skills-dir plugins behind a
-workspace trust dialog, restricts their MCP servers to per-server approval, and
-refuses to load their monitors at all (§1.6). Loading project-scope hooks and MCP
-ungated would mean a cloned repo can register shell hooks and spawn servers with
-no confirmation — a real escalation over reading skill text, which is all
-`.claude/skills/` gets today.
+**All three working-tree paths are gated, and the gate is workspace trust.**
+`isProjectSuppliedPlugin` covers `<cwd>/.claude/skills/`, `<cwd>/.agents/plugins/`
+and `<cwd>/.hoocode/plugins/`; `shouldWithholdExecutables` withholds from them
+unless `isWorkspaceTrusted(cwd)`.
 
-Upgrade path when someone wants it: `ctx.ui.confirm` is already the primitive,
-and `propose-plugin.ts:252-260` sets the headless precedent — no UI means refuse,
-not proceed.
+An earlier version gated only `.claude/skills/`, arguing that the hoocode homes
+held plugins "the user installed deliberately". That is true of the person who
+ran the install and false for everyone who clones the result — and **no property
+of a path can distinguish them**, because everything in the working tree travels
+with the repository, including any marker a plugin might carry to claim
+otherwise. The question was unanswerable where it was being asked. Trust moves it
+somewhere the repository cannot reach.
+
+The reason is the escalation, not a preference. A cloned repo that can register
+shell hooks and spawn MCP servers with no confirmation is running code on the
+strength of `git clone`; reading its skill text is not. Claude draws the same
+line — workspace trust dialog for project-scope skills-dir plugins, per-server
+MCP approval, monitors not loaded at all (§1.6).
+
+*(This section previously said hoocode had no workspace trust mechanism, which
+was true when written. It has one now; see below.)*
+
+**The record** (`plugins/trust.ts`) is `~/.agents/trusted-workspaces.json`: a
+per-machine list of absolute paths, in the agent dir precisely so repository
+content cannot write it. Matching is exact, not prefix — trusting `~/src` must
+not silently trust every repository ever cloned beneath it.
+
+**Granting is a human act.** `/plugin trust` grants it; so does an explicit
+`/plugin install --scope project`, where a person is demonstrably operating in
+that directory on purpose and would otherwise watch the plugin they just chose
+load with its hooks withheld. The autonomous `InstallPlugin` never grants it: a
+model deciding a workspace may execute repository code is the exact decision the
+record exists to keep with a person. `/plugin untrust` reverses it.
+
+Two consequences worth stating rather than discovering:
+
+- **Trust is about a place, not a commit.** Once a directory is trusted, code
+  pulled into it later is trusted too. That is the same bargain Claude Code's
+  workspace trust and VS Code's trusted folders make, and it is what makes the
+  feature usable — re-prompting per commit would train people to click through.
+- **It changes behavior for existing project-local installs.** A plugin an older
+  hoocode put in `<cwd>/.agents/plugins/` and that carries hooks or MCP servers
+  now loads passive-only until the workspace is trusted. The load error names the
+  plugin and the one command that fixes it. The old behavior was the bug.
+
+Not built: prompting at load time. `loadPlugins` has no UI handle, and the
+`propose-plugin.ts:252-260` precedent (no UI means refuse, not proceed) points
+the same way — withhold and report, with an explicit command to grant.
 
 ---
 
@@ -939,7 +994,8 @@ Both vendor columns are now first-hand: Claude from
 | Who installs | human | human | **model**, within trusted marketplaces |
 | Who authors | human (`plugin init`) | human | **model** (`ProposePlugin`) |
 | Validation | `claude plugin validate` | none | G1–G4, delegating to `claude plugin validate` where it exists |
-| Plugin scope | user | user (project scoping is an open upstream request) | user (consumption + production split, §5.3) |
+| Plugin scope | user (default), project, local, managed | user (project scoping is an open upstream request) | user (default) + project for installs; user-only for authoring (§5.2, §5.5) |
+| Scope is recorded as | an `enabledPlugins` entry in the settings file for that scope | n/a | the install destination — there is no enablement registry |
 | Local drop-in | `~/.claude/skills/<id>/`, discovered in place | none — install copies to cache, reinstall per change | follows the platform |
 | Precedence | n/a | skills/agents first-wins, MCP last-wins | first-wins throughout |
 | MCP schema loading | eager | eager | **deferred** |

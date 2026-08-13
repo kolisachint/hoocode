@@ -39,6 +39,108 @@ describe("marketplace manifests", () => {
 		expect(market?.plugins).toEqual([{ name: "foo", source: "./plugins/foo", description: "Foo" }]);
 	});
 
+	// The three shapes below all appear in anthropics/claude-plugins-official and
+	// github/awesome-copilot. Each was dropped or mis-resolved before; they are
+	// pinned here because the only other place they are checked is the network.
+	it("treats a url source carrying `path` as a git subdirectory", () => {
+		const dir = path.join(tempDir, "url-with-path");
+		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), {
+			name: "official-like",
+			plugins: [
+				{
+					name: "atomic-agents",
+					source: {
+						source: "url",
+						url: "https://github.com/BrainBlend-AI/atomic-agents.git",
+						path: "claude-plugin/atomic-agents",
+						sha: "b15ca449a81278b1c92666bdf9a2e57a817dcacd",
+					},
+				},
+			],
+		});
+		// Dropping `path` installed the whole repository instead of the plugin.
+		expect(parseMarketplaceDir(dir)?.plugins[0].source).toEqual({
+			source: "git-subdir",
+			url: "https://github.com/BrainBlend-AI/atomic-agents.git",
+			path: "claude-plugin/atomic-agents",
+			sha: "b15ca449a81278b1c92666bdf9a2e57a817dcacd",
+		});
+	});
+
+	it("accepts `commit` as the pin when `sha` is absent", () => {
+		const dir = path.join(tempDir, "commit-pin");
+		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), {
+			name: "official-like",
+			plugins: [
+				{ name: "jfrog", source: { source: "github", repo: "jfrog/claude-plugin", commit: "259c8e71" } },
+				{ name: "sha-wins", source: { source: "github", repo: "o/r", commit: "259c8e71", sha: "3ae8f772" } },
+			],
+		});
+		const plugins = parseMarketplaceDir(dir)?.plugins ?? [];
+		expect(plugins[0].source).toEqual({
+			source: "url",
+			url: "https://github.com/jfrog/claude-plugin.git",
+			sha: "259c8e71",
+		});
+		// `sha` is the documented field, so it wins when a catalog ships both.
+		expect(plugins[1].source).toEqual({ source: "url", url: "https://github.com/o/r.git", sha: "3ae8f772" });
+	});
+
+	it("normalizes the github shorthand with path, ref and sha", () => {
+		const dir = path.join(tempDir, "gh-shorthand");
+		writeJson(path.join(dir, ".github", "plugin", "marketplace.json"), {
+			name: "awesome-copilot-like",
+			plugins: [
+				{ name: "figma", source: { source: "github", repo: "figma/mcp-server-guide" } },
+				{
+					name: "copilot-goal-skill",
+					source: {
+						source: "github",
+						repo: "gsemet/copilot-goal-skill",
+						path: "plugins/copilot-goal-skill",
+						ref: "1.1.2",
+						sha: "17d0452f",
+					},
+				},
+			],
+		});
+		const plugins = parseMarketplaceDir(dir)?.plugins ?? [];
+		expect(plugins[0].source).toEqual({ source: "url", url: "https://github.com/figma/mcp-server-guide.git" });
+		expect(plugins[1].source).toEqual({
+			source: "git-subdir",
+			url: "https://github.com/gsemet/copilot-goal-skill.git",
+			path: "plugins/copilot-goal-skill",
+			ref: "1.1.2",
+			sha: "17d0452f",
+		});
+	});
+
+	it("keeps npm and archive entries in the catalog, and still drops malformed ones", () => {
+		// A documented source type hoocode cannot fetch is not the same as a broken
+		// entry. Dropping both made an archive plugin read as "does not exist"
+		// rather than "cannot install that kind yet".
+		const dir = path.join(tempDir, "unsupported-kinds");
+		writeJson(path.join(dir, ".claude-plugin", "marketplace.json"), {
+			name: "mixed",
+			plugins: [
+				{ name: "zip-plugin", source: { source: "archive", url: "https://ex.com/p.zip", sha256: "abc" } },
+				{ name: "npm-plugin", source: { source: "npm", package: "@acme/p", version: "2.1.0" } },
+				{ name: "bad-source", source: { source: "unknown", url: "https://ex.com/r.git" } },
+				{ name: "bad-shape", source: 123 },
+			],
+		});
+		const parsed = parseMarketplaceDir(dir);
+		expect(parsed?.plugins.map((p) => p.name)).toEqual(["zip-plugin", "npm-plugin"]);
+
+		expect(resolvePluginSource(parsed!.plugins[0].source, dir)).toEqual({
+			kind: "archive",
+			url: "https://ex.com/p.zip",
+			sha256: "abc",
+		});
+		// The version folds into the spec so the message can name what was asked for.
+		expect(resolvePluginSource(parsed!.plugins[1].source, dir)).toEqual({ kind: "npm", spec: "@acme/p@2.1.0" });
+	});
+
 	it("prefers the native .agents-plugin manifest over Claude and Copilot", () => {
 		const dir = path.join(tempDir, "triple");
 		writeJson(path.join(dir, ".agents-plugin", "marketplace.json"), { name: "from-agents", plugins: [] });

@@ -528,4 +528,30 @@ describe("SettingsManager", () => {
 			expect(manager.getSessionDir()).toBe(join(homedir(), "sessions"));
 		});
 	});
+
+	describe("getPluginInstallScope", () => {
+		it("defaults to user, so an autonomous install never writes into the repo unasked", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "dark" }));
+			expect(SettingsManager.create(projectDir, agentDir).getPluginInstallScope()).toBe("user");
+		});
+
+		it("returns project when set", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ pluginInstallScope: "project" }));
+			expect(SettingsManager.create(projectDir, agentDir).getPluginInstallScope()).toBe("project");
+		});
+
+		it("falls back to user on an unrecognized value rather than trusting it", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ pluginInstallScope: "global" }));
+			expect(SettingsManager.create(projectDir, agentDir).getPluginInstallScope()).toBe("user");
+		});
+
+		it("lets a project settings file pick the scope for that repo", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ pluginInstallScope: "user" }));
+			writeFileSync(
+				join(projectDir, ".hoocode", "settings.json"),
+				JSON.stringify({ pluginInstallScope: "project" }),
+			);
+			expect(SettingsManager.create(projectDir, agentDir).getPluginInstallScope()).toBe("project");
+		});
+	});
 });

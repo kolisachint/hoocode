@@ -114,15 +114,17 @@ describe("plugin content containment (step 3)", () => {
 		expect(skills.map((s) => s.name)).toEqual(["solo"]);
 	});
 
-	it("scopes the passive gate to .claude/skills, not to every project path", () => {
-		// `<cwd>/.agents/plugins` and `<cwd>/.hoocode/plugins` are hoocode's own
-		// former install homes: they hold plugins the user installed deliberately,
-		// so gating them would break existing setups. Only the vendor convention
-		// for repo-committed, collaborator-shared plugins is withheld.
+	it("applies the passive gate to every working-tree plugin path", () => {
+		// This once excluded `<cwd>/.agents/plugins` and `<cwd>/.hoocode/plugins`,
+		// on the grounds that they held plugins "the user installed deliberately".
+		// That is true of the person who ran the install and false for everyone who
+		// clones the result, and no property of a path can tell the two apart —
+		// which is why the question moved to workspace trust. Being in the working
+		// tree is the whole test now.
 		const cwd = path.join(dir, "repo");
 		expect(isProjectSuppliedPlugin(path.join(cwd, ".claude", "skills", "shared"), cwd)).toBe(true);
-		expect(isProjectSuppliedPlugin(path.join(cwd, ".agents", "plugins", "installed"), cwd)).toBe(false);
-		expect(isProjectSuppliedPlugin(path.join(cwd, ".hoocode", "plugins", "installed"), cwd)).toBe(false);
+		expect(isProjectSuppliedPlugin(path.join(cwd, ".agents", "plugins", "installed"), cwd)).toBe(true);
+		expect(isProjectSuppliedPlugin(path.join(cwd, ".hoocode", "plugins", "installed"), cwd)).toBe(true);
 		expect(isProjectSuppliedPlugin(path.join(dir, "elsewhere", "global"), cwd)).toBe(false);
 	});
 

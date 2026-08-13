@@ -68,8 +68,37 @@ interface MarketplacePluginSourceGitSubdir {
 	sha?: string;
 }
 
-/** Source value authored in a marketplace manifest. */
-export type MarketplacePluginSource = string | MarketplacePluginSourceUrl | MarketplacePluginSourceGitSubdir;
+/** Structured source pointing at an npm package. */
+interface MarketplacePluginSourceNpm {
+	source: "npm";
+	package: string;
+	version?: string;
+	registry?: string;
+}
+
+/** Structured source pointing at a zip archive served over HTTPS. */
+interface MarketplacePluginSourceArchive {
+	source: "archive";
+	url: string;
+	sha256?: string;
+}
+
+/**
+ * Source value authored in a marketplace manifest.
+ *
+ * `npm` and `archive` are in the union despite not being installable here. They
+ * are documented vendor source types, so an entry using one is a *valid* catalog
+ * entry hoocode cannot fetch — which is a different thing from a malformed entry,
+ * and has to read differently. Dropping them at parse time made the plugin vanish
+ * from SearchPlugins entirely, so the failure mode was "that plugin does not
+ * exist" rather than "hoocode cannot install that kind yet".
+ */
+export type MarketplacePluginSource =
+	| string
+	| MarketplacePluginSourceUrl
+	| MarketplacePluginSourceGitSubdir
+	| MarketplacePluginSourceNpm
+	| MarketplacePluginSourceArchive;
 
 interface MarketplacePluginEntry {
 	name: string;
@@ -143,34 +172,60 @@ function normalizeSource(source: unknown): MarketplacePluginSource | null {
 	const obj = source as Record<string, unknown>;
 	const src = obj.source;
 	const url = obj.url;
+	// `commit` is not in the documented schema but appears in the wild alongside
+	// `sha` (anthropics/claude-plugins-official ships two such entries). It names
+	// the same thing, so it stands in as the pin when `sha` is absent rather than
+	// silently leaving the entry unpinned.
+	const shaValue = typeof obj.sha === "string" ? obj.sha : typeof obj.commit === "string" ? obj.commit : undefined;
 	const pin = {
 		...(typeof obj.ref === "string" ? { ref: obj.ref } : {}),
-		...(typeof obj.sha === "string" ? { sha: obj.sha } : {}),
+		...(shaValue ? { sha: shaValue } : {}),
 	};
+	const subdir = typeof obj.path === "string" && obj.path.length > 0 ? obj.path : undefined;
 	if (src === "url" && typeof url === "string") {
+		// A `url` entry carrying `path` means the plugin is a subdirectory of that
+		// repo, exactly like `git-subdir`. Dropping the `path` used to install the
+		// whole repository instead — six entries in the official Claude marketplace
+		// resolve that way, and each produced a plugin directory with none of the
+		// plugin in it.
+		if (subdir) return { source: "git-subdir", url, path: subdir, ...pin };
 		return { source: "url", url, ...pin };
 	}
-	if (src === "git-subdir" && typeof url === "string" && typeof obj.path === "string") {
-		return { source: "git-subdir", url, path: obj.path, ...pin };
+	if (src === "git-subdir" && typeof url === "string" && subdir) {
+		return { source: "git-subdir", url, path: subdir, ...pin };
 	}
 	// Copilot marketplace shorthand: { source: "github", repo: "owner/name", path? }
-	// (used by github/copilot-plugins). Normalize to the equivalent git source.
+	// (used by github/copilot-plugins and github/awesome-copilot). Normalize to the
+	// equivalent git source.
 	if (src === "github" && typeof obj.repo === "string" && /^[\w.-]+\/[\w.-]+$/.test(obj.repo)) {
 		const repoUrl = `https://github.com/${obj.repo}.git`;
-		if (typeof obj.path === "string" && obj.path.length > 0) {
-			return { source: "git-subdir", url: repoUrl, path: obj.path, ...pin };
-		}
+		if (subdir) return { source: "git-subdir", url: repoUrl, path: subdir, ...pin };
 		return { source: "url", url: repoUrl, ...pin };
 	}
+	// Documented types hoocode cannot fetch. Kept so the entry stays visible and
+	// install can explain itself; see the MarketplacePluginSource docstring.
+	if (src === "npm" && typeof obj.package === "string") {
+		return {
+			source: "npm",
+			package: obj.package,
+			...(typeof obj.version === "string" ? { version: obj.version } : {}),
+			...(typeof obj.registry === "string" ? { registry: obj.registry } : {}),
+		};
+	}
+	if (src === "archive" && typeof url === "string") {
+		return { source: "archive", url, ...(typeof obj.sha256 === "string" ? { sha256: obj.sha256 } : {}) };
+	}
+	// Anything else is malformed rather than merely unsupported, and stays dropped.
 	return null;
 }
 
-/** A resolved, installable plugin source. */
+/** A resolved plugin source. The last two are recognized but not fetchable here. */
 export type ResolvedPluginSource =
 	| { kind: "local"; path: string }
 	| { kind: "git"; url: string; ref?: string; sha?: string }
 	| { kind: "git-subdir"; url: string; path: string; ref?: string; sha?: string }
-	| { kind: "npm"; spec: string };
+	| { kind: "npm"; spec: string }
+	| { kind: "archive"; url: string; sha256?: string };
 
 function readJson<T>(file: string): T | null {
 	try {
@@ -254,6 +309,12 @@ export function resolvePluginSource(source: MarketplacePluginSource, marketplace
 	}
 	if (source.source === "url") {
 		return { kind: "git", url: source.url, ref: source.ref, sha: source.sha };
+	}
+	if (source.source === "npm") {
+		return { kind: "npm", spec: source.version ? `${source.package}@${source.version}` : source.package };
+	}
+	if (source.source === "archive") {
+		return { kind: "archive", url: source.url, sha256: source.sha256 };
 	}
 	return { kind: "git-subdir", url: source.url, path: source.path, ref: source.ref, sha: source.sha };
 }

@@ -30,6 +30,7 @@ import { execCommand } from "../exec.js";
 import { clearExtensionMcpServers } from "../extension-mcp-servers.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
 import { buildPluginFactory, discoverPlugins, pluginExtensionPath, withheldCapabilities } from "./plugins/index.js";
+import { isWorkspaceTrusted } from "./plugins/trust.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -650,16 +651,35 @@ export async function discoverAndLoadExtensions(
 }
 
 /**
- * Whether a discovered plugin came with the repository rather than from the user.
+ * Whether a discovered plugin sits in the working tree, and therefore came with
+ * the repository as far as anyone but its installer can tell.
  *
- * Scoped to `<cwd>/.claude/skills` — the vendor convention for repo-committed,
- * collaborator-shared plugins, which Claude Code puts behind a workspace trust
- * dialog. The other project paths (`.agents/plugins`, `.hoocode/plugins`) are
- * hoocode's own former install homes, holding plugins the user installed
- * deliberately, so treating those as untrusted would break existing setups.
+ * All three project paths count: `<cwd>/.claude/skills` (the vendor convention
+ * for repo-committed plugins) and `<cwd>/.agents/plugins` + `<cwd>/.hoocode/plugins`
+ * (hoocode's own project-scope install homes). An earlier version listed only the
+ * first, reasoning that the hoocode homes held plugins "the user installed
+ * deliberately" — true of the person who ran the install, and false for every
+ * collaborator who clones the result. Location cannot tell those two apart, so it
+ * is the wrong thing to ask; {@link isWorkspaceTrusted} asks the right one.
  */
 export function isProjectSuppliedPlugin(pluginRoot: string, cwd: string): boolean {
-	return isUnderDir(pluginRoot, path.join(cwd, ".claude", "skills"));
+	return [
+		path.join(cwd, ".claude", "skills"),
+		path.join(cwd, ".agents", "plugins"),
+		path.join(cwd, CONFIG_DIR_NAME, "plugins"),
+	].some((root) => isUnderDir(pluginRoot, root));
+}
+
+/**
+ * Whether a plugin's **executable** capabilities (hooks, MCP servers) should be
+ * withheld: it lives in the working tree and this machine has not trusted the
+ * workspace.
+ *
+ * Passive capabilities always load. Reading a repository's skill text is what
+ * opening the repository already implies; starting its processes is not.
+ */
+export function shouldWithholdExecutables(pluginRoot: string, cwd: string, agentDir: string = getAgentDir()): boolean {
+	return isProjectSuppliedPlugin(pluginRoot, cwd) && !isWorkspaceTrusted(cwd, agentDir);
 }
 
 /** True when `target` is `root` or sits inside it. */
@@ -723,15 +743,11 @@ export async function loadPlugins(
 
 	for (const plugin of discoverPlugins(pluginDirs)) {
 		try {
-			// Withhold the executable half of a plugin that came with the repository
-			// rather than from the user. Scoped to `<cwd>/.claude/skills` — the
-			// vendor convention for repo-committed, collaborator-shared plugins,
-			// which Claude Code itself puts behind a workspace trust dialog. The
-			// other project paths (`.agents/plugins`, `.hoocode/plugins`) are
-			// hoocode's own former install homes, holding plugins the user installed
-			// deliberately, so gating those would break existing setups.
-			// See PluginFactoryOptions.passiveOnly.
-			const passiveOnly = isProjectSuppliedPlugin(plugin.root, cwd);
+			// Withhold the executable half of a plugin that lives in the working tree
+			// until this machine has trusted the workspace. Skills, commands and
+			// subagents still load — reading a repository's text is what opening it
+			// already implies. See PluginFactoryOptions.passiveOnly.
+			const passiveOnly = shouldWithholdExecutables(plugin.root, cwd);
 			const withheld = passiveOnly ? withheldCapabilities(plugin) : [];
 			const extension = await loadExtensionFromFactory(
 				buildPluginFactory(plugin, { passiveOnly }),
@@ -746,9 +762,10 @@ export async function loadPlugins(
 				errors.push({
 					path: plugin.manifestPath,
 					error:
-						`Project-scoped plugin "${plugin.id}": ${withheld.join(" and ")} not loaded. ` +
-						"Executable capabilities from a project directory require a trust gate hoocode does not have; " +
-						"install the plugin for your user instead if you trust it.",
+						`Plugin "${plugin.id}" is in the working tree: ${withheld.join(" and ")} not loaded. ` +
+						"Code committed to a repository runs for whoever clones it, so hoocode does not start it " +
+						"until you say this directory is yours to run code from. Run `/plugin trust` to allow it here, " +
+						"or install the plugin at user scope instead.",
 				});
 			}
 		} catch (err) {

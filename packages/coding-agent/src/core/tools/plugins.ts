@@ -22,6 +22,7 @@
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
+import { getAgentDir } from "../../config.js";
 import { getArmedReuseNudges } from "../../extensions/core/prompt-reactive/policy.js";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.js";
 import { registerCapabilities } from "../capabilities/registry.js";
@@ -36,8 +37,10 @@ import {
 	uninstallPlugin,
 } from "../extensions/plugins/install.js";
 import { availablePluginGroups, installedPluginRows } from "../extensions/plugins/listing.js";
+import { isWorkspaceTrusted } from "../extensions/plugins/trust.js";
 import { defineTool, type ToolDefinition, type ToolRenderResultOptions } from "../extensions/types.js";
 import { plural, renderList } from "../format-list.js";
+import { SettingsManager } from "../settings-manager.js";
 import {
 	INSTALL_PLUGIN_TOOL_NAME,
 	LIST_PLUGINS_TOOL_NAME,
@@ -239,7 +242,13 @@ export function createListPluginsToolDefinition(): ToolDefinition {
 				const text = params.id ? `No installed plugin with id "${params.id}".` : "No plugins installed.";
 				return { content: [{ type: "text" as const, text }], details: { count: 0 } };
 			}
-			const text = `${plural(installed.length, "plugin")} installed:\n${renderList([{ rows: installedPluginRows(installed) }], { indent: 2 })}`;
+			const rows = installedPluginRows(installed, { cwd: ctx.cwd, trusted: isWorkspaceTrusted(ctx.cwd) });
+			let text = `${plural(installed.length, "plugin")} installed:\n${renderList([{ rows }], { indent: 2 })}`;
+			if (rows.some((row) => row.facts?.some((fact) => fact.includes("withheld")))) {
+				text +=
+					"\n\nWorking-tree plugins run their skills and commands but not their hooks or MCP servers " +
+					"until this directory is trusted (`/plugin trust`).";
+			}
 			return { content: [{ type: "text" as const, text }], details: { count: installed.length } };
 		},
 		renderResult(result, options, theme, context) {
@@ -328,8 +337,14 @@ export function createInstallPluginToolDefinition(): ToolDefinition {
 		],
 		parameters: installParams,
 		async execute(_id, params: Static<typeof installParams>, _signal, _onUpdate, ctx) {
-			ctx.ui.notify(`Installing plugin "${params.name}": ${params.reason}`, "info");
-			const outcome = await installAvailablePlugin(ctx.cwd, params.name);
+			// Autonomous installs cannot ask, so the destination is a standing
+			// decision the human made in settings rather than a per-call argument:
+			// putting a scope in the tool schema would let the model choose to write
+			// into the user's working tree, which is exactly the call that should not
+			// be the model's. `/plugin install` asks instead of reading this.
+			const scope = SettingsManager.create(ctx.cwd, getAgentDir()).getPluginInstallScope();
+			ctx.ui.notify(`Installing plugin "${params.name}" (${scope} scope): ${params.reason}`, "info");
+			const outcome = await installAvailablePlugin(ctx.cwd, params.name, getAgentDir(), { scope });
 			let text = outcome.message;
 			if (outcome.installed && outcome.dest) {
 				// Source trust is not content trust: the marketplace boundary vouches
