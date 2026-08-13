@@ -5,8 +5,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import { isEmptyDigest, renderLearnDigest } from "../src/core/learn/digest.js";
 import { extractLearnDigest, LEARN_DIGEST_MARKER } from "../src/core/learn/extract.js";
 import {
+	commandHead,
+	extractErrorRegion,
 	isBenignFailure,
 	isRuleShapedDirective,
+	isUninformativeFailure,
 	normalizeCommand,
 	normalizeDirective,
 	normalizeErrorSignature,
@@ -178,6 +181,53 @@ describe("isRuleShapedDirective", () => {
 	});
 });
 
+describe("commandHead", () => {
+	it("strips the cd prefix that wraps nearly every agent command", () => {
+		expect(commandHead("cd /Users/ada/repo && npm run check")).toBe("npm run");
+		expect(commandHead("cd /somewhere && sudo env npm test")).toBe("npm test");
+	});
+
+	it("keeps a bare command intact", () => {
+		expect(commandHead("git commit -m x")).toBe("git commit");
+	});
+});
+
+describe("extractErrorRegion", () => {
+	it("skips the tool banner and starts at the error", () => {
+		const output = [
+			"> pi-monorepo@0.0.3 check",
+			"> biome check --write . && tsgo --noEmit",
+			"Checked 232 files in 119ms. No fixes applied.",
+			"src/core/agent-session.ts(532,34): error TS2339: Property 'tokensAfter' does not exist.",
+		].join("\n");
+		expect(extractErrorRegion(output).startsWith("src/core/agent-session.ts(532,34): error TS2339")).toBe(true);
+	});
+
+	it("keeps two different errors from the same command distinguishable", () => {
+		const banner = "> pkg@1 check\n> biome check --write . && tsgo --noEmit\nChecked 232 files.\n";
+		const a = normalizeErrorSignature(extractErrorRegion(`${banner}x.ts(1,1): error TS2339: no such property`));
+		const b = normalizeErrorSignature(extractErrorRegion(`${banner}y.ts(9,9): error TS2305: no exported member`));
+		expect(a).not.toBe(b);
+	});
+
+	it("falls back to the tail, since tools print the banner first and the verdict last", () => {
+		const region = extractErrorRegion("preamble line\nsomething unremarkable at the very end", 20);
+		expect(region.endsWith("at the very end")).toBe(true);
+		expect(region).not.toContain("preamble");
+	});
+});
+
+describe("isUninformativeFailure", () => {
+	it("rejects aborts and empty output", () => {
+		expect(isUninformativeFailure("Command aborted")).toBe(true);
+		expect(isUninformativeFailure("   ")).toBe(true);
+	});
+
+	it("accepts a real failure", () => {
+		expect(isUninformativeFailure("error TS2339: nope")).toBe(false);
+	});
+});
+
 describe("isBenignFailure", () => {
 	it("treats no-match searches and test predicates as normal answers", () => {
 		expect(isBenignFailure("rg needle src")).toBe(true);
@@ -279,6 +329,32 @@ describe("fix extraction", () => {
 		expect(extract(fixture).fixes).toEqual([]);
 	});
 
+	it("ignores an aborted command, which is a change of mind and not a failure", () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [
+			...bash("npm install", "Command aborted", true),
+			...bash("npm install", "ok", false),
+		]);
+
+		expect(extract(fixture).fixes).toEqual([]);
+	});
+
+	it("keeps two different failures of the same command apart despite a shared banner", () => {
+		const fixture = createFixture();
+		const banner = "> pkg@1 check\n> biome check --write . && tsgo --noEmit\nChecked 232 files.\n";
+		writeSession(fixture, "s1", [
+			...bash("npm run check", `${banner}x.ts(1,1): error TS2339: no such property`, true),
+			...bash("npm run check", "ok", false),
+			...bash("npm run check", `${banner}y.ts(9,9): error TS2305: no exported member`, true),
+			...bash("npm run check", "ok", false),
+		]);
+
+		const fixes = extract(fixture).fixes;
+		expect(fixes).toHaveLength(2);
+		// The excerpt starts at the error, not at the banner every run shares.
+		expect(fixes[0]!.errorExcerpt).not.toContain("biome check");
+	});
+
 	it("counts the same failure signature across sessions", () => {
 		const fixture = createFixture();
 		const entries = () => [
@@ -316,6 +392,66 @@ describe("workflow extraction", () => {
 		writeSession(fixture, "s1", entries);
 
 		expect(extract(fixture).workflows).toEqual([]);
+	});
+
+	it("ignores the edit/test rhythm, which is one command and every rotation of itself", () => {
+		const fixture = createFixture();
+		// A long alternating run: sliding windows would report this as a dozen
+		// distinct "workflows" that are really one habit sliced at each offset.
+		const entries = Array.from({ length: 10 }, (_, i) => [
+			...edit(`src/f${i}.ts`),
+			...edit(`src/g${i}.ts`),
+			...bash("npm run check", "ok", false),
+		]).flat();
+		writeSession(fixture, "s1", entries);
+
+		expect(extract(fixture).workflows).toEqual([]);
+	});
+
+	it("counts a repeated procedure once per occurrence, not once per window offset", () => {
+		const fixture = createFixture();
+		const cycle = () => [
+			...edit("src/a.ts"),
+			...bash("npm test", "ok", false),
+			...bash("git commit -m x", "ok", false),
+		];
+		writeSession(fixture, "s1", [...cycle(), ...cycle(), ...cycle()]);
+
+		const workflows = extract(fixture).workflows;
+		expect(workflows.length).toBeGreaterThan(0);
+		// Three cycles means three occurrences — not the nine-ish a sliding
+		// window over the same steps would report.
+		expect(workflows[0]!.count).toBe(3);
+	});
+
+	it("reports one member per overlapping family rather than every variant", () => {
+		const fixture = createFixture();
+		const cycle = () => [
+			...edit("src/a.ts"),
+			...bash("npm test", "ok", false),
+			...bash("git commit -m x", "ok", false),
+			...bash("git push", "ok", false),
+		];
+		writeSession(fixture, "s1", [...cycle(), ...cycle(), ...cycle()]);
+
+		const workflows = extract(fixture).workflows;
+		// The 3-, 4- and 5-step windows over this cycle all qualify; only one
+		// representative should survive.
+		expect(workflows).toHaveLength(1);
+	});
+
+	it("honours a configured workflow repeat threshold", () => {
+		const fixture = createFixture();
+		const cycle = () => [
+			...edit("src/a.ts"),
+			...bash("npm test", "ok", false),
+			...bash("git commit -m x", "ok", false),
+		];
+		writeSession(fixture, "s1", [...cycle(), ...cycle(), ...cycle()]);
+
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir, skills: [] };
+		expect(extractLearnDigest({ ...base, minWorkflowRepeats: 3 }).workflows.length).toBeGreaterThan(0);
+		expect(extractLearnDigest({ ...base, minWorkflowRepeats: 4 }).workflows).toEqual([]);
 	});
 });
 

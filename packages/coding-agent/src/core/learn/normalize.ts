@@ -80,6 +80,63 @@ export function normalizeCommand(command: string): string {
 	return collapsed.slice(0, MAX_SIGNATURE_CHARS);
 }
 
+/**
+ * Prefixes that say where or how a command runs rather than what it does.
+ *
+ * Nearly every command an agent runs is wrapped in `cd <somewhere> && …`, and
+ * once paths are collapsed that prefix is identical everywhere. Taking the head
+ * of the raw command therefore yields `cd <path>` for the whole session, which
+ * makes every bash step look like every other one.
+ */
+const COMMAND_PREFIX = /^(?:cd\s+\S+\s*&&\s*|(?:sudo|env|time|nice|exec)\s+)/;
+
+/**
+ * The first `tokens` words of what a command actually does, with the
+ * where-and-how prefixes stripped. `cd <path> && npm run check` becomes
+ * `npm run`, which is the part worth comparing across sessions.
+ */
+export function commandHead(command: string, tokens = 2): string {
+	let out = normalizeCommand(command);
+	// Prefixes stack: `cd x && sudo env FOO=1 cmd`.
+	for (let i = 0; i < 4 && COMMAND_PREFIX.test(out); i++) {
+		out = out.replace(COMMAND_PREFIX, "");
+	}
+	return out.split(" ").slice(0, tokens).join(" ").trim();
+}
+
+/**
+ * The part of a command's output that is actually the error.
+ *
+ * Build tools lead with a banner — npm's `> pkg@1.0 check > biome check …`, a
+ * compiler's version line — that is byte-identical across every run. Signing a
+ * failure by its whole output therefore signs mostly the banner, and two
+ * unrelated failures of the same command look like the same problem. Scanning
+ * for the first error-shaped line fixes both the signature and what the reader
+ * is shown; failing that, the tail beats the head, because tools print the
+ * banner first and the verdict last.
+ */
+const ERROR_LINE =
+	/\b(?:error|err!|errors?:|failed|failure|cannot|can't|unable to|not found|no such|unexpected|expected|invalid|denied|refused|timed out|traceback|panic|exception|fatal)\b|^\s*(?:×|✖|✗)/i;
+
+export function extractErrorRegion(output: string, maxChars = 400): string {
+	const lines = output.split("\n");
+	const start = lines.findIndex((line) => ERROR_LINE.test(line));
+	if (start >= 0) {
+		return lines.slice(start).join("\n").slice(0, maxChars).trim();
+	}
+	return output.slice(-maxChars).trim();
+}
+
+/**
+ * Output that reports no failure worth learning from: an abort is the user
+ * changing their mind, and an empty result says nothing at all.
+ */
+export function isUninformativeFailure(output: string): boolean {
+	const trimmed = output.trim();
+	if (trimmed.length === 0) return true;
+	return /^(?:command aborted|aborted|cancelled|canceled|interrupted|killed|sigint|sigterm)\b/i.test(trimmed);
+}
+
 /** Filler that carries no rule content, stripped before directives are compared. */
 const DIRECTIVE_FILLER =
 	/^(?:please|pls|hey|ok|okay|now|also|and|so|just|quickly|can you|could you|would you|i want you to|i'd like you to|let's|lets)\b[\s,]*/i;

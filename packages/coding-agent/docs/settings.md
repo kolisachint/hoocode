@@ -193,6 +193,8 @@ The window `/learn` mines when looking for repeated directives, fixes, and workf
 | `learnMaxSessions` | number | `20` | Recent sessions in this directory to scan |
 | `learnMaxAgeDays` | number | `30` | Ignore sessions older than this |
 | `learnMinRepeats` | number | `2` | Times a directive must recur before it is proposed |
+| `learnMinWorkflowRepeats` | number | `3` | Non-overlapping repeats a tool sequence needs before it is proposed as a skill |
+| `learnMaxProposals` | number | `8` | Cap on each list in the digest |
 
 ```json
 { "learnMaxSessions": 50, "learnMaxAgeDays": 90, "learnMinRepeats": 3 }
@@ -202,6 +204,11 @@ Widen the window on a repo you touch rarely, so a habit spread over months still
 reaches the repeat threshold. Narrow it on one you work in daily, where the last
 few weeks are the only relevant history. `learnMinRepeats` is the signal/noise
 dial: raise it for fewer, better-evidenced proposals.
+
+`learnMinWorkflowRepeats` counts *non-overlapping* occurrences, so three means
+the sequence genuinely happened three separate times, not that a sliding window
+matched it three times inside one stretch of work. `learnMaxProposals` bounds
+what a single run can ask you to review; every proposal costs the model context.
 
 Non-numeric or non-positive values fall back to the default rather than
 narrowing the window to nothing. As with all settings, a project

@@ -123,7 +123,10 @@ repeated:
   that is not working and wants rewriting, not duplicating.
 - **Failures you resolved** — a command that failed, then later succeeded
   unchanged, with the work in between.
-- **Repeated tool sequences** — candidate skills.
+- **Repeated tool sequences** — candidate skills. Only procedures qualify: a
+  sequence has to chain at least two distinct doing-commands (test then commit,
+  build then publish). The edit/test rhythm is one command and every rotation of
+  itself, so it is not reported.
 
 It then proposes edits to the repo `AGENTS.md`, to `~/.agents/AGENTS.md` for
 habits that travel with you, or as a new skill. Nothing is written without the

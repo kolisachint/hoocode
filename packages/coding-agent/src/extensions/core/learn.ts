@@ -74,6 +74,8 @@ export function setupLearn(pi: ExtensionAPI): void {
 					maxSessions: window.maxSessions,
 					maxAgeDays: window.maxAgeDays,
 					minRepeats: window.minRepeats,
+					minWorkflowRepeats: window.minWorkflowRepeats,
+					maxProposals: window.maxProposals,
 					state: readLearnState(statePath),
 					ignoreState,
 				});

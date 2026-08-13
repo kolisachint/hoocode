@@ -31,17 +31,33 @@
   everything. Coverage reads both user scopes and loaded skills as well as the
   repo file, so a proposal routed to `~/.agents/AGENTS.md` or turned into a
   skill counts as adopted either way.
+- `/learn`'s two weakest categories were corrected against real transcripts.
+  Tool-sequence steps kept only the head of a command, and since nearly every
+  agent command is wrapped in `cd <path> && …`, every bash step collapsed to
+  `bash:cd <path>` and the sequences were content-free. Occurrences were counted
+  per sliding-window position, turning one stretch of edit/test churn into
+  "25x". And a sequence only had to be *any* three tool calls, so the digest
+  filled with eight rotations of the same edit/test rhythm. Steps now name the
+  real command, occurrences are counted without overlap, overlapping variants
+  collapse to one representative, and a sequence must chain two distinct
+  doing-commands to qualify as a procedure.
+- Failure signatures are taken from the error region rather than the whole
+  output. Build tools lead with an identical banner, so signing everything made
+  unrelated failures of one command collide on their shared preamble and showed
+  the reader npm's header instead of the error. Aborted and empty results are
+  skipped — an abort is a change of mind, not a problem that was solved.
 - A directive already covered by a skill and still being asked for by hand comes
   back marked `has-skill` rather than as a candidate rule, with the advice to
   sharpen the skill's `description` so it triggers — a rule duplicating an
   existing skill is cost with no benefit. The bar for a skill match is set
   higher than for a rule line, since a skill description is a much larger
   haystack and matches a short directive by chance far more easily.
-- `learnMaxSessions` (default 20), `learnMaxAgeDays` (default 30) and
-  `learnMinRepeats` (default 2) configure the window `/learn` mines. Read
-  per-invocation and project-overridable, so a repo can carry its own window;
-  non-positive values fall back to the default rather than silently mining
-  nothing.
+- `learnMaxSessions` (default 20), `learnMaxAgeDays` (default 30),
+  `learnMinRepeats` (default 2), `learnMinWorkflowRepeats` (default 3) and
+  `learnMaxProposals` (default 8) configure what `/learn` mines and how much it
+  proposes. Read per-invocation and project-overridable, so a repo can carry its
+  own window; non-positive values fall back to the default rather than silently
+  mining nothing.
 - Aggregate budget across all loaded context files, on top of the existing
   per-file limits: a warning past ~6k tokens, and trimming of the least specific
   scope first past ~16k. Trimmed files stay visible with a notice rather than

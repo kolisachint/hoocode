@@ -23,9 +23,12 @@ import { getUserAgentsDir } from "../../config.js";
 import { getDefaultSessionDir } from "../session-manager.js";
 import { loadSkills } from "../skills.js";
 import {
+	commandHead,
 	contentWords,
+	extractErrorRegion,
 	isBenignFailure,
 	isRuleShapedDirective,
+	isUninformativeFailure,
 	normalizeCommand,
 	normalizeDirective,
 	normalizeErrorSignature,
@@ -70,9 +73,9 @@ const DEFAULT_MIN_DIRECTIVE_COUNT = 2;
 const WORKFLOW_MIN_LEN = 3;
 const WORKFLOW_MAX_LEN = 5;
 /** Repeats before a tool sequence is worth proposing as a skill. */
-const MIN_WORKFLOW_COUNT = 3;
+const DEFAULT_MIN_WORKFLOW_COUNT = 3;
 /** Cap on each list in the digest, so the model's budget goes to the top signals. */
-const MAX_PER_CATEGORY = 8;
+const DEFAULT_MAX_PER_CATEGORY = 8;
 
 /**
  * Where a repeated directive already lives, if anywhere.
@@ -167,6 +170,10 @@ export interface ExtractOptions {
 	maxAgeDays?: number;
 	/** Occurrences a directive needs before it is proposed. The signal/noise dial. */
 	minRepeats?: number;
+	/** Non-overlapping repeats a tool sequence needs before it is proposed as a skill. */
+	minWorkflowRepeats?: number;
+	/** Cap on each list in the digest. */
+	maxProposals?: number;
 	/**
 	 * What previous runs already showed. Items with no new occurrences since are
 	 * held back. Omit (or pass `ignoreState`) to propose everything in the window.
@@ -348,10 +355,11 @@ function listSessions(options: ExtractOptions): { sessions: ParsedSession[]; ski
 function applySuppression<T extends Proposable>(
 	items: T[],
 	state: LearnState | undefined,
+	maxProposals: number,
 	covered: (item: T) => boolean,
 	onDeclined?: (item: T) => void,
 ): { kept: T[]; suppressed: number } {
-	if (!state) return { kept: items.slice(0, MAX_PER_CATEGORY), suppressed: 0 };
+	if (!state) return { kept: items.slice(0, maxProposals), suppressed: 0 };
 
 	const kept: T[] = [];
 	let suppressed = 0;
@@ -364,7 +372,7 @@ function applySuppression<T extends Proposable>(
 		if (verdict.previouslyDeclined) onDeclined?.(item);
 		kept.push(item);
 	}
-	return { kept: kept.slice(0, MAX_PER_CATEGORY), suppressed };
+	return { kept: kept.slice(0, maxProposals), suppressed };
 }
 
 /** Nearest AGENTS.md walking up from cwd, so proposals can be checked against it. */
@@ -571,7 +579,16 @@ function extractFixes(perSession: Array<{ session: ParsedSession; events: ToolEv
 
 			if (!resolved) continue;
 
-			const signature = normalizeErrorSignature(failure.output ?? "");
+			const output = failure.output ?? "";
+			// An abort is the user changing their mind, not a problem that was
+			// solved, and empty output carries nothing to sign or show.
+			if (isUninformativeFailure(output)) continue;
+
+			// Sign the error region, not the whole output: build tools lead with an
+			// identical banner, so signing everything makes unrelated failures of
+			// the same command collide on their shared preamble.
+			const errorRegion = extractErrorRegion(output);
+			const signature = normalizeErrorSignature(errorRegion);
 			if (!signature) continue;
 
 			const key = `${normalized} ${signature}`;
@@ -587,7 +604,7 @@ function extractFixes(perSession: Array<{ session: ParsedSession; events: ToolEv
 						key: `fix:${key}`,
 						command: normalized,
 						signature,
-						errorExcerpt: (failure.output ?? "").replace(/\s+/g, " ").trim().slice(0, 240),
+						errorExcerpt: errorRegion.replace(/\s+/g, " ").trim().slice(0, 240),
 						interveningCommands: [...new Set(interveningCommands)].slice(0, 5),
 						editedFiles: [...new Set(editedFiles)].slice(0, 5),
 						count: 1,
@@ -607,17 +624,83 @@ function extractFixes(perSession: Array<{ session: ParsedSession; events: ToolEv
 	return out.sort((a, b) => b.count - a.count || b.sessions - a.sessions || a.signature.localeCompare(b.signature));
 }
 
-/** A tool call reduced to a comparable step: the tool, plus the verb for bash. */
+/** A tool call reduced to a comparable step: the tool, plus what a bash call runs. */
 function stepSignature(event: ToolEvent): string {
 	if (event.name === "bash") {
 		const command = typeof event.args?.command === "string" ? event.args.command : "";
-		const head = normalizeCommand(command).split(" ").slice(0, 2).join(" ");
+		const head = commandHead(command);
 		return head ? `bash:${head}` : "bash";
 	}
 	return event.name;
 }
 
-function extractWorkflows(perSession: Array<{ session: ParsedSession; events: ToolEvent[] }>): WorkflowCandidate[] {
+/**
+ * Commands that are how an agent looks around rather than what the user was
+ * doing. A sequence built only from these plus file edits describes "coding",
+ * not a workflow, and no useful skill has ever come out of one.
+ */
+const PLUMBING_COMMANDS = new Set([
+	"cd",
+	"ls",
+	"pwd",
+	"cat",
+	"head",
+	"tail",
+	"wc",
+	"echo",
+	"which",
+	"find",
+	"fd",
+	"grep",
+	"rg",
+	"sed",
+	"awk",
+	"git status",
+	"git diff",
+	"git log",
+	"git show",
+]);
+
+/**
+ * Whether a sequence is a procedure rather than the rhythm of editing code.
+ *
+ * Two distinct doing-commands is the bar, and it was set by looking at real
+ * transcripts. One command is not enough: the edit/test loop
+ * (`edit → edit → bash:npm run`) satisfies it, and because a sliding window
+ * over a long alternating run produces every rotation of that cycle, it alone
+ * filled all eight slots with `edit → npm run → edit`, `npm run → edit → edit`
+ * and so on — one habit described eight ways.
+ *
+ * A procedure worth a skill chains *different* actions: test then commit then
+ * push, build then tag then publish. Requiring two distinct ones keeps those and
+ * drops the rhythm. The cost is real — a genuine one-command routine with setup
+ * is missed — and that is the intended trade, since a missed skill costs nothing
+ * while a digest full of noise costs the reader's attention every run.
+ */
+function isProcedure(steps: string[]): boolean {
+	const commands = new Set<string>();
+	for (const step of steps) {
+		if (!step.startsWith("bash:")) continue;
+		const head = step.slice("bash:".length);
+		if (PLUMBING_COMMANDS.has(head) || PLUMBING_COMMANDS.has(head.split(" ")[0] ?? "")) continue;
+		commands.add(head);
+	}
+	return commands.size >= 2;
+}
+
+/** True when `needle` appears as a contiguous run inside `haystack`. */
+function containsSequence(haystack: string[], needle: string[]): boolean {
+	if (needle.length > haystack.length) return false;
+	for (let i = 0; i + needle.length <= haystack.length; i++) {
+		if (needle.every((step, offset) => haystack[i + offset] === step)) return true;
+	}
+	return false;
+}
+
+function extractWorkflows(
+	perSession: Array<{ session: ParsedSession; events: ToolEvent[] }>,
+	minRepeats: number,
+): WorkflowCandidate[] {
 	interface Acc {
 		steps: string[];
 		count: number;
@@ -628,39 +711,85 @@ function extractWorkflows(perSession: Array<{ session: ParsedSession; events: To
 
 	for (const { session, events } of perSession) {
 		const steps = events.slice(0, MAX_TOOL_CALLS_PER_SESSION).map(stepSignature);
+
 		for (let len = WORKFLOW_MIN_LEN; len <= WORKFLOW_MAX_LEN; len++) {
+			// Collect every position first, then count greedily without overlap.
+			// Counting each sliding position separately treats one long stretch of
+			// edit/read churn as dozens of repeats: an `edit > read > edit` run of
+			// length 12 scores 10 occurrences when it is really one stretch of work.
+			const positions = new Map<string, number[]>();
 			for (let i = 0; i + len <= steps.length; i++) {
 				const window = steps.slice(i, i + len);
 				// A run of one repeated tool is a loop, not a workflow.
 				if (new Set(window).size < 2) continue;
+				if (!isProcedure(window)) continue;
 				const key = window.join(" > ");
+				const list = positions.get(key);
+				if (list) list.push(i);
+				else positions.set(key, [i]);
+			}
+
+			for (const [key, occurrences] of positions) {
+				let count = 0;
+				let nextFree = -1;
+				for (const start of occurrences) {
+					if (start < nextFree) continue;
+					count++;
+					nextFree = start + len;
+				}
+
 				const existing = acc.get(key);
 				if (existing) {
-					existing.count++;
+					existing.count += count;
 					existing.sessions.add(session.id);
 					if (session.timestamp > existing.lastSeen) existing.lastSeen = session.timestamp;
 				} else {
-					acc.set(key, { steps: window, count: 1, sessions: new Set([session.id]), lastSeen: session.timestamp });
+					acc.set(key, {
+						steps: key.split(" > "),
+						count,
+						sessions: new Set([session.id]),
+						lastSeen: session.timestamp,
+					});
 				}
 			}
 		}
 	}
 
-	const candidates = [...acc.values()]
-		.filter((entry) => entry.count >= MIN_WORKFLOW_COUNT)
+	const ranked = [...acc.values()]
+		.filter((entry) => entry.count >= minRepeats)
 		.map((entry) => ({
 			key: `workflow:${entry.steps.join(" > ")}`,
 			steps: entry.steps,
 			count: entry.count,
 			sessions: entry.sessions.size,
 			lastSeen: entry.lastSeen,
-		}));
+		}))
+		// Sessions first, matching directives: a sequence seen in three sessions is
+		// a workflow, while one repeated ten times in a single session is usually
+		// just the shape of that one task.
+		.sort(
+			(a, b) =>
+				b.sessions - a.sessions ||
+				b.count - a.count ||
+				b.steps.length - a.steps.length ||
+				a.steps.join().localeCompare(b.steps.join()),
+		);
 
-	// Prefer longer sequences at equal frequency: a five-step workflow is a more
-	// useful skill than the three-step prefix it contains.
-	return candidates.sort(
-		(a, b) => b.count - a.count || b.steps.length - a.steps.length || a.steps.join().localeCompare(b.steps.join()),
-	);
+	// Every n-gram overlaps its own extensions and prefixes, so without this the
+	// list is one workflow described five slightly different ways. The test runs
+	// both directions on purpose: a shorter sequence always outranks the longer
+	// one containing it (it occurs at least as often), so checking only
+	// shorter-inside-kept would never fire. Keep the best-ranked member of each
+	// family and drop the rest.
+	const distinct: typeof ranked = [];
+	for (const candidate of ranked) {
+		const overlapsKept = distinct.some(
+			(kept) => containsSequence(kept.steps, candidate.steps) || containsSequence(candidate.steps, kept.steps),
+		);
+		if (overlapsKept) continue;
+		distinct.push(candidate);
+	}
+	return distinct;
 }
 
 /**
@@ -732,16 +861,23 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 	// skill, or a habit, and which one is not recoverable here, so they get
 	// suppression only and are never labelled declined.
 	const skills = options.skills ?? loadSkillIndex(options.cwd, options.agentDir);
+	const maxProposals = options.maxProposals ?? DEFAULT_MAX_PER_CATEGORY;
 	const directives = applySuppression(
 		clusterDirectives(withDirectives, corpus, skills, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
 		state,
+		maxProposals,
 		(item) => item.status !== "new",
 		(item) => {
 			item.previouslyDeclined = true;
 		},
 	);
-	const fixes = applySuppression(extractFixes(withEvents), state, () => false);
-	const workflows = applySuppression(extractWorkflows(withEvents), state, () => false);
+	const fixes = applySuppression(extractFixes(withEvents), state, maxProposals, () => false);
+	const workflows = applySuppression(
+		extractWorkflows(withEvents, options.minWorkflowRepeats ?? DEFAULT_MIN_WORKFLOW_COUNT),
+		state,
+		maxProposals,
+		() => false,
+	);
 
 	const surfaced = [
 		...directives.kept.map((d) => ({ key: d.key, lastSeen: d.lastSeen, covered: d.status !== "new" })),
