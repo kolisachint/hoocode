@@ -426,6 +426,8 @@ export const VERSION: string = pkg.version || "0.0.0";
 // e.g., HOOCODE_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
+// e.g., HOOCODE_USER_AGENTS_DIR — the cross-vendor `~/.agents` scope.
+export const ENV_USER_AGENTS_DIR = `${APP_NAME.toUpperCase()}_USER_AGENTS_DIR`;
 
 export function expandTildePath(path: string): string {
 	if (path === "~") return homedir();
@@ -452,6 +454,21 @@ export function getAgentDir(): string {
 		return expandTildePath(envDir);
 	}
 	return join(homedir(), CONFIG_DIR_NAME);
+}
+
+/**
+ * The cross-vendor user scope (e.g. `~/.agents/`).
+ *
+ * Unlike the native home this directory is shared with other agent tools, so
+ * hoocode only ever reads from it. Overridable so tests do not depend on
+ * whatever the developer happens to keep in their real `~/.agents`.
+ */
+export function getUserAgentsDir(): string {
+	const envDir = process.env[ENV_USER_AGENTS_DIR];
+	if (envDir) {
+		return expandTildePath(envDir);
+	}
+	return join(homedir(), ".agents");
 }
 
 /** Subdirectory under the project config dir holding subagent runtime state

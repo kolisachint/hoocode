@@ -47,6 +47,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Manually compact context, optionally with custom instructions |
+| `/learn [all\|stats]` | Mine recent sessions for repeated directives, fixes, and workflows and promote them to `AGENTS.md` or a skill; `stats` reports what became of past proposals |
 | `/copy` | Copy last assistant message to clipboard |
 | `/export [file]` | Export session to HTML |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
@@ -92,13 +93,74 @@ See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 
 ## Context Files
 
-HooCode loads `AGENTS.md` or `CLAUDE.md` at startup from:
+HooCode loads `AGENTS.md` or `CLAUDE.md` at startup from, least specific first:
 
-- `~/.hoocode/agent/AGENTS.md` for global instructions
+- `~/.agents/AGENTS.md` — the cross-vendor user scope, shared with other agent tools
+- `~/.hoocode/agent/AGENTS.md` — hoocode's own global instructions, which win on conflict
 - parent directories, walking up from the current working directory
 - the current directory
 
+Both user scopes are read additively: neither shadows the other, so an existing
+`~/.hoocode` file keeps working when you add a `~/.agents` one.
+
 Use context files for project conventions, commands, safety rules, and preferences. Disable loading with `--no-context-files` or `-nc`.
+
+Context files are re-sent on **every** request, so their size is a recurring
+cost. HooCode warns when one file grows past ~2k tokens, truncates it past ~10k,
+and warns again when the set as a whole passes ~6k — trimming the least specific
+scope first past ~16k. The startup listing shows the running total.
+
+Long or conditional guidance belongs in a [skill](skills.md) instead: skills load
+on demand, context files load always.
+
+### Learning rules from your sessions
+
+`/learn` reads recent session transcripts for this directory, and reports what
+repeated:
+
+- **Directives you restated** across sessions — candidate rules, with the count
+  that justifies them. An item marked `restated` is already covered by a rule
+  that is not working and wants rewriting, not duplicating.
+- **Failures you resolved** — a command that failed, then later succeeded
+  unchanged, with the work in between.
+- **Repeated tool sequences** — candidate skills. Only procedures qualify: a
+  sequence has to chain at least two distinct doing-commands (test then commit,
+  build then publish). The edit/test rhythm is one command and every rotation of
+  itself, so it is not reported.
+
+It then proposes edits to the repo `AGENTS.md`, to `~/.agents/AGENTS.md` for
+habits that travel with you, or as a new skill. Nothing is written without the
+usual edit approval. Because it reads transcripts from disk rather than the live
+conversation, it still works after the session has been compacted.
+
+`/learn stats` reports what became of past proposals: how many were shown, and
+what share of the directive proposals you actually wrote down. It reads the
+history file rather than re-mining sessions, so it is instant.
+
+Read the number carefully. Adoption is a proxy for usefulness, not ground truth
+— a proposal you correctly rejected as not durable counts against it exactly like
+a junk one. Near zero means the extractor is proposing the wrong things; near
+100% means the bar is too low and everything is getting through. The trend
+matters more than the value, and it is the fastest way to tell whether a change
+to `learnMinRepeats` helped.
+
+`/learn` remembers what it has already shown you, per directory. An item comes
+back only once it recurs *after* it was last put in front of you — so a rule you
+accepted is not re-proposed, and one you passed on does not reappear every run
+unchanged. Something you keep saying anyway will return, which is the point: that
+is the case where the existing rule is not working. Run `/learn all` to ignore
+that memory and re-propose everything in the window.
+
+An item shown before that still is not written down anywhere is flagged as
+previously declined, so it is proposed tentatively rather than pressed a second
+time. That inference reads context files and skills alike, so a proposal you
+routed to `~/.agents/AGENTS.md` or turned into a skill both count as adopted.
+
+When a directive is already covered by a **skill** and you keep asking for it by
+hand, it comes back marked `has-skill` rather than as a new rule. That is a
+triggering problem, not a missing rule: the skill's `description` frontmatter
+probably does not describe the situation you were in, so sharpening it is the fix
+rather than writing a rule that duplicates the skill.
 
 ### System Prompt Files
 

@@ -53,6 +53,11 @@ export const DEFAULT_SETTINGS = {
 	enableWebTools: false,
 	enableEmbsearchTools: true,
 	embsearchThresholdBytes: 0,
+	learnMaxSessions: 20,
+	learnMaxAgeDays: 30,
+	learnMinRepeats: 2,
+	learnMinWorkflowRepeats: 3,
+	learnMaxProposals: 8,
 	light: false,
 	terminal: {
 		showImages: true,

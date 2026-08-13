@@ -519,6 +519,31 @@ export class SettingsManager {
 		return { ...DEFAULT_SETTINGS.compaction, ...this.settings.compaction };
 	}
 
+	/**
+	 * Window and threshold `/learn` mines sessions with.
+	 *
+	 * Each value falls back to its default unless it is a finite positive number,
+	 * so a typo (`0`, `-1`, a pasted string) cannot silently reduce the window to
+	 * nothing and make the command report "no recent sessions".
+	 */
+	getLearnSettings(): {
+		maxSessions: number;
+		maxAgeDays: number;
+		minRepeats: number;
+		minWorkflowRepeats: number;
+		maxProposals: number;
+	} {
+		const positive = (value: unknown, fallback: number): number =>
+			typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+		return {
+			maxSessions: positive(this.settings.learnMaxSessions, DEFAULT_SETTINGS.learnMaxSessions),
+			maxAgeDays: positive(this.settings.learnMaxAgeDays, DEFAULT_SETTINGS.learnMaxAgeDays),
+			minRepeats: positive(this.settings.learnMinRepeats, DEFAULT_SETTINGS.learnMinRepeats),
+			minWorkflowRepeats: positive(this.settings.learnMinWorkflowRepeats, DEFAULT_SETTINGS.learnMinWorkflowRepeats),
+			maxProposals: positive(this.settings.learnMaxProposals, DEFAULT_SETTINGS.learnMaxProposals),
+		};
+	}
+
 	/** Byte cap on a single read/bash tool result before truncation. Clamped to >= 1024. */
 	getToolOutputMaxBytes(): number {
 		const v = this.settings.toolOutput?.maxBytes ?? DEFAULT_SETTINGS.toolOutput!.maxBytes;

@@ -21,6 +21,7 @@
 import type { ExtensionAPI } from "../../core/extensions/types.js";
 import { setupAskOptions } from "./ask-options.js";
 import { setupCost } from "./cost.js";
+import { setupLearn } from "./learn.js";
 import { setupLoop } from "./loop.js";
 import { setupMarketplace } from "./marketplace.js";
 import { setupMcpLoader } from "./mcp-loader.js";
@@ -41,6 +42,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupLoop(pi);
 	setupMarketplace(pi);
 	setupPromptReactiveNudges(pi);
+	setupLearn(pi);
 }
 
 hooCore.displayName = "hoo-core";

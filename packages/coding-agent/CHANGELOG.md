@@ -2,6 +2,75 @@
 
 ## [Unreleased]
 
+### Added
+
+- `~/.agents/AGENTS.md` is read as user-scope instructions, alongside the
+  existing `~/.hoocode/AGENTS.md`. The two are additive and ordered least
+  specific first, so the native home wins on conflict and nobody has to migrate
+  an existing file. Closes the long-standing gap in `docs/agent-spec-tree-map.md`
+  against the one cross-vendor convention forming at user scope. Override the
+  directory with `HOOCODE_USER_AGENTS_DIR`.
+- `/learn` — promotes what recent sessions actually taught into durable rules
+  and skills. A deterministic extractor reads session transcripts off disk and
+  reports three ranked lists with their evidence: directives you have restated
+  across sessions, failures where a command failed and later succeeded
+  unchanged, and repeated tool sequences. The model then proposes edits to the
+  repo `AGENTS.md`, to `~/.agents/AGENTS.md`, or as a new skill. Reading from
+  disk rather than the live context is what makes cross-session counts possible
+  and what keeps the command working after compaction. Items already covered by
+  a rule that you keep restating are flagged as rewrites rather than additions,
+  so the file does not only grow.
+- `/learn stats` — what became of past proposals, and the closest thing to an
+  eval this has without a gold set. No new instrumentation was needed: each
+  history entry already records whether the item was written down when it was
+  shown, and coverage now is recomputable, so the pair reconstructs adoption.
+  Directives only, since fixes and workflows have no coverage signal and
+  counting them would mean inventing an outcome. The readout says plainly that
+  near-100% means the bar is too low rather than that every proposal was good.
+- `/learn` now remembers what it has already shown, per directory, in
+  `~/.hoocode/learn/`. An item returns only once it recurs *after* it was last
+  surfaced. This fixes a case where a rule accepted from a previous run came
+  back flagged `restated` — accusing a working rule of not working, because its
+  occurrences were still inside the window — and stops a declined proposal from
+  reappearing unchanged every run. Items shown before that are still not written
+  down anywhere are marked as previously declined, inferred from what is on disk
+  rather than by asking. `/learn all` ignores the memory and re-proposes
+  everything. Coverage reads both user scopes and loaded skills as well as the
+  repo file, so a proposal routed to `~/.agents/AGENTS.md` or turned into a
+  skill counts as adopted either way.
+- `/learn`'s two weakest categories were corrected against real transcripts.
+  Tool-sequence steps kept only the head of a command, and since nearly every
+  agent command is wrapped in `cd <path> && …`, every bash step collapsed to
+  `bash:cd <path>` and the sequences were content-free. Occurrences were counted
+  per sliding-window position, turning one stretch of edit/test churn into
+  "25x". And a sequence only had to be *any* three tool calls, so the digest
+  filled with eight rotations of the same edit/test rhythm. Steps now name the
+  real command, occurrences are counted without overlap, overlapping variants
+  collapse to one representative, and a sequence must chain two distinct
+  doing-commands to qualify as a procedure.
+- Failure signatures are taken from the error region rather than the whole
+  output. Build tools lead with an identical banner, so signing everything made
+  unrelated failures of one command collide on their shared preamble and showed
+  the reader npm's header instead of the error. Aborted and empty results are
+  skipped — an abort is a change of mind, not a problem that was solved.
+- A directive already covered by a skill and still being asked for by hand comes
+  back marked `has-skill` rather than as a candidate rule, with the advice to
+  sharpen the skill's `description` so it triggers — a rule duplicating an
+  existing skill is cost with no benefit. The bar for a skill match is set
+  higher than for a rule line, since a skill description is a much larger
+  haystack and matches a short directive by chance far more easily.
+- `learnMaxSessions` (default 20), `learnMaxAgeDays` (default 30),
+  `learnMinRepeats` (default 2), `learnMinWorkflowRepeats` (default 3) and
+  `learnMaxProposals` (default 8) configure what `/learn` mines and how much it
+  proposes. Read per-invocation and project-overridable, so a repo can carry its
+  own window; non-positive values fall back to the default rather than silently
+  mining nothing.
+- Aggregate budget across all loaded context files, on top of the existing
+  per-file limits: a warning past ~6k tokens, and trimming of the least specific
+  scope first past ~16k. Trimmed files stay visible with a notice rather than
+  disappearing. The startup listing now shows the total tokens-per-turn the set
+  costs, which the per-file annotation could not surface.
+
 ## [0.5.13] - 2026-08-13
 
 ## [0.5.12] - 2026-08-12
