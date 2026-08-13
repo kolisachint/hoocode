@@ -12,7 +12,7 @@ import {
 	Spacer,
 	Text,
 } from "@kolisachint/hoocode-tui";
-import type { WarningSettings } from "../../../core/settings-manager.js";
+import type { LearnSettingKey, WarningSettings } from "../../../core/settings-manager.js";
 import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyDisplayText } from "./keybinding-hints.js";
@@ -93,6 +93,7 @@ export interface SettingsConfig {
 	warnings: WarningSettings;
 	voiceSilenceMs: number;
 	webtoolsTimeoutSecs: number;
+	learn: Record<LearnSettingKey, number>;
 }
 
 export interface SettingsCallbacks {
@@ -131,7 +132,68 @@ export interface SettingsCallbacks {
 	onWarningsChange: (warnings: WarningSettings) => void;
 	onVoiceSilenceMsChange: (ms: number) => void;
 	onWebtoolsTimeoutSecsChange: (secs: number) => void;
+	onLearnSettingChange: (key: LearnSettingKey, value: number) => void;
 	onCancel: () => void;
+}
+
+/**
+ * The `/learn` thresholds as pane rows: the presets to cycle through, and what
+ * each one buys. Kept as a table because all five are the same shape — a
+ * positive integer with a handful of sensible values — and the pane, the change
+ * handler and the category row all read from it rather than repeating the list.
+ */
+const LEARN_SETTINGS: ReadonlyArray<{
+	key: LearnSettingKey;
+	label: string;
+	description: string;
+	presets: number[];
+}> = [
+	{
+		key: "learnMaxSessions",
+		label: "Sessions scanned",
+		description: "How many recent sessions in this directory /learn mines. Raise it on a repo you touch rarely.",
+		presets: [10, 20, 30, 50, 100],
+	},
+	{
+		key: "learnMaxAgeDays",
+		label: "Session age limit",
+		description: "Ignore sessions older than this many days. A pattern that stopped is not a rule.",
+		presets: [7, 14, 30, 60, 90, 180],
+	},
+	{
+		key: "learnMinRepeats",
+		label: "Directive repeats",
+		description:
+			"Times a directive must recur before it is proposed. The signal/noise dial: raise it for fewer, better-evidenced proposals.",
+		presets: [2, 3, 4, 5],
+	},
+	{
+		key: "learnMinWorkflowRepeats",
+		label: "Workflow repeats",
+		description: "Non-overlapping repeats a tool sequence needs before it is proposed as a skill.",
+		presets: [2, 3, 4, 5, 6],
+	},
+	{
+		key: "learnMaxProposals",
+		label: "Max proposals",
+		description: "Cap on each list in the digest. Every proposal costs the model context.",
+		presets: [3, 5, 8, 12, 20],
+	},
+];
+
+const LEARN_KEYS: ReadonlySet<string> = new Set(LEARN_SETTINGS.map((setting) => setting.key));
+
+/**
+ * Preset list for a numeric row, guaranteed to contain the value in force.
+ *
+ * Without this a value set by hand in settings.json — say 45 days — is absent
+ * from the cycle, so the first keypress silently snaps it to the first preset.
+ * These particular settings gate whether `/learn` finds anything at all, so a
+ * stray keystroke narrowing the window is exactly the surprise to avoid.
+ */
+function presetValues(presets: number[], current: number): string[] {
+	const all = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
+	return all.map(String);
 }
 
 /**
@@ -822,6 +884,22 @@ export class SettingsSelectorComponent extends Container {
 			values: ["5", "10", "15", "30", "60", "120"],
 		});
 
+		// The /learn thresholds, appended as leaf rows and gathered into their own
+		// category below. They are written to the user settings.json, which /learn
+		// re-reads on every invocation, so a change here applies to the next run.
+		const webtoolsIndex = items.findIndex((item) => item.id === "webtools-timeout-secs");
+		items.splice(
+			webtoolsIndex + 1,
+			0,
+			...LEARN_SETTINGS.map(({ key, label, description, presets }) => ({
+				id: key,
+				label,
+				description,
+				currentValue: String(config.learn[key]),
+				values: presetValues(presets, config.learn[key]),
+			})),
+		);
+
 		// Keep the tool/flag controls together as one block near the top, inserted
 		// after the image/terminal splices above so they aren't leapfrogged.
 		const toolFlagGroup: SettingItem[] = [
@@ -967,6 +1045,11 @@ export class SettingsSelectorComponent extends Container {
 				case "webtools-timeout-secs":
 					callbacks.onWebtoolsTimeoutSecsChange(parseInt(newValue, 10));
 					break;
+				default:
+					// The /learn rows are keyed by their settings.json name, so they need
+					// no case of their own — the id is the key to write.
+					if (LEARN_KEYS.has(id)) callbacks.onLearnSettingChange(id as LearnSettingKey, parseInt(newValue, 10));
+					break;
 			}
 		};
 
@@ -1016,6 +1099,15 @@ export class SettingsSelectorComponent extends Container {
 				"auto-resize-images",
 				"block-images",
 			]),
+			// Top level rather than folded into Advanced: these are the thresholds
+			// that decide whether /learn finds anything, and burying them is what
+			// made them undiscoverable in the first place.
+			categoryRow(
+				"cat-learn",
+				"Learning",
+				"Thresholds /learn mines sessions with: how far back to look, and how often something must repeat.",
+				LEARN_SETTINGS.map((setting) => setting.key),
+			),
 			categoryRow("cat-advanced", "Advanced", "Startup, telemetry, skills, warnings, voice, and web tools.", [
 				"quiet-startup",
 				"collapse-changelog",

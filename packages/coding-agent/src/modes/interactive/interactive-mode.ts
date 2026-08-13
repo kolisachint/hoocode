@@ -3127,6 +3127,18 @@ export class InteractiveMode {
 					// getWebtoolsTimeoutSecs already folds in HOOCODE_WEBTOOLS_TIMEOUT.
 					voiceSilenceMs: resolveVoiceSilenceMs(this.settingsManager),
 					webtoolsTimeoutSecs: this.settingsManager.getWebtoolsTimeoutSecs(),
+					// The effective window, so a project settings.json narrowing it for
+					// this repo shows up here rather than the user-scope value alone.
+					learn: (() => {
+						const learn = this.settingsManager.getLearnSettings();
+						return {
+							learnMaxSessions: learn.maxSessions,
+							learnMaxAgeDays: learn.maxAgeDays,
+							learnMinRepeats: learn.minRepeats,
+							learnMinWorkflowRepeats: learn.minWorkflowRepeats,
+							learnMaxProposals: learn.maxProposals,
+						};
+					})(),
 				},
 				{
 					onAutoCompactChange: (enabled) => {
@@ -3324,6 +3336,11 @@ export class InteractiveMode {
 					onWebtoolsTimeoutSecsChange: (secs) => {
 						// Persisted; webfetch/websearch pick it up when tools rebuild next session.
 						this.settingsManager.setWebtoolsTimeoutSecs(secs);
+					},
+					onLearnSettingChange: (key, value) => {
+						// /learn reads settings fresh on every invocation, so the next run
+						// picks this up with no restart and nothing to re-wire live.
+						this.settingsManager.setLearnSetting(key, value);
 					},
 					onCancel: () => {
 						done();

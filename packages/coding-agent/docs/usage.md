@@ -162,10 +162,11 @@ triggering problem, not a missing rule: the skill's `description` frontmatter
 probably does not describe the situation you were in, so sharpening it is the fix
 rather than writing a rule that duplicates the skill.
 
-`/learn settings` prints where sessions are read from, how many were found, the
-five thresholds in force, and the two files you can set them in — the user
-`~/.hoocode/settings.json` and the project `.hoocode/settings.json`. See
-[settings](settings.md#learn) for what each one does.
+The five thresholds are editable from `/settings` under **Learning**. `/learn
+settings` prints the same values as text, along with where sessions are read
+from, how many were found, and the two files you can set them in by hand — the
+user `~/.hoocode/settings.json` and the project `.hoocode/settings.json`. See
+[settings](settings.md#learning-from-sessions) for what each one does.
 
 Sessions are read from `~/.hoocode/sessions/<encoded-cwd>/`, the directory
 hoocode writes this project's transcripts into. If a run reports nothing, it

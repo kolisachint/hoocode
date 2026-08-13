@@ -37,6 +37,12 @@
   project `settings.json` paths to set them in, the session directory being read,
   and the state file. The settings existed but had no discoverable home; every
   message that now reports a disappointing result points at them.
+- A **Learning** category in the `/settings` pane holding the same five
+  thresholds. Top level rather than folded into Advanced, since these are what
+  decide whether `/learn` finds anything and burying them is what made them
+  undiscoverable. A value set by hand in `settings.json` that is not one of the
+  presets stays in the cycle, so a keypress cannot silently snap the window
+  down to the first preset.
 
 ## [0.5.14] - 2026-08-13
 
