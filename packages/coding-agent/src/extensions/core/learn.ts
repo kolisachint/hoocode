@@ -21,10 +21,17 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getHooCodeDir } from "../../config.js";
+import { loadProjectContextFiles } from "../../core/context-files.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 import { isEmptyDigest, renderLearnDigest } from "../../core/learn/digest.js";
-import { extractLearnDigest } from "../../core/learn/extract.js";
-import { getLearnStatePath, readLearnState, recordSurfaced, writeLearnState } from "../../core/learn/state.js";
+import { buildCoverageIndex, extractLearnDigest, matchCoverage } from "../../core/learn/extract.js";
+import {
+	getLearnStatePath,
+	readLearnState,
+	recordSurfaced,
+	summarizeLearnState,
+	writeLearnState,
+} from "../../core/learn/state.js";
 import { SettingsManager } from "../../core/settings-manager.js";
 
 /** Guards against double-registration when default extensions load more than once. */
@@ -39,19 +46,94 @@ function displayPath(path: string): string {
 	return path.startsWith(home) ? `~${path.slice(home.length)}` : path;
 }
 
+function shortDate(iso: string | undefined): string {
+	if (!iso) return "unknown";
+	const date = new Date(iso);
+	return Number.isNaN(date.getTime()) ? "unknown" : date.toISOString().slice(0, 10);
+}
+
+/**
+ * `/learn stats` — what became of past proposals.
+ *
+ * Reads the state file and recomputes coverage; it does not re-mine sessions,
+ * so it is instant and answers a different question than a normal run: not
+ * "what should I write down" but "is this command earning its place".
+ */
+function reportStats(ctx: ExtensionCommandContext): void {
+	const agentDir = getHooCodeDir();
+	const statePath = getLearnStatePath(agentDir, ctx.sessionManager.getSessionDir());
+	const state = readLearnState(statePath);
+
+	if (Object.keys(state.surfaced).length === 0) {
+		ctx.ui.notify("No /learn history for this directory yet.", "info");
+		return;
+	}
+
+	const coverage = buildCoverageIndex({ cwd: ctx.cwd, agentDir });
+	const stats = summarizeLearnState(state, (normalized) => {
+		const match = matchCoverage(normalized, coverage);
+		return !!(match.rule || match.skill);
+	});
+
+	const contextTokens = loadProjectContextFiles({ cwd: ctx.cwd, agentDir }).agentsFiles.reduce(
+		(sum, file) => sum + (file.tokens ?? 0),
+		0,
+	);
+
+	const lines: string[] = [];
+	lines.push(`/learn history for this directory — ${shortDate(stats.earliest)} to ${shortDate(stats.latest)}`);
+	lines.push(
+		`  Proposals shown   ${stats.total}  (${stats.directives} directive, ${stats.fixes} fix, ${stats.workflows} workflow)`,
+	);
+	if (stats.lastRun) lines.push(`  Last run          ${shortDate(stats.lastRun)}`);
+	lines.push("");
+
+	if (stats.open === 0) {
+		lines.push("No directive proposals yet, so there is nothing to measure adoption against.");
+	} else {
+		const rate = Math.round((stats.adopted / stats.open) * 100);
+		lines.push("Directive adoption — the only category with a coverage signal");
+		lines.push(`  Written down      ${stats.adopted} of ${stats.open}  (${rate}%)`);
+		lines.push(`  Passed over       ${stats.declined}`);
+		lines.push("");
+		// Without this the number invites the wrong conclusion. Adoption is a proxy
+		// for usefulness, and a proposal correctly rejected as not durable counts
+		// against it exactly like a junk one — so near-100% means the bar is too
+		// low, not that the extractor is perfect.
+		lines.push("  A very high rate means the bar is too low, not that every proposal was good.");
+		lines.push("  Near zero means the extractor is proposing the wrong things.");
+	}
+
+	lines.push("");
+	lines.push(`Context files       ~${contextTokens} tokens, re-sent every request`);
+
+	ctx.ui.notify(lines.join("\n"), "info");
+}
+
 export function setupLearn(pi: ExtensionAPI): void {
 	const guarded = pi as unknown as Record<symbol, boolean>;
 	if (guarded[REGISTERED]) return;
 	guarded[REGISTERED] = true;
 
 	pi.registerCommand("learn", {
-		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all]",
+		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all|stats]",
 		getArgumentCompletions: (prefix: string) =>
-			["all"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: "re-propose everything" })),
+			(
+				[
+					{ value: "all", label: "re-propose everything" },
+					{ value: "stats", label: "what happened to past proposals" },
+				] as const
+			)
+				.filter((option) => option.value.startsWith(prefix))
+				.map((option) => ({ value: option.value, label: option.label })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 			const argument = args.trim().toLowerCase();
-			if (argument && argument !== "all") {
-				ctx.ui.notify("Usage: /learn [all]", "warning");
+			if (argument && argument !== "all" && argument !== "stats") {
+				ctx.ui.notify("Usage: /learn [all|stats]", "warning");
+				return;
+			}
+			if (argument === "stats") {
+				reportStats(ctx);
 				return;
 			}
 			const ignoreState = argument === "all";

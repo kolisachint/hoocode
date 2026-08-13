@@ -20,6 +20,13 @@
   and what keeps the command working after compaction. Items already covered by
   a rule that you keep restating are flagged as rewrites rather than additions,
   so the file does not only grow.
+- `/learn stats` — what became of past proposals, and the closest thing to an
+  eval this has without a gold set. No new instrumentation was needed: each
+  history entry already records whether the item was written down when it was
+  shown, and coverage now is recomputable, so the pair reconstructs adoption.
+  Directives only, since fixes and workflows have no coverage signal and
+  counting them would mean inventing an outcome. The readout says plainly that
+  near-100% means the bar is too low rather than that every proposal was good.
 - `/learn` now remembers what it has already shown, per directory, in
   `~/.hoocode/learn/`. An item returns only once it recurs *after* it was last
   surfaced. This fixes a case where a rule accepted from a previous run came

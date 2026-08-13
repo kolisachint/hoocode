@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { isEmptyDigest, renderLearnDigest } from "../src/core/learn/digest.js";
-import { extractLearnDigest, LEARN_DIGEST_MARKER } from "../src/core/learn/extract.js";
+import { extractLearnDigest, LEARN_DIGEST_MARKER, matchCoverage } from "../src/core/learn/extract.js";
 import {
 	commandHead,
 	extractErrorRegion,
@@ -14,7 +14,13 @@ import {
 	normalizeDirective,
 	normalizeErrorSignature,
 } from "../src/core/learn/normalize.js";
-import { getLearnStatePath, readLearnState, recordSurfaced, writeLearnState } from "../src/core/learn/state.js";
+import {
+	getLearnStatePath,
+	readLearnState,
+	recordSurfaced,
+	summarizeLearnState,
+	writeLearnState,
+} from "../src/core/learn/state.js";
 
 let tempDir: string;
 
@@ -734,6 +740,58 @@ describe("learn state file", () => {
 
 		writeLearnState(path, stale, new Date("2026-08-01T00:00:00.000Z"));
 		expect(readLearnState(path).surfaced).toEqual({});
+	});
+});
+
+describe("learn stats", () => {
+	const covered = (rules: string[]) => (normalized: string) =>
+		!!matchCoverage(normalized, { ruleLines: rules, skills: [] }).rule;
+
+	function stateWith(entries: Array<{ key: string; covered: boolean }>) {
+		return recordSurfaced(
+			readLearnState("missing"),
+			entries.map((e) => ({ key: e.key, lastSeen: "2026-08-01T00:00:00.000Z", covered: e.covered })),
+			new Date("2026-08-02T00:00:00.000Z"),
+		);
+	}
+
+	it("counts a proposal written down since as adopted", () => {
+		const state = stateWith([{ key: "directive:always run the tests with coverage", covered: false }]);
+		const stats = summarizeLearnState(state, covered(["- always run the tests with coverage"]));
+
+		expect(stats.open).toBe(1);
+		expect(stats.adopted).toBe(1);
+		expect(stats.declined).toBe(0);
+	});
+
+	it("counts one still absent as passed over", () => {
+		const state = stateWith([{ key: "directive:always run the tests with coverage", covered: false }]);
+		const stats = summarizeLearnState(state, covered([]));
+
+		expect(stats.adopted).toBe(0);
+		expect(stats.declined).toBe(1);
+	});
+
+	it("excludes items already written down when shown, which were never a decision", () => {
+		const state = stateWith([{ key: "directive:always run the tests with coverage", covered: true }]);
+		const stats = summarizeLearnState(state, covered(["- always run the tests with coverage"]));
+
+		expect(stats.directives).toBe(1);
+		expect(stats.open).toBe(0);
+		expect(stats.adopted).toBe(0);
+	});
+
+	it("counts fixes and workflows without inventing an outcome for them", () => {
+		const state = stateWith([
+			{ key: "fix:npm install gyp", covered: false },
+			{ key: "workflow:edit > bash:npm test", covered: false },
+		]);
+		const stats = summarizeLearnState(state, covered([]));
+
+		expect(stats.total).toBe(2);
+		expect(stats.fixes).toBe(1);
+		expect(stats.workflows).toBe(1);
+		expect(stats.open).toBe(0);
 	});
 });
 

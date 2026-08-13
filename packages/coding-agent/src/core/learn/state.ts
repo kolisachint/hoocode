@@ -143,6 +143,67 @@ export function judge(state: LearnState, input: SuppressionInput): SuppressionVe
 	};
 }
 
+export interface LearnStats {
+	/** Proposals on record, across all categories. */
+	total: number;
+	directives: number;
+	fixes: number;
+	workflows: number;
+	/**
+	 * Directive proposals that were genuinely open questions — not already
+	 * written down when they were shown. Only these can be adopted or passed
+	 * over, so they are the denominator of the rate.
+	 */
+	open: number;
+	adopted: number;
+	declined: number;
+	earliest?: string;
+	latest?: string;
+	lastRun?: string;
+}
+
+/**
+ * Reconstruct what happened to past proposals.
+ *
+ * Nothing extra is recorded to make this work: each entry already stores whether
+ * it was covered when it was shown, and coverage now is recomputable, so the
+ * pair is enough to tell an adopted proposal from one that was passed over.
+ *
+ * Directives only. Fixes and workflows have no coverage signal — a fix may have
+ * become a rule, a skill, or a habit, and which one is not recoverable — so
+ * counting them here would mean inventing an outcome.
+ */
+export function summarizeLearnState(state: LearnState, isCoveredNow: (normalized: string) => boolean): LearnStats {
+	const stats: LearnStats = { total: 0, directives: 0, fixes: 0, workflows: 0, open: 0, adopted: 0, declined: 0 };
+
+	for (const [key, item] of Object.entries(state.surfaced)) {
+		stats.total++;
+		if (!stats.earliest || item.surfacedAt < stats.earliest) stats.earliest = item.surfacedAt;
+		if (!stats.latest || item.surfacedAt > stats.latest) stats.latest = item.surfacedAt;
+
+		if (key.startsWith("fix:")) {
+			stats.fixes++;
+			continue;
+		}
+		if (key.startsWith("workflow:")) {
+			stats.workflows++;
+			continue;
+		}
+		if (!key.startsWith("directive:")) continue;
+
+		stats.directives++;
+		// Already written down when shown, so there was no decision to make.
+		if (item.coveredWhenSurfaced) continue;
+
+		stats.open++;
+		if (isCoveredNow(key.slice("directive:".length))) stats.adopted++;
+		else stats.declined++;
+	}
+
+	stats.lastRun = state.lastRun;
+	return stats;
+}
+
 /** Record everything this run put on screen, so the next run can suppress it. */
 export function recordSurfaced(
 	state: LearnState,

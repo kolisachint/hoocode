@@ -47,7 +47,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Manually compact context, optionally with custom instructions |
-| `/learn` | Mine recent sessions for repeated directives, fixes, and workflows, and promote them to `AGENTS.md` or a skill |
+| `/learn [all\|stats]` | Mine recent sessions for repeated directives, fixes, and workflows and promote them to `AGENTS.md` or a skill; `stats` reports what became of past proposals |
 | `/copy` | Copy last assistant message to clipboard |
 | `/export [file]` | Export session to HTML |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
@@ -132,6 +132,17 @@ It then proposes edits to the repo `AGENTS.md`, to `~/.agents/AGENTS.md` for
 habits that travel with you, or as a new skill. Nothing is written without the
 usual edit approval. Because it reads transcripts from disk rather than the live
 conversation, it still works after the session has been compacted.
+
+`/learn stats` reports what became of past proposals: how many were shown, and
+what share of the directive proposals you actually wrote down. It reads the
+history file rather than re-mining sessions, so it is instant.
+
+Read the number carefully. Adoption is a proxy for usefulness, not ground truth
+— a proposal you correctly rejected as not durable counts against it exactly like
+a junk one. Near zero means the extractor is proposing the wrong things; near
+100% means the bar is too low and everything is getting through. The trend
+matters more than the value, and it is the fastest way to tell whether a change
+to `learnMinRepeats` helped.
 
 `/learn` remembers what it has already shown you, per directory. An item comes
 back only once it recurs *after* it was last put in front of you — so a rule you

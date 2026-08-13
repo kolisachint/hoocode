@@ -438,8 +438,7 @@ function userDirectives(entries: EntryLike[]): string[] {
 
 function clusterDirectives(
 	perSession: Array<{ session: ParsedSession; directives: string[] }>,
-	agentsContent: string | undefined,
-	skills: Array<{ name: string; description: string }>,
+	coverage: CoverageIndex,
 	minRepeats: number,
 ): DirectiveCluster[] {
 	interface Acc {
@@ -473,48 +472,16 @@ function clusterDirectives(
 		}
 	}
 
-	const agentsLines = (agentsContent ?? "")
-		.split("\n")
-		.map((l) => l.trim())
-		.filter((l) => l.length > 0 && !l.startsWith("#"));
-
 	const clusters: DirectiveCluster[] = [];
 	for (const entry of acc.values()) {
 		if (entry.count < minRepeats) continue;
-
-		const words = contentWords(entry.text);
-		let bestLine: string | undefined;
-		let bestOverlap = 0;
-		for (const line of agentsLines) {
-			const overlap = wordOverlap(words, line);
-			if (overlap > bestOverlap) {
-				bestOverlap = overlap;
-				bestLine = line;
-			}
-		}
-
-		let bestSkill: string | undefined;
-		let bestSkillOverlap = 0;
-		for (const skill of skills) {
-			const haystack = `${skill.name} ${skill.description.slice(0, SKILL_DESCRIPTION_CHARS)}`;
-			const overlap = wordOverlap(words, haystack);
-			if (overlap > bestSkillOverlap) {
-				bestSkillOverlap = overlap;
-				bestSkill = skill.name;
-			}
-		}
 
 		// Everything reaching here cleared the repeat threshold. Suppression handles
 		// the case that used to make these labels lie — a proposal accepted from a
 		// previous run coming back as "not working" when nothing had happened
 		// since. By the time an item survives that filter, a match genuinely means
 		// you repeated yourself after the rule or skill already existed.
-		//
-		// A rule wins over a skill when both match: it is the more specific answer,
-		// and its "rewrite this line" advice is more actionable than "sharpen a
-		// description".
-		const coveredByRule = bestOverlap >= COVERED_OVERLAP;
-		const coveredBySkill = !coveredByRule && bestSkillOverlap >= SKILL_COVERED_OVERLAP;
+		const match = matchCoverage(entry.text, coverage);
 		clusters.push({
 			key: `directive:${entry.normalized}`,
 			text: entry.text,
@@ -522,9 +489,9 @@ function clusterDirectives(
 			count: entry.count,
 			sessions: entry.sessions.size,
 			lastSeen: entry.lastSeen,
-			status: coveredByRule ? "restated" : coveredBySkill ? "has-skill" : "new",
-			existingRule: coveredByRule ? bestLine : undefined,
-			existingSkill: coveredBySkill ? bestSkill : undefined,
+			status: match.rule ? "restated" : match.skill ? "has-skill" : "new",
+			existingRule: match.rule,
+			existingSkill: match.skill,
 			previouslyDeclined: false,
 		});
 	}
@@ -793,6 +760,78 @@ function extractWorkflows(
 }
 
 /**
+ * Everything a proposal could already have been written into.
+ *
+ * Built once and shared, because the same question — is this already written
+ * down? — is asked while ranking a run *and* afterwards by `/learn stats`,
+ * which reconstructs adoption by comparing coverage now against coverage when
+ * the item was shown.
+ */
+export interface CoverageIndex {
+	/** Candidate rule lines from the repo context file and both user scopes. */
+	ruleLines: string[];
+	skills: Array<{ name: string; description: string }>;
+}
+
+export interface CoverageMatch {
+	/** The context-file line that covers this, if any. */
+	rule?: string;
+	/** The skill that covers this, if any. Only set when no rule matched. */
+	skill?: string;
+}
+
+/**
+ * Where a piece of text is already written down, if anywhere.
+ *
+ * A rule wins over a skill when both match: it is the more specific answer, and
+ * "rewrite this line" is more actionable than "sharpen a description".
+ */
+export function matchCoverage(text: string, index: CoverageIndex): CoverageMatch {
+	const words = contentWords(text);
+
+	let bestLine: string | undefined;
+	let bestOverlap = 0;
+	for (const line of index.ruleLines) {
+		const overlap = wordOverlap(words, line);
+		if (overlap > bestOverlap) {
+			bestOverlap = overlap;
+			bestLine = line;
+		}
+	}
+	if (bestOverlap >= COVERED_OVERLAP) return { rule: bestLine };
+
+	let bestSkill: string | undefined;
+	let bestSkillOverlap = 0;
+	for (const skill of index.skills) {
+		const haystack = `${skill.name} ${skill.description.slice(0, SKILL_DESCRIPTION_CHARS)}`;
+		const overlap = wordOverlap(words, haystack);
+		if (overlap > bestSkillOverlap) {
+			bestSkillOverlap = overlap;
+			bestSkill = skill.name;
+		}
+	}
+	if (bestSkillOverlap >= SKILL_COVERED_OVERLAP) return { skill: bestSkill };
+
+	return {};
+}
+
+/** Assemble the coverage index for a directory. */
+export function buildCoverageIndex(options: {
+	cwd: string;
+	agentDir: string;
+	skills?: Array<{ name: string; description: string }>;
+}): CoverageIndex {
+	const corpus = coverageCorpus(options.agentDir, findAgentsFile(options.cwd));
+	return {
+		ruleLines: corpus
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0 && !line.startsWith("#")),
+		skills: options.skills ?? loadSkillIndex(options.cwd, options.agentDir),
+	};
+}
+
+/**
  * Text a proposal is checked against to decide whether it is already written
  * down — the nearest repo context file plus both user scopes.
  *
@@ -847,7 +886,7 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 			agentsContent = undefined;
 		}
 	}
-	const corpus = coverageCorpus(options.agentDir, agentsFilePath);
+	const coverage = buildCoverageIndex({ cwd: options.cwd, agentDir: options.agentDir, skills: options.skills });
 
 	const withDirectives = sessions.map((session) => ({ session, directives: userDirectives(session.entries) }));
 	const withEvents = sessions.map((session) => ({ session, events: toolEvents(session.entries) }));
@@ -860,10 +899,9 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 	// declined one. Fixes and workflows do not: a fix may have become a rule, a
 	// skill, or a habit, and which one is not recoverable here, so they get
 	// suppression only and are never labelled declined.
-	const skills = options.skills ?? loadSkillIndex(options.cwd, options.agentDir);
 	const maxProposals = options.maxProposals ?? DEFAULT_MAX_PER_CATEGORY;
 	const directives = applySuppression(
-		clusterDirectives(withDirectives, corpus, skills, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
+		clusterDirectives(withDirectives, coverage, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
 		state,
 		maxProposals,
 		(item) => item.status !== "new",
