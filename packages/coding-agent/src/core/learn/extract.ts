@@ -15,12 +15,12 @@
  * rather than conclusions.
  */
 
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { TextContent, ToolCall } from "@kolisachint/hoocode-ai";
 import { getUserAgentsDir } from "../../config.js";
-import { getDefaultSessionDir } from "../session-manager.js";
+import { getSessionDirPath } from "../session-manager.js";
 import { loadSkills } from "../skills.js";
 import {
 	commandHead,
@@ -145,9 +145,36 @@ export interface WorkflowCandidate extends Proposable {
 	sessions: number;
 }
 
+/**
+ * Why a session file on disk did not make it into the digest.
+ *
+ * "No recent sessions" is the one outcome a user cannot act on without this:
+ * an empty session directory, a directory full of month-old sessions, and a
+ * directory full of sessions belonging to another checkout all produce the same
+ * sentence, and the fix differs in each case.
+ */
+export interface SessionScanReport {
+	/** Directories actually searched, in order. */
+	dirs: string[];
+	/** Directories that do not exist on disk. */
+	missingDirs: string[];
+	/** `.jsonl` files found across all searched directories. */
+	files: number;
+	/** Skipped for being older than the age window. */
+	tooOld: number;
+	/** Skipped because the session header records a different working directory. */
+	otherCwd: number;
+	/** Skipped for being beyond `maxSessions`. */
+	overLimit: number;
+	/** Skipped for being unreadable, unparseable, or empty. */
+	unreadable: number;
+}
+
 export interface LearnDigest {
 	scannedSessions: number;
 	skippedSessions: number;
+	/** Where the sessions came from, and what was passed over. */
+	scan: SessionScanReport;
 	oldestSession?: string;
 	newestSession?: string;
 	agentsFilePath?: string;
@@ -164,7 +191,11 @@ export interface LearnDigest {
 export interface ExtractOptions {
 	cwd: string;
 	agentDir: string;
-	/** Override the directory scanned. Defaults to the per-cwd session dir. */
+	/**
+	 * An extra directory to scan, normally the live session manager's. The
+	 * per-cwd default directory is always scanned as well, so a session manager
+	 * pointing somewhere unusual cannot hide this directory's history.
+	 */
 	sessionDir?: string;
 	maxSessions?: number;
 	maxAgeDays?: number;
@@ -257,11 +288,42 @@ function activeBranch(entries: EntryLike[]): EntryLike[] {
 	return branch.reverse();
 }
 
-function parseSessionFile(file: string, cwd: string): ParsedSession | undefined {
+/**
+ * Compare two directory paths the way the filesystem does.
+ *
+ * A session header stores the cwd as it was typed, and the same directory can
+ * be spelled several ways: through a symlink (`/tmp` is `/private/tmp` on
+ * macOS), with a trailing separator, or in different case on the
+ * case-insensitive filesystems that macOS and Windows ship by default. String
+ * equality on `resolve()` alone rejects every one of those, and rejecting them
+ * here means silently discarding the whole history the command exists to read.
+ */
+function normalizeDirPath(path: string): string {
+	let resolved = resolve(path);
+	try {
+		resolved = realpathSync.native(resolved);
+	} catch {
+		// Deleted or never-created directory: the textual form is all we have.
+	}
+	// `resolve` already drops a trailing separator except at a filesystem root,
+	// where dropping it would turn "/" into "".
+	if (resolved.length > 1 && resolved.endsWith(sep)) resolved = resolved.slice(0, -1);
+	return process.platform === "win32" || process.platform === "darwin" ? resolved.toLowerCase() : resolved;
+}
+
+function sameDirectory(a: string, b: string): boolean {
+	return normalizeDirPath(a) === normalizeDirPath(b);
+}
+
+/** Reason a candidate file produced no session, for the scan report. */
+type SkipReason = "otherCwd" | "unreadable";
+
+function parseSessionFile(file: string, cwd: string, onSkip: (reason: SkipReason) => void): ParsedSession | undefined {
 	let raw: string;
 	try {
 		raw = readFileSync(file, "utf-8");
 	} catch {
+		onSkip("unreadable");
 		return undefined;
 	}
 
@@ -287,8 +349,14 @@ function parseSessionFile(file: string, cwd: string): ParsedSession | undefined 
 
 	// An explicit `--session` path can put a session for another directory in
 	// this directory, so trust the header over the file's location.
-	if (header?.cwd && resolve(header.cwd) !== resolve(cwd)) return undefined;
-	if (entries.length === 0) return undefined;
+	if (header?.cwd && !sameDirectory(header.cwd, cwd)) {
+		onSkip("otherCwd");
+		return undefined;
+	}
+	if (entries.length === 0) {
+		onSkip("unreadable");
+		return undefined;
+	}
 
 	return {
 		file,
@@ -298,29 +366,75 @@ function parseSessionFile(file: string, cwd: string): ParsedSession | undefined 
 	};
 }
 
-function listSessions(options: ExtractOptions): { sessions: ParsedSession[]; skipped: number } {
-	const dir = options.sessionDir ?? getDefaultSessionDir(options.cwd, options.agentDir);
-	if (!existsSync(dir)) return { sessions: [], skipped: 0 };
+/**
+ * Every directory this cwd's sessions could be sitting in.
+ *
+ * The caller passes the live session manager's directory, which is the right
+ * answer almost always — but not quite always, and each exception silently
+ * emptied the digest. An in-memory session (`--no-session`) reports `""`; an
+ * explicit `--session <path>` reports wherever that file lives; a custom
+ * `sessionDir` setting points at one shared directory. In every one of those
+ * cases the per-cwd default directory still holds the history worth mining, so
+ * search both and let the header check sort out what belongs to this cwd.
+ */
+export function candidateSessionDirs(options: Pick<ExtractOptions, "cwd" | "agentDir" | "sessionDir">): string[] {
+	const dirs: string[] = [];
+	const seen = new Set<string>();
+	for (const dir of [options.sessionDir, getSessionDirPath(options.cwd, options.agentDir)]) {
+		if (!dir) continue;
+		const key = normalizeDirPath(dir);
+		if (seen.has(key)) continue;
+		seen.add(key);
+		dirs.push(dir);
+	}
+	return dirs;
+}
+
+function listSessions(options: ExtractOptions): {
+	sessions: ParsedSession[];
+	skipped: number;
+	scan: SessionScanReport;
+} {
+	const dirs = candidateSessionDirs(options);
+	const scan: SessionScanReport = {
+		dirs,
+		missingDirs: [],
+		files: 0,
+		tooOld: 0,
+		otherCwd: 0,
+		overLimit: 0,
+		unreadable: 0,
+	};
 
 	const maxSessions = options.maxSessions ?? DEFAULT_MAX_SESSIONS;
 	const maxAgeDays = options.maxAgeDays ?? DEFAULT_MAX_AGE_DAYS;
 	const now = options.now ?? new Date();
 	const cutoff = now.getTime() - maxAgeDays * 24 * 60 * 60 * 1000;
 
-	let files: string[];
-	try {
-		files = readdirSync(dir)
-			.filter((f) => f.endsWith(".jsonl"))
-			.map((f) => join(dir, f));
-	} catch {
-		return { sessions: [], skipped: 0 };
+	const files: string[] = [];
+	for (const dir of dirs) {
+		if (!existsSync(dir)) {
+			scan.missingDirs.push(dir);
+			continue;
+		}
+		try {
+			for (const name of readdirSync(dir)) {
+				if (name.endsWith(".jsonl")) files.push(join(dir, name));
+			}
+		} catch {
+			scan.missingDirs.push(dir);
+		}
 	}
+	scan.files = files.length;
 
+	// Newest first across all directories, so `maxSessions` keeps the most recent
+	// history rather than whichever directory happened to be searched first.
 	const dated = files
 		.map((file) => {
 			try {
 				return { file, mtime: statSync(file).mtime.getTime() };
 			} catch {
+				scan.unreadable++;
 				return undefined;
 			}
 		})
@@ -328,21 +442,37 @@ function listSessions(options: ExtractOptions): { sessions: ParsedSession[]; ski
 		.sort((a, b) => b.mtime - a.mtime);
 
 	const sessions: ParsedSession[] = [];
+	const seenIds = new Set<string>();
 	let skipped = 0;
 	for (const { file, mtime } of dated) {
 		if (sessions.length >= maxSessions) {
+			scan.overLimit++;
 			skipped++;
 			continue;
 		}
 		if (mtime < cutoff) {
+			scan.tooOld++;
 			skipped++;
 			continue;
 		}
-		const parsed = parseSessionFile(file, options.cwd);
-		if (parsed) sessions.push(parsed);
-		else skipped++;
+		const parsed = parseSessionFile(file, options.cwd, (reason) => {
+			scan[reason]++;
+		});
+		if (!parsed) {
+			skipped++;
+			continue;
+		}
+		// Searching two directories can turn up the same session twice (an explicit
+		// `--session` path inside the default directory). Counting it twice would
+		// inflate the cross-session repetition that decides what gets proposed.
+		if (seenIds.has(parsed.id)) {
+			skipped++;
+			continue;
+		}
+		seenIds.add(parsed.id);
+		sessions.push(parsed);
 	}
-	return { sessions, skipped };
+	return { sessions, skipped, scan };
 }
 
 /**
@@ -373,6 +503,14 @@ function applySuppression<T extends Proposable>(
 		kept.push(item);
 	}
 	return { kept: kept.slice(0, maxProposals), suppressed };
+}
+
+/**
+ * Where this cwd's sessions were found and what was passed over, without
+ * ranking anything. `/learn stats` reports on the window without re-mining it.
+ */
+export function scanSessions(options: ExtractOptions): SessionScanReport {
+	return listSessions(options).scan;
 }
 
 /** Nearest AGENTS.md walking up from cwd, so proposals can be checked against it. */
@@ -875,7 +1013,7 @@ function loadSkillIndex(cwd: string, agentDir: string): Array<{ name: string; de
 
 /** Mine the recent sessions for this cwd and return the ranked digest. */
 export function extractLearnDigest(options: ExtractOptions): LearnDigest {
-	const { sessions, skipped } = listSessions(options);
+	const { sessions, skipped, scan } = listSessions(options);
 
 	const agentsFilePath = findAgentsFile(options.cwd);
 	let agentsContent: string | undefined;
@@ -926,6 +1064,7 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 	return {
 		scannedSessions: sessions.length,
 		skippedSessions: skipped,
+		scan,
 		oldestSession: timestamps[0],
 		newestSession: timestamps[timestamps.length - 1],
 		agentsFilePath,

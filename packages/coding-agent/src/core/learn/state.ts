@@ -57,9 +57,12 @@ function emptyState(): LearnState {
 /**
  * State file for a directory.
  *
- * Keyed off the session directory's own name rather than re-deriving the cwd
- * encoding, so the two can never drift apart: whatever set of sessions is being
- * mined is the set this state describes.
+ * Keyed off the *name* of the cwd's session directory, which encodes the cwd —
+ * so the bookmark is per working directory, matching what the digest describes.
+ * Callers pass the cwd-derived path rather than whatever directory the live
+ * session happens to be reading: a session with no directory of its own would
+ * otherwise land every project on one nameless state file, and projects sharing
+ * a custom `sessionDir` would share one bookmark between them.
  */
 export function getLearnStatePath(agentDir: string, sessionDir: string): string {
 	return join(agentDir, "learn", `${basename(sessionDir)}.json`);

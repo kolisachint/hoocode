@@ -47,7 +47,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |
 | `/compact [prompt]` | Manually compact context, optionally with custom instructions |
-| `/learn [all\|stats]` | Mine recent sessions for repeated directives, fixes, and workflows and promote them to `AGENTS.md` or a skill; `stats` reports what became of past proposals |
+| `/learn [all\|stats\|settings]` | Mine recent sessions for repeated directives, fixes, and workflows and promote them to `AGENTS.md` or a skill; `stats` reports what became of past proposals, `settings` shows where sessions are read from and the thresholds in force |
 | `/copy` | Copy last assistant message to clipboard |
 | `/export [file]` | Export session to HTML |
 | `/share` | Upload as private GitHub gist with shareable HTML link |
@@ -161,6 +161,20 @@ hand, it comes back marked `has-skill` rather than as a new rule. That is a
 triggering problem, not a missing rule: the skill's `description` frontmatter
 probably does not describe the situation you were in, so sharpening it is the fix
 rather than writing a rule that duplicates the skill.
+
+`/learn settings` prints where sessions are read from, how many were found, the
+five thresholds in force, and the two files you can set them in — the user
+`~/.hoocode/settings.json` and the project `.hoocode/settings.json`. See
+[settings](settings.md#learn) for what each one does.
+
+Sessions are read from `~/.hoocode/sessions/<encoded-cwd>/`, the directory
+hoocode writes this project's transcripts into. If a run reports nothing, it
+names that directory, how many transcripts it holds, and why each was passed
+over — out of the age window, over the session cap, or recorded under a
+different working directory. Those are the three reasons a directory full of
+history still mines to nothing, and each has a different fix: widen
+`learnMaxAgeDays`, raise `learnMaxSessions`, or check that you are running from
+the same path the sessions were recorded under.
 
 ### System Prompt Files
 

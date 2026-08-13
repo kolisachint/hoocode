@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { isEmptyDigest, renderLearnDigest } from "../src/core/learn/digest.js";
-import { extractLearnDigest, LEARN_DIGEST_MARKER, matchCoverage } from "../src/core/learn/extract.js";
+import { extractLearnDigest, LEARN_DIGEST_MARKER, matchCoverage, scanSessions } from "../src/core/learn/extract.js";
 import {
 	commandHead,
 	extractErrorRegion,
@@ -21,6 +21,7 @@ import {
 	summarizeLearnState,
 	writeLearnState,
 } from "../src/core/learn/state.js";
+import { getSessionDirPath } from "../src/core/session-manager.js";
 
 let tempDir: string;
 
@@ -547,6 +548,122 @@ describe("session selection", () => {
 	it("returns an empty digest when there is nothing to mine", () => {
 		const fixture = createFixture();
 		expect(isEmptyDigest(extract(fixture))).toBe(true);
+	});
+});
+
+// ── Session discovery ───────────────────────────────────────────────────────
+
+/**
+ * Where the sessions are found at all, which is upstream of every other
+ * behaviour here: each case below used to report "no recent sessions in this
+ * directory" while a full history sat on disk.
+ */
+describe("session discovery", () => {
+	/** Write a session into the per-cwd default directory rather than the fixture's. */
+	function writeDefaultDirSession(fixture: Fixture, name: string, headerCwd = fixture.cwd): string {
+		const dir = getSessionDirPath(fixture.cwd, fixture.agentDir);
+		mkdirSync(dir, { recursive: true });
+		const lines = [
+			JSON.stringify({
+				type: "session",
+				version: 3,
+				id: name,
+				timestamp: "2026-08-01T00:00:00.000Z",
+				cwd: headerCwd,
+			}),
+			JSON.stringify(userEntry("always run the tests with --coverage")),
+		];
+		writeFileSync(join(dir, `${name}.jsonl`), `${lines.join("\n")}\n`);
+		return dir;
+	}
+
+	it("finds the cwd's own sessions when the session manager reports no directory", () => {
+		const fixture = createFixture();
+		writeDefaultDirSession(fixture, "s1");
+		writeDefaultDirSession(fixture, "s2");
+
+		// An in-memory session (`--no-session`) reports "", which is not nullish and
+		// so used to be taken literally as the directory to scan.
+		const digest = extractLearnDigest({ cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: "", skills: [] });
+		expect(digest.scannedSessions).toBe(2);
+		expect(digest.directives).toHaveLength(1);
+	});
+
+	it("finds the cwd's own sessions when the session manager points elsewhere", () => {
+		const fixture = createFixture();
+		writeDefaultDirSession(fixture, "s1");
+		writeDefaultDirSession(fixture, "s2");
+
+		// `--session <path>` or a custom `sessionDir` setting: the live directory is
+		// real but is not where this directory's history lives.
+		const digest = extract(fixture);
+		expect(digest.scannedSessions).toBe(2);
+		expect(digest.scan.dirs).toHaveLength(2);
+	});
+
+	it("counts a session reachable from both directories once", () => {
+		const fixture = createFixture();
+		const dir = writeDefaultDirSession(fixture, "s1");
+		writeDefaultDirSession(fixture, "s2");
+
+		const digest = extractLearnDigest({ cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: dir, skills: [] });
+		expect(digest.scan.dirs).toHaveLength(1);
+		expect(digest.scannedSessions).toBe(2);
+	});
+
+	it("accepts a header cwd spelled through a symlink", () => {
+		const fixture = createFixture();
+		const link = join(tempDir, "link-to-repo");
+		symlinkSync(fixture.cwd, link);
+		writeDefaultDirSession(fixture, "s1", link);
+		writeDefaultDirSession(fixture, "s2", link);
+
+		const digest = extract(fixture);
+		expect(digest.scannedSessions).toBe(2);
+		expect(digest.scan.otherCwd).toBe(0);
+	});
+
+	it("reports why each file was passed over", () => {
+		const fixture = createFixture();
+		writeSession(fixture, "mine", [userEntry("always run the tests with --coverage")]);
+		writeFileSync(
+			join(fixture.sessionDir, "other.jsonl"),
+			`${JSON.stringify({ type: "session", version: 3, id: "other", timestamp: "2026-08-01T00:00:00.000Z", cwd: "/elsewhere" })}\n${JSON.stringify(userEntry("always run the tests with --coverage"))}\n`,
+		);
+
+		const scan = scanSessions({ cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir });
+		expect(scan.files).toBe(2);
+		expect(scan.otherCwd).toBe(1);
+		expect(scan.dirs).toContain(fixture.sessionDir);
+	});
+
+	it("names the missing directory when there is no history at all", () => {
+		const fixture = createFixture();
+		const scan = scanSessions({ cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: "" });
+		expect(scan.files).toBe(0);
+		expect(scan.missingDirs).toEqual([getSessionDirPath(fixture.cwd, fixture.agentDir)]);
+	});
+
+	it("separates stale history from missing history", () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);
+
+		const digest = extractLearnDigest({
+			cwd: fixture.cwd,
+			agentDir: fixture.agentDir,
+			sessionDir: fixture.sessionDir,
+			now: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000),
+		});
+		expect(digest.scannedSessions).toBe(0);
+		expect(digest.scan.files).toBe(1);
+		expect(digest.scan.tooOld).toBe(1);
+	});
+
+	it("does not create the session directory just by looking for it", () => {
+		const fixture = createFixture();
+		const dir = getSessionDirPath(fixture.cwd, fixture.agentDir);
+		scanSessions({ cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: "" });
+		expect(existsSync(dir)).toBe(false);
 	});
 });
 
