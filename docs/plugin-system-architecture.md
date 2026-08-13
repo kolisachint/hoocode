@@ -847,8 +847,16 @@ Two consequences worth stating rather than discovering:
   feature usable — re-prompting per commit would train people to click through.
 - **It changes behavior for existing project-local installs.** A plugin an older
   hoocode put in `<cwd>/.agents/plugins/` and that carries hooks or MCP servers
-  now loads passive-only until the workspace is trusted. The load error names the
+  now loads passive-only until the workspace is trusted. The notice names the
   plugin and the one command that fixes it. The old behavior was the bug.
+
+**The notice is a warning, not an error** (`ExtensionLoadIssue.severity`). It
+first shipped as an error, and `main.ts` exits on any error diagnostic before
+the TUI opens — so a repo carrying a plugin with an MCP server made hoocode
+refuse to start, while telling the user to run a slash command that only exists
+inside the session it had just refused to open. Nothing failed to load here: the
+plugin loaded, minus its executable half. Anything whose remedy lives behind the
+prompt has to let the prompt come up.
 
 Not built: prompting at load time. `loadPlugins` has no UI handle, and the
 `propose-plugin.ts:252-260` precedent (no UI means refuse, not proceed) points

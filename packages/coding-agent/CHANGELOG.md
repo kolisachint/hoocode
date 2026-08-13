@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A repo-committed plugin no longer stops hoocode from starting. Withholding a
+  working-tree plugin's hooks and MCP servers was reported as a load *error*,
+  and any error diagnostic exits before the TUI opens — so the notice told you
+  to run `/plugin trust` while making the prompt that runs it unreachable. The
+  notice is a warning now: the session starts, the plugin's skills and commands
+  load, and `/plugin trust` is there to grant the rest.
+- An MCP server whose command cannot be spawned no longer crashes the process on
+  startup. `ChildProcess` emitted `error` (ENOENT) with no listener attached,
+  which is fatal in Node; the failure is now caught and reported per server as
+  `command not found`. Windows launches `npx`/`npm`-style commands through the
+  shell as well, since those are `.cmd` shims that `spawn()` cannot execute
+  directly — the case that produced `spawn npx ENOENT` for `@playwright/mcp`.
+
 ## [0.5.14] - 2026-08-13
 
 ### Added

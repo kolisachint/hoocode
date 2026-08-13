@@ -786,7 +786,11 @@ export function showLoadedResources(
 		const extensionErrors = resourceLoader.getExtensions().errors;
 		if (extensionErrors.length > 0) {
 			for (const error of extensionErrors) {
-				extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
+				extensionDiagnostics.push({
+					type: error.severity ?? "error",
+					message: error.error,
+					path: error.path,
+				});
 			}
 		}
 
