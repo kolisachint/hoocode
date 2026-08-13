@@ -35,6 +35,7 @@ import type {
 	Extension,
 	ExtensionAPI,
 	ExtensionFactory,
+	ExtensionLoadIssue,
 	ExtensionRuntime,
 	LoadExtensionsResult,
 	MessageRenderer,
@@ -736,10 +737,10 @@ export async function loadPlugins(
 	cwd: string,
 	eventBus: EventBus,
 	runtime: ExtensionRuntime,
-): Promise<{ extensions: Extension[]; errors: Array<{ path: string; error: string }> }> {
+): Promise<{ extensions: Extension[]; errors: ExtensionLoadIssue[] }> {
 	clearExtensionMcpServers();
 	const extensions: Extension[] = [];
-	const errors: Array<{ path: string; error: string }> = [];
+	const errors: ExtensionLoadIssue[] = [];
 
 	for (const plugin of discoverPlugins(pluginDirs)) {
 		try {
@@ -759,8 +760,13 @@ export async function loadPlugins(
 			);
 			extensions.push(extension);
 			if (withheld.length > 0) {
+				// A warning, not an error: the plugin *did* load, minus its executable
+				// half, and the session must reach the prompt for `/plugin trust` to be
+				// runnable at all. Reporting this as an error aborted startup, which
+				// left the only remedy behind a door it had just locked.
 				errors.push({
 					path: plugin.manifestPath,
+					severity: "warning",
 					error:
 						`Plugin "${plugin.id}" is in the working tree: ${withheld.join(" and ")} not loaded. ` +
 						"Code committed to a repository runs for whoever clones it, so hoocode does not start it " +

@@ -32,6 +32,7 @@ import { formatDurationSecs } from "../../core/format-duration.js";
 import { clearMcpServerStatuses, setMcpServerStatus } from "../../core/mcp-status.js";
 import { deferMcpSchemas, subagentSkipMcp } from "../../core/subagent-depth.js";
 import { taskStore } from "../../core/task-store.js";
+import { shouldUseWindowsShell } from "../../utils/child-process.js";
 import {
 	type DeferredMcpToolEntry,
 	formatDeferredCatalog,
@@ -120,10 +121,15 @@ function spawnMcpServer(config: McpServerConfig & { command: string }): McpConne
 	const proc: ChildProcess = spawn(config.command, config.args ?? [], {
 		env: { ...process.env, ...(config.env ?? {}) },
 		stdio: ["pipe", "pipe", "pipe"],
+		// `npx`/`npm` are .cmd shims on Windows, which spawn() cannot execute
+		// directly — without this the launch fails with ENOENT.
+		shell: shouldUseWindowsShell(config.command),
 	});
 
 	let nextId = 1;
 	const pending = new Map<number, { resolve: (r: unknown) => void; reject: (e: Error) => void }>();
+	/** Set once the child fails to launch, so later calls fail fast with the cause. */
+	let launchError: Error | undefined;
 
 	const rl = createInterface({ input: proc.stdout! });
 	rl.on("line", (line) => {
@@ -151,7 +157,23 @@ function spawnMcpServer(config: McpServerConfig & { command: string }): McpConne
 		mcpConnections.delete(config.name);
 	});
 
+	// A ChildProcess that emits "error" with no listener takes the whole process
+	// down with it. A missing MCP command is a bad config line, not a reason for
+	// hoocode to refuse to start, so absorb it and let the handshake report it.
+	proc.on("error", (err: NodeJS.ErrnoException) => {
+		launchError =
+			err.code === "ENOENT"
+				? new Error(`MCP server "${config.name}": command not found: ${config.command}`)
+				: new Error(`MCP server "${config.name}" failed to start: ${err.message}`);
+		for (const cb of pending.values()) cb.reject(launchError);
+		pending.clear();
+		mcpConnections.delete(config.name);
+	});
+	// stdin dies with the child; its EPIPE surfaces through the same path.
+	proc.stdin?.on("error", () => {});
+
 	function rpc(method: string, params?: unknown, timeoutMs?: number): Promise<unknown> {
+		if (launchError) return Promise.reject(launchError);
 		const id = nextId++;
 		return new Promise<unknown>((resolve, reject) => {
 			let timer: NodeJS.Timeout | undefined;
@@ -173,12 +195,22 @@ function spawnMcpServer(config: McpServerConfig & { command: string }): McpConne
 					reject(e);
 				},
 			});
-			proc.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+			try {
+				proc.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+			} catch (err) {
+				pending.delete(id);
+				if (timer) clearTimeout(timer);
+				reject(launchError ?? (err instanceof Error ? err : new Error(String(err))));
+			}
 		});
 	}
 
 	function notify(method: string, params?: unknown): void {
-		proc.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
+		try {
+			proc.stdin!.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
+		} catch {
+			// The server is gone; the pending rpc rejections already carry the reason.
+		}
 	}
 
 	return {

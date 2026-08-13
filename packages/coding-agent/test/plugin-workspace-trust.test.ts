@@ -43,9 +43,13 @@ function seedPlugin(root: string, id: string): void {
 	});
 }
 
-async function loadAndCollectErrors(cwd: string): Promise<string[]> {
+async function loadAndCollectIssues(cwd: string) {
 	const res = await loadPlugins(defaultPluginDirs(cwd), cwd, createEventBus(), createExtensionRuntime());
-	return res.errors.map((e) => e.error);
+	return res.errors;
+}
+
+async function loadAndCollectErrors(cwd: string): Promise<string[]> {
+	return (await loadAndCollectIssues(cwd)).map((e) => e.error);
 }
 
 describe("workspace trust", () => {
@@ -118,6 +122,18 @@ describe("workspace trust", () => {
 		expect(shouldWithholdExecutables(path.join(cwd, ".agents", "plugins", "hooky"), cwd)).toBe(false);
 		const after = await loadAndCollectErrors(cwd);
 		expect(after.some((e) => e.includes("hooky"))).toBe(false);
+	});
+
+	it("reports withholding as a warning, so the session that runs `/plugin trust` can start", async () => {
+		seedPlugin(path.join(cwd, ".agents", "plugins", "hooky"), "hooky");
+
+		const issues = await loadAndCollectIssues(cwd);
+		const notice = issues.find((e) => e.error.includes("hooky"));
+		expect(notice).toBeDefined();
+		// An "error" here aborts startup (main.ts exits on any error diagnostic),
+		// which would put the only remedy — /plugin trust, a slash command — behind
+		// a prompt the user can never reach.
+		expect(notice?.severity).toBe("warning");
 	});
 
 	it("never withholds from a user-scoped plugin, trusted workspace or not", async () => {

@@ -782,10 +782,16 @@ export async function main(args: string[], options?: MainOptions) {
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
 			...services.diagnostics,
 			...collectSettingsDiagnostics(settingsManager, "runtime creation"),
-			...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
-				type: "error" as const,
-				message: `Failed to load extension "${path}": ${error}`,
-			})),
+			// Warnings here describe an extension that loaded with something held back
+			// (workspace trust withholding a plugin's hooks and MCP servers). They are
+			// reported and stepped over; only real load failures abort startup below.
+			...resourceLoader
+				.getExtensions()
+				.errors.map(({ path, error, severity }) =>
+					severity === "warning"
+						? { type: "warning" as const, message: `${error} (${path})` }
+						: { type: "error" as const, message: `Failed to load extension "${path}": ${error}` },
+				),
 		];
 
 		// When subagent tooling is enabled, append the main session subagent instructions.
