@@ -29,7 +29,10 @@ export function isEmptyDigest(digest: LearnDigest): boolean {
 	return digest.directives.length === 0 && digest.fixes.length === 0 && digest.workflows.length === 0;
 }
 
-export function renderLearnDigest(digest: LearnDigest, options: { userScopePath: string }): string {
+export function renderLearnDigest(
+	digest: LearnDigest,
+	options: { userScopePath: string; mode?: "incremental" | "all" },
+): string {
 	const lines: string[] = [];
 
 	lines.push(
@@ -37,6 +40,21 @@ export function renderLearnDigest(digest: LearnDigest, options: { userScopePath:
 			(digest.skippedSessions > 0 ? ` (${digest.skippedSessions} skipped: out of window or unreadable)` : "") +
 			(digest.oldestSession ? `, ${shortDate(digest.oldestSession)} to ${shortDate(digest.newestSession)}` : "") +
 			(digest.suppressed > 0 ? `. ${digest.suppressed} item(s) held back — already shown and unchanged since` : "") +
+			".",
+	);
+	// Naming the mode keeps two very different empty results from reading alike:
+	// "nothing new since last time" and "nothing here at all" are not the same
+	// answer, and the reader cannot tell them apart from the counts.
+	if (options.mode === "all") {
+		lines.push("Mode: all — suppression is off, so items you have already seen and decided on are included.");
+	}
+	// The model reads every transcript in full, which costs real tokens. Saying
+	// what was re-read versus reused keeps that price visible rather than hidden.
+	lines.push(
+		`Read by the model this run: ${digest.mining.mined}; reused from cache: ${digest.mining.cached}` +
+			(digest.mining.failed > 0
+				? `; failed: ${digest.mining.failed} (their signals are missing from the counts below)`
+				: "") +
 			".",
 	);
 	lines.push("");
@@ -54,6 +72,13 @@ export function renderLearnDigest(digest: LearnDigest, options: { userScopePath:
 		for (const cluster of digest.directives) {
 			lines.push(`- **${cluster.status}** — "${cluster.text.replace(/\s+/g, " ").trim()}"`);
 			lines.push(`  - ${evidence(cluster.count, cluster.sessions, cluster.lastSeen)}`);
+			// Occurrences were grouped by meaning, not by wording, so the quote above
+			// is one phrasing of several. Naming the shared point keeps a count of 5
+			// from looking like five copies of one sentence.
+			lines.push(`  - grouped as: ${cluster.label}`);
+			if (cluster.rationale) {
+				lines.push(`  - why it may be durable: ${cluster.rationale}`);
+			}
 			if (cluster.existingRule) {
 				lines.push(`  - already covered by: "${cluster.existingRule.slice(0, 160)}"`);
 			}

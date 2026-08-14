@@ -540,15 +540,22 @@ export class SettingsManager {
 		minRepeats: number;
 		minWorkflowRepeats: number;
 		maxProposals: number;
+		/** "provider/model-id" to read transcripts with, or undefined for the session model. */
+		minerModel?: string;
 	} {
 		const positive = (value: unknown, fallback: number): number =>
 			typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.floor(value) : fallback;
+		const minerModel =
+			typeof this.settings.learnMinerModel === "string" && this.settings.learnMinerModel.trim().length > 0
+				? this.settings.learnMinerModel.trim()
+				: undefined;
 		return {
 			maxSessions: positive(this.settings.learnMaxSessions, DEFAULT_SETTINGS.learnMaxSessions),
 			maxAgeDays: positive(this.settings.learnMaxAgeDays, DEFAULT_SETTINGS.learnMaxAgeDays),
 			minRepeats: positive(this.settings.learnMinRepeats, DEFAULT_SETTINGS.learnMinRepeats),
 			minWorkflowRepeats: positive(this.settings.learnMinWorkflowRepeats, DEFAULT_SETTINGS.learnMinWorkflowRepeats),
 			maxProposals: positive(this.settings.learnMaxProposals, DEFAULT_SETTINGS.learnMaxProposals),
+			minerModel,
 		};
 	}
 

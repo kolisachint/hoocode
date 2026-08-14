@@ -2,15 +2,19 @@
  * `/learn` — promote what recent sessions actually taught into durable rules
  * and skills.
  *
- * The command is a thin shell on purpose. It runs the deterministic extractor
- * over session transcripts on disk, renders the ranked result, and injects it
- * as a follow-up message; every judgement after that belongs to the model,
- * which can read the repo and phrase a rule far better than a heuristic can.
+ * The command is a thin shell on purpose. It runs the mining pipeline over
+ * session transcripts on disk, renders the ranked result, and injects it as a
+ * follow-up message; every judgement after that belongs to the model, which can
+ * read the repo and phrase a rule far better than a heuristic can.
  *
  * Reading transcripts from disk rather than the live context is what makes this
  * work: the on-disk history survives compaction, and it spans past sessions, so
  * "you have said this in five separate sessions" is available as a number
  * instead of a guess. That number is the whole reason the command exists.
+ *
+ * The pipeline reads every transcript with a model rather than pre-filtering
+ * with regexes, which costs real tokens on a cold cache. That price is stated
+ * before it is paid, never inferred: a run with sessions to read asks first.
  *
  * Follows /grill in modes.ts: no session switch, no mode change, no config
  * write — just a follow-up message. Writes to AGENTS.md happen through ordinary
@@ -18,20 +22,27 @@
  * separate picker is needed.
  */
 
+import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import type { Api, Model } from "@kolisachint/hoocode-ai";
 import { CONFIG_DIR_NAME, getHooCodeDir } from "../../config.js";
 import { loadProjectContextFiles } from "../../core/context-files.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
+import { hashSessionFile, summarizeCache } from "../../core/learn/cache.js";
+import type { CoverageJudge } from "../../core/learn/coverage.js";
+import { createLlmCoverageJudge } from "../../core/learn/coverage.js";
 import { isEmptyDigest, renderLearnDigest } from "../../core/learn/digest.js";
 import {
 	buildCoverageIndex,
-	extractLearnDigest,
+	candidateSessionDirs,
 	type LearnDigest,
-	matchCoverage,
+	mineLearnDigest,
 	type SessionScanReport,
 	scanSessions,
 } from "../../core/learn/extract.js";
+import type { Miner } from "../../core/learn/mine.js";
+import { createLlmMiner } from "../../core/learn/mine.js";
 import {
 	getLearnStatePath,
 	readLearnState,
@@ -47,6 +58,19 @@ const REGISTERED = Symbol.for("hoocode.learn.registered");
 
 /** User-scope destination offered for personal rules that travel across repos. */
 const USER_SCOPE_PATH = join(homedir(), ".agents", "AGENTS.md");
+
+/** Status-bar key for mining progress. */
+const STATUS_KEY = "learn";
+
+/**
+ * Sessions that can be read without asking first.
+ *
+ * A run that has one or two new transcripts to read is the normal daily case
+ * and interrupting it to confirm a trivial cost is noise. Beyond this the run
+ * is a backfill — onboarding to an existing repo, or a first run — and the
+ * reader should get to decide before it starts.
+ */
+const CONFIRM_ABOVE_PENDING = 3;
 
 /** Render a home-relative path the way the user would type it. */
 function displayPath(path: string): string {
@@ -73,12 +97,13 @@ const SETTING_KEYS: Array<{ key: keyof LearnWindow; setting: string; note: strin
 		note: "repeats before a tool sequence is proposed",
 	},
 	{ key: "maxProposals", setting: "learnMaxProposals", note: "cap on each list in the digest" },
+	{ key: "minerModel", setting: "learnMinerModel", note: "model that reads transcripts (default: session model)" },
 ];
 
 /**
  * Where the knobs live, and what they are set to.
  *
- * `/learn` has five settings and no UI, so until this existed the only way to
+ * `/learn` has its settings and no UI, so until this existed the only way to
  * find them was to already know they were in `settings.json`. Every message that
  * reports a disappointing result names a threshold, so every one of them ends
  * with these lines.
@@ -94,7 +119,7 @@ function settingsPathLines(ctx: ExtensionCommandContext, agentDir: string): stri
 function settingsLines(ctx: ExtensionCommandContext, agentDir: string, window: LearnWindow): string[] {
 	const lines = settingsPathLines(ctx, agentDir);
 	for (const { key, setting, note } of SETTING_KEYS) {
-		lines.push(`  ${setting.padEnd(24)} ${String(window[key]).padStart(3)}   ${note}`);
+		lines.push(`  ${setting.padEnd(24)} ${String(window[key] ?? "—").padStart(3)}   ${note}`);
 	}
 	return lines;
 }
@@ -112,7 +137,7 @@ function stateKeyDir(ctx: ExtensionCommandContext, agentDir: string): string {
 	return getSessionDirPath(ctx.cwd, agentDir);
 }
 
-/** Run the directory scan without ranking anything, for the reports that only need counts. */
+/** Run the directory scan without mining anything, for the reports that only need counts. */
 function sessionScanPreview(ctx: ExtensionCommandContext, agentDir: string, window: LearnWindow): SessionScanReport {
 	return scanSessions({
 		cwd: ctx.cwd,
@@ -164,13 +189,82 @@ function reportNoSessions(ctx: ExtensionCommandContext, agentDir: string, digest
 }
 
 /**
+ * The model that reads transcripts.
+ *
+ * Defaults to the session's model, which is always configured and always
+ * authorised, but this is the one call in the pipeline that reads *everything*
+ * — so `learnMinerModel` exists to point it at something cheap. An unresolvable
+ * setting falls back rather than failing: a typo in a model id should not take
+ * the command out entirely.
+ */
+function resolveMinerModel(
+	ctx: ExtensionCommandContext,
+	window: LearnWindow,
+): { model: Model<Api> | undefined; note?: string } {
+	if (!window.minerModel) return { model: ctx.model };
+
+	const slash = window.minerModel.indexOf("/");
+	if (slash > 0) {
+		const found = ctx.modelRegistry.find(window.minerModel.slice(0, slash), window.minerModel.slice(slash + 1));
+		if (found) return { model: found };
+	}
+	return {
+		model: ctx.model,
+		note: `learnMinerModel "${window.minerModel}" did not resolve; using the session model instead.`,
+	};
+}
+
+/** Build the two model-backed stages, or report why they cannot be built. */
+async function buildPipeline(
+	ctx: ExtensionCommandContext,
+	window: LearnWindow,
+): Promise<{ miner: Miner; coverageJudge: CoverageJudge; note?: string } | { error: string }> {
+	const { model, note } = resolveMinerModel(ctx, window);
+	if (!model) {
+		return {
+			error: "/learn reads session transcripts with a model, and no model is selected. Pick one with /model, then run /learn again.",
+		};
+	}
+
+	const auth = await ctx.modelRegistry.getApiKeyAndHeaders(model);
+	if (!auth.ok) {
+		return { error: `/learn could not authenticate ${model.provider}/${model.id}: ${auth.error}` };
+	}
+
+	const deps = { model, apiKey: auth.apiKey, headers: auth.headers };
+	return { miner: createLlmMiner(deps), coverageJudge: createLlmCoverageJudge(deps), note };
+}
+
+/**
+ * How many sessions in the window still need a model call.
+ *
+ * Hashing every candidate file is cheap next to reading them, and knowing the
+ * number up front is what lets the run state its price before charging it.
+ */
+function pendingWork(ctx: ExtensionCommandContext, agentDir: string, window: LearnWindow): { pending: number } {
+	const dirs = candidateSessionDirs({ cwd: ctx.cwd, agentDir, sessionDir: ctx.sessionManager.getSessionDir() });
+	const hashes: Array<string | undefined> = [];
+	for (const dir of dirs) {
+		try {
+			for (const name of readdirSync(dir)) {
+				if (name.endsWith(".jsonl")) hashes.push(hashSessionFile(join(dir, name)));
+			}
+		} catch {
+			// A missing directory is already reported by the scan.
+		}
+	}
+	return { pending: summarizeCache(agentDir, hashes.slice(0, window.maxSessions)).pending };
+}
+
+/**
  * `/learn stats` — what became of past proposals.
  *
  * Reads the state file and recomputes coverage; it does not re-mine sessions,
- * so it is instant and answers a different question than a normal run: not
- * "what should I write down" but "is this command earning its place".
+ * so it costs one small model call and answers a different question than a
+ * normal run: not "what should I write down" but "is this command earning its
+ * place".
  */
-function reportStats(ctx: ExtensionCommandContext): void {
+async function reportStats(ctx: ExtensionCommandContext): Promise<void> {
 	const agentDir = getHooCodeDir();
 	const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
 	const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
@@ -192,10 +286,34 @@ function reportStats(ctx: ExtensionCommandContext): void {
 	}
 
 	const coverage = buildCoverageIndex({ cwd: ctx.cwd, agentDir });
-	const stats = summarizeLearnState(state, (normalized) => {
-		const match = matchCoverage(normalized, coverage);
-		return !!(match.rule || match.skill);
-	});
+
+	// Coverage is a model judgement now, so it is resolved once for every stored
+	// label in a single batch and then answered from the resulting set. Asking
+	// per item would be one call per proposal ever made in this directory.
+	const labels = Object.keys(state.surfaced)
+		.filter((key) => key.startsWith("directive:"))
+		.map((key) => key.slice("directive:".length));
+
+	const covered = new Set<string>();
+	if (labels.length > 0) {
+		const pipeline = await buildPipeline(ctx, window);
+		if (!("error" in pipeline)) {
+			try {
+				const verdicts = await pipeline.coverageJudge(
+					labels.map((label) => ({ label, text: label })),
+					coverage,
+				);
+				for (const [label, match] of verdicts) {
+					if (match.rule || match.skill) covered.add(label);
+				}
+			} catch {
+				// Adoption is reported as zero rather than failing the report; the
+				// caveat below already tells the reader not to over-read the number.
+			}
+		}
+	}
+
+	const stats = summarizeLearnState(state, (label) => covered.has(label));
 
 	const contextTokens = loadProjectContextFiles({ cwd: ctx.cwd, agentDir }).agentsFiles.reduce(
 		(sum, file) => sum + (file.tokens ?? 0),
@@ -223,7 +341,7 @@ function reportStats(ctx: ExtensionCommandContext): void {
 		// against it exactly like a junk one — so near-100% means the bar is too
 		// low, not that the extractor is perfect.
 		lines.push("  A very high rate means the bar is too low, not that every proposal was good.");
-		lines.push("  Near zero means the extractor is proposing the wrong things.");
+		lines.push("  Near zero means the miner is proposing the wrong things.");
 	}
 
 	lines.push("");
@@ -244,6 +362,12 @@ function reportSettings(ctx: ExtensionCommandContext): void {
 	lines.push("");
 	lines.push(...scanLines(sessionScanPreview(ctx, agentDir, window), window));
 	lines.push(`State file  ${displayPath(getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir)))}`);
+	const { pending } = pendingWork(ctx, agentDir, window);
+	lines.push(
+		pending === 0
+			? "All sessions in the window are already mined; the next /learn costs one small coverage call."
+			: `${pending} session(s) in the window still need reading by the miner model.`,
+	);
 	ctx.ui.notify(lines.join("\n"), "info");
 }
 
@@ -271,7 +395,7 @@ export function setupLearn(pi: ExtensionAPI): void {
 				return;
 			}
 			if (argument === "stats") {
-				reportStats(ctx);
+				await reportStats(ctx);
 				return;
 			}
 			if (argument === "settings") {
@@ -286,9 +410,34 @@ export function setupLearn(pi: ExtensionAPI): void {
 			const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
 			const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
 
+			const pipeline = await buildPipeline(ctx, window);
+			if ("error" in pipeline) {
+				ctx.ui.notify(pipeline.error, "error");
+				return;
+			}
+			if (pipeline.note) ctx.ui.notify(pipeline.note, "warning");
+
+			// State the price before charging it. A first run in a busy repo reads
+			// every transcript in the window, which is the expensive path by design
+			// — but it should never be a surprise, and the cache means it is paid
+			// once rather than on every run.
+			const { pending } = pendingWork(ctx, agentDir, window);
+			if (pending > CONFIRM_ABOVE_PENDING) {
+				const proceed = await ctx.ui.confirm(
+					"Read session transcripts?",
+					`${pending} session(s) have not been read yet. /learn reads each one with a model ` +
+						`(${window.minerModel ?? "the session model"}) and caches the result, so this cost is paid once ` +
+						`per session. Later runs reuse it.`,
+				);
+				if (!proceed) {
+					ctx.ui.notify("/learn cancelled — nothing was read.", "info");
+					return;
+				}
+			}
+
 			let digest: LearnDigest;
 			try {
-				digest = extractLearnDigest({
+				digest = await mineLearnDigest({
 					cwd: ctx.cwd,
 					agentDir,
 					// Searched in addition to the per-cwd default directory, so a session
@@ -302,10 +451,17 @@ export function setupLearn(pi: ExtensionAPI): void {
 					maxProposals: window.maxProposals,
 					state: readLearnState(statePath),
 					ignoreState,
+					miner: pipeline.miner,
+					coverageJudge: pipeline.coverageJudge,
+					onProgress: ({ done, total, cached }) => {
+						ctx.ui.setStatus(STATUS_KEY, `/learn reading sessions ${done}/${total} (${cached} cached)`);
+					},
 				});
 			} catch (error) {
 				ctx.ui.notify(`/learn could not read session history: ${error}`, "error");
 				return;
+			} finally {
+				ctx.ui.setStatus(STATUS_KEY, undefined);
 			}
 
 			if (digest.scannedSessions === 0) {
@@ -317,8 +473,8 @@ export function setupLearn(pi: ExtensionAPI): void {
 				const lines: string[] = [];
 				lines.push(
 					digest.suppressed > 0
-						? `Scanned ${digest.scannedSessions} session(s) — nothing new since last time (${digest.suppressed} already shown). Run /learn all to see them again.`
-						: `Scanned ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
+						? `Read ${digest.scannedSessions} session(s) — nothing new since last time (${digest.suppressed} already shown). Run /learn all to see them again.`
+						: `Read ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
 				);
 				if (digest.suppressed === 0) {
 					// The thresholds are the reason a scan with real sessions in it came
@@ -336,15 +492,22 @@ export function setupLearn(pi: ExtensionAPI): void {
 				digest.workflows.length > 0 ? `${digest.workflows.length} workflow(s)` : undefined,
 			].filter((part): part is string => !!part);
 			const held = digest.suppressed > 0 ? `, ${digest.suppressed} held back` : "";
-			ctx.ui.notify(`Mined ${digest.scannedSessions} session(s): ${counts.join(", ")}${held}.`, "info");
+			ctx.ui.notify(
+				`Mined ${digest.scannedSessions} session(s) (${digest.mining.mined} read, ${digest.mining.cached} cached): ${counts.join(", ")}${held}.`,
+				"info",
+			);
 
 			// Record before delivering: what matters is that these were put in front
 			// of the user, which is true whether or not they act on the digest.
 			writeLearnState(statePath, recordSurfaced(readLearnState(statePath), digest.surfaced));
 
-			pi.sendUserMessage(renderLearnDigest(digest, { userScopePath: displayPath(USER_SCOPE_PATH) }), {
-				deliverAs: "followUp",
-			});
+			pi.sendUserMessage(
+				renderLearnDigest(digest, {
+					userScopePath: displayPath(USER_SCOPE_PATH),
+					mode: ignoreState ? "all" : "incremental",
+				}),
+				{ deliverAs: "followUp" },
+			);
 		},
 	});
 }

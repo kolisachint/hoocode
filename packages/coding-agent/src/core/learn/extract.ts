@@ -8,40 +8,43 @@
  * whether something is a durable rule or a one-off, and it is the one thing a
  * prompt reading its own context cannot see.
  *
- * The split of labour is deliberate. This module is entirely deterministic: it
- * parses, filters, normalizes, counts and ranks. Judgement — is this a rule, how
- * should it be phrased, which scope owns it — belongs to the model reading the
- * digest, which is why the output carries evidence (counts, sessions, dates)
- * rather than conclusions.
+ * This module is the orchestrator, and the split of labour inside it is
+ * deliberate:
+ *
+ * - **Gathering** is deterministic. Finding session files, resolving which cwd
+ *   they belong to, walking the active branch of a forked session — all exact,
+ *   all cheap, all here.
+ * - **Judgement** is the model's, in `mine.ts` and `coverage.ts`. What counts as
+ *   a directive, what two phrasings have in common, whether a rule already
+ *   covers something — none of that survives contact with a regex, and it used
+ *   to be decided by one.
+ * - **Counting** is deterministic again, in `reduce.ts`. The number is the
+ *   product, and a model asked to count over a long context will be
+ *   approximately right.
+ *
+ * The expensive step is memoized per session file (`cache.ts`), so a session is
+ * read by the model exactly once in its life and the counts are still computed
+ * over every session in the window on every run.
  */
 
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
-import type { TextContent, ToolCall } from "@kolisachint/hoocode-ai";
 import { getUserAgentsDir } from "../../config.js";
 import { getSessionDirPath } from "../session-manager.js";
 import { loadSkills } from "../skills.js";
-import {
-	commandHead,
-	contentWords,
-	extractErrorRegion,
-	isBenignFailure,
-	isRuleShapedDirective,
-	isUninformativeFailure,
-	normalizeCommand,
-	normalizeDirective,
-	normalizeErrorSignature,
-	wordOverlap,
-} from "./normalize.js";
+import { hashSessionFile, pruneLearnCache, readCachedMining, writeCachedMining } from "./cache.js";
+import type { CoverageIndex, CoverageJudge, CoverageQuery } from "./coverage.js";
+import { noCoverageJudge } from "./coverage.js";
+import type { MinableSession, Miner } from "./mine.js";
+import { LEARN_DIGEST_MARKER } from "./mine.js";
+import type { DirectiveCluster, FixCandidate, MinedSession, Proposable, WorkflowCandidate } from "./reduce.js";
+import { reduceDirectives, reduceFixes, reduceWorkflows } from "./reduce.js";
 import { judge, type LearnState } from "./state.js";
 
-/**
- * Prefix on the message `/learn` injects. The digest is persisted like any user
- * turn, so without this marker the next `/learn` would mine its own output and
- * every proposal would compound its own count.
- */
-export const LEARN_DIGEST_MARKER = "[learn-digest]";
+export type { CoverageIndex, CoverageMatch } from "./coverage.js";
+export { LEARN_DIGEST_MARKER } from "./mine.js";
+export type { DirectiveCluster, DirectiveStatus, FixCandidate, WorkflowCandidate } from "./reduce.js";
 
 /** Sessions considered, newest first. */
 const DEFAULT_MAX_SESSIONS = 20;
@@ -49,101 +52,12 @@ const DEFAULT_MAX_SESSIONS = 20;
 const DEFAULT_MAX_AGE_DAYS = 30;
 /** Entries parsed per session file, as a guard against pathological transcripts. */
 const MAX_ENTRIES_PER_SESSION = 8000;
-/** Tool calls per session fed to the workflow detector. */
-const MAX_TOOL_CALLS_PER_SESSION = 400;
-/** How far forward the fix extractor looks for the same command succeeding. */
-const FIX_LOOKAHEAD = 40;
-/** Word overlap against an existing rule above which a directive counts as covered. */
-const COVERED_OVERLAP = 0.6;
-/**
- * The same bar for skills, set higher on purpose.
- *
- * A rule is one line, so overlap against it is a sharp signal. A skill is a name
- * plus a description written to attract matches, which is a far larger haystack
- * — a short directive's words turn up in it by chance much more readily. The
- * higher bar and the truncation below keep "you already have a skill for this"
- * from being said on a coincidence.
- */
-const SKILL_COVERED_OVERLAP = 0.75;
-/** Description characters considered. The opening says what a skill does; the rest is trigger bait. */
-const SKILL_DESCRIPTION_CHARS = 300;
-/** Directives must reach this many occurrences to be reported at all. */
+/** Occurrences a directive needs before it is proposed. */
 const DEFAULT_MIN_DIRECTIVE_COUNT = 2;
-/** Tool sequence lengths considered as workflow candidates. */
-const WORKFLOW_MIN_LEN = 3;
-const WORKFLOW_MAX_LEN = 5;
 /** Repeats before a tool sequence is worth proposing as a skill. */
 const DEFAULT_MIN_WORKFLOW_COUNT = 3;
 /** Cap on each list in the digest, so the model's budget goes to the top signals. */
 const DEFAULT_MAX_PER_CATEGORY = 8;
-
-/**
- * Where a repeated directive already lives, if anywhere.
- *
- * A directive covered by a rule and said only once is simply dropped — the rule
- * exists and is working. What survives is one of three cases, and they want
- * different responses:
- *
- * - `new` — not written down anywhere. Propose it.
- * - `restated` — a context-file rule covers it and you said it anyway, so the
- *   rule is not working. Rewrite it; do not add a second one.
- * - `has-skill` — a *skill* covers it and you asked by hand anyway, which
- *   usually means the skill's `description` is not triggering. Sharpen the
- *   description rather than writing a rule that duplicates the skill.
- */
-export type DirectiveStatus = "new" | "restated" | "has-skill";
-
-/** Fields every proposable item shares, so suppression can be applied uniformly. */
-interface Proposable {
-	/** Stable identity across runs — what the state file remembers. */
-	key: string;
-	/** Newest occurrence in the window, ISO. */
-	lastSeen: string;
-}
-
-export interface DirectiveCluster extends Proposable {
-	/** Representative raw text, the longest seen in the cluster. */
-	text: string;
-	normalized: string;
-	/** Total times said. */
-	count: number;
-	/** Distinct sessions it was said in — the stronger of the two counts. */
-	sessions: number;
-	status: DirectiveStatus;
-	/** The existing rule line matched, when status is `restated`. */
-	existingRule?: string;
-	/** The skill that already covers this, when status is `has-skill`. */
-	existingSkill?: string;
-	/**
-	 * Shown before and still not written down anywhere — neither as a rule nor as
-	 * a skill — so you saw this proposal and passed on it. Only meaningful for
-	 * directives, which are the only items with a real coverage signal.
-	 */
-	previouslyDeclined: boolean;
-}
-
-export interface FixCandidate extends Proposable {
-	/** Normalized failing command. */
-	command: string;
-	/** Normalized error signature, the dedupe key. */
-	signature: string;
-	/** Short raw excerpt, so the model sees the real error text. */
-	errorExcerpt: string;
-	/** Commands run between the failure and the pass. */
-	interveningCommands: string[];
-	/** Files edited between the failure and the pass. */
-	editedFiles: string[];
-	/** Times this signature failed and was resolved across the window. */
-	count: number;
-	sessions: number;
-}
-
-export interface WorkflowCandidate extends Proposable {
-	/** Tool-call signatures in order. */
-	steps: string[];
-	count: number;
-	sessions: number;
-}
 
 /**
  * Why a session file on disk did not make it into the digest.
@@ -170,11 +84,23 @@ export interface SessionScanReport {
 	unreadable: number;
 }
 
+/** What the run cost, so the price of an LLM-read pipeline is visible rather than hidden. */
+export interface MiningReport {
+	/** Sessions whose candidates came from cache, free. */
+	cached: number;
+	/** Sessions sent to the model this run. */
+	mined: number;
+	/** Sessions the model failed on. Their signals are missing from the counts. */
+	failed: number;
+}
+
 export interface LearnDigest {
 	scannedSessions: number;
 	skippedSessions: number;
 	/** Where the sessions came from, and what was passed over. */
 	scan: SessionScanReport;
+	/** What was read by the model versus reused. */
+	mining: MiningReport;
 	oldestSession?: string;
 	newestSession?: string;
 	agentsFilePath?: string;
@@ -201,7 +127,7 @@ export interface ExtractOptions {
 	maxAgeDays?: number;
 	/** Occurrences a directive needs before it is proposed. The signal/noise dial. */
 	minRepeats?: number;
-	/** Non-overlapping repeats a tool sequence needs before it is proposed as a skill. */
+	/** Repeats a tool sequence needs before it is proposed as a skill. */
 	minWorkflowRepeats?: number;
 	/** Cap on each list in the digest. */
 	maxProposals?: number;
@@ -219,6 +145,17 @@ export interface ExtractOptions {
 	skills?: Array<{ name: string; description: string }>;
 	/** Injectable clock, for tests. */
 	now?: Date;
+}
+
+/** Everything the async pipeline needs beyond the window settings. */
+export interface MineOptions extends ExtractOptions {
+	/** Reads one session and reports what it saw. */
+	miner: Miner;
+	/** Decides which proposals are already written down. Defaults to "none are". */
+	coverageJudge?: CoverageJudge;
+	/** Progress callback, so a cold-cache run is not a silent wait. */
+	onProgress?: (progress: { done: number; total: number; cached: number }) => void;
+	signal?: AbortSignal;
 }
 
 interface SessionHeaderLike {
@@ -244,31 +181,14 @@ interface ParsedSession {
 	entries: EntryLike[];
 }
 
-function textOf(content: unknown): string {
-	if (typeof content === "string") return content;
-	if (!Array.isArray(content)) return "";
-	return content
-		.map((block) =>
-			block && typeof block === "object" && (block as TextContent).type === "text"
-				? ((block as TextContent).text ?? "")
-				: "",
-		)
-		.join("\n")
-		.trim();
-}
-
-function isToolCall(block: unknown): block is ToolCall {
-	return !!block && typeof block === "object" && (block as ToolCall).type === "toolCall";
-}
-
 /**
  * Reduce a session's raw entries to the branch that was actually taken.
  *
  * Session files are trees — forks and clones append entries that were never
  * part of the same conversation. Walking parent links back from the last entry
- * keeps the extractor from stitching a "fix" out of two turns that never
- * happened in sequence. Sessions written before entry ids existed are flat, and
- * for those file order *is* the branch.
+ * keeps the miner from reading two turns that never happened in sequence as if
+ * they did. Sessions written before entry ids existed are flat, and for those
+ * file order *is* the branch.
  */
 function activeBranch(entries: EntryLike[]): EntryLike[] {
 	const withIds = entries.filter((e) => typeof e.id === "string");
@@ -507,7 +427,8 @@ function applySuppression<T extends Proposable>(
 
 /**
  * Where this cwd's sessions were found and what was passed over, without
- * ranking anything. `/learn stats` reports on the window without re-mining it.
+ * mining anything. `/learn settings` and `/learn stats` report on the window
+ * without paying for a model call.
  */
 export function scanSessions(options: ExtractOptions): SessionScanReport {
 	return listSessions(options).scan;
@@ -525,432 +446,6 @@ function findAgentsFile(cwd: string): string | undefined {
 		if (parent === dir) return undefined;
 		dir = parent;
 	}
-}
-
-interface ToolEvent {
-	name: string;
-	args: Record<string, any>;
-	/** Set once the matching result is seen. */
-	isError?: boolean;
-	output?: string;
-}
-
-/** Pair tool calls with their results along one branch, in call order. */
-function toolEvents(entries: EntryLike[]): ToolEvent[] {
-	const byCallId = new Map<string, ToolEvent>();
-	const ordered: ToolEvent[] = [];
-
-	for (const entry of entries) {
-		const message = entry.type === "message" ? entry.message : undefined;
-		if (!message) continue;
-		if (message.role === "assistant") {
-			for (const block of (message.content ?? []) as unknown[]) {
-				if (!isToolCall(block)) continue;
-				const event: ToolEvent = { name: block.name, args: block.arguments ?? {} };
-				byCallId.set(block.id, event);
-				ordered.push(event);
-			}
-		} else if (message.role === "toolResult") {
-			const event = byCallId.get(message.toolCallId);
-			if (!event) continue;
-			event.isError = message.isError;
-			event.output = textOf(message.content);
-		}
-	}
-	return ordered;
-}
-
-/** User turns worth mining, in order, with the digest's own output excluded. */
-function userDirectives(entries: EntryLike[]): string[] {
-	const out: string[] = [];
-	for (const entry of entries) {
-		const message = entry.type === "message" ? entry.message : undefined;
-		if (!message || message.role !== "user") continue;
-		const text = textOf(message.content);
-		if (!text || text.startsWith(LEARN_DIGEST_MARKER)) continue;
-		if (!isRuleShapedDirective(text)) continue;
-		out.push(text.trim());
-	}
-	return out;
-}
-
-function clusterDirectives(
-	perSession: Array<{ session: ParsedSession; directives: string[] }>,
-	coverage: CoverageIndex,
-	minRepeats: number,
-): DirectiveCluster[] {
-	interface Acc {
-		text: string;
-		normalized: string;
-		count: number;
-		sessions: Set<string>;
-		lastSeen: string;
-	}
-	const acc = new Map<string, Acc>();
-
-	for (const { session, directives } of perSession) {
-		for (const text of directives) {
-			const normalized = normalizeDirective(text);
-			if (!normalized) continue;
-			const existing = acc.get(normalized);
-			if (existing) {
-				existing.count++;
-				existing.sessions.add(session.id);
-				if (session.timestamp > existing.lastSeen) existing.lastSeen = session.timestamp;
-				if (text.length > existing.text.length) existing.text = text;
-			} else {
-				acc.set(normalized, {
-					text,
-					normalized,
-					count: 1,
-					sessions: new Set([session.id]),
-					lastSeen: session.timestamp,
-				});
-			}
-		}
-	}
-
-	const clusters: DirectiveCluster[] = [];
-	for (const entry of acc.values()) {
-		if (entry.count < minRepeats) continue;
-
-		// Everything reaching here cleared the repeat threshold. Suppression handles
-		// the case that used to make these labels lie — a proposal accepted from a
-		// previous run coming back as "not working" when nothing had happened
-		// since. By the time an item survives that filter, a match genuinely means
-		// you repeated yourself after the rule or skill already existed.
-		const match = matchCoverage(entry.text, coverage);
-		clusters.push({
-			key: `directive:${entry.normalized}`,
-			text: entry.text,
-			normalized: entry.normalized,
-			count: entry.count,
-			sessions: entry.sessions.size,
-			lastSeen: entry.lastSeen,
-			status: match.rule ? "restated" : match.skill ? "has-skill" : "new",
-			existingRule: match.rule,
-			existingSkill: match.skill,
-			previouslyDeclined: false,
-		});
-	}
-
-	return clusters.sort((a, b) => b.sessions - a.sessions || b.count - a.count || a.text.localeCompare(b.text));
-}
-
-/** Files a mutating tool touched, for the resolution summary. */
-function editedFile(event: ToolEvent): string | undefined {
-	if (!["edit", "write", "multi_edit", "apply_patch"].includes(event.name)) return undefined;
-	const path = event.args?.path ?? event.args?.file_path ?? event.args?.filePath;
-	return typeof path === "string" ? path : undefined;
-}
-
-function extractFixes(perSession: Array<{ session: ParsedSession; events: ToolEvent[] }>): FixCandidate[] {
-	interface Acc {
-		candidate: FixCandidate;
-		sessions: Set<string>;
-	}
-	const acc = new Map<string, Acc>();
-
-	for (const { session, events } of perSession) {
-		for (let i = 0; i < events.length; i++) {
-			const failure = events[i]!;
-			if (failure.name !== "bash" || !failure.isError) continue;
-			const command = typeof failure.args?.command === "string" ? failure.args.command : "";
-			if (!command || isBenignFailure(command)) continue;
-
-			const normalized = normalizeCommand(command);
-			const interveningCommands: string[] = [];
-			const editedFiles: string[] = [];
-			let resolved = false;
-
-			for (let j = i + 1; j < Math.min(events.length, i + 1 + FIX_LOOKAHEAD); j++) {
-				const next = events[j]!;
-				const file = editedFile(next);
-				if (file) editedFiles.push(file);
-
-				if (next.name !== "bash") continue;
-				const nextCommand = typeof next.args?.command === "string" ? next.args.command : "";
-				if (!nextCommand) continue;
-
-				// The same command later succeeding is the only evidence that the
-				// problem was actually fixed. A *different* command passing says
-				// nothing, and neither does the model moving on.
-				if (normalizeCommand(nextCommand) === normalized && !next.isError) {
-					resolved = true;
-					break;
-				}
-				interveningCommands.push(nextCommand.trim());
-			}
-
-			if (!resolved) continue;
-
-			const output = failure.output ?? "";
-			// An abort is the user changing their mind, not a problem that was
-			// solved, and empty output carries nothing to sign or show.
-			if (isUninformativeFailure(output)) continue;
-
-			// Sign the error region, not the whole output: build tools lead with an
-			// identical banner, so signing everything makes unrelated failures of
-			// the same command collide on their shared preamble.
-			const errorRegion = extractErrorRegion(output);
-			const signature = normalizeErrorSignature(errorRegion);
-			if (!signature) continue;
-
-			const key = `${normalized} ${signature}`;
-			const existing = acc.get(key);
-			if (existing) {
-				existing.candidate.count++;
-				existing.sessions.add(session.id);
-				if (session.timestamp > existing.candidate.lastSeen) existing.candidate.lastSeen = session.timestamp;
-			} else {
-				acc.set(key, {
-					sessions: new Set([session.id]),
-					candidate: {
-						key: `fix:${key}`,
-						command: normalized,
-						signature,
-						errorExcerpt: errorRegion.replace(/\s+/g, " ").trim().slice(0, 240),
-						interveningCommands: [...new Set(interveningCommands)].slice(0, 5),
-						editedFiles: [...new Set(editedFiles)].slice(0, 5),
-						count: 1,
-						sessions: 1,
-						lastSeen: session.timestamp,
-					},
-				});
-			}
-		}
-	}
-
-	const out: FixCandidate[] = [];
-	for (const { candidate, sessions } of acc.values()) {
-		candidate.sessions = sessions.size;
-		out.push(candidate);
-	}
-	return out.sort((a, b) => b.count - a.count || b.sessions - a.sessions || a.signature.localeCompare(b.signature));
-}
-
-/** A tool call reduced to a comparable step: the tool, plus what a bash call runs. */
-function stepSignature(event: ToolEvent): string {
-	if (event.name === "bash") {
-		const command = typeof event.args?.command === "string" ? event.args.command : "";
-		const head = commandHead(command);
-		return head ? `bash:${head}` : "bash";
-	}
-	return event.name;
-}
-
-/**
- * Commands that are how an agent looks around rather than what the user was
- * doing. A sequence built only from these plus file edits describes "coding",
- * not a workflow, and no useful skill has ever come out of one.
- */
-const PLUMBING_COMMANDS = new Set([
-	"cd",
-	"ls",
-	"pwd",
-	"cat",
-	"head",
-	"tail",
-	"wc",
-	"echo",
-	"which",
-	"find",
-	"fd",
-	"grep",
-	"rg",
-	"sed",
-	"awk",
-	"git status",
-	"git diff",
-	"git log",
-	"git show",
-]);
-
-/**
- * Whether a sequence is a procedure rather than the rhythm of editing code.
- *
- * Two distinct doing-commands is the bar, and it was set by looking at real
- * transcripts. One command is not enough: the edit/test loop
- * (`edit → edit → bash:npm run`) satisfies it, and because a sliding window
- * over a long alternating run produces every rotation of that cycle, it alone
- * filled all eight slots with `edit → npm run → edit`, `npm run → edit → edit`
- * and so on — one habit described eight ways.
- *
- * A procedure worth a skill chains *different* actions: test then commit then
- * push, build then tag then publish. Requiring two distinct ones keeps those and
- * drops the rhythm. The cost is real — a genuine one-command routine with setup
- * is missed — and that is the intended trade, since a missed skill costs nothing
- * while a digest full of noise costs the reader's attention every run.
- */
-function isProcedure(steps: string[]): boolean {
-	const commands = new Set<string>();
-	for (const step of steps) {
-		if (!step.startsWith("bash:")) continue;
-		const head = step.slice("bash:".length);
-		if (PLUMBING_COMMANDS.has(head) || PLUMBING_COMMANDS.has(head.split(" ")[0] ?? "")) continue;
-		commands.add(head);
-	}
-	return commands.size >= 2;
-}
-
-/** True when `needle` appears as a contiguous run inside `haystack`. */
-function containsSequence(haystack: string[], needle: string[]): boolean {
-	if (needle.length > haystack.length) return false;
-	for (let i = 0; i + needle.length <= haystack.length; i++) {
-		if (needle.every((step, offset) => haystack[i + offset] === step)) return true;
-	}
-	return false;
-}
-
-function extractWorkflows(
-	perSession: Array<{ session: ParsedSession; events: ToolEvent[] }>,
-	minRepeats: number,
-): WorkflowCandidate[] {
-	interface Acc {
-		steps: string[];
-		count: number;
-		sessions: Set<string>;
-		lastSeen: string;
-	}
-	const acc = new Map<string, Acc>();
-
-	for (const { session, events } of perSession) {
-		const steps = events.slice(0, MAX_TOOL_CALLS_PER_SESSION).map(stepSignature);
-
-		for (let len = WORKFLOW_MIN_LEN; len <= WORKFLOW_MAX_LEN; len++) {
-			// Collect every position first, then count greedily without overlap.
-			// Counting each sliding position separately treats one long stretch of
-			// edit/read churn as dozens of repeats: an `edit > read > edit` run of
-			// length 12 scores 10 occurrences when it is really one stretch of work.
-			const positions = new Map<string, number[]>();
-			for (let i = 0; i + len <= steps.length; i++) {
-				const window = steps.slice(i, i + len);
-				// A run of one repeated tool is a loop, not a workflow.
-				if (new Set(window).size < 2) continue;
-				if (!isProcedure(window)) continue;
-				const key = window.join(" > ");
-				const list = positions.get(key);
-				if (list) list.push(i);
-				else positions.set(key, [i]);
-			}
-
-			for (const [key, occurrences] of positions) {
-				let count = 0;
-				let nextFree = -1;
-				for (const start of occurrences) {
-					if (start < nextFree) continue;
-					count++;
-					nextFree = start + len;
-				}
-
-				const existing = acc.get(key);
-				if (existing) {
-					existing.count += count;
-					existing.sessions.add(session.id);
-					if (session.timestamp > existing.lastSeen) existing.lastSeen = session.timestamp;
-				} else {
-					acc.set(key, {
-						steps: key.split(" > "),
-						count,
-						sessions: new Set([session.id]),
-						lastSeen: session.timestamp,
-					});
-				}
-			}
-		}
-	}
-
-	const ranked = [...acc.values()]
-		.filter((entry) => entry.count >= minRepeats)
-		.map((entry) => ({
-			key: `workflow:${entry.steps.join(" > ")}`,
-			steps: entry.steps,
-			count: entry.count,
-			sessions: entry.sessions.size,
-			lastSeen: entry.lastSeen,
-		}))
-		// Sessions first, matching directives: a sequence seen in three sessions is
-		// a workflow, while one repeated ten times in a single session is usually
-		// just the shape of that one task.
-		.sort(
-			(a, b) =>
-				b.sessions - a.sessions ||
-				b.count - a.count ||
-				b.steps.length - a.steps.length ||
-				a.steps.join().localeCompare(b.steps.join()),
-		);
-
-	// Every n-gram overlaps its own extensions and prefixes, so without this the
-	// list is one workflow described five slightly different ways. The test runs
-	// both directions on purpose: a shorter sequence always outranks the longer
-	// one containing it (it occurs at least as often), so checking only
-	// shorter-inside-kept would never fire. Keep the best-ranked member of each
-	// family and drop the rest.
-	const distinct: typeof ranked = [];
-	for (const candidate of ranked) {
-		const overlapsKept = distinct.some(
-			(kept) => containsSequence(kept.steps, candidate.steps) || containsSequence(candidate.steps, kept.steps),
-		);
-		if (overlapsKept) continue;
-		distinct.push(candidate);
-	}
-	return distinct;
-}
-
-/**
- * Everything a proposal could already have been written into.
- *
- * Built once and shared, because the same question — is this already written
- * down? — is asked while ranking a run *and* afterwards by `/learn stats`,
- * which reconstructs adoption by comparing coverage now against coverage when
- * the item was shown.
- */
-export interface CoverageIndex {
-	/** Candidate rule lines from the repo context file and both user scopes. */
-	ruleLines: string[];
-	skills: Array<{ name: string; description: string }>;
-}
-
-export interface CoverageMatch {
-	/** The context-file line that covers this, if any. */
-	rule?: string;
-	/** The skill that covers this, if any. Only set when no rule matched. */
-	skill?: string;
-}
-
-/**
- * Where a piece of text is already written down, if anywhere.
- *
- * A rule wins over a skill when both match: it is the more specific answer, and
- * "rewrite this line" is more actionable than "sharpen a description".
- */
-export function matchCoverage(text: string, index: CoverageIndex): CoverageMatch {
-	const words = contentWords(text);
-
-	let bestLine: string | undefined;
-	let bestOverlap = 0;
-	for (const line of index.ruleLines) {
-		const overlap = wordOverlap(words, line);
-		if (overlap > bestOverlap) {
-			bestOverlap = overlap;
-			bestLine = line;
-		}
-	}
-	if (bestOverlap >= COVERED_OVERLAP) return { rule: bestLine };
-
-	let bestSkill: string | undefined;
-	let bestSkillOverlap = 0;
-	for (const skill of index.skills) {
-		const haystack = `${skill.name} ${skill.description.slice(0, SKILL_DESCRIPTION_CHARS)}`;
-		const overlap = wordOverlap(words, haystack);
-		if (overlap > bestSkillOverlap) {
-			bestSkillOverlap = overlap;
-			bestSkill = skill.name;
-		}
-	}
-	if (bestSkillOverlap >= SKILL_COVERED_OVERLAP) return { skill: bestSkill };
-
-	return {};
 }
 
 /** Assemble the coverage index for a directory. */
@@ -1011,8 +506,76 @@ function loadSkillIndex(cwd: string, agentDir: string): Array<{ name: string; de
 	}
 }
 
+/**
+ * Run the miner over the window, reusing cached results wherever the file has
+ * not changed.
+ *
+ * A session that fails to mine is counted and skipped rather than aborting the
+ * run: one provider hiccup on one transcript should cost that transcript's
+ * signals, not the whole digest. The failure count is reported so the reader
+ * knows the numbers are short.
+ */
+async function mineSessions(
+	sessions: ParsedSession[],
+	options: MineOptions,
+): Promise<{ mined: MinedSession[]; report: MiningReport }> {
+	const mined: MinedSession[] = [];
+	const report: MiningReport = { cached: 0, mined: 0, failed: 0 };
+
+	let done = 0;
+	for (const session of sessions) {
+		if (options.signal?.aborted) break;
+
+		const hash = hashSessionFile(session.file);
+		const cached = hash ? readCachedMining(options.agentDir, hash) : undefined;
+		if (cached) {
+			mined.push({ sessionId: session.id, timestamp: session.timestamp, candidates: cached.candidates });
+			report.cached++;
+			done++;
+			options.onProgress?.({ done, total: sessions.length, cached: report.cached });
+			continue;
+		}
+
+		const minable: MinableSession = { id: session.id, timestamp: session.timestamp, entries: session.entries };
+		try {
+			const candidates = await options.miner(minable, options.signal);
+			mined.push({ sessionId: session.id, timestamp: session.timestamp, candidates });
+			report.mined++;
+			if (hash) {
+				writeCachedMining(options.agentDir, hash, {
+					sessionId: session.id,
+					timestamp: session.timestamp,
+					candidates,
+					minedAt: new Date().toISOString(),
+				});
+			}
+		} catch {
+			report.failed++;
+		}
+		done++;
+		options.onProgress?.({ done, total: sessions.length, cached: report.cached });
+	}
+
+	return { mined, report };
+}
+
+/** Apply the coverage verdicts to the clusters they were asked about. */
+function applyCoverage(directives: DirectiveCluster[], verdicts: Map<string, { rule?: string; skill?: string }>): void {
+	for (const cluster of directives) {
+		const verdict = verdicts.get(cluster.label);
+		if (!verdict) continue;
+		if (verdict.rule) {
+			cluster.status = "restated";
+			cluster.existingRule = verdict.rule;
+		} else if (verdict.skill) {
+			cluster.status = "has-skill";
+			cluster.existingSkill = verdict.skill;
+		}
+	}
+}
+
 /** Mine the recent sessions for this cwd and return the ranked digest. */
-export function extractLearnDigest(options: ExtractOptions): LearnDigest {
+export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest> {
 	const { sessions, skipped, scan } = listSessions(options);
 
 	const agentsFilePath = findAgentsFile(options.cwd);
@@ -1024,10 +587,29 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 			agentsContent = undefined;
 		}
 	}
-	const coverage = buildCoverageIndex({ cwd: options.cwd, agentDir: options.agentDir, skills: options.skills });
 
-	const withDirectives = sessions.map((session) => ({ session, directives: userDirectives(session.entries) }));
-	const withEvents = sessions.map((session) => ({ session, events: toolEvents(session.entries) }));
+	const { mined, report } = await mineSessions(sessions, options);
+	pruneLearnCache(options.agentDir, options.now);
+
+	const minRepeats = options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT;
+	const maxProposals = options.maxProposals ?? DEFAULT_MAX_PER_CATEGORY;
+	const directives = reduceDirectives(mined, minRepeats);
+	const fixes = reduceFixes(mined, minRepeats);
+	const workflows = reduceWorkflows(mined, options.minWorkflowRepeats ?? DEFAULT_MIN_WORKFLOW_COUNT);
+
+	// Coverage is asked only about what survived the repeat threshold. Judging
+	// everything would mean sending the context file alongside a long tail of
+	// one-off observations that are never going to be proposed.
+	const coverage = buildCoverageIndex({ cwd: options.cwd, agentDir: options.agentDir, skills: options.skills });
+	const queries: CoverageQuery[] = directives.map((d) => ({ label: d.label, text: d.text }));
+	try {
+		const verdicts = await (options.coverageJudge ?? noCoverageJudge)(queries, coverage, options.signal);
+		applyCoverage(directives, verdicts);
+	} catch {
+		// A failed coverage call leaves everything `new`, which over-proposes
+		// slightly. That is the right way to fail: the reader can reject a
+		// duplicate, but cannot recover a proposal that was wrongly withheld.
+	}
 
 	const timestamps = sessions.map((s) => s.timestamp).sort();
 	const state = options.ignoreState ? undefined : options.state;
@@ -1037,9 +619,8 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 	// declined one. Fixes and workflows do not: a fix may have become a rule, a
 	// skill, or a habit, and which one is not recoverable here, so they get
 	// suppression only and are never labelled declined.
-	const maxProposals = options.maxProposals ?? DEFAULT_MAX_PER_CATEGORY;
-	const directives = applySuppression(
-		clusterDirectives(withDirectives, coverage, options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT),
+	const keptDirectives = applySuppression(
+		directives,
 		state,
 		maxProposals,
 		(item) => item.status !== "new",
@@ -1047,33 +628,32 @@ export function extractLearnDigest(options: ExtractOptions): LearnDigest {
 			item.previouslyDeclined = true;
 		},
 	);
-	const fixes = applySuppression(extractFixes(withEvents), state, maxProposals, () => false);
-	const workflows = applySuppression(
-		extractWorkflows(withEvents, options.minWorkflowRepeats ?? DEFAULT_MIN_WORKFLOW_COUNT),
-		state,
-		maxProposals,
-		() => false,
-	);
+	const keptFixes = applySuppression(fixes, state, maxProposals, () => false);
+	const keptWorkflows = applySuppression(workflows, state, maxProposals, () => false);
 
 	const surfaced = [
-		...directives.kept.map((d) => ({ key: d.key, lastSeen: d.lastSeen, covered: d.status !== "new" })),
-		...fixes.kept.map((f) => ({ key: f.key, lastSeen: f.lastSeen, covered: false })),
-		...workflows.kept.map((w) => ({ key: w.key, lastSeen: w.lastSeen, covered: false })),
+		...keptDirectives.kept.map((d) => ({ key: d.key, lastSeen: d.lastSeen, covered: d.status !== "new" })),
+		...keptFixes.kept.map((f) => ({ key: f.key, lastSeen: f.lastSeen, covered: false })),
+		...keptWorkflows.kept.map((w) => ({ key: w.key, lastSeen: w.lastSeen, covered: false })),
 	];
 
 	return {
 		scannedSessions: sessions.length,
 		skippedSessions: skipped,
 		scan,
+		mining: report,
 		oldestSession: timestamps[0],
 		newestSession: timestamps[timestamps.length - 1],
 		agentsFilePath,
 		agentsFileTokens:
 			agentsContent === undefined ? undefined : Math.round(Buffer.byteLength(agentsContent, "utf-8") / 4),
-		directives: directives.kept,
-		fixes: fixes.kept,
-		workflows: workflows.kept,
-		suppressed: directives.suppressed + fixes.suppressed + workflows.suppressed,
+		directives: keptDirectives.kept,
+		fixes: keptFixes.kept,
+		workflows: keptWorkflows.kept,
+		suppressed: keptDirectives.suppressed + keptFixes.suppressed + keptWorkflows.suppressed,
 		surfaced,
 	};
 }
+
+/** Re-exported so callers do not need to know the marker lives in the miner. */
+export const DIGEST_MARKER = LEARN_DIGEST_MARKER;

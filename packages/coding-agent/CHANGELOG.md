@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `/learn` now reads session transcripts with a model instead of pre-filtering
+  them with regexes. The old extractor only considered user turns matching a
+  whitelist of imperative words, so anything phrased another way — "we're on bun
+  now", "that's not how our error handling works", a constraint stated once in
+  passing — was not ranked low, it was invisible. Length and line-count caps
+  dropped long explanations too, which is where the reasoning behind a rule
+  usually is. Every user turn now goes to the model whole.
+- Grouping is semantic rather than lexical. The model labels each occurrence
+  with what was *meant*, so "we're on bun now" and "stop using npm" count as one
+  recurring point instead of two unrelated ones. Counting still happens in code:
+  a model asked to count across a long context is approximately right, and the
+  count is what the digest is for.
+- Coverage — whether a proposal is already written down — is a model judgement
+  instead of word overlap. The old 0.6-overlap test both called unrelated rules a
+  match (marking a working rule `restated`) and missed real paraphrases that
+  picked different vocabulary (proposing a duplicate).
+- Mining results are cached per session file, keyed on content hash, so each
+  transcript is read once in its life. Counts are still recomputed over every
+  session in the window on every run, so caching the expensive step never costs
+  the cross-session evidence. A run reports what it read versus reused, and asks
+  before reading more than a few new sessions.
+- The digest names the mode it ran in, so "nothing new since last time" and
+  "nothing here at all" no longer read alike.
+
+### Added
+
+- `learnMinerModel` setting — "provider/model-id" used to read transcripts.
+  Defaults to the session model. This is the one call that reads everything, so
+  a cheap fast model is usually right; results are cached, so changing it does
+  not re-read what was already mined.
+
 ## [0.5.16] - 2026-08-13
 
 ### Fixed
