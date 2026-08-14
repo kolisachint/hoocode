@@ -123,20 +123,9 @@ export function pruneLearnCache(agentDir: string, now: Date = new Date()): void 
 	}
 }
 
-/** How much of this run will need the model. Drives the progress report and the cost warning. */
-export interface CacheStatus {
-	/** Sessions already mined, free to reuse. */
-	cached: number;
-	/** Sessions that still need a model call. */
-	pending: number;
-}
-
-export function summarizeCache(agentDir: string, hashes: Array<string | undefined>): CacheStatus {
-	let cached = 0;
-	let pending = 0;
-	for (const hash of hashes) {
-		if (hash && readCachedMining(agentDir, hash)) cached++;
-		else pending++;
-	}
-	return { cached, pending };
-}
+/**
+ * Counting what a run still owes the model lives in `extract.ts:planMining`,
+ * not here: the answer depends on which sessions the window actually selects,
+ * and duplicating that selection is how the confirmation prompt ends up
+ * quoting a number the run does not honour.
+ */

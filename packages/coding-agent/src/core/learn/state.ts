@@ -25,8 +25,18 @@ import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { writeFileAtomicSync } from "../../utils/atomic-file.js";
 
-/** Bump when the on-disk shape changes; an unknown version is discarded, not migrated. */
-const STATE_VERSION = 1;
+/**
+ * Bump when the on-disk shape changes; an unknown version is discarded, not
+ * migrated.
+ *
+ * v2: keys hold the miner's semantic label (`directive:use-bun-not-npm`) where
+ * v1 held normalized directive text (`directive:always use bun not npm`). The
+ * two never collide, so a v1 file left in place would not suppress anything —
+ * harmless — but every entry in it would be counted by `/learn stats` as a
+ * proposal that was never adopted, permanently depressing the rate. Discarding
+ * costs one round of re-proposing; keeping costs a number that stays wrong.
+ */
+const STATE_VERSION = 2;
 
 /** Surfaced keys older than this are forgotten, so the file cannot grow without bound. */
 const STATE_RETENTION_DAYS = 180;
@@ -42,6 +52,13 @@ export interface SurfacedItem {
 	 * told from a declined one, without asking.
 	 */
 	coveredWhenSurfaced: boolean;
+	/**
+	 * Representative wording, kept so `/learn stats` can ask about coverage using
+	 * what was actually said. The key alone is a slug, and judging "is this
+	 * written down?" from a slug is a much weaker question than judging it from
+	 * the sentence the slug stands for.
+	 */
+	text?: string;
 }
 
 export interface LearnState {
@@ -210,13 +227,18 @@ export function summarizeLearnState(state: LearnState, isCoveredNow: (normalized
 /** Record everything this run put on screen, so the next run can suppress it. */
 export function recordSurfaced(
 	state: LearnState,
-	items: Array<{ key: string; lastSeen: string; covered: boolean }>,
+	items: Array<{ key: string; lastSeen: string; covered: boolean; text?: string }>,
 	now: Date = new Date(),
 ): LearnState {
 	const surfaced = { ...state.surfaced };
 	const at = now.toISOString();
 	for (const item of items) {
-		surfaced[item.key] = { surfacedAt: at, lastOccurrence: item.lastSeen, coveredWhenSurfaced: item.covered };
+		surfaced[item.key] = {
+			surfacedAt: at,
+			lastOccurrence: item.lastSeen,
+			coveredWhenSurfaced: item.covered,
+			text: item.text,
+		};
 	}
 	return { version: STATE_VERSION, lastRun: at, surfaced };
 }

@@ -28,8 +28,20 @@
 - The digest names the mode it ran in, so "nothing new since last time" and
   "nothing here at all" no longer read alike.
 
+- `/learn`'s per-directory memory is discarded once on upgrade. Its keys used to
+  be normalized directive text and are now the miner's semantic label, so old
+  entries could never match a new proposal — harmless for suppression, but every
+  one of them would have counted in `/learn stats` as a proposal that was never
+  adopted, holding the rate down permanently. The cost of discarding is one round
+  of re-proposing.
+
 ### Added
 
+- A long backfill can be stopped with escape. Everything read up to that point is
+  already cached, so resuming picks up where it left off. A stopped run neither
+  shows nor records its proposals: it counted only part of the window, so its
+  numbers are low, and bookmarking them would hide those items on the next
+  complete run.
 - `learnMinerModel` setting — "provider/model-id" used to read transcripts.
   Defaults to the session model. This is the one call that reads everything, so
   a cheap fast model is usually right; results are cached, so changing it does

@@ -6,7 +6,7 @@ import { getLearnCacheDir, hashSessionFile, readCachedMining, writeCachedMining 
 import type { CoverageIndex, CoverageJudge, CoverageMatch } from "../src/core/learn/coverage.js";
 import { parseVerdicts } from "../src/core/learn/coverage.js";
 import { isEmptyDigest, renderLearnDigest } from "../src/core/learn/digest.js";
-import { type MineOptions, mineLearnDigest, scanSessions } from "../src/core/learn/extract.js";
+import { type MineOptions, mineLearnDigest, planMining, scanSessions } from "../src/core/learn/extract.js";
 import type { MinableSession, MinedCandidate, Miner } from "../src/core/learn/mine.js";
 import { chunkTranscript, LEARN_DIGEST_MARKER, parseCandidates, renderTranscript } from "../src/core/learn/mine.js";
 import { reduceDirectives, reduceFixes, reduceWorkflows } from "../src/core/learn/reduce.js";
@@ -574,6 +574,89 @@ describe("mining failures", () => {
 	});
 });
 
+describe("cancellation", () => {
+	it("stops reading and reports it, rather than presenting a part-counted window", async () => {
+		const fixture = createFixture();
+		for (const name of ["s1", "s2", "s3"]) {
+			writeSession(fixture, name, [userEntry("always run the tests with --coverage")]);
+		}
+
+		const controller = new AbortController();
+		let read = 0;
+		const stopsAfterOne: Miner = async (session) => {
+			read++;
+			if (read === 1) controller.abort();
+			return fakeMiner()(session);
+		};
+
+		const digest = await mine(fixture, { miner: stopsAfterOne, signal: controller.signal });
+		expect(digest.aborted).toBe(true);
+		// Cancelling is not the provider failing on a transcript.
+		expect(digest.mining.failed).toBe(0);
+		expect(digest.mining.mined).toBe(1);
+	});
+
+	it("keeps what it already read, so resuming is cheap", async () => {
+		const fixture = createFixture();
+		for (const name of ["s1", "s2", "s3"]) {
+			writeSession(fixture, name, [userEntry("always run the tests with --coverage")]);
+		}
+
+		const controller = new AbortController();
+		let read = 0;
+		const stopsAfterTwo: Miner = async (session) => {
+			read++;
+			if (read === 2) controller.abort();
+			return fakeMiner()(session);
+		};
+
+		await mine(fixture, { miner: stopsAfterTwo, signal: controller.signal });
+		// The resumed run pays only for what the cancelled one did not reach.
+		const resumed = await mine(fixture);
+		expect(resumed.aborted).toBe(false);
+		expect(resumed.mining.cached).toBe(2);
+		expect(resumed.mining.mined).toBe(1);
+		expect(resumed.directives[0]!.sessions).toBe(3);
+	});
+});
+
+describe("planMining", () => {
+	it("counts what the run will actually read, not every file on disk", async () => {
+		const fixture = createFixture();
+		writeSession(fixture, "mine", [userEntry("always run the tests with --coverage")]);
+		// Belongs to another checkout: found on disk, never mined.
+		writeFileSync(
+			join(fixture.sessionDir, "other.jsonl"),
+			`${JSON.stringify({ type: "session", version: 3, id: "other", timestamp: "2026-08-01T00:00:00.000Z", cwd: "/elsewhere" })}\n${JSON.stringify(userEntry("x"))}\n`,
+		);
+
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		// Two .jsonl files exist, but only one is this directory's.
+		expect(scanSessions(base).files).toBe(2);
+		expect(planMining(base)).toEqual({ total: 1, cached: 0, pending: 1 });
+	});
+
+	it("honours the session cap the run will use", () => {
+		const fixture = createFixture();
+		for (const name of ["s1", "s2", "s3"]) writeSession(fixture, name, [userEntry("a directive")]);
+
+		const base = { cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir };
+		expect(planMining({ ...base, maxSessions: 2 })).toEqual({ total: 2, cached: 0, pending: 2 });
+	});
+
+	it("reports nothing pending once the window is mined", async () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [userEntry("a directive")]);
+		await mine(fixture);
+
+		expect(planMining({ cwd: fixture.cwd, agentDir: fixture.agentDir, sessionDir: fixture.sessionDir })).toEqual({
+			total: 1,
+			cached: 1,
+			pending: 0,
+		});
+	});
+});
+
 // ── Cache ───────────────────────────────────────────────────────────────────
 
 describe("mining cache", () => {
@@ -995,6 +1078,47 @@ describe("learn state file", () => {
 		expect(readLearnState(path).surfaced).toEqual({});
 	});
 
+	it("discards a v1 file, whose keys are normalized text and can never match a label", () => {
+		const fixture = createFixture();
+		const path = getLearnStatePath(fixture.agentDir, fixture.sessionDir);
+		mkdirSync(join(path, ".."), { recursive: true });
+
+		// Left in place, every one of these would be counted by /learn stats as a
+		// proposal that was never adopted — the rate would read low forever.
+		writeFileSync(
+			path,
+			JSON.stringify({
+				version: 1,
+				surfaced: {
+					"directive:always run the tests with coverage": {
+						surfacedAt: "2026-08-01T00:00:00.000Z",
+						lastOccurrence: "2026-08-01T00:00:00.000Z",
+						coveredWhenSurfaced: false,
+					},
+				},
+			}),
+		);
+		expect(readLearnState(path).surfaced).toEqual({});
+	});
+
+	it("keeps the wording, so stats can ask about coverage with the sentence not the slug", () => {
+		const fixture = createFixture();
+		const path = getLearnStatePath(fixture.agentDir, fixture.sessionDir);
+
+		writeLearnState(
+			path,
+			recordSurfaced(readLearnState(path), [
+				{
+					key: "directive:use-bun-not-npm",
+					lastSeen: "2026-08-01T00:00:00.000Z",
+					covered: false,
+					text: "we're on bun now",
+				},
+			]),
+		);
+		expect(readLearnState(path).surfaced["directive:use-bun-not-npm"]!.text).toBe("we're on bun now");
+	});
+
 	it("prunes entries nothing has referenced in a long time", () => {
 		const fixture = createFixture();
 		const path = getLearnStatePath(fixture.agentDir, fixture.sessionDir);
@@ -1094,6 +1218,23 @@ describe("digest rendering", () => {
 
 		expect(renderLearnDigest(digest, { userScopePath: "~", mode: "all" })).toContain("Mode: all");
 		expect(renderLearnDigest(digest, { userScopePath: "~", mode: "incremental" })).not.toContain("Mode: all");
+	});
+
+	it("omits detail the model did not supply, rather than rendering empty fields", async () => {
+		const fixture = createFixture();
+		const bare: Miner = async () => [
+			{ kind: "fix", label: "some-fix", text: "npm install", command: "npm install" },
+			{ kind: "workflow", label: "some-workflow", text: "a routine" },
+		];
+		writeSession(fixture, "s1", [userEntry("x")]);
+		writeSession(fixture, "s2", [userEntry("x")]);
+
+		const rendered = renderLearnDigest(await mine(fixture, { miner: bare, minWorkflowRepeats: 2 }), {
+			userScopePath: "~",
+		});
+		expect(rendered).not.toContain("- error: \n");
+		expect(rendered).not.toContain("``");
+		expect(rendered).toContain("some-workflow");
 	});
 
 	it("names the shared label, so a count does not look like repeated copies of one sentence", async () => {

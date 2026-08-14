@@ -97,13 +97,17 @@ export function renderLearnDigest(
 		lines.push("## Failures you resolved");
 		lines.push("");
 		lines.push(
-			"Each is a command that failed, then later succeeded unchanged after intervening work — " +
-				"so something in between was the fix.",
+			"Each is a command that failed and later succeeded, where something done in between was the fix. " +
+				"Recurring ones are worth writing down; a one-off is not.",
 		);
 		lines.push("");
 		for (const fix of digest.fixes) {
 			lines.push(`- \`${fix.command}\` — ${evidence(fix.count, fix.sessions, fix.lastSeen)}`);
-			lines.push(`  - error: ${fix.errorExcerpt}`);
+			lines.push(`  - grouped as: ${fix.label}`);
+			// The excerpt comes from the model now, which may not have quoted one.
+			if (fix.errorExcerpt) {
+				lines.push(`  - error: ${fix.errorExcerpt}`);
+			}
 			if (fix.interveningCommands.length > 0) {
 				lines.push(`  - commands in between: ${fix.interveningCommands.map((c) => `\`${c}\``).join(", ")}`);
 			}
@@ -119,9 +123,10 @@ export function renderLearnDigest(
 		lines.push("## Repeated tool sequences");
 		lines.push("");
 		for (const workflow of digest.workflows) {
-			lines.push(
-				`- \`${workflow.steps.join(" → ")}\` — ${evidence(workflow.count, workflow.sessions, workflow.lastSeen)}`,
-			);
+			// A workflow the model named but did not enumerate still has a label
+			// worth showing; rendering an empty backtick pair instead would not.
+			const steps = workflow.steps.length > 0 ? `\`${workflow.steps.join(" → ")}\`` : workflow.label;
+			lines.push(`- ${steps} — ${evidence(workflow.count, workflow.sessions, workflow.lastSeen)}`);
 		}
 		lines.push("");
 	}

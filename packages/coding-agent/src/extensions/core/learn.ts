@@ -22,22 +22,20 @@
  * separate picker is needed.
  */
 
-import { readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Api, Model } from "@kolisachint/hoocode-ai";
 import { CONFIG_DIR_NAME, getHooCodeDir } from "../../config.js";
 import { loadProjectContextFiles } from "../../core/context-files.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
-import { hashSessionFile, summarizeCache } from "../../core/learn/cache.js";
 import type { CoverageJudge } from "../../core/learn/coverage.js";
 import { createLlmCoverageJudge } from "../../core/learn/coverage.js";
 import { isEmptyDigest, renderLearnDigest } from "../../core/learn/digest.js";
 import {
 	buildCoverageIndex,
-	candidateSessionDirs,
 	type LearnDigest,
 	mineLearnDigest,
+	planMining,
 	type SessionScanReport,
 	scanSessions,
 } from "../../core/learn/extract.js";
@@ -61,6 +59,9 @@ const USER_SCOPE_PATH = join(homedir(), ".agents", "AGENTS.md");
 
 /** Status-bar key for mining progress. */
 const STATUS_KEY = "learn";
+
+/** Escape, the way a raw terminal delivers it. */
+const ESCAPE = "\x1b";
 
 /**
  * Sessions that can be read without asking first.
@@ -236,24 +237,20 @@ async function buildPipeline(
 }
 
 /**
- * How many sessions in the window still need a model call.
+ * What this run still owes the model.
  *
- * Hashing every candidate file is cheap next to reading them, and knowing the
- * number up front is what lets the run state its price before charging it.
+ * Delegated to `planMining` so the number quoted by the confirmation prompt
+ * comes from the same session selection the run will use — same window, same
+ * cwd check, same de-duplication.
  */
-function pendingWork(ctx: ExtensionCommandContext, agentDir: string, window: LearnWindow): { pending: number } {
-	const dirs = candidateSessionDirs({ cwd: ctx.cwd, agentDir, sessionDir: ctx.sessionManager.getSessionDir() });
-	const hashes: Array<string | undefined> = [];
-	for (const dir of dirs) {
-		try {
-			for (const name of readdirSync(dir)) {
-				if (name.endsWith(".jsonl")) hashes.push(hashSessionFile(join(dir, name)));
-			}
-		} catch {
-			// A missing directory is already reported by the scan.
-		}
-	}
-	return { pending: summarizeCache(agentDir, hashes.slice(0, window.maxSessions)).pending };
+function pendingWork(ctx: ExtensionCommandContext, agentDir: string, window: LearnWindow) {
+	return planMining({
+		cwd: ctx.cwd,
+		agentDir,
+		sessionDir: ctx.sessionManager.getSessionDir(),
+		maxSessions: window.maxSessions,
+		maxAgeDays: window.maxAgeDays,
+	});
 }
 
 /**
@@ -290,19 +287,21 @@ async function reportStats(ctx: ExtensionCommandContext): Promise<void> {
 	// Coverage is a model judgement now, so it is resolved once for every stored
 	// label in a single batch and then answered from the resulting set. Asking
 	// per item would be one call per proposal ever made in this directory.
-	const labels = Object.keys(state.surfaced)
-		.filter((key) => key.startsWith("directive:"))
-		.map((key) => key.slice("directive:".length));
+	const labels = Object.entries(state.surfaced)
+		.filter(([key]) => key.startsWith("directive:"))
+		// Entries recorded before the wording was kept fall back to the slug, which
+		// is a weaker question but still a answerable one.
+		.map(([key, item]) => ({
+			label: key.slice("directive:".length),
+			text: item.text || key.slice("directive:".length),
+		}));
 
 	const covered = new Set<string>();
 	if (labels.length > 0) {
 		const pipeline = await buildPipeline(ctx, window);
 		if (!("error" in pipeline)) {
 			try {
-				const verdicts = await pipeline.coverageJudge(
-					labels.map((label) => ({ label, text: label })),
-					coverage,
-				);
+				const verdicts = await pipeline.coverageJudge(labels, coverage);
 				for (const [label, match] of verdicts) {
 					if (match.rule || match.skill) covered.add(label);
 				}
@@ -435,6 +434,16 @@ export function setupLearn(pi: ExtensionAPI): void {
 				}
 			}
 
+			// A backfill can run for minutes across dozens of transcripts, and the
+			// agent is idle throughout — so `ctx.signal` is undefined and there is no
+			// ambient way out. Escape gets one.
+			const controller = new AbortController();
+			const unsubscribe = ctx.ui.onTerminalInput((data) => {
+				if (data !== ESCAPE) return undefined;
+				controller.abort();
+				return { consume: true };
+			});
+
 			let digest: LearnDigest;
 			try {
 				digest = await mineLearnDigest({
@@ -453,15 +462,32 @@ export function setupLearn(pi: ExtensionAPI): void {
 					ignoreState,
 					miner: pipeline.miner,
 					coverageJudge: pipeline.coverageJudge,
+					signal: controller.signal,
 					onProgress: ({ done, total, cached }) => {
-						ctx.ui.setStatus(STATUS_KEY, `/learn reading sessions ${done}/${total} (${cached} cached)`);
+						ctx.ui.setStatus(
+							STATUS_KEY,
+							`/learn reading sessions ${done}/${total} (${cached} cached) — esc to stop`,
+						);
 					},
 				});
 			} catch (error) {
 				ctx.ui.notify(`/learn could not read session history: ${error}`, "error");
 				return;
 			} finally {
+				unsubscribe();
 				ctx.ui.setStatus(STATUS_KEY, undefined);
+			}
+
+			// A cancelled run counted only part of the window, so its numbers are not
+			// merely incomplete — they are low. Showing them would be misleading and
+			// bookmarking them would hide those items on the next, complete run.
+			// Everything read so far is cached, so stopping costs nothing but time.
+			if (digest.aborted) {
+				ctx.ui.notify(
+					`/learn stopped — ${digest.mining.mined} session(s) were read and cached, so resuming picks up where this left off.`,
+					"info",
+				);
+				return;
 			}
 
 			if (digest.scannedSessions === 0) {

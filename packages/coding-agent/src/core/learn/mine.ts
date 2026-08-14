@@ -140,7 +140,6 @@ function renderArgs(args: Record<string, unknown> | undefined): string {
  */
 export function renderTranscript(session: MinableSession): string {
 	const lines: string[] = [];
-	const pendingCalls = new Map<string, string>();
 
 	for (const entry of session.entries) {
 		const message = entry.type === "message" ? entry.message : undefined;
@@ -157,9 +156,7 @@ export function renderTranscript(session: MinableSession): string {
 		if (message.role === "assistant") {
 			for (const block of (message.content ?? []) as unknown[]) {
 				if (!isToolCall(block)) continue;
-				const rendered = `${block.name}(${renderArgs(block.arguments as Record<string, unknown>)})`;
-				pendingCalls.set(block.id, rendered);
-				lines.push(`TOOL: ${rendered}`);
+				lines.push(`TOOL: ${block.name}(${renderArgs(block.arguments as Record<string, unknown>)})`);
 			}
 			continue;
 		}

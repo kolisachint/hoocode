@@ -37,7 +37,6 @@ import { hashSessionFile, pruneLearnCache, readCachedMining, writeCachedMining }
 import type { CoverageIndex, CoverageJudge, CoverageQuery } from "./coverage.js";
 import { noCoverageJudge } from "./coverage.js";
 import type { MinableSession, Miner } from "./mine.js";
-import { LEARN_DIGEST_MARKER } from "./mine.js";
 import type { DirectiveCluster, FixCandidate, MinedSession, Proposable, WorkflowCandidate } from "./reduce.js";
 import { reduceDirectives, reduceFixes, reduceWorkflows } from "./reduce.js";
 import { judge, type LearnState } from "./state.js";
@@ -101,6 +100,13 @@ export interface LearnDigest {
 	scan: SessionScanReport;
 	/** What was read by the model versus reused. */
 	mining: MiningReport;
+	/**
+	 * The run stopped before reading the whole window, so the counts below are
+	 * computed from part of it. Callers must not record these as surfaced: a
+	 * partial count can fall under the repeat threshold, and bookmarking it would
+	 * hide the item on the next run, when the evidence is complete.
+	 */
+	aborted: boolean;
 	oldestSession?: string;
 	newestSession?: string;
 	agentsFilePath?: string;
@@ -111,7 +117,7 @@ export interface LearnDigest {
 	/** Items held back because nothing new has happened since they were last shown. */
 	suppressed: number;
 	/** Everything this run put on screen, for the caller to persist. */
-	surfaced: Array<{ key: string; lastSeen: string; covered: boolean }>;
+	surfaced: Array<{ key: string; lastSeen: string; covered: boolean; text?: string }>;
 }
 
 export interface ExtractOptions {
@@ -434,6 +440,28 @@ export function scanSessions(options: ExtractOptions): SessionScanReport {
 	return listSessions(options).scan;
 }
 
+/**
+ * What a run would read, without reading it.
+ *
+ * Runs the real selection — the same age, cwd, cap and de-duplication rules
+ * `mineLearnDigest` applies — and then asks the cache about each survivor. It
+ * has to be the same selection: this number is what the confirmation prompt
+ * quotes, and a prompt that says twelve before reading three is worse than no
+ * prompt at all. Hashing the chosen files is cheap next to sending them to a
+ * model.
+ */
+export function planMining(options: ExtractOptions): { total: number; cached: number; pending: number } {
+	const { sessions } = listSessions(options);
+	let cached = 0;
+	let pending = 0;
+	for (const session of sessions) {
+		const hash = hashSessionFile(session.file);
+		if (hash && readCachedMining(options.agentDir, hash)) cached++;
+		else pending++;
+	}
+	return { total: sessions.length, cached, pending };
+}
+
 /** Nearest AGENTS.md walking up from cwd, so proposals can be checked against it. */
 function findAgentsFile(cwd: string): string | undefined {
 	let dir = resolve(cwd);
@@ -514,17 +542,22 @@ function loadSkillIndex(cwd: string, agentDir: string): Array<{ name: string; de
  * run: one provider hiccup on one transcript should cost that transcript's
  * signals, not the whole digest. The failure count is reported so the reader
  * knows the numbers are short.
+ *
+ * Cancellation is different from failure and is reported separately. A run
+ * stopped half way has counted only some of the window, so its numbers are not
+ * merely short — they are wrong in a way that would poison the bookmark if the
+ * digest were treated as a completed run.
  */
 async function mineSessions(
 	sessions: ParsedSession[],
 	options: MineOptions,
-): Promise<{ mined: MinedSession[]; report: MiningReport }> {
+): Promise<{ mined: MinedSession[]; report: MiningReport; aborted: boolean }> {
 	const mined: MinedSession[] = [];
 	const report: MiningReport = { cached: 0, mined: 0, failed: 0 };
 
 	let done = 0;
 	for (const session of sessions) {
-		if (options.signal?.aborted) break;
+		if (options.signal?.aborted) return { mined, report, aborted: true };
 
 		const hash = hashSessionFile(session.file);
 		const cached = hash ? readCachedMining(options.agentDir, hash) : undefined;
@@ -550,13 +583,16 @@ async function mineSessions(
 				});
 			}
 		} catch {
+			// A cancelled request surfaces here as a rejection. That is not the
+			// provider failing on this transcript, so it must not be counted as one.
+			if (options.signal?.aborted) return { mined, report, aborted: true };
 			report.failed++;
 		}
 		done++;
 		options.onProgress?.({ done, total: sessions.length, cached: report.cached });
 	}
 
-	return { mined, report };
+	return { mined, report, aborted: false };
 }
 
 /** Apply the coverage verdicts to the clusters they were asked about. */
@@ -588,7 +624,7 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 		}
 	}
 
-	const { mined, report } = await mineSessions(sessions, options);
+	const { mined, report, aborted } = await mineSessions(sessions, options);
 	pruneLearnCache(options.agentDir, options.now);
 
 	const minRepeats = options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT;
@@ -632,7 +668,14 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 	const keptWorkflows = applySuppression(workflows, state, maxProposals, () => false);
 
 	const surfaced = [
-		...keptDirectives.kept.map((d) => ({ key: d.key, lastSeen: d.lastSeen, covered: d.status !== "new" })),
+		// Directives carry their wording forward so a later `/learn stats` can ask
+		// about coverage using the sentence rather than the slug that names it.
+		...keptDirectives.kept.map((d) => ({
+			key: d.key,
+			lastSeen: d.lastSeen,
+			covered: d.status !== "new",
+			text: d.text,
+		})),
 		...keptFixes.kept.map((f) => ({ key: f.key, lastSeen: f.lastSeen, covered: false })),
 		...keptWorkflows.kept.map((w) => ({ key: w.key, lastSeen: w.lastSeen, covered: false })),
 	];
@@ -642,6 +685,7 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 		skippedSessions: skipped,
 		scan,
 		mining: report,
+		aborted,
 		oldestSession: timestamps[0],
 		newestSession: timestamps[timestamps.length - 1],
 		agentsFilePath,
@@ -654,6 +698,3 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 		surfaced,
 	};
 }
-
-/** Re-exported so callers do not need to know the marker lives in the miner. */
-export const DIGEST_MARKER = LEARN_DIGEST_MARKER;
