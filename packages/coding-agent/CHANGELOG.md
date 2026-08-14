@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The `Working...` line no longer strobes, the hardware cursor no longer
+  flickers at the end of it, and a long working message is truncated instead of
+  wrapping onto a second line. See the tui changelog for details — the same
+  fixes cover the compaction, retry, branch-summary and bash-command loaders.
+
 ## [0.5.16] - 2026-08-13
 
 ### Fixed
