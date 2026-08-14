@@ -42,10 +42,17 @@
   shows nor records its proposals: it counted only part of the window, so its
   numbers are low, and bookmarking them would hide those items on the next
   complete run.
-- `learnMinerModel` setting — "provider/model-id" used to read transcripts.
-  Defaults to the session model. This is the one call that reads everything, so
-  a cheap fast model is usually right; results are cached, so changing it does
-  not re-read what was already mined.
+- `/learn` reads transcripts with the `fast` model category — the same tier
+  subagents already use for bulk reads — rather than the session's model. Set
+  `modelCategories.fast` to change it; left unset it is derived from the models
+  you have, so nothing here is provider-specific. `/learn settings` names the
+  model it resolved and how much it sends per call.
+- Transcripts are chunked to fit the reading model's context window instead of a
+  fixed 120k characters. Rendering already compresses the two real transcripts in
+  this repo from 0.93 MB and 2.26 MB to roughly 47k and 68k tokens, so on a
+  200k-token model each is now a single call rather than two and three. Fewer
+  boundaries also means fewer blind spots: a failure and the fix that resolved it
+  can otherwise land on opposite sides of one.
 
 ## [0.5.16] - 2026-08-13
 

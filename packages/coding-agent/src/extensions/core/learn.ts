@@ -40,7 +40,7 @@ import {
 	scanSessions,
 } from "../../core/learn/extract.js";
 import type { Miner } from "../../core/learn/mine.js";
-import { createLlmMiner } from "../../core/learn/mine.js";
+import { chunkCharsForModel, createLlmMiner } from "../../core/learn/mine.js";
 import {
 	getLearnStatePath,
 	readLearnState,
@@ -48,6 +48,7 @@ import {
 	summarizeLearnState,
 	writeLearnState,
 } from "../../core/learn/state.js";
+import { resolveModelCategory } from "../../core/model-categories.js";
 import { getSessionDirPath } from "../../core/session-manager.js";
 import { SettingsManager } from "../../core/settings-manager.js";
 
@@ -98,7 +99,6 @@ const SETTING_KEYS: Array<{ key: keyof LearnWindow; setting: string; note: strin
 		note: "repeats before a tool sequence is proposed",
 	},
 	{ key: "maxProposals", setting: "learnMaxProposals", note: "cap on each list in the digest" },
-	{ key: "minerModel", setting: "learnMinerModel", note: "model that reads transcripts (default: session model)" },
 ];
 
 /**
@@ -192,35 +192,40 @@ function reportNoSessions(ctx: ExtensionCommandContext, agentDir: string, digest
 /**
  * The model that reads transcripts.
  *
- * Defaults to the session's model, which is always configured and always
- * authorised, but this is the one call in the pipeline that reads *everything*
- * — so `learnMinerModel` exists to point it at something cheap. An unresolvable
- * setting falls back rather than failing: a typo in a model id should not take
- * the command out entirely.
+ * This is the one call in the pipeline that reads *everything*, so it wants the
+ * cheapest capable model rather than the session's. That question already has an
+ * answer in this codebase — the `fast` model category, which subagents use for
+ * exactly this kind of bulk read — so it is reused rather than reinvented.
+ * `settings.modelCategories.fast` wins when set; otherwise the tier is derived
+ * from the user's available models, and nothing here is provider-specific.
+ *
+ * Falls back to the session model when the tier resolves to nothing or to a
+ * model the registry cannot find, since a mis-set tier should not take the
+ * command out entirely.
  */
-function resolveMinerModel(
-	ctx: ExtensionCommandContext,
-	window: LearnWindow,
-): { model: Model<Api> | undefined; note?: string } {
-	if (!window.minerModel) return { model: ctx.model };
+function resolveMinerModel(ctx: ExtensionCommandContext, settings: SettingsManager): Model<Api> | undefined {
+	const ref = resolveModelCategory(
+		"fast",
+		{
+			modelCategories: settings.getModelCategories(),
+			defaultProvider: settings.getDefaultProvider(),
+			defaultModel: settings.getDefaultModel(),
+		},
+		ctx.modelRegistry.getAvailable(),
+	);
+	if (!ref) return ctx.model;
 
-	const slash = window.minerModel.indexOf("/");
-	if (slash > 0) {
-		const found = ctx.modelRegistry.find(window.minerModel.slice(0, slash), window.minerModel.slice(slash + 1));
-		if (found) return { model: found };
-	}
-	return {
-		model: ctx.model,
-		note: `learnMinerModel "${window.minerModel}" did not resolve; using the session model instead.`,
-	};
+	const slash = ref.indexOf("/");
+	const found = slash > 0 ? ctx.modelRegistry.find(ref.slice(0, slash), ref.slice(slash + 1)) : undefined;
+	return found ?? ctx.model;
 }
 
 /** Build the two model-backed stages, or report why they cannot be built. */
 async function buildPipeline(
 	ctx: ExtensionCommandContext,
-	window: LearnWindow,
-): Promise<{ miner: Miner; coverageJudge: CoverageJudge; note?: string } | { error: string }> {
-	const { model, note } = resolveMinerModel(ctx, window);
+	settings: SettingsManager,
+): Promise<{ miner: Miner; coverageJudge: CoverageJudge; model: Model<Api> } | { error: string }> {
+	const model = resolveMinerModel(ctx, settings);
 	if (!model) {
 		return {
 			error: "/learn reads session transcripts with a model, and no model is selected. Pick one with /model, then run /learn again.",
@@ -233,7 +238,7 @@ async function buildPipeline(
 	}
 
 	const deps = { model, apiKey: auth.apiKey, headers: auth.headers };
-	return { miner: createLlmMiner(deps), coverageJudge: createLlmCoverageJudge(deps), note };
+	return { miner: createLlmMiner(deps), coverageJudge: createLlmCoverageJudge(deps), model };
 }
 
 /**
@@ -263,7 +268,8 @@ function pendingWork(ctx: ExtensionCommandContext, agentDir: string, window: Lea
  */
 async function reportStats(ctx: ExtensionCommandContext): Promise<void> {
 	const agentDir = getHooCodeDir();
-	const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
+	const settings = SettingsManager.create(ctx.cwd, agentDir);
+	const window = settings.getLearnSettings();
 	const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
 	const state = readLearnState(statePath);
 
@@ -298,7 +304,7 @@ async function reportStats(ctx: ExtensionCommandContext): Promise<void> {
 
 	const covered = new Set<string>();
 	if (labels.length > 0) {
-		const pipeline = await buildPipeline(ctx, window);
+		const pipeline = await buildPipeline(ctx, settings);
 		if (!("error" in pipeline)) {
 			try {
 				const verdicts = await pipeline.coverageJudge(labels, coverage);
@@ -356,8 +362,24 @@ async function reportStats(ctx: ExtensionCommandContext): Promise<void> {
 /** `/learn settings` — the knobs, their current values, and the files to set them in. */
 function reportSettings(ctx: ExtensionCommandContext): void {
 	const agentDir = getHooCodeDir();
-	const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
+	const settings = SettingsManager.create(ctx.cwd, agentDir);
+	const window = settings.getLearnSettings();
 	const lines = settingsLines(ctx, agentDir, window);
+
+	// The reading model is not a `/learn` setting — it is the shared `fast` tier,
+	// so name it here rather than leaving the reader to guess which model is
+	// about to read their history, and point at the setting that changes it.
+	const model = resolveMinerModel(ctx, settings);
+	lines.push(
+		`  reads transcripts with  ${model ? `${model.provider}/${model.id}` : "no model selected"}` +
+			`   (the \`fast\` tier — set modelCategories.fast to change it)`,
+	);
+	if (model) {
+		lines.push(
+			`  ${Math.round(chunkCharsForModel(model) / 1000)}k characters per call, from its ${model.contextWindow} token window`,
+		);
+	}
+
 	lines.push("");
 	lines.push(...scanLines(sessionScanPreview(ctx, agentDir, window), window));
 	lines.push(`State file  ${displayPath(getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir)))}`);
@@ -365,7 +387,7 @@ function reportSettings(ctx: ExtensionCommandContext): void {
 	lines.push(
 		pending === 0
 			? "All sessions in the window are already mined; the next /learn costs one small coverage call."
-			: `${pending} session(s) in the window still need reading by the miner model.`,
+			: `${pending} session(s) in the window still need reading, roughly one call each.`,
 	);
 	ctx.ui.notify(lines.join("\n"), "info");
 }
@@ -406,15 +428,15 @@ export function setupLearn(pi: ExtensionAPI): void {
 			// Read per-invocation so a settings edit takes effect without a reload,
 			// and so a project settings.json can narrow the window for one repo.
 			const agentDir = getHooCodeDir();
-			const window = SettingsManager.create(ctx.cwd, agentDir).getLearnSettings();
+			const settings = SettingsManager.create(ctx.cwd, agentDir);
+			const window = settings.getLearnSettings();
 			const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
 
-			const pipeline = await buildPipeline(ctx, window);
+			const pipeline = await buildPipeline(ctx, settings);
 			if ("error" in pipeline) {
 				ctx.ui.notify(pipeline.error, "error");
 				return;
 			}
-			if (pipeline.note) ctx.ui.notify(pipeline.note, "warning");
 
 			// State the price before charging it. A first run in a busy repo reads
 			// every transcript in the window, which is the expensive path by design
@@ -425,7 +447,7 @@ export function setupLearn(pi: ExtensionAPI): void {
 				const proceed = await ctx.ui.confirm(
 					"Read session transcripts?",
 					`${pending} session(s) have not been read yet. /learn reads each one with a model ` +
-						`(${window.minerModel ?? "the session model"}) and caches the result, so this cost is paid once ` +
+						`(${pipeline.model.provider}/${pipeline.model.id}) and caches the result, so this cost is paid once ` +
 						`per session. Later runs reuse it.`,
 				);
 				if (!proceed) {

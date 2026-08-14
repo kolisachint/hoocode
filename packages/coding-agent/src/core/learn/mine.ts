@@ -70,14 +70,44 @@ export interface MinableSession {
 export type Miner = (session: MinableSession, signal?: AbortSignal) => Promise<MinedCandidate[]>;
 
 /**
- * Characters of rendered transcript per model call.
+ * Chunking exists to fit a session into a context window, so it is sized from
+ * the window rather than from a fixed guess.
  *
- * Real transcripts are large — the two session fixtures in this repo are 974 KB
- * and 2.37 MB — so a session routinely exceeds any context window and has to be
- * chunked. 120k characters is roughly 30k tokens, which leaves room for the
- * instructions and the response on every model this ships with.
+ * The guess was costing calls. Rendering already strips assistant prose and
+ * truncates tool output, which compresses the two real transcripts in this repo
+ * from 0.93 MB and 2.26 MB down to 183 KB and 266 KB — about 47k and 68k
+ * tokens. A fixed 120k-character chunk cut those into two and three pieces for
+ * no reason: on any model with a 200k window each is comfortably one call.
+ *
+ * One call per session is also better than a cheaper-looking alternative. A
+ * chunk boundary is a blind spot — a failure and the fix that resolved it can
+ * land on opposite sides of one — so the fewer boundaries inside a session, the
+ * more the model can actually see.
  */
-const CHUNK_CHARS = 120_000;
+const CHUNK_CONTEXT_FRACTION = 0.6;
+
+/** Rough bytes per token. Deliberately conservative; a wrong guess here costs a wasted call. */
+const CHARS_PER_TOKEN = 4;
+
+/** Used when a model does not report a usable window. */
+const FALLBACK_CHUNK_CHARS = 120_000;
+
+/** Never chunk below this, or a small window would shred a transcript into noise. */
+const MIN_CHUNK_CHARS = 40_000;
+
+/**
+ * How much rendered transcript to send per call, given the reading model.
+ *
+ * Only a fraction of the window is used: the instructions, the response, and
+ * tokenizer variance all have to fit alongside, and overshooting costs a
+ * context-overflow error rather than a slightly worse answer.
+ */
+export function chunkCharsForModel(model: Pick<Model<any>, "contextWindow">): number {
+	const window = model.contextWindow;
+	if (!Number.isFinite(window) || window <= 0) return FALLBACK_CHUNK_CHARS;
+	const budgetTokens = window * CHUNK_CONTEXT_FRACTION - MAX_RESPONSE_TOKENS;
+	return Math.max(MIN_CHUNK_CHARS, Math.floor(budgetTokens * CHARS_PER_TOKEN));
+}
 
 /** Tool output kept per call. Errors carry the signal; success output is mostly noise. */
 const TOOL_OUTPUT_CHARS = 600;
@@ -179,7 +209,7 @@ export function renderTranscript(session: MinableSession): string {
  * rather than being split — losing the second half of a long directive is
  * exactly the failure this rewrite exists to remove.
  */
-export function chunkTranscript(text: string, chunkChars = CHUNK_CHARS): string[] {
+export function chunkTranscript(text: string, chunkChars = FALLBACK_CHUNK_CHARS): string[] {
 	if (text.length <= chunkChars) return text.length > 0 ? [text] : [];
 
 	const chunks: string[] = [];
@@ -298,8 +328,9 @@ export interface MinerDeps {
  * do.
  */
 export function createLlmMiner(deps: MinerDeps): Miner {
+	const chunkChars = chunkCharsForModel(deps.model);
 	return async (session, signal) => {
-		const chunks = chunkTranscript(renderTranscript(session));
+		const chunks = chunkTranscript(renderTranscript(session), chunkChars);
 		const candidates: MinedCandidate[] = [];
 
 		for (const chunk of chunks) {

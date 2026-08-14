@@ -8,7 +8,13 @@ import { parseVerdicts } from "../src/core/learn/coverage.js";
 import { isEmptyDigest, renderLearnDigest } from "../src/core/learn/digest.js";
 import { type MineOptions, mineLearnDigest, planMining, scanSessions } from "../src/core/learn/extract.js";
 import type { MinableSession, MinedCandidate, Miner } from "../src/core/learn/mine.js";
-import { chunkTranscript, LEARN_DIGEST_MARKER, parseCandidates, renderTranscript } from "../src/core/learn/mine.js";
+import {
+	chunkCharsForModel,
+	chunkTranscript,
+	LEARN_DIGEST_MARKER,
+	parseCandidates,
+	renderTranscript,
+} from "../src/core/learn/mine.js";
 import { reduceDirectives, reduceFixes, reduceWorkflows } from "../src/core/learn/reduce.js";
 import {
 	getLearnStatePath,
@@ -265,6 +271,32 @@ describe("chunkTranscript", () => {
 
 	it("returns nothing for an empty transcript", () => {
 		expect(chunkTranscript("")).toEqual([]);
+	});
+});
+
+describe("chunkCharsForModel", () => {
+	it("sizes from the window, so a typical session is one call on a large model", () => {
+		// The two real transcripts in this repo render to 183 KB and 266 KB. A
+		// 200k-token window must swallow either whole — chunking them was costing
+		// calls and putting blind spots inside a single session.
+		const budget = chunkCharsForModel({ contextWindow: 200_000 });
+		expect(budget).toBeGreaterThan(280_000);
+	});
+
+	it("leaves headroom rather than filling the window", () => {
+		// Instructions, the response and tokenizer variance all have to fit
+		// alongside; overshooting costs a context-overflow error, not a worse answer.
+		const budget = chunkCharsForModel({ contextWindow: 200_000 });
+		expect(budget).toBeLessThan(200_000 * 4);
+	});
+
+	it("still chunks a small window, but never into slivers", () => {
+		expect(chunkCharsForModel({ contextWindow: 8_000 })).toBe(40_000);
+	});
+
+	it("falls back when a model reports no usable window", () => {
+		expect(chunkCharsForModel({ contextWindow: 0 })).toBe(120_000);
+		expect(chunkCharsForModel({ contextWindow: Number.NaN })).toBe(120_000);
 	});
 });
 

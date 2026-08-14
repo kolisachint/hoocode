@@ -174,7 +174,6 @@ export interface Settings {
 	learnMinRepeats?: number; // default: 2 - times a directive must recur before /learn proposes it. This is the signal/noise dial: raise it for fewer, better-evidenced proposals.
 	learnMinWorkflowRepeats?: number; // default: 3 - non-overlapping repeats a tool sequence needs before /learn proposes it as a skill. Raise it in a repo where the same few tools churn constantly.
 	learnMaxProposals?: number; // default: 8 - cap on each list in the /learn digest. Every proposal costs the model context, so this bounds what one run can ask you to review.
-	learnMinerModel?: string; // "provider/model-id" used to read transcripts during /learn. Defaults to the session model. This model reads every transcript in full, so a cheap fast one is usually the right choice; results are cached per session, so changing it does not re-read what was already mined.
 	light?: boolean; // default: false - minimal low-token preset for small/local models: read/write/edit/bash only (short schemas), terse prompt, no subagents/TodoWrite/skills/context files/mode appendix. Same as the --light CLI flag.
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
