@@ -21,7 +21,12 @@ export {
 } from "./components/editor.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
-export { Loader, type LoaderIndicatorOptions } from "./components/loader.js";
+export {
+	Loader,
+	type LoaderIndicatorOptions,
+	SPINNER_FRAMES,
+	SPINNER_INTERVAL_MS,
+} from "./components/loader.js";
 export { type DefaultTextStyle, Markdown, type MarkdownTheme } from "./components/markdown.js";
 export {
 	type SelectItem,

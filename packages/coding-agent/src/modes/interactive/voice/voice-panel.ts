@@ -24,12 +24,15 @@
  */
 
 import type { Component, TUI } from "@kolisachint/hoocode-tui";
-import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import { SPINNER_FRAMES, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import { renderDownloadProgress } from "../components/progress-bar.js";
 import { theme } from "../theme/theme.js";
 
 export type VoicePanelPhase = "warming" | "listening" | "silence" | "transcribing";
 
-const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+// The spinner is the shared one, not a private braille set. This panel was the
+// last surface animating its own: the task pane dropped a duplicate spinner for
+// the same reason, and two spinners on screen read as two kinds of waiting.
 // 8 filled levels; index 0 renders as a baseline dot so an empty history still
 // reads as "a track", not a blank line.
 const WAVE_LEVELS = ["▁", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];
@@ -75,10 +78,6 @@ function lineWithHint(
 	}
 	if (lw <= width) return leftStyled;
 	return truncateToWidth(leftStyled, width, theme.fg("dim", "…"));
-}
-
-function formatMb(bytes: number): string {
-	return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
 export class VoicePanel implements Component {
@@ -225,18 +224,14 @@ export class VoicePanel implements Component {
 		return `${m}:${s.toString().padStart(2, "0")}`;
 	}
 
-	/** Determinate download bar: `·` fill over a dim track with % and MB counts. */
+	/**
+	 * The model download's progress, rendered by the shared progress-bar
+	 * component so this panel and the footer always agree. The panel is wider
+	 * than a footer line, so it asks for a finer track — width is the only thing
+	 * a surface gets to choose.
+	 */
 	private renderDownloadBar(): string {
-		const total = this.downloadTotal;
-		if (total === null || total <= 0) {
-			return ` ${theme.fg("dim", `downloaded ${formatMb(this.downloadReceived)}…`)}`;
-		}
-		const ratio = Math.max(0, Math.min(1, this.downloadReceived / total));
-		const filled = Math.round(ratio * PROGRESS_CELLS);
-		const bar = theme.fg("accent", "·".repeat(filled)) + theme.fg("dim", "·".repeat(PROGRESS_CELLS - filled));
-		const pct = `${Math.round(ratio * 100)}%`;
-		const sizes = `${formatMb(this.downloadReceived)} / ${formatMb(total)}`;
-		return ` ${bar} ${theme.fg("muted", pct)} ${theme.fg("dim", `· ${sizes}`)}`;
+		return ` ${renderDownloadProgress(this.downloadReceived, this.downloadTotal, { cells: PROGRESS_CELLS })}`;
 	}
 
 	render(width: number): string[] {

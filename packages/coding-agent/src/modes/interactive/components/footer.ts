@@ -7,6 +7,7 @@ import { formatTokens } from "../../../core/format-tokens.js";
 import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
 import { taskStore } from "../../../core/task-store.js";
 import { theme } from "../theme/theme.js";
+import { renderDownloadProgress, renderProgressBar } from "./progress-bar.js";
 
 /**
  * Assemble one footer line: `left` flush left, `right` flush right when it fits
@@ -51,19 +52,12 @@ function sanitizeStatusText(text: string): string {
 		.trim();
 }
 
-/** Cells in a startup-progress bar; compact so several tools fit the footer. */
-const STARTUP_BAR_CELLS = 12;
-
-function formatMb(bytes: number): string {
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /**
  * One footer line for a transient progress entry (tool download, index build,
- * `/learn` reading transcripts): a fill over a dim track with percent and a
- * `received / total` (or `done/total`) detail. An indeterminate download (no
- * Content-Length) drops the bar for a running byte count; an error entry
- * renders as a dim message. Returns a styled string; the caller width-clamps it.
+ * `/learn` reading transcripts). The bar comes from the shared progress-bar
+ * component, so this line and the voice panel's cannot drift apart again. An
+ * error entry renders as a dim message instead. Returns a styled string; the
+ * caller width-clamps it.
  */
 function renderStartupLine(entry: StartupProgress): string {
 	if (entry.kind === "error") {
@@ -71,37 +65,10 @@ function renderStartupLine(entry: StartupProgress): string {
 	}
 	const label = theme.fg("text", entry.label);
 	if (entry.kind === "download") {
-		if (entry.totalBytes === null || entry.totalBytes <= 0) {
-			return `${label} ${theme.fg("dim", `${formatMb(entry.receivedBytes)}…`)}`;
-		}
-		const detail = `${formatMb(entry.receivedBytes)} / ${formatMb(entry.totalBytes)}`;
-		return `${label} ${determinateBar(entry.receivedBytes / entry.totalBytes, detail)}`;
+		return `${label} ${renderDownloadProgress(entry.receivedBytes, entry.totalBytes)}`;
 	}
-	const detail = `${entry.done}/${entry.total} ${entry.unit}`;
 	const ratio = entry.total > 0 ? entry.done / entry.total : 0;
-	return `${label} ${determinateBar(ratio, detail)}`;
-}
-
-/**
- * Filled/empty bar + percent + trailing detail.
- *
- * The glyphs differ in shape, not only in colour, matching the context gauge
- * above. The previous `·`-over-`·` fill encoded the whole reading in colour
- * alone, so at a glance — or on a low-contrast theme, or piped somewhere that
- * drops styling — a bar at 10% and one at 90% looked identical. `▰▱` stays just
- * as compact and survives all three.
- *
- * A started-but-tiny ratio keeps one filled cell rather than rounding to an
- * empty bar, since "nothing has happened yet" and "the first of forty files is
- * done" are different things to be told.
- */
-function determinateBar(ratio: number, detail: string): string {
-	const clamped = Math.max(0, Math.min(1, ratio));
-	const scaled = clamped * STARTUP_BAR_CELLS;
-	const filled = Math.max(clamped > 0 ? 1 : 0, Math.min(STARTUP_BAR_CELLS, Math.round(scaled)));
-	const bar = theme.fg("accent", "▰".repeat(filled)) + theme.fg("dim", "▱".repeat(STARTUP_BAR_CELLS - filled));
-	const pct = `${Math.round(clamped * 100)}%`;
-	return `${bar} ${theme.fg("muted", pct)} ${theme.fg("dim", `· ${detail}`)}`;
+	return `${label} ${renderProgressBar(ratio, `${entry.done}/${entry.total} ${entry.unit}`)}`;
 }
 
 /**

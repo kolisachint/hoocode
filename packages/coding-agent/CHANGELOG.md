@@ -4,12 +4,23 @@
 
 ### Changed
 
-- Footer progress bars distinguish filled from empty by shape (`▰▱`) rather than
-  by colour alone, matching the context gauge beside them. The previous `·`-over-
-  `·` fill put the entire reading in the colour, so at a glance, on a low-contrast
+- Every surface that makes you wait now uses one progress bar. The footer (tool
+  downloads, the semantic index, `/learn`) and the voice panel each had their
+  own, written months apart, and they had drifted three ways: one drew `▰▱` and
+  the other `·` over `·`, one said `2.0 MB` and the other `2 MB`, and each
+  carried its own copy of the percent-and-detail layout. Bar width is still per
+  surface — a footer line shares its row, a panel has room to be finer — but
+  nothing else is.
+- Progress bars distinguish filled from empty by shape (`▰▱`) rather than by
+  colour alone, matching the context gauge beside them. The previous `·`-over-`·`
+  fill put the entire reading in the colour, so at a glance, on a low-contrast
   theme, or anywhere styling is dropped, 10% and 90% looked identical. A started
   bar also keeps one filled cell instead of rounding down to empty, so the first
   of forty files reads differently from none of them.
+- The voice panel spins with the application's shared spinner instead of a
+  private braille set. It was the last surface animating its own; two spinners on
+  screen read as two kinds of waiting, which is not a distinction anything here
+  means to draw.
 - `/learn` now reads session transcripts with a model instead of pre-filtering
   them with regexes. The old extractor only considered user turns matching a
   whitelist of imperative words, so anything phrased another way — "we're on bun

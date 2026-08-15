@@ -8,10 +8,27 @@ export interface LoaderIndicatorOptions {
 	intervalMs?: number;
 }
 
-const DEFAULT_FRAMES = ["○", "●"];
-// Each frame requests a full TUI re-render, so the cadence is a direct tax on
-// long transcripts; 120ms stays visually smooth at two-thirds the render load.
-const DEFAULT_INTERVAL_MS = 120;
+/**
+ * The application's indeterminate-wait animation.
+ *
+ * Exported because it is the app's single answer to "something is happening and
+ * I cannot tell you how far along": anything that spins while the user waits
+ * uses these frames, whether or not it can embed a {@link Loader}. A surface
+ * that renders its own lines (the voice panel) imports the frames; everything
+ * else gets them by using the component. Two different spinners on screen read
+ * as two different kinds of waiting, which is a distinction nothing here means
+ * to draw.
+ */
+export const SPINNER_FRAMES = ["○", "●"];
+
+/**
+ * Each frame requests a full TUI re-render, so the cadence is a direct tax on
+ * long transcripts; 120ms stays visually smooth at two-thirds the render load.
+ */
+export const SPINNER_INTERVAL_MS = 120;
+
+const DEFAULT_FRAMES = SPINNER_FRAMES;
+const DEFAULT_INTERVAL_MS = SPINNER_INTERVAL_MS;
 
 /**
  * Loader component that updates with an optional spinning animation.
