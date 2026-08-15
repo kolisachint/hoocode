@@ -51,6 +51,7 @@ import {
 import { resolveModelCategory } from "../../core/model-categories.js";
 import { getSessionDirPath } from "../../core/session-manager.js";
 import { SettingsManager } from "../../core/settings-manager.js";
+import { startupProgress } from "../../core/startup-progress.js";
 
 /** Guards against double-registration when default extensions load more than once. */
 const REGISTERED = Symbol.for("hoocode.learn.registered");
@@ -58,8 +59,8 @@ const REGISTERED = Symbol.for("hoocode.learn.registered");
 /** User-scope destination offered for personal rules that travel across repos. */
 const USER_SCOPE_PATH = join(homedir(), ".agents", "AGENTS.md");
 
-/** Status-bar key for mining progress. */
-const STATUS_KEY = "learn";
+/** Footer key for the mining progress bar. */
+const PROGRESS_KEY = "learn-mining";
 
 /** Escape, the way a raw terminal delivers it. */
 const ESCAPE = "\x1b";
@@ -486,10 +487,21 @@ export function setupLearn(pi: ExtensionAPI): void {
 					coverageJudge: pipeline.coverageJudge,
 					signal: controller.signal,
 					onProgress: ({ done, total, cached }) => {
-						ctx.ui.setStatus(
-							STATUS_KEY,
-							`/learn reading sessions ${done}/${total} (${cached} cached) — esc to stop`,
-						);
+						// The same footer bar the semantic index uses. Cached sessions are
+						// counted as done because they are: the bar measures progress
+						// through the window, not money spent, and a run that is mostly
+						// cache should look nearly finished from the start.
+						startupProgress.set({
+							key: PROGRESS_KEY,
+							kind: "work",
+							label:
+								cached > 0
+									? `Reading sessions (${cached} cached) — esc to stop`
+									: "Reading sessions — esc to stop",
+							done,
+							total,
+							unit: "sessions",
+						});
 					},
 				});
 			} catch (error) {
@@ -497,7 +509,7 @@ export function setupLearn(pi: ExtensionAPI): void {
 				return;
 			} finally {
 				unsubscribe();
-				ctx.ui.setStatus(STATUS_KEY, undefined);
+				startupProgress.remove(PROGRESS_KEY);
 			}
 
 			// A cancelled run counted only part of the window, so its numbers are not

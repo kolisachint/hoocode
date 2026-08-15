@@ -59,12 +59,11 @@ function formatMb(bytes: number): string {
 }
 
 /**
- * One footer line for a transient startup-progress entry (tool download or
- * index build), styled like the voice download bar: a `·` fill over a dim
- * track with percent and a `received / total` (or `done/total`) detail. An
- * indeterminate download (no Content-Length) drops the bar for a running byte
- * count; an error entry renders as a dim message. Returns a styled string; the
- * caller width-clamps it.
+ * One footer line for a transient progress entry (tool download, index build,
+ * `/learn` reading transcripts): a fill over a dim track with percent and a
+ * `received / total` (or `done/total`) detail. An indeterminate download (no
+ * Content-Length) drops the bar for a running byte count; an error entry
+ * renders as a dim message. Returns a styled string; the caller width-clamps it.
  */
 function renderStartupLine(entry: StartupProgress): string {
 	if (entry.kind === "error") {
@@ -83,11 +82,24 @@ function renderStartupLine(entry: StartupProgress): string {
 	return `${label} ${determinateBar(ratio, detail)}`;
 }
 
-/** `·`-fill bar + percent + trailing detail, matching the voice download bar. */
+/**
+ * Filled/empty bar + percent + trailing detail.
+ *
+ * The glyphs differ in shape, not only in colour, matching the context gauge
+ * above. The previous `·`-over-`·` fill encoded the whole reading in colour
+ * alone, so at a glance — or on a low-contrast theme, or piped somewhere that
+ * drops styling — a bar at 10% and one at 90% looked identical. `▰▱` stays just
+ * as compact and survives all three.
+ *
+ * A started-but-tiny ratio keeps one filled cell rather than rounding to an
+ * empty bar, since "nothing has happened yet" and "the first of forty files is
+ * done" are different things to be told.
+ */
 function determinateBar(ratio: number, detail: string): string {
 	const clamped = Math.max(0, Math.min(1, ratio));
-	const filled = Math.round(clamped * STARTUP_BAR_CELLS);
-	const bar = theme.fg("accent", "·".repeat(filled)) + theme.fg("dim", "·".repeat(STARTUP_BAR_CELLS - filled));
+	const scaled = clamped * STARTUP_BAR_CELLS;
+	const filled = Math.max(clamped > 0 ? 1 : 0, Math.min(STARTUP_BAR_CELLS, Math.round(scaled)));
+	const bar = theme.fg("accent", "▰".repeat(filled)) + theme.fg("dim", "▱".repeat(STARTUP_BAR_CELLS - filled));
 	const pct = `${Math.round(clamped * 100)}%`;
 	return `${bar} ${theme.fg("muted", pct)} ${theme.fg("dim", `· ${detail}`)}`;
 }

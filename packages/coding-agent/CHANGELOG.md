@@ -4,6 +4,12 @@
 
 ### Changed
 
+- Footer progress bars distinguish filled from empty by shape (`▰▱`) rather than
+  by colour alone, matching the context gauge beside them. The previous `·`-over-
+  `·` fill put the entire reading in the colour, so at a glance, on a low-contrast
+  theme, or anywhere styling is dropped, 10% and 90% looked identical. A started
+  bar also keeps one filled cell instead of rounding down to empty, so the first
+  of forty files reads differently from none of them.
 - `/learn` now reads session transcripts with a model instead of pre-filtering
   them with regexes. The old extractor only considered user turns matching a
   whitelist of imperative words, so anything phrased another way — "we're on bun
@@ -37,6 +43,11 @@
 
 ### Added
 
+- `/learn` shows a progress bar in the footer while it reads transcripts — the
+  same one the semantic index uses — with the count of sessions done, how many
+  came from cache, and the reminder that escape stops it. Cached sessions count
+  as done: the bar measures progress through the window, so a mostly-cached run
+  looks nearly finished from the start, which it is.
 - A long backfill can be stopped with escape. Everything read up to that point is
   already cached, so resuming picks up where it left off. A stopped run neither
   shows nor records its proposals: it counted only part of the window, so its
