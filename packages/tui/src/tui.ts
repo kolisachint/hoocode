@@ -90,6 +90,14 @@ export function isFocusable(component: Component | null): component is Component
 export const CURSOR_MARKER = "\x1b_pi:c\x07";
 
 /**
+ * DECTCEM cursor visibility, as strings rather than Terminal calls so they can
+ * be folded into a frame's synchronized-output buffer instead of racing it as a
+ * separate write.
+ */
+const HIDE_CURSOR = "\x1b[?25l";
+const SHOW_CURSOR = "\x1b[?25h";
+
+/**
  * Anchor position for overlays
  */
 export type OverlayAnchor =
@@ -1193,10 +1201,11 @@ export class TUI extends Container {
 				if (i > 0) buffer += "\r\n";
 				buffer += this.emitLine(newLines[i]);
 			}
-			buffer += "\x1b[?2026l"; // End synchronized output
-			this.terminal.write(buffer);
 			this.cursorRow = Math.max(0, newLines.length - 1);
 			this.hardwareCursorRow = this.cursorRow;
+			buffer += this.buildHardwareCursorMove(cursorPos, newLines.length);
+			buffer += "\x1b[?2026l"; // End synchronized output
+			this.terminal.write(buffer);
 			// Reset max lines when clearing, otherwise track growth
 			if (clear) {
 				this.maxLinesRendered = newLines.length;
@@ -1205,7 +1214,6 @@ export class TUI extends Container {
 			}
 			const bufferLength = Math.max(height, newLines.length);
 			this.previousViewportTop = Math.max(0, bufferLength - height);
-			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
 			this.previousWidth = width;
@@ -1340,12 +1348,14 @@ export class TUI extends Container {
 				if (extraLines > 0) {
 					buffer += `\x1b[${extraLines}A`;
 				}
-				buffer += "\x1b[?2026l";
-				this.terminal.write(buffer);
 				this.cursorRow = targetRow;
 				this.hardwareCursorRow = targetRow;
+				buffer += this.buildHardwareCursorMove(cursorPos, newLines.length);
+				buffer += "\x1b[?2026l";
+				this.terminal.write(buffer);
+			} else {
+				this.positionHardwareCursor(cursorPos, newLines.length);
 			}
-			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
 			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
 			this.previousWidth = width;
@@ -1451,6 +1461,17 @@ export class TUI extends Container {
 			buffer += `\x1b[${extraLines}A`;
 		}
 
+		// Track cursor position for next render
+		// cursorRow tracks end of content (for viewport calculation)
+		// hardwareCursorRow tracks actual terminal cursor position (for movement)
+		this.cursorRow = Math.max(0, newLines.length - 1);
+		this.hardwareCursorRow = finalCursorRow;
+
+		// Position hardware cursor for IME. Inside the synchronized block, so the
+		// frame is never presented with the cursor still parked at the end of the
+		// last redrawn line.
+		buffer += this.buildHardwareCursorMove(cursorPos, newLines.length);
+
 		buffer += "\x1b[?2026l"; // End synchronized output
 
 		if (process.env.HOOCODE_TUI_DEBUG === "1") {
@@ -1485,17 +1506,9 @@ export class TUI extends Container {
 		// Write entire buffer at once
 		this.terminal.write(buffer);
 
-		// Track cursor position for next render
-		// cursorRow tracks end of content (for viewport calculation)
-		// hardwareCursorRow tracks actual terminal cursor position (for movement)
-		this.cursorRow = Math.max(0, newLines.length - 1);
-		this.hardwareCursorRow = finalCursorRow;
 		// Track terminal's working area (grows but doesn't shrink unless cleared)
 		this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
 		this.previousViewportTop = Math.max(prevViewportTop, finalCursorRow - height + 1);
-
-		// Position hardware cursor for IME
-		this.positionHardwareCursor(cursorPos, newLines.length);
 
 		this.previousLines = newLines;
 		this.previousKittyImageIds = this.collectKittyImageIds(newLines);
@@ -1504,14 +1517,30 @@ export class TUI extends Container {
 	}
 
 	/**
-	 * Position the hardware cursor for IME candidate window.
+	 * Build the escape sequence that parks the hardware cursor for this frame.
+	 *
+	 * Callers must append the result to the frame buffer *inside* the
+	 * synchronized-output block. Emitting it as a separate write leaves the
+	 * cursor wherever the last redrawn line ended for the gap between the two
+	 * writes, which on an animated status line shows up as a cursor flickering
+	 * at the end of that line at the animation's cadence.
+	 *
+	 * Updates `hardwareCursorRow` to where the sequence leaves the cursor.
+	 *
 	 * @param cursorPos The cursor position extracted from rendered output, or null
 	 * @param totalLines Total number of rendered lines
 	 */
-	private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
+	private buildHardwareCursorMove(cursorPos: { row: number; col: number } | null, totalLines: number): string {
+		const visibility = this.showHardwareCursor ? SHOW_CURSOR : HIDE_CURSOR;
+
 		if (!cursorPos || totalLines <= 0) {
-			this.terminal.hideCursor();
-			return;
+			// Nothing focused, so there is no position to honor - but the cursor
+			// still has to land somewhere known. Lines are padded to the full
+			// terminal width, so a frame that ends after the last emitted line
+			// leaves the cursor in the terminal's pending-wrap state at the right
+			// margin, where it renders on the following row on some terminals.
+			// Returning to column 0 keeps it on the row we think it is on.
+			return `\r${HIDE_CURSOR}`;
 		}
 
 		// Clamp cursor position to valid range
@@ -1529,15 +1558,16 @@ export class TUI extends Container {
 		// Move to absolute column (1-indexed)
 		buffer += `\x1b[${targetCol + 1}G`;
 
-		if (buffer) {
-			this.terminal.write(buffer);
-		}
-
 		this.hardwareCursorRow = targetRow;
-		if (this.showHardwareCursor) {
-			this.terminal.showCursor();
-		} else {
-			this.terminal.hideCursor();
-		}
+		return buffer + visibility;
+	}
+
+	/**
+	 * Position the hardware cursor for IME candidate window, as a standalone
+	 * write. Only for frames that emit no content of their own; frames that
+	 * build a buffer must fold `buildHardwareCursorMove` into it instead.
+	 */
+	private positionHardwareCursor(cursorPos: { row: number; col: number } | null, totalLines: number): void {
+		this.terminal.write(this.buildHardwareCursorMove(cursorPos, totalLines));
 	}
 }

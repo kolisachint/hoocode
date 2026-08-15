@@ -4,7 +4,7 @@
 
 ### Changed
 
-- Every surface that makes you wait now uses one progress bar. The footer (tool
+- Every surface that shows measurable progress now uses one progress bar. The footer (tool
   downloads, the semantic index, `/learn`) and the voice panel each had their
   own, written months apart, and they had drifted three ways: one drew `▰▱` and
   the other `·` over `·`, one said `2.0 MB` and the other `2 MB`, and each
@@ -17,10 +17,6 @@
   theme, or anywhere styling is dropped, 10% and 90% looked identical. A started
   bar also keeps one filled cell instead of rounding down to empty, so the first
   of forty files reads differently from none of them.
-- The voice panel spins with the application's shared spinner instead of a
-  private braille set. It was the last surface animating its own; two spinners on
-  screen read as two kinds of waiting, which is not a distinction anything here
-  means to draw.
 - `/learn` now reads session transcripts with a model instead of pre-filtering
   them with regexes. The old extractor only considered user turns matching a
   whitelist of imperative words, so anything phrased another way — "we're on bun
@@ -44,7 +40,6 @@
   before reading more than a few new sessions.
 - The digest names the mode it ran in, so "nothing new since last time" and
   "nothing here at all" no longer read alike.
-
 - `/learn`'s per-directory memory is discarded once on upgrade. Its keys used to
   be normalized directive text and are now the miner's semantic label, so old
   entries could never match a new proposal — harmless for suppression, but every
@@ -75,6 +70,14 @@
   200k-token model each is now a single call rather than two and three. Fewer
   boundaries also means fewer blind spots: a failure and the fix that resolved it
   can otherwise land on opposite sides of one.
+## [0.5.17] - 2026-08-14
+
+### Fixed
+
+- The `Working...` line no longer strobes, the hardware cursor no longer
+  flickers at the end of it, and a long working message is truncated instead of
+  wrapping onto a second line. See the tui changelog for details — the same
+  fixes cover the compaction, retry, branch-summary and bash-command loaders.
 
 ## [0.5.16] - 2026-08-13
 

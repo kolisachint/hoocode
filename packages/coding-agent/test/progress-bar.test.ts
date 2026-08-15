@@ -1,13 +1,15 @@
 /**
- * The shared wait-indicator components, and the property that motivates them:
- * two surfaces showing the same progress must render it the same way.
+ * The shared progress bar, and the property that motivates it: two surfaces
+ * showing the same progress must render it the same way.
  *
- * These had drifted three ways before being extracted — glyphs, byte format,
+ * The bar had drifted three ways before being extracted — glyphs, byte format,
  * and layout — so the cross-surface assertions below are the point of the file,
  * not incidental coverage.
+ *
+ * Spinners are deliberately NOT unified the same way; see the rotation test at
+ * the bottom for why frame count is a functional choice rather than a style one.
  */
 
-import { SPINNER_FRAMES } from "@kolisachint/hoocode-tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import {
 	formatMegabytes,
@@ -85,13 +87,15 @@ describe("wait indicators agree across surfaces", () => {
 		panel.dispose();
 	});
 
-	it("spins with the shared frames rather than a private set", () => {
+	it("spins with a rotation, not the Loader's two-frame pulse", () => {
+		// Deliberately NOT unified with the Loader's `○`/`●`. Frame count is
+		// functional: two frames read as the line switching on and off, which is
+		// why the Loader beats them at 640ms rather than spinner speed. This panel
+		// ticks at 100ms to drive its silence countdown, so a two-frame indicator
+		// here would be precisely the strobe the Loader exists to avoid.
 		const panel = new VoicePanel(undefined, "esc cancel");
 		panel.setWarming("Starting voice input…");
-		const rendered = plain(panel.render(80));
-		expect(SPINNER_FRAMES.some((frame) => rendered.includes(frame))).toBe(true);
-		// The braille set this panel used to own is gone.
-		expect(rendered).not.toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
+		expect(plain(panel.render(80))).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/);
 		panel.dispose();
 	});
 });

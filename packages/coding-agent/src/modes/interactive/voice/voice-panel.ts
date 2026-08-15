@@ -24,15 +24,23 @@
  */
 
 import type { Component, TUI } from "@kolisachint/hoocode-tui";
-import { SPINNER_FRAMES, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import { renderDownloadProgress } from "../components/progress-bar.js";
 import { theme } from "../theme/theme.js";
 
 export type VoicePanelPhase = "warming" | "listening" | "silence" | "transcribing";
 
-// The spinner is the shared one, not a private braille set. This panel was the
-// last surface animating its own: the task pane dropped a duplicate spinner for
-// the same reason, and two spinners on screen read as two kinds of waiting.
+/**
+ * A rotation, deliberately not the two-frame `○`/`●` pulse the transcript
+ * Loader uses.
+ *
+ * Frame count is functional here, not cosmetic. Two frames read as the line
+ * switching on and off, so the Loader beats them slowly (640ms) to avoid a
+ * strobe; enough frames to read as motion can run fast without flickering. This
+ * panel animates at 100ms because it also drives the silence countdown, and a
+ * two-frame pulse at that cadence is exactly the strobe the Loader avoids.
+ */
+const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 // 8 filled levels; index 0 renders as a baseline dot so an empty history still
 // reads as "a track", not a blank line.
 const WAVE_LEVELS = ["▁", "▁", "▂", "▃", "▄", "▅", "▆", "▇", "█"];

@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [0.5.17] - 2026-08-14
+
+### Fixed
+
+- The `Working...` status line no longer strobes. Its `○`/`●` indicator has only
+  two frames, so the eye reads it as the line switching on and off rather than
+  as motion, and it was running at spinner speed (120ms) — roughly four full
+  on/off cycles a second. Two-frame indicators now pulse at 640ms while
+  indicators with enough frames to read as rotation keep the fast cadence, and a
+  caller-supplied `intervalMs` is floored at 80ms so no extension can reintroduce
+  a strobe. The slower default also cuts the re-render load the animation puts on
+  long transcripts.
+- The hardware cursor no longer flickers at the end of the status line while the
+  agent works. Each frame moved the cursor in a second write issued after the
+  synchronized-output block closed, so the frame was presented with the cursor
+  still parked where the last redrawn line ended — on an animated status line,
+  once per animation frame. The cursor move is now part of the frame buffer.
+- A frame that ends without a focused component now returns the cursor to column
+  0 instead of leaving it in the terminal's pending-wrap state at the right
+  margin, where it renders on the following row on some terminals.
+- `Loader` renders on a single line, truncating with an ellipsis instead of
+  wrapping. A message longer than the terminal width (a long `setWorkingMessage`,
+  or `Working... (Esc to interrupt)` in a narrow window) used to spill onto a
+  second line and push everything below it down.
+
 ## [0.5.16] - 2026-08-13
 
 ## [0.5.15] - 2026-08-13
