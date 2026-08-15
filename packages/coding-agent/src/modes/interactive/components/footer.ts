@@ -7,6 +7,7 @@ import { formatTokens } from "../../../core/format-tokens.js";
 import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
 import { taskStore } from "../../../core/task-store.js";
 import { theme } from "../theme/theme.js";
+import { renderDownloadProgress, renderProgressBar } from "./progress-bar.js";
 
 /**
  * Assemble one footer line: `left` flush left, `right` flush right when it fits
@@ -51,19 +52,11 @@ function sanitizeStatusText(text: string): string {
 		.trim();
 }
 
-/** Cells in a startup-progress bar; compact so several tools fit the footer. */
-const STARTUP_BAR_CELLS = 12;
-
-function formatMb(bytes: number): string {
-	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 /**
- * One footer line for a transient startup-progress entry (tool download or
- * index build), styled like the voice download bar: a `·` fill over a dim
- * track with percent and a `received / total` (or `done/total`) detail. An
- * indeterminate download (no Content-Length) drops the bar for a running byte
- * count; an error entry renders as a dim message. Returns a styled string; the
+ * One footer line for a transient progress entry (tool download, index build,
+ * `/learn` reading transcripts). The bar comes from the shared progress-bar
+ * component, so this line and the voice panel's cannot drift apart again. An
+ * error entry renders as a dim message instead. Returns a styled string; the
  * caller width-clamps it.
  */
 function renderStartupLine(entry: StartupProgress): string {
@@ -72,24 +65,10 @@ function renderStartupLine(entry: StartupProgress): string {
 	}
 	const label = theme.fg("text", entry.label);
 	if (entry.kind === "download") {
-		if (entry.totalBytes === null || entry.totalBytes <= 0) {
-			return `${label} ${theme.fg("dim", `${formatMb(entry.receivedBytes)}…`)}`;
-		}
-		const detail = `${formatMb(entry.receivedBytes)} / ${formatMb(entry.totalBytes)}`;
-		return `${label} ${determinateBar(entry.receivedBytes / entry.totalBytes, detail)}`;
+		return `${label} ${renderDownloadProgress(entry.receivedBytes, entry.totalBytes)}`;
 	}
-	const detail = `${entry.done}/${entry.total} ${entry.unit}`;
 	const ratio = entry.total > 0 ? entry.done / entry.total : 0;
-	return `${label} ${determinateBar(ratio, detail)}`;
-}
-
-/** `·`-fill bar + percent + trailing detail, matching the voice download bar. */
-function determinateBar(ratio: number, detail: string): string {
-	const clamped = Math.max(0, Math.min(1, ratio));
-	const filled = Math.round(clamped * STARTUP_BAR_CELLS);
-	const bar = theme.fg("accent", "·".repeat(filled)) + theme.fg("dim", "·".repeat(STARTUP_BAR_CELLS - filled));
-	const pct = `${Math.round(clamped * 100)}%`;
-	return `${bar} ${theme.fg("muted", pct)} ${theme.fg("dim", `· ${detail}`)}`;
+	return `${label} ${renderProgressBar(ratio, `${entry.done}/${entry.total} ${entry.unit}`)}`;
 }
 
 /**

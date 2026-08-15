@@ -142,4 +142,47 @@ describe("startup progress in a live TUI", () => {
 		await waitForText(rendered, "ripgrep");
 		await waitForText(rendered, "75%"); // rg: 3/4 MB
 	});
+
+	test("shows /learn reading sessions on the same bar as the index", async () => {
+		startupProgress.set({
+			key: "learn-mining",
+			kind: "work",
+			label: "Reading sessions (2 cached) — esc to stop",
+			done: 3,
+			total: 12,
+			unit: "sessions",
+		});
+		await waitForText(rendered, "Reading sessions (2 cached)");
+		await waitForText(rendered, "3/12 sessions");
+		await waitForText(rendered, "25%");
+	});
+
+	test("distinguishes filled from empty by shape, not only colour", async () => {
+		// Styling is stripped from `rendered()`, so this asserts what a
+		// low-contrast theme or a piped capture actually shows. The previous
+		// `·`-over-`·` fill left 10% and 90% looking identical here.
+		startupProgress.set({
+			key: "learn-mining",
+			kind: "work",
+			label: "Reading sessions",
+			done: 3,
+			total: 12,
+			unit: "sessions",
+		});
+		await waitForText(rendered, "▰▰▰▱▱▱▱▱▱▱▱▱");
+	});
+
+	test("keeps one filled cell once work has started, so the first item is visible", async () => {
+		// 1/40 rounds to zero cells. "Nothing has happened yet" and "the first of
+		// forty is done" should not look the same.
+		startupProgress.set({
+			key: "learn-mining",
+			kind: "work",
+			label: "Reading sessions",
+			done: 1,
+			total: 40,
+			unit: "sessions",
+		});
+		await waitForText(rendered, "▰▱▱▱▱▱▱▱▱▱▱▱");
+	});
 });

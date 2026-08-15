@@ -25,10 +25,21 @@
 
 import type { Component, TUI } from "@kolisachint/hoocode-tui";
 import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import { renderDownloadProgress } from "../components/progress-bar.js";
 import { theme } from "../theme/theme.js";
 
 export type VoicePanelPhase = "warming" | "listening" | "silence" | "transcribing";
 
+/**
+ * A rotation, deliberately not the two-frame `○`/`●` pulse the transcript
+ * Loader uses.
+ *
+ * Frame count is functional here, not cosmetic. Two frames read as the line
+ * switching on and off, so the Loader beats them slowly (640ms) to avoid a
+ * strobe; enough frames to read as motion can run fast without flickering. This
+ * panel animates at 100ms because it also drives the silence countdown, and a
+ * two-frame pulse at that cadence is exactly the strobe the Loader avoids.
+ */
 const SPINNER_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 // 8 filled levels; index 0 renders as a baseline dot so an empty history still
 // reads as "a track", not a blank line.
@@ -75,10 +86,6 @@ function lineWithHint(
 	}
 	if (lw <= width) return leftStyled;
 	return truncateToWidth(leftStyled, width, theme.fg("dim", "…"));
-}
-
-function formatMb(bytes: number): string {
-	return `${Math.round(bytes / (1024 * 1024))} MB`;
 }
 
 export class VoicePanel implements Component {
@@ -225,18 +232,14 @@ export class VoicePanel implements Component {
 		return `${m}:${s.toString().padStart(2, "0")}`;
 	}
 
-	/** Determinate download bar: `·` fill over a dim track with % and MB counts. */
+	/**
+	 * The model download's progress, rendered by the shared progress-bar
+	 * component so this panel and the footer always agree. The panel is wider
+	 * than a footer line, so it asks for a finer track — width is the only thing
+	 * a surface gets to choose.
+	 */
 	private renderDownloadBar(): string {
-		const total = this.downloadTotal;
-		if (total === null || total <= 0) {
-			return ` ${theme.fg("dim", `downloaded ${formatMb(this.downloadReceived)}…`)}`;
-		}
-		const ratio = Math.max(0, Math.min(1, this.downloadReceived / total));
-		const filled = Math.round(ratio * PROGRESS_CELLS);
-		const bar = theme.fg("accent", "·".repeat(filled)) + theme.fg("dim", "·".repeat(PROGRESS_CELLS - filled));
-		const pct = `${Math.round(ratio * 100)}%`;
-		const sizes = `${formatMb(this.downloadReceived)} / ${formatMb(total)}`;
-		return ` ${bar} ${theme.fg("muted", pct)} ${theme.fg("dim", `· ${sizes}`)}`;
+		return ` ${renderDownloadProgress(this.downloadReceived, this.downloadTotal, { cells: PROGRESS_CELLS })}`;
 	}
 
 	render(width: number): string[] {

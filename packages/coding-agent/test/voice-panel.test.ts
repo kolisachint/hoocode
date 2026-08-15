@@ -66,8 +66,32 @@ describe("VoicePanel", () => {
 		panel.setDownloadProgress(450 * 1024 * 1024, 900 * 1024 * 1024);
 		const text = plain(panel.render(80));
 		expect(text).toContain("50%");
-		expect(text).toContain("450 MB / 900 MB");
+		// One decimal, from the shared progress-bar component. This panel used to
+		// round to whole megabytes while the footer showed tenths; a slow download
+		// at whole-MB granularity sits unchanged for tens of seconds, which is
+		// exactly when the user is deciding whether it has hung.
+		expect(text).toContain("450.0 MB / 900.0 MB");
 		expect(text).toContain("first run downloads");
+	});
+
+	it("draws the same bar as the footer, distinguishable without colour", () => {
+		panel = new VoicePanel(undefined, "ctrl+r cancel");
+		panel.setWarming("Starting voice input…");
+		panel.setDownloadProgress(1 * 1024 * 1024, 4 * 1024 * 1024);
+		// Styling is stripped here, so this is what a low-contrast theme or a piped
+		// capture shows. The old `·`-over-`·` fill was uniform at every ratio.
+		expect(plain(panel.render(80))).toContain("▰▰▰▰▰▱▱▱▱▱▱▱▱▱▱");
+	});
+
+	it("drops the bar for a running byte count when the length is unknown", () => {
+		panel = new VoicePanel(undefined, "ctrl+r cancel");
+		panel.setWarming("Starting voice input…");
+		panel.setDownloadProgress(3 * 1024 * 1024, null);
+		const text = plain(panel.render(80));
+		// A bar that cannot reach the end is worse than no bar; the moving count
+		// already says "still going".
+		expect(text).toContain("3.0 MB…");
+		expect(text).not.toContain("▰");
 	});
 
 	it("shows a shrinking silence countdown, and abandons it when a loud level resumes", () => {

@@ -552,6 +552,11 @@ export class SettingsManager {
 		};
 	}
 
+	/** Configured `fast`/`standard`/`capable` tiers, for callers resolving a category. */
+	getModelCategories(): Settings["modelCategories"] {
+		return this.settings.modelCategories ? structuredClone(this.settings.modelCategories) : undefined;
+	}
+
 	/**
 	 * Persist one `/learn` threshold to the user scope.
 	 *

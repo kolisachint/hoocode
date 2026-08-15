@@ -2,6 +2,74 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Every surface that shows measurable progress now uses one progress bar. The footer (tool
+  downloads, the semantic index, `/learn`) and the voice panel each had their
+  own, written months apart, and they had drifted three ways: one drew `▰▱` and
+  the other `·` over `·`, one said `2.0 MB` and the other `2 MB`, and each
+  carried its own copy of the percent-and-detail layout. Bar width is still per
+  surface — a footer line shares its row, a panel has room to be finer — but
+  nothing else is.
+- Progress bars distinguish filled from empty by shape (`▰▱`) rather than by
+  colour alone, matching the context gauge beside them. The previous `·`-over-`·`
+  fill put the entire reading in the colour, so at a glance, on a low-contrast
+  theme, or anywhere styling is dropped, 10% and 90% looked identical. A started
+  bar also keeps one filled cell instead of rounding down to empty, so the first
+  of forty files reads differently from none of them.
+- `/learn` now reads session transcripts with a model instead of pre-filtering
+  them with regexes. The old extractor only considered user turns matching a
+  whitelist of imperative words, so anything phrased another way — "we're on bun
+  now", "that's not how our error handling works", a constraint stated once in
+  passing — was not ranked low, it was invisible. Length and line-count caps
+  dropped long explanations too, which is where the reasoning behind a rule
+  usually is. Every user turn now goes to the model whole.
+- Grouping is semantic rather than lexical. The model labels each occurrence
+  with what was *meant*, so "we're on bun now" and "stop using npm" count as one
+  recurring point instead of two unrelated ones. Counting still happens in code:
+  a model asked to count across a long context is approximately right, and the
+  count is what the digest is for.
+- Coverage — whether a proposal is already written down — is a model judgement
+  instead of word overlap. The old 0.6-overlap test both called unrelated rules a
+  match (marking a working rule `restated`) and missed real paraphrases that
+  picked different vocabulary (proposing a duplicate).
+- Mining results are cached per session file, keyed on content hash, so each
+  transcript is read once in its life. Counts are still recomputed over every
+  session in the window on every run, so caching the expensive step never costs
+  the cross-session evidence. A run reports what it read versus reused, and asks
+  before reading more than a few new sessions.
+- The digest names the mode it ran in, so "nothing new since last time" and
+  "nothing here at all" no longer read alike.
+- `/learn`'s per-directory memory is discarded once on upgrade. Its keys used to
+  be normalized directive text and are now the miner's semantic label, so old
+  entries could never match a new proposal — harmless for suppression, but every
+  one of them would have counted in `/learn stats` as a proposal that was never
+  adopted, holding the rate down permanently. The cost of discarding is one round
+  of re-proposing.
+
+### Added
+
+- `/learn` shows a progress bar in the footer while it reads transcripts — the
+  same one the semantic index uses — with the count of sessions done, how many
+  came from cache, and the reminder that escape stops it. Cached sessions count
+  as done: the bar measures progress through the window, so a mostly-cached run
+  looks nearly finished from the start, which it is.
+- A long backfill can be stopped with escape. Everything read up to that point is
+  already cached, so resuming picks up where it left off. A stopped run neither
+  shows nor records its proposals: it counted only part of the window, so its
+  numbers are low, and bookmarking them would hide those items on the next
+  complete run.
+- `/learn` reads transcripts with the `fast` model category — the same tier
+  subagents already use for bulk reads — rather than the session's model. Set
+  `modelCategories.fast` to change it; left unset it is derived from the models
+  you have, so nothing here is provider-specific. `/learn settings` names the
+  model it resolved and how much it sends per call.
+- Transcripts are chunked to fit the reading model's context window instead of a
+  fixed 120k characters. Rendering already compresses the two real transcripts in
+  this repo from 0.93 MB and 2.26 MB to roughly 47k and 68k tokens, so on a
+  200k-token model each is now a single call rather than two and three. Fewer
+  boundaries also means fewer blind spots: a failure and the fix that resolved it
+  can otherwise land on opposite sides of one.
 ## [0.5.17] - 2026-08-14
 
 ### Fixed

@@ -1,13 +1,18 @@
 /**
- * Process-wide store for transient startup progress: first-run downloads of the
- * external tool binaries (fd, rg, the semantic-index engine) and the semantic
- * index build itself.
+ * Process-wide store for transient progress bars in the footer: first-run
+ * downloads of the external tool binaries (fd, rg, the semantic-index engine),
+ * the semantic index build, and `/learn` reading session transcripts.
  *
  * Modeled on `taskStore` — a singleton the footer reads directly and re-renders
- * on change — but deliberately separate from it: this is short-lived startup
- * status, not agent work, so it must never render as a task-panel plan row.
- * Entries are keyed so several concurrent downloads each own a stable footer
- * line; a caller removes its key when the work settles and the line disappears.
+ * on change — but deliberately separate from it: this is short-lived status,
+ * not agent work, so it must never render as a task-panel plan row. Entries are
+ * keyed so several concurrent jobs each own a stable footer line; a caller
+ * removes its key when the work settles and the line disappears.
+ *
+ * Most entries are startup work, and `clear()` drops them when the first user
+ * turn begins. A caller running later (a slash command, say) owns its key for
+ * the length of its own await and must remove it in a `finally`, so a failure
+ * cannot strand a bar in the footer.
  */
 
 export type StartupProgress =
