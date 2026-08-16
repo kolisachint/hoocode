@@ -65,6 +65,8 @@ const COVERAGE_SYSTEM_PROMPT = `You decide whether each proposed rule is ALREADY
 
 You are given numbered RULES (lines from context files), numbered SKILLS (name and description), and numbered PROPOSALS.
 
+Each rule reads \`[scope] Heading > Subheading > line\`. The scope is \`repo\` (binds work in this project) or \`user\` (binds everywhere). The heading path is the section the line lives under, and it is what tells you the line's subject when the line alone is ambiguous.
+
 For each proposal, decide:
 - "rule" — an existing rule already says this. The reader repeating it means that rule is not working, so it should be rewritten rather than duplicated.
 - "skill" — an existing skill already does this, and the reader asked by hand anyway. Usually the skill's description does not describe the situation they were in.

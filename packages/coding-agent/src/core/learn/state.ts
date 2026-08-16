@@ -30,13 +30,14 @@ import { writeFileAtomicSync } from "../../utils/atomic-file.js";
  * migrated.
  *
  * v2: keys hold the miner's semantic label (`directive:use-bun-not-npm`) where
- * v1 held normalized directive text (`directive:always use bun not npm`). The
- * two never collide, so a v1 file left in place would not suppress anything —
- * harmless — but every entry in it would be counted by `/learn stats` as a
- * proposal that was never adopted, permanently depressing the rate. Discarding
- * costs one round of re-proposing; keeping costs a number that stays wrong.
+ * v1 held normalized directive text (`directive:always use bun not npm`).
+ *
+ * v3: `workflow:` keys are gone — the category was removed — and labels now come
+ * from a global naming pass rather than per-session guesses, so the keys a v2
+ * file holds were drawn from a vocabulary that no longer exists. Keeping them
+ * would suppress nothing and count as proposals that were never revisited.
  */
-const STATE_VERSION = 2;
+const STATE_VERSION = 3;
 
 /** Surfaced keys older than this are forgotten, so the file cannot grow without bound. */
 const STATE_RETENTION_DAYS = 180;
@@ -168,56 +169,35 @@ export interface LearnStats {
 	total: number;
 	directives: number;
 	fixes: number;
-	workflows: number;
-	/**
-	 * Directive proposals that were genuinely open questions — not already
-	 * written down when they were shown. Only these can be adopted or passed
-	 * over, so they are the denominator of the rate.
-	 */
-	open: number;
-	adopted: number;
-	declined: number;
+	requests: number;
 	earliest?: string;
 	latest?: string;
 	lastRun?: string;
 }
 
 /**
- * Reconstruct what happened to past proposals.
+ * Count what has been proposed, and when.
  *
- * Nothing extra is recorded to make this work: each entry already stores whether
- * it was covered when it was shown, and coverage now is recomputable, so the
- * pair is enough to tell an adopted proposal from one that was passed over.
- *
- * Directives only. Fixes and workflows have no coverage signal — a fix may have
- * become a rule, a skill, or a habit, and which one is not recoverable — so
- * counting them here would mean inventing an outcome.
+ * Deliberately no adoption rate. There used to be one, derived by re-judging
+ * coverage and calling the delta "adopted", and it was wrong in both
+ * directions: a failed judge at either end moved the number, and a proposal
+ * correctly rejected as junk was indistinguishable from one ignored. It shipped
+ * with two disclaimers explaining how not to misread it, which is the clearest
+ * possible sign that it should not have shipped. What the reader actually wants
+ * — is the always-loaded surface growing or shrinking — is measurable exactly,
+ * from the context files themselves, and is reported instead.
  */
-export function summarizeLearnState(state: LearnState, isCoveredNow: (normalized: string) => boolean): LearnStats {
-	const stats: LearnStats = { total: 0, directives: 0, fixes: 0, workflows: 0, open: 0, adopted: 0, declined: 0 };
+export function summarizeLearnState(state: LearnState): LearnStats {
+	const stats: LearnStats = { total: 0, directives: 0, fixes: 0, requests: 0 };
 
 	for (const [key, item] of Object.entries(state.surfaced)) {
 		stats.total++;
 		if (!stats.earliest || item.surfacedAt < stats.earliest) stats.earliest = item.surfacedAt;
 		if (!stats.latest || item.surfacedAt > stats.latest) stats.latest = item.surfacedAt;
 
-		if (key.startsWith("fix:")) {
-			stats.fixes++;
-			continue;
-		}
-		if (key.startsWith("workflow:")) {
-			stats.workflows++;
-			continue;
-		}
-		if (!key.startsWith("directive:")) continue;
-
-		stats.directives++;
-		// Already written down when shown, so there was no decision to make.
-		if (item.coveredWhenSurfaced) continue;
-
-		stats.open++;
-		if (isCoveredNow(key.slice("directive:".length))) stats.adopted++;
-		else stats.declined++;
+		if (key.startsWith("fix:")) stats.fixes++;
+		else if (key.startsWith("request:")) stats.requests++;
+		else if (key.startsWith("directive:")) stats.directives++;
 	}
 
 	stats.lastRun = state.lastRun;

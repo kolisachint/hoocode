@@ -34,16 +34,18 @@ import { getUserAgentsDir } from "../../config.js";
 import { getSessionDirPath } from "../session-manager.js";
 import { loadSkills } from "../skills.js";
 import { hashSessionFile, pruneLearnCache, readCachedMining, writeCachedMining } from "./cache.js";
+import type { Clusterer, ClusterInput } from "./cluster.js";
+import { fallbackLabel } from "./cluster.js";
 import type { CoverageIndex, CoverageJudge, CoverageQuery } from "./coverage.js";
 import { noCoverageJudge } from "./coverage.js";
-import type { MinableSession, Miner } from "./mine.js";
-import type { DirectiveCluster, FixCandidate, MinedSession, Proposable, WorkflowCandidate } from "./reduce.js";
-import { reduceDirectives, reduceFixes, reduceWorkflows } from "./reduce.js";
+import type { MinableSession, MinedCandidate, Miner } from "./mine.js";
+import type { DirectiveCluster, FixCandidate, MinedSession, Proposable, RequestCandidate } from "./reduce.js";
+import { reduceDirectives, reduceFixes, reduceRequests } from "./reduce.js";
 import { judge, type LearnState } from "./state.js";
 
 export type { CoverageIndex, CoverageMatch } from "./coverage.js";
 export { LEARN_DIGEST_MARKER } from "./mine.js";
-export type { DirectiveCluster, DirectiveStatus, FixCandidate, WorkflowCandidate } from "./reduce.js";
+export type { DirectiveCluster, DirectiveStatus, FixCandidate, RequestCandidate } from "./reduce.js";
 
 /** Sessions considered, newest first. */
 const DEFAULT_MAX_SESSIONS = 20;
@@ -53,8 +55,14 @@ const DEFAULT_MAX_AGE_DAYS = 30;
 const MAX_ENTRIES_PER_SESSION = 8000;
 /** Occurrences a directive needs before it is proposed. */
 const DEFAULT_MIN_DIRECTIVE_COUNT = 2;
-/** Repeats before a tool sequence is worth proposing as a skill. */
-const DEFAULT_MIN_WORKFLOW_COUNT = 3;
+/**
+ * Sessions a request needs before it is worth proposing as a slash command.
+ *
+ * Higher than the directive bar. A rule you stated twice is a rule; a job you
+ * asked for twice may just be a job that came up twice. Three separate sessions
+ * is the point at which typing it again is the expensive option.
+ */
+const DEFAULT_MIN_REQUEST_COUNT = 3;
 /** Cap on each list in the digest, so the model's budget goes to the top signals. */
 const DEFAULT_MAX_PER_CATEGORY = 8;
 
@@ -107,15 +115,43 @@ export interface LearnDigest {
 	 * hide the item on the next run, when the evidence is complete.
 	 */
 	aborted: boolean;
+	/**
+	 * The coverage judge failed, so every directive reads `new` whether or not it
+	 * is written down. Callers must not record these as surfaced either: the
+	 * bookmark stores whether an item was covered when shown, and a wrong `false`
+	 * there tells a later run you passed over a proposal you were never given.
+	 */
+	coverageFailed: boolean;
 	oldestSession?: string;
 	newestSession?: string;
 	agentsFilePath?: string;
 	agentsFileTokens?: number;
 	directives: DirectiveCluster[];
 	fixes: FixCandidate[];
-	workflows: WorkflowCandidate[];
+	requests: RequestCandidate[];
 	/** Items held back because nothing new has happened since they were last shown. */
 	suppressed: number;
+	/** Items that cleared every threshold but lost the ranking to `maxProposals`. */
+	cut: number;
+	/**
+	 * What the window contained before the thresholds, so an empty digest can be
+	 * read.
+	 *
+	 * The pipeline filters hard — replayed slash-command bodies, tool output,
+	 * quotes that cannot be found in the transcript, then a distinct-session bar
+	 * — and every one of those is silent. Without these numbers "nothing to
+	 * propose" is unreadable: it could mean the sessions taught nothing, or that
+	 * the bar is one session too high, and the reader has no way to tell which
+	 * knob to reach for.
+	 */
+	funnel: {
+		/** Occurrences the miner reported and the quote check accepted. */
+		candidates: number;
+		/** Distinct points after naming — how much the clustering pass actually merged. */
+		points: number;
+		/** Points that were named and counted but did not clear the repeat threshold. */
+		belowThreshold: number;
+	};
 	/** Everything this run put on screen, for the caller to persist. */
 	surfaced: Array<{ key: string; lastSeen: string; covered: boolean; text?: string }>;
 }
@@ -134,7 +170,7 @@ export interface ExtractOptions {
 	/** Occurrences a directive needs before it is proposed. The signal/noise dial. */
 	minRepeats?: number;
 	/** Repeats a tool sequence needs before it is proposed as a skill. */
-	minWorkflowRepeats?: number;
+	minRequestRepeats?: number;
 	/** Cap on each list in the digest. */
 	maxProposals?: number;
 	/**
@@ -157,6 +193,12 @@ export interface ExtractOptions {
 export interface MineOptions extends ExtractOptions {
 	/** Reads one session and reports what it saw. */
 	miner: Miner;
+	/**
+	 * Names the whole window at once, deciding which occurrences are the same
+	 * point. Without one, each candidate is named after its own wording, which
+	 * groups identical sentences and nothing else.
+	 */
+	clusterer?: Clusterer;
 	/** Decides which proposals are already written down. Defaults to "none are". */
 	coverageJudge?: CoverageJudge;
 	/** Progress callback, so a cold-cache run is not a silent wait. */
@@ -183,8 +225,31 @@ interface EntryLike {
 interface ParsedSession {
 	file: string;
 	id: string;
+	/** When the session was opened. Describes the window, not what is in it. */
 	timestamp: string;
+	/**
+	 * When the session was last written to.
+	 *
+	 * This is the clock suppression runs on, and it must not be the session's
+	 * start. A session opened yesterday and worked in today would date everything
+	 * said in it to yesterday, which can be older than the last `/learn` run — so
+	 * something said minutes ago reads as "nothing new since you were last shown
+	 * this" and is held back. Per-candidate timestamps would be finer, but the
+	 * miner sees an untimestamped blob and would have to invent them; the
+	 * session's last activity is deterministic, free, and errs toward showing an
+	 * item again rather than hiding it.
+	 */
+	lastActivity: string;
 	entries: EntryLike[];
+}
+
+/** Newest entry timestamp on the branch, falling back to when the session opened. */
+function lastActivityOf(entries: EntryLike[], fallback: string): string {
+	let latest = "";
+	for (const entry of entries) {
+		if (typeof entry.timestamp === "string" && entry.timestamp > latest) latest = entry.timestamp;
+	}
+	return latest || fallback;
 }
 
 /**
@@ -284,11 +349,14 @@ function parseSessionFile(file: string, cwd: string, onSkip: (reason: SkipReason
 		return undefined;
 	}
 
+	const branch = activeBranch(entries);
+	const opened = header?.timestamp ?? statSync(file).mtime.toISOString();
 	return {
 		file,
 		id: header?.id ?? file,
-		timestamp: header?.timestamp ?? statSync(file).mtime.toISOString(),
-		entries: activeBranch(entries),
+		timestamp: opened,
+		lastActivity: lastActivityOf(branch, opened),
+		entries: branch,
 	};
 }
 
@@ -414,8 +482,10 @@ function applySuppression<T extends Proposable>(
 	maxProposals: number,
 	covered: (item: T) => boolean,
 	onDeclined?: (item: T) => void,
-): { kept: T[]; suppressed: number } {
-	if (!state) return { kept: items.slice(0, maxProposals), suppressed: 0 };
+): { kept: T[]; suppressed: number; cut: number } {
+	if (!state) {
+		return { kept: items.slice(0, maxProposals), suppressed: 0, cut: Math.max(0, items.length - maxProposals) };
+	}
 
 	const kept: T[] = [];
 	let suppressed = 0;
@@ -428,7 +498,11 @@ function applySuppression<T extends Proposable>(
 		if (verdict.previouslyDeclined) onDeclined?.(item);
 		kept.push(item);
 	}
-	return { kept: kept.slice(0, maxProposals), suppressed };
+	// Anything past the cap cleared every bar and lost on rank alone. It is not
+	// suppressed and it is not bookmarked, so it will be back next run — but a
+	// digest that silently shows eight of twenty reads as "twenty is all there
+	// was", and the reader tunes the wrong knob.
+	return { kept: kept.slice(0, maxProposals), suppressed, cut: Math.max(0, kept.length - maxProposals) };
 }
 
 /**
@@ -462,6 +536,74 @@ export function planMining(options: ExtractOptions): { total: number; cached: nu
 	return { total: sessions.length, cached, pending };
 }
 
+/** One session's candidates before the naming pass has seen them. */
+interface RawMinedSession {
+	sessionId: string;
+	lastActivity: string;
+	candidates: MinedCandidate[];
+}
+
+/**
+ * Name every candidate in the window in one place.
+ *
+ * The pass runs over the whole window at once rather than per session, which is
+ * the entire point: "is this the same point as that" is unanswerable from
+ * inside one transcript. Labels already on record are offered as vocabulary so
+ * an item you decided on keeps the key it was bookmarked under — without that,
+ * a renamed cluster reads as brand new and suppression quietly stops working.
+ *
+ * A failed call falls back to naming each candidate after its own wording,
+ * which groups identical sentences and nothing else. That is the behaviour the
+ * pipeline had before this stage existed, so a clustering outage costs recall,
+ * not the run.
+ */
+async function labelSessions(
+	raw: RawMinedSession[],
+	clusterer: Clusterer | undefined,
+	knownLabels: string[],
+	signal?: AbortSignal,
+): Promise<MinedSession[]> {
+	const inputs: ClusterInput[] = [];
+	const origin: Array<{ session: number; candidate: number }> = [];
+	for (const [sessionIndex, session] of raw.entries()) {
+		for (const [candidateIndex, candidate] of session.candidates.entries()) {
+			inputs.push({ id: inputs.length, kind: candidate.kind, text: candidate.text });
+			origin.push({ session: sessionIndex, candidate: candidateIndex });
+		}
+	}
+
+	let labels = new Map<number, string>();
+	if (clusterer && inputs.length > 0) {
+		try {
+			labels = await clusterer(inputs, knownLabels, signal);
+		} catch {
+			// Fall through to per-text labels below.
+		}
+	}
+
+	const labelled: MinedSession[] = raw.map((session) => ({
+		sessionId: session.sessionId,
+		lastActivity: session.lastActivity,
+		candidates: [],
+	}));
+	for (const [index, input] of inputs.entries()) {
+		const where = origin[index];
+		const candidate = where ? raw[where.session]?.candidates[where.candidate] : undefined;
+		if (!where || !candidate) continue;
+		labelled[where.session]?.candidates.push({
+			...candidate,
+			label: labels.get(input.id) ?? fallbackLabel(input.text),
+		});
+	}
+	return labelled;
+}
+
+/** Labels already on record, so the naming pass can reuse rather than reinvent them. */
+function knownLabelsFrom(state: LearnState | undefined): string[] {
+	if (!state) return [];
+	return Object.keys(state.surfaced).map((key) => key.slice(key.indexOf(":") + 1));
+}
+
 /** Nearest AGENTS.md walking up from cwd, so proposals can be checked against it. */
 function findAgentsFile(cwd: string): string | undefined {
 	let dir = resolve(cwd);
@@ -476,20 +618,57 @@ function findAgentsFile(cwd: string): string | undefined {
 	}
 }
 
+/**
+ * Turn one context file into rule lines the coverage judge can reason about.
+ *
+ * Headings were dropped and the lines under them sent bare, which asks the
+ * model to decide whether a proposal is in scope using text with the scope
+ * removed — "stage only your own files" reads very differently under "Git Rules
+ * for Parallel Agents" than on its own. So each line carries its heading path,
+ * and the scope it came from, since the corpus spans a repo file and two user
+ * ones and a rule's home decides who it binds.
+ *
+ * Fenced blocks go: a code sample illustrates a rule, it is not one, and on a
+ * real file it is a large share of the non-bullet text.
+ */
+function ruleLinesOf(content: string, scope: string): string[] {
+	const lines: string[] = [];
+	const headings: string[] = [];
+	let inFence = false;
+
+	for (const raw of content.split("\n")) {
+		const line = raw.trim();
+		if (line.startsWith("```")) {
+			inFence = !inFence;
+			continue;
+		}
+		if (inFence || line.length === 0) continue;
+
+		const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+		if (heading) {
+			const depth = heading[1]?.length ?? 1;
+			headings.length = Math.min(headings.length, depth - 1);
+			headings[depth - 1] = heading[2] ?? "";
+			continue;
+		}
+
+		const path = headings.filter(Boolean).join(" > ");
+		lines.push(path ? `[${scope}] ${path} > ${line}` : `[${scope}] ${line}`);
+	}
+	return lines;
+}
+
 /** Assemble the coverage index for a directory. */
 export function buildCoverageIndex(options: {
 	cwd: string;
 	agentDir: string;
 	skills?: Array<{ name: string; description: string }>;
 }): CoverageIndex {
-	const corpus = coverageCorpus(options.agentDir, findAgentsFile(options.cwd));
-	return {
-		ruleLines: corpus
-			.split("\n")
-			.map((line) => line.trim())
-			.filter((line) => line.length > 0 && !line.startsWith("#")),
-		skills: options.skills ?? loadSkillIndex(options.cwd, options.agentDir),
-	};
+	const ruleLines: string[] = [];
+	for (const file of coverageFiles(options.agentDir, findAgentsFile(options.cwd))) {
+		ruleLines.push(...ruleLinesOf(file.content, file.scope));
+	}
+	return { ruleLines, skills: options.skills ?? loadSkillIndex(options.cwd, options.agentDir) };
 }
 
 /**
@@ -500,17 +679,22 @@ export function buildCoverageIndex(options: {
  * user scope. Checking only the repo file would report a rule you accepted into
  * `~/.agents/AGENTS.md` as declined.
  */
-function coverageCorpus(agentDir: string, repoFile: string | undefined): string {
-	const parts: string[] = [];
-	for (const candidate of [repoFile, join(getUserAgentsDir(), "AGENTS.md"), join(agentDir, "AGENTS.md")]) {
-		if (!candidate || !existsSync(candidate)) continue;
+function coverageFiles(agentDir: string, repoFile: string | undefined): Array<{ scope: string; content: string }> {
+	const files: Array<{ scope: string; content: string }> = [];
+	const candidates: Array<{ scope: string; path: string | undefined }> = [
+		{ scope: "repo", path: repoFile },
+		{ scope: "user", path: join(getUserAgentsDir(), "AGENTS.md") },
+		{ scope: "user", path: join(agentDir, "AGENTS.md") },
+	];
+	for (const candidate of candidates) {
+		if (!candidate.path || !existsSync(candidate.path)) continue;
 		try {
-			parts.push(readFileSync(candidate, "utf-8"));
+			files.push({ scope: candidate.scope, content: readFileSync(candidate.path, "utf-8") });
 		} catch {
 			// Unreadable context file: treat as absent rather than failing the run.
 		}
 	}
-	return parts.join("\n");
+	return files;
 }
 
 /**
@@ -551,8 +735,8 @@ function loadSkillIndex(cwd: string, agentDir: string): Array<{ name: string; de
 async function mineSessions(
 	sessions: ParsedSession[],
 	options: MineOptions,
-): Promise<{ mined: MinedSession[]; report: MiningReport; aborted: boolean }> {
-	const mined: MinedSession[] = [];
+): Promise<{ mined: RawMinedSession[]; report: MiningReport; aborted: boolean }> {
+	const mined: RawMinedSession[] = [];
 	const report: MiningReport = { cached: 0, mined: 0, failed: 0 };
 
 	let done = 0;
@@ -562,7 +746,7 @@ async function mineSessions(
 		const hash = hashSessionFile(session.file);
 		const cached = hash ? readCachedMining(options.agentDir, hash) : undefined;
 		if (cached) {
-			mined.push({ sessionId: session.id, timestamp: session.timestamp, candidates: cached.candidates });
+			mined.push({ sessionId: session.id, lastActivity: session.lastActivity, candidates: cached.candidates });
 			report.cached++;
 			done++;
 			options.onProgress?.({ done, total: sessions.length, cached: report.cached });
@@ -572,7 +756,7 @@ async function mineSessions(
 		const minable: MinableSession = { id: session.id, timestamp: session.timestamp, entries: session.entries };
 		try {
 			const candidates = await options.miner(minable, options.signal);
-			mined.push({ sessionId: session.id, timestamp: session.timestamp, candidates });
+			mined.push({ sessionId: session.id, lastActivity: session.lastActivity, candidates });
 			report.mined++;
 			if (hash) {
 				writeCachedMining(options.agentDir, hash, {
@@ -627,32 +811,49 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 	const { mined, report, aborted } = await mineSessions(sessions, options);
 	pruneLearnCache(options.agentDir, options.now);
 
+	const state = options.ignoreState ? undefined : options.state;
+	// Named against the labels already on record — including in `all` mode, where
+	// suppression is off but the bookmark still has to line up next run.
+	const labelled = await labelSessions(mined, options.clusterer, knownLabelsFrom(options.state), options.signal);
+
 	const minRepeats = options.minRepeats ?? DEFAULT_MIN_DIRECTIVE_COUNT;
 	const maxProposals = options.maxProposals ?? DEFAULT_MAX_PER_CATEGORY;
-	const directives = reduceDirectives(mined, minRepeats);
-	const fixes = reduceFixes(mined, minRepeats);
-	const workflows = reduceWorkflows(mined, options.minWorkflowRepeats ?? DEFAULT_MIN_WORKFLOW_COUNT);
+	const directives = reduceDirectives(labelled, minRepeats);
+	const fixes = reduceFixes(labelled, minRepeats);
+	const requests = reduceRequests(labelled, options.minRequestRepeats ?? DEFAULT_MIN_REQUEST_COUNT);
+
+	// Counted with the threshold at 1, which is the same reduce over the same
+	// input — so the difference is exactly what the threshold cost, rather than an
+	// estimate of it.
+	const everyPoint =
+		reduceDirectives(labelled, 1).length + reduceFixes(labelled, 1).length + reduceRequests(labelled, 1).length;
+	const funnel = {
+		candidates: labelled.reduce((sum, session) => sum + session.candidates.length, 0),
+		points: everyPoint,
+		belowThreshold: everyPoint - directives.length - fixes.length - requests.length,
+	};
 
 	// Coverage is asked only about what survived the repeat threshold. Judging
 	// everything would mean sending the context file alongside a long tail of
 	// one-off observations that are never going to be proposed.
 	const coverage = buildCoverageIndex({ cwd: options.cwd, agentDir: options.agentDir, skills: options.skills });
 	const queries: CoverageQuery[] = directives.map((d) => ({ label: d.label, text: d.text }));
+	let coverageFailed = false;
 	try {
 		const verdicts = await (options.coverageJudge ?? noCoverageJudge)(queries, coverage, options.signal);
 		applyCoverage(directives, verdicts);
 	} catch {
 		// A failed coverage call leaves everything `new`, which over-proposes
 		// slightly. That is the right way to fail: the reader can reject a
-		// duplicate, but cannot recover a proposal that was wrongly withheld.
+		// duplicate, but cannot recover a proposal that was wrongly withheld. What
+		// must not happen is writing that guess down as if it were a reading.
+		coverageFailed = true;
 	}
 
 	const timestamps = sessions.map((s) => s.timestamp).sort();
-	const state = options.ignoreState ? undefined : options.state;
-
 	// Directives carry a real coverage signal — is this written down as a rule or
 	// a skill right now? — which is what separates an adopted proposal from a
-	// declined one. Fixes and workflows do not: a fix may have become a rule, a
+	// declined one. Fixes and requests do not: a fix may have become a rule, a
 	// skill, or a habit, and which one is not recoverable here, so they get
 	// suppression only and are never labelled declined.
 	const keptDirectives = applySuppression(
@@ -665,7 +866,7 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 		},
 	);
 	const keptFixes = applySuppression(fixes, state, maxProposals, () => false);
-	const keptWorkflows = applySuppression(workflows, state, maxProposals, () => false);
+	const keptRequests = applySuppression(requests, state, maxProposals, () => false);
 
 	const surfaced = [
 		// Directives carry their wording forward so a later `/learn stats` can ask
@@ -677,7 +878,7 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 			text: d.text,
 		})),
 		...keptFixes.kept.map((f) => ({ key: f.key, lastSeen: f.lastSeen, covered: false })),
-		...keptWorkflows.kept.map((w) => ({ key: w.key, lastSeen: w.lastSeen, covered: false })),
+		...keptRequests.kept.map((r) => ({ key: r.key, lastSeen: r.lastSeen, covered: false })),
 	];
 
 	return {
@@ -686,6 +887,7 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 		scan,
 		mining: report,
 		aborted,
+		coverageFailed,
 		oldestSession: timestamps[0],
 		newestSession: timestamps[timestamps.length - 1],
 		agentsFilePath,
@@ -693,8 +895,10 @@ export async function mineLearnDigest(options: MineOptions): Promise<LearnDigest
 			agentsContent === undefined ? undefined : Math.round(Buffer.byteLength(agentsContent, "utf-8") / 4),
 		directives: keptDirectives.kept,
 		fixes: keptFixes.kept,
-		workflows: keptWorkflows.kept,
-		suppressed: keptDirectives.suppressed + keptFixes.suppressed + keptWorkflows.suppressed,
+		requests: keptRequests.kept,
+		suppressed: keptDirectives.suppressed + keptFixes.suppressed + keptRequests.suppressed,
+		cut: keptDirectives.cut + keptFixes.cut + keptRequests.cut,
+		funnel,
 		surfaced,
 	};
 }

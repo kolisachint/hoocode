@@ -3135,7 +3135,7 @@ export class InteractiveMode {
 							learnMaxSessions: learn.maxSessions,
 							learnMaxAgeDays: learn.maxAgeDays,
 							learnMinRepeats: learn.minRepeats,
-							learnMinWorkflowRepeats: learn.minWorkflowRepeats,
+							learnMinRequestRepeats: learn.minRequestRepeats,
 							learnMaxProposals: learn.maxProposals,
 						};
 					})(),

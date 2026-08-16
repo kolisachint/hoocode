@@ -3,19 +3,29 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { getLearnCacheDir, hashSessionFile, readCachedMining, writeCachedMining } from "../src/core/learn/cache.js";
+import type { Clusterer } from "../src/core/learn/cluster.js";
 import type { CoverageIndex, CoverageJudge, CoverageMatch } from "../src/core/learn/coverage.js";
 import { parseVerdicts } from "../src/core/learn/coverage.js";
 import { isEmptyDigest, renderLearnDigest } from "../src/core/learn/digest.js";
-import { type MineOptions, mineLearnDigest, planMining, scanSessions } from "../src/core/learn/extract.js";
-import type { MinableSession, MinedCandidate, Miner } from "../src/core/learn/mine.js";
+import {
+	buildCoverageIndex,
+	type MineOptions,
+	mineLearnDigest,
+	planMining,
+	scanSessions,
+} from "../src/core/learn/extract.js";
+import type { LabelledCandidate, MinableSession, MinedCandidate, Miner } from "../src/core/learn/mine.js";
 import {
 	chunkCharsForModel,
 	chunkTranscript,
+	isReplayedTurn,
 	LEARN_DIGEST_MARKER,
 	parseCandidates,
 	renderTranscript,
+	replayFingerprints,
+	verifyCandidates,
 } from "../src/core/learn/mine.js";
-import { reduceDirectives, reduceFixes, reduceWorkflows } from "../src/core/learn/reduce.js";
+import { reduceDirectives, reduceFixes, reduceRequests } from "../src/core/learn/reduce.js";
 import {
 	getLearnStatePath,
 	readLearnState,
@@ -159,13 +169,33 @@ function fakeMiner(extra?: (session: MinableSession) => MinedCandidate[]): Miner
 			.split("\n")
 			.filter((line) => line.startsWith("USER: "))
 			.map((line) => line.slice("USER: ".length))
-			.map<MinedCandidate>((text) => ({ kind: "directive", label: slugify(text), text }));
+			.map<MinedCandidate>((text) => ({ kind: "directive", text }));
 		return [...directives, ...(extra?.(session) ?? [])];
 	};
 }
 
 /** A miner that reports nothing, for tests about discovery rather than content. */
 const emptyMiner: Miner = async () => [];
+
+/**
+ * A clusterer that names each item after its significant words.
+ *
+ * Crude on purpose, and crude in the right direction: two differently-worded
+ * lines about the same thing land on one label, which is the property the real
+ * pass exists to provide. It also honours the known-label vocabulary, so tests
+ * about state stability exercise the same path the model is asked to follow.
+ */
+function fakeClusterer(): Clusterer {
+	return async (inputs, knownLabels) => {
+		const out = new Map<number, string>();
+		for (const input of inputs) {
+			const slug = slugify(input.text);
+			const known = knownLabels.find((label) => label === slug);
+			out.set(input.id, known ?? slug);
+		}
+		return out;
+	};
+}
 
 /**
  * A coverage judge that matches on shared significant words.
@@ -209,6 +239,7 @@ function mine(fixture: Fixture, overrides: Partial<MineOptions> = {}) {
 		// so a developer's own skills would otherwise leak into coverage assertions.
 		skills: [],
 		miner: fakeMiner(),
+		clusterer: fakeClusterer(),
 		coverageJudge: fakeCoverageJudge(),
 		...overrides,
 	});
@@ -247,10 +278,75 @@ describe("renderTranscript", () => {
 		expect(rendered).toContain("ERROR: gyp ERR! boom");
 	});
 
-	it("truncates successful tool output, which is mostly noise", () => {
-		const rendered = renderTranscript(session(bash("ls", "x".repeat(5000), false)));
-		expect(rendered.length).toBeLessThan(2000);
-		expect(rendered).toContain("…");
+	it("drops successful tool output, which is a file talking rather than the user", () => {
+		// Kept, this is where "directives" lifted out of plan files come from.
+		const rendered = renderTranscript(session(bash("cat plan.md", "Set the tagline to 'coding agent'", false)));
+		expect(rendered).toContain("TOOL: bash(command=cat plan.md)");
+		expect(rendered).not.toContain("tagline");
+	});
+
+	it("drops a user turn that is a slash-command body replaying itself", () => {
+		const template = {
+			content: "Open a release PR with bump type: **$1**. Stage only the files you changed in this session.",
+		};
+		const fingerprints = replayFingerprints([template]);
+		const expansion =
+			"Open a release PR with bump type: **patch**. Stage only the files you changed in this session.";
+		const rendered = renderTranscript(session([userEntry(expansion), userEntry("use tabs")]), fingerprints);
+		expect(rendered).not.toContain("Stage only");
+		expect(rendered).toContain("USER: use tabs");
+	});
+
+	it("keeps a turn that merely mentions a command, which the user did type", () => {
+		const fingerprints = replayFingerprints([
+			{ content: "Open a release PR with bump type: **$1**. Stage only the files you changed in this session." },
+		]);
+		const rendered = renderTranscript(session([userEntry("run /pr patch when you are done")]), fingerprints);
+		expect(rendered).toContain("USER: run /pr patch when you are done");
+	});
+});
+
+describe("replayFingerprints", () => {
+	it("ignores a template with no literal run long enough to identify it", () => {
+		// A short body cannot be told from a sentence someone would type, and a
+		// false positive here deletes real evidence rather than noise.
+		expect(replayFingerprints([{ content: "$1 $2" }])).toEqual([]);
+		expect(replayFingerprints([{ content: "commit my work" }])).toEqual([]);
+		expect(replayFingerprints([{ content: "x".repeat(39) }])).toEqual([]);
+		expect(replayFingerprints([{ content: "x".repeat(40) }])).toHaveLength(1);
+	});
+
+	it("survives the wrapping a markdown body imposes on a sentence", () => {
+		const fingerprints = replayFingerprints([
+			{ content: "Identify ONLY the files you changed in this session. Do NOT use\n   `git add -A`." },
+		]);
+		expect(
+			isReplayedTurn("Identify ONLY the files you changed in this session. Do NOT use `git add -A`.", fingerprints),
+		).toBe(true);
+	});
+});
+
+describe("verifyCandidates", () => {
+	function directive(text: string): MinedCandidate {
+		return { kind: "directive", text };
+	}
+
+	it("keeps a quote that can be found in what the user said", () => {
+		const kept = verifyCandidates([directive("always use bun")], "we're on bun now. always use bun, never npm");
+		expect(kept).toHaveLength(1);
+	});
+
+	it("matches across the wrapping the user's own message had", () => {
+		expect(verifyCandidates([directive("always use bun")], "always   use\nbun")).toHaveLength(1);
+	});
+
+	it("drops a quote that appears nowhere, since it cannot be shown", () => {
+		expect(verifyCandidates([directive("never force push")], "use tabs everywhere")).toHaveLength(0);
+	});
+
+	it("holds fixes to no such test, since their evidence is not something said", () => {
+		const fix: MinedCandidate = { kind: "fix", text: "install failed, then passed" };
+		expect(verifyCandidates([fix], "unrelated")).toHaveLength(1);
 	});
 });
 
@@ -304,34 +400,38 @@ describe("chunkCharsForModel", () => {
 
 describe("parseCandidates", () => {
 	it("reads a well-formed response", () => {
+		const parsed = parseCandidates(JSON.stringify({ candidates: [{ kind: "directive", text: "we're on bun now" }] }));
+		expect(parsed).toHaveLength(1);
+		expect(parsed[0]!.text).toBe("we're on bun now");
+	});
+
+	it("ignores a label, which this stage is no longer asked for", () => {
 		const parsed = parseCandidates(
-			JSON.stringify({ candidates: [{ kind: "directive", label: "Use-Bun", text: "we're on bun now" }] }),
+			JSON.stringify({ candidates: [{ kind: "directive", label: "use-bun", text: "we're on bun now" }] }),
 		);
 		expect(parsed).toHaveLength(1);
-		// Labels are the grouping key, so case cannot be allowed to fork a cluster.
-		expect(parsed[0]!.label).toBe("use-bun");
+		expect("label" in parsed[0]!).toBe(false);
 	});
 
 	it("tolerates a fenced or prefixed response", () => {
 		const parsed = parseCandidates(
-			'Here you go:\n```json\n{"candidates":[{"kind":"fix","label":"py-missing","text":"npm install"}]}\n```',
+			'Here you go:\n```json\n{"candidates":[{"kind":"fix","text":"npm install"}]}\n```',
 		);
 		expect(parsed).toHaveLength(1);
 		expect(parsed[0]!.kind).toBe("fix");
 	});
 
-	it("drops rows that cannot be grouped or quoted", () => {
+	it("drops rows that cannot be quoted or typed", () => {
 		const parsed = parseCandidates(
 			JSON.stringify({
 				candidates: [
-					{ kind: "directive", label: "", text: "no label" },
-					{ kind: "directive", label: "no-text", text: "" },
-					{ kind: "nonsense", label: "bad-kind", text: "x" },
-					{ kind: "directive", label: "good", text: "keep me" },
+					{ kind: "directive", text: "" },
+					{ kind: "nonsense", text: "x" },
+					{ kind: "directive", text: "keep me" },
 				],
 			}),
 		);
-		expect(parsed.map((c) => c.label)).toEqual(["good"]);
+		expect(parsed.map((c) => c.text)).toEqual(["keep me"]);
 	});
 
 	it("returns nothing rather than throwing on unparseable output", () => {
@@ -380,9 +480,9 @@ describe("parseVerdicts", () => {
 // ── Reduction ───────────────────────────────────────────────────────────────
 
 describe("reduce", () => {
-	const session = (id: string, timestamp: string, candidates: MinedCandidate[]) => ({
+	const session = (id: string, lastActivity: string, candidates: LabelledCandidate[]) => ({
 		sessionId: id,
-		timestamp,
+		lastActivity,
 		candidates,
 	});
 
@@ -405,6 +505,22 @@ describe("reduce", () => {
 		// The longest quote is kept, since it carries the most of the reasoning.
 		expect(clusters[0]!.text).toBe("stop using npm install here please");
 		expect(clusters[0]!.lastSeen).toBe("2026-08-02T00:00:00.000Z");
+	});
+
+	it("counts sessions, not lines: saying it twice in one sitting is not a habit", () => {
+		// Restating something in one session usually means the agent ignored it the
+		// first time, which is evidence about that afternoon, not about how you work.
+		const clusters = reduceDirectives(
+			[
+				session("s1", "2026-08-01T00:00:00.000Z", [
+					{ kind: "directive", label: "loud", text: "a" },
+					{ kind: "directive", label: "loud", text: "a" },
+					{ kind: "directive", label: "loud", text: "a" },
+				]),
+			],
+			2,
+		);
+		expect(clusters).toEqual([]);
 	});
 
 	it("drops a label that has not reached the repeat threshold", () => {
@@ -430,6 +546,45 @@ describe("reduce", () => {
 		expect(clusters[0]!.label).toBe("spread");
 	});
 
+	it("merges two labels carrying the same sentence, which is the same proposal twice", () => {
+		// Observed on a real corpus: the same quote arrived under `stage-only-own-files`
+		// and `stage-only-changed-files` and was proposed twice, word for word.
+		const quote = "Do NOT use `git add -A` or `git add .`";
+		const clusters = reduceDirectives(
+			[
+				session("s1", "2026-08-01T00:00:00.000Z", [
+					{ kind: "directive", label: "stage-only-own-files", text: quote },
+				]),
+				session("s2", "2026-08-02T00:00:00.000Z", [
+					{ kind: "directive", label: "stage-only-changed-files", text: `  ${quote.toUpperCase()}  ` },
+				]),
+			],
+			2,
+		);
+		// Merging before the threshold, not after: each label alone is below it.
+		expect(clusters).toHaveLength(1);
+		expect(clusters[0]!.sessions).toBe(2);
+		expect(clusters[0]!.count).toBe(2);
+	});
+
+	it("gives a merged cluster the same name whichever session came first", () => {
+		// The name is the state key. If it followed session order it would change
+		// whenever a session was added, and every item the reader had already
+		// decided on would come back as new.
+		const quote = "stage only your own files";
+		const a = { kind: "directive" as const, label: "stage-only-own-files", text: quote };
+		const b = { kind: "directive" as const, label: "only-stage-your-files", text: quote };
+		const forwards = reduceDirectives(
+			[session("s1", "2026-08-01T00:00:00.000Z", [a]), session("s2", "2026-08-02T00:00:00.000Z", [b])],
+			2,
+		);
+		const backwards = reduceDirectives(
+			[session("s2", "2026-08-02T00:00:00.000Z", [b]), session("s1", "2026-08-01T00:00:00.000Z", [a])],
+			2,
+		);
+		expect(forwards[0]!.key).toBe(backwards[0]!.key);
+	});
+
 	it("merges fix detail across occurrences without duplicating it", () => {
 		const fixes = reduceFixes(
 			[
@@ -453,17 +608,20 @@ describe("reduce", () => {
 		expect(fixes[0]!.errorExcerpt).toBe("gyp ERR!");
 	});
 
-	it("carries workflow steps through", () => {
-		const workflows = reduceWorkflows(
+	it("carries a request's wording through, so the proposal can quote it", () => {
+		const requests = reduceRequests(
 			[
 				session("s1", "2026-08-01T00:00:00.000Z", [
-					{ kind: "workflow", label: "edit-test-commit", text: "cycle", steps: ["edit", "bash", "bash"] },
+					{ kind: "request", label: "open-release-pr", text: "open a release PR" },
 				]),
-				session("s2", "2026-08-02T00:00:00.000Z", [{ kind: "workflow", label: "edit-test-commit", text: "cycle" }]),
+				session("s2", "2026-08-02T00:00:00.000Z", [
+					{ kind: "request", label: "open-release-pr", text: "open a release PR" },
+				]),
 			],
 			2,
 		);
-		expect(workflows[0]!.steps).toEqual(["edit", "bash", "bash"]);
+		expect(requests[0]!.text).toBe("open a release PR");
+		expect(requests[0]!.sessions).toBe(2);
 	});
 });
 
@@ -481,6 +639,57 @@ describe("directive mining", () => {
 		expect(digest.directives[0]!.count).toBe(2);
 		expect(digest.directives[0]!.sessions).toBe(2);
 		expect(digest.directives[0]!.status).toBe("new");
+	});
+
+	it("groups two phrasings of one point across sessions, which one session cannot do", async () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [userEntry("we're on bun now")]);
+		writeSession(fixture, "s2", [userEntry("stop using npm install")]);
+
+		// Nothing in either sentence overlaps the other, so this only works because
+		// naming happens once with both in view.
+		const clusterer: Clusterer = async (items) =>
+			new Map(items.map((item) => [item.id, /bun|npm/.test(item.text) ? "use-bun-not-npm" : "other"]));
+
+		const digest = await mine(fixture, { clusterer });
+		expect(digest.directives).toHaveLength(1);
+		expect(digest.directives[0]!.label).toBe("use-bun-not-npm");
+		expect(digest.directives[0]!.sessions).toBe(2);
+	});
+
+	it("offers the labels already on record, so a bookmarked item keeps its key", async () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);
+		writeSession(fixture, "s2", [userEntry("always run the tests with --coverage")]);
+
+		let offered: string[] = [];
+		const clusterer: Clusterer = async (items, knownLabels) => {
+			offered = knownLabels;
+			return new Map(items.map((item) => [item.id, "run-tests-with-coverage"]));
+		};
+
+		const first = await mine(fixture, { clusterer });
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced);
+		await mine(fixture, { clusterer, state });
+
+		// Without this the second run can rename the cluster, the bookmark stops
+		// matching, and everything already decided on comes back forever.
+		expect(offered).toContain("run-tests-with-coverage");
+	});
+
+	it("still proposes when clustering fails, grouping identical wording only", async () => {
+		const fixture = createFixture();
+		writeSession(fixture, "s1", [userEntry("always run the tests with --coverage")]);
+		writeSession(fixture, "s2", [userEntry("always run the tests with --coverage")]);
+
+		const digest = await mine(fixture, {
+			clusterer: async () => {
+				throw new Error("provider down");
+			},
+		});
+		// The floor: worse recall than a working pass, but not a lost run.
+		expect(digest.directives).toHaveLength(1);
+		expect(digest.directives[0]!.label).toBe("always-run-the-tests-with-coverage");
 	});
 
 	it("drops a directive said only once", async () => {
@@ -524,52 +733,95 @@ describe("directive mining", () => {
 			},
 		});
 		expect(digest.directives[0]!.status).toBe("new");
+		// Flagged so the caller does not bookmark a guess as a reading: `new` here
+		// means "not known", and storing it as "not covered" would have a later run
+		// report a proposal as passed over that was never put in front of anyone.
+		expect(digest.coverageFailed).toBe(true);
+	});
+
+	it("reports the funnel, so an empty run can be told from an over-filtered one", async () => {
+		const fixture = createFixture();
+		// Two points, one of them said in both sessions and one only in the first.
+		writeSession(fixture, "s1", [
+			userEntry("always run the tests with --coverage"),
+			userEntry("never commit to main"),
+		]);
+		writeSession(fixture, "s2", [userEntry("always run the tests with --coverage")]);
+
+		const digest = await mine(fixture);
+		expect(digest.funnel.candidates).toBe(3);
+		expect(digest.funnel.points).toBe(2);
+		// Exactly what the threshold cost, not an estimate of it.
+		expect(digest.funnel.belowThreshold).toBe(1);
+		expect(digest.directives).toHaveLength(1);
+	});
+
+	it("reports what the per-run cap cut, so the top of a list does not read as the list", async () => {
+		const fixture = createFixture();
+		for (const id of ["s1", "s2"]) {
+			writeSession(fixture, id, [
+				userEntry("always run the tests with --coverage"),
+				userEntry("never commit to main"),
+			]);
+		}
+
+		const digest = await mine(fixture, { maxProposals: 1 });
+		expect(digest.directives).toHaveLength(1);
+		expect(digest.cut).toBe(1);
 	});
 });
 
-describe("fix and workflow mining", () => {
-	/** Reports a fix and a workflow whenever the transcript shows a failed command. */
+describe("fix and request mining", () => {
+	/** Reports a fix whenever the transcript shows a failed command. */
 	const toolMiner: Miner = async (session) => {
 		const rendered = renderTranscript(session);
 		if (!rendered.includes("ERROR:")) return [];
 		return [
 			{
 				kind: "fix",
-				label: "npm-install-python-missing",
 				text: "npm install",
 				command: "npm install",
 				errorExcerpt: "gyp ERR!",
 				editedFiles: ["package.json"],
 			},
-			{ kind: "workflow", label: "edit-then-retest", text: "edit then rerun", steps: ["edit", "bash"] },
 		];
 	};
 
-	it("carries fixes and workflows through the pipeline into the digest", async () => {
+	it("carries fix detail through the pipeline into the digest", async () => {
 		const fixture = createFixture();
 		const entries = [...bash("npm install", "gyp ERR! no Python", true), ...edit("package.json")];
 		writeSession(fixture, "s1", entries);
 		writeSession(fixture, "s2", entries);
 
-		const digest = await mine(fixture, { miner: toolMiner, minWorkflowRepeats: 2 });
+		const digest = await mine(fixture, { miner: toolMiner });
 		expect(digest.fixes).toHaveLength(1);
 		expect(digest.fixes[0]!.command).toBe("npm install");
 		expect(digest.fixes[0]!.editedFiles).toEqual(["package.json"]);
 		expect(digest.fixes[0]!.sessions).toBe(2);
-		expect(digest.workflows).toHaveLength(1);
-		expect(digest.workflows[0]!.steps).toEqual(["edit", "bash"]);
 	});
 
-	it("holds a workflow to its own threshold, separate from directives", async () => {
+	it("proposes a repeated request as a slash command, on its own higher threshold", async () => {
 		const fixture = createFixture();
-		const entries = [...bash("npm install", "gyp ERR! no Python", true), ...edit("package.json")];
-		writeSession(fixture, "s1", entries);
-		writeSession(fixture, "s2", entries);
+		// The signal the miner used to be told to throw away: a job asked for by
+		// name, in three different sessions, in slightly different words.
+		const requestMiner: Miner = async (session) =>
+			renderTranscript(session)
+				.split("\n")
+				.filter((line) => line.startsWith("USER: "))
+				.map((line) => ({ kind: "request" as const, text: line.slice("USER: ".length) }));
+		const clusterer: Clusterer = async (items) => new Map(items.map((item) => [item.id, "open-release-pr"]));
 
-		// Seen twice, but workflows need three before they are worth a skill.
-		const digest = await mine(fixture, { miner: toolMiner, minWorkflowRepeats: 3 });
-		expect(digest.fixes).toHaveLength(1);
-		expect(digest.workflows).toEqual([]);
+		writeSession(fixture, "s1", [userEntry("open a release PR")]);
+		writeSession(fixture, "s2", [userEntry("raise the release PR please")]);
+
+		// Two sessions is under the request bar, which is higher than the directive
+		// one: a job that came up twice may just be a job that came up twice.
+		expect((await mine(fixture, { miner: requestMiner, clusterer })).requests).toEqual([]);
+
+		writeSession(fixture, "s3", [userEntry("cut a release PR")]);
+		const digest = await mine(fixture, { miner: requestMiner, clusterer });
+		expect(digest.requests).toHaveLength(1);
+		expect(digest.requests[0]!.sessions).toBe(3);
 	});
 });
 
@@ -701,7 +953,7 @@ describe("mining cache", () => {
 		writeCachedMining(fixture.agentDir, hash, {
 			sessionId: "s1",
 			timestamp: "2026-08-01T00:00:00.000Z",
-			candidates: [{ kind: "directive", label: "x", text: "x" }],
+			candidates: [{ kind: "directive", text: "x" }],
 			minedAt: "2026-08-01T00:00:00.000Z",
 		});
 		expect(readCachedMining(fixture.agentDir, hash)!.candidates).toHaveLength(1);
@@ -951,6 +1203,37 @@ describe("session discovery", () => {
 	});
 });
 
+describe("buildCoverageIndex", () => {
+	function index(agents: string): string[] {
+		const fixture = createFixture();
+		writeFileSync(join(fixture.cwd, "AGENTS.md"), agents);
+		return buildCoverageIndex({ cwd: fixture.cwd, agentDir: fixture.agentDir, skills: [] }).ruleLines;
+	}
+
+	it("carries the heading path, so a rule is judged with its subject attached", () => {
+		// "Stage only your own files" is unanswerable without knowing it is a git
+		// rule, and the heading is where that lives.
+		const lines = index("# Rules\n\n## Git\n\n- Stage only your own files\n");
+		expect(lines).toContain("[repo] Rules > Git > - Stage only your own files");
+	});
+
+	it("pops back out of a subsection rather than nesting forever", () => {
+		const lines = index("## Git\n\n### Committing\n\n- one\n\n## Testing\n\n- two\n");
+		expect(lines).toContain("[repo] Git > Committing > - one");
+		expect(lines).toContain("[repo] Testing > - two");
+	});
+
+	it("drops fenced code, which illustrates a rule rather than being one", () => {
+		const lines = index("## Commands\n\n```bash\ngit reset --hard\n```\n\n- Never reset\n");
+		expect(lines.some((line) => line.includes("git reset --hard"))).toBe(false);
+		expect(lines).toContain("[repo] Commands > - Never reset");
+	});
+
+	it("names the scope, since a rule's home decides who it binds", () => {
+		expect(index("- use tabs\n")).toContain("[repo] - use tabs");
+	});
+});
+
 describe("suppression across runs", () => {
 	/** Two sessions repeating one directive, timestamped so recurrence can be simulated. */
 	function repeatedDirective(fixture: Fixture, sessionTimes: string[]): void {
@@ -978,6 +1261,35 @@ describe("suppression across runs", () => {
 
 		expect(second.directives).toEqual([]);
 		expect(second.suppressed).toBe(1);
+	});
+
+	it("dates an item by when it was said, not by when the session was opened", async () => {
+		const fixture = createFixture();
+		// Both sessions were opened before the last run and worked in after it — the
+		// shape of any long-running session. Dating them by the header would call
+		// today's words old news and hold them back.
+		["s0", "s1"].forEach((id) => {
+			const lines = [
+				JSON.stringify({
+					type: "session",
+					version: 3,
+					id,
+					timestamp: "2026-08-01T00:00:00.000Z",
+					cwd: fixture.cwd,
+				}),
+				JSON.stringify({
+					...userEntry("always run the tests with --coverage"),
+					timestamp: "2026-08-10T00:00:00.000Z",
+				}),
+			];
+			writeFileSync(join(fixture.sessionDir, `${id}.jsonl`), `${lines.join("\n")}\n`);
+		});
+
+		const first = await mine(fixture);
+		expect(first.directives).toHaveLength(1);
+
+		const state = recordSurfaced(readLearnState("missing"), first.surfaced, new Date("2026-08-05T00:00:00.000Z"));
+		expect((await mine(fixture, { state })).directives).toHaveLength(1);
 	});
 
 	it("shows it again once it recurs after being shown", async () => {
@@ -1166,54 +1478,39 @@ describe("learn state file", () => {
 });
 
 describe("learn stats", () => {
-	/** State keys hold the miner's label, so adoption is looked up by label too. */
-	const covered = (labels: string[]) => (label: string) => labels.includes(label);
-
-	function stateWith(entries: Array<{ key: string; covered: boolean }>) {
+	function stateWith(keys: string[]) {
 		return recordSurfaced(
 			readLearnState("missing"),
-			entries.map((e) => ({ key: e.key, lastSeen: "2026-08-01T00:00:00.000Z", covered: e.covered })),
+			keys.map((key) => ({ key, lastSeen: "2026-08-01T00:00:00.000Z", covered: false })),
 			new Date("2026-08-02T00:00:00.000Z"),
 		);
 	}
 
-	it("counts a proposal written down since as adopted", () => {
-		const state = stateWith([{ key: "directive:coverage-tests", covered: false }]);
-		const stats = summarizeLearnState(state, covered(["coverage-tests"]));
+	it("counts what has been proposed, by category", () => {
+		const stats = summarizeLearnState(
+			stateWith(["directive:coverage-tests", "fix:npm-install-gyp", "request:open-release-pr"]),
+		);
 
-		expect(stats.open).toBe(1);
-		expect(stats.adopted).toBe(1);
-		expect(stats.declined).toBe(0);
-	});
-
-	it("counts one still absent as passed over", () => {
-		const state = stateWith([{ key: "directive:coverage-tests", covered: false }]);
-		const stats = summarizeLearnState(state, covered([]));
-
-		expect(stats.adopted).toBe(0);
-		expect(stats.declined).toBe(1);
-	});
-
-	it("excludes items already written down when shown, which were never a decision", () => {
-		const state = stateWith([{ key: "directive:coverage-tests", covered: true }]);
-		const stats = summarizeLearnState(state, covered(["coverage-tests"]));
-
+		expect(stats.total).toBe(3);
 		expect(stats.directives).toBe(1);
-		expect(stats.open).toBe(0);
-		expect(stats.adopted).toBe(0);
+		expect(stats.fixes).toBe(1);
+		expect(stats.requests).toBe(1);
 	});
 
-	it("counts fixes and workflows without inventing an outcome for them", () => {
-		const state = stateWith([
-			{ key: "fix:npm-install-gyp", covered: false },
-			{ key: "workflow:edit-test-commit", covered: false },
-		]);
-		const stats = summarizeLearnState(state, covered([]));
+	it("reports no adoption rate, which was never a number anyone could act on", () => {
+		// It re-judged coverage with a model call and called the delta "adopted",
+		// so a failed judge at either end moved it, and a proposal correctly
+		// rejected as junk counted exactly like one ignored. What replaced it is
+		// the always-loaded token count, which the filesystem answers exactly.
+		const stats = summarizeLearnState(stateWith(["directive:coverage-tests"]));
+		expect("adopted" in stats).toBe(false);
+		expect("declined" in stats).toBe(false);
+	});
 
-		expect(stats.total).toBe(2);
-		expect(stats.fixes).toBe(1);
-		expect(stats.workflows).toBe(1);
-		expect(stats.open).toBe(0);
+	it("dates the record from what it holds", () => {
+		const stats = summarizeLearnState(stateWith(["directive:coverage-tests"]));
+		expect(stats.earliest).toBe("2026-08-02T00:00:00.000Z");
+		expect(stats.lastRun).toBe("2026-08-02T00:00:00.000Z");
 	});
 });
 
@@ -1255,18 +1552,34 @@ describe("digest rendering", () => {
 	it("omits detail the model did not supply, rather than rendering empty fields", async () => {
 		const fixture = createFixture();
 		const bare: Miner = async () => [
-			{ kind: "fix", label: "some-fix", text: "npm install", command: "npm install" },
-			{ kind: "workflow", label: "some-workflow", text: "a routine" },
+			{ kind: "fix", text: "npm install", command: "npm install" },
+			{ kind: "request", text: "a routine job" },
 		];
 		writeSession(fixture, "s1", [userEntry("x")]);
 		writeSession(fixture, "s2", [userEntry("x")]);
 
-		const rendered = renderLearnDigest(await mine(fixture, { miner: bare, minWorkflowRepeats: 2 }), {
+		const rendered = renderLearnDigest(await mine(fixture, { miner: bare, minRequestRepeats: 2 }), {
 			userScopePath: "~",
 		});
 		expect(rendered).not.toContain("- error: \n");
 		expect(rendered).not.toContain("``");
-		expect(rendered).toContain("some-workflow");
+		expect(rendered).toContain("a routine job");
+	});
+
+	it("flattens and caps a request quote, which is a whole task message", async () => {
+		const fixture = createFixture();
+		const long = `open a release PR\nand ${"then do the next thing ".repeat(40)}`;
+		const requestMiner: Miner = async () => [{ kind: "request", text: long }];
+		for (const id of ["s1", "s2"]) writeSession(fixture, id, [userEntry(long)]);
+
+		const rendered = renderLearnDigest(await mine(fixture, { miner: requestMiner, minRequestRepeats: 2 }), {
+			userScopePath: "~",
+		});
+		const line = rendered.split("\n").find((l) => l.includes("open a release PR")) ?? "";
+		// One bullet, not a paragraph that breaks the list it sits in.
+		expect(line.startsWith("- ")).toBe(true);
+		expect(line.length).toBeLessThan(300);
+		expect(rendered).toContain("…");
 	});
 
 	it("names the shared label, so a count does not look like repeated copies of one sentence", async () => {

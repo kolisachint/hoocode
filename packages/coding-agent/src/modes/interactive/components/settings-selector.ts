@@ -168,7 +168,7 @@ const LEARN_SETTINGS: ReadonlyArray<{
 		presets: [2, 3, 4, 5],
 	},
 	{
-		key: "learnMinWorkflowRepeats",
+		key: "learnMinRequestRepeats",
 		label: "Workflow repeats",
 		description: "Non-overlapping repeats a tool sequence needs before it is proposed as a skill.",
 		presets: [2, 3, 4, 5, 6],
