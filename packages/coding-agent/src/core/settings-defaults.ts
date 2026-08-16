@@ -56,7 +56,7 @@ export const DEFAULT_SETTINGS = {
 	learnMaxSessions: 20,
 	learnMaxAgeDays: 30,
 	learnMinRepeats: 2,
-	learnMinWorkflowRepeats: 3,
+	learnMinRequestRepeats: 3,
 	learnMaxProposals: 8,
 	light: false,
 	terminal: {

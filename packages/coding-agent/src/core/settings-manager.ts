@@ -24,7 +24,7 @@ export type LearnSettingKey =
 	| "learnMaxSessions"
 	| "learnMaxAgeDays"
 	| "learnMinRepeats"
-	| "learnMinWorkflowRepeats"
+	| "learnMinRequestRepeats"
 	| "learnMaxProposals";
 
 /** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
@@ -538,7 +538,7 @@ export class SettingsManager {
 		maxSessions: number;
 		maxAgeDays: number;
 		minRepeats: number;
-		minWorkflowRepeats: number;
+		minRequestRepeats: number;
 		maxProposals: number;
 	} {
 		const positive = (value: unknown, fallback: number): number =>
@@ -547,7 +547,7 @@ export class SettingsManager {
 			maxSessions: positive(this.settings.learnMaxSessions, DEFAULT_SETTINGS.learnMaxSessions),
 			maxAgeDays: positive(this.settings.learnMaxAgeDays, DEFAULT_SETTINGS.learnMaxAgeDays),
 			minRepeats: positive(this.settings.learnMinRepeats, DEFAULT_SETTINGS.learnMinRepeats),
-			minWorkflowRepeats: positive(this.settings.learnMinWorkflowRepeats, DEFAULT_SETTINGS.learnMinWorkflowRepeats),
+			minRequestRepeats: positive(this.settings.learnMinRequestRepeats, DEFAULT_SETTINGS.learnMinRequestRepeats),
 			maxProposals: positive(this.settings.learnMaxProposals, DEFAULT_SETTINGS.learnMaxProposals),
 		};
 	}

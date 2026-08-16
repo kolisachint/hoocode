@@ -12,19 +12,11 @@ Before searching, check these maps:
 
 ## Recent Changes
 
-- **Browser + document tools removed**: `browser_run`/`browser_continue` and the
-  six `Doc*` tools are gone, along with `src/core/tools/browser/`,
-  `src/core/tools/doc/`, `src/core/tools/filetools-shared.ts`, the
+- **Browser + document tools removed**: `browser_run`/`browser_continue`, the six
+  `Doc*` tools, `src/core/tools/{browser,doc}/`, `filetools-shared.ts`, and the
   `--enable-browsertools` / `--enable-browser-live-preview` / `--enable-filetools`
-  flags, the matching `enableBrowserTools` / `enableBrowserLivePreview` /
-  `enableFileTools` settings, the `browsertools` + `filetools` entries in
-  `src/utils/tools-manager.ts`, and their rows in the interactive tool-group
-  picker. `TOOL_FACTORIES` in `src/core/tools/index.ts` is down to 10 built-ins.
-  `read` still refuses to dump OOXML/PDF bytes, but now points at `bash` rather
-  than `DocRead`.
-- **Fixed per-turn surface trimmed ~402 tokens (~8.8%)**: see the rules in
-  "Prompt token surface" below — the savings came almost entirely from deleting
-  guidance that was being sent twice, not from dropping information.
+  flags with their settings and `tools-manager.ts` entries are all gone.
+  `TOOL_FACTORIES` in `src/core/tools/index.ts` is down to 10 built-ins.
 - **Provider trim (complete)**: `amazon-bedrock`, `mistral`,
   `cloudflare-workers-ai`, and `cloudflare-ai-gateway` are fully removed —
   implementations, registrations, `Api`/`KnownProvider` entries, env keys,
@@ -119,8 +111,7 @@ when-to-delegate guidance in `buildTaskMainPrompt`.
   See `docs/bun-migration.md` for the completed migration.
 - Only run specific tests if user instructs: `npx tsx ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`
 - Run tests from the package root, not the repo root.
-- If you create or modify a test file, you MUST run that test file and iterate until it passes.
-- When writing tests, run them, identify issues in either the test or implementation, and iterate until fixed.
+- If you create or modify a test file, you MUST run it and iterate on the test or the implementation until it passes.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` plus the faux provider. Do not use real provider APIs, real API keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` and name them `<issue-number>-<short-slug>.test.ts`.
 - NEVER commit unless user asks
@@ -165,7 +156,6 @@ When closing issues via commit:
 
 - `/pr [patch|minor|major]` - opens a PR on a feature branch. With a bump it labels the PR `npm:<bump>` so the merge-release workflow publishes on merge; without one it only opens a PR (no publish). Defined in `.agents/commands/pr.md`.
 - `/push [patch|minor|major]` - pushes your session's changes straight to `origin/main` (stage only your files, commit, rebase, fast-forward push). Without a bump it publishes nothing; with `patch|minor|major` it runs the release to publish. Defined in `.agents/commands/push.md`.
-- Both stage only the files you changed (never `git add -A/.`) and never force push, reset, checkout, clean, or stash.
 - Slash-command definitions live in `.agents/commands/` (also read from `.hoocode/commands/`, `.claude/commands/`, and the user-level equivalents). Scaffold a new one with `/new-command <name>`.
 
 ## Testing hoocode Interactive Mode with tmux
@@ -294,54 +284,13 @@ Create provider file exporting:
 
 The script handles: version bump, CHANGELOG finalization, commit, tag, publish, and adding new `[Unreleased]` sections.
 
-## **CRITICAL** Git Rules for Parallel Agents **CRITICAL**
+## Git Rules for Parallel Agents
 
-Multiple agents may work on different files in the same worktree simultaneously. You MUST follow these rules:
+Other agents may have uncommitted work in this worktree.
 
-### Committing
-
-- **ONLY commit files YOU changed in THIS session**
-- ALWAYS include `fixes #<number>` or `closes #<number>` in the commit message when there is a related issue or PR
-- NEVER use `git add -A` or `git add .` - these sweep up changes from other agents
-- ALWAYS use `git add <specific-file-paths>` listing only files you modified
-- Before committing, run `git status` and verify you are only staging YOUR files
-- Track which files you created/modified/deleted during the session
-- It is always fine to include `packages/ai/src/models.generated.ts` in a commit alongside the actual files you want to commit
-
-### Forbidden Git Operations
-
-These commands can destroy other agents' work:
-
-- `git reset --hard` - destroys uncommitted changes
-- `git checkout .` - destroys uncommitted changes
-- `git clean -fd` - deletes untracked files
-- `git stash` - stashes ALL changes including other agents' work
-- `git add -A` / `git add .` - stages other agents' uncommitted work
-- `git commit --no-verify` - bypasses required checks and is never allowed
-
-### Safe Workflow
-
-```bash
-# 1. Check status first
-git status
-
-# 2. Add ONLY your specific files
-git add packages/ai/src/providers/transform-messages.ts
-git add packages/ai/CHANGELOG.md
-
-# 3. Commit
-git commit -m "fix(ai): description"
-
-# 4. Push (pull --rebase if needed, but NEVER reset/checkout)
-git pull --rebase && git push
-```
-
-### If Rebase Conflicts Occur
-
-- Resolve conflicts in YOUR files only
-- If conflict is in a file you didn't modify, abort and ask the user
-- NEVER force push
-
-### User override
-
-If the user instructions conflict with rules set out here, ask for confirmation that they want to override the rules. Only then execute their instructions.
+- Stage only the paths you created/modified/deleted this session; run `git status` first and verify. Never `git add -A` or `git add .`.
+- `packages/ai/src/models.generated.ts` may always be staged alongside your files.
+- Include `fixes #<number>` / `closes #<number>` in the commit message when there is a related issue or PR.
+- Never run: force push, `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`, `git commit --no-verify`.
+- Update with `git pull --rebase`; resolve conflicts only in your own files, and abort and ask if a conflict is in a file you did not touch.
+- If user instructions conflict with these rules, ask for confirmation before overriding them.

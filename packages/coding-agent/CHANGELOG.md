@@ -2,6 +2,181 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- The `workflow` category is gone, and `learnMinWorkflowRepeats` with it. It
+  mined tool sequences and proposed them as skills, and in practice it proposed
+  nothing at all: on a real corpus, 30 candidates were mined and not one ever
+  cleared its threshold, because the threshold was three identical
+  model-invented names for a tool sequence across separate sessions. Nor is it
+  worth reimplementing deterministically — counting tool trigrams over the same
+  corpus yields 170 "workflows" led by `bash -> bash -> bash` at 1142
+  occurrences. Tool names carry no procedural meaning.
+- `learnMinWorkflowRepeats` is replaced by `learnMinRequestRepeats` (default 3),
+  which gates the new `request` category below.
+
+### Added
+
+- `/learn` proposes **slash commands** for work you keep asking for by name. The
+  miner was explicitly told not to report task requests — and those discarded
+  requests were the strongest unexploited signal in the corpus. A directive is
+  *how* work should be done; a request repeated across sessions is *what you
+  keep asking for*, which is the definition of a slash command. Held to a higher
+  bar than directives: a rule stated twice is a rule, but a job asked for twice
+  may just be a job that came up twice.
+- The digest routes a proposal three ways instead of two — rule, skill, or slash
+  command — and names the destination for each, along with what it costs: a
+  context file is loaded every turn, a skill's description is always loaded but
+  its body on demand, and a slash command costs nothing until it is invoked.
+- The digest states the boundary with `ProposePlugin`: skills and commands
+  proposed from mined evidence are local habits written under `.agents/`;
+  `ProposePlugin` packages something already proven useful into a portable
+  artifact. Hooks and MCP servers are never proposed from this evidence, which
+  records what was said and what failed — far too weak a warrant for anything
+  that executes.
+
+### Changed
+
+- `/learn` names occurrences in one global pass instead of asking the miner to
+  name them per session. The miner was told to emit a label — its canonical name
+  for what was meant — and the reduce step grouped on exact label equality, but
+  a session mined in isolation is being asked to hit a shared vocabulary it has
+  never seen. On a real corpus that produced 188 distinct labels from 191
+  candidates: `use-bun-not-npm` and `prefer-bun-over-npm` are the same rule and
+  never met, and nothing ever reached the repeat threshold. Naming now happens
+  once, with every candidate visible at the same time, which is the only
+  vantage point from which "is this the same point as that" is answerable.
+- Cached candidates no longer carry a label, which makes the mining cache
+  model-independent. A label was frozen at mining time, so changing the `fast`
+  model tier forked the vocabulary permanently — old sessions and new ones
+  naming the same thing differently, with every count split across the seam and
+  no sign that it had happened.
+- The naming pass is given the labels already on record and told to reuse them.
+  State keys are `directive:<label>`, so a label that drifts between runs
+  silently breaks suppression and re-proposes everything already decided on.
+- A failed naming call falls back to naming each candidate after its own
+  wording, which groups identical sentences and nothing else — the behaviour the
+  pipeline had before the pass existed. An outage costs recall, not the run.
+
+### Fixed
+
+- `/learn stale` audited nothing when run from a package subdirectory. Context
+  files are collected by walking up from the working directory, so in a monorepo
+  the repo's `AGENTS.md` sits *above* the package you are in — and the audit
+  anchored on the working directory, declared that file "outside this working
+  tree", skipped it, and reported a clean run. Running from a package root is
+  the normal case, so the check was passing by checking nothing. Referents now
+  resolve against the project root.
+- A cluster formed by merging two labels carrying the same sentence took its
+  name from whichever session came first, and session order changes whenever a
+  session is added. The name is the state key, so it drifted between runs, the
+  bookmark stopped matching, and items already decided on came back as new. The
+  merged name is now a pure function of what was merged.
+- The clustering vocabulary is trimmed from both ends rather than by taking a
+  prefix. It holds labels already on record followed by names coined earlier in
+  the same run, which anchor different things — one keeps the bookmark matching
+  across runs, the other stops a split window inventing rival names for one
+  point. A prefix dropped the second exactly when a window was large enough to
+  be split, which is the only time it mattered.
+- Request quotes are flattened to one line and capped. A request is a whole task
+  message rather than a sentence — a slash-command body runs to thousands of
+  characters — so rendering several raw swamped the digest and a multi-line one
+  broke the list it sat in.
+- `/learn` no longer mines text the user never typed. A `user`-type slash
+  command is persisted as an ordinary user message holding the whole template
+  body, with nothing marking it as machinery, so running `/pr` thirty times
+  wrote the same two thousand characters into thirty transcripts — making it the
+  most repeated "user statement" in a real corpus by a wide margin. Every
+  proposal in a recent 100-session run turned out to be `/pr` template text,
+  counted as though it had been said aloud. User turns matching a slash-command
+  body are now skipped. Detection is retroactive rather than a flag written at
+  turn time, so it fixes transcripts that already exist instead of only future
+  ones.
+- `/learn` no longer reads successful tool output. It was fed 600 characters per
+  call, so lines out of plan files and configs were mined as directives and
+  attributed to the user — a tenth of them on a real corpus. Tool calls and
+  errors are still shown, which is what fix detection actually needs.
+- Candidates whose quote cannot be found in what the user said are dropped. The
+  miner is told to quote verbatim and the digest renders every quote inside
+  quotation marks, but on a real corpus a third of them appeared nowhere in the
+  session. A quote that cannot be located is evidence that cannot be shown. This
+  also backstops the case above: a command file deleted since a transcript was
+  written leaves no fingerprint to match, but its text is still unfindable in
+  anything the user said.
+- Two labels carrying the same sentence are merged into one proposal, before the
+  repeat threshold rather than after. The model labels each session
+  independently and cannot see what it called the same thing last time, so
+  identical quotes arrived under two labels and were proposed twice, word for
+  word — each below the threshold alone.
+- The mining cache version is bumped: entries mined before these changes were
+  read from a different transcript than the pipeline now produces, so the next
+  run re-reads the window once.
+- An item is dated by when it was said, not by when its session was opened.
+  Suppression compares an item's newest occurrence against the last run, and the
+  occurrence was taking the session header's timestamp — so in a session opened
+  yesterday and worked in today, something said minutes ago read as older than
+  the last run and was held back as "nothing new". It now takes the session's
+  last activity.
+- The repeat threshold counts distinct sessions rather than total occurrences.
+  Saying a thing twice inside one session is the commonest thing in a transcript
+  and usually means the opposite of durable — the agent ignored it the first
+  time, so it was restated.
+- Coverage rules are sent to the judge with their heading path and scope
+  (`[repo] Git Rules > - Stage only your own files`) instead of bare lines.
+  Headings were stripped and the lines under them sent alone, which asks the
+  model to decide whether a proposal is in scope using text with the scope
+  removed. Fenced code blocks are dropped: a sample illustrates a rule, it is
+  not one.
+- A run whose coverage judge failed no longer writes the bookmark. Everything
+  reads `new` when that call fails, and recording that as "was not written down
+  when shown" made a later run report proposals as passed over that were never
+  shown. Skipping the write costs one round of re-proposing.
+- An empty run now reports its funnel: occurrences read, distinct points named,
+  and how many fell below the repeat threshold. The pipeline filters hard —
+  replayed command bodies, tool output, unfindable quotes, then a
+  distinct-session bar — and all of it was silent, so "nothing to propose" could
+  not be told from "over-filtered" and gave the reader no idea which knob to
+  reach for. The below-threshold figure is computed by running the same reduce
+  with the threshold at 1, so it is what the threshold cost rather than an
+  estimate of it.
+- Proposals cut by the per-run cap are reported instead of vanishing. Eight
+  shown out of twenty read as "twenty was all there was", which sends the reader
+  to the wrong knob.
+- Added an evaluation harness for the naming pass (`test/support/learn-eval.ts`
+  over a hand-grouped corpus). Every existing test injected a clusterer that
+  already agreed with itself, so none of them could fail on the assumption the
+  design rests on — which is how a 1.6% collision rate shipped and stayed for
+  months. The harness scores merges, false merges, and cluster ratio, and takes
+  a real model's clusterer so the assumption can be measured rather than
+  assumed.
+
+- `/learn stats` no longer reports an adoption rate, and no longer makes a model
+  call. It re-judged coverage and called the delta "adopted", which moved with a
+  failed judge at either end and could not tell a proposal correctly rejected as
+  junk from one ignored; it shipped with two disclaimers explaining how not to
+  misread it. It now reports what has been proposed, and the always-loaded token
+  cost of the context files, which is the question the number was reaching for
+  and one the filesystem answers exactly.
+
+- `/learn stale` — the subtractive half of `/learn`. The mining path can only
+  ever propose additions, so nothing in the command moved the always-loaded
+  token surface down: a rule naming a deleted workflow or a command that was
+  removed keeps costing tokens on every request, and the agent believes it. The
+  audit resolves every backticked path and `bun run` script named by the context
+  files in force against the working tree and every package root in it, and
+  reports the lines whose referents are gone, priced in tokens. It is
+  deterministic — no model call, no cache, no state — so it costs nothing and
+  can be run often. On this repo it found four: a documented slash command
+  deleted three months ago, and three contribution-gate workflows that do not
+  exist.
+- Precision comes from exclusions rather than cleverness, because a noisy
+  report is one nobody reads: only path-like referents with a separator are
+  checked (a bare `stream.test.ts` in a monorepo is under-specified, not stale),
+  paths resolve against every package root rather than the repo root alone, and
+  lines that assert absence ("was removed", "e.g. `x.ts`") are skipped, since
+  they are correct precisely because the file is missing. Findings are presented
+  to the model as candidates to verify, not as a licence to delete.
+
 ## [0.5.18] - 2026-08-15
 
 ### Changed

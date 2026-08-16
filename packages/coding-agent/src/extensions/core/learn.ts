@@ -22,17 +22,20 @@
  * separate picker is needed.
  */
 
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { Api, Model } from "@kolisachint/hoocode-ai";
 import { CONFIG_DIR_NAME, getHooCodeDir } from "../../config.js";
 import { loadProjectContextFiles } from "../../core/context-files.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
+import { auditContextFiles, staleTokens } from "../../core/learn/audit.js";
+import type { Clusterer } from "../../core/learn/cluster.js";
+import { createLlmClusterer } from "../../core/learn/cluster.js";
 import type { CoverageJudge } from "../../core/learn/coverage.js";
 import { createLlmCoverageJudge } from "../../core/learn/coverage.js";
-import { isEmptyDigest, renderLearnDigest } from "../../core/learn/digest.js";
+import { isEmptyDigest, renderAuditReport, renderLearnDigest } from "../../core/learn/digest.js";
 import {
-	buildCoverageIndex,
 	type LearnDigest,
 	mineLearnDigest,
 	planMining,
@@ -40,7 +43,7 @@ import {
 	scanSessions,
 } from "../../core/learn/extract.js";
 import type { Miner } from "../../core/learn/mine.js";
-import { chunkCharsForModel, createLlmMiner } from "../../core/learn/mine.js";
+import { chunkCharsForModel, createLlmMiner, replayFingerprints } from "../../core/learn/mine.js";
 import {
 	getLearnStatePath,
 	readLearnState,
@@ -49,6 +52,7 @@ import {
 	writeLearnState,
 } from "../../core/learn/state.js";
 import { resolveModelCategory } from "../../core/model-categories.js";
+
 import { getSessionDirPath } from "../../core/session-manager.js";
 import { SettingsManager } from "../../core/settings-manager.js";
 import { startupProgress } from "../../core/startup-progress.js";
@@ -95,8 +99,8 @@ const SETTING_KEYS: Array<{ key: keyof LearnWindow; setting: string; note: strin
 	{ key: "maxAgeDays", setting: "learnMaxAgeDays", note: "ignore sessions older than this, in days" },
 	{ key: "minRepeats", setting: "learnMinRepeats", note: "times a directive must recur to be proposed" },
 	{
-		key: "minWorkflowRepeats",
-		setting: "learnMinWorkflowRepeats",
+		key: "minRequestRepeats",
+		setting: "learnMinRequestRepeats",
 		note: "repeats before a tool sequence is proposed",
 	},
 	{ key: "maxProposals", setting: "learnMaxProposals", note: "cap on each list in the digest" },
@@ -221,11 +225,39 @@ function resolveMinerModel(ctx: ExtensionCommandContext, settings: SettingsManag
 	return found ?? ctx.model;
 }
 
+/**
+ * Literal runs from the slash commands in force, so the miner can tell a
+ * command body replaying itself from something the user typed.
+ *
+ * Read from the session's own command list rather than re-deriving the search
+ * path: which directories are scanned, in which order, and which flags disable
+ * them is a precedence list that lives in one place and would drift the moment
+ * it lived in two.
+ */
+function loadReplayFingerprints(pi: ExtensionAPI): string[] {
+	const bodies: Array<{ content: string }> = [];
+	for (const command of pi.getCommands()) {
+		const path = command.sourceInfo?.path;
+		// A built-in has no file behind it, and nothing to replay.
+		if (!path || !existsSync(path)) continue;
+		try {
+			bodies.push({ content: readFileSync(path, "utf-8") });
+		} catch {
+			// Unreadable command file: one fewer fingerprint, not a failed run.
+		}
+	}
+	return replayFingerprints(bodies);
+}
+
 /** Build the two model-backed stages, or report why they cannot be built. */
 async function buildPipeline(
 	ctx: ExtensionCommandContext,
 	settings: SettingsManager,
-): Promise<{ miner: Miner; coverageJudge: CoverageJudge; model: Model<Api> } | { error: string }> {
+	/** Empty for callers that only need the coverage judge; mining wants the real set. */
+	fingerprints: string[] = [],
+): Promise<
+	{ miner: Miner; clusterer: Clusterer; coverageJudge: CoverageJudge; model: Model<Api> } | { error: string }
+> {
 	const model = resolveMinerModel(ctx, settings);
 	if (!model) {
 		return {
@@ -238,8 +270,18 @@ async function buildPipeline(
 		return { error: `/learn could not authenticate ${model.provider}/${model.id}: ${auth.error}` };
 	}
 
-	const deps = { model, apiKey: auth.apiKey, headers: auth.headers };
-	return { miner: createLlmMiner(deps), coverageJudge: createLlmCoverageJudge(deps), model };
+	const deps = {
+		model,
+		apiKey: auth.apiKey,
+		headers: auth.headers,
+		replayFingerprints: fingerprints,
+	};
+	return {
+		miner: createLlmMiner(deps),
+		clusterer: createLlmClusterer(deps),
+		coverageJudge: createLlmCoverageJudge(deps),
+		model,
+	};
 }
 
 /**
@@ -260,14 +302,15 @@ function pendingWork(ctx: ExtensionCommandContext, agentDir: string, window: Lea
 }
 
 /**
- * `/learn stats` — what became of past proposals.
+ * `/learn stats` — what has been proposed here, and what it costs.
  *
- * Reads the state file and recomputes coverage; it does not re-mine sessions,
- * so it costs one small model call and answers a different question than a
- * normal run: not "what should I write down" but "is this command earning its
- * place".
+ * Reads the state file and the context files. No model call: this used to
+ * re-judge coverage and report an "adoption rate", which was unreliable in both
+ * directions and shipped with two disclaimers explaining how not to misread it.
+ * The honest version of the question it was trying to answer — is the
+ * always-loaded surface growing — is a number the filesystem can answer exactly.
  */
-async function reportStats(ctx: ExtensionCommandContext): Promise<void> {
+function reportStats(ctx: ExtensionCommandContext): void {
 	const agentDir = getHooCodeDir();
 	const settings = SettingsManager.create(ctx.cwd, agentDir);
 	const window = settings.getLearnSettings();
@@ -289,75 +332,78 @@ async function reportStats(ctx: ExtensionCommandContext): Promise<void> {
 		return;
 	}
 
-	const coverage = buildCoverageIndex({ cwd: ctx.cwd, agentDir });
+	const stats = summarizeLearnState(state);
 
-	// Coverage is a model judgement now, so it is resolved once for every stored
-	// label in a single batch and then answered from the resulting set. Asking
-	// per item would be one call per proposal ever made in this directory.
-	const labels = Object.entries(state.surfaced)
-		.filter(([key]) => key.startsWith("directive:"))
-		// Entries recorded before the wording was kept fall back to the slug, which
-		// is a weaker question but still a answerable one.
-		.map(([key, item]) => ({
-			label: key.slice("directive:".length),
-			text: item.text || key.slice("directive:".length),
-		}));
-
-	const covered = new Set<string>();
-	if (labels.length > 0) {
-		const pipeline = await buildPipeline(ctx, settings);
-		if (!("error" in pipeline)) {
-			try {
-				const verdicts = await pipeline.coverageJudge(labels, coverage);
-				for (const [label, match] of verdicts) {
-					if (match.rule || match.skill) covered.add(label);
-				}
-			} catch {
-				// Adoption is reported as zero rather than failing the report; the
-				// caveat below already tells the reader not to over-read the number.
-			}
-		}
-	}
-
-	const stats = summarizeLearnState(state, (label) => covered.has(label));
-
-	const contextTokens = loadProjectContextFiles({ cwd: ctx.cwd, agentDir }).agentsFiles.reduce(
-		(sum, file) => sum + (file.tokens ?? 0),
-		0,
-	);
+	const contextFiles = loadProjectContextFiles({ cwd: ctx.cwd, agentDir }).agentsFiles;
+	const contextTokens = contextFiles.reduce((sum, file) => sum + (file.tokens ?? 0), 0);
 
 	const lines: string[] = [];
 	lines.push(`/learn history for this directory — ${shortDate(stats.earliest)} to ${shortDate(stats.latest)}`);
 	lines.push(
-		`  Proposals shown   ${stats.total}  (${stats.directives} directive, ${stats.fixes} fix, ${stats.workflows} workflow)`,
+		`  Proposals shown   ${stats.total}  (${stats.directives} directive, ${stats.fixes} fix, ${stats.requests} request)`,
 	);
 	if (stats.lastRun) lines.push(`  Last run          ${shortDate(stats.lastRun)}`);
 	lines.push("");
 
-	if (stats.open === 0) {
-		lines.push("No directive proposals yet, so there is nothing to measure adoption against.");
-	} else {
-		const rate = Math.round((stats.adopted / stats.open) * 100);
-		lines.push("Directive adoption — the only category with a coverage signal");
-		lines.push(`  Written down      ${stats.adopted} of ${stats.open}  (${rate}%)`);
-		lines.push(`  Passed over       ${stats.declined}`);
-		lines.push("");
-		// Without this the number invites the wrong conclusion. Adoption is a proxy
-		// for usefulness, and a proposal correctly rejected as not durable counts
-		// against it exactly like a junk one — so near-100% means the bar is too
-		// low, not that the extractor is perfect.
-		lines.push("  A very high rate means the bar is too low, not that every proposal was good.");
-		lines.push("  Near zero means the miner is proposing the wrong things.");
+	// The one number worth watching, and the only one here that is exact. Mining
+	// can only push it up; `/learn stale` is what pushes it down.
+	lines.push(`Always-loaded cost  ~${contextTokens} tokens across ${contextFiles.length} context file(s)`);
+	for (const file of contextFiles) {
+		lines.push(`  ~${file.tokens ?? 0}  ${displayPath(file.path)}`);
 	}
-
+	lines.push("  Run /learn stale to find lines naming something that no longer exists.");
 	lines.push("");
-	lines.push(`Context files       ~${contextTokens} tokens, re-sent every request`);
 	lines.push(`State file          ${displayPath(statePath)}`);
 	lines.push("");
 	lines.push(...settingsPathLines(ctx, agentDir));
 	lines.push("  Run /learn settings for the thresholds in force.");
 
 	ctx.ui.notify(lines.join("\n"), "info");
+}
+
+/**
+ * `/learn stale` — which lines in the context files name something that is gone.
+ *
+ * The mining path can only propose additions, so this is the only half of the
+ * command that moves the always-loaded token surface down. It is deterministic
+ * and costs nothing, which is what makes it the half worth running often; the
+ * findings go to the model only when there are some, so a clean audit is free.
+ */
+function reportAudit(pi: ExtensionAPI, ctx: ExtensionCommandContext): void {
+	const agentDir = getHooCodeDir();
+	const { agentsFiles } = loadProjectContextFiles({ cwd: ctx.cwd, agentDir });
+
+	if (agentsFiles.length === 0) {
+		ctx.ui.notify("/learn stale found no context files to check (no AGENTS.md or CLAUDE.md is in force).", "warning");
+		return;
+	}
+
+	const report = auditContextFiles({ cwd: ctx.cwd, files: agentsFiles });
+
+	if (report.files.length === 0) {
+		const lines = ["/learn stale checked nothing — every context file in force is outside this working tree."];
+		for (const path of report.skippedFiles) lines.push(`  ${displayPath(path)}`);
+		lines.push("A rule written in a user-scope file names paths in whatever repo it was written for, not this one.");
+		ctx.ui.notify(lines.join("\n"), "info");
+		return;
+	}
+
+	const totalTokens = report.files.reduce((sum, file) => sum + file.tokens, 0);
+	if (report.stale.length === 0) {
+		ctx.ui.notify(
+			`/learn stale — ${report.checked} referent(s) in ${report.files.length} context file(s) all resolve. ` +
+				`~${totalTokens} tokens, re-sent every request.`,
+			"info",
+		);
+		return;
+	}
+
+	ctx.ui.notify(
+		`/learn stale — ${report.stale.length} of ${report.checked} referent(s) do not resolve ` +
+			`(~${staleTokens(report)} of ~${totalTokens} always-loaded tokens).`,
+		"info",
+	);
+	pi.sendUserMessage(renderAuditReport(report), { deliverAs: "followUp" });
 }
 
 /** `/learn settings` — the knobs, their current values, and the files to set them in. */
@@ -399,11 +445,12 @@ export function setupLearn(pi: ExtensionAPI): void {
 	guarded[REGISTERED] = true;
 
 	pi.registerCommand("learn", {
-		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all|stats|settings]",
+		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all|stale|stats|settings]",
 		getArgumentCompletions: (prefix: string) =>
 			(
 				[
 					{ value: "all", label: "re-propose everything" },
+					{ value: "stale", label: "context-file lines naming something that is gone" },
 					{ value: "stats", label: "what happened to past proposals" },
 					{ value: "settings", label: "where sessions are read from, and the knobs" },
 				] as const
@@ -412,12 +459,16 @@ export function setupLearn(pi: ExtensionAPI): void {
 				.map((option) => ({ value: option.value, label: option.label })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 			const argument = args.trim().toLowerCase();
-			if (argument && argument !== "all" && argument !== "stats" && argument !== "settings") {
-				ctx.ui.notify("Usage: /learn [all|stats|settings]", "warning");
+			if (argument && !["all", "stale", "stats", "settings"].includes(argument)) {
+				ctx.ui.notify("Usage: /learn [all|stale|stats|settings]", "warning");
+				return;
+			}
+			if (argument === "stale") {
+				reportAudit(pi, ctx);
 				return;
 			}
 			if (argument === "stats") {
-				await reportStats(ctx);
+				reportStats(ctx);
 				return;
 			}
 			if (argument === "settings") {
@@ -433,7 +484,7 @@ export function setupLearn(pi: ExtensionAPI): void {
 			const window = settings.getLearnSettings();
 			const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
 
-			const pipeline = await buildPipeline(ctx, settings);
+			const pipeline = await buildPipeline(ctx, settings, loadReplayFingerprints(pi));
 			if ("error" in pipeline) {
 				ctx.ui.notify(pipeline.error, "error");
 				return;
@@ -479,11 +530,12 @@ export function setupLearn(pi: ExtensionAPI): void {
 					maxSessions: window.maxSessions,
 					maxAgeDays: window.maxAgeDays,
 					minRepeats: window.minRepeats,
-					minWorkflowRepeats: window.minWorkflowRepeats,
+					minRequestRepeats: window.minRequestRepeats,
 					maxProposals: window.maxProposals,
 					state: readLearnState(statePath),
 					ignoreState,
 					miner: pipeline.miner,
+					clusterer: pipeline.clusterer,
 					coverageJudge: pipeline.coverageJudge,
 					signal: controller.signal,
 					onProgress: ({ done, total, cached }) => {
@@ -537,8 +589,13 @@ export function setupLearn(pi: ExtensionAPI): void {
 						: `Read ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
 				);
 				if (digest.suppressed === 0) {
-					// The thresholds are the reason a scan with real sessions in it came
-					// back empty, so this is the moment they are worth knowing about.
+					// Which of the two empty results this is. "Nothing was said" and "a
+					// lot was said and none of it repeated" read identically otherwise,
+					// and they point at completely different knobs.
+					lines.push(
+						`  ${digest.funnel.candidates} occurrence(s) → ${digest.funnel.points} distinct point(s) → ` +
+							`${digest.funnel.belowThreshold} below the repeat threshold`,
+					);
 					lines.push("");
 					lines.push(...settingsLines(ctx, agentDir, window));
 				}
@@ -549,17 +606,26 @@ export function setupLearn(pi: ExtensionAPI): void {
 			const counts = [
 				digest.directives.length > 0 ? `${digest.directives.length} directive(s)` : undefined,
 				digest.fixes.length > 0 ? `${digest.fixes.length} fix(es)` : undefined,
-				digest.workflows.length > 0 ? `${digest.workflows.length} workflow(s)` : undefined,
+				digest.requests.length > 0 ? `${digest.requests.length} request(s)` : undefined,
 			].filter((part): part is string => !!part);
 			const held = digest.suppressed > 0 ? `, ${digest.suppressed} held back` : "";
+			const cut = digest.cut > 0 ? `, ${digest.cut} cut to fit the cap` : "";
 			ctx.ui.notify(
-				`Mined ${digest.scannedSessions} session(s) (${digest.mining.mined} read, ${digest.mining.cached} cached): ${counts.join(", ")}${held}.`,
+				`Mined ${digest.scannedSessions} session(s) (${digest.mining.mined} read, ${digest.mining.cached} cached): ${counts.join(", ")}${held}${cut}.`,
 				"info",
 			);
 
 			// Record before delivering: what matters is that these were put in front
 			// of the user, which is true whether or not they act on the digest.
-			writeLearnState(statePath, recordSurfaced(readLearnState(statePath), digest.surfaced));
+			//
+			// Unless coverage could not be read. The bookmark stores whether an item
+			// was already written down when it was shown, and that is what later tells
+			// an adopted proposal from one passed over. Recording a guess as a reading
+			// would have a later run tell the user they passed on something they were
+			// never shown. Skipping costs one round of re-proposing.
+			if (!digest.coverageFailed) {
+				writeLearnState(statePath, recordSurfaced(readLearnState(statePath), digest.surfaced));
+			}
 
 			pi.sendUserMessage(
 				renderLearnDigest(digest, {

@@ -1,0 +1,37 @@
+{
+	"description": "Evaluation corpus for the /learn pipeline. Each group is one durable point said in different sessions and different words; a working naming pass gives every phrasing in a group the same label, and never shares a label between groups. `decoys` are pairs that look alike and mean different things, which is the failure mode a naive clusterer has. Point a real model's clusterer at this to measure it; the test uses a deterministic one to lock the pipeline's behaviour.",
+	"groups": [
+		{
+			"label": "use-bun-not-npm",
+			"phrasings": ["we're on bun now", "stop using npm install", "pnpm isn't what we use here"]
+		},
+		{
+			"label": "never-force-push",
+			"phrasings": ["never force push", "don't rewrite history that others have pulled"]
+		},
+		{
+			"label": "discuss-before-implementing",
+			"phrasings": ["let's discuss this first, no code yet", "talk it through before you touch anything"]
+		},
+		{
+			"label": "stage-only-your-own-files",
+			"phrasings": ["only stage the files you changed", "never git add -A, other agents are working here"]
+		}
+	],
+	"decoys": [
+		{
+			"label": "doc-tools-off-by-default",
+			"phrasings": ["doc tools should be off by default", "doc tools stay off unless asked for"]
+		},
+		{
+			"label": "network-tools-off-by-default",
+			"phrasings": ["network tools should be off by default", "network tools stay off unless asked for"]
+		}
+	],
+	"unverifiable": [
+		"a directive the miner paraphrased into something nobody said"
+	],
+	"replayed": [
+		"Open a release PR with bump type: **patch**. Identify ONLY the files you changed in this session and stage those."
+	]
+}

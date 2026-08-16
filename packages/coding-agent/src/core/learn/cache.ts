@@ -27,13 +27,25 @@ import { writeFileAtomicSync } from "../../utils/atomic-file.js";
 import type { MinedCandidate } from "./mine.js";
 
 /**
- * Bump when the miner prompt or the candidate shape changes.
+ * Bump when the miner prompt, the candidate shape, or what the miner is shown
+ * changes.
  *
  * The version is part of the cache key, not a field inside the entry, so a bump
  * invalidates every entry at once without a migration or a sweep — old files
  * simply stop being looked up, and the pruner reclaims them on age.
+ *
+ * v2: transcripts no longer carry successful tool output or replayed
+ * slash-command bodies, and candidates are dropped when their quote cannot be
+ * found in what the user said. Entries mined before that were read from a
+ * different transcript than the one the pipeline now produces, so keeping them
+ * would mean counting evidence the current rules would have rejected.
+ *
+ * v3: candidates no longer carry a label. Naming moved to a global pass that
+ * sees the whole window, which is also what makes this file model-independent:
+ * a cached label was frozen at mining time, so changing the `fast` tier forked
+ * the vocabulary permanently and split every count across the seam.
  */
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 3;
 
 /** Entries untouched for this long are reclaimed. */
 const CACHE_RETENTION_DAYS = 180;

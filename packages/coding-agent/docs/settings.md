@@ -196,8 +196,8 @@ the session directory being read.
 |---------|------|---------|-------------|
 | `learnMaxSessions` | number | `20` | Recent sessions in this directory to scan |
 | `learnMaxAgeDays` | number | `30` | Ignore sessions older than this |
-| `learnMinRepeats` | number | `2` | Times a directive must recur before it is proposed |
-| `learnMinWorkflowRepeats` | number | `3` | Non-overlapping repeats a tool sequence needs before it is proposed as a skill |
+| `learnMinRepeats` | number | `2` | Separate sessions a directive must recur in before it is proposed |
+| `learnMinRequestRepeats` | number | `3` | Separate sessions a piece of work must be asked for before it is proposed as a slash command |
 | `learnMaxProposals` | number | `8` | Cap on each list in the digest |
 
 ```json
@@ -209,10 +209,13 @@ reaches the repeat threshold. Narrow it on one you work in daily, where the last
 few weeks are the only relevant history. `learnMinRepeats` is the signal/noise
 dial: raise it for fewer, better-evidenced proposals.
 
-`learnMinWorkflowRepeats` counts *non-overlapping* occurrences, so three means
-the sequence genuinely happened three separate times, not that a sliding window
-matched it three times inside one stretch of work. `learnMaxProposals` bounds
-what a single run can ask you to review; every proposal costs the model context.
+Both thresholds count *distinct sessions*, not occurrences: saying a thing twice
+in one sitting usually means it was ignored the first time, which is evidence
+about that afternoon rather than about how you work.
+`learnMinRequestRepeats` is higher than `learnMinRepeats` on purpose — a rule
+stated twice is a rule, but a job asked for twice may just be a job that came up
+twice. `learnMaxProposals` bounds what a single run can ask you to review; every
+proposal costs the model context.
 
 Non-numeric or non-positive values fall back to the default rather than
 narrowing the window to nothing. As with all settings, a project

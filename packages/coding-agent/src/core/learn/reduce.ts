@@ -15,7 +15,7 @@
  * whitelist they cannot see.
  */
 
-import type { MinedCandidate } from "./mine.js";
+import type { LabelledCandidate, MinedCandidate } from "./mine.js";
 
 /** Where a repeated directive already lives, if anywhere. */
 export type DirectiveStatus = "new" | "restated" | "has-skill";
@@ -65,19 +65,30 @@ export interface FixCandidate extends Proposable {
 	sessions: number;
 }
 
-export interface WorkflowCandidate extends Proposable {
+/**
+ * A piece of work the user keeps asking for by name.
+ *
+ * This is the slash-command signal, and it was being thrown away: the miner
+ * used to be told not to report task requests at all. But a request repeated
+ * across sessions is exactly what a slash command is for, and the evidence for
+ * it is stronger than for most rules — the same job, asked for again, in
+ * someone's own words.
+ */
+export interface RequestCandidate extends Proposable {
 	label: string;
-	/** Tool names in order. */
-	steps: string[];
+	/** How the user phrased it, so the proposal can quote rather than invent. */
+	text: string;
 	count: number;
 	sessions: number;
 }
 
-/** One session's mining output, tagged with the identity the counts need. */
+/** One session's mining output, named and tagged with the identity the counts need. */
 export interface MinedSession {
 	sessionId: string;
-	timestamp: string;
-	candidates: MinedCandidate[];
+	/** When the session was last written to — the clock suppression runs on. */
+	lastActivity: string;
+	/** Named by the global clustering pass; grouping here is exact-label arithmetic. */
+	candidates: LabelledCandidate[];
 }
 
 interface Acc {
@@ -93,10 +104,12 @@ interface Acc {
 /**
  * Group every candidate of one kind by its label.
  *
- * `lastSeen` takes the session timestamp rather than anything the model
+ * `lastSeen` takes the session's last activity rather than anything the model
  * reports: the model is reading a transcript and has no reliable clock, and
  * `lastSeen` drives suppression, where a wrong value silently hides a live
- * signal or resurfaces a dead one.
+ * signal or resurfaces a dead one. It is deliberately not the session's start
+ * either — a long-running session would date today's words to the day it was
+ * opened, and suppression would call them old news.
  */
 function groupByLabel(sessions: MinedSession[], kind: MinedCandidate["kind"]): Acc[] {
 	const acc = new Map<string, Acc>();
@@ -108,7 +121,7 @@ function groupByLabel(sessions: MinedSession[], kind: MinedCandidate["kind"]): A
 			if (existing) {
 				existing.count++;
 				existing.sessions.add(session.sessionId);
-				if (session.timestamp > existing.lastSeen) existing.lastSeen = session.timestamp;
+				if (session.lastActivity > existing.lastSeen) existing.lastSeen = session.lastActivity;
 				// Keep the fullest quote: a longer one carries more of the reasoning.
 				if (candidate.text.length > existing.text.length) existing.text = candidate.text;
 				existing.rationale ??= candidate.rationale;
@@ -120,7 +133,7 @@ function groupByLabel(sessions: MinedSession[], kind: MinedCandidate["kind"]): A
 					rationale: candidate.rationale,
 					count: 1,
 					sessions: new Set([session.sessionId]),
-					lastSeen: session.timestamp,
+					lastSeen: session.lastActivity,
 					samples: [candidate],
 				});
 			}
@@ -128,6 +141,49 @@ function groupByLabel(sessions: MinedSession[], kind: MinedCandidate["kind"]): A
 	}
 
 	return [...acc.values()];
+}
+
+/**
+ * Merge accumulators whose representative quote is the same sentence.
+ *
+ * The model labels each session independently and has no way to see what it
+ * called the same thing last time, so identical text routinely arrives under
+ * two labels — and then reads as two separate proposals, the same words twice.
+ * Matching on the quote costs nothing and is the one case where sameness is not
+ * a judgement call.
+ *
+ * This runs before the repeat threshold on purpose: two occurrences split
+ * across two labels are each below the bar, and merging them afterwards would
+ * mean neither was ever considered.
+ *
+ * The surviving label is the lexicographically smallest of the merged set, not
+ * the first one seen. First-seen follows session order, which changes whenever
+ * a session is added — so the merged cluster would silently change its name
+ * between runs, the state key with it, and every item the reader had already
+ * decided on would come back as new. A merge has to be a pure function of what
+ * was merged.
+ */
+function mergeIdenticalText(entries: Acc[]): Acc[] {
+	const byText = new Map<string, Acc>();
+	const order: Acc[] = [];
+
+	for (const entry of entries) {
+		const key = entry.text.replace(/\s+/g, " ").trim().toLowerCase();
+		const existing = byText.get(key);
+		if (!existing) {
+			byText.set(key, entry);
+			order.push(entry);
+			continue;
+		}
+		existing.count += entry.count;
+		for (const session of entry.sessions) existing.sessions.add(session);
+		if (entry.lastSeen > existing.lastSeen) existing.lastSeen = entry.lastSeen;
+		existing.rationale ??= entry.rationale;
+		existing.samples.push(...entry.samples);
+		if (entry.label < existing.label) existing.label = entry.label;
+	}
+
+	return order;
 }
 
 /** Distinct sessions first, then raw count: five sessions beats nine times in one. */
@@ -149,9 +205,21 @@ function mergeStrings(samples: MinedCandidate[], pick: (c: MinedCandidate) => st
 	return out.slice(0, 12);
 }
 
+/**
+ * The repeat threshold counts distinct sessions, not occurrences.
+ *
+ * Saying a thing twice inside one session is the commonest thing in a
+ * transcript and usually means the opposite of durable: the agent ignored it
+ * the first time, so it was restated. Two *sessions* is a claim about how you
+ * work; two lines in one session is a claim about one afternoon.
+ */
+function repeatedEnough(entry: Acc, minRepeats: number): boolean {
+	return entry.sessions.size >= minRepeats;
+}
+
 export function reduceDirectives(sessions: MinedSession[], minRepeats: number): DirectiveCluster[] {
-	return groupByLabel(sessions, "directive")
-		.filter((entry) => entry.count >= minRepeats)
+	return mergeIdenticalText(groupByLabel(sessions, "directive"))
+		.filter((entry) => repeatedEnough(entry, minRepeats))
 		.map((entry) => ({
 			key: `directive:${entry.label}`,
 			label: entry.label,
@@ -170,7 +238,7 @@ export function reduceDirectives(sessions: MinedSession[], minRepeats: number): 
 
 export function reduceFixes(sessions: MinedSession[], minRepeats: number): FixCandidate[] {
 	return groupByLabel(sessions, "fix")
-		.filter((entry) => entry.count >= minRepeats)
+		.filter((entry) => repeatedEnough(entry, minRepeats))
 		.map((entry) => ({
 			key: `fix:${entry.label}`,
 			label: entry.label,
@@ -185,13 +253,13 @@ export function reduceFixes(sessions: MinedSession[], minRepeats: number): FixCa
 		.sort(byEvidence);
 }
 
-export function reduceWorkflows(sessions: MinedSession[], minRepeats: number): WorkflowCandidate[] {
-	return groupByLabel(sessions, "workflow")
-		.filter((entry) => entry.count >= minRepeats)
+export function reduceRequests(sessions: MinedSession[], minRepeats: number): RequestCandidate[] {
+	return mergeIdenticalText(groupByLabel(sessions, "request"))
+		.filter((entry) => repeatedEnough(entry, minRepeats))
 		.map((entry) => ({
-			key: `workflow:${entry.label}`,
+			key: `request:${entry.label}`,
 			label: entry.label,
-			steps: entry.samples.find((s) => s.steps && s.steps.length > 0)?.steps ?? [],
+			text: entry.text,
 			count: entry.count,
 			sessions: entry.sessions.size,
 			lastSeen: entry.lastSeen,

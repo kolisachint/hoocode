@@ -12,12 +12,18 @@
  * verbatim; the budget is enforced by chunking and by a session cap the reader
  * can see, not by a filter they cannot.
  *
- * What the model does *not* do is count. It reports occurrences one session at
- * a time, and each one carries a `label` — its own normalization of what was
- * meant. Counting identical labels across sessions is arithmetic, and it stays
- * in code (see `reduce.ts`), for two reasons: models do not count reliably over
- * long contexts, and a session mined in isolation cannot see recurrence anyway.
- * Semantic grouping is the model's job; the number is not.
+ * What the model does *not* do here is name or count. It used to emit a label
+ * per occurrence — its own canonical name for what was meant — and the reduce
+ * step grouped on exact label equality. That cannot work from inside one
+ * session: the model is asked to hit a shared vocabulary it has never seen, and
+ * on a real corpus it agreed with itself 3 times out of 188. Naming now happens
+ * once, globally, in `cluster.ts`, where every candidate is visible at the same
+ * time. Counting stays in `reduce.ts`, where it always belonged.
+ *
+ * Leaving labels out also makes the cache model-independent. A cached candidate
+ * used to carry a label frozen at mining time, so changing the `fast` tier
+ * forked the vocabulary permanently: old sessions and new ones named the same
+ * thing differently, and neither side reached the repeat threshold.
  */
 
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
@@ -25,21 +31,18 @@ import type { Model, TextContent, ToolCall } from "@kolisachint/hoocode-ai";
 import { completeSimple } from "@kolisachint/hoocode-ai";
 
 /** What kind of thing the model noticed. */
-export type CandidateKind = "directive" | "fix" | "workflow";
+export type CandidateKind = "directive" | "fix" | "request";
 
 /**
  * One occurrence, as reported by the model reading a single session.
  *
- * `label` is the load-bearing field. It is the model's canonical name for what
- * was meant — "use-bun-not-npm" for all of "we're on bun now", "stop using
- * npm", and "pnpm isn't what we use" — and it is what the reduce step groups
- * on. Getting a stable label out of the model is what buys semantic clustering
- * that `normalizeDirective`'s lowercase-and-strip-punctuation could never do.
+ * Deliberately unnamed. What was *meant* is only decidable against everything
+ * else that was said, and this stage sees one session, so it reports what it
+ * saw and leaves grouping to `cluster.ts`. This is also the shape that goes in
+ * the cache, which is why nothing model-specific may live on it.
  */
 export interface MinedCandidate {
 	kind: CandidateKind;
-	/** Canonical slug for what was meant. The clustering key. */
-	label: string;
 	/** Verbatim text from the transcript, so the digest can quote rather than paraphrase. */
 	text: string;
 	/** Why this is durable, in the model's words. Shown when a proposal is borderline. */
@@ -52,8 +55,12 @@ export interface MinedCandidate {
 	interveningCommands?: string[];
 	/** Files changed as part of the fix. */
 	editedFiles?: string[];
-	/** Tool sequence, for `workflow` candidates. */
-	steps?: string[];
+}
+
+/** A candidate once the global naming pass has decided what to call it. */
+export interface LabelledCandidate extends MinedCandidate {
+	/** Canonical slug for what was meant. The clustering key. */
+	label: string;
 }
 
 /** A session reduced to what the miner needs: identity, time, and rendered text. */
@@ -109,9 +116,16 @@ export function chunkCharsForModel(model: Pick<Model<any>, "contextWindow">): nu
 	return Math.max(MIN_CHUNK_CHARS, Math.floor(budgetTokens * CHARS_PER_TOKEN));
 }
 
-/** Tool output kept per call. Errors carry the signal; success output is mostly noise. */
-const TOOL_OUTPUT_CHARS = 600;
+/** Error output kept per call. Errors carry the signal; success output is dropped entirely. */
 const TOOL_ERROR_CHARS = 1_500;
+
+/**
+ * Shortest literal run of a slash-command body that identifies a replay.
+ *
+ * Long enough that a user cannot type it by accident, short enough to survive a
+ * template whose placeholders are densely packed.
+ */
+const REPLAY_FINGERPRINT_CHARS = 40;
 
 /** Response ceiling per chunk. A chunk yielding more than this is noise, not signal. */
 const MAX_RESPONSE_TOKENS = 4_000;
@@ -125,6 +139,53 @@ const MAX_CANDIDATES_PER_CHUNK = 40;
  * every proposal would compound its own count.
  */
 export const LEARN_DIGEST_MARKER = "[learn-digest]";
+
+/** Collapse whitespace so a quote survives the wrapping a markdown source imposes on it. */
+function normalizeForMatch(text: string): string {
+	return text.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+/**
+ * Literal runs from slash-command bodies, used to recognise a replayed expansion.
+ *
+ * A `user`-type slash command is persisted as an ordinary user message holding
+ * the whole template body, with nothing to mark it as machinery. Read back off
+ * disk it is indistinguishable from something the user typed — and it is the
+ * most repeated text in a real corpus, because running `/pr` thirty times
+ * writes the same two thousand characters thirty times. Mining it produces
+ * directives the user never stated, at counts that look exactly like organic
+ * repetition.
+ *
+ * Detection is retroactive on purpose. A provenance flag written at turn time
+ * would be exact, but it would only help sessions recorded after it shipped,
+ * leaving the existing corpus contaminated for months. Matching against the
+ * command bodies still on disk fixes the history that already exists. The gap
+ * is a template that has since been deleted; that case wants the flag, and is
+ * the reason to add one later.
+ */
+export function replayFingerprints(templates: Array<{ content: string }>): string[] {
+	const out: string[] = [];
+	for (const template of templates) {
+		// Split on the placeholders that argument substitution rewrites, leaving the
+		// literal text that survives every expansion.
+		const segments = template.content.split(/\$(?:\d+|ARGUMENTS|\*)/);
+		let longest = "";
+		for (const segment of segments) {
+			const normalized = normalizeForMatch(segment);
+			if (normalized.length > longest.length) longest = normalized;
+		}
+		if (longest.length >= REPLAY_FINGERPRINT_CHARS) out.push(longest);
+	}
+	return out;
+}
+
+/** True when a user turn is the body of a slash command rather than something typed. */
+export function isReplayedTurn(text: string, fingerprints: string[]): boolean {
+	if (fingerprints.length === 0) return false;
+	const normalized = normalizeForMatch(text);
+	if (normalized.length < REPLAY_FINGERPRINT_CHARS) return false;
+	return fingerprints.some((fingerprint) => normalized.includes(fingerprint));
+}
 
 function textOf(content: unknown): string {
 	if (typeof content === "string") return content;
@@ -161,14 +222,19 @@ function renderArgs(args: Record<string, unknown> | undefined): string {
 /**
  * Render a session as plain text for the model.
  *
- * User turns go in whole and unfiltered — that is the entire point of this
- * rewrite, and any truncation here would quietly reintroduce the recall problem
- * the regex gate had. Assistant prose is dropped: it is the bulk of a
- * transcript and almost none of it is evidence about what the *user* wants.
- * Tool calls are kept because a repeated sequence is a workflow and a
- * failure-then-pass is a fix, and both are things worth proposing.
+ * User turns the user actually typed go in whole and unfiltered — any
+ * truncation there would quietly reintroduce the recall problem the old regex
+ * gate had. What does not go in is text the user's tooling replayed: its own
+ * past digests, and slash-command bodies.
+ *
+ * Assistant prose is dropped: it is the bulk of a transcript and almost none of
+ * it is evidence about what the *user* wants. Tool calls are kept, because a
+ * failure-then-pass is a fix. Successful tool output is dropped: it is a file
+ * or a command's stdout, not a statement by anyone, and feeding it to a miner
+ * looking for directives yields lines lifted out of plan files and configs
+ * attributed to the user.
  */
-export function renderTranscript(session: MinableSession): string {
+export function renderTranscript(session: MinableSession, fingerprints: string[] = []): string {
 	const lines: string[] = [];
 
 	for (const entry of session.entries) {
@@ -179,6 +245,7 @@ export function renderTranscript(session: MinableSession): string {
 			const text = textOf(message.content);
 			// Skip the command's own past output, or proposals compound their counts.
 			if (!text || text.startsWith(LEARN_DIGEST_MARKER)) continue;
+			if (isReplayedTurn(text, fingerprints)) continue;
 			lines.push(`USER: ${text}`);
 			continue;
 		}
@@ -191,16 +258,52 @@ export function renderTranscript(session: MinableSession): string {
 			continue;
 		}
 
-		if (message.role === "toolResult") {
+		if (message.role === "toolResult" && message.isError) {
 			const output = textOf(message.content);
 			if (!output) continue;
-			const limit = message.isError ? TOOL_ERROR_CHARS : TOOL_OUTPUT_CHARS;
-			const label = message.isError ? "ERROR" : "RESULT";
-			lines.push(`${label}: ${output.length > limit ? `${output.slice(0, limit)}…` : output}`);
+			lines.push(`ERROR: ${output.length > TOOL_ERROR_CHARS ? `${output.slice(0, TOOL_ERROR_CHARS)}…` : output}`);
 		}
 	}
 
 	return lines.join("\n");
+}
+
+/** Everything the user actually said in a session, normalized, for checking quotes against. */
+export function spokenText(session: MinableSession, fingerprints: string[] = []): string {
+	const parts: string[] = [];
+	for (const entry of session.entries) {
+		const message = entry.type === "message" ? entry.message : undefined;
+		if (!message || message.role !== "user") continue;
+		const text = textOf(message.content);
+		if (!text || text.startsWith(LEARN_DIGEST_MARKER)) continue;
+		if (isReplayedTurn(text, fingerprints)) continue;
+		parts.push(text);
+	}
+	return normalizeForMatch(parts.join("\n"));
+}
+
+/**
+ * Drop candidates whose quote cannot be found in what the user said.
+ *
+ * The miner is told to quote verbatim and the digest renders every quote inside
+ * quotation marks, but on a real corpus a third of them appear nowhere in the
+ * session: paraphrases, merged sentences, and lines lifted out of tool output.
+ * A quote that cannot be located is evidence that cannot be shown, and a
+ * proposal the reader cannot check is worse than one that was never made.
+ *
+ * Whitespace is normalized before comparing, because a directive written in a
+ * markdown file arrives wrapped across lines and the model unwraps it.
+ */
+export function verifyCandidates(candidates: MinedCandidate[], spoken: string): MinedCandidate[] {
+	// Normalized again rather than trusting the caller: the check is a substring
+	// test, and one un-normalized argument would silently reject everything.
+	const haystack = normalizeForMatch(spoken);
+	if (!haystack) return [];
+	return candidates.filter((candidate) => {
+		// A fix is evidenced by commands and errors, not by something the user said.
+		if (candidate.kind === "fix") return true;
+		return haystack.includes(normalizeForMatch(candidate.text));
+	});
 }
 
 /**
@@ -239,23 +342,22 @@ Report three kinds of thing.
 - corrective: "no, that's not how our error handling works"
 - declarative: "we're on bun now", "the API returns snake_case"
 - preference stated once, in passing: "I'd rather see this as a table"
-Do NOT report task requests ("add a button to the header", "fix the login bug"). A task is what to do now; a directive is how things should be done in general. When a message contains both, report only the directive part.
+A directive is how things should be done in general. What to do right now is a **request** — see below — not a directive. When a message contains both, report the directive part here.
 
 **fix** — a command that failed and later succeeded, where something in between was the cause. Report the failing command, a short error excerpt, and what changed in between.
 
-**workflow** — a sequence of three or more tool calls that recurs within this session, or that clearly represents a routine procedure (scaffold a file, then register it, then test it).
+**request** — the user asking for a piece of work by name: "open a release PR", "run the full check and fix what it finds", "give me a demo of X". Report the request as they phrased it. A request repeated across sessions is a slash command waiting to be written, which is why it is worth reporting even though it is not a rule.
 
-For every item, produce a "label": a short kebab-case slug naming what was MEANT, not what was said. The label is how occurrences are grouped across sessions, so two different phrasings of the same underlying point MUST get the same label.
-- "we're on bun now" → use-bun-not-npm
-- "stop using npm install" → use-bun-not-npm
-- "pnpm isn't what we use here" → use-bun-not-npm
-Keep labels general enough to collide when they mean the same thing, specific enough not to collide when they do not. Prefer 2-5 words.
+A message can contain both a request and a directive — "open a release PR, and remember to stage only your own files" is one of each. Report both, separately.
+
+Quote "text" VERBATIM from the transcript. Do not paraphrase, merge two sentences, or tidy the wording: a quote that cannot be found in the session is discarded, because the reader is shown it in quotation marks and has to be able to check it.
+
+Do not name or group anything. A later stage sees every session at once and decides what counts as the same point; from inside one session you cannot know.
 
 Output STRICT JSON, no markdown fence, no prose:
-{"candidates":[{"kind":"directive","label":"use-bun-not-npm","text":"<verbatim quote>","rationale":"<one clause on why it is durable>"}]}
+{"candidates":[{"kind":"directive","text":"<verbatim quote>","rationale":"<one clause on why it is durable>"}]}
 
 For fix items add: "command", "errorExcerpt", "interveningCommands" (array), "editedFiles" (array).
-For workflow items add: "steps" (array of tool names in order).
 
 Report nothing rather than padding. An empty list is a correct answer for a session that taught nothing: {"candidates":[]}`;
 
@@ -287,27 +389,23 @@ export function parseCandidates(response: string): MinedCandidate[] {
 		if (!item || typeof item !== "object") continue;
 		const candidate = item as Record<string, unknown>;
 		const kind = candidate.kind;
-		if (kind !== "directive" && kind !== "fix" && kind !== "workflow") continue;
+		if (kind !== "directive" && kind !== "fix" && kind !== "request") continue;
 
-		const label = typeof candidate.label === "string" ? candidate.label.trim().toLowerCase() : "";
 		const text = typeof candidate.text === "string" ? candidate.text.trim() : "";
-		// A candidate with no label cannot be grouped, and one with no text cannot
-		// be quoted back — either way there is nothing to show the reader.
-		if (!label || !text) continue;
+		// Nothing to quote back means nothing to show the reader.
+		if (!text) continue;
 
 		const strings = (value: unknown): string[] | undefined =>
 			Array.isArray(value) ? value.filter((v): v is string => typeof v === "string").slice(0, 12) : undefined;
 
 		out.push({
 			kind,
-			label,
 			text,
 			rationale: typeof candidate.rationale === "string" ? candidate.rationale.trim() : undefined,
 			command: typeof candidate.command === "string" ? candidate.command : undefined,
 			errorExcerpt: typeof candidate.errorExcerpt === "string" ? candidate.errorExcerpt.slice(0, 400) : undefined,
 			interveningCommands: strings(candidate.interveningCommands),
 			editedFiles: strings(candidate.editedFiles),
-			steps: strings(candidate.steps),
 		});
 	}
 	return out;
@@ -317,6 +415,12 @@ export interface MinerDeps {
 	model: Model<any>;
 	apiKey?: string;
 	headers?: Record<string, string>;
+	/**
+	 * Literal runs from the slash-command bodies in force, from
+	 * `replayFingerprints`. User turns matching one are machinery replaying
+	 * itself, not the user speaking.
+	 */
+	replayFingerprints?: string[];
 }
 
 /**
@@ -329,8 +433,9 @@ export interface MinerDeps {
  */
 export function createLlmMiner(deps: MinerDeps): Miner {
 	const chunkChars = chunkCharsForModel(deps.model);
+	const fingerprints = deps.replayFingerprints ?? [];
 	return async (session, signal) => {
-		const chunks = chunkTranscript(renderTranscript(session), chunkChars);
+		const chunks = chunkTranscript(renderTranscript(session, fingerprints), chunkChars);
 		const candidates: MinedCandidate[] = [];
 
 		for (const chunk of chunks) {
@@ -356,6 +461,9 @@ export function createLlmMiner(deps: MinerDeps): Miner {
 			candidates.push(...parseCandidates(text));
 		}
 
-		return candidates;
+		// Verify against the whole session rather than the chunk that produced the
+		// candidate: a quote can legitimately straddle a chunk boundary, and a
+		// dropped-for-being-unfindable verdict has to mean unfindable anywhere.
+		return verifyCandidates(candidates, spokenText(session, fingerprints));
 	};
 }

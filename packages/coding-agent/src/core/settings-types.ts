@@ -172,7 +172,7 @@ export interface Settings {
 	learnMaxSessions?: number; // default: 20 - how many recent sessions in this directory /learn mines. Raise it on a repo you touch rarely; lower it when only the last few days matter.
 	learnMaxAgeDays?: number; // default: 30 - ignore sessions older than this. A pattern that stopped is not a rule, so the window is what keeps stale habits out of proposals.
 	learnMinRepeats?: number; // default: 2 - times a directive must recur before /learn proposes it. This is the signal/noise dial: raise it for fewer, better-evidenced proposals.
-	learnMinWorkflowRepeats?: number; // default: 3 - non-overlapping repeats a tool sequence needs before /learn proposes it as a skill. Raise it in a repo where the same few tools churn constantly.
+	learnMinRequestRepeats?: number; // default: 3 - separate sessions a piece of work must be asked for before /learn proposes it as a slash command. Higher than the directive bar: a job that came up twice may just be a job that came up twice.
 	learnMaxProposals?: number; // default: 8 - cap on each list in the /learn digest. Every proposal costs the model context, so this bounds what one run can ask you to review.
 	light?: boolean; // default: false - minimal low-token preset for small/local models: read/write/edit/bash only (short schemas), terse prompt, no subagents/TodoWrite/skills/context files/mode appendix. Same as the --light CLI flag.
 	terminal?: TerminalSettings;

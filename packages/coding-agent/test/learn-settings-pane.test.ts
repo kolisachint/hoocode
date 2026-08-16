@@ -29,7 +29,7 @@ const DEFAULT_LEARN = {
 	learnMaxSessions: 20,
 	learnMaxAgeDays: 30,
 	learnMinRepeats: 2,
-	learnMinWorkflowRepeats: 3,
+	learnMinRequestRepeats: 3,
 	learnMaxProposals: 8,
 };
 
