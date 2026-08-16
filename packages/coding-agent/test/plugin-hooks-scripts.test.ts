@@ -120,6 +120,27 @@ describe("plugin hooks + bundled scripts (install → parse → bridge → run)"
 		expect(pass).toBeUndefined();
 	});
 
+	it("survives a hook that exits without draining stdin (async EPIPE on the payload write)", async () => {
+		const { pi, handlers } = makePi();
+		const errors: string[] = [];
+		installPluginHooks(
+			pi,
+			{ PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "exit 0" }] }] },
+			cwd,
+			{},
+			(m: string) => errors.push(m),
+		);
+
+		// Payload far larger than the OS pipe buffer (64KB), so the write cannot
+		// drain before the child exits. Unhandled, stdin's EPIPE kills the process.
+		const decision = await handlers.get("tool_call")!({
+			toolName: "bash",
+			input: { command: "x".repeat(1_000_000) },
+		});
+		expect(decision).toBeUndefined();
+		expect(errors).toEqual([]);
+	});
+
 	it("synthesizes a manifest for a manifest-less marketplace plugin (bare capability tree)", async () => {
 		// Like copilot-plugins' "spark": the plugin dir is just a skills/ tree.
 		const market2 = path.join(cwd, "market2");
