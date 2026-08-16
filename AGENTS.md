@@ -12,16 +12,8 @@ Before searching, check these maps:
 
 ## Recent Changes
 
-- **Browser + document tools removed**: `browser_run`/`browser_continue`, the six
-  `Doc*` tools, `src/core/tools/{browser,doc}/`, `filetools-shared.ts`, and the
-  `--enable-browsertools` / `--enable-browser-live-preview` / `--enable-filetools`
-  flags with their settings and `tools-manager.ts` entries are all gone.
-  `TOOL_FACTORIES` in `src/core/tools/index.ts` is down to 10 built-ins.
-- **Provider trim (complete)**: `amazon-bedrock`, `mistral`,
-  `cloudflare-workers-ai`, and `cloudflare-ai-gateway` are fully removed —
-  implementations, registrations, `Api`/`KnownProvider` entries, env keys,
-  generated models, and test scaffolding. `mistralai/*` model ids served
-  through OpenRouter are unrelated and remain supported.
+- **Browser + document tools removed**: `browser_*`, `Doc*`, `filetools-shared.ts`, and their `--enable-browsertools`/`--enable-browser-live-preview`/`--enable-filetools` flags are gone; `TOOL_FACTORIES` is 10 built-ins.
+- **Providers removed**: `amazon-bedrock`, `mistral`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`. `mistralai/*` ids via OpenRouter still work.
 - **MCP Standard Config Support**: Now reads standard `mcp.json` format from:
   - `~/.agents/mcp.json` (user-level)
   - `.agents/mcp.json` (project-level)
@@ -155,7 +147,7 @@ When closing issues via commit:
 ### Slash commands
 
 - `/pr [patch|minor|major]` - opens a PR on a feature branch. With a bump it labels the PR `npm:<bump>` so the merge-release workflow publishes on merge; without one it only opens a PR (no publish). Defined in `.agents/commands/pr.md`.
-- `/push [patch|minor|major]` - pushes your session's changes straight to `origin/main` (stage only your files, commit, rebase, fast-forward push). Without a bump it publishes nothing; with `patch|minor|major` it runs the release to publish. Defined in `.agents/commands/push.md`.
+- `/postmerge [pr-number]` - after a PR merges, verifies CI, npm publish, version bump, tag and GitHub release, then returns to an up-to-date `main`. Defined in `.agents/commands/postmerge.md`.
 - Slash-command definitions live in `.agents/commands/` (also read from `.hoocode/commands/`, `.claude/commands/`, and the user-level equivalents). Scaffold a new one with `/new-command <name>`.
 
 ## Testing hoocode Interactive Mode with tmux
