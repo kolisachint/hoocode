@@ -4,7 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { KeybindingsManager } from "../../../src/core/keybindings.js";
 import { ModelSelectorComponent } from "../../../src/modes/interactive/components/model-selector.js";
 import { ScopedModelsSelectorComponent } from "../../../src/modes/interactive/components/scoped-models-selector.js";
-import { initTheme } from "../../../src/modes/interactive/theme/theme.js";
+import { initTheme, SELECT_CURSOR } from "../../../src/modes/interactive/theme/theme.js";
 import { createHarness, type Harness } from "../harness.js";
 
 function createFakeTui(): TUI {
@@ -95,7 +95,12 @@ describe("issue #3217 scoped model ordering", () => {
 			.split("\n")
 			.filter((line) => line.includes(`[${modelOne.provider}]`));
 		const orderedIds = renderedLines.slice(0, 3).map((line) => {
-			const [modelId] = line.trim().replace(/^→\s*/, "").split(" [");
+			// Derived from the shared cursor rather than spelled out: this stripped a
+			// hardcoded → for one commit after every picker moved to SELECT_CURSOR,
+			// which left the glyph riding along in the extracted id.
+			const trimmed = line.trim();
+			const withoutCursor = trimmed.startsWith(SELECT_CURSOR) ? trimmed.slice(SELECT_CURSOR.length) : trimmed;
+			const [modelId] = withoutCursor.split(" [");
 			return modelId?.trim() ?? "";
 		});
 
