@@ -56,6 +56,10 @@ function runHookCommand(
 		child.stderr.on("data", (d) => {
 			stderr += d.toString();
 		});
+		// A hook that exits without draining stdin (block.sh, `exit 2`, any script
+		// that ignores its input) makes the payload write below fail asynchronously.
+		// stdin then emits EPIPE, which is fatal to the process if unhandled.
+		child.stdin.on("error", () => {});
 		child.on("error", () => {
 			clearTimeout(timer);
 			resolve({ exitCode: 1, stdout, stderr, json: undefined });
@@ -78,7 +82,7 @@ function runHookCommand(
 			child.stdin.write(JSON.stringify(input));
 			child.stdin.end();
 		} catch {
-			/* child may have already exited */
+			/* child already exited: the payload is best-effort, the exit code is not */
 		}
 	});
 }

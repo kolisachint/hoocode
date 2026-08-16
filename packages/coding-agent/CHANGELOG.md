@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Plugin hooks no longer crash the process when a hook exits without reading its
+  stdin. `runHookCommand` wrote the JSON payload inside a `try`, which catches
+  only synchronous throws: a hook that exits first (`exit 2`, any script
+  ignoring its input) made the write fail asynchronously, and `child.stdin`
+  emitted an unhandled `EPIPE`. Intermittently fatal in real sessions, and the
+  cause of the `bun-test (coding-agent)` failure on `main` where every test file
+  passed but the run still exited 1.
+
 ## [0.5.20] - 2026-08-16
 
 ## [0.5.19] - 2026-08-16
