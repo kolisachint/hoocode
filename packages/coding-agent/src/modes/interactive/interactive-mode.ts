@@ -38,6 +38,7 @@ import {
 } from "@kolisachint/hoocode-tui";
 import { spawnSync } from "child_process";
 import { APP_NAME, APP_TITLE, VERSION } from "../../config.js";
+import { setTerminalOwnedByTui } from "../../core/agent-log.js";
 import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
@@ -881,6 +882,10 @@ export class InteractiveMode {
 
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
+		// From here the TUI owns the terminal, so the agent's operational log lines
+		// (dispatch, warm fallback, lifeguard) must stop writing to it — a write the
+		// renderer did not make desyncs its cursor bookkeeping and duplicates rows.
+		setTerminalOwnedByTui(true);
 		this.isInitialized = true;
 
 		// Initialize extensions first so resources are shown before messages
@@ -3721,6 +3726,8 @@ export class InteractiveMode {
 		}
 		if (this.isInitialized) {
 			this.ui.stop();
+			// The terminal is ours again: later log lines can print normally.
+			setTerminalOwnedByTui(false);
 			this.isInitialized = false;
 		}
 	}

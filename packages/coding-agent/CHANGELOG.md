@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Dispatching a subagent no longer duplicates rows in the TUI. `beginDispatch`
+  wrote its `[DISPATCH]` line straight to the terminal with `console.error`;
+  stdout is reserved for the event stream, but stderr is not free either while
+  the TUI owns the screen. The renderer is differential and repositions by
+  relative row deltas from its own bookkeeping (`hardwareCursorRow`), so a write
+  it did not make scrolled the terminal underneath it and every later partial
+  repaint landed a row off — painting a second `Agent [explore]` row for a
+  single dispatch, wedging fragments of the log line into the transcript, and
+  scrambling the frame outright with two or more concurrent spawns. The damage
+  persisted until something forced a full repaint, which is why expanding and
+  collapsing tool output (`ctrl+O`) appeared to "fix" it.
+
+  Operational log lines now go through a small `agentLog` sink (`core/agent-log.ts`)
+  that stays silent while a TUI is attached and is unchanged in every other mode
+  (`--print`, RPC, CI). Nothing is lost interactively: the dispatch is already on
+  screen as its tool row and task-panel row, every field of the `[DISPATCH]` line
+  is persisted to `dispatch-log.json`, and warm/inherited-model fallbacks already
+  surface as a `⚠` note on the task row. `HOOCODE_DEBUG_AGENT_LOG=1` tees the
+  suppressed lines to `hoocode-debug.log`. The same hazard is closed for the
+  `[WARM]` cold-spawn fallbacks, the inherited-model retry notice, and the
+  lifeguard's stall report, which could corrupt the frame the same way.
+
 ## [0.5.21] - 2026-08-16
 
 ### Fixed

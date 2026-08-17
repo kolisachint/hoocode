@@ -9,6 +9,7 @@ import { writeFileAtomicSync } from "../utils/atomic-file.js";
 import { waitForChildProcess } from "../utils/child-process.js";
 import { killProcessTree } from "../utils/shell.js";
 import { MODEL_INHERIT } from "./agent-frontmatter.js";
+import { agentLog } from "./agent-log.js";
 import { type AgentRegistry, loadAgentRegistry } from "./agent-registry.js";
 import { DispatchEvaluator } from "./dispatch-evaluator.js";
 import { SubagentLifeguard } from "./lifeguard.js";
@@ -477,9 +478,10 @@ export class SubagentPool extends EventEmitter {
 		// so a delegation tree's nesting is visible in logs without extra tooling.
 		const childDepth = currentSubagentDepth(this.env) + 1;
 
-		// Pre-dispatch logging. Use stderr: stdout is reserved for the JSON event
-		// stream / TUI render and must not be polluted.
-		console.error(
+		// Pre-dispatch logging. Goes through agentLog rather than console.error:
+		// stdout is reserved for the JSON event stream, and stderr is not free
+		// either while the interactive TUI owns the terminal (see agent-log.ts).
+		agentLog(
 			`[DISPATCH] agent=${agent_type} depth=${childDepth} reason=${reason} complexity=${complexity} task_id=${task_id}`,
 		);
 		this.writeDispatchLog(task_id, agent_type, reason, complexity, task, childDepth);
@@ -1010,7 +1012,7 @@ export class SubagentPool extends EventEmitter {
 					result.error = this.deriveFailureReason(result);
 				}
 				if (this.shouldRetryWithInheritedModel(task, result)) {
-					console.error(
+					agentLog(
 						`[DISPATCH] agent=${task.agent_type} task_id=${task.task_id} preferred model failed; retrying with inherited model`,
 					);
 					this.cleanupRetryArtifacts(task);
