@@ -4,6 +4,7 @@ import { existsSync, readdirSync, readFileSync, rmdirSync, statSync, unlinkSync 
 import { join } from "node:path";
 import { getDispatchRoot } from "../config.js";
 import { killProcessTree } from "../utils/shell.js";
+import { agentLog } from "./agent-log.js";
 
 const TIMEOUTS_MS: Record<string, number> = {
 	explore: 5 * 60 * 1000,
@@ -216,7 +217,7 @@ export class SubagentLifeguard extends EventEmitter {
 		// (concurrent monitored subagents, threshold) that fed the decision.
 		const last = this.lastHeartbeat.get(task_id);
 		const silentMs = last === undefined ? -1 : Date.now() - last;
-		console.error(
+		agentLog(
 			`[LIFEGUARD] stalled task_id=${task_id} agent=${monitored.agent_type} ` +
 				`silent_ms=${silentMs} concurrent=${this.processes.size} ` +
 				`load_mult=${this.loadMultiplier().toFixed(2)} base_threshold_ms=${HEARTBEAT_MISS_THRESHOLD_MS}`,

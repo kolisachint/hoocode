@@ -18,6 +18,7 @@ import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { agentColorFor } from "../../modes/interactive/theme/theme.js";
 import { type AgentDefinition, TASK_TOOL_NAME } from "../agent-frontmatter.js";
+import { agentLog } from "../agent-log.js";
 import { loadAgentRegistry } from "../agent-registry.js";
 import type { ToolDefinition } from "../extensions/types.js";
 import { defineTool } from "../extensions/types.js";
@@ -366,7 +367,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 							);
 						} catch (error) {
 							if (!(error instanceof WarmWorkerError)) throw error;
-							console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
+							agentLog(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
 						}
 					}
 				}
@@ -438,7 +439,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 							taskStore.patchAgent(poolTaskId, { state: "failed", activity: "" });
 							throw error;
 						}
-						console.error(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
+						agentLog(`[WARM] ${params.subagent_type} fell back to cold spawn: ${error.message}`);
 					}
 				}
 			}
