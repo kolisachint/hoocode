@@ -5,7 +5,9 @@ exists in the repo today, and `.github/extensions/` is not read anywhere
 (`grep -rn "\.github/extensions" .` is clean). The facts about the Copilot
 side were verified against `@github/copilot-sdk@1.0.11` (npm) and the
 `github/awesome-copilot` reference extension `pr-artifact-explorer`, both read
-directly rather than from documentation.
+directly rather than from documentation. The module-resolution and lifecycle
+contract (§4.1, §6.1) is quoted from `docs/extensions.md` inside the SDK package
+and cross-checked against all 23 extensions in the catalog.
 
 **Motivation:** hoocode is a TUI. Every rich review surface it could offer — a
 plan you reorder, a diff you approve hunk by hunk, a queue of pending
@@ -249,15 +251,71 @@ Four responsibilities, deliberately separated so that only `protocol.ts` and
 - **`protocol.ts`** — the entire tier-2 surface. Three request types, one
   version handshake. If GitHub moves, this file and the shim move; nothing else
   does.
-- **`sdk-shim/`** — resolves the `@github/copilot-sdk/extension` import inside
-  the child, implementing `createCanvas`, `joinSession`, and `CanvasError` as a
-  thin translation onto `protocol.ts`. Roughly what their SDK does onto theirs.
-- **`runner.ts`** — spawns the entry file with the shim injected into module
-  resolution, owns stdio framing, keeps stdout clean, maps `session.log` to
-  hoocode's logging.
+- **`sdk-shim/`** — implements `createCanvas`, `joinSession`, and `CanvasError`
+  as a thin translation onto `protocol.ts`. Roughly what their SDK does onto
+  theirs.
+- **`runner.ts`** — forks the entry file, owns stdio framing, keeps stdout clean,
+  maps `session.log` to hoocode's logging, and — the hard requirement from §4.1 —
+  **injects the shim as a module resolver** so the child's bare
+  `@github/copilot-sdk/extension` import resolves without anything being written
+  into the extension directory.
 - **`registry.ts`** — instance table keyed by `instanceId`, plus the two things
   the host must provide that a browser cannot: an idle reaper and SSE-liveness
   heartbeat (§6).
+
+### 4.1 Module resolution is the load-bearing mechanism
+
+Settled against GitHub's own documentation, shipped inside the SDK package as
+`docs/extensions.md`:
+
+> **Launch**: Each extension is forked as a child process with
+> `@github/copilot-sdk` available via an automatic module resolver.
+
+> The `@github/copilot-sdk` import is resolved automatically — you don't install
+> it.
+
+So a canvas extension never installs the SDK, and `package.json` plays no part
+in resolution. Empirically confirmed across all 23 extensions in
+`github/awesome-copilot`: **not one ships `node_modules`**, and the three that
+omit `package.json` entirely work the same as the twenty that include it.
+
+Consequences, all now requirements rather than options:
+
+- **The shim is an injected resolver, not a file on disk.** hoocode must make
+  `@github/copilot-sdk/extension` resolvable inside the forked child — a
+  `node:module` `register()` resolve hook mapping that specifier onto
+  `sdk-shim/`. We never write into the extension directory; a canvas pulled from
+  the catalog stays byte-identical to upstream, which is what tier 1 of §2.1
+  requires.
+- **Discovery keys off `<dir>/extension.mjs`, nothing else.** The entry file is
+  required, must be named `extension.mjs`, and must be an ES module. All 23
+  catalog extensions comply; where `package.json` exists, its `main` is always
+  `extension.mjs` anyway.
+- **hoocode installs nothing.** If a child imports a bare specifier we do not
+  provide, the import fails; surface an error naming the missing module and the
+  extension's README. Running a package install on behalf of repository-supplied
+  code would defeat §5.
+
+### 4.2 The one catalog extension with a real dependency
+
+`chromium-control-canvas` declares `playwright: ^1.60.0` and imports it bare.
+Its README instructs the user to run `npm install` plus `npx playwright install
+chromium` by hand. It is the **only** third-party dependency anywhere in the
+catalog — every other extension imports nothing but `@github/copilot-sdk` and
+`node:` builtins.
+
+So "clone it and it works" holds for 22 of 23, and the exception fails the same
+way in the Copilot app until a person installs its dependencies. Our behaviour
+should match: fail with a clear message, never install.
+
+Worth noting as evidence that `package.json` is decorative here: three further
+extensions (`arcade-canvas`, `backrooms-canvas`, `flight-map-canvas`) tell users
+to run `npm install` even though their only declared dependency is the
+auto-resolved SDK. The catalog's own instructions are inconsistent with GitHub's
+documented behaviour, which is another reason not to key any of our logic off
+`package.json`.
+
+### 4.3 Discovery paths
 
 Discovery reads, in precedence order:
 
@@ -318,6 +376,32 @@ session. `registry.ts` therefore owns, from the start and not as a retrofit:
   seconds is idle,
 - an **idle reaper** that calls `canvas.close` and reaps the child,
 - **teardown on session end** for everything still live.
+
+### 6.1 The process lifecycle to mirror
+
+The SDK's `docs/extensions.md` states the CLI's contract, which our runner should
+match so a canvas cannot tell the hosts apart:
+
+| Stage | Copilot CLI behaviour |
+|---|---|
+| Launch | forked child process; JSON-RPC over stdio |
+| Connect | `joinSession()` attaches to the user's **current foreground session** |
+| Reload | on `/clear`, or when the foreground session is replaced |
+| Shutdown | on CLI exit — **SIGTERM, then SIGKILL after 5s** |
+
+The reload trigger matters for us: hoocode's session lifecycle is not the Copilot
+CLI's, so `registry.ts` must decide what counts as "foreground session replaced"
+and reload canvases on the same boundary hoocode already uses for session reset.
+
+### 6.2 Known gap: extensions are not only canvases
+
+`joinSession({ tools, hooks, canvases })` — a Copilot extension may register
+agent **tools** and **hooks** as well as canvases. Phase 1's shim implements
+canvases only. It should accept the `tools` and `hooks` keys, ignore them, and
+warn once naming the extension, so a catalog extension that uses them degrades
+visibly rather than half-working. Supporting them is a separate decision: hoocode
+already has its own tool and hook systems, so this is a mapping question, not a
+missing-feature question.
 
 ---
 
@@ -430,17 +514,26 @@ outage costs nothing.
 
 ## 10. Open questions
 
-1. **Does the Copilot app resolve `@github/copilot-sdk/extension` for an
-   extension with no `package.json`?** `pr-artifact-explorer` ships without one,
-   which strongly implies the host provides it. Worth confirming, because it
-   decides whether our canvases can stay dependency-free by policy or by luck.
-2. **Entry-file convention.** Docs and the reference agree on `extension.mjs`,
-   but discovery should probably accept a `package.json` `main` when present.
-3. **How does the Copilot app itself launch the child?** Our runner should match
-   its argv and environment conventions where observable, so a canvas cannot tell
-   the hosts apart.
-4. **Multiple canvases per extension.** `joinSession({ canvases: [...] })` takes
+Settled — see §4.1, §4.2, §6.1: the SDK import is resolved by the host's
+automatic module resolver and is never installed; `package.json` plays no part in
+resolution and discovery must key off `extension.mjs`; the launch, reload and
+shutdown contract is documented and mirrorable.
+
+Still open:
+
+1. **Argv and environment.** The documented contract covers fork, stdio, reload
+   and signals, but not what the CLI passes on the command line or in the
+   environment. `pr-artifact-explorer` reads `COPILOT_HOME` (defaulting to
+   `~/.copilot`); a canvas may read more. Decide which variables hoocode sets and
+   which it deliberately does not.
+2. **Multiple canvases per extension.** `joinSession({ canvases: [...] })` takes
    an array; `registry.ts` must key by `(extension, canvasId, instanceId)`.
+3. **Resolver mechanism under the Bun binary.** `loader.ts` already special-cases
+   Bun with `virtualModules`/`tryNative` (see `isBunBinary` there). The canvas
+   runner forks a child rather than importing, so it is a different problem, but
+   the shim's resolve hook needs verifying under both the Node dev path and the
+   packaged Bun binary.
+4. **`tools` and `hooks` mapping** (§6.2) — whether to support them at all.
 
 ---
 
