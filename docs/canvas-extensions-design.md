@@ -12,9 +12,9 @@ Phase 2 is also in: `trust.ts` gates repository-supplied canvases and the
 registry enforces it at the single point where a process could start.
 
 Every design question that blocked reachability is now decided, with evidence, in
-§11 — availability, environment, timeouts, and the agent-facing tool shape. Canvas
-support requires hoocode running under Node ≥ 20.6 (the npm install path); under the
-self-contained binary it is unavailable and says so (§11.1).
+§11 — availability, environment, timeouts, and the agent-facing tool shape. Canvases
+run on every install path where a Node ≥ 20.6 is reachable, including the standalone
+binary, which forks a Node child (§11.1).
 
 `launch.ts` implements the availability decision and the production launch path is
 verified end to end: a compiled shim forked with `execArgv: []` — no TypeScript
@@ -601,18 +601,24 @@ instances by `(extensionId, canvasId, instanceId)`.
 
 Still open:
 
-1. **Canvas support under the packaged binary** (§11.1) — deliberately out of
-   scope for the preview, not unresolved by accident. Removing the Node
-   requirement needs a Bun-native resolver; the hook path is disproven.
-2. **Whether `open` should be cancellable.** §11.4 gives `canvas.open` a generous
-   ceiling, but a canvas that hangs during `open` currently occupies a slot until
-   it times out. A cancel path would be better than a longer timeout.
+1. **Removing the Node requirement entirely** would need a Bun-native resolver, since
+   the `module.register` hook path is disproven. Not worth it while every install path
+   can reach a Node; recorded in case that changes.
+2. **`canvas.open` is not cancellable.** §11.4 gives it a generous ceiling, but a
+   canvas that hangs during `open` occupies a slot until it times out, and a person
+   watching a spinner has no way out. Because `instanceId` is generated *before* the
+   call, cancelling can close an instance we never saw open — one `abandon(instanceId)`
+   path serving both a user's Esc and the timeout, ending in `canvas.close` and, if
+   that goes unanswered, terminating the child.
+3. **`invoke_canvas_action` ignores its `AbortSignal`.** `ToolDefinition.execute`
+   receives one, and the tool drops it, so aborting a turn leaves the request running
+   and its answer arriving for a turn nobody awaits. Same machinery as (2).
 
 ---
 
 ## 11. Decisions
 
-### 11.1 Availability: canvases require hoocode running under Node
+### 11.1 Availability: canvases require a reachable Node ≥ 20.6
 
 Two facts, both established by running the code rather than reading about it.
 
@@ -634,18 +640,42 @@ same `--import` resolver is not an option; it would need a Bun-native mechanism
 A version check alone passes under Bun and then fails silently per the above, so
 detection must key on `process.versions.bun` being **absent**.
 
-The decision: **canvas support requires hoocode to be running under Node ≥ 20.6**
-(the version that introduced `module.register`). That is exactly the npm install
-path — `npm install -g @kolisachint/hoocode-agent` — where two things hold at once:
-`process.execPath` is a suitable Node to fork, and the built `dist` is on disk for
-the child to import the shim from. Under the self-contained binary, canvases are
-**unavailable and say so**, rather than half-working.
+The decision: **the child must run under Node ≥ 20.6; hoocode itself need not.**
 
-Conditional availability is a real cost against the single-binary promise, and it is
-accepted for a preview: the Copilot app gates canvases behind a preview build of its
-own, so "this feature needs one more thing" is not out of character. `launch.ts`
-returns either a `CanvasRuntime` or a reason string, so the unavailable path is a
-sentence the user can act on rather than a crash.
+An earlier draft of this section conflated those and excluded the standalone binary
+altogether. That was wrong. The Bun finding rules out running the *child* under Bun;
+it says nothing about a Bun-compiled *parent* forking a Node child, which works —
+verified by running the real `pr-artifact-explorer` from a Bun parent through a Node
+child, page serving under its own CSP and capability token enforced. So the question
+`launch.ts` asks is "is a usable Node reachable?", not "are we Node?":
+
+| Install path | Child forks |
+|---|---|
+| `npm install -g` (`engines: node >= 20.6.0`) | `process.execPath` — we are already Node, no PATH lookup |
+| bun / source checkout | `process.execPath` when it is Node, else PATH |
+| standalone binary | `node` from PATH, discovered on first use |
+
+Only "no Node anywhere" degrades, and it degrades honestly: `resolveCanvasRuntime`
+returns either a `CanvasRuntime` or a sentence the user can act on, and never throws.
+Two ordering details matter — the shim is checked before PATH is probed so the more
+actionable reason wins, and forking ourselves requires `process.versions.bun` to be
+*absent* rather than merely a satisfying Node version.
+
+Pleasant alignment: the npm package already declares `engines: node >= 20.6.0`, which
+is exactly `module.register`'s minimum, so for npm users the requirement is guaranteed
+by the package rather than an extra ask.
+
+Resolution can spawn `node --version`, so it is not cached here: callers resolve once
+per session and hold the result.
+
+**Shipping the shim.** The child imports the shim from a real path on disk, which the
+Bun binary's virtual filesystem is not. `config.ts` gains `getCanvasDir()` beside the
+existing `getThemesDir()` and `getExportTemplateDir()`, following the same shape, and
+`scripts/build-binaries.sh` copies `dist/core/canvas` next to the executable — the
+whole directory, so `sdk-shim/index.js`'s import of `../protocol.js` still resolves.
+That is not a new distribution mechanism: the binary zip already ships
+`export-html/`, `theme/`, `assets/`, a wasm blob and a `node_modules/koffi` tree with
+a native module beside the exe.
 
 ### 11.2 The child's environment
 
