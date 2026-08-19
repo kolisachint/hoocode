@@ -8,11 +8,12 @@ action inventory), `discovery.ts`. The Phase 1 acceptance test passes —
 `pr-artifact-explorer` from `github/awesome-copilot` opens unmodified and answers
 actions (`test/canvas-acceptance-pr-artifact-explorer.test.ts`).
 
-Not yet built: the trust gate (§5, Phase 2), the bridge that registers canvas
-actions as agent tools, and how a shipped build launches the child (§10.3).
-Nothing in the agent or TUI reaches this code yet, so there is no user-visible
-behaviour — deliberately, since the trust gate must land before a canvas that
-arrived in a clone can be forked on anyone's behalf.
+Phase 2 is also in: `trust.ts` gates repository-supplied canvases and the
+registry enforces it at the single point where a process could start.
+
+Not yet built: the bridge that registers canvas actions as agent tools, and how a
+shipped build launches the child (§10.3). Nothing in the agent or TUI reaches this
+code yet, so there is no user-visible behaviour.
 
 The facts about the Copilot side were verified against `@github/copilot-sdk@1.0.11`
 (npm) and the `github/awesome-copilot` reference extension `pr-artifact-explorer`,
@@ -360,11 +361,31 @@ the exact reason:
 A canvas is a process **that also opens a listening socket**. It belongs in the
 workspace-trust record on the same grounds, with no new mechanism needed:
 
-- A canvas found under `.github/extensions/` in an untrusted workspace is
-  **detected and listed but never spawned**.
+- A canvas found under `.agents/extensions/` or `.github/extensions/` in an
+  untrusted workspace is **detected and listed but never forked**.
 - Granting trust stays a human act. Per `trust.ts`, the autonomous install path
   never grants it — and a model deciding to execute a canvas that arrived in a
   clone is precisely the decision that record exists to keep with a person.
+
+### 5.1 One difference from plugins
+
+`shouldWithholdExecutables` withholds a plugin's hooks and MCP servers while still
+loading its skills, because a plugin has passive capabilities worth having.
+**A canvas has none.** Its declaration, its actions and its UI all come from
+running its code — even listing what a canvas offers requires forking it, since
+the declaration arrives in the child's `ready` message. There is nothing to
+partially allow, so `shouldWithholdCanvas` withholds the extension whole.
+
+What survives is discovery: `discovery.ts` only reads directory entries, so an
+untrusted canvas can still be named and offered. `gateCanvasExtensions` returns
+`{ runnable, withheld }` rather than filtering silently, because the point of the
+gate is that a person can see what a repository offers and choose — not that the
+offer disappears.
+
+Enforcement lives in `CanvasRegistry`, in the private `child()` method every path
+funnels through. Callers are still expected to filter with `gateCanvasExtensions`
+so they can explain a refusal; the registry check is the backstop that makes a
+forgetful caller safe rather than dangerous.
 
 This is a differentiator, not overhead. `.github/extensions/` arriving via `git
 pull` is a supply-chain edge for Copilot users too; we have the machinery to
@@ -593,7 +614,8 @@ Shipped:
 | `src/core/canvas/sdk-shim/` | child-side `@github/copilot-sdk/extension` implementation |
 | `src/core/canvas/resolver.ts` | `data:`-URL `--import` hook mapping the SDK specifier onto the shim |
 | `src/core/canvas/runner.ts` | fork, stdio framing, request correlation, `session.log` bridge, SIGTERM→SIGKILL |
-| `src/core/canvas/registry.ts` | children, instances, idle reaper, instance cap, action inventory |
+| `src/core/canvas/registry.ts` | children, instances, idle reaper, instance cap, action inventory, trust enforcement |
+| `src/core/canvas/trust.ts` | withholds repository-supplied canvases in an untrusted workspace |
 | `src/core/canvas/discovery.ts` | locate canvas dirs by `extension.mjs` |
 | `test/canvas-acceptance-pr-artifact-explorer.test.ts` | Phase 1 acceptance against the real catalog extension |
 
@@ -601,15 +623,16 @@ Still to build:
 
 | Path | Role |
 |---|---|
-| trust gating for `.github/extensions/` | §5 — must precede any agent reachability |
 | action→tool bridge | registers `registry.activeActions()` as agent tools |
+| launch strategy for shipped builds | §10.3 — the last blocker before anything user-facing |
 
 Touched:
 
 | Path | Change |
 |---|---|
 | `src/core/extensions/plugins/formats/copilot.ts` | canvas **detection** only, no capability mapping |
-| `src/core/extensions/plugins/trust.ts` | canvases join the process-gated set |
+| `src/core/extensions/plugins/trust.ts` | reused unchanged — `isWorkspaceTrusted` already asks the right question |
+| `src/utils/paths.ts` | gained `isPathInside`; four private copies of it already existed elsewhere |
 | `src/extensions/core/scaffold.ts` | `/create-canvas` template (Phase 3) |
 | `docs/agent-spec-tree-map.md` | record `.github/extensions/` and `~/.copilot/extensions/` |
 | `docs/plugin-format-mapping.md` | note canvas as a non-capability Copilot surface |

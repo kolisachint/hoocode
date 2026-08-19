@@ -15,23 +15,10 @@
 
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-	CanvasCallError,
-	type CanvasExtensionProcess,
-	type CanvasRuntime,
-	spawnCanvasExtension,
-} from "../src/core/canvas/runner.js";
+import { CanvasCallError, type CanvasExtensionProcess, spawnCanvasExtension } from "../src/core/canvas/runner.js";
+import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
 const FIXTURE = path.join(import.meta.dirname, "fixtures", "canvas", "plan-board", "extension.mjs");
-
-/** Fork the child under tsx so it can import the shim straight from `src/`. */
-function canvasTestRuntime(): CanvasRuntime {
-	return {
-		execPath: process.execPath,
-		execArgv: ["--import", "tsx/esm"],
-		shimUrl: new URL("../src/core/canvas/sdk-shim/index.ts", import.meta.url).href,
-	};
-}
 
 function providerParams(instanceId = "i1") {
 	return { sessionId: "s1", extensionId: "plan-board", canvasId: "plan-board", instanceId };

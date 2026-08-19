@@ -31,6 +31,7 @@ import * as path from "node:path";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 import type { CanvasActionDeclaration, CanvasDeclaration, CanvasProviderOpenResult, JsonValue } from "./protocol.js";
 import { type CanvasExtensionProcess, type CanvasRuntime, spawnCanvasExtension } from "./runner.js";
+import { CanvasTrustError, shouldWithholdCanvas } from "./trust.js";
 
 /** Default idle ceiling before an untouched instance is reaped. */
 export const CANVAS_INSTANCE_IDLE_MS = 30 * 60 * 1_000;
@@ -82,6 +83,14 @@ export interface CanvasRegistryEvents {
 /** Registry configuration. */
 export interface CanvasRegistryOptions extends CanvasRegistryEvents {
 	runtime: CanvasRuntime;
+	/**
+	 * Working directory the trust gate is evaluated against (§5). Required: forking
+	 * a canvas that arrived in a clone is exactly what the gate exists to prevent,
+	 * so there is no sensible default to fall back to.
+	 */
+	cwd: string;
+	/** Trust-store location. Defaults to the agent dir; injectable for tests. */
+	agentDir?: string;
 	/** Clock, injectable so idle policy is testable without sleeping. */
 	now?: () => number;
 	idleTimeoutMs?: number;
@@ -272,6 +281,14 @@ export class CanvasRegistry {
 	}
 
 	private async child(extension: DiscoveredCanvasExtension): Promise<ChildEntry> {
+		// The single choke point: every path that could start a process comes through
+		// here, so the gate is enforced once and cannot be bypassed by a caller that
+		// forgot to filter. Callers should still filter with `gateCanvasExtensions`
+		// so they can explain the refusal; this is the backstop, not the UI.
+		if (shouldWithholdCanvas(extension, this.options.cwd, this.options.agentDir)) {
+			throw new CanvasTrustError(extension.id, this.options.cwd);
+		}
+
 		const existing = this.children.get(extension.id);
 		if (existing?.process.running) return existing;
 		if (existing) this.children.delete(extension.id);

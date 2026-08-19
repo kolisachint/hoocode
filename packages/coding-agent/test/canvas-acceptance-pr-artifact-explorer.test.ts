@@ -22,7 +22,8 @@
 import { existsSync } from "node:fs";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { type CanvasExtensionProcess, type CanvasRuntime, spawnCanvasExtension } from "../src/core/canvas/runner.js";
+import { type CanvasExtensionProcess, spawnCanvasExtension } from "../src/core/canvas/runner.js";
+import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
 const CANDIDATES = [
 	process.env.HOOCODE_CANVAS_ACCEPTANCE_DIR,
@@ -31,14 +32,6 @@ const CANDIDATES = [
 ].filter((candidate): candidate is string => typeof candidate === "string" && candidate.length > 0);
 
 const extensionDir = CANDIDATES.find((candidate) => existsSync(path.join(candidate, "extension.mjs")));
-
-function runtime(): CanvasRuntime {
-	return {
-		execPath: process.execPath,
-		execArgv: ["--import", "tsx/esm"],
-		shimUrl: new URL("../src/core/canvas/sdk-shim/index.ts", import.meta.url).href,
-	};
-}
 
 describe.skipIf(extensionDir === undefined)("acceptance: pr-artifact-explorer", () => {
 	let canvas: CanvasExtensionProcess | undefined;
@@ -54,7 +47,7 @@ describe.skipIf(extensionDir === undefined)("acceptance: pr-artifact-explorer", 
 		canvas = spawnCanvasExtension({
 			extensionId: "pr-artifact-explorer",
 			entry: path.join(extensionDir as string, "extension.mjs"),
-			runtime: runtime(),
+			runtime: canvasTestRuntime(),
 			onStderr: (chunk) => stderr.push(chunk),
 		});
 		return canvas;

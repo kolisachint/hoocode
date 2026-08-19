@@ -7,13 +7,18 @@
  * instance-id generator are injected, so nothing here sleeps.
  */
 
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DiscoveredCanvasExtension } from "../src/core/canvas/discovery.js";
 import { CanvasRegistry, type CanvasRegistryOptions, canvasInstanceKeyOf } from "../src/core/canvas/registry.js";
-import type { CanvasRuntime } from "../src/core/canvas/runner.js";
+import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
 const FIXTURE_DIR = path.join(import.meta.dirname, "fixtures", "canvas", "plan-board");
+
+/** A directory containing no extension scopes, so nothing here is repository-supplied. */
+const cwdForGate = mkdtempSync(path.join(tmpdir(), "hoocode-canvas-registry-cwd-"));
 
 const EXTENSION: DiscoveredCanvasExtension = {
 	id: "plan-board",
@@ -21,14 +26,6 @@ const EXTENSION: DiscoveredCanvasExtension = {
 	entry: path.join(FIXTURE_DIR, "extension.mjs"),
 	scope: "project",
 };
-
-function runtime(): CanvasRuntime {
-	return {
-		execPath: process.execPath,
-		execArgv: ["--import", "tsx/esm"],
-		shimUrl: new URL("../src/core/canvas/sdk-shim/index.ts", import.meta.url).href,
-	};
-}
 
 describe("canvas registry", () => {
 	let registry: CanvasRegistry | undefined;
@@ -40,7 +37,12 @@ describe("canvas registry", () => {
 		clock = 1_000;
 		counter = 0;
 		registry = new CanvasRegistry({
-			runtime: runtime(),
+			runtime: canvasTestRuntime(),
+			// The fixture lives inside this repo but outside any `<cwd>/.github/extensions`,
+			// so the trust gate treats it as locally installed. Gating itself is covered
+			// by canvas-trust.test.ts.
+			cwd: cwdForGate,
+			agentDir: path.join(cwdForGate, ".hoocode"),
 			now: () => clock,
 			newInstanceId: () => {
 				counter += 1;
