@@ -30,7 +30,7 @@ import { execCommand } from "../exec.js";
 import { clearExtensionMcpServers } from "../extension-mcp-servers.js";
 import { createSyntheticSourceInfo } from "../source-info.js";
 import { buildPluginFactory, discoverPlugins, pluginExtensionPath, withheldCapabilities } from "./plugins/index.js";
-import { isWorkspaceTrusted } from "./plugins/trust.js";
+import { isRepositorySupplied, shouldWithholdRepositorySupplied } from "./plugins/trust.js";
 import type {
 	Extension,
 	ExtensionAPI,
@@ -664,11 +664,16 @@ export async function discoverAndLoadExtensions(
  * is the wrong thing to ask; {@link isWorkspaceTrusted} asks the right one.
  */
 export function isProjectSuppliedPlugin(pluginRoot: string, cwd: string): boolean {
+	return isRepositorySupplied(pluginRoot, pluginProjectScopeRoots(cwd));
+}
+
+/** A plugin's project-scope homes — the locations that travel with a clone. */
+function pluginProjectScopeRoots(cwd: string): string[] {
 	return [
 		path.join(cwd, ".claude", "skills"),
 		path.join(cwd, ".agents", "plugins"),
 		path.join(cwd, CONFIG_DIR_NAME, "plugins"),
-	].some((root) => isUnderDir(pluginRoot, root));
+	];
 }
 
 /**
@@ -680,14 +685,7 @@ export function isProjectSuppliedPlugin(pluginRoot: string, cwd: string): boolea
  * opening the repository already implies; starting its processes is not.
  */
 export function shouldWithholdExecutables(pluginRoot: string, cwd: string, agentDir: string = getAgentDir()): boolean {
-	return isProjectSuppliedPlugin(pluginRoot, cwd) && !isWorkspaceTrusted(cwd, agentDir);
-}
-
-/** True when `target` is `root` or sits inside it. */
-function isUnderDir(target: string, root: string): boolean {
-	const normalized = path.resolve(root);
-	if (path.resolve(target) === normalized) return true;
-	return path.resolve(target).startsWith(normalized.endsWith(path.sep) ? normalized : `${normalized}${path.sep}`);
+	return shouldWithholdRepositorySupplied(pluginRoot, cwd, pluginProjectScopeRoots(cwd), agentDir);
 }
 
 /**

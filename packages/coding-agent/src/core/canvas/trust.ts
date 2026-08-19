@@ -9,9 +9,11 @@
  * > that start on session load.
  *
  * A canvas extension is a process **that also opens a listening socket**, so it
- * belongs in that record on identical grounds and needs no new mechanism —
- * `isWorkspaceTrusted` already asks the right question, and the record lives
- * outside the repository so repository content cannot forge it.
+ * belongs in that record on identical grounds and needs no new mechanism. The gate
+ * itself is shared: `isRepositorySupplied` and `shouldWithholdRepositorySupplied`
+ * live in `plugins/trust.ts` and are used by the plugin gate too, so this module
+ * supplies only the roots that are specific to canvas extensions. The record lives
+ * outside the repository, so repository content cannot forge it.
  *
  * One difference from plugins, and it matters. `shouldWithholdExecutables` can
  * withhold a plugin's hooks and MCP servers while still loading its skills,
@@ -26,8 +28,7 @@
 
 import * as path from "node:path";
 import { getAgentDir } from "../../config.js";
-import { isPathInside } from "../../utils/paths.js";
-import { isWorkspaceTrusted } from "../extensions/plugins/trust.js";
+import { isRepositorySupplied, shouldWithholdRepositorySupplied } from "../extensions/plugins/trust.js";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 
 /** Thrown when something tries to run a canvas the workspace has not earned. */
@@ -59,7 +60,12 @@ export class CanvasTrustError extends Error {
  * repository and got there by a deliberate local act.
  */
 export function isProjectSuppliedCanvas(extension: DiscoveredCanvasExtension, cwd: string): boolean {
-	return [".agents", ".github"].some((marker) => isPathInside(extension.dir, path.join(cwd, marker, "extensions")));
+	return isRepositorySupplied(extension.dir, canvasProjectScopeRoots(cwd));
+}
+
+/** A canvas extension's project-scope homes — the locations that travel with a clone. */
+function canvasProjectScopeRoots(cwd: string): string[] {
+	return [path.join(cwd, ".agents", "extensions"), path.join(cwd, ".github", "extensions")];
 }
 
 /**
@@ -71,7 +77,7 @@ export function shouldWithholdCanvas(
 	cwd: string,
 	agentDir: string = getAgentDir(),
 ): boolean {
-	return isProjectSuppliedCanvas(extension, cwd) && !isWorkspaceTrusted(cwd, agentDir);
+	return shouldWithholdRepositorySupplied(extension.dir, cwd, canvasProjectScopeRoots(cwd), agentDir);
 }
 
 /** A withheld extension, with the reason, so a caller can explain rather than hide. */

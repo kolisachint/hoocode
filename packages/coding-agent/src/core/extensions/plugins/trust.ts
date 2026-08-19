@@ -29,6 +29,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
 import { getAgentDir } from "../../../config.js";
+import { isPathInside } from "../../../utils/paths.js";
 
 /** One trusted working directory. */
 export interface TrustedWorkspace {
@@ -102,4 +103,36 @@ export function untrustWorkspace(cwd: string, agentDir: string = getAgentDir()):
 	if (after.length === before.length) return false;
 	writeStore(agentDir, after);
 	return true;
+}
+
+/**
+ * Whether `target` sits under any of `projectScopeRoots`, and therefore came with
+ * the repository as far as anyone but its installer can tell.
+ *
+ * Callers supply their own roots because each capability has its own project-scope
+ * homes — plugins live in `.claude/skills` and `.agents/plugins`, canvas extensions
+ * in `.agents/extensions` and `.github/extensions`. What does not vary is the
+ * reasoning: no location can distinguish "I put this here" from "this arrived in
+ * the clone", so location only decides *whether* to ask about trust. It never
+ * answers the question.
+ */
+export function isRepositorySupplied(target: string, projectScopeRoots: string[]): boolean {
+	return projectScopeRoots.some((root) => isPathInside(target, root));
+}
+
+/**
+ * Whether repository-supplied code at `target` must be withheld: it lives in the
+ * working tree and this machine has not trusted the workspace.
+ *
+ * What "withheld" means is the caller's to decide, and it differs by capability. A
+ * plugin keeps its passive capabilities and loses only its processes; a canvas has
+ * no passive half, so it is withheld whole.
+ */
+export function shouldWithholdRepositorySupplied(
+	target: string,
+	cwd: string,
+	projectScopeRoots: string[],
+	agentDir: string = getAgentDir(),
+): boolean {
+	return isRepositorySupplied(target, projectScopeRoots) && !isWorkspaceTrusted(cwd, agentDir);
 }

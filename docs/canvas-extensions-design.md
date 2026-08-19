@@ -367,7 +367,18 @@ workspace-trust record on the same grounds, with no new mechanism needed:
   never grants it — and a model deciding to execute a canvas that arrived in a
   clone is precisely the decision that record exists to keep with a person.
 
-### 5.1 One difference from plugins
+### 5.1 The gate is shared with the plugin gate
+
+`isRepositorySupplied` and `shouldWithholdRepositorySupplied` live in
+`plugins/trust.ts` and serve both gates. Each caller supplies only its own
+project-scope roots — `.claude/skills` + `.agents/plugins` + `.hoocode/plugins` for
+plugins, `.agents/extensions` + `.github/extensions` for canvases — because that
+list is the only thing that differs. `loader.ts`'s `isProjectSuppliedPlugin` and
+`shouldWithholdExecutables` keep their names and behaviour and now delegate; the
+existing plugin trust tests pass unchanged, which is what makes the consolidation
+safe to assert.
+
+### 5.2 One difference from plugins
 
 `shouldWithholdExecutables` withholds a plugin's hooks and MCP servers while still
 loading its skills, because a plugin has passive capabilities worth having.
@@ -631,7 +642,8 @@ Touched:
 | Path | Change |
 |---|---|
 | `src/core/extensions/plugins/formats/copilot.ts` | canvas **detection** only, no capability mapping |
-| `src/core/extensions/plugins/trust.ts` | reused unchanged — `isWorkspaceTrusted` already asks the right question |
+| `src/core/extensions/plugins/trust.ts` | gained the shared `isRepositorySupplied` / `shouldWithholdRepositorySupplied` used by both gates |
+| `src/core/extensions/loader.ts` | plugin gate delegates to the shared pair; its private `isUnderDir` removed |
 | `src/utils/paths.ts` | gained `isPathInside`; four private copies of it already existed elsewhere |
 | `src/extensions/core/scaffold.ts` | `/create-canvas` template (Phase 3) |
 | `docs/agent-spec-tree-map.md` | record `.github/extensions/` and `~/.copilot/extensions/` |
