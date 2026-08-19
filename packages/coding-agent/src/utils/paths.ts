@@ -16,6 +16,22 @@ export function canonicalizePath(path: string): string {
 }
 
 /**
+ * Whether `target` is `root` itself or sits inside it.
+ *
+ * Segment-aware, so `/a/bc` is not treated as being inside `/a/b`. Four private
+ * copies of this predicate already exist (`core/extensions/loader.ts`,
+ * `core/extensions/plugins/install.ts`, `core/skills.ts`,
+ * `core/prompt-templates.ts`); new callers should use this one.
+ */
+export function isPathInside(target: string, root: string): boolean {
+	const normalizedRoot = resolvePath(root);
+	const normalizedTarget = resolvePath(target);
+	if (normalizedTarget === normalizedRoot) return true;
+	const prefix = normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`;
+	return normalizedTarget.startsWith(prefix);
+}
+
+/**
  * Returns true if the value is NOT a package source (npm:, git:, etc.)
  * or a URL protocol. Bare names and relative paths without ./ prefix
  * are considered local.

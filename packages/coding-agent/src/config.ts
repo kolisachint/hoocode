@@ -356,6 +356,25 @@ export function getExportTemplateDir(): string {
 	return join(packageDir, srcOrDist, "core", "export-html");
 }
 
+/**
+ * Get path to the canvas subsystem directory (shipped with package).
+ *
+ * The child process a canvas extension runs in imports the SDK shim from here, so
+ * it has to be a real path on disk — not a path inside the Bun binary's virtual
+ * filesystem. Same shape as {@link getThemesDir} and {@link getExportTemplateDir}:
+ * - For Bun binary: `canvas/` next to the executable (copied by scripts/build-binaries.sh)
+ * - For Node.js (dist/): `dist/core/canvas/`
+ * - For tsx (src/): `src/core/canvas/`
+ */
+export function getCanvasDir(): string {
+	if (isBunBinary) {
+		return join(getPackageDir(), "canvas");
+	}
+	const packageDir = getPackageDir();
+	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
+	return join(packageDir, srcOrDist, "core", "canvas");
+}
+
 /** Get path to package.json */
 function getPackageJsonPath(): string {
 	return join(getPackageDir(), "package.json");

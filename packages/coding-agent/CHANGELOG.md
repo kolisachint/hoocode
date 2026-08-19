@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/canvas` — run GitHub Copilot canvas extensions in hoocode. A canvas is a shared
+  interactive surface an agent and a person both drive: the agent mutates state and
+  navigates the view, the person reads and edits on the same page. Copilot canvas
+  extensions are directories of plain `.mjs` with no dependencies except one
+  host-provided import, so satisfying that import runs the community catalog
+  unmodified — verified against `pr-artifact-explorer` from `github/awesome-copilot`,
+  which opens byte-identical to upstream with nothing written into its directory.
+
+  `/canvas list` shows what is installed, what is open, and what is being withheld;
+  `/canvas open <extension>[:<canvas>]` opens one behind a spinner you can cancel with
+  escape; `/canvas close <instanceId>` closes it. Extensions are read from
+  `.agents/extensions/`, `.github/extensions/`, and `~/.copilot/extensions/`.
+
+  An extension that arrived in the repository is **listed but never run** until the
+  workspace is trusted (`/plugin trust`), on the same grounds as a plugin's hooks and
+  MCP servers: it is a process that also binds a listening socket. Unlike a plugin it
+  has no passive half — even its name comes from running its code — so it is withheld
+  whole rather than partially.
+
+  While a canvas is open the agent gets two tools, mirroring the shape Copilot names
+  in its own SDK: `list_canvas_capabilities` and `invoke_canvas_action`. There is
+  deliberately no tool to *open* a canvas — that forks a process, which stays a
+  person's decision. The pair costs ~235 tokens of prompt surface and nothing at all
+  in a session that never opens one.
+
+  Canvas support needs a reachable Node 20.6 or newer, which is what `module.register`
+  requires: the npm install forks itself, and the standalone binary forks a `node`
+  from PATH. Where none is reachable, `/canvas` says so instead of half-working.
+  See `docs/canvas-extensions-design.md`.
+
 ## [0.5.22] - 2026-08-18
 
 ### Fixed

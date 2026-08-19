@@ -11,6 +11,7 @@
  *   - thinking-escalation.ts — raise thinking after tool errors, then restore
  *   - loop.ts               — /loop cron scheduling + autonomous continuation
  *   - marketplace.ts        — /plugin marketplace + install/remove
+ *   - canvas.ts             — /canvas list/open/close for canvas extensions
  *   - prompt-reactive/      — runtime plugin-reuse nudge (reactive to tool/turn cues)
  *   - config.ts             — hoo-config.json types, I/O, and merge rules
  *
@@ -20,6 +21,7 @@
 
 import type { ExtensionAPI } from "../../core/extensions/types.js";
 import { setupAskOptions } from "./ask-options.js";
+import { setupCanvas } from "./canvas.js";
 import { setupCost } from "./cost.js";
 import { setupLearn } from "./learn.js";
 import { setupLoop } from "./loop.js";
@@ -41,6 +43,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupThinkingEscalation(pi);
 	setupLoop(pi);
 	setupMarketplace(pi);
+	setupCanvas(pi);
 	setupPromptReactiveNudges(pi);
 	setupLearn(pi);
 }

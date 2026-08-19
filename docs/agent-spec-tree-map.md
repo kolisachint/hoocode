@@ -284,6 +284,7 @@ differs; **None** = not scanned.
 | `layouts/ui.json` | [P1] | **None** | — | UI compiled in; no on-disk layout specs | (absent) |
 | `.backups/` | [P1] | **None (equivalent)** | `~/.hoocode/sessions/<id>/session.jsonl` | Sessions auto-saved (not a `.backups` spec) | `config.ts:385-390` |
 | Extensions | — (hoocode) | **Full** | `./.hoocode/extensions`, `~/.hoocode/extensions`, `--extensions`, manifest | `index.ts/js` or `*.ts/js`, default `ExtensionFactory` export | `core/extensions/loader.ts:420-500` |
+| Canvas extensions | [A] (GitHub Copilot) | **Full** | `./.agents/extensions`, `./.github/extensions`, `~/.copilot/extensions` | `extension.mjs` speaking the canvas provider protocol; forked, never imported | `core/canvas/discovery.ts`, `core/canvas/runner.ts` |
 | package.json manifest | — (hoocode) | **Full** | `hoocode` (or legacy `pi`) key | `agents[]`, `skills[]`, `extensions[]`, `prompts[]`, `themes[]` | `core/package-manager.ts:534-550` |
 
 ### Precedence (project beats global, last write wins on name)

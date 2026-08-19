@@ -78,6 +78,10 @@ if [ -d dist/modes/interactive/assets ]; then
   cp dist/modes/interactive/assets/* binaries/windows-x64/assets/
 fi
 cp -r dist/core/export-html binaries/windows-x64/
+# Canvas: the forked child imports the SDK shim from a real path on disk, so the
+# whole canvas directory ships beside the exe with its relative layout intact
+# (sdk-shim/index.js imports ../protocol.js). See config.ts getCanvasDir().
+cp -r dist/core/canvas binaries/windows-x64/
 cp -r docs binaries/windows-x64/
 # Exclude examples' node_modules: they contain bun workspace symlinks that do
 # not resolve once copied, and the runtime only needs the example sources.
