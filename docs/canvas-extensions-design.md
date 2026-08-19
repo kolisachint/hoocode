@@ -705,6 +705,15 @@ Two consequences worth stating:
   canvas, so the schema needs three fields instead of five; the registry resolves the
   extension and canvas ids itself.
 
+**The tool description makes no safety claim.** An earlier version told the model
+actions "cannot edit files or run commands". That is false: a canvas extension is
+arbitrary Node code running with the user's privileges — `pr-artifact-explorer`
+downloads artifact ZIPs to disk and calls the GitHub API — and none of it passes
+hoocode's permission gate, because the gate sits in front of hoocode's own tools, not
+inside a forked extension. The workspace-trust gate (§5) is the control here. Never
+state a safety property the runtime does not enforce; a test asserts the description
+does not regress to one.
+
 Failures are thrown, matching the built-ins — the loop turns a rejection into the
 model's result. `CanvasError.code` survives the process boundary as
 `CanvasCallError.code`, but only an `Error`'s *message* is rendered to the model, so

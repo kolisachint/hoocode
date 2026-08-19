@@ -124,8 +124,17 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
 	return defineTool<typeof invokeParams, CanvasInvokeDetails>({
 		name: INVOKE_CANVAS_ACTION_TOOL_NAME,
 		label: INVOKE_CANVAS_ACTION_TOOL_NAME,
+		// The description deliberately makes no safety claim. An earlier version said
+		// actions "cannot edit files or run commands", which is false: a canvas
+		// extension is arbitrary Node code running with the user's privileges, and
+		// `pr-artifact-explorer` really does download artifacts to disk and call the
+		// GitHub API. Those side effects never pass hoocode's permission gate, because
+		// the gate sits in front of hoocode's own tools, not inside a forked
+		// extension — the workspace-trust gate (canvas/trust.ts) is the control here,
+		// not a sentence in a tool schema. Never tell the model a safety property the
+		// runtime does not enforce.
 		description:
-			"Invoke an action on an open canvas. Actions read or change that canvas's own state and may move the view the person is looking at; they cannot edit files or run commands.",
+			"Invoke an action on an open canvas. Actions are implemented by the canvas extension itself: an action may change what the person is looking at and can have side effects of its own, so read the action's description before calling it.",
 		promptSnippet: "Act on an open canvas the user is looking at",
 		parameters: invokeParams,
 		async execute(_toolCallId, params: InvokeParams) {

@@ -110,6 +110,18 @@ describe("canvas tools", () => {
 			}
 		});
 
+		it("claims no safety property the runtime does not enforce", async () => {
+			// A canvas extension is arbitrary Node code with the user's privileges, and
+			// its side effects never reach hoocode's permission gate. An earlier
+			// description asserted actions "cannot edit files or run commands", which was
+			// simply false — workspace trust is the control, not the schema text.
+			const reg = build();
+			await reg.open(EXTENSION, "plan-board");
+			const invoke = tools(reg).invoke;
+			expect(invoke?.description).toMatch(/side effects/i);
+			expect(invoke?.description).not.toMatch(/cannot (edit|run|touch|write)/i);
+		});
+
 		it("exposes no way for the agent to open a canvas", async () => {
 			const reg = build();
 			await reg.open(EXTENSION, "plan-board");
