@@ -41,6 +41,13 @@ const session = await joinSession({
 					},
 				},
 				{
+					name: "crash",
+					description: "Exits the process, to exercise host recovery from a dead extension.",
+					handler: () => {
+						process.exit(9);
+					},
+				},
+				{
 					name: "leak_stdout",
 					description: "Writes a stray line to stdout, to exercise stray reporting.",
 					handler: () => {

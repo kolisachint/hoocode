@@ -3,12 +3,16 @@
 **Status:** Phase 1 partly implemented. Shipped in
 `packages/coding-agent/src/core/canvas/`: `protocol.ts` (wire contract),
 `sdk-shim/` (child-side SDK surface), `resolver.ts` (module resolution),
-`runner.ts` (fork and lifecycle), `discovery.ts`. The Phase 1 acceptance test
-passes — `pr-artifact-explorer` from `github/awesome-copilot` opens unmodified
-and answers actions (`test/canvas-acceptance-pr-artifact-explorer.test.ts`).
-Not yet built: `registry.ts` (instance table, idle reaper, action→tool bridge),
-the trust gate (§5, Phase 2), and any hoocode-side surfacing — nothing in the
-agent or TUI reaches this code yet, so there is no user-visible behaviour.
+`runner.ts` (fork and lifecycle), `registry.ts` (children, instances, reaping,
+action inventory), `discovery.ts`. The Phase 1 acceptance test passes —
+`pr-artifact-explorer` from `github/awesome-copilot` opens unmodified and answers
+actions (`test/canvas-acceptance-pr-artifact-explorer.test.ts`).
+
+Not yet built: the trust gate (§5, Phase 2), the bridge that registers canvas
+actions as agent tools, and how a shipped build launches the child (§10.3).
+Nothing in the agent or TUI reaches this code yet, so there is no user-visible
+behaviour — deliberately, since the trust gate must land before a canvas that
+arrived in a clone can be forked on anyone's behalf.
 
 The facts about the Copilot side were verified against `@github/copilot-sdk@1.0.11`
 (npm) and the `github/awesome-copilot` reference extension `pr-artifact-explorer`,
@@ -383,10 +387,26 @@ lifecycle signal the Copilot app provides:
 Without a close signal, loopback servers and child processes leak across a long
 session. `registry.ts` therefore owns, from the start and not as a retrofit:
 
-- an **SSE-liveness heartbeat** — an instance with no connected client for N
-  seconds is idle,
 - an **idle reaper** that calls `canvas.close` and reaps the child,
+- a **per-canvas instance cap**, so a loop cannot open ports without bound,
 - **teardown on session end** for everything still live.
+
+An earlier draft of this section also called for an "SSE-liveness heartbeat — an
+instance with no connected client for N seconds is idle". **That was wrong and is
+withdrawn.** It is not implementable: the SSE endpoint and its client set live
+inside the extension's own HTTP server (`entry.sseClients` in
+`pr-artifact-explorer`'s `server.mjs`), and the host never sees them. Learning
+otherwise would take either proxying the canvas URL — which breaks the token,
+origin and CSP model the extension built for itself — or adding a liveness call to
+the contract, which breaks tier-2 portability (§2.1). Neither is worth it for a
+reaper.
+
+So `registry.ts` defines idleness narrowly and honestly: **time since hoocode last
+touched the instance**, meaning opened it or invoked one of its actions. A person
+reading a canvas in a browser tab is invisible to us. That makes the reaper
+advisory cleanup rather than a claim about whether anyone is watching, and it is
+why the default timeout is generous (30 minutes) and the child lingers after its
+last instance closes — reopening a warm extension should not pay for a fork.
 
 ### 6.1 The process lifecycle to mirror
 
@@ -573,6 +593,7 @@ Shipped:
 | `src/core/canvas/sdk-shim/` | child-side `@github/copilot-sdk/extension` implementation |
 | `src/core/canvas/resolver.ts` | `data:`-URL `--import` hook mapping the SDK specifier onto the shim |
 | `src/core/canvas/runner.ts` | fork, stdio framing, request correlation, `session.log` bridge, SIGTERM→SIGKILL |
+| `src/core/canvas/registry.ts` | children, instances, idle reaper, instance cap, action inventory |
 | `src/core/canvas/discovery.ts` | locate canvas dirs by `extension.mjs` |
 | `test/canvas-acceptance-pr-artifact-explorer.test.ts` | Phase 1 acceptance against the real catalog extension |
 
@@ -580,7 +601,8 @@ Still to build:
 
 | Path | Role |
 |---|---|
-| `src/core/canvas/registry.ts` | instances, idle reaper, heartbeat, action→tool bridge |
+| trust gating for `.github/extensions/` | §5 — must precede any agent reachability |
+| action→tool bridge | registers `registry.activeActions()` as agent tools |
 
 Touched:
 

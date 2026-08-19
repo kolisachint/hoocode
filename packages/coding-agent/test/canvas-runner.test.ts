@@ -74,6 +74,7 @@ describe("canvas runner", () => {
 		expect(ready.canvases[0]?.actions?.map((action) => action.name)).toEqual([
 			"add_step",
 			"needs_auth",
+			"crash",
 			"leak_stdout",
 		]);
 		expect(JSON.stringify(ready)).not.toContain("handler");
