@@ -62,6 +62,7 @@ describe("canvas runner", () => {
 			"add_step",
 			"needs_auth",
 			"crash",
+			"flood",
 			"leak_stdout",
 		]);
 		expect(JSON.stringify(ready)).not.toContain("handler");

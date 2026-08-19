@@ -118,6 +118,7 @@ describe("canvas registry", () => {
 			"add_step",
 			"needs_auth",
 			"crash",
+			"flood",
 			"leak_stdout",
 		]);
 		await reg.close(instance);
@@ -128,7 +129,7 @@ describe("canvas registry", () => {
 		const reg = build();
 		await reg.open(EXTENSION, "plan-board");
 		await reg.open(EXTENSION, "plan-board");
-		expect(reg.activeActions()).toHaveLength(8);
+		expect(reg.activeActions()).toHaveLength(10);
 		expect(new Set(reg.activeActions().map((binding) => binding.instanceId))).toEqual(new Set(["i1", "i2"]));
 	});
 

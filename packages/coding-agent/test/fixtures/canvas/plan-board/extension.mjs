@@ -48,6 +48,11 @@ const session = await joinSession({
 					},
 				},
 				{
+					name: "flood",
+					description: "Returns an oversized payload, to exercise host-side result capping.",
+					handler: () => ({ rows: Array.from({ length: 4000 }, (_, i) => `row-${i}-padding-padding`) }),
+				},
+				{
 					name: "leak_stdout",
 					description: "Writes a stray line to stdout, to exercise stray reporting.",
 					handler: () => {

@@ -21,8 +21,10 @@ verified end to end: a compiled shim forked with `execArgv: []` — no TypeScrip
 loader — runs the real `pr-artifact-explorer`, serves its page under its own CSP, and
 enforces its capability token.
 
-Not yet built: the two agent-facing tools (§11.5). Nothing in the agent or TUI reaches
-this code yet, so there is still no user-visible behaviour.
+The two agent-facing tools are in (§11.5), measured at ~219 tokens together and
+**absent entirely while no canvas is open**. What remains is host wiring: something
+in the TUI has to let a person open a canvas and hand the tools to the session.
+Until that exists there is still no user-visible behaviour.
 
 The facts about the Copilot side were verified against `@github/copilot-sdk@1.0.11`
 (npm) and the `github/awesome-copilot` reference extension `pr-artifact-explorer`,
@@ -686,6 +688,29 @@ active tool's schema is re-sent on every request. One tool per open action would
 that surface scale with how many canvases are open. Two fixed tools keep it flat, and
 `registry.activeActions()` feeds the discovery response rather than the tool registry.
 
+Measured: `list_canvas_capabilities` ~75 tokens, `invoke_canvas_action` ~144, **~219
+together** — and `createCanvasToolDefinitions` returns an empty array while nothing is
+open, so a repository without canvases pays nothing at all. A test asserts each schema
+stays under the ~250-token per-tool budget, so a future description cannot quietly
+start costing every request.
+
+Two consequences worth stating:
+
+- **There is no "open a canvas" tool.** Opening forks a process and binds a listening
+  socket, which is a person's decision behind the trust gate (§5). The agent drives a
+  surface a human already opened. That also keeps the injection surface flat: text
+  from an issue title rendered into a canvas can at most cause an action on an
+  instance somebody chose to open.
+- **Instances are addressed by `instanceId` alone.** It is a UUID unique across every
+  canvas, so the schema needs three fields instead of five; the registry resolves the
+  extension and canvas ids itself.
+
+Failures are thrown, matching the built-ins — the loop turns a rejection into the
+model's result. `CanvasError.code` survives the process boundary as
+`CanvasCallError.code`, but only an `Error`'s *message* is rendered to the model, so
+the tool folds the code into the message rather than letting the typed-error intent
+(§8) stop at the tool boundary.
+
 ---
 
 ## File map
@@ -702,13 +727,14 @@ Shipped:
 | `src/core/canvas/trust.ts` | withholds repository-supplied canvases in an untrusted workspace |
 | `src/core/canvas/discovery.ts` | locate canvas dirs by `extension.mjs` |
 | `src/core/canvas/launch.ts` | whether canvases can run here (§11.1), and the runtime to fork |
+| `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action`, created only while a canvas is open |
 | `test/canvas-acceptance-pr-artifact-explorer.test.ts` | Phase 1 acceptance against the real catalog extension |
 
 Still to build:
 
 | Path | Role |
 |---|---|
-| `list_canvas_capabilities` + `invoke_canvas_action` | §11.5 — the two fixed tools that make canvases reachable |
+| host wiring | a way for a person to open a canvas, and to hand the tools to the session |
 
 Touched:
 
