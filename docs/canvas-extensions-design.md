@@ -21,10 +21,20 @@ verified end to end: a compiled shim forked with `execArgv: []` — no TypeScrip
 loader — runs the real `pr-artifact-explorer`, serves its page under its own CSP, and
 enforces its capability token.
 
-The two agent-facing tools are in (§11.5), measured at ~219 tokens together and
-**absent entirely while no canvas is open**. What remains is host wiring: something
-in the TUI has to let a person open a canvas and hand the tools to the session.
-Until that exists there is still no user-visible behaviour.
+The two agent-facing tools are in (§11.5), and so is the interactive surface:
+`/canvas list | open <extension>[:<canvas>] | close <instanceId>`, implemented as a
+built-in extension over `core/canvas/session.ts` — a facade that holds no TUI types so
+every decision it makes is testable without a terminal. Opening runs behind a
+cancellable loader whose `AbortSignal` reaches the abandon path (§11.6), so escape
+releases a port the extension may already have bound.
+
+**This is the first user-visible behaviour**; everything before it was subsystem work.
+
+One constraint discovered while wiring it: `registerTool` has no counterpart to remove
+a tool, so the two canvas tools register on the first successful open and stay for the
+session. A session that never opens a canvas still pays nothing, which is the case that
+matters, and they answer honestly when nothing is open — but the earlier claim that they
+are absent *whenever* nothing is open is only true until the first open.
 
 The facts about the Copilot side were verified against `@github/copilot-sdk@1.0.11`
 (npm) and the `github/awesome-copilot` reference extension `pr-artifact-explorer`,
