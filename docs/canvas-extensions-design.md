@@ -11,9 +11,18 @@ actions (`test/canvas-acceptance-pr-artifact-explorer.test.ts`).
 Phase 2 is also in: `trust.ts` gates repository-supplied canvases and the
 registry enforces it at the single point where a process could start.
 
-Not yet built: the bridge that registers canvas actions as agent tools, and how a
-shipped build launches the child (§10.3). Nothing in the agent or TUI reaches this
-code yet, so there is no user-visible behaviour.
+Every design question that blocked reachability is now decided, with evidence, in
+§11 — availability, environment, timeouts, and the agent-facing tool shape. Canvas
+support requires hoocode running under Node ≥ 20.6 (the npm install path); under the
+self-contained binary it is unavailable and says so (§11.1).
+
+`launch.ts` implements the availability decision and the production launch path is
+verified end to end: a compiled shim forked with `execArgv: []` — no TypeScript
+loader — runs the real `pr-artifact-explorer`, serves its page under its own CSP, and
+enforces its capability token.
+
+Not yet built: the two agent-facing tools (§11.5). Nothing in the agent or TUI reaches
+this code yet, so there is still no user-visible behaviour.
 
 The facts about the Copilot side were verified against `@github/copilot-sdk@1.0.11`
 (npm) and the `github/awesome-copilot` reference extension `pr-artifact-explorer`,
@@ -582,36 +591,100 @@ automatic module resolver and is never installed; `package.json` plays no part i
 resolution and discovery must key off `extension.mjs`; the launch, reload and
 shutdown contract is documented and mirrorable.
 
+Settled since the first draft — see §11 for each decision and its evidence:
+availability and how the child is launched (§11.1), the child's environment
+(§11.2), `tools`/`hooks` (§11.3), timeout policy (§11.4), and how actions reach
+the agent (§11.5). Multiple canvases per extension is handled: `registry.ts` keys
+instances by `(extensionId, canvasId, instanceId)`.
+
 Still open:
 
-1. **Argv and environment.** The documented contract covers fork, stdio, reload
-   and signals, but not what the CLI passes on the command line or in the
-   environment. `pr-artifact-explorer` reads `COPILOT_HOME` (defaulting to
-   `~/.copilot`); a canvas may read more. Decide which variables hoocode sets and
-   which it deliberately does not.
-2. **Multiple canvases per extension.** `joinSession({ canvases: [...] })` takes
-   an array; `registry.ts` must key by `(extension, canvasId, instanceId)`.
-3. **How the child is launched in a shipped build — the largest remaining risk.**
-   The resolve hook is verified on Node (`node --import`, tests green against the
-   real extension), and delivering it as `data:` URLs removed the asset-packaging
-   problem entirely. Two things are still unsettled, and they compound:
-   - hoocode ships as a self-contained binary with **no Node at runtime**
-     (`docs/product.md`), so the runner cannot assume `node` is on PATH. The
-     likely answer is re-executing `process.execPath` in a canvas-child mode, but
-     that needs the packaged runtime to support `node:module`'s `register()` with
-     a `data:` hooks URL — unverified under Bun.
-   - the child must import the shim as **JavaScript**. Tests inject the
-     TypeScript source under `--import tsx/esm`; production needs the built
-     `dist` path or an embedded equivalent.
+1. **Canvas support under the packaged binary** (§11.1) — deliberately out of
+   scope for the preview, not unresolved by accident. Removing the Node
+   requirement needs a Bun-native resolver; the hook path is disproven.
+2. **Whether `open` should be cancellable.** §11.4 gives `canvas.open` a generous
+   ceiling, but a canvas that hangs during `open` currently occupies a slot until
+   it times out. A cancel path would be better than a longer timeout.
 
-   `CanvasRuntime` (`execPath`, `execArgv`, `shimUrl`) is a required parameter
-   with no default precisely so this decision stays explicit and un-guessed. It
-   must be settled before anything user-facing can open a canvas.
-4. **`tools` and `hooks` mapping** (§6.2) — whether to support them at all.
-5. **Request timeout policy.** `runner.ts` defaults to a 30s ceiling per provider
-   call so a wedged handler cannot hang a session. That is a guess: `open` on a
-   canvas that downloads an artifact may legitimately exceed it, so the ceiling
-   probably belongs per-method, or per-canvas.
+---
+
+## 11. Decisions
+
+### 11.1 Availability: canvases require hoocode running under Node
+
+Two facts, both established by running the code rather than reading about it.
+
+**Bun does not honour `node:module` resolve hooks.** It exports `register` as a
+function, so the call succeeds and nothing warns — but the child then resolved the
+*real* `@github/copilot-sdk` out of Bun's global install cache instead of the shim:
+
+```
+error: joinSession() is intended for extensions running as child processes of the Copilot CLI.
+  at /root/.bun/install/cache/@github/copilot-sdk@1.0.11@@@1/dist/extension.js:18
+```
+
+Silent wrong-resolution, not an error. So re-executing the packaged binary with the
+same `--import` resolver is not an option; it would need a Bun-native mechanism
+(`Bun.plugin` in a `--preload`), which is unbuilt work of unknown size.
+
+**`process.versions.node` cannot be used to detect Node.** Bun reports
+`process.versions.node = "24.3.0"` alongside `process.versions.bun = "1.3.11"`.
+A version check alone passes under Bun and then fails silently per the above, so
+detection must key on `process.versions.bun` being **absent**.
+
+The decision: **canvas support requires hoocode to be running under Node ≥ 20.6**
+(the version that introduced `module.register`). That is exactly the npm install
+path — `npm install -g @kolisachint/hoocode-agent` — where two things hold at once:
+`process.execPath` is a suitable Node to fork, and the built `dist` is on disk for
+the child to import the shim from. Under the self-contained binary, canvases are
+**unavailable and say so**, rather than half-working.
+
+Conditional availability is a real cost against the single-binary promise, and it is
+accepted for a preview: the Copilot app gates canvases behind a preview build of its
+own, so "this feature needs one more thing" is not out of character. `launch.ts`
+returns either a `CanvasRuntime` or a reason string, so the unavailable path is a
+sentence the user can act on rather than a crash.
+
+### 11.2 The child's environment
+
+Evidence, from the SDK's own `dist/extension.js`: the real `joinSession` reads
+exactly one variable, `SESSION_ID`, and throws without it. Its transport is
+`connectToParentProcessViaStdio()`, which writes to `process.stdout` — confirming
+stdout is the protocol channel, as §1.1 assumed.
+
+- **`SESSION_ID` is set.** Our shim does not need it, but a real SDK-using
+  extension throws without it, so setting it is free fidelity.
+- **`COPILOT_HOME` is left alone**, defaulting to `~/.copilot`. Pointing it at a
+  hoocode-private directory would isolate state but would also make the hosts
+  distinguishable and lose an extension's existing cache — and a canvas being
+  unable to tell the hosts apart is the whole portability thesis (§2).
+
+### 11.3 `tools` and `hooks`: closed by measurement
+
+**Zero of the 23 catalog extensions declare `tools` or `hooks` alongside a canvas.**
+The shim's accept-and-warn-once behaviour (§6.2) is therefore sufficient, and
+mapping them onto hoocode's own tool and hook systems is not worth designing until
+a real extension needs it.
+
+### 11.4 Timeouts are per method
+
+A single 30s ceiling was a guess, and wrong for `canvas.open` on a canvas that
+downloads an artifact before returning a URL. Ceilings are per provider method:
+`canvas.open` generous, `canvas.action.invoke` tighter, `canvas.close` short —
+each overridable. See §10's remaining question about cancelling `open` rather than
+merely waiting longer.
+
+### 11.5 Actions reach the agent through two fixed tools
+
+Copilot names its own agent-facing shape in the SDK types: `list_canvas_capabilities`
+for discovery and `invoke_canvas_action` for invocation. Two fixed tools, whatever is
+open.
+
+hoocode mirrors that, for its own reason as well as fidelity: `AGENTS.md` budgets the
+prompt surface at ~4,140 tokens with ~2,710 of it tool schemas, and everything in an
+active tool's schema is re-sent on every request. One tool per open action would make
+that surface scale with how many canvases are open. Two fixed tools keep it flat, and
+`registry.activeActions()` feeds the discovery response rather than the tool registry.
 
 ---
 
@@ -628,14 +701,14 @@ Shipped:
 | `src/core/canvas/registry.ts` | children, instances, idle reaper, instance cap, action inventory, trust enforcement |
 | `src/core/canvas/trust.ts` | withholds repository-supplied canvases in an untrusted workspace |
 | `src/core/canvas/discovery.ts` | locate canvas dirs by `extension.mjs` |
+| `src/core/canvas/launch.ts` | whether canvases can run here (§11.1), and the runtime to fork |
 | `test/canvas-acceptance-pr-artifact-explorer.test.ts` | Phase 1 acceptance against the real catalog extension |
 
 Still to build:
 
 | Path | Role |
 |---|---|
-| action→tool bridge | registers `registry.activeActions()` as agent tools |
-| launch strategy for shipped builds | §10.3 — the last blocker before anything user-facing |
+| `list_canvas_capabilities` + `invoke_canvas_action` | §11.5 — the two fixed tools that make canvases reachable |
 
 Touched:
 

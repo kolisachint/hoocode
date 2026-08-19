@@ -41,7 +41,7 @@ describe("canvas runner", () => {
 			extensionId: "plan-board",
 			entry: FIXTURE,
 			runtime: canvasTestRuntime(),
-			requestTimeoutMs: 20_000,
+			requestTimeoutMs: { "canvas.open": 20_000, "canvas.action.invoke": 20_000 },
 			onStray: (line) => strays.push(line),
 			onLog: (message) => logs.push(message),
 		});

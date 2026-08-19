@@ -39,8 +39,22 @@ import { canvasResolverImportArg } from "./resolver.js";
 /** Grace period between SIGTERM and SIGKILL, matching the documented CLI contract. */
 export const CANVAS_SHUTDOWN_GRACE_MS = 5_000;
 
-/** Default ceiling on a single provider call, so a wedged handler cannot hang a session. */
-export const CANVAS_REQUEST_TIMEOUT_MS = 30_000;
+/**
+ * Default ceiling per provider method, so a wedged handler cannot hang a session
+ * (design doc §11.4).
+ *
+ * These differ because the calls do. `canvas.open` may legitimately do real work
+ * before it can return a URL — `pr-artifact-explorer` starts a server and
+ * `inspect_artifact`-shaped canvases may fetch — whereas an action is a request
+ * against an already-open instance, and `close` should be near-instant since the
+ * SDK contract makes `onClose` fire-and-forget. A single 30s ceiling for all three
+ * was a guess, and wrong at both ends.
+ */
+export const CANVAS_REQUEST_TIMEOUT_MS: Readonly<Record<CanvasProviderMethod, number>> = {
+	"canvas.open": 120_000,
+	"canvas.action.invoke": 30_000,
+	"canvas.close": 5_000,
+};
 
 /** How the child is launched. Injectable so tests can run the TypeScript shim under tsx. */
 export interface CanvasRuntime {
@@ -58,11 +72,14 @@ export interface CanvasRunnerOptions {
 	extensionId: string;
 	/** Absolute path to the extension's `extension.mjs`. */
 	entry: string;
+	/** Value for the child's `SESSION_ID`. Defaults to the extension id. */
+	sessionId?: string;
 	runtime: CanvasRuntime;
 	/** Working directory for the child. Defaults to the extension directory's parent. */
 	cwd?: string;
 	env?: NodeJS.ProcessEnv;
-	requestTimeoutMs?: number;
+	/** Per-method overrides merged over {@link CANVAS_REQUEST_TIMEOUT_MS}. 0 disables. */
+	requestTimeoutMs?: Partial<Record<CanvasProviderMethod, number>>;
 	/** A `session.log` call from the extension. */
 	onLog?: (message: string, level: string | undefined, ephemeral: boolean | undefined) => void;
 	/** A stdout line that was not protocol. Almost always a stray `console.log`. */
@@ -106,13 +123,21 @@ export class CanvasCallError extends Error {
 
 /** Fork an extension and return a handle to its provider surface. */
 export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtensionProcess {
-	const timeoutMs = options.requestTimeoutMs ?? CANVAS_REQUEST_TIMEOUT_MS;
+	const timeouts: Record<CanvasProviderMethod, number> = { ...CANVAS_REQUEST_TIMEOUT_MS, ...options.requestTimeoutMs };
 	const child = spawn(
 		options.runtime.execPath,
 		[...options.runtime.execArgv, "--import", canvasResolverImportArg(options.runtime.shimUrl), options.entry],
 		{
 			cwd: options.cwd,
-			env: { ...(options.env ?? process.env), HOOCODE_CANVAS_EXTENSION_ID: options.extensionId },
+			env: {
+				...(options.env ?? process.env),
+				HOOCODE_CANVAS_EXTENSION_ID: options.extensionId,
+				// The real SDK's joinSession throws without SESSION_ID (design doc §11.2).
+				// Our shim does not read it, but an extension that uses the SDK directly
+				// would, so setting it is free fidelity. COPILOT_HOME is deliberately left
+				// alone: a canvas should not be able to tell the hosts apart.
+				SESSION_ID: options.sessionId ?? options.extensionId,
+			},
 			stdio: ["pipe", "pipe", "pipe"],
 		},
 	) as ChildProcessWithoutNullStreams;
@@ -190,6 +215,7 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 		}
 		const id = nextId;
 		nextId += 1;
+		const timeoutMs = timeouts[method];
 		return new Promise<JsonValue>((resolve, reject) => {
 			const timer =
 				timeoutMs > 0
