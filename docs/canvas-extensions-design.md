@@ -6,7 +6,7 @@
 `runner.ts` (fork and lifecycle), `registry.ts` (children, instances, reaping,
 action inventory), `discovery.ts`. The Phase 1 acceptance test passes —
 `pr-artifact-explorer` from `github/awesome-copilot` opens unmodified and answers
-actions (`test/canvas-acceptance-pr-artifact-explorer.test.ts`).
+actions (`test/canvas-acceptance-catalog.test.ts`).
 
 Phase 2 is also in: `trust.ts` gates repository-supplied canvases and the
 registry enforces it at the single point where a process could start.
@@ -815,6 +815,40 @@ through the same function moments later), and deferring a tick did not help. Lef
 documented rather than papered over with a sleep — the loader disappearing is itself the
 signal.
 
+### 12.1 A second catalog canvas
+
+`arcade-canvas` (a different author) was taken through the same path — installed to
+`~/.copilot/extensions/` exactly as its README says, then opened from `/canvas`,
+driven through the two agent tools, and closed. It is a useful second case because it
+differs where it matters:
+
+| | `pr-artifact-explorer` | `arcade-canvas` |
+|---|---|---|
+| `package.json` | none | present, declaring `@github/copilot-sdk` |
+| README install step | copy the folder | copy **and `npm install`** |
+| loopback server | capability token enforced | **no token** |
+| content | GitHub API + ZIP index | static Phaser game bundle |
+
+It ran with **no `node_modules` anywhere and the `npm install` step skipped**, which is
+§4.1 and §4.2 confirmed against a second extension: the declared dependency is
+decorative because the host resolves the import. Its page and every static asset it
+references served, path traversal was refused, `select_game` switched games, and two
+instances stayed independent on their own ports.
+
+Two things worth carrying forward:
+
+- **The security posture in §8 is each extension's choice, not something the host
+  imposes.** `arcade-canvas` serves its page with no capability token at all. Nothing is
+  wrong with that for a game, but it means "canvases are token-gated" is an observation
+  about one extension rather than a property of the surface.
+- **Nothing validates action input against the declared schema** — not hoocode, and not
+  necessarily the extension. `select_game` normalises an unknown `gameKey` to a default,
+  so a wrong or misspelled field silently *looks* like a success. That is precisely why
+  `list_canvas_capabilities` returns the schemas (§11.5): the model is meant to read
+  them rather than guess. Whether the host should validate input against
+  `inputSchema` before dispatch is an open question — it would turn a silent default
+  into an honest error, at the cost of rejecting input a canvas would have accepted.
+
 Incidental confirmation of §11.5's honesty fix: merely running `pr-artifact-explorer` in
 tests created `~/.copilot/extensions/pr-artifact-explorer/artifacts/cache`. A canvas
 really does write outside itself, and none of it passes the permission gate. Discovery
@@ -837,7 +871,7 @@ Shipped:
 | `src/core/canvas/discovery.ts` | locate canvas dirs by `extension.mjs` |
 | `src/core/canvas/launch.ts` | whether canvases can run here (§11.1), and the runtime to fork |
 | `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action`, created only while a canvas is open |
-| `test/canvas-acceptance-pr-artifact-explorer.test.ts` | Phase 1 acceptance against the real catalog extension |
+| `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1) |
 
 Still to build:
 
@@ -862,4 +896,4 @@ Reference (read-only, external):
 | Source | Used for |
 |---|---|
 | `@github/copilot-sdk@1.0.11` `dist/canvas.d.ts`, `dist/sdkProtocolVersion.d.ts` | the contract; devDependency for types and conformance tests |
-| `github/awesome-copilot` `extensions/pr-artifact-explorer/` | transport pattern, security posture, Phase 1 acceptance test |
+| `github/awesome-copilot` `extensions/pr-artifact-explorer/`, `extensions/arcade-canvas/` | transport pattern, security posture, acceptance tests |
