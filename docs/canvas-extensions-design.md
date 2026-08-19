@@ -671,6 +671,14 @@ by the package rather than an extra ask.
 Resolution can spawn `node --version`, so it is not cached here: callers resolve once
 per session and hold the result.
 
+**Running from source.** A checkout has no `dist`, so the built shim does not exist and
+canvas support would be off for exactly the people most likely to be writing a canvas.
+`launch.ts` therefore pairs each shim candidate with the argv needed to import it: the
+built `index.js` needs none, and the TypeScript source is offered with a `tsx` loader —
+but **only when `tsx` actually resolves**, so this stays a verified capability rather
+than a hopeful one. The loader path is absolute, because Node resolves a bare
+`--import` specifier against the *child's* working directory.
+
 **Shipping the shim.** The child imports the shim from a real path on disk, which the
 Bun binary's virtual filesystem is not. `config.ts` gains `getCanvasDir()` beside the
 existing `getThemesDir()` and `getExportTemplateDir()`, following the same shape, and
@@ -776,6 +784,41 @@ id is no longer pending.
 Per-method ceilings are also reachable now. They had been defined in `runner.ts` but
 `CanvasRegistryOptions` did not forward them, so nothing that goes through the registry
 — which is everything real — could set them. The timeout test is what caught it.
+
+---
+
+## 12. Smoke test, and one known gap
+
+Run in a real terminal (`./hoocode-test.sh`, tmux per `AGENTS.md`) against the fixture
+canvas installed at `~/.copilot/extensions/`, plus a repository-supplied copy under
+`.agents/extensions/`:
+
+| Path | Result |
+|---|---|
+| `/canvas list` | lists user-scope extensions, and the repository-supplied one as `[withheld: untrusted workspace]` with a pointer to `/plugin trust` |
+| `/canvas open <ext>` | opens; prints the loopback URL |
+| the URL | serves 200 with its token, **403 without** |
+| `/canvas close <id>` | closes; the port is refused afterwards, so the extension released it |
+| `/canvas open <withheld>` | refused, quoting the trust reason |
+| escape during a slow open | cancels; the extension logs `closed <id> (known=false)` — the abandon path (§11.6) reaching an instance it never finished opening |
+
+Two bugs it caught that no unit test could: `CATEGORY_GLYPH` is a map, so the listing
+rendered `[object Object]`; and the cancel path needed to decide from
+`loader.signal.aborted` rather than from which of the abort and the rejection landed
+first.
+
+**Known gap.** The "Canvas open cancelled." confirmation does not render when the cancel
+came from the loader's own escape handling. Every *effect* of cancelling is correct and
+verified above. Ruled out: the continuation runs and `ctx.ui.notify` works on those
+lines (the failure path renders its error, and the canvas's own diagnostic arrives
+through the same function moments later), and deferring a tick did not help. Left
+documented rather than papered over with a sleep — the loader disappearing is itself the
+signal.
+
+Incidental confirmation of §11.5's honesty fix: merely running `pr-artifact-explorer` in
+tests created `~/.copilot/extensions/pr-artifact-explorer/artifacts/cache`. A canvas
+really does write outside itself, and none of it passes the permission gate. Discovery
+correctly ignores that directory, because it keys off `extension.mjs` and nothing else.
 
 ---
 

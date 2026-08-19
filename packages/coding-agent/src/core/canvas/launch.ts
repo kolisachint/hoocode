@@ -31,6 +31,7 @@
 
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import * as path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { promisify } from "node:util";
@@ -38,6 +39,7 @@ import { getCanvasDir } from "../../config.js";
 import type { CanvasRuntime } from "./runner.js";
 
 const execFileAsync = promisify(execFile);
+const require = createRequire(import.meta.url);
 
 /** Minimum Node that supports `module.register`, which `resolver.ts` depends on. */
 export const CANVAS_MIN_NODE_MAJOR = 20;
@@ -49,6 +51,20 @@ export const CANVAS_NODE_PROBE_TIMEOUT_MS = 5_000;
 
 /** Either a runtime that can fork canvases, or the reason none is available. */
 export type CanvasAvailability = { available: true; runtime: CanvasRuntime } | { available: false; reason: string };
+
+/**
+ * A shim the child could import, paired with whatever argv it needs to do so.
+ *
+ * The pairing is the point: the built `.js` needs nothing, while the TypeScript source
+ * needs a loader. Offering a shim without its prerequisite is how you get an
+ * "available" that fails at fork time.
+ */
+export interface CanvasShimCandidate {
+	/** `file:` URL of the shim module. */
+	url: string;
+	/** Extra argv prepended for the child, e.g. a TypeScript loader. */
+	execArgv: string[];
+}
 
 /** A Node executable found on PATH. */
 export interface DiscoveredNode {
@@ -66,8 +82,8 @@ export interface CanvasHostProbe {
 	nodeVersion: string;
 	/** `process.execPath`. */
 	execPath: string;
-	/** Candidate shim module URLs, highest precedence first. */
-	shimCandidates: string[];
+	/** Candidate shims, highest precedence first. */
+	shimCandidates: CanvasShimCandidate[];
 	/** Whether a `file:` URL exists on disk. */
 	exists: (fileUrl: string) => boolean;
 	/** Locate a Node on PATH. Resolves undefined when there is none. */
@@ -75,19 +91,48 @@ export interface CanvasHostProbe {
 }
 
 /**
- * Where the child looks for the shim: the built layout, via `getCanvasDir()` so the
- * standalone binary's sidecar copy is found the same way themes and the HTML export
- * template are.
+ * Where the child looks for the shim, best first.
  *
- * The TypeScript source is deliberately **not** a candidate. A forked child runs
- * with `execArgv: []` and cannot import `.ts`, so offering `index.ts` would make
- * this function answer "available" in a source checkout and then fail at fork time
- * — a wrong yes is worse than an honest no. Running canvases from source means
- * supplying a `CanvasRuntime` directly with a TypeScript loader in `execArgv`, which
- * is what `test/canvas-test-runtime.ts` does.
+ * 1. The built `index.js`, via `getCanvasDir()` so the standalone binary's sidecar
+ *    copy is found the same way themes and the HTML export template are. Needs no
+ *    extra argv.
+ * 2. The TypeScript source, for a checkout run through `tsx` (`hoocode-test.sh`)
+ *    where no `dist` exists. Offered **only** when `tsx` actually resolves, so this
+ *    is a verified capability rather than a hopeful one — a forked child cannot
+ *    import `.ts` on its own, and an "available" that fails at fork time is worse
+ *    than an honest no.
+ *
+ * Without (2), the people most likely to be writing canvases — contributors running
+ * from source — could not open one.
  */
-function defaultShimCandidates(): string[] {
-	return [pathToFileURL(path.join(getCanvasDir(), "sdk-shim", "index.js")).href];
+function defaultShimCandidates(): CanvasShimCandidate[] {
+	const canvasDir = getCanvasDir();
+	const candidates: CanvasShimCandidate[] = [
+		{ url: pathToFileURL(path.join(canvasDir, "sdk-shim", "index.js")).href, execArgv: [] },
+	];
+	const loader = typescriptLoaderArg();
+	if (loader) {
+		candidates.push({
+			url: pathToFileURL(path.join(canvasDir, "sdk-shim", "index.ts")).href,
+			execArgv: ["--import", loader],
+		});
+	}
+	return candidates;
+}
+
+/**
+ * An absolute `--import` argument for `tsx`, or undefined when it is not installed.
+ *
+ * Absolute on purpose: Node resolves a bare `--import` specifier against the *child's*
+ * working directory, so `tsx/esm` would work only while an extension happened to sit
+ * inside this repository and fail elsewhere with ERR_MODULE_NOT_FOUND.
+ */
+function typescriptLoaderArg(): string | undefined {
+	try {
+		return pathToFileURL(require.resolve("tsx/esm")).href;
+	} catch {
+		return undefined;
+	}
 }
 
 function fileUrlExists(fileUrl: string): boolean {
@@ -149,8 +194,8 @@ const MIN_LABEL = `${CANVAS_MIN_NODE_MAJOR}.${CANVAS_MIN_NODE_MINOR}`;
 export async function resolveCanvasRuntime(
 	probe: CanvasHostProbe = currentCanvasHostProbe(),
 ): Promise<CanvasAvailability> {
-	const shimUrl = probe.shimCandidates.find((candidate) => probe.exists(candidate));
-	if (shimUrl === undefined) {
+	const shim = probe.shimCandidates.find((candidate) => probe.exists(candidate.url));
+	if (shim === undefined) {
 		return {
 			available: false,
 			reason:
@@ -162,7 +207,7 @@ export async function resolveCanvasRuntime(
 	// Forking ourselves is only sound when we are genuinely Node: Bun reports a
 	// satisfying process.versions.node but ignores the resolve hook the child needs.
 	if (probe.bunVersion === undefined && meetsMinimum(probe.nodeVersion)) {
-		return { available: true, runtime: { execPath: probe.execPath, execArgv: [], shimUrl } };
+		return { available: true, runtime: { execPath: probe.execPath, execArgv: shim.execArgv, shimUrl: shim.url } };
 	}
 
 	const found = await probe.probePathNode();
@@ -182,5 +227,5 @@ export async function resolveCanvasRuntime(
 				`the \`node\` on PATH is ${found.version}.`,
 		};
 	}
-	return { available: true, runtime: { execPath: found.execPath, execArgv: [], shimUrl } };
+	return { available: true, runtime: { execPath: found.execPath, execArgv: shim.execArgv, shimUrl: shim.url } };
 }

@@ -19,6 +19,10 @@
 import { homedir } from "node:os";
 import { getAgentDir } from "../../config.js";
 import { CATEGORY_GLYPH } from "../../core/brand.js";
+
+/** Canvas extensions are extensions, so they wear the extension glyph. */
+const GLYPH = CATEGORY_GLYPH.extensions;
+
 import type { CanvasInstance } from "../../core/canvas/registry.js";
 import { type CanvasOverview, CanvasSession, parseCanvasRef } from "../../core/canvas/session.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
@@ -51,10 +55,10 @@ function renderOverview(overview: CanvasOverview): string {
 		const name = listing.canvasId ? `${listing.extensionId}:${listing.canvasId}` : listing.extensionId;
 		const label = listing.displayName ? `  ${listing.displayName}` : "";
 		if (listing.withheld === "untrusted-workspace") {
-			lines.push(`${CATEGORY_GLYPH} ${name}${label}  [withheld: untrusted workspace]`);
+			lines.push(`${GLYPH} ${name}${label}  [withheld: untrusted workspace]`);
 			continue;
 		}
-		lines.push(`${CATEGORY_GLYPH} ${name}${label}  (${listing.scope})`);
+		lines.push(`${GLYPH} ${name}${label}  (${listing.scope})`);
 		for (const instance of listing.open) lines.push(`    open  ${describeInstance(instance)}`);
 	}
 	if (overview.withheldCount > 0) {
@@ -144,14 +148,22 @@ export function setupCanvas(pi: ExtensionAPI): void {
 			// already have bound. Outside a terminal (--print, RPC) there is nothing to draw
 			// and nothing to press, so the open simply runs.
 			const outcome = ctx.hasUI
-				? await ctx.ui.custom<OpenOutcome>((tui, theme, _keybindings, done) => {
+				? await ctx.ui.custom<OpenOutcome | undefined>((tui, theme, _keybindings, done) => {
 						const loader = new BorderedLoader(tui, theme, `Opening ${ref.extensionId}…`);
 						loader.onAbort = () => done({ kind: "cancelled" });
 						void canvas
 							.open(ref, { signal: loader.signal })
 							.then((instance) => done({ kind: "opened", instance }))
+							// Cancelling races: the signal rejects the pending call at the same moment
+							// onAbort fires, and whichever lands first resolves `custom`. Deciding from
+							// the signal rather than from who won means a cancel always reads as a
+							// cancel instead of surfacing as an error.
 							.catch((error: unknown) =>
-								done({ kind: "failed", message: error instanceof Error ? error.message : String(error) }),
+								done(
+									loader.signal.aborted
+										? { kind: "cancelled" }
+										: { kind: "failed", message: error instanceof Error ? error.message : String(error) },
+								),
 							);
 						return loader;
 					})
@@ -165,7 +177,20 @@ export function setupCanvas(pi: ExtensionAPI): void {
 							}),
 						);
 
-			if (outcome.kind === "cancelled") {
+			// `custom` can also settle on its own when the overlay is dismissed, without
+			// our `done` ever running — an escape that closes the surface leaves no
+			// outcome. Treat that as the cancel it is rather than reading `.kind` off
+			// undefined and failing silently.
+			if (!outcome || outcome.kind === "cancelled") {
+				// KNOWN ISSUE: this confirmation does not render when the cancel came from the
+				// loader's own escape handling, though every effect of cancelling is correct
+				// and verified (the open rejects, no instance is registered, and the extension
+				// is told to close the instance it never finished opening). Ruled out: the
+				// continuation does run and `ctx.ui.notify` works here — the failure path
+				// through the same lines renders its error, and the canvas's own diagnostic
+				// arrives moments later through this very function. Deferring a tick did not
+				// help either. Left as an unexplained cosmetic gap rather than papered over
+				// with a sleep; the loader disappearing is itself the signal.
 				ctx.ui.notify("Canvas open cancelled.", "info");
 				return;
 			}

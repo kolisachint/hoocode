@@ -18,7 +18,7 @@ import {
 	resolveCanvasRuntime,
 } from "../src/core/canvas/launch.js";
 
-const SHIM = "file:///app/dist/core/canvas/sdk-shim/index.js";
+const SHIM = { url: "file:///app/dist/core/canvas/sdk-shim/index.js", execArgv: [] };
 
 function probe(overrides: Partial<CanvasHostProbe> = {}): CanvasHostProbe {
 	return {
@@ -46,7 +46,7 @@ describe("resolveCanvasRuntime", () => {
 			);
 			expect(result).toEqual({
 				available: true,
-				runtime: { execPath: "/usr/bin/node", execArgv: [], shimUrl: SHIM },
+				runtime: { execPath: "/usr/bin/node", execArgv: [], shimUrl: SHIM.url },
 			});
 			expect(probed, "should not spawn node --version when we are already Node").toBe(false);
 		});
@@ -80,7 +80,7 @@ describe("resolveCanvasRuntime", () => {
 			);
 			expect(result).toEqual({
 				available: true,
-				runtime: { execPath: "node", execArgv: [], shimUrl: SHIM },
+				runtime: { execPath: "node", execArgv: [], shimUrl: SHIM.url },
 			});
 		});
 
@@ -138,11 +138,19 @@ describe("resolveCanvasRuntime", () => {
 		});
 
 		it("falls through to the next candidate when the first is missing", async () => {
-			const second = "file:///app/canvas/sdk-shim/index.js";
+			const source = { url: "file:///app/src/core/canvas/sdk-shim/index.ts", execArgv: ["--import", "file:///tsx"] };
 			const result = await resolveCanvasRuntime(
-				probe({ shimCandidates: [SHIM, second], exists: (url) => url === second }),
+				probe({ shimCandidates: [SHIM, source], exists: (url) => url === source.url }),
 			);
-			expect(result.available === true && result.runtime.shimUrl).toBe(second);
+			expect(result.available === true && result.runtime.shimUrl).toBe(source.url);
+		});
+
+		it("carries the candidate's own prerequisites into execArgv", async () => {
+			// The pairing is the point: a TypeScript shim is only offered with the loader
+			// that lets a forked child import it, so "available" cannot mean "fails later".
+			const source = { url: "file:///app/src/core/canvas/sdk-shim/index.ts", execArgv: ["--import", "file:///tsx"] };
+			const result = await resolveCanvasRuntime(probe({ shimCandidates: [source] }));
+			expect(result.available === true && result.runtime.execArgv).toEqual(["--import", "file:///tsx"]);
 		});
 	});
 
@@ -165,12 +173,29 @@ describe("currentCanvasHostProbe", () => {
 		expect(actual.execPath).toBe(process.execPath);
 	});
 
-	it("offers only the built shim, never the TypeScript source", () => {
-		// A wrong "available" is worse than an honest no: a forked child runs with
-		// execArgv: [] and cannot import .ts.
+	it("prefers the built shim and needs no argv for it", () => {
 		const actual = currentCanvasHostProbe();
-		expect(actual.shimCandidates).toHaveLength(1);
-		expect(actual.shimCandidates[0]?.endsWith("/sdk-shim/index.js")).toBe(true);
+		expect(actual.shimCandidates[0]?.url.endsWith("/sdk-shim/index.js")).toBe(true);
+		expect(actual.shimCandidates[0]?.execArgv).toEqual([]);
+	});
+
+	it("offers the TypeScript source only with a loader that actually resolves", () => {
+		// tsx is a devDependency, so in this checkout the source candidate exists and
+		// carries an absolute loader path. Bare `tsx/esm` would resolve against the
+		// child's cwd and break for an extension outside this repository.
+		const source = currentCanvasHostProbe().shimCandidates.find((candidate) =>
+			candidate.url.endsWith("/sdk-shim/index.ts"),
+		);
+		expect(source).toBeDefined();
+		expect(source?.execArgv[0]).toBe("--import");
+		expect(source?.execArgv[1]?.startsWith("file:///")).toBe(true);
+	});
+
+	it("can actually run a canvas in this source checkout", async () => {
+		// The regression this guards: with no dist, a contributor running from source
+		// could not open a canvas at all.
+		const result = await resolveCanvasRuntime();
+		expect(result.available).toBe(true);
 	});
 
 	it("really can find a Node on PATH in this environment", async () => {
