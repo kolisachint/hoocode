@@ -1,13 +1,20 @@
 # Design Note: Canvas extensions — hosting GitHub Copilot canvases
 
-**Status:** Proposed. Nothing in this document is implemented. No canvas code
-exists in the repo today, and `.github/extensions/` is not read anywhere
-(`grep -rn "\.github/extensions" .` is clean). The facts about the Copilot
-side were verified against `@github/copilot-sdk@1.0.11` (npm) and the
-`github/awesome-copilot` reference extension `pr-artifact-explorer`, both read
-directly rather than from documentation. The module-resolution and lifecycle
-contract (§4.1, §6.1) is quoted from `docs/extensions.md` inside the SDK package
-and cross-checked against all 23 extensions in the catalog.
+**Status:** Phase 1 partly implemented. Shipped in
+`packages/coding-agent/src/core/canvas/`: `protocol.ts` (wire contract),
+`sdk-shim/` (child-side SDK surface), `resolver.ts` (module resolution),
+`runner.ts` (fork and lifecycle), `discovery.ts`. The Phase 1 acceptance test
+passes — `pr-artifact-explorer` from `github/awesome-copilot` opens unmodified
+and answers actions (`test/canvas-acceptance-pr-artifact-explorer.test.ts`).
+Not yet built: `registry.ts` (instance table, idle reaper, action→tool bridge),
+the trust gate (§5, Phase 2), and any hoocode-side surfacing — nothing in the
+agent or TUI reaches this code yet, so there is no user-visible behaviour.
+
+The facts about the Copilot side were verified against `@github/copilot-sdk@1.0.11`
+(npm) and the `github/awesome-copilot` reference extension `pr-artifact-explorer`,
+both read directly rather than from documentation. The module-resolution and
+lifecycle contract (§4.1, §6.1) is quoted from `docs/extensions.md` inside the SDK
+package and cross-checked against all 23 extensions in the catalog.
 
 **Motivation:** hoocode is a TUI. Every rich review surface it could offer — a
 plan you reorder, a diff you approve hunk by hunk, a queue of pending
@@ -281,16 +288,20 @@ omit `package.json` entirely work the same as the twenty that include it.
 
 Consequences, all now requirements rather than options:
 
-- **The shim is an injected resolver, not a file on disk.** hoocode must make
-  `@github/copilot-sdk/extension` resolvable inside the forked child — a
-  `node:module` `register()` resolve hook mapping that specifier onto
-  `sdk-shim/`. We never write into the extension directory; a canvas pulled from
-  the catalog stays byte-identical to upstream, which is what tier 1 of §2.1
-  requires.
+- **The shim is an injected resolver, not a file on disk.** Implemented in
+  `resolver.ts`: a `node:module` `register()` resolve hook that maps the package
+  and its subpaths onto `sdk-shim/`, delivered entirely through `--import`
+  **`data:` URLs**. Nothing is written to disk, so there is no `.mjs` asset to
+  copy into `dist/` or embed in the packaged binary — the whole resolver exists
+  only as command-line arguments. Verified: after forking `pr-artifact-explorer`
+  and driving it through open plus an action, `git status` in the catalog clone is
+  clean and no `node_modules` appeared, which is what tier 1 of §2.1 requires.
 - **Discovery keys off `<dir>/extension.mjs`, nothing else.** The entry file is
   required, must be named `extension.mjs`, and must be an ES module. All 23
   catalog extensions comply; where `package.json` exists, its `main` is always
-  `extension.mjs` anyway.
+  `extension.mjs` anyway. Some extensions also carry a `copilot-extension.json`,
+  but it is optional and uninformative — 8 of 23 have one, each holds exactly
+  `{ name, version }`, and `name` always equals the directory name.
 - **hoocode installs nothing.** If a child imports a bare specifier we do not
   provide, the import fails; surface an error naming the missing module and the
   extension's README. Running a package install on behalf of repository-supplied
@@ -528,26 +539,48 @@ Still open:
    which it deliberately does not.
 2. **Multiple canvases per extension.** `joinSession({ canvases: [...] })` takes
    an array; `registry.ts` must key by `(extension, canvasId, instanceId)`.
-3. **Resolver mechanism under the Bun binary.** `loader.ts` already special-cases
-   Bun with `virtualModules`/`tryNative` (see `isBunBinary` there). The canvas
-   runner forks a child rather than importing, so it is a different problem, but
-   the shim's resolve hook needs verifying under both the Node dev path and the
-   packaged Bun binary.
+3. **How the child is launched in a shipped build — the largest remaining risk.**
+   The resolve hook is verified on Node (`node --import`, tests green against the
+   real extension), and delivering it as `data:` URLs removed the asset-packaging
+   problem entirely. Two things are still unsettled, and they compound:
+   - hoocode ships as a self-contained binary with **no Node at runtime**
+     (`docs/product.md`), so the runner cannot assume `node` is on PATH. The
+     likely answer is re-executing `process.execPath` in a canvas-child mode, but
+     that needs the packaged runtime to support `node:module`'s `register()` with
+     a `data:` hooks URL — unverified under Bun.
+   - the child must import the shim as **JavaScript**. Tests inject the
+     TypeScript source under `--import tsx/esm`; production needs the built
+     `dist` path or an embedded equivalent.
+
+   `CanvasRuntime` (`execPath`, `execArgv`, `shimUrl`) is a required parameter
+   with no default precisely so this decision stays explicit and un-guessed. It
+   must be settled before anything user-facing can open a canvas.
 4. **`tools` and `hooks` mapping** (§6.2) — whether to support them at all.
+5. **Request timeout policy.** `runner.ts` defaults to a 30s ceiling per provider
+   call so a wedged handler cannot hang a session. That is a guess: `open` on a
+   canvas that downloads an artifact may legitimately exceed it, so the ceiling
+   probably belongs per-method, or per-canvas.
 
 ---
 
 ## File map
 
-Proposed:
+Shipped:
 
 | Path | Role |
 |---|---|
-| `src/core/canvas/protocol.ts` | 3 JSON-RPC methods + version handshake — the entire GitHub-facing surface |
+| `src/core/canvas/protocol.ts` | 3 provider methods + version + payloads + NDJSON codec — the entire GitHub-facing surface |
 | `src/core/canvas/sdk-shim/` | child-side `@github/copilot-sdk/extension` implementation |
-| `src/core/canvas/runner.ts` | spawn, stdio framing, `session.log` bridge |
+| `src/core/canvas/resolver.ts` | `data:`-URL `--import` hook mapping the SDK specifier onto the shim |
+| `src/core/canvas/runner.ts` | fork, stdio framing, request correlation, `session.log` bridge, SIGTERM→SIGKILL |
+| `src/core/canvas/discovery.ts` | locate canvas dirs by `extension.mjs` |
+| `test/canvas-acceptance-pr-artifact-explorer.test.ts` | Phase 1 acceptance against the real catalog extension |
+
+Still to build:
+
+| Path | Role |
+|---|---|
 | `src/core/canvas/registry.ts` | instances, idle reaper, heartbeat, action→tool bridge |
-| `src/core/canvas/discovery.ts` | locate canvas dirs and entry files |
 
 Touched:
 
