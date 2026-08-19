@@ -30,7 +30,13 @@ import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 import type { CanvasActionDeclaration, CanvasDeclaration, CanvasProviderOpenResult, JsonValue } from "./protocol.js";
-import { type CanvasExtensionProcess, type CanvasRuntime, spawnCanvasExtension } from "./runner.js";
+import {
+	type CanvasCallOptions,
+	type CanvasExtensionProcess,
+	type CanvasRunnerOptions,
+	type CanvasRuntime,
+	spawnCanvasExtension,
+} from "./runner.js";
 import { CanvasTrustError, shouldWithholdCanvas } from "./trust.js";
 
 /** Default idle ceiling before an untouched instance is reaped. */
@@ -95,6 +101,14 @@ export interface CanvasRegistryOptions extends CanvasRegistryEvents {
 	now?: () => number;
 	idleTimeoutMs?: number;
 	childLingerMs?: number;
+	/**
+	 * Per-method provider-call ceilings, merged over the runner's defaults.
+	 *
+	 * Plumbed through because the registry is the entry point everything real goes
+	 * via: without this the ceilings in `runner.ts` were only reachable by calling
+	 * `spawnCanvasExtension` directly, which nothing does.
+	 */
+	requestTimeoutMs?: CanvasRunnerOptions["requestTimeoutMs"];
 	maxInstancesPerCanvas?: number;
 	/** Instance id generator, injectable for deterministic tests. */
 	newInstanceId?: () => string;
@@ -132,7 +146,12 @@ export class CanvasRegistry {
 	}
 
 	/** Open a canvas instance and return what the host needs to render it. */
-	async open(extension: DiscoveredCanvasExtension, canvasId: string, input?: JsonValue): Promise<CanvasInstance> {
+	async open(
+		extension: DiscoveredCanvasExtension,
+		canvasId: string,
+		input?: JsonValue,
+		options?: CanvasCallOptions,
+	): Promise<CanvasInstance> {
 		const child = await this.child(extension);
 		if (!child.declarations.has(canvasId)) {
 			const known = [...child.declarations.keys()].join(", ") || "none";
@@ -148,13 +167,16 @@ export class CanvasRegistry {
 		}
 
 		const instanceId = this.newInstanceId();
-		const result = (await child.process.open({
-			sessionId: extension.id,
-			extensionId: extension.id,
-			canvasId,
-			instanceId,
-			input,
-		})) as CanvasProviderOpenResult | null;
+		let result: CanvasProviderOpenResult | null;
+		try {
+			result = (await child.process.open(
+				{ sessionId: extension.id, extensionId: extension.id, canvasId, instanceId, input },
+				options,
+			)) as CanvasProviderOpenResult | null;
+		} catch (cause) {
+			await this.abandon(extension.id, canvasId, instanceId);
+			throw cause;
+		}
 
 		const instance: CanvasInstance = {
 			extensionId: extension.id,
@@ -171,20 +193,28 @@ export class CanvasRegistry {
 	}
 
 	/** Invoke an action on an open instance. */
-	async invokeAction(key: CanvasInstanceKey, actionName: string, input?: JsonValue): Promise<JsonValue> {
+	async invokeAction(
+		key: CanvasInstanceKey,
+		actionName: string,
+		input?: JsonValue,
+		options?: CanvasCallOptions,
+	): Promise<JsonValue> {
 		const instance = this.instances.get(canvasInstanceKeyOf(key));
 		if (!instance) throw new Error(`No open canvas instance ${canvasInstanceKeyOf(key)}.`);
 		const child = this.children.get(key.extensionId);
 		if (!child) throw new Error(`Canvas extension "${key.extensionId}" is not running.`);
 
-		const result = await child.process.invokeAction({
-			sessionId: key.extensionId,
-			extensionId: key.extensionId,
-			canvasId: key.canvasId,
-			instanceId: key.instanceId,
-			actionName,
-			input,
-		});
+		const result = await child.process.invokeAction(
+			{
+				sessionId: key.extensionId,
+				extensionId: key.extensionId,
+				canvasId: key.canvasId,
+				instanceId: key.instanceId,
+				actionName,
+				input,
+			},
+			options,
+		);
 		instance.lastTouchedAt = this.now();
 		return result;
 	}
@@ -276,6 +306,44 @@ export class CanvasRegistry {
 		await Promise.all(children.map((child) => child.process.terminate()));
 	}
 
+	/**
+	 * Reconcile an instance we asked to open but never saw open — because a person
+	 * cancelled, or the call timed out. One path serves both.
+	 *
+	 * The provider protocol has no cancel verb, so the child may have finished opening
+	 * and be holding a port. `canvas.close` is the only way to tell it to let go, and
+	 * it can be sent because the instance id was generated before the open call.
+	 *
+	 * If the close itself goes unanswered the child is wedged, and the only remaining
+	 * lever is terminating it — but that kills every instance of that extension, so it
+	 * is done only when no other instance is live. When siblings exist the child is left
+	 * alone and the leak is reported, rather than paid for by someone else's open canvas.
+	 */
+	private async abandon(extensionId: string, canvasId: string, instanceId: string): Promise<void> {
+		const child = this.children.get(extensionId);
+		if (!child) return;
+		try {
+			await child.process.close({ sessionId: extensionId, extensionId, canvasId, instanceId });
+			return;
+		} catch (cause) {
+			const detail = cause instanceof Error ? cause.message : String(cause);
+			if (this.instancesOf(extensionId).length > 0) {
+				this.options.onDiagnostic?.(
+					extensionId,
+					`Stopped opening canvas "${canvasId}" but the extension did not confirm the close (${detail}). ` +
+						"It has other canvases open, so it was left running; a port may stay bound until it exits.",
+				);
+				return;
+			}
+			this.children.delete(extensionId);
+			await child.process.terminate();
+			this.options.onDiagnostic?.(
+				extensionId,
+				`Stopped opening canvas "${canvasId}" and the extension did not confirm the close (${detail}); it was stopped.`,
+			);
+		}
+	}
+
 	private instancesOf(extensionId: string): CanvasInstance[] {
 		return this.listInstances().filter((instance) => instance.extensionId === extensionId);
 	}
@@ -297,6 +365,7 @@ export class CanvasRegistry {
 			extensionId: extension.id,
 			entry: extension.entry,
 			runtime: this.options.runtime,
+			requestTimeoutMs: this.options.requestTimeoutMs,
 			cwd: path.dirname(extension.dir),
 			onLog: (message, level) => this.options.onLog?.(extension.id, message, level),
 			onStray: (line) => this.options.onStray?.(extension.id, line),

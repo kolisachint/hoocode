@@ -604,15 +604,8 @@ Still open:
 1. **Removing the Node requirement entirely** would need a Bun-native resolver, since
    the `module.register` hook path is disproven. Not worth it while every install path
    can reach a Node; recorded in case that changes.
-2. **`canvas.open` is not cancellable.** §11.4 gives it a generous ceiling, but a
-   canvas that hangs during `open` occupies a slot until it times out, and a person
-   watching a spinner has no way out. Because `instanceId` is generated *before* the
-   call, cancelling can close an instance we never saw open — one `abandon(instanceId)`
-   path serving both a user's Esc and the timeout, ending in `canvas.close` and, if
-   that goes unanswered, terminating the child.
-3. **`invoke_canvas_action` ignores its `AbortSignal`.** `ToolDefinition.execute`
-   receives one, and the tool drops it, so aborting a turn leaves the request running
-   and its answer arriving for a turn nobody awaits. Same machinery as (2).
+2. **A TUI surface for opening and cancelling.** The mechanism is in (§11.6); what is
+   missing is the spinner-with-Esc that lets a person use it.
 
 ---
 
@@ -749,6 +742,30 @@ model's result. `CanvasError.code` survives the process boundary as
 `CanvasCallError.code`, but only an `Error`'s *message* is rendered to the model, so
 the tool folds the code into the message rather than letting the typed-error intent
 (§8) stop at the tool boundary.
+
+### 11.6 Cancelling: one abandon path, and a signal that is honoured
+
+The provider protocol has no cancel verb, so aborting a call only ends *our* wait —
+the child may have finished opening and be holding a port. What makes cancelling safe
+is that `registry.open` generates the `instanceId` **before** calling `canvas.open`,
+so it can close an instance it never saw open.
+
+`abandon(extensionId, canvasId, instanceId)` serves a person's cancel and a timeout
+identically: send `canvas.close`; if that goes unanswered the child is wedged, and
+terminating it is the only lever left — but that kills every instance of that
+extension, so it happens only when no sibling instance is live. When siblings exist the
+child is left running and the possible leak is reported, rather than paid for by
+someone else's open canvas.
+
+`invoke_canvas_action` now passes the turn's `AbortSignal` through
+`registry.invokeAction` into the runner. A signal that is already aborted rejects
+without writing anything to the child, and a late answer for an abandoned call is
+dropped rather than mistaken for the next one — the runner ignores any response whose
+id is no longer pending.
+
+Per-method ceilings are also reachable now. They had been defined in `runner.ts` but
+`CanvasRegistryOptions` did not forward them, so nothing that goes through the registry
+— which is everything real — could set them. The timeout test is what caught it.
 
 ---
 

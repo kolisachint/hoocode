@@ -22,7 +22,6 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import {
 	CANVAS_ENVELOPE_VERSION,
-	CANVAS_ERROR_CODE_INTERNAL,
 	type CanvasChildToHostMessage,
 	CanvasMessageDecoder,
 	type CanvasProviderCloseRequest,
@@ -35,6 +34,21 @@ import {
 	type JsonValue,
 } from "./protocol.js";
 import { canvasResolverImportArg } from "./resolver.js";
+
+/** Code on the error a cancelled or timed-out provider call rejects with. */
+export const CANVAS_ERROR_CODE_ABORTED = "aborted";
+
+/** Per-call options. A signal cancels the wait; the child is reconciled by the caller. */
+export interface CanvasCallOptions {
+	/**
+	 * Stop waiting when this aborts.
+	 *
+	 * The provider protocol has no cancel verb, so aborting only ends *our* wait —
+	 * the child may still be working and may still answer. `registry.ts` is what
+	 * reconciles that, by closing the instance it will never see (see its `abandon`).
+	 */
+	signal?: AbortSignal;
+}
 
 /** Grace period between SIGTERM and SIGKILL, matching the documented CLI contract. */
 export const CANVAS_SHUTDOWN_GRACE_MS = 5_000;
@@ -97,9 +111,9 @@ export interface CanvasExtensionProcess {
 	readonly ready: Promise<CanvasReadyMessage>;
 	/** Whether the child is still running. */
 	readonly running: boolean;
-	open(params: CanvasProviderOpenRequest): Promise<JsonValue>;
-	close(params: CanvasProviderCloseRequest): Promise<JsonValue>;
-	invokeAction(params: CanvasProviderInvokeActionRequest): Promise<JsonValue>;
+	open(params: CanvasProviderOpenRequest, options?: CanvasCallOptions): Promise<JsonValue>;
+	close(params: CanvasProviderCloseRequest, options?: CanvasCallOptions): Promise<JsonValue>;
+	invokeAction(params: CanvasProviderInvokeActionRequest, options?: CanvasCallOptions): Promise<JsonValue>;
 	/** SIGTERM, then SIGKILL after {@link CANVAS_SHUTDOWN_GRACE_MS}. Resolves on exit. */
 	terminate(): Promise<void>;
 }
@@ -107,7 +121,8 @@ export interface CanvasExtensionProcess {
 interface PendingCall {
 	resolve: (value: JsonValue) => void;
 	reject: (reason: Error) => void;
-	timer: NodeJS.Timeout | undefined;
+	/** Clear the timer and detach the abort listener. Safe to call twice. */
+	dispose: () => void;
 }
 
 /** Error carrying the `CanvasError.code` an extension handler threw. */
@@ -155,7 +170,7 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 
 	const settleAll = (reason: Error): void => {
 		for (const call of pending.values()) {
-			if (call.timer) clearTimeout(call.timer);
+			call.dispose();
 			call.reject(reason);
 		}
 		pending.clear();
@@ -170,10 +185,12 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 				options.onLog?.(message.message, message.level, message.ephemeral);
 				return;
 			default: {
+				// A response for an id no longer pending is one whose caller stopped
+				// waiting — aborted or timed out. Dropping it is the whole point.
 				const call = pending.get(message.id);
 				if (!call) return;
 				pending.delete(message.id);
-				if (call.timer) clearTimeout(call.timer);
+				call.dispose();
 				if (message.type === "response") call.resolve(message.result);
 				else call.reject(new CanvasCallError(message.code, message.message));
 			}
@@ -209,27 +226,56 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 		options.onExit?.(code, signal);
 	});
 
-	const call = (method: CanvasProviderMethod, params: JsonValue): Promise<JsonValue> => {
+	const call = (
+		method: CanvasProviderMethod,
+		params: JsonValue,
+		callOptions?: CanvasCallOptions,
+	): Promise<JsonValue> => {
 		if (exited) {
 			return Promise.reject(new Error(`Canvas extension "${options.extensionId}" is not running.`));
+		}
+		const signal = callOptions?.signal;
+		if (signal?.aborted) {
+			// Nothing is written to the child: a request nobody awaits should not exist.
+			return Promise.reject(
+				new CanvasCallError(CANVAS_ERROR_CODE_ABORTED, `Canvas ${method} was cancelled before it started.`),
+			);
 		}
 		const id = nextId;
 		nextId += 1;
 		const timeoutMs = timeouts[method];
 		return new Promise<JsonValue>((resolve, reject) => {
+			const abandon = (error: Error): void => {
+				const entry = pending.get(id);
+				if (!entry) return;
+				pending.delete(id);
+				entry.dispose();
+				reject(error);
+			};
 			const timer =
 				timeoutMs > 0
-					? setTimeout(() => {
-							pending.delete(id);
-							reject(
-								new CanvasCallError(
-									CANVAS_ERROR_CODE_INTERNAL,
-									`Canvas extension "${options.extensionId}" did not answer ${method} within ${timeoutMs}ms.`,
+					? setTimeout(
+							() =>
+								abandon(
+									new CanvasCallError(
+										CANVAS_ERROR_CODE_ABORTED,
+										`Canvas extension "${options.extensionId}" did not answer ${method} within ${timeoutMs}ms.`,
+									),
 								),
-							);
-						}, timeoutMs)
+							timeoutMs,
+						)
 					: undefined;
-			pending.set(id, { resolve, reject, timer });
+			const onAbort = () =>
+				abandon(new CanvasCallError(CANVAS_ERROR_CODE_ABORTED, `Canvas ${method} was cancelled.`));
+			signal?.addEventListener("abort", onAbort, { once: true });
+			pending.set(id, {
+				resolve,
+				reject,
+				dispose: () => {
+					if (timer) clearTimeout(timer);
+					signal?.removeEventListener("abort", onAbort);
+				},
+			});
 			child.stdin.write(
 				encodeCanvasMessage({ envelope: CANVAS_ENVELOPE_VERSION, type: "request", id, method, params }),
 			);
@@ -242,9 +288,9 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 		get running() {
 			return !exited;
 		},
-		open: (params) => call("canvas.open", params as unknown as JsonValue),
-		close: (params) => call("canvas.close", params as unknown as JsonValue),
-		invokeAction: (params) => call("canvas.action.invoke", params as unknown as JsonValue),
+		open: (params, callOptions) => call("canvas.open", params as unknown as JsonValue, callOptions),
+		close: (params, callOptions) => call("canvas.close", params as unknown as JsonValue, callOptions),
+		invokeAction: (params, callOptions) => call("canvas.action.invoke", params as unknown as JsonValue, callOptions),
 		terminate: () =>
 			new Promise<void>((resolve) => {
 				if (exited) {

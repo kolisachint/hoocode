@@ -137,7 +137,7 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
 			"Invoke an action on an open canvas. Actions are implemented by the canvas extension itself: an action may change what the person is looking at and can have side effects of its own, so read the action's description before calling it.",
 		promptSnippet: "Act on an open canvas the user is looking at",
 		parameters: invokeParams,
-		async execute(_toolCallId, params: InvokeParams) {
+		async execute(_toolCallId, params: InvokeParams, signal) {
 			// instanceId is a UUID and unique across every canvas, so the model does not
 			// have to carry the extension and canvas ids too — the registry already knows
 			// which instance a given id belongs to.
@@ -154,7 +154,9 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
 			}
 
 			try {
-				const result = await registry.invokeAction(instance, params.action, params.input as never);
+				// Honour the turn's abort signal: without this, aborting a turn leaves the
+				// request running and its answer arriving for a turn nobody awaits.
+				const result = await registry.invokeAction(instance, params.action, params.input as never, { signal });
 				const { text, truncated } = renderResult(result);
 				return {
 					...textResult(text),

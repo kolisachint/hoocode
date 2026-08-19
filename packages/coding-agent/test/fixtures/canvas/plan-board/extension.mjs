@@ -20,7 +20,11 @@ const session = await joinSession({
 			id: "plan-board",
 			displayName: "Plan Board",
 			description: "A fixture plan board.",
-			inputSchema: { type: "object", properties: { title: { type: "string" } }, additionalProperties: false },
+			inputSchema: {
+				type: "object",
+				properties: { title: { type: "string" }, delayMs: { type: "integer", minimum: 0 } },
+				additionalProperties: false,
+			},
 			actions: [
 				{
 					name: "add_step",
@@ -62,6 +66,10 @@ const session = await joinSession({
 				},
 			],
 			open: async (ctx) => {
+				// `delayMs` lets a test cancel or time out an open that is genuinely in
+				// flight, rather than racing an instant one.
+				const delayMs = ctx.input?.delayMs ?? 0;
+				if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
 				const token = randomBytes(32).toString("base64url");
 				const steps = [];
 				const server = createServer((req, res) => {
@@ -86,6 +94,10 @@ const session = await joinSession({
 			},
 			onClose: async (ctx) => {
 				const entry = instances.get(ctx.instanceId);
+				// Reported either way: a close for an instance the extension never finished
+				// opening is exactly the abandon path, and a test needs to see it arrive.
+				// stdout is the protocol channel, so session.log is the observable route.
+				await session.log(`closed ${ctx.instanceId} (known=${entry !== undefined})`);
 				if (!entry) return;
 				instances.delete(ctx.instanceId);
 				await new Promise((resolve) => entry.server.close(resolve));
