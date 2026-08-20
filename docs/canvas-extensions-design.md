@@ -420,6 +420,14 @@ workspace-trust record on the same grounds, with no new mechanism needed:
 - Granting trust stays a human act. Per `trust.ts`, the autonomous install path
   never grants it — and a model deciding to execute a canvas that arrived in a
   clone is precisely the decision that record exists to keep with a person.
+- **`/new-canvas` grants it**, on the same footing as `/plugin install --scope
+  project`: a person typing that command in that directory *is* the human act,
+  and the alternative is absurd — the gate refusing a file the person created
+  seconds earlier, with the words "came with this repository". The grant is
+  wider than the one canvas, since it also releases the hooks and MCP servers of
+  plugins already committed there, so the command says so and names
+  `/plugin untrust`. Scaffolding is the only authoring path that grants; nothing
+  a *model* does ever will.
 
 ### 5.1 The gate is shared with the plugin gate
 
@@ -624,6 +632,10 @@ The template is complete rather than a stub, and that is the point — a canvas 
 no passive half, so a scaffold that does not run teaches nothing and cannot be
 checked. `test/new-canvas.test.ts` forks what it writes through the production
 runner and drives the protocol against it.
+
+Scaffolding grants workspace trust, for the reason in §5 — without it the gate
+withholds the canvas the moment it is written, which is how this shipped first
+and was wrong.
 
 **Acceptance:** `/new-canvas x` then `/canvas open x` works with no `/reload`
 in between; canvases are discovered when `/canvas` runs, not loaded at session
@@ -954,6 +966,7 @@ Shipped:
 | `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins, in discovery's own shape (§4.3) |
 | `src/extensions/core/canvas.ts` | `/canvas list \| open \| close`, the cancellable loader, and tool registration on first open |
 | `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action`, created only while a canvas is open |
+| `src/modes/interactive/resource-display.ts` | canvases in the startup / `/reload` summary — counted, and named with how to open them |
 | `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1); the CI canary runs it (§2.3) |
 
 Still to build:
