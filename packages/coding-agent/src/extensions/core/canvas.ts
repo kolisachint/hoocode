@@ -50,7 +50,7 @@ function renderOverview(overview: CanvasOverview): string {
 	if (overview.listings.length === 0) {
 		lines.push(
 			"No canvas extensions found in .agents/extensions, .github/extensions, ~/.copilot/extensions,",
-			"or any installed plugin. Scaffold one with /create-canvas <name>, or install one with /plugin.",
+			"or any installed plugin. Scaffold one with /new-canvas <name>, or install one with /plugin.",
 		);
 		return lines.join("\n");
 	}

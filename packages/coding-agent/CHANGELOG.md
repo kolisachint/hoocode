@@ -4,7 +4,7 @@
 
 ### Added
 
-- `/create-canvas <name>` — scaffold a canvas extension. Writes
+- `/new-canvas <name>` — scaffold a canvas extension. Writes
   `.agents/extensions/<name>/extension.mjs` (or `.github/extensions/` with
   `--platform github`), pre-wired with a declared canvas, one agent-callable
   action, and a token-gated loopback server. It runs as scaffolded, so
@@ -37,6 +37,11 @@
   and a cache left on the wrong ref is re-cloned rather than kept up to date
   forever. `/plugin install arcade-canvas@awesome-copilot` now lands a working
   canvas and says so.
+
+  The pin names a branch hoocode does not control, so a retired one falls back
+  to the default branch with a note saying entries there may be unbuilt, rather
+  than dropping the marketplace outright — and a fallback clone stays put
+  instead of being discarded and re-downloaded on every run.
 
 - Starting a new session, resuming one, or forking one shows the same loaded
   resources `/reload` does. The listing was rendered — extensions rebind before

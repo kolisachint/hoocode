@@ -584,7 +584,12 @@ window. Plus the §2.3 conformance test and protocol-version assertion.
 Canvas directories under `.github/extensions/` in an untrusted workspace are
 listed but never spawned. Ships with Phase 1 or immediately after. Not optional.
 
-### Phase 3 — `/create-canvas` authoring — shipped
+### Phase 3 — `/new-canvas` authoring — shipped
+
+Named `/new-canvas`, not `/create-canvas` as this section first proposed: the
+three sibling scaffolds are `/new-skill`, `/new-agent` and `/new-command`, and
+one odd verb in that set is a worse cost than a rename before anyone depends on
+it.
 
 A scaffold template in `src/extensions/core/scaffold.ts`, writing
 `.agents/extensions/<name>/extension.mjs` by default and `.github/extensions/`
@@ -595,10 +600,10 @@ be a worse lie than naming the two real homes.
 
 The template is complete rather than a stub, and that is the point — a canvas has
 no passive half, so a scaffold that does not run teaches nothing and cannot be
-checked. `test/create-canvas.test.ts` forks what it writes through the production
+checked. `test/new-canvas.test.ts` forks what it writes through the production
 runner and drives the protocol against it.
 
-**Acceptance:** `/create-canvas x` then `/canvas open x` works with no `/reload`
+**Acceptance:** `/new-canvas x` then `/canvas open x` works with no `/reload`
 in between; canvases are discovered when `/canvas` runs, not loaded at session
 start.
 
@@ -923,7 +928,7 @@ Touched:
 | `src/core/extensions/plugins/trust.ts` | gained the shared `isRepositorySupplied` / `shouldWithholdRepositorySupplied` used by both gates |
 | `src/core/extensions/loader.ts` | plugin gate delegates to the shared pair; its private `isUnderDir` removed |
 | `src/utils/paths.ts` | gained `isPathInside`; four private copies of it already existed elsewhere |
-| `src/extensions/core/scaffold.ts` | `/create-canvas` template (Phase 3) — ✅ shipped |
+| `src/extensions/core/scaffold.ts` | `/new-canvas` template (Phase 3) — ✅ shipped |
 | `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins (§4.3) |
 | `src/core/extensions/plugins/formats/shared.ts` | `detectCanvasExtensions`, shared by all three readers |
 | `docs/agent-spec-tree-map.md` | record `.github/extensions/` and `~/.copilot/extensions/` |

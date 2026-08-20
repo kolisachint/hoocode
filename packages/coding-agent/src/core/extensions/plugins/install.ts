@@ -190,9 +190,26 @@ async function checkedOutRef(dir: string): Promise<string | undefined> {
 	return name && name !== "HEAD" ? name : undefined;
 }
 
+/** Whether `ref` is still a branch on the remote. False on any network failure. */
+async function remoteHasRef(url: string, ref: string): Promise<boolean> {
+	const res = await execGit(["ls-remote", "--heads", "--", url, ref]);
+	return res.code === 0 && res.stdout.trim().length > 0;
+}
+
 export interface EnsureMarketplacesOptions {
 	/** Refresh regardless of the TTL. */
 	force?: boolean;
+	/**
+	 * Marketplaces to ensure; defaults to {@link WELL_KNOWN_MARKETPLACES}.
+	 *
+	 * A seam, and a deliberate one. The ref-pinning rules below — discard a cache
+	 * on the wrong branch, fall back when a pin is retired, and do not loop
+	 * between those two — are only exercised against a remote whose branches can
+	 * be moved and deleted, which no real marketplace will do on demand. Without
+	 * this the whole path could only be checked by hand against GitHub, and a
+	 * check that needs the network is a check that rots.
+	 */
+	marketplaces?: ReadonlyArray<{ name: string; url: string; ref?: string }>;
 }
 
 /**
@@ -203,13 +220,18 @@ export interface EnsureMarketplacesOptions {
  * stayed permanently invisible — the inherit half of the system quietly stopped
  * inheriting. Offline is non-fatal: each failure is returned and search degrades
  * to whatever is already on disk.
+ *
+ * The returned strings are notes for the caller to surface, not fatal errors —
+ * a retired ref that fell back to the default branch reports here too, because
+ * the consequence (entries that install with no capabilities) is otherwise
+ * invisible and inexplicable.
  */
 export async function ensureWellKnownMarketplaces(
 	agentDir: string = getAgentDir(),
 	options: EnsureMarketplacesOptions = {},
 ): Promise<string[]> {
 	const errors: string[] = [];
-	for (const wk of WELL_KNOWN_MARKETPLACES) {
+	for (const wk of options.marketplaces ?? WELL_KNOWN_MARKETPLACES) {
 		const dir = marketplaceCacheDir(wk.url, agentDir);
 		let present = existsSync(dir);
 		// A cache is keyed by URL, not by ref, so a marketplace that gains (or
@@ -217,14 +239,38 @@ export async function ensureWellKnownMarketplaces(
 		// `pull --ff-only` there would faithfully keep updating the wrong branch
 		// forever, so the mismatch is resolved the only way it can be: discard and
 		// clone the ref that is asked for.
-		if (present && wk.ref && (await checkedOutRef(dir)) !== wk.ref) {
+		//
+		// Guarded on the ref still existing upstream, which is not paranoia — it is
+		// what stops a loop. When a pin is retired, the fallback below leaves a
+		// default-branch clone in the slot; that clone mismatches the pin forever,
+		// so an unguarded check would discard and re-download it on every single
+		// run. Probing costs one `ls-remote` and only on the mismatch path.
+		if (present && wk.ref && (await checkedOutRef(dir)) !== wk.ref && (await remoteHasRef(wk.url, wk.ref))) {
 			rmSync(dir, { recursive: true, force: true });
 			present = false;
 		}
 		if (present && !options.force && !isStale(agentDir, wk.url)) continue;
 
 		mkdirSync(path.dirname(dir), { recursive: true });
-		const res = present ? await refreshClone(wk.url, dir, wk.ref) : await cloneGitRepo(wk.url, dir, wk.ref);
+		let res = present ? await refreshClone(wk.url, dir, wk.ref) : await cloneGitRepo(wk.url, dir, wk.ref);
+		// A pinned ref that cannot be cloned is the one failure worth retrying
+		// differently. The pin names someone else's distribution branch — for
+		// awesome-copilot, a name held in a workflow env var — so it can be renamed
+		// or retired without warning, and a cold cache would then lose that
+		// marketplace outright rather than degrade. A warm cache already degrades
+		// correctly (the stale copy is kept below, and it is *built* content, which
+		// beats an unbuilt default branch), so this applies to the cold case only.
+		let degraded: string | undefined;
+		if (res.code !== 0 && !present && wk.ref) {
+			rmSync(dir, { recursive: true, force: true });
+			const fallback = await cloneGitRepo(wk.url, dir);
+			if (fallback.code === 0) {
+				degraded =
+					`${wk.name}: branch "${wk.ref}" is unavailable, so the default branch was used instead. ` +
+					"Plugin entries there may be unbuilt and install with no capabilities.";
+				res = fallback;
+			}
+		}
 		if (res.code !== 0) {
 			// A failed *refresh* keeps the stale copy: an out-of-date index is far
 			// more useful than none, and the network may simply be down.
@@ -232,6 +278,7 @@ export async function ensureWellKnownMarketplaces(
 			errors.push(`${wk.name}: ${(res.stderr || res.stdout).trim()}`);
 			continue;
 		}
+		if (degraded) errors.push(degraded);
 		recordFetch(agentDir, wk.url);
 	}
 	return errors;

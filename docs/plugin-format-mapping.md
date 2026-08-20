@@ -204,7 +204,7 @@ unknown tokens warn and are skipped. The targets apply to:
   opt-in interop choice). The authoring tools expose no per-call platform
   parameter — the session flag governs.
 - **Workspace scaffolds** (`/new-skill`, `/new-agent`, `/new-command`,
-  `/create-canvas`): instead of `.hoocode/`, each target platform's *workspace*
+  `/new-canvas`): instead of `.hoocode/`, each target platform's *workspace*
   conventions are written (verified against the vendors' docs, 2026-07):
 
 | Artifact | `claude` | `github` (Copilot) | `agents` (native) |
@@ -217,7 +217,7 @@ unknown tokens warn and are skipped. The targets apply to:
 The canvas row is the one that does not go through the format registry's
 `WorkspaceLayout`, and the dash is why: Claude has no canvas convention, so a
 layout method returning nothing for that adapter would be a worse lie than
-naming the two real homes. `/create-canvas` targeted at `claude` alone declines
+naming the two real homes. `/new-canvas` targeted at `claude` alone declines
 and says so rather than writing into a directory that vendor will never read.
 
 Each adapter (`formats/claude.ts`, `formats/copilot.ts`, `formats/agents.ts`)

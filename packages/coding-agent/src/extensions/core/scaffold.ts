@@ -1,5 +1,5 @@
 /**
- * Scaffold commands — /new-skill, /new-agent, /new-command, and /create-canvas.
+ * Scaffold commands — /new-skill, /new-agent, /new-command, and /new-canvas.
  *
  * Without `--platform`, each creates a ready-to-edit resource file
  * under `.hoocode/` (hoocode's private surface), picked up on the next /reload.
@@ -408,7 +408,7 @@ export function setupScaffold(pi: ExtensionAPI): void {
 		},
 	});
 
-	// ── /create-canvas <name> ─────────────────────────────────────────────────
+	// ── /new-canvas <name> ────────────────────────────────────────────────────
 	// Creates a canvas extension — .agents/extensions/<name>/extension.mjs by
 	// default, or .github/extensions/<name>/ with --platform github (Copilot's
 	// project scope). Design: docs/canvas-extensions-design.md §9, Phase 3.
@@ -417,14 +417,14 @@ export function setupScaffold(pi: ExtensionAPI): void {
 	// discovered when /canvas runs, not loaded at session start, so the new
 	// extension is openable immediately.
 
-	pi.registerCommand("create-canvas", {
-		description: "Scaffold a new canvas extension. Usage: /create-canvas <name>",
+	pi.registerCommand("new-canvas", {
+		description: "Scaffold a new canvas extension. Usage: /new-canvas <name>",
 		getArgumentCompletions: () => [],
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
 			const name = args.trim();
 			const error = validateResourceName(name);
 			if (error) {
-				ctx.ui.notify(`/create-canvas: ${error}. Usage: /create-canvas <name>`, "warning");
+				ctx.ui.notify(`/new-canvas: ${error}. Usage: /new-canvas <name>`, "warning");
 				return;
 			}
 
@@ -435,7 +435,7 @@ export function setupScaffold(pi: ExtensionAPI): void {
 			const targets = requested.filter((platform) => CANVAS_HOMES[platform] !== undefined);
 			if (targets.length === 0) {
 				ctx.ui.notify(
-					`/create-canvas: no canvas home for platform "${requested.join(", ")}". ` +
+					`/new-canvas: no canvas home for platform "${requested.join(", ")}". ` +
 						"Canvas extensions exist under .agents/extensions (agents) and .github/extensions (github) only.",
 					"warning",
 				);

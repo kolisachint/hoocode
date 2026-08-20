@@ -1,5 +1,5 @@
 /**
- * `/create-canvas` — the authoring half of canvas extensions
+ * `/new-canvas` — the authoring half of canvas extensions
  * (`docs/canvas-extensions-design.md` §9, Phase 3).
  *
  * The interesting assertion is not that a file appeared. A canvas has no passive
@@ -20,7 +20,7 @@ import { setPlatforms } from "../src/core/extensions/plugins/formats/platform-ta
 import { setupScaffold } from "../src/extensions/core/scaffold.js";
 import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
-describe("/create-canvas", () => {
+describe("/new-canvas", () => {
 	let cwd: string;
 	let commands: Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>;
 	let notifications: string[];
@@ -28,7 +28,7 @@ describe("/create-canvas", () => {
 	let running: CanvasExtensionProcess | undefined;
 
 	beforeEach(() => {
-		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-create-canvas-"));
+		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-new-canvas-"));
 		commands = new Map();
 		notifications = [];
 		const pi = {
@@ -46,7 +46,7 @@ describe("/create-canvas", () => {
 		fs.rmSync(cwd, { recursive: true, force: true });
 	});
 
-	const run = (args: string) => commands.get("create-canvas")?.handler(args, ctx);
+	const run = (args: string) => commands.get("new-canvas")?.handler(args, ctx);
 
 	it("scaffolds into .agents/extensions, the native canvas search root", async () => {
 		await run("my-board");
