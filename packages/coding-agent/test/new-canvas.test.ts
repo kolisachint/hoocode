@@ -14,9 +14,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import { CANVAS_ENTRY_FILE } from "../src/core/canvas/discovery.js";
 import { type CanvasExtensionProcess, spawnCanvasExtension } from "../src/core/canvas/runner.js";
+import { CanvasSession } from "../src/core/canvas/session.js";
 import { setPlatforms } from "../src/core/extensions/plugins/formats/platform-targets.js";
+import { isWorkspaceTrusted, untrustWorkspace } from "../src/core/extensions/plugins/trust.js";
 import { setupScaffold } from "../src/extensions/core/scaffold.js";
 import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
@@ -26,9 +29,20 @@ describe("/new-canvas", () => {
 	let notifications: string[];
 	let ctx: unknown;
 	let running: CanvasExtensionProcess | undefined;
+	let home: string;
+	let agentDir: string;
+	let priorAgentDir: string | undefined;
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-new-canvas-"));
+		// The scaffold reaches for `getAgentDir()` to record workspace trust, so the
+		// trust store has to be redirected somewhere disposable — otherwise these
+		// tests would trust a temp directory on the developer's real machine.
+		home = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-new-canvas-home-"));
+		agentDir = path.join(home, ".hoocode");
+		fs.mkdirSync(agentDir, { recursive: true });
+		priorAgentDir = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = agentDir;
 		commands = new Map();
 		notifications = [];
 		const pi = {
@@ -43,7 +57,11 @@ describe("/new-canvas", () => {
 		await running?.terminate();
 		running = undefined;
 		setPlatforms(undefined);
+		untrustWorkspace(cwd, agentDir);
+		if (priorAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+		else process.env[ENV_AGENT_DIR] = priorAgentDir;
 		fs.rmSync(cwd, { recursive: true, force: true });
+		fs.rmSync(home, { recursive: true, force: true });
 	});
 
 	const run = (args: string) => commands.get("new-canvas")?.handler(args, ctx);
@@ -81,6 +99,51 @@ describe("/new-canvas", () => {
 		await run("kept");
 		expect(fs.readFileSync(file, "utf8")).toBe("// mine");
 		expect(notifications.join("\n")).toContain("already exist");
+	});
+
+	/**
+	 * The bug this locks down: `.agents/extensions/` is a project-scope root, so
+	 * the trust gate withheld a canvas the moment it was scaffolded — the command
+	 * printed "Open it now" and `/canvas open` then refused with "came with this
+	 * repository", of a file created seconds earlier.
+	 */
+	it("leaves the scaffolded canvas openable, and says that it trusted the workspace to do it", async () => {
+		expect(isWorkspaceTrusted(cwd, agentDir)).toBe(false);
+
+		await run("my-board");
+
+		expect(isWorkspaceTrusted(cwd, agentDir)).toBe(true);
+		// Granting is wider than the canvas, so it must be visible and reversible.
+		const said = notifications.join("\n");
+		expect(said).toContain("Trusted this workspace");
+		expect(said).toContain("/plugin untrust");
+
+		const session = new CanvasSession({
+			cwd,
+			homeDir: home,
+			agentDir,
+			resolveRuntime: async () => ({ available: true, runtime: canvasTestRuntime() }),
+		});
+		try {
+			const overview = await session.list();
+			expect(overview.listings.map((l) => l.extensionId)).toEqual(["my-board"]);
+			expect(overview.listings[0]?.withheld).toBeUndefined();
+			expect(overview.withheldCount).toBe(0);
+		} finally {
+			await session.dispose();
+		}
+	});
+
+	it("does not re-trust, or claim to, a workspace that was already trusted", async () => {
+		await run("first");
+		notifications.length = 0;
+		await run("second");
+		expect(notifications.join("\n")).not.toContain("Trusted this workspace");
+	});
+
+	it("grants nothing when it created nothing", async () => {
+		await run("Not A Slug");
+		expect(isWorkspaceTrusted(cwd, agentDir)).toBe(false);
 	});
 
 	it("scaffolds a canvas that actually runs: it declares itself and answers its action", async () => {

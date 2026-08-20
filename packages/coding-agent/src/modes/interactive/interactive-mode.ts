@@ -43,6 +43,9 @@ import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import { type AssistantUsageTotals, sumAssistantUsage } from "../../core/agent-session-stats.js";
+import { canvasSearchRoots, discoverCanvasExtensions } from "../../core/canvas/discovery.js";
+import { pluginCanvasExtensions } from "../../core/canvas/plugin-canvases.js";
+import { gateCanvasExtensions } from "../../core/canvas/trust.js";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -1051,6 +1054,29 @@ export class InteractiveMode {
 				getActiveMode: () => this.footerDataProvider.getActiveMode(),
 				getSubagentEnabled: () => this.footerDataProvider.getSubagentEnabled(),
 				getAgentCount: () => this.getDispatchableAgentCount(),
+				// Cheap and fork-free: directory entries plus each installed plugin's
+				// resolved canvas dirs. Computed inside the listing branch, so a quiet
+				// startup pays nothing for it.
+				getCanvases: () => {
+					try {
+						const cwd = this.sessionManager.getCwd();
+						const found = discoverCanvasExtensions(
+							canvasSearchRoots(cwd, os.homedir()),
+							pluginCanvasExtensions(cwd),
+						);
+						const gated = gateCanvasExtensions(found, cwd);
+						return [
+							...gated.runnable.map((e) => ({ id: e.id, scope: e.scope as string, withheld: false })),
+							...gated.withheld.map((w) => ({
+								id: w.extension.id,
+								scope: w.extension.scope as string,
+								withheld: true,
+							})),
+						];
+					} catch {
+						return [];
+					}
+				},
 				getAgents: () => {
 					if (!this.footerDataProvider.getSubagentEnabled()) return [];
 					try {

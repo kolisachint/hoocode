@@ -36,6 +36,7 @@ export const CATEGORY_GLYPH = {
 	themes: "◒",
 	context: "❯",
 	extensions: "⊹",
+	canvases: "▤",
 } as const;
 
 export type CategoryKey = keyof typeof CATEGORY_GLYPH;

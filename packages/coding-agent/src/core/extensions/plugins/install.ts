@@ -196,6 +196,21 @@ async function remoteHasRef(url: string, ref: string): Promise<boolean> {
 	return res.code === 0 && res.stdout.trim().length > 0;
 }
 
+/**
+ * Whether {@link ensureWellKnownMarketplaces} would actually reach the network.
+ *
+ * Exists so an interactive caller can say "Refreshing marketplace indices…"
+ * before a multi-second clone and stay silent when the answer is already on
+ * disk. Deliberately does not probe the remote — the ref-mismatch case needs
+ * network to detect, so this under-reports rather than paying for a round trip
+ * to decide whether to print a line.
+ */
+export function wellKnownMarketplacesAreStale(agentDir: string = getAgentDir()): boolean {
+	return WELL_KNOWN_MARKETPLACES.some(
+		(wk) => !existsSync(marketplaceCacheDir(wk.url, agentDir)) || isStale(agentDir, wk.url),
+	);
+}
+
 export interface EnsureMarketplacesOptions {
 	/** Refresh regardless of the TTL. */
 	force?: boolean;

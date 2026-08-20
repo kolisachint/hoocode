@@ -15,10 +15,12 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { getAgentDir } from "../../config.js";
 import { CANVAS_ENTRY_FILE } from "../../core/canvas/discovery.js";
 import { getFormatByPlatform } from "../../core/extensions/plugins/formats/index.js";
 import { getWorkspacePlatforms } from "../../core/extensions/plugins/formats/platform-targets.js";
 import type { EmittedFile, MarketplacePlatform, WorkspaceLayout } from "../../core/extensions/plugins/formats/types.js";
+import { isWorkspaceTrusted, trustWorkspace } from "../../core/extensions/plugins/trust.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 
 /** Validates a resource name: lowercase a-z, 0-9, hyphens, no leading/trailing/double hyphens. */
@@ -458,10 +460,30 @@ export function setupScaffold(pi: ExtensionAPI): void {
 				created.push(relative);
 			}
 
+			// A canvas lands in the working tree, which is where the trust gate looks
+			// (`core/canvas/trust.ts`) — so without this the canvas you just asked for
+			// is withheld the moment you try to open it, and refused with "came with
+			// this repository", which is not true of a file created seconds ago.
+			//
+			// Granting is the same call `/plugin install --scope project` makes, for
+			// the same stated reason: a person typing this command in this directory
+			// is the human act workspace trust asks for. It is deliberately wider than
+			// this one canvas — it also lets plugins already committed here run their
+			// hooks and MCP servers — so it is said out loud and pointed at its
+			// reverse, never done silently.
+			let trustNote = "";
+			if (created.length > 0 && !isWorkspaceTrusted(ctx.cwd, getAgentDir())) {
+				trustWorkspace(ctx.cwd, getAgentDir());
+				trustNote =
+					`Trusted this workspace so the canvas can run. Plugins committed here may now run hooks ` +
+					`and MCP servers too; \`/plugin untrust\` reverses it.`;
+			}
+
 			const lines: string[] = [];
 			if (created.length > 0) {
 				lines.push("Canvas created:", ...created.map((file) => `  ${file}`));
 				lines.push("", `Open it now with /canvas open ${name} — no /reload needed.`);
+				if (trustNote) lines.push("", trustNote);
 			}
 			if (skipped.length > 0) {
 				lines.push("Skipped (already exist):", ...skipped.map((file) => `  ${file}`));

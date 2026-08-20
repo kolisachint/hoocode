@@ -11,6 +11,14 @@
   `/canvas open <name>` works immediately — no `/reload`, because canvases are
   discovered when `/canvas` runs rather than loaded at session start.
 
+  Scaffolding trusts the workspace, the same grant `/plugin install --scope
+  project` makes and for the same reason: a canvas lands in the working tree,
+  which is where the trust gate looks, so without it the canvas you just asked
+  for would be refused with "came with this repository" seconds after you
+  created it. The grant is wider than the one canvas — plugins committed here
+  may then run hooks and MCP servers — so it is stated in the output and
+  `/plugin untrust` reverses it.
+
 - Plugins can ship canvases, and `/canvas` now finds them. Both real catalog
   layouts are read: the Copilot manifest's `"extensions": "<dir>"` path key
   (`Redth/mobile-canvas-ghcp`) and the Agent Plugins vendor content namespace
@@ -24,6 +32,12 @@
 - Subagents in the `com.github.copilot/agents/` namespace load. This is where
   `github/awesome-copilot` publishes all 125 of its plugin agents; they were
   previously read as nothing.
+
+- Canvases appear in the startup and `/reload` surface — a counted cell, and a
+  detail row per canvas carrying either `/canvas open <id>` or the reason it is
+  withheld. Installing a canvas plugin used to report "1 plugin" and give no
+  sign a canvas existed, which is a large part of why the gap below went
+  unnoticed.
 
 ### Fixed
 
@@ -42,6 +56,14 @@
   to the default branch with a note saying entries there may be unbuilt, rather
   than dropping the marketplace outright — and a fallback clone stays put
   instead of being discarded and re-downloaded on every run.
+
+- `/plugin list` and `/plugin install` refresh the curated marketplace indices
+  before reading them, as `SearchPlugins` already did. The human path never did,
+  so a stale — or, after the fix below, a *wrong-ref* — cache could persist
+  indefinitely: someone who only ever typed `/plugin install` would have kept
+  installing unbuilt stubs with no way to know why. TTL-respecting, so it is
+  free when the cache is fresh, and it says so before a fetch that will take a
+  moment.
 
 - Starting a new session, resuming one, or forking one shows the same loaded
   resources `/reload` does. The listing was rendered — extensions rebind before

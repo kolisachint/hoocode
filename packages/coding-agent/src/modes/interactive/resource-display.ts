@@ -458,6 +458,13 @@ export interface ResourceDisplayDeps {
 	getAgentCount(): number;
 	/** Dispatchable agents for this cwd (empty when Task tool is off). */
 	getAgents(): AgentDefinition[];
+	/**
+	 * Canvases that could be opened here (`/canvas`). Listing one is free — it
+	 * reads directory entries and never forks — which is why they can appear in a
+	 * startup summary at all, and why a withheld one is reported rather than
+	 * hidden: the point of the trust gate is that a person can see the offer.
+	 */
+	getCanvases(): Array<{ id: string; scope: string; withheld: boolean }>;
 	/** Terminal width, used to keep one-line-per-item sections to one line. */
 	getColumns?(): number | undefined;
 	quietStartup(): boolean;
@@ -549,6 +556,7 @@ export function showLoadedResources(
 		const loadedThemes = themesResult.themes;
 		const customThemes = loadedThemes.filter((t) => t.sourcePath);
 		const agentCount = deps.getAgentCount();
+		const canvases = deps.getCanvases();
 		// Live servers, whatever their source (mcp.json, per-server files, plugins) —
 		// the loader records each connect outcome, so this is what the session can
 		// actually call, not what was merely configured.
@@ -568,7 +576,7 @@ export function showLoadedResources(
 		// One cell per loaded capability class (glyph + count + label), so "what
 		// can this session do" reads at a glance; names/paths sit one keypress
 		// away in the details below. Cells pad to a common width, four per row.
-		const plural = (n: number, s: string) => (n === 1 ? s : `${s}s`);
+		const plural = (n: number, s: string, many?: string) => (n === 1 ? s : (many ?? `${s}s`));
 		const cells: Array<{ key: CategoryKey; count: number; label: string }> = [];
 		if (skills.length > 0) cells.push({ key: "skills", count: skills.length, label: plural(skills.length, "skill") });
 		if (templates.length > 0) {
@@ -587,6 +595,9 @@ export function showLoadedResources(
 				count: codeExtensionCount,
 				label: plural(codeExtensionCount, "extension"),
 			});
+		}
+		if (canvases.length > 0) {
+			cells.push({ key: "canvases", count: canvases.length, label: plural(canvases.length, "canvas", "canvases") });
 		}
 		if (customThemes.length > 0) {
 			cells.push({ key: "themes", count: customThemes.length, label: plural(customThemes.length, "theme") });
@@ -741,6 +752,24 @@ export function showLoadedResources(
 				formatPackagePath: (item) => getShortPath(item.path, item.sourceInfo),
 			});
 			detailSections.push(`${sectionHeader("Themes")}\n${themeList}`);
+		}
+		// Canvases last: they are the one capability nothing here has *loaded* —
+		// each is a process waiting to be asked for, so the section says how to ask
+		// rather than where the file is.
+		if (canvases.length > 0) {
+			const canvasList = renderCompactRows(
+				canvases.map((canvas) => ({
+					name: canvas.id,
+					detail: canvas.withheld
+						? "withheld: untrusted workspace — /plugin trust"
+						: `${canvas.scope} · /canvas open ${canvas.id}`,
+				})),
+				{
+					columns: deps.getColumns?.(),
+					style: { name: (text) => theme.fg("muted", text), detail: (text) => theme.fg("dim", text) },
+				},
+			);
+			detailSections.push(`${sectionHeader("Canvases")}\n${canvasList}`);
 		}
 
 		if (detailSections.length > 0) {

@@ -40,6 +40,7 @@ import { getAgentDir } from "../../config.js";
 import { CATEGORY_GLYPH, SEGMENT_SEP } from "../../core/brand.js";
 import { getPlugin } from "../../core/extensions/plugins/authoring.js";
 import {
+	ensureWellKnownMarketplaces,
 	findAvailablePlugin,
 	installAvailablePlugin,
 	listAvailablePlugins,
@@ -47,6 +48,7 @@ import {
 	readMarketplaceRecords,
 	refreshMarketplaces,
 	uninstallPlugin,
+	wellKnownMarketplacesAreStale,
 } from "../../core/extensions/plugins/install.js";
 import { availablePluginGroups } from "../../core/extensions/plugins/listing.js";
 import {
@@ -131,6 +133,30 @@ function listHeader(
 ): string {
 	const head = `${theme.fg("accent", glyph)} ${theme.fg("muted", summary)}`;
 	return hint ? `${head}\n${theme.fg("dim", `  ${hint}`)}` : head;
+}
+
+/**
+ * Bring the curated marketplace indices up to date before reading them.
+ *
+ * `SearchPlugins` (the model's path) has always done this; the human `/plugin`
+ * path never did, so a cache could sit stale indefinitely — and a *wrong* cache
+ * with it. That is not hypothetical: `awesome-copilot` is pinned to its built
+ * distribution branch, and the correction only reaches a cache that something
+ * asks to refresh. Someone who only ever types `/plugin install` would have kept
+ * installing unbuilt stubs and had no way to know why.
+ *
+ * TTL-respecting, so it is free when the cache is fresh. The notice is printed
+ * only when a fetch will actually happen, because a silent multi-second clone
+ * looks like a hang and a line printed every time looks like noise.
+ */
+async function refreshIndices(ctx: ExtensionCommandContext): Promise<void> {
+	const agentDir = getAgentDir();
+	if (wellKnownMarketplacesAreStale(agentDir)) ctx.ui.notify("Refreshing marketplace indices…", "info");
+	const errors = await ensureWellKnownMarketplaces(agentDir);
+	// Non-fatal by construction: whatever is already on disk still lists. Worth
+	// saying though — a retired ref reports here, and its consequence (entries
+	// that install with no capabilities) is otherwise inexplicable.
+	if (errors.length > 0) ctx.ui.notify(`Marketplace indices: ${errors.join("; ")}`, "warning");
 }
 
 export function setupMarketplace(pi: ExtensionAPI): void {
@@ -239,6 +265,7 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 
 			// ── list available plugins ──────────────────────────────────────────
 			if (trimmed === "list" || trimmed === "") {
+				await refreshIndices(ctx);
 				const available = listAvailablePlugins(cwd);
 				if (available.length === 0) {
 					ctx.ui.notify("No plugins available. Add a marketplace first.", "info");
@@ -282,6 +309,7 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 					ctx.ui.notify(`Unknown scope "${scopeMatch[1]}". Use --scope user or --scope project.`, "warning");
 					return;
 				}
+				await refreshIndices(ctx);
 				if (!findAvailablePlugin(cwd, name)) {
 					ctx.ui.notify(`Plugin "${name}" not found in any marketplace.`, "error");
 					return;
