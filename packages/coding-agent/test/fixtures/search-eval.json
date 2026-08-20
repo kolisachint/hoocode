@@ -32,8 +32,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/extensions/loader.ts",
-        "startLine": 141,
-        "endLine": 188,
+        "startLine": 156,
+        "endLine": 203,
         "anchor": "export function createExtensionRuntime"
       }
     ]
@@ -45,8 +45,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/extensions/loader.ts",
-        "startLine": 454,
-        "endLine": 478,
+        "startLine": 469,
+        "endLine": 493,
         "anchor": "export async function loadExtensions"
       }
     ]
@@ -370,8 +370,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/extensions/loader.ts",
-        "startLine": 163,
-        "endLine": 167,
+        "startLine": 178,
+        "endLine": 182,
         "anchor": "\"Extension runtime not initialized\""
       }
     ]
@@ -758,14 +758,14 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/extensions/loader.ts",
-        "startLine": 454,
-        "endLine": 478,
+        "startLine": 469,
+        "endLine": 493,
         "anchor": "export async function loadExtensions"
       },
       {
         "path": "packages/coding-agent/src/core/extensions/loader.ts",
-        "startLine": 141,
-        "endLine": 188,
+        "startLine": 156,
+        "endLine": 203,
         "anchor": "export function createExtensionRuntime"
       }
     ]
