@@ -1,7 +1,10 @@
+import * as fs from "node:fs";
+import * as os from "node:os";
 import { homedir } from "node:os";
 import * as path from "node:path";
 import { type AutocompleteProvider, CombinedAutocompleteProvider, Container } from "@kolisachint/hoocode-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.js";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.js";
 import type { SourceInfo } from "../src/core/source-info.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
@@ -243,6 +246,10 @@ describe("InteractiveMode.showLoadedResources", () => {
 			sessionManager: {
 				getCwd: () => options.cwd ?? "/tmp/project",
 			},
+			// Sections that render one row per item ask for the terminal width. Only
+			// reached once such a section has content, which is why the harness went
+			// without this until the Canvases section arrived.
+			ui: { terminal: { columns: 100 } },
 			footerDataProvider: {
 				getActiveMode: () => "build",
 				getSubagentEnabled: () => false,
@@ -433,6 +440,46 @@ describe("InteractiveMode.showLoadedResources", () => {
 		// and the same key opens both.
 		expect(output).not.toContain("commit");
 		expect(output).not.toContain("details");
+	});
+
+	test("counts canvases, and the detail says how to open one", () => {
+		// A canvas is the one capability nothing loads: it waits to be asked for.
+		// Before this it was absent from the summary entirely, so installing a
+		// canvas plugin reported "1 plugin" and gave no sign a canvas existed.
+		//
+		// Driven through real discovery rather than a stub, because the thing worth
+		// checking is that the startup path finds a canvas at all. `~/.copilot/
+		// extensions` is a real search root on the machine running this, so the
+		// assertions name their own fixtures and never a total.
+		const repo = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-canvas-surface-"));
+		const home = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-canvas-surface-home-"));
+		const priorAgentDir = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = path.join(home, ".hoocode");
+		try {
+			const dir = path.join(repo, ".agents", "extensions", "repo-board");
+			fs.mkdirSync(dir, { recursive: true });
+			fs.writeFileSync(path.join(dir, "extension.mjs"), "export {};\n", "utf8");
+
+			const fakeThis = createShowLoadedResourcesThis({
+				quietStartup: false,
+				toolOutputExpanded: true,
+				cwd: repo,
+			});
+			(InteractiveMode as any).prototype.showLoadedResources.call(fakeThis, { force: false });
+
+			const output = normalizeRenderedOutput(fakeThis.chatContainer);
+			expect(output).toMatch(/\d+ canvas(es)?/);
+			expect(output).toContain("repo-board");
+			// Untrusted workspace: surfaced with its reason, never hidden — and the
+			// summary points at the command that fixes it.
+			expect(output).toContain("untrusted workspace");
+			expect(output).toContain("/plugin trust");
+		} finally {
+			if (priorAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+			else process.env[ENV_AGENT_DIR] = priorAgentDir;
+			fs.rmSync(repo, { recursive: true, force: true });
+			fs.rmSync(home, { recursive: true, force: true });
+		}
 	});
 
 	test("shows the detailed listing when expanded", () => {

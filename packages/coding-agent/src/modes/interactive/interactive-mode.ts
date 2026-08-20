@@ -43,6 +43,9 @@ import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import { type AssistantUsageTotals, sumAssistantUsage } from "../../core/agent-session-stats.js";
+import { canvasSearchRoots, discoverCanvasExtensions } from "../../core/canvas/discovery.js";
+import { pluginCanvasExtensions } from "../../core/canvas/plugin-canvases.js";
+import { gateCanvasExtensions } from "../../core/canvas/trust.js";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -1051,6 +1054,29 @@ export class InteractiveMode {
 				getActiveMode: () => this.footerDataProvider.getActiveMode(),
 				getSubagentEnabled: () => this.footerDataProvider.getSubagentEnabled(),
 				getAgentCount: () => this.getDispatchableAgentCount(),
+				// Cheap and fork-free: directory entries plus each installed plugin's
+				// resolved canvas dirs. Computed inside the listing branch, so a quiet
+				// startup pays nothing for it.
+				getCanvases: () => {
+					try {
+						const cwd = this.sessionManager.getCwd();
+						const found = discoverCanvasExtensions(
+							canvasSearchRoots(cwd, os.homedir()),
+							pluginCanvasExtensions(cwd),
+						);
+						const gated = gateCanvasExtensions(found, cwd);
+						return [
+							...gated.runnable.map((e) => ({ id: e.id, scope: e.scope as string, withheld: false })),
+							...gated.withheld.map((w) => ({
+								id: w.extension.id,
+								scope: w.extension.scope as string,
+								withheld: true,
+							})),
+						];
+					} catch {
+						return [];
+					}
+				},
 				getAgents: () => {
 					if (!this.footerDataProvider.getSubagentEnabled()) return [];
 					try {
@@ -1164,6 +1190,10 @@ export class InteractiveMode {
 
 		const extensionRunner = this.session.extensionRunner;
 		this.setupExtensionShortcuts(extensionRunner);
+		// The startup path draws the listing here, because it renders messages
+		// without clearing. A *rebind* (/new, /resume, /fork) clears the transcript
+		// straight afterwards, so `renderCurrentSessionState` draws it again — this
+		// call is the one startup keeps.
 		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
 		this.showStartupNoticesIfNeeded();
 	}
@@ -1207,6 +1237,17 @@ export class InteractiveMode {
 		process.exit(1);
 	}
 
+	/**
+	 * Reset the transcript to whatever the (possibly just-swapped) session holds.
+	 *
+	 * Every caller — /new, /resume, /fork — reaches here *after* the runtime has
+	 * rebound extensions, and rebinding is what renders the loaded-resource
+	 * listing. Clearing the chat therefore wiped the listing a moment after it was
+	 * drawn, which is why /reload showed skills, agents and plugins and starting a
+	 * new session showed nothing. Re-rendering it here is what makes the surface
+	 * common: one call site, so a session change of any kind reports the same
+	 * capabilities /reload does.
+	 */
 	private renderCurrentSessionState(): void {
 		this.chatContainer.clear();
 		this.pendingMessagesContainer.clear();
@@ -1214,6 +1255,7 @@ export class InteractiveMode {
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
+		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
 		this.renderInitialMessages();
 	}
 

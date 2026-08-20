@@ -70,7 +70,7 @@ export function defaultMarketplaceRecord(): MarketplaceRecord {
  * what is discoverable; installed plugins are still never auto-updated, and
  * plugin sources inside the official index are sha-pinned.
  */
-export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string }> = [
+export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string; ref?: string }> = [
 	{ name: "claude-plugins-official", url: "https://github.com/anthropics/claude-plugins-official" },
 	// The Copilot plugin directory ships both a `.github/plugin/marketplace.json`
 	// and a `.claude-plugin/marketplace.json`, so it parses with
@@ -78,10 +78,20 @@ export const WELL_KNOWN_MARKETPLACES: ReadonlyArray<{ name: string; url: string 
 	{ name: "copilot-plugins", url: "https://github.com/github/copilot-plugins" },
 	// GitHub's community index, `.github/plugin/marketplace.json`. Same owner as
 	// copilot-plugins, which is what makes it a source-trust decision of the same
-	// kind. Note that most of its in-repo entries carry their content in Copilot
-	// UI `extensions/`, a surface hoocode does not model — those install and load
-	// nothing, and say so.
-	{ name: "awesome-copilot", url: "https://github.com/github/awesome-copilot" },
+	// kind.
+	//
+	// Pinned to the `marketplace` branch, and that is load-bearing. On `main` a
+	// `plugins/<name>/` directory holds only `plugin.json` and `README.md`; the
+	// real content lives in the repository's top-level `agents/`, `skills/` and
+	// `extensions/` trees and is named from the manifest under the repo's own
+	// `extensions["com.github.awesome-copilot"]` namespace. CI *materializes* those
+	// references into each plugin directory and publishes the result on
+	// `marketplace` (`eng/materialize-plugins.mjs`), which is the branch the
+	// vendor's own `copilot plugin install` consumes. Cloning the default branch
+	// installed the stub — every entry landed with no capabilities and said so,
+	// which read as "hoocode does not model this surface" when it was really
+	// "hoocode fetched the wrong ref".
+	{ name: "awesome-copilot", url: "https://github.com/github/awesome-copilot", ref: "marketplace" },
 ];
 
 /**
@@ -140,13 +150,20 @@ function readJsonFile<T>(file: string): T | null {
  * offline destroyed a perfectly good index — the opposite of the "offline is
  * non-fatal" property the caller depends on.
  */
-async function refreshClone(url: string, dir: string): Promise<{ code: number; stdout: string; stderr: string }> {
+async function refreshClone(
+	url: string,
+	dir: string,
+	ref?: string,
+): Promise<{ code: number; stdout: string; stderr: string }> {
 	const pulled = await execGit(["-C", dir, "pull", "--ff-only"]);
 	if (pulled.code === 0) return pulled;
 
 	const staging = mkdtempSync(path.join(os.tmpdir(), "hoo-market-refresh-"));
 	const target = path.join(staging, "clone");
-	const cloned = await cloneGitRepo(url, target);
+	// The re-clone must land on the same ref the cache was created from, or a
+	// pinned marketplace silently falls back to the default branch on its first
+	// non-fast-forward refresh.
+	const cloned = await cloneGitRepo(url, target, ref);
 	if (cloned.code !== 0) {
 		rmSync(staging, { recursive: true, force: true });
 		return cloned;
@@ -162,9 +179,52 @@ async function refreshClone(url: string, dir: string): Promise<{ code: number; s
 	return cloned;
 }
 
+/**
+ * Branch name a cached clone is sitting on, or undefined when it is detached or
+ * unreadable (a corrupt cache answers "not the ref I want", which is correct).
+ */
+async function checkedOutRef(dir: string): Promise<string | undefined> {
+	const res = await execGit(["-C", dir, "rev-parse", "--abbrev-ref", "HEAD"]);
+	if (res.code !== 0) return undefined;
+	const name = res.stdout.trim();
+	return name && name !== "HEAD" ? name : undefined;
+}
+
+/** Whether `ref` is still a branch on the remote. False on any network failure. */
+async function remoteHasRef(url: string, ref: string): Promise<boolean> {
+	const res = await execGit(["ls-remote", "--heads", "--", url, ref]);
+	return res.code === 0 && res.stdout.trim().length > 0;
+}
+
+/**
+ * Whether {@link ensureWellKnownMarketplaces} would actually reach the network.
+ *
+ * Exists so an interactive caller can say "Refreshing marketplace indices…"
+ * before a multi-second clone and stay silent when the answer is already on
+ * disk. Deliberately does not probe the remote — the ref-mismatch case needs
+ * network to detect, so this under-reports rather than paying for a round trip
+ * to decide whether to print a line.
+ */
+export function wellKnownMarketplacesAreStale(agentDir: string = getAgentDir()): boolean {
+	return WELL_KNOWN_MARKETPLACES.some(
+		(wk) => !existsSync(marketplaceCacheDir(wk.url, agentDir)) || isStale(agentDir, wk.url),
+	);
+}
+
 export interface EnsureMarketplacesOptions {
 	/** Refresh regardless of the TTL. */
 	force?: boolean;
+	/**
+	 * Marketplaces to ensure; defaults to {@link WELL_KNOWN_MARKETPLACES}.
+	 *
+	 * A seam, and a deliberate one. The ref-pinning rules below — discard a cache
+	 * on the wrong branch, fall back when a pin is retired, and do not loop
+	 * between those two — are only exercised against a remote whose branches can
+	 * be moved and deleted, which no real marketplace will do on demand. Without
+	 * this the whole path could only be checked by hand against GitHub, and a
+	 * check that needs the network is a check that rots.
+	 */
+	marketplaces?: ReadonlyArray<{ name: string; url: string; ref?: string }>;
 }
 
 /**
@@ -175,19 +235,57 @@ export interface EnsureMarketplacesOptions {
  * stayed permanently invisible — the inherit half of the system quietly stopped
  * inheriting. Offline is non-fatal: each failure is returned and search degrades
  * to whatever is already on disk.
+ *
+ * The returned strings are notes for the caller to surface, not fatal errors —
+ * a retired ref that fell back to the default branch reports here too, because
+ * the consequence (entries that install with no capabilities) is otherwise
+ * invisible and inexplicable.
  */
 export async function ensureWellKnownMarketplaces(
 	agentDir: string = getAgentDir(),
 	options: EnsureMarketplacesOptions = {},
 ): Promise<string[]> {
 	const errors: string[] = [];
-	for (const wk of WELL_KNOWN_MARKETPLACES) {
+	for (const wk of options.marketplaces ?? WELL_KNOWN_MARKETPLACES) {
 		const dir = marketplaceCacheDir(wk.url, agentDir);
-		const present = existsSync(dir);
+		let present = existsSync(dir);
+		// A cache is keyed by URL, not by ref, so a marketplace that gains (or
+		// changes) a pin finds a clone of the wrong branch sitting in its slot. A
+		// `pull --ff-only` there would faithfully keep updating the wrong branch
+		// forever, so the mismatch is resolved the only way it can be: discard and
+		// clone the ref that is asked for.
+		//
+		// Guarded on the ref still existing upstream, which is not paranoia — it is
+		// what stops a loop. When a pin is retired, the fallback below leaves a
+		// default-branch clone in the slot; that clone mismatches the pin forever,
+		// so an unguarded check would discard and re-download it on every single
+		// run. Probing costs one `ls-remote` and only on the mismatch path.
+		if (present && wk.ref && (await checkedOutRef(dir)) !== wk.ref && (await remoteHasRef(wk.url, wk.ref))) {
+			rmSync(dir, { recursive: true, force: true });
+			present = false;
+		}
 		if (present && !options.force && !isStale(agentDir, wk.url)) continue;
 
 		mkdirSync(path.dirname(dir), { recursive: true });
-		const res = present ? await refreshClone(wk.url, dir) : await cloneGitRepo(wk.url, dir);
+		let res = present ? await refreshClone(wk.url, dir, wk.ref) : await cloneGitRepo(wk.url, dir, wk.ref);
+		// A pinned ref that cannot be cloned is the one failure worth retrying
+		// differently. The pin names someone else's distribution branch — for
+		// awesome-copilot, a name held in a workflow env var — so it can be renamed
+		// or retired without warning, and a cold cache would then lose that
+		// marketplace outright rather than degrade. A warm cache already degrades
+		// correctly (the stale copy is kept below, and it is *built* content, which
+		// beats an unbuilt default branch), so this applies to the cold case only.
+		let degraded: string | undefined;
+		if (res.code !== 0 && !present && wk.ref) {
+			rmSync(dir, { recursive: true, force: true });
+			const fallback = await cloneGitRepo(wk.url, dir);
+			if (fallback.code === 0) {
+				degraded =
+					`${wk.name}: branch "${wk.ref}" is unavailable, so the default branch was used instead. ` +
+					"Plugin entries there may be unbuilt and install with no capabilities.";
+				res = fallback;
+			}
+		}
 		if (res.code !== 0) {
 			// A failed *refresh* keeps the stale copy: an out-of-date index is far
 			// more useful than none, and the network may simply be down.
@@ -195,6 +293,7 @@ export async function ensureWellKnownMarketplaces(
 			errors.push(`${wk.name}: ${(res.stderr || res.stdout).trim()}`);
 			continue;
 		}
+		if (degraded) errors.push(degraded);
 		recordFetch(agentDir, wk.url);
 	}
 	return errors;
@@ -470,6 +569,10 @@ function loadableCapabilities(plugin: NormalizedPlugin): string[] {
 		plugin.hooks && "hooks",
 		plugin.mcpServers && Object.keys(plugin.mcpServers).length > 0 && "MCP servers",
 		plugin.providers?.length && "providers",
+		// Not loaded at session start like the rest — a canvas has no passive half —
+		// but it is unquestionably something the install brought, and reporting it
+		// is what stops a canvas plugin reading as an install that did nothing.
+		plugin.canvasExtensions?.length && "canvases",
 	].filter((c): c is string => typeof c === "string");
 }
 
@@ -600,16 +703,21 @@ export async function installAvailablePlugin(
 		// caller never asked for.
 		message += ` Listed by ListPlugins as "${parsed.id}"; either name uninstalls it.`;
 	}
+	if (parsed.canvasExtensions?.length) {
+		// A canvas is the one capability that is not loaded on activation: it has no
+		// passive half, so it waits for someone to open it. Saying so here is the
+		// difference between "installed and inert" and "installed, run /canvas".
+		const ids = parsed.canvasExtensions.map((extension) => extension.id).join(", ");
+		message += ` Canvases: ${ids} — open one with /canvas open <id>.`;
+	}
 	if (capabilities.length === 0) {
 		// An install that adds nothing should not read as an install that worked.
-		// Common in github/awesome-copilot, where most entries carry their content
-		// in Copilot UI `extensions/` that hoocode has no analog for.
 		const surfaces = parsed.unsupportedSurfaces?.length
 			? ` Unsupported surfaces present: ${parsed.unsupportedSurfaces.join(", ")}.`
 			: "";
 		message +=
 			" Note: it contributes no capabilities hoocode can load" +
-			` (no skills, commands, subagents, hooks or MCP servers).${surfaces}`;
+			` (no skills, commands, subagents, canvases, hooks or MCP servers).${surfaces}`;
 	}
 	return {
 		installed: true,

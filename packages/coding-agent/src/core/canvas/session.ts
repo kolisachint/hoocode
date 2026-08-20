@@ -18,6 +18,7 @@ import { getAgentDir } from "../../config.js";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 import { type CanvasSearchRoot, canvasSearchRoots, discoverCanvasExtensions } from "./discovery.js";
 import { type CanvasAvailability, resolveCanvasRuntime } from "./launch.js";
+import { pluginCanvasExtensions } from "./plugin-canvases.js";
 import { type CanvasInstance, CanvasRegistry, type CanvasRegistryEvents } from "./registry.js";
 import type { CanvasCallOptions } from "./runner.js";
 import { gateCanvasExtensions } from "./trust.js";
@@ -51,6 +52,12 @@ export interface CanvasSessionOptions extends CanvasRegistryEvents {
 	agentDir?: string;
 	/** Override the search roots; defaults to {@link canvasSearchRoots}. */
 	roots?: CanvasSearchRoot[];
+	/**
+	 * Override how plugin-shipped canvases are found; defaults to
+	 * {@link pluginCanvasExtensions}. Pass `() => []` to look at the search roots
+	 * and nothing else.
+	 */
+	pluginExtensions?: () => DiscoveredCanvasExtension[];
 	/** Override availability resolution, for tests and for hosts that already know. */
 	resolveRuntime?: () => Promise<CanvasAvailability>;
 }
@@ -81,6 +88,7 @@ export function parseCanvasRef(input: string): CanvasRef | undefined {
 export class CanvasSession {
 	private readonly options: CanvasSessionOptions;
 	private readonly roots: CanvasSearchRoot[];
+	private readonly pluginExtensions: () => DiscoveredCanvasExtension[];
 	/** Cached because resolving can spawn `node --version` and cannot change mid-session. */
 	private availabilityPromise: Promise<CanvasAvailability> | undefined;
 	/** Created on first successful open, not at construction: listing must not fork. */
@@ -89,12 +97,17 @@ export class CanvasSession {
 	constructor(options: CanvasSessionOptions) {
 		this.options = options;
 		this.roots = options.roots ?? canvasSearchRoots(options.cwd, options.homeDir);
+		// Re-read on every discover rather than cached: /plugin install can add a
+		// canvas mid-session, and a listing that cannot see it is the bug this
+		// exists to fix.
+		this.pluginExtensions =
+			options.pluginExtensions ?? (() => pluginCanvasExtensions(options.cwd, options.agentDir ?? getAgentDir()));
 	}
 
 	/** Discovered extensions, partitioned by the trust gate. Read-only and always safe. */
 	discover(): { runnable: DiscoveredCanvasExtension[]; withheld: DiscoveredCanvasExtension[] } {
 		const gated = gateCanvasExtensions(
-			discoverCanvasExtensions(this.roots),
+			discoverCanvasExtensions(this.roots, this.pluginExtensions()),
 			this.options.cwd,
 			this.options.agentDir ?? getAgentDir(),
 		);

@@ -1,7 +1,7 @@
 /**
  * Cancelling an open, and honouring a turn's abort signal.
  *
- * Design: `docs/canvas-extensions-design.md` §11.4 and §10. The provider protocol has
+ * Design: `docs/canvas-extensions-design.md` §11.4 and §11.6. The provider protocol has
  * no cancel verb, so aborting only ends *our* wait — the child may have finished
  * opening and be holding a port. What makes this safe is that the instance id is
  * generated before the open call, so the registry can close an instance it never saw

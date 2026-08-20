@@ -123,6 +123,7 @@ function capabilityLines(plugin: NormalizedPlugin): string[] {
 	add("Subagents", plugin.agentsDir);
 	add("Hooks", plugin.hooks);
 	add("MCP servers", plugin.mcpServers);
+	add("Canvases", plugin.canvasExtensions?.length);
 	return lines;
 }
 

@@ -10,6 +10,10 @@
  * marketplace): hooks parse, bundled scripts stay executable, and activation
  * schedules the automatic reload for the executable tier.
  *
+ * And `github/awesome-copilot`, which is pinned to a distribution branch rather
+ * than a default branch — see the block at the bottom for why that is load
+ * bearing and what breaks silently without a check here.
+ *
  * Network-dependent: when the marketplace clones fail (offline sandbox) the
  * tests skip rather than fail.
  */
@@ -19,6 +23,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.js";
+import { CANVAS_ENTRY_FILE } from "../src/core/canvas/discovery.js";
+import { pluginCanvasExtensions } from "../src/core/canvas/plugin-canvases.js";
 import { ensureWellKnownMarketplaces } from "../src/core/extensions/plugins/install.js";
 import { createAgentSession } from "../src/core/sdk.js";
 import { SessionManager } from "../src/core/session-manager.js";
@@ -144,4 +150,71 @@ describe("E2E: Copilot marketplace (github/copilot-plugins)", () => {
 		expect(statSync(join(dest, "scripts", "setup-ralph-loop.sh")).mode & 0o111).not.toBe(0);
 		expect(idleReloads).toBe(0); // hooks reload goes through activatePlugin's own scheduling, not the uninstall path
 	}, 120_000);
+});
+
+/**
+ * `github/awesome-copilot` is the one well-known marketplace hoocode does not
+ * read from a default branch, and the reason is not cosmetic. There, a
+ * `plugins/<name>/` directory holds only `plugin.json` and a README; the real
+ * content lives in top-level trees, is named from the manifest's own
+ * `extensions["com.github.awesome-copilot"]` namespace, and is materialized into
+ * each plugin directory by CI onto the `marketplace` branch — the branch the
+ * vendor's own installer reads.
+ *
+ * Read from the default branch, every entry in that catalog installs as an empty
+ * shell and truthfully reports that it contributes nothing. That is a silent
+ * failure in the worst way: the install *succeeds*, and it reads as a missing
+ * hoocode feature rather than a wrong ref. Nothing in the unit tests can catch a
+ * regression here, because the difference lives entirely in what the remote
+ * serves. Hence this.
+ *
+ * `arcade-canvas` is the case to pin on: it carries no skills, commands or
+ * hooks, so a canvas is the *only* thing that can prove the content arrived.
+ */
+describe("E2E: awesome-copilot marketplace, pinned to its distribution branch", () => {
+	it("installs arcade-canvas with its canvas intact, and /canvas can see it", async () => {
+		if (!online) return;
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir: join(tempDir, ".agent-home3"),
+			sessionManager: SessionManager.inMemory(),
+		});
+		const ctx = {
+			cwd: tempDir,
+			hasUI: false,
+			ui: { notify: () => {} },
+			activatePlugin: (dir: string) => session.activatePlugin(dir),
+			requestReloadWhenIdle: () => session.requestReloadWhenIdle(),
+		} as never;
+
+		const install = createInstallPluginToolDefinition();
+		const result = await install.execute(
+			"t4",
+			{ name: "arcade-canvas", reason: "E2E: canvas surface from a materialized marketplace branch" },
+			undefined as never,
+			undefined as never,
+			ctx,
+		);
+		expect((result as { details: { installed: boolean } }).details.installed).toBe(true);
+
+		// The stub-branch symptom, asserted directly: an install off the default
+		// branch lands a directory with nothing in it but a manifest and a README.
+		const dest = join(tempDir, ".agents", "plugins", "arcade-canvas");
+		const entry = join(dest, "com.github.copilot", "extensions", "arcade-canvas", CANVAS_ENTRY_FILE);
+		expect(existsSync(entry)).toBe(true);
+
+		// And the surface hoocode actually exposes: the canvas is discoverable by
+		// the same path `/canvas list` walks.
+		const canvases = pluginCanvasExtensions(tempDir, join(tempDir, ".hoocode"));
+		expect(canvases.map((c) => c.id)).toContain("arcade-canvas");
+
+		// The install summary has to say so too — a canvas is the one capability
+		// that is never loaded on activation, so if it goes unmentioned the install
+		// reads as inert.
+		expect(textOf(result as never)).toContain("arcade-canvas");
+
+		// ...and "never loaded" is the other half of the contract: activating the
+		// plugin must not have started a process or put anything in the prompt.
+		expect(session.systemPrompt).not.toContain("arcade-canvas");
+	}, 180_000);
 });

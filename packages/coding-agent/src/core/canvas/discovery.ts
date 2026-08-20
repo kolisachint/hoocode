@@ -87,10 +87,21 @@ function hasEntryFile(dir: string): boolean {
 }
 
 /**
- * Discover canvas extensions across `roots`. First root wins on an id collision,
- * so a project-local extension shadows a same-named user-scope one.
+ * Discover canvas extensions across `roots`, then append `extra`. First wins on
+ * an id collision, so a project-local extension shadows a same-named user-scope
+ * one — and anything a person placed in a search root by hand shadows a
+ * same-named canvas that arrived inside a package.
+ *
+ * `extra` is how plugin-shipped canvases join the same list (see
+ * `plugin-canvases.ts`): a plugin's canvas directories are named by its manifest
+ * rather than by their position under a search root, so they cannot be expressed
+ * as a root — but once resolved they are ordinary discovered extensions, and
+ * every consumer downstream is better off not knowing the difference.
  */
-export function discoverCanvasExtensions(roots: CanvasSearchRoot[]): DiscoveredCanvasExtension[] {
+export function discoverCanvasExtensions(
+	roots: CanvasSearchRoot[],
+	extra: readonly DiscoveredCanvasExtension[] = [],
+): DiscoveredCanvasExtension[] {
 	const found = new Map<string, DiscoveredCanvasExtension>();
 	for (const root of roots) {
 		for (const id of subdirectories(root.dir)) {
@@ -99,6 +110,11 @@ export function discoverCanvasExtensions(roots: CanvasSearchRoot[]): DiscoveredC
 			if (!hasEntryFile(dir)) continue;
 			found.set(id, { id, dir, entry: path.join(dir, CANVAS_ENTRY_FILE), scope: root.scope });
 		}
+	}
+	for (const extension of extra) {
+		if (found.has(extension.id)) continue;
+		if (!hasEntryFile(extension.dir)) continue;
+		found.set(extension.id, extension);
 	}
 	return [...found.values()];
 }

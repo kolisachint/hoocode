@@ -9,7 +9,8 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { PluginHooksConfig } from "../manifest.js";
+import { CANVAS_ENTRY_FILE } from "../../../canvas/discovery.js";
+import type { PluginCanvasExtension, PluginHooksConfig } from "../manifest.js";
 import type { AuthoredHook, WorkspaceLayout } from "./types.js";
 
 /** Raw manifest shape accepted by the `plugin.json`-style formats (agents/claude/copilot). */
@@ -28,7 +29,14 @@ export interface RawManifest {
 	mcpServers?: Record<string, unknown> | string;
 	/** Native-only. */
 	providers?: unknown;
-	/** Copilot: extension directories, `{ paths, exclusive }`. Parsed for preservation only. */
+	/**
+	 * Copilot: canvas-extension directory (a path, or list of paths, relative to
+	 * the plugin root — e.g. `"extensions": "extensions"`). The Agent Plugins spec
+	 * gives the same key a second, unrelated meaning: a map of vendor metadata
+	 * namespaces (`{ "com.github.copilot": { logo } }`). Both readings are handled
+	 * — see {@link detectCanvasExtensions} — and the map form is preserved
+	 * verbatim through `unknownFields`.
+	 */
 	extensions?: unknown;
 	/** Copilot: LSP config path or inline definitions. Parsed for preservation only. */
 	lspServers?: unknown;
@@ -67,6 +75,80 @@ export function unknownManifestFields(raw: RawManifest): Record<string, unknown>
 		if (!MODELLED_MANIFEST_KEYS.has(key)) out[key] = value;
 	}
 	return Object.keys(out).length > 0 ? out : undefined;
+}
+
+/**
+ * Vendor content namespace directory. The Agent Plugins layout both vendors are
+ * converging on keeps portable capabilities at the plugin root (`skills/`) and
+ * puts vendor-specific ones under a reverse-DNS directory, so Copilot's agents
+ * and canvas extensions ship as `com.github.copilot/<capability>/`.
+ * `github/awesome-copilot` publishes its whole catalog this way.
+ */
+export const COPILOT_CONTENT_DIR = "com.github.copilot";
+
+/** Conventional canvas-extension container, relative to a plugin root. */
+const CANVAS_EXTENSIONS_DIR = "extensions";
+
+/**
+ * Canvas-extension containers a plugin may ship, starting with the manifest's own
+ * `extensions` path (Copilot's key, e.g. `"extensions": "extensions"`). Both are
+ * real: `extensions/` is what a standalone canvas plugin uses, and the namespaced
+ * one is what a materialized `awesome-copilot` entry carries.
+ */
+function canvasContainerDirs(root: string, override: unknown): string[] {
+	const dirs: string[] = [];
+	// `extensions` is also the key the Agent Plugins spec uses for a *map* of
+	// vendor metadata (`{ "com.github.copilot": { logo } }`). `resolveCapabilityDir`
+	// ignores anything that is not a string or string array, so the two readings
+	// of one key cannot collide — and the map form stays in `unknownFields`, which
+	// is what keeps a re-emit from dropping it.
+	const declared = resolveCapabilityDir(root, override, CANVAS_EXTENSIONS_DIR);
+	if (declared) dirs.push(declared);
+	const namespaced = dirIfExists(root, path.join(COPILOT_CONTENT_DIR, CANVAS_EXTENSIONS_DIR));
+	if (namespaced && !dirs.includes(namespaced)) dirs.push(namespaced);
+	return dirs;
+}
+
+/**
+ * Canvas extensions a plugin ships (see `docs/canvas-extensions-design.md` §4.3).
+ *
+ * Discovery keys off `<dir>/extension.mjs` and nothing else, exactly as
+ * `core/canvas/discovery.ts` does for the workspace and user search roots — the
+ * entry file is the whole contract, so a plugin's canvases are found by the same
+ * rule as everyone else's.
+ *
+ * A plugin whose *root* carries `extension.mjs` is itself one canvas extension,
+ * which is how a single-canvas repository is laid out; its id is the plugin id,
+ * since there is no directory name below the root to take one from.
+ */
+export function detectCanvasExtensions(
+	root: string,
+	pluginId: string,
+	override: unknown,
+): PluginCanvasExtension[] | undefined {
+	const found: PluginCanvasExtension[] = [];
+	const seen = new Set<string>();
+	const add = (id: string, dir: string): void => {
+		if (seen.has(id)) return;
+		if (!fs.existsSync(path.join(dir, CANVAS_ENTRY_FILE))) return;
+		seen.add(id);
+		found.push({ id, dir });
+	};
+
+	add(pluginId, root);
+	for (const container of canvasContainerDirs(root, override)) {
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(container, { withFileTypes: true });
+		} catch {
+			continue;
+		}
+		for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+			if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+			add(entry.name, path.join(container, entry.name));
+		}
+	}
+	return found.length > 0 ? found : undefined;
 }
 
 /**
