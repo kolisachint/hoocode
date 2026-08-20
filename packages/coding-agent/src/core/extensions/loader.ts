@@ -78,26 +78,26 @@ function getAliases(): Record<string, string> {
 	const typeboxValueEntry = require.resolve("typebox/value");
 
 	const packagesRoot = path.resolve(__dirname, "../../../../");
-	const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string => {
+	// Prefer the sibling workspace build; fall back to normal package resolution.
+	// Returns null when neither exists (an unbuilt workspace checkout), so the
+	// specifier is simply left unaliased instead of breaking every extension.
+	const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string | null => {
 		const workspacePath = path.join(packagesRoot, workspaceRelativePath);
 		if (fs.existsSync(workspacePath)) {
 			return workspacePath;
 		}
-		return fileURLToPath(import.meta.resolve(specifier));
+		// require.resolve, not import.meta.resolve: the latter is undefined once
+		// this module goes through a bundler/test transform, and throwing here
+		// would take down extensions that never import this specifier.
+		try {
+			return require.resolve(specifier);
+		} catch {
+			return null;
+		}
 	};
 
-	const hooCodingAgentEntry = packageIndex;
-	const hooAgentCoreEntry = resolveWorkspaceOrImport("agent/dist/index.js", "@kolisachint/hoocode-agent-core");
-	const hooTuiEntry = resolveWorkspaceOrImport("tui/dist/index.js", "@kolisachint/hoocode-tui");
-	const hooAiEntry = resolveWorkspaceOrImport("ai/dist/index.js", "@kolisachint/hoocode-ai");
-	const hooAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@kolisachint/hoocode-ai/oauth");
-
 	_aliases = {
-		"@kolisachint/hoocode-agent": hooCodingAgentEntry,
-		"@kolisachint/hoocode-agent-core": hooAgentCoreEntry,
-		"@kolisachint/hoocode-tui": hooTuiEntry,
-		"@kolisachint/hoocode-ai": hooAiEntry,
-		"@kolisachint/hoocode-ai/oauth": hooAiOauthEntry,
+		"@kolisachint/hoocode-agent": packageIndex,
 		typebox: typeboxEntry,
 		"typebox/compile": typeboxCompileEntry,
 		"typebox/value": typeboxValueEntry,
@@ -105,6 +105,19 @@ function getAliases(): Record<string, string> {
 		"@sinclair/typebox/compile": typeboxCompileEntry,
 		"@sinclair/typebox/value": typeboxValueEntry,
 	};
+
+	const workspaceAliases: Array<[string, string, string]> = [
+		["@kolisachint/hoocode-agent-core", "agent/dist/index.js", "@kolisachint/hoocode-agent-core"],
+		["@kolisachint/hoocode-tui", "tui/dist/index.js", "@kolisachint/hoocode-tui"],
+		["@kolisachint/hoocode-ai", "ai/dist/index.js", "@kolisachint/hoocode-ai"],
+		["@kolisachint/hoocode-ai/oauth", "ai/dist/oauth.js", "@kolisachint/hoocode-ai/oauth"],
+	];
+	for (const [alias, workspaceRelativePath, specifier] of workspaceAliases) {
+		const entry = resolveWorkspaceOrImport(workspaceRelativePath, specifier);
+		if (entry) {
+			_aliases[alias] = entry;
+		}
+	}
 
 	return _aliases;
 }

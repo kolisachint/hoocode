@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Extension loading no longer depends on the sibling workspace packages having
+  been built. `getAliases()` resolved every workspace alias eagerly and threw if
+  any one of them was missing, so a single unresolvable specifier took down every
+  extension — including extensions that import nothing. The fallback also used
+  `import.meta.resolve`, which is undefined once the module goes through a
+  bundler or test transform (`__vite_ssr_import_meta__.resolve is not a
+  function`). Aliases now resolve via `require.resolve` and an unresolvable one
+  is omitted rather than fatal.
+
 ## [0.5.23] - 2026-08-19
 
 ### Added
