@@ -24,6 +24,16 @@
  *                                                        reader still accepts bare `.md` names)
  *   hooks             hooks.json or hooks/hooks.json    ({ description?, hooks: { Event: [...] } })
  *   MCP servers       .mcp.json                         ({ mcpServers } | { servers })
+ *   canvases          extensions/<name>/extension.mjs   (or the manifest's `extensions` path override;
+ *                                                        opened on demand by /canvas, never loaded)
+ *
+ * Plus the Agent Plugins vendor content namespace, which is how
+ * `github/awesome-copilot` publishes its whole catalog — portable skills stay at
+ * `skills/`, and Copilot-specific capabilities move under a reverse-DNS
+ * directory:
+ *
+ *   subagents         com.github.copilot/agents/<name>.md
+ *   canvases          com.github.copilot/extensions/<name>/extension.mjs
  *
  * Workspace-level (non-plugin) conventions, per the current GitHub Copilot
  * customization docs (docs.github.com — agent skills, custom agents, prompt
@@ -47,6 +57,8 @@ import * as path from "node:path";
 import type { NormalizedPlugin } from "../manifest.js";
 import {
 	authoredHooksToConfig,
+	COPILOT_CONTENT_DIR,
+	detectCanvasExtensions,
 	detectUnsupportedSurfaces,
 	dirIfExists,
 	emitJson,
@@ -97,6 +109,14 @@ const emitManifestRelPath = "plugin.json";
 const PROMPTS_DIR = path.join(MARKER_DIR, "prompts");
 // Legacy authored layout (read-only fallback).
 const LEGACY_CHATMODES_DIR = path.join(MARKER_DIR, "chatmodes");
+/**
+ * Copilot's subagent home inside the vendor content namespace. This is the
+ * layout `github/awesome-copilot` publishes: portable skills stay at `skills/`
+ * and everything Copilot-specific is emitted under `com.github.copilot/`
+ * (`eng/materialize-plugins.mjs`). Without it every agent in that catalog parses
+ * as nothing.
+ */
+const CONTENT_AGENTS_DIR = path.join(COPILOT_CONTENT_DIR, "agents");
 // Documented alternates, not legacy: the reference lists both locations for each.
 const ALT_MCP_FILE = path.join(MARKER_DIR, "mcp.json");
 const ALT_HOOKS_FILE = path.join("hooks", "hooks.json");
@@ -135,6 +155,12 @@ export function copilotReadPaths(): string[] {
 		LEGACY_HOOKS_FILE,
 		"skills",
 		"agents",
+		CONTENT_AGENTS_DIR,
+		// Canvas extensions: the container, the namespaced container, and the entry
+		// file that is the whole detection contract.
+		"extensions",
+		path.join(COPILOT_CONTENT_DIR, "extensions"),
+		"extension.mjs",
 		// The `<name>.agent.md` subagent convention, which the reference writes as
 		// a suffix rather than a path.
 		".agent.md",
@@ -214,7 +240,10 @@ export const copilotFormat: PluginFormatAdapter = {
 			// Commands map to Copilot prompt files at `.github/prompts/`; a manifest
 			// `commands` override or a conventional `commands/` dir still wins if present.
 			commandsDir: resolveCapabilityDir(root, raw.commands, "commands") ?? dirIfExists(root, PROMPTS_DIR),
-			agentsDir: resolveCapabilityDir(root, raw.agents, "agents") ?? dirIfExists(root, LEGACY_CHATMODES_DIR),
+			agentsDir:
+				resolveCapabilityDir(root, raw.agents, "agents") ??
+				dirIfExists(root, CONTENT_AGENTS_DIR) ??
+				dirIfExists(root, LEGACY_CHATMODES_DIR),
 			themesDir: resolveCapabilityDir(root, raw.themes, "themes"),
 			// Manifest first, then the reference's two locations (root `hooks.json`
 			// and `hooks/hooks.json`), then hoocode's legacy `.github/hooks/`.
@@ -226,8 +255,14 @@ export const copilotFormat: PluginFormatAdapter = {
 			mcpServers: normalizeMcp(raw.mcpServers, root) ?? normalizeMcp(undefined, root, ALT_MCP_FILE),
 			// Providers are a native-only concept.
 			providers: undefined,
-			// `extensions` and `lspServers` are real Copilot manifest keys we do not
-			// model; carried here so an edit cannot drop them.
+			// Canvas extensions: `extensions/` (or the manifest's own path) and the
+			// namespaced `com.github.copilot/extensions/`. Not loaded into the
+			// session — `/canvas` opens them on demand — but resolved here so the
+			// plugin can report what it brought.
+			canvasExtensions: detectCanvasExtensions(root, id, raw.extensions),
+			// `lspServers` is a real Copilot manifest key we do not model, and
+			// `extensions` carries a vendor-metadata map alongside the canvas path
+			// read above; both are carried here so an edit cannot drop them.
 			unknownFields: unknownManifestFields(raw),
 			unsupportedSurfaces: detectUnsupportedSurfaces(root),
 		};

@@ -47,6 +47,14 @@ export interface PluginProvider {
 	config: ProviderConfig;
 }
 
+/** One canvas extension shipped inside a plugin: its id and the directory holding `extension.mjs`. */
+export interface PluginCanvasExtension {
+	/** Directory name, or the plugin id when the plugin root is itself the extension. */
+	id: string;
+	/** Absolute path to the extension directory. */
+	dir: string;
+}
+
 /** Normalized, format-agnostic representation of a plugin. */
 export interface NormalizedPlugin {
 	/** Stable identifier (manifest `name`). */
@@ -79,6 +87,17 @@ export interface NormalizedPlugin {
 	mcpServers?: Record<string, unknown>;
 	/** Native-only: providers to register. */
 	providers?: PluginProvider[];
+	/**
+	 * Canvas extensions this plugin ships, resolved to their directories.
+	 *
+	 * Unlike every other capability here this one is not loaded into the session:
+	 * a canvas has no passive half (see `docs/canvas-extensions-design.md` §5.1),
+	 * so the plugin contributes *search roots* that `/canvas` lists and opens on
+	 * demand rather than anything that runs at load. Resolving them at parse time
+	 * is what lets `ListPlugins`, the install summary and `/canvas` all agree on
+	 * what a plugin actually brought.
+	 */
+	canvasExtensions?: PluginCanvasExtension[];
 	/**
 	 * Manifest keys this adapter does not model, preserved verbatim.
 	 *

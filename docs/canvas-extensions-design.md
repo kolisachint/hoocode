@@ -361,9 +361,31 @@ Discovery reads, in precedence order:
 | `.agents/extensions/` | hoocode native, `.agents/`-first policy | authored here by default |
 | `.github/extensions/` | Copilot project scope | **arrives with a clone — gated (§5)** |
 | `~/.copilot/extensions/` | Copilot user scope | the catalog's install target |
+| installed plugins | every plugin on `defaultPluginDirs` | resolved from the manifest, not from position |
 
 This follows the policy in `docs/plugin-format-mapping.md` §0: `.agents/` is
 read first and written by default; vendor conventions are compatibility inputs.
+
+The fourth row is not a search root and cannot be one. A plugin's canvases are
+named by its **manifest** rather than by where they sit, so the plugin readers
+resolve them (`NormalizedPlugin.canvasExtensions`) and `plugin-canvases.ts`
+presents the result in the shape the three roots produce — which is what lets
+the trust gate, the listing and `open` stay unaware a plugin was involved. Two
+layouts are read, both real:
+
+| Layout | Seen in |
+|---|---|
+| `"extensions": "<dir>"` manifest key + `<dir>/<id>/extension.mjs` | `Redth/mobile-canvas-ghcp` |
+| `com.github.copilot/extensions/<id>/extension.mjs` | `github/awesome-copilot`, all 24 canvas entries |
+
+A plugin root that itself carries `extension.mjs` is one canvas, named for the
+plugin — there is no directory below the root to take a name from.
+
+Precedence puts plugins last: anything a person placed in a search root by hand
+shadows a same-named canvas that arrived inside a package. Scope comes from
+where the *plugin* lives, not the canvas directory — a plugin installed at
+project scope travels in every clone whichever subdirectory its canvas sits in,
+and that is the only question §5 asks.
 Note that hoocode's *existing* extension locations are `./.hoocode/extensions`
 and `~/.hoocode/extensions` (`docs/agent-spec-tree-map.md`, `loader.ts:420-500`)
 — those stay in-process and are unrelated to canvases.
@@ -382,8 +404,10 @@ the exact reason:
 A canvas is a process **that also opens a listening socket**. It belongs in the
 workspace-trust record on the same grounds, with no new mechanism needed:
 
-- A canvas found under `.agents/extensions/` or `.github/extensions/` in an
-  untrusted workspace is **detected and listed but never forked**.
+- A canvas found under `.agents/extensions/`, `.github/extensions/`, or a
+  project-scoped plugin home (`.agents/plugins/`, `.hoocode/plugins/`,
+  `.claude/skills/`) in an untrusted workspace is **detected and listed but
+  never forked**.
 - Granting trust stays a human act. Per `trust.ts`, the autonomous install path
   never grants it — and a model deciding to execute a canvas that arrived in a
   clone is precisely the decision that record exists to keep with a person.
@@ -393,7 +417,8 @@ workspace-trust record on the same grounds, with no new mechanism needed:
 `isRepositorySupplied` and `shouldWithholdRepositorySupplied` live in
 `plugins/trust.ts` and serve both gates. Each caller supplies only its own
 project-scope roots — `.claude/skills` + `.agents/plugins` + `.hoocode/plugins` for
-plugins, `.agents/extensions` + `.github/extensions` for canvases — because that
+plugins, and those same three plus `.agents/extensions` + `.github/extensions`
+for canvases, since a plugin can ship one (§4.3) — because that
 list is the only thing that differs. `loader.ts`'s `isProjectSuppliedPlugin` and
 `shouldWithholdExecutables` keep their names and behaviour and now delegate; the
 existing plugin trust tests pass unchanged, which is what makes the consolidation
@@ -559,12 +584,23 @@ window. Plus the §2.3 conformance test and protocol-version assertion.
 Canvas directories under `.github/extensions/` in an untrusted workspace are
 listed but never spawned. Ships with Phase 1 or immediately after. Not optional.
 
-### Phase 3 — `/create-canvas` authoring
+### Phase 3 — `/create-canvas` authoring — shipped
 
-A skill plus a scaffold template — in Copilot this is a skill, not machinery, and
-it should be the same here. `src/extensions/core/scaffold.ts` already handles
-`--platform copilot`. Last, because until Phase 1 exists there is nothing to run
-what it scaffolds.
+A scaffold template in `src/extensions/core/scaffold.ts`, writing
+`.agents/extensions/<name>/extension.mjs` by default and `.github/extensions/`
+under `--platform github`. Deliberately *not* routed through the format
+registry's `WorkspaceLayout` like `/new-skill` and friends: there is no Claude
+canvas convention, and a layout method returning nothing for one adapter would
+be a worse lie than naming the two real homes.
+
+The template is complete rather than a stub, and that is the point — a canvas has
+no passive half, so a scaffold that does not run teaches nothing and cannot be
+checked. `test/create-canvas.test.ts` forks what it writes through the production
+runner and drives the protocol against it.
+
+**Acceptance:** `/create-canvas x` then `/canvas open x` works with no `/reload`
+in between; canvases are discovered when `/canvas` runs, not loaded at session
+start.
 
 ### Phase 4 — Our first canvas
 
@@ -887,7 +923,9 @@ Touched:
 | `src/core/extensions/plugins/trust.ts` | gained the shared `isRepositorySupplied` / `shouldWithholdRepositorySupplied` used by both gates |
 | `src/core/extensions/loader.ts` | plugin gate delegates to the shared pair; its private `isUnderDir` removed |
 | `src/utils/paths.ts` | gained `isPathInside`; four private copies of it already existed elsewhere |
-| `src/extensions/core/scaffold.ts` | `/create-canvas` template (Phase 3) |
+| `src/extensions/core/scaffold.ts` | `/create-canvas` template (Phase 3) — ✅ shipped |
+| `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins (§4.3) |
+| `src/core/extensions/plugins/formats/shared.ts` | `detectCanvasExtensions`, shared by all three readers |
 | `docs/agent-spec-tree-map.md` | record `.github/extensions/` and `~/.copilot/extensions/` |
 | `docs/plugin-format-mapping.md` | note canvas as a non-capability Copilot surface |
 

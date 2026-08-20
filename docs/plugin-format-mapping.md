@@ -78,6 +78,43 @@ normalizes to the equivalent git / git-subdir source, and both vendors'
 `metadata.pluginRoot` (a base dir prepended to relative plugin sources) is
 applied at parse time.
 
+### The vendor content namespace (`com.github.copilot/`)
+
+The Agent Plugins layout both vendors are converging on keeps portable
+capabilities at the plugin root and puts vendor-specific ones under a
+reverse-DNS directory. `github/awesome-copilot` publishes its whole catalog this
+way, so hoocode reads it:
+
+| Namespaced path | Read as |
+|---|---|
+| `skills/<name>/SKILL.md` | not namespaced — portable, stays at the root |
+| `com.github.copilot/agents/<name>.md` | subagents (`agentPaths`) |
+| `com.github.copilot/extensions/<id>/extension.mjs` | canvas extensions (below) |
+
+Worth knowing when reading that repository: on its **default branch** a
+`plugins/<name>/` directory holds only `plugin.json` and `README.md`, and the
+content is named from the manifest's own `extensions["com.github.awesome-copilot"]`
+namespace pointing at top-level trees. CI materializes those references into each
+plugin directory and publishes the result on the **`marketplace` branch**, which
+is what `copilot plugin install` — and now hoocode — actually reads. Cloning the
+default branch installs a stub.
+
+### Canvas extensions
+
+Canvases are the one plugin surface that is **not** loaded into the session: a
+canvas has no passive half, so a plugin contributes search entries that `/canvas`
+lists and opens on demand (`docs/canvas-extensions-design.md` §4.3). Two manifest
+readings coexist under one key, and both are real:
+
+| `extensions` value | Meaning |
+|---|---|
+| a string or string list, e.g. `"extensions"` | Copilot's canvas-directory path override |
+| an object, e.g. `{ "com.github.copilot": { "logo": ... } }` | Agent Plugins vendor metadata map — preserved verbatim, never read as a path |
+
+Detection keys off `<dir>/extension.mjs` and nothing else, matching Copilot's own
+rule. A plugin root that carries `extension.mjs` is itself one canvas, named for
+the plugin.
+
 ---
 
 ## 2. Plugin manifest mapping (`.agents-plugin` ↔ `.claude-plugin`)
@@ -98,6 +135,7 @@ no merge.**
 | `mcpServers` / `.mcp.json` | ✅ | ✅ | extension-MCP registry → connected on `session_start` |
 | `providers: [{ name, config }]` | ❌ (ignored) | ✅ **native-only** | `registerProvider` |
 | `extensions: string[]` (typed TS) | ❌ | 🔜 native-only (deferred) | direct extension load |
+| `extensions: "<dir>"` (canvas dir) + `extensions/<id>/extension.mjs` | ✅ | ✅ | `/canvas` search entries — opened on demand, never loaded (§1) |
 
 ### Environment-variable parity
 
@@ -165,15 +203,22 @@ unknown tokens warn and are skipped. The targets apply to:
   layout; `--support-platform` is the only way to also emit vendor layouts (an
   opt-in interop choice). The authoring tools expose no per-call platform
   parameter — the session flag governs.
-- **Workspace scaffolds** (`/new-skill`, `/new-agent`, `/new-command`): instead
-  of `.hoocode/`, each target platform's *workspace* conventions are written
-  (verified against the vendors' docs, 2026-07):
+- **Workspace scaffolds** (`/new-skill`, `/new-agent`, `/new-command`,
+  `/create-canvas`): instead of `.hoocode/`, each target platform's *workspace*
+  conventions are written (verified against the vendors' docs, 2026-07):
 
 | Artifact | `claude` | `github` (Copilot) | `agents` (native) |
 |---|---|---|---|
 | skill | `.claude/skills/<name>/SKILL.md` | `.github/skills/<name>/SKILL.md` | `.agents/skills/<name>/SKILL.md` |
 | subagent | `.claude/agents/<name>.md` (`tools` comma string) | `.github/agents/<name>.agent.md` (`tools` YAML list) | `.agents/agents/<name>.md` |
 | command | `.claude/commands/<name>.md` | `.github/prompts/<name>.prompt.md` | `.agents/commands/<name>.md` |
+| canvas | — (no such surface) | `.github/extensions/<name>/extension.mjs` | `.agents/extensions/<name>/extension.mjs` |
+
+The canvas row is the one that does not go through the format registry's
+`WorkspaceLayout`, and the dash is why: Claude has no canvas convention, so a
+layout method returning nothing for that adapter would be a worse lie than
+naming the two real homes. `/create-canvas` targeted at `claude` alone declines
+and says so rather than writing into a directory that vendor will never read.
 
 Each adapter (`formats/claude.ts`, `formats/copilot.ts`, `formats/agents.ts`)
 carries its own `WorkspaceLayout`, and the session state lives in

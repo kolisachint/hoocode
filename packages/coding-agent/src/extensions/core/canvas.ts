@@ -48,7 +48,10 @@ function renderOverview(overview: CanvasOverview): string {
 		lines.push(`Canvases are unavailable: ${overview.availability.reason}`, "");
 	}
 	if (overview.listings.length === 0) {
-		lines.push("No canvas extensions found in .agents/extensions, .github/extensions, or ~/.copilot/extensions.");
+		lines.push(
+			"No canvas extensions found in .agents/extensions, .github/extensions, ~/.copilot/extensions,",
+			"or any installed plugin. Scaffold one with /create-canvas <name>, or install one with /plugin.",
+		);
 		return lines.join("\n");
 	}
 	for (const listing of overview.listings) {

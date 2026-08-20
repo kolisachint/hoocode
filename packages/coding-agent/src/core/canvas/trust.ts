@@ -27,7 +27,7 @@
  */
 
 import * as path from "node:path";
-import { getAgentDir } from "../../config.js";
+import { CONFIG_DIR_NAME, getAgentDir } from "../../config.js";
 import { isRepositorySupplied, shouldWithholdRepositorySupplied } from "../extensions/plugins/trust.js";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 
@@ -50,11 +50,10 @@ export class CanvasTrustError extends Error {
  * Whether an extension sits in the working tree, and therefore arrived with the
  * repository as far as anyone but its author can tell.
  *
- * Both project-scope homes count. `.agents/extensions/` is where hoocode would
- * author its own, and `.github/extensions/` is Copilot's project scope — the one
- * that travels in every clone. Neither location can distinguish "I put this here"
- * from "this arrived in the clone", which is exactly why location is not the
- * question being asked; it only decides *whether* to ask about trust.
+ * Every project-scope home counts — see {@link canvasProjectScopeRoots}. None of
+ * them can distinguish "I put this here" from "this arrived in the clone", which
+ * is exactly why location is not the question being asked; it only decides
+ * *whether* to ask about trust.
  *
  * User scope (`~/.copilot/extensions/`) is not project-supplied: it is outside any
  * repository and got there by a deliberate local act.
@@ -63,9 +62,25 @@ export function isProjectSuppliedCanvas(extension: DiscoveredCanvasExtension, cw
 	return isRepositorySupplied(extension.dir, canvasProjectScopeRoots(cwd));
 }
 
-/** A canvas extension's project-scope homes — the locations that travel with a clone. */
+/**
+ * A canvas extension's project-scope homes — the locations that travel with a
+ * clone.
+ *
+ * The plugin homes belong here for the same reason `loader.ts` counts them for
+ * plugins: a plugin installed at project scope, or committed into the working
+ * tree, arrives in every collaborator's clone, and a canvas it ships is a
+ * process with a listening socket exactly like one dropped in `.github/`. The
+ * person who ran the install knows they chose it; nobody who clones the result
+ * does, and location cannot tell those two apart.
+ */
 function canvasProjectScopeRoots(cwd: string): string[] {
-	return [path.join(cwd, ".agents", "extensions"), path.join(cwd, ".github", "extensions")];
+	return [
+		path.join(cwd, ".agents", "extensions"),
+		path.join(cwd, ".github", "extensions"),
+		path.join(cwd, ".agents", "plugins"),
+		path.join(cwd, CONFIG_DIR_NAME, "plugins"),
+		path.join(cwd, ".claude", "skills"),
+	];
 }
 
 /**

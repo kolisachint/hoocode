@@ -38,6 +38,7 @@ export function pluginCapabilities(plugin: NormalizedPlugin): string[] {
 		plugin.hooks && "hooks",
 		plugin.mcpServers && "mcp",
 		plugin.providers?.length && "providers",
+		plugin.canvasExtensions?.length && "canvases",
 	].filter((value): value is string => typeof value === "string");
 }
 

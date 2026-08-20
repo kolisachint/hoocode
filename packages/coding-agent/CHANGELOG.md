@@ -2,6 +2,47 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/create-canvas <name>` — scaffold a canvas extension. Writes
+  `.agents/extensions/<name>/extension.mjs` (or `.github/extensions/` with
+  `--platform github`), pre-wired with a declared canvas, one agent-callable
+  action, and a token-gated loopback server. It runs as scaffolded, so
+  `/canvas open <name>` works immediately — no `/reload`, because canvases are
+  discovered when `/canvas` runs rather than loaded at session start.
+
+- Plugins can ship canvases, and `/canvas` now finds them. Both real catalog
+  layouts are read: the Copilot manifest's `"extensions": "<dir>"` path key
+  (`Redth/mobile-canvas-ghcp`) and the Agent Plugins vendor content namespace
+  `com.github.copilot/extensions/<id>/` (`github/awesome-copilot`). A plugin
+  whose root itself carries `extension.mjs` counts as one canvas named for the
+  plugin. Installed canvases are listed and opened exactly like hand-placed
+  ones, and a canvas from a project-scoped plugin goes through the same
+  workspace-trust gate as one in `.github/extensions/` — it arrives in every
+  collaborator's clone the same way.
+
+- Subagents in the `com.github.copilot/agents/` namespace load. This is where
+  `github/awesome-copilot` publishes all 125 of its plugin agents; they were
+  previously read as nothing.
+
+### Fixed
+
+- `github/awesome-copilot` plugins install with their content. hoocode cloned
+  the repository's default branch, where a `plugins/<name>/` directory holds
+  only `plugin.json` and `README.md` — the real content lives in top-level
+  trees and is materialized into each plugin directory by CI on the
+  `marketplace` branch, which is the branch the vendor's own installer reads.
+  Every entry therefore installed as an empty shell and reported that it
+  contributed no capabilities. The marketplace is now pinned to that branch,
+  and a cache left on the wrong ref is re-cloned rather than kept up to date
+  forever. `/plugin install arcade-canvas@awesome-copilot` now lands a working
+  canvas and says so.
+
+- Starting a new session, resuming one, or forking one shows the same loaded
+  resources `/reload` does. The listing was rendered — extensions rebind before
+  the transcript is reset — and then wiped a moment later by that reset, so
+  every session change but `/reload` reported nothing.
+
 ## [0.5.24] - 2026-08-20
 
 ### Fixed

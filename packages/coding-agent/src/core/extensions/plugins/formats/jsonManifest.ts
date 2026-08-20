@@ -13,6 +13,7 @@ import type { NormalizedPlugin, PluginProvider } from "../manifest.js";
 import {
 	authoredHooksToConfig,
 	claudeStyleWorkspace,
+	detectCanvasExtensions,
 	detectUnsupportedSurfaces,
 	emitJson,
 	emitMarkdown,
@@ -38,7 +39,16 @@ export const CONVENTIONAL_COMPONENTS = ["skills", "commands", "agents", "hooks",
  * {@link CONVENTIONAL_COMPONENTS}, which drives *detection* — `themes` is parsed
  * but has never made a directory a plugin on its own.
  */
-export const JSON_MANIFEST_READ_PATHS = [...CONVENTIONAL_COMPONENTS, "themes", "hooks/hooks.json"];
+export const JSON_MANIFEST_READ_PATHS = [
+	...CONVENTIONAL_COMPONENTS,
+	"themes",
+	"hooks/hooks.json",
+	// Canvas extensions: the container, the namespaced container, and the entry
+	// file that is the whole detection contract.
+	"extensions",
+	"com.github.copilot/extensions",
+	"extension.mjs",
+];
 
 /** True when `root` carries any component in its default location. */
 function hasConventionalComponents(root: string): boolean {
@@ -122,6 +132,10 @@ export function createJsonManifestAdapter(opts: JsonManifestOptions): PluginForm
 				hooks: normalizeHooks(raw.hooks, root),
 				mcpServers: normalizeMcp(raw.mcpServers, root),
 				providers,
+				// A canvas plugin is format-agnostic on disk — `mobile-canvas-ghcp`
+				// ships a `.claude-plugin/` manifest and an `extensions/` tree — so
+				// this is read here as well as in the Copilot adapter, not only there.
+				canvasExtensions: detectCanvasExtensions(root, id, raw.extensions),
 				unknownFields: unknownManifestFields(raw),
 				unsupportedSurfaces: detectUnsupportedSurfaces(root),
 			};
