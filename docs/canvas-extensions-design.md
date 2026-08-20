@@ -200,9 +200,18 @@ problem:
    a failing typecheck with a readable diff. Highest-leverage item in the plan.
 3. **Assert `SDK_PROTOCOL_VERSION === 3`** in a test. When it becomes 4 we learn
    it from a test name, not a user report.
-4. **Canary.** `pr-artifact-explorer` pinned at a commit, opened headless in CI,
-   actions invoked. Catches behavioural drift the types cannot see.
-5. **Renovate on that one package.** Bump → typecheck + canary → known in a day.
+4. **Canary — shipped.** The `canvas-canary` job in `.github/workflows/ci.yml`
+   sparse-checks-out `pr-artifact-explorer` and `arcade-canvas` at a pinned SHA
+   and runs `test/canvas-acceptance-catalog.test.ts` against them: forked, opened,
+   actions invoked. Catches behavioural drift the types cannot see. Pinned to a
+   SHA rather than a branch — a canary aimed at a moving target reports upstream
+   edits as our regressions, and the job executes third-party code, so the
+   revision should change only when someone bumps it here deliberately. The test
+   *fails* rather than skips when the checkout is missing; a canary that can go
+   green having run nothing is worse than no canary.
+5. **Renovate on that one package — not set up.** Bump → typecheck + canary →
+   known in a day. Items 2–4 are the checks; this is what would make them fire on
+   the day the SDK changes rather than whenever we next look. See §10 item 4.
 
 ### 2.4 Residual risk, stated plainly
 
@@ -229,8 +238,8 @@ commands. That is wrong, and the repo shows why.
 `src/core/extensions/plugins/manifest.ts` normalizes `skills`, `commands`,
 `agents`, `hooks`, `mcpServers`, plus `skillsDir`/`commandsDir`/`agentsDir`.
 Every one of those is a **declarative file the loader reads and hands to the
-runtime**. That is why `plugins/formats/copilot.ts` is 304 clean lines: it maps
-vendor paths onto that tree and nothing more.
+runtime**. That is why `plugins/formats/copilot.ts` stays a thin mapping file: it
+maps vendor paths onto that tree and nothing more.
 
 A canvas has no declarative form. It is:
 
@@ -537,8 +546,14 @@ Measure with `hoocode --print-token-surface` before and after a canvas opens.
 
 ## 8. Security posture to copy
 
-`pr-artifact-explorer`'s server is a good reference and its choices should be
-defaults in `registry.ts` and in anything we author:
+`pr-artifact-explorer`'s server is a good reference. Read the list below with one
+correction the smoke test forced (§12.1): **points 1–4 are things the extension's
+own HTTP server does, and the host cannot default them.** `arcade-canvas` serves
+its page with no capability token at all, and that is its author's call to make.
+So this is a standard for *anything we author* — the `/new-canvas` template, and
+any canvas hoocode ships — plus the posture we should expect when reviewing one,
+not a property `registry.ts` can enforce. Point 5 and the rule at the end are
+genuinely ours:
 
 1. **Secrets never cross the boundary.** Tokens stay in the extension process;
    the page receives sanitized metadata only, and every authenticated call is
@@ -554,6 +569,13 @@ defaults in `registry.ts` and in anything we author:
    token delivered via a `<meta>` marker replacement.
 5. **Typed errors.** `CanvasError(code, message)` gives the agent a
    machine-readable code rather than a string to interpret.
+
+What `/new-canvas` scaffolds, and what it leaves out: the template implements the
+per-instance capability token (point 3) and typed `CanvasError`s (point 5), and
+stops there. A scaffold is read as much as it is run, so it demonstrates the one
+mechanism a canvas cannot work without and points here for the rest — the `Host`
+and `Sec-Fetch-Site` checks, the body cap, the separate origin for untrusted
+content, and the CSP are all worth adding to a canvas that grows past a demo.
 
 One rule of our own, following from hoocode's permission gate: **a canvas grants
 the agent no new capability.** Actions read or mutate canvas state. Anything a
@@ -650,13 +672,30 @@ availability and how the child is launched (§11.1), the child's environment
 the agent (§11.5). Multiple canvases per extension is handled: `registry.ts` keys
 instances by `(extensionId, canvasId, instanceId)`.
 
+Settled since: the **TUI surface for opening and cancelling**. `/canvas open`
+draws a `BorderedLoader`, and its `AbortSignal` is what carries a person's Esc
+into the abandon path (§11.6) rather than merely hiding a spinner — verified in
+§12's smoke test. One cosmetic gap remains and is recorded there, not here.
+
 Still open:
 
 1. **Removing the Node requirement entirely** would need a Bun-native resolver, since
    the `module.register` hook path is disproven. Not worth it while every install path
    can reach a Node; recorded in case that changes.
-2. **A TUI surface for opening and cancelling.** The mechanism is in (§11.6); what is
-   missing is the spinner-with-Esc that lets a person use it.
+2. **The shim is TypeScript, so tests fork it from `src/` under `tsx`** while a release
+   resolves built JavaScript. `CanvasRuntime` takes the shim URL as a parameter exactly
+   so the two differ by configuration and not by code, but the path CI exercises is
+   still not byte-for-byte the path a release runs. See `test/canvas-test-runtime.ts`.
+3. **Should the host validate action input against the declared `inputSchema` before
+   dispatch?** Observed in §12.1: `arcade-canvas` normalises an unknown `gameKey` to a
+   default, so a misspelled field silently *looks* like a success. Validating would turn
+   that into an honest error, at the cost of rejecting input the canvas would have
+   accepted. Left open on purpose — the case against is that the canvas owns its own
+   contract, and `list_canvas_capabilities` already hands the model the schemas to read
+   (§11.5).
+4. **Nothing announces an SDK bump.** §2.3 items 2–4 are the right checks and all three
+   are in place; what is missing is item 5, the Renovate rule that makes them run on the
+   day `@github/copilot-sdk` changes rather than whenever someone next bumps it by hand.
 
 ---
 
@@ -755,8 +794,8 @@ a real extension needs it.
 A single 30s ceiling was a guess, and wrong for `canvas.open` on a canvas that
 downloads an artifact before returning a URL. Ceilings are per provider method:
 `canvas.open` generous, `canvas.action.invoke` tighter, `canvas.close` short —
-each overridable. See §10's remaining question about cancelling `open` rather than
-merely waiting longer.
+each overridable. Cancelling a slow `open` rather than merely waiting it out is
+handled by the abandon path in §11.6.
 
 ### 11.5 Actions reach the agent through two fixed tools
 
@@ -911,26 +950,29 @@ Shipped:
 | `src/core/canvas/trust.ts` | withholds repository-supplied canvases in an untrusted workspace |
 | `src/core/canvas/discovery.ts` | locate canvas dirs by `extension.mjs` |
 | `src/core/canvas/launch.ts` | whether canvases can run here (§11.1), and the runtime to fork |
+| `src/core/canvas/session.ts` | the session facade: what is there, can it run, open this, close that — with no TUI in it |
+| `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins, in discovery's own shape (§4.3) |
+| `src/extensions/core/canvas.ts` | `/canvas list \| open \| close`, the cancellable loader, and tool registration on first open |
 | `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action`, created only while a canvas is open |
-| `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1) |
+| `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1); the CI canary runs it (§2.3) |
 
 Still to build:
 
 | Path | Role |
 |---|---|
-| host wiring | a way for a person to open a canvas, and to hand the tools to the session |
+| a canvas of our own | §9 Phase 4 — the plan board. Everything above hosts *other people's* canvases; we have authored none |
 
 Touched:
 
 | Path | Change |
 |---|---|
-| `src/core/extensions/plugins/formats/copilot.ts` | canvas **detection** only, no capability mapping |
+| `src/core/extensions/plugins/formats/copilot.ts` | canvas **detection** only, no capability mapping; plus the `com.github.copilot/` content namespace |
 | `src/core/extensions/plugins/trust.ts` | gained the shared `isRepositorySupplied` / `shouldWithholdRepositorySupplied` used by both gates |
 | `src/core/extensions/loader.ts` | plugin gate delegates to the shared pair; its private `isUnderDir` removed |
 | `src/utils/paths.ts` | gained `isPathInside`; four private copies of it already existed elsewhere |
 | `src/extensions/core/scaffold.ts` | `/new-canvas` template (Phase 3) — ✅ shipped |
-| `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins (§4.3) |
 | `src/core/extensions/plugins/formats/shared.ts` | `detectCanvasExtensions`, shared by all three readers |
+| `.github/workflows/ci.yml` | the `canvas-canary` job (§2.3 item 4) |
 | `docs/agent-spec-tree-map.md` | record `.github/extensions/` and `~/.copilot/extensions/` |
 | `docs/plugin-format-mapping.md` | note canvas as a non-capability Copilot surface |
 

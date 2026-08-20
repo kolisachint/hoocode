@@ -7,7 +7,7 @@
  * TypeScript and a forked child cannot import it otherwise. Production resolves
  * built JavaScript instead; `CanvasRuntime` takes the shim URL as a parameter
  * precisely so that swap needs no code change (see `docs/canvas-extensions-design.md`
- * §10.3, still open).
+ * §10, still-open item 2).
  *
  * `tsx` is resolved to an **absolute** path rather than passed as the bare
  * specifier `tsx/esm`. Node resolves a bare `--import` specifier against the

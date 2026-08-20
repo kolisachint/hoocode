@@ -15,11 +15,19 @@
  *     *not* token-gate its server — a reminder that the security posture in §8 is
  *     each extension's own choice, not something the host imposes.
  *
- * Neither is vendored here, so each block skips unless a checkout is present:
+ * Neither is vendored here, so each block skips unless a checkout is present.
+ * **CI is the real caller**: the `canvas-canary` job (`.github/workflows/ci.yml`)
+ * sparse-checks-out both extensions at a pinned SHA and points
+ * `HOOCODE_CANVAS_ACCEPTANCE_ROOT` at them — see design §2.3 item 4 for why the
+ * revision is pinned. To reproduce it locally:
  *
  *   git clone --depth 1 https://github.com/github/awesome-copilot /tmp/awesome-copilot
  *   HOOCODE_CANVAS_ACCEPTANCE_ROOT=/tmp/awesome-copilot/extensions \
- *     npx tsx ../../node_modules/vitest/dist/cli.js --run test/canvas-acceptance-catalog.test.ts
+ *     bun run test test/canvas-acceptance-catalog.test.ts
+ *
+ * Skipping is for the no-checkout case only. Once that variable is set the
+ * absence of an extension is an error, because a canary that can report success
+ * having run nothing is worse than no canary at all.
  *
  * Only unauthenticated surfaces are exercised, so no GitHub token is needed and
  * nothing is downloaded.
@@ -37,9 +45,24 @@ const ROOTS = [
 	"/tmp/awesome-copilot/extensions",
 ].filter((root): root is string => typeof root === "string" && root.length > 0);
 
-/** Locate a catalog extension, or undefined when no checkout is available. */
+/**
+ * Locate a catalog extension, or undefined when no checkout is available.
+ *
+ * Setting `HOOCODE_CANVAS_ACCEPTANCE_ROOT` is a statement of intent — CI does it
+ * — so a miss *there* is a failure rather than a skip. Without this the canary
+ * has the one outcome a canary must never have: a checkout step that silently
+ * produced nothing leaves every block skipped and the job green, which is
+ * indistinguishable from the catalog still working.
+ */
 function catalogExtension(id: string): string | undefined {
-	return ROOTS.map((root) => path.join(root, id)).find((dir) => existsSync(path.join(dir, "extension.mjs")));
+	const found = ROOTS.map((root) => path.join(root, id)).find((dir) => existsSync(path.join(dir, "extension.mjs")));
+	if (!found && process.env.HOOCODE_CANVAS_ACCEPTANCE_ROOT) {
+		throw new Error(
+			`HOOCODE_CANVAS_ACCEPTANCE_ROOT is set to "${process.env.HOOCODE_CANVAS_ACCEPTANCE_ROOT}" but ` +
+				`"${id}/extension.mjs" is not under it. The canary was asked to run and cannot; refusing to skip.`,
+		);
+	}
+	return found;
 }
 
 const extensionDir = catalogExtension("pr-artifact-explorer");

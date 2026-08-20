@@ -14,3 +14,7 @@ mcp-servers/*
 # Plugin marketplace cache / generated config
 .agents/marketplace-cache/
 .agents/marketplaces.json
+
+# Third-party canvases the CI canary checks out (.github/workflows/ci.yml).
+# Ignored so reproducing that job locally cannot commit someone else's tree.
+.canvas-catalog/
