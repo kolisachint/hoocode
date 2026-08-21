@@ -4,6 +4,7 @@
 
 import { type AgentDefinition, TASK_TOOL_NAME } from "./agent-frontmatter.js";
 import { formatAgentsForPrompt } from "./agent-registry.js";
+import { formatSelfDocsForPrompt } from "./self-docs.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 
 export interface BuildSystemPromptOptions {
@@ -29,6 +30,18 @@ export interface BuildSystemPromptOptions {
 	 * agents exist without re-reading the agent registry each turn.
 	 */
 	agents?: AgentDefinition[];
+	/**
+	 * Point the model at hoocode's own shipped docs so it can answer questions
+	 * about hoocode itself.
+	 *
+	 * Defaults to true for the built-in prompt and false when `customPrompt`
+	 * replaces it. Every other appended section (context files, skills, agents)
+	 * only appears because the caller passed the content in; this one
+	 * materializes on its own, so a caller who has taken over the system prompt
+	 * gets it only by asking. That also keeps it out of light mode, whose whole
+	 * point is a minimal fixed per-turn surface. Needs the read tool either way.
+	 */
+	includeSelfDocs?: boolean;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -43,6 +56,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
 		agents: providedAgents,
+		includeSelfDocs,
 	} = options;
 	const resolvedCwd = cwd;
 	const promptCwd = resolvedCwd.replace(/\\/g, "/");
@@ -54,6 +68,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const date = `${year}-${month}-${day}`;
 
 	const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
+	const wantSelfDocs = includeSelfDocs ?? !customPrompt;
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
@@ -85,6 +100,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		const hasTask = !selectedTools || selectedTools.includes(TASK_TOOL_NAME);
 		if (hasTask && agents.length > 0) {
 			prompt += formatAgentsForPrompt(agents);
+		}
+
+		// Append hoocode's own docs (only if read tool is available)
+		if (wantSelfDocs && hasRead) {
+			prompt += formatSelfDocsForPrompt();
 		}
 
 		// Add date and working directory last
@@ -199,6 +219,11 @@ ${guidelines}`;
 	const hasTask = tools.includes(TASK_TOOL_NAME);
 	if (hasTask && agents.length > 0) {
 		prompt += formatAgentsForPrompt(agents);
+	}
+
+	// Append hoocode's own docs (only if read tool is available)
+	if (wantSelfDocs && hasRead) {
+		prompt += formatSelfDocsForPrompt();
 	}
 
 	// Add date and working directory last
