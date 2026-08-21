@@ -1,6 +1,6 @@
 /**
  * `/new-canvas` — the authoring half of canvas extensions
- * (`docs/canvas-extensions-design.md` §9, Phase 3).
+ * (`docs/canvas-extensions-design.md` §9 Phase 3, §13).
  *
  * The interesting assertion is not that a file appeared. A canvas has no passive
  * half — its id, its actions and its UI all come from running its code — so a
@@ -8,6 +8,12 @@
  * would only confirm that we wrote what we wrote. So the template is forked here
  * for real, through the same runner production uses, and driven over the
  * protocol: it must announce itself, serve a page, answer its action, and close.
+ *
+ * The second half of the file is about the shape the command borrowed from
+ * Copilot's `/create-canvas`: a sentence rather than a slug, opened before it is
+ * built, and handed to the model as a brief. Those are behaviours a person would
+ * notice missing, so each is asserted on the command's own output rather than on
+ * the helpers underneath it.
  */
 
 import * as fs from "node:fs";
@@ -17,16 +23,19 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.js";
 import { CANVAS_ENTRY_FILE } from "../src/core/canvas/discovery.js";
 import { type CanvasExtensionProcess, spawnCanvasExtension } from "../src/core/canvas/runner.js";
+import { canvasNameFromDescription, parseCanvasRequest } from "../src/core/canvas/scaffold.js";
 import { CanvasSession } from "../src/core/canvas/session.js";
 import { setPlatforms } from "../src/core/extensions/plugins/formats/platform-targets.js";
 import { isWorkspaceTrusted, untrustWorkspace } from "../src/core/extensions/plugins/trust.js";
-import { setupScaffold } from "../src/extensions/core/scaffold.js";
+import { setupCanvas } from "../src/extensions/core/canvas.js";
 import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
 describe("/new-canvas", () => {
 	let cwd: string;
 	let commands: Map<string, { handler: (args: string, ctx: unknown) => Promise<void> }>;
+	let shutdown: (() => void) | undefined;
 	let notifications: string[];
+	let sentToModel: string[];
 	let ctx: unknown;
 	let running: CanvasExtensionProcess | undefined;
 	let home: string;
@@ -35,7 +44,7 @@ describe("/new-canvas", () => {
 
 	beforeEach(() => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-new-canvas-"));
-		// The scaffold reaches for `getAgentDir()` to record workspace trust, so the
+		// The command reaches for `getAgentDir()` to record workspace trust, so the
 		// trust store has to be redirected somewhere disposable — otherwise these
 		// tests would trust a temp directory on the developer's real machine.
 		home = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-new-canvas-home-"));
@@ -45,15 +54,34 @@ describe("/new-canvas", () => {
 		process.env[ENV_AGENT_DIR] = agentDir;
 		commands = new Map();
 		notifications = [];
+		sentToModel = [];
 		const pi = {
 			registerCommand: (name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) =>
 				commands.set(name, def),
+			registerTool: () => {},
+			on: (_event: string, handler: () => void) => {
+				shutdown = handler;
+			},
+			sendUserMessage: (content: string) => {
+				sentToModel.push(content);
+			},
 		} as never;
-		setupScaffold(pi);
-		ctx = { cwd, ui: { notify: (message: string) => notifications.push(message) } } as never;
+		setupCanvas(pi, {
+			homeDir: home,
+			resolveRuntime: async () => ({ available: true, runtime: canvasTestRuntime() }),
+		});
+		// `hasUI: false` is the --print/RPC path, which opens without a loader. The
+		// loader needs a terminal, and cancelling through it is covered by
+		// `canvas-cancel.test.ts`.
+		ctx = { cwd, hasUI: false, ui: { notify: (message: string) => notifications.push(message) } } as never;
 	});
 
 	afterEach(async () => {
+		// `/new-canvas` opens what it creates, so nearly every test here leaves a
+		// child holding a port. The session's own shutdown hook is what production
+		// uses; firing it is both the cleanup and a check that it is wired.
+		shutdown?.();
+		shutdown = undefined;
 		await running?.terminate();
 		running = undefined;
 		setPlatforms(undefined);
@@ -65,6 +93,7 @@ describe("/new-canvas", () => {
 	});
 
 	const run = (args: string) => commands.get("new-canvas")?.handler(args, ctx);
+	const said = () => notifications.join("\n");
 
 	it("scaffolds into .agents/extensions, the native canvas search root", async () => {
 		await run("my-board");
@@ -82,13 +111,7 @@ describe("/new-canvas", () => {
 		setPlatforms(["claude"]);
 		await run("my-board");
 		expect(fs.existsSync(path.join(cwd, ".claude"))).toBe(false);
-		expect(notifications.join("\n")).toContain("no canvas home");
-	});
-
-	it("rejects a name that is not a valid directory slug", async () => {
-		await run("Not A Slug");
-		expect(fs.existsSync(path.join(cwd, ".agents"))).toBe(false);
-		expect(notifications.join("\n")).toContain("lowercase");
+		expect(said()).toContain("no canvas home");
 	});
 
 	it("never clobbers an existing extension", async () => {
@@ -98,7 +121,7 @@ describe("/new-canvas", () => {
 
 		await run("kept");
 		expect(fs.readFileSync(file, "utf8")).toBe("// mine");
-		expect(notifications.join("\n")).toContain("already exist");
+		expect(said()).toContain("already exist");
 	});
 
 	/**
@@ -114,9 +137,8 @@ describe("/new-canvas", () => {
 
 		expect(isWorkspaceTrusted(cwd, agentDir)).toBe(true);
 		// Granting is wider than the canvas, so it must be visible and reversible.
-		const said = notifications.join("\n");
-		expect(said).toContain("Trusted this workspace");
-		expect(said).toContain("/plugin untrust");
+		expect(said()).toContain("Trusted this workspace");
+		expect(said()).toContain("/plugin untrust");
 
 		const session = new CanvasSession({
 			cwd,
@@ -138,11 +160,11 @@ describe("/new-canvas", () => {
 		await run("first");
 		notifications.length = 0;
 		await run("second");
-		expect(notifications.join("\n")).not.toContain("Trusted this workspace");
+		expect(said()).not.toContain("Trusted this workspace");
 	});
 
 	it("grants nothing when it created nothing", async () => {
-		await run("Not A Slug");
+		await run("   ");
 		expect(isWorkspaceTrusted(cwd, agentDir)).toBe(false);
 	});
 
@@ -185,5 +207,116 @@ describe("/new-canvas", () => {
 		await running.close(params);
 		// The close handler shuts the server down, so the port stops answering.
 		await expect(fetch(opened.url as string)).rejects.toThrow();
+	});
+
+	// ── Copilot's `/create-canvas` shape ──────────────────────────────────────
+
+	/**
+	 * The gap that started this: `/new-canvas <a sentence>` was refused with "name
+	 * must be lowercase a-z", so the only way in was to have already decided on a
+	 * directory name. Copilot's `/create-canvas` takes the sentence.
+	 */
+	it("takes a description, derives a directory name from it, and says which one it picked", async () => {
+		await run("a kanban board for the release checklist");
+
+		expect(fs.existsSync(path.join(cwd, ".agents", "extensions", "kanban-board-release", CANVAS_ENTRY_FILE))).toBe(
+			true,
+		);
+		expect(said()).toContain("kanban-board-release");
+	});
+
+	it("takes an explicit name alongside a description", async () => {
+		await run("release-board: a kanban board for the release checklist");
+
+		expect(fs.existsSync(path.join(cwd, ".agents", "extensions", "release-board", CANVAS_ENTRY_FILE))).toBe(true);
+		expect(sentToModel.join("\n")).toContain("a kanban board for the release checklist");
+	});
+
+	it("asks for a name rather than inventing one when nothing usable survives", async () => {
+		await run("!!! ???");
+		expect(fs.existsSync(path.join(cwd, ".agents"))).toBe(false);
+		expect(said()).toContain("could not derive a directory name");
+	});
+
+	/**
+	 * Opening is what makes the rest of it work: Copilot puts the canvas in front
+	 * of the person and *then* builds it, and a brief that can name a live url and
+	 * instance id is a different instruction than one that cannot.
+	 */
+	it("opens the canvas it created, without a separate /canvas open", async () => {
+		await run("my-board");
+
+		expect(said()).toContain("Opened my-board");
+		expect(said()).toMatch(/http:\/\/127\.0\.0\.1:\d+\/\?token=/);
+
+		const url = said().match(/http:\/\/127\.0\.0\.1:\d+\/\?token=\S+/)?.[0] as string;
+		expect((await fetch(url)).status).toBe(200);
+	});
+
+	it("hands the model a build brief naming the file, the live instance, and the reload it must call", async () => {
+		await run("a kanban board for the release checklist");
+
+		expect(sentToModel).toHaveLength(1);
+		const brief = sentToModel[0] as string;
+		expect(brief).toContain("a kanban board for the release checklist");
+		expect(brief).toContain(path.join(".agents", "extensions", "kanban-board-release", CANVAS_ENTRY_FILE));
+		expect(brief).toContain("reload_canvas");
+		// The three contract rules whose symptom does not name the cause.
+		expect(brief).toContain("@github/copilot-sdk/extension");
+		expect(brief).toContain("session.log");
+		expect(brief).toContain("token");
+		// It must name the instance it opened, or the model has nothing to reload.
+		const instanceId = said().match(/Opened kanban-board-release \(([^)]+)\)/)?.[1] as string;
+		expect(brief).toContain(instanceId);
+	});
+
+	/**
+	 * `/new-canvas my-board` still means "give me the template to edit". Starting
+	 * a build nobody asked for would burn a turn and overwrite the file they were
+	 * about to open.
+	 */
+	it("starts no build when only a name was given", async () => {
+		await run("my-board");
+		expect(sentToModel).toEqual([]);
+		expect(said()).toContain("/canvas reload my-board");
+	});
+});
+
+/**
+ * The parse is where a person's sentence becomes a directory, so its edges are
+ * worth pinning: a bare slug must never be re-read as a one-word description,
+ * and a derived name must be a legal directory without further cleaning.
+ */
+describe("reading what /new-canvas was given", () => {
+	it("treats a bare slug as a name, with nothing to build", () => {
+		expect(parseCanvasRequest("my-board")).toEqual({ name: "my-board", description: undefined });
+		// A single word is a slug, not a description of a canvas.
+		expect(parseCanvasRequest("board")).toEqual({ name: "board", description: undefined });
+	});
+
+	it("splits an explicit name from a description on the colon", () => {
+		expect(parseCanvasRequest("release-board: track the release")).toEqual({
+			name: "release-board",
+			description: "track the release",
+		});
+	});
+
+	it("falls back to derivation when the part before the colon is not a name", () => {
+		// "Note:" is prose, not a slug, so the whole line is the description.
+		const parsed = parseCanvasRequest("Note: a board for triage");
+		expect(parsed).toEqual({ name: "note-board-triage", description: "Note: a board for triage" });
+	});
+
+	it("drops grammar but never subject matter when deriving a name", () => {
+		expect(canvasNameFromDescription("a board for tracking the release checklist")).toBe("board-tracking-release");
+		expect(canvasNameFromDescription("A Kanban Board!")).toBe("kanban-board");
+		// "canvas" is dropped as a category word, unless it is all there is.
+		expect(canvasNameFromDescription("a canvas showing flaky tests")).toBe("showing-flaky-tests");
+		expect(canvasNameFromDescription("a canvas")).toBe("canvas");
+	});
+
+	it("gives up rather than inventing a name", () => {
+		expect(canvasNameFromDescription("!!!")).toBeUndefined();
+		expect(parseCanvasRequest("  ")).toBe("name or description is required");
 	});
 });

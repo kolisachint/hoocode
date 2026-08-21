@@ -1,5 +1,11 @@
 /**
- * Scaffold commands — /new-skill, /new-agent, /new-command, and /new-canvas.
+ * Scaffold commands — /new-skill, /new-agent, and /new-command.
+ *
+ * `/new-canvas` was their fourth sibling and is not here any more. It stopped
+ * being a file-writing command when it grew Copilot's `/create-canvas` shape:
+ * it opens what it writes and hands the agent a brief to build it, so it needs
+ * the canvas session and the agent loop, neither of which belongs in a scaffold.
+ * It lives in `extensions/core/canvas.ts` over `core/canvas/scaffold.ts`.
  *
  * Without `--platform`, each creates a ready-to-edit resource file
  * under `.hoocode/` (hoocode's private surface), picked up on the next /reload.
@@ -15,12 +21,9 @@
 
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { getAgentDir } from "../../config.js";
-import { CANVAS_ENTRY_FILE } from "../../core/canvas/discovery.js";
 import { getFormatByPlatform } from "../../core/extensions/plugins/formats/index.js";
 import { getWorkspacePlatforms } from "../../core/extensions/plugins/formats/platform-targets.js";
 import type { EmittedFile, MarketplacePlatform, WorkspaceLayout } from "../../core/extensions/plugins/formats/types.js";
-import { isWorkspaceTrusted, trustWorkspace } from "../../core/extensions/plugins/trust.js";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 
 /** Validates a resource name: lowercase a-z, 0-9, hyphens, no leading/trailing/double hyphens. */
@@ -104,114 +107,6 @@ const COMMAND_BODY_TEMPLATE = (name: string) =>
 		"- $@ or $ARGUMENTS for all arguments",
 		"",
 	].join("\n");
-
-/**
- * A working single-canvas extension.
- *
- * Deliberately complete rather than a stub: a canvas has no passive half — its
- * name, its actions and its UI all come from running its code — so a scaffold
- * that does not run teaches nothing and cannot be checked with `/canvas open`.
- * This one opens, serves a page, answers an action, and closes cleanly, which is
- * the whole contract; everything past that is the author's.
- *
- * Shaped like the catalog extensions hoocode already hosts: the only import is
- * `@github/copilot-sdk/extension` (host-resolved — never installed, see
- * `docs/canvas-extensions-design.md` §4.1) plus `node:` builtins, and the UI is
- * served from an ephemeral loopback port behind a per-instance token so nothing
- * else on the machine can read it.
- */
-const CANVAS_ENTRY_TEMPLATE = (name: string): string => `\
-// ${name} — a canvas extension. Run it with: /canvas open ${name}
-//
-// The "@github/copilot-sdk/extension" import is resolved by the host at fork
-// time. Do not install it, and do not add a node_modules here.
-import { createCanvas, CanvasError, joinSession } from "@github/copilot-sdk/extension";
-import { randomBytes } from "node:crypto";
-import { createServer } from "node:http";
-
-/** Per-instance state. A canvas can be opened more than once at a time. */
-const instances = new Map();
-
-const session = await joinSession({
-	canvases: [
-		createCanvas({
-			id: "${name}",
-			displayName: "${name}",
-			description: "TODO: one sentence — the agent reads this to decide whether to open it.",
-			actions: [
-				{
-					name: "add_note",
-					description: "TODO: describe what the agent can do to this canvas.",
-					inputSchema: {
-						type: "object",
-						properties: { text: { type: "string" } },
-						required: ["text"],
-					},
-					handler: (ctx) => {
-						const entry = instances.get(ctx.instanceId);
-						// CanvasError carries a code the host shows verbatim; a bare
-						// throw arrives as an opaque internal error instead.
-						if (!entry) throw new CanvasError("no_instance", \`Instance "\${ctx.instanceId}" is not open.\`);
-						entry.notes.push(ctx.input.text);
-						return { notes: entry.notes.length };
-					},
-				},
-			],
-			open: async (ctx) => {
-				const token = randomBytes(32).toString("base64url");
-				const notes = [];
-				const server = createServer((req, res) => {
-					const url = new URL(req.url ?? "/", "http://127.0.0.1");
-					if (url.searchParams.get("token") !== token) {
-						res.writeHead(403, { "Content-Type": "text/plain" });
-						res.end("forbidden");
-						return;
-					}
-					res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-					res.end(
-						\`<!doctype html><meta charset="utf-8"><title>${name}</title>\` +
-							\`<p>\${notes.length} note(s). TODO: build the UI.\`,
-					);
-				});
-				// Port 0 on 127.0.0.1: an ephemeral port, reachable only from this machine.
-				await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
-				const { port } = server.address();
-				instances.set(ctx.instanceId, { server, notes });
-				return {
-					url: \`http://127.0.0.1:\${port}/?token=\${token}\`,
-					title: "${name}",
-				};
-			},
-			onClose: async (ctx) => {
-				const entry = instances.get(ctx.instanceId);
-				// Called for an abandoned open too, so the instance may be unknown.
-				if (!entry) return;
-				instances.delete(ctx.instanceId);
-				await new Promise((resolve) => entry.server.close(resolve));
-			},
-		}),
-	],
-});
-
-// stdout is the protocol channel. Use session.log, never console.log.
-await session.log("${name} ready");
-`;
-
-/**
- * Where a canvas extension lives, per platform.
- *
- * This does not go through {@link WorkspaceLayout} like the other scaffolds, and
- * the reason is that a canvas has no Claude convention to emit into: the surface
- * exists in Copilot and in hoocode's own `.agents/` tree and nowhere else. A
- * layout method returning nothing for one adapter would be a worse lie than
- * naming the two real homes here — these are exactly the roots
- * `core/canvas/discovery.ts` searches, which is what makes a scaffold live on
- * the next /canvas.
- */
-const CANVAS_HOMES: Partial<Record<MarketplacePlatform, string[]>> = {
-	agents: [".agents", "extensions"],
-	github: [".github", "extensions"],
-};
 
 export function setupScaffold(pi: ExtensionAPI): void {
 	// ── /new-skill <name> ─────────────────────────────────────────────────────
@@ -407,88 +302,6 @@ export function setupScaffold(pi: ExtensionAPI): void {
 				`Command created: ${join(".hoocode", "commands", `${name}.md`)}\nEdit the file, then run /reload to activate it.`,
 				"info",
 			);
-		},
-	});
-
-	// ── /new-canvas <name> ────────────────────────────────────────────────────
-	// Creates a canvas extension — .agents/extensions/<name>/extension.mjs by
-	// default, or .github/extensions/<name>/ with --platform github (Copilot's
-	// project scope). Design: docs/canvas-extensions-design.md §9, Phase 3.
-	//
-	// Unlike the other scaffolds this one needs no /reload: canvases are
-	// discovered when /canvas runs, not loaded at session start, so the new
-	// extension is openable immediately.
-
-	pi.registerCommand("new-canvas", {
-		description: "Scaffold a new canvas extension. Usage: /new-canvas <name>",
-		getArgumentCompletions: () => [],
-		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
-			const name = args.trim();
-			const error = validateResourceName(name);
-			if (error) {
-				ctx.ui.notify(`/new-canvas: ${error}. Usage: /new-canvas <name>`, "warning");
-				return;
-			}
-
-			// `--platform claude` is dropped rather than redirected: Claude has no
-			// canvas convention, and silently writing into someone else's marker
-			// directory would put an extension where that vendor will never look.
-			const requested = getWorkspacePlatforms() ?? ["agents"];
-			const targets = requested.filter((platform) => CANVAS_HOMES[platform] !== undefined);
-			if (targets.length === 0) {
-				ctx.ui.notify(
-					`/new-canvas: no canvas home for platform "${requested.join(", ")}". ` +
-						"Canvas extensions exist under .agents/extensions (agents) and .github/extensions (github) only.",
-					"warning",
-				);
-				return;
-			}
-
-			const created: string[] = [];
-			const skipped: string[] = [];
-			for (const platform of targets) {
-				const home = CANVAS_HOMES[platform];
-				if (!home) continue;
-				const relative = join(...home, name, CANVAS_ENTRY_FILE);
-				const absolute = join(ctx.cwd, relative);
-				if (existsSync(absolute)) {
-					skipped.push(relative);
-					continue;
-				}
-				mkdirSync(dirname(absolute), { recursive: true });
-				writeFileSync(absolute, CANVAS_ENTRY_TEMPLATE(name), "utf8");
-				created.push(relative);
-			}
-
-			// A canvas lands in the working tree, which is where the trust gate looks
-			// (`core/canvas/trust.ts`) — so without this the canvas you just asked for
-			// is withheld the moment you try to open it, and refused with "came with
-			// this repository", which is not true of a file created seconds ago.
-			//
-			// Granting is the same call `/plugin install --scope project` makes, for
-			// the same stated reason: a person typing this command in this directory
-			// is the human act workspace trust asks for. It is deliberately wider than
-			// this one canvas — it also lets plugins already committed here run their
-			// hooks and MCP servers — so it is said out loud and pointed at its
-			// reverse, never done silently.
-			let trustNote = "";
-			if (created.length > 0 && !isWorkspaceTrusted(ctx.cwd, getAgentDir())) {
-				trustWorkspace(ctx.cwd, getAgentDir());
-				trustNote =
-					`Trusted this workspace so the canvas can run. Plugins committed here may now run hooks ` +
-					`and MCP servers too; \`/plugin untrust\` reverses it.`;
-			}
-
-			const lines: string[] = [];
-			if (created.length > 0) {
-				lines.push("Canvas created:", ...created.map((file) => `  ${file}`));
-				lines.push("", `Open it now with /canvas open ${name} — no /reload needed.`);
-				if (trustNote) lines.push("", trustNote);
-			}
-			if (skipped.length > 0) {
-				lines.push("Skipped (already exist):", ...skipped.map((file) => `  ${file}`));
-			}
-			ctx.ui.notify(lines.join("\n"), created.length > 0 ? "info" : "warning");
 		},
 	});
 }

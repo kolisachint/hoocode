@@ -19,7 +19,7 @@ import type { DiscoveredCanvasExtension } from "./discovery.js";
 import { type CanvasSearchRoot, canvasSearchRoots, discoverCanvasExtensions } from "./discovery.js";
 import { type CanvasAvailability, resolveCanvasRuntime } from "./launch.js";
 import { pluginCanvasExtensions } from "./plugin-canvases.js";
-import { type CanvasInstance, CanvasRegistry, type CanvasRegistryEvents } from "./registry.js";
+import { type CanvasInstance, CanvasRegistry, type CanvasRegistryEvents, type CanvasReloadResult } from "./registry.js";
 import type { CanvasCallOptions } from "./runner.js";
 import { gateCanvasExtensions } from "./trust.js";
 
@@ -207,6 +207,29 @@ export class CanvasSession {
 		if (!registry || !instance) return undefined;
 		await registry.close(instance);
 		return instance;
+	}
+
+	/**
+	 * Re-fork an open extension so an edit to its code takes effect.
+	 *
+	 * Reached by extension id rather than instance id because a reload restarts the
+	 * *process*, and one child serves every instance of every canvas the extension
+	 * declares — pretending it could reload one instance would be a lie about what
+	 * happens. {@link CanvasRegistry.reload} carries the open instances across.
+	 */
+	async reload(extensionId: string, options?: CanvasCallOptions): Promise<CanvasReloadResult> {
+		const registry = this.registryOrUndefined();
+		if (!registry) {
+			throw new Error(
+				`Canvas extension "${extensionId}" is not running, so there is nothing to reload. Open it first.`,
+			);
+		}
+		return registry.reload(extensionId, options);
+	}
+
+	/** The extension ids with at least one open instance — what {@link reload} accepts. */
+	runningExtensionIds(): string[] {
+		return [...new Set(this.instances().map((instance) => instance.extensionId))];
 	}
 
 	/** Every open instance. */

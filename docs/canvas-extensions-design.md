@@ -641,6 +641,11 @@ and was wrong.
 in between; canvases are discovered when `/canvas` runs, not loaded at session
 start.
 
+**Superseded in part by §13.** Measured against Copilot's `/create-canvas`, a
+scaffold is only the first third of the command: it now takes a description,
+opens what it creates, and hands the agent a brief to build it — and, the gap
+that actually mattered, an edit to an open canvas can be made live.
+
 ### Phase 4 — Our first canvas
 
 A **plan canvas**: the agent drafts steps and navigates; the person reorders,
@@ -809,7 +814,7 @@ downloads an artifact before returning a URL. Ceilings are per provider method:
 each overridable. Cancelling a slow `open` rather than merely waiting it out is
 handled by the abandon path in §11.6.
 
-### 11.5 Actions reach the agent through two fixed tools
+### 11.5 Actions reach the agent through fixed tools
 
 Copilot names its own agent-facing shape in the SDK types: `list_canvas_capabilities`
 for discovery and `invoke_canvas_action` for invocation. Two fixed tools, whatever is
@@ -821,11 +826,12 @@ active tool's schema is re-sent on every request. One tool per open action would
 that surface scale with how many canvases are open. Two fixed tools keep it flat, and
 `registry.activeActions()` feeds the discovery response rather than the tool registry.
 
-Measured: `list_canvas_capabilities` ~75 tokens, `invoke_canvas_action` ~144, **~219
-together** — and `createCanvasToolDefinitions` returns an empty array while nothing is
-open, so a repository without canvases pays nothing at all. A test asserts each schema
-stays under the ~250-token per-tool budget, so a future description cannot quietly
-start costing every request.
+Measured: `list_canvas_capabilities` ~75 tokens, `invoke_canvas_action` ~144 — and
+`createCanvasToolDefinitions` returns an empty array while nothing is open, so a
+repository without canvases pays nothing at all. A test asserts each schema stays under
+the ~250-token per-tool budget, so a future description cannot quietly start costing
+every request. The invariant the tests protect is that the surface is *fixed*, not that
+it is two: one tool per open action is the thing ruled out.
 
 Two consequences worth stating:
 
@@ -834,6 +840,14 @@ Two consequences worth stating:
   surface a human already opened. That also keeps the injection surface flat: text
   from an issue title rendered into a canvas can at most cause an action on an
   instance somebody chose to open.
+- **There *is* a `reload_canvas` tool**, added with §13, and the distinction is what
+  keeps the bullet above intact. Reloading restarts an extension the person already
+  opened, in a workspace they already trusted, from a path the host already resolved;
+  the model cannot reach a new extension through it, and a poisoned string in some
+  canvas's data still cannot cause one to start. It is not a boundary on the file's
+  *contents* and is not described as one — whatever wrote `extension.mjs`, through the
+  permission gate, is what runs. It is hoocode's, not Copilot's: their host reloads the
+  panel itself. Measured at ~59 tokens, so the three together are ~278.
 - **Instances are addressed by `instanceId` alone.** It is a UUID unique across every
   canvas, so the schema needs three fields instead of five; the registry resolves the
   extension and canvas ids itself.
@@ -948,6 +962,98 @@ correctly ignores that directory, because it keys off `extension.mjs` and nothin
 
 ---
 
+## 13. Parity with `/create-canvas`: authoring is a loop, not a file
+
+`/new-canvas` shipped as a scaffold (§9 Phase 3) and was measured against the
+thing it is the counterpart of — Copilot's `/create-canvas`, which "lets you
+create interactive interfaces directly from a conversation": you describe what
+you want in the prompt box, the agent generates the extension, it opens in the
+right panel, and **you keep iterating by asking for capability or UI changes**.
+
+Three gaps, each reproduced before it was fixed:
+
+| | before | after |
+|---|---|---|
+| `/new-canvas a kanban board for the release checklist` | refused: *"name must be lowercase a-z, 0-9, and hyphens only"* | scaffolds `kanban-board-release`, and says which name it derived |
+| after scaffolding | printed *"Open it now with /canvas open x"* | already open, url in the same message |
+| editing `extension.mjs` while it is open | **changed nothing at all** | `reload_canvas` / `/canvas reload` makes it live |
+
+The third was the one that mattered, and it was silent. The registry hands back
+the child it already forked, so an edit reached neither the open page nor a
+freshly opened *second* instance; the only way to see a change was to end the
+session. "Ask for a UI change and watch it appear" — the entire point of
+authoring a canvas in a session — was not reachable at any speed.
+
+### 13.1 Reloading
+
+`registry.reload(extensionId)` forks the edited code, and only once the new child
+has answered with its declarations does it close the old instances, kill the old
+child, and re-open each instance against the new one.
+
+That order is the whole design. A broken edit is the *normal* failure while
+iterating — a syntax error, a throw at module scope — and paying for it with the
+person's open canvas would make the loop hostile. On failure the old child is
+still registered and still serving, and the reload throws.
+
+Two consequences are stated rather than hidden:
+
+- **Instance ids survive; urls do not.** The extension binds a fresh ephemeral
+  port and mints a fresh capability token inside `open()`, and the host has no
+  way to make it reuse either — that is the extension's business (§1.1). So a
+  reload always hands back new urls, and both the command and the tool
+  description say to give them to the person: the tab in front of them points at
+  a closed port. This is the one place hoocode is visibly worse than a host with
+  a panel it can re-point.
+- **In-process state is gone**, because a process really did restart. The `input`
+  each instance was opened with is replayed so the canvas comes back rather than
+  coming back empty, but anything the extension kept in memory does not survive.
+
+`onExit` needed a guard for this: during a reload two children of one extension
+are briefly alive, and the probe dying before it is adopted must not clear the
+live child's instances. Only the *currently registered* child may clear the
+table.
+
+### 13.2 Describing instead of naming
+
+`/new-canvas` now reads three shapes: a bare slug (unchanged, and tested first so
+a one-word request can never be re-read as a description), `name: description`,
+and a bare description whose directory name is derived. Derivation drops grammar
+only, never subject matter — "a board for tracking the release checklist" becomes
+`board-tracking-release` — and gives up rather than inventing `canvas-1` when
+nothing usable survives, because a name we made up hides that we did not
+understand the request.
+
+When a description is given, the command opens the canvas and then sends the
+model a build brief (`canvasBuildBrief`) as a follow-up turn. A scaffold plus a
+sentence is not a canvas; the gap between them is the agent's work, and the brief
+is what makes it a task rather than a hope. It states the three contract rules
+whose symptom does not name the cause: an installed dependency (§4.1 — the
+resolver already provides the SDK), a `console.log` (corrupts the JSON-RPC
+channel), and a write without a reload (changes nothing).
+
+A bare `/new-canvas my-board` still means "give me the template". Starting a build
+nobody asked for would burn a turn and overwrite the file they were about to edit.
+
+### 13.3 What moved, and why
+
+`/new-canvas` left `extensions/core/scaffold.ts`, where it sat beside
+`/new-skill`, `/new-agent` and `/new-command`. It is not a file-writing command
+any more: it opens what it writes and drives the agent loop, so it needs the
+canvas session and `pi.sendUserMessage`, neither of which belongs in a scaffold.
+The command lives in `extensions/core/canvas.ts`; every decision it makes — the
+parse, the name derivation, the homes, the template, the brief — is in
+`core/canvas/scaffold.ts`, testable without a terminal, a fork or a model.
+
+### 13.4 Still not parity
+
+Copilot renders the canvas in a panel it owns. hoocode hands you a URL for your
+own browser, so it cannot re-point a tab on reload, cannot follow a
+`navigateInstance` call, and cannot tell whether anyone is looking (§6, and the
+registry's correction to it). Those follow from not having a panel, not from
+anything above.
+
+---
+
 ## File map
 
 Shipped:
@@ -964,10 +1070,12 @@ Shipped:
 | `src/core/canvas/launch.ts` | whether canvases can run here (§11.1), and the runtime to fork |
 | `src/core/canvas/session.ts` | the session facade: what is there, can it run, open this, close that — with no TUI in it |
 | `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins, in discovery's own shape (§4.3) |
-| `src/extensions/core/canvas.ts` | `/canvas list \| open \| close`, the cancellable loader, and tool registration on first open |
-| `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action`, created only while a canvas is open |
+| `src/extensions/core/canvas.ts` | `/canvas list \| open \| reload \| close` and `/new-canvas`, the cancellable loader, and tool registration on first open |
+| `src/core/canvas/scaffold.ts` | what `/new-canvas` was asked for, where it writes, the template, and the model's build brief (§13) |
+| `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action` + `reload_canvas`, created only while a canvas is open |
 | `src/modes/interactive/resource-display.ts` | canvases in the startup / `/reload` summary — counted, and named with how to open them |
 | `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1); the CI canary runs it (§2.3) |
+| `test/canvas-reload.test.ts` | the iterate loop end to end: edit an open canvas, reload through the agent's own tools, drive the capability that edit added (§13) |
 
 Still to build:
 
