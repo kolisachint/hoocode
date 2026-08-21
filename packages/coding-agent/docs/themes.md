@@ -20,7 +20,7 @@ Themes are JSON files that define colors for the TUI.
 HooCode loads themes from:
 
 - Built-in: every `*.json` in the shipped theme directory (see [Built-in Themes](#built-in-themes))
-- Global: `~/.hoocode/agent/themes/*.json`
+- Global: `~/.hoocode/themes/*.json`
 - Project: `.hoocode/themes/*.json`
 - Packages: `themes/` directories or `pi.themes` entries in `package.json`
 - Settings: `themes` array with files or directories
@@ -113,8 +113,8 @@ On first run, hoocode detects your terminal background and defaults to `dark` or
 1. Create a theme file:
 
 ```bash
-mkdir -p ~/.hoocode/agent/themes
-vim ~/.hoocode/agent/themes/my-theme.json
+mkdir -p ~/.hoocode/themes
+vim ~/.hoocode/themes/my-theme.json
 ```
 
 2. Define the theme with all required colors (see [Color Tokens](#color-tokens)):

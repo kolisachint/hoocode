@@ -71,7 +71,7 @@ Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpM
 
 ## Sessions
 
-Sessions are saved automatically to `~/.hoocode/agent/sessions/`, organized by working directory.
+Sessions are saved automatically to `~/.hoocode/sessions/`, organized by working directory.
 
 ```bash
 hoocode -c                  # Continue most recent session
@@ -96,7 +96,7 @@ See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 HooCode loads `AGENTS.md` or `CLAUDE.md` at startup from, least specific first:
 
 - `~/.agents/AGENTS.md` — the cross-vendor user scope, shared with other agent tools
-- `~/.hoocode/agent/AGENTS.md` — hoocode's own global instructions, which win on conflict
+- `~/.hoocode/AGENTS.md` — hoocode's own global instructions, which win on conflict
 - parent directories, walking up from the current working directory
 - the current directory
 
@@ -182,7 +182,7 @@ the same path the sessions were recorded under.
 Replace the default system prompt with:
 
 - `.hoocode/SYSTEM.md` for a project
-- `~/.hoocode/agent/SYSTEM.md` globally
+- `~/.hoocode/SYSTEM.md` globally
 
 Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in either location.
 
@@ -336,7 +336,7 @@ hoocode --tools read,grep,find,ls -p "Review the code"
 
 | Variable | Description |
 |----------|-------------|
-| `HOOCODE_AGENT_DIR` | Override config directory; default is `~/.hoocode/agent` |
+| `HOOCODE_AGENT_DIR` | Override config directory; default is `~/.hoocode` |
 | `HOOCODE_AGENT_SESSION_DIR` | Override session storage directory; overridden by `--session-dir` |
 | `HOOCODE_PACKAGE_DIR` | Override package directory, useful for Nix/Guix store paths |
 | `HOOCODE_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |

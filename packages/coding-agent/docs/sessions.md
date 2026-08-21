@@ -4,7 +4,7 @@ HooCode saves conversations as sessions so you can continue work, branch from ea
 
 ## Session Storage
 
-Sessions auto-save to `~/.hoocode/agent/sessions/`, organized by working directory. Each session is a JSONL file with a tree structure.
+Sessions auto-save to `~/.hoocode/sessions/`, organized by working directory. Each session is a JSONL file with a tree structure.
 
 ```bash
 hoocode -c                  # Continue most recent session

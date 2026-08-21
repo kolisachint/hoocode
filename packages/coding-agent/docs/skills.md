@@ -24,7 +24,7 @@ HooCode implements the [Agent Skills standard](https://agentskills.io/specificat
 HooCode loads skills from:
 
 - Global:
-  - `~/.hoocode/agent/skills/`
+  - `~/.hoocode/skills/`
   - `~/.agents/skills/`
 - Project:
   - `.hoocode/skills/`
@@ -34,7 +34,7 @@ HooCode loads skills from:
 - CLI: `--skill <path>` (repeatable, additive even with `--no-skills`)
 
 Discovery rules:
-- In `~/.hoocode/agent/skills/` and `.hoocode/skills/`, direct root `.md` files are discovered as individual skills
+- In `~/.hoocode/skills/` and `.hoocode/skills/`, direct root `.md` files are discovered as individual skills
 - In all skill locations, directories containing `SKILL.md` are discovered recursively
 - In `~/.agents/skills/` and project `.agents/skills/`, root `.md` files are ignored
 

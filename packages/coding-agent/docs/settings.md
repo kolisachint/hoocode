@@ -4,7 +4,7 @@ HooCode uses JSON settings files with project settings overriding global setting
 
 | Location | Scope |
 |----------|-------|
-| `~/.hoocode/agent/settings.json` | Global (all projects) |
+| `~/.hoocode/settings.json` | Global (all projects) |
 | `.hoocode/settings.json` | Project (current directory) |
 
 Edit directly or use `/settings` for common options.
@@ -244,7 +244,7 @@ window.
 
 These settings define where to load extensions, skills, prompts, and themes from.
 
-Paths in `~/.hoocode/agent/settings.json` resolve relative to `~/.hoocode/agent`. Paths in `.hoocode/settings.json` resolve relative to `.hoocode`. Absolute paths and `~` are supported.
+Paths in `~/.hoocode/settings.json` resolve relative to `~/.hoocode`. Paths in `.hoocode/settings.json` resolve relative to `.hoocode`. Absolute paths and `~` are supported.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
@@ -313,7 +313,7 @@ See [packages.md](packages.md) for package management details.
 Project settings (`.hoocode/settings.json`) override global settings. Nested objects are merged:
 
 ```json
-// ~/.hoocode/agent/settings.json (global)
+// ~/.hoocode/settings.json (global)
 {
   "theme": "dark",
   "compaction": { "enabled": true, "reserveTokens": 16384 }

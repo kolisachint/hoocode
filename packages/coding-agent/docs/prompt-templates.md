@@ -8,7 +8,7 @@ Prompt templates are Markdown snippets that expand into full prompts. Type `/nam
 
 HooCode loads prompt templates from:
 
-- Global: `~/.hoocode/agent/prompts/*.md`
+- Global: `~/.hoocode/prompts/*.md`
 - Project: `.hoocode/prompts/*.md`
 - Packages: `prompts/` directories or `pi.prompts` entries in `package.json`
 - Settings: `prompts` array with files or directories

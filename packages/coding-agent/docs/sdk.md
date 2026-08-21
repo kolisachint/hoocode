@@ -338,7 +338,7 @@ const { session } = await createAgentSession({
   cwd: process.cwd(), // default
   
   // Global config directory
-  agentDir: "~/.hoocode/agent", // default (expands ~)
+  agentDir: "~/.hoocode", // default (expands ~)
 });
 ```
 
@@ -354,7 +354,7 @@ const { session } = await createAgentSession({
 `agentDir` is used by `DefaultResourceLoader` for:
 - Global extensions (`extensions/`)
 - Global skills:
-  - `skills/` under `agentDir` (for example `~/.hoocode/agent/skills/`)
+  - `skills/` under `agentDir` (for example `~/.hoocode/skills/`)
   - `~/.agents/skills/`
 - Global prompts (`prompts/`)
 - Global context file (`AGENTS.md`)
@@ -418,7 +418,7 @@ API key resolution priority (handled by AuthStorage):
 ```typescript
 import { AuthStorage, ModelRegistry } from "@kolisachint/hoocode-agent";
 
-// Default: uses ~/.hoocode/agent/auth.json and ~/.hoocode/agent/models.json
+// Default: uses ~/.hoocode/auth.json and ~/.hoocode/models.json
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
 
@@ -560,7 +560,7 @@ Custom tools passed via `customTools` are combined with extension-registered too
 
 ### Extensions
 
-Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.hoocode/agent/extensions/`, `.hoocode/extensions/`, and settings.json extension sources.
+Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.hoocode/extensions/`, `.hoocode/extensions/`, and settings.json extension sources.
 
 ```typescript
 import { createAgentSession, DefaultResourceLoader } from "@kolisachint/hoocode-agent";
@@ -818,7 +818,7 @@ const { session } = await createAgentSession({
 **Project-specific settings:**
 
 Settings load from two locations and merge:
-1. Global: `~/.hoocode/agent/settings.json`
+1. Global: `~/.hoocode/settings.json`
 2. Project: `<cwd>/.hoocode/settings.json`
 
 Project overrides global. Nested objects merge keys. Setters modify global settings by default.

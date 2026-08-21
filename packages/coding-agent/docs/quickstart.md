@@ -40,7 +40,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 hoocode
 ```
 
-You can also run `/login` and select an API-key provider to store the key in `~/.hoocode/agent/auth.json`.
+You can also run `/login` and select an API-key provider to store the key in `~/.hoocode/auth.json`.
 
 See [Providers](providers.md) for all supported providers, environment variables, and cloud-provider setup.
 
@@ -75,7 +75,7 @@ HooCode loads context files at startup. Add an `AGENTS.md` file to tell it how t
 
 HooCode loads:
 
-- `~/.hoocode/agent/AGENTS.md` for global instructions
+- `~/.hoocode/AGENTS.md` for global instructions
 - `AGENTS.md` or `CLAUDE.md` from parent directories and the current directory
 
 Restart hoocode, or run `/reload`, after changing context files.
