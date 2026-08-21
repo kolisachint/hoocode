@@ -26,11 +26,26 @@
   port and mints a new token on every open — so the previous browser tab is dead
   and the replacement url is printed.
 
+- An arrow-key games canvas, hoocode's first canvas of its own, at
+  `.agents/extensions/create-lightweight-games/`. Open it with
+  `/canvas open create-lightweight-games`. Snake and a randomly carved Maze are
+  yours alone; **Duel** is a turn-based coin race you play against the model —
+  you move with the arrow keys, it moves through `invoke_canvas_action`, and the
+  board updates live for both of you. It was built by running
+  `/new-canvas create lightweight games that can be played with keyboard arrow keys`
+  and iterating with `reload_canvas`, which is what the two entries above are for.
+
 ### Changed
 
 - `/new-canvas` moved from the `/new-*` scaffold family to the canvas surface. It
   is no longer a file-writing command: it opens what it creates and drives the
   agent loop.
+
+- The build brief now tells the model to leave the canvas's `id` alone and rename
+  `displayName` instead. Renaming the id drops the instance the person is
+  watching on the next reload — correct behaviour, since the canvas the instance
+  was opened against no longer exists, but a trap the model walks into because
+  the scaffold names the canvas after a directory derived from a sentence.
 
 ## [0.5.25] - 2026-08-20
 

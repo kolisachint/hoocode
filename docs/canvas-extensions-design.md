@@ -1044,7 +1044,50 @@ The command lives in `extensions/core/canvas.ts`; every decision it makes — th
 parse, the name derivation, the homes, the template, the brief — is in
 `core/canvas/scaffold.ts`, testable without a terminal, a fork or a model.
 
-### 13.4 Still not parity
+### 13.4 What building one with it turned up
+
+The command was then used for its own purpose — `/new-canvas create lightweight
+games that can be played with keyboard arrow keys` — and the canvas it produced
+is committed at `.agents/extensions/create-lightweight-games/`, covered by
+`test/canvas-arrow-key-games.test.ts`. That makes it §9 Phase 4's "a canvas of
+our own", though not the plan board that section describes.
+
+Four things the loop surfaced that no unit test had:
+
+- **Renaming the canvas `id` drops the open instance.** The scaffold names the
+  canvas after the directory, the directory is named from a sentence, and the
+  first thing a model wants to do is pick a better name. The reload reported it
+  exactly right — *"the reloaded extension no longer declares canvas X (declares:
+  Y)"* — but it still cost the canvas the person was watching, twice. The brief
+  now says to change `displayName` and leave `id` alone. Auto-adopting a sole
+  replacement was considered and rejected: it is a guess, and a wrong one
+  whenever an extension genuinely declares several canvases.
+- **A broken edit really is free.** A syntax error in the first draft made the
+  reload refuse; `/canvas list` showed the canvas still open on its original
+  port, unchanged. That is §13.1's ordering doing its job on an accident rather
+  than in a test.
+- **The token gate needs to cover what the page itself loads.** The first draft
+  served `/app.js` and `/app.css` behind the token but linked them without one,
+  so every asset 403'd. `curl` checks that append the token by hand cannot see
+  this; a browser hits it on the first paint. The lesson generalises to any
+  canvas that serves more than one route.
+- **Real time is what an agent cannot join.** Snake and the maze are the
+  person's alone — an agent acting in tool calls seconds apart cannot share a
+  130ms clock. The third game, Duel, is turn-based precisely so it can be
+  shared, and that is the general shape: **a canvas an agent co-plays has to be
+  turn-based, or it has to give the agent something other than reflexes to
+  contribute.**
+
+One thing the canvas needed that the host does not provide: a way to *wait*. The
+agent has no event channel — nothing tells it the person moved — so its only
+options are to poll `get_state` or to be told. Duel solves it inside the
+extension with an `await_turn` action that blocks until the turn flips and
+returns just under the host's 30s action ceiling. It works, and it is worth
+noting that every canvas wanting the same thing has to invent it again; a
+host-level "wait for this canvas to change" has an obvious shape and does not
+exist.
+
+### 13.5 Still not parity
 
 Copilot renders the canvas in a panel it owns. hoocode hands you a URL for your
 own browser, so it cannot re-point a tab on reload, cannot follow a
@@ -1076,12 +1119,14 @@ Shipped:
 | `src/modes/interactive/resource-display.ts` | canvases in the startup / `/reload` summary — counted, and named with how to open them |
 | `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1); the CI canary runs it (§2.3) |
 | `test/canvas-reload.test.ts` | the iterate loop end to end: edit an open canvas, reload through the agent's own tools, drive the capability that edit added (§13) |
+| `.agents/extensions/create-lightweight-games/` | hoocode's own canvas — arrow-key Snake and Maze, plus Duel, a turn-based game the agent plays (§13.4) |
+| `test/canvas-arrow-key-games.test.ts` | that canvas's contract: declarations, the token gate covering its own assets, and Duel's turn rules |
 
 Still to build:
 
 | Path | Role |
 |---|---|
-| a canvas of our own | §9 Phase 4 — the plan board. Everything above hosts *other people's* canvases; we have authored none |
+| the plan board | §9 Phase 4. `.agents/extensions/create-lightweight-games/` is now a canvas of our own (§13.4), but it is a games canvas — the reviewable plan surface that phase is actually about is still unbuilt |
 
 Touched:
 

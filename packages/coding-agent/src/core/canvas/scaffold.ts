@@ -301,12 +301,19 @@ export interface CanvasBriefTarget {
  * into a build task with the contract attached, so the model does not have to
  * infer the rules of a surface it cannot see from a template it has not read.
  *
- * Three of those rules are stated because getting them wrong fails in ways whose
+ * Four of those rules are stated because getting them wrong fails in ways whose
  * symptom does not name the cause: an installed dependency (the resolver already
  * provides the SDK, and a `node_modules` here is a §4.1 violation), a
  * `console.log` (corrupts the JSON-RPC channel and surfaces as "non-protocol
- * stdout"), and a write without a reload (changes nothing at all, because the
- * running child was forked from the old bytes).
+ * stdout"), a write without a reload (changes nothing at all, because the running
+ * child was forked from the old bytes), and a renamed canvas id.
+ *
+ * That last one is the newest and was found the hard way, by building a canvas
+ * with this command: the scaffold names the canvas after the directory, a model
+ * that thinks of a better name renames the `id`, and the next reload drops the
+ * instance the person is looking at — correctly, since the canvas it was opened
+ * against no longer exists. `displayName` is the half they actually see, so it
+ * is the half to change.
  */
 export function canvasBuildBrief(
 	name: string,
@@ -343,6 +350,7 @@ export function canvasBuildBrief(
 		"The contract this surface runs under, which is not yours to change:",
 		'- The only non-`node:` import allowed is "@github/copilot-sdk/extension". The host resolves it when it forks the extension. Do not install anything, and do not add a package.json or node_modules in the extension directory.',
 		"- stdout is the JSON-RPC channel. Use `session.log(...)`; a `console.log` corrupts the protocol.",
+		"- Do not change the canvas's `id`. An open instance is bound to it, so renaming it drops the canvas the person is watching on your next reload. Give it a nicer `displayName` instead — that is the one they see.",
 		"- Serve the UI from the loopback server the template already starts. Keep the per-instance token check, and keep `onClose` shutting the server down — that is what stops a port outliving the session.",
 		"- Everything in `actions: [...]` becomes callable by you through invoke_canvas_action once it is open, so give each action a real description and inputSchema. That list is how you drive the canvas; the person drives the same state through the page.",
 		"",

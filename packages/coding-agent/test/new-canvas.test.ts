@@ -264,6 +264,8 @@ describe("/new-canvas", () => {
 		// The three contract rules whose symptom does not name the cause.
 		expect(brief).toContain("@github/copilot-sdk/extension");
 		expect(brief).toContain("session.log");
+		// Found by using the command: renaming the canvas id drops the open instance.
+		expect(brief).toContain("`id`");
 		expect(brief).toContain("token");
 		// It must name the instance it opened, or the model has nothing to reload.
 		const instanceId = said().match(/Opened kanban-board-release \(([^)]+)\)/)?.[1] as string;
