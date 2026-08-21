@@ -18,8 +18,15 @@ import { getAgentDir } from "../../config.js";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 import { type CanvasSearchRoot, canvasSearchRoots, discoverCanvasExtensions } from "./discovery.js";
 import { type CanvasAvailability, resolveCanvasRuntime } from "./launch.js";
+import {
+	type CanvasLifecycleRefusal,
+	type CanvasRemoveResult,
+	type CanvasRenameResult,
+	removeCanvasExtension,
+	renameCanvasExtension,
+} from "./lifecycle.js";
 import { pluginCanvasExtensions } from "./plugin-canvases.js";
-import { type CanvasInstance, CanvasRegistry, type CanvasRegistryEvents } from "./registry.js";
+import { type CanvasInstance, CanvasRegistry, type CanvasRegistryEvents, type CanvasReloadResult } from "./registry.js";
 import type { CanvasCallOptions } from "./runner.js";
 import { gateCanvasExtensions } from "./trust.js";
 
@@ -43,6 +50,15 @@ export interface CanvasOverview {
 	listings: CanvasListing[];
 	/** Extensions withheld by the trust gate — surfaced, never hidden (§5.1). */
 	withheldCount: number;
+	/**
+	 * Action names per open instance.
+	 *
+	 * Beside the listings rather than inside them because an action belongs to a
+	 * running instance, not to a canvas on disk: a listing exists for extensions
+	 * that have never been forked, and those have no actions to report — not zero
+	 * of them, none knowable.
+	 */
+	actionsByInstance: Map<string, string[]>;
 }
 
 /** Configuration for a session's canvas facade. */
@@ -169,7 +185,13 @@ export class CanvasSession {
 				open: [],
 			});
 		}
-		return { availability, listings, withheldCount: withheld.length };
+		const actionsByInstance = new Map<string, string[]>();
+		for (const binding of this.registryOrUndefined()?.activeActions() ?? []) {
+			const names = actionsByInstance.get(binding.instanceId) ?? [];
+			names.push(binding.action.name);
+			actionsByInstance.set(binding.instanceId, names);
+		}
+		return { availability, listings, withheldCount: withheld.length, actionsByInstance };
 	}
 
 	/**
@@ -207,6 +229,88 @@ export class CanvasSession {
 		if (!registry || !instance) return undefined;
 		await registry.close(instance);
 		return instance;
+	}
+
+	/**
+	 * Re-fork an open extension so an edit to its code takes effect.
+	 *
+	 * Reached by extension id rather than instance id because a reload restarts the
+	 * *process*, and one child serves every instance of every canvas the extension
+	 * declares — pretending it could reload one instance would be a lie about what
+	 * happens. {@link CanvasRegistry.reload} carries the open instances across.
+	 */
+	async reload(extensionId: string, options?: CanvasCallOptions): Promise<CanvasReloadResult> {
+		const registry = this.registryOrUndefined();
+		if (!registry) {
+			throw new Error(
+				`Canvas extension "${extensionId}" is not running, so there is nothing to reload. Open it first.`,
+			);
+		}
+		return registry.reload(extensionId, options);
+	}
+
+	/**
+	 * Rename a canvas extension, closing anything it has open first.
+	 *
+	 * Closing is not politeness: the directory is about to move, and an instance
+	 * left open would be serving from a path that no longer exists while the
+	 * registry still believed it was there. The closed instance ids are returned so
+	 * the caller can say what it cost.
+	 */
+	async rename(extensionId: string, to: string): Promise<CanvasRenameResult | CanvasLifecycleRefusal> {
+		const extension = this.find(extensionId);
+		if (!extension) return { reason: "unwritable", detail: this.notFound(extensionId) };
+		await this.closeAllOf(extensionId);
+		return renameCanvasExtension(extension, to, this.roots);
+	}
+
+	/** Delete a canvas extension, closing anything it has open first. */
+	async remove(extensionId: string): Promise<CanvasRemoveResult | CanvasLifecycleRefusal> {
+		const extension = this.find(extensionId);
+		if (!extension) return { reason: "unwritable", detail: this.notFound(extensionId) };
+		await this.closeAllOf(extensionId);
+		return removeCanvasExtension(extension, this.roots);
+	}
+
+	/**
+	 * Close every instance of an extension and stop its child.
+	 *
+	 * `close` alone would leave the process alive for its linger period, still
+	 * holding the code we are about to move or delete. Rename and remove both need
+	 * it actually gone.
+	 */
+	private async closeAllOf(extensionId: string): Promise<string[]> {
+		const registry = this.registryOrUndefined();
+		if (!registry) return [];
+		const open = registry.listInstances().filter((instance) => instance.extensionId === extensionId);
+		for (const instance of open) await registry.close(instance);
+		await registry.stopChild(extensionId);
+		return open.map((instance) => instance.instanceId);
+	}
+
+	/** The discovered extension with this id, runnable or withheld. */
+	private find(extensionId: string): DiscoveredCanvasExtension | undefined {
+		const { runnable, withheld } = this.discover();
+		return [...runnable, ...withheld].find((candidate) => candidate.id === extensionId);
+	}
+
+	private notFound(extensionId: string): string {
+		const known =
+			this.discover()
+				.runnable.map((candidate) => candidate.id)
+				.join(", ") || "none";
+		return `No canvas extension "${extensionId}" (found: ${known}).`;
+	}
+
+	/** Everything that could be renamed or removed, for completions and messages. */
+	knownExtensionIds(): string[] {
+		const { runnable, withheld } = this.discover();
+		return [...runnable, ...withheld].map((candidate) => candidate.id).sort();
+	}
+
+	/** The extension ids with at least one open instance — what {@link reload} accepts. */
+	runningExtensionIds(): string[] {
+		return [...new Set(this.instances().map((instance) => instance.extensionId))];
 	}
 
 	/** Every open instance. */

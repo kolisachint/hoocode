@@ -641,6 +641,11 @@ and was wrong.
 in between; canvases are discovered when `/canvas` runs, not loaded at session
 start.
 
+**Superseded in part by §13.** Measured against Copilot's `/create-canvas`, a
+scaffold is only the first third of the command: it now takes a description,
+opens what it creates, and hands the agent a brief to build it — and, the gap
+that actually mattered, an edit to an open canvas can be made live.
+
 ### Phase 4 — Our first canvas
 
 A **plan canvas**: the agent drafts steps and navigates; the person reorders,
@@ -809,7 +814,7 @@ downloads an artifact before returning a URL. Ceilings are per provider method:
 each overridable. Cancelling a slow `open` rather than merely waiting it out is
 handled by the abandon path in §11.6.
 
-### 11.5 Actions reach the agent through two fixed tools
+### 11.5 Actions reach the agent through fixed tools
 
 Copilot names its own agent-facing shape in the SDK types: `list_canvas_capabilities`
 for discovery and `invoke_canvas_action` for invocation. Two fixed tools, whatever is
@@ -821,11 +826,12 @@ active tool's schema is re-sent on every request. One tool per open action would
 that surface scale with how many canvases are open. Two fixed tools keep it flat, and
 `registry.activeActions()` feeds the discovery response rather than the tool registry.
 
-Measured: `list_canvas_capabilities` ~75 tokens, `invoke_canvas_action` ~144, **~219
-together** — and `createCanvasToolDefinitions` returns an empty array while nothing is
-open, so a repository without canvases pays nothing at all. A test asserts each schema
-stays under the ~250-token per-tool budget, so a future description cannot quietly
-start costing every request.
+Measured: `list_canvas_capabilities` ~75 tokens, `invoke_canvas_action` ~144 — and
+`createCanvasToolDefinitions` returns an empty array while nothing is open, so a
+repository without canvases pays nothing at all. A test asserts each schema stays under
+the ~250-token per-tool budget, so a future description cannot quietly start costing
+every request. The invariant the tests protect is that the surface is *fixed*, not that
+it is two: one tool per open action is the thing ruled out.
 
 Two consequences worth stating:
 
@@ -834,6 +840,14 @@ Two consequences worth stating:
   surface a human already opened. That also keeps the injection surface flat: text
   from an issue title rendered into a canvas can at most cause an action on an
   instance somebody chose to open.
+- **There *is* a `reload_canvas` tool**, added with §13, and the distinction is what
+  keeps the bullet above intact. Reloading restarts an extension the person already
+  opened, in a workspace they already trusted, from a path the host already resolved;
+  the model cannot reach a new extension through it, and a poisoned string in some
+  canvas's data still cannot cause one to start. It is not a boundary on the file's
+  *contents* and is not described as one — whatever wrote `extension.mjs`, through the
+  permission gate, is what runs. It is hoocode's, not Copilot's: their host reloads the
+  panel itself. Measured at ~59 tokens, so the three together are ~278.
 - **Instances are addressed by `instanceId` alone.** It is a UUID unique across every
   canvas, so the schema needs three fields instead of five; the registry resolves the
   extension and canvas ids itself.
@@ -948,6 +962,219 @@ correctly ignores that directory, because it keys off `extension.mjs` and nothin
 
 ---
 
+## 13. Parity with `/create-canvas`: authoring is a loop, not a file
+
+`/new-canvas` shipped as a scaffold (§9 Phase 3) and was measured against the
+thing it is the counterpart of — Copilot's `/create-canvas`, which "lets you
+create interactive interfaces directly from a conversation": you describe what
+you want in the prompt box, the agent generates the extension, it opens in the
+right panel, and **you keep iterating by asking for capability or UI changes**.
+
+Three gaps, each reproduced before it was fixed:
+
+| | before | after |
+|---|---|---|
+| `/new-canvas a kanban board for the release checklist` | refused: *"name must be lowercase a-z, 0-9, and hyphens only"* | scaffolds `kanban-board-release`, and says which name it derived |
+| after scaffolding | printed *"Open it now with /canvas open x"* | already open, url in the same message |
+| editing `extension.mjs` while it is open | **changed nothing at all** | `reload_canvas` / `/canvas reload` makes it live |
+
+The third was the one that mattered, and it was silent. The registry hands back
+the child it already forked, so an edit reached neither the open page nor a
+freshly opened *second* instance; the only way to see a change was to end the
+session. "Ask for a UI change and watch it appear" — the entire point of
+authoring a canvas in a session — was not reachable at any speed.
+
+### 13.1 Reloading
+
+`registry.reload(extensionId)` forks the edited code, and only once the new child
+has answered with its declarations does it close the old instances, kill the old
+child, and re-open each instance against the new one.
+
+That order is the whole design. A broken edit is the *normal* failure while
+iterating — a syntax error, a throw at module scope — and paying for it with the
+person's open canvas would make the loop hostile. On failure the old child is
+still registered and still serving, and the reload throws.
+
+Two consequences are stated rather than hidden:
+
+- **Instance ids survive; urls do not.** The extension binds a fresh ephemeral
+  port and mints a fresh capability token inside `open()`, and the host has no
+  way to make it reuse either — that is the extension's business (§1.1). So a
+  reload always hands back new urls, and both the command and the tool
+  description say to give them to the person: the tab in front of them points at
+  a closed port. This is the one place hoocode is visibly worse than a host with
+  a panel it can re-point.
+- **In-process state is gone**, because a process really did restart. The `input`
+  each instance was opened with is replayed so the canvas comes back rather than
+  coming back empty, but anything the extension kept in memory does not survive.
+
+`onExit` needed a guard for this: during a reload two children of one extension
+are briefly alive, and the probe dying before it is adopted must not clear the
+live child's instances. Only the *currently registered* child may clear the
+table.
+
+### 13.2 Describing instead of naming
+
+`/new-canvas` now reads three shapes: a bare slug (unchanged, and tested first so
+a one-word request can never be re-read as a description), `name: description`,
+and a bare description whose directory name is derived. Derivation drops grammar
+only, never subject matter — "a board for tracking the release checklist" becomes
+`board-tracking-release` — and gives up rather than inventing `canvas-1` when
+nothing usable survives, because a name we made up hides that we did not
+understand the request.
+
+When a description is given, the command opens the canvas and then sends the
+model a build brief (`canvasBuildBrief`) as a follow-up turn. A scaffold plus a
+sentence is not a canvas; the gap between them is the agent's work, and the brief
+is what makes it a task rather than a hope. It states the three contract rules
+whose symptom does not name the cause: an installed dependency (§4.1 — the
+resolver already provides the SDK), a `console.log` (corrupts the JSON-RPC
+channel), and a write without a reload (changes nothing).
+
+A bare `/new-canvas my-board` still means "give me the template". Starting a build
+nobody asked for would burn a turn and overwrite the file they were about to edit.
+
+### 13.3 What moved, and why
+
+`/new-canvas` left `extensions/core/scaffold.ts`, where it sat beside
+`/new-skill`, `/new-agent` and `/new-command`. It is not a file-writing command
+any more: it opens what it writes and drives the agent loop, so it needs the
+canvas session and `pi.sendUserMessage`, neither of which belongs in a scaffold.
+The command lives in `extensions/core/canvas.ts`; every decision it makes — the
+parse, the name derivation, the homes, the template, the brief — is in
+`core/canvas/scaffold.ts`, testable without a terminal, a fork or a model.
+
+### 13.4 What building one with it turned up
+
+The command was then used for its own purpose — `/new-canvas create lightweight
+games that can be played with keyboard arrow keys` — and the canvas it produced
+is committed at `.agents/extensions/arrow-key-games/`, covered by
+`test/canvas-arrow-key-games.test.ts`. That makes it §9 Phase 4's "a canvas of
+our own", though not the plan board that section describes.
+
+Four things the loop surfaced that no unit test had:
+
+- **Renaming the canvas `id` drops the open instance.** The scaffold names the
+  canvas after the directory, the directory is named from a sentence, and the
+  first thing a model wants to do is pick a better name. The reload reported it
+  exactly right — *"the reloaded extension no longer declares canvas X (declares:
+  Y)"* — but it still cost the canvas the person was watching, twice. The brief
+  now says to change `displayName` and leave `id` alone. Auto-adopting a sole
+  replacement was considered and rejected: it is a guess, and a wrong one
+  whenever an extension genuinely declares several canvases.
+- **A broken edit really is free.** A syntax error in the first draft made the
+  reload refuse; `/canvas list` showed the canvas still open on its original
+  port, unchanged. That is §13.1's ordering doing its job on an accident rather
+  than in a test.
+- **The token gate needs to cover what the page itself loads.** The first draft
+  served `/app.js` and `/app.css` behind the token but linked them without one,
+  so every asset 403'd. `curl` checks that append the token by hand cannot see
+  this; a browser hits it on the first paint. The lesson generalises to any
+  canvas that serves more than one route.
+- **Real time is what an agent cannot join.** Snake and the maze are the
+  person's alone — an agent acting in tool calls seconds apart cannot share a
+  130ms clock. The third game, Duel, is turn-based precisely so it can be
+  shared, and that is the general shape: **a canvas an agent co-plays has to be
+  turn-based, or it has to give the agent something other than reflexes to
+  contribute.**
+
+One thing the canvas needed that the host does not provide: a way to *wait*. The
+agent has no event channel — nothing tells it the person moved — so its only
+options are to poll `get_state` or to be told. Duel solves it inside the
+extension with an `await_turn` action that blocks until the turn flips and
+returns just under the host's 30s action ceiling. It works, and it is worth
+noting that every canvas wanting the same thing has to invent it again; a
+host-level "wait for this canvas to change" has an obvious shape and does not
+exist.
+
+### 13.5 The rest of the lifecycle
+
+Create and iterate were built first because they were missing outright. Reviewing
+the surface afterwards found that everything *after* creation was still
+hand-work, and one piece of it was a trap.
+
+**Naming was wrong more often than right.** Measured on twelve realistic
+phrasings, seven produced a name for the *request* rather than the thing:
+`create-lightweight-games`, `build-dashboard-showing`, `want-review-pull`,
+`help-compare-two`. Two rules fix it, both grammar-only:
+
+- **Request words are dropped anywhere** — `create`, `build`, `make`, `show`,
+  `help`, `want`, `please`, `something`. People type this command as an
+  instruction, and the instruction was landing in the directory name.
+- **Nouns are preferred over `-ing`/`-ed` words**, but only while at least two
+  survive. A participle sits between the request and its subject and pushes the
+  subject out of a three-word name: `dashboard-showing-flaky` was losing "tests".
+  Where dropping them would leave nothing, the participle *is* the subject —
+  "a canvas for onboarding" — and it stays.
+
+Every one of the fifteen sample phrasings now improves or holds, and the table is
+the test (`test/canvas-lifecycle.test.ts`): a heuristic asserted case by case
+invites tuning one case at the expense of the rest.
+
+**`/canvas rename <extension> <new-name>`.** A canvas has more identity than a
+file: the directory name *is* the extension id, since discovery keys off
+position, and the canvas separately declares an `id`, a `displayName` and
+whatever its header comment tells the reader to type. Renaming by hand means
+getting all of them right, and the `id` is not cosmetic — §13.4 records losing an
+open canvas to it twice.
+
+The rewriting is narrow on purpose: **a string literal whose entire content is
+the old name**, plus `/canvas <verb> <old>` in a comment. That covers `id`,
+`displayName`, `title` and the scaffold's `ID`/`NAME` constants without knowing
+any of their names, and it cannot touch a sentence that merely mentions the
+canvas — `"the board is the point of the board"` is not the string `"board"`. A
+whole-word replacement would have rewritten that sentence, which is worse than
+leaving it. Everything else is reported by line number, never edited.
+
+The template changed to meet it halfway: it named itself in six places, so a
+rename left four stale mentions behind. It now names itself once, in `ID` and
+`NAME` at the top, and a scaffolded canvas renames with nothing left over. Both
+shapes rename correctly, since the rule is about literals rather than about the
+template.
+
+**`/canvas remove <extension>`.** Confirmed, because deleting source is not
+undoable from here — and *refused* rather than assumed outside a terminal, so a
+piped `--print` session cannot delete a directory. Both it and rename close what
+the extension had open and stop its child first: a process outliving its own
+source keeps serving code that is nowhere on disk, which is the most confusing
+state a canvas can be in.
+
+Both refuse a canvas that arrived inside a plugin. A plugin's canvases are named
+by its manifest rather than by position, so moving the directory would break the
+plugin rather than rename anything; the refusal points at `/plugin`. The test is
+positional and cheap: an extension is ours to edit when its directory sits
+directly inside a search root.
+
+**Editing capabilities needed steering, and got it from the reload.** Adding,
+removing or reshaping an action was invisible — the reload answered "which
+canvases exist", which is not the question an author has. A typo inside
+`actions: [...]`, an action attached to the wrong canvas, and a handler that
+throws at declaration time all fail the same silent way: the action is simply not
+there, and the next `invoke_canvas_action` reports it missing with no hint why.
+
+`reload` now diffs the action inventory and reports **added / removed / changed**,
+through the tool and through `/canvas reload`. `changed` is separated because it
+is the case where a `list_canvas_capabilities` result the model still holds has
+become *wrong* rather than merely incomplete. "Nothing changed" is said out loud
+too, since silence would read as success.
+
+**`/canvas list` names the actions of open instances.** They were visible only to
+the model, through `list_canvas_capabilities` — so the person steering the
+session could not see the surface they were being asked about. Only for open
+instances, because actions come from running the code (§5.1); an extension that
+has never been forked has no actions to report, and none knowable is different
+from zero.
+
+### 13.6 Still not parity
+
+Copilot renders the canvas in a panel it owns. hoocode hands you a URL for your
+own browser, so it cannot re-point a tab on reload, cannot follow a
+`navigateInstance` call, and cannot tell whether anyone is looking (§6, and the
+registry's correction to it). Those follow from not having a panel, not from
+anything above.
+
+---
+
 ## File map
 
 Shipped:
@@ -964,16 +1191,22 @@ Shipped:
 | `src/core/canvas/launch.ts` | whether canvases can run here (§11.1), and the runtime to fork |
 | `src/core/canvas/session.ts` | the session facade: what is there, can it run, open this, close that — with no TUI in it |
 | `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins, in discovery's own shape (§4.3) |
-| `src/extensions/core/canvas.ts` | `/canvas list \| open \| close`, the cancellable loader, and tool registration on first open |
-| `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action`, created only while a canvas is open |
+| `src/extensions/core/canvas.ts` | `/canvas list \| open \| reload \| close` and `/new-canvas`, the cancellable loader, and tool registration on first open |
+| `src/core/canvas/scaffold.ts` | what `/new-canvas` was asked for, where it writes, the template, and the model's build brief (§13) |
+| `src/core/canvas/lifecycle.ts` | renaming and removing: which places hold a canvas's name, and which are prose (§13.5) |
+| `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action` + `reload_canvas`, created only while a canvas is open |
 | `src/modes/interactive/resource-display.ts` | canvases in the startup / `/reload` summary — counted, and named with how to open them |
 | `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1); the CI canary runs it (§2.3) |
+| `test/canvas-reload.test.ts` | the iterate loop end to end: edit an open canvas, reload through the agent's own tools, drive the capability that edit added (§13) |
+| `.agents/extensions/arrow-key-games/` | hoocode's own canvas — arrow-key Snake and Maze, plus Duel, a turn-based game the agent plays (§13.4) |
+| `test/canvas-arrow-key-games.test.ts` | that canvas's contract: declarations, the token gate covering its own assets, and Duel's turn rules |
+| `test/canvas-lifecycle.test.ts` | naming measured against fifteen real phrasings, plus rename and remove through a live session (§13.5) |
 
 Still to build:
 
 | Path | Role |
 |---|---|
-| a canvas of our own | §9 Phase 4 — the plan board. Everything above hosts *other people's* canvases; we have authored none |
+| the plan board | §9 Phase 4. `.agents/extensions/arrow-key-games/` is now a canvas of our own (§13.4), but it is a games canvas — the reviewable plan surface that phase is actually about is still unbuilt |
 
 Touched:
 
