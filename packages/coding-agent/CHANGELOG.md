@@ -27,19 +27,51 @@
   and the replacement url is printed.
 
 - An arrow-key games canvas, hoocode's first canvas of its own, at
-  `.agents/extensions/create-lightweight-games/`. Open it with
-  `/canvas open create-lightweight-games`. Snake and a randomly carved Maze are
+  `.agents/extensions/arrow-key-games/`. Open it with
+  `/canvas open arrow-key-games`. Snake and a randomly carved Maze are
   yours alone; **Duel** is a turn-based coin race you play against the model —
   you move with the arrow keys, it moves through `invoke_canvas_action`, and the
   board updates live for both of you. It was built by running
   `/new-canvas create lightweight games that can be played with keyboard arrow keys`
   and iterating with `reload_canvas`, which is what the two entries above are for.
 
+- `/canvas rename <extension> <new-name>` and `/canvas remove <extension>`. A
+  canvas's name lives in four places — the directory (which *is* the extension
+  id), the canvas's own `id`, its `displayName`, and its header comment — and
+  getting the `id` wrong by hand drops the canvas you are looking at on the next
+  reload. Rename does all of it at once, closes what was open first, and prints
+  every line it rewrote. It only touches a string that is *entirely* the old
+  name, so a sentence mentioning the canvas is reported rather than rewritten.
+  Remove asks before deleting, refuses when there is no surface to ask on, and
+  both refuse a canvas that came from a plugin, pointing at `/plugin` instead.
+
+- Reloading now reports which actions the edit **added, removed or changed**, so
+  writing a new action tells you whether the host can see it. Previously a typo
+  inside `actions: [...]` failed silently — the action just was not there.
+  "Nothing changed" is reported too, since silence reads as success.
+
+- `/canvas list` names the actions of each open canvas. They were visible only to
+  the model, so the person steering the session could not see the surface they
+  were being asked about.
+
 ### Changed
 
 - `/new-canvas` moved from the `/new-*` scaffold family to the canvas surface. It
   is no longer a file-writing command: it opens what it creates and drives the
   agent loop.
+
+- `/new-canvas` derives a much better name from a description. It was naming the
+  *request* rather than the thing — `create lightweight games…` became
+  `create-lightweight-games`, `help me compare two benchmark runs` became
+  `help-compare-two` — because opening words like "create", "build", "show" and
+  "help me" landed in the directory name, and `-ing`/`-ed` words crowded out the
+  nouns. On twelve realistic descriptions, seven were wrong; all of them now read
+  as names for the thing: `lightweight-games-keyboard`, `dashboard-flaky-tests`,
+  `compare-benchmark-runs`.
+
+- The scaffolded template names itself once, in `ID` and `NAME` at the top,
+  instead of repeating the name in six places. Existing canvases are unaffected —
+  rename handles both shapes.
 
 - The build brief now tells the model to leave the canvas's `id` alone and rename
   `displayName` instead. Renaming the id drops the instance the person is

@@ -44,19 +44,21 @@ export function validateCanvasName(name: string): string | null {
 }
 
 /**
- * Words dropped when a directory name is derived from a sentence.
+ * Words dropped wherever they appear, because they carry no subject.
  *
- * Only grammar, never subject matter: "a board for tracking the release checklist"
- * should become `board-tracking-release`, and a list that reached further would
- * start deciding which of someone's nouns mattered.
+ * Only grammar, never subject matter: a list that reached further would start
+ * deciding which of someone's nouns mattered.
  */
 const FILLER = new Set([
 	"a",
+	"about",
+	"across",
 	"an",
 	"and",
 	"are",
 	"as",
 	"at",
+	"by",
 	"be",
 	"can",
 	"for",
@@ -64,6 +66,7 @@ const FILLER = new Set([
 	"i",
 	"in",
 	"is",
+	"into",
 	"it",
 	"its",
 	"me",
@@ -73,6 +76,7 @@ const FILLER = new Set([
 	"one",
 	"or",
 	"our",
+	"over",
 	"so",
 	"that",
 	"the",
@@ -84,13 +88,69 @@ const FILLER = new Set([
 	"us",
 	"we",
 	"which",
+	"via",
+	"when",
+	"where",
+	"while",
 	"with",
 	"you",
 	"your",
 ]);
 
+/**
+ * Words that open a request rather than describe one.
+ *
+ * People type `/new-canvas` as an instruction — "create a…", "build me a…",
+ * "help me…", "I want to…" — and the opening clause was landing in the directory
+ * name: `create-lightweight-games`, `help-compare-two`, `want-review-pull`. On a
+ * spread of twelve realistic descriptions, seven produced a name that named the
+ * request instead of the thing.
+ *
+ * These are dropped anywhere, not only at the front, because "add a canvas that
+ * shows X" buries one in the middle.
+ */
+const REQUEST_WORDS = new Set([
+	"add",
+	"build",
+	"could",
+	"create",
+	"design",
+	"generate",
+	"give",
+	"help",
+	"let",
+	"make",
+	"need",
+	"new",
+	"please",
+	"produce",
+	"set",
+	"show",
+	"something",
+	"up",
+	"want",
+	"would",
+]);
+
+/** Counting words: "compare two benchmark runs" is about the runs. */
+const CARDINALS = new Set(["two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"]);
+
 /** How many words a derived name keeps. Enough to be recognisable, short enough to type. */
 const DERIVED_NAME_WORDS = 3;
+
+/**
+ * Whether a word is probably a verb form rather than the thing being described.
+ *
+ * Crude on purpose — no part-of-speech tagger for a directory name. It exists
+ * because a participle sits between the request and its subject and pushes the
+ * subject out of a three-word name: "a dashboard **showing** flaky tests" became
+ * `dashboard-showing-flaky`, and "a spreadsheet for **tracking** API latency"
+ * became `spreadsheet-tracking-api`. The length floor spares short words where
+ * the ending is a coincidence (`feed`, `used`, `ring`).
+ */
+function looksLikeVerbForm(word: string): boolean {
+	return word.length > 4 && (word.endsWith("ing") || word.endsWith("ed"));
+}
 
 /**
  * Turn a sentence into a directory name.
@@ -106,12 +166,20 @@ export function canvasNameFromDescription(description: string): string | undefin
 		.trim()
 		.split(" ")
 		.filter((word) => word.length > 0);
+
+	const content = words.filter((word) => !FILLER.has(word) && !REQUEST_WORDS.has(word) && !CARDINALS.has(word));
 	// "canvas" is dropped only when something else remains: "/new-canvas a canvas"
 	// should still produce `canvas` rather than nothing.
-	const meaningful = words.filter((word) => !FILLER.has(word));
-	const named = meaningful.filter((word) => word !== "canvas");
-	const kept = (named.length > 0 ? named : meaningful).slice(0, DERIVED_NAME_WORDS);
-	const name = kept.join("-");
+	const named = content.filter((word) => word !== "canvas");
+	let kept = named.length > 0 ? named : content;
+
+	// Prefer nouns — but only while enough of them remain. Where they do not, the
+	// participle *is* the subject ("a canvas for onboarding") and dropping it would
+	// leave nothing worth naming.
+	const nouns = kept.filter((word) => !looksLikeVerbForm(word));
+	if (nouns.length >= 2) kept = nouns;
+
+	const name = kept.slice(0, DERIVED_NAME_WORDS).join("-");
 	return validateCanvasName(name) === null ? name : undefined;
 }
 
@@ -178,7 +246,7 @@ export function parseCanvasRequest(input: string): CanvasRequest | string {
  * else on the machine can read it.
  */
 export const CANVAS_ENTRY_TEMPLATE = (name: string): string => `\
-// ${name} — a canvas extension. Run it with: /canvas open ${name}
+// A canvas extension. Run it with: /canvas open ${name}
 //
 // The "@github/copilot-sdk/extension" import is resolved by the host at fork
 // time. Do not install it, and do not add a node_modules here.
@@ -186,14 +254,21 @@ import { createCanvas, CanvasError, joinSession } from "@github/copilot-sdk/exte
 import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 
+// The canvas's identity, in one place. An open instance is bound to this id, so
+// changing it drops the canvas anyone is currently looking at — rename the
+// canvas with \`/canvas rename\`, or change NAME alone if you only want a
+// different label on the page.
+const ID = "${name}";
+const NAME = "${name}";
+
 /** Per-instance state. A canvas can be opened more than once at a time. */
 const instances = new Map();
 
 const session = await joinSession({
 	canvases: [
 		createCanvas({
-			id: "${name}",
-			displayName: "${name}",
+			id: ID,
+			displayName: NAME,
 			description: "TODO: one sentence — the agent reads this to decide whether to open it.",
 			actions: [
 				{
@@ -226,7 +301,7 @@ const session = await joinSession({
 					}
 					res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
 					res.end(
-						\`<!doctype html><meta charset="utf-8"><title>${name}</title>\` +
+						\`<!doctype html><meta charset="utf-8"><title>\${NAME}</title>\` +
 							\`<p>\${notes.length} note(s). TODO: build the UI.\`,
 					);
 				});
@@ -236,7 +311,7 @@ const session = await joinSession({
 				instances.set(ctx.instanceId, { server, notes });
 				return {
 					url: \`http://127.0.0.1:\${port}/?token=\${token}\`,
-					title: "${name}",
+					title: NAME,
 				};
 			},
 			onClose: async (ctx) => {
@@ -251,7 +326,7 @@ const session = await joinSession({
 });
 
 // stdout is the protocol channel. Use session.log, never console.log.
-await session.log("${name} ready");
+await session.log(\`\${ID} ready\`);
 `;
 
 /** What {@link scaffoldCanvas} wrote. */
@@ -350,7 +425,8 @@ export function canvasBuildBrief(
 		"The contract this surface runs under, which is not yours to change:",
 		'- The only non-`node:` import allowed is "@github/copilot-sdk/extension". The host resolves it when it forks the extension. Do not install anything, and do not add a package.json or node_modules in the extension directory.',
 		"- stdout is the JSON-RPC channel. Use `session.log(...)`; a `console.log` corrupts the protocol.",
-		"- Do not change the canvas's `id`. An open instance is bound to it, so renaming it drops the canvas the person is watching on your next reload. Give it a nicer `displayName` instead — that is the one they see.",
+		"- Do not change the canvas's `id` (the template holds it in `ID`). An open instance is bound to it, so renaming it drops the canvas the person is watching on your next reload. Change `NAME` for a nicer label — that is the one they see — and if the directory name itself is wrong, say so and let them run `/canvas rename`, which moves everything at once.",
+		"- After a reload, read the action list it reports back. That is the host telling you which of your actions it can actually see, and it is the only confirmation an action you just wrote is really callable.",
 		"- Serve the UI from the loopback server the template already starts. Keep the per-instance token check, and keep `onClose` shutting the server down — that is what stops a port outliving the session.",
 		"- Everything in `actions: [...]` becomes callable by you through invoke_canvas_action once it is open, so give each action a real description and inputSchema. That list is how you drive the canvas; the person drives the same state through the page.",
 		"",

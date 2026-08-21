@@ -94,6 +94,30 @@ export interface CanvasReloadDrop {
 	reason: string;
 }
 
+/**
+ * How a reload changed what the agent can call.
+ *
+ * Reported because editing a canvas's actions is otherwise invisible. A reload
+ * that only said which canvases exist leaves the one question an author actually
+ * has unanswered — *did the host see the action I just wrote?* — and the answer
+ * matters: a typo in `actions: [...]`, a handler that throws at declaration time,
+ * or an action defined on the wrong canvas all fail by the action simply not
+ * being there.
+ *
+ * `changed` means same name, different declaration — a reworded description or a
+ * reshaped `inputSchema`. That is worth separating from added and removed
+ * because it is the case where a stale `list_canvas_capabilities` result in the
+ * model's context is now wrong rather than merely incomplete.
+ */
+export interface CanvasActionDelta {
+	/** `canvasId.actionName`, so a multi-canvas extension stays unambiguous. */
+	added: string[];
+	removed: string[];
+	changed: string[];
+	/** Everything the extension declares now, in the same form. */
+	current: string[];
+}
+
 /** What a {@link CanvasRegistry.reload} did. */
 export interface CanvasReloadResult {
 	extensionId: string;
@@ -106,6 +130,40 @@ export interface CanvasReloadResult {
 	dropped: CanvasReloadDrop[];
 	/** Canvas ids the reloaded extension declares, which the edit may have changed. */
 	canvases: string[];
+	/** What the edit did to the action inventory. */
+	actions: CanvasActionDelta;
+}
+
+/**
+ * Index an extension's actions by `canvasId.actionName`, against a stable
+ * serialization of the declaration.
+ *
+ * `JSON.stringify` of the whole declaration is the comparison, which makes it
+ * sensitive to key order — but both sides come from the same code path in the
+ * same shim, so a reordering here means the author reordered the source, and
+ * reporting that as "changed" is closer to true than missing a reshaped schema.
+ */
+function indexActions(declarations: Map<string, CanvasDeclaration>): Map<string, string> {
+	const index = new Map<string, string>();
+	for (const [canvasId, declaration] of declarations) {
+		for (const action of declaration.actions ?? []) {
+			index.set(`${canvasId}.${action.name}`, JSON.stringify(action));
+		}
+	}
+	return index;
+}
+
+/** Compare two action inventories. */
+function diffActions(before: Map<string, string>, after: Map<string, string>): CanvasActionDelta {
+	const added: string[] = [];
+	const removed: string[] = [];
+	const changed: string[] = [];
+	for (const [key, shape] of after) {
+		if (!before.has(key)) added.push(key);
+		else if (before.get(key) !== shape) changed.push(key);
+	}
+	for (const key of before.keys()) if (!after.has(key)) removed.push(key);
+	return { added: added.sort(), removed: removed.sort(), changed: changed.sort(), current: [...after.keys()].sort() };
 }
 
 /** Diagnostics the registry emits. The host decides how to surface them. */
@@ -323,8 +381,10 @@ export class CanvasRegistry {
 			);
 		}
 
-		// Snapshot before anything moves: `close` mutates the instance table.
+		// Snapshot before anything moves: `close` mutates the instance table, and the
+		// old child's declarations go with it when it is terminated.
 		const carried = this.instancesOf(extensionId);
+		const actionsBefore = indexActions(previous.declarations);
 
 		// Fork the edited code first. If it does not come up, the old child is still
 		// registered and still serving, and this throws without costing anything.
@@ -395,7 +455,30 @@ export class CanvasRegistry {
 		}
 		next.idleSince = reopened.length === 0 ? this.now() : undefined;
 
-		return { extensionId, reopened, dropped, canvases: [...next.declarations.keys()] };
+		return {
+			extensionId,
+			reopened,
+			dropped,
+			canvases: [...next.declarations.keys()],
+			actions: diffActions(actionsBefore, indexActions(next.declarations)),
+		};
+	}
+
+	/**
+	 * Stop an extension's child now, rather than at the end of its linger period.
+	 *
+	 * The reaper's grace period is right for an extension nobody is using and wrong
+	 * for one whose directory is about to be moved or deleted: a child outliving
+	 * its own source is the most confusing state a canvas can be in, because it
+	 * keeps serving code that is no longer anywhere on disk.
+	 */
+	async stopChild(extensionId: string): Promise<boolean> {
+		const child = this.children.get(extensionId);
+		if (!child) return false;
+		for (const instance of this.instancesOf(extensionId)) await this.close(instance);
+		this.children.delete(extensionId);
+		await child.process.terminate();
+		return true;
 	}
 
 	/** Every open instance. */

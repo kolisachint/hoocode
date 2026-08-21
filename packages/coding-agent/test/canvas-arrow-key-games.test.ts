@@ -1,5 +1,5 @@
 /**
- * hoocode's own canvas: `.agents/extensions/create-lightweight-games`.
+ * hoocode's own canvas: `.agents/extensions/arrow-key-games`.
  *
  * It is committed to this repository, which is the reason this file exists. A
  * canvas has no passive half — everything about it comes from running its code —
@@ -23,7 +23,7 @@ import { CANVAS_ENTRY_FILE } from "../src/core/canvas/discovery.js";
 import { type CanvasExtensionProcess, spawnCanvasExtension } from "../src/core/canvas/runner.js";
 import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
-const EXTENSION_ID = "create-lightweight-games";
+const EXTENSION_ID = "arrow-key-games";
 const ENTRY = path.resolve(__dirname, "..", "..", "..", ".agents", "extensions", EXTENSION_ID, CANVAS_ENTRY_FILE);
 
 interface Snapshot {

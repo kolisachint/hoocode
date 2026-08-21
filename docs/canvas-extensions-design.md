@@ -1048,7 +1048,7 @@ parse, the name derivation, the homes, the template, the brief — is in
 
 The command was then used for its own purpose — `/new-canvas create lightweight
 games that can be played with keyboard arrow keys` — and the canvas it produced
-is committed at `.agents/extensions/create-lightweight-games/`, covered by
+is committed at `.agents/extensions/arrow-key-games/`, covered by
 `test/canvas-arrow-key-games.test.ts`. That makes it §9 Phase 4's "a canvas of
 our own", though not the plan board that section describes.
 
@@ -1087,7 +1087,85 @@ noting that every canvas wanting the same thing has to invent it again; a
 host-level "wait for this canvas to change" has an obvious shape and does not
 exist.
 
-### 13.5 Still not parity
+### 13.5 The rest of the lifecycle
+
+Create and iterate were built first because they were missing outright. Reviewing
+the surface afterwards found that everything *after* creation was still
+hand-work, and one piece of it was a trap.
+
+**Naming was wrong more often than right.** Measured on twelve realistic
+phrasings, seven produced a name for the *request* rather than the thing:
+`create-lightweight-games`, `build-dashboard-showing`, `want-review-pull`,
+`help-compare-two`. Two rules fix it, both grammar-only:
+
+- **Request words are dropped anywhere** — `create`, `build`, `make`, `show`,
+  `help`, `want`, `please`, `something`. People type this command as an
+  instruction, and the instruction was landing in the directory name.
+- **Nouns are preferred over `-ing`/`-ed` words**, but only while at least two
+  survive. A participle sits between the request and its subject and pushes the
+  subject out of a three-word name: `dashboard-showing-flaky` was losing "tests".
+  Where dropping them would leave nothing, the participle *is* the subject —
+  "a canvas for onboarding" — and it stays.
+
+Every one of the fifteen sample phrasings now improves or holds, and the table is
+the test (`test/canvas-lifecycle.test.ts`): a heuristic asserted case by case
+invites tuning one case at the expense of the rest.
+
+**`/canvas rename <extension> <new-name>`.** A canvas has more identity than a
+file: the directory name *is* the extension id, since discovery keys off
+position, and the canvas separately declares an `id`, a `displayName` and
+whatever its header comment tells the reader to type. Renaming by hand means
+getting all of them right, and the `id` is not cosmetic — §13.4 records losing an
+open canvas to it twice.
+
+The rewriting is narrow on purpose: **a string literal whose entire content is
+the old name**, plus `/canvas <verb> <old>` in a comment. That covers `id`,
+`displayName`, `title` and the scaffold's `ID`/`NAME` constants without knowing
+any of their names, and it cannot touch a sentence that merely mentions the
+canvas — `"the board is the point of the board"` is not the string `"board"`. A
+whole-word replacement would have rewritten that sentence, which is worse than
+leaving it. Everything else is reported by line number, never edited.
+
+The template changed to meet it halfway: it named itself in six places, so a
+rename left four stale mentions behind. It now names itself once, in `ID` and
+`NAME` at the top, and a scaffolded canvas renames with nothing left over. Both
+shapes rename correctly, since the rule is about literals rather than about the
+template.
+
+**`/canvas remove <extension>`.** Confirmed, because deleting source is not
+undoable from here — and *refused* rather than assumed outside a terminal, so a
+piped `--print` session cannot delete a directory. Both it and rename close what
+the extension had open and stop its child first: a process outliving its own
+source keeps serving code that is nowhere on disk, which is the most confusing
+state a canvas can be in.
+
+Both refuse a canvas that arrived inside a plugin. A plugin's canvases are named
+by its manifest rather than by position, so moving the directory would break the
+plugin rather than rename anything; the refusal points at `/plugin`. The test is
+positional and cheap: an extension is ours to edit when its directory sits
+directly inside a search root.
+
+**Editing capabilities needed steering, and got it from the reload.** Adding,
+removing or reshaping an action was invisible — the reload answered "which
+canvases exist", which is not the question an author has. A typo inside
+`actions: [...]`, an action attached to the wrong canvas, and a handler that
+throws at declaration time all fail the same silent way: the action is simply not
+there, and the next `invoke_canvas_action` reports it missing with no hint why.
+
+`reload` now diffs the action inventory and reports **added / removed / changed**,
+through the tool and through `/canvas reload`. `changed` is separated because it
+is the case where a `list_canvas_capabilities` result the model still holds has
+become *wrong* rather than merely incomplete. "Nothing changed" is said out loud
+too, since silence would read as success.
+
+**`/canvas list` names the actions of open instances.** They were visible only to
+the model, through `list_canvas_capabilities` — so the person steering the
+session could not see the surface they were being asked about. Only for open
+instances, because actions come from running the code (§5.1); an extension that
+has never been forked has no actions to report, and none knowable is different
+from zero.
+
+### 13.6 Still not parity
 
 Copilot renders the canvas in a panel it owns. hoocode hands you a URL for your
 own browser, so it cannot re-point a tab on reload, cannot follow a
@@ -1115,18 +1193,20 @@ Shipped:
 | `src/core/canvas/plugin-canvases.ts` | canvases resolved out of installed plugins, in discovery's own shape (§4.3) |
 | `src/extensions/core/canvas.ts` | `/canvas list \| open \| reload \| close` and `/new-canvas`, the cancellable loader, and tool registration on first open |
 | `src/core/canvas/scaffold.ts` | what `/new-canvas` was asked for, where it writes, the template, and the model's build brief (§13) |
+| `src/core/canvas/lifecycle.ts` | renaming and removing: which places hold a canvas's name, and which are prose (§13.5) |
 | `src/core/tools/canvas.ts` | `list_canvas_capabilities` + `invoke_canvas_action` + `reload_canvas`, created only while a canvas is open |
 | `src/modes/interactive/resource-display.ts` | canvases in the startup / `/reload` summary — counted, and named with how to open them |
 | `test/canvas-acceptance-catalog.test.ts` | acceptance against two real catalog extensions (§12.1); the CI canary runs it (§2.3) |
 | `test/canvas-reload.test.ts` | the iterate loop end to end: edit an open canvas, reload through the agent's own tools, drive the capability that edit added (§13) |
-| `.agents/extensions/create-lightweight-games/` | hoocode's own canvas — arrow-key Snake and Maze, plus Duel, a turn-based game the agent plays (§13.4) |
+| `.agents/extensions/arrow-key-games/` | hoocode's own canvas — arrow-key Snake and Maze, plus Duel, a turn-based game the agent plays (§13.4) |
 | `test/canvas-arrow-key-games.test.ts` | that canvas's contract: declarations, the token gate covering its own assets, and Duel's turn rules |
+| `test/canvas-lifecycle.test.ts` | naming measured against fifteen real phrasings, plus rename and remove through a live session (§13.5) |
 
 Still to build:
 
 | Path | Role |
 |---|---|
-| the plan board | §9 Phase 4. `.agents/extensions/create-lightweight-games/` is now a canvas of our own (§13.4), but it is a games canvas — the reviewable plan surface that phase is actually about is still unbuilt |
+| the plan board | §9 Phase 4. `.agents/extensions/arrow-key-games/` is now a canvas of our own (§13.4), but it is a games canvas — the reviewable plan surface that phase is actually about is still unbuilt |
 
 Touched:
 

@@ -1,5 +1,5 @@
-// create-lightweight-games — arrow-key games on a canvas. Run it with:
-//   /canvas open create-lightweight-games
+// arrow-key-games — Snake, a Maze, and Duel, a turn-based game the agent plays. Run it with:
+//   /canvas open arrow-key-games
 //
 // The "@github/copilot-sdk/extension" import is resolved by the host at fork
 // time. Do not install it, and do not add a node_modules here.
@@ -569,7 +569,7 @@ const session = await joinSession({
 			// extension was scaffolded even though the canvas grew a nicer name — a
 			// rename here would drop the canvas the person is looking at on the next
 			// reload. `displayName` is the half they actually see.
-			id: "create-lightweight-games",
+			id: "arrow-key-games",
 			displayName: "Arrow-key games",
 			description:
 				"Lightweight keyboard games on a grid — Snake, a Maze, and Duel, a turn-based coin race you play against the person. They use the arrow keys; you read the board and move through the actions below.",

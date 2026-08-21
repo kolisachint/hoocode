@@ -230,6 +230,46 @@ describe("reloading a canvas", () => {
 		expect(registry.listInstances()).toEqual([]);
 	});
 
+	/**
+	 * The question an author actually has after editing `actions: [...]` is
+	 * whether the host saw it, and before this the reload answered a different
+	 * one — which canvases exist. A typo in an action, a handler that throws at
+	 * declaration time, or an action attached to the wrong canvas all fail the
+	 * same silent way: the action is simply not there.
+	 */
+	it("reports which actions the edit added, removed and reshaped", async () => {
+		await registry.open(extension, "board");
+
+		const grown = await registry.reload("board");
+		expect(grown.actions).toEqual({ added: [], removed: [], changed: [], current: ["board.read_state"] });
+
+		write(extensionSource({ body: "<p>board", extraAction: true }));
+		const added = await registry.reload("board");
+		expect(added.actions.added).toEqual(["board.set_title"]);
+		expect(added.actions.removed).toEqual([]);
+		expect(added.actions.current).toEqual(["board.read_state", "board.set_title"]);
+
+		write(extensionSource({ body: "<p>board" }));
+		const removed = await registry.reload("board");
+		expect(removed.actions.removed).toEqual(["board.set_title"]);
+		expect(removed.actions.current).toEqual(["board.read_state"]);
+	});
+
+	/**
+	 * Same name, different declaration. Separated from added and removed because
+	 * it is the case where a `list_canvas_capabilities` result the model is still
+	 * holding has become wrong rather than merely incomplete.
+	 */
+	it("calls a reworded or reshaped action changed, not added", async () => {
+		await registry.open(extension, "board");
+		write(extensionSource({ body: "<p>board" }).replace("Read the canvas state.", "Read the board, and its title."));
+
+		const result = await registry.reload("board");
+		expect(result.actions.changed).toEqual(["board.read_state"]);
+		expect(result.actions.added).toEqual([]);
+		expect(result.actions.removed).toEqual([]);
+	});
+
 	it("refuses to reload something that was never opened", async () => {
 		await expect(registry.reload("board")).rejects.toThrow(/not running/);
 	});
@@ -264,6 +304,9 @@ describe("reloading a canvas", () => {
 
 		const reloaded = await call(RELOAD_CANVAS_TOOL_NAME, { extensionId: "board" });
 		expect(reloaded).toContain("Reloaded board");
+		// The confirmation that the edit landed, in the same breath as the reload.
+		expect(reloaded).toContain("Actions added: board.set_title");
+		expect(reloaded).toContain("Now callable: board.read_state, board.set_title");
 		// The model has to be told the url changed, or it tells the person to look
 		// at a tab pointing at a closed port.
 		expect(reloaded).toMatch(/http:\/\/127\.0\.0\.1:\d+\/\?token=/);

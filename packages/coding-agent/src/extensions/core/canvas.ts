@@ -28,6 +28,7 @@ import { CATEGORY_GLYPH } from "../../core/brand.js";
 /** Canvas extensions are extensions, so they wear the extension glyph. */
 const GLYPH = CATEGORY_GLYPH.extensions;
 
+import { isCanvasRefusal } from "../../core/canvas/lifecycle.js";
 import type { CanvasInstance } from "../../core/canvas/registry.js";
 import { CANVAS_HOMES, canvasBuildBrief, parseCanvasRequest, scaffoldCanvas } from "../../core/canvas/scaffold.js";
 import {
@@ -42,7 +43,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extension
 import { createCanvasToolDefinitions } from "../../core/tools/canvas.js";
 import { BorderedLoader } from "../../modes/interactive/components/bordered-loader.js";
 
-const SUBCOMMANDS = ["list", "open", "close", "reload"] as const;
+const SUBCOMMANDS = ["list", "open", "close", "reload", "rename", "remove"] as const;
 
 /** How an open attempt ended. `custom()` resolves with exactly one of these. */
 type OpenOutcome =
@@ -75,7 +76,15 @@ function renderOverview(overview: CanvasOverview): string {
 			continue;
 		}
 		lines.push(`${GLYPH} ${name}${label}  (${listing.scope})`);
-		for (const instance of listing.open) lines.push(`    open  ${describeInstance(instance)}`);
+		for (const instance of listing.open) {
+			lines.push(`    open  ${describeInstance(instance)}`);
+			// What a canvas can do is otherwise visible only to the model, through
+			// `list_canvas_capabilities` — so the person driving the session could not
+			// see the surface they were being asked about. Only for open instances,
+			// because actions come from running the code (§5.1).
+			const actions = overview.actionsByInstance.get(instance.instanceId) ?? [];
+			if (actions.length > 0) lines.push(`          actions  ${actions.join(", ")}`);
+		}
 	}
 	if (overview.withheldCount > 0) {
 		lines.push(
@@ -182,7 +191,7 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 
 	pi.registerCommand("canvas", {
 		description:
-			"Work with canvas extensions. /canvas list | /canvas open <extension>[:<canvas>] | /canvas reload [extension] | /canvas close <instanceId>",
+			"Work with canvas extensions. /canvas list | open <extension>[:<canvas>] | reload [extension] | close <instanceId> | rename <extension> <new-name> | remove <extension>",
 		getArgumentCompletions: (prefix: string) =>
 			SUBCOMMANDS.filter((name) => name.startsWith(prefix)).map((name) => ({ value: name, label: name })),
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -226,6 +235,13 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 				try {
 					const result = await canvas.reload(extensionId);
 					const lines = [`Reloaded ${result.extensionId} from disk.`];
+					// Same reason the tool reports it: an edit to `actions: [...]` is
+					// otherwise invisible, and a typo there fails by the action simply
+					// not being there.
+					const { added, removed, changed } = result.actions;
+					if (added.length > 0) lines.push(`  + ${added.join(", ")}`);
+					if (removed.length > 0) lines.push(`  - ${removed.join(", ")}`);
+					if (changed.length > 0) lines.push(`  ~ ${changed.join(", ")} (description or schema)`);
 					for (const instance of result.reopened) {
 						// The url is the point of saying anything: the extension binds a new
 						// port and mints a new token on every open, so the tab the person has
@@ -247,6 +263,89 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 						"error",
 					);
 				}
+				return;
+			}
+
+			if (trimmed.startsWith("rename")) {
+				const [from, to, ...rest] = trimmed.slice("rename".length).trim().split(/\s+/).filter(Boolean);
+				if (!from || !to || rest.length > 0) {
+					ctx.ui.notify(`Usage: /canvas rename <extension> <new-name>  (see /canvas list)`, "warning");
+					return;
+				}
+				// Renaming closes whatever the extension had open, because the directory
+				// is about to move out from under it. Say so before doing it, not after.
+				const wasOpen = canvas.instances().filter((instance) => instance.extensionId === from);
+				const result = await canvas.rename(from, to);
+				if (isCanvasRefusal(result)) {
+					ctx.ui.notify(`/canvas rename: ${result.detail}`, "warning");
+					return;
+				}
+				const lines = [`Renamed ${result.from} → ${result.to}.`, `  ${result.dir}`];
+				if (result.rewrites.length > 0) {
+					lines.push("", "Rewrote in extension.mjs:");
+					for (const rewrite of result.rewrites) lines.push(`  line ${rewrite.line}: ${rewrite.after.trim()}`);
+				}
+				if (result.leftovers.length > 0) {
+					// Prose is not identity, so it is reported rather than edited — a rename
+					// that silently rewrote a description would be worse than one that
+					// admits what it left.
+					lines.push(
+						"",
+						`"${result.from}" still appears on line(s) ${result.leftovers.join(", ")}; those look like prose, so they were left alone.`,
+					);
+				}
+				if (wasOpen.length > 0) lines.push("", `Closed ${wasOpen.length} open instance(s) to move the directory.`);
+				lines.push("", `Open it with /canvas open ${result.to}.`);
+				ctx.ui.notify(lines.join("\n"), "info");
+				return;
+			}
+
+			if (trimmed.startsWith("remove")) {
+				const target = trimmed.slice("remove".length).trim();
+				if (!target) {
+					ctx.ui.notify("Usage: /canvas remove <extension>  (see /canvas list)", "warning");
+					return;
+				}
+				const known = canvas.knownExtensionIds();
+				if (!known.includes(target)) {
+					ctx.ui.notify(`No canvas extension "${target}" (found: ${known.join(", ") || "none"}).`, "warning");
+					return;
+				}
+				// Deleting source is not undoable from here, so it is confirmed — and
+				// outside a terminal there is nobody to ask, so it is refused rather than
+				// assumed. `--print` and RPC should not be able to delete a directory
+				// because a command happened to be piped in.
+				if (!ctx.hasUI) {
+					ctx.ui.notify(
+						`/canvas remove needs to ask before deleting ${target}, and there is no interactive surface here. Delete the directory yourself, or run this in a terminal.`,
+						"warning",
+					);
+					return;
+				}
+				const confirmed = await ctx.ui.confirm(
+					`Delete canvas "${target}"?`,
+					"This deletes the extension directory and everything in it. It is not undoable from here.",
+				);
+				if (!confirmed) {
+					ctx.ui.notify(`Left ${target} alone.`, "info");
+					return;
+				}
+				const openCount = canvas.instances().filter((instance) => instance.extensionId === target).length;
+				const result = await canvas.remove(target);
+				if (isCanvasRefusal(result)) {
+					ctx.ui.notify(`/canvas remove: ${result.detail}`, "warning");
+					return;
+				}
+				ctx.ui.notify(
+					[
+						`Removed ${result.id}.`,
+						`  ${result.dir}`,
+						openCount > 0 ? `Closed ${openCount} open instance(s) first.` : "",
+					]
+						.filter((line) => line.length > 0)
+						.join("\n"),
+					"info",
+				);
 				return;
 			}
 

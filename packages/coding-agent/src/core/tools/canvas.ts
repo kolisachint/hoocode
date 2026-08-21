@@ -83,6 +83,9 @@ export interface CanvasReloadDetails {
 	extensionId: string;
 	reopened: number;
 	dropped: number;
+	actionsAdded: number;
+	actionsRemoved: number;
+	actionsChanged: number;
 }
 
 /** What `invoke_canvas_action` reports. */
@@ -228,7 +231,7 @@ function createReloadTool(registry: CanvasRegistry): ToolDefinition {
 		name: RELOAD_CANVAS_TOOL_NAME,
 		label: RELOAD_CANVAS_TOOL_NAME,
 		description:
-			"Restart an open canvas extension so your edits to its source take effect. Editing the extension's file does nothing on its own — the running process was forked from the old code. Call this after every edit. Open instances are carried across and keep their instanceId, but each gets a NEW url: tell the person the new url, because the tab they have open is now dead.",
+			"Restart an open canvas extension so your edits to its source take effect. Editing the extension's file does nothing on its own — the running process was forked from the old code. Call this after every edit. It reports which actions you added, removed or changed, so use it to confirm an action you just wrote is really callable. Open instances are carried across and keep their instanceId, but each gets a NEW url: tell the person the new url, because the tab they have open is now dead.",
 		promptSnippet: "Restart an edited canvas so the change is live",
 		parameters: reloadParams,
 		async execute(_toolCallId, params: ReloadParams, signal) {
@@ -248,6 +251,23 @@ function createReloadTool(registry: CanvasRegistry): ToolDefinition {
 			const result = await registry.reload(params.extensionId, { signal });
 
 			const lines = [`Reloaded ${params.extensionId}. It declares: ${result.canvases.join(", ") || "no canvases"}.`];
+
+			// The capability delta is the answer to the question an author actually has
+			// after an edit — did the host see the action I just wrote? Silence would read
+			// as success, so "nothing changed" is said out loud too.
+			const { added, removed, changed, current } = result.actions;
+			if (added.length + removed.length + changed.length === 0) {
+				lines.push(`Actions unchanged: ${current.join(", ") || "none"}.`);
+			} else {
+				if (added.length > 0) lines.push(`Actions added: ${added.join(", ")}.`);
+				if (removed.length > 0) lines.push(`Actions removed: ${removed.join(", ")}.`);
+				if (changed.length > 0) {
+					lines.push(
+						`Actions changed (description or inputSchema): ${changed.join(", ")}. Any schema you were holding for these is stale.`,
+					);
+				}
+				lines.push(`Now callable: ${current.join(", ") || "none"}.`);
+			}
 			if (result.reopened.length > 0) {
 				lines.push(
 					"Re-opened (give the person the new url — their old tab points at a closed port):",
@@ -272,6 +292,9 @@ function createReloadTool(registry: CanvasRegistry): ToolDefinition {
 					extensionId: params.extensionId,
 					reopened: result.reopened.length,
 					dropped: result.dropped.length,
+					actionsAdded: added.length,
+					actionsRemoved: removed.length,
+					actionsChanged: changed.length,
 				},
 			};
 		},

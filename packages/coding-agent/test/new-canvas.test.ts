@@ -309,11 +309,11 @@ describe("reading what /new-canvas was given", () => {
 		expect(parsed).toEqual({ name: "note-board-triage", description: "Note: a board for triage" });
 	});
 
-	it("drops grammar but never subject matter when deriving a name", () => {
-		expect(canvasNameFromDescription("a board for tracking the release checklist")).toBe("board-tracking-release");
-		expect(canvasNameFromDescription("A Kanban Board!")).toBe("kanban-board");
-		// "canvas" is dropped as a category word, unless it is all there is.
-		expect(canvasNameFromDescription("a canvas showing flaky tests")).toBe("showing-flaky-tests");
+	// Derivation is measured against a table of real phrasings in
+	// `canvas-lifecycle.test.ts`; the one case that belongs here is the word
+	// "canvas" itself, since it is the command's own name and a person will type it.
+	it('drops "canvas" as a category word, unless it is all they said', () => {
+		expect(canvasNameFromDescription("a canvas showing flaky tests")).toBe("flaky-tests");
 		expect(canvasNameFromDescription("a canvas")).toBe("canvas");
 	});
 
