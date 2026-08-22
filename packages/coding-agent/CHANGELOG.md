@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Added
+
+- hoocode can answer questions about itself. The startup banner already promised
+  "hoocode can explain its own features and look up its docs", but nothing put a
+  docs path into model context — `getDocsPath()`'s only caller printed paths to
+  the human on an auth failure. The agent could not find them on its own either:
+  its cwd is your project, so searching there turns up your docs, never
+  hoocode's.
+
+  The system prompt now lists the shipped docs (~215 tokens, filenames only),
+  and a `SearchHooCode` tool retrieves them at the heading level, returning a
+  file path and line number to read. It also indexes the session's skills,
+  slash commands, and subagents, so "what can you do?" has one place that
+  answers it. MCP tools remain with `ResolveMcpTools`.
+
+- New documentation for features that had none: `plugins.md` (marketplaces,
+  the trust model, plugin formats), `mcp.md` (server config, transports,
+  deferred schemas), `modes.md` (ask/plan/build/debug and the plan → grill →
+  approve → goal workflow), and `canvas.md`. `usage.md` gains the 13 slash
+  commands that were shipping undocumented, including `/plugin`, `/mode`,
+  `/loop`, `/canvas`, `/cost`, and the `/new-*` scaffolds, plus the 12 CLI
+  flags that were missing from the reference — the optional tool bundles
+  (`--enable-todowrite`, `--enable-webtools`, `--enable-search-tool`,
+  `--enable-plugintools`), the subagent flags, `--light`,
+  `--print-token-surface`, `--platform`, `--team`, and `--disallowed-tools`.
+  Every slash command and CLI flag hoocode accepts is now documented.
+
+### Fixed
+
+- Capability search could not match a plural: a query for "theme" missed a
+  heading reading "Themes". Singular forms are now indexed alongside the
+  originals, so exact tool names still match exactly.
+
+- Capability search ranked on question filler. "how do I add a custom theme"
+  was won by a section matching "add" and "how" over the one titled "Creating a
+  Custom Theme". Function words are now dropped from queries.
+
+- The dense capability index is a shared store keyed on a content hash, but the
+  MCP loader seeded it from only its own tools, evicting any other producer's
+  vectors. It now seeds from the full registered set.
+
+- Corrected the global config directory throughout the docs. Paths were written
+  as `~/.pi/agent/` or `~/.hoocode/agent/`; the real directory is `~/.hoocode`,
+  with no `agent/` segment. Every global path — `settings.json`,
+  `keybindings.json`, `auth.json`, `sessions/`, `skills/`, `extensions/`,
+  `themes/` — pointed somewhere that does not exist.
+
 ## [0.5.26] - 2026-08-21
 
 ### Added

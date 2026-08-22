@@ -12,6 +12,7 @@
  *   - loop.ts               — /loop cron scheduling + autonomous continuation
  *   - marketplace.ts        — /plugin marketplace + install/remove
  *   - canvas.ts             — /canvas list/open/close for canvas extensions
+ *   - self-knowledge.ts     — SearchHooCode over hoocode's own docs and capabilities
  *   - prompt-reactive/      — runtime plugin-reuse nudge (reactive to tool/turn cues)
  *   - config.ts             — hoo-config.json types, I/O, and merge rules
  *
@@ -31,6 +32,7 @@ import { setupMode } from "./modes.js";
 import { setupPermissionGate } from "./permission-gate.js";
 import { setupPromptReactiveNudges } from "./prompt-reactive/nudges.js";
 import { setupScaffold } from "./scaffold.js";
+import { setupSelfKnowledge } from "./self-knowledge.js";
 import { setupThinkingEscalation } from "./thinking-escalation.js";
 
 function hooCore(pi: ExtensionAPI): void {
@@ -46,6 +48,7 @@ function hooCore(pi: ExtensionAPI): void {
 	setupCanvas(pi);
 	setupPromptReactiveNudges(pi);
 	setupLearn(pi);
+	setupSelfKnowledge(pi);
 }
 
 hooCore.displayName = "hoo-core";

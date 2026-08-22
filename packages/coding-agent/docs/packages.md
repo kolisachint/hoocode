@@ -36,7 +36,7 @@ hoocode update npm:@foo/bar      # update one package
 hoocode update --extension npm:@foo/bar
 ```
 
-By default, `install` and `remove` write to global settings (`~/.hoocode/agent/settings.json`). Use `-l` to write to project settings (`.hoocode/settings.json`) instead. Project settings can be shared with your team, and hoocode installs any missing packages automatically on startup.
+By default, `install` and `remove` write to global settings (`~/.hoocode/settings.json`). Use `-l` to write to project settings (`.hoocode/settings.json`) instead. Project settings can be shared with your team, and hoocode installs any missing packages automatically on startup.
 
 To try a package without installing it, use `--extension` or `-e`. This installs to a temporary directory for the current run only:
 
@@ -84,7 +84,7 @@ ssh://git@github.com/user/repo@v1
 - SSH URLs use your configured SSH keys automatically (respects `~/.ssh/config`).
 - For non-interactive runs (for example CI), you can set `GIT_TERMINAL_PROMPT=0` to disable credential prompts and set `GIT_SSH_COMMAND` (for example `ssh -o BatchMode=yes -o ConnectTimeout=5`) to fail fast.
 - Refs pin the package and skip package updates (`hoocode update`, `hoocode update --extensions`).
-- Cloned to `~/.hoocode/agent/git/<host>/<path>` (global) or `.hoocode/git/<host>/<path>` (project).
+- Cloned to `~/.hoocode/git/<host>/<path>` (global) or `.hoocode/git/<host>/<path>` (project).
 - Runs `npm install` after clone or pull if `package.json` exists.
 
 **SSH examples:**
@@ -163,7 +163,7 @@ If no `pi` manifest is present, hoocode auto-discovers resources from these dire
 
 Third party runtime dependencies belong in `dependencies` in `package.json`. Dependencies that do not register extensions, skills, prompt templates, or themes also belong in `dependencies`. When hoocode installs a package from npm or git, it runs `npm install`, so those dependencies are installed automatically.
 
-Pi bundles core packages for extensions and skills. If you import any of these, list them in `peerDependencies` with a `"*"` range and do not bundle them: `@kolisachint/hoocode-ai`, `@kolisachint/hoocode-agent-core`, `@kolisachint/hoocode-agent`, `@kolisachint/hoocode-tui`, `typebox`.
+HooCode bundles core packages for extensions and skills. If you import any of these, list them in `peerDependencies` with a `"*"` range and do not bundle them: `@kolisachint/hoocode-ai`, `@kolisachint/hoocode-agent-core`, `@kolisachint/hoocode-agent`, `@kolisachint/hoocode-tui`, `typebox`.
 
 Other hoocode packages must be bundled in your tarball. Add them to `dependencies` and `bundledDependencies`, then reference their resources through `node_modules/` paths. HooCode loads packages with separate module roots, so separate installs do not collide or share modules.
 
@@ -212,7 +212,7 @@ Filter what a package loads using the object form in settings:
 
 ## Enable and Disable Resources
 
-Use `hoocode config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. Works for both global (`~/.hoocode/agent`) and project (`.hoocode/`) scopes.
+Use `hoocode config` to enable or disable extensions, skills, prompt templates, and themes from installed packages and local directories. Works for both global (`~/.hoocode`) and project (`.hoocode/`) scopes.
 
 ## Scope and Deduplication
 

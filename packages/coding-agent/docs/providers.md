@@ -20,7 +20,7 @@ Use `/login` in interactive mode, then select a provider:
 - Claude Pro/Max
 - GitHub Copilot
 
-Use `/logout` to clear credentials. Tokens are stored in `~/.hoocode/agent/auth.json` and auto-refresh when expired.
+Use `/logout` to clear credentials. Tokens are stored in `~/.hoocode/auth.json` and auto-refresh when expired.
 
 ### OpenAI Codex
 
@@ -49,7 +49,7 @@ hoocode
 
 ### Auth File
 
-Store credentials in `~/.hoocode/agent/auth.json`:
+Store credentials in `~/.hoocode/auth.json`:
 
 ```json
 {

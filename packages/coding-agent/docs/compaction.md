@@ -2,7 +2,7 @@
 
 LLMs have limited context windows. When conversations grow too long, hoocode uses compaction to summarize older content while preserving recent work. This page covers both auto-compaction and branch summarization.
 
-**Source files** ([pi-mono](https://github.com/kolisachint/hoocode)):
+**Source files** ([hoocode](https://github.com/kolisachint/hoocode)):
 - [`packages/coding-agent/src/core/compaction/compaction.ts`](https://github.com/kolisachint/hoocode/blob/main/packages/coding-agent/src/core/compaction/compaction.ts) - Auto-compaction logic
 - [`packages/coding-agent/src/core/compaction/branch-summarization.ts`](https://github.com/kolisachint/hoocode/blob/main/packages/coding-agent/src/core/compaction/branch-summarization.ts) - Branch summarization
 - [`packages/coding-agent/src/core/compaction/utils.ts`](https://github.com/kolisachint/hoocode/blob/main/packages/coding-agent/src/core/compaction/utils.ts) - Shared utilities (file tracking, serialization)
@@ -32,13 +32,13 @@ Auto-compaction triggers when:
 contextTokens > contextWindow - reserveTokens
 ```
 
-By default, `reserveTokens` is 16384 tokens (configurable in `~/.hoocode/agent/settings.json` or `<project-dir>/.hoocode/settings.json`). This leaves room for the LLM's response.
+By default, `reserveTokens` is 16384 tokens (configurable in `~/.hoocode/settings.json` or `<project-dir>/.hoocode/settings.json`). This leaves room for the LLM's response.
 
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 
 ### How It Works
 
-1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.hoocode/agent/settings.json` or `<project-dir>/.hoocode/settings.json`) is reached
+1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.hoocode/settings.json` or `<project-dir>/.hoocode/settings.json`) is reached
 2. **Extract messages**: Collect messages from the previous kept boundary (or session start) up to the cut point
 3. **Generate summary**: Call LLM to summarize with structured format, passing the previous summary as iterative context when present
 4. **Append entry**: Save `CompactionEntry` with summary and `firstKeptEntryId`
@@ -373,7 +373,7 @@ See `SessionBeforeTreeEvent` and `TreePreparation` in the types file.
 
 ## Settings
 
-Configure compaction in `~/.hoocode/agent/settings.json` or `<project-dir>/.hoocode/settings.json`:
+Configure compaction in `~/.hoocode/settings.json` or `<project-dir>/.hoocode/settings.json`:
 
 ```json
 {

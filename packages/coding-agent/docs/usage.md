@@ -54,7 +54,55 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/reload` | Reload keybindings, extensions, skills, prompts, and context files |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
+| `/import <file>` | Import and resume a session from a JSONL file |
+| `/cost` | Session token and cost totals, broken down by model |
 | `/quit` | Quit hoocode |
+
+### Modes and planning
+
+See [Modes](modes.md) for what each mode changes.
+
+| Command | Description |
+|---------|-------------|
+| `/mode <ask\|plan\|build\|debug>` | Switch the active mode |
+| `/plan` | Shorthand for `/mode plan` |
+| `/approve` | Approve the current plan and switch to build mode to execute it |
+| `/grill [me\|plan]` | Stress-test the current plan before committing to it |
+| `/goal [--max-turns N] <objective>` | Work autonomously toward a goal |
+
+### Plugins and extensibility
+
+See [Plugins](plugins.md) for the marketplace and trust model.
+
+| Command | Description |
+|---------|-------------|
+| `/plugin marketplace add <git-url\|path>` | Register a marketplace |
+| `/plugin marketplace list\|refresh` | List registered marketplaces, or re-fetch their indices |
+| `/plugin list` | List installed plugins |
+| `/plugin install <name> [--scope user\|project]` | Install a plugin |
+| `/plugin remove <name>` | Uninstall a plugin |
+| `/plugin trust [list]`, `/plugin untrust` | Inspect or revoke workspace trust |
+| `/plugin publish <name> [--to <dir>]` | Package a plugin for distribution |
+| `/new-skill <name>` | Scaffold a new skill |
+| `/new-agent <name>` | Scaffold a new subagent |
+| `/new-command <name>` | Scaffold a new slash command |
+| `/new-canvas <what it should do>` | Scaffold a canvas extension and build it; `/new-canvas <name>` scaffolds the template only |
+
+### Canvas and scheduling
+
+| Command | Description |
+|---------|-------------|
+| `/canvas list` | List canvases the loaded extensions provide |
+| `/canvas open <extension>[:<canvas>]` | Open a canvas |
+| `/canvas reload [extension]` | Pick up code changes without restarting the session |
+| `/canvas close <instanceId>` | Close a running canvas |
+| `/canvas rename <extension> <new-name>` | Rename a canvas everywhere its name appears |
+| `/canvas remove <extension>` | Delete a canvas, after confirming |
+| `/loop "<cron>" <prompt>` | Schedule a prompt on a cron expression |
+| `/loop <5m\|2h> <prompt>` | Schedule a prompt on an interval |
+| `/loop once "<cron>" <prompt>` | Schedule a one-shot prompt |
+| `/loop list`, `/loop delete <id>`, `/loop stop` | Inspect and cancel schedules |
+| `/loop auto [--max-turns N] <task>` | Run an autonomous loop on a task |
 
 ## Message Queue
 
@@ -71,7 +119,7 @@ Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpM
 
 ## Sessions
 
-Sessions are saved automatically to `~/.hoocode/agent/sessions/`, organized by working directory.
+Sessions are saved automatically to `~/.hoocode/sessions/`, organized by working directory.
 
 ```bash
 hoocode -c                  # Continue most recent session
@@ -96,7 +144,7 @@ See [Sessions](sessions.md) and [Compaction](compaction.md) for details.
 HooCode loads `AGENTS.md` or `CLAUDE.md` at startup from, least specific first:
 
 - `~/.agents/AGENTS.md` — the cross-vendor user scope, shared with other agent tools
-- `~/.hoocode/agent/AGENTS.md` — hoocode's own global instructions, which win on conflict
+- `~/.hoocode/AGENTS.md` — hoocode's own global instructions, which win on conflict
 - parent directories, walking up from the current working directory
 - the current directory
 
@@ -182,7 +230,7 @@ the same path the sessions were recorded under.
 Replace the default system prompt with:
 
 - `.hoocode/SYSTEM.md` for a project
-- `~/.hoocode/agent/SYSTEM.md` globally
+- `~/.hoocode/SYSTEM.md` globally
 
 Append to the default prompt without replacing it with `APPEND_SYSTEM.md` in either location.
 
@@ -259,10 +307,33 @@ cat README.md | hoocode -p "Summarize this text"
 | Option | Description |
 |--------|-------------|
 | `--tools <list>`, `-t <list>` | Allowlist specific built-in, extension, and custom tools |
+| `--disallowed-tools <list>` | Comma-separated denylist, subtracted from the allowlist or default set |
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
 Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+
+#### Optional tool bundles
+
+Off by default unless noted; each adds a capability rather than a single tool.
+
+| Option | Enables |
+|--------|---------|
+| `--enable-todowrite` | The TodoWrite tool — a live todo list in the task panel |
+| `--enable-webtools` | `webfetch` and `websearch` (network access) |
+| `--enable-search-tool` | The semantic index behind the `search` tool (on by default). Legacy alias: `--enable-embsearchtools` |
+| `--enable-plugintools` | The autonomous plugin system — see [Plugins](plugins.md) |
+
+#### Subagents
+
+See [Subagent delegation](routing.md).
+
+| Option | Description |
+|--------|-------------|
+| `--enable-subagents` | Enable the subagent tool (delegate to isolated agent loops) |
+| `--no-subagents`, `--disable-subagents` | Disable it for this session, overriding the setting |
+| `--max-subagent-depth <n>` | Tree-wide nesting cap (default 2 — one level of nesting) |
+| `--warm-subagents` | Dispatch eligible subagents on reused warm RPC workers (experimental) |
 
 ### Resource Options
 
@@ -290,9 +361,27 @@ hoocode --no-extensions -e ./my-extension.ts
 |--------|-------------|
 | `--system-prompt <text>` | Replace default prompt; context files and skills are still appended |
 | `--append-system-prompt <text>` | Append to system prompt |
+| `--light` | Minimal low-token preset for small/local models (see below) |
+| `--print-token-surface` | Print the fixed per-turn surface (system prompt + serialized tool schemas) and exit |
+| `--platform <list>` | Platform layout(s) to target when writing artifacts: `claude`, `copilot` (alias `github`, `gh`), `agents` (alias `native`). Comma-separated and/or repeated |
+| `--team <url\|auto>` | Bridge a hooteams server into the task panel's teams view — focus roles, nudge, attach, answer approval gates. `auto` searches upward from cwd for `.agents/teams/default.json` or `hooteams.config.json` and spawns hooteams locally |
 | `--verbose` | Force verbose startup |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show version |
+
+#### Light mode
+
+`--light` (or the `light` setting) trims the session to the smallest useful
+fixed per-turn surface, for small or local models that waste context on harness
+boilerplate:
+
+- Only `read`, `write`, `edit`, and `bash`, with short descriptions and stripped
+  parameter schemas. `bash` subsumes grep/find/ls — search happens via the shell.
+- A terse replacement system prompt.
+- No subagents, TodoWrite, skills, context files, mode appendix, or the
+  self-documentation section.
+
+`--print-token-surface` reports what that surface actually costs.
 
 ### File Arguments
 
@@ -336,7 +425,7 @@ hoocode --tools read,grep,find,ls -p "Review the code"
 
 | Variable | Description |
 |----------|-------------|
-| `HOOCODE_AGENT_DIR` | Override config directory; default is `~/.hoocode/agent` |
+| `HOOCODE_AGENT_DIR` | Override config directory; default is `~/.hoocode` |
 | `HOOCODE_AGENT_SESSION_DIR` | Override session storage directory; overridden by `--session-dir` |
 | `HOOCODE_PACKAGE_DIR` | Override package directory, useful for Nix/Guix store paths |
 | `HOOCODE_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |

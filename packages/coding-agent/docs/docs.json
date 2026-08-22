@@ -12,7 +12,7 @@
           "path": "quickstart.md"
         },
         {
-          "title": "Using Pi",
+          "title": "Using HooCode",
           "path": "usage.md"
         },
         {
@@ -34,6 +34,31 @@
         {
           "title": "Compaction",
           "path": "compaction.md"
+        },
+        {
+          "title": "Modes",
+          "path": "modes.md"
+        }
+      ]
+    },
+    {
+      "title": "Extending hoocode",
+      "items": [
+        {
+          "title": "MCP",
+          "path": "mcp.md"
+        },
+        {
+          "title": "Plugins",
+          "path": "plugins.md"
+        },
+        {
+          "title": "Canvas",
+          "path": "canvas.md"
+        },
+        {
+          "title": "Subagent delegation",
+          "path": "routing.md"
         }
       ]
     },
@@ -57,7 +82,7 @@
           "path": "themes.md"
         },
         {
-          "title": "Pi Packages",
+          "title": "HooCode Packages",
           "path": "packages.md"
         },
         {

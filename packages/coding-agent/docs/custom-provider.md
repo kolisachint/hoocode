@@ -330,7 +330,7 @@ interface OAuthLoginCallbacks {
 
 ### OAuthCredentials
 
-Credentials are persisted in `~/.hoocode/agent/auth.json`:
+Credentials are persisted in `~/.hoocode/auth.json`:
 
 ```typescript
 interface OAuthCredentials {
