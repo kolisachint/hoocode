@@ -54,6 +54,56 @@ jobs:
       - name: Test ${{ matrix.package }}
         run: cd packages/${{ matrix.package }} && bun run test
 
+  # Tier 2 of the canvas drift check (docs/canvas-extensions-design.md §2.3).
+  # The typecheck catches shape changes in the SDK's types; only running someone
+  # else's canvas catches behavioural drift, which is the half that reaches users
+  # as "the catalog stopped working". Two extensions by different authors, chosen
+  # because they stress the host differently (§12.1).
+  #
+  # Pinned to a SHA, not a branch, for two reasons: a canary aimed at a moving
+  # target reports upstream edits as our regressions, and this job executes third
+  # party code, so the revision it runs should change only when someone bumps it
+  # here on purpose.
+  canvas-canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only the two extension directories; the full repository is ~180MB and
+      # nothing else in it is read.
+      - name: Check out the pinned catalog canvases
+        uses: actions/checkout@v4
+        with:
+          repository: github/awesome-copilot
+          ref: 318066d2213b510e89b500ed0d53506c54093ddc
+          path: .canvas-catalog
+          sparse-checkout: |
+            extensions/pr-artifact-explorer
+            extensions/arcade-canvas
+          sparse-checkout-cone-mode: false
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dependencies
+        run: |
+          cd packages/ai && bun run build
+          cd ../agent && bun run build
+          cd ../tui && bun run build
+
+      # The extensions are run unmodified, with no node_modules anywhere: the SDK
+      # import is resolved by the host (§4.1). If that stops being true, this is
+      # where it shows up.
+      - name: Open the catalog canvases
+        env:
+          HOOCODE_CANVAS_ACCEPTANCE_ROOT: ${{ github.workspace }}/.canvas-catalog/extensions
+        run: cd packages/coding-agent && bun run test test/canvas-acceptance-catalog.test.ts
+
   bun-build:
     runs-on: ubuntu-latest
     steps:
