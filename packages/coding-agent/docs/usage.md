@@ -307,10 +307,33 @@ cat README.md | hoocode -p "Summarize this text"
 | Option | Description |
 |--------|-------------|
 | `--tools <list>`, `-t <list>` | Allowlist specific built-in, extension, and custom tools |
+| `--disallowed-tools <list>` | Comma-separated denylist, subtracted from the allowlist or default set |
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
 Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+
+#### Optional tool bundles
+
+Off by default unless noted; each adds a capability rather than a single tool.
+
+| Option | Enables |
+|--------|---------|
+| `--enable-todowrite` | The TodoWrite tool — a live todo list in the task panel |
+| `--enable-webtools` | `webfetch` and `websearch` (network access) |
+| `--enable-search-tool` | The semantic index behind the `search` tool (on by default). Legacy alias: `--enable-embsearchtools` |
+| `--enable-plugintools` | The autonomous plugin system — see [Plugins](plugins.md) |
+
+#### Subagents
+
+See [Subagent delegation](routing.md).
+
+| Option | Description |
+|--------|-------------|
+| `--enable-subagents` | Enable the subagent tool (delegate to isolated agent loops) |
+| `--no-subagents`, `--disable-subagents` | Disable it for this session, overriding the setting |
+| `--max-subagent-depth <n>` | Tree-wide nesting cap (default 2 — one level of nesting) |
+| `--warm-subagents` | Dispatch eligible subagents on reused warm RPC workers (experimental) |
 
 ### Resource Options
 
@@ -338,9 +361,27 @@ hoocode --no-extensions -e ./my-extension.ts
 |--------|-------------|
 | `--system-prompt <text>` | Replace default prompt; context files and skills are still appended |
 | `--append-system-prompt <text>` | Append to system prompt |
+| `--light` | Minimal low-token preset for small/local models (see below) |
+| `--print-token-surface` | Print the fixed per-turn surface (system prompt + serialized tool schemas) and exit |
+| `--platform <list>` | Platform layout(s) to target when writing artifacts: `claude`, `copilot` (alias `github`, `gh`), `agents` (alias `native`). Comma-separated and/or repeated |
+| `--team <url\|auto>` | Bridge a hooteams server into the task panel's teams view — focus roles, nudge, attach, answer approval gates. `auto` searches upward from cwd for `.agents/teams/default.json` or `hooteams.config.json` and spawns hooteams locally |
 | `--verbose` | Force verbose startup |
 | `-h`, `--help` | Show help |
 | `-v`, `--version` | Show version |
+
+#### Light mode
+
+`--light` (or the `light` setting) trims the session to the smallest useful
+fixed per-turn surface, for small or local models that waste context on harness
+boilerplate:
+
+- Only `read`, `write`, `edit`, and `bash`, with short descriptions and stripped
+  parameter schemas. `bash` subsumes grep/find/ls — search happens via the shell.
+- A terse replacement system prompt.
+- No subagents, TodoWrite, skills, context files, mode appendix, or the
+  self-documentation section.
+
+`--print-token-surface` reports what that surface actually costs.
 
 ### File Arguments
 

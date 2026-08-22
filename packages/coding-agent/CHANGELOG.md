@@ -22,7 +22,12 @@
   deferred schemas), `modes.md` (ask/plan/build/debug and the plan → grill →
   approve → goal workflow), and `canvas.md`. `usage.md` gains the 13 slash
   commands that were shipping undocumented, including `/plugin`, `/mode`,
-  `/loop`, `/canvas`, `/cost`, and the `/new-*` scaffolds.
+  `/loop`, `/canvas`, `/cost`, and the `/new-*` scaffolds, plus the 12 CLI
+  flags that were missing from the reference — the optional tool bundles
+  (`--enable-todowrite`, `--enable-webtools`, `--enable-search-tool`,
+  `--enable-plugintools`), the subagent flags, `--light`,
+  `--print-token-surface`, `--platform`, `--team`, and `--disallowed-tools`.
+  Every slash command and CLI flag hoocode accepts is now documented.
 
 ### Fixed
 
