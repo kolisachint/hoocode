@@ -54,7 +54,52 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | `/reload` | Reload keybindings, extensions, skills, prompts, and context files |
 | `/hotkeys` | Show all keyboard shortcuts |
 | `/changelog` | Display version history |
+| `/import <file>` | Import and resume a session from a JSONL file |
+| `/cost` | Session token and cost totals, broken down by model |
 | `/quit` | Quit hoocode |
+
+### Modes and planning
+
+See [Modes](modes.md) for what each mode changes.
+
+| Command | Description |
+|---------|-------------|
+| `/mode <ask\|plan\|build\|debug>` | Switch the active mode |
+| `/plan` | Shorthand for `/mode plan` |
+| `/approve` | Approve the current plan and switch to build mode to execute it |
+| `/grill [me\|plan]` | Stress-test the current plan before committing to it |
+| `/goal [--max-turns N] <objective>` | Work autonomously toward a goal |
+
+### Plugins and extensibility
+
+See [Plugins](plugins.md) for the marketplace and trust model.
+
+| Command | Description |
+|---------|-------------|
+| `/plugin marketplace add <git-url\|path>` | Register a marketplace |
+| `/plugin marketplace list\|refresh` | List registered marketplaces, or re-fetch their indices |
+| `/plugin list` | List installed plugins |
+| `/plugin install <name> [--scope user\|project]` | Install a plugin |
+| `/plugin remove <name>` | Uninstall a plugin |
+| `/plugin trust [list]`, `/plugin untrust` | Inspect or revoke workspace trust |
+| `/plugin publish <name> [--to <dir>]` | Package a plugin for distribution |
+| `/new-skill <name>` | Scaffold a new skill |
+| `/new-agent <name>` | Scaffold a new subagent |
+| `/new-command <name>` | Scaffold a new slash command |
+| `/new-canvas <name>` | Scaffold a new canvas extension |
+
+### Canvas and scheduling
+
+| Command | Description |
+|---------|-------------|
+| `/canvas list` | List canvases the loaded extensions provide |
+| `/canvas open <extension>[:<canvas>]` | Open a canvas |
+| `/canvas close <instanceId>` | Close a running canvas |
+| `/loop "<cron>" <prompt>` | Schedule a prompt on a cron expression |
+| `/loop <5m\|2h> <prompt>` | Schedule a prompt on an interval |
+| `/loop once "<cron>" <prompt>` | Schedule a one-shot prompt |
+| `/loop list`, `/loop delete <id>`, `/loop stop` | Inspect and cancel schedules |
+| `/loop auto [--max-turns N] <task>` | Run an autonomous loop on a task |
 
 ## Message Queue
 

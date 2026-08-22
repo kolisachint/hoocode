@@ -147,6 +147,7 @@ let cached: SelfDoc[] | undefined;
 /** Drop the cached listing. Tests, and anything that relocates the package root. */
 export function resetSelfDocs(): void {
 	cached = undefined;
+	cachedSections = undefined;
 }
 
 /**
@@ -206,40 +207,204 @@ export function listSelfDocs(): SelfDoc[] {
 /**
  * The system-prompt section, or `""` when there is nothing to point at.
  *
- * Groups by directory and prints each root once rather than repeating a ~50
- * character absolute path on all thirty lines — that repetition alone cost more
- * tokens than every description combined, and the model can join a root and a
- * filename perfectly well.
+ * Deliberately just filenames. An earlier version carried a one-line summary
+ * per doc and cost ~860 tokens on every single turn, which is a poor trade for
+ * something most turns never use — and it stopped being necessary once
+ * SearchHooCode could retrieve at the heading level. Filenames alone still let
+ * the model go straight to `themes.md` or `keybindings.md` for the obvious
+ * cases, and anything less obvious is one search away. That is ~180 tokens.
+ *
+ * Directories are printed once rather than repeated per entry, for the same
+ * reason: the path was the single largest term on every line.
  */
 export function formatSelfDocsForPrompt(docs: readonly SelfDoc[] = listSelfDocs()): string {
 	if (docs.length === 0) return "";
 
 	// Insertion order is already meaningful (overview first, then alphabetical,
 	// then README/CHANGELOG), so group without re-sorting.
-	const groups = new Map<string, SelfDoc[]>();
+	const groups = new Map<string, string[]>();
 	for (const doc of docs) {
 		const root = dirname(doc.path);
 		const bucket = groups.get(root);
-		if (bucket) bucket.push(doc);
-		else groups.set(root, [doc]);
+		if (bucket) bucket.push(doc.id);
+		else groups.set(root, [doc.id]);
 	}
 
-	const sections: string[] = [];
-	for (const [root, entries] of groups) {
-		const lines = entries.map((doc) => {
-			const summary = doc.description ? ` — ${doc.description}` : "";
-			return `- ${doc.id} (${doc.title})${summary}`;
-		});
-		sections.push(`In ${root}/\n${lines.join("\n")}`);
-	}
+	const sections = [...groups].map(([root, files]) => `${root}/: ${files.join(", ")}`);
 
 	return `
 
 # About hoocode itself
 
-You are running inside hoocode, and its own documentation ships with the install. When the user asks what hoocode can do, how one of its features works, or how to configure, extend, or troubleshoot it, read the relevant file below and answer from it. Do not answer such questions from memory — hoocode is actively developed and your training data does not cover it.
+You are running inside hoocode. Its own docs ship with the install, listed below; hoocode is actively developed, so answer questions about it from these files rather than from memory. They sit outside the working directory, so searching the project will not find them. Use SearchHooCode to locate a specific heading, or read a file directly.
 
-These files live outside the working directory, so searching the project will not find them. Read them by joining the directory and the filename.
+${sections.join("\n")}`;
+}
 
-${sections.join("\n\n")}`;
+// ---------------------------------------------------------------------------
+// Section index
+// ---------------------------------------------------------------------------
+
+/**
+ * A single heading's worth of a doc.
+ *
+ * Doc-level retrieval would add nothing the prompt listing above does not
+ * already give: thirty files with a summary each are cheap enough to list in
+ * full, so a search that answers "read extensions.md" is a round trip for
+ * information the model already had. The questions that actually need
+ * retrieval are the ones inside a 1,100-line file — "how do I register a
+ * tool?" should land on `extensions.md § Custom tools` with a line number, not
+ * on the file.
+ */
+export interface SelfDocSection {
+	/** `<file>#<slug>`, unique across the corpus. */
+	id: string;
+	/** Filename, e.g. `extensions.md`. */
+	file: string;
+	/** Absolute path to the file. */
+	path: string;
+	/** Heading trail from the document title down, e.g. `["Extensions", "Custom tools"]`. */
+	headings: string[];
+	/** 1-based line of the heading, so a reader can jump straight to it. */
+	line: number;
+	/** Start of the section body, for ranking and for showing why a hit matched. */
+	excerpt: string;
+}
+
+/**
+ * How much section body to keep.
+ *
+ * Every character past this is invisible to retrieval, so the cap is a recall
+ * limit, not just a size one: at 240 a question about `/grill` missed the
+ * section that documents it, because the term sat in the fourth sentence. 400
+ * covers the opening of essentially every section here for about 95KB more
+ * index across the corpus, which buys back that class of miss.
+ */
+const MAX_EXCERPT = 400;
+
+/** `Custom tools` → `custom-tools`, so ids stay stable and readable. */
+function slugify(heading: string): string {
+	return (
+		heading
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/^-+|-+$/g, "") || "section"
+	);
+}
+
+/** `extensions.md § Extensions › Custom tools` — what a search result is labelled with. */
+export function sectionLabel(section: SelfDocSection): string {
+	return section.headings.length > 0 ? `${section.file} § ${section.headings.join(" › ")}` : section.file;
+}
+
+/**
+ * Split one markdown file into sections at its headings.
+ *
+ * Fenced code is tracked so a `#` comment inside a bash block cannot be
+ * mistaken for a heading — which would otherwise split docs at every shell
+ * comment. Code *content* still lands in the excerpt: the exact identifiers
+ * someone searches for (`pi.registerTool`) usually live in the examples, and
+ * dropping them would blind the lexical leg to the best terms in the file.
+ */
+export function splitIntoSections(markdown: string, file: string, path: string): SelfDocSection[] {
+	const lines = markdown.split(/\r?\n/);
+	const sections: SelfDocSection[] = [];
+	const trail: Array<{ depth: number; text: string }> = [];
+	const usedIds = new Set<string>();
+
+	let current: SelfDocSection | undefined;
+	let body: string[] = [];
+	let inFence = false;
+
+	const flush = (): void => {
+		if (!current) return;
+		current.excerpt = truncate(stripInlineMarkdown(body.join(" ")), MAX_EXCERPT);
+		sections.push(current);
+		body = [];
+	};
+
+	for (let i = 0; i < lines.length; i++) {
+		const raw = lines[i] ?? "";
+		if (raw.trimStart().startsWith("```")) {
+			inFence = !inFence;
+			continue;
+		}
+		const heading = inFence ? null : /^(#{1,6})\s+(.+?)\s*$/.exec(raw);
+		if (!heading) {
+			if (raw.trim() !== "") body.push(raw.trim());
+			continue;
+		}
+
+		flush();
+
+		const depth = heading[1]?.length ?? 1;
+		const text = stripInlineMarkdown(heading[2] ?? "");
+		while (trail.length > 0 && (trail[trail.length - 1]?.depth ?? 0) >= depth) trail.pop();
+		trail.push({ depth, text });
+
+		// Disambiguate repeated headings ("Example" appears eleven times in
+		// extensions.md) so ids stay unique and the registry does not collapse them.
+		let id = `${file}#${slugify(trail.map((t) => t.text).join("-"))}`;
+		if (usedIds.has(id)) {
+			let n = 2;
+			while (usedIds.has(`${id}-${n}`)) n++;
+			id = `${id}-${n}`;
+		}
+		usedIds.add(id);
+
+		current = { id, file, path, headings: trail.map((t) => t.text), line: i + 1, excerpt: "" };
+	}
+	flush();
+
+	return sections;
+}
+
+/**
+ * Files kept out of the section index.
+ *
+ * The changelog is 40% of the corpus by section count and none of it answers
+ * "how does X work": it is hundreds of near-identical `Added`/`Fixed`/`Changed`
+ * headings under version numbers, which crowd real documentation out of the
+ * ranking while matching almost any query about a feature by name.
+ *
+ * `index.md` is excluded for the mirror-image reason: it is a table of contents,
+ * so its "sections" are lists of links whose text is every other doc's title and
+ * summary. That makes it match any query those docs would match, while carrying
+ * none of the content — a guaranteed false attractor that displaces the page it
+ * is pointing at.
+ *
+ * Both stay in the prompt's filename listing, one read away.
+ */
+const SECTION_INDEX_EXCLUDED = new Set(["CHANGELOG.md", "index.md"]);
+
+let cachedSections: SelfDocSection[] | undefined;
+
+/** Drop the cached section index. Tests, and anything that relocates the package root. */
+export function resetSelfDocSections(): void {
+	cachedSections = undefined;
+}
+
+/**
+ * Every section of every shipped doc.
+ *
+ * Reads each file once per session and caches; the docs are read-only install
+ * content, so there is nothing to invalidate on.
+ */
+export function listSelfDocSections(): SelfDocSection[] {
+	if (cachedSections) return cachedSections;
+
+	const sections: SelfDocSection[] = [];
+	for (const doc of listSelfDocs()) {
+		if (SECTION_INDEX_EXCLUDED.has(doc.id)) continue;
+		let content: string;
+		try {
+			content = readFileSync(doc.path, "utf-8");
+		} catch {
+			continue;
+		}
+		sections.push(...splitIntoSections(content, doc.id, doc.path));
+	}
+
+	cachedSections = sections;
+	return sections;
 }

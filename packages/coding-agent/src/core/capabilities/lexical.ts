@@ -23,25 +23,119 @@ const K1 = 1.2;
 const B = 0.75;
 
 /**
+ * Fold a regular English plural to its singular, or return undefined.
+ *
+ * Deliberately crude: only the endings that are unambiguous without a
+ * dictionary. Documentation headings are written in whichever number reads best
+ * ("Themes", "Custom Providers") while questions are asked in the other ("how
+ * do I add a theme"), and with no folding at all those two never meet — the
+ * single most useful term in the query is the one term that cannot match.
+ *
+ * Irregulars are left alone. Getting "indices" wrong costs a missed hit;
+ * inventing a stemmer that mangles "status" into "statu" would cost matches
+ * that work today.
+ */
+function singularize(token: string): string | undefined {
+	if (token.length > 4 && token.endsWith("ies")) return `${token.slice(0, -3)}y`;
+	if (token.length > 4 && /(?:ss|sh|ch|x|z)es$/.test(token)) return token.slice(0, -2);
+	if (token.length > 3 && token.endsWith("s") && !token.endsWith("ss") && !token.endsWith("us")) {
+		return token.slice(0, -1);
+	}
+	return undefined;
+}
+
+/**
  * Split identifiers the way a person reads them: `mcp_github_create_pr` and
  * `createPullRequest` both yield their parts, and the original token is kept so
  * an exact name still scores as an exact match.
+ *
+ * Singular forms are emitted *alongside* the originals rather than replacing
+ * them, which is the same bargain the identifier splitting makes: an exact
+ * token still matches exactly, and a near miss now matches too.
  */
 export function tokenize(text: string): string[] {
 	const out: string[] = [];
+	const push = (token: string): void => {
+		out.push(token);
+		const singular = singularize(token);
+		if (singular && singular !== token) out.push(singular);
+	};
 	for (const raw of text.toLowerCase().match(/[a-z0-9]+(?:[_-][a-z0-9]+)*/gi) ?? []) {
 		const token = raw.toLowerCase();
-		out.push(token);
+		push(token);
 		// Split on separators, then on camelCase boundaries in the source text.
 		const parts = token.split(/[_-]+/).filter(Boolean);
-		if (parts.length > 1) out.push(...parts);
+		if (parts.length > 1) for (const part of parts) push(part);
 	}
 	for (const camel of text.match(/[a-z][a-z0-9]*|[A-Z][a-z0-9]*|[A-Z]+(?![a-z])/g) ?? []) {
 		const lower = camel.toLowerCase();
-		if (lower.length > 1) out.push(lower);
+		if (lower.length > 1) push(lower);
 	}
 	return out;
 }
+
+/**
+ * Function words dropped from *queries* only.
+ *
+ * Questions arrive as "how do I add a custom theme", and in a corpus of a few
+ * hundred short documents the filler carries real weight: a section whose prose
+ * happens to say "Add an AGENTS.md file ... to tell it how to work" outscores
+ * the section actually titled "Creating a Custom Theme", because it matched
+ * three throwaway words to the target's one meaningful one.
+ *
+ * Query-side only, deliberately. Stripping these from documents too would
+ * change every document length and every average, re-tuning a ranking that
+ * works; dropping a term from the query just stops it contributing, which is
+ * the whole intent.
+ */
+const QUERY_STOPWORDS = new Set([
+	"a",
+	"an",
+	"and",
+	"are",
+	"as",
+	"at",
+	"be",
+	"by",
+	"can",
+	"do",
+	"does",
+	"for",
+	"from",
+	"get",
+	"how",
+	"i",
+	"in",
+	"is",
+	"it",
+	"its",
+	"me",
+	"my",
+	"of",
+	"on",
+	"or",
+	"so",
+	"that",
+	"the",
+	"then",
+	"there",
+	"this",
+	"to",
+	"use",
+	"using",
+	"want",
+	"was",
+	"what",
+	"when",
+	"where",
+	"which",
+	"who",
+	"why",
+	"will",
+	"with",
+	"you",
+	"your",
+]);
 
 /** The text a document is matched on: name first, since that is what queries name. */
 function documentText(doc: CapabilityDoc): string {
@@ -88,7 +182,11 @@ export class LexicalIndex {
 
 	/** Top `k` documents for `query`, best first. Documents scoring zero are omitted. */
 	search(query: string, k = 10): LexicalHit[] {
-		const terms = tokenize(query);
+		const raw = tokenize(query);
+		// Fall back to the unfiltered terms when a query is nothing but function
+		// words, so "what is it" still searches rather than silently matching all.
+		const filtered = raw.filter((t) => !QUERY_STOPWORDS.has(t));
+		const terms = filtered.length > 0 ? filtered : raw;
 		if (terms.length === 0 || this.postings.length === 0) return [];
 		const n = this.postings.length;
 

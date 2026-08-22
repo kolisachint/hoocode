@@ -35,6 +35,14 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 - [Keybindings](keybindings.md) - default shortcuts and custom keybindings.
 - [Sessions](sessions.md) - session management, branching, and tree navigation.
 - [Compaction](compaction.md) - context compaction and branch summarization.
+- [Modes](modes.md) - ask, plan, build, and debug, and the planning workflow.
+
+## Extending hoocode
+
+- [MCP](mcp.md) - connect Model Context Protocol servers and their tools.
+- [Plugins](plugins.md) - install capabilities from marketplaces, and the trust model.
+- [Canvas](canvas.md) - interactive surfaces the agent can drive.
+- [Subagent delegation](routing.md) - hand focused work to a separate agent.
 
 ## Customization
 

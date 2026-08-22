@@ -34,6 +34,31 @@
         {
           "title": "Compaction",
           "path": "compaction.md"
+        },
+        {
+          "title": "Modes",
+          "path": "modes.md"
+        }
+      ]
+    },
+    {
+      "title": "Extending hoocode",
+      "items": [
+        {
+          "title": "MCP",
+          "path": "mcp.md"
+        },
+        {
+          "title": "Plugins",
+          "path": "plugins.md"
+        },
+        {
+          "title": "Canvas",
+          "path": "canvas.md"
+        },
+        {
+          "title": "Subagent delegation",
+          "path": "routing.md"
         }
       ]
     },

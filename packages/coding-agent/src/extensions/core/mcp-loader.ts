@@ -24,7 +24,7 @@ import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
 import { getHooCodeDir } from "../../config.js";
 import { ensureDenseIndex } from "../../core/capabilities/dense.js";
-import { registerCapabilities } from "../../core/capabilities/registry.js";
+import { getCapabilities, registerCapabilities } from "../../core/capabilities/registry.js";
 import { resetCapabilitySearch, searchCapabilities } from "../../core/capabilities/search.js";
 import { getExtensionMcpServers } from "../../core/extension-mcp-servers.js";
 import type { ExtensionAPI, ExtensionContext, SessionStartEvent, ToolDefinition } from "../../core/extensions/types.js";
@@ -707,7 +707,13 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 			// Fire-and-forget: the lexical leg answers immediately, and the dense one
 			// joins when (and if) it is ready. Awaiting here would put an embedding
 			// model's startup in front of the session's.
-			void ensureDenseIndex(toCapabilityDocs(deferredCatalog, true)).catch(() => {});
+			//
+			// Indexed over everything registered, not just these tools: the dense
+			// store is shared and keyed on the hash of whatever it was built from, so
+			// passing a subset here would evict the other producers' vectors (and
+			// theirs would evict these). Every caller passing the full set makes the
+			// last write the complete one.
+			void ensureDenseIndex(getCapabilities()).catch(() => {});
 
 			const resolveParams = Type.Object(
 				{

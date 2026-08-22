@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import { formatSelfDocsForPrompt, listSelfDocs, resetSelfDocs } from "../src/core/self-docs.js";
+import { formatSelfDocsForPrompt, listSelfDocSections, listSelfDocs, resetSelfDocs } from "../src/core/self-docs.js";
 import { buildSystemPrompt } from "../src/core/system-prompt.js";
 
 /**
@@ -120,11 +120,27 @@ describe("formatSelfDocsForPrompt", () => {
 		});
 
 		const section = formatSelfDocsForPrompt();
-		expect(section).toContain(`In ${join(fixture, "docs")}/`);
-		expect(section).toContain(`In ${fixture}/`);
-		// Filenames are listed bare under their directory heading.
-		expect(section).toContain("- skills.md (Skills) — Reusable capabilities.");
+		expect(section).toContain(`${join(fixture, "docs")}/: index.md, skills.md`);
+		expect(section).toContain(`${fixture}/: README.md`);
 		expect(section).not.toContain(join(fixture, "docs", "skills.md"));
+	});
+
+	test("stays terse — filenames only, no per-doc summaries", () => {
+		writeFixture({
+			"docs/index.md": "# Docs\n\n- [Skills](skills.md) - Reusable capabilities.\n",
+			"docs/skills.md": "# Skills\n",
+		});
+
+		// The summaries still exist on the SelfDoc entries for SearchHooCode; they
+		// just do not ride along on every turn.
+		expect(formatSelfDocsForPrompt()).not.toContain("Reusable capabilities.");
+		expect(listSelfDocs().find((d) => d.id === "skills.md")?.description).toBe("Reusable capabilities.");
+	});
+
+	test("points at SearchHooCode for anything the filename list cannot answer", () => {
+		writeFixture({ "docs/index.md": "# Docs\n" });
+
+		expect(formatSelfDocsForPrompt()).toContain("SearchHooCode");
 	});
 });
 
@@ -180,5 +196,38 @@ describe("buildSystemPrompt self-docs section", () => {
 
 		const prompt = buildSystemPrompt({ selectedTools: ["read"], cwd: process.cwd() });
 		expect(prompt.indexOf("# About hoocode itself")).toBeLessThan(prompt.indexOf("Current date:"));
+	});
+});
+
+describe("listSelfDocSections", () => {
+	test("indexes sections of ordinary docs", () => {
+		writeFixture({
+			"docs/index.md": "# Docs\n",
+			"docs/themes.md": "# Themes\n\n## Custom Themes\n\nDefine colors.\n",
+		});
+
+		expect(listSelfDocSections().map((s) => s.headings)).toEqual([["Themes"], ["Themes", "Custom Themes"]]);
+	});
+
+	test("excludes the changelog, whose version headings crowd out real docs", () => {
+		writeFixture({
+			"docs/index.md": "# Docs\n",
+			"docs/themes.md": "# Themes\n",
+			"CHANGELOG.md": "# Changelog\n\n## [1.0.0]\n\n### Added\n\nTheme support.\n",
+		});
+
+		expect(listSelfDocSections().every((s) => s.file !== "CHANGELOG.md")).toBe(true);
+		// Still listed for the model to read directly.
+		expect(listSelfDocs().map((d) => d.id)).toContain("CHANGELOG.md");
+	});
+
+	test("excludes the table of contents, which would match every query it links to", () => {
+		writeFixture({
+			"docs/index.md": "# Docs\n\n- [Themes](themes.md) - custom terminal themes.\n",
+			"docs/themes.md": "# Themes\n\nDefine colors.\n",
+		});
+
+		expect(listSelfDocSections().every((s) => s.file !== "index.md")).toBe(true);
+		expect(listSelfDocs().map((d) => d.id)).toContain("index.md");
 	});
 });
