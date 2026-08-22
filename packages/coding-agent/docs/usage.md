@@ -86,7 +86,7 @@ See [Plugins](plugins.md) for the marketplace and trust model.
 | `/new-skill <name>` | Scaffold a new skill |
 | `/new-agent <name>` | Scaffold a new subagent |
 | `/new-command <name>` | Scaffold a new slash command |
-| `/new-canvas <name>` | Scaffold a new canvas extension |
+| `/new-canvas <what it should do>` | Scaffold a canvas extension and build it; `/new-canvas <name>` scaffolds the template only |
 
 ### Canvas and scheduling
 
@@ -94,7 +94,10 @@ See [Plugins](plugins.md) for the marketplace and trust model.
 |---------|-------------|
 | `/canvas list` | List canvases the loaded extensions provide |
 | `/canvas open <extension>[:<canvas>]` | Open a canvas |
+| `/canvas reload [extension]` | Pick up code changes without restarting the session |
 | `/canvas close <instanceId>` | Close a running canvas |
+| `/canvas rename <extension> <new-name>` | Rename a canvas everywhere its name appears |
+| `/canvas remove <extension>` | Delete a canvas, after confirming |
 | `/loop "<cron>" <prompt>` | Schedule a prompt on a cron expression |
 | `/loop <5m\|2h> <prompt>` | Schedule a prompt on an interval |
 | `/loop once "<cron>" <prompt>` | Schedule a one-shot prompt |

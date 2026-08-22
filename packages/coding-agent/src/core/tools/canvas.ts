@@ -1,13 +1,19 @@
 /**
- * The two agent-facing canvas tools.
+ * The three agent-facing canvas tools.
  *
  * Design: `docs/canvas-extensions-design.md` §11.5. Copilot names its own shape in
  * the SDK types — `list_canvas_capabilities` to discover, `invoke_canvas_action` to
  * invoke — and hoocode mirrors it, for its own reason as well as fidelity:
  * `AGENTS.md` budgets the prompt at ~4,140 tokens with ~2,710 of it tool schemas,
  * and every active tool's schema is re-sent on every request. One tool per open
- * action would make that surface grow with how many canvases are open. Two fixed
- * tools keep it flat.
+ * action would make that surface grow with how many canvases are open. Fixed tools
+ * keep it flat.
+ *
+ * `reload_canvas` is hoocode's, not Copilot's, and it is what makes a canvas
+ * something the agent can *iterate on* rather than only drive: an edit to
+ * `extension.mjs` is invisible until the child forked from the old bytes is
+ * replaced. See {@link createReloadTool} for why reloading is the agent's to do
+ * while opening is not.
  *
  * **There is deliberately no "open a canvas" tool.** Opening forks a process and
  * binds a listening socket; that is a person's decision, gated by workspace trust
@@ -27,6 +33,11 @@ import { defineTool, type ToolDefinition } from "../extensions/types.js";
 export const LIST_CANVAS_CAPABILITIES_TOOL_NAME = "list_canvas_capabilities";
 /** Tool name for action invocation, matching Copilot's. */
 export const INVOKE_CANVAS_ACTION_TOOL_NAME = "invoke_canvas_action";
+/**
+ * Tool name for re-forking an edited extension. hoocode's own — Copilot has no
+ * equivalent because its `/create-canvas` flow reloads the panel itself.
+ */
+export const RELOAD_CANVAS_TOOL_NAME = "reload_canvas";
 
 /**
  * Ceiling on a serialized action result, in characters.
@@ -38,6 +49,17 @@ export const INVOKE_CANVAS_ACTION_TOOL_NAME = "invoke_canvas_action";
 export const CANVAS_RESULT_MAX_CHARS = 8_000;
 
 const listParams = Type.Object({}, { additionalProperties: false });
+
+const reloadParams = Type.Object(
+	{
+		extensionId: Type.String({
+			description: "The extension whose code changed. From list_canvas_capabilities (the `extension` field).",
+		}),
+	},
+	{ additionalProperties: false },
+);
+
+type ReloadParams = Static<typeof reloadParams>;
 
 const invokeParams = Type.Object(
 	{
@@ -54,6 +76,16 @@ type InvokeParams = Static<typeof invokeParams>;
 export interface CanvasCapabilitiesDetails {
 	instances: number;
 	actions: number;
+}
+
+/** What `reload_canvas` reports. */
+export interface CanvasReloadDetails {
+	extensionId: string;
+	reopened: number;
+	dropped: number;
+	actionsAdded: number;
+	actionsRemoved: number;
+	actionsChanged: number;
 }
 
 /** What `invoke_canvas_action` reports. */
@@ -176,6 +208,100 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
 }
 
 /**
+ * Reload: re-fork an extension whose source changed, carrying its open instances.
+ *
+ * This is the tool that makes a canvas *iterable* by the agent — "add a column",
+ * "make the header sticky" — which is the whole point of authoring one in a
+ * session. Editing `extension.mjs` alone changes nothing: the child forked from
+ * the old bytes keeps serving until it is replaced.
+ *
+ * It reloads; it does not open. That distinction is what keeps §11.5's reasoning
+ * intact. Opening is a person's decision because it starts a process from a
+ * directory nobody has vouched for; reloading only restarts an extension the
+ * person already opened, in a workspace they already trusted, from a path the
+ * host already resolved. The model cannot reach a new extension through it, and
+ * a poisoned string in some canvas's data still cannot cause one to start.
+ *
+ * It is not a safety boundary on the *contents* of the file, and must not be
+ * described as one: whatever wrote `extension.mjs` — the model's own edit,
+ * through the permission gate — is what runs.
+ */
+function createReloadTool(registry: CanvasRegistry): ToolDefinition {
+	return defineTool<typeof reloadParams, CanvasReloadDetails>({
+		name: RELOAD_CANVAS_TOOL_NAME,
+		label: RELOAD_CANVAS_TOOL_NAME,
+		description:
+			"Restart an open canvas extension so your edits to its source take effect. Editing the extension's file does nothing on its own — the running process was forked from the old code. Call this after every edit. It reports which actions you added, removed or changed, so use it to confirm an action you just wrote is really callable. Open instances are carried across and keep their instanceId, but each gets a NEW url: tell the person the new url, because the tab they have open is now dead.",
+		promptSnippet: "Restart an edited canvas so the change is live",
+		parameters: reloadParams,
+		async execute(_toolCallId, params: ReloadParams, signal) {
+			const running = [...new Set(registry.listInstances().map((instance) => instance.extensionId))];
+			if (!running.includes(params.extensionId)) {
+				throw new Error(
+					running.length === 0
+						? "No canvas is open, so there is nothing to reload."
+						: `Canvas extension "${params.extensionId}" has nothing open. Running: ${running.join(", ")}.`,
+				);
+			}
+
+			// A failed reload is the common case while iterating — the edit did not
+			// parse, or threw at module scope. The registry leaves the old child
+			// serving in that case, so this reads as "your edit is broken and the
+			// canvas is untouched", which is what the model needs to hear to fix it.
+			const result = await registry.reload(params.extensionId, { signal });
+
+			const lines = [`Reloaded ${params.extensionId}. It declares: ${result.canvases.join(", ") || "no canvases"}.`];
+
+			// The capability delta is the answer to the question an author actually has
+			// after an edit — did the host see the action I just wrote? Silence would read
+			// as success, so "nothing changed" is said out loud too.
+			const { added, removed, changed, current } = result.actions;
+			if (added.length + removed.length + changed.length === 0) {
+				lines.push(`Actions unchanged: ${current.join(", ") || "none"}.`);
+			} else {
+				if (added.length > 0) lines.push(`Actions added: ${added.join(", ")}.`);
+				if (removed.length > 0) lines.push(`Actions removed: ${removed.join(", ")}.`);
+				if (changed.length > 0) {
+					lines.push(
+						`Actions changed (description or inputSchema): ${changed.join(", ")}. Any schema you were holding for these is stale.`,
+					);
+				}
+				lines.push(`Now callable: ${current.join(", ") || "none"}.`);
+			}
+			if (result.reopened.length > 0) {
+				lines.push(
+					"Re-opened (give the person the new url — their old tab points at a closed port):",
+					...result.reopened.map(
+						(instance) =>
+							`  ${instance.canvasId} (${instance.instanceId})${instance.url ? ` — ${instance.url}` : ""}`,
+					),
+				);
+			}
+			if (result.dropped.length > 0) {
+				lines.push(
+					"Did not come back:",
+					...result.dropped.map((drop) => `  ${drop.canvasId} (${drop.instanceId}): ${drop.reason}`),
+				);
+			}
+			if (result.reopened.length === 0 && result.dropped.length === 0) {
+				lines.push("Nothing was open, so nothing was re-opened.");
+			}
+			return {
+				...textResult(lines.join("\n")),
+				details: {
+					extensionId: params.extensionId,
+					reopened: result.reopened.length,
+					dropped: result.dropped.length,
+					actionsAdded: added.length,
+					actionsRemoved: removed.length,
+					actionsChanged: changed.length,
+				},
+			};
+		},
+	});
+}
+
+/**
  * The canvas tools, or none.
  *
  * Returns an empty array while nothing is open, so the two schemas are absent from
@@ -185,5 +311,5 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
  */
 export function createCanvasToolDefinitions(registry: CanvasRegistry): ToolDefinition[] {
 	if (registry.listInstances().length === 0) return [];
-	return [createListCapabilitiesTool(registry), createInvokeActionTool(registry)];
+	return [createListCapabilitiesTool(registry), createInvokeActionTool(registry), createReloadTool(registry)];
 }

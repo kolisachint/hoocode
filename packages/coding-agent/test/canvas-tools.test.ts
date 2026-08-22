@@ -23,6 +23,7 @@ import {
 	createCanvasToolDefinitions,
 	INVOKE_CANVAS_ACTION_TOOL_NAME,
 	LIST_CANVAS_CAPABILITIES_TOOL_NAME,
+	RELOAD_CANVAS_TOOL_NAME,
 } from "../src/core/tools/canvas.js";
 import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
@@ -68,6 +69,7 @@ describe("canvas tools", () => {
 			all: defs,
 			list: byName.get(LIST_CANVAS_CAPABILITIES_TOOL_NAME),
 			invoke: byName.get(INVOKE_CANVAS_ACTION_TOOL_NAME),
+			reload: byName.get(RELOAD_CANVAS_TOOL_NAME),
 		};
 	}
 
@@ -76,25 +78,31 @@ describe("canvas tools", () => {
 			expect(createCanvasToolDefinitions(build())).toEqual([]);
 		});
 
-		it("contributes exactly two tools, named as Copilot names them", async () => {
+		it("contributes the two Copilot-named tools, plus hoocode's reload", async () => {
 			const reg = build();
 			await reg.open(EXTENSION, "plan-board");
 			expect(tools(reg).all.map((def) => def.name)).toEqual([
 				LIST_CANVAS_CAPABILITIES_TOOL_NAME,
 				INVOKE_CANVAS_ACTION_TOOL_NAME,
+				RELOAD_CANVAS_TOOL_NAME,
 			]);
 		});
 
-		it("stays at two tools however many canvases are open", async () => {
+		/**
+		 * The invariant is that the surface is *fixed*, not that it is two: one tool
+		 * per open action would grow the prompt with how many canvases are open,
+		 * which is the thing §11.5 rules out.
+		 */
+		it("stays at the same tools however many canvases are open", async () => {
 			const reg = build();
 			await reg.open(EXTENSION, "plan-board");
 			await reg.open(EXTENSION, "plan-board");
 			await reg.open(EXTENSION, "plan-board");
 			expect(reg.activeActions().length).toBeGreaterThan(3);
-			expect(tools(reg).all).toHaveLength(2);
+			expect(tools(reg).all).toHaveLength(3);
 		});
 
-		it("keeps both schemas inside the per-tool token budget", async () => {
+		it("keeps every schema inside the per-tool token budget", async () => {
 			const reg = build();
 			await reg.open(EXTENSION, "plan-board");
 			// AGENTS.md: a built-in should land under ~250 tokens serialized, estimated

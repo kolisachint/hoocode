@@ -29,7 +29,13 @@
 import { randomUUID } from "node:crypto";
 import * as path from "node:path";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
-import type { CanvasActionDeclaration, CanvasDeclaration, CanvasProviderOpenResult, JsonValue } from "./protocol.js";
+import type {
+	CanvasActionDeclaration,
+	CanvasDeclaration,
+	CanvasProviderOpenResult,
+	CanvasReadyMessage,
+	JsonValue,
+} from "./protocol.js";
 import {
 	type CanvasCallOptions,
 	type CanvasExtensionProcess,
@@ -63,6 +69,13 @@ export interface CanvasInstance extends CanvasInstanceKey {
 	status: string | undefined;
 	/** When hoocode last opened this instance or invoked one of its actions. */
 	lastTouchedAt: number;
+	/**
+	 * The `input` this instance was opened with, kept so {@link CanvasRegistry.reload}
+	 * can re-open it the same way. `canvas.open` is the only place a canvas is told
+	 * what it is opening *onto*, so replaying it is what makes a reload a reload
+	 * rather than a fresh, emptier canvas.
+	 */
+	openInput: JsonValue | undefined;
 }
 
 /**
@@ -72,6 +85,85 @@ export interface CanvasInstance extends CanvasInstanceKey {
  */
 export interface CanvasActionBinding extends CanvasInstanceKey {
 	action: CanvasActionDeclaration;
+}
+
+/** An instance that did not survive a {@link CanvasRegistry.reload}, and why. */
+export interface CanvasReloadDrop {
+	instanceId: string;
+	canvasId: string;
+	reason: string;
+}
+
+/**
+ * How a reload changed what the agent can call.
+ *
+ * Reported because editing a canvas's actions is otherwise invisible. A reload
+ * that only said which canvases exist leaves the one question an author actually
+ * has unanswered — *did the host see the action I just wrote?* — and the answer
+ * matters: a typo in `actions: [...]`, a handler that throws at declaration time,
+ * or an action defined on the wrong canvas all fail by the action simply not
+ * being there.
+ *
+ * `changed` means same name, different declaration — a reworded description or a
+ * reshaped `inputSchema`. That is worth separating from added and removed
+ * because it is the case where a stale `list_canvas_capabilities` result in the
+ * model's context is now wrong rather than merely incomplete.
+ */
+export interface CanvasActionDelta {
+	/** `canvasId.actionName`, so a multi-canvas extension stays unambiguous. */
+	added: string[];
+	removed: string[];
+	changed: string[];
+	/** Everything the extension declares now, in the same form. */
+	current: string[];
+}
+
+/** What a {@link CanvasRegistry.reload} did. */
+export interface CanvasReloadResult {
+	extensionId: string;
+	/**
+	 * Instances that came back, with their **new** urls — the old ones are dead
+	 * ports. Instance ids are unchanged.
+	 */
+	reopened: CanvasInstance[];
+	/** Instances that could not be re-opened. */
+	dropped: CanvasReloadDrop[];
+	/** Canvas ids the reloaded extension declares, which the edit may have changed. */
+	canvases: string[];
+	/** What the edit did to the action inventory. */
+	actions: CanvasActionDelta;
+}
+
+/**
+ * Index an extension's actions by `canvasId.actionName`, against a stable
+ * serialization of the declaration.
+ *
+ * `JSON.stringify` of the whole declaration is the comparison, which makes it
+ * sensitive to key order — but both sides come from the same code path in the
+ * same shim, so a reordering here means the author reordered the source, and
+ * reporting that as "changed" is closer to true than missing a reshaped schema.
+ */
+function indexActions(declarations: Map<string, CanvasDeclaration>): Map<string, string> {
+	const index = new Map<string, string>();
+	for (const [canvasId, declaration] of declarations) {
+		for (const action of declaration.actions ?? []) {
+			index.set(`${canvasId}.${action.name}`, JSON.stringify(action));
+		}
+	}
+	return index;
+}
+
+/** Compare two action inventories. */
+function diffActions(before: Map<string, string>, after: Map<string, string>): CanvasActionDelta {
+	const added: string[] = [];
+	const removed: string[] = [];
+	const changed: string[] = [];
+	for (const [key, shape] of after) {
+		if (!before.has(key)) added.push(key);
+		else if (before.get(key) !== shape) changed.push(key);
+	}
+	for (const key of before.keys()) if (!after.has(key)) removed.push(key);
+	return { added: added.sort(), removed: removed.sort(), changed: changed.sort(), current: [...after.keys()].sort() };
 }
 
 /** Diagnostics the registry emits. The host decides how to surface them. */
@@ -119,6 +211,16 @@ interface ChildEntry {
 	declarations: Map<string, CanvasDeclaration>;
 	/** When the child's instance count last dropped to zero; undefined while in use. */
 	idleSince: number | undefined;
+	/**
+	 * The descriptor this child was forked from.
+	 *
+	 * Kept because {@link CanvasRegistry.reload} is reached by extension id — from a
+	 * tool call, or from `/canvas reload` — and re-forking needs the entry file and
+	 * the scope the trust gate reads. Re-discovering it here would duplicate the
+	 * search roots and could silently resolve a *different* extension than the one
+	 * that is running.
+	 */
+	extension: DiscoveredCanvasExtension;
 }
 
 /** Render a key as a stable string, for maps and messages. */
@@ -186,6 +288,7 @@ export class CanvasRegistry {
 			title: result?.title,
 			status: result?.status,
 			lastTouchedAt: this.now(),
+			openInput: input,
 		};
 		this.instances.set(canvasInstanceKeyOf(instance), instance);
 		child.idleSince = undefined;
@@ -241,6 +344,141 @@ export class CanvasRegistry {
 			);
 		}
 		if (this.instancesOf(key.extensionId).length === 0) child.idleSince = this.now();
+	}
+
+	/**
+	 * Re-fork a running extension from disk and put its open instances back.
+	 *
+	 * This is what makes a canvas *iterable*. A canvas has no passive half — its
+	 * id, its actions and its UI all come from running its code — so editing
+	 * `extension.mjs` changes nothing at all while the child that was forked from
+	 * the old bytes is still serving: not the open page, and not even a freshly
+	 * opened second instance, because {@link child} hands back the child already in
+	 * the table. Without a reload the only way to see an edit is to end the session.
+	 *
+	 * The order is deliberate. The new child is forked and asked for its
+	 * declarations **before** the old one is touched, so an edit that does not run —
+	 * a syntax error, a throw at module scope, a `joinSession` that never resolves —
+	 * leaves the person looking at exactly the canvas they had, and the error is
+	 * reported instead of being paid for with their open surface.
+	 *
+	 * Instance ids are preserved, so an `instanceId` the model already holds keeps
+	 * working across a reload. **URLs are not**: the extension binds a fresh
+	 * ephemeral port and mints a fresh capability token in `open()`, and the host
+	 * has no way to make it reuse either. So a reload always hands back new URLs,
+	 * and the caller must show them — an already-open browser tab is pointing at a
+	 * port that is now closed.
+	 *
+	 * The `input` each instance was opened with is replayed, so a reload restores
+	 * the canvas rather than a blank one. Everything the *extension* kept in memory
+	 * is gone, which is the honest meaning of restarting a process.
+	 */
+	async reload(extensionId: string, options?: CanvasCallOptions): Promise<CanvasReloadResult> {
+		const previous = this.children.get(extensionId);
+		if (!previous) {
+			throw new Error(
+				`Canvas extension "${extensionId}" is not running, so there is nothing to reload. Open it first.`,
+			);
+		}
+
+		// Snapshot before anything moves: `close` mutates the instance table, and the
+		// old child's declarations go with it when it is terminated.
+		const carried = this.instancesOf(extensionId);
+		const actionsBefore = indexActions(previous.declarations);
+
+		// Fork the edited code first. If it does not come up, the old child is still
+		// registered and still serving, and this throws without costing anything.
+		const next = await this.spawn(previous.extension);
+
+		// The swap. Registering the new child before stopping the old one is what
+		// makes the old one's `onExit` a no-op rather than a table-clearing race.
+		this.children.set(extensionId, next);
+		for (const instance of carried) this.instances.delete(canvasInstanceKeyOf(instance));
+		for (const instance of carried) {
+			try {
+				await previous.process.close({
+					sessionId: extensionId,
+					extensionId,
+					canvasId: instance.canvasId,
+					instanceId: instance.instanceId,
+				});
+			} catch {
+				// The old child is about to be killed, so a refused close costs nothing:
+				// its ports go with the process. Reporting it would be noise on a path
+				// the person asked for.
+			}
+		}
+		await previous.process.terminate();
+
+		const reopened: CanvasInstance[] = [];
+		const dropped: CanvasReloadDrop[] = [];
+		for (const instance of carried) {
+			// The edit may have renamed or removed the canvas. That is a legitimate
+			// thing for an author to do mid-iteration, so it is reported rather than
+			// thrown — the other instances still come back.
+			if (!next.declarations.has(instance.canvasId)) {
+				dropped.push({
+					instanceId: instance.instanceId,
+					canvasId: instance.canvasId,
+					reason: `the reloaded extension no longer declares canvas "${instance.canvasId}" (declares: ${[...next.declarations.keys()].join(", ") || "none"})`,
+				});
+				continue;
+			}
+			try {
+				const result = (await next.process.open(
+					{
+						sessionId: extensionId,
+						extensionId,
+						canvasId: instance.canvasId,
+						instanceId: instance.instanceId,
+						input: instance.openInput,
+					},
+					options,
+				)) as CanvasProviderOpenResult | null;
+				const fresh: CanvasInstance = {
+					...instance,
+					url: result?.url,
+					title: result?.title,
+					status: result?.status,
+					lastTouchedAt: this.now(),
+				};
+				this.instances.set(canvasInstanceKeyOf(fresh), fresh);
+				reopened.push(fresh);
+			} catch (cause) {
+				await this.abandon(extensionId, instance.canvasId, instance.instanceId);
+				dropped.push({
+					instanceId: instance.instanceId,
+					canvasId: instance.canvasId,
+					reason: cause instanceof Error ? cause.message : String(cause),
+				});
+			}
+		}
+		next.idleSince = reopened.length === 0 ? this.now() : undefined;
+
+		return {
+			extensionId,
+			reopened,
+			dropped,
+			canvases: [...next.declarations.keys()],
+			actions: diffActions(actionsBefore, indexActions(next.declarations)),
+		};
+	}
+
+	/**
+	 * Stop an extension's child now, rather than at the end of its linger period.
+	 *
+	 * The reaper's grace period is right for an extension nobody is using and wrong
+	 * for one whose directory is about to be moved or deleted: a child outliving
+	 * its own source is the most confusing state a canvas can be in, because it
+	 * keeps serving code that is no longer anywhere on disk.
+	 */
+	async stopChild(extensionId: string): Promise<boolean> {
+		const child = this.children.get(extensionId);
+		if (!child) return false;
+		for (const instance of this.instancesOf(extensionId)) await this.close(instance);
+		this.children.delete(extensionId);
+		await child.process.terminate();
+		return true;
 	}
 
 	/** Every open instance. */
@@ -349,6 +587,25 @@ export class CanvasRegistry {
 	}
 
 	private async child(extension: DiscoveredCanvasExtension): Promise<ChildEntry> {
+		const existing = this.children.get(extension.id);
+		if (existing?.process.running) return existing;
+		if (existing) this.children.delete(extension.id);
+
+		const entry = await this.spawn(extension);
+		this.children.set(extension.id, entry);
+		return entry;
+	}
+
+	/**
+	 * Fork one extension and wait for its declarations, without registering it.
+	 *
+	 * Separate from {@link child} because {@link reload} needs to fork a *second*
+	 * child while the first is still serving the person's open canvas: if the edit
+	 * that prompted the reload does not run, the old child is still there and
+	 * nothing was lost. Registering is therefore the caller's step, taken only once
+	 * the new child has answered.
+	 */
+	private async spawn(extension: DiscoveredCanvasExtension): Promise<ChildEntry> {
 		// The single choke point: every path that could start a process comes through
 		// here, so the gate is enforced once and cannot be bypassed by a caller that
 		// forgot to filter. Callers should still filter with `gateCanvasExtensions`
@@ -357,10 +614,7 @@ export class CanvasRegistry {
 			throw new CanvasTrustError(extension.id, this.options.cwd);
 		}
 
-		const existing = this.children.get(extension.id);
-		if (existing?.process.running) return existing;
-		if (existing) this.children.delete(extension.id);
-
+		let spawned: CanvasExtensionProcess | undefined;
 		const process = spawnCanvasExtension({
 			extensionId: extension.id,
 			entry: extension.entry,
@@ -370,10 +624,27 @@ export class CanvasRegistry {
 			onLog: (message, level) => this.options.onLog?.(extension.id, message, level),
 			onStray: (line) => this.options.onStray?.(extension.id, line),
 			onStderr: (chunk) => this.options.onStderr?.(extension.id, chunk),
-			onExit: () => this.forget(extension.id),
+			// Only the child that is *currently registered* may clear the table. A
+			// reload's probe dying before it is adopted must not take the live child's
+			// instances with it, and the old child's own exit — which reload causes on
+			// purpose, after the new one is registered — must not undo the swap.
+			onExit: () => {
+				const registered = this.children.get(extension.id);
+				if (spawned && registered?.process === spawned) this.forget(extension.id);
+			},
 		});
+		spawned = process;
 
-		const ready = await process.ready;
+		let ready: CanvasReadyMessage;
+		try {
+			ready = await process.ready;
+		} catch (cause) {
+			// `ready` rejects when the child exits first, but a child that answered
+			// nothing and stayed up would otherwise be orphaned by the throw.
+			await process.terminate();
+			throw cause;
+		}
+
 		if (ready.unsupported && ready.unsupported.length > 0) {
 			this.options.onDiagnostic?.(
 				extension.id,
@@ -381,13 +652,12 @@ export class CanvasRegistry {
 			);
 		}
 
-		const entry: ChildEntry = {
+		return {
 			process,
 			declarations: new Map(ready.canvases.map((declaration) => [declaration.id, declaration])),
 			idleSince: this.now(),
+			extension,
 		};
-		this.children.set(extension.id, entry);
-		return entry;
 	}
 
 	/** Drop a dead child and its instances, so a crash cannot leave stale entries. */
