@@ -50,6 +50,7 @@ function paneConfig(learn: Record<string, number> = DEFAULT_LEARN): any {
 		blockImages: false,
 		enableSkillCommands: true,
 		pluginInstallScope: "user",
+		platform: [],
 		steeringMode: "all",
 		followUpMode: "all",
 		transport: "auto",

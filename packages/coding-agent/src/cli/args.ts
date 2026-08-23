@@ -390,7 +390,8 @@ ${chalk.bold("Options:")}
                                   distribution units and the native agents layout belongs to no
                                   marketplace, so agents is ignored for them (scaffolds still use it)
                                   Default: claude for plugins; .hoocode/ for scaffolds
-                                  Can also be set via the "platform" setting
+                                  Can also be set via the "platform" setting, which
+                                  /settings -> Plugins -> Platform writes (per environment)
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)

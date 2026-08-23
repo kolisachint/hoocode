@@ -54,6 +54,7 @@ import type {
 	ExtensionRunner,
 	ExtensionUIContext,
 } from "../../core/extensions/index.js";
+import { getWorkspacePlatforms, setPlatforms } from "../../core/extensions/plugins/formats/platform-targets.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { formatDurationSecs } from "../../core/format-duration.js";
 import { formatTokens } from "../../core/format-tokens.js";
@@ -3150,6 +3151,9 @@ export class InteractiveMode {
 					blockImages: this.settingsManager.getBlockImages(),
 					enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
 					pluginInstallScope: this.settingsManager.getPluginInstallScope(),
+					// The targets actually in force, so a session launched with --platform
+					// shows what it is writing rather than the (possibly unset) setting.
+					platform: getWorkspacePlatforms() ?? [],
 					steeringMode: this.session.steeringMode,
 					followUpMode: this.session.followUpMode,
 					transport: this.settingsManager.getTransport(),
@@ -3283,6 +3287,13 @@ export class InteractiveMode {
 						// Read per install by InstallPlugin, so it applies immediately with
 						// nothing to reload.
 						this.settingsManager.setPluginInstallScope(scope);
+					},
+					onPlatformChange: (platforms) => {
+						// Persist for later sessions, then update the process-wide session
+						// state so plugin authoring and the /new-* scaffolds pick the new
+						// layout up in this session too.
+						this.settingsManager.setPlatform(platforms);
+						setPlatforms(platforms);
 					},
 					onSteeringModeChange: (mode) => {
 						this.session.setSteeringMode(mode);

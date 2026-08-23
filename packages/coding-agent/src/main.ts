@@ -432,11 +432,12 @@ function buildSessionOptions(
 	if (lightMode && !parsed.tools && !parsed.noTools && !parsed.noBuiltinTools) {
 		options.tools = [...LIGHT_TOOL_NAMES];
 	}
-	// Artifact platform targeting: --support-platform flag (falls back to the
-	// supportPlatform setting) picks which vendor layout(s) hoocode writes when
-	// it produces artifacts — authored plugins (ProposePlugin) and the /new-skill
-	// //new-agent //new-command scaffolds. Stored as process-wide state next to
-	// the format registry; readers of every format stay unaffected.
+	// Artifact platform targeting: the --platform flag (falls back to the
+	// `platform` setting, which /settings also writes) picks which vendor
+	// layout(s) hoocode writes when it produces artifacts — authored plugins
+	// (ProposePlugin) and the /new-skill //new-agent //new-command scaffolds.
+	// Stored as process-wide state next to the format registry; readers of every
+	// format stay unaffected.
 	const platformTokens = parsed.platform ?? settingsManager.getPlatform();
 	if (platformTokens && platformTokens.length > 0) {
 		const { platforms, invalid } = parsePlatforms(platformTokens);

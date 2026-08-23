@@ -977,6 +977,19 @@ export class SettingsManager {
 		return Array.isArray(value) ? value : [value];
 	}
 
+	/**
+	 * Persist the artifact platform targets. Always stored as an array (getPlatform
+	 * accepts either shape), and an empty/undefined list removes the key so the
+	 * per-consumer defaults apply again rather than an empty list being read as
+	 * "target nothing". Global scope: the layout a machine writes is an
+	 * environment-level choice, not a per-repo one.
+	 */
+	setPlatform(platforms: readonly string[] | undefined): void {
+		this.globalSettings.platform = platforms && platforms.length > 0 ? [...platforms] : undefined;
+		this.markModified("platform");
+		this.save();
+	}
+
 	getEnablePluginTools(): boolean {
 		return this.settings.enablePluginTools ?? DEFAULT_SETTINGS.enablePluginTools!;
 	}
