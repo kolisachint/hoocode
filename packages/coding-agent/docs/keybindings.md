@@ -20,6 +20,11 @@ After editing `keybindings.json`, run `/reload` in hoocode to apply the changes 
 
 Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1`, etc.
 
+> **`alt` needs a cooperating terminal.** On macOS outside the Kitty keyboard
+> protocol, `Option` composes characters instead of sending `Alt` — `Option+M`
+> types `µ`. Some Linux terminals claim `Alt+<letter>` for menu mnemonics. See
+> [terminal-setup.md](terminal-setup.md#alt-keys) for the per-terminal setting.
+
 ## All Actions
 
 ### TUI Editor Cursor Movement

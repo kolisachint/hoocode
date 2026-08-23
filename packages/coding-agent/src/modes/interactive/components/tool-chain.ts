@@ -46,6 +46,11 @@ export class ToolChainComponent extends Container {
 		return this.opened;
 	}
 
+	/** Whether a summary line is standing in for this chain's calls right now. */
+	get isSummarised(): boolean {
+		return this.isCollapsed();
+	}
+
 	get isEmpty(): boolean {
 		return this.blocks.length === 0;
 	}
@@ -91,9 +96,18 @@ export class ToolChainComponent extends Container {
 		this.memo = undefined;
 	}
 
-	/** Whether this chain is currently drawn as a single summary line. */
+	/**
+	 * Whether this chain is currently drawn as a single summary line.
+	 *
+	 * A chain of one is not summarised. Its phrase would be `Ran npm run check`,
+	 * which is strictly less than the radar row it replaced: the row names the
+	 * tool and how much came back, and the phrase drops both to say the same
+	 * thing in prose. Summarising is only worth a lossy rewrite when there is
+	 * more than one call to fold — and by measurement most chains have exactly
+	 * one, so this is the common case, not an edge.
+	 */
 	private isCollapsed(): boolean {
-		return this.view === "radar" && !this.opened && this.blocks.length > 0;
+		return this.view === "radar" && !this.opened && this.blocks.length > 1;
 	}
 
 	override render(width: number): string[] {

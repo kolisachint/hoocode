@@ -172,6 +172,24 @@ describe("ToolChainComponent", () => {
 		expect(lines[body].indexOf("ASSERTION")).toBeGreaterThan(lines[row].indexOf("●"));
 	});
 
+	test("a chain of one keeps its radar row instead of a phrase", () => {
+		// The phrase would be `Explored`, which drops both the tool and how much
+		// came back — strictly less than the row it replaced.
+		const chain = chainOf("radar", [RUN[0]], "one");
+		chain.close("done");
+		const out = render(chain);
+		expect(out).toContain("grep");
+		expect(out).toContain("2 lines");
+		expect(out).not.toContain("Explored");
+		expect(chain.isSummarised).toBe(false);
+	});
+
+	test("two calls are still worth folding", () => {
+		const chain = chainOf("radar", RUN.slice(0, 2), "two");
+		expect(chain.isSummarised).toBe(true);
+		expect(render(chain)).toContain("grep › read");
+	});
+
 	test("reports whether it is still collecting calls", () => {
 		const chain = chainOf("radar", RUN, "s");
 		expect(chain.isOpen).toBe(true);

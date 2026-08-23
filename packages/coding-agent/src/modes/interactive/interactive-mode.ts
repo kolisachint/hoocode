@@ -2203,7 +2203,7 @@ export class InteractiveMode {
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
-						this.hideThinkingBlock,
+						this.thinkingHiddenForView(),
 						this.getMarkdownThemeWithSettings(),
 						this.hiddenThinkingLabel,
 					);
@@ -2623,7 +2623,7 @@ export class InteractiveMode {
 			case "assistant": {
 				const assistantComponent = new AssistantMessageComponent(
 					message,
-					this.hideThinkingBlock,
+					this.thinkingHiddenForView(),
 					this.getMarkdownThemeWithSettings(),
 					this.hiddenThinkingLabel,
 				);
@@ -3055,6 +3055,9 @@ export class InteractiveMode {
 			const chains = this.transcriptChains();
 			for (let i = chains.length - 1; i >= 0; i--) {
 				if (chains[i].isEmpty || chains[i].isOpened === wantOpen) continue;
+				// A chain of one is never summarised, so there is nothing for unfold to
+				// reveal; skipping it keeps the press moving to a chain that will change.
+				if (wantOpen && !chains[i].isSummarised) continue;
 				chains[i].setOpened(wantOpen);
 				this.ui.requestRender();
 				return;
@@ -3086,13 +3089,39 @@ export class InteractiveMode {
 		this.applyToolOutputView(next);
 	}
 
+	/**
+	 * Whether thinking traces render folded to their one-line label.
+	 *
+	 * Radar folds them regardless of the setting. The dial is one question asked
+	 * once — "how much do I ever want to see" — and a view whose whole job is to
+	 * fold a tool's output down to a row cannot then spend forty lines on the
+	 * reasoning that led to it.
+	 *
+	 * It is also what keeps a running chain on screen. A chain stays open across
+	 * a thinking block (thinking is not text, so it is not a chain boundary), and
+	 * an unfolded trace streaming in below pushes the chain's own summary line off
+	 * the top — where every subsequent call rewrites a line above the viewport and
+	 * forces the full redraw that clears terminal scrollback.
+	 */
+	private thinkingHiddenForView(): boolean {
+		return this.hideThinkingBlock || this.toolOutputView === "radar";
+	}
+
 	private applyToolOutputView(view: ToolOutputView): void {
+		const thinkingWasHidden = this.thinkingHiddenForView();
 		this.toolOutputView = view;
 		this.settingsManager.setToolOutputView(view);
 		this.footer.setToolOutputView(view);
+		const thinkingHidden = this.thinkingHiddenForView();
 		for (const child of this.chatContainer.children) {
 			if (child instanceof ToolChainComponent) child.setView(view);
 			else if (child instanceof ToolExecutionComponent) child.setView(view);
+			else if (child instanceof AssistantMessageComponent && thinkingHidden !== thinkingWasHidden) {
+				child.setHideThinkingBlock(thinkingHidden);
+			}
+		}
+		if (this.streamingComponent && thinkingHidden !== thinkingWasHidden) {
+			this.streamingComponent.setHideThinkingBlock(thinkingHidden);
 		}
 		this.ui.requestRender();
 	}
@@ -3151,12 +3180,18 @@ export class InteractiveMode {
 
 		// If streaming, re-add the streaming component with updated visibility and re-render
 		if (this.streamingComponent && this.streamingMessage) {
-			this.streamingComponent.setHideThinkingBlock(this.hideThinkingBlock);
+			this.streamingComponent.setHideThinkingBlock(this.thinkingHiddenForView());
 			this.streamingComponent.updateContent(this.streamingMessage);
 			this.chatContainer.addChild(this.streamingComponent);
 		}
 
-		this.showStatus(`Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`);
+		// Radar overrides the setting, so say so rather than claiming a change the
+		// screen does not show.
+		this.showStatus(
+			!this.hideThinkingBlock && this.toolOutputView === "radar"
+				? "Thinking blocks: visible (radar keeps them folded)"
+				: `Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`,
+		);
 	}
 
 	private openExternalEditor(): void {
@@ -3586,9 +3621,10 @@ export class InteractiveMode {
 					onHideThinkingBlockChange: (hidden) => {
 						this.hideThinkingBlock = hidden;
 						this.settingsManager.setHideThinkingBlock(hidden);
+						const effective = this.thinkingHiddenForView();
 						for (const child of this.chatContainer.children) {
 							if (child instanceof AssistantMessageComponent) {
-								child.setHideThinkingBlock(hidden);
+								child.setHideThinkingBlock(effective);
 							}
 						}
 						this.chatContainer.clear();

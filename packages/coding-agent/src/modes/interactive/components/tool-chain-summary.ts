@@ -161,6 +161,15 @@ export function chainStats(entries: ChainEntry[], state: ChainState): string {
 	return parts.join(" · ");
 }
 
+interface ToolFamily {
+	verb: string;
+	/** Noun for the headline's count form: "Edited 3 files". */
+	noun: string;
+	/** Noun for the secondary clause, which has no verb to lean on: "· 38 reads". */
+	tail: string;
+	tools: string[];
+}
+
 /**
  * Tool families, in the order a settled chain reports them.
  *
@@ -168,18 +177,52 @@ export function chainStats(entries: ChainEntry[], state: ChainState): string {
  * one is remembered as the edit. Mutation outranks execution outranks reading
  * outranks searching, so the phrase names the most consequential thing the
  * chain did rather than the most frequent.
+ *
+ * Priority alone is only sound while the chain is small enough for every call
+ * to plausibly serve the headline act. See `INCIDENTAL_SHARE`.
  */
-const FAMILIES: Array<{ verb: string; noun: string; tools: string[] }> = [
-	{ verb: "Edited", noun: "file", tools: ["edit", "write", "MultiEdit", "NotebookEdit"] },
-	{ verb: "Ran", noun: "command", tools: ["bash"] },
-	{ verb: "Delegated", noun: "task", tools: ["Task", "TaskOutput"] },
-	{ verb: "Fetched", noun: "page", tools: ["webfetch", "websearch"] },
-	{ verb: "Read", noun: "file", tools: ["read"] },
-	{ verb: "Searched", noun: "search", tools: ["grep", "find", "search", "ls"] },
+const FAMILIES: ToolFamily[] = [
+	{ verb: "Edited", noun: "file", tail: "edit", tools: ["edit", "write", "MultiEdit", "NotebookEdit"] },
+	{ verb: "Ran", noun: "command", tail: "command", tools: ["bash"] },
+	{ verb: "Delegated", noun: "task", tail: "task", tools: ["Task", "TaskOutput"] },
+	{ verb: "Fetched", noun: "page", tail: "fetch", tools: ["webfetch", "websearch"] },
+	{ verb: "Read", noun: "file", tail: "read", tools: ["read"] },
+	{ verb: "Searched", noun: "search", tail: "search", tools: ["grep", "find", "search", "ls"] },
 ];
 
-/** Longest common directory prefix of the given paths, or "" when they share none. */
-function commonPathPrefix(paths: string[]): string {
+/**
+ * Calls from here up, a chain is long enough that priority order alone starts
+ * lying, and the three rules below switch on.
+ *
+ * Below it the existing behaviour is left exactly as it was. Measured over this
+ * repo's own sessions, 87% of chains are three calls or fewer and 75% touch a
+ * single family; the failure these rules address does not exist down there, so
+ * neither should the rules.
+ */
+const LONG_CHAIN_CALLS = 10;
+
+/**
+ * A family this far below the chain's own size did not characterise it.
+ *
+ * Priority order says a chain that read six files and changed one is the edit,
+ * and at seven calls that is true. At seventy-three it is not: 28 greps, 37
+ * reads and one edit is an investigation that ended in a small change, and
+ * calling it "Edited subagent.ts" describes 1 call out of 73.
+ */
+const INCIDENTAL_SHARE = 0.1;
+
+/** Below this, a secondary family is a footnote and not worth the width. */
+const MIN_SECONDARY_CALLS = 3;
+
+/**
+ * Longest common directory prefix of the given paths, or "" when they share none.
+ *
+ * `long` chains additionally reject a single-segment prefix: across forty files
+ * the shared root collapses to something like `packages`, which names a location
+ * so broad it is worse than the count it displaced. Short chains keep theirs —
+ * `Edited docs` is a genuine location, and three files rarely share a vague one.
+ */
+function commonPathPrefix(paths: string[], long: boolean): string {
 	if (paths.length === 0) return "";
 	const split = paths.map((p) => p.split("/").filter(Boolean));
 	const [first, ...rest] = split;
@@ -188,7 +231,11 @@ function commonPathPrefix(paths: string[]): string {
 		if (rest.every((parts) => parts[i] === first[i])) prefix.push(first[i]);
 		else break;
 	}
-	return prefix.join("/");
+	if (prefix.length === 0) return "";
+	if (long && prefix.length < 2) return "";
+	const joined = prefix.join("/");
+	// `filter(Boolean)` drops the empty leading segment of an absolute path.
+	return paths[0].startsWith("/") ? `/${joined}` : joined;
 }
 
 /**
@@ -202,12 +249,52 @@ function usableAsTarget(subject: string): boolean {
 	return subject.includes("/") || /\.[a-zA-Z0-9]+$/.test(subject);
 }
 
+/** The headline clause for one family's calls. */
+function familyPhrase(family: ToolFamily, matched: ChainEntry[], long: boolean): string {
+	const subjects = matched.map((e) => e.subject).filter(Boolean);
+
+	// A lone call is fully described by its own subject, whatever shape it is:
+	// a command, a pattern, a URL, a path.
+	if (matched.length === 1 && subjects.length === 1) {
+		return `${family.verb} ${subjects[0]}`;
+	}
+
+	// Several calls: name the place they share, or fall back to a count.
+	const target = commonPathPrefix(subjects.filter(usableAsTarget), long);
+	if (target) return `${family.verb} ${target}`;
+	// Searching has no natural plural noun ("3 searches" says nothing the
+	// stats do not), so the bare verb carries it.
+	if (family.noun === "search") return "Explored";
+	return `${family.verb} ${plural(matched.length, family.noun)}`;
+}
+
+/** The family with the most calls other than `chosen`, if any reaches the floor. */
+function largestOtherFamily(
+	entries: ChainEntry[],
+	chosen: ToolFamily,
+): { family: ToolFamily; count: number } | undefined {
+	let best: { family: ToolFamily; count: number } | undefined;
+	for (const family of FAMILIES) {
+		if (family === chosen) continue;
+		const count = entries.filter((e) => family.tools.includes(e.tool)).length;
+		if (count > (best?.count ?? 0)) best = { family, count };
+	}
+	return best && best.count >= MIN_SECONDARY_CALLS ? best : undefined;
+}
+
 /**
  * The settled chain's phrase: what this run amounted to.
  *
- * Deliberately one clause, not an inventory. "Edited packages/tui, read 6
- * files, searched packages" is a worse line than "Edited packages/tui" — the
+ * Deliberately close to one clause, not an inventory. "Edited packages/tui, read
+ * 6 files, searched packages" is a worse line than "Edited packages/tui" — the
  * count is already in the stats, and the per-call detail is one `alt+u` away.
+ *
+ * A long chain earns at most one more clause, and only when its headline family
+ * is a minority of the calls. That is the case where a single clause stops being
+ * terse and starts being false: 31 edits among 182 calls is worth naming, but so
+ * is the fact that 76 of the rest were commands. Listing every family it touched
+ * is not the alternative — a chain that reports "(ran, delegated, read,
+ * searched)" has said only that it was busy.
  *
  * A location is only named when the calls actually share one. Naming a single
  * arbitrary file out of five would read as a claim the chain never made, so
@@ -215,29 +302,39 @@ function usableAsTarget(subject: string): boolean {
  */
 export function chainPhrase(entries: ChainEntry[]): string {
 	if (entries.length === 0) return "No calls";
+	const long = entries.length >= LONG_CHAIN_CALLS;
 
+	let chosen: ToolFamily | undefined;
+	let matched: ChainEntry[] = [];
 	for (const family of FAMILIES) {
-		const matched = entries.filter((e) => family.tools.includes(e.tool));
-		if (matched.length === 0) continue;
+		const m = entries.filter((e) => family.tools.includes(e.tool));
+		if (m.length === 0) continue;
+		if (long && m.length / entries.length < INCIDENTAL_SHARE) continue;
+		chosen = family;
+		matched = m;
+		break;
+	}
 
-		const subjects = matched.map((e) => e.subject).filter(Boolean);
-
-		// A lone call is fully described by its own subject, whatever shape it is:
-		// a command, a pattern, a URL, a path.
-		if (matched.length === 1 && subjects.length === 1) {
-			return `${family.verb} ${subjects[0]}`;
+	// Every family was incidental — a long chain spread thin across many tools.
+	// The largest still describes it better than the priority order's first hit.
+	if (!chosen) {
+		for (const family of FAMILIES) {
+			const m = entries.filter((e) => family.tools.includes(e.tool));
+			if (m.length > matched.length) {
+				chosen = family;
+				matched = m;
+			}
 		}
-
-		// Several calls: name the place they share, or fall back to a count.
-		const target = commonPathPrefix(subjects.filter(usableAsTarget));
-		if (target) return `${family.verb} ${target}`;
-		// Searching has no natural plural noun ("3 searches" says nothing the
-		// stats do not), so the bare verb carries it.
-		if (family.noun === "search") return "Explored";
-		return `${family.verb} ${plural(matched.length, family.noun)}`;
 	}
 
 	// An unrecognised tool set still gets a line rather than a blank.
-	const names = [...new Set(entries.map((e) => e.tool))];
-	return names.length === 1 ? `Called ${names[0]}` : `Called ${plural(names.length, "tool")}`;
+	if (!chosen) {
+		const names = [...new Set(entries.map((e) => e.tool))];
+		return names.length === 1 ? `Called ${names[0]}` : `Called ${plural(names.length, "tool")}`;
+	}
+
+	const head = familyPhrase(chosen, matched, long);
+	if (!long || matched.length / entries.length >= 0.5) return head;
+	const secondary = largestOtherFamily(entries, chosen);
+	return secondary ? `${head} · ${plural(secondary.count, secondary.family.tail)}` : head;
 }

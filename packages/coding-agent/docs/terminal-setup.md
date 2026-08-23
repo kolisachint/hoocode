@@ -6,6 +6,57 @@ HooCode uses the [Kitty keyboard protocol](https://sw.kovidgoyal.net/kitty/keybo
 
 Work out of the box.
 
+## Alt keys
+
+37 actions are reachable only with `Alt` — the model selector (`Alt+M`), settings
+(`Alt+S`), the shortcut list (`Alt+K`), every picker verb, and the tree filters.
+A terminal that speaks the Kitty keyboard protocol reports `Alt` correctly and
+needs nothing here.
+
+Interrupt (`Esc`), clear (`Ctrl+C`), exit (`Ctrl+D`) and expand (`Ctrl+O`) are
+deliberately never on `Alt`, so a misconfigured terminal is recoverable.
+
+### macOS
+
+Outside the Kitty protocol, macOS treats `Option` as a compose key rather than
+`Alt`. `Option+M` produces `µ`, `Option+S` produces `ß`, and `Option+E`,
+`Option+U` and `Option+N` are dead keys that emit nothing at all. HooCode never
+sees a key chord, so it types the character into the prompt instead — or, for
+the dead keys, appears to ignore the press entirely.
+
+Ghostty, Kitty, WezTerm and iTerm2 negotiate the Kitty protocol and are
+unaffected. Terminal.app does not support it, so configure it explicitly:
+
+| Terminal | Setting |
+|---|---|
+| Terminal.app | Settings → Profiles → Keyboard → **Use Option as Meta Key** |
+| iTerm2 (protocol disabled) | Settings → Profiles → Keys → Left Option key → **Esc+** |
+| Ghostty | `macos-option-as-alt = true` |
+| Kitty | `macos_option_as_alt yes` |
+| VS Code | `"terminal.integrated.macOptionIsMeta": true` |
+
+### Linux
+
+GNOME Terminal and Konsole can claim `Alt+<letter>` for menu mnemonics before
+the application sees it — `Alt+F` for File, `Alt+E` for Edit, `Alt+S` for Search,
+`Alt+T` for Terminal, `Alt+H` for Help. Where those overlap, hoocode gets
+nothing.
+
+In GNOME Terminal, turn off Preferences → General → **Enable mnemonics**. In
+Konsole, Settings → Configure Keyboard Shortcuts.
+
+### Rebinding instead
+
+Any of these can be moved rather than configured around. See
+[keybindings.md](keybindings.md); for example, in `~/.hoocode/keybindings.json`:
+
+```json
+{
+  "app.hotkeys.open": "ctrl+q",
+  "app.settings.open": ["alt+s", "f2"]
+}
+```
+
 ## Ghostty
 
 Add to your Ghostty config (`~/Library/Application Support/com.mitchellh.ghostty/config` on macOS, `~/.config/ghostty/config` on Linux):
