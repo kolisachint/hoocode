@@ -27,6 +27,11 @@
 
 ### Fixed
 
+- A `/settings` row whose key the project's `.hoocode/settings.json` also sets
+  looked like it took and then reverted: rows write the user file, which the
+  project file is merged over on the next session. The Plugins rows now say so
+  in their description.
+
 - `pluginInstallScope` was unreachable in `/settings`. The row and its callback
   existed, but the row belonged to no category after the pane was grouped, so
   nothing in the UI could open it. It now lives under **Plugins** alongside

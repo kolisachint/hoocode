@@ -45,6 +45,7 @@ function paneConfig(platform: string[] = []): any {
 		enableSkillCommands: true,
 		pluginInstallScope: "user",
 		enablePluginTools: false,
+		projectPinnedSettings: [],
 		platform,
 		steeringMode: "all",
 		followUpMode: "all",

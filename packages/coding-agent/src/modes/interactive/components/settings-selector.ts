@@ -73,6 +73,11 @@ export interface SettingsConfig {
 	enableSkillCommands: boolean;
 	pluginInstallScope: "user" | "project";
 	enablePluginTools: boolean;
+	/**
+	 * settings.json keys the project file sets. A pane row writes user scope, so
+	 * anything listed here wins again on the next session however the row is set.
+	 */
+	projectPinnedSettings: string[];
 	/** Platform layouts in force this session (empty = unset, per-consumer defaults apply). */
 	platform: MarketplacePlatform[];
 	steeringMode: "all" | "one-at-a-time";
@@ -710,6 +715,15 @@ export class SettingsSelectorComponent extends Container {
 		const followUpKey = keyDisplayText("app.message.followUp");
 		let currentWarnings = { ...config.warnings };
 
+		// A row writes the user settings file; a key the project file also sets is
+		// merged over it on the next session, so say so rather than letting the row
+		// look like it took.
+		const projectPinned = new Set(config.projectPinnedSettings);
+		const pinnedNote = (key: string): string =>
+			projectPinned.has(key)
+				? ` This repo's .hoocode/settings.json sets ${key}, which overrides this row from the next session on.`
+				: "";
+
 		const toolsOn = config.tools.filter((t) => t.enabled).length;
 		const toolsOff = config.tools.length - toolsOn;
 
@@ -908,8 +922,7 @@ export class SettingsSelectorComponent extends Container {
 		items.splice(skillCommandsIdx + 1, 0, {
 			id: "plugin-tools",
 			label: "Plugin system",
-			description:
-				"Autonomous plugin system: the lifecycle tools (SearchPlugins, InstallPlugin, ...), ProposePlugin, and the plugin-reuse nudge. Tools arrive on the next session; the nudge follows at once.",
+			description: `Autonomous plugin system: the lifecycle tools (SearchPlugins, InstallPlugin, ...), ProposePlugin, and the plugin-reuse nudge. Tools arrive on the next session; the nudge follows at once.${pinnedNote("enablePluginTools")}`,
 			currentValue: config.enablePluginTools ? "true" : "false",
 			values: ["true", "false"],
 		});
@@ -933,8 +946,7 @@ export class SettingsSelectorComponent extends Container {
 		items.splice(pluginScopeIdx + 1, 0, {
 			id: "platform",
 			label: "Platform",
-			description:
-				"Vendor layout(s) hoocode writes artifacts in: authored plugins and the /new-skill //new-agent //new-command scaffolds.",
+			description: `Vendor layout(s) hoocode writes artifacts in: authored plugins and the /new-skill //new-agent //new-command scaffolds.${pinnedNote("platform")}`,
 			currentValue: platformSummary(currentPlatforms),
 			submenu: (_currentValue, done) =>
 				new PlatformSubmenu(

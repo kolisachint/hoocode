@@ -3152,6 +3152,9 @@ export class InteractiveMode {
 					enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
 					pluginInstallScope: this.settingsManager.getPluginInstallScope(),
 					enablePluginTools: this.settingsManager.getEnablePluginTools(),
+					// Rows write the user settings file, so a key the project file also
+					// sets is merged back over it next session. The pane says which.
+					projectPinnedSettings: Object.keys(this.settingsManager.getProjectSettings()),
 					// The targets actually in force, so a session launched with --platform
 					// shows what it is writing rather than the (possibly unset) setting.
 					platform: getWorkspacePlatforms() ?? [],

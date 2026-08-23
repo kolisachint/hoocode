@@ -239,6 +239,10 @@ every run.
 { "enablePluginTools": true, "platform": ["claude", "github"], "pluginInstallScope": "user" }
 ```
 
+`/settings` writes the global file. If a project `.hoocode/settings.json` sets
+one of these keys it is merged over that on the next session, so the pane marks
+the row as overridden rather than letting the change look permanent.
+
 `enablePluginTools` is off by default and is the one gate for the whole
 autonomous system — see [Plugins](plugins.md). Toggling it in `/settings`
 attaches the tools on the next session, since they are wired up when the session

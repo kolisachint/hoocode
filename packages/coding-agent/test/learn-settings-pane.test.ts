@@ -51,6 +51,7 @@ function paneConfig(learn: Record<string, number> = DEFAULT_LEARN): any {
 		enableSkillCommands: true,
 		pluginInstallScope: "user",
 		enablePluginTools: false,
+		projectPinnedSettings: [],
 		platform: [],
 		steeringMode: "all",
 		followUpMode: "all",
