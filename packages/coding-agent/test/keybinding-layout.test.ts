@@ -208,6 +208,85 @@ describe("keybinding layout", () => {
 		]);
 	});
 
+	/**
+	 * Every action whose only keys need alt.
+	 *
+	 * Alt is not free everywhere. A terminal that does not speak the Kitty
+	 * protocol has to be told to send it: on macOS the Option key composes
+	 * characters instead (Option+M is µ, and Option+E/U/N are dead keys that send
+	 * nothing at all), so Terminal.app types junk into the prompt rather than
+	 * firing any of these. Kitty-protocol terminals — Ghostty, Kitty, WezTerm,
+	 * iTerm2 — report Option as the alt modifier and are unaffected.
+	 *
+	 * This list is therefore the cost of the alt ring, and `docs/terminal-setup.md`
+	 * documents the setting each terminal needs. Adding to it is allowed; doing it
+	 * without noticing is not. If this test fails, either give the action a
+	 * non-alt key too or add it here and to that doc.
+	 */
+	const ALT_DEPENDENT = [
+		"tui.editor.jumpBackward",
+		"tui.editor.deleteWordForward",
+		"tui.editor.yankPop",
+		"app.model.select",
+		"app.view.cycleForward",
+		"app.view.cycleBackward",
+		"app.tools.unfoldOne",
+		"app.tools.foldOne",
+		"app.team.focus",
+		"app.editor.external",
+		"app.message.followUp",
+		"app.message.dequeue",
+		"app.input.voiceTranscribe",
+		"app.session.tree",
+		"app.session.resume",
+		"app.session.changeDirectory",
+		"app.settings.open",
+		"app.hotkeys.open",
+		"app.mode.cycle",
+		"app.session.togglePath",
+		"app.session.toggleSort",
+		"app.session.rename",
+		"app.session.toggleNamedFilter",
+		"app.session.delete",
+		"app.models.save",
+		"app.models.enableAll",
+		"app.models.clearAll",
+		"app.models.toggleProvider",
+		"app.models.reorderUp",
+		"app.models.reorderDown",
+		"app.tree.filter.default",
+		"app.tree.filter.noTools",
+		"app.tree.filter.userOnly",
+		"app.tree.filter.labeledOnly",
+		"app.tree.filter.all",
+		"app.tree.filter.cycleForward",
+		"app.tree.filter.cycleBackward",
+		// Windows has no ctrl+v to spare: the console pastes with it.
+		...(process.platform === "win32" ? ["app.clipboard.pasteImage"] : []),
+	];
+
+	it("pins which actions a terminal must send alt to reach", () => {
+		const manager = new KeybindingsManager();
+		const altDependent = Object.keys(KEYBINDINGS).filter((id) => {
+			const keys = manager.getKeys(id as never);
+			// Unbound by default is a choice, not an alt dependency.
+			if (keys.length === 0) return false;
+			return keys.every((key) => key.split("+").includes("alt"));
+		});
+		expect(altDependent.sort()).toEqual([...ALT_DEPENDENT].sort());
+	});
+
+	it("keeps the keys for getting out and getting help off alt", () => {
+		// Whatever else needs configuring, a user on a terminal that eats Option
+		// must still be able to interrupt, clear, exit, and read the transcript.
+		const manager = new KeybindingsManager();
+		const mustWorkAnywhere = ["app.interrupt", "app.clear", "app.exit", "app.tools.expand", "tui.input.submit"];
+		const needingAlt = mustWorkAnywhere.filter((id) =>
+			manager.getKeys(id as never).every((key) => key.split("+").includes("alt")),
+		);
+		expect(needingAlt).toEqual([]);
+	});
+
 	it("binds nothing to an alt key the parser cannot read", () => {
 		const manager = new KeybindingsManager();
 		const unparseable: string[] = [];

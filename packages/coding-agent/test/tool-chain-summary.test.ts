@@ -104,3 +104,100 @@ describe("chain phrase (the settled line)", () => {
 		expect(chainPhrase([call("mcp__thing__do", "x")])).toBe("Called mcp__thing__do");
 	});
 });
+
+/**
+ * Priority order alone is only sound while a chain is small enough for every
+ * call to plausibly serve the headline act. These are the rules that switch on
+ * once it is not, at 10 calls.
+ */
+describe("chain phrase (long chains)", () => {
+	const reads = (n: number, dir: string) => Array.from({ length: n }, (_, i) => call("read", `${dir}/f${i}.ts`, 10));
+	const many = (n: number, tool: string, subject: (i: number) => string) =>
+		Array.from({ length: n }, (_, i) => call(tool, subject(i)));
+
+	test("an incidental act does not get to name a long chain", () => {
+		// 28 searches and 37 reads ending in one edit is an investigation that
+		// happened to change something, not an edit. Naming the edit describes one
+		// call out of 66.
+		const entries = [
+			...many(28, "grep", (i) => `symbol${i}`),
+			...reads(37, "packages/coding-agent/src"),
+			call("edit", "packages/coding-agent/src/core/tools/subagent.ts"),
+		];
+		expect(chainPhrase(entries)).toBe("Read packages/coding-agent/src");
+	});
+
+	test("a tenth of the calls is enough to keep the headline", () => {
+		// Exactly at the threshold the edit still leads, though it owes the reads
+		// a mention...
+		expect(chainPhrase([...reads(9, "packages/tui/src"), call("edit", "src/keys.ts")])).toBe(
+			"Edited src/keys.ts · 9 reads",
+		);
+		// ...one call further and it stops being the headline at all.
+		expect(chainPhrase([...reads(10, "packages/tui/src"), call("edit", "src/keys.ts")])).toBe(
+			"Read packages/tui/src",
+		);
+	});
+
+	test("below the threshold a long chain behaves exactly as before", () => {
+		const entries = [...reads(6, "src"), call("edit", "src/keys.ts")];
+		expect(chainPhrase(entries)).toBe("Edited src/keys.ts");
+	});
+
+	test("a location too broad to mean anything becomes a count", () => {
+		// Across enough files the shared root collapses to `packages`, which names
+		// half the repo. The count says more.
+		const entries = [...reads(20, "packages/tui/src"), ...reads(20, "packages/ai/src")];
+		expect(chainPhrase(entries)).toBe("Read 40 files");
+	});
+
+	test("a short chain keeps its shallow location", () => {
+		// `docs` is a real place; three files rarely share a vague one.
+		expect(chainPhrase([call("write", "docs/a.md"), call("write", "docs/b.md")])).toBe("Edited docs");
+	});
+
+	test("an absolute location keeps its leading slash", () => {
+		expect(chainPhrase([call("read", "/etc/nginx/a.conf"), call("read", "/etc/nginx/b.conf")])).toBe(
+			"Read /etc/nginx",
+		);
+	});
+
+	test("a minority headline admits the largest thing it left out", () => {
+		// 3 edits among 18 calls is worth naming, but so is the fact that 10 of the
+		// rest were commands.
+		const entries = [
+			...many(3, "edit", (i) => `packages/tui/src/x${i}.ts`),
+			...many(10, "bash", () => "bun run check"),
+			...reads(5, "packages/tui/src"),
+		];
+		expect(chainPhrase(entries)).toBe("Edited packages/tui/src · 10 commands");
+	});
+
+	test("a headline that covers the run says nothing more", () => {
+		const entries = [...many(10, "edit", (i) => `packages/tui/src/x${i}.ts`), ...reads(3, "packages/tui/src")];
+		expect(chainPhrase(entries)).toBe("Edited packages/tui/src");
+	});
+
+	test("a footnote-sized remainder is not worth the width", () => {
+		const entries = [
+			...many(4, "edit", (i) => `src/x${i}.ts`),
+			...many(2, "bash", () => "check"),
+			...many(2, "read", (i) => `src/y${i}.ts`),
+			...many(2, "grep", (i) => `sym${i}`),
+			...many(2, "webfetch", () => "https://example.com"),
+		];
+		expect(chainPhrase(entries)).not.toContain("·");
+	});
+
+	test("a chain spread thin across everything still names its largest act", () => {
+		// Unrecognised tools inflate the total until every family is incidental;
+		// the largest one still describes the run better than the priority order's
+		// first hit would.
+		const entries = [
+			...many(50, "TodoWrite", () => "plan"),
+			...many(4, "edit", (i) => `src/x${i}.ts`),
+			...many(4, "bash", () => "check"),
+		];
+		expect(chainPhrase(entries)).toBe("Edited 4 files · 4 commands");
+	});
+});

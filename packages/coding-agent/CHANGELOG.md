@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Radar keeps a running chain on screen. Thinking traces now fold to their
+  one-line label in radar, the way tool bodies already do. A chain stays open
+  across a thinking block, so an unfolded trace streaming in below it pushed the
+  chain's own summary line above the viewport — where every subsequent call
+  rewrote a line the terminal had already scrolled away, forcing the full redraw
+  that clears scrollback.
+
+- A settled radar chain no longer takes its name from an act incidental to it.
+  From 10 calls up, a tool family covering less than a tenth of the run cannot be
+  the headline: 28 searches and 37 reads ending in a single edit now reads as
+  `Read packages/coding-agent/src` rather than `Edited subagent.ts`, which
+  described 1 call out of 66. Chains below 10 calls are unchanged.
+
+- A settled chain's location keeps the leading `/` on absolute paths.
+
+### Changed
+
+- A long radar chain whose headline family is a minority of its calls now names
+  the largest thing it left out — `Edited packages/coding-agent · 76 commands`.
+  Capped at one extra clause: a chain reporting every family it touched has said
+  only that it was busy.
+
+- Across enough files a shared path prefix collapses to something as broad as
+  `packages`, which is worse than the count it displaced; from 10 calls up such a
+  location is dropped in favour of the file count. Short chains keep theirs, so
+  `Edited docs` still reads as before.
+
+- A radar chain of a single call keeps its signal row instead of collapsing to a
+  phrase. `Ran npm run check` dropped both the tool and how much came back;
+  `bash  npm run check  12 lines` does not.
+
+### Documentation
+
+- `terminal-setup.md` documents what `alt` costs. 37 actions are reachable only
+  through it, and outside the Kitty keyboard protocol macOS treats `Option` as a
+  compose key — `Option+M` types `µ`, and `Option+E`/`U`/`N` are dead keys that
+  send nothing — while some Linux terminals claim `Alt+<letter>` for menu
+  mnemonics. Added the per-terminal setting for Terminal.app, iTerm2, Ghostty,
+  Kitty and VS Code, and a note that interrupt, clear, exit and expand are kept
+  off `alt` so a misconfigured terminal stays recoverable.
+
 ## [0.5.32] - 2026-08-23
 
 ### Breaking Changes
