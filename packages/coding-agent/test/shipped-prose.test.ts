@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_MODE_PROMPTS } from "../src/core/mode-prompts.js";
+import { buildTaskMainPrompt } from "../src/core/tools/subagent.js";
 import { buildGrillMessage, buildSystemPrompt, type PlanSections } from "../src/extensions/core/modes.js";
 import { EMBEDDED_MODES, EMBEDDED_PROMPTS } from "../src/init-templates.generated.js";
 
@@ -64,6 +65,28 @@ describe("grill prompts have one source", () => {
 		expect(buildGrillMessage(sections, "both")).toBe(
 			`${me}\n\n${bridge}\n\n${critique}\n\n---\n\n**Goal**\nShip it.`,
 		);
+	});
+});
+
+describe("the Task delegation prompt has one source", () => {
+	it("is assembled from templates/prompts and nothing else", () => {
+		const main = template("prompts", "task-main.md");
+		// The built-in explore/plan agents are background:true, so a default cwd
+		// takes the with-background branch.
+		const background = template("prompts", "task-background-agents.md").trim();
+		expect(buildTaskMainPrompt()).toBe(main.replace("{{BACKGROUND_GUIDANCE}}", background).trim());
+	});
+
+	it("keeps the substitution token the two background variants fill", () => {
+		// Losing the token silently drops the background/barrier guidance rather
+		// than failing: the replace becomes a no-op and the prompt still renders.
+		expect(template("prompts", "task-main.md")).toContain("{{BACKGROUND_GUIDANCE}}");
+		expect(EMBEDDED_PROMPTS["task-background-agents"]).toBeTruthy();
+		expect(EMBEDDED_PROMPTS["task-background-none"]).toBeTruthy();
+	});
+
+	it("leaves no substitution token in the rendered prompt", () => {
+		expect(buildTaskMainPrompt()).not.toContain("{{");
 	});
 });
 

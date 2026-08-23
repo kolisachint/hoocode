@@ -33,6 +33,13 @@
   They are prose the runtime injects verbatim — no interpolation, no branching —
   so they are edited as prose now. The message `/grill` produces is unchanged.
 
+- The Task delegation appendix moved to `templates/prompts/task-main.md` and its
+  two `task-background-*` variants. At ~600 tok/turn it is the largest block of
+  always-on text hoocode emits once the Task tool is on, and it had exactly one
+  interpolation slot in otherwise static prose, so a string constant bought
+  nothing. The rendered prompt is byte-identical on both the with- and
+  without-background-agents branches.
+
 - `ProposePlugin` and `UpdatePlugin` shed ~55% of their always-on prompt
   guidance (~626 to ~301 tok/turn when the plugin system is enabled). What was
   removed was how-to-author-well guidance, which is not a tool contract and now

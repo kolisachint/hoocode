@@ -114,9 +114,12 @@ The shipped CLI. Largest package.
 - `templates/modes/<mode>/system.md` - the four built-in mode prompts. Single source:
   `core/mode-prompts.ts` re-exports the embedded copy as `DEFAULT_MODE_PROMPTS`, and
   `/init` scaffolds the same text into a project. Do not add a second copy in `.ts`.
-- `templates/prompts/*.md` - prose the runtime injects verbatim (the `/grill` phases).
-  Reached through `EMBEDDED_PROMPTS`. For prompts with no interpolation and no
-  branching; anything that needs logic stays in the module that builds it.
+- `templates/prompts/*.md` - prose the runtime injects verbatim: the `/grill`
+  phases and the Task delegation appendix (`task-main.md` plus its two
+  `task-background-*` variants). Reached through `EMBEDDED_PROMPTS`. A `{{TOKEN}}`
+  placeholder is the escape hatch for the one-slot case (`{{PLAN_PATH}}`,
+  `{{BACKGROUND_GUIDANCE}}`); anything needing real logic stays in the module
+  that builds it.
 
 ## Generated files (do not edit by hand)
 

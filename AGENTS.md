@@ -101,8 +101,11 @@ Two corollaries:
 - **Prose lives in a file, not a string constant.** `templates/prompts/*.md`
   and `templates/modes/*/system.md` are embedded at build time by
   `scripts/embed-templates.mjs`. A prompt with no interpolation and no
-  branching belongs there. Keeping a second hand-written copy in `.ts` is how
-  the mode prompts silently diverged from the ones `/init` scaffolds.
+  branching belongs there, and so does one with a single substitution slot — use
+  a `{{TOKEN}}` placeholder (`{{PLAN_PATH}}`, `{{BACKGROUND_GUIDANCE}}`) and
+  keep the variant text in its own file. Only prompts that need real logic stay
+  in the module that builds them. Keeping a second hand-written copy in `.ts` is
+  how the mode prompts silently diverged from the ones `/init` scaffolds.
 - **Craft guidance is not a tool contract.** A tool's `promptGuidelines` are
   resident on every turn; a how-to-do-this-well guide is not a contract and
   does not belong there. Ship it as a skill (the bundled marketplace under
