@@ -101,6 +101,27 @@ Set `HOOCODE_SKIP_VERSION_CHECK=1` to disable the HooCode version update check. 
 }
 ```
 
+### Context budget
+
+Everything in the system prompt and in an active tool's schema is re-sent on
+every request. These three settings decide how large that is, and `/settings`
+groups them under **Context** with the live per-turn cost printed under the
+list.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `light` | boolean | `false` | Low-token preset: `read`/`write`/`edit`/`bash` only with stripped schemas, a terse system prompt, and no subagents/TodoWrite/skills/context files |
+| `contextGc` | boolean | `true` | Stub superseded read results out of the outgoing context |
+
+`light` is read at startup to pick the tool set and the system prompt, so
+toggling it in `/settings` applies on the next session. `--light` turns it on
+for a single run. Auto-compaction lives in the same category and is documented
+under [Compaction](#compaction).
+
+`/settings` also prices each tool by what its schema costs per turn, on the
+switch itself, so it is clear which one is worth turning off. `hoocode
+--print-token-surface` prints the same measurement as text.
+
 ### Branch Summary
 
 | Setting | Type | Default | Description |

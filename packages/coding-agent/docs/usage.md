@@ -371,9 +371,9 @@ hoocode --no-extensions -e ./my-extension.ts
 
 #### Light mode
 
-`--light` (or the `light` setting) trims the session to the smallest useful
-fixed per-turn surface, for small or local models that waste context on harness
-boilerplate:
+`--light` (or the `light` setting, editable in `/settings` under **Context**)
+trims the session to the smallest useful fixed per-turn surface, for small or
+local models that waste context on harness boilerplate:
 
 - Only `read`, `write`, `edit`, and `bash`, with short descriptions and stripped
   parameter schemas. `bash` subsumes grep/find/ls — search happens via the shell.

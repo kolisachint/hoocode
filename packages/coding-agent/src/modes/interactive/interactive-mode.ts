@@ -59,6 +59,7 @@ import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { formatDurationSecs } from "../../core/format-duration.js";
 import { formatTokens } from "../../core/format-tokens.js";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.js";
+import { measurePromptSurface, measureToolSchemaTokens } from "../../core/light.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
@@ -3109,7 +3110,18 @@ export class InteractiveMode {
 			// Union so tools disabled at startup (absent from the live registry) still
 			// appear and can be re-enabled for the next session.
 			const toolToggleNames = [...new Set([...builtinToolNames, ...disabledToolNames])].sort();
-			const toolToggles = toolToggleNames.map((name) => ({ name, enabled: !disabledToolNames.has(name) }));
+			// Price every tool the pane lists, including the ones that are off: what
+			// the row needs to show is what turning it back on will cost per turn. A
+			// tool disabled before launch has no schema in this session, so it has no
+			// price to show either.
+			const schemaTokens = new Map(
+				this.session.getAllTools().map((tool) => [tool.name, measureToolSchemaTokens(tool)]),
+			);
+			const toolToggles = toolToggleNames.map((name) => ({
+				name,
+				enabled: !disabledToolNames.has(name),
+				tokens: schemaTokens.get(name),
+			}));
 
 			const toolGroups = [
 				{
@@ -3150,6 +3162,7 @@ export class InteractiveMode {
 					autoResizeImages: this.settingsManager.getImageAutoResize(),
 					blockImages: this.settingsManager.getBlockImages(),
 					enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
+					light: this.settingsManager.getLight(),
 					pluginInstallScope: this.settingsManager.getPluginInstallScope(),
 					enablePluginTools: this.settingsManager.getEnablePluginTools(),
 					// Rows write the user settings file, so a key the project file also
@@ -3184,6 +3197,10 @@ export class InteractiveMode {
 					webtoolsTimeoutSecs: this.settingsManager.getWebtoolsTimeoutSecs(),
 					// The effective window, so a project settings.json narrowing it for
 					// this repo shows up here rather than the user-scope value alone.
+					// Re-measured on every change so the pane can price what a toggle did:
+					// the session rebuilds its system prompt as tools come and go, and
+					// this reads that live state rather than a snapshot.
+					measureTokenSurface: () => measurePromptSurface(this.session),
 					learn: (() => {
 						const learn = this.settingsManager.getLearnSettings();
 						return {
@@ -3286,6 +3303,11 @@ export class InteractiveMode {
 					onEnableSkillCommandsChange: (enabled) => {
 						this.settingsManager.setEnableSkillCommands(enabled);
 						this.setupAutocompleteProvider();
+					},
+					onLightChange: (enabled) => {
+						// Picks the tool set and the system prompt at startup, so it binds
+						// on the next session rather than this one.
+						this.settingsManager.setLight(enabled);
 					},
 					onPluginInstallScopeChange: (scope) => {
 						// Read per install by InstallPlugin, so it applies immediately with
