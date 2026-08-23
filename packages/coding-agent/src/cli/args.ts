@@ -371,7 +371,8 @@ ${chalk.bold("Options:")}
   --enable-plugintools           Enable the autonomous plugin system (off by default)
                                   Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and
                                   ProposePlugin, plus the runtime plugin-reuse nudge
-                                  Can also be enabled via the "enablePluginTools" setting
+                                  Can also be enabled via the "enablePluginTools" setting,
+                                  which /settings -> Plugins -> Plugin system writes
   --light                        Minimal low-token preset for small/local models:
                                   only the read/write/edit/bash tools (short descriptions,
                                   stripped schemas; search via bash), a terse system prompt, and

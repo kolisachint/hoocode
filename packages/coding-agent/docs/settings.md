@@ -231,12 +231,20 @@ every run.
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
+| `enablePluginTools` | boolean | `false` | Master switch for the autonomous plugin system: the lifecycle tools, `ProposePlugin`, and the plugin-reuse nudge |
 | `platform` | string \| string[] | - | Vendor layout(s) to write artifacts in: `claude`, `github` (aliases `copilot`, `gh`), `agents` (alias `native`) |
 | `pluginInstallScope` | string | `"user"` | Where an autonomous plugin install lands: `user` (`~/.agents/plugins`) or `project` (`<cwd>/.agents/plugins`, shared once committed) |
 
 ```json
-{ "platform": ["claude", "github"], "pluginInstallScope": "user" }
+{ "enablePluginTools": true, "platform": ["claude", "github"], "pluginInstallScope": "user" }
 ```
+
+`enablePluginTools` is off by default and is the one gate for the whole
+autonomous system — see [Plugins](plugins.md). Toggling it in `/settings`
+attaches the tools on the next session, since they are wired up when the session
+is built; the reuse nudge re-reads the setting and follows immediately. The
+`--enable-plugintools` flag turns it on for a single run. Slash-command plugin
+management (`/plugin`) is unaffected either way.
 
 `platform` governs the two things hoocode *writes*: authored plugins, and the
 `/new-skill`, `/new-agent` and `/new-command` scaffolds. Reading is unaffected —

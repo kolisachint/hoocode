@@ -4,6 +4,13 @@
 
 ### Added
 
+- `enablePluginTools` is editable from `/settings` too, as **Plugin system** at
+  the top of the same **Plugins** category. It is the one gate for the whole
+  autonomous plugin system — the lifecycle tools, `ProposePlugin`, and the
+  plugin-reuse nudge — and was flag- and file-only. The tools are wired up when
+  a session is built, so they arrive on the next session; the nudge re-reads the
+  setting and follows immediately.
+
 - The artifact platform targets are editable from `/settings`, under a new
   **Plugins** category. `platform` decides the vendor layout hoocode writes when
   it authors a plugin or scaffolds with `/new-skill`, `/new-agent` and

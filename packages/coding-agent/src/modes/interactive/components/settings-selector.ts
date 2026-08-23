@@ -72,6 +72,7 @@ export interface SettingsConfig {
 	blockImages: boolean;
 	enableSkillCommands: boolean;
 	pluginInstallScope: "user" | "project";
+	enablePluginTools: boolean;
 	/** Platform layouts in force this session (empty = unset, per-consumer defaults apply). */
 	platform: MarketplacePlatform[];
 	steeringMode: "all" | "one-at-a-time";
@@ -114,6 +115,7 @@ export interface SettingsCallbacks {
 	onBlockImagesChange: (blocked: boolean) => void;
 	onEnableSkillCommandsChange: (enabled: boolean) => void;
 	onPluginInstallScopeChange: (scope: "user" | "project") => void;
+	onEnablePluginToolsChange: (enabled: boolean) => void;
 	onPlatformChange: (platforms: MarketplacePlatform[]) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
@@ -900,10 +902,22 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Plugin install scope (insert after skill-commands). Governs the
-		// autonomous InstallPlugin only — /plugin install asks per install.
+		// The autonomous plugin system's master switch (insert after skill-commands).
+		// One flag for the lifecycle tools and the reuse nudge, so both flip together.
 		const skillCommandsIdx = items.findIndex((item) => item.id === "skill-commands");
 		items.splice(skillCommandsIdx + 1, 0, {
+			id: "plugin-tools",
+			label: "Plugin system",
+			description:
+				"Autonomous plugin system: the lifecycle tools (SearchPlugins, InstallPlugin, ...), ProposePlugin, and the plugin-reuse nudge. Tools arrive on the next session; the nudge follows at once.",
+			currentValue: config.enablePluginTools ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// Plugin install scope (insert after the master switch). Governs the
+		// autonomous InstallPlugin only — /plugin install asks per install.
+		const pluginToolsIdx = items.findIndex((item) => item.id === "plugin-tools");
+		items.splice(pluginToolsIdx + 1, 0, {
 			id: "plugin-install-scope",
 			label: "Plugin install scope",
 			description: "Where autonomous plugin installs go: user (~/.agents) or project (this repo, shared)",
@@ -1118,6 +1132,9 @@ export class SettingsSelectorComponent extends Container {
 				case "skill-commands":
 					callbacks.onEnableSkillCommandsChange(newValue === "true");
 					break;
+				case "plugin-tools":
+					callbacks.onEnablePluginToolsChange(newValue === "true");
+					break;
 				case "plugin-install-scope":
 					callbacks.onPluginInstallScopeChange(newValue as "user" | "project");
 					break;
@@ -1236,8 +1253,8 @@ export class SettingsSelectorComponent extends Container {
 			categoryRow(
 				"cat-plugins",
 				"Plugins",
-				"Where hoocode writes plugins and scaffolds: the vendor layout it targets, and where autonomous installs land.",
-				["platform", "plugin-install-scope"],
+				"The autonomous plugin system's master switch, the vendor layout hoocode writes, and where autonomous installs land.",
+				["plugin-tools", "platform", "plugin-install-scope"],
 			),
 			categoryRow("cat-images", "Images", "Inline image rendering and resizing.", [
 				"show-images",

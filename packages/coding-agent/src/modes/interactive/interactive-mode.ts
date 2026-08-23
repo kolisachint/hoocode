@@ -3151,6 +3151,7 @@ export class InteractiveMode {
 					blockImages: this.settingsManager.getBlockImages(),
 					enableSkillCommands: this.settingsManager.getEnableSkillCommands(),
 					pluginInstallScope: this.settingsManager.getPluginInstallScope(),
+					enablePluginTools: this.settingsManager.getEnablePluginTools(),
 					// The targets actually in force, so a session launched with --platform
 					// shows what it is writing rather than the (possibly unset) setting.
 					platform: getWorkspacePlatforms() ?? [],
@@ -3287,6 +3288,13 @@ export class InteractiveMode {
 						// Read per install by InstallPlugin, so it applies immediately with
 						// nothing to reload.
 						this.settingsManager.setPluginInstallScope(scope);
+					},
+					onEnablePluginToolsChange: (enabled) => {
+						// Master switch for the autonomous plugin system. The lifecycle
+						// tools are attached when the session is built, so they arrive on
+						// the next session; the reuse nudge re-reads settings.json per
+						// check and follows immediately.
+						this.settingsManager.setEnablePluginTools(enabled);
 					},
 					onPlatformChange: (platforms) => {
 						// Persist for later sessions, then update the process-wide session

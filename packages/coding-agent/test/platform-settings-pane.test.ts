@@ -44,6 +44,7 @@ function paneConfig(platform: string[] = []): any {
 		blockImages: false,
 		enableSkillCommands: true,
 		pluginInstallScope: "user",
+		enablePluginTools: false,
 		platform,
 		steeringMode: "all",
 		followUpMode: "all",
@@ -104,7 +105,7 @@ describe("platform settings pane", () => {
 		const { category, submenu } = pluginRows(new SettingsSelectorComponent(paneConfig(), {} as any));
 
 		expect(category.label).toBe("Plugins");
-		expect(submenu.items.map((item: any) => item.id)).toEqual(["platform", "plugin-install-scope"]);
+		expect(submenu.items.map((item: any) => item.id)).toEqual(["plugin-tools", "platform", "plugin-install-scope"]);
 	});
 
 	it("leaves no setting stranded outside every category", () => {
@@ -118,6 +119,7 @@ describe("platform settings pane", () => {
 			"tool-output-display",
 			"tool-settings",
 			"platform",
+			"plugin-tools",
 			"plugin-install-scope",
 			"steering-mode",
 			"follow-up-mode",
@@ -196,6 +198,21 @@ describe("platform settings pane", () => {
 
 		expect(changes).toEqual([[]]);
 		expect(summary).toBe("default (claude)");
+	});
+});
+
+describe("the plugin system master switch", () => {
+	it("routes the row to the setting that gates the tools and the nudge", () => {
+		const changes: boolean[] = [];
+		const component = new SettingsSelectorComponent(paneConfig(), {
+			onEnablePluginToolsChange: (enabled: any) => changes.push(enabled),
+		} as any);
+
+		const { submenu } = pluginRows(component);
+		expect(submenu.items.find((item: any) => item.id === "plugin-tools").currentValue).toBe("false");
+
+		submenu.onChange("plugin-tools", "true");
+		expect(changes).toEqual([true]);
 	});
 });
 
