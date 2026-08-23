@@ -14,6 +14,13 @@ export interface SettingItem {
 	/** Current value to display (right side) */
 	currentValue: string;
 	/**
+	 * Display-only text rendered after the value, dimmed and never cycled. For
+	 * what a row *costs* rather than what it is set to - a token price, a count -
+	 * which would otherwise have to be folded into `currentValue`, where the next
+	 * keypress would fail to find it among `values` and reset the row.
+	 */
+	valueSuffix?: string;
+	/**
 	 * Extra text the search matches against, never rendered. A row that stands for
 	 * other rows (a category) lists what is inside it here, so searching for a
 	 * setting finds the row that leads to it instead of coming back empty.
@@ -155,8 +162,19 @@ export class SettingsList implements Component {
 			const valueMaxWidth = width - usedWidth - 2;
 
 			const valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
+			// The suffix takes what the value left behind, so a narrow terminal drops
+			// the price rather than the setting.
+			const suffixText = item.valueSuffix
+				? this.theme.hint(
+						truncateToWidth(
+							`  ${item.valueSuffix}`,
+							Math.max(0, valueMaxWidth - visibleWidth(item.currentValue)),
+							"",
+						),
+					)
+				: "";
 
-			const row = truncateToWidth(prefix + labelText + separator + valueText, width);
+			const row = truncateToWidth(prefix + labelText + separator + valueText + suffixText, width);
 			lines.push(
 				isSelected && this.theme.selectedRow ? applyBackgroundToLine(row, width, this.theme.selectedRow) : row,
 			);

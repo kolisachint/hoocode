@@ -87,14 +87,22 @@ function pluginRows(component: SettingsSelectorComponent): any {
 	return { category, submenu: category.submenu("", () => {}).settingsList };
 }
 
-/** Every leaf id reachable by walking the pane's category submenus. */
+/**
+ * Every id reachable by opening rows from the top level down.
+ *
+ * Follows any submenu built on a settings list - categories, but also Tools,
+ * Tool output and the platform toggles - so a row cannot hide from this by
+ * moving one level deeper. The select-list submenus (theme, thinking) expose no
+ * settings list and are left alone; their own row is already counted.
+ */
 function reachableIds(component: SettingsSelectorComponent): Set<string> {
 	const ids = new Set<string>();
 	const walk = (list: any) => {
 		for (const item of list.items) {
 			ids.add(item.id);
-			if (!item.id.startsWith("cat-")) continue;
-			walk(item.submenu(item.currentValue, () => {}).settingsList);
+			if (!item.submenu) continue;
+			const nested = item.submenu(item.currentValue, () => {})?.settingsList;
+			if (nested) walk(nested);
 		}
 	};
 	walk(component.getSettingsList() as any);
@@ -116,9 +124,13 @@ describe("platform settings pane", () => {
 
 		for (const id of [
 			"autocompact",
+			"context-gc",
+			"light",
 			"tools",
+			"tool-output",
 			"tool-output-display",
-			"tool-settings",
+			"output-max-bytes",
+			"output-max-lines",
 			"platform",
 			"plugin-tools",
 			"plugin-install-scope",

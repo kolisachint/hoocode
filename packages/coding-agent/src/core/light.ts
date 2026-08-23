@@ -138,6 +138,20 @@ function estimateStringTokens(text: string): number {
 }
 
 /**
+ * What one tool costs on every request: its serialized `{name, description,
+ * parameters}`, the three fields a provider re-sends each turn.
+ *
+ * Exported because the surface is worth showing for a tool that is *off* too —
+ * `/settings` prices each toggle with it, and a disabled tool has no entry in a
+ * measured surface precisely because it currently costs nothing.
+ */
+export function measureToolSchemaTokens(tool: ToolInfo): number {
+	return estimateStringTokens(
+		JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters }),
+	);
+}
+
+/**
  * Measure the fixed per-turn surface a session sends on every request: the
  * assembled system prompt plus the serialized schemas (name, description,
  * parameters) of the active tools. Providers add their own envelope on top,
@@ -152,12 +166,7 @@ export function measurePromptSurface(session: {
 	const tools = session
 		.getAllTools()
 		.filter((tool) => activeNames.has(tool.name))
-		.map((tool) => ({
-			name: tool.name,
-			tokens: estimateStringTokens(
-				JSON.stringify({ name: tool.name, description: tool.description, parameters: tool.parameters }),
-			),
-		}));
+		.map((tool) => ({ name: tool.name, tokens: measureToolSchemaTokens(tool) }));
 	const systemPromptTokens = estimateStringTokens(session.systemPrompt);
 	const toolSchemaTokens = tools.reduce((sum, tool) => sum + tool.tokens, 0);
 	return {

@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/settings` prices what it is about to cost you. A line under the pane reports
+  the fixed per-turn surface — system prompt plus active tool schemas, the text
+  re-sent on every request — and each tool carries its own schema price beside
+  its switch, including the tools that are off, where the price is what turning
+  one back on will cost. The numbers are the same measurement
+  `--print-token-surface` prints, re-measured after every change, so a toggle
+  that moves the surface shows what it moved.
+
+- The `light` preset is editable from `/settings`. It was the one low-token
+  control with no home in the pane, which is backwards for the setting whose
+  entire purpose is the token budget. It reads at startup, so it applies on the
+  next session.
+
+- `/settings` grouping: a **Context** category now holds auto-compact, context
+  GC and the light preset. Those three decide the token budget and were in three
+  different places — auto-compact alone at the top level, context GC filed under
+  tool settings, light nowhere. Tool output display joins the truncation caps it
+  belongs with under one **Tool output** row, and every top-level row now opens
+  something rather than cycling in place.
+
 ## [0.5.29] - 2026-08-23
 
 ### Added

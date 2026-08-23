@@ -13,6 +13,7 @@ import {
 	Text,
 } from "@kolisachint/hoocode-tui";
 import type { MarketplacePlatform } from "../../../core/extensions/plugins/formats/types.js";
+import type { PromptSurface } from "../../../core/light.js";
 import type { LearnSettingKey, WarningSettings } from "../../../core/settings-manager.js";
 import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -37,6 +38,13 @@ interface ToolToggleInfo {
 	name: string;
 	/** Whether the tool is currently enabled (not in the persisted disabled set). */
 	enabled: boolean;
+	/**
+	 * What this tool's serialized schema costs on every request. Priced whether or
+	 * not it is on: for a tool that is off, this is what turning it on will cost.
+	 * Undefined for a tool that was disabled before launch, whose schema this
+	 * session never built.
+	 */
+	tokens?: number;
 }
 
 interface FlagInfo {
@@ -71,6 +79,7 @@ export interface SettingsConfig {
 	autoResizeImages: boolean;
 	blockImages: boolean;
 	enableSkillCommands: boolean;
+	light: boolean;
 	pluginInstallScope: "user" | "project";
 	enablePluginTools: boolean;
 	/**
@@ -103,6 +112,12 @@ export interface SettingsConfig {
 	voiceSilenceMs: number;
 	webtoolsTimeoutSecs: number;
 	learn: Record<LearnSettingKey, number>;
+	/**
+	 * Re-measure the fixed per-turn surface (system prompt + active tool schemas).
+	 * Called on open and after every change, so a toggle that costs tokens shows
+	 * what it cost. Omitted by callers that have no session to measure.
+	 */
+	measureTokenSurface?: () => PromptSurface;
 }
 
 export interface SettingsCallbacks {
@@ -119,6 +134,7 @@ export interface SettingsCallbacks {
 	onAutoResizeImagesChange: (enabled: boolean) => void;
 	onBlockImagesChange: (blocked: boolean) => void;
 	onEnableSkillCommandsChange: (enabled: boolean) => void;
+	onLightChange: (enabled: boolean) => void;
 	onPluginInstallScopeChange: (scope: "user" | "project") => void;
 	onEnablePluginToolsChange: (enabled: boolean) => void;
 	onPlatformChange: (platforms: MarketplacePlatform[]) => void;
@@ -387,6 +403,10 @@ class ToolsSubmenu extends Container {
 				? "Core tool. Disabling leaves the agent unable to perform this action in every session."
 				: "Disable to remove this tool from the agent this session and every future session.",
 			currentValue: tool.enabled ? "on" : "off",
+			// What the schema costs on every request, whether the tool is on or off:
+			// off, it is the price of turning it back on. This is the number that
+			// makes a tool worth disabling, so it belongs beside the switch.
+			valueSuffix: tool.tokens !== undefined ? `${tokenCount(tool.tokens)} tok/turn` : undefined,
 			values: ["on", "off"],
 		}));
 
@@ -448,21 +468,24 @@ function byteLabels(current: number): string[] {
 }
 
 interface ToolSettingsConfig {
+	toolOutputDisplay: "collapsed" | "peek" | "standard";
 	toolOutputMaxBytes: number;
 	toolOutputMaxLines: number;
-	contextGc: boolean;
 }
 
 interface ToolSettingsCallbacks {
+	onToolOutputDisplayChange: (level: "collapsed" | "peek" | "standard") => void;
 	onToolOutputMaxBytesChange: (bytes: number) => void;
 	onToolOutputMaxLinesChange: (lines: number) => void;
-	onContextGcChange: (enabled: boolean) => void;
 }
 
 /**
- * Submenu for per-tool runtime settings. These feed the tool runtime the next
- * time it is built (next session / rebuild), so changes apply to future tool
- * calls rather than retroactively.
+ * Submenu for what a tool result looks like: how much of it is rendered, and
+ * where it is truncated. The display level applies to the transcript at once;
+ * the caps feed the tool runtime, so they bind on future tool calls.
+ *
+ * Context GC is deliberately not here. It is not about a tool's output but about
+ * what stays in the outgoing context, which is the Context category's subject.
  */
 class ToolSettingsSubmenu extends Container {
 	private settingsList: SettingsList;
@@ -472,25 +495,26 @@ class ToolSettingsSubmenu extends Container {
 
 		const items: SettingItem[] = [
 			{
+				id: "tool-output-display",
+				label: "Display",
+				description:
+					"How tool results render. 'standard': shown (expandable). 'collapsed': hidden. 'peek': hidden with a ▸ reveal caret (press the expand key to reveal).",
+				currentValue: config.toolOutputDisplay,
+				values: ["standard", "collapsed", "peek"],
+			},
+			{
 				id: "output-max-bytes",
-				label: "Output max bytes",
+				label: "Max bytes",
 				description: "Byte cap on a single read/bash result before truncation. Applies to future tool calls.",
 				currentValue: bytesToLabel(config.toolOutputMaxBytes),
 				values: byteLabels(config.toolOutputMaxBytes),
 			},
 			{
 				id: "output-max-lines",
-				label: "Output max lines",
+				label: "Max lines",
 				description: "Line cap on a single read/bash result before truncation. Applies to future tool calls.",
 				currentValue: String(config.toolOutputMaxLines),
 				values: presetValues([200, 400, 800, 1600, 3200], config.toolOutputMaxLines),
-			},
-			{
-				id: "context-gc",
-				label: "Context GC",
-				description: "Stub superseded read results (files later edited/re-read) out of the outgoing context.",
-				currentValue: config.contextGc ? "true" : "false",
-				values: ["true", "false"],
 			},
 		];
 
@@ -500,6 +524,9 @@ class ToolSettingsSubmenu extends Container {
 			getSettingsListTheme(),
 			(id, newValue) => {
 				switch (id) {
+					case "tool-output-display":
+						callbacks.onToolOutputDisplayChange(newValue as "collapsed" | "peek" | "standard");
+						break;
 					case "output-max-bytes": {
 						const preset = TOOL_OUTPUT_BYTE_PRESETS.find(([label]) => label === newValue);
 						// A hand-set cap has no preset entry; its label is "<n> KB" by
@@ -510,9 +537,6 @@ class ToolSettingsSubmenu extends Container {
 					}
 					case "output-max-lines":
 						callbacks.onToolOutputMaxLinesChange(parseInt(newValue, 10));
-						break;
-					case "context-gc":
-						callbacks.onContextGcChange(newValue === "true");
 						break;
 				}
 			},
@@ -703,13 +727,46 @@ class SelectSubmenu extends Container {
 }
 
 /**
+ * Token counts, grouped and exact.
+ *
+ * `formatTokens` (2.7k) exists for the fixed-width chrome, where a count must
+ * never grow the box it sits in. This pane is the opposite case: the point of
+ * showing a number here is to compare it with another one, and "2.7k" hides the
+ * difference between the tool that costs 2,710 and the one that costs 2,749.
+ */
+function tokenCount(tokens: number): string {
+	return tokens.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+}
+
+/**
+ * The fixed per-turn cost, as one line under the pane.
+ *
+ * Every byte of system prompt and active tool schema is re-sent on every
+ * request, and the pane is where that number is decided - so the pane is where
+ * it should be visible. It reports the *live* session: a tool toggle applies at
+ * once and moves it, while a setting that only takes effect next session (a tool
+ * group, the light preset) leaves it alone until then.
+ */
+function formatSurfaceLine(surface: PromptSurface): string {
+	const tools = `${surface.tools.length} tool${surface.tools.length === 1 ? "" : "s"}`;
+	return (
+		`  Per-turn surface: ${tokenCount(surface.totalTokens)} tokens  ` +
+		`${theme.fg("dim", `(${tokenCount(surface.systemPromptTokens)} system prompt + ${tokenCount(surface.toolSchemaTokens)} schemas, ${tools})`)}`
+	);
+}
+
+/**
  * Main settings selector component.
  */
 export class SettingsSelectorComponent extends Container {
 	private settingsList: SettingsList;
+	private surfaceLine?: Text;
+	private measureTokenSurface?: () => PromptSurface;
 
 	constructor(config: SettingsConfig, callbacks: SettingsCallbacks) {
 		super();
+
+		this.measureTokenSurface = config.measureTokenSurface;
 
 		const supportsImages = getCapabilities().images;
 		const followUpKey = keyDisplayText("app.message.followUp");
@@ -723,6 +780,8 @@ export class SettingsSelectorComponent extends Container {
 			projectPinned.has(key)
 				? ` This repo's .hoocode/settings.json sets ${key}, which overrides this row from the next session on.`
 				: "";
+
+		const initialSurface = config.measureTokenSurface?.();
 
 		const toolsOn = config.tools.filter((t) => t.enabled).length;
 		const toolsOff = config.tools.length - toolsOn;
@@ -906,8 +965,29 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Skill commands toggle (insert after block-images)
-		const blockImagesIndex = items.findIndex((item) => item.id === "block-images");
+		// Context GC (insert after block-images), a leaf the Context category picks up.
+		items.splice(items.findIndex((item) => item.id === "block-images") + 1, 0, {
+			id: "context-gc",
+			label: "Context GC",
+			description: "Stub superseded read results (files later edited or re-read) out of the outgoing context.",
+			currentValue: config.contextGc ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// The light preset (insert after context GC). Read at startup to pick the
+		// tool set and the system prompt, so it lands on the next session.
+		const blockImagesIdx = items.findIndex((item) => item.id === "context-gc");
+		items.splice(blockImagesIdx + 1, 0, {
+			id: "light",
+			label: "Light preset",
+			description:
+				"Low-token preset for small or local models: read/write/edit/bash only with stripped schemas, a terse system prompt, and no subagents/TodoWrite/skills/context files. Applies on the next session.",
+			currentValue: config.light ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// Skill commands toggle (insert after the light preset)
+		const blockImagesIndex = items.findIndex((item) => item.id === "light");
 		items.splice(blockImagesIndex + 1, 0, {
 			id: "skill-commands",
 			label: "Skill commands",
@@ -1062,41 +1142,38 @@ export class SettingsSelectorComponent extends Container {
 				id: "tools",
 				label: "Tools",
 				description:
-					"Enable/disable tools and tool groups (web, semantic search). Changes persist across sessions.",
+					"Enable/disable tools and tool groups (web, semantic search), each priced by what its schema costs per turn. Changes persist across sessions.",
 				currentValue: toolsOff > 0 ? `${toolsOn} on · ${toolsOff} off` : `${toolsOn} on`,
+				valueSuffix: initialSurface ? `${tokenCount(initialSurface.toolSchemaTokens)} tok/turn` : undefined,
 				submenu: (_currentValue, done) =>
 					new ToolsSubmenu(
 						config.tools,
 						config.toolGroups,
-						(name, enabled) => callbacks.onToolEnabledChange(name, enabled),
+						(name, enabled) => {
+							callbacks.onToolEnabledChange(name, enabled);
+							// Applied live by the host, so the surface below is already stale.
+							this.refreshTokenSurface();
+						},
 						(id, enabled) => callbacks.onToolGroupChange(id, enabled),
 						() => done(),
 					),
 			},
 			{
-				id: "tool-output-display",
-				label: "Tool output display",
-				description:
-					"How tool results render. 'standard': shown (expandable). 'collapsed': hidden. 'peek': hidden with a ▸ reveal caret (press the expand key to reveal).",
+				id: "tool-output",
+				label: "Tool output",
+				description: "How much of a tool result is rendered, and where it is truncated.",
 				currentValue: config.toolOutputDisplay,
-				values: ["standard", "collapsed", "peek"],
-			},
-			{
-				id: "tool-settings",
-				label: "Tool settings",
-				description: "Per-tool runtime settings: output truncation caps and context garbage collection.",
-				currentValue: "configure",
 				submenu: (_currentValue, done) =>
 					new ToolSettingsSubmenu(
 						{
+							toolOutputDisplay: config.toolOutputDisplay,
 							toolOutputMaxBytes: config.toolOutputMaxBytes,
 							toolOutputMaxLines: config.toolOutputMaxLines,
-							contextGc: config.contextGc,
 						},
 						{
+							onToolOutputDisplayChange: callbacks.onToolOutputDisplayChange,
 							onToolOutputMaxBytesChange: callbacks.onToolOutputMaxBytesChange,
 							onToolOutputMaxLinesChange: callbacks.onToolOutputMaxLinesChange,
-							onContextGcChange: callbacks.onContextGcChange,
 						},
 						() => done(),
 					),
@@ -1126,9 +1203,6 @@ export class SettingsSelectorComponent extends Container {
 				case "autocompact":
 					callbacks.onAutoCompactChange(newValue === "true");
 					break;
-				case "tool-output-display":
-					callbacks.onToolOutputDisplayChange(newValue as "collapsed" | "peek" | "standard");
-					break;
 				case "show-images":
 					callbacks.onShowImagesChange(newValue === "true");
 					break;
@@ -1143,6 +1217,9 @@ export class SettingsSelectorComponent extends Container {
 					break;
 				case "skill-commands":
 					callbacks.onEnableSkillCommandsChange(newValue === "true");
+					break;
+				case "light":
+					callbacks.onLightChange(newValue === "true");
 					break;
 				case "plugin-tools":
 					callbacks.onEnablePluginToolsChange(newValue === "true");
@@ -1213,6 +1290,10 @@ export class SettingsSelectorComponent extends Container {
 					if (LEARN_KEYS.has(id)) callbacks.onLearnSettingChange(id as LearnSettingKey, parseInt(newValue, 10));
 					break;
 			}
+			// Most rows leave the per-turn surface alone; the ones that do not (a tool
+			// toggle, anything that rebuilds the system prompt) move it immediately.
+			// Re-measuring after every change is cheaper than knowing which is which.
+			this.refreshTokenSurface();
 		};
 
 		// Partition the flat leaf settings into named category submenus so the
@@ -1237,8 +1318,17 @@ export class SettingsSelectorComponent extends Container {
 		};
 
 		const topItems: SettingItem[] = [
-			...(byId.has("autocompact") ? [byId.get("autocompact")!] : []),
 			...toolFlagGroup,
+			// What the model is sent, and how much of it. Auto-compact used to sit
+			// alone at the top level and context GC was filed under tool settings,
+			// which left the three settings that decide the token budget in three
+			// different places - with the light preset in none of them.
+			categoryRow(
+				"cat-context",
+				"Context",
+				"What the model is sent and how much of it: compaction, superseded reads, and the low-token preset.",
+				["autocompact", "context-gc", "light"],
+			),
 			categoryRow(
 				"cat-behavior",
 				"Behavior",
@@ -1306,7 +1396,17 @@ export class SettingsSelectorComponent extends Container {
 		);
 
 		this.addChild(this.settingsList);
+		if (initialSurface) {
+			this.surfaceLine = new Text(formatSurfaceLine(initialSurface), 0, 0);
+			this.addChild(this.surfaceLine);
+		}
 		this.addChild(new DynamicBorder());
+	}
+
+	/** Re-price the pane after a change that may have altered what each turn sends. */
+	private refreshTokenSurface(): void {
+		if (!this.surfaceLine || !this.measureTokenSurface) return;
+		this.surfaceLine.setText(formatSurfaceLine(this.measureTokenSurface()));
 	}
 
 	getSettingsList(): SettingsList {
