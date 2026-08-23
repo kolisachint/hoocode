@@ -26,6 +26,19 @@ export class Box implements Component {
 		this.bgFn = bgFn;
 	}
 
+	/**
+	 * Change the horizontal padding after construction.
+	 *
+	 * For a box whose padding exists to carry a background band: with no band to
+	 * draw, the padding is just an indent that pushes the content out of line
+	 * with everything around it.
+	 */
+	setPaddingX(paddingX: number): void {
+		if (this.paddingX === paddingX) return;
+		this.paddingX = paddingX;
+		this.invalidateCache();
+	}
+
 	addChild(component: Component): void {
 		this.children.push(component);
 		this.invalidateCache();

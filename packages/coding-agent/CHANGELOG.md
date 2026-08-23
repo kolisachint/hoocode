@@ -123,6 +123,14 @@
 
 - The startup banner names the working directory and never re-read it, so after
   `/cd` it kept advertising the directory you had left.
+
+- `edit`'s call line sat one column right of every other tool's in the folded
+  views. Its render component pads horizontally to carry the diff's header band,
+  and with no band to draw that padding was just an indent. It now pads only
+  when the band is there.
+
+- A failed call's reason now hangs off its radar row instead of starting back at
+  the left margin.
 ## [0.5.31] - 2026-08-23
 
 ### Added

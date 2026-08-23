@@ -133,6 +133,45 @@ describe("ToolChainComponent", () => {
 		expect(render(chain)).not.toContain("›");
 	});
 
+	test("every tool's call line starts in the same column", () => {
+		// `edit` renders its own framed diff and pads for the header band. With no
+		// band to draw — a bare call line in a folded view — that padding was just
+		// an indent putting it one column right of every other tool.
+		const chain = chainOf(
+			"glance",
+			[
+				{ tool: "ls", args: { path: `${cwd}/docs` }, out: "a" },
+				{ tool: "read", args: { file_path: `${cwd}/a.ts` }, out: "a" },
+				{ tool: "edit", args: { path: `${cwd}/a.ts`, edits: [] }, out: "" },
+			],
+			"align",
+		);
+		chain.close("done");
+		const columns = render(chain)
+			.split("\n")
+			.filter((line) => line.includes("●"))
+			.map((line) => line.indexOf("●"));
+		expect(new Set(columns).size).toBe(1);
+	});
+
+	test("a failure's reason hangs off its radar row rather than starting a new column", () => {
+		const chain = chainOf(
+			"radar",
+			[
+				{ tool: "ls", args: { path: `${cwd}/docs` }, out: "a" },
+				{ tool: "bash", args: { command: "bun test" }, out: "ASSERTION FAILED", isError: true },
+			],
+			"indent",
+		);
+		chain.close("done");
+		chain.setOpened(true);
+		const lines = render(chain).split("\n");
+		const row = lines.findIndex((line) => line.includes("bash"));
+		const body = lines.findIndex((line) => line.includes("ASSERTION FAILED"));
+		expect(body).toBeGreaterThan(row);
+		expect(lines[body].indexOf("ASSERTION")).toBeGreaterThan(lines[row].indexOf("●"));
+	});
+
 	test("reports whether it is still collecting calls", () => {
 		const chain = chainOf("radar", RUN, "s");
 		expect(chain.isOpen).toBe(true);

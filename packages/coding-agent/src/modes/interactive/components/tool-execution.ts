@@ -73,6 +73,35 @@ class PrefixFirstLine implements Component {
 	}
 }
 
+/**
+ * Indents every line of a child, unlike PrefixFirstLine which only offsets the
+ * first. Used for a failure's body under a radar row, so the reason reads as
+ * hanging off the row rather than starting a new column.
+ */
+class IndentAll implements Component {
+	private child: Component;
+	private indent: string;
+	private memo?: { src: string[]; width: number; out: string[] };
+
+	constructor(child: Component, width: number) {
+		this.child = child;
+		this.indent = " ".repeat(width);
+	}
+
+	invalidate(): void {
+		this.child.invalidate?.();
+		this.memo = undefined;
+	}
+
+	render(width: number): string[] {
+		const lines = this.child.render(Math.max(1, width - this.indent.length));
+		if (this.memo && this.memo.src === lines && this.memo.width === width) return this.memo.out;
+		const out = lines.map((line) => (line.trim() === "" ? line : this.indent + line));
+		this.memo = { src: lines, width, out };
+		return out;
+	}
+}
+
 export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
@@ -351,6 +380,14 @@ export class ToolExecutionComponent extends Container {
 		return this.view === "radar" && !this.revealed;
 	}
 
+	/**
+	 * A failure's body under a radar row hangs off the row; anywhere else it sits
+	 * directly under its own call line and needs no extra indent.
+	 */
+	private indentUnderSignalRow(component: Component): Component {
+		return this.shouldShowSignalLine() ? new IndentAll(component, 3) : component;
+	}
+
 	private getSignalComponent(): ToolSignalComponent {
 		const input = {
 			toolName: this.toolName,
@@ -519,7 +556,7 @@ export class ToolExecutionComponent extends Container {
 				if (!resultRenderer) {
 					const component = this.createResultFallback();
 					if (component) {
-						renderContainer.addChild(component);
+						renderContainer.addChild(this.indentUnderSignalRow(component));
 						hasContent = true;
 					}
 				} else {
@@ -531,7 +568,7 @@ export class ToolExecutionComponent extends Container {
 							this.getRenderContext(this.resultRendererComponent),
 						);
 						this.resultRendererComponent = component;
-						renderContainer.addChild(component);
+						renderContainer.addChild(this.indentUnderSignalRow(component));
 						hasContent = true;
 					} catch {
 						this.resultRendererComponent = undefined;
