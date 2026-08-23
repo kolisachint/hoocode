@@ -20,6 +20,18 @@
   and the hook trap where a changed command adds a second hook instead of
   replacing one. Install it with `/plugin install plugin-authoring`.
 
+### Fixed
+
+- `/new-skill`, `/new-agent` and `/new-command` scaffolded different content
+  depending on whether `--platform` was set. Each command has two write paths —
+  the per-vendor emitters and the plain `.hoocode/` writer — and each carried
+  its own copy of the body, which had drifted in both directions: the
+  `.hoocode/` command body documented the `${@:N}` / `${@:N:L}` slice
+  placeholders that the platform path silently omitted, and the `.hoocode/`
+  agent body identified the agent as running inside hoocode where the platform
+  one did not. Both paths read one definition now, and the richer text won in
+  each case.
+
 ### Changed
 
 - The four built-in mode prompts have one home. `templates/modes/<mode>/system.md`
