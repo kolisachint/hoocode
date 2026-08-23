@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { AgentSession } from "./agent-session.js";
 import type { AgentSessionRuntimeDiagnostic, AgentSessionServices } from "./agent-session-services.js";
@@ -6,7 +6,7 @@ import type { ReplacedSessionContext, SessionShutdownEvent, SessionStartEvent } 
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
 import type { CreateAgentSessionResult } from "./sdk.js";
 import { assertSessionCwdExists } from "./session-cwd.js";
-import { SessionManager } from "./session-manager.js";
+import { getSessionDirPath, SessionManager } from "./session-manager.js";
 
 /**
  * Result returned by runtime creation.
@@ -32,6 +32,19 @@ export type CreateAgentSessionRuntimeFactory = (options: {
 	sessionManager: SessionManager;
 	sessionStartEvent?: SessionStartEvent;
 }) => Promise<CreateAgentSessionRuntimeResult>;
+
+/**
+ * Thrown when `/cd` is pointed at something that is not a usable directory.
+ */
+export class ChangeDirectoryError extends Error {
+	readonly path: string;
+
+	constructor(message: string, path: string) {
+		super(message);
+		this.name = "ChangeDirectoryError";
+		this.path = path;
+	}
+}
 
 /**
  * Thrown when /import references a JSONL file path that does not exist.
@@ -229,6 +242,60 @@ export class AgentSessionRuntime {
 		}
 		await this.finishSessionReplacement(options?.withSession);
 		return { cancelled: false };
+	}
+
+	/**
+	 * Move the whole runtime to another directory without leaving the process.
+	 *
+	 * Everything cwd-bound is rebuilt for the new root — tools, context files
+	 * (AGENTS.md and friends), project settings, extensions, skills, agents, the
+	 * MCP server set — which is exactly why this cannot just reassign a string:
+	 * those services are constructed per cwd and a half-moved runtime would run
+	 * the new repo's code against the old repo's rules.
+	 *
+	 * Sessions are stored per project, so the move starts a fresh session in the
+	 * target directory rather than dragging the current transcript across. The
+	 * old session is already persisted; `/resume` in the old directory reopens
+	 * it. A session directory the user pinned explicitly (`--session-dir`, the
+	 * env var, or the setting) is *not* cwd-derived and is carried over as-is.
+	 *
+	 * @throws {ChangeDirectoryError} When the target is missing or not a directory.
+	 */
+	async changeDirectory(targetCwd: string): Promise<{ cancelled: boolean; cwd: string }> {
+		const resolved = resolve(targetCwd);
+		if (!existsSync(resolved)) {
+			throw new ChangeDirectoryError(`No such directory: ${resolved}`, resolved);
+		}
+		if (!statSync(resolved).isDirectory()) {
+			throw new ChangeDirectoryError(`Not a directory: ${resolved}`, resolved);
+		}
+		if (resolve(this.cwd) === resolved) {
+			return { cancelled: false, cwd: this.cwd };
+		}
+
+		const beforeResult = await this.emitBeforeSwitch("new");
+		if (beforeResult.cancelled) {
+			return { cancelled: true, cwd: this.cwd };
+		}
+
+		const previousSessionFile = this.session.sessionFile;
+		const currentSessionDir = this.session.sessionManager.getSessionDir();
+		// A cwd-derived directory must be re-derived for the new root; a pinned one
+		// is the user's explicit choice and travels with them.
+		const pinnedSessionDir = currentSessionDir === getSessionDirPath(this.cwd) ? undefined : currentSessionDir;
+		const sessionManager = SessionManager.create(resolved, pinnedSessionDir);
+
+		await this.teardownCurrent("new", sessionManager.getSessionFile());
+		this.apply(
+			await this.createRuntime({
+				cwd: resolved,
+				agentDir: this.services.agentDir,
+				sessionManager,
+				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },
+			}),
+		);
+		await this.finishSessionReplacement();
+		return { cancelled: false, cwd: resolved };
 	}
 
 	async fork(

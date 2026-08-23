@@ -6,6 +6,7 @@ import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provi
 import { formatTokens } from "../../../core/format-tokens.js";
 import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
 import { taskStore } from "../../../core/task-store.js";
+import type { ToolOutputView } from "../../../core/tool-output-view.js";
 import { theme } from "../theme/theme.js";
 import { renderDownloadProgress, renderProgressBar } from "./progress-bar.js";
 
@@ -34,6 +35,16 @@ function contextGauge(percent: number, errorLevel: number, warnLevel: number): {
 	const color = percent >= errorLevel ? "error" : percent >= warnLevel ? "warning" : "accent";
 	return { plain: fill + track, styled: theme.fg(color, fill) + theme.fg("dim", track) };
 }
+
+/**
+ * The view dial's glyph, filling up as the view widens — so the footer shows
+ * where the dial sits on its three-stop scale, not just its name.
+ */
+const TOOL_OUTPUT_VIEW_GLYPHS: Record<ToolOutputView, string> = {
+	radar: "◌",
+	glance: "◍",
+	full: "◉",
+};
 
 /** Count subagent runs currently in flight, for the footer's live delegation cue. */
 function activeSubagentCount(): number {
@@ -77,6 +88,7 @@ function renderStartupLine(entry: StartupProgress): string {
  */
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
+	private toolOutputView: ToolOutputView = "glance";
 
 	constructor(
 		private session: AgentSession,
@@ -89,6 +101,11 @@ export class FooterComponent implements Component {
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	/** The view dial's current stop, shown so `alt+o` has somewhere to land. */
+	setToolOutputView(view: ToolOutputView): void {
+		this.toolOutputView = view;
 	}
 
 	/**
@@ -164,8 +181,23 @@ export class FooterComponent implements Component {
 			l1Styled += theme.fg("dim", ` • ${sessionName}`);
 		}
 		const nSub = activeSubagentCount();
-		const l1RightPlain = nSub > 0 ? `◇${nSub} running` : "";
-		const l1RightStyled = nSub > 0 ? theme.fg("accent", `◇${nSub}`) + theme.fg("dim", " running") : "";
+		// Right cluster: the view dial always, the live subagent count when there
+		// is one. The dial's glyph fills up as the view widens, so its position on
+		// the three-stop scale reads without parsing the word.
+		const viewGlyph = TOOL_OUTPUT_VIEW_GLYPHS[this.toolOutputView];
+		const rightParts: Array<{ plain: string; styled: string }> = [];
+		if (nSub > 0) {
+			rightParts.push({
+				plain: `◇${nSub} running`,
+				styled: theme.fg("accent", `◇${nSub}`) + theme.fg("dim", " running"),
+			});
+		}
+		rightParts.push({
+			plain: `${viewGlyph} ${this.toolOutputView}`,
+			styled: theme.fg("dim", `${viewGlyph} ${this.toolOutputView}`),
+		});
+		const l1RightPlain = rightParts.map((p) => p.plain).join("  ");
+		const l1RightStyled = rightParts.map((p) => p.styled).join("  ");
 		const line1 = assembleLine(width, l1Plain, l1Styled, l1RightPlain, l1RightStyled);
 
 		// ── Line 2 — session vitals ─────────────────────────────────────────────

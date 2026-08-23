@@ -85,8 +85,8 @@ export interface ModelsCallbacks {
 }
 
 /**
- * Component for enabling/disabling models for Ctrl+P cycling.
- * Changes are session-only until explicitly persisted with Ctrl+S.
+ * Component for enabling/disabling models for the model-cycling keybinding.
+ * Changes are session-only until explicitly persisted with the save keybinding.
  */
 export class ScopedModelsSelectorComponent extends Container implements Focusable {
 	private modelsById: Map<string, Model<any>> = new Map();

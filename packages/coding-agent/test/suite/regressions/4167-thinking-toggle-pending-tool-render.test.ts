@@ -5,6 +5,7 @@ import stripAnsi from "strip-ansi";
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import type { AgentSessionEvent } from "../../../src/core/agent-session.js";
 import type { SessionContext } from "../../../src/core/session-manager.js";
+import type { ToolOutputView } from "../../../src/core/tool-output-view.js";
 import type { ToolExecutionComponent } from "../../../src/modes/interactive/components/tool-execution.js";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.js";
 import { initTheme } from "../../../src/modes/interactive/theme/theme.js";
@@ -39,6 +40,7 @@ type RenderSessionContextThis = {
 	sessionManager: { getCwd(): string };
 	session: { retryAttempt: number };
 	toolOutputExpanded: boolean;
+	toolOutputView: ToolOutputView;
 	isInitialized: boolean;
 	updateEditorBorderColor(): void;
 	getRegisteredToolDefinition(toolName: string): undefined;
@@ -68,6 +70,9 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 		sessionManager: { getCwd: () => process.cwd() },
 		session: { retryAttempt: 0 },
 		toolOutputExpanded: false,
+		// This test is about whether a tool result reaches the transcript at all,
+		// so it asks for the view that renders result bodies.
+		toolOutputView: "full",
 		isInitialized: true,
 		updateEditorBorderColor: vi.fn(),
 		getRegisteredToolDefinition: (_toolName: string) => undefined,

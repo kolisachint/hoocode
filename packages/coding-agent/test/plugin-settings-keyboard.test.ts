@@ -48,7 +48,7 @@ function openPane(manager: SettingsManager): SettingsSelectorComponent {
 		tools: [],
 		toolGroups: [],
 		flags: [],
-		toolOutputDisplay: "standard",
+		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,
 		toolOutputMaxLines: 200,
 		contextGc: true,

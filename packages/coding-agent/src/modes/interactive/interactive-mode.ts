@@ -69,6 +69,7 @@ import type { SourceInfo } from "../../core/source-info.js";
 import { startupProgress } from "../../core/startup-progress.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
+import { cycleToolOutputView, type ToolOutputView } from "../../core/tool-output-view.js";
 import { settleDanglingMainTasks } from "../../core/tools/todo.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
@@ -286,8 +287,8 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
-	// Persisted tool-output display level (collapsed / peek / standard).
-	private toolOutputDisplay: "collapsed" | "peek" | "standard" = "standard";
+	// Persisted view dial (radar / glance / full). See core/tool-output-view.ts.
+	private toolOutputView: ToolOutputView = "glance";
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -485,6 +486,7 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footer.setToolOutputView(this.toolOutputView);
 		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
 		this.chrome = new ExtensionChrome({
 			ui: this.ui,
@@ -576,8 +578,8 @@ export class InteractiveMode {
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
-		// Load tool-output display level
-		this.toolOutputDisplay = this.settingsManager.getToolOutputDisplay();
+		// Load the tool-output view dial
+		this.toolOutputView = this.settingsManager.getToolOutputView();
 
 		// Completion chime: rings the terminal bell when a long turn finishes or the
 		// agent blocks awaiting input. Enable is read fresh so a live toggle applies.
@@ -674,6 +676,15 @@ export class InteractiveMode {
 					label: item.id,
 					description: item.provider,
 				}));
+			};
+		}
+
+		const cdCommand = slashCommands.find((command) => command.name === "cd");
+		if (cdCommand) {
+			cdCommand.argumentHint = "<path>";
+			cdCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const completions = this.commandExecutor.getChangeDirectoryCompletions(prefix);
+				return completions.length > 0 ? completions : null;
 			};
 		}
 
@@ -839,9 +850,14 @@ export class InteractiveMode {
 				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
 				hint("app.model.select", "to select model"),
 				hint("app.tools.expand", "to expand tools"),
+				hint("app.view.cycleForward", "to cycle tool output (radar/glance/full)"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.tasks.cycleView", "to cycle task panel view"),
 				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
+				hint("app.mode.cycle", "to cycle agent mode"),
+				hint("app.session.changeDirectory", "to change working directory"),
+				hint("app.settings.open", "for settings"),
+				hint("app.hotkeys.open", "for all shortcuts"),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
 				rawKeyHint("!", "to run bash"),
@@ -1203,6 +1219,7 @@ export class InteractiveMode {
 	private applyRuntimeSettings(): void {
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footer.setToolOutputView(this.toolOutputView);
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
@@ -1680,6 +1697,8 @@ export class InteractiveMode {
 		this.ui.onDebug = () => this.commandExecutor.handleDebug();
 		this.defaultEditor.onAction("app.model.select", () => this.modelController.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
+		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.tasks.cycleView", () => {
 			this.taskPanel.cycleView();
@@ -1693,6 +1712,15 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
+		this.defaultEditor.onAction("app.session.changeDirectory", () => {
+			// Prefill rather than act: a directory change needs a target, and the
+			// editor's own path completion is already the best way to name one.
+			this.editor.setText("/cd ");
+			this.ui.requestRender();
+		});
+		this.defaultEditor.onAction("app.settings.open", () => this.showSettingsSelector());
+		this.defaultEditor.onAction("app.hotkeys.open", () => this.commandExecutor.handleHotkeys());
+		this.defaultEditor.onAction("app.mode.cycle", () => void this.cycleAgentMode());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1887,6 +1915,13 @@ export class InteractiveMode {
 					run: () => {
 						this.showSessionSelector();
 						clearEditor();
+					},
+				},
+				"/cd": {
+					withArgs: true,
+					run: async (text: string) => {
+						clearEditor();
+						await this.commandExecutor.handleChangeDirectory(text);
 					},
 				},
 				"/quit": {
@@ -2178,7 +2213,7 @@ export class InteractiveMode {
 									{
 										showImages: this.settingsManager.getShowImages(),
 										imageWidthCells: this.settingsManager.getImageWidthCells(),
-										displayLevel: this.toolOutputDisplay,
+										view: this.toolOutputView,
 									},
 									this.getRegisteredToolDefinition(content.name),
 									this.ui,
@@ -2253,7 +2288,7 @@ export class InteractiveMode {
 						{
 							showImages: this.settingsManager.getShowImages(),
 							imageWidthCells: this.settingsManager.getImageWidthCells(),
-							displayLevel: this.toolOutputDisplay,
+							view: this.toolOutputView,
 						},
 						this.getRegisteredToolDefinition(event.toolName),
 						this.ui,
@@ -2608,7 +2643,7 @@ export class InteractiveMode {
 							{
 								showImages: this.settingsManager.getShowImages(),
 								imageWidthCells: this.settingsManager.getImageWidthCells(),
-								displayLevel: this.toolOutputDisplay,
+								view: this.toolOutputView,
 							},
 							this.getRegisteredToolDefinition(content.name),
 							this.ui,
@@ -2899,6 +2934,30 @@ export class InteractiveMode {
 		this.setToolsExpanded(!this.toolOutputExpanded);
 	}
 
+	/**
+	 * Move the view dial one stop and report where it landed.
+	 *
+	 * The dial is the persistent decision ("how much do I ever want to see"),
+	 * which is why it saves; `app.tools.expand` stays the momentary one ("open
+	 * what is in front of me"), which is why it does not.
+	 */
+	private cycleToolOutputView(direction: "forward" | "backward"): void {
+		const next = cycleToolOutputView(this.toolOutputView, direction);
+		this.applyToolOutputView(next);
+	}
+
+	private applyToolOutputView(view: ToolOutputView): void {
+		this.toolOutputView = view;
+		this.settingsManager.setToolOutputView(view);
+		this.footer.setToolOutputView(view);
+		for (const child of this.chatContainer.children) {
+			if (child instanceof ToolExecutionComponent) {
+				child.setView(view);
+			}
+		}
+		this.ui.requestRender();
+	}
+
 	private setToolsExpanded(expanded: boolean): void {
 		this.toolOutputExpanded = expanded;
 		const activeHeader = this.chrome.customHeader ?? this.builtInHeader;
@@ -2911,6 +2970,36 @@ export class InteractiveMode {
 			}
 		}
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Step the agent mode one along (ask → plan → build → debug → ask).
+	 *
+	 * Mode is the product's central guardrail and sits first in the footer, yet
+	 * it was reachable only by typing `/mode <name>`. The list comes from the
+	 * mode command's own argument completions rather than a copy kept here, so
+	 * a project that adds a mode gets it in the rotation for free; if the command
+	 * is missing (a `--light` run strips the extension), the key says so instead
+	 * of guessing.
+	 */
+	private async cycleAgentMode(): Promise<void> {
+		const command = this.session.extensionRunner.getCommand("mode");
+		if (!command) {
+			this.showWarning("Modes are not available in this session");
+			return;
+		}
+
+		const completions = (await command.getArgumentCompletions?.("")) ?? [];
+		const modes = completions.map((item) => item.value);
+		if (modes.length === 0) {
+			this.showWarning("No modes are configured");
+			return;
+		}
+
+		const current = this.footerDataProvider.getActiveMode();
+		const index = modes.indexOf(current);
+		const next = modes[(index + 1) % modes.length];
+		await this.session.prompt(`/mode ${next}`);
 	}
 
 	private toggleThinkingBlockVisibility(): void {
@@ -3153,7 +3242,7 @@ export class InteractiveMode {
 					tools: toolToggles,
 					toolGroups,
 					flags,
-					toolOutputDisplay: this.toolOutputDisplay,
+					toolOutputView: this.toolOutputView,
 					toolOutputMaxBytes: this.settingsManager.getToolOutputMaxBytes(),
 					toolOutputMaxLines: this.settingsManager.getToolOutputMaxLines(),
 					contextGc: this.settingsManager.getContextGcEnabled(),
@@ -3253,15 +3342,8 @@ export class InteractiveMode {
 								break;
 						}
 					},
-					onToolOutputDisplayChange: (level) => {
-						this.toolOutputDisplay = level;
-						this.settingsManager.setToolOutputDisplay(level);
-						for (const child of this.chatContainer.children) {
-							if (child instanceof ToolExecutionComponent) {
-								child.setDisplayLevel(level);
-							}
-						}
-						this.ui.requestRender();
+					onToolOutputViewChange: (view) => {
+						this.applyToolOutputView(view);
 					},
 					onToolOutputMaxBytesChange: (bytes) => {
 						this.settingsManager.setToolOutputMaxBytes(bytes);

@@ -20,6 +20,8 @@ interface AppKeybindings {
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
 	"app.tools.expand": true;
+	"app.view.cycleForward": true;
+	"app.view.cycleBackward": true;
 	"app.thinking.toggle": true;
 	"app.tasks.cycleView": true;
 	"app.team.focus": true;
@@ -35,6 +37,10 @@ interface AppKeybindings {
 	"app.session.tree": true;
 	"app.session.fork": true;
 	"app.session.resume": true;
+	"app.session.changeDirectory": true;
+	"app.settings.open": true;
+	"app.hotkeys.open": true;
+	"app.mode.cycle": true;
 	"app.tree.foldOrUp": true;
 	"app.tree.unfoldOrDown": true;
 	"app.tree.editLabel": true;
@@ -65,6 +71,38 @@ declare module "@kolisachint/hoocode-tui" {
 	interface Keybindings extends AppKeybindings {}
 }
 
+/**
+ * The cockpit layout.
+ *
+ * Three rings, and which ring a key belongs to is decided by its modifier:
+ *
+ * - **ctrl — the view.** What is on screen right now: expand, thinking blocks,
+ *   task panel, model cycling. Pressed many times a minute, so they sit under
+ *   the hand and never require a second modifier.
+ * - **alt — the cockpit.** What the agent *is* and where it works: model,
+ *   mode, working directory, settings, sessions. Pressed a few times a session.
+ * - **overlays.** Inside a picker, the query line is a text field, so every
+ *   `ctrl+<letter>` there belongs to the *text* (ctrl+a start of line, ctrl+u
+ *   kill line, ctrl+w kill word). A picker's own verbs are therefore all on
+ *   `alt+<letter>`, mnemonic to that picker; the picker captures keys while it
+ *   is open, so reusing a global letter there is unambiguous.
+ *
+ * Two rules keep the set learnable: shift reverses whatever the unshifted key
+ * does, and no binding takes a key the editor or the terminal already owns
+ * (ctrl+a/e/b/f/k/u/w/y/d/l/r/g, ctrl+s XOFF, ctrl+m == enter, ctrl+i == tab).
+ *
+ * Two constraints from the key parser shape which alt keys are usable at all,
+ * and `test/keybinding-layout.test.ts` holds both:
+ *
+ * - Only `alt+<letter>` and `alt+<digit>` survive a terminal without the Kitty
+ *   keyboard protocol. `alt+[` and `alt+]` arrive as the CSI and OSC
+ *   introducers and are not parsed as keys; nor is any shift-modified key, so a
+ *   `shift+…` default is a Kitty-only convenience on top of an unshifted key
+ *   that works everywhere (as `shift+ctrl+p` has always been).
+ * - Legacy `alt+p` and `alt+n` are also accepted as `alt+up` and `alt+down`
+ *   (the emacs previous/next aliases), so no scope may bind both halves of
+ *   either pair.
+ */
 export const KEYBINDINGS = {
 	...TUI_KEYBINDINGS,
 	"app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
@@ -86,22 +124,32 @@ export const KEYBINDINGS = {
 		defaultKeys: "shift+ctrl+p",
 		description: "Cycle to previous model",
 	},
-	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
-	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
+	// alt+m, not ctrl+l: ctrl+l is "clear the screen" in every shell and every
+	// full-screen terminal app, and users press it reflexively to tidy up. It
+	// opening a model dialog is the single most surprising key in the old set.
+	"app.model.select": { defaultKeys: "alt+m", description: "Open model selector" },
+	"app.tools.expand": {
+		defaultKeys: "ctrl+o",
+		description: "Expand or collapse what is in front of you (tool bodies, header, summaries)",
+	},
+	// The view dial pairs with ctrl+o on purpose: same letter, different ring.
+	// ctrl+o opens what is already there; alt+o decides how much is ever there.
+	"app.view.cycleForward": {
+		defaultKeys: "alt+o",
+		description: "Cycle tool output view (radar → glance → full)",
+	},
+	"app.view.cycleBackward": {
+		defaultKeys: "shift+alt+o",
+		description: "Cycle tool output view backward",
+	},
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking blocks",
 	},
 	"app.tasks.cycleView": {
-		// ctrl+n is free in the main editor (no emacs next-line binding here);
-		// app.session.toggleNamedFilter also uses ctrl+n but only inside the
-		// session-selector overlay, which captures keys while open.
+		// ctrl+n is free in the main editor (no emacs next-line binding here).
 		defaultKeys: "ctrl+n",
 		description: "Cycle task panel view (tasks → subagents → teams, skips empty lenses)",
-	},
-	"app.session.toggleNamedFilter": {
-		defaultKeys: "ctrl+n",
-		description: "Toggle named session filter",
 	},
 	"app.team.focus": {
 		// Pairs with ctrl+n (cycle task panel view): alt+n steps INTO the teams
@@ -121,8 +169,10 @@ export const KEYBINDINGS = {
 		defaultKeys: "a",
 		description: "Attach to the selected team role (team focus mode)",
 	},
+	// alt+e, not ctrl+g: ctrl+g is emacs/readline "abort" — the key you hit to
+	// get out of something. Having it launch $EDITOR inverts that reflex.
 	"app.editor.external": {
-		defaultKeys: "ctrl+g",
+		defaultKeys: "alt+e",
 		description: "Open external editor",
 	},
 	"app.message.followUp": {
@@ -137,14 +187,30 @@ export const KEYBINDINGS = {
 		defaultKeys: process.platform === "win32" ? "alt+v" : "ctrl+v",
 		description: "Paste image from clipboard",
 	},
+	// alt+r, not ctrl+r: ctrl+r is reverse history search in every shell, and it
+	// was also the session picker's rename key — one chord, two meanings.
 	"app.input.voiceTranscribe": {
-		defaultKeys: "ctrl+r",
+		defaultKeys: "alt+r",
 		description: "Record voice and transcribe into the editor",
 	},
+	// The two destructive-ish session moves stay unbound by default. /new
+	// replaces the transcript and /fork needs a message picked out of it, so
+	// neither wants to be one stray chord away; both remain bindable by hand.
 	"app.session.new": { defaultKeys: [], description: "Start a new session" },
-	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
 	"app.session.fork": { defaultKeys: [], description: "Fork current session" },
-	"app.session.resume": { defaultKeys: [], description: "Resume a session" },
+	// Navigation is non-destructive, so it gets keys: t for tree, h for history.
+	"app.session.tree": { defaultKeys: "alt+t", description: "Open session tree" },
+	"app.session.resume": { defaultKeys: "alt+h", description: "Resume a session from history" },
+	"app.session.changeDirectory": {
+		defaultKeys: "alt+w",
+		description: "Change working directory (move to another repo without quitting)",
+	},
+	"app.settings.open": { defaultKeys: "alt+s", description: "Open settings" },
+	"app.hotkeys.open": { defaultKeys: "alt+k", description: "Show keyboard shortcuts" },
+	"app.mode.cycle": {
+		defaultKeys: "alt+g",
+		description: "Cycle agent mode (ask → plan → build → debug)",
+	},
 	"app.tree.foldOrUp": {
 		defaultKeys: ["ctrl+left", "alt+left"],
 		description: "Fold tree branch or move up",
@@ -161,40 +227,53 @@ export const KEYBINDINGS = {
 		defaultKeys: "shift+t",
 		description: "Toggle tree label timestamps",
 	},
+	// Session picker verbs. All on alt so the picker's query line keeps the
+	// emacs editing keys it used to lose: ctrl+a jumped to the start of the
+	// query *and* enabled every model, ctrl+d deleted a character *and* deleted
+	// the highlighted session.
 	"app.session.togglePath": {
-		defaultKeys: "ctrl+p",
+		defaultKeys: "alt+p",
 		description: "Toggle session path display",
 	},
 	"app.session.toggleSort": {
-		defaultKeys: "ctrl+s",
-		description: "Toggle session sort mode",
+		defaultKeys: "alt+o",
+		description: "Toggle session sort order",
 	},
 	"app.session.rename": {
-		defaultKeys: "ctrl+r",
+		defaultKeys: "alt+r",
 		description: "Rename session",
 	},
+	"app.session.toggleNamedFilter": {
+		defaultKeys: "alt+n",
+		description: "Toggle named session filter",
+	},
 	"app.session.delete": {
-		defaultKeys: "ctrl+d",
+		defaultKeys: "alt+x",
 		description: "Delete session",
 	},
 	"app.session.deleteNoninvasive": {
 		defaultKeys: "ctrl+backspace",
 		description: "Delete session when query is empty",
 	},
+	// Model picker verbs, same rule. ctrl+s in particular was XOFF: on a terminal
+	// with flow control still on, "save" froze the session instead.
 	"app.models.save": {
-		defaultKeys: "ctrl+s",
+		defaultKeys: "alt+s",
 		description: "Save model selection",
 	},
 	"app.models.enableAll": {
-		defaultKeys: "ctrl+a",
+		defaultKeys: "alt+a",
 		description: "Enable all models",
 	},
 	"app.models.clearAll": {
-		defaultKeys: "ctrl+x",
+		defaultKeys: "alt+x",
 		description: "Clear all models",
 	},
+	// alt+g ("group"), not alt+p: on a terminal without the Kitty protocol, alt+p
+	// arrives as ESC-p, which the key parser also accepts as alt+up — and alt+up
+	// is this same picker's reorder key.
 	"app.models.toggleProvider": {
-		defaultKeys: "ctrl+p",
+		defaultKeys: "alt+g",
 		description: "Toggle all models for provider",
 	},
 	"app.models.reorderUp": {
@@ -207,32 +286,40 @@ export const KEYBINDINGS = {
 	},
 	"app.options.next": { defaultKeys: "right", description: "Confirm and advance to the next question" },
 	"app.options.back": { defaultKeys: "left", description: "Go back to the previous question" },
+	// Five lenses in a fixed order, so they are numbered rather than lettered:
+	// alt+1..alt+5 needs no mnemonic and collides with nothing. The old set
+	// (ctrl+d/t/u/l/a) collided with delete-char, thinking, kill-to-start,
+	// clear-screen and start-of-line respectively.
 	"app.tree.filter.default": {
-		defaultKeys: "ctrl+d",
+		defaultKeys: "alt+1",
 		description: "Tree filter: default view",
 	},
 	"app.tree.filter.noTools": {
-		defaultKeys: "ctrl+t",
+		defaultKeys: "alt+2",
 		description: "Tree filter: hide tool results",
 	},
 	"app.tree.filter.userOnly": {
-		defaultKeys: "ctrl+u",
+		defaultKeys: "alt+3",
 		description: "Tree filter: user messages only",
 	},
 	"app.tree.filter.labeledOnly": {
-		defaultKeys: "ctrl+l",
+		defaultKeys: "alt+4",
 		description: "Tree filter: labeled entries only",
 	},
 	"app.tree.filter.all": {
-		defaultKeys: "ctrl+a",
+		defaultKeys: "alt+5",
 		description: "Tree filter: show all entries",
 	},
+	// alt+c for "cycle". Not a bracket pair, tempting as `alt+[` / `alt+]` are:
+	// without the Kitty protocol those arrive as ESC-[ and ESC-], which are the
+	// CSI and OSC introducers and so are not parsed as keys at all. The backward
+	// half needs Kitty, like every other shift-modified default here.
 	"app.tree.filter.cycleForward": {
-		defaultKeys: "ctrl+o",
+		defaultKeys: "alt+c",
 		description: "Tree filter: cycle forward",
 	},
 	"app.tree.filter.cycleBackward": {
-		defaultKeys: "shift+ctrl+o",
+		defaultKeys: "shift+alt+c",
 		description: "Tree filter: cycle backward",
 	},
 } as const satisfies KeybindingDefinitions;

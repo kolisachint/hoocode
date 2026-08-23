@@ -74,6 +74,34 @@ Four tool groups are **off by default** — turn them on per session with a flag
 | **Web** (`webfetch` · `websearch`) | `--enable-webtools` or `"enableWebTools": true` | Fetch a URL as text and run web searches. |
 | **Plugins** (`SearchPlugins` · `InstallPlugin` · `ProposePlugin` · ...) | `--enable-plugintools` or `"enablePluginTools": true` | The autonomous plugin lifecycle system — discover, install, and propose plugins, plus a runtime reuse nudge. |
 
+### How much of a tool call you see
+
+One dial, `Alt+O`, with three stops from least to most (`Shift+Alt+O` goes back). The footer shows where it sits.
+
+| View | What a tool call looks like |
+|---|---|
+| **radar** | One aligned signal row: the tool, the call's subject, and how much came back — `● grep  toolOutputView  27 lines`. Every tool renders the same three columns, so a screen of them is a map of the run, and a search that found nothing is visible without opening it. |
+| **glance** | The tool's own call line with a `▸` caret; the result body is folded away until you ask for it. **The default.** |
+| **full** | Call line plus the result body. |
+
+`Ctrl+O` is separate and orthogonal: it opens what is in front of you — tool bodies, the header, summaries — without moving the dial.
+
+## Working across repositories
+
+`/cd <path>` moves the session to another directory without leaving the process, so provider auth, the warmed model list, and the terminal all survive the move. Everything scoped to the directory is rebuilt for the new root: tools, context files, project settings, extensions, skills, agents, and MCP servers. Sessions are stored per project, so a fresh session starts in the target; the one you left is still on disk and `/resume` in the old directory reopens it.
+
+Bare `/cd` goes home, `/cd -` returns to where you came from, and the argument completes against real subdirectories. `Alt+W` opens it.
+
+## Keys
+
+Three rings, and a key's modifier says which ring it is in:
+
+- **`Ctrl` — the view.** What is on screen right now: expand (`Ctrl+O`), thinking blocks (`Ctrl+T`), the task panel (`Ctrl+N`), model cycling (`Ctrl+P`).
+- **`Alt` — the cockpit.** What the agent is and where it works: mode (`Alt+G`), model (`Alt+M`), directory (`Alt+W`), the view dial (`Alt+O`), settings (`Alt+S`), session tree (`Alt+T`), history (`Alt+H`), shortcuts (`Alt+K`).
+- **Inside a picker**, every `Ctrl` key still belongs to the query you are typing — `Ctrl+A`, `Ctrl+U`, `Ctrl+W` edit text, as they do everywhere else. A picker's own verbs are all on `Alt`, and its hint line names them.
+
+`Shift` reverses whatever the unshifted key does. Everything is rebindable in `~/.hoocode/keybindings.json`; `/hotkeys` lists the set currently in force.
+
 ## Extensibility
 
 - **MCP servers** — connect external tools and data sources through the Model Context Protocol.

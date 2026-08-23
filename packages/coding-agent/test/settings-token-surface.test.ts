@@ -37,7 +37,7 @@ function paneConfig(overrides: Record<string, unknown> = {}): any {
 		],
 		toolGroups: [],
 		flags: [],
-		toolOutputDisplay: "standard",
+		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,
 		toolOutputMaxLines: 200,
 		contextGc: true,

@@ -145,24 +145,41 @@ describe("SettingsManager", () => {
 		});
 	});
 
-	describe("toolOutputDisplay", () => {
-		it("defaults to standard", () => {
+	describe("toolOutputView", () => {
+		it("defaults to glance", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
-			expect(manager.getToolOutputDisplay()).toBe("standard");
+			expect(manager.getToolOutputView()).toBe("glance");
 		});
 
 		it("round-trips a valid value and rejects an invalid one", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
-			manager.setToolOutputDisplay("peek");
+			manager.setToolOutputView("radar");
 			await manager.flush();
 
 			const settingsPath = join(agentDir, "settings.json");
-			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).toolOutputDisplay).toBe("peek");
-			expect(SettingsManager.create(projectDir, agentDir).getToolOutputDisplay()).toBe("peek");
+			expect(JSON.parse(readFileSync(settingsPath, "utf-8")).toolOutputView).toBe("radar");
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputView()).toBe("radar");
 
 			// An externally written bogus value falls back to the default.
-			writeFileSync(settingsPath, JSON.stringify({ toolOutputDisplay: "bogus" }));
-			expect(SettingsManager.create(projectDir, agentDir).getToolOutputDisplay()).toBe("standard");
+			writeFileSync(settingsPath, JSON.stringify({ toolOutputView: "bogus" }));
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputView()).toBe("glance");
+		});
+
+		it("reads the pre-dial collapsed/peek/standard values", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			const read = (value: string) => {
+				writeFileSync(settingsPath, JSON.stringify({ toolOutputDisplay: value }));
+				return SettingsManager.create(projectDir, agentDir).getToolOutputView();
+			};
+			expect(read("collapsed")).toBe("radar");
+			expect(read("peek")).toBe("glance");
+			expect(read("standard")).toBe("full");
+		});
+
+		it("prefers an explicit view over a stale legacy value", () => {
+			const settingsPath = join(agentDir, "settings.json");
+			writeFileSync(settingsPath, JSON.stringify({ toolOutputDisplay: "standard", toolOutputView: "radar" }));
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputView()).toBe("radar");
 		});
 	});
 

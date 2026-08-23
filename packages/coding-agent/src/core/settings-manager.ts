@@ -18,6 +18,7 @@ import type {
 	TransportSetting,
 	WarningSettings,
 } from "./settings-types.js";
+import { isToolOutputView, LEGACY_TOOL_OUTPUT_VIEWS, type ToolOutputView } from "./tool-output-view.js";
 
 /** The `/learn` thresholds, which are flat top-level numeric settings. */
 export type LearnSettingKey =
@@ -675,15 +676,25 @@ export class SettingsManager {
 		this.save();
 	}
 
-	/** How tool result bodies render in the TUI (collapsed / peek / standard). */
-	getToolOutputDisplay(): "collapsed" | "peek" | "standard" {
-		const v = this.settings.toolOutputDisplay;
-		return v === "collapsed" || v === "peek" || v === "standard" ? v : DEFAULT_SETTINGS.toolOutputDisplay!;
+	/**
+	 * How much of a tool call the transcript shows (radar / glance / full).
+	 *
+	 * Settings files written before the dial existed carry the old three-value
+	 * `toolOutputDisplay` key. They are read here rather than rewritten on load,
+	 * so a downgrade keeps working until the user actually changes the setting.
+	 */
+	getToolOutputView(): ToolOutputView {
+		const view = this.settings.toolOutputView;
+		if (isToolOutputView(view)) return view;
+
+		const legacy = (this.settings as { toolOutputDisplay?: unknown }).toolOutputDisplay;
+		const migrated = LEGACY_TOOL_OUTPUT_VIEWS[legacy as string];
+		return migrated ?? DEFAULT_SETTINGS.toolOutputView!;
 	}
 
-	setToolOutputDisplay(display: "collapsed" | "peek" | "standard"): void {
-		this.globalSettings.toolOutputDisplay = display;
-		this.markModified("toolOutputDisplay");
+	setToolOutputView(view: ToolOutputView): void {
+		this.globalSettings.toolOutputView = view;
+		this.markModified("toolOutputView");
 		this.save();
 	}
 

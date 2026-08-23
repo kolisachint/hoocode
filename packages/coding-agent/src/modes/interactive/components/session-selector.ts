@@ -548,14 +548,14 @@ class SessionList implements Component, Focusable {
 			return;
 		}
 
-		// Ctrl+P: toggle path display
+		// Toggle path display
 		if (kb.matches(keyData, "app.session.togglePath")) {
 			this.showPath = !this.showPath;
 			this.onTogglePath?.(this.showPath);
 			return;
 		}
 
-		// Ctrl+D: initiate delete confirmation (useful on terminals that don't distinguish Ctrl+Backspace from Backspace)
+		// Initiate delete confirmation (useful on terminals that don't distinguish Ctrl+Backspace from Backspace)
 		if (kb.matches(keyData, "app.session.delete")) {
 			this.startDeleteConfirmationForSelectedSession();
 			return;

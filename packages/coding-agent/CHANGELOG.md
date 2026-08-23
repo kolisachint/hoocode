@@ -2,6 +2,96 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- The tool-output setting is renamed and its values with it: `toolOutputDisplay`
+  (`collapsed` / `peek` / `standard`) is now `toolOutputView` (`radar` /
+  `glance` / `full`), and the default moves from `standard` to `glance`. Old
+  settings files still load — `collapsed` reads as `radar`, `peek` as `glance`,
+  `standard` as `full` — and the old key is rewritten the first time the view is
+  changed. Nothing is lost, but a session that used to open with every tool
+  result on screen now opens with call lines and folds the bodies away.
+
+- Keybindings moved off keys the terminal, the shell, or the prompt editor
+  already owned. The bindings are configurable as before, so a
+  `~/.hoocode/keybindings.json` that pins any of these keeps working:
+
+  | Action | Was | Now |
+  |---|---|---|
+  | Open model selector | `ctrl+l` | `alt+m` |
+  | Open external editor | `ctrl+g` | `alt+e` |
+  | Voice record | `ctrl+r` | `alt+r` |
+  | Session picker: toggle path | `ctrl+p` | `alt+p` |
+  | Session picker: sort order | `ctrl+s` | `alt+o` |
+  | Session picker: rename | `ctrl+r` | `alt+r` |
+  | Session picker: delete | `ctrl+d` | `alt+x` |
+  | Session picker: named filter | `ctrl+n` | `alt+n` |
+  | Model picker: save | `ctrl+s` | `alt+s` |
+  | Model picker: enable all | `ctrl+a` | `alt+a` |
+  | Model picker: clear all | `ctrl+x` | `alt+x` |
+  | Model picker: toggle provider | `ctrl+p` | `alt+g` |
+  | Tree filters | `ctrl+d/t/u/l/a` | `alt+1`…`alt+5` |
+  | Tree filter cycle | `ctrl+o` / `shift+ctrl+o` | `alt+c` / `shift+alt+c` |
+  | Team roster focus | `alt+n` | unchanged |
+
+### Added
+
+- A **view dial** for tool output, on `alt+o` (`shift+alt+o` cycles back), with
+  three stops from least to most:
+
+  - **radar** — one aligned signal row per call: the tool, the call's subject,
+    and how much came back (`412 lines`, `ok`, `error`). Every tool renders the
+    same three columns, so a screen of them reads as a map of the run rather
+    than a log of it, and a search that found nothing is visible without opening
+    it. Expanding a radar block opens it fully for as long as it is open.
+  - **glance** — the tool's own call line with a `▸` caret, body folded away.
+    The new default.
+  - **full** — call line plus the result body, as before.
+
+  The footer shows where the dial sits, with a glyph that fills up as the view
+  widens. `ctrl+o` is unchanged and orthogonal: it opens what is in front of you
+  without moving the dial.
+
+- `/cd <path>` moves the whole session to another directory without leaving the
+  process — provider auth, the warmed model list and the terminal all survive.
+  Everything cwd-bound is rebuilt for the new root (tools, context files,
+  project settings, extensions, skills, agents, MCP servers), and because
+  sessions are stored per project, a fresh session starts there; the one you
+  left is still on disk and `/resume` in the old directory reopens it. Bare
+  `/cd` goes home, `/cd -` returns to the previous directory, and the argument
+  completes against real subdirectories. Bound to `alt+w`.
+
+- Keys for the cockpit moves that had none: `alt+g` cycles the agent mode
+  (ask → plan → build → debug, taken from the mode command's own list rather
+  than a copy), `alt+s` opens settings, `alt+k` opens the shortcut list,
+  `alt+t` opens the session tree, and `alt+h` resumes from history. `/new` and
+  `/fork` stay unbound by default — one replaces the transcript, the other needs
+  a message picked out of it.
+
+### Changed
+
+- The keybinding set is organized into three rings, and which ring a key is in
+  is decided by its modifier. `ctrl` is the view: what is on screen right now.
+  `alt` is the cockpit: what the agent is and where it works. Inside a picker,
+  every `ctrl` key belongs to the query you are typing, so a picker's own verbs
+  are all on `alt`. That last rule is what most of the moves above are: the
+  session picker took `ctrl+a` (start of line), `ctrl+u` (kill to start) and
+  `ctrl+d` (delete character) out of its own search field, and the model picker
+  put "save" on `ctrl+s`, which is XOFF on a terminal with flow control on.
+
+  Every default is checked against what a terminal without the Kitty keyboard
+  protocol actually sends. Only `alt+<letter>` and `alt+<digit>` survive there,
+  and legacy `alt+p`/`alt+n` double as `alt+up`/`alt+down`, so no scope binds
+  both halves of either pair — that is why the model picker's provider toggle is
+  `alt+g` rather than the obvious `alt+p`, which would have fired the reorder
+  key sitting next to it. `test/keybinding-layout.test.ts` holds all of this.
+
+- `ctrl+n` no longer means two things. It was both "cycle the task panel" and
+  the session picker's named filter; the filter moves to `alt+n`.
+
+- `/hotkeys` is grouped by ring — Flow, View, Cockpit — instead of by
+  Navigation / Editing / Other.
+
 ## [0.5.30] - 2026-08-23
 
 ### Added

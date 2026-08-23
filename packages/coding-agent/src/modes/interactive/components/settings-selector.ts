@@ -15,6 +15,11 @@ import {
 import type { MarketplacePlatform } from "../../../core/extensions/plugins/formats/types.js";
 import type { PromptSurface } from "../../../core/light.js";
 import type { LearnSettingKey, WarningSettings } from "../../../core/settings-manager.js";
+import {
+	TOOL_OUTPUT_VIEW_DESCRIPTIONS,
+	TOOL_OUTPUT_VIEWS,
+	type ToolOutputView,
+} from "../../../core/tool-output-view.js";
 import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyDisplayText } from "./keybinding-hints.js";
@@ -70,7 +75,7 @@ export interface SettingsConfig {
 	tools: ToolToggleInfo[];
 	toolGroups: ToolGroupInfo[];
 	flags: FlagInfo[];
-	toolOutputDisplay: "collapsed" | "peek" | "standard";
+	toolOutputView: ToolOutputView;
 	toolOutputMaxBytes: number;
 	toolOutputMaxLines: number;
 	contextGc: boolean;
@@ -124,7 +129,7 @@ export interface SettingsCallbacks {
 	onAutoCompactChange: (enabled: boolean) => void;
 	onToolEnabledChange: (name: string, enabled: boolean) => void;
 	onToolGroupChange: (id: string, enabled: boolean) => void;
-	onToolOutputDisplayChange: (level: "collapsed" | "peek" | "standard") => void;
+	onToolOutputViewChange: (view: ToolOutputView) => void;
 	onToolOutputMaxBytesChange: (bytes: number) => void;
 	onToolOutputMaxLinesChange: (lines: number) => void;
 	onContextGcChange: (enabled: boolean) => void;
@@ -468,21 +473,21 @@ function byteLabels(current: number): string[] {
 }
 
 interface ToolSettingsConfig {
-	toolOutputDisplay: "collapsed" | "peek" | "standard";
+	toolOutputView: ToolOutputView;
 	toolOutputMaxBytes: number;
 	toolOutputMaxLines: number;
 }
 
 interface ToolSettingsCallbacks {
-	onToolOutputDisplayChange: (level: "collapsed" | "peek" | "standard") => void;
+	onToolOutputViewChange: (view: ToolOutputView) => void;
 	onToolOutputMaxBytesChange: (bytes: number) => void;
 	onToolOutputMaxLinesChange: (lines: number) => void;
 }
 
 /**
  * Submenu for what a tool result looks like: how much of it is rendered, and
- * where it is truncated. The display level applies to the transcript at once;
- * the caps feed the tool runtime, so they bind on future tool calls.
+ * where it is truncated. The view applies to the whole transcript at once; the
+ * caps feed the tool runtime, so they bind on future tool calls.
  *
  * Context GC is deliberately not here. It is not about a tool's output but about
  * what stays in the outgoing context, which is the Context category's subject.
@@ -495,12 +500,11 @@ class ToolSettingsSubmenu extends Container {
 
 		const items: SettingItem[] = [
 			{
-				id: "tool-output-display",
-				label: "Display",
-				description:
-					"How tool results render. 'standard': shown (expandable). 'collapsed': hidden. 'peek': hidden with a ▸ reveal caret (press the expand key to reveal).",
-				currentValue: config.toolOutputDisplay,
-				values: ["standard", "collapsed", "peek"],
+				id: "tool-output-view",
+				label: "View",
+				description: `How much of a tool call the transcript shows, least to most. 'radar': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.radar}. 'glance': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.glance}. 'full': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.full}.`,
+				currentValue: config.toolOutputView,
+				values: [...TOOL_OUTPUT_VIEWS],
 			},
 			{
 				id: "output-max-bytes",
@@ -524,8 +528,8 @@ class ToolSettingsSubmenu extends Container {
 			getSettingsListTheme(),
 			(id, newValue) => {
 				switch (id) {
-					case "tool-output-display":
-						callbacks.onToolOutputDisplayChange(newValue as "collapsed" | "peek" | "standard");
+					case "tool-output-view":
+						callbacks.onToolOutputViewChange(newValue as ToolOutputView);
 						break;
 					case "output-max-bytes": {
 						const preset = TOOL_OUTPUT_BYTE_PRESETS.find(([label]) => label === newValue);
@@ -1162,16 +1166,16 @@ export class SettingsSelectorComponent extends Container {
 				id: "tool-output",
 				label: "Tool output",
 				description: "How much of a tool result is rendered, and where it is truncated.",
-				currentValue: config.toolOutputDisplay,
+				currentValue: config.toolOutputView,
 				submenu: (_currentValue, done) =>
 					new ToolSettingsSubmenu(
 						{
-							toolOutputDisplay: config.toolOutputDisplay,
+							toolOutputView: config.toolOutputView,
 							toolOutputMaxBytes: config.toolOutputMaxBytes,
 							toolOutputMaxLines: config.toolOutputMaxLines,
 						},
 						{
-							onToolOutputDisplayChange: callbacks.onToolOutputDisplayChange,
+							onToolOutputViewChange: callbacks.onToolOutputViewChange,
 							onToolOutputMaxBytesChange: callbacks.onToolOutputMaxBytesChange,
 							onToolOutputMaxLinesChange: callbacks.onToolOutputMaxLinesChange,
 						},

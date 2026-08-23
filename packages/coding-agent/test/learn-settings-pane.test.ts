@@ -40,7 +40,7 @@ function paneConfig(learn: Record<string, number> = DEFAULT_LEARN): any {
 		tools: [],
 		toolGroups: [],
 		flags: [],
-		toolOutputDisplay: "standard",
+		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,
 		toolOutputMaxLines: 200,
 		contextGc: true,

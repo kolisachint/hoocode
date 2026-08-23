@@ -15,7 +15,7 @@ import { getDebugLogPath, getShareViewerUrl } from "../../config.js";
 import { loadAgentRegistry } from "../../core/agent-registry.js";
 import type { AgentSession } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
-import { SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
+import { ChangeDirectoryError, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import type { KeybindingsManager } from "../../core/keybindings.js";
 import { MissingSessionCwdError } from "../../core/session-cwd.js";
 import type { SessionManager } from "../../core/session-manager.js";
@@ -66,6 +66,9 @@ export interface CommandContext {
 }
 
 export class CommandExecutor {
+	/** Where `/cd -` returns to. Set on every successful move, session-local. */
+	private previousCwd?: string;
+
 	constructor(private readonly ctx: CommandContext) {}
 
 	// =========================================================================
@@ -504,6 +507,15 @@ export class CommandExecutor {
 		const followUp = keyDisplayText("app.message.followUp");
 		const dequeue = keyDisplayText("app.message.dequeue");
 		const pasteImage = keyDisplayText("app.clipboard.pasteImage");
+		const viewForward = keyDisplayText("app.view.cycleForward");
+		const viewBackward = keyDisplayText("app.view.cycleBackward");
+		const voice = keyDisplayText("app.input.voiceTranscribe");
+		const changeDirectory = keyDisplayText("app.session.changeDirectory");
+		const openSettings = keyDisplayText("app.settings.open");
+		const openHotkeys = keyDisplayText("app.hotkeys.open");
+		const cycleMode = keyDisplayText("app.mode.cycle");
+		const sessionTree = keyDisplayText("app.session.tree");
+		const sessionResume = keyDisplayText("app.session.resume");
 
 		let hotkeys = `
 **Navigation**
@@ -530,7 +542,7 @@ export class CommandExecutor {
 | \`${yankPop}\` | Cycle through the deleted text after pasting |
 | \`${undo}\` | Undo |
 
-**Other**
+**Flow** — the keys you hit without thinking
 | Key | Action |
 |-----|--------|
 | \`${tab}\` | Path completion / accept autocomplete |
@@ -538,19 +550,38 @@ export class CommandExecutor {
 | \`${clear}\` | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${suspend}\` | Suspend to background |
-| \`${cycleThinkingLevel}\` | Cycle thinking level |
-| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
-| \`${selectModel}\` | Open model selector |
-| \`${expandTools}\` | Toggle tool output expansion |
-| \`${toggleThinking}\` | Toggle thinking block visibility |
-| \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |
-| \`${externalEditor}\` | Edit message in external editor |
 | \`${followUp}\` | Queue follow-up message |
 | \`${dequeue}\` | Restore queued messages |
 | \`${pasteImage}\` | Paste image from clipboard |
 | \`/\` | Slash commands |
 | \`!\` | Run bash command |
 | \`!!\` | Run bash command (excluded from context) |
+
+**View** — what is on screen right now (\`Ctrl\`)
+| Key | Action |
+|-----|--------|
+| \`${expandTools}\` | Expand or collapse what is in front of you |
+| \`${viewForward}\` / \`${viewBackward}\` | Cycle tool output: radar → glance → full |
+| \`${toggleThinking}\` | Toggle thinking block visibility |
+| \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |
+| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
+| \`${cycleThinkingLevel}\` | Cycle thinking level |
+
+**Cockpit** — what the agent is, and where it works (\`Alt\`)
+| Key | Action |
+|-----|--------|
+| \`${cycleMode}\` | Cycle agent mode (ask → plan → build → debug) |
+| \`${selectModel}\` | Open model selector |
+| \`${changeDirectory}\` | Change working directory (\`/cd\`) |
+| \`${sessionTree}\` | Open session tree |
+| \`${sessionResume}\` | Resume a session from history |
+| \`${openSettings}\` | Open settings |
+| \`${openHotkeys}\` | Show this list |
+| \`${externalEditor}\` | Edit message in external editor |
+| \`${voice}\` | Record voice and transcribe |
+
+Inside a picker, every \`Ctrl\` key still edits the query — the picker's own
+verbs are on \`Alt\`, and its hint line names them.
 `;
 
 		// Add extension-registered shortcuts
@@ -593,6 +624,112 @@ export class CommandExecutor {
 		} catch (error: unknown) {
 			await this.ctx.handleFatalRuntimeError("Failed to create session", error);
 		}
+	}
+
+	/**
+	 * `/cd [path]` — move the whole session to another directory.
+	 *
+	 * Written for the case it exists to serve: you are done in one repo and want
+	 * to work in the next one without losing the process, its provider auth, or
+	 * its warmed model list. Bare `/cd` goes home, `/cd -` goes back to where you
+	 * came from, `~` and relative paths resolve as a shell would.
+	 *
+	 * The move starts a fresh session rooted in the target — see
+	 * `AgentSessionRuntime.changeDirectory` for why the whole runtime is rebuilt
+	 * rather than a cwd string reassigned.
+	 */
+	async handleChangeDirectory(text: string): Promise<void> {
+		const prefix = "/cd";
+		const rawArg = text.startsWith(prefix) ? text.slice(prefix.length).trim() : text.trim();
+		const previousCwd = this.ctx.sessionManager.getCwd();
+
+		let target: string;
+		if (!rawArg || rawArg === "~") {
+			target = os.homedir();
+		} else if (rawArg === "-") {
+			if (!this.previousCwd) {
+				this.ctx.showWarning("No previous directory to return to");
+				return;
+			}
+			target = this.previousCwd;
+		} else {
+			const expanded = rawArg.startsWith("~/") ? path.join(os.homedir(), rawArg.slice(2)) : rawArg;
+			target = path.resolve(previousCwd, expanded);
+		}
+
+		if (path.resolve(target) === path.resolve(previousCwd)) {
+			this.ctx.showStatus(`Already in ${target}`);
+			return;
+		}
+
+		this.ctx.stopLoadingAnimation();
+		this.ctx.statusContainer.clear();
+		try {
+			const result = await this.ctx.runtimeHost.changeDirectory(target);
+			if (result.cancelled) {
+				return;
+			}
+			this.previousCwd = previousCwd;
+			this.ctx.renderCurrentSessionState();
+			this.ctx.chatContainer.addChild(new Spacer(1));
+			this.ctx.chatContainer.addChild(
+				new Text(
+					`${theme.fg("accent", "✓ Working directory")} ${theme.fg("muted", result.cwd)}\n` +
+						theme.fg(
+							"dim",
+							`New session started here. ${keyDisplayText("app.session.resume")} reopens the session you left in ${previousCwd}.`,
+						),
+					1,
+					1,
+				),
+			);
+			this.ctx.ui.requestRender();
+		} catch (error: unknown) {
+			if (error instanceof ChangeDirectoryError) {
+				this.ctx.showError(error.message);
+				return;
+			}
+			await this.ctx.handleFatalRuntimeError(`Failed to change directory to ${target}`, error);
+		}
+	}
+
+	/** Directory completions for `/cd <prefix>`, plus the two shell shorthands. */
+	getChangeDirectoryCompletions(argumentPrefix: string): Array<{ value: string; label: string }> {
+		const cwd = this.ctx.sessionManager.getCwd();
+		const expanded = argumentPrefix.startsWith("~/")
+			? path.join(os.homedir(), argumentPrefix.slice(2))
+			: argumentPrefix;
+		// A prefix ending in a separator names the directory to list; otherwise the
+		// last segment is a partial name to filter its parent by.
+		const endsWithSep = expanded.endsWith("/") || expanded.endsWith(path.sep);
+		const base = endsWithSep ? expanded : path.dirname(expanded);
+		const partial = endsWithSep ? "" : path.basename(expanded);
+		const searchDir = path.isAbsolute(base) ? base : path.resolve(cwd, base || ".");
+
+		const completions: Array<{ value: string; label: string }> = [];
+		if (!argumentPrefix) {
+			if (this.previousCwd) completions.push({ value: "-", label: `- (${this.previousCwd})` });
+			completions.push({ value: "~", label: `~ (${os.homedir()})` });
+		}
+
+		let entries: fs.Dirent[];
+		try {
+			entries = fs.readdirSync(searchDir, { withFileTypes: true });
+		} catch {
+			return completions;
+		}
+
+		for (const entry of entries) {
+			if (!entry.isDirectory()) continue;
+			if (partial && !entry.name.startsWith(partial)) continue;
+			if (!partial && entry.name.startsWith(".")) continue;
+			const joined =
+				base && !endsWithSep
+					? path.join(path.dirname(argumentPrefix), entry.name)
+					: `${argumentPrefix}${entry.name}`;
+			completions.push({ value: `${joined}/`, label: `${entry.name}/` });
+		}
+		return completions.slice(0, 50);
 	}
 
 	handleDebug(): void {
