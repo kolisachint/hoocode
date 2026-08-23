@@ -54,4 +54,48 @@ describe("AssistantMessageComponent", () => {
 		expect(rendered.includes(OSC133_ZONE_END)).toBe(false);
 		expect(rendered.includes(OSC133_ZONE_FINAL)).toBe(false);
 	});
+
+	test("omit renders nothing for a message that only thought and called a tool", () => {
+		initTheme("dark");
+
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([
+				{ type: "thinking", thinking: "weighing the options", thinkingSignature: "" },
+				{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "file.txt" } },
+			]),
+			"omit",
+		);
+
+		expect(component.render(60)).toEqual([]);
+	});
+
+	test("omit drops the thinking block but keeps the text around it", () => {
+		initTheme("dark");
+
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([
+				{ type: "thinking", thinking: "weighing the options", thinkingSignature: "" },
+				{ type: "text", text: "here is the answer" },
+			]),
+			"omit",
+		);
+		const rendered = component.render(60).join("\n");
+
+		expect(rendered).toContain("here is the answer");
+		expect(rendered).not.toContain("weighing the options");
+		expect(rendered).not.toContain("Thinking...");
+	});
+
+	test("label stands in for the trace", () => {
+		initTheme("dark");
+
+		const component = new AssistantMessageComponent(
+			createAssistantMessage([{ type: "thinking", thinking: "weighing the options", thinkingSignature: "" }]),
+			"label",
+		);
+		const rendered = component.render(60).join("\n");
+
+		expect(rendered).toContain("Thinking...");
+		expect(rendered).not.toContain("weighing the options");
+	});
 });

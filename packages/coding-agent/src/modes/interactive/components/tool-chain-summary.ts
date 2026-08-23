@@ -168,6 +168,31 @@ interface ToolFamily {
 	/** Noun for the secondary clause, which has no verb to lean on: "· 38 reads". */
 	tail: string;
 	tools: string[];
+	/**
+	 * Whether this family's subjects name a place on disk.
+	 *
+	 * Only these may be reduced to a shared location. A command is not a path
+	 * however much it looks like one: three calls that all begin
+	 * `cd /Users/me/repo && …` share a long slash-separated prefix, and treating
+	 * it as a location produced `Ran cd /Users/me/repo` — a headline naming the
+	 * one part of the command that did nothing.
+	 */
+	subjectIsPath: boolean;
+	/** Reduce a subject to the act it performed, when the raw form carries noise. */
+	act?: (subject: string) => string;
+}
+
+/** Leading `cd <dir> &&` runs, however many are chained. */
+const CD_PREFIX_RE = /^(?:cd\s+(?:"[^"]*"|'[^']*'|[^\s;&|]+)\s*&&\s*)+/;
+
+/**
+ * A command's act, with the navigation stripped off the front.
+ *
+ * `cd packages/tui && bun run check` is one act performed somewhere, not two,
+ * and the somewhere is not what the chain did.
+ */
+function commandAct(subject: string): string {
+	return subject.replace(CD_PREFIX_RE, "").trim() || subject;
 }
 
 /**
@@ -182,12 +207,18 @@ interface ToolFamily {
  * to plausibly serve the headline act. See `INCIDENTAL_SHARE`.
  */
 const FAMILIES: ToolFamily[] = [
-	{ verb: "Edited", noun: "file", tail: "edit", tools: ["edit", "write", "MultiEdit", "NotebookEdit"] },
-	{ verb: "Ran", noun: "command", tail: "command", tools: ["bash"] },
-	{ verb: "Delegated", noun: "task", tail: "task", tools: ["Task", "TaskOutput"] },
-	{ verb: "Fetched", noun: "page", tail: "fetch", tools: ["webfetch", "websearch"] },
-	{ verb: "Read", noun: "file", tail: "read", tools: ["read"] },
-	{ verb: "Searched", noun: "search", tail: "search", tools: ["grep", "find", "search", "ls"] },
+	{
+		verb: "Edited",
+		noun: "file",
+		tail: "edit",
+		tools: ["edit", "write", "MultiEdit", "NotebookEdit"],
+		subjectIsPath: true,
+	},
+	{ verb: "Ran", noun: "command", tail: "command", tools: ["bash"], subjectIsPath: false, act: commandAct },
+	{ verb: "Delegated", noun: "task", tail: "task", tools: ["Task", "TaskOutput"], subjectIsPath: false },
+	{ verb: "Fetched", noun: "page", tail: "fetch", tools: ["webfetch", "websearch"], subjectIsPath: false },
+	{ verb: "Read", noun: "file", tail: "read", tools: ["read"], subjectIsPath: true },
+	{ verb: "Searched", noun: "search", tail: "search", tools: ["grep", "find", "search", "ls"], subjectIsPath: true },
 ];
 
 /**
@@ -251,16 +282,17 @@ function usableAsTarget(subject: string): boolean {
 
 /** The headline clause for one family's calls. */
 function familyPhrase(family: ToolFamily, matched: ChainEntry[], long: boolean): string {
-	const subjects = matched.map((e) => e.subject).filter(Boolean);
+	const subjects = matched.map((e) => (family.act ? family.act(e.subject) : e.subject)).filter(Boolean);
 
 	// A lone call is fully described by its own subject, whatever shape it is:
-	// a command, a pattern, a URL, a path.
-	if (matched.length === 1 && subjects.length === 1) {
+	// a command, a pattern, a URL, a path. So is a run that did the same thing
+	// every time — `bun run check` twice is that command, not "2 commands".
+	if (subjects.length === matched.length && new Set(subjects).size === 1) {
 		return `${family.verb} ${subjects[0]}`;
 	}
 
 	// Several calls: name the place they share, or fall back to a count.
-	const target = commonPathPrefix(subjects.filter(usableAsTarget), long);
+	const target = family.subjectIsPath ? commonPathPrefix(subjects.filter(usableAsTarget), long) : "";
 	if (target) return `${family.verb} ${target}`;
 	// Searching has no natural plural noun ("3 searches" says nothing the
 	// stats do not), so the bare verb carries it.

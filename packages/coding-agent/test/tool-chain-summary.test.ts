@@ -100,6 +100,25 @@ describe("chain phrase (the settled line)", () => {
 		expect(chainPhrase([call("bash", "a"), call("bash", "b")])).toBe("Ran 2 commands");
 	});
 
+	test("never reads a shared command prefix as a location", () => {
+		// A command is not a path however much it looks like one: these two share
+		// `cd /Users/me/repo &&`, which named the one part that did nothing.
+		expect(chainPhrase([call("bash", "cd /Users/me/repo && ls"), call("bash", "cd /Users/me/repo && cat x")])).toBe(
+			"Ran 2 commands",
+		);
+	});
+
+	test("names the act, not the navigation in front of it", () => {
+		expect(chainPhrase([call("bash", "cd /Users/me/repo && bun run check", 40)])).toBe("Ran bun run check");
+	});
+
+	test("a run that did the same thing every time is that thing, not a count", () => {
+		expect(
+			chainPhrase([call("bash", "cd /repo && bun run check"), call("bash", "cd /elsewhere && bun run check")]),
+		).toBe("Ran bun run check");
+		expect(chainPhrase([call("read", "src/keys.ts"), call("read", "src/keys.ts")])).toBe("Read src/keys.ts");
+	});
+
 	test("still says something for an unrecognised tool", () => {
 		expect(chainPhrase([call("mcp__thing__do", "x")])).toBe("Called mcp__thing__do");
 	});
