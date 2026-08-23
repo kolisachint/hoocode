@@ -31,6 +31,13 @@ the clone.
 
 Two different decisions, deliberately kept apart:
 
+hoocode ships one marketplace already registered, carrying two plugins:
+`hello-world` (a minimal example) and `plugin-authoring` (how to author a good
+plugin — when a capability is worth extracting, naming it so it triggers again,
+portability rules, and the hook trap where a changed command adds a second hook
+instead of replacing one). Install the latter before authoring:
+`/plugin install plugin-authoring`.
+
 **Adding a marketplace is a human act.** It says you accept code from that
 source. Nothing installs a marketplace for you.
 
