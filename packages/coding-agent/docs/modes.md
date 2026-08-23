@@ -63,6 +63,10 @@ against these locations, first match winning:
 3. Directories passed with `--mode-path`
 4. The built-in prompt, for the four names above
 
+The built-in prompt is the same text `/init` scaffolds into a project: both come
+from `templates/modes/<name>/system.md`. There is no second copy, so a project
+that ran `/init` and one that did not behave identically until you edit the file.
+
 So `./.hoocode/modes/build/system.md` overrides the shipped build prompt for one
 project, and `./.hoocode/modes/review/system.md` adds a `review` mode that
 `/mode review` will find.

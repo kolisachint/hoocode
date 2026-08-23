@@ -13,6 +13,8 @@ import {
 	Text,
 } from "@kolisachint/hoocode-tui";
 import type { MarketplacePlatform } from "../../../core/extensions/plugins/formats/types.js";
+import type { ExternalToolStatus } from "../../../core/external-tools.js";
+import { buildRowGates, statusLabel } from "../../../core/external-tools.js";
 import type { PromptSurface } from "../../../core/light.js";
 import type { LearnSettingKey, WarningSettings } from "../../../core/settings-manager.js";
 import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
@@ -69,6 +71,12 @@ export interface SettingsConfig {
 	autoCompact: boolean;
 	tools: ToolToggleInfo[];
 	toolGroups: ToolGroupInfo[];
+	/**
+	 * The external Rust binaries and whether each one is present. Rendered as
+	 * its own top-level category, and used to annotate the rows that are gated
+	 * on a binary that is not installed.
+	 */
+	externalTools: ExternalToolStatus[];
 	flags: FlagInfo[];
 	toolOutputDisplay: "collapsed" | "peek" | "standard";
 	toolOutputMaxBytes: number;
@@ -361,6 +369,36 @@ class PlatformSubmenu extends Container {
 }
 
 /**
+ * Trailing sentence for a row whose setting is inert until an external binary
+ * shows up. The row is annotated rather than hidden: the binaries were invisible
+ * precisely because nothing ever mentioned them, and a row that disappears when
+ * its dependency is missing teaches the user nothing at all.
+ */
+function gateNote(gate: ExternalToolStatus | undefined): string {
+	if (!gate || gate.installed) return "";
+	return gate.downloadable
+		? ` Needs the ${gate.tool} binary, which hoocode fetches the first time this is used. Until then: ${gate.fallback}`
+		: ` Needs the ${gate.tool} binary, and this environment will not fetch it. Until then: ${gate.fallback}`;
+}
+
+/** "3 of 5 installed" - the one number that says whether this category needs attention. */
+function externalCount(statuses: readonly ExternalToolStatus[]): string {
+	const installed = statuses.filter((status) => status.installed).length;
+	return `${installed} of ${statuses.length} installed`;
+}
+
+/** The capability words, so the category row says what the binaries are for. */
+function externalSummary(statuses: readonly ExternalToolStatus[]): string {
+	return statuses.map((status) => status.tool).join(", ");
+}
+
+/** Value-column marker for a gated row, so the list shows it without selecting. */
+function gateSuffix(gate: ExternalToolStatus | undefined): string | undefined {
+	if (!gate || gate.installed) return undefined;
+	return `needs ${gate.tool}`;
+}
+
+/**
  * Submenu for tool availability. The first rows are group switches (web,
  * semantic search) that decide whether a group's tools
  * exist at all — this is the same master switch that governs, e.g., the
@@ -380,6 +418,8 @@ class ToolsSubmenu extends Container {
 	constructor(
 		tools: ToolToggleInfo[],
 		groups: ToolGroupInfo[],
+		/** Rows gated on an external binary, keyed by row id. See buildRowGates. */
+		gates: ReadonlyMap<string, ExternalToolStatus>,
 		onChange: (name: string, enabled: boolean) => void,
 		onGroupChange: (id: string, enabled: boolean) => void,
 		onCancel: () => void,
@@ -388,13 +428,21 @@ class ToolsSubmenu extends Container {
 
 		this.enabled = new Map(tools.map((t) => [t.name, t.enabled]));
 
-		const groupItems: SettingItem[] = groups.map((group) => ({
-			id: `${ToolsSubmenu.GROUP_PREFIX}${group.id}`,
-			label: `[group] ${group.label}`,
-			description: `${group.description} Governs whether these tools exist; applies on the next session.`,
-			currentValue: group.enabled ? "on" : "off",
-			values: ["on", "off"],
-		}));
+		const groupItems: SettingItem[] = groups.map((group) => {
+			const id = `${ToolsSubmenu.GROUP_PREFIX}${group.id}`;
+			const gate = gates.get(id);
+			return {
+				id,
+				label: `[group] ${group.label}`,
+				description: `${group.description} Governs whether these tools exist; applies on the next session.${gateNote(gate)}`,
+				currentValue: group.enabled ? "on" : "off",
+				// The switch stays settable with the binary missing: the setting is
+				// what makes hoocode fetch it, so refusing the toggle would make the
+				// group unreachable forever.
+				valueSuffix: gateSuffix(gate),
+				values: ["on", "off"],
+			};
+		});
 
 		const toolItems: SettingItem[] = tools.map((tool) => ({
 			id: tool.name,
@@ -437,6 +485,109 @@ class ToolsSubmenu extends Container {
 			{ enableSearch: true },
 		);
 
+		this.addChild(this.settingsList);
+	}
+
+	handleInput(data: string): void {
+		this.settingsList.handleInput(data);
+	}
+}
+
+/**
+ * Read-only detail for one external binary: what it is, whether it is here, what
+ * it turns on, and what hoocode does without it.
+ *
+ * A submenu rather than a long `description` because the useful answer is five
+ * or six lines and the pane shows descriptions on one. Nothing here is settable
+ * - the binary is either on the machine or it is not - so the rows carry no
+ * `values` and Enter does nothing but close.
+ */
+class ExternalToolDetailSubmenu extends Container {
+	private settingsList: SettingsList;
+
+	constructor(status: ExternalToolStatus, onCancel: () => void) {
+		super();
+
+		const acquisition =
+			status.acquisition === "startup"
+				? "Downloaded in the background at startup."
+				: status.acquisition === "on-demand"
+					? "Downloaded the first time the feature is used."
+					: "Never downloaded automatically; install it yourself.";
+
+		const location = status.installed
+			? status.source === "path"
+				? `found on PATH as \`${status.path}\``
+				: status.source === "override"
+					? `${status.overrideEnv} points at ${status.path}`
+					: `hoocode's own copy at ${status.path}`
+			: status.downloadable
+				? `${acquisition} Not on this machine yet.`
+				: "Not installed, and this environment will not download it (offline mode, or no published build for this platform).";
+
+		const rows: ReadonlyArray<[label: string, value: string, description: string]> = [
+			["Status", statusLabel(status), location],
+			[
+				"Enables",
+				`${status.enables.length} feature${status.enables.length === 1 ? "" : "s"}`,
+				status.enables.join("; "),
+			],
+			["Without it", "fallback", status.fallback],
+			["Source", status.repo || "-", `Release archives come from github.com/${status.repo}. ${acquisition}`],
+			["Env", String(status.env.length), status.env.join("  |  ")],
+		];
+
+		const items: SettingItem[] = rows.map(([label, value, description], index) => ({
+			id: `detail-${index}`,
+			label,
+			currentValue: value,
+			description,
+		}));
+
+		this.settingsList = new SettingsList(items, items.length, getSettingsListTheme(), () => {}, onCancel);
+		this.addChild(this.settingsList);
+	}
+
+	handleInput(data: string): void {
+		this.settingsList.handleInput(data);
+	}
+}
+
+/**
+ * The external-binary category: one row per managed Rust binary.
+ *
+ * These binaries were entirely invisible before this pane existed. hoocode works
+ * without every one of them, which is the whole reason nobody found them: search
+ * silently got slower, semantic ranking silently never happened, and web/voice
+ * were simply features nobody knew were there. The row states presence; the
+ * submenu states what presence buys.
+ */
+class ExternalToolsSubmenu extends Container {
+	private settingsList: SettingsList;
+
+	constructor(statuses: ExternalToolStatus[], onCancel: () => void) {
+		super();
+
+		const items: SettingItem[] = statuses.map((status) => ({
+			id: `ext-${status.tool}`,
+			label: status.label,
+			description: `${status.summary} Without it: ${status.fallback}`,
+			currentValue: statusLabel(status),
+			// The value column says whether it is here; the suffix says what it is
+			// for, so the list reads without opening every row.
+			valueSuffix: status.installed ? undefined : status.downloadable ? "auto-fetch" : "manual",
+			keywords: [status.tool, status.repo, ...status.settingsKeys, ...status.enables].join(" "),
+			submenu: (_currentValue, done) => new ExternalToolDetailSubmenu(status, () => done()),
+		}));
+
+		this.settingsList = new SettingsList(
+			items,
+			Math.min(items.length, 10),
+			getSettingsListTheme(),
+			() => {},
+			onCancel,
+			{ enableSearch: true },
+		);
 		this.addChild(this.settingsList);
 	}
 
@@ -781,6 +932,10 @@ export class SettingsSelectorComponent extends Container {
 				? ` This repo's .hoocode/settings.json sets ${key}, which overrides this row from the next session on.`
 				: "";
 
+		// Which rows are gated on an external binary that is not on this machine.
+		// Built once so every row that needs it reads the same answer.
+		const rowGates = buildRowGates(config.externalTools);
+
 		const initialSurface = config.measureTokenSurface?.();
 
 		const toolsOn = config.tools.filter((t) => t.enabled).length;
@@ -1104,8 +1259,9 @@ export class SettingsSelectorComponent extends Container {
 		items.splice(terminalProgressIndex + 1, 0, {
 			id: "voice-silence-ms",
 			label: "Voice silence window",
-			description: "Trailing-silence (ms) before voice capture auto-stops (300-10000). Env: VOICETOOLS_SILENCE_MS.",
+			description: `Trailing-silence (ms) before voice capture auto-stops (300-10000). Env: VOICETOOLS_SILENCE_MS.${gateNote(rowGates.get("voice-silence-ms"))}`,
 			currentValue: String(config.voiceSilenceMs),
+			valueSuffix: gateSuffix(rowGates.get("voice-silence-ms")),
 			values: presetValues([300, 500, 800, 1200, 2000, 3000, 5000, 8000, 10000], config.voiceSilenceMs),
 		});
 
@@ -1114,8 +1270,9 @@ export class SettingsSelectorComponent extends Container {
 		items.splice(voiceSilenceIndex + 1, 0, {
 			id: "webtools-timeout-secs",
 			label: "Web tools timeout",
-			description: "Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
+			description: `Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.${gateNote(rowGates.get("webtools-timeout-secs"))}`,
 			currentValue: String(config.webtoolsTimeoutSecs),
+			valueSuffix: gateSuffix(rowGates.get("webtools-timeout-secs")),
 			values: presetValues([5, 10, 15, 30, 60, 120], config.webtoolsTimeoutSecs),
 		});
 
@@ -1149,6 +1306,7 @@ export class SettingsSelectorComponent extends Container {
 					new ToolsSubmenu(
 						config.tools,
 						config.toolGroups,
+						rowGates,
 						(name, enabled) => {
 							callbacks.onToolEnabledChange(name, enabled);
 							// Applied live by the host, so the surface below is already stale.
@@ -1373,6 +1531,21 @@ export class SettingsSelectorComponent extends Container {
 				"Thresholds /learn mines sessions with: how far back to look, and how often something must repeat.",
 				LEARN_SETTINGS.map((setting) => setting.key),
 			),
+			// The external binaries. Top level, not folded into Advanced: their whole
+			// problem was that nothing in the product ever said they existed, and a
+			// row two levels down would have been the same silence with extra steps.
+			// This is the only category built from live machine state rather than
+			// settings, so it is assembled here instead of going through categoryRow.
+			{
+				id: "cat-external",
+				label: "External tools",
+				description: `Optional Rust binaries that expand what hoocode can do: ${externalSummary(config.externalTools)}. hoocode runs without every one of them - each row says what it adds and what happens without it.`,
+				currentValue: externalCount(config.externalTools),
+				keywords: config.externalTools
+					.flatMap((status) => [status.tool, status.label, ...status.settingsKeys])
+					.join(" "),
+				submenu: (_currentValue, done) => new ExternalToolsSubmenu(config.externalTools, () => done()),
+			},
 			categoryRow("cat-advanced", "Advanced", "Startup, telemetry, skills, warnings, voice, and web tools.", [
 				"quiet-startup",
 				"collapse-changelog",

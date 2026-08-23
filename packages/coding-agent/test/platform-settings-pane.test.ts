@@ -33,6 +33,8 @@ function paneConfig(platform: string[] = []): any {
 		autoCompact: true,
 		tools: [],
 		toolGroups: [],
+		// Not the subject here; the External tools category is covered by its own suite.
+		externalTools: [],
 		flags: [],
 		toolOutputDisplay: "standard",
 		toolOutputMaxBytes: 8192,

@@ -74,6 +74,32 @@ Four tool groups are **off by default** — turn them on per session with a flag
 | **Web** (`webfetch` · `websearch`) | `--enable-webtools` or `"enableWebTools": true` | Fetch a URL as text and run web searches. |
 | **Plugins** (`SearchPlugins` · `InstallPlugin` · `ProposePlugin` · ...) | `--enable-plugintools` or `"enablePluginTools": true` | The autonomous plugin lifecycle system — discover, install, and propose plugins, plus a runtime reuse nudge. |
 
+## External binaries
+
+hoocode is self-sufficient on its own: nothing below is required, and every one
+of them is optional. They are an expansion layer — five small Rust binaries that
+either make an existing tool faster or add a capability hoocode otherwise does
+not have. hoocode resolves each from `PATH` or its own bin directory, and
+downloads a published release when it needs one.
+
+Because hoocode degrades quietly without them, they used to be invisible.
+`/settings` → **External tools** now lists all five with their live status, what
+each one enables, and what happens without it. Any settings row that is inert
+without its binary is marked `needs <binary>` there.
+
+| Binary | Adds | Without it |
+|---|---|---|
+| `rg` (ripgrep) | The fast path for `grep` and for the lexical half of `search`. Fetched at startup. | A pure-JS scanner with identical match output — materially slower on large trees. |
+| `fd` | The fast path for `find`. Fetched at startup. | A JS directory walker with the same result shape, slower and with approximated glob/ignore handling. |
+| `embsearch` | The local embedding index: semantic hits fused into `search`, and meaning-ranked MCP/capability lookup. Fetched on first use. Requires the ONNX build; the mock build is rejected. | `search` runs lexical-only and capability lookup ranks lexically. Nothing errors; intent-phrased queries just rank worse. |
+| `webtools` | The `webfetch` and `websearch` tools — hoocode's only network path. Fetched on first use. | Both tools error when called. The web tool group is off by default, so this stays invisible until you enable it. |
+| `voicetools` | Push-to-talk voice input in the TUI. Fetched on first use. | Voice capture reports an error and never starts. |
+
+Resolution order for each is: `HOOCODE_<TOOL>_BINARY` (an explicit path, for a
+local build) → hoocode's bin directory → `PATH` → download. Set `HOOCODE_OFFLINE=1`
+to never download; set `HOOCODE_NATIVE_SEARCH=1` to force the JS paths even when
+`rg`/`fd` are present.
+
 ## Extensibility
 
 - **MCP servers** — connect external tools and data sources through the Model Context Protocol.
