@@ -571,6 +571,24 @@ describe("ToolExecutionComponent view dial", () => {
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
 	});
 
+	test("reports its own fold state, so one block can be opened without the rest", () => {
+		// The regression this guards: ctrl+o expands every block at once, which
+		// left the ▸ caret on each row advertising a per-block action no key
+		// could perform. `app.tools.unfoldOne` walks back from the newest block
+		// to the first one still folded, which needs this to be readable.
+		const first = build("glance", { command: "one" });
+		const second = build("glance", { command: "two" });
+		expect([first.isRevealed(), second.isRevealed()]).toEqual([false, false]);
+
+		second.setExpanded(true);
+		expect([first.isRevealed(), second.isRevealed()]).toEqual([false, true]);
+		expect(stripAnsi(first.render(120).join("\n"))).not.toContain("RESULT BODY");
+		expect(stripAnsi(second.render(120).join("\n"))).toContain("RESULT BODY");
+
+		second.setExpanded(false);
+		expect(second.isRevealed()).toBe(false);
+	});
+
 	test("setView switches an existing block live", () => {
 		const component = build("full");
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");

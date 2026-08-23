@@ -508,6 +508,8 @@ export class CommandExecutor {
 		const dequeue = keyDisplayText("app.message.dequeue");
 		const pasteImage = keyDisplayText("app.clipboard.pasteImage");
 		const viewForward = keyDisplayText("app.view.cycleForward");
+		const unfoldOne = keyDisplayText("app.tools.unfoldOne");
+		const foldOne = keyDisplayText("app.tools.foldOne");
 		const viewBackward = keyDisplayText("app.view.cycleBackward");
 		const voice = keyDisplayText("app.input.voiceTranscribe");
 		const changeDirectory = keyDisplayText("app.session.changeDirectory");
@@ -560,7 +562,8 @@ export class CommandExecutor {
 **View** — what is on screen right now (\`Ctrl\`)
 | Key | Action |
 |-----|--------|
-| \`${expandTools}\` | Expand or collapse what is in front of you |
+| \`${expandTools}\` | Expand or collapse every tool block at once |
+| \`${unfoldOne}\` / \`${foldOne}\` | Unfold / re-fold one block, newest first (repeat to peel back) |
 | \`${viewForward}\` / \`${viewBackward}\` | Cycle tool output: radar → glance → full |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |

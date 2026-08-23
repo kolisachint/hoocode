@@ -49,8 +49,19 @@
   - **full** — call line plus the result body, as before.
 
   The footer shows where the dial sits, with a glyph that fills up as the view
-  widens. `ctrl+o` is unchanged and orthogonal: it opens what is in front of you
-  without moving the dial.
+  widens.
+
+- `alt+u` unfolds a single tool block, newest first, and repeating it peels
+  backwards through what is on screen; `shift+alt+u` re-folds. `ctrl+o` is
+  unchanged and still expands everything at once.
+
+  This is the action the `▸` caret has always implied and no key could perform:
+  every block drew its own caret, but the only key that acted on one acted on
+  all of them. Opening works from the newest block backwards rather than through
+  a cursor because the transcript is bottom-anchored with no app-level
+  scrolling — anything far enough up is in the terminal's own scrollback, where
+  this process can neither scroll nor place a selection, so a cursor would move
+  somewhere you cannot see. Each block it opens is its own marker instead.
 
 - `/cd <path>` moves the whole session to another directory without leaving the
   process — provider auth, the warmed model list and the terminal all survive.

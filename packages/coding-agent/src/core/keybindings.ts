@@ -22,6 +22,8 @@ interface AppKeybindings {
 	"app.tools.expand": true;
 	"app.view.cycleForward": true;
 	"app.view.cycleBackward": true;
+	"app.tools.unfoldOne": true;
+	"app.tools.foldOne": true;
 	"app.thinking.toggle": true;
 	"app.tasks.cycleView": true;
 	"app.team.focus": true;
@@ -141,6 +143,20 @@ export const KEYBINDINGS = {
 	"app.view.cycleBackward": {
 		defaultKeys: "shift+alt+o",
 		description: "Cycle tool output view backward",
+	},
+	// The per-block counterpart to ctrl+o's all-or-nothing. The transcript is
+	// bottom-anchored with no app-level scrolling — older blocks live in the
+	// terminal's own scrollback, which this process cannot address — so "open
+	// one" can only ever mean "open one at the tail". Repeating the key peels
+	// backwards from the newest folded block, which is what the ▸ caret has been
+	// advertising all along.
+	"app.tools.unfoldOne": {
+		defaultKeys: "alt+u",
+		description: "Unfold the newest still-folded tool block (repeat to peel back)",
+	},
+	"app.tools.foldOne": {
+		defaultKeys: "shift+alt+u",
+		description: "Re-fold the most recently unfolded tool block",
 	},
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",

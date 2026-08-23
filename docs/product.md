@@ -84,7 +84,7 @@ One dial, `Alt+O`, with three stops from least to most (`Shift+Alt+O` goes back)
 | **glance** | The tool's own call line with a `▸` caret; the result body is folded away until you ask for it. **The default.** |
 | **full** | Call line plus the result body. |
 
-`Ctrl+O` is separate and orthogonal: it opens what is in front of you — tool bodies, the header, summaries — without moving the dial.
+Two keys open things without moving the dial. `Ctrl+O` expands everything at once — tool bodies, the header, summaries. `Alt+U` opens a single block, and repeating it peels backwards from the newest folded one (`Shift+Alt+U` re-folds); that is what the `▸` caret on each row refers to. Opening works from the newest block backwards because the transcript is bottom-anchored: older output lives in your terminal's own scrollback, which the agent cannot scroll or put a cursor into.
 
 ## Working across repositories
 
@@ -96,8 +96,8 @@ Bare `/cd` goes home, `/cd -` returns to where you came from, and the argument c
 
 Three rings, and a key's modifier says which ring it is in:
 
-- **`Ctrl` — the view.** What is on screen right now: expand (`Ctrl+O`), thinking blocks (`Ctrl+T`), the task panel (`Ctrl+N`), model cycling (`Ctrl+P`).
-- **`Alt` — the cockpit.** What the agent is and where it works: mode (`Alt+G`), model (`Alt+M`), directory (`Alt+W`), the view dial (`Alt+O`), settings (`Alt+S`), session tree (`Alt+T`), history (`Alt+H`), shortcuts (`Alt+K`).
+- **`Ctrl` — the view.** What is on screen right now: expand everything (`Ctrl+O`), thinking blocks (`Ctrl+T`), the task panel (`Ctrl+N`), model cycling (`Ctrl+P`).
+- **`Alt` — the cockpit.** What the agent is and where it works: mode (`Alt+G`), model (`Alt+M`), directory (`Alt+W`), the view dial (`Alt+O`), unfold one block (`Alt+U`), settings (`Alt+S`), session tree (`Alt+T`), history (`Alt+H`), shortcuts (`Alt+K`).
 - **Inside a picker**, every `Ctrl` key still belongs to the query you are typing — `Ctrl+A`, `Ctrl+U`, `Ctrl+W` edit text, as they do everywhere else. A picker's own verbs are all on `Alt`, and its hint line names them.
 
 `Shift` reverses whatever the unshifted key does. Everything is rebindable in `~/.hoocode/keybindings.json`; `/hotkeys` lists the set currently in force.

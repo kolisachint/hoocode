@@ -851,7 +851,8 @@ export class InteractiveMode {
 				hint("app.thinking.cycle", "to cycle thinking level"),
 				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
 				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand tools"),
+				hint("app.tools.expand", "to expand all tool output"),
+				hint("app.tools.unfoldOne", "to unfold one block (repeat to peel back)"),
 				hint("app.view.cycleForward", "to cycle tool output (radar/glance/full)"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.tasks.cycleView", "to cycle task panel view"),
@@ -1705,6 +1706,8 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
 		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
 		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
+		this.defaultEditor.onAction("app.tools.unfoldOne", () => this.stepToolOutput("unfold"));
+		this.defaultEditor.onAction("app.tools.foldOne", () => this.stepToolOutput("fold"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.tasks.cycleView", () => {
 			this.taskPanel.cycleView();
@@ -2938,6 +2941,38 @@ export class InteractiveMode {
 
 	private toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
+	}
+
+	/**
+	 * Open or close one tool block instead of all of them.
+	 *
+	 * `ctrl+o` is all-or-nothing, which left the ▸ caret on every glance and
+	 * radar row advertising something no key could do. This is the missing half:
+	 * unfold walks back from the newest block to the first one still folded,
+	 * fold walks back to the most recently opened one.
+	 *
+	 * Working from the tail is not a shortcut, it is the only thing this view can
+	 * honestly offer. The transcript is bottom-anchored and has no app-level
+	 * scrolling — anything far enough up is in the terminal's own scrollback,
+	 * where this process cannot put a cursor or scroll to a selection. So the
+	 * key peels backwards through what is actually on screen, and each block it
+	 * opens is its own marker for where you have got to.
+	 */
+	private stepToolOutput(direction: "unfold" | "fold"): void {
+		const wantRevealed = direction === "unfold";
+		const blocks = this.chatContainer.children.filter(
+			(child): child is ToolExecutionComponent => child instanceof ToolExecutionComponent,
+		);
+		for (let i = blocks.length - 1; i >= 0; i--) {
+			const block = blocks[i];
+			if (block.isRevealed() === wantRevealed) continue;
+			block.setExpanded(wantRevealed);
+			this.ui.requestRender();
+			return;
+		}
+		this.showStatus(
+			wantRevealed ? "No folded tool output below this point" : "No unfolded tool output below this point",
+		);
 	}
 
 	/**

@@ -302,6 +302,17 @@ export class ToolExecutionComponent extends Container {
 		this.updateDisplay();
 	}
 
+	/**
+	 * Whether this block is currently opened up.
+	 *
+	 * Read by the one-at-a-time unfold, which walks back from the newest block
+	 * to find the first one still folded. The caret already tells the user this;
+	 * this is the same fact in a form the key handler can act on.
+	 */
+	isRevealed(): boolean {
+		return this.revealed;
+	}
+
 	/** Whether the result body should render given the view and reveal state. */
 	private shouldShowBody(): boolean {
 		return this.view === "full" || this.revealed;
