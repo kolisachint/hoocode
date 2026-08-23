@@ -42,6 +42,8 @@ export function isExpandable(obj: unknown): obj is Expandable {
 }
 
 export class ExpandableText extends Text implements Expandable {
+	private isExpanded: boolean;
+
 	constructor(
 		private collapsed: () => string,
 		private expanded: () => string,
@@ -50,10 +52,23 @@ export class ExpandableText extends Text implements Expandable {
 		paddingY: number,
 	) {
 		super(initiallyExpanded ? expanded() : collapsed(), paddingX, paddingY);
+		this.isExpanded = initiallyExpanded;
 	}
 
 	setExpanded(expanded: boolean): void {
+		this.isExpanded = expanded;
 		this.setText(expanded ? this.expanded() : this.collapsed());
+	}
+
+	/**
+	 * Re-evaluate the current state's text without changing which state it is in.
+	 *
+	 * The two closures are captured once, so anything they read that can change
+	 * later — the startup banner reads the working directory — goes stale until
+	 * something asks for it again. `/cd` is that something.
+	 */
+	refresh(): void {
+		this.setText(this.isExpanded ? this.expanded() : this.collapsed());
 	}
 }
 

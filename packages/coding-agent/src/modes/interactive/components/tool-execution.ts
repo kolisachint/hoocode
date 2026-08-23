@@ -407,13 +407,16 @@ export class ToolExecutionComponent extends Container {
 	/**
 	 * The container this block renders into.
 	 *
-	 * Normally the tool decides: a self-rendering tool (`edit` draws its own
-	 * framed diff) gets the bare container, everything else gets the padded box.
-	 * Radar overrides that — its whole value is that every tool produces the same
-	 * row, which it cannot do if half of them render without the box's padding.
+	 * A self-rendering tool (`edit` draws its own framed diff) normally gets the
+	 * bare container so its frame can use the full width; everything else gets
+	 * the padded box. That only matters while the body is on screen. With the
+	 * body folded away the block is a single line, and the unpadded container
+	 * put it one column left of every other row — invisible while `peek` was an
+	 * opt-in, glaring now that `glance` is the default. So: padded box whenever
+	 * nothing is expanded, which also gives radar the uniform rows it exists for.
 	 */
 	private activeShell(): Box | Container {
-		if (this.shouldShowSignalLine()) return this.contentBox;
+		if (!this.shouldShowBody()) return this.contentBox;
 		return this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox;
 	}
 

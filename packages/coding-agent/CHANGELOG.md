@@ -92,6 +92,16 @@
 - `/hotkeys` is grouped by ring — Flow, View, Cockpit — instead of by
   Navigation / Editing / Other.
 
+### Fixed
+
+- A self-rendering tool's call line (`edit`) sat one column left of every other
+  row while its body was folded away, because it skipped the padded shell its
+  own diff frame needs. Harmless while `peek` was opt-in, visible on every edit
+  now that `glance` is the default.
+
+- The startup banner names the working directory and never re-read it, so after
+  `/cd` it kept advertising the directory you had left.
+
 ## [0.5.30] - 2026-08-23
 
 ### Added

@@ -822,7 +822,9 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const termW = this.ui.terminal.columns;
-			const logo =
+			// A function, not a value: the banner names the working directory, and
+			// `/cd` moves it. `refreshBuiltInHeader` re-reads this after a move.
+			const logo = () =>
 				termW >= 40
 					? buildCompactWordmark({
 							appName: APP_NAME,
@@ -872,8 +874,8 @@ export class InteractiveMode {
 				`${APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend ${APP_NAME}.`,
 			);
 			this.builtInHeader = new ExpandableText(
-				() => logo,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				() => logo(),
+				() => `${logo()}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -1220,6 +1222,10 @@ export class InteractiveMode {
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footer.setToolOutputView(this.toolOutputView);
+		// The startup banner names the cwd, which `/cd` changes under it.
+		if (this.builtInHeader instanceof ExpandableText) {
+			this.builtInHeader.refresh();
+		}
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
