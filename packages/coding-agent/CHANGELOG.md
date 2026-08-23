@@ -39,29 +39,40 @@
 - A **view dial** for tool output, on `alt+o` (`shift+alt+o` cycles back), with
   three stops from least to most:
 
-  - **radar** — one aligned signal row per call: the tool, the call's subject,
-    and how much came back (`412 lines`, `ok`, `error`). Every tool renders the
-    same three columns, so a screen of them reads as a map of the run rather
-    than a log of it, and a search that found nothing is visible without opening
-    it. Expanding a radar block opens it fully for as long as it is open.
-  - **glance** — the tool's own call line with a `▸` caret, body folded away.
-    The new default.
+  - **radar** — one line per *chain*: a run of consecutive tool calls. While the
+    run is working the line shows its shape, in order, with the failures marked
+    — `◐ grep › read › bash✗ › edit › bash…  4 done · 1 failed · running`. Once
+    the agent moves on it becomes what the run amounted to —
+    `● Edited packages/tui/src/keys.ts  5 calls · 1 failed · 453 lines`.
+    Consecutive repeats collapse (`read ×4`) and long chains elide their middle,
+    but never a failure. `alt+u` turns a chain back into its individual calls.
+  - **glance** — the tool's own call line, one per call, body folded away. The
+    new default.
   - **full** — call line plus the result body, as before.
+
+- **A failure always shows why it failed, in every view.** Previously a failed
+  tool in the folded views was a red dot and nothing else — the one thing you
+  always want to see was the one thing they hid.
 
   The footer shows where the dial sits, with a glyph that fills up as the view
   widens.
 
-- `alt+u` unfolds a single tool block, newest first, and repeating it peels
-  backwards through what is on screen; `shift+alt+u` re-folds. `ctrl+o` is
-  unchanged and still expands everything at once.
+- `alt+u` opens one thing, newest first, repeating to peel backwards;
+  `shift+alt+u` re-folds. In radar it turns a chain back into its calls;
+  elsewhere it opens a single tool body. `ctrl+o` is unchanged and still expands
+  everything at once.
 
-  This is the action the `▸` caret has always implied and no key could perform:
-  every block drew its own caret, but the only key that acted on one acted on
-  all of them. Opening works from the newest block backwards rather than through
-  a cursor because the transcript is bottom-anchored with no app-level
-  scrolling — anything far enough up is in the terminal's own scrollback, where
-  this process can neither scroll nor place a selection, so a cursor would move
-  somewhere you cannot see. Each block it opens is its own marker instead.
+  It works from the newest backwards rather than through a cursor because the
+  transcript is bottom-anchored with no app-level scrolling — anything far
+  enough up is in the terminal's own scrollback, where this process can neither
+  scroll nor place a selection, so a cursor would move somewhere you cannot see.
+
+### Removed
+
+- The `▸` disclosure caret on folded tool rows. It is a click-target idiom in a
+  TUI with no pointer, it cost two columns on every row, and it advertised a
+  per-row action that could only ever be reached from the keyboard. Opening is
+  now `ctrl+o` (everything) or `alt+u` (one thing, newest first).
 
 - `/cd <path>` moves the whole session to another directory without leaving the
   process — provider auth, the warmed model list and the terminal all survive.

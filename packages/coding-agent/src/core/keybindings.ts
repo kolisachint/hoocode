@@ -144,19 +144,18 @@ export const KEYBINDINGS = {
 		defaultKeys: "shift+alt+o",
 		description: "Cycle tool output view backward",
 	},
-	// The per-block counterpart to ctrl+o's all-or-nothing. The transcript is
-	// bottom-anchored with no app-level scrolling — older blocks live in the
-	// terminal's own scrollback, which this process cannot address — so "open
+	// The one-at-a-time counterpart to ctrl+o's all-or-nothing. The transcript is
+	// bottom-anchored with no app-level scrolling — anything far enough up is in
+	// the terminal's own scrollback, which this process cannot address — so "open
 	// one" can only ever mean "open one at the tail". Repeating the key peels
-	// backwards from the newest folded block, which is what the ▸ caret has been
-	// advertising all along.
+	// backwards from there.
 	"app.tools.unfoldOne": {
 		defaultKeys: "alt+u",
-		description: "Unfold the newest still-folded tool block (repeat to peel back)",
+		description: "Open the newest folded thing — a chain in radar, a tool body otherwise",
 	},
 	"app.tools.foldOne": {
 		defaultKeys: "shift+alt+u",
-		description: "Re-fold the most recently unfolded tool block",
+		description: "Re-fold the most recently opened chain or tool block",
 	},
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",

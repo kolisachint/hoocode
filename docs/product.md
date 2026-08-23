@@ -80,11 +80,15 @@ One dial, `Alt+O`, with three stops from least to most (`Shift+Alt+O` goes back)
 
 | View | What a tool call looks like |
 |---|---|
-| **radar** | One aligned signal row: the tool, the call's subject, and how much came back — `● grep  toolOutputView  27 lines`. Every tool renders the same three columns, so a screen of them is a map of the run, and a search that found nothing is visible without opening it. |
-| **glance** | The tool's own call line with a `▸` caret; the result body is folded away until you ask for it. **The default.** |
+| **radar** | One line per *chain* — a run of consecutive tool calls. While it works the line shows its shape in order, `◐ grep › read › bash✗ › edit › bash…`; once the agent moves on it becomes what the run amounted to, `● Edited packages/tui/src/keys.ts`. |
+| **glance** | The tool's own call line, one per call, body folded away. **The default.** |
 | **full** | Call line plus the result body. |
 
-Two keys open things without moving the dial. `Ctrl+O` expands everything at once — tool bodies, the header, summaries. `Alt+U` opens a single block, and repeating it peels backwards from the newest folded one (`Shift+Alt+U` re-folds); that is what the `▸` caret on each row refers to. Opening works from the newest block backwards because the transcript is bottom-anchored: older output lives in your terminal's own scrollback, which the agent cannot scroll or put a cursor into.
+**A failure always shows why**, in every view. That is the one thing none of them fold away: a red dot with no explanation is worse than no folding at all.
+
+A chain ends when the agent next speaks, or when the turn ends. A run that was interrupted keeps its working shape plus a marker rather than a tidy summary — the settled line is a claim about what the run amounted to, and a run cut off partway through has no such claim to make.
+
+Two keys open things without moving the dial. `Ctrl+O` expands everything at once — tool bodies, the header, summaries. `Alt+U` opens one thing, newest first, repeating to peel backwards (`Shift+Alt+U` re-folds): in radar that turns a chain back into its calls, elsewhere it opens a single body. It works from the newest backwards because the transcript is bottom-anchored — older output lives in your terminal's own scrollback, which the agent can neither scroll nor put a cursor into.
 
 ## Working across repositories
 

@@ -17,6 +17,7 @@ import { createAllToolDefinitions, type ToolName } from "../../../core/tools/ind
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
+import type { ChainEntry } from "./tool-chain-summary.js";
 import { ToolSignalComponent, toolSubject } from "./tool-signal.js";
 
 /**
@@ -306,16 +307,39 @@ export class ToolExecutionComponent extends Container {
 	 * Whether this block is currently opened up.
 	 *
 	 * Read by the one-at-a-time unfold, which walks back from the newest block
-	 * to find the first one still folded. The caret already tells the user this;
-	 * this is the same fact in a form the key handler can act on.
+	 * to find the first one still folded.
 	 */
 	isRevealed(): boolean {
 		return this.revealed;
 	}
 
-	/** Whether the result body should render given the view and reveal state. */
+	/** This call's contribution to its chain's summary line. */
+	chainEntry(): ChainEntry {
+		const output = this.result ? this.getTextOutput() : "";
+		return {
+			tool: this.toolName,
+			subject: toolSubject(this.args, this.cwd),
+			isError: this.result?.isError === true,
+			isPartial: this.result === undefined || this.isPartial,
+			outputLines: output.trim() ? output.split("\n").length : 0,
+		};
+	}
+
+	/** The failure text, for a collapsed chain to print under its line. */
+	errorText(): string {
+		return this.result?.isError ? this.getTextOutput() : "";
+	}
+
+	/**
+	 * Whether the result body should render.
+	 *
+	 * A failure always shows its reason, in every view. Everything else about
+	 * these views is a judgement about how much detail you want; why something
+	 * broke is not detail, and a red dot with no explanation was the one thing
+	 * the folded views got wrong.
+	 */
 	private shouldShowBody(): boolean {
-		return this.view === "full" || this.revealed;
+		return this.view === "full" || this.revealed || this.result?.isError === true;
 	}
 
 	/**
@@ -460,9 +484,11 @@ export class ToolExecutionComponent extends Container {
 			// The dot is prepended to the first line of the call renderer so it stays inline
 			// (adding it as a separate child would stack it on its own line).
 			const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
-			// Glance blocks advertise their folded body with a ▸/▾ caret before the dot.
-			const caret = this.view === "glance" ? theme.fg("muted", this.revealed ? "▾ " : "▸ ") : "";
-			const dot = caret + theme.fg(dotColor, "● ");
+			// No disclosure caret. It is a click-target idiom in a TUI with no
+			// pointer, it cost two columns on every row for an action that could
+			// only ever be reached by keyboard, and reading it as "this row opens"
+			// set an expectation the view does not meet.
+			const dot = theme.fg(dotColor, "● ");
 
 			// Radar replaces the tool's own call renderer with the uniform signal
 			// row, so a screen of mixed tools lines up into one readable map.
@@ -570,7 +596,6 @@ export class ToolExecutionComponent extends Container {
 
 	private formatToolExecution(): string {
 		const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
-		const caret = this.view === "glance" ? theme.fg("muted", this.revealed ? "▾ " : "▸ ") : "";
 		// A tool with no renderer still gets a radar row, just without the
 		// flush-right signal column (this path has no width to align against).
 		if (this.shouldShowSignalLine()) {
@@ -581,7 +606,7 @@ export class ToolExecutionComponent extends Container {
 				(subject ? ` ${theme.fg("toolOutput", subject)}` : "")
 			);
 		}
-		let text = caret + theme.fg(dotColor, "● ") + theme.fg("toolTitle", theme.bold(this.toolName));
+		let text = theme.fg(dotColor, "● ") + theme.fg("toolTitle", theme.bold(this.toolName));
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;

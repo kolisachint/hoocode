@@ -9,6 +9,7 @@
  */
 
 import type { AssistantMessage } from "@kolisachint/hoocode-ai";
+import { Container } from "@kolisachint/hoocode-tui";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { ExtensionContext } from "../../../src/core/extensions/types.js";
 import { type Task, taskStore } from "../../../src/core/task-store.js";
@@ -41,10 +42,13 @@ type SettleThis = {
 	chime?: { onTurnComplete: (options: { aborted: boolean }) => void };
 	showTurnCost: () => void;
 	settleDanglingPlanItems: () => void;
+	closeOpenChain: (outcome: "done" | "interrupted") => void;
+	chatContainer: Container;
+	openChain: undefined;
 };
 
 function createSettleThis(overrides: Partial<SettleThis> = {}): SettleThis {
-	const proto = InteractiveMode.prototype as unknown as Pick<SettleThis, "settleDanglingPlanItems">;
+	const proto = InteractiveMode.prototype as unknown as Pick<SettleThis, "settleDanglingPlanItems" | "closeOpenChain">;
 	return {
 		turnStopReason: "stop",
 		chimePendingRetry: false,
@@ -53,6 +57,11 @@ function createSettleThis(overrides: Partial<SettleThis> = {}): SettleThis {
 		chime: { onTurnComplete: vi.fn() },
 		showTurnCost: vi.fn(),
 		settleDanglingPlanItems: proto.settleDanglingPlanItems,
+		// Settling also closes the turn's last radar chain. Borrowed rather than
+		// stubbed so this test keeps exercising the real settle path.
+		closeOpenChain: proto.closeOpenChain,
+		chatContainer: new Container(),
+		openChain: undefined,
 		...overrides,
 	};
 }

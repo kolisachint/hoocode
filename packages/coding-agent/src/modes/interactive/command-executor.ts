@@ -563,7 +563,7 @@ export class CommandExecutor {
 | Key | Action |
 |-----|--------|
 | \`${expandTools}\` | Expand or collapse every tool block at once |
-| \`${unfoldOne}\` / \`${foldOne}\` | Unfold / re-fold one block, newest first (repeat to peel back) |
+| \`${unfoldOne}\` / \`${foldOne}\` | Open / re-fold one thing, newest first — a chain in radar, a tool body otherwise |
 | \`${viewForward}\` / \`${viewBackward}\` | Cycle tool output: radar → glance → full |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |

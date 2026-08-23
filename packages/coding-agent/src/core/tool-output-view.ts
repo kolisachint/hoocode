@@ -2,10 +2,9 @@
  * How much of a tool call the transcript shows. Three stops on one dial, least
  * to most, cycled with `app.view.cycleForward` / `app.view.cycleBackward`:
  *
- * - `radar` — one aligned signal line per call: tool, subject, and how much came
- *   back. A screen of them reads as a map of the run rather than a log of it.
- * - `glance` — the tool's own call line with a ▸ caret; the body is folded away
- *   until the expand key asks for it. The default.
+ * - `radar` — one line per *chain*: a run of consecutive tool calls collapsed to
+ *   the shape it had while working, or what it amounted to once it is over.
+ * - `glance` — the tool's own call line, body folded away. The default.
  * - `full` — call line plus the result body, truncated then expandable.
  *
  * The expand key (`app.tools.expand`) is orthogonal: it opens what is in front
@@ -21,8 +20,8 @@ export const TOOL_OUTPUT_VIEWS: readonly ToolOutputView[] = ["radar", "glance", 
 
 /** One-line description per view, shared by the settings pane and `/hotkeys`. */
 export const TOOL_OUTPUT_VIEW_DESCRIPTIONS: Record<ToolOutputView, string> = {
-	radar: "one signal line per call: tool, subject, and how much came back",
-	glance: "the call line with a ▸ caret; body folded away until you ask",
+	radar: "one line per run of tool calls; failures still show why they failed",
+	glance: "the call line alone; failures still show why they failed",
 	full: "call line plus the result body",
 };
 

@@ -41,11 +41,15 @@ type RenderSessionContextThis = {
 	session: { retryAttempt: number };
 	toolOutputExpanded: boolean;
 	toolOutputView: ToolOutputView;
+	openChain: undefined;
+	attachToolBlock: (block: ToolExecutionComponent) => void;
+	closeOpenChain: (outcome: "done" | "interrupted") => void;
 	isInitialized: boolean;
 	updateEditorBorderColor(): void;
 	getRegisteredToolDefinition(toolName: string): undefined;
 	addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void;
 	trimTranscriptMemory(): void;
+	transcriptToolBlocks: () => ToolExecutionComponent[];
 };
 
 type RenderSessionContext = (
@@ -73,6 +77,21 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 		// This test is about whether a tool result reaches the transcript at all,
 		// so it asks for the view that renders result bodies.
 		toolOutputView: "full",
+		// Tool blocks now reach the transcript through a chain. Borrowed from the
+		// prototype rather than stubbed, so the grouping this test renders through
+		// is the same grouping the real transcript builds.
+		openChain: undefined,
+		attachToolBlock: (
+			InteractiveMode.prototype as unknown as { attachToolBlock: RenderSessionContextThis["attachToolBlock"] }
+		).attachToolBlock,
+		closeOpenChain: (
+			InteractiveMode.prototype as unknown as { closeOpenChain: RenderSessionContextThis["closeOpenChain"] }
+		).closeOpenChain,
+		transcriptToolBlocks: (
+			InteractiveMode.prototype as unknown as {
+				transcriptToolBlocks: RenderSessionContextThis["transcriptToolBlocks"];
+			}
+		).transcriptToolBlocks,
 		isInitialized: true,
 		updateEditorBorderColor: vi.fn(),
 		getRegisteredToolDefinition: (_toolName: string) => undefined,

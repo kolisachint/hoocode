@@ -501,17 +501,40 @@ describe("ToolExecutionComponent view dial", () => {
 		expect(rendered).toContain("RESULT BODY");
 	});
 
-	test("glance hides the body with a ▸ caret and reveals it (▾) on expand", () => {
+	test("glance shows the call line alone, with no disclosure caret", () => {
 		const component = build("glance");
 		const folded = stripAnsi(component.render(120).join("\n"));
-		expect(folded).toContain("▸");
 		expect(folded).toContain("custom call");
 		expect(folded).not.toContain("RESULT BODY");
+		// The caret was a click-target idiom in a TUI with no pointer.
+		expect(folded).not.toContain("▸");
+		expect(folded).not.toContain("▾");
 
 		component.setExpanded(true);
-		const revealed = stripAnsi(component.render(120).join("\n"));
-		expect(revealed).toContain("▾");
-		expect(revealed).toContain("RESULT BODY");
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
+	});
+
+	test("a failure shows why it failed in every view, unasked", () => {
+		// The one thing the folded views must never hide: a red dot with no
+		// explanation is worse than no folding at all.
+		for (const view of ["radar", "glance", "full"] as ToolOutputView[]) {
+			const toolDefinition: ToolDefinition = {
+				...createBaseToolDefinition(),
+				renderCall: () => new Text("custom call", 0, 0),
+				renderResult: () => new Text("WHY IT BROKE", 0, 0),
+			};
+			const component = new ToolExecutionComponent(
+				"custom_tool",
+				`err-${view}`,
+				{ command: "bun test" },
+				{ view },
+				toolDefinition,
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult({ content: [{ type: "text", text: "boom" }], details: {}, isError: true }, false);
+			expect(stripAnsi(component.render(120).join("\n")), view).toContain("WHY IT BROKE");
+		}
 	});
 
 	test("radar replaces the call renderer with a signal row", () => {
