@@ -14,11 +14,30 @@
   detail view naming what it enables, what hoocode does instead when it is
   missing, where the release comes from, and the env vars that steer it.
 
-- A bundled `plugin-authoring` plugin in the default marketplace, carrying the
-  craft half of plugin authoring as a skill: when a capability is worth
-  extracting, naming and describing it so it triggers again, portability rules,
-  and the hook trap where a changed command adds a second hook instead of
-  replacing one. Install it with `/plugin install plugin-authoring`.
+- hoocode can ship skills of its own. It read them from `~/.agents/skills`,
+  `.hoocode/skills`, `.claude/skills` and installed packages — every source
+  except itself — which is why it shipped three subagents and zero skills while
+  telling users skills are the extension unit. Built-ins are catalogued in
+  `core/builtin-skills.ts` and load at lowest precedence, so a skill of the same
+  name from anywhere else wins and the collision is reported.
+
+  A skill costs its description on every turn, so each built-in can be gated on
+  the feature it serves rather than on everyone's token budget.
+
+- The first one: `plugin-authoring`, the craft half of `ProposePlugin`/
+  `UpdatePlugin` — when a capability is worth extracting, naming and describing
+  it so it triggers again, portability rules, and the hook trap where a changed
+  command adds a second hook instead of replacing one. Gated on
+  `enablePluginTools`, which is off by default, so a default session pays
+  nothing for it.
+
+  Built-ins are materialized to a content-addressed cache under
+  `~/.hoocode/cache/builtin-skills/`. A skill is loaded by reading its file, so
+  its location has to be a real path, and the compiled standalone binary has no
+  install directory to read from; materializing the same embedded copy
+  everywhere keeps the skill set identical across npm, pnpm, source and the
+  binary. If the cache cannot be written the built-ins are absent and everything
+  else runs normally. `--no-skills` and `--light` suppress them.
 
 ### Fixed
 

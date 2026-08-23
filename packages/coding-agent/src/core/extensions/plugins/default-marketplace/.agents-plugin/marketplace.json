@@ -11,11 +11,6 @@
       "name": "hello-world",
       "source": "./plugins/hello-world",
       "description": "Minimal example plugin: a greeting skill and a /hello command."
-    },
-    {
-      "name": "plugin-authoring",
-      "source": "./plugins/plugin-authoring",
-      "description": "How to author a good plugin: portability, naming, and when a capability is worth extracting."
     }
   ]
 }

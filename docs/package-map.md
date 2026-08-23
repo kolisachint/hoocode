@@ -114,6 +114,10 @@ The shipped CLI. Largest package.
 - `templates/modes/<mode>/system.md` - the four built-in mode prompts. Single source:
   `core/mode-prompts.ts` re-exports the embedded copy as `DEFAULT_MODE_PROMPTS`, and
   `/init` scaffolds the same text into a project. Do not add a second copy in `.ts`.
+- `templates/skills/<name>/SKILL.md` - skills hoocode ships itself. Catalogued in
+  `core/builtin-skills.ts`, which gates each one and materializes the embedded copy
+  to `~/.hoocode/cache/builtin-skills/<hash>/` so a skill's location is a real path
+  on every install method, the compiled binary included.
 - `templates/prompts/*.md` - prose the runtime injects verbatim: the `/grill`
   phases and the Task delegation appendix (`task-main.md` plus its two
   `task-background-*` variants). Reached through `EMBEDDED_PROMPTS`. A `{{TOKEN}}`

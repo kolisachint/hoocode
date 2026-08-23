@@ -1,6 +1,0 @@
-{
-  "name": "plugin-authoring",
-  "version": "0.1.0",
-  "description": "How to author a good plugin: portability, naming, and when a capability is worth extracting.",
-  "author": "hoocode"
-}

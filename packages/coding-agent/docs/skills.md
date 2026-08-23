@@ -9,6 +9,7 @@ HooCode implements the [Agent Skills standard](https://agentskills.io/specificat
 ## Table of Contents
 
 - [Locations](#locations)
+- [Skills hoocode ships](#skills-hoocode-ships)
 - [How Skills Work](#how-skills-work)
 - [Skill Commands](#skill-commands)
 - [Skill Structure](#skill-structure)
@@ -32,6 +33,7 @@ HooCode loads skills from:
 - Packages: `skills/` directories or `pi.skills` entries in `package.json`
 - Settings: `skills` array with files or directories
 - CLI: `--skill <path>` (repeatable, additive even with `--no-skills`)
+- Built-in: skills hoocode ships itself (see below)
 
 Discovery rules:
 - In `~/.hoocode/skills/` and `.hoocode/skills/`, direct root `.md` files are discovered as individual skills
@@ -60,6 +62,34 @@ For project-level Claude Code skills, add to `.hoocode/settings.json`:
   "skills": ["../.claude/skills"]
 }
 ```
+
+## Skills hoocode ships
+
+hoocode ships a small set of its own skills. They are lowest precedence: a skill
+of the same name from any other location — `--skill`, settings, `~/.agents/skills`,
+`.hoocode/skills` — wins, and the collision is reported as a diagnostic. So
+shipping one can never shadow a skill you wrote.
+
+| Skill | Loaded when | Covers |
+|---|---|---|
+| `plugin-authoring` | `enablePluginTools` is on | When a capability is worth extracting, naming it so it triggers again, portability rules, and the hook trap where a changed command adds a second hook instead of replacing one. |
+
+A skill costs its description on every turn, so one that only makes sense
+alongside a feature rides that feature's switch rather than your token budget.
+`plugin-authoring` is gated on the plugin system, which is off by default, so a
+default session pays nothing for it.
+
+`--no-skills` and `--light` suppress built-ins along with everything else.
+
+**Where they live.** hoocode writes them to a content-addressed cache under
+`~/.hoocode/cache/builtin-skills/<hash>/` and loads them from there. A skill is
+loaded by `read`ing its file, so its location has to be a real path — and the
+compiled standalone binary has no install directory to read from. Materializing
+the same embedded copy on every install method keeps the skill set identical
+across npm, pnpm, source and the binary. The directory is a cache: edit a copy
+under `~/.agents/skills/` instead, which takes precedence anyway. If it cannot be
+written (read-only home, full disk) the built-in skills are simply absent and
+everything else runs normally.
 
 ## How Skills Work
 

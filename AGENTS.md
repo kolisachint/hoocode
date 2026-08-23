@@ -108,10 +108,12 @@ Two corollaries:
   how the mode prompts silently diverged from the ones `/init` scaffolds.
 - **Craft guidance is not a tool contract.** A tool's `promptGuidelines` are
   resident on every turn; a how-to-do-this-well guide is not a contract and
-  does not belong there. Ship it as a skill (the bundled marketplace under
-  `core/extensions/plugins/default-marketplace/` is copied to `dist` wholesale,
-  so a plugin added there ships with no build changes) and point the tool at
-  it in one line.
+  does not belong there. Ship it as a built-in skill — add the directory under
+  `templates/skills/` and an entry to `BUILTIN_SKILLS` in
+  `core/builtin-skills.ts` — and point the tool at it in one line. Give it a
+  `gate` unless it is useful in every session: a skill costs its description
+  every turn, so one that only makes sense alongside a feature rides that
+  feature's switch.
 
 ## Conversational Style
 
