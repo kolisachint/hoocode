@@ -83,7 +83,18 @@ function createSymlinkedSessionPaths(): {
 	};
 }
 
-const CTRL_D = "\x04";
+/**
+ * Raw input for the picker's delete verb, read from the keybinding rather than
+ * hardcoded. The picker's verbs moved off ctrl+letters — ctrl+d deleted a
+ * character in the query as well as the highlighted session — and a test with
+ * the sequence spelled out would still be testing the old layout.
+ */
+const DELETE_SESSION = (() => {
+	const key = new KeybindingsManager().getKeys("app.session.delete")[0];
+	const match = /^alt\+(.)$/.exec(key ?? "");
+	if (!match) throw new Error(`Expected an alt+<char> binding for app.session.delete, got ${key}`);
+	return `\x1b${match[1]}`;
+})();
 const CTRL_BACKSPACE = "\x1b[127;5u";
 
 describe("session selector path/delete interactions", () => {
@@ -129,7 +140,7 @@ describe("session selector path/delete interactions", () => {
 		expect(confirmationChanges).toEqual([]);
 	});
 
-	it("enters confirmation mode on Ctrl+D even with a non-empty search query", async () => {
+	it("enters confirmation mode on the delete key even with a non-empty search query", async () => {
 		const sessions = [makeSession({ id: "a" }), makeSession({ id: "b" })];
 
 		const selector = new SessionSelectorComponent(
@@ -148,7 +159,7 @@ describe("session selector path/delete interactions", () => {
 		list.onDeleteConfirmationChange = (path) => confirmationChanges.push(path);
 
 		list.handleInput("a");
-		list.handleInput(CTRL_D);
+		list.handleInput(DELETE_SESSION);
 
 		expect(confirmationChanges).toEqual([sessions[0]!.path]);
 	});
@@ -307,7 +318,7 @@ describe("session selector path/delete interactions", () => {
 			errorMessage = message;
 		};
 
-		list.handleInput(CTRL_D);
+		list.handleInput(DELETE_SESSION);
 
 		expect(confirmationChanges).toEqual([]);
 		expect(errorMessage).toBe("Cannot delete the currently active session");

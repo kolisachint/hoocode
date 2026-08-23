@@ -260,6 +260,10 @@ function buildEditCallComponent(
 	theme: typeof import("../../modes/interactive/theme/theme.js").theme,
 ): EditCallRenderComponent {
 	component.setBgFn(getEditHeaderBg(component.preview, component.settledError, theme));
+	// The horizontal padding exists to carry the header band. With no band —
+	// a bare call line in a folded view — it is just an indent that pushes this
+	// tool's text one column right of every other tool's.
+	component.setPaddingX(component.preview || component.settledError ? 1 : 0);
 	component.clear();
 	component.addChild(new Text(formatEditCall(args, theme), 0, 0));
 

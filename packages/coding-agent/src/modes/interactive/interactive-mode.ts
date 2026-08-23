@@ -70,6 +70,7 @@ import type { SourceInfo } from "../../core/source-info.js";
 import { startupProgress } from "../../core/startup-progress.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
+import { cycleToolOutputView, type ToolOutputView } from "../../core/tool-output-view.js";
 import { settleDanglingMainTasks } from "../../core/tools/todo.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
@@ -95,6 +96,7 @@ import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
 import { TaskPanelComponent } from "./components/task-panel.js";
+import { ToolChainComponent } from "./components/tool-chain.js";
 import { ToolExecutionComponent } from "./components/tool-execution.js";
 import { TreeSelectorComponent } from "./components/tree-selector.js";
 import { UserMessageComponent } from "./components/user-message.js";
@@ -287,8 +289,13 @@ export class InteractiveMode {
 
 	// Tool output expansion state
 	private toolOutputExpanded = false;
-	// Persisted tool-output display level (collapsed / peek / standard).
-	private toolOutputDisplay: "collapsed" | "peek" | "standard" = "standard";
+	// Persisted view dial (radar / glance / full). See core/tool-output-view.ts.
+	private toolOutputView: ToolOutputView = "glance";
+	// The chain currently collecting tool calls, if the agent is mid-run.
+	private openChain?: ToolChainComponent;
+	// Whether the assistant message being streamed has said anything yet. The
+	// first words it speaks close the chain the previous message's calls built.
+	private sawTextInCurrentMessage = false;
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -486,6 +493,7 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footer.setToolOutputView(this.toolOutputView);
 		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
 		this.chrome = new ExtensionChrome({
 			ui: this.ui,
@@ -577,8 +585,8 @@ export class InteractiveMode {
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 
-		// Load tool-output display level
-		this.toolOutputDisplay = this.settingsManager.getToolOutputDisplay();
+		// Load the tool-output view dial
+		this.toolOutputView = this.settingsManager.getToolOutputView();
 
 		// Completion chime: rings the terminal bell when a long turn finishes or the
 		// agent blocks awaiting input. Enable is read fresh so a live toggle applies.
@@ -675,6 +683,15 @@ export class InteractiveMode {
 					label: item.id,
 					description: item.provider,
 				}));
+			};
+		}
+
+		const cdCommand = slashCommands.find((command) => command.name === "cd");
+		if (cdCommand) {
+			cdCommand.argumentHint = "<path>";
+			cdCommand.getArgumentCompletions = (prefix: string): AutocompleteItem[] | null => {
+				const completions = this.commandExecutor.getChangeDirectoryCompletions(prefix);
+				return completions.length > 0 ? completions : null;
 			};
 		}
 
@@ -812,7 +829,9 @@ export class InteractiveMode {
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
 			const termW = this.ui.terminal.columns;
-			const logo =
+			// A function, not a value: the banner names the working directory, and
+			// `/cd` moves it. `refreshBuiltInHeader` re-reads this after a move.
+			const logo = () =>
 				termW >= 40
 					? buildCompactWordmark({
 							appName: APP_NAME,
@@ -839,10 +858,16 @@ export class InteractiveMode {
 				hint("app.thinking.cycle", "to cycle thinking level"),
 				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
 				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand tools"),
+				hint("app.tools.expand", "to expand all tool output"),
+				hint("app.tools.unfoldOne", "to open one chain or block (repeat to peel back)"),
+				hint("app.view.cycleForward", "to cycle tool output (radar/glance/full)"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.tasks.cycleView", "to cycle task panel view"),
 				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
+				hint("app.mode.cycle", "to cycle agent mode"),
+				hint("app.session.changeDirectory", "to change working directory"),
+				hint("app.settings.open", "for settings"),
+				hint("app.hotkeys.open", "for all shortcuts"),
 				hint("app.editor.external", "for external editor"),
 				rawKeyHint("/", "for commands"),
 				rawKeyHint("!", "to run bash"),
@@ -857,8 +882,8 @@ export class InteractiveMode {
 				`${APP_NAME} can explain its own features and look up its docs. Ask it how to use or extend ${APP_NAME}.`,
 			);
 			this.builtInHeader = new ExpandableText(
-				() => logo,
-				() => `${logo}\n${expandedInstructions}\n\n${onboarding}`,
+				() => logo(),
+				() => `${logo()}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
 				1,
 				0,
@@ -1204,6 +1229,11 @@ export class InteractiveMode {
 	private applyRuntimeSettings(): void {
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footer.setToolOutputView(this.toolOutputView);
+		// The startup banner names the cwd, which `/cd` changes under it.
+		if (this.builtInHeader instanceof ExpandableText) {
+			this.builtInHeader.refresh();
+		}
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
@@ -1253,6 +1283,7 @@ export class InteractiveMode {
 	 */
 	private renderCurrentSessionState(): void {
 		this.chatContainer.clear();
+		this.openChain = undefined;
 		this.pendingMessagesContainer.clear();
 		this.messageQueue.resetCompactionQueue();
 		this.streamingComponent = undefined;
@@ -1270,12 +1301,7 @@ export class InteractiveMode {
 	 * later full rebuild (theme toggle / reload) restores full fidelity.
 	 */
 	private trimTranscriptMemory(): void {
-		const freezable: ToolExecutionComponent[] = [];
-		for (const child of this.chatContainer.children) {
-			if (child instanceof ToolExecutionComponent && child.isFreezable()) {
-				freezable.push(child);
-			}
-		}
+		const freezable = this.transcriptToolBlocks().filter((block) => block.isFreezable());
 		const excess = freezable.length - LIVE_TOOL_WINDOW;
 		for (let i = 0; i < excess; i++) {
 			freezable[i].freeze();
@@ -1681,6 +1707,10 @@ export class InteractiveMode {
 		this.ui.onDebug = () => this.commandExecutor.handleDebug();
 		this.defaultEditor.onAction("app.model.select", () => this.modelController.showModelSelector());
 		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
+		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
+		this.defaultEditor.onAction("app.tools.unfoldOne", () => this.stepToolOutput("unfold"));
+		this.defaultEditor.onAction("app.tools.foldOne", () => this.stepToolOutput("fold"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.tasks.cycleView", () => {
 			this.taskPanel.cycleView();
@@ -1694,6 +1724,15 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
 		this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
+		this.defaultEditor.onAction("app.session.changeDirectory", () => {
+			// Prefill rather than act: a directory change needs a target, and the
+			// editor's own path completion is already the best way to name one.
+			this.editor.setText("/cd ");
+			this.ui.requestRender();
+		});
+		this.defaultEditor.onAction("app.settings.open", () => this.showSettingsSelector());
+		this.defaultEditor.onAction("app.hotkeys.open", () => this.commandExecutor.handleHotkeys());
+		this.defaultEditor.onAction("app.mode.cycle", () => void this.cycleAgentMode());
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -1890,6 +1929,13 @@ export class InteractiveMode {
 						clearEditor();
 					},
 				},
+				"/cd": {
+					withArgs: true,
+					run: async (text: string) => {
+						clearEditor();
+						await this.commandExecutor.handleChangeDirectory(text);
+					},
+				},
 				"/quit": {
 					run: async () => {
 						clearEditor();
@@ -1996,6 +2042,10 @@ export class InteractiveMode {
 			if (this.chimePendingRetry || this.session.isStreaming || this.session.isCompacting) {
 				return;
 			}
+			// The last chain of a turn has nothing after it to close it, so it
+			// settles here. A turn that did not end cleanly leaves its chain in the
+			// running rendering plus a marker rather than claiming an outcome.
+			this.closeOpenChain(this.turnStopReason === "stop" ? "done" : "interrupted");
 			this.showTurnCost();
 			this.settleDanglingPlanItems();
 			this.chime?.onTurnComplete({ aborted: this.turnStopReason === "aborted" });
@@ -2158,6 +2208,7 @@ export class InteractiveMode {
 						this.hiddenThinkingLabel,
 					);
 					this.streamingMessage = event.message;
+					this.sawTextInCurrentMessage = false;
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(this.streamingMessage);
 					this.ui.requestRender();
@@ -2169,6 +2220,18 @@ export class InteractiveMode {
 					this.streamingMessage = event.message;
 					this.scheduleStreamingRender();
 
+					// The agent speaking ends the run its previous calls formed. Tool
+					// calls later in this same message open a fresh chain.
+					if (!this.sawTextInCurrentMessage) {
+						const spoke = this.streamingMessage.content.some(
+							(content) => content.type === "text" && content.text.trim() !== "",
+						);
+						if (spoke) {
+							this.sawTextInCurrentMessage = true;
+							this.closeOpenChain("done");
+						}
+					}
+
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
@@ -2179,14 +2242,14 @@ export class InteractiveMode {
 									{
 										showImages: this.settingsManager.getShowImages(),
 										imageWidthCells: this.settingsManager.getImageWidthCells(),
-										displayLevel: this.toolOutputDisplay,
+										view: this.toolOutputView,
 									},
 									this.getRegisteredToolDefinition(content.name),
 									this.ui,
 									this.sessionManager.getCwd(),
 								);
 								component.setExpanded(this.toolOutputExpanded);
-								this.chatContainer.addChild(component);
+								this.attachToolBlock(component);
 								this.pendingTools.set(content.id, component);
 							} else {
 								const component = this.pendingTools.get(content.id);
@@ -2254,14 +2317,14 @@ export class InteractiveMode {
 						{
 							showImages: this.settingsManager.getShowImages(),
 							imageWidthCells: this.settingsManager.getImageWidthCells(),
-							displayLevel: this.toolOutputDisplay,
+							view: this.toolOutputView,
 						},
 						this.getRegisteredToolDefinition(event.toolName),
 						this.ui,
 						this.sessionManager.getCwd(),
 					);
 					component.setExpanded(this.toolOutputExpanded);
-					this.chatContainer.addChild(component);
+					this.attachToolBlock(component);
 					this.pendingTools.set(event.toolCallId, component);
 				}
 				component.markExecutionStarted();
@@ -2595,9 +2658,17 @@ export class InteractiveMode {
 			this.updateEditorBorderColor();
 		}
 
+		let lastAssistantStopReason: AssistantMessage["stopReason"] | undefined;
 		for (const message of sessionContext.messages) {
 			// Assistant messages need special handling for tool calls
 			if (message.role === "assistant") {
+				// Same boundary the live path uses: the agent speaking ends the run
+				// its previous calls formed. Rebuilding history has to reproduce it,
+				// or a resumed session would show one chain where it lived through
+				// several.
+				const spoke = message.content.some((content) => content.type === "text" && content.text.trim() !== "");
+				if (spoke) this.closeOpenChain("done");
+				lastAssistantStopReason = message.stopReason;
 				this.addMessageToChat(message);
 				// Render tool call components
 				for (const content of message.content) {
@@ -2609,14 +2680,14 @@ export class InteractiveMode {
 							{
 								showImages: this.settingsManager.getShowImages(),
 								imageWidthCells: this.settingsManager.getImageWidthCells(),
-								displayLevel: this.toolOutputDisplay,
+								view: this.toolOutputView,
 							},
 							this.getRegisteredToolDefinition(content.name),
 							this.ui,
 							this.sessionManager.getCwd(),
 						);
 						component.setExpanded(this.toolOutputExpanded);
-						this.chatContainer.addChild(component);
+						this.attachToolBlock(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
 							let errorMessage: string;
@@ -2646,6 +2717,14 @@ export class InteractiveMode {
 				// All other messages use standard rendering
 				this.addMessageToChat(message, options);
 			}
+		}
+
+		// History has no live state: a chain left open at the end of the rebuild is
+		// finished, and how the last assistant message ended says whether it
+		// finished cleanly. Tool calls still awaiting results are the exception —
+		// this is a resumed run in flight, so its chain stays open for them.
+		if (renderedPendingTools.size === 0) {
+			this.closeOpenChain(lastAssistantStopReason === "stop" ? "done" : "interrupted");
 		}
 
 		for (const [toolCallId, component] of renderedPendingTools) {
@@ -2896,8 +2975,126 @@ export class InteractiveMode {
 		}
 	}
 
+	/**
+	 * Put a tool block into the transcript, extending the open chain or starting
+	 * one. Every path that renders a tool call comes through here — live
+	 * streaming, execution start, and rebuilding history — so a chain cannot be
+	 * assembled correctly in one place and forgotten in another.
+	 */
+	private attachToolBlock(block: ToolExecutionComponent): void {
+		if (!this.openChain || !this.openChain.isOpen) {
+			this.openChain = new ToolChainComponent(this.toolOutputView);
+			this.chatContainer.addChild(this.openChain);
+		}
+		this.openChain.add(block);
+	}
+
+	/**
+	 * Settle the open chain.
+	 *
+	 * Called when the agent speaks (the run it was doing is over, whatever comes
+	 * next is a new one) and when the turn settles. Closing on the agent's next
+	 * words rather than only at turn end is what keeps the flip cheap: the line
+	 * is still at the bottom of the screen, so the TUI rewrites it in place
+	 * instead of taking the full-redraw path that clears terminal scrollback.
+	 */
+	private closeOpenChain(outcome: "done" | "interrupted"): void {
+		if (!this.openChain) return;
+		if (this.openChain.isEmpty) {
+			this.chatContainer.removeChild(this.openChain);
+		} else {
+			this.openChain.close(outcome);
+		}
+		this.openChain = undefined;
+		this.ui.requestRender();
+	}
+
+	/** Every tool block in the transcript, in order, across all chains. */
+	private transcriptToolBlocks(): ToolExecutionComponent[] {
+		const blocks: ToolExecutionComponent[] = [];
+		for (const child of this.chatContainer.children) {
+			if (child instanceof ToolChainComponent) blocks.push(...child.toolBlocks);
+			else if (child instanceof ToolExecutionComponent) blocks.push(child);
+		}
+		return blocks;
+	}
+
+	/** Every chain in the transcript, in order. */
+	private transcriptChains(): ToolChainComponent[] {
+		return this.chatContainer.children.filter(
+			(child): child is ToolChainComponent => child instanceof ToolChainComponent,
+		);
+	}
+
 	private toggleToolOutputExpansion(): void {
 		this.setToolsExpanded(!this.toolOutputExpanded);
+	}
+
+	/**
+	 * Open or close one tool block instead of all of them.
+	 *
+	 * `ctrl+o` is all-or-nothing, which left the ▸ caret on every glance and
+	 * radar row advertising something no key could do. This is the missing half:
+	 * unfold walks back from the newest block to the first one still folded,
+	 * fold walks back to the most recently opened one.
+	 *
+	 * Working from the tail is not a shortcut, it is the only thing this view can
+	 * honestly offer. The transcript is bottom-anchored and has no app-level
+	 * scrolling — anything far enough up is in the terminal's own scrollback,
+	 * where this process cannot put a cursor or scroll to a selection. So the
+	 * key peels backwards through what is actually on screen, and each block it
+	 * opens is its own marker for where you have got to.
+	 */
+	private stepToolOutput(direction: "unfold" | "fold"): void {
+		const wantOpen = direction === "unfold";
+
+		// Radar's unit is the chain: one press turns the newest summary line back
+		// into the calls it stands for. Its per-call bodies are a glance/full
+		// question, so the step stops there rather than cascading.
+		if (this.toolOutputView === "radar") {
+			const chains = this.transcriptChains();
+			for (let i = chains.length - 1; i >= 0; i--) {
+				if (chains[i].isEmpty || chains[i].isOpened === wantOpen) continue;
+				chains[i].setOpened(wantOpen);
+				this.ui.requestRender();
+				return;
+			}
+			this.showStatus(wantOpen ? "No collapsed chains below this point" : "No open chains below this point");
+			return;
+		}
+
+		const blocks = this.transcriptToolBlocks();
+		for (let i = blocks.length - 1; i >= 0; i--) {
+			const block = blocks[i];
+			if (block.isRevealed() === wantOpen) continue;
+			block.setExpanded(wantOpen);
+			this.ui.requestRender();
+			return;
+		}
+		this.showStatus(wantOpen ? "No folded tool output below this point" : "No unfolded tool output below this point");
+	}
+
+	/**
+	 * Move the view dial one stop and report where it landed.
+	 *
+	 * The dial is the persistent decision ("how much do I ever want to see"),
+	 * which is why it saves; `app.tools.expand` stays the momentary one ("open
+	 * what is in front of me"), which is why it does not.
+	 */
+	private cycleToolOutputView(direction: "forward" | "backward"): void {
+		const next = cycleToolOutputView(this.toolOutputView, direction);
+		this.applyToolOutputView(next);
+	}
+
+	private applyToolOutputView(view: ToolOutputView): void {
+		this.toolOutputView = view;
+		this.settingsManager.setToolOutputView(view);
+		this.footer.setToolOutputView(view);
+		for (const child of this.chatContainer.children) {
+			if (child instanceof ToolChainComponent) child.setView(view);
+			else if (child instanceof ToolExecutionComponent) child.setView(view);
+		}
+		this.ui.requestRender();
 	}
 
 	private setToolsExpanded(expanded: boolean): void {
@@ -2912,6 +3109,36 @@ export class InteractiveMode {
 			}
 		}
 		this.ui.requestRender();
+	}
+
+	/**
+	 * Step the agent mode one along (ask → plan → build → debug → ask).
+	 *
+	 * Mode is the product's central guardrail and sits first in the footer, yet
+	 * it was reachable only by typing `/mode <name>`. The list comes from the
+	 * mode command's own argument completions rather than a copy kept here, so
+	 * a project that adds a mode gets it in the rotation for free; if the command
+	 * is missing (a `--light` run strips the extension), the key says so instead
+	 * of guessing.
+	 */
+	private async cycleAgentMode(): Promise<void> {
+		const command = this.session.extensionRunner.getCommand("mode");
+		if (!command) {
+			this.showWarning("Modes are not available in this session");
+			return;
+		}
+
+		const completions = (await command.getArgumentCompletions?.("")) ?? [];
+		const modes = completions.map((item) => item.value);
+		if (modes.length === 0) {
+			this.showWarning("No modes are configured");
+			return;
+		}
+
+		const current = this.footerDataProvider.getActiveMode();
+		const index = modes.indexOf(current);
+		const next = modes[(index + 1) % modes.length];
+		await this.session.prompt(`/mode ${next}`);
 	}
 
 	private toggleThinkingBlockVisibility(): void {
@@ -3158,7 +3385,7 @@ export class InteractiveMode {
 					// shows as present without a restart.
 					externalTools: describeExternalTools(),
 					flags,
-					toolOutputDisplay: this.toolOutputDisplay,
+					toolOutputView: this.toolOutputView,
 					toolOutputMaxBytes: this.settingsManager.getToolOutputMaxBytes(),
 					toolOutputMaxLines: this.settingsManager.getToolOutputMaxLines(),
 					contextGc: this.settingsManager.getContextGcEnabled(),
@@ -3258,15 +3485,8 @@ export class InteractiveMode {
 								break;
 						}
 					},
-					onToolOutputDisplayChange: (level) => {
-						this.toolOutputDisplay = level;
-						this.settingsManager.setToolOutputDisplay(level);
-						for (const child of this.chatContainer.children) {
-							if (child instanceof ToolExecutionComponent) {
-								child.setDisplayLevel(level);
-							}
-						}
-						this.ui.requestRender();
+					onToolOutputViewChange: (view) => {
+						this.applyToolOutputView(view);
 					},
 					onToolOutputMaxBytesChange: (bytes) => {
 						this.settingsManager.setToolOutputMaxBytes(bytes);

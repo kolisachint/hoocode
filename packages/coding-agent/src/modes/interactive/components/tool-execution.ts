@@ -12,23 +12,24 @@ import {
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.js";
+import type { ToolOutputView } from "../../../core/tool-output-view.js";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.js";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
+import type { ChainEntry } from "./tool-chain-summary.js";
+import { ToolSignalComponent, toolSubject } from "./tool-signal.js";
 
 /**
- * How a tool block's result body is displayed:
- * - "standard": result shown (truncated preview, expandable) — the default.
- * - "collapsed": result hidden; only the call line + status dot render.
- * - "peek": result hidden by default with a ▸ affordance; the expand key reveals it.
+ * Re-exported so tool-block callers keep a single import site for the view
+ * dial; the type itself lives in core (the settings manager persists it).
  */
-export type ToolOutputDisplayLevel = "collapsed" | "peek" | "standard";
+export type { ToolOutputView } from "../../../core/tool-output-view.js";
 
 export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
-	displayLevel?: ToolOutputDisplayLevel;
+	view?: ToolOutputView;
 }
 
 /**
@@ -72,6 +73,35 @@ class PrefixFirstLine implements Component {
 	}
 }
 
+/**
+ * Indents every line of a child, unlike PrefixFirstLine which only offsets the
+ * first. Used for a failure's body under a radar row, so the reason reads as
+ * hanging off the row rather than starting a new column.
+ */
+class IndentAll implements Component {
+	private child: Component;
+	private indent: string;
+	private memo?: { src: string[]; width: number; out: string[] };
+
+	constructor(child: Component, width: number) {
+		this.child = child;
+		this.indent = " ".repeat(width);
+	}
+
+	invalidate(): void {
+		this.child.invalidate?.();
+		this.memo = undefined;
+	}
+
+	render(width: number): string[] {
+		const lines = this.child.render(Math.max(1, width - this.indent.length));
+		if (this.memo && this.memo.src === lines && this.memo.width === width) return this.memo.out;
+		const out = lines.map((line) => (line.trim() === "" ? line : this.indent + line));
+		this.memo = { src: lines, width, out };
+		return out;
+	}
+}
+
 export class ToolExecutionComponent extends Container {
 	private contentBox: Box;
 	private contentText: Text;
@@ -85,11 +115,13 @@ export class ToolExecutionComponent extends Container {
 	private toolCallId: string;
 	private args: any;
 	private expanded = false;
-	// Persisted display level (collapsed/peek/standard). Controls whether the
-	// result body renders at all; `revealed` is the per-block override that the
-	// global expand key flips for collapsed/peek blocks.
-	private displayLevel: ToolOutputDisplayLevel;
+	// Persisted view (radar/glance/full). Controls how the call line is drawn and
+	// whether the result body renders at all; `revealed` is the per-block override
+	// the global expand key flips for radar/glance blocks.
+	private view: ToolOutputView;
 	private revealed = false;
+	private signalComponent?: ToolSignalComponent;
+	private leadingSpacer: Spacer;
 	private showImages: boolean;
 	private imageWidthCells: number;
 	private isPartial = true;
@@ -138,11 +170,14 @@ export class ToolExecutionComponent extends Container {
 		this.builtInToolDefinition = createAllToolDefinitions(cwd)[toolName as ToolName];
 		this.showImages = options.showImages ?? true;
 		this.imageWidthCells = options.imageWidthCells ?? 60;
-		this.displayLevel = options.displayLevel ?? "standard";
+		this.view = options.view ?? "glance";
 		this.ui = ui;
 		this.cwd = cwd;
 
-		this.addChild(new Spacer(1));
+		// The separator between consecutive tool blocks. Radar drops it: rows that
+		// are one line each only read as a map when they stack without gaps.
+		this.leadingSpacer = new Spacer(1);
+		this.addChild(this.leadingSpacer);
 
 		// Always create all shell variants. contentBox is used for default renderer-based composition.
 		// selfRenderContainer is used when the tool renders its own framing.
@@ -155,7 +190,7 @@ export class ToolExecutionComponent extends Container {
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
-			this.addChild(this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox);
+			this.addChild(this.activeShell());
 		} else {
 			this.addChild(this.contentText);
 		}
@@ -286,20 +321,88 @@ export class ToolExecutionComponent extends Container {
 
 	setExpanded(expanded: boolean): void {
 		this.expanded = expanded;
-		// For collapsed/peek blocks the same global toggle reveals the hidden body;
-		// for standard blocks `expanded` alone switches truncated ↔ full.
+		// For radar/glance blocks the same global toggle reveals the hidden body;
+		// for full blocks `expanded` alone switches truncated ↔ everything.
 		this.revealed = expanded;
 		this.updateDisplay();
 	}
 
-	setDisplayLevel(level: ToolOutputDisplayLevel): void {
-		this.displayLevel = level;
+	setView(view: ToolOutputView): void {
+		this.view = view;
 		this.updateDisplay();
 	}
 
-	/** Whether the result body should render given the level and reveal state. */
+	/**
+	 * Whether this block is currently opened up.
+	 *
+	 * Read by the one-at-a-time unfold, which walks back from the newest block
+	 * to find the first one still folded.
+	 */
+	isRevealed(): boolean {
+		return this.revealed;
+	}
+
+	/** This call's contribution to its chain's summary line. */
+	chainEntry(): ChainEntry {
+		const output = this.result ? this.getTextOutput() : "";
+		return {
+			tool: this.toolName,
+			subject: toolSubject(this.args, this.cwd),
+			isError: this.result?.isError === true,
+			isPartial: this.result === undefined || this.isPartial,
+			outputLines: output.trim() ? output.split("\n").length : 0,
+		};
+	}
+
+	/** The failure text, for a collapsed chain to print under its line. */
+	errorText(): string {
+		return this.result?.isError ? this.getTextOutput() : "";
+	}
+
+	/**
+	 * Whether the result body should render.
+	 *
+	 * A failure always shows its reason, in every view. Everything else about
+	 * these views is a judgement about how much detail you want; why something
+	 * broke is not detail, and a red dot with no explanation was the one thing
+	 * the folded views got wrong.
+	 */
 	private shouldShowBody(): boolean {
-		return this.displayLevel === "standard" || this.revealed;
+		return this.view === "full" || this.revealed || this.result?.isError === true;
+	}
+
+	/**
+	 * Whether this block draws its radar signal line instead of the tool's own
+	 * call renderer. A revealed block leaves radar for as long as it is open, so
+	 * "expand" means the same thing in every view.
+	 */
+	private shouldShowSignalLine(): boolean {
+		return this.view === "radar" && !this.revealed;
+	}
+
+	/**
+	 * A failure's body under a radar row hangs off the row; anywhere else it sits
+	 * directly under its own call line and needs no extra indent.
+	 */
+	private indentUnderSignalRow(component: Component): Component {
+		return this.shouldShowSignalLine() ? new IndentAll(component, 3) : component;
+	}
+
+	private getSignalComponent(): ToolSignalComponent {
+		const input = {
+			toolName: this.toolName,
+			args: this.args,
+			cwd: this.cwd,
+			result: this.result,
+			isPartial: this.isPartial,
+			showImages: this.showImages,
+		};
+		if (this.signalComponent) {
+			this.signalComponent.setInput(input);
+		} else {
+			this.signalComponent = new ToolSignalComponent(input);
+		}
+		return this.signalComponent;
 	}
 
 	setShowImages(show: boolean): void {
@@ -373,13 +476,41 @@ export class ToolExecutionComponent extends Container {
 		return lines;
 	}
 
+	/**
+	 * The container this block renders into.
+	 *
+	 * A self-rendering tool (`edit` draws its own framed diff) normally gets the
+	 * bare container so its frame can use the full width; everything else gets
+	 * the padded box. That only matters while the body is on screen. With the
+	 * body folded away the block is a single line, and the unpadded container
+	 * put it one column left of every other row — invisible while `peek` was an
+	 * opt-in, glaring now that `glance` is the default. So: padded box whenever
+	 * nothing is expanded, which also gives radar the uniform rows it exists for.
+	 */
+	private activeShell(): Box | Container {
+		if (!this.shouldShowBody()) return this.contentBox;
+		return this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox;
+	}
+
+	/** Swap the attached shell when the view changes which one applies. */
+	private syncShellChild(): void {
+		const wanted = this.activeShell();
+		const other = wanted === this.contentBox ? this.selfRenderContainer : this.contentBox;
+		if (this.children.includes(wanted)) return;
+		this.removeChild(other);
+		other.clear();
+		this.addChild(wanted);
+	}
+
 	private updateDisplay(): void {
 		// Frozen blocks are immutable snapshots with their source state released.
 		if (this.frozen) return;
 		let hasContent = false;
 		this.hideComponent = false;
+		this.leadingSpacer.setLines(this.shouldShowSignalLine() ? 0 : 1);
 		if (this.hasRendererDefinition()) {
-			const renderContainer = this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox;
+			this.syncShellChild();
+			const renderContainer = this.activeShell();
 			// Boxless: no background fill on the container.
 			if (renderContainer instanceof Box) {
 				renderContainer.setBgFn(undefined);
@@ -390,24 +521,33 @@ export class ToolExecutionComponent extends Container {
 			// The dot is prepended to the first line of the call renderer so it stays inline
 			// (adding it as a separate child would stack it on its own line).
 			const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
-			// Peek blocks advertise their hidden body with a ▸/▾ caret before the dot.
-			const caret = this.displayLevel === "peek" ? theme.fg("muted", this.revealed ? "▾ " : "▸ ") : "";
-			const dot = caret + theme.fg(dotColor, "● ");
+			// No disclosure caret. It is a click-target idiom in a TUI with no
+			// pointer, it cost two columns on every row for an action that could
+			// only ever be reached by keyboard, and reading it as "this row opens"
+			// set an expectation the view does not meet.
+			const dot = theme.fg(dotColor, "● ");
 
-			const callRenderer = this.getCallRenderer();
-			if (!callRenderer) {
-				renderContainer.addChild(new PrefixFirstLine(dot, this.createCallFallback()));
+			// Radar replaces the tool's own call renderer with the uniform signal
+			// row, so a screen of mixed tools lines up into one readable map.
+			if (this.shouldShowSignalLine()) {
+				renderContainer.addChild(new PrefixFirstLine(dot, this.getSignalComponent()));
 				hasContent = true;
 			} else {
-				try {
-					const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
-					this.callRendererComponent = component;
-					renderContainer.addChild(new PrefixFirstLine(dot, component));
-					hasContent = true;
-				} catch {
-					this.callRendererComponent = undefined;
+				const callRenderer = this.getCallRenderer();
+				if (!callRenderer) {
 					renderContainer.addChild(new PrefixFirstLine(dot, this.createCallFallback()));
 					hasContent = true;
+				} else {
+					try {
+						const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
+						this.callRendererComponent = component;
+						renderContainer.addChild(new PrefixFirstLine(dot, component));
+						hasContent = true;
+					} catch {
+						this.callRendererComponent = undefined;
+						renderContainer.addChild(new PrefixFirstLine(dot, this.createCallFallback()));
+						hasContent = true;
+					}
 				}
 			}
 
@@ -416,7 +556,7 @@ export class ToolExecutionComponent extends Container {
 				if (!resultRenderer) {
 					const component = this.createResultFallback();
 					if (component) {
-						renderContainer.addChild(component);
+						renderContainer.addChild(this.indentUnderSignalRow(component));
 						hasContent = true;
 					}
 				} else {
@@ -428,7 +568,7 @@ export class ToolExecutionComponent extends Container {
 							this.getRenderContext(this.resultRendererComponent),
 						);
 						this.resultRendererComponent = component;
-						renderContainer.addChild(component);
+						renderContainer.addChild(this.indentUnderSignalRow(component));
 						hasContent = true;
 					} catch {
 						this.resultRendererComponent = undefined;
@@ -456,7 +596,7 @@ export class ToolExecutionComponent extends Container {
 		}
 		this.imageSpacers = [];
 
-		if (this.result) {
+		if (this.result && !this.shouldShowSignalLine()) {
 			const imageBlocks = this.result.content.filter((c) => c.type === "image");
 			const caps = getCapabilities();
 			for (let i = 0; i < imageBlocks.length; i++) {
@@ -493,8 +633,17 @@ export class ToolExecutionComponent extends Container {
 
 	private formatToolExecution(): string {
 		const dotColor = this.result?.isError ? "error" : this.isPartial ? "warning" : "success";
-		const caret = this.displayLevel === "peek" ? theme.fg("muted", this.revealed ? "▾ " : "▸ ") : "";
-		let text = caret + theme.fg(dotColor, "● ") + theme.fg("toolTitle", theme.bold(this.toolName));
+		// A tool with no renderer still gets a radar row, just without the
+		// flush-right signal column (this path has no width to align against).
+		if (this.shouldShowSignalLine()) {
+			const subject = toolSubject(this.args, this.cwd);
+			return (
+				theme.fg(dotColor, "● ") +
+				theme.fg("toolTitle", theme.bold(this.toolName)) +
+				(subject ? ` ${theme.fg("toolOutput", subject)}` : "")
+			);
+		}
+		let text = theme.fg(dotColor, "● ") + theme.fg("toolTitle", theme.bold(this.toolName));
 		const content = JSON.stringify(this.args, null, 2);
 		if (content) {
 			text += `\n\n${content}`;

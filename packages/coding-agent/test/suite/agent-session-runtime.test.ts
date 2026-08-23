@@ -1,16 +1,17 @@
-import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, registerFauxProvider } from "@kolisachint/hoocode-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	ChangeDirectoryError,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 } from "../../src/core/agent-session-runtime.js";
 import { AuthStorage } from "../../src/core/auth-storage.js";
-import { SessionManager } from "../../src/core/session-manager.js";
+import { getSessionDirPath, SessionManager } from "../../src/core/session-manager.js";
 import type {
 	ExtensionAPI,
 	ExtensionFactory,
@@ -159,6 +160,54 @@ describe("AgentSessionRuntime characterization", () => {
 			throw new Error("missing persisted assistant message");
 		}
 		expect(persistedAssistant.usage.cost.total).toBe(0.123);
+	});
+
+	it("moves the runtime to another directory and starts a session there", async () => {
+		const { runtime, tempDir } = await createRuntimeForTest(() => {});
+		const otherDir = realpathSync(mkdtempSync(join(tmpdir(), "pi-runtime-cd-")));
+		cleanups.push(() => rmSync(otherDir, { recursive: true, force: true }));
+
+		await runtime.session.prompt("hello");
+		const originalSessionFile = runtime.session.sessionFile;
+		const originalSession = runtime.session;
+
+		const result = await runtime.changeDirectory(otherDir);
+		await runtime.session.bindExtensions({});
+
+		expect(result).toEqual({ cancelled: false, cwd: otherDir });
+		expect(runtime.cwd).toBe(otherDir);
+		expect(runtime.session).not.toBe(originalSession);
+		expect(runtime.session.sessionManager.getCwd()).toBe(otherDir);
+		// A fresh session in the new root, not the old transcript dragged across.
+		expect(runtime.session.messages).toEqual([]);
+		expect(runtime.session.sessionFile).not.toBe(originalSessionFile);
+		// The session left behind is still on disk and still reopenable.
+		expect(existsSync(originalSessionFile!)).toBe(true);
+		// Sessions are stored per project, so the new session lives elsewhere.
+		expect(runtime.session.sessionManager.getSessionDir()).toBe(getSessionDirPath(otherDir));
+
+		expect(realpathSync(tempDir)).not.toBe(otherDir);
+	});
+
+	it("rejects a directory that is missing or is a file, without touching the session", async () => {
+		const { runtime, tempDir } = await createRuntimeForTest(() => {});
+		const sessionBefore = runtime.session;
+		const filePath = join(tempDir, "not-a-directory.txt");
+		writeFileSync(filePath, "");
+
+		await expect(runtime.changeDirectory(join(tempDir, "does-not-exist"))).rejects.toThrow(ChangeDirectoryError);
+		await expect(runtime.changeDirectory(filePath)).rejects.toThrow(/Not a directory/);
+		expect(runtime.session).toBe(sessionBefore);
+	});
+
+	it("is a no-op when the target is the current directory", async () => {
+		const { runtime, tempDir } = await createRuntimeForTest(() => {});
+		const sessionBefore = runtime.session;
+
+		const result = await runtime.changeDirectory(tempDir);
+
+		expect(result.cancelled).toBe(false);
+		expect(runtime.session).toBe(sessionBefore);
 	});
 
 	it("emits session_before_switch and session_start for new and resume flows", async () => {

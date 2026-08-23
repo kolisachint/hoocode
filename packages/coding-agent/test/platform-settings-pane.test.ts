@@ -36,7 +36,7 @@ function paneConfig(platform: string[] = []): any {
 		// Not the subject here; the External tools category is covered by its own suite.
 		externalTools: [],
 		flags: [],
-		toolOutputDisplay: "standard",
+		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,
 		toolOutputMaxLines: 200,
 		contextGc: true,
@@ -130,7 +130,7 @@ describe("platform settings pane", () => {
 			"light",
 			"tools",
 			"tool-output",
-			"tool-output-display",
+			"tool-output-view",
 			"output-max-bytes",
 			"output-max-lines",
 			"platform",

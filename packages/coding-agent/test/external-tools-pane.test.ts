@@ -47,7 +47,7 @@ function paneConfig(externalTools: ExternalToolStatus[]): any {
 		],
 		externalTools,
 		flags: [],
-		toolOutputDisplay: "standard",
+		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,
 		toolOutputMaxLines: 200,
 		contextGc: true,

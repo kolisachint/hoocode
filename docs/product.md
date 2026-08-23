@@ -74,6 +74,22 @@ Four tool groups are **off by default** — turn them on per session with a flag
 | **Web** (`webfetch` · `websearch`) | `--enable-webtools` or `"enableWebTools": true` | Fetch a URL as text and run web searches. |
 | **Plugins** (`SearchPlugins` · `InstallPlugin` · `ProposePlugin` · ...) | `--enable-plugintools` or `"enablePluginTools": true` | The autonomous plugin lifecycle system — discover, install, and propose plugins, plus a runtime reuse nudge. |
 
+### How much of a tool call you see
+
+One dial, `Alt+O`, with three stops from least to most (`Shift+Alt+O` goes back). The footer shows where it sits.
+
+| View | What a tool call looks like |
+|---|---|
+| **radar** | One line per *chain* — a run of consecutive tool calls. While it works the line shows its shape in order, `◐ grep › read › bash✗ › edit › bash…`; once the agent moves on it becomes what the run amounted to, `● Edited packages/tui/src/keys.ts`. |
+| **glance** | The tool's own call line, one per call, body folded away. **The default.** |
+| **full** | Call line plus the result body. |
+
+**A failure always shows why**, in every view. That is the one thing none of them fold away: a red dot with no explanation is worse than no folding at all.
+
+A chain ends when the agent next speaks, or when the turn ends. A run that was interrupted keeps its working shape plus a marker rather than a tidy summary — the settled line is a claim about what the run amounted to, and a run cut off partway through has no such claim to make.
+
+Two keys open things without moving the dial. `Ctrl+O` expands everything at once — tool bodies, the header, summaries. `Alt+U` opens one thing, newest first, repeating to peel backwards (`Shift+Alt+U` re-folds): in radar that turns a chain back into its calls, elsewhere it opens a single body. It works from the newest backwards because the transcript is bottom-anchored — older output lives in your terminal's own scrollback, which the agent can neither scroll nor put a cursor into.
+
 ## External binaries
 
 hoocode is self-sufficient on its own: nothing below is required, and every one
@@ -99,6 +115,22 @@ Resolution order for each is: `HOOCODE_<TOOL>_BINARY` (an explicit path, for a
 local build) → hoocode's bin directory → `PATH` → download. Set `HOOCODE_OFFLINE=1`
 to never download; set `HOOCODE_NATIVE_SEARCH=1` to force the JS paths even when
 `rg`/`fd` are present.
+
+## Working across repositories
+
+`/cd <path>` moves the session to another directory without leaving the process, so provider auth, the warmed model list, and the terminal all survive the move. Everything scoped to the directory is rebuilt for the new root: tools, context files, project settings, extensions, skills, agents, and MCP servers. Sessions are stored per project, so a fresh session starts in the target; the one you left is still on disk and `/resume` in the old directory reopens it.
+
+Bare `/cd` goes home, `/cd -` returns to where you came from, and the argument completes against real subdirectories. `Alt+W` opens it.
+
+## Keys
+
+Three rings, and a key's modifier says which ring it is in:
+
+- **`Ctrl` — the view.** What is on screen right now: expand everything (`Ctrl+O`), thinking blocks (`Ctrl+T`), the task panel (`Ctrl+N`), model cycling (`Ctrl+P`).
+- **`Alt` — the cockpit.** What the agent is and where it works: mode (`Alt+G`), model (`Alt+M`), directory (`Alt+W`), the view dial (`Alt+O`), unfold one block (`Alt+U`), settings (`Alt+S`), session tree (`Alt+T`), history (`Alt+H`), shortcuts (`Alt+K`).
+- **Inside a picker**, every `Ctrl` key still belongs to the query you are typing — `Ctrl+A`, `Ctrl+U`, `Ctrl+W` edit text, as they do everywhere else. A picker's own verbs are all on `Alt`, and its hint line names them.
+
+`Shift` reverses whatever the unshifted key does. Everything is rebindable in `~/.hoocode/keybindings.json`; `/hotkeys` lists the set currently in force.
 
 ## Extensibility
 

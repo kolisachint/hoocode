@@ -25,8 +25,18 @@ function makeSession(overrides: Partial<SessionInfo> & { id: string }): SessionI
 	};
 }
 
-// Kitty keyboard protocol encoding for Ctrl+R
-const CTRL_R = "\x1b[114;5u";
+/**
+ * The rename verb's raw input and its display text, both read from the
+ * keybinding. The picker's verbs live on alt so the query line keeps its emacs
+ * editing keys; asserting on the resolved key rather than a literal keeps this
+ * test honest if the binding moves again.
+ */
+const RENAME_KEY = new KeybindingsManager().getKeys("app.session.rename")[0]!;
+const RENAME_INPUT = (() => {
+	const match = /^alt\+(.)$/.exec(RENAME_KEY);
+	if (!match) throw new Error(`Expected an alt+<char> binding for app.session.rename, got ${RENAME_KEY}`);
+	return `\x1b${match[1]}`;
+})();
 
 describe("session selector rename", () => {
 	beforeAll(() => {
@@ -53,7 +63,7 @@ describe("session selector rename", () => {
 		await flushPromises();
 
 		const output = selector.render(120).join("\n");
-		expect(output).toContain("ctrl+r");
+		expect(output).toContain(RENAME_KEY);
 		expect(output).toContain("rename");
 	});
 
@@ -72,11 +82,11 @@ describe("session selector rename", () => {
 		await flushPromises();
 
 		const output = selector.render(120).join("\n");
-		expect(output).not.toContain("ctrl+r");
+		expect(output).not.toContain(RENAME_KEY);
 		expect(output).not.toContain("rename");
 	});
 
-	it("enters rename mode on Ctrl+R and submits with Enter", async () => {
+	it("enters rename mode on the rename key and submits with Enter", async () => {
 		const sessions = [makeSession({ id: "a", name: "Old" })];
 		const renameSession = vi.fn(async () => {});
 
@@ -92,7 +102,7 @@ describe("session selector rename", () => {
 		);
 		await flushPromises();
 
-		selector.getSessionList().handleInput(CTRL_R);
+		selector.getSessionList().handleInput(RENAME_INPUT);
 		await flushPromises();
 
 		// Rename mode layout

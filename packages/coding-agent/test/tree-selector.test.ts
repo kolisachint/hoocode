@@ -19,6 +19,23 @@ beforeEach(() => {
 	setKeybindings(new KeybindingsManager());
 });
 
+/**
+ * Raw input for a tree-filter lens, derived from the keybinding rather than
+ * hardcoded: the lenses moved from ctrl+letters (which collided with the query
+ * line's editing keys) to alt+digits, and a test spelling the escape sequence
+ * out by hand would have gone on passing against the old layout.
+ */
+function filterKey(keybinding: Parameters<KeybindingsManager["getKeys"]>[0]): string {
+	const key = new KeybindingsManager().getKeys(keybinding)[0];
+	const match = /^alt\+(.)$/.exec(key ?? "");
+	if (!match) throw new Error(`Expected an alt+<char> binding for ${keybinding}, got ${key}`);
+	return `\x1b${match[1]}`;
+}
+
+const FILTER_DEFAULT = filterKey("app.tree.filter.default");
+const FILTER_USER_ONLY = filterKey("app.tree.filter.userOnly");
+const FILTER_LABELED_ONLY = filterKey("app.tree.filter.labeledOnly");
+
 // Helper to create a user message entry
 function userMessage(id: string, parentId: string | null, content: string): SessionMessageEntry {
 	return {
@@ -209,7 +226,7 @@ describe("TreeSelectorComponent", () => {
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-2");
 
 			// Simulate Ctrl+U (user-only filter)
-			selector.handleInput("\x15");
+			selector.handleInput(FILTER_USER_ONLY);
 
 			// Should now be on user-2 (the parent user message), not user-3
 			expect(list.getSelectedNode()?.entry.id).toBe("user-2");
@@ -238,12 +255,12 @@ describe("TreeSelectorComponent", () => {
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-2");
 
 			// Switch to user-only
-			selector.handleInput("\x15"); // Ctrl+U
+			selector.handleInput(FILTER_USER_ONLY);
 			expect(list.getSelectedNode()?.entry.id).toBe("user-2");
 
 			// Switch back to default - should stay on user-2
 			// (since that's what we navigated to via parent traversal)
-			selector.handleInput("\x04"); // Ctrl+D
+			selector.handleInput(FILTER_DEFAULT);
 			expect(list.getSelectedNode()?.entry.id).toBe("user-2");
 		});
 	});
@@ -301,13 +318,13 @@ describe("TreeSelectorComponent", () => {
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-2");
 
 			// Switch to labeled-only filter (no labels exist, so empty result)
-			selector.handleInput("\x0c"); // Ctrl+L
+			selector.handleInput(FILTER_LABELED_ONLY);
 
 			// The list should be empty, getSelectedNode returns undefined
 			expect(list.getSelectedNode()).toBeUndefined();
 
 			// Switch back to default filter
-			selector.handleInput("\x04"); // Ctrl+D
+			selector.handleInput(FILTER_DEFAULT);
 
 			// Should restore to asst-2 (the selection before we switched to empty filter)
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-2");
@@ -329,18 +346,18 @@ describe("TreeSelectorComponent", () => {
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-1");
 
 			// Switch to labeled-only (empty) - Ctrl+L toggles labeled ↔ default
-			selector.handleInput("\x0c"); // Ctrl+L -> labeled-only
+			selector.handleInput(FILTER_LABELED_ONLY);
 			expect(list.getSelectedNode()).toBeUndefined();
 
 			// Switch to default, then back to labeled-only
-			selector.handleInput("\x0c"); // Ctrl+L -> default (toggle back)
+			selector.handleInput(FILTER_LABELED_ONLY); // toggles back to default
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-1");
 
-			selector.handleInput("\x0c"); // Ctrl+L -> labeled-only again
+			selector.handleInput(FILTER_LABELED_ONLY);
 			expect(list.getSelectedNode()).toBeUndefined();
 
 			// Switch back to default with Ctrl+D
-			selector.handleInput("\x04"); // Ctrl+D
+			selector.handleInput(FILTER_DEFAULT);
 			expect(list.getSelectedNode()?.entry.id).toBe("asst-1");
 		});
 	});
@@ -636,8 +653,8 @@ describe("TreeSelectorComponent", () => {
 			selector.handleInput(CTRL_LEFT); // asst-4a → user-3a
 			selector.handleInput(CTRL_LEFT); // fold user-3a
 
-			selector.handleInput("\x15"); // ctrl+u: user-only filter resets folds
-			selector.handleInput("\x04"); // ctrl+d: back to default
+			selector.handleInput(FILTER_USER_ONLY); // user-only filter resets folds
+			selector.handleInput(FILTER_DEFAULT); // back to default
 
 			// Navigate to user-3a to verify fold was reset
 			let currentId = "";

@@ -50,7 +50,7 @@ function openPane(manager: SettingsManager): SettingsSelectorComponent {
 		// Not the subject here; the External tools category is covered by its own suite.
 		externalTools: [],
 		flags: [],
-		toolOutputDisplay: "standard",
+		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,
 		toolOutputMaxLines: 200,
 		contextGc: true,

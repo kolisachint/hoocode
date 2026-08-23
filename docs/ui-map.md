@@ -50,6 +50,9 @@ Rendered in order as the conversation scrolls:
 - `user-message.ts`, `assistant-message.ts` - the two primary message rows.
 - `custom-message.ts` - custom/system-injected messages (e.g. background-task results).
 - `bash-execution.ts`, `tool-execution.ts` - tool call + result rendering.
+- `tool-signal.ts` - a single call's radar row (tool, subject, size), shown when a chain is opened.
+- `tool-chain.ts`, `tool-chain-summary.ts` - the radar view's per-chain line: a run
+  of consecutive tool calls as one line, working shape vs settled phrase.
 - `diff.ts` - unified diff rendering for edits.
 - `skill-invocation-message.ts` - skill invocations.
 - `branch-summary-message.ts`, `compaction-summary-message.ts` - summaries produced by
@@ -137,10 +140,14 @@ Pickers presented over the main view:
 
 - The task pane / subagent list, status icons, warning cue: `components/task-panel.ts`.
 - How a tool call is shown: `components/tool-execution.ts` (and `bash-execution.ts`,
-  `diff.ts`).
+  `diff.ts`). How much of it is shown: the view dial in `core/tool-output-view.ts`
+  (radar / glance / full); radar groups calls into `components/tool-chain.ts`.
 - Colors / styling: `theme/` and `theme.fg(...)`.
 - The prompt editor and keybindings: `tui/src/editor-component.ts`,
-  `tui/src/keybindings.ts`.
+  `tui/src/keybindings.ts`. The app's own bindings and the three-ring layout they
+  follow (`ctrl` = view, `alt` = cockpit, pickers never take a `ctrl+<letter>`):
+  `coding-agent/src/core/keybindings.ts`, guarded by
+  `coding-agent/test/keybinding-layout.test.ts`.
 - A generic widget (box, list, markdown): `tui/src/components/`.
 - The render/diff loop: `tui/src/tui.ts` + `tui/src/terminal.ts`.
 - Width/truncation math: `tui/src/utils.ts` (`visibleWidth`, `truncateToWidth`).

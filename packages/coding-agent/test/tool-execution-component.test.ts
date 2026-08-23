@@ -5,6 +5,7 @@ import { Type } from "typebox";
 import { beforeAll, describe, expect, test } from "vitest";
 import { getReadmePath } from "../src/config.js";
 import type { ToolDefinition } from "../src/core/extensions/types.js";
+import type { ToolOutputView } from "../src/core/tool-output-view.js";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.js";
 import { createWriteToolDefinition } from "../src/core/tools/write.js";
@@ -45,7 +46,7 @@ describe("ToolExecutionComponent parity", () => {
 			"custom_tool",
 			"tool-dot",
 			{},
-			{},
+			{ view: "full" },
 			toolDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -70,7 +71,7 @@ describe("ToolExecutionComponent parity", () => {
 			"custom_tool",
 			"tool-dot-wrap",
 			{},
-			{},
+			{ view: "full" },
 			toolDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -98,7 +99,7 @@ describe("ToolExecutionComponent parity", () => {
 			"custom_tool",
 			"tool-1",
 			{},
-			{},
+			{ view: "full" },
 			toolDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -128,7 +129,7 @@ describe("ToolExecutionComponent parity", () => {
 			"edit",
 			"tool-2",
 			{ path: "README.md", oldText: "before", newText: "after" },
-			{},
+			{ view: "full" },
 			overrideDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -145,7 +146,7 @@ describe("ToolExecutionComponent parity", () => {
 			"read",
 			"tool-3",
 			{ file_path: "README.md" },
-			{},
+			{ view: "full" },
 			undefined,
 			createFakeTui(),
 			process.cwd(),
@@ -180,7 +181,7 @@ describe("ToolExecutionComponent parity", () => {
 			"read",
 			"tool-4",
 			{ path: "README.md" },
-			{},
+			{ view: "full" },
 			createReadToolDefinition(process.cwd()),
 			createFakeTui(),
 			process.cwd(),
@@ -200,7 +201,7 @@ describe("ToolExecutionComponent parity", () => {
 			"read",
 			"tool-4b",
 			{ path: "notes.txt" },
-			{},
+			{ view: "full" },
 			overrideDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -221,7 +222,7 @@ describe("ToolExecutionComponent parity", () => {
 			"read",
 			"tool-4c",
 			{ path: "README.md" },
-			{},
+			{ view: "full" },
 			overrideDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -239,7 +240,7 @@ describe("ToolExecutionComponent parity", () => {
 			"read",
 			"tool-4d",
 			{ path: "README.md" },
-			{},
+			{ view: "full" },
 			{
 				...builtInDefinition,
 				renderCall: () => new Text("override call", 0, 0),
@@ -261,7 +262,7 @@ describe("ToolExecutionComponent parity", () => {
 			"read",
 			"tool-4e",
 			{ path: "README.md" },
-			{},
+			{ view: "full" },
 			{
 				...createBaseToolDefinition("read"),
 				parameters: builtInTool.parameters,
@@ -294,7 +295,7 @@ describe("ToolExecutionComponent parity", () => {
 			"custom_tool",
 			"tool-5",
 			{},
-			{},
+			{ view: "full" },
 			toolDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -317,7 +318,7 @@ describe("ToolExecutionComponent parity", () => {
 			"custom_tool",
 			"tool-5b",
 			{ foo: "bar" },
-			{},
+			{ view: "full" },
 			toolDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -336,7 +337,7 @@ describe("ToolExecutionComponent parity", () => {
 			"custom_tool",
 			"tool-6",
 			{ foo: "bar" },
-			{},
+			{ view: "full" },
 			toolDefinition,
 			createFakeTui(),
 			process.cwd(),
@@ -352,7 +353,7 @@ describe("ToolExecutionComponent parity", () => {
 			"write",
 			"tool-7",
 			{ path: "README.md", content: "one\ntwo\n" },
-			{},
+			{ view: "full" },
 			createWriteToolDefinition(process.cwd()),
 			createFakeTui(),
 			process.cwd(),
@@ -368,7 +369,7 @@ describe("ToolExecutionComponent parity", () => {
 			"read",
 			"tool-8",
 			{ path: "notes.txt" },
-			{},
+			{ view: "full" },
 			createReadToolDefinition(process.cwd()),
 			createFakeTui(),
 			process.cwd(),
@@ -422,7 +423,7 @@ describe("ToolExecutionComponent parity", () => {
 				"read",
 				`tool-compact-${scenario.title}`,
 				{ path: scenario.path },
-				{},
+				{ view: "full" },
 				createReadToolDefinition(process.cwd()),
 				createFakeTui(),
 				process.cwd(),
@@ -454,7 +455,7 @@ describe("ToolExecutionComponent parity", () => {
 				"read",
 				`tool-compact-range-${scenario.title}`,
 				{ path: scenario.path, offset: 120, limit: 210 },
-				{},
+				{ view: "full" },
 				createReadToolDefinition(process.cwd()),
 				createFakeTui(),
 				process.cwd(),
@@ -467,12 +468,12 @@ describe("ToolExecutionComponent parity", () => {
 	}
 });
 
-describe("ToolExecutionComponent display levels", () => {
+describe("ToolExecutionComponent view dial", () => {
 	beforeAll(() => {
 		initTheme("dark");
 	});
 
-	function build(displayLevel: "collapsed" | "peek" | "standard") {
+	function build(view: ToolOutputView, args: Record<string, unknown> = {}) {
 		const toolDefinition: ToolDefinition = {
 			...createBaseToolDefinition(),
 			renderCall: () => new Text("custom call", 0, 0),
@@ -480,47 +481,143 @@ describe("ToolExecutionComponent display levels", () => {
 		};
 		const component = new ToolExecutionComponent(
 			"custom_tool",
-			`level-${displayLevel}`,
-			{},
-			{ displayLevel },
+			`view-${view}`,
+			args,
+			{ view },
 			toolDefinition,
 			createFakeTui(),
 			process.cwd(),
 		);
-		component.updateResult({ content: [{ type: "text", text: "done" }], details: {}, isError: false }, false);
+		component.updateResult(
+			{ content: [{ type: "text", text: "one\ntwo\nthree" }], details: {}, isError: false },
+			false,
+		);
 		return component;
 	}
 
-	test("standard shows the result body", () => {
-		const rendered = stripAnsi(build("standard").render(120).join("\n"));
+	test("full shows the result body", () => {
+		const rendered = stripAnsi(build("full").render(120).join("\n"));
 		expect(rendered).toContain("custom call");
 		expect(rendered).toContain("RESULT BODY");
 	});
 
-	test("collapsed hides the result body but keeps the call line", () => {
-		const rendered = stripAnsi(build("collapsed").render(120).join("\n"));
-		expect(rendered).toContain("custom call");
-		expect(rendered).not.toContain("RESULT BODY");
-	});
-
-	test("peek hides the body with a ▸ caret and reveals it (▾) on expand", () => {
-		const component = build("peek");
-		const collapsed = stripAnsi(component.render(120).join("\n"));
-		expect(collapsed).toContain("▸"); // ▸
-		expect(collapsed).not.toContain("RESULT BODY");
+	test("glance shows the call line alone, with no disclosure caret", () => {
+		const component = build("glance");
+		const folded = stripAnsi(component.render(120).join("\n"));
+		expect(folded).toContain("custom call");
+		expect(folded).not.toContain("RESULT BODY");
+		// The caret was a click-target idiom in a TUI with no pointer.
+		expect(folded).not.toContain("▸");
+		expect(folded).not.toContain("▾");
 
 		component.setExpanded(true);
-		const revealed = stripAnsi(component.render(120).join("\n"));
-		expect(revealed).toContain("▾"); // ▾
-		expect(revealed).toContain("RESULT BODY");
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
 	});
 
-	test("setDisplayLevel switches an existing block live", () => {
-		const component = build("standard");
+	test("a failure shows why it failed in every view, unasked", () => {
+		// The one thing the folded views must never hide: a red dot with no
+		// explanation is worse than no folding at all.
+		for (const view of ["radar", "glance", "full"] as ToolOutputView[]) {
+			const toolDefinition: ToolDefinition = {
+				...createBaseToolDefinition(),
+				renderCall: () => new Text("custom call", 0, 0),
+				renderResult: () => new Text("WHY IT BROKE", 0, 0),
+			};
+			const component = new ToolExecutionComponent(
+				"custom_tool",
+				`err-${view}`,
+				{ command: "bun test" },
+				{ view },
+				toolDefinition,
+				createFakeTui(),
+				process.cwd(),
+			);
+			component.updateResult({ content: [{ type: "text", text: "boom" }], details: {}, isError: true }, false);
+			expect(stripAnsi(component.render(120).join("\n")), view).toContain("WHY IT BROKE");
+		}
+	});
+
+	test("radar replaces the call renderer with a signal row", () => {
+		const rendered = stripAnsi(build("radar", { command: "npm run check" }).render(120).join("\n"));
+		expect(rendered).not.toContain("custom call");
+		expect(rendered).not.toContain("RESULT BODY");
+		expect(rendered).toContain("custom_to"); // tool column, capped to its width
+		expect(rendered).toContain("npm run check"); // subject column
+		expect(rendered).toContain("3 lines"); // signal column
+	});
+
+	test("expanding a radar block leaves radar for as long as it is open", () => {
+		const component = build("radar", { command: "npm run check" });
+		component.setExpanded(true);
+		const revealed = stripAnsi(component.render(120).join("\n"));
+		expect(revealed).toContain("custom call");
+		expect(revealed).toContain("RESULT BODY");
+
+		component.setExpanded(false);
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("npm run check");
+	});
+
+	test("radar rows stack without the separator the other views keep", () => {
+		const radar = build("radar", { command: "npm run check" }).render(120);
+		expect(radar.filter((line) => stripAnsi(line).trim() === "")).toEqual([]);
+		// The same block in glance keeps its leading blank separator line.
+		expect(stripAnsi(build("glance", { command: "npm run check" }).render(120)[0]!).trim()).toBe("");
+	});
+
+	test("radar gives a self-rendering tool the same row framing as every other", () => {
+		// `edit` renders its own frame, so it normally bypasses the padded shell.
+		// Radar's whole value is uniformity, so it must line up with the rest.
+		const selfRendering: ToolDefinition = {
+			...createBaseToolDefinition(),
+			renderShell: "self",
+			renderCall: () => new Text("custom call", 0, 0),
+			renderResult: () => new Text("RESULT BODY", 0, 0),
+		};
+		const component = new ToolExecutionComponent(
+			"self_tool",
+			"view-radar-self",
+			{ command: "npm run check" },
+			{ view: "radar" },
+			selfRendering,
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult({ content: [{ type: "text", text: "a\nb" }], details: {}, isError: false }, false);
+
+		const selfRow = stripAnsi(component.render(120).join("\n"));
+		const plainRow = stripAnsi(build("radar", { command: "npm run check" }).render(120).join("\n"));
+		expect(selfRow.indexOf("npm run check")).toBe(plainRow.indexOf("npm run check"));
+		expect(selfRow.length).toBe(plainRow.length);
+
+		// And it goes back to its own frame when the dial moves off radar.
+		component.setView("full");
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
-		component.setDisplayLevel("collapsed");
+	});
+
+	test("reports its own fold state, so one block can be opened without the rest", () => {
+		// The regression this guards: ctrl+o expands every block at once, which
+		// left the ▸ caret on each row advertising a per-block action no key
+		// could perform. `app.tools.unfoldOne` walks back from the newest block
+		// to the first one still folded, which needs this to be readable.
+		const first = build("glance", { command: "one" });
+		const second = build("glance", { command: "two" });
+		expect([first.isRevealed(), second.isRevealed()]).toEqual([false, false]);
+
+		second.setExpanded(true);
+		expect([first.isRevealed(), second.isRevealed()]).toEqual([false, true]);
+		expect(stripAnsi(first.render(120).join("\n"))).not.toContain("RESULT BODY");
+		expect(stripAnsi(second.render(120).join("\n"))).toContain("RESULT BODY");
+
+		second.setExpanded(false);
+		expect(second.isRevealed()).toBe(false);
+	});
+
+	test("setView switches an existing block live", () => {
+		const component = build("full");
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
+		component.setView("glance");
 		expect(stripAnsi(component.render(120).join("\n"))).not.toContain("RESULT BODY");
-		component.setDisplayLevel("standard");
+		component.setView("full");
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
 	});
 });
@@ -535,7 +632,7 @@ describe("ToolExecutionComponent freeze (memory trimming)", () => {
 			"read",
 			id,
 			{ path: "README.md" },
-			{},
+			{ view: "full" },
 			createReadToolDefinition(process.cwd()),
 			createFakeTui(),
 			process.cwd(),
@@ -552,7 +649,7 @@ describe("ToolExecutionComponent freeze (memory trimming)", () => {
 			"read",
 			"freeze-partial",
 			{ path: "README.md" },
-			{},
+			{ view: "full" },
 			createReadToolDefinition(process.cwd()),
 			createFakeTui(),
 			process.cwd(),

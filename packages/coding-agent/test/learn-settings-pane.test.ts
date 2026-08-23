@@ -42,7 +42,7 @@ function paneConfig(learn: Record<string, number> = DEFAULT_LEARN): any {
 		// Not the subject here; the External tools category is covered by its own suite.
 		externalTools: [],
 		flags: [],
-		toolOutputDisplay: "standard",
+		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,
 		toolOutputMaxLines: 200,
 		contextGc: true,
