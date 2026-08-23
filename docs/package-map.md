@@ -137,7 +137,10 @@ The shipped CLI. Largest package.
 - A built-in tool: `packages/coding-agent/src/core/tools/`.
 - Whether a description actually triggers: `core/extensions/plugins/trigger-eval.ts`
   (scoring, shared) + `trigger-judge.ts` (the model call). Agent selection reuses both
-  via `core/agent-selection-eval.ts`; run it with `bun run agent-eval`.
+  via `core/agent-selection-eval.ts`. Run it from `packages/coding-agent` with
+  `npm run agent-eval` (`-- --dry-run` prints the corpus without calling a model).
+  It runs from source via the root tsconfig's path aliases, so no build is needed —
+  unlike the `search-eval:*` scripts, which still resolve through `dist`.
 - A shipped prompt, mode prompt, or agent definition: `packages/coding-agent/templates/`.
 - Plugins bundled with hoocode: `core/extensions/plugins/default-marketplace/plugins/`
   (copied to `dist` wholesale by `copy-assets`, so adding one needs no build change).

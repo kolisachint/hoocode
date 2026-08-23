@@ -11,11 +11,16 @@
  * The scoring lives in `src/core/agent-selection-eval.ts` and the judge in
  * `src/core/extensions/plugins/trigger-judge.ts`; this file is only the CLI.
  *
- * Usage:
- *   bun scripts/agent-eval.ts
- *   bun scripts/agent-eval.ts --model anthropic/claude-sonnet-5
- *   bun scripts/agent-eval.ts --gold path/to/cases.json --out runs/agents.json
- *   bun scripts/agent-eval.ts --dry-run     # print the corpus, call no model
+ * Usage (from packages/coding-agent):
+ *   npm run agent-eval
+ *   npm run agent-eval -- --model anthropic/claude-sonnet-5
+ *   npm run agent-eval -- --gold path/to/cases.json --out runs/agents.json
+ *   npm run agent-eval -- --dry-run     # print the corpus, call no model
+ *
+ * Runs from source through the root tsconfig's path aliases, so it needs no
+ * build. That is why it is `tsx --tsconfig ../../tsconfig.json` rather than
+ * `bun` like the search-eval scripts: bun resolves the workspace packages
+ * through their `dist` entrypoints and fails until they are built.
  *
  * A run needs a model and credentials. Without them it exits non-zero saying so,
  * rather than reporting a green it did not measure.

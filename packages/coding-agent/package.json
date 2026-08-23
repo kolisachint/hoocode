@@ -46,7 +46,7 @@
 		"search-eval": "bun scripts/search-eval.ts",
 		"search-eval:gold": "bun scripts/search-eval-gold.ts",
 		"search-eval:compare": "bun scripts/search-eval-compare.ts",
-		"agent-eval": "bun scripts/agent-eval.ts",
+		"agent-eval": "tsx --tsconfig ../../tsconfig.json scripts/agent-eval.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
