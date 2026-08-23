@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Radar hides thinking traces outright rather than folding them to their
+  one-line label. Folding is right when the label sits between things you can
+  see, but a message that only thought and called tools has nothing left on
+  screen once its calls join the chain — so the label stood alone under the
+  summary and a six-call chain rendered as one row plus six `Thinking...` lines,
+  which is the noise radar exists to remove. One row per chain now means one row.
+
+- A settled radar chain never reads a shared command prefix as a location. A
+  command is not a path however much it looks like one: several calls beginning
+  `cd /Users/me/repo && …` share a long slash-separated prefix, and naming it
+  produced `Ran cd /Users/me/repo` — a headline for the one part of the command
+  that did nothing. Only families whose subject is a path reduce to a shared
+  location now; a command's leading `cd … &&` is stripped so the phrase names the
+  act, and a run that did the same thing every time reports that thing
+  (`Ran bun run check`) rather than a count.
+
 ## [0.5.33] - 2026-08-23
 
 ### Fixed
