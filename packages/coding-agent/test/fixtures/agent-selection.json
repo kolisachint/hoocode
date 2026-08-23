@@ -1,0 +1,50 @@
+{
+  "$comment": [
+    "Gold set for the agent-selection eval (scripts/agent-eval.ts).",
+    "",
+    "Authored from what people actually ask a coding agent, NOT from the agent",
+    "descriptions. Generating cases from the descriptions and then checking the",
+    "descriptions match them measures self-consistency and always passes; see the",
+    "circularity note in core/extensions/plugins/trigger-eval.ts.",
+    "",
+    "`expect: null` means the parent should do the work itself. Those cases are the",
+    "discriminative half: an over-eager roster wins every delegation case and still",
+    "makes the agent worse, because it ships trivial work to a subagent that cannot",
+    "see the conversation.",
+    "",
+    "The explore/plan pairs are deliberate. Those two agents ship with the same",
+    "tools, the same isolation and the same background flag, so if the model cannot",
+    "separate them here, they are one agent with two names."
+  ],
+  "cases": [
+    { "prompt": "Where is rate limiting implemented in this codebase?", "expect": "explore" },
+    { "prompt": "Trace what happens between the HTTP handler and the database write for a checkout request.", "expect": "explore" },
+    { "prompt": "Which modules import the legacy config loader?", "expect": "explore" },
+    { "prompt": "I'm getting a null deref in the session code. Find where the session can be unset.", "expect": "explore" },
+    { "prompt": "Summarize how the plugin loader decides what to activate. Don't change anything.", "expect": "explore" },
+    { "prompt": "Map out the directory structure of the worker package and what each file is for.", "expect": "explore" },
+    { "prompt": "How big a change would it be to swap the JSON parser? Just tell me what it touches.", "expect": "explore" },
+
+    { "prompt": "Work out how we'd add multi-tenancy to the billing service. I want the approach and the files before any code changes.", "expect": "plan" },
+    { "prompt": "Research the codebase and propose an implementation plan for offline mode.", "expect": "plan" },
+    { "prompt": "Before we touch anything: what's the migration path from the v1 schema to v2, step by step?", "expect": "plan" },
+    { "prompt": "Give me an ordered plan for splitting the monolith's auth code into its own package, with risks called out.", "expect": "plan" },
+    { "prompt": "I need a design for caching these queries. Investigate what exists, then write up the approach.", "expect": "plan" },
+
+    { "prompt": "Add pagination to the users endpoint, update the tests, and make sure the suite passes.", "expect": "general-purpose" },
+    { "prompt": "The build is broken on main. Figure out why and fix it.", "expect": "general-purpose" },
+    { "prompt": "Rename the Widget class to Component everywhere and run the type checker.", "expect": "general-purpose" },
+    { "prompt": "Port the retry logic from the old client to the new one and add coverage for it.", "expect": "general-purpose" },
+    { "prompt": "Set up a lint rule that bans console.log outside the logger module, then fix the violations.", "expect": "general-purpose" },
+    { "prompt": "Upgrade the test framework to v3 and get everything green again.", "expect": "general-purpose" },
+
+    { "prompt": "Change the timeout on line 42 of config.ts from 30 to 60.", "expect": null },
+    { "prompt": "What does this error message mean?", "expect": null },
+    { "prompt": "Fix the typo in the README heading.", "expect": null },
+    { "prompt": "Is `Array.prototype.at` available in Node 18?", "expect": null },
+    { "prompt": "Add a semicolon at the end of the import I just pasted.", "expect": null },
+    { "prompt": "Walk me through this function line by line while I ask questions as we go.", "expect": null },
+    { "prompt": "Rename this local variable from `x` to `count`.", "expect": null },
+    { "prompt": "What's the difference between the two approaches you just described?", "expect": null }
+  ]
+}

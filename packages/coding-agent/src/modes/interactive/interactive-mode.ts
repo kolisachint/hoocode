@@ -55,6 +55,7 @@ import type {
 	ExtensionUIContext,
 } from "../../core/extensions/index.js";
 import { getWorkspacePlatforms, setPlatforms } from "../../core/extensions/plugins/formats/platform-targets.js";
+import { describeExternalTools } from "../../core/external-tools.js";
 import { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { formatDurationSecs } from "../../core/format-duration.js";
 import { formatTokens } from "../../core/format-tokens.js";
@@ -3379,6 +3380,10 @@ export class InteractiveMode {
 					autoCompact: this.session.autoCompactionEnabled,
 					tools: toolToggles,
 					toolGroups,
+					// Resolved fresh on every open, never downloaded: a binary that
+					// arrived since the last open (a startup fetch, a `brew install`)
+					// shows as present without a restart.
+					externalTools: describeExternalTools(),
 					flags,
 					toolOutputView: this.toolOutputView,
 					toolOutputMaxBytes: this.settingsManager.getToolOutputMaxBytes(),

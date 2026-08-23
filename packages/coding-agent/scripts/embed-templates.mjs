@@ -40,6 +40,32 @@ function readFlatMarkdown(dir) {
 	return entries;
 }
 
+/**
+ * Every file under `dir`, keyed by its POSIX path relative to `dir`.
+ *
+ * Skills are directories, not single files — a SKILL.md plus whatever reference
+ * material it points at — so the embed has to carry the tree rather than one
+ * file per name the way modes and prompts do.
+ */
+function readTree(dir, prefix = "") {
+	const entries = {};
+	let names;
+	try {
+		names = readdirSync(dir, { withFileTypes: true });
+	} catch {
+		return entries;
+	}
+	for (const dirent of names.sort((a, b) => a.name.localeCompare(b.name))) {
+		const rel = prefix ? `${prefix}/${dirent.name}` : dirent.name;
+		if (dirent.isDirectory()) {
+			Object.assign(entries, readTree(join(dir, dirent.name), rel));
+		} else if (dirent.isFile()) {
+			entries[rel] = readFileSync(join(dir, dirent.name), "utf8");
+		}
+	}
+	return entries;
+}
+
 function readSubdirEntries(parent, filename) {
 	const entries = {};
 	let names;
@@ -64,6 +90,13 @@ const defaultConfig = readFileSync(join(templatesDir, "default-config.json"), "u
 const modes = readSubdirEntries(join(templatesDir, "modes"), "system.md");
 const profiles = readSubdirEntries(join(templatesDir, "profiles"), "context.md");
 const agentPrompts = readFlatMarkdown(join(templatesDir, "agents"));
+// Prose the runtime injects verbatim (e.g. the /grill phases). Markdown files
+// rather than TS string constants so a prompt is edited as prose, in one place.
+const prompts = readFlatMarkdown(join(templatesDir, "prompts"));
+// Skills hoocode itself ships. Materialized to a cache dir at runtime, because
+// a skill's <location> has to be a real readable path for the read tool and the
+// compiled binary has no templates/ next to it.
+const skills = readTree(join(templatesDir, "skills"));
 
 const modeEntries = Object.entries(modes)
 	.sort(([a], [b]) => a.localeCompare(b))
@@ -76,6 +109,16 @@ const profileEntries = Object.entries(profiles)
 	.join("\n");
 
 const agentEntries = Object.entries(agentPrompts)
+	.sort(([a], [b]) => a.localeCompare(b))
+	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
+	.join("\n");
+
+const skillEntries = Object.entries(skills)
+	.sort(([a], [b]) => a.localeCompare(b))
+	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
+	.join("\n");
+
+const promptEntries = Object.entries(prompts)
 	.sort(([a], [b]) => a.localeCompare(b))
 	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
 	.join("\n");
@@ -99,6 +142,15 @@ ${profileEntries}
 export const EMBEDDED_AGENT_PROMPTS: Record<string, string> = {
 ${agentEntries}
 };
+
+export const EMBEDDED_PROMPTS: Record<string, string> = {
+${promptEntries}
+};
+
+/** Built-in skills, keyed by path relative to templates/skills (POSIX separators). */
+export const EMBEDDED_SKILLS: Record<string, string> = {
+${skillEntries}
+};
 `;
 
 writeFileSync(outFile, body);
@@ -112,6 +164,8 @@ try {
 const modeCount = Object.keys(modes).length;
 const profileCount = Object.keys(profiles).length;
 const agentCount = Object.keys(agentPrompts).length;
+const promptCount = Object.keys(prompts).length;
+const skillFileCount = Object.keys(skills).length;
 console.log(
-	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"}, ${agentCount} agent prompt${agentCount === 1 ? "" : "s"})`,
+	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"}, ${agentCount} agent prompt${agentCount === 1 ? "" : "s"}, ${promptCount} prompt${promptCount === 1 ? "" : "s"}, ${skillFileCount} skill file${skillFileCount === 1 ? "" : "s"})`,
 );

@@ -90,6 +90,32 @@ A chain ends when the agent next speaks, or when the turn ends. A run that was i
 
 Two keys open things without moving the dial. `Ctrl+O` expands everything at once — tool bodies, the header, summaries. `Alt+U` opens one thing, newest first, repeating to peel backwards (`Shift+Alt+U` re-folds): in radar that turns a chain back into its calls, elsewhere it opens a single body. It works from the newest backwards because the transcript is bottom-anchored — older output lives in your terminal's own scrollback, which the agent can neither scroll nor put a cursor into.
 
+## External binaries
+
+hoocode is self-sufficient on its own: nothing below is required, and every one
+of them is optional. They are an expansion layer — five small Rust binaries that
+either make an existing tool faster or add a capability hoocode otherwise does
+not have. hoocode resolves each from `PATH` or its own bin directory, and
+downloads a published release when it needs one.
+
+Because hoocode degrades quietly without them, they used to be invisible.
+`/settings` → **External tools** now lists all five with their live status, what
+each one enables, and what happens without it. Any settings row that is inert
+without its binary is marked `needs <binary>` there.
+
+| Binary | Adds | Without it |
+|---|---|---|
+| `rg` (ripgrep) | The fast path for `grep` and for the lexical half of `search`. Fetched at startup. | A pure-JS scanner with identical match output — materially slower on large trees. |
+| `fd` | The fast path for `find`. Fetched at startup. | A JS directory walker with the same result shape, slower and with approximated glob/ignore handling. |
+| `embsearch` | The local embedding index: semantic hits fused into `search`, and meaning-ranked MCP/capability lookup. Fetched on first use. Requires the ONNX build; the mock build is rejected. | `search` runs lexical-only and capability lookup ranks lexically. Nothing errors; intent-phrased queries just rank worse. |
+| `webtools` | The `webfetch` and `websearch` tools — hoocode's only network path. Fetched on first use. | Both tools error when called. The web tool group is off by default, so this stays invisible until you enable it. |
+| `voicetools` | Push-to-talk voice input in the TUI. Fetched on first use. | Voice capture reports an error and never starts. |
+
+Resolution order for each is: `HOOCODE_<TOOL>_BINARY` (an explicit path, for a
+local build) → hoocode's bin directory → `PATH` → download. Set `HOOCODE_OFFLINE=1`
+to never download; set `HOOCODE_NATIVE_SEARCH=1` to force the JS paths even when
+`rg`/`fd` are present.
+
 ## Working across repositories
 
 `/cd <path>` moves the session to another directory without leaving the process, so provider auth, the warmed model list, and the terminal all survive the move. Everything scoped to the directory is rebuilt for the new root: tools, context files, project settings, extensions, skills, agents, and MCP servers. Sessions are stored per project, so a fresh session starts in the target; the one you left is still on disk and `/resume` in the old directory reopens it.

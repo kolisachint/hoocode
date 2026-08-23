@@ -47,6 +47,8 @@ function openPane(manager: SettingsManager): SettingsSelectorComponent {
 		autoCompact: true,
 		tools: [],
 		toolGroups: [],
+		// Not the subject here; the External tools category is covered by its own suite.
+		externalTools: [],
 		flags: [],
 		toolOutputView: "glance",
 		toolOutputMaxBytes: 8192,

@@ -302,12 +302,15 @@ export function createProposePluginToolDefinition(): ToolDefinition {
 			"and requires human confirmation before it activates. To change an existing plugin, use UpdatePlugin.",
 		promptSnippet:
 			"Author a new portable, reusable plugin to fill a capability gap (passive is autonomous; executable asks to confirm).",
+		// Trimmed to the trigger and the two hard prohibitions. The craft guidance —
+		// portability rules, capability-not-task naming, the one-call shape — was
+		// ~600 tok/turn of always-on prose restating a how-to. It is the
+		// `plugin-authoring` skill in the bundled marketplace now, read on demand.
 		promptGuidelines: [
-			"Sense reusability proactively: when you complete a multi-step recipe you'd plausibly repeat (or repeat the same pattern twice in one session) and SearchPlugins finds nothing that covers it, author it with ProposePlugin. Name and describe it by the capability, not the one-off task that prompted it, so it triggers again in other contexts. Passive skills/commands activate immediately and are reversible with UninstallPlugin — announce what you created and why.",
-			"Author for portability: write self-contained content — no absolute or machine-specific paths, no embedded secrets or environment-specific values, no assumptions about the current repo unless that is the capability's point. Prefer relative paths and runtime discovery, and state any prerequisites in the body. The layout is the session's target platform; you never choose it.",
-			"One tool for the whole plugin: put skills + a hook in a single call. The risk gate is computed from content — you don't pre-classify. Read-only subagents and skills/commands go straight through; hooks, MCP servers, or a subagent needing Bash/Write/Edit/MCP or tools:* pause for human confirmation.",
+			"Sense reusability proactively: a multi-step recipe you'd plausibly repeat (or repeated twice in one session) that SearchPlugins does not already cover is worth authoring. Read the plugin-authoring skill first if it is available; it decides naming, portability and shape.",
+			"Announce what you authored and why — passive content activates without asking, so the user learns it exists only if you say so.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
-			"Publishing a proven-useful plugin to a marketplace stays a human action — do not do it autonomously.",
+			"Publishing to a marketplace stays a human action — never do it autonomously.",
 		],
 		parameters: proposeParams,
 		async execute(_id, params: Static<typeof proposeParams>, _signal, _onUpdate, ctx: ExtensionContext) {
@@ -392,10 +395,7 @@ export function createUpdatePluginToolDefinition(): ToolDefinition {
 		promptSnippet:
 			"Add/replace capabilities in a portable plugin you authored (additive; executable additions ask to confirm).",
 		promptGuidelines: [
-			"Use UpdatePlugin to grow a plugin you already authored — e.g. add a skill to it, or attach a hook. Supply only the delta; existing capabilities are preserved (a matching name replaces just that one). It cannot remove a capability — use RemovePluginCapability for that.",
-			"Keep additions portable: same content rules as ProposePlugin — no absolute paths, no secrets, capability-not-task naming.",
 			"Hooks cannot be modified in place: they have no name, so supplying a changed command ADDS a second hook alongside the old one (both fire). To change a hook, RemovePluginCapability the old one first, then add the new one here.",
-			"Only executable *additions* trigger confirmation — adding a passive skill to an already-executable plugin does not re-prompt.",
 			"Never grant a subagent any plugin-system tool (InstallPlugin, ProposePlugin, ...); that is always rejected.",
 		],
 		parameters: updateParams,

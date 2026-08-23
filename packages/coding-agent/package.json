@@ -1,6 +1,6 @@
 {
 	"name": "@kolisachint/hoocode-agent",
-	"version": "0.5.30",
+	"version": "0.5.31",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
 	"hoocodeConfig": {
@@ -46,12 +46,13 @@
 		"search-eval": "bun scripts/search-eval.ts",
 		"search-eval:gold": "bun scripts/search-eval-gold.ts",
 		"search-eval:compare": "bun scripts/search-eval-compare.ts",
+		"agent-eval": "tsx --tsconfig ../../tsconfig.json scripts/agent-eval.ts",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
-		"@kolisachint/hoocode-agent-core": "^0.5.30",
-		"@kolisachint/hoocode-ai": "^0.5.30",
-		"@kolisachint/hoocode-tui": "^0.5.30",
+		"@kolisachint/hoocode-agent-core": "^0.5.31",
+		"@kolisachint/hoocode-ai": "^0.5.31",
+		"@kolisachint/hoocode-tui": "^0.5.31",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",

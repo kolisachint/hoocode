@@ -10,6 +10,7 @@ vi.hoisted(() => {
 	process.env.HOOCODE_CODING_AGENT_DIR = `${require("node:os").tmpdir()}/hoocode-test-isolated-${process.pid}/agent`;
 });
 
+import { DEFAULT_MODE_PROMPTS } from "../src/core/mode-prompts.js";
 import { type HooConfig, mergeConfigs } from "../src/extensions/core/config.js";
 import { buildApproveMessage, buildSystemPrompt, parsePlanSections } from "../src/extensions/core/modes.js";
 
@@ -329,7 +330,10 @@ describe("buildSystemPrompt search-path precedence", () => {
 
 	it("falls back to MODE_DEFAULTS when nothing matches", () => {
 		const prompt = buildSystemPrompt("ask", cwd, {});
-		// Built-in default for "ask" mentions ASK mode
-		expect(prompt).toContain("ASK mode");
+		// The built-in default IS the shipped template, not a second copy of it.
+		// Asserting equality is what keeps them from drifting again: they were two
+		// hand-maintained texts with different rules until the copy was removed.
+		expect(prompt).toBe(DEFAULT_MODE_PROMPTS.ask);
+		expect(prompt).toContain("ask mode");
 	});
 });

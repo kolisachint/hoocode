@@ -536,8 +536,14 @@ describe("plugin lifecycle tools", () => {
 		expect((q.details as { count: number }).count).toBe(1);
 
 		const gh = await tool.execute("3", { platform: "github" }, undefined, undefined, ctx);
-		// hello-world (default marketplace) supports github; widget (agents) does not.
-		expect((gh.details as { count: number }).count).toBe(1);
+		// The default marketplace supports github; widget (agents-only) does not.
+		// Asserted by content rather than by an exact count: the count pinned this
+		// test to "the default marketplace has exactly one plugin", so adding a
+		// bundled plugin broke a test that has nothing to do with how many there are.
+		const ghText = gh.content.map((part) => (part as { text: string }).text).join("\n");
+		expect(ghText).toContain("hello-world");
+		expect(ghText).not.toContain("widget");
+		expect((gh.details as { count: number }).count).toBeGreaterThanOrEqual(1);
 	});
 
 	it("SearchPlugins adds capability matches without disturbing the substring ones", async () => {

@@ -16,6 +16,7 @@
 
 import { Text } from "@kolisachint/hoocode-tui";
 import { type Static, Type } from "typebox";
+import { EMBEDDED_PROMPTS } from "../../init-templates.generated.js";
 import { agentColorFor } from "../../modes/interactive/theme/theme.js";
 import { type AgentDefinition, TASK_TOOL_NAME } from "../agent-frontmatter.js";
 import { agentLog } from "../agent-log.js";
@@ -49,7 +50,13 @@ export { summarizeAgentDescription } from "../agent-registry.js";
 /**
  * Build the main-session subagent instructions appended to the system prompt.
  *
- * The detailed background/barrier guidance (the three heaviest bullets) is only
+ * The prose lives in `templates/prompts/task-*.md` and reaches here through the
+ * build-time embed. It is the largest block of always-on text hoocode emits
+ * (~600 tok/turn once the Task tool is on) and it had no interpolation beyond
+ * the single background slot, so keeping it as a TypeScript string constant
+ * bought nothing and made it awkward to edit as the prose it is.
+ *
+ * The detailed background/barrier guidance (the two heaviest bullets) is only
  * emitted when the project actually has background-capable agents; otherwise a
  * single concise line covers the per-call `background: true` escape hatch. This
  * keeps the always-on cost down for the common case where nothing runs in the
@@ -57,31 +64,13 @@ export { summarizeAgentDescription } from "../agent-registry.js";
  */
 export function buildTaskMainPrompt(cwd: string = process.cwd()): string {
 	const hasBackgroundAgents = collectBackgroundAgentNames(cwd).size > 0;
+	const backgroundGuidance = (
+		EMBEDDED_PROMPTS[hasBackgroundAgents ? "task-background-agents" : "task-background-none"] ?? ""
+	).trim();
 
-	const backgroundGuidance = hasBackgroundAgents
-		? `- Background agents run non-blocking (or force per call with \`background: true\`): you get a short "explore#1 finished" notification and pull the full result with \`TaskOutput\` (e.g. \`TaskOutput("explore#1")\`); \`TaskOutput(list: true)\` shows what's running.
-- After dispatching, don't idle — keep doing independent work (read/edit unrelated files, draft, dispatch more); barrier with \`TaskOutput(wait: true)\` (a named task, or all outstanding when no id) only when you genuinely can't proceed.`
-		: `- You can force any task to run in the background with \`background: true\` (non-blocking): keep working, then pull its result with \`TaskOutput\` (e.g. \`TaskOutput("explore#1")\`) or block on it with \`TaskOutput(wait: true)\`.`;
-
-	return `You have access to the **Task** tool. Use it to delegate self-contained tasks to specialized subagents that run in their own isolated context and return only their final answer. Pick an agent by name from the <available_agents> list in this prompt and pass it as \`subagent_type\`.
-
-When to delegate:
-1. The work is self-contained and you only need the final result, not intermediate steps.
-2. You want to investigate or edit something in parallel without losing your current context or reasoning chain.
-3. The task is a discrete unit (explore one module, run one test file, review one PR, fix one isolated bug).
-4. You need to run a long command or test suite and wait for its output without blocking your own reasoning.
-
-Model tier (optional \`complexity\`): set \`fast\` for quick reads/lookups, \`standard\` for multi-file edits, \`capable\` for deep architecture work. It maps to a model from \`settings.modelCategories\`. Omit it to use the agent's default; an agent that pins its own model ignores \`complexity\`.
-
-Guidelines:
-- Choose the agent whose description best matches the task.
-- Make every task specific and self-contained. The subagent cannot see this conversation; pass all necessary context (files, constraints, prior findings) in \`prompt\`.
-- Do NOT delegate tasks that require tight back-and-forth with your current reasoning, or edits to files you are actively reasoning about.
-- The subagent returns ONLY its final answer. Its intermediate reasoning, tool calls, and output are hidden from you.
-- Delegate proactively when work is self-contained or parallelizable: multi-step investigation, read-only exploration (use \`explore\`), research before changes (use \`plan\`), drafting a standalone file/section, or running a long command/test suite. Dispatch independent subtasks in the same turn. Handle only trivial single-step edits or tightly interactive back-and-forth inline.
-${backgroundGuidance}
-- When working through a TodoWrite plan, mark the plan item in_progress BEFORE dispatching subagents for it: each dispatch is attributed to the current in_progress item in the user's task panel, so dispatching first (or with several items in_progress) leaves the run unattributed.
-- To continue a previous subagent (for example one that returned partial results), call Task again with \`resume_task_id\` set to its task_id; it resumes with its full prior transcript and \`prompt\` is your follow-up.`;
+	// Trimmed at both ends: the template file ends with a newline, and this is
+	// appended to a system prompt that manages its own separators.
+	return (EMBEDDED_PROMPTS["task-main"] ?? "").replace("{{BACKGROUND_GUIDANCE}}", backgroundGuidance).trim();
 }
 
 const taskParams = Type.Object({

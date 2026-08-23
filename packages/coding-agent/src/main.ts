@@ -25,6 +25,7 @@ import {
 } from "./core/agent-session-services.js";
 import { formatNoModelsAvailableMessage } from "./core/auth-guidance.js";
 import { AuthStorage } from "./core/auth-storage.js";
+import { builtinSkillPaths } from "./core/builtin-skills.js";
 import { analyzeDeferral, formatDeferral } from "./core/capabilities/deferral.js";
 import { reportEmbsearchProgress } from "./core/embsearch/embsearch-progress.js";
 import {
@@ -757,6 +758,15 @@ export async function main(args: string[], options?: MainOptions) {
 		} else {
 			delete process.env[LIGHT_MODE_ENV];
 		}
+		// Skills hoocode ships itself. Contributed as explicit paths rather than a
+		// default directory so `--no-skills` and light mode suppress them the same
+		// way they suppress everything else, and so a gated-off skill is never
+		// materialized at all.
+		const builtinSkills =
+			parsed.noSkills || lightMode
+				? []
+				: builtinSkillPaths({ enablePluginTools: earlySettingsManager.getEnablePluginTools() }, agentDir);
+
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
@@ -765,7 +775,13 @@ export async function main(args: string[], options?: MainOptions) {
 			extensionFlagValues: parsed.unknownFlags,
 			resourceLoaderOptions: {
 				additionalExtensionPaths: resolvedExtensionPaths,
-				additionalSkillPaths: resolvedSkillPaths,
+				// Built-ins last. Skill paths are first-wins by name, so anything the
+				// user pointed at - `--skills`, a settings path, `~/.agents/skills`,
+				// `.hoocode/skills` - beats a skill hoocode ships under the same name,
+				// and the collision is still reported as a diagnostic. Left untouched
+				// when there are no built-ins, so that path is byte for byte what it was.
+				additionalSkillPaths:
+					builtinSkills.length > 0 ? [...(resolvedSkillPaths ?? []), ...builtinSkills] : resolvedSkillPaths,
 				additionalPromptTemplatePaths: resolvedPromptTemplatePaths,
 				additionalSlashCommandPaths: resolvedSlashCommandPaths,
 				additionalThemePaths: resolvedThemePaths,

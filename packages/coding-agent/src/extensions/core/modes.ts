@@ -23,6 +23,7 @@ import type {
 } from "../../core/extensions/types.js";
 import { isLightModeEnv } from "../../core/light.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
+import { EMBEDDED_PROMPTS } from "../../init-templates.generated.js";
 import { mergeSearchPaths, readConfig, readMergedConfig, writeConfig } from "./config.js";
 import { AUTO_LOOP_DONE_TOKEN, LOOP_AUTO_CHANGED, LOOP_AUTO_START, type LoopAutoStartPayload } from "./loop.js";
 
@@ -230,25 +231,21 @@ function renderPlanForReview(sections: PlanSections): string {
 	return parts.length > 0 ? parts.join("\n\n") : sections.raw;
 }
 
-/** Phase 1 — interrogate the request, surfacing unknowns as ask_options questions. */
-const GRILL_ME_PROMPT = `You are interrogating the *request*, not writing code.
-
-Re-read the plan below and find where it rests on assumptions nobody confirmed: ambiguous requirements, unstated constraints, decisions you made silently because the request did not specify them, and places where a different reasonable reading of the request would produce a materially different plan.
-
-Put the most consequential of those to the user with the ask_options tool. Ask only what would actually change the plan — settle anything you can from the codebase or from convention yourself. Prefer two to four sharp questions over an exhaustive list, and mark a recommended option wherever you have a genuine preference.
-
-Do not edit files and do not revise the plan yet.`;
-
-/** Phase 2 — adversarial self-critique of the plan file. */
-const GRILL_PLAN_PROMPT = `You are attacking the plan below, not executing it.
-
-Review it as a skeptical reviewer would:
-- Which steps rest on assumptions you have not verified in the codebase? Read the relevant files and verify them now.
-- Where could this fail silently — wrong-but-plausible behaviour rather than a loud error?
-- What does the goal require that the plan does not cover? What does the plan cover that the goal does not need?
-- Does the verification section prove the goal is met, or only that the code runs?
-
-Report what you find. Where a weakness is real, revise the plan file and state what changed. Where the plan holds up, say so plainly rather than inventing criticism. Do not implement anything.`;
+/**
+ * The `/grill` phases, read from the shipped prompt templates.
+ *
+ * These were two ~200-word string constants in this file. They are prose the
+ * runtime injects verbatim - no interpolation, no branching, nothing a compiler
+ * checks - so a `.md` under `templates/prompts/` is their right home, and the
+ * existing build-time embed carries them in. Editing a prompt is now editing
+ * prose rather than editing TypeScript that happens to contain prose.
+ *
+ * Each is trimmed: the files end with a newline and the phases are joined with
+ * explicit separators below.
+ */
+function grillPrompt(name: "grill-me" | "grill-plan" | "grill-bridge"): string {
+	return (EMBEDDED_PROMPTS[name] ?? "").trim();
+}
 
 /**
  * Builds the follow-up message injected by `/grill`.
@@ -260,13 +257,11 @@ Report what you find. Where a weakness is real, revise the plan file and state w
  */
 export function buildGrillMessage(sections: PlanSections, target: GrillTarget): string {
 	const plan = renderPlanForReview(sections);
-	if (target === "me") return `${GRILL_ME_PROMPT}\n\n---\n\n${plan}`;
-	if (target === "plan") return `${GRILL_PLAN_PROMPT}\n\n---\n\n${plan}`;
-	return (
-		`${GRILL_ME_PROMPT}\n\n` +
-		`Once the user has answered, fold their answers into the plan and immediately continue with this review:\n\n` +
-		`${GRILL_PLAN_PROMPT}\n\n---\n\n${plan}`
-	);
+	const me = grillPrompt("grill-me");
+	const critique = grillPrompt("grill-plan");
+	if (target === "me") return `${me}\n\n---\n\n${plan}`;
+	if (target === "plan") return `${critique}\n\n---\n\n${plan}`;
+	return `${me}\n\n${grillPrompt("grill-bridge")}\n\n${critique}\n\n---\n\n${plan}`;
 }
 
 // ============================================================================

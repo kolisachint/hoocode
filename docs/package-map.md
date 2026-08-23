@@ -111,6 +111,19 @@ The shipped CLI. Largest package.
   `interactive/voice/`.
 - `templates/agents/*.md` - built-in subagent definitions (frontmatter + prompt). Edit
   these, then regenerate the embedded copy (see npm-packages.md).
+- `templates/modes/<mode>/system.md` - the four built-in mode prompts. Single source:
+  `core/mode-prompts.ts` re-exports the embedded copy as `DEFAULT_MODE_PROMPTS`, and
+  `/init` scaffolds the same text into a project. Do not add a second copy in `.ts`.
+- `templates/skills/<name>/SKILL.md` - skills hoocode ships itself. Catalogued in
+  `core/builtin-skills.ts`, which gates each one and materializes the embedded copy
+  to `~/.hoocode/cache/builtin-skills/<hash>/` so a skill's location is a real path
+  on every install method, the compiled binary included.
+- `templates/prompts/*.md` - prose the runtime injects verbatim: the `/grill`
+  phases and the Task delegation appendix (`task-main.md` plus its two
+  `task-background-*` variants). Reached through `EMBEDDED_PROMPTS`. A `{{TOKEN}}`
+  placeholder is the escape hatch for the one-slot case (`{{PLAN_PATH}}`,
+  `{{BACKGROUND_GUIDANCE}}`); anything needing real logic stays in the module
+  that builds it.
 
 ## Generated files (do not edit by hand)
 
@@ -122,6 +135,15 @@ The shipped CLI. Largest package.
 ## Common "where is X" answers
 
 - A built-in tool: `packages/coding-agent/src/core/tools/`.
+- Whether a description actually triggers: `core/extensions/plugins/trigger-eval.ts`
+  (scoring, shared) + `trigger-judge.ts` (the model call). Agent selection reuses both
+  via `core/agent-selection-eval.ts`. Run it from `packages/coding-agent` with
+  `npm run agent-eval` (`-- --dry-run` prints the corpus without calling a model).
+  It runs from source via the root tsconfig's path aliases, so no build is needed —
+  unlike the `search-eval:*` scripts, which still resolve through `dist`.
+- A shipped prompt, mode prompt, or agent definition: `packages/coding-agent/templates/`.
+- Plugins bundled with hoocode: `core/extensions/plugins/default-marketplace/plugins/`
+  (copied to `dist` wholesale by `copy-assets`, so adding one needs no build change).
 - The `Task`/subagent tool: `core/tools/subagent.ts` + `core/subagent-pool.ts`.
 - A provider: `packages/ai/src/providers/`.
 - The agent turn/tool loop: `packages/agent/src/agent-loop.ts`.

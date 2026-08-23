@@ -1,7 +1,11 @@
 {
   "name": "hoocode",
   "owner": "hoocode",
-  "supportPlatform": ["agents", "claude", "github"],
+  "supportPlatform": [
+    "agents",
+    "claude",
+    "github"
+  ],
   "plugins": [
     {
       "name": "hello-world",

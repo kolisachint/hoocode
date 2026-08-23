@@ -123,6 +123,108 @@
 
 - The startup banner names the working directory and never re-read it, so after
   `/cd` it kept advertising the directory you had left.
+## [0.5.31] - 2026-08-23
+
+### Added
+
+- `/settings` has an **External tools** category. hoocode ships five optional
+  Rust binaries — `rg`, `fd`, `embsearch`, `webtools`, `voicetools` — that
+  expand what it can do, and nothing in the product ever said so. hoocode works
+  without every one of them, which is exactly why they stayed invisible: search
+  silently got slower, semantic ranking silently never happened, and web and
+  voice were features nobody knew were there. Each row shows live status
+  (installed / found on `PATH` / env override / not installed), and opens a
+  detail view naming what it enables, what hoocode does instead when it is
+  missing, where the release comes from, and the env vars that steer it.
+
+- hoocode can ship skills of its own. It read them from `~/.agents/skills`,
+  `.hoocode/skills`, `.claude/skills` and installed packages — every source
+  except itself — which is why it shipped three subagents and zero skills while
+  telling users skills are the extension unit. Built-ins are catalogued in
+  `core/builtin-skills.ts` and load at lowest precedence, so a skill of the same
+  name from anywhere else wins and the collision is reported.
+
+  A skill costs its description on every turn, so each built-in can be gated on
+  the feature it serves rather than on everyone's token budget.
+
+- The first one: `plugin-authoring`, the craft half of `ProposePlugin`/
+  `UpdatePlugin` — when a capability is worth extracting, naming and describing
+  it so it triggers again, portability rules, and the hook trap where a changed
+  command adds a second hook instead of replacing one. Gated on
+  `enablePluginTools`, which is off by default, so a default session pays
+  nothing for it.
+
+  Built-ins are materialized to a content-addressed cache under
+  `~/.hoocode/cache/builtin-skills/`. A skill is loaded by reading its file, so
+  its location has to be a real path, and the compiled standalone binary has no
+  install directory to read from; materializing the same embedded copy
+  everywhere keeps the skill set identical across npm, pnpm, source and the
+  binary. If the cache cannot be written the built-ins are absent and everything
+  else runs normally. `--no-skills` and `--light` suppress them.
+
+- An agent-selection eval: `bun run agent-eval` scores the built-in agent roster
+  against a gold set of real tasks, reporting how often each agent is chosen
+  when it should be, how often the parent correctly keeps work inline, and a
+  confusion matrix naming which agent loses to which. It reuses the plugin G4
+  trigger harness rather than adding a second one, and describes each agent with
+  the summarized text `<available_agents>` actually emits.
+
+  This exists to settle whether `plan` and `explore` are two agents or one:
+  they ship with the same tools, the same isolation and the same background
+  flag, and `complexity` on the Task tool already expresses the only other
+  difference. That was being argued from intuition; it is now measurable.
+
+### Fixed
+
+- The G4 plugin trigger gate never had a judge. `trigger-eval.ts` takes its
+  model call as a parameter so scoring stays testable, and nothing in the tree
+  ever passed one — so every G4 run has reported `not-run` since it was written.
+  `createLlmTriggerJudge` is that judge, shared with the agent-selection eval.
+
+- `/new-skill`, `/new-agent` and `/new-command` scaffolded different content
+  depending on whether `--platform` was set. Each command has two write paths —
+  the per-vendor emitters and the plain `.hoocode/` writer — and each carried
+  its own copy of the body, which had drifted in both directions: the
+  `.hoocode/` command body documented the `${@:N}` / `${@:N:L}` slice
+  placeholders that the platform path silently omitted, and the `.hoocode/`
+  agent body identified the agent as running inside hoocode where the platform
+  one did not. Both paths read one definition now, and the richer text won in
+  each case.
+
+### Changed
+
+- The four built-in mode prompts have one home. `templates/modes/<mode>/system.md`
+  is now the only copy: `core/mode-prompts.ts` re-exports the embedded copy as
+  `DEFAULT_MODE_PROMPTS` instead of carrying a second, hand-written set. The two
+  had already drifted — `/init` scaffolds the template text into a project, so a
+  user who ran it and a user who did not were getting differently worded mode
+  rules from the same version.
+
+- The `/grill` phases moved out of TypeScript into `templates/prompts/*.md`.
+  They are prose the runtime injects verbatim — no interpolation, no branching —
+  so they are edited as prose now. The message `/grill` produces is unchanged.
+
+- The Task delegation appendix moved to `templates/prompts/task-main.md` and its
+  two `task-background-*` variants. At ~600 tok/turn it is the largest block of
+  always-on text hoocode emits once the Task tool is on, and it had exactly one
+  interpolation slot in otherwise static prose, so a string constant bought
+  nothing. The rendered prompt is byte-identical on both the with- and
+  without-background-agents branches.
+
+- `ProposePlugin` and `UpdatePlugin` shed ~55% of their always-on prompt
+  guidance (~626 to ~301 tok/turn when the plugin system is enabled). What was
+  removed was how-to-author-well guidance, which is not a tool contract and now
+  lives in the `plugin-authoring` skill; what stayed is the trigger, the
+  transparency rule for autonomous authoring, the hook trap, and the two hard
+  prohibitions. Several removed lines also restated the tools' own descriptions
+  or each other.
+
+- Settings rows that are inert without one of those binaries now say so. The
+  `web` and `semantic search` tool-group switches, the web tools timeout and the
+  voice silence window carry a `needs <binary>` marker and explain the fallback
+  and whether hoocode will fetch the binary. The rows stay settable — the
+  setting is what makes hoocode fetch the binary in the first place, and hiding
+  a row when its dependency is missing would recreate the same silence.
 
 ## [0.5.30] - 2026-08-23
 
