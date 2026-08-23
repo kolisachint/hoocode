@@ -36,6 +36,8 @@ function paneConfig(overrides: Record<string, unknown> = {}): any {
 			{ name: "websearch", enabled: true },
 		],
 		toolGroups: [],
+		// Not the subject here; the External tools category is covered by its own suite.
+		externalTools: [],
 		flags: [],
 		toolOutputDisplay: "standard",
 		toolOutputMaxBytes: 8192,

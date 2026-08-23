@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/settings` has an **External tools** category. hoocode ships five optional
+  Rust binaries — `rg`, `fd`, `embsearch`, `webtools`, `voicetools` — that
+  expand what it can do, and nothing in the product ever said so. hoocode works
+  without every one of them, which is exactly why they stayed invisible: search
+  silently got slower, semantic ranking silently never happened, and web and
+  voice were features nobody knew were there. Each row shows live status
+  (installed / found on `PATH` / env override / not installed), and opens a
+  detail view naming what it enables, what hoocode does instead when it is
+  missing, where the release comes from, and the env vars that steer it.
+
+### Changed
+
+- Settings rows that are inert without one of those binaries now say so. The
+  `web` and `semantic search` tool-group switches, the web tools timeout and the
+  voice silence window carry a `needs <binary>` marker and explain the fallback
+  and whether hoocode will fetch the binary. The rows stay settable — the
+  setting is what makes hoocode fetch the binary in the first place, and hiding
+  a row when its dependency is missing would recreate the same silence.
+
 ## [0.5.30] - 2026-08-23
 
 ### Added

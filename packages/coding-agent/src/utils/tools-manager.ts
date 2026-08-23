@@ -507,3 +507,62 @@ export async function ensureTool(
 		return undefined;
 	}
 }
+
+/** How a resolved managed binary was found. */
+export type ManagedToolSource =
+	/** `HOOCODE_<TOOL>_BINARY` pointed at it. */
+	| "override"
+	/** hoocode downloaded it into its own bin dir. */
+	| "managed"
+	/** It was already on PATH. */
+	| "path";
+
+export interface ManagedToolStatus {
+	tool: ManagedTool;
+	/** Upstream display name (e.g. "ripgrep" for `rg`). */
+	name: string;
+	/** GitHub repo the release archives come from. */
+	repo: string;
+	/** Env var that overrides resolution with an explicit path. */
+	overrideEnv: string;
+	/** Resolved path (absolute, or a bare command name found on PATH). */
+	path: string | null;
+	source: ManagedToolSource | null;
+}
+
+/**
+ * Resolve a managed binary and say *how* it resolved, without ever downloading.
+ *
+ * `getToolPath` answers "can I use it"; the settings pane needs "is this the
+ * copy I downloaded, one already on PATH, or a local build someone pointed the
+ * env var at", because those three have different implications for the user.
+ */
+export function getToolStatus(tool: ManagedTool): ManagedToolStatus {
+	const config = TOOLS[tool];
+	const overrideEnv = `HOOCODE_${tool.toUpperCase()}_BINARY`;
+	const base: ManagedToolStatus = {
+		tool,
+		name: config?.name ?? tool,
+		repo: config?.repo ?? "",
+		overrideEnv,
+		path: null,
+		source: null,
+	};
+	if (!config) return base;
+
+	const path = getToolPath(tool);
+	if (!path) return base;
+
+	const override = process.env[overrideEnv]?.trim();
+	if (override && path === override) return { ...base, path, source: "override" };
+
+	const managedPath = join(TOOLS_DIR, config.binaryName + (platform() === "win32" ? ".exe" : ""));
+	if (path === managedPath) return { ...base, path, source: "managed" };
+
+	return { ...base, path, source: "path" };
+}
+
+/** Whether hoocode is configured to never download a missing binary. */
+export function isOfflineMode(): boolean {
+	return isOfflineModeEnabled();
+}
