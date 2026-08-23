@@ -111,6 +111,12 @@ The shipped CLI. Largest package.
   `interactive/voice/`.
 - `templates/agents/*.md` - built-in subagent definitions (frontmatter + prompt). Edit
   these, then regenerate the embedded copy (see npm-packages.md).
+- `templates/modes/<mode>/system.md` - the four built-in mode prompts. Single source:
+  `core/mode-prompts.ts` re-exports the embedded copy as `DEFAULT_MODE_PROMPTS`, and
+  `/init` scaffolds the same text into a project. Do not add a second copy in `.ts`.
+- `templates/prompts/*.md` - prose the runtime injects verbatim (the `/grill` phases).
+  Reached through `EMBEDDED_PROMPTS`. For prompts with no interpolation and no
+  branching; anything that needs logic stays in the module that builds it.
 
 ## Generated files (do not edit by hand)
 
@@ -122,6 +128,9 @@ The shipped CLI. Largest package.
 ## Common "where is X" answers
 
 - A built-in tool: `packages/coding-agent/src/core/tools/`.
+- A shipped prompt, mode prompt, or agent definition: `packages/coding-agent/templates/`.
+- Plugins bundled with hoocode: `core/extensions/plugins/default-marketplace/plugins/`
+  (copied to `dist` wholesale by `copy-assets`, so adding one needs no build change).
 - The `Task`/subagent tool: `core/tools/subagent.ts` + `core/subagent-pool.ts`.
 - A provider: `packages/ai/src/providers/`.
 - The agent turn/tool loop: `packages/agent/src/agent-loop.ts`.

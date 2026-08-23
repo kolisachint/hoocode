@@ -71,6 +71,45 @@ when-to-use guidance probably belongs in a system-prompt block instead — that
 is why `Task` keeps its mechanics in `description` and its 2.5KB of
 when-to-delegate guidance in `buildTaskMainPrompt`.
 
+## Where a capability belongs
+
+Before writing a capability as code, decide which of the four homes it wants.
+The mistake this rule exists to prevent is shipping prose as TypeScript: a
+prompt compiled into a string constant is not type-checked, not editable as
+prose, and often resident on every turn.
+
+| Home | Always-on cost | Body loaded | Isolation |
+|---|---|---|---|
+| Tool | full schema, every turn | never (always resident) | no |
+| Agent | summarized `description` in `<available_agents>` | on dispatch | **yes** — own context, enforced tool allowlist, own model tier |
+| Skill | `<name>` + `<description>` + `<location>` | on `read` | no |
+| Slash command | **nothing** | on invocation | no |
+
+The rule that follows:
+
+> **Agent when you need isolation. Skill when you need instruction. Command
+> when a human triggers it. Tool only when the model must call it with
+> structured arguments.**
+
+Skills and agents cost about the same per turn, so "convert an agent to a skill"
+never saves tokens — pick between them on isolation, not price. A subagent is a
+whole extra model context that cannot see the parent conversation; a skill is a
+`read` into the context you already have.
+
+Two corollaries:
+
+- **Prose lives in a file, not a string constant.** `templates/prompts/*.md`
+  and `templates/modes/*/system.md` are embedded at build time by
+  `scripts/embed-templates.mjs`. A prompt with no interpolation and no
+  branching belongs there. Keeping a second hand-written copy in `.ts` is how
+  the mode prompts silently diverged from the ones `/init` scaffolds.
+- **Craft guidance is not a tool contract.** A tool's `promptGuidelines` are
+  resident on every turn; a how-to-do-this-well guide is not a contract and
+  does not belong there. Ship it as a skill (the bundled marketplace under
+  `core/extensions/plugins/default-marketplace/` is copied to `dist` wholesale,
+  so a plugin added there ships with no build changes) and point the tool at
+  it in one line.
+
 ## Conversational Style
 
 - Keep answers short and concise

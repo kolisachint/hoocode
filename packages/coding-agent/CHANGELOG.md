@@ -14,7 +14,32 @@
   detail view naming what it enables, what hoocode does instead when it is
   missing, where the release comes from, and the env vars that steer it.
 
+- A bundled `plugin-authoring` plugin in the default marketplace, carrying the
+  craft half of plugin authoring as a skill: when a capability is worth
+  extracting, naming and describing it so it triggers again, portability rules,
+  and the hook trap where a changed command adds a second hook instead of
+  replacing one. Install it with `/plugin install plugin-authoring`.
+
 ### Changed
+
+- The four built-in mode prompts have one home. `templates/modes/<mode>/system.md`
+  is now the only copy: `core/mode-prompts.ts` re-exports the embedded copy as
+  `DEFAULT_MODE_PROMPTS` instead of carrying a second, hand-written set. The two
+  had already drifted — `/init` scaffolds the template text into a project, so a
+  user who ran it and a user who did not were getting differently worded mode
+  rules from the same version.
+
+- The `/grill` phases moved out of TypeScript into `templates/prompts/*.md`.
+  They are prose the runtime injects verbatim — no interpolation, no branching —
+  so they are edited as prose now. The message `/grill` produces is unchanged.
+
+- `ProposePlugin` and `UpdatePlugin` shed ~55% of their always-on prompt
+  guidance (~626 to ~301 tok/turn when the plugin system is enabled). What was
+  removed was how-to-author-well guidance, which is not a tool contract and now
+  lives in the `plugin-authoring` skill; what stayed is the trigger, the
+  transparency rule for autonomous authoring, the hook trap, and the two hard
+  prohibitions. Several removed lines also restated the tools' own descriptions
+  or each other.
 
 - Settings rows that are inert without one of those binaries now say so. The
   `web` and `semantic search` tool-group switches, the web tools timeout and the

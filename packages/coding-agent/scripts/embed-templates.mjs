@@ -64,6 +64,9 @@ const defaultConfig = readFileSync(join(templatesDir, "default-config.json"), "u
 const modes = readSubdirEntries(join(templatesDir, "modes"), "system.md");
 const profiles = readSubdirEntries(join(templatesDir, "profiles"), "context.md");
 const agentPrompts = readFlatMarkdown(join(templatesDir, "agents"));
+// Prose the runtime injects verbatim (e.g. the /grill phases). Markdown files
+// rather than TS string constants so a prompt is edited as prose, in one place.
+const prompts = readFlatMarkdown(join(templatesDir, "prompts"));
 
 const modeEntries = Object.entries(modes)
 	.sort(([a], [b]) => a.localeCompare(b))
@@ -76,6 +79,11 @@ const profileEntries = Object.entries(profiles)
 	.join("\n");
 
 const agentEntries = Object.entries(agentPrompts)
+	.sort(([a], [b]) => a.localeCompare(b))
+	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
+	.join("\n");
+
+const promptEntries = Object.entries(prompts)
 	.sort(([a], [b]) => a.localeCompare(b))
 	.map(([name, content]) => `\t${escape(name)}: ${escape(content)},`)
 	.join("\n");
@@ -99,6 +107,10 @@ ${profileEntries}
 export const EMBEDDED_AGENT_PROMPTS: Record<string, string> = {
 ${agentEntries}
 };
+
+export const EMBEDDED_PROMPTS: Record<string, string> = {
+${promptEntries}
+};
 `;
 
 writeFileSync(outFile, body);
@@ -112,6 +124,7 @@ try {
 const modeCount = Object.keys(modes).length;
 const profileCount = Object.keys(profiles).length;
 const agentCount = Object.keys(agentPrompts).length;
+const promptCount = Object.keys(prompts).length;
 console.log(
-	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"}, ${agentCount} agent prompt${agentCount === 1 ? "" : "s"})`,
+	`embed-templates: wrote ${outFile} (${modeCount} mode${modeCount === 1 ? "" : "s"}, ${profileCount} profile${profileCount === 1 ? "" : "s"}, ${agentCount} agent prompt${agentCount === 1 ? "" : "s"}, ${promptCount} prompt${promptCount === 1 ? "" : "s"})`,
 );
