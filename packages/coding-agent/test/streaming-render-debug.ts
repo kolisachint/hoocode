@@ -50,7 +50,7 @@ async function main() {
 		content: [{ type: "thinking", thinking: "" }],
 	} as AssistantMessage;
 
-	const component = new AssistantMessageComponent(message, false);
+	const component = new AssistantMessageComponent(message, "full");
 	tui.addChild(component);
 	tui.start();
 

@@ -82,7 +82,7 @@ import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { BashExecutionController } from "./bash-execution-controller.js";
 import { type CommandContext, CommandExecutor } from "./command-executor.js";
 import { BELL, CompletionChime } from "./completion-chime.js";
-import { AssistantMessageComponent } from "./components/assistant-message.js";
+import { AssistantMessageComponent, type ThinkingDisplay } from "./components/assistant-message.js";
 import { BashExecutionComponent } from "./components/bash-execution.js";
 import { BranchSummaryMessageComponent } from "./components/branch-summary-message.js";
 import { CompactionSummaryMessageComponent } from "./components/compaction-summary-message.js";
@@ -2203,7 +2203,7 @@ export class InteractiveMode {
 				} else if (event.message.role === "assistant") {
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
-						this.thinkingHiddenForView(),
+						this.thinkingDisplayForView(),
 						this.getMarkdownThemeWithSettings(),
 						this.hiddenThinkingLabel,
 					);
@@ -2623,7 +2623,7 @@ export class InteractiveMode {
 			case "assistant": {
 				const assistantComponent = new AssistantMessageComponent(
 					message,
-					this.thinkingHiddenForView(),
+					this.thinkingDisplayForView(),
 					this.getMarkdownThemeWithSettings(),
 					this.hiddenThinkingLabel,
 				);
@@ -3090,38 +3090,43 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Whether thinking traces render folded to their one-line label.
+	 * How much of a thinking trace this view shows.
 	 *
-	 * Radar folds them regardless of the setting. The dial is one question asked
-	 * once — "how much do I ever want to see" — and a view whose whole job is to
-	 * fold a tool's output down to a row cannot then spend forty lines on the
-	 * reasoning that led to it.
+	 * Radar drops them outright, regardless of the setting. The dial is one
+	 * question asked once — "how much do I ever want to see" — and a view whose
+	 * whole job is to fold a run of tool calls down to a row cannot then spend
+	 * forty lines on the reasoning that led to it. Folding to the label is not
+	 * enough either: a message that only thought and called tools has nothing
+	 * else on screen once its calls join the chain, so its label would stand
+	 * alone under the summary and one row per chain would become one row plus a
+	 * label per call.
 	 *
 	 * It is also what keeps a running chain on screen. A chain stays open across
 	 * a thinking block (thinking is not text, so it is not a chain boundary), and
-	 * an unfolded trace streaming in below pushes the chain's own summary line off
-	 * the top — where every subsequent call rewrites a line above the viewport and
-	 * forces the full redraw that clears terminal scrollback.
+	 * a trace rendering below pushes the chain's own summary line off the top —
+	 * where every subsequent call rewrites a line above the viewport and forces
+	 * the full redraw that clears terminal scrollback.
 	 */
-	private thinkingHiddenForView(): boolean {
-		return this.hideThinkingBlock || this.toolOutputView === "radar";
+	private thinkingDisplayForView(): ThinkingDisplay {
+		if (this.toolOutputView === "radar") return "omit";
+		return this.hideThinkingBlock ? "label" : "full";
 	}
 
 	private applyToolOutputView(view: ToolOutputView): void {
-		const thinkingWasHidden = this.thinkingHiddenForView();
+		const previousThinking = this.thinkingDisplayForView();
 		this.toolOutputView = view;
 		this.settingsManager.setToolOutputView(view);
 		this.footer.setToolOutputView(view);
-		const thinkingHidden = this.thinkingHiddenForView();
+		const thinking = this.thinkingDisplayForView();
 		for (const child of this.chatContainer.children) {
 			if (child instanceof ToolChainComponent) child.setView(view);
 			else if (child instanceof ToolExecutionComponent) child.setView(view);
-			else if (child instanceof AssistantMessageComponent && thinkingHidden !== thinkingWasHidden) {
-				child.setHideThinkingBlock(thinkingHidden);
+			else if (child instanceof AssistantMessageComponent && thinking !== previousThinking) {
+				child.setThinkingDisplay(thinking);
 			}
 		}
-		if (this.streamingComponent && thinkingHidden !== thinkingWasHidden) {
-			this.streamingComponent.setHideThinkingBlock(thinkingHidden);
+		if (this.streamingComponent && thinking !== previousThinking) {
+			this.streamingComponent.setThinkingDisplay(thinking);
 		}
 		this.ui.requestRender();
 	}
@@ -3180,7 +3185,7 @@ export class InteractiveMode {
 
 		// If streaming, re-add the streaming component with updated visibility and re-render
 		if (this.streamingComponent && this.streamingMessage) {
-			this.streamingComponent.setHideThinkingBlock(this.thinkingHiddenForView());
+			this.streamingComponent.setThinkingDisplay(this.thinkingDisplayForView());
 			this.streamingComponent.updateContent(this.streamingMessage);
 			this.chatContainer.addChild(this.streamingComponent);
 		}
@@ -3189,7 +3194,7 @@ export class InteractiveMode {
 		// screen does not show.
 		this.showStatus(
 			!this.hideThinkingBlock && this.toolOutputView === "radar"
-				? "Thinking blocks: visible (radar keeps them folded)"
+				? "Thinking blocks: visible (radar hides them)"
 				: `Thinking blocks: ${this.hideThinkingBlock ? "hidden" : "visible"}`,
 		);
 	}
@@ -3621,10 +3626,10 @@ export class InteractiveMode {
 					onHideThinkingBlockChange: (hidden) => {
 						this.hideThinkingBlock = hidden;
 						this.settingsManager.setHideThinkingBlock(hidden);
-						const effective = this.thinkingHiddenForView();
+						const effective = this.thinkingDisplayForView();
 						for (const child of this.chatContainer.children) {
 							if (child instanceof AssistantMessageComponent) {
-								child.setHideThinkingBlock(effective);
+								child.setThinkingDisplay(effective);
 							}
 						}
 						this.chatContainer.clear();

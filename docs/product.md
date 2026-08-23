@@ -80,7 +80,7 @@ One dial, `Alt+O`, with three stops from least to most (`Shift+Alt+O` goes back)
 
 | View | What a tool call looks like |
 |---|---|
-| **radar** | One line per *chain* — a run of consecutive tool calls. While it works the line shows its shape in order, `◐ grep › read › bash✗ › edit › bash…`; once the agent moves on it becomes what the run amounted to, `● Edited packages/tui/src/keys.ts`. |
+| **radar** | One line per *chain* — a run of consecutive tool calls. While it works the line shows its shape in order, `◐ grep › read › bash✗ › edit › bash…`; once the agent moves on it becomes what the run amounted to, `● Edited packages/tui/src/keys.ts`. Thinking traces are hidden here regardless of the `Ctrl+T` setting — a view that folds a whole run into a row cannot then spend forty lines on the reasoning behind it. |
 | **glance** | The tool's own call line, one per call, body folded away. **The default.** |
 | **full** | Call line plus the result body. |
 

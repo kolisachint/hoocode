@@ -2,6 +2,18 @@ import type { AssistantMessage } from "@kolisachint/hoocode-ai";
 import { Container, type DefaultTextStyle, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.js";
 
+/**
+ * How a thinking block renders.
+ *
+ * `omit` exists for radar. Folding a trace to its one-line label is right when
+ * the label sits between things you can see; under a chain summary it is not,
+ * because a message whose only content is thinking plus tool calls has nothing
+ * left on screen once its calls collapse into the chain's row. A stack of
+ * `Thinking...` lines under a one-line summary is precisely the noise radar
+ * exists to remove.
+ */
+export type ThinkingDisplay = "full" | "label" | "omit";
+
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
@@ -81,7 +93,7 @@ export function segmentStreamingMarkdown(text: string): string[] {
  */
 export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
-	private hideThinkingBlock: boolean;
+	private thinkingDisplay: ThinkingDisplay;
 	private markdownTheme: MarkdownTheme;
 	private hiddenThinkingLabel: string;
 	private lastMessage?: AssistantMessage;
@@ -95,13 +107,13 @@ export class AssistantMessageComponent extends Container {
 
 	constructor(
 		message?: AssistantMessage,
-		hideThinkingBlock = false,
+		thinkingDisplay: ThinkingDisplay = "full",
 		markdownTheme: MarkdownTheme = getMarkdownTheme(),
 		hiddenThinkingLabel = "Thinking...",
 	) {
 		super();
 
-		this.hideThinkingBlock = hideThinkingBlock;
+		this.thinkingDisplay = thinkingDisplay;
 		this.markdownTheme = markdownTheme;
 		this.hiddenThinkingLabel = hiddenThinkingLabel;
 
@@ -167,11 +179,18 @@ export class AssistantMessageComponent extends Container {
 		this.contentContainer.addChild(this.reuseMarkdown(keyBase, text, style));
 	}
 
-	setHideThinkingBlock(hide: boolean): void {
-		this.hideThinkingBlock = hide;
+	setThinkingDisplay(display: ThinkingDisplay): void {
+		this.thinkingDisplay = display;
 		if (this.lastMessage) {
 			this.updateContent(this.lastMessage);
 		}
+	}
+
+	/** Whether a content block puts anything on screen under the current settings. */
+	private isVisibleBlock(content: AssistantMessage["content"][number]): boolean {
+		if (content.type === "text") return content.text.trim() !== "";
+		if (content.type === "thinking") return this.thinkingDisplay !== "omit" && content.thinking.trim() !== "";
+		return false;
 	}
 
 	setHiddenThinkingLabel(label: string): void {
@@ -217,9 +236,7 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
-		const hasVisibleContent = message.content.some(
-			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
-		);
+		const hasVisibleContent = message.content.some((c) => this.isVisibleBlock(c));
 
 		if (hasVisibleContent) {
 			this.contentContainer.addChild(new Spacer(1));
@@ -233,13 +250,13 @@ export class AssistantMessageComponent extends Container {
 				// Set paddingY=0 to avoid extra spacing before tool executions
 				this.addMarkdownBlock(`${i}:text`, content.text.trim(), streaming);
 			} else if (content.type === "thinking" && content.thinking.trim()) {
+				if (this.thinkingDisplay === "omit") continue;
+
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
-				const hasVisibleContentAfter = message.content
-					.slice(i + 1)
-					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+				const hasVisibleContentAfter = message.content.slice(i + 1).some((c) => this.isVisibleBlock(c));
 
-				if (this.hideThinkingBlock) {
+				if (this.thinkingDisplay === "label") {
 					// Show static thinking label when hidden
 					this.contentContainer.addChild(
 						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
