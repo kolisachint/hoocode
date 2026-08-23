@@ -110,6 +110,13 @@ Default `claude` rather than erroring keeps the autonomous capability-gap flow
 unbroken, and §1.5 shows it is also the only platform where the local loop
 actually closes.
 
+The `platform` setting is the same knob without the per-invocation flag, and
+`/settings → Plugins → Platform` writes it (user scope, applied to the running
+session as well as persisted). The pane offers the three canonical tokens as
+independent toggles rather than a cycle, because the setting is a list; turning
+all of them off removes the key, which is not the same as targeting nothing —
+the per-consumer defaults come back.
+
 ### 1.5 The two platforms are not symmetric
 
 | | Claude Code | Copilot CLI |
@@ -1180,10 +1187,11 @@ where authored plugins are half-live.
    asymmetry is a consumption-side behavior change with real blast radius
    (`registerExtensionMcpServers`), so it is deliberately *not* in the plan
    above — decide it separately.
-2. **Does `--platform` accept multiple values?** `emitForPlatforms` already
-   handles it and dedupes by path (`formats/index.ts:69-80`), and
-   `github/copilot-plugins` ships both index formats, so dual-emission is a real
-   shape. Recommend allowing it, never defaulting to it.
+2. ~~**Does `--platform` accept multiple values?**~~ **Settled: yes, never by
+   default.** `emitForPlatforms` already handled it and dedupes by path
+   (`formats/index.ts:69-80`), and `github/copilot-plugins` ships both index
+   formats, so dual-emission is a real shape. The `/settings` row is a set of
+   per-platform toggles on that basis.
 3. **`~/.claude/skills/<id>/` collision** with a plugin Claude Code installed
    itself, and with a user's hand-written skill of the same name. Needs a
    pre-write check; `UninstallPlugin` must never delete a directory it did not

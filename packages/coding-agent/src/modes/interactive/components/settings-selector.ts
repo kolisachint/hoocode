@@ -12,6 +12,7 @@ import {
 	Spacer,
 	Text,
 } from "@kolisachint/hoocode-tui";
+import type { MarketplacePlatform } from "../../../core/extensions/plugins/formats/types.js";
 import type { LearnSettingKey, WarningSettings } from "../../../core/settings-manager.js";
 import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
@@ -71,6 +72,14 @@ export interface SettingsConfig {
 	blockImages: boolean;
 	enableSkillCommands: boolean;
 	pluginInstallScope: "user" | "project";
+	enablePluginTools: boolean;
+	/**
+	 * settings.json keys the project file sets. A pane row writes user scope, so
+	 * anything listed here wins again on the next session however the row is set.
+	 */
+	projectPinnedSettings: string[];
+	/** Platform layouts in force this session (empty = unset, per-consumer defaults apply). */
+	platform: MarketplacePlatform[];
 	steeringMode: "all" | "one-at-a-time";
 	followUpMode: "all" | "one-at-a-time";
 	transport: Transport;
@@ -111,6 +120,8 @@ export interface SettingsCallbacks {
 	onBlockImagesChange: (blocked: boolean) => void;
 	onEnableSkillCommandsChange: (enabled: boolean) => void;
 	onPluginInstallScopeChange: (scope: "user" | "project") => void;
+	onEnablePluginToolsChange: (enabled: boolean) => void;
+	onPlatformChange: (platforms: MarketplacePlatform[]) => void;
 	onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
 	onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
 	onTransportChange: (transport: Transport) => void;
@@ -187,9 +198,9 @@ const LEARN_KEYS: ReadonlySet<string> = new Set(LEARN_SETTINGS.map((setting) => 
  * Preset list for a numeric row, guaranteed to contain the value in force.
  *
  * Without this a value set by hand in settings.json — say 45 days — is absent
- * from the cycle, so the first keypress silently snaps it to the first preset.
- * These particular settings gate whether `/learn` finds anything at all, so a
- * stray keystroke narrowing the window is exactly the surprise to avoid.
+ * from the cycle, so the first keypress silently snaps it to the first preset,
+ * discarding a deliberate choice the pane never showed as unusual. Every numeric
+ * cycle row goes through this for that reason.
  */
 function presetValues(presets: number[], current: number): string[] {
 	const all = presets.includes(current) ? presets : [...presets, current].sort((a, b) => a - b);
@@ -234,6 +245,98 @@ class WarningSettingsSubmenu extends Container {
 		);
 
 		this.addChild(this.settingsList);
+	}
+
+	handleInput(data: string): void {
+		this.settingsList.handleInput(data);
+	}
+}
+
+/**
+ * The artifact platform targets, in the order the pane shows them. Each row is an
+ * independent on/off toggle because `--platform` (and the `platform` setting it
+ * mirrors) takes a list: emitting for two platforms at once is a supported shape.
+ * The tokens here are the canonical ones — the CLI aliases (`copilot`, `gh`,
+ * `native`) fold into these before anything reads them.
+ */
+const PLATFORM_ROWS: ReadonlyArray<{
+	platform: MarketplacePlatform;
+	label: string;
+	description: string;
+}> = [
+	{
+		platform: "claude",
+		label: "claude",
+		description:
+			"Claude Code layout: .claude/ scaffolds, and authored plugins drop into ~/.claude/skills/<id>/. The default when nothing is set.",
+	},
+	{
+		platform: "github",
+		label: "github (copilot, gh)",
+		description:
+			"Copilot layout: .github/ scaffolds, and authored plugins are produced under ~/.agents/publish/github/<id>/.",
+	},
+	{
+		platform: "agents",
+		label: "agents (native)",
+		description:
+			"Cross-vendor .agents/ layout. Scaffolds only - a plugin belongs to no marketplace in this layout, so plugin authoring ignores it.",
+	},
+];
+
+/** Row value for the platform setting: the selection, or the fallback when it is empty. */
+function platformSummary(platforms: readonly MarketplacePlatform[]): string {
+	return platforms.length > 0 ? platforms.join(", ") : "default (claude)";
+}
+
+/**
+ * Submenu for the session's artifact platform targets (the `platform` setting,
+ * same knob as `--platform`).
+ *
+ * A list rather than a cycle: the setting is a list, and the three tokens are not
+ * mutually exclusive. Turning everything off is legal and means "unset" — the
+ * per-consumer defaults come back (claude for plugins, .hoocode/ for scaffolds).
+ */
+class PlatformSubmenu extends Container {
+	private settingsList: SettingsList;
+	private selected: Set<MarketplacePlatform>;
+
+	constructor(
+		platforms: readonly MarketplacePlatform[],
+		onChange: (platforms: MarketplacePlatform[]) => void,
+		onDone: (summary: string) => void,
+	) {
+		super();
+
+		this.selected = new Set(platforms);
+
+		const items: SettingItem[] = PLATFORM_ROWS.map(({ platform, label, description }) => ({
+			id: platform,
+			label,
+			description,
+			currentValue: this.selected.has(platform) ? "on" : "off",
+			values: ["on", "off"],
+		}));
+
+		this.settingsList = new SettingsList(
+			items,
+			Math.min(items.length, 10),
+			getSettingsListTheme(),
+			(id, newValue) => {
+				const platform = id as MarketplacePlatform;
+				if (newValue === "on") this.selected.add(platform);
+				else this.selected.delete(platform);
+				onChange(this.ordered());
+			},
+			() => onDone(platformSummary(this.ordered())),
+		);
+
+		this.addChild(this.settingsList);
+	}
+
+	/** Selection in the pane's order, so the persisted list does not depend on click order. */
+	private ordered(): MarketplacePlatform[] {
+		return PLATFORM_ROWS.map((row) => row.platform).filter((platform) => this.selected.has(platform));
 	}
 
 	handleInput(data: string): void {
@@ -336,6 +439,14 @@ function bytesToLabel(bytes: number): string {
 	return match ? match[0] : `${Math.round(bytes / 1024)} KB`;
 }
 
+/** Byte-cap labels to cycle through, including a hand-set cap that matches no preset. */
+function byteLabels(current: number): string[] {
+	const all: Array<[string, number]> = TOOL_OUTPUT_BYTE_PRESETS.some(([, bytes]) => bytes === current)
+		? [...TOOL_OUTPUT_BYTE_PRESETS]
+		: [...TOOL_OUTPUT_BYTE_PRESETS, [bytesToLabel(current), current]];
+	return all.sort((a, b) => a[1] - b[1]).map(([label]) => label);
+}
+
 interface ToolSettingsConfig {
 	toolOutputMaxBytes: number;
 	toolOutputMaxLines: number;
@@ -365,14 +476,14 @@ class ToolSettingsSubmenu extends Container {
 				label: "Output max bytes",
 				description: "Byte cap on a single read/bash result before truncation. Applies to future tool calls.",
 				currentValue: bytesToLabel(config.toolOutputMaxBytes),
-				values: TOOL_OUTPUT_BYTE_PRESETS.map(([label]) => label),
+				values: byteLabels(config.toolOutputMaxBytes),
 			},
 			{
 				id: "output-max-lines",
 				label: "Output max lines",
 				description: "Line cap on a single read/bash result before truncation. Applies to future tool calls.",
 				currentValue: String(config.toolOutputMaxLines),
-				values: ["200", "400", "800", "1600", "3200"],
+				values: presetValues([200, 400, 800, 1600, 3200], config.toolOutputMaxLines),
 			},
 			{
 				id: "context-gc",
@@ -391,7 +502,10 @@ class ToolSettingsSubmenu extends Container {
 				switch (id) {
 					case "output-max-bytes": {
 						const preset = TOOL_OUTPUT_BYTE_PRESETS.find(([label]) => label === newValue);
-						if (preset) callbacks.onToolOutputMaxBytesChange(preset[1]);
+						// A hand-set cap has no preset entry; its label is "<n> KB" by
+						// construction, so read the number back out of it.
+						const bytes = preset ? preset[1] : Math.round(parseFloat(newValue) * 1024);
+						if (Number.isFinite(bytes) && bytes > 0) callbacks.onToolOutputMaxBytesChange(bytes);
 						break;
 					}
 					case "output-max-lines":
@@ -601,6 +715,15 @@ export class SettingsSelectorComponent extends Container {
 		const followUpKey = keyDisplayText("app.message.followUp");
 		let currentWarnings = { ...config.warnings };
 
+		// A row writes the user settings file; a key the project file also sets is
+		// merged over it on the next session, so say so rather than letting the row
+		// look like it took.
+		const projectPinned = new Set(config.projectPinnedSettings);
+		const pinnedNote = (key: string): string =>
+			projectPinned.has(key)
+				? ` This repo's .hoocode/settings.json sets ${key}, which overrides this row from the next session on.`
+				: "";
+
 		const toolsOn = config.tools.filter((t) => t.enabled).length;
 		const toolsOff = config.tools.length - toolsOn;
 
@@ -760,7 +883,7 @@ export class SettingsSelectorComponent extends Container {
 				label: "Image width",
 				description: "Preferred inline image width in terminal cells",
 				currentValue: String(config.imageWidthCells),
-				values: ["60", "80", "120"],
+				values: presetValues([60, 80, 120], config.imageWidthCells),
 			});
 		}
 
@@ -793,10 +916,21 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Plugin install scope (insert after skill-commands). Governs the
-		// autonomous InstallPlugin only — /plugin install asks per install.
+		// The autonomous plugin system's master switch (insert after skill-commands).
+		// One flag for the lifecycle tools and the reuse nudge, so both flip together.
 		const skillCommandsIdx = items.findIndex((item) => item.id === "skill-commands");
 		items.splice(skillCommandsIdx + 1, 0, {
+			id: "plugin-tools",
+			label: "Plugin system",
+			description: `Autonomous plugin system: the lifecycle tools (SearchPlugins, InstallPlugin, ...), ProposePlugin, and the plugin-reuse nudge. Tools arrive on the next session; the nudge follows at once.${pinnedNote("enablePluginTools")}`,
+			currentValue: config.enablePluginTools ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// Plugin install scope (insert after the master switch). Governs the
+		// autonomous InstallPlugin only — /plugin install asks per install.
+		const pluginToolsIdx = items.findIndex((item) => item.id === "plugin-tools");
+		items.splice(pluginToolsIdx + 1, 0, {
 			id: "plugin-install-scope",
 			label: "Plugin install scope",
 			description: "Where autonomous plugin installs go: user (~/.agents) or project (this repo, shared)",
@@ -804,9 +938,30 @@ export class SettingsSelectorComponent extends Container {
 			values: ["user", "project"],
 		});
 
-		// Hardware cursor toggle (insert after plugin-install-scope)
-		const skillCommandsIndex = items.findIndex((item) => item.id === "plugin-install-scope");
-		items.splice(skillCommandsIndex + 1, 0, {
+		// Artifact platform targets (insert after plugin-install-scope). Set once and
+		// it holds for every later session: it is the `platform` setting, which
+		// `--platform` overrides for a single run.
+		const pluginScopeIdx = items.findIndex((item) => item.id === "plugin-install-scope");
+		let currentPlatforms = [...config.platform];
+		items.splice(pluginScopeIdx + 1, 0, {
+			id: "platform",
+			label: "Platform",
+			description: `Vendor layout(s) hoocode writes artifacts in: authored plugins and the /new-skill //new-agent //new-command scaffolds.${pinnedNote("platform")}`,
+			currentValue: platformSummary(currentPlatforms),
+			submenu: (_currentValue, done) =>
+				new PlatformSubmenu(
+					currentPlatforms,
+					(platforms) => {
+						currentPlatforms = platforms;
+						callbacks.onPlatformChange(platforms);
+					},
+					(summary) => done(summary),
+				),
+		});
+
+		// Hardware cursor toggle (insert after the platform row)
+		const platformIndex = items.findIndex((item) => item.id === "platform");
+		items.splice(platformIndex + 1, 0, {
 			id: "show-hardware-cursor",
 			label: "Show hardware cursor",
 			description: "Show the terminal cursor while still positioning it for IME support",
@@ -841,7 +996,7 @@ export class SettingsSelectorComponent extends Container {
 			label: "Autocomplete max items",
 			description: "Max visible items in autocomplete dropdown (3-20)",
 			currentValue: String(config.autocompleteMaxVisible),
-			values: ["3", "5", "7", "10", "15", "20"],
+			values: presetValues([3, 5, 7, 10, 15, 20], config.autocompleteMaxVisible),
 		});
 
 		// Clear on shrink toggle (insert after autocomplete-max-visible)
@@ -871,7 +1026,7 @@ export class SettingsSelectorComponent extends Container {
 			label: "Voice silence window",
 			description: "Trailing-silence (ms) before voice capture auto-stops (300-10000). Env: VOICETOOLS_SILENCE_MS.",
 			currentValue: String(config.voiceSilenceMs),
-			values: ["300", "500", "800", "1200", "2000", "3000", "5000", "8000", "10000"],
+			values: presetValues([300, 500, 800, 1200, 2000, 3000, 5000, 8000, 10000], config.voiceSilenceMs),
 		});
 
 		// Webtools request timeout (insert after voice-silence-ms)
@@ -881,7 +1036,7 @@ export class SettingsSelectorComponent extends Container {
 			label: "Web tools timeout",
 			description: "Per-request timeout (secs) for webfetch/websearch (1-120). Env: HOOCODE_WEBTOOLS_TIMEOUT.",
 			currentValue: String(config.webtoolsTimeoutSecs),
-			values: ["5", "10", "15", "30", "60", "120"],
+			values: presetValues([5, 10, 15, 30, 60, 120], config.webtoolsTimeoutSecs),
 		});
 
 		// The /learn thresholds, appended as leaf rows and gathered into their own
@@ -989,8 +1144,15 @@ export class SettingsSelectorComponent extends Container {
 				case "skill-commands":
 					callbacks.onEnableSkillCommandsChange(newValue === "true");
 					break;
+				case "plugin-tools":
+					callbacks.onEnablePluginToolsChange(newValue === "true");
+					break;
 				case "plugin-install-scope":
 					callbacks.onPluginInstallScopeChange(newValue as "user" | "project");
+					break;
+				case "platform":
+					// Display only. Each toggle inside the submenu already applied itself;
+					// closing it hands back the summary purely to refresh this row's value.
 					break;
 				case "steering-mode":
 					callbacks.onSteeringModeChange(newValue as "all" | "one-at-a-time");
@@ -1014,7 +1176,7 @@ export class SettingsSelectorComponent extends Container {
 					callbacks.onEnableInstallTelemetryChange(newValue === "true");
 					break;
 				case "double-escape-action":
-					callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
+					callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree" | "none");
 					break;
 				case "tree-filter-mode":
 					callbacks.onTreeFilterModeChange(
@@ -1065,6 +1227,11 @@ export class SettingsSelectorComponent extends Container {
 				label,
 				description,
 				currentValue: `${members.length} setting${members.length === 1 ? "" : "s"}`,
+				// Categories shortened the top level but also hid every setting from
+				// its search: searching "theme" matched no category label. The member
+				// labels ride along as search text so the query lands on the category
+				// that holds the setting.
+				keywords: members.map((member) => member.label).join(" "),
 				submenu: (_currentValue, done) => new CategorySubmenu(members, applyChange, () => done()),
 			};
 		};
@@ -1092,6 +1259,14 @@ export class SettingsSelectorComponent extends Container {
 					"clear-on-shrink",
 					"terminal-progress",
 				],
+			),
+			// Artifact production. `plugin-install-scope` had no category and was
+			// therefore unreachable from the pane despite having a live callback.
+			categoryRow(
+				"cat-plugins",
+				"Plugins",
+				"The autonomous plugin system's master switch, the vendor layout hoocode writes, and where autonomous installs land.",
+				["plugin-tools", "platform", "plugin-install-scope"],
 			),
 			categoryRow("cat-images", "Images", "Inline image rendering and resizing.", [
 				"show-images",

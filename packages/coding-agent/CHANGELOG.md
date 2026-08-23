@@ -2,6 +2,51 @@
 
 ## [Unreleased]
 
+### Added
+
+- `enablePluginTools` is editable from `/settings` too, as **Plugin system** at
+  the top of the same **Plugins** category. It is the one gate for the whole
+  autonomous plugin system — the lifecycle tools, `ProposePlugin`, and the
+  plugin-reuse nudge — and was flag- and file-only. The tools are wired up when
+  a session is built, so they arrive on the next session; the nudge re-reads the
+  setting and follows immediately.
+
+- The artifact platform targets are editable from `/settings`, under a new
+  **Plugins** category. `platform` decides the vendor layout hoocode writes when
+  it authors a plugin or scaffolds with `/new-skill`, `/new-agent` and
+  `/new-command`, but it was reachable only through the `--platform` flag or by
+  hand-editing settings.json — which made a per-environment choice look like a
+  per-invocation one. The pane row writes the global settings file and applies
+  the change to the running session, so it is set once per machine.
+
+  The three tokens (`claude`, `github`, `agents`) are independent toggles rather
+  than a cycle, because the setting is a list and dual-emission is supported.
+  Turning all of them off removes the key: the per-consumer defaults come back
+  (`claude` for plugins, `.hoocode/` for scaffolds), which is not the same as
+  targeting nothing.
+
+### Fixed
+
+- A `/settings` row whose key the project's `.hoocode/settings.json` also sets
+  looked like it took and then reverted: rows write the user file, which the
+  project file is merged over on the next session. The Plugins rows now say so
+  in their description.
+
+- `pluginInstallScope` was unreachable in `/settings`. The row and its callback
+  existed, but the row belonged to no category after the pane was grouped, so
+  nothing in the UI could open it. It now lives under **Plugins** alongside
+  `platform`, and a test walks the pane to keep every setting reachable.
+
+- `/settings` search matched category labels only, so typing the name of a
+  setting — "theme", "transport" — returned nothing once the pane grouped its
+  rows into categories. A category now searches by the labels of the settings
+  inside it.
+
+- A numeric setting edited by hand in settings.json no longer snaps to a preset
+  on the first keypress. Image width, autocomplete size, the voice silence
+  window, the web-tools timeout and both tool-output caps now include the value
+  in force in their cycle, as the `/learn` thresholds already did.
+
 ## [0.5.28] - 2026-08-22
 
 ## [0.5.27] - 2026-08-22

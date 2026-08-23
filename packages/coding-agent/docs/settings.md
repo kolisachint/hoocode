@@ -222,6 +222,49 @@ narrowing the window to nothing. As with all settings, a project
 `.hoocode/settings.json` overrides the global one, so a repo can carry its own
 window.
 
+### Plugins and artifacts
+
+Where hoocode writes what it authors. Both are editable from `/settings` under
+**Plugins**, which writes the global settings file — the layout a machine
+targets is an environment-level choice, so it is set once rather than passed on
+every run.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `enablePluginTools` | boolean | `false` | Master switch for the autonomous plugin system: the lifecycle tools, `ProposePlugin`, and the plugin-reuse nudge |
+| `platform` | string \| string[] | - | Vendor layout(s) to write artifacts in: `claude`, `github` (aliases `copilot`, `gh`), `agents` (alias `native`) |
+| `pluginInstallScope` | string | `"user"` | Where an autonomous plugin install lands: `user` (`~/.agents/plugins`) or `project` (`<cwd>/.agents/plugins`, shared once committed) |
+
+```json
+{ "enablePluginTools": true, "platform": ["claude", "github"], "pluginInstallScope": "user" }
+```
+
+`/settings` writes the global file. If a project `.hoocode/settings.json` sets
+one of these keys it is merged over that on the next session, so the pane marks
+the row as overridden rather than letting the change look permanent.
+
+`enablePluginTools` is off by default and is the one gate for the whole
+autonomous system — see [Plugins](plugins.md). Toggling it in `/settings`
+attaches the tools on the next session, since they are wired up when the session
+is built; the reuse nudge re-reads the setting and follows immediately. The
+`--enable-plugintools` flag turns it on for a single run. Slash-command plugin
+management (`/plugin`) is unaffected either way.
+
+`platform` governs the two things hoocode *writes*: authored plugins, and the
+`/new-skill`, `/new-agent` and `/new-command` scaffolds. Reading is unaffected —
+every vendor convention is read regardless of this setting.
+
+It takes a list because emitting for two platforms at once is a supported shape;
+in `/settings` the three tokens are independent toggles for that reason.
+Unsetting it (all toggles off) is not the same as targeting nothing: the
+defaults come back, which are `claude` for an authored plugin and `.hoocode/`
+for a scaffold. `agents` is a scaffold-only target — a plugin is a distribution
+unit and the native layout belongs to no marketplace — so plugin authoring
+filters it out rather than failing.
+
+The `--platform` CLI flag sets the same targets for a single run and overrides
+this setting.
+
 ### Model Cycling
 
 | Setting | Type | Default | Description |

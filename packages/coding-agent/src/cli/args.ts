@@ -371,7 +371,8 @@ ${chalk.bold("Options:")}
   --enable-plugintools           Enable the autonomous plugin system (off by default)
                                   Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and
                                   ProposePlugin, plus the runtime plugin-reuse nudge
-                                  Can also be enabled via the "enablePluginTools" setting
+                                  Can also be enabled via the "enablePluginTools" setting,
+                                  which /settings -> Plugins -> Plugin system writes
   --light                        Minimal low-token preset for small/local models:
                                   only the read/write/edit/bash tools (short descriptions,
                                   stripped schemas; search via bash), a terse system prompt, and
@@ -390,7 +391,8 @@ ${chalk.bold("Options:")}
                                   distribution units and the native agents layout belongs to no
                                   marketplace, so agents is ignored for them (scaffolds still use it)
                                   Default: claude for plugins; .hoocode/ for scaffolds
-                                  Can also be set via the "platform" setting
+                                  Can also be set via the "platform" setting, which
+                                  /settings -> Plugins -> Platform writes (per environment)
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)

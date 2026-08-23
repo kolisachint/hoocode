@@ -13,6 +13,12 @@ export interface SettingItem {
 	description?: string;
 	/** Current value to display (right side) */
 	currentValue: string;
+	/**
+	 * Extra text the search matches against, never rendered. A row that stands for
+	 * other rows (a category) lists what is inside it here, so searching for a
+	 * setting finds the row that leads to it instead of coming back empty.
+	 */
+	keywords?: string;
 	/** If provided, Enter/Space cycles through these values */
 	values?: string[];
 	/** If provided, Enter opens this submenu. Receives current value and done callback. */
@@ -243,7 +249,9 @@ export class SettingsList implements Component {
 	}
 
 	private applyFilter(query: string): void {
-		this.filteredItems = fuzzyFilter(this.items, query, (item) => item.label);
+		this.filteredItems = fuzzyFilter(this.items, query, (item) =>
+			item.keywords ? `${item.label} ${item.keywords}` : item.label,
+		);
 		this.selectedIndex = 0;
 	}
 

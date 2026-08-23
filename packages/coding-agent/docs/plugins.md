@@ -107,8 +107,9 @@ Then package for distribution:
 
 ## Model-facing tools
 
-When plugin tooling is enabled (`--enable-plugintools`, or the
-`enablePluginTools` setting), the model gets its own lifecycle tools rather than
+When plugin tooling is enabled (`--enable-plugintools`, the `enablePluginTools`
+setting, or `/settings` under **Plugins**), the model gets its own lifecycle
+tools rather than
 going through the slash command: `SearchPlugins`, `ListPlugins`,
 `SuggestPluginInstall`, `InstallPlugin`, `UninstallPlugin`, `UpdatePlugin`,
 `ProposePlugin`, `RemovePluginCapability`, and `PackagePlugin`.
