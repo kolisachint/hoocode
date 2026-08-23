@@ -39,7 +39,24 @@
   binary. If the cache cannot be written the built-ins are absent and everything
   else runs normally. `--no-skills` and `--light` suppress them.
 
+- An agent-selection eval: `bun run agent-eval` scores the built-in agent roster
+  against a gold set of real tasks, reporting how often each agent is chosen
+  when it should be, how often the parent correctly keeps work inline, and a
+  confusion matrix naming which agent loses to which. It reuses the plugin G4
+  trigger harness rather than adding a second one, and describes each agent with
+  the summarized text `<available_agents>` actually emits.
+
+  This exists to settle whether `plan` and `explore` are two agents or one:
+  they ship with the same tools, the same isolation and the same background
+  flag, and `complexity` on the Task tool already expresses the only other
+  difference. That was being argued from intuition; it is now measurable.
+
 ### Fixed
+
+- The G4 plugin trigger gate never had a judge. `trigger-eval.ts` takes its
+  model call as a parameter so scoring stays testable, and nothing in the tree
+  ever passed one — so every G4 run has reported `not-run` since it was written.
+  `createLlmTriggerJudge` is that judge, shared with the agent-selection eval.
 
 - `/new-skill`, `/new-agent` and `/new-command` scaffolded different content
   depending on whether `--platform` was set. Each command has two write paths —
