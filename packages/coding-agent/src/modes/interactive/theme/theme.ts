@@ -1301,10 +1301,19 @@ export function getMarkdownTheme(): MarkdownTheme {
 	// A theme that sets the headline pair renders headings as a filled chip: the
 	// text takes the chip's ink, and the fill is applied to the finished line so
 	// the chip's padding never leaks into the inline-style prefix.
+	//
+	// Only the top two levels get a bar. Below that the renderer keeps the `###`
+	// marker, and a marker inside a filled chip is saying the same thing twice —
+	// the chip *is* the marker. A page of `###` bars is also just loud: two
+	// levels of chip and the rest as coloured text is the hierarchy a printed
+	// page would use.
 	const chip = theme.hasBg("headlineBg") && theme.has("headlineText");
+	const chipped = (level: number) => chip && level <= 2;
 	return {
-		heading: (text: string) => theme.fg(chip ? "headlineText" : "mdHeading", text),
-		headingBlock: chip ? (line: string) => theme.bg("headlineBg", ` ${line} `) : undefined,
+		heading: (text: string, level: number) => theme.fg(chipped(level) ? "headlineText" : "mdHeading", text),
+		headingBlock: chip
+			? (line: string, level: number) => (chipped(level) ? theme.bg("headlineBg", ` ${line} `) : line)
+			: undefined,
 		link: (text: string) => theme.fg("mdLink", text),
 		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
 		code: (text: string) => theme.fg("mdCode", text),

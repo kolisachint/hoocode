@@ -41,6 +41,30 @@
     each built that bracket string by hand; they now share one helper, because a
     tape strip only reads as one device if every tag agrees.
 
+  Rendering a real transcript through the components turned up two things the
+  token tests could not see:
+
+  - A heading chip wrapped the `###` marker along with the text below level two,
+    saying the same thing twice. The hook is level-aware now — `heading(text,
+    level)` and `headingBlock(line, level)` — and only the top two levels take a
+    bar; a filled bar on every `###` in a long answer is exhausting anyway.
+  - A chip painted inside a filled block punched a hole in it. A background is a
+    pair, so the chip has to close its own fill, and that close ended the
+    block's fill too: the extension row ran lilac for one cell, tape for the
+    chip, and bare page from there to the right margin.
+
+### Fixed
+
+- A filled `Box` keeps its background behind anything that paints its own fill.
+  A child that draws a background — a chip, a label strip, a highlighted span —
+  has to close it, and that reset ended the band's background as well, so the
+  row finished on the terminal's own canvas instead of on the block. The band
+  now re-opens its background after any inner reset, recovering the opener from
+  the `bgFn` it was handed rather than assuming a colour, which makes it right
+  for any nested fill and a no-op for a `bgFn` that adds no codes.
+
+### Added (continued)
+
   Dropped from the same design pass: a `cutEdge` token. It was meant to separate
   a heavy block rule from hairline chrome, but the weight change comes entirely
   from the glyph — a dedicated colour lands ΔE 2.6 from `border`, under the
