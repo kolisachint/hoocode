@@ -1,5 +1,7 @@
 import { Box, Text } from "@kolisachint/hoocode-tui";
+import stripAnsi from "strip-ansi";
 import { beforeEach, describe, expect, it } from "vitest";
+import { renderToolSignalLine, type ToolSignalInput } from "../src/modes/interactive/components/tool-signal.js";
 import {
 	getMarkdownTheme,
 	getPaperShadowFn,
@@ -15,6 +17,16 @@ import {
  * fallback on a theme without it, the effect on a theme with it — because a
  * fallback that is never exercised is the one that rots.
  */
+/** One radar row's worth of input, so the stroke tests differ only in `isLatest`. */
+const SIGNAL: ToolSignalInput = {
+	toolName: "read",
+	args: { path: "src/modes/interactive/theme/theme.ts" },
+	cwd: "/repo",
+	result: { content: [{ type: "text", text: "a\nb\nc" }], isError: false },
+	isPartial: false,
+	showImages: false,
+};
+
 describe("cut-out token fallbacks", () => {
 	describe("a theme without them", () => {
 		beforeEach(() => initTheme("dark", false));
@@ -43,6 +55,13 @@ describe("cut-out token fallbacks", () => {
 
 		it("paints a gauge track in dim", () => {
 			expect(theme.fg("halftone", "▱")).toBe(theme.fg("dim", "▱"));
+		});
+
+		it("draws no marker stroke on the newest radar row", () => {
+			expect(theme.hasBg("activeToolBg")).toBe(false);
+			const marked = renderToolSignalLine({ ...SIGNAL, isLatest: true }, 60);
+			const plain = renderToolSignalLine({ ...SIGNAL, isLatest: false }, 60);
+			expect(marked).toBe(plain);
 		});
 	});
 
@@ -90,6 +109,25 @@ describe("cut-out token fallbacks", () => {
 
 		it("paints a gauge track apart from dim", () => {
 			expect(theme.fg("halftone", "▱")).not.toBe(theme.fg("dim", "▱"));
+		});
+
+		it("strokes the newest radar row and nothing else", () => {
+			const marked = renderToolSignalLine({ ...SIGNAL, isLatest: true }, 60);
+			const plain = renderToolSignalLine({ ...SIGNAL, isLatest: false }, 60);
+			expect(marked).not.toBe(plain);
+
+			const sentinel = "\u0000";
+			const opener = theme.bg("activeToolBg", sentinel).split(sentinel)[0];
+			expect(marked).toContain(opener);
+			expect(plain).not.toContain(opener);
+
+			// A highlighter runs over the words, not the whole line: the stroke
+			// closes before the flush-right signal, which keeps its status colour.
+			const close = marked.lastIndexOf("\x1b[49m");
+			expect(close).toBeGreaterThan(-1);
+			expect(marked.slice(close)).toContain("lines");
+			// And it changes no visible character — only how they are painted.
+			expect(stripAnsi(marked)).toBe(stripAnsi(plain));
 		});
 	});
 

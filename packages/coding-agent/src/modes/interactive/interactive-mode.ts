@@ -294,6 +294,10 @@ export class InteractiveMode {
 	private toolOutputView: ToolOutputView = "glance";
 	// The chain currently collecting tool calls, if the agent is mid-run.
 	private openChain?: ToolChainComponent;
+	/** The newest tool block in the transcript; radar marks it. */
+	private latestToolBlock?: ToolExecutionComponent;
+	/** The run that block belongs to; radar marks its folded line too. */
+	private latestChain?: ToolChainComponent;
 	// Whether the assistant message being streamed has said anything yet. The
 	// first words it speaks close the chain the previous message's calls built.
 	private sawTextInCurrentMessage = false;
@@ -1285,6 +1289,8 @@ export class InteractiveMode {
 	private renderCurrentSessionState(): void {
 		this.chatContainer.clear();
 		this.openChain = undefined;
+		this.latestToolBlock = undefined;
+		this.latestChain = undefined;
 		this.pendingMessagesContainer.clear();
 		this.messageQueue.resetCompactionQueue();
 		this.streamingComponent = undefined;
@@ -2988,6 +2994,19 @@ export class InteractiveMode {
 			this.chatContainer.addChild(this.openChain);
 		}
 		this.openChain.add(block);
+		// The newest call carries radar's marker stroke. This is the one place
+		// every tool block is attached, so it is the one place that can know
+		// which block is newest without two paths disagreeing about it. The run
+		// it belongs to is marked as well: radar folds a run of more than one
+		// call to a single line, and that line is what the view usually shows.
+		this.latestToolBlock?.setLatest(false);
+		block.setLatest(true);
+		this.latestToolBlock = block;
+		if (this.latestChain !== this.openChain) {
+			this.latestChain?.setLatest(false);
+			this.openChain.setLatest(true);
+			this.latestChain = this.openChain;
+		}
 	}
 
 	/**

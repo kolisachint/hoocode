@@ -585,7 +585,11 @@ describe.each(CUTOUT_THEMES)("%s", (themeName) => {
 	const grounds: Record<string, string> = SOLARIZED[mode];
 
 	function cutoutSurfaces(): Record<string, string> {
-		return { ...grounds, ...surfaces(themeName) };
+		const colors = getResolvedThemeColors(themeName);
+		// `activeToolBg` is a real surface: the radar row paints `toolTitle` and
+		// `toolOutput` straight onto it, so it answers to the same AAA sweep as
+		// any other background. The chip fills do not, and are excluded above.
+		return { ...grounds, ...surfaces(themeName), "bg.activeToolBg": colors.activeToolBg };
 	}
 
 	it("keeps every foreground at AAA contrast on every surface, terminal page included", () => {
@@ -595,6 +599,8 @@ describe.each(CUTOUT_THEMES)("%s", (themeName) => {
 		const failures: string[] = [];
 		for (const [token, value] of Object.entries(colors)) {
 			if ((BG_TOKENS as readonly string[]).includes(token)) continue;
+			// A background, not an ink — it is swept as a surface below instead.
+			if (token === "activeToolBg") continue;
 			if (CHIP_TOKENS.has(token) || CUTOUT_DECORATIVE.has(token)) continue;
 			for (const [surface, background] of Object.entries(backgrounds)) {
 				const ratio = contrast(value, background);

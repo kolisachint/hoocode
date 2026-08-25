@@ -136,6 +136,13 @@ const ThemeJsonSchema = Type.Object({
 		// restyle the footer's brand mark. Unset: the label keeps its own color.
 		tapeBg: Type.Optional(ColorValueSchema),
 		tapeText: Type.Optional(ColorValueSchema),
+		// activeToolBg: the marker stroke over the most recent tool row in radar.
+		// Radar is a map of a run, and a map is most useful when it says where you
+		// are on it — the stroke walks down the screen as the agent works, then
+		// stays on the last thing it did. Unset: no stroke, which is how radar
+		// rendered before. Kept separate from `selectedBg` so a theme can make the
+		// transcript's mark quieter than its list selection.
+		activeToolBg: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -246,7 +253,8 @@ export type ThemeBg =
 	| "warningBg"
 	| "brandBg"
 	| "headlineBg"
-	| "tapeBg";
+	| "tapeBg"
+	| "activeToolBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -754,6 +762,7 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"brandBg",
 		"headlineBg",
 		"tapeBg",
+		"activeToolBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {
