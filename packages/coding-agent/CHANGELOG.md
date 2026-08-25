@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The marketplace TTL tests no longer clone three real GitHub repositories on
+  every call. `refreshMarketplaces` has always meant the well-known indices as
+  well as the user-added ones, so a test covering a *local* git remote still
+  reached `github.com` three times per call — six to eight seconds a test
+  locally, and past the 30-second budget on a loaded CI runner. That is what
+  made this file the most reliable way to turn `main` red: a different test in
+  it timed out on each run, which is the signature of a clock rather than a
+  defect.
+
+  `ensureWellKnownMarketplaces` already documented a seam for exactly this — "a
+  check that needs the network is a check that rots" — but `refreshMarketplaces`
+  did not carry it up to its own callers. It does now, and the tests pass an
+  empty list, which is what their own docstring always claimed they did. The
+  three tests drop from 20.3s to 0.6s combined. Production behaviour is
+  unchanged: with no options the default is still the well-known list.
+
 ## [0.5.36] - 2026-08-25
 
 ### Added
