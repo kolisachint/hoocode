@@ -3,7 +3,7 @@ import type { TextContent } from "@kolisachint/hoocode-ai";
 import type { Component } from "@kolisachint/hoocode-tui";
 import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
 import type { MessageRenderer } from "../../../core/extensions/types.js";
-import { getMarkdownTheme, theme } from "../theme/theme.js";
+import { getMarkdownTheme, getPaperShadowFn, messageLabel, theme } from "../theme/theme.js";
 
 /**
  * Component that renders a custom message entry from extensions.
@@ -31,6 +31,7 @@ export class CustomMessageComponent extends Container {
 
 		// Create box with purple background (used for default rendering)
 		this.box = new Box(1, 1, (t) => theme.bg("customMessageBg", t));
+		this.box.setShadowFn(getPaperShadowFn());
 
 		this.rebuild();
 	}
@@ -75,7 +76,7 @@ export class CustomMessageComponent extends Container {
 		this.box.clear();
 
 		// Default rendering: label + content
-		const label = theme.fg("customMessageLabel", `\x1b[1m[${this.message.customType}]\x1b[22m`);
+		const label = messageLabel(this.message.customType);
 		this.box.addChild(new Text(label, 0, 0));
 		this.box.addChild(new Spacer(1));
 

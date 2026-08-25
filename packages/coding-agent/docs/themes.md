@@ -42,9 +42,11 @@ Disable discovery with `--no-themes`.
 | `colorsafe-light` | white | Okabe-Ito hues, no red/green pairs |
 | `vox-dark` | newsprint black | Explanatory-journalism yellow; `warning` is orange |
 | `vox-light` | cream | Ink on paper; yellow survives as highlight and brand chip |
+| `vox-cutout-light` | cream / Solarized Light | Paper cut-outs: bold flat stocks, cut edges, AAA ink |
+| `vox-cutout-dark` | Solarized Dark | The same cut-outs on newsprint black; AAA ink |
 
 The six accessible themes are `high-contrast-*`, `warm-*`, and `colorsafe-*`; the
-`vox-*` pair is a style theme and is described separately below. The six are built
+`vox-*` themes are style themes and are described separately below. The six are built
 for low vision. Every color they
 draw clears **WCAG AAA (7:1)** against every surface the TUI paints behind it —
 the page, selected rows, user messages, and all three tool-box states — and none
@@ -95,6 +97,53 @@ Two deliberate departures from the standard the default `light` theme is held to
 - **`brandText` is exempt from the surface sweep.** It only ever renders on
   `brandBg`, never on a page surface, so measuring it against the page is
   meaningless. On its own chip it sits at 14.8:1.
+
+### The `vox-cutout-*` pair
+
+The same explanatory-journalism voice cut for paper rather than newsprint: flat
+stocks pasted onto the page, a scissor-cut rule around them, poster inks printed
+on top. Unlike the `vox-*` pair it **is** AAA, and
+`test/theme-contrast.test.ts` enforces it.
+
+`vox-cutout-light` is cut for a cream page (Solarized Light, or anything near
+`#fdf6e3`); `vox-cutout-dark` is cut for Solarized Dark. Two things separate
+them from `vox-light`:
+
+- **The surfaces are stock, not washes.** `vox-light` tints its backgrounds a
+  degree or two off white — on a cream terminal such as Solarized Light its user
+  message sits ΔE 1.0 from the page, which is to say invisible. Every surface
+  here is a flat colored sheet held at least ΔE 10 clear of both Solarized
+  grounds (`base3` `#fdf6e3` and `base2` `#eee8d5`), so a message block or tool
+  box reads as a piece of paper laid on the page rather than a faint tint of it.
+  The sheets carry the state: white for what you typed, blue for work in flight,
+  mint for done, blush for failed, lilac for an extension, masking-tape tan for a
+  warning notice, and flat vox yellow for the selected row.
+- **The ink is capped by the loudest sheet.** Full-strength `#ffe600` under a
+  selected row is the brightest surface any text has to survive, and AAA on it
+  puts a hard ceiling on every foreground in the palette — each ink sits within a
+  hair of that ceiling at ~7.2:1, as dark as a printed ink and no darker. That
+  ceiling is why the accent is a deep gold rather than the amber `vox-light`
+  uses: an amber light enough to read as yellow cannot clear 7:1 on its own
+  highlight band. Bold flat color and AAA pull against each other, and this theme
+  spends the whole budget on flat color.
+
+It keeps `vox-light`'s two departures — rules are neutral rather than saturated,
+and `brandText` is measured only on its own chip — and adds the vox rule that
+`warning` is orange, never yellow.
+
+On the dark side the same rules run in reverse: AAA on a dark ground is a
+*floor*, and Solarized's `base02` is the lighter of its two stops, so it is what
+every ink has to clear. The stocks are dark coloured papers — navy in flight,
+deep green done, maroon failed, aubergine for an extension, burnt umber for a
+warning, olive-gold selected — and they all avoid the cyan the ground itself is
+made of, because a stock in the ground's own hue cannot separate from it.
+
+Point your terminal at the matching Solarized palette and the sheets land where
+they were cut to land. On pure white or pure black the contrast floor still
+holds; the sheets simply read a touch louder.
+
+Both themes set the four cut-out token groups described under
+[Optional Tokens](#optional-tokens).
 
 ## Selecting a Theme
 
@@ -320,12 +369,63 @@ themes keep working.
 | `brandBg` | Background of the footer brand chip | Brand mark renders as `accent`-colored text |
 | `brandText` | Text color of the footer brand chip | Brand mark renders as `accent`-colored text |
 | `warningBg` | Fill behind a warning notice (the billing caveat box) | Falls back to `customMessageBg` |
+| `paperShadow` | Offset band under a filled message block | No shadow row is drawn |
+| `halftone` | Unfilled remainder of a gauge or progress track | Falls back to `dim` |
+| `headlineBg`/`headlineText` | Markdown heading chip | Headings stay `mdHeading`-coloured text |
+| `tapeBg`/`tapeText` | Tape-strip message label | The label keeps `customMessageLabel` in brackets |
 
 `warningBg` is a surface, not text: `warning` renders the title on it and `muted`
 the body, so it wants a low-chroma tint of the theme's warning hue rather than the
 warning color itself. Every built-in sets it, and all six accessible themes keep
 every foreground at AAA against it (`test/theme-contrast.test.ts` sweeps it with
 the other surfaces).
+
+### The cut-out tokens
+
+Four groups that draw the paper-collage language rather than only colouring it.
+Every one is optional with a defined fallback, so a theme that sets none of them
+renders exactly as it did before they existed; `test/theme-cutout-tokens.test.ts`
+exercises both sides of each. The `vox-cutout-*` pair is the only built-in that
+sets them.
+
+**`paperShadow`** draws an offset band under a filled message block — a user
+message, an extension message, an error or warning notice — so the block reads
+as a sheet laid on the page rather than a colour printed into it. A terminal has
+no sub-pixel offsets and no blur, so the band is one extra row of `▀`: an upper
+half-block, which paints solid colour across the top half of its cells and so
+hugs the block's bottom edge, indented one column to give the offset. There is
+no matching right-hand column, because these boxes render at the full terminal
+width and a column past the last cell has nowhere to go.
+
+It is a shape, not text, so it answers to the 2.8:1 decorative floor rather than
+a text-contrast one — and it has to stay ΔE-clear of every `*Bg` token as well,
+or the shadow sinks into the sheet it is hugging. On a dark theme nothing can be
+darker than the page, so the band is set *lighter* than the ground: it reads as a
+cut edge rather than a shadow, which is the closest a dark canvas gets.
+
+**`halftone`** colours the unfilled remainder of a gauge or progress track. Those
+tracks used `dim`, which is body-weight text: a track drawn in it reads as
+writing rather than as the space the fill has yet to reach. The floor is
+inverted from the usual one — the track wants to stay *below* the filled bar so
+the fill keeps carrying the signal, and above roughly 2.8:1 so it is visible at
+all — and it has to separate from `dim` by ΔE 11, or it has bought nothing.
+
+**`headlineBg`/`headlineText`** render markdown headings as a filled chip instead
+of coloured text. This is how a light theme keeps a vivid brand hue: inside a
+chip a colour can be far brighter than it could ever be as text on the page.
+`vox-cutout-light` is the case in point — its AAA ceiling pushes `accent` from
+vox amber down to a deep gold, and the chip gets full-strength `#ffe600` back at
+15:1.
+
+**`tapeBg`/`tapeText`** render the `[branch]` / `[skill]` / `[extension]` tag that
+heads a message block as a strip laid across it, rather than brackets set inside
+it. Kept separate from `brandBg`/`brandText` so taping a label does not restyle
+the footer's brand mark.
+
+Both chip pairs are honored **only as a pair**, and both are exempt from the
+surface sweep for the same reason `brandText` is: a chip ink never renders on a
+page surface, so measuring it against one says nothing. Each is measured against
+its own fill instead.
 
 `brandBg` and `brandText` are honored **only as a pair** — set both, or neither.
 They exist for light themes, where a brand hue vivid enough to be recognizable is

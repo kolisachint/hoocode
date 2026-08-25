@@ -338,6 +338,30 @@
 				"brandText": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Brand chip text (optional; only honoured when brandBg is also set)"
+				},
+				"paperShadow": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Offset band under a filled message block (optional; unset draws no shadow row)"
+				},
+				"halftone": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Unfilled remainder of a gauge or progress track (optional; falls back to dim)"
+				},
+				"headlineBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Markdown heading chip fill (optional; only honoured when headlineText is also set)"
+				},
+				"headlineText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Markdown heading chip text (optional; only honoured when headlineBg is also set)"
+				},
+				"tapeBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Tape-strip label fill (optional; only honoured when tapeText is also set)"
+				},
+				"tapeText": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Tape-strip label text (optional; only honoured when tapeBg is also set)"
 				}
 			},
 			"additionalProperties": false

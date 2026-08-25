@@ -1,6 +1,6 @@
 import type { CompactionSummaryMessage } from "@kolisachint/hoocode-agent-core";
 import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
-import { getMarkdownTheme, theme } from "../theme/theme.js";
+import { getMarkdownTheme, messageLabel, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 
 /**
@@ -38,7 +38,7 @@ export class CompactionSummaryMessageComponent extends Box {
 			after !== undefined && this.message.tokensBefore > 0
 				? `Compacted ${beforeStr} → ${after.toLocaleString()} tokens (saved ${formatSavings(this.message.tokensBefore, after)})`
 				: `Compacted from ${beforeStr} tokens`;
-		const label = theme.fg("customMessageLabel", `\x1b[1m[compaction]\x1b[22m`);
+		const label = messageLabel("compaction");
 		this.addChild(new Text(label, 0, 0));
 		this.addChild(new Spacer(1));
 

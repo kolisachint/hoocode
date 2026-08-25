@@ -1,6 +1,6 @@
 import { Box, Markdown, type MarkdownTheme, Text } from "@kolisachint/hoocode-tui";
 import type { ParsedSkillBlock } from "../../../core/agent-session.js";
-import { getMarkdownTheme, theme } from "../theme/theme.js";
+import { getMarkdownTheme, messageLabel, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 
 /**
@@ -35,7 +35,7 @@ export class SkillInvocationMessageComponent extends Box {
 
 		if (this.expanded) {
 			// Expanded: label + skill name header + full content
-			const label = theme.fg("customMessageLabel", `\x1b[1m[skill]\x1b[22m`);
+			const label = messageLabel("skill");
 			this.addChild(new Text(label, 0, 0));
 			const header = `**${this.skillBlock.name}**\n\n`;
 			this.addChild(
@@ -46,7 +46,7 @@ export class SkillInvocationMessageComponent extends Box {
 		} else {
 			// Collapsed: single line - [skill] name (hint to expand)
 			const line =
-				theme.fg("customMessageLabel", `\x1b[1m[skill]\x1b[22m `) +
+				`${messageLabel("skill")} ` +
 				theme.fg("customMessageText", this.skillBlock.name) +
 				theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`);
 			this.addChild(new Text(line, 0, 0));

@@ -109,6 +109,33 @@ const ThemeJsonSchema = Type.Object({
 		// enough to read as a chip is rarely legible as text on a light canvas.
 		brandBg: Type.Optional(ColorValueSchema),
 		brandText: Type.Optional(ColorValueSchema),
+		// Cut-out chrome (6 colors). All OPTIONAL, all with a defined fallback,
+		// so a theme that sets none of them renders exactly as it does today.
+		//
+		// paperShadow: the offset band drawn under a filled message block, so the
+		// block reads as a sheet laid on the page rather than printed into it. A
+		// terminal has no sub-pixel offsets, so this is one extra row of `▀` — a
+		// half-block, which is solid color in the half it covers. Unset: no
+		// shadow row is drawn.
+		paperShadow: Type.Optional(ColorValueSchema),
+		// halftone: the *unfilled* remainder of a gauge or progress track. It has
+		// to sit apart from `dim`, which is body-weight text — a track that reads
+		// as text competes with the fill it is supposed to recede behind. Unset:
+		// falls back to `dim`, which is what the tracks used before.
+		halftone: Type.Optional(ColorValueSchema),
+		// Headline chip (2 colors), honoured only as a pair. Markdown headings
+		// render as a filled bar instead of coloured text. This is how a light
+		// theme keeps a vivid brand hue: inside a chip a color can be far
+		// brighter than it could ever be as text on the page. Unset: headings
+		// stay `mdHeading`-coloured text.
+		headlineBg: Type.Optional(ColorValueSchema),
+		headlineText: Type.Optional(ColorValueSchema),
+		// Tape chip (2 colors), honoured only as a pair. A label laid *across* a
+		// block rather than set inside it — the extension tag, a tool's name in
+		// radar. Separate from brandBg/brandText so taping a label does not
+		// restyle the footer's brand mark. Unset: the label keeps its own color.
+		tapeBg: Type.Optional(ColorValueSchema),
+		tapeText: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -176,7 +203,11 @@ export type ThemeColor =
 	| "agent5"
 	| "agent6"
 	| "mcp"
-	| "brandText";
+	| "brandText"
+	| "paperShadow"
+	| "halftone"
+	| "headlineText"
+	| "tapeText";
 
 /** The agent identity palette, in hash order. */
 export const AGENT_COLOR_TOKENS = [
@@ -213,7 +244,9 @@ export type ThemeBg =
 	| "toolSuccessBg"
 	| "toolErrorBg"
 	| "warningBg"
-	| "brandBg";
+	| "brandBg"
+	| "headlineBg"
+	| "tapeBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -434,6 +467,13 @@ export class Theme {
 					this.fgColors.set(token, accentAnsi);
 				}
 			}
+		}
+		// A gauge always has an unfilled remainder to draw, so unlike the chip
+		// pairs there is no "skip it" rendering to fall back to. `dim` is what
+		// the tracks used before the token existed.
+		const dimAnsi = this.fgColors.get("dim");
+		if (dimAnsi !== undefined && !this.fgColors.has("halftone")) {
+			this.fgColors.set("halftone", dimAnsi);
 		}
 		this.bgColors = new Map();
 		for (const [key, value] of Object.entries(bgColors) as [ThemeBg, string | number][]) {
@@ -712,6 +752,8 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"toolErrorBg",
 		"warningBg",
 		"brandBg",
+		"headlineBg",
+		"tapeBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {
@@ -1229,9 +1271,40 @@ export function getLanguageFromPath(filePath: string): string | undefined {
 	return extToLang[ext];
 }
 
+/**
+ * The `[branch]` / `[skill]` / `[extension]` tag that heads a message block.
+ *
+ * Five call sites had written the same bold-brackets-in-customMessageLabel
+ * string by hand, which is why they are here now: a theme that sets the tape
+ * pair renders the tag as a strip laid across the block instead, and that only
+ * reads as one device if every tag agrees. Themes without the pair get exactly
+ * the string the call sites used to build.
+ */
+export function messageLabel(name: string): string {
+	if (theme.hasBg("tapeBg") && theme.has("tapeText")) {
+		return theme.bg("tapeBg", theme.fg("tapeText", `\x1b[1m ${name} \x1b[22m`));
+	}
+	return theme.fg("customMessageLabel", `\x1b[1m[${name}]\x1b[22m`);
+}
+
+/**
+ * The shadow pass for a filled block, or nothing when the theme has no
+ * `paperShadow`. Every block that reads as a pasted sheet — a user message, an
+ * extension message, an error or warning notice — takes its shadow from here so
+ * they cannot drift apart.
+ */
+export function getPaperShadowFn(): ((text: string) => string) | undefined {
+	return theme.has("paperShadow") ? (text: string) => theme.fg("paperShadow", text) : undefined;
+}
+
 export function getMarkdownTheme(): MarkdownTheme {
+	// A theme that sets the headline pair renders headings as a filled chip: the
+	// text takes the chip's ink, and the fill is applied to the finished line so
+	// the chip's padding never leaks into the inline-style prefix.
+	const chip = theme.hasBg("headlineBg") && theme.has("headlineText");
 	return {
-		heading: (text: string) => theme.fg("mdHeading", text),
+		heading: (text: string) => theme.fg(chip ? "headlineText" : "mdHeading", text),
+		headingBlock: chip ? (line: string) => theme.bg("headlineBg", ` ${line} `) : undefined,
 		link: (text: string) => theme.fg("mdLink", text),
 		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
 		code: (text: string) => theme.fg("mdCode", text),

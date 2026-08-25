@@ -5,6 +5,7 @@ type RenderCache = {
 	childLines: string[];
 	width: number;
 	bgSample: string | undefined;
+	shadowSample: string | undefined;
 	lines: string[];
 };
 
@@ -16,6 +17,7 @@ export class Box implements Component {
 	private paddingX: number;
 	private paddingY: number;
 	private bgFn?: (text: string) => string;
+	private shadowFn?: (text: string) => string;
 
 	// Cache for rendered output
 	private cache?: RenderCache;
@@ -62,16 +64,39 @@ export class Box implements Component {
 		// Don't invalidate here - we'll detect bgFn changes by sampling output
 	}
 
+	/**
+	 * Draw an offset band under the box, so the block reads as a sheet laid on
+	 * the page rather than a color printed into it.
+	 *
+	 * A terminal has no sub-pixel offsets, so the shadow is one extra row of
+	 * `▀` — an upper half-block, which paints solid color across the top half of
+	 * its cells and so hugs the box's bottom edge — indented one column to give
+	 * the offset. There is no matching right-hand column: these boxes render at
+	 * the full terminal width, and a column past the last cell has nowhere to go.
+	 *
+	 * Passing no function draws no shadow, which is the behavior of every theme
+	 * that does not opt in.
+	 */
+	setShadowFn(shadowFn?: (text: string) => string): void {
+		this.shadowFn = shadowFn;
+	}
+
 	private invalidateCache(): void {
 		this.cache = undefined;
 	}
 
-	private matchCache(width: number, childLines: string[], bgSample: string | undefined): boolean {
+	private matchCache(
+		width: number,
+		childLines: string[],
+		bgSample: string | undefined,
+		shadowSample: string | undefined,
+	): boolean {
 		const cache = this.cache;
 		return (
 			!!cache &&
 			cache.width === width &&
 			cache.bgSample === bgSample &&
+			cache.shadowSample === shadowSample &&
 			cache.childLines.length === childLines.length &&
 			cache.childLines.every((line, i) => line === childLines[i])
 		);
@@ -107,9 +132,10 @@ export class Box implements Component {
 
 		// Check if bgFn output changed by sampling
 		const bgSample = this.bgFn ? this.bgFn("test") : undefined;
+		const shadowSample = this.shadowFn ? this.shadowFn("test") : undefined;
 
 		// Check cache validity
-		if (this.matchCache(width, childLines, bgSample)) {
+		if (this.matchCache(width, childLines, bgSample, shadowSample)) {
 			return this.cache!.lines;
 		}
 
@@ -131,8 +157,15 @@ export class Box implements Component {
 			result.push(this.applyBg("", width));
 		}
 
+		// The shadow rides under the finished block, indented by one cell. It is
+		// drawn on the page, not on the box's fill, so it is not run through
+		// applyBg.
+		if (this.shadowFn && width > 1) {
+			result.push(` ${this.shadowFn("▀".repeat(width - 1))}`);
+		}
+
 		// Update cache
-		this.cache = { childLines, width, bgSample, lines: result };
+		this.cache = { childLines, width, bgSample, shadowSample, lines: result };
 
 		return result;
 	}

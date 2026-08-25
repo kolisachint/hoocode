@@ -1,6 +1,6 @@
 import type { BranchSummaryMessage } from "@kolisachint/hoocode-agent-core";
 import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
-import { getMarkdownTheme, theme } from "../theme/theme.js";
+import { getMarkdownTheme, messageLabel, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 
 /**
@@ -32,7 +32,7 @@ export class BranchSummaryMessageComponent extends Box {
 	private updateDisplay(): void {
 		this.clear();
 
-		const label = theme.fg("customMessageLabel", `\x1b[1m[branch]\x1b[22m`);
+		const label = messageLabel("branch");
 		this.addChild(new Text(label, 0, 0));
 		this.addChild(new Spacer(1));
 

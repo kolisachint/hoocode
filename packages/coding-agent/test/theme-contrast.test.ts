@@ -526,3 +526,233 @@ describe("accessible themes", () => {
 		expect(contrast(colors.selectedBg, pageBg as string)).toBeGreaterThan(1.2);
 	});
 });
+
+/**
+ * The Solarized grounds the `vox-cutout-*` pair is cut for.
+ *
+ * A theme paints text straight onto the terminal's own canvas wherever it draws
+ * no surface of its own, so for a theme aimed at a specific terminal palette
+ * those grounds are surfaces like any other — sweeping only the theme's own
+ * backgrounds would miss the page the whole thing sits on. Both stops of each
+ * palette are included: the alt band is the lighter of the two on Solarized
+ * Light and the *lighter* of the two on Solarized Dark as well, so it is the
+ * binding surface in both directions.
+ */
+const SOLARIZED = {
+	light: { "solarized base3": "#fdf6e3", "solarized base2": "#eee8d5" },
+	dark: { "solarized base03": "#002b36", "solarized base02": "#073642" },
+} as const;
+
+const CUTOUT_THEMES = ["vox-cutout-light", "vox-cutout-dark"] as const;
+
+/**
+ * Chip fills, and the inks that only ever render inside them. A chip is not a
+ * page surface — measuring `headlineText` against the page says nothing, since
+ * it never touches the page. Each pair is checked against itself instead.
+ */
+const CHIP_PAIRS = [
+	["headlineBg", "headlineText"],
+	["tapeBg", "tapeText"],
+	["brandBg", "brandText"],
+] as const;
+const CHIP_TOKENS: ReadonlySet<string> = new Set<string>(CHIP_PAIRS.flat());
+
+/**
+ * Drawn on the terminal page and meant to recede: the offset band under a
+ * block, and the unfilled remainder of a gauge. Holding these to 7:1 would
+ * defeat the point — a shadow as loud as the text is not a shadow, and a track
+ * as loud as its fill stops reading as the space the fill has yet to reach.
+ */
+const CUTOUT_DECORATIVE = new Set(["paperShadow", "halftone"]);
+
+/** Rules and inactive chrome carry no meaning through colour in these themes. */
+const CUTOUT_NEUTRAL_RULES = new Set([
+	"border",
+	"borderMuted",
+	"mdHr",
+	"mdCodeBlockBorder",
+	"syntaxOperator",
+	"syntaxPunctuation",
+	"thinkingOff",
+	"thinkingMinimal",
+]);
+
+/** How far a pasted sheet has to sit from the page for the cut edge to read. */
+const MIN_SHEET_DIFFERENCE = 10;
+
+describe.each(CUTOUT_THEMES)("%s", (themeName) => {
+	const mode = themeName.endsWith("-light") ? "light" : "dark";
+	const grounds: Record<string, string> = SOLARIZED[mode];
+
+	function cutoutSurfaces(): Record<string, string> {
+		return { ...grounds, ...surfaces(themeName) };
+	}
+
+	it("keeps every foreground at AAA contrast on every surface, terminal page included", () => {
+		const colors = getResolvedThemeColors(themeName);
+		const backgrounds = cutoutSurfaces();
+
+		const failures: string[] = [];
+		for (const [token, value] of Object.entries(colors)) {
+			if ((BG_TOKENS as readonly string[]).includes(token)) continue;
+			if (CHIP_TOKENS.has(token) || CUTOUT_DECORATIVE.has(token)) continue;
+			for (const [surface, background] of Object.entries(backgrounds)) {
+				const ratio = contrast(value, background);
+				if (ratio < MIN_CONTRAST) {
+					failures.push(`${token} (${value}) on ${surface} (${background}): ${ratio.toFixed(2)}:1`);
+				}
+			}
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("keeps every chip legible on its own fill", () => {
+		const colors = getResolvedThemeColors(themeName);
+		const failures: string[] = [];
+		for (const [bg, fg] of CHIP_PAIRS) {
+			// Honoured only as a pair, so a theme that sets one half and not the
+			// other has a bug the renderer will silently swallow.
+			expect(colors[bg] !== undefined, `${bg}/${fg} must be set as a pair`).toBe(colors[fg] !== undefined);
+			const ratio = contrast(colors[fg], colors[bg]);
+			if (ratio < MIN_CONTRAST) failures.push(`${fg} on ${bg}: ${ratio.toFixed(2)}:1`);
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("keeps the shadow and the gauge track visible without letting them read as text", () => {
+		// A decorative separation bar, not a text-contrast one — the same floor
+		// the default light theme holds its rules to.
+		const MIN_DECORATIVE = 2.8;
+		const colors = getResolvedThemeColors(themeName);
+		const failures: string[] = [];
+		for (const token of CUTOUT_DECORATIVE) {
+			for (const [ground, value] of Object.entries(grounds)) {
+				const ratio = contrast(colors[token], value);
+				if (ratio < MIN_DECORATIVE) {
+					failures.push(`${token} (${colors[token]}) on ${ground}: ${ratio.toFixed(2)}:1`);
+				}
+			}
+		}
+		// The shadow hugs the block it sits under, so it has to separate from
+		// every sheet as well as from the page.
+		for (const token of BG_TOKENS) {
+			const delta = difference(colors.paperShadow, colors[token]);
+			if (delta < MIN_SHEET_DIFFERENCE) {
+				failures.push(`paperShadow (${colors.paperShadow}) ~ ${token} (${colors[token]}): ΔE ${delta.toFixed(1)}`);
+			}
+		}
+		// `halftone` exists to stop the track reading as `dim`, which is
+		// body-weight text. If the two collapse together it has bought nothing.
+		const trackDelta = difference(colors.halftone, colors.dim);
+		if (trackDelta < MIN_DIFFERENCE) {
+			failures.push(`halftone (${colors.halftone}) ~ dim (${colors.dim}): ΔE ${trackDelta.toFixed(1)}`);
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("keeps meaning-carrying tokens saturated enough to read as printed ink", () => {
+		const colors = getResolvedThemeColors(themeName);
+		const washedOut = LIGHT_HUE_TOKENS.filter(
+			(token) => !CUTOUT_NEUTRAL_RULES.has(token) && saturation(colors[token]) < 0.35,
+		).map((token) => `${token} (${colors[token]}): ${(saturation(colors[token]) * 100).toFixed(0)}% saturation`);
+		expect(washedOut).toEqual([]);
+	});
+
+	it("keeps tokens that mean different things apart", () => {
+		const colors = getResolvedThemeColors(themeName);
+		const groups: Record<string, string[]> = {
+			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
+			"agent identity": [...AGENT_TOKENS, "mcp"],
+			syntax: [
+				"syntaxComment",
+				"syntaxKeyword",
+				"syntaxFunction",
+				"syntaxVariable",
+				"syntaxString",
+				"syntaxNumber",
+				"syntaxType",
+			],
+			"thinking levels": [
+				"thinkingOff",
+				"thinkingMinimal",
+				"thinkingLow",
+				"thinkingMedium",
+				"thinkingHigh",
+				"thinkingXhigh",
+			],
+			diff: ["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
+		};
+
+		const collisions: string[] = [];
+		for (const [label, tokens] of Object.entries(groups)) {
+			for (let i = 0; i < tokens.length; i++) {
+				for (let j = i + 1; j < tokens.length; j++) {
+					const delta = difference(colors[tokens[i]], colors[tokens[j]]);
+					if (delta < MIN_DIFFERENCE) {
+						collisions.push(
+							`[${label}] ${tokens[i]} (${colors[tokens[i]]}) ~ ${tokens[j]} (${colors[tokens[j]]}): ΔE ${delta.toFixed(1)}`,
+						);
+					}
+				}
+			}
+		}
+		expect(collisions).toEqual([]);
+	});
+
+	it("keeps colors that mean different things apart after the 256-color downgrade", () => {
+		const groups = {
+			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
+			"agent identity": [...AGENT_TOKENS, "mcp"],
+			syntax: [
+				"syntaxComment",
+				"syntaxKeyword",
+				"syntaxFunction",
+				"syntaxVariable",
+				"syntaxString",
+				"syntaxNumber",
+				"syntaxType",
+			],
+		};
+		const quantized = loadThemeFromPath(
+			new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url).pathname,
+			"256color",
+		);
+
+		for (const [label, tokens] of Object.entries(groups)) {
+			const byIndex = new Map<string, string[]>();
+			for (const token of tokens) {
+				const index = quantized.getFgAnsi(token as ThemeColor);
+				byIndex.set(index, [...(byIndex.get(index) ?? []), token]);
+			}
+			const collisions = [...byIndex.values()].filter((members) => members.length > 1).map((m) => m.join(" = "));
+			expect(collisions, label).toEqual([]);
+		}
+	});
+
+	it("cuts every pasted sheet clear of the Solarized page behind it", () => {
+		// The look is sheets of stock pasted onto the terminal's own paper. A
+		// surface that lands within a couple of ΔE of that paper stops reading as
+		// a separate sheet at all — which is exactly how `vox-light`'s near-white
+		// washes disappear on a Solarized Light terminal.
+		const colors = getResolvedThemeColors(themeName);
+		const tooClose: string[] = [];
+		for (const token of BG_TOKENS) {
+			for (const [ground, value] of Object.entries(grounds)) {
+				const delta = difference(colors[token], value);
+				if (delta < MIN_SHEET_DIFFERENCE) {
+					tooClose.push(`${token} (${colors[token]}) vs ${ground} (${value}): ΔE ${delta.toFixed(1)}`);
+				}
+			}
+		}
+		expect(tooClose).toEqual([]);
+	});
+
+	it("keeps its surfaces on one side of the light/dark split", () => {
+		const isLight = mode === "light";
+		const wrongSide = Object.entries(surfaces(themeName))
+			.map(([surface, background]) => [surface, luminance(background)] as const)
+			.filter(([, value]) => (isLight ? value <= 0.5 : value >= 0.5))
+			.map(([surface, value]) => `${surface}: ${value.toFixed(3)}`);
+		expect(wrongSide).toEqual([]);
+	});
+});

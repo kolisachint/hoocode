@@ -9,7 +9,7 @@ import { type Static, Type } from "typebox";
 import { getReadmePath } from "../../config.js";
 import { keyHint, keyText } from "../../modes/interactive/components/keybinding-hints.js";
 import { renderReadOutput } from "../../modes/interactive/components/read-output.js";
-import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/interactive/theme/theme.js";
+import { getLanguageFromPath, highlightCode, messageLabel, type Theme } from "../../modes/interactive/theme/theme.js";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
@@ -180,7 +180,7 @@ function formatCompactReadCall(
 	const expandHint = theme.fg("dim", ` (${keyText("app.tools.expand")} to expand)`);
 	if (classification.kind === "skill") {
 		return (
-			theme.fg("customMessageLabel", `\x1b[1m[skill]\x1b[22m `) +
+			`${messageLabel("skill")} ` +
 			theme.fg("customMessageText", classification.label) +
 			formatReadLineRange(args, theme) +
 			expandHint
