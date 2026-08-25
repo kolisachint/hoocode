@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Added
+
+- Radar marks the newest run with a marker stroke. The view answers a different
+  question than the other two — not what a tool said but the shape of the run —
+  and what it could not say was which run you are on. `activeToolBg` covers the
+  verb and the subject and stops before the flush-right signal, so the status
+  colour stays on the page: a highlighter runs over the words, not the whole
+  line. It marks two shapes because radar shows two, the folded chain line and
+  the per-call row; marking only the row would have left it invisible in the
+  common case, since a run of more than one call folds to a single line. Optional
+  like the rest, and unset it draws nothing.
+
+- Filled message blocks are cut into sheets rather than run as full-width bands.
+  A block that reaches both margins has no right edge to show, which is why the
+  shadow could only ever be a bottom edge: there was no column past the last one
+  to put anything in. Blocks that take `paperShadow` now hold three columns back
+  from the right margin, cast a shadow along that edge as well as under it, and
+  have the edge cut rather than ruled — roughly one row in five gives up a
+  single column, always out of padding and never out of content.
+
+  The cut comes from a hash of the block's own content, so it is stable between
+  frames and different between blocks. A coin flip per row was the first attempt
+  and it was wrong: alternating columns read as a sawtooth, which is the
+  opposite of hand-cut. Scissors leave a mostly straight line with the
+  occasional nick.
+
+### Fixed
+
+- A filled `Box` keeps its background behind anything that paints its own fill.
+  A child that draws a background — a chip, a label strip, a highlighted span —
+  has to close it, and that reset ended the band's background as well, so the
+  row finished on the terminal's own canvas instead of on the block. The band
+  now re-opens its background after any inner reset, recovering the opener from
+  the `bgFn` it was handed rather than assuming a colour, which makes it right
+  for any nested fill and a no-op for a `bgFn` that adds no codes.
+
+- A heading chip no longer wraps the `###` marker along with the text. Below
+  level two the renderer prints that marker, and a marker inside a filled chip
+  says the same thing twice — the chip *is* the marker. The hook takes the level
+  now (`heading(text, level)`, `headingBlock(line, level)`) and only the top two
+  levels take a bar, which is the better typography regardless: a filled bar on
+  every `###` in a long answer is exhausting.
+
 ## [0.5.35] - 2026-08-25
 
 ### Added
@@ -40,44 +83,6 @@
     laid across the block instead of brackets set inside it. Five call sites had
     each built that bracket string by hand; they now share one helper, because a
     tape strip only reads as one device if every tag agrees.
-
-  Rendering a real transcript through the components turned up two things the
-  token tests could not see:
-
-  - A heading chip wrapped the `###` marker along with the text below level two,
-    saying the same thing twice. The hook is level-aware now — `heading(text,
-    level)` and `headingBlock(line, level)` — and only the top two levels take a
-    bar; a filled bar on every `###` in a long answer is exhausting anyway.
-  - A chip painted inside a filled block punched a hole in it. A background is a
-    pair, so the chip has to close its own fill, and that close ended the
-    block's fill too: the extension row ran lilac for one cell, tape for the
-    chip, and bare page from there to the right margin.
-
-- Filled message blocks are cut into sheets rather than run as full-width bands.
-  A block that reaches both margins has no right edge to show, which is why the
-  shadow could only ever be a bottom edge: there was no column past the last one
-  to put anything in. Blocks that take `paperShadow` now hold three columns back
-  from the right margin, cast a shadow along that edge as well as under it, and
-  have the edge cut rather than ruled — roughly one row in five gives up a
-  single column, always out of padding and never out of content.
-
-  The cut comes from a hash of the block's own content, so it is stable between
-  frames and different between blocks. A coin flip per row was the first attempt
-  and it was wrong: alternating columns read as a sawtooth, which is the
-  opposite of hand-cut. Scissors leave a mostly straight line with the
-  occasional nick.
-
-### Fixed
-
-- A filled `Box` keeps its background behind anything that paints its own fill.
-  A child that draws a background — a chip, a label strip, a highlighted span —
-  has to close it, and that reset ended the band's background as well, so the
-  row finished on the terminal's own canvas instead of on the block. The band
-  now re-opens its background after any inner reset, recovering the opener from
-  the `bgFn` it was handed rather than assuming a colour, which makes it right
-  for any nested fill and a no-op for a `bgFn` that adds no codes.
-
-### Added (continued)
 
   Dropped from the same design pass: a `cutEdge` token. It was meant to separate
   a heavy block rule from hairline chrome, but the weight change comes entirely
