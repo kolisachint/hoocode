@@ -48,7 +48,7 @@ export function formatMegabytes(bytes: number): string {
 function track(ratio: number, cells: number): string {
 	const clamped = Math.max(0, Math.min(1, ratio));
 	const filled = Math.max(clamped > 0 ? 1 : 0, Math.min(cells, Math.round(clamped * cells)));
-	return theme.fg("accent", "▰".repeat(filled)) + theme.fg("dim", "▱".repeat(cells - filled));
+	return theme.fg("accent", "▰".repeat(filled)) + theme.fg("halftone", "▱".repeat(cells - filled));
 }
 
 export interface ProgressBarOptions {

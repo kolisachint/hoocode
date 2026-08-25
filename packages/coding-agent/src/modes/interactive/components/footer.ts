@@ -33,7 +33,11 @@ function contextGauge(percent: number, errorLevel: number, warnLevel: number): {
 	const fill = "▰".repeat(filled);
 	const track = "▱".repeat(CELLS - filled);
 	const color = percent >= errorLevel ? "error" : percent >= warnLevel ? "warning" : "accent";
-	return { plain: fill + track, styled: theme.fg(color, fill) + theme.fg("dim", track) };
+	// The unfilled track takes `halftone`, which falls back to `dim` — the tone it
+	// used before the token existed. The point of separating them is that `dim` is
+	// body-weight text: a track drawn in it reads as writing rather than as the
+	// space the fill has yet to reach.
+	return { plain: fill + track, styled: theme.fg(color, fill) + theme.fg("halftone", track) };
 }
 
 /**

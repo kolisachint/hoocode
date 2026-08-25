@@ -528,43 +528,64 @@ describe("accessible themes", () => {
 });
 
 /**
- * The Solarized Light terminal grounds `vox-cutout-light` is cut for. A theme
- * paints text straight onto the terminal's own canvas wherever it does not draw
- * a surface of its own, so for a theme aimed at a specific terminal palette
+ * The Solarized grounds the `vox-cutout-*` pair is cut for.
+ *
+ * A theme paints text straight onto the terminal's own canvas wherever it draws
+ * no surface of its own, so for a theme aimed at a specific terminal palette
  * those grounds are surfaces like any other — sweeping only the theme's own
- * backgrounds would miss the page the whole thing sits on.
+ * backgrounds would miss the page the whole thing sits on. Both stops of each
+ * palette are included: the alt band is the lighter of the two on Solarized
+ * Light and the *lighter* of the two on Solarized Dark as well, so it is the
+ * binding surface in both directions.
  */
-const SOLARIZED_LIGHT = {
-	"solarized base3": "#fdf6e3",
-	"solarized base2": "#eee8d5",
+const SOLARIZED = {
+	light: { "solarized base3": "#fdf6e3", "solarized base2": "#eee8d5" },
+	dark: { "solarized base03": "#002b36", "solarized base02": "#073642" },
 } as const;
 
-describe("vox-cutout-light", () => {
-	/**
-	 * The cut-out look is bold flat stock rather than the near-white washes the
-	 * other light themes use, and a bolder surface leaves less room above it: the
-	 * flat yellow selection band caps every ink in the palette at ~7.2:1. That is
-	 * the whole design constraint, so it is the thing worth locking down.
-	 */
-	const themeName = "vox-cutout-light";
+const CUTOUT_THEMES = ["vox-cutout-light", "vox-cutout-dark"] as const;
 
-	/** Rules carry no meaning through color here, so they answer to a separation bar. */
-	const NEUTRAL_RULE_TOKENS = new Set([
-		"border",
-		"borderMuted",
-		"mdHr",
-		"mdCodeBlockBorder",
-		"syntaxOperator",
-		"syntaxPunctuation",
-		"thinkingOff",
-		"thinkingMinimal",
-	]);
+/**
+ * Chip fills, and the inks that only ever render inside them. A chip is not a
+ * page surface — measuring `headlineText` against the page says nothing, since
+ * it never touches the page. Each pair is checked against itself instead.
+ */
+const CHIP_PAIRS = [
+	["headlineBg", "headlineText"],
+	["tapeBg", "tapeText"],
+	["brandBg", "brandText"],
+] as const;
+const CHIP_TOKENS: ReadonlySet<string> = new Set<string>(CHIP_PAIRS.flat());
 
-	/** How far a pasted sheet has to sit from the page for the cut edge to read. */
-	const MIN_SHEET_DIFFERENCE = 10;
+/**
+ * Drawn on the terminal page and meant to recede: the offset band under a
+ * block, and the unfilled remainder of a gauge. Holding these to 7:1 would
+ * defeat the point — a shadow as loud as the text is not a shadow, and a track
+ * as loud as its fill stops reading as the space the fill has yet to reach.
+ */
+const CUTOUT_DECORATIVE = new Set(["paperShadow", "halftone"]);
+
+/** Rules and inactive chrome carry no meaning through colour in these themes. */
+const CUTOUT_NEUTRAL_RULES = new Set([
+	"border",
+	"borderMuted",
+	"mdHr",
+	"mdCodeBlockBorder",
+	"syntaxOperator",
+	"syntaxPunctuation",
+	"thinkingOff",
+	"thinkingMinimal",
+]);
+
+/** How far a pasted sheet has to sit from the page for the cut edge to read. */
+const MIN_SHEET_DIFFERENCE = 10;
+
+describe.each(CUTOUT_THEMES)("%s", (themeName) => {
+	const mode = themeName.endsWith("-light") ? "light" : "dark";
+	const grounds: Record<string, string> = SOLARIZED[mode];
 
 	function cutoutSurfaces(): Record<string, string> {
-		return { ...SOLARIZED_LIGHT, ...surfaces(themeName) };
+		return { ...grounds, ...surfaces(themeName) };
 	}
 
 	it("keeps every foreground at AAA contrast on every surface, terminal page included", () => {
@@ -574,9 +595,7 @@ describe("vox-cutout-light", () => {
 		const failures: string[] = [];
 		for (const [token, value] of Object.entries(colors)) {
 			if ((BG_TOKENS as readonly string[]).includes(token)) continue;
-			// brandText only ever renders inside the brand chip, never on a page
-			// surface, so measuring it against one says nothing.
-			if (token === "brandText") continue;
+			if (CHIP_TOKENS.has(token) || CUTOUT_DECORATIVE.has(token)) continue;
 			for (const [surface, background] of Object.entries(backgrounds)) {
 				const ratio = contrast(value, background);
 				if (ratio < MIN_CONTRAST) {
@@ -587,15 +606,54 @@ describe("vox-cutout-light", () => {
 		expect(failures).toEqual([]);
 	});
 
-	it("keeps the brand chip legible on its own fill", () => {
+	it("keeps every chip legible on its own fill", () => {
 		const colors = getResolvedThemeColors(themeName);
-		expect(contrast(colors.brandText, colors.brandBg)).toBeGreaterThan(MIN_CONTRAST);
+		const failures: string[] = [];
+		for (const [bg, fg] of CHIP_PAIRS) {
+			// Honoured only as a pair, so a theme that sets one half and not the
+			// other has a bug the renderer will silently swallow.
+			expect(colors[bg] !== undefined, `${bg}/${fg} must be set as a pair`).toBe(colors[fg] !== undefined);
+			const ratio = contrast(colors[fg], colors[bg]);
+			if (ratio < MIN_CONTRAST) failures.push(`${fg} on ${bg}: ${ratio.toFixed(2)}:1`);
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("keeps the shadow and the gauge track visible without letting them read as text", () => {
+		// A decorative separation bar, not a text-contrast one — the same floor
+		// the default light theme holds its rules to.
+		const MIN_DECORATIVE = 2.8;
+		const colors = getResolvedThemeColors(themeName);
+		const failures: string[] = [];
+		for (const token of CUTOUT_DECORATIVE) {
+			for (const [ground, value] of Object.entries(grounds)) {
+				const ratio = contrast(colors[token], value);
+				if (ratio < MIN_DECORATIVE) {
+					failures.push(`${token} (${colors[token]}) on ${ground}: ${ratio.toFixed(2)}:1`);
+				}
+			}
+		}
+		// The shadow hugs the block it sits under, so it has to separate from
+		// every sheet as well as from the page.
+		for (const token of BG_TOKENS) {
+			const delta = difference(colors.paperShadow, colors[token]);
+			if (delta < MIN_SHEET_DIFFERENCE) {
+				failures.push(`paperShadow (${colors.paperShadow}) ~ ${token} (${colors[token]}): ΔE ${delta.toFixed(1)}`);
+			}
+		}
+		// `halftone` exists to stop the track reading as `dim`, which is
+		// body-weight text. If the two collapse together it has bought nothing.
+		const trackDelta = difference(colors.halftone, colors.dim);
+		if (trackDelta < MIN_DIFFERENCE) {
+			failures.push(`halftone (${colors.halftone}) ~ dim (${colors.dim}): ΔE ${trackDelta.toFixed(1)}`);
+		}
+		expect(failures).toEqual([]);
 	});
 
 	it("keeps meaning-carrying tokens saturated enough to read as printed ink", () => {
 		const colors = getResolvedThemeColors(themeName);
 		const washedOut = LIGHT_HUE_TOKENS.filter(
-			(token) => !NEUTRAL_RULE_TOKENS.has(token) && saturation(colors[token]) < 0.35,
+			(token) => !CUTOUT_NEUTRAL_RULES.has(token) && saturation(colors[token]) < 0.35,
 		).map((token) => `${token} (${colors[token]}): ${(saturation(colors[token]) * 100).toFixed(0)}% saturation`);
 		expect(washedOut).toEqual([]);
 	});
@@ -679,7 +737,7 @@ describe("vox-cutout-light", () => {
 		const colors = getResolvedThemeColors(themeName);
 		const tooClose: string[] = [];
 		for (const token of BG_TOKENS) {
-			for (const [ground, value] of Object.entries(SOLARIZED_LIGHT)) {
+			for (const [ground, value] of Object.entries(grounds)) {
 				const delta = difference(colors[token], value);
 				if (delta < MIN_SHEET_DIFFERENCE) {
 					tooClose.push(`${token} (${colors[token]}) vs ${ground} (${value}): ΔE ${delta.toFixed(1)}`);
@@ -687,5 +745,14 @@ describe("vox-cutout-light", () => {
 			}
 		}
 		expect(tooClose).toEqual([]);
+	});
+
+	it("keeps its surfaces on one side of the light/dark split", () => {
+		const isLight = mode === "light";
+		const wrongSide = Object.entries(surfaces(themeName))
+			.map(([surface, background]) => [surface, luminance(background)] as const)
+			.filter(([, value]) => (isLight ? value <= 0.5 : value >= 0.5))
+			.map(([surface, value]) => `${surface}: ${value.toFixed(3)}`);
+		expect(wrongSide).toEqual([]);
 	});
 });

@@ -4,6 +4,46 @@
 
 ### Added
 
+- A `vox-cutout-dark` to go with the light one, and four optional token groups
+  that let a theme draw the cut-out language instead of only colouring it.
+
+  The pair is cut for Solarized: light for `base3`, dark for `base03`. On the
+  dark side every rule runs in reverse — AAA on a dark ground is a floor, not a
+  ceiling, and Solarized's `base02` is the lighter of its two stops, so that is
+  what every ink has to clear. Its stocks are dark coloured papers, all of them
+  steering clear of the cyan the ground itself is made of, because a stock in
+  the ground's own hue has nothing to separate against.
+
+  The four groups are `paperShadow`, `halftone`, `headlineBg`/`headlineText`,
+  and `tapeBg`/`tapeText`. All optional, all with a defined fallback, so every
+  other theme renders exactly as it did — `test/theme-cutout-tokens.test.ts`
+  checks each one from both sides, since a fallback nothing exercises is the one
+  that rots.
+
+  - `paperShadow` draws an offset band under a filled message block, so the
+    block reads as a sheet laid on the page rather than a colour printed into
+    it. A terminal has no sub-pixel offsets, so this is one row of `▀` — an
+    upper half-block, solid in the half it covers — indented a column. There is
+    no matching right-hand column: these boxes render at the full terminal
+    width, and a column past the last cell has nowhere to go.
+  - `halftone` colours the unfilled remainder of a gauge or progress track,
+    which until now borrowed `dim`. `dim` is body-weight text, and a track drawn
+    in it reads as writing rather than as the space the fill has yet to reach.
+  - The headline pair renders markdown headings as a filled chip. This is how a
+    light theme keeps a vivid brand hue: inside a chip a colour can be far
+    brighter than it could ever be as text on the page, which is exactly what
+    `vox-cutout-light` needed — its AAA ceiling had pushed the accent from vox
+    amber down to a deep gold, and the chip gets the yellow back at 15:1.
+  - The tape pair renders the `[branch]`/`[skill]`/`[extension]` tag as a strip
+    laid across the block instead of brackets set inside it. Five call sites had
+    each built that bracket string by hand; they now share one helper, because a
+    tape strip only reads as one device if every tag agrees.
+
+  Dropped from the same design pass: a `cutEdge` token. It was meant to separate
+  a heavy block rule from hairline chrome, but the weight change comes entirely
+  from the glyph — a dedicated colour lands ΔE 2.6 from `border`, under the
+  threshold at which two colours look different at all.
+
 - A `vox-cutout-light` theme: the vox voice cut for paper instead of newsprint.
   `vox-light` tints its backgrounds a degree or two off white, which works on the
   near-white page it assumes and disappears on a cream one — on Solarized Light

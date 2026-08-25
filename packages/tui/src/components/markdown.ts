@@ -52,6 +52,16 @@ export interface DefaultTextStyle {
  */
 export interface MarkdownTheme {
 	heading: (text: string) => string;
+	/**
+	 * Optional wrapper applied to a *finished* heading line — the hook a theme
+	 * uses to render headings as a filled chip rather than coloured text.
+	 *
+	 * It has to be separate from `heading`: that one is also called with a
+	 * sentinel to extract an ANSI prefix for inline-token restores, so anything
+	 * it adds beyond escape codes (the chip's padding spaces) would be spliced
+	 * back in around every codespan and bold run inside the heading.
+	 */
+	headingBlock?: (text: string) => string;
 	link: (text: string) => string;
 	linkUrl: (text: string) => string;
 	code: (text: string) => string;
@@ -331,7 +341,7 @@ export class Markdown implements Component {
 
 				const headingText = this.renderInlineTokens(token.tokens || [], headingStyleContext);
 				const styledHeading = headingLevel >= 3 ? headingStyleFn(headingPrefix) + headingText : headingText;
-				lines.push(styledHeading);
+				lines.push(this.theme.headingBlock ? this.theme.headingBlock(styledHeading) : styledHeading);
 				if (nextTokenType && nextTokenType !== "space") {
 					lines.push(""); // Add spacing after headings (unless space token follows)
 				}
