@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	applyBackgroundToLine,
+	type Box,
 	type EditorTheme,
 	type MarkdownTheme,
 	type SelectListTheme,
@@ -1304,6 +1305,25 @@ export function messageLabel(name: string): string {
  */
 export function getPaperShadowFn(): ((text: string) => string) | undefined {
 	return theme.has("paperShadow") ? (text: string) => theme.fg("paperShadow", text) : undefined;
+}
+
+/** How far a sheet holds back from the right margin, leaving a gutter of page. */
+export const PAPER_INSET = 3;
+
+/**
+ * Give a filled block the paper treatment: a gutter of page at its right, a cut
+ * edge, and a shadow along both of them.
+ *
+ * The three arrive together because they are one decision. A block that runs
+ * edge to edge has no right edge to cut and nowhere to cast a shadow, so a
+ * theme asking for paper is asking for the gutter that makes paper possible.
+ * A theme without `paperShadow` gets the full-width band it has always drawn.
+ */
+export function applyPaperSheet(box: Box): void {
+	const shadow = getPaperShadowFn();
+	box.setShadowFn(shadow);
+	box.setInset(shadow ? PAPER_INSET : 0);
+	box.setCutEdge(shadow !== undefined);
 }
 
 export function getMarkdownTheme(): MarkdownTheme {

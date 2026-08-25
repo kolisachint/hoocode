@@ -53,6 +53,20 @@
     block's fill too: the extension row ran lilac for one cell, tape for the
     chip, and bare page from there to the right margin.
 
+- Filled message blocks are cut into sheets rather than run as full-width bands.
+  A block that reaches both margins has no right edge to show, which is why the
+  shadow could only ever be a bottom edge: there was no column past the last one
+  to put anything in. Blocks that take `paperShadow` now hold three columns back
+  from the right margin, cast a shadow along that edge as well as under it, and
+  have the edge cut rather than ruled — roughly one row in five gives up a
+  single column, always out of padding and never out of content.
+
+  The cut comes from a hash of the block's own content, so it is stable between
+  frames and different between blocks. A coin flip per row was the first attempt
+  and it was wrong: alternating columns read as a sawtooth, which is the
+  opposite of hand-cut. Scissors leave a mostly straight line with the
+  occasional nick.
+
 ### Fixed
 
 - A filled `Box` keeps its background behind anything that paints its own fill.

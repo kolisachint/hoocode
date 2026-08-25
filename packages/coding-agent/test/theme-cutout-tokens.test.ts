@@ -1,12 +1,14 @@
-import { Box, Text } from "@kolisachint/hoocode-tui";
+import { Box, Text, visibleWidth } from "@kolisachint/hoocode-tui";
 import stripAnsi from "strip-ansi";
 import { beforeEach, describe, expect, it } from "vitest";
 import { renderToolSignalLine, type ToolSignalInput } from "../src/modes/interactive/components/tool-signal.js";
 import {
+	applyPaperSheet,
 	getMarkdownTheme,
 	getPaperShadowFn,
 	initTheme,
 	messageLabel,
+	PAPER_INSET,
 	theme,
 } from "../src/modes/interactive/theme/theme.js";
 
@@ -35,12 +37,15 @@ describe("cut-out token fallbacks", () => {
 			expect(getPaperShadowFn()).toBeUndefined();
 		});
 
-		it("adds no shadow row to a filled box", () => {
+		it("adds no shadow row to a filled box, and no gutter", () => {
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
-			box.setShadowFn(getPaperShadowFn());
+			applyPaperSheet(box);
 			box.addChild(new Text("hello", 0, 0));
 			// One padding row, one content row, one padding row. Nothing else.
-			expect(box.render(20)).toHaveLength(3);
+			const lines = box.render(20);
+			expect(lines).toHaveLength(3);
+			// And the band still runs the full width it always did.
+			expect(lines.map((l) => visibleWidth(l))).toEqual([20, 20, 20]);
 		});
 
 		it("leaves headings as coloured text", () => {
@@ -68,17 +73,36 @@ describe("cut-out token fallbacks", () => {
 	describe.each(["vox-cutout-light", "vox-cutout-dark"])("%s", (themeName) => {
 		beforeEach(() => initTheme(themeName, false));
 
-		it("draws a shadow row under a filled box", () => {
+		it("cuts the block into a sheet with a shadow on both edges", () => {
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
-			box.setShadowFn(getPaperShadowFn());
+			applyPaperSheet(box);
 			box.addChild(new Text("hello", 0, 0));
-			const lines = box.render(20);
+			const lines = box.render(40);
 			expect(lines).toHaveLength(4);
-			// Indented one cell to give the offset, and one cell shorter than the
-			// block so it stays inside the terminal's last column.
-			const shadow = lines[3];
-			expect(shadow.startsWith(" ")).toBe(true);
-			expect(shadow.match(/▀/g)).toHaveLength(19);
+
+			// The band holds back from the right margin, so the sheet has an edge.
+			const band = 40 - PAPER_INSET;
+			for (const line of lines.slice(0, 3)) {
+				// A cut edge takes at most one column, and only out of padding.
+				expect(visibleWidth(line)).toBeGreaterThanOrEqual(band - 1);
+				expect(visibleWidth(line)).toBeLessThanOrEqual(band + 1);
+			}
+			// Rows below the first cast a shadow along the right edge; the first
+			// does not, because the offset is down as well as right.
+			expect(lines[0]).not.toContain("▌");
+			expect(lines[1] + lines[2]).toContain("▌");
+			// And the bottom run is offset one column right of the band.
+			expect(lines[3].startsWith(" ")).toBe(true);
+			expect(lines[3].match(/▀/g)).toHaveLength(band - 1);
+		});
+
+		it("never lets the cut edge eat a character", () => {
+			const text = "x".repeat(30);
+			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
+			applyPaperSheet(box);
+			box.addChild(new Text(text, 0, 0));
+			const rendered = box.render(40).join("\n");
+			expect(stripAnsi(rendered)).toContain(text);
 		});
 
 		it("renders headings as a filled chip", () => {

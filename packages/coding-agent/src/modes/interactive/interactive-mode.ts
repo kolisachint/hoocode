@@ -115,11 +115,11 @@ import {
 import { checkForPackageUpdates, checkTmuxKeyboardSetup, getChangelogForDisplay } from "./startup-checks.js";
 import { TeamFocusController } from "./team-focus.js";
 import {
+	applyPaperSheet,
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
 	getEditorTheme,
 	getMarkdownTheme,
-	getPaperShadowFn,
 	getThemeByName,
 	initTheme,
 	onThemeChange,
@@ -3288,7 +3288,7 @@ export class InteractiveMode {
 	 */
 	private showBlock(bg: "warningBg" | "toolErrorBg", fg: "warning" | "error", title: string, body: string[]): void {
 		const box = new Box(1, 1, (t) => theme.bg(bg, t));
-		box.setShadowFn(getPaperShadowFn());
+		applyPaperSheet(box);
 		box.addChild(new Text(theme.bold(theme.fg(fg, title)), 0, 0));
 		for (const line of body) {
 			box.addChild(new Text(theme.fg("muted", line), 0, 0));

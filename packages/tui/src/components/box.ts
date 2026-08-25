@@ -6,8 +6,29 @@ type RenderCache = {
 	width: number;
 	bgSample: string | undefined;
 	shadowSample: string | undefined;
+	inset: number;
+	cutEdge: boolean;
 	lines: string[];
 };
+
+/**
+ * Roughly one row in this many takes the cut.
+ *
+ * A coin flip per row is not a cut edge, it is a sawtooth: the eye reads
+ * alternating columns as a pattern, which is the opposite of hand-made. Scissors
+ * leave a mostly straight line with the occasional nick, so the deviation has to
+ * be rare enough to read as an accident.
+ */
+const CUT_EVERY = 5;
+
+/** djb2. Small, stable, and good enough to decide one column of a paper edge. */
+function hashString(value: string): number {
+	let hash = 5381;
+	for (let i = 0; i < value.length; i++) {
+		hash = ((hash << 5) + hash + value.charCodeAt(i)) >>> 0;
+	}
+	return hash;
+}
 
 /**
  * Box component - a container that applies padding and background to all children
@@ -18,6 +39,8 @@ export class Box implements Component {
 	private paddingY: number;
 	private bgFn?: (text: string) => string;
 	private shadowFn?: (text: string) => string;
+	private inset = 0;
+	private cutEdge = false;
 
 	// Cache for rendered output
 	private cache?: RenderCache;
@@ -79,6 +102,35 @@ export class Box implements Component {
 	 */
 	setShadowFn(shadowFn?: (text: string) => string): void {
 		this.shadowFn = shadowFn;
+		this.invalidateCache();
+	}
+
+	/**
+	 * Hold the band back from the right margin, leaving a gutter of page.
+	 *
+	 * A block that runs the full width of the terminal has no right edge to
+	 * show: it is a band of colour between two screen edges, not a sheet on a
+	 * page. Reserving a few columns gives it one, which is what makes both the
+	 * shadow's right-hand column and a cut edge possible at all.
+	 */
+	setInset(inset: number): void {
+		if (this.inset === inset) return;
+		this.inset = Math.max(0, inset);
+		this.invalidateCache();
+	}
+
+	/**
+	 * Cut the right edge by hand rather than ruling it.
+	 *
+	 * The jitter is one column at most and it only ever eats padding, never
+	 * content, so a cut edge cannot cost a character. It is derived from the row
+	 * index and the block's own content, which keeps it identical between frames
+	 * — an edge that reshuffled on every render would read as noise, not paper.
+	 */
+	setCutEdge(cutEdge: boolean): void {
+		if (this.cutEdge === cutEdge) return;
+		this.cutEdge = cutEdge;
+		this.invalidateCache();
 	}
 
 	private invalidateCache(): void {
@@ -97,6 +149,8 @@ export class Box implements Component {
 			cache.width === width &&
 			cache.bgSample === bgSample &&
 			cache.shadowSample === shadowSample &&
+			cache.inset === this.inset &&
+			cache.cutEdge === this.cutEdge &&
 			cache.childLines.length === childLines.length &&
 			cache.childLines.every((line, i) => line === childLines[i])
 		);
@@ -114,7 +168,10 @@ export class Box implements Component {
 			return [];
 		}
 
-		const contentWidth = Math.max(1, width - this.paddingX * 2);
+		// The band stops short of the right margin when inset, leaving a gutter of
+		// page for the sheet's own edge and the shadow that follows it.
+		const bandWidth = Math.max(1, width - this.inset);
+		const contentWidth = Math.max(1, bandWidth - this.paddingX * 2);
 		const leftPad = " ".repeat(this.paddingX);
 
 		// Render all children
@@ -140,32 +197,43 @@ export class Box implements Component {
 		}
 
 		// Apply background and padding
+		const rows: string[] = [];
+		for (let i = 0; i < this.paddingY; i++) rows.push("");
+		rows.push(...childLines);
+		for (let i = 0; i < this.paddingY; i++) rows.push("");
+
+		// A cut edge needs a seed that is stable for this block but different
+		// from its neighbours, or every sheet on screen is cut identically.
+		const seed = this.cutEdge ? hashString(childLines.join("\n")) : 0;
 		const result: string[] = [];
+		rows.forEach((line, index) => {
+			// Never let the cut reach into the content: the jitter comes out of
+			// the padding the row was going to draw anyway.
+			const slack = Math.max(0, bandWidth - visibleWidth(line));
+			const cut = this.cutEdge && slack > 0 && hashString(`${seed}:${index}`) % CUT_EVERY === 0 ? 1 : 0;
+			const rowWidth = bandWidth - cut;
+			const band = this.applyBg(line, rowWidth);
+			// The shadow follows the edge it is cast by, so it jitters with it.
+			// The first row has none: the offset is down *and* right.
+			const column = this.shadowFn && this.inset > 0 && index > 0 ? this.shadowFn("▌") : "";
+			result.push(band + column);
+		});
 
-		// Top padding
-		for (let i = 0; i < this.paddingY; i++) {
-			result.push(this.applyBg("", width));
-		}
-
-		// Content
-		for (const line of childLines) {
-			result.push(this.applyBg(line, width));
-		}
-
-		// Bottom padding
-		for (let i = 0; i < this.paddingY; i++) {
-			result.push(this.applyBg("", width));
-		}
-
-		// The shadow rides under the finished block, indented by one cell. It is
-		// drawn on the page, not on the box's fill, so it is not run through
-		// applyBg.
-		if (this.shadowFn && width > 1) {
-			result.push(` ${this.shadowFn("▀".repeat(width - 1))}`);
+		// The shadow's bottom run, offset one column right of the band.
+		if (this.shadowFn && bandWidth > 1) {
+			result.push(` ${this.shadowFn("▀".repeat(bandWidth - 1))}`);
 		}
 
 		// Update cache
-		this.cache = { childLines, width, bgSample, shadowSample, lines: result };
+		this.cache = {
+			childLines,
+			width,
+			bgSample,
+			shadowSample,
+			inset: this.inset,
+			cutEdge: this.cutEdge,
+			lines: result,
+		};
 
 		return result;
 	}
