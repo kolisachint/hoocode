@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added
+
+- A `vox-cutout-light` theme: the vox voice cut for paper instead of newsprint.
+  `vox-light` tints its backgrounds a degree or two off white, which works on the
+  near-white page it assumes and disappears on a cream one — on Solarized Light
+  its user message sits ΔE 1.0 from the terminal's own paper, so the block that
+  is supposed to read as a pasted sheet reads as nothing at all. Every surface
+  here is a flat colored stock held clear of both Solarized grounds, and the
+  sheets carry the state: white for what you typed, blue for work in flight, mint
+  for done, blush for failed, masking-tape tan for a warning. Unlike the `vox-*`
+  pair the theme is AAA rather than AA, and `test/theme-contrast.test.ts` now
+  sweeps it — against its own surfaces and against the Solarized grounds it is
+  cut for, since a theme aimed at a specific terminal palette paints onto that
+  palette wherever it draws no surface of its own. Flat vox yellow under a
+  selected row is the brightest thing any text has to survive, and clearing 7:1
+  on it caps every ink in the palette; each one sits within a hair of that cap.
+
 ## [0.5.34] - 2026-08-23
 
 ### Fixed

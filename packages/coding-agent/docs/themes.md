@@ -42,9 +42,10 @@ Disable discovery with `--no-themes`.
 | `colorsafe-light` | white | Okabe-Ito hues, no red/green pairs |
 | `vox-dark` | newsprint black | Explanatory-journalism yellow; `warning` is orange |
 | `vox-light` | cream | Ink on paper; yellow survives as highlight and brand chip |
+| `vox-cutout-light` | cream / Solarized Light | Paper cut-outs: bold flat stocks, scissor-cut rules, AAA ink |
 
 The six accessible themes are `high-contrast-*`, `warm-*`, and `colorsafe-*`; the
-`vox-*` pair is a style theme and is described separately below. The six are built
+`vox-*` themes are style themes and are described separately below. The six are built
 for low vision. Every color they
 draw clears **WCAG AAA (7:1)** against every surface the TUI paints behind it —
 the page, selected rows, user messages, and all three tool-box states — and none
@@ -95,6 +96,41 @@ Two deliberate departures from the standard the default `light` theme is held to
 - **`brandText` is exempt from the surface sweep.** It only ever renders on
   `brandBg`, never on a page surface, so measuring it against the page is
   meaningless. On its own chip it sits at 14.8:1.
+
+### `vox-cutout-light`
+
+The same explanatory-journalism voice cut for paper rather than newsprint: flat
+stocks pasted onto the page, a scissor-cut rule around them, poster inks printed
+on top. Unlike the `vox-*` pair it **is** AAA, and
+`test/theme-contrast.test.ts` enforces it.
+
+Two things separate it from `vox-light`:
+
+- **The surfaces are stock, not washes.** `vox-light` tints its backgrounds a
+  degree or two off white — on a cream terminal such as Solarized Light its user
+  message sits ΔE 1.0 from the page, which is to say invisible. Every surface
+  here is a flat colored sheet held at least ΔE 10 clear of both Solarized
+  grounds (`base3` `#fdf6e3` and `base2` `#eee8d5`), so a message block or tool
+  box reads as a piece of paper laid on the page rather than a faint tint of it.
+  The sheets carry the state: white for what you typed, blue for work in flight,
+  mint for done, blush for failed, lilac for an extension, masking-tape tan for a
+  warning notice, and flat vox yellow for the selected row.
+- **The ink is capped by the loudest sheet.** Full-strength `#ffe600` under a
+  selected row is the brightest surface any text has to survive, and AAA on it
+  puts a hard ceiling on every foreground in the palette — each ink sits within a
+  hair of that ceiling at ~7.2:1, as dark as a printed ink and no darker. That
+  ceiling is why the accent is a deep gold rather than the amber `vox-light`
+  uses: an amber light enough to read as yellow cannot clear 7:1 on its own
+  highlight band. Bold flat color and AAA pull against each other, and this theme
+  spends the whole budget on flat color.
+
+It keeps `vox-light`'s two departures — rules are neutral rather than saturated,
+and `brandText` is measured only on its own chip — and adds the vox rule that
+`warning` is orange, never yellow.
+
+Point your terminal at Solarized Light (or any cream page near `#fdf6e3`) and
+the sheets land where they were cut to land. On pure white the contrast floor
+still holds; the sheets simply read a touch louder.
 
 ## Selecting a Theme
 
