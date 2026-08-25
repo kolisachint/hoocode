@@ -4,7 +4,11 @@
  * Indices used to be fetched exactly once and never again, so a plugin added
  * upstream stayed permanently invisible — the inherit half of the system quietly
  * stopped inheriting. These cover the TTL and the explicit refresh, using a local
- * git remote so nothing here touches the network.
+ * git remote so nothing here touches the network — which means passing an empty
+ * well-known list, because "refresh the marketplaces" also means the three real
+ * GitHub indices. Without that these cloned github.com three times per test:
+ * six seconds locally, and past the 30s budget on a loaded CI runner, which is
+ * what made this file the repository's most reliable way to turn main red.
  */
 
 import { execFileSync } from "node:child_process";
@@ -29,6 +33,9 @@ function writeJson(file: string, data: unknown): void {
 	fs.mkdirSync(path.dirname(file), { recursive: true });
 	fs.writeFileSync(file, JSON.stringify(data, null, 2), "utf8");
 }
+
+/** No well-known indices: this file is about a user-added marketplace. */
+const OFFLINE = { marketplaces: [] as ReadonlyArray<{ name: string; url: string; ref?: string }> };
 
 describe("marketplace index freshness", () => {
 	let home: string;
@@ -89,13 +96,13 @@ describe("marketplace index freshness", () => {
 		// the staleness the TTL exists to bound.
 		expect(listAvailablePlugins(cwd).map((p) => p.name)).not.toContain("second");
 
-		await refreshMarketplaces(cwd);
+		await refreshMarketplaces(cwd, undefined, OFFLINE);
 		expect(listAvailablePlugins(cwd).map((p) => p.name)).toContain("second");
 	}, 30_000);
 
 	it("records a fetch timestamp so staleness can be judged", async () => {
 		addAsUserMarketplace();
-		await refreshMarketplaces(cwd);
+		await refreshMarketplaces(cwd, undefined, OFFLINE);
 		const meta = JSON.parse(fs.readFileSync(marketplaceCacheMetaPath(), "utf8")) as Record<string, string>;
 		expect(meta[remote]).toBeDefined();
 		expect(Number.isFinite(Date.parse(meta[remote]))).toBe(true);
@@ -107,7 +114,7 @@ describe("marketplace index freshness", () => {
 
 		// Remote disappears — the offline case.
 		fs.rmSync(remote, { recursive: true, force: true });
-		const { errors } = await refreshMarketplaces(cwd);
+		const { errors } = await refreshMarketplaces(cwd, undefined, OFFLINE);
 		expect(errors.length).toBeGreaterThan(0);
 
 		// An out-of-date index beats no index at all.

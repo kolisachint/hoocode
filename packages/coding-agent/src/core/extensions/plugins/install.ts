@@ -307,17 +307,22 @@ export async function ensureWellKnownMarketplaces(
 export async function refreshMarketplaces(
 	cwd: string,
 	agentDir: string = getAgentDir(),
+	options: EnsureMarketplacesOptions = {},
 ): Promise<{ refreshed: string[]; errors: string[] }> {
-	const errors = await ensureWellKnownMarketplaces(agentDir, { force: true });
-	const refreshed = WELL_KNOWN_MARKETPLACES.filter((wk) => existsSync(marketplaceCacheDir(wk.url, agentDir))).map(
-		(wk) => wk.name,
-	);
+	// The same seam `ensureWellKnownMarketplaces` documents, carried up to the
+	// caller that needs it. Without it a test covering *user-added* marketplaces
+	// still cloned three real GitHub repositories on every call, because
+	// refreshing "the marketplaces" has always meant the well-known list too —
+	// which is a check that needs the network, and so a check that rots.
+	const wellKnown = options.marketplaces ?? WELL_KNOWN_MARKETPLACES;
+	const errors = await ensureWellKnownMarketplaces(agentDir, { ...options, force: true });
+	const refreshed = wellKnown.filter((wk) => existsSync(marketplaceCacheDir(wk.url, agentDir))).map((wk) => wk.name);
 
 	// User-added marketplaces are cached the same way when they came from git; a
 	// local-path marketplace is read in place and has nothing to refresh.
 	for (const record of readMarketplaceRecords(cwd, agentDir)) {
 		const isCachedClone = record.dir.startsWith(marketplaceCacheRoot(agentDir));
-		if (!isCachedClone || WELL_KNOWN_MARKETPLACES.some((wk) => wk.url === record.location)) continue;
+		if (!isCachedClone || wellKnown.some((wk) => wk.url === record.location)) continue;
 		const res = await refreshClone(record.location, record.dir);
 		if (res.code !== 0) errors.push(`${record.location}: ${(res.stderr || res.stdout).trim()}`);
 		else {
