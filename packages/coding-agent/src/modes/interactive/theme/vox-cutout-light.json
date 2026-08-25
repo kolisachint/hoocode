@@ -105,7 +105,8 @@
 		"headlineBg": "ink",
 		"headlineText": "tapeYellow",
 		"tapeBg": "stockTape",
-		"tapeText": "ink"
+		"tapeText": "ink",
+		"activeToolBg": "stockYellow"
 	},
 	"export": {
 		"pageBg": "#fdf6e3",

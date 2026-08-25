@@ -24,6 +24,8 @@ export class ToolChainComponent extends Container {
 	private state: ChainState = "running";
 	/** Opened into its per-call rows by `app.tools.unfoldOne`. */
 	private opened = false;
+	/** The newest run in the transcript; radar marks it. */
+	private latest = false;
 	private memo?: { width: number; out: string[] };
 
 	constructor(view: ToolOutputView) {
@@ -91,6 +93,20 @@ export class ToolChainComponent extends Container {
 		this.memo = undefined;
 	}
 
+	/**
+	 * Mark this run as the newest in the transcript, or no longer it.
+	 *
+	 * The per-call rows carry the same mark, but they are not what radar usually
+	 * shows: a run of more than one call folds to this single line, so without
+	 * marking the line too the stroke would be invisible in the view it was
+	 * built for.
+	 */
+	setLatest(latest: boolean): void {
+		if (this.latest === latest) return;
+		this.latest = latest;
+		this.memo = undefined;
+	}
+
 	override invalidate(): void {
 		super.invalidate();
 		this.memo = undefined;
@@ -140,15 +156,19 @@ export class ToolChainComponent extends Container {
 		}
 
 		const stats = chainStats(entries, this.state);
+		// The marker stroke runs over what you read and stops before the stats,
+		// the same shape it takes on a per-call row.
+		const stroke = this.latest && theme.hasBg("activeToolBg");
+		const mark = (text: string) => (stroke ? theme.bg("activeToolBg", text) : text);
 		// " ● " + left, then stats flush right when there is room for both.
 		const prefix = `${glyph} `;
 		const budget = Math.max(0, width - 1 - visibleWidth(prefix));
 		let line: string;
 		if (visibleWidth(leftPlain) + 2 + visibleWidth(stats) <= budget) {
 			const pad = " ".repeat(budget - visibleWidth(leftPlain) - visibleWidth(stats));
-			line = ` ${theme.fg(glyphTone, prefix)}${leftStyled}${pad}${theme.fg("muted", stats)}`;
+			line = ` ${theme.fg(glyphTone, prefix)}${mark(leftStyled)}${pad}${theme.fg("muted", stats)}`;
 		} else {
-			line = ` ${theme.fg(glyphTone, prefix)}${truncateToWidth(leftStyled, budget)}`;
+			line = ` ${theme.fg(glyphTone, prefix)}${mark(truncateToWidth(leftStyled, budget))}`;
 		}
 
 		const out = [line, ...this.failureLines(width)];

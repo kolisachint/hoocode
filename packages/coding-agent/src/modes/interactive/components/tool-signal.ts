@@ -94,6 +94,8 @@ export interface ToolSignalInput {
 	result?: { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; isError: boolean };
 	isPartial: boolean;
 	showImages: boolean;
+	/** The newest call in the transcript. Themes that set `activeToolBg` mark it. */
+	isLatest?: boolean;
 }
 
 /**
@@ -141,11 +143,14 @@ export function renderToolSignalLine(input: ToolSignalInput, width: number): str
 	const left = verb + shownSubject;
 	const pad = Math.max(signal.text ? MIN_SIGNAL_GAP : 0, available - visibleWidth(left) - visibleWidth(signal.text));
 
+	// The marker stroke covers the verb and the subject — the part you read —
+	// and stops before the flush-right signal, which keeps its status colour on
+	// the page. A highlighter runs over the words, not the whole line.
+	const stroke = input.isLatest === true && theme.hasBg("activeToolBg");
+	const content = theme.fg("toolTitle", theme.bold(verb)) + theme.fg("toolOutput", shownSubject);
+
 	return (
-		theme.fg("toolTitle", theme.bold(verb)) +
-		theme.fg("toolOutput", shownSubject) +
-		" ".repeat(pad) +
-		theme.fg(signal.color, signal.text)
+		(stroke ? theme.bg("activeToolBg", content) : content) + " ".repeat(pad) + theme.fg(signal.color, signal.text)
 	);
 }
 

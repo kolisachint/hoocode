@@ -376,6 +376,8 @@ export class ToolExecutionComponent extends Container {
 	 * call renderer. A revealed block leaves radar for as long as it is open, so
 	 * "expand" means the same thing in every view.
 	 */
+	private isLatest = false;
+
 	private shouldShowSignalLine(): boolean {
 		return this.view === "radar" && !this.revealed;
 	}
@@ -388,6 +390,19 @@ export class ToolExecutionComponent extends Container {
 		return this.shouldShowSignalLine() ? new IndentAll(component, 3) : component;
 	}
 
+	/**
+	 * Mark this block as the newest call in the transcript, or no longer it.
+	 *
+	 * Only radar draws anything from it: the other two views already show each
+	 * call in full, so there is nothing for a "where am I" mark to add.
+	 */
+	setLatest(isLatest: boolean): void {
+		if (this.isLatest === isLatest) return;
+		this.isLatest = isLatest;
+		this.signalComponent?.invalidate();
+		this.updateDisplay();
+	}
+
 	private getSignalComponent(): ToolSignalComponent {
 		const input = {
 			toolName: this.toolName,
@@ -396,6 +411,7 @@ export class ToolExecutionComponent extends Container {
 			result: this.result,
 			isPartial: this.isPartial,
 			showImages: this.showImages,
+			isLatest: this.isLatest,
 		};
 		if (this.signalComponent) {
 			this.signalComponent.setInput(input);

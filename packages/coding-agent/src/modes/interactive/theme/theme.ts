@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import {
 	applyBackgroundToLine,
+	type Box,
 	type EditorTheme,
 	type MarkdownTheme,
 	type SelectListTheme,
@@ -136,6 +137,13 @@ const ThemeJsonSchema = Type.Object({
 		// restyle the footer's brand mark. Unset: the label keeps its own color.
 		tapeBg: Type.Optional(ColorValueSchema),
 		tapeText: Type.Optional(ColorValueSchema),
+		// activeToolBg: the marker stroke over the most recent tool row in radar.
+		// Radar is a map of a run, and a map is most useful when it says where you
+		// are on it — the stroke walks down the screen as the agent works, then
+		// stays on the last thing it did. Unset: no stroke, which is how radar
+		// rendered before. Kept separate from `selectedBg` so a theme can make the
+		// transcript's mark quieter than its list selection.
+		activeToolBg: Type.Optional(ColorValueSchema),
 	}),
 	export: Type.Optional(
 		Type.Object({
@@ -246,7 +254,8 @@ export type ThemeBg =
 	| "warningBg"
 	| "brandBg"
 	| "headlineBg"
-	| "tapeBg";
+	| "tapeBg"
+	| "activeToolBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -754,6 +763,7 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"brandBg",
 		"headlineBg",
 		"tapeBg",
+		"activeToolBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {
@@ -1297,14 +1307,42 @@ export function getPaperShadowFn(): ((text: string) => string) | undefined {
 	return theme.has("paperShadow") ? (text: string) => theme.fg("paperShadow", text) : undefined;
 }
 
+/** How far a sheet holds back from the right margin, leaving a gutter of page. */
+export const PAPER_INSET = 3;
+
+/**
+ * Give a filled block the paper treatment: a gutter of page at its right, a cut
+ * edge, and a shadow along both of them.
+ *
+ * The three arrive together because they are one decision. A block that runs
+ * edge to edge has no right edge to cut and nowhere to cast a shadow, so a
+ * theme asking for paper is asking for the gutter that makes paper possible.
+ * A theme without `paperShadow` gets the full-width band it has always drawn.
+ */
+export function applyPaperSheet(box: Box): void {
+	const shadow = getPaperShadowFn();
+	box.setShadowFn(shadow);
+	box.setInset(shadow ? PAPER_INSET : 0);
+	box.setCutEdge(shadow !== undefined);
+}
+
 export function getMarkdownTheme(): MarkdownTheme {
 	// A theme that sets the headline pair renders headings as a filled chip: the
 	// text takes the chip's ink, and the fill is applied to the finished line so
 	// the chip's padding never leaks into the inline-style prefix.
+	//
+	// Only the top two levels get a bar. Below that the renderer keeps the `###`
+	// marker, and a marker inside a filled chip is saying the same thing twice —
+	// the chip *is* the marker. A page of `###` bars is also just loud: two
+	// levels of chip and the rest as coloured text is the hierarchy a printed
+	// page would use.
 	const chip = theme.hasBg("headlineBg") && theme.has("headlineText");
+	const chipped = (level: number) => chip && level <= 2;
 	return {
-		heading: (text: string) => theme.fg(chip ? "headlineText" : "mdHeading", text),
-		headingBlock: chip ? (line: string) => theme.bg("headlineBg", ` ${line} `) : undefined,
+		heading: (text: string, level: number) => theme.fg(chipped(level) ? "headlineText" : "mdHeading", text),
+		headingBlock: chip
+			? (line: string, level: number) => (chipped(level) ? theme.bg("headlineBg", ` ${line} `) : line)
+			: undefined,
 		link: (text: string) => theme.fg("mdLink", text),
 		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
 		code: (text: string) => theme.fg("mdCode", text),

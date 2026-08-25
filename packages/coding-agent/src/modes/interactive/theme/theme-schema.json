@@ -362,6 +362,10 @@
 				"tapeText": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Tape-strip label text (optional; only honoured when tapeBg is also set)"
+				},
+				"activeToolBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Marker stroke over the most recent tool row in radar (optional; unset draws no stroke)"
 				}
 			},
 			"additionalProperties": false

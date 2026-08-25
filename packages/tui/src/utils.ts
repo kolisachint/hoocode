@@ -853,8 +853,31 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
 	const padding = " ".repeat(paddingNeeded);
 
 	// Apply background to content + padding
-	const withPadding = line + padding;
+	const withPadding = repairNestedBgResets(line, bgFn) + padding;
 	return bgFn(withPadding);
+}
+
+/**
+ * Re-open the band's background after anything inside the line closed it.
+ *
+ * A background is a pair — an opener and `ESC[49m` — so a child that paints its
+ * own fill (a chip, a label strip, a highlighted span) has to close it, and that
+ * close ends the *band's* background too. Everything after it, the padding
+ * included, falls back to the terminal's own canvas: the block develops a hole
+ * from the chip to the end of the row.
+ *
+ * The fix is to follow every inner reset with the band's opener again. The
+ * opener is recovered from `bgFn` itself rather than assumed, so this works for
+ * whatever colour the caller is painting — and collapses to a no-op for a `bgFn`
+ * that adds no codes at all.
+ */
+function repairNestedBgResets(line: string, bgFn: (text: string) => string): string {
+	const BG_RESET = "\x1b[49m";
+	if (!line.includes(BG_RESET)) return line;
+	const sentinel = "\u0000";
+	const opener = bgFn(sentinel).split(sentinel)[0] ?? "";
+	if (opener === "") return line;
+	return line.split(BG_RESET).join(BG_RESET + opener);
 }
 
 /**

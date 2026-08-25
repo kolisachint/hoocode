@@ -397,6 +397,16 @@ hugs the block's bottom edge, indented one column to give the offset. There is
 no matching right-hand column, because these boxes render at the full terminal
 width and a column past the last cell has nowhere to go.
 
+Setting it also gives the block the rest of the paper treatment, because the
+three are one decision rather than three. A block that runs from margin to
+margin has no right edge to cut and nowhere to cast a shadow sideways — it is a
+band of colour between two screen edges, not a sheet on a page. So a theme that
+sets `paperShadow` also gets a three-column gutter of page at the block's right,
+a shadow along that edge as well as under it, and an edge that is cut rather
+than ruled: roughly one row in five gives up a single column, always out of
+padding and never out of content, from a hash that is stable for the block so
+the edge does not reshuffle between frames.
+
 It is a shape, not text, so it answers to the 2.8:1 decorative floor rather than
 a text-contrast one — and it has to stay ΔE-clear of every `*Bg` token as well,
 or the shadow sinks into the sheet it is hugging. On a dark theme nothing can be
