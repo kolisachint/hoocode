@@ -393,9 +393,11 @@ message, an extension message, an error or warning notice — so the block reads
 as a sheet laid on the page rather than a colour printed into it. A terminal has
 no sub-pixel offsets and no blur, so the band is one extra row of `▀`: an upper
 half-block, which paints solid colour across the top half of its cells and so
-hugs the block's bottom edge, indented one column to give the offset. There is
-no matching right-hand column, because these boxes render at the full terminal
-width and a column past the last cell has nowhere to go.
+hugs the block's bottom edge, indented one column to give the offset. The
+block's right edge gets the matching column of `▌` — a left half-block, which
+paints the half of its cell nearest the sheet — and the bottom run reaches under
+that column, so the two close the corner instead of stopping a cell short of
+each other.
 
 Setting it also gives the block the rest of the paper treatment, because the
 three are one decision rather than three. A block that runs from margin to
@@ -406,6 +408,15 @@ a shadow along that edge as well as under it, and an edge that is cut rather
 than ruled: roughly one row in five gives up a single column, always out of
 padding and never out of content, from a hash that is stable for the block so
 the edge does not reshuffle between frames.
+
+The cut moves the sheet, never the shadow. Letting the shadow follow the nick
+was the first attempt and it cost the shadow its line: `▌` paints half a cell,
+so a one-column step leaves no overlap between one row's mark and the next, and
+a column that stepped in and out every fifth row read as a dashed staircase
+rather than an edge — the more so because the sheet's own edge is a quiet colour
+and the shadow is the loud one. A nicked row now shows its cut as a column of
+page between sheet and shadow, which is what a nick looks like, and the shadow
+stays one straight line down the sheet.
 
 It is a shape, not text, so it answers to the 2.8:1 decorative floor rather than
 a text-contrast one — and it has to stay ΔE-clear of every `*Bg` token as well,

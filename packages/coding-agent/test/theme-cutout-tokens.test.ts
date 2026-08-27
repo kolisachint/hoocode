@@ -91,9 +91,43 @@ describe("cut-out token fallbacks", () => {
 			// does not, because the offset is down as well as right.
 			expect(lines[0]).not.toContain("▌");
 			expect(lines[1] + lines[2]).toContain("▌");
-			// And the bottom run is offset one column right of the band.
+			// And the bottom run is offset one column right of the band, ending
+			// under the right-hand column so the two close the corner.
 			expect(lines[3].startsWith(" ")).toBe(true);
-			expect(lines[3].match(/▀/g)).toHaveLength(band - 1);
+			expect(lines[3].match(/▀/g)).toHaveLength(band);
+			expect(visibleWidth(lines[3])).toBe(band + 1);
+		});
+
+		it("holds the shadow in one column, whatever the cut does to the edge", () => {
+			// A shadow that stepped in and out with the nick was not a shadow:
+			// the glyph is half a cell wide, so a one-column step leaves no
+			// overlap between one row's mark and the next, and the edge reads as
+			// a dashed staircase. Every shadowed row ends in the same cell.
+			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
+			applyPaperSheet(box);
+			for (let i = 0; i < 12; i++) {
+				box.addChild(new Text(`row ${i}`, 0, 0));
+			}
+			const lines = box.render(40);
+			const edge = 40 - PAPER_INSET + 1;
+			for (const line of lines.slice(1)) {
+				expect(visibleWidth(line)).toBe(edge);
+			}
+			expect(lines.slice(1, -1).every((line) => line.includes("▌"))).toBe(true);
+		});
+
+		it("still cuts the sheet's own edge", () => {
+			// The nick moved off the shadow, not out of the theme: with the
+			// shadow's column left off, the rows that took one are narrower.
+			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
+			box.setInset(PAPER_INSET);
+			box.setCutEdge(true);
+			for (let i = 0; i < 12; i++) {
+				box.addChild(new Text(`row ${i}`, 0, 0));
+			}
+			const band = 40 - PAPER_INSET;
+			const widths = new Set(box.render(40).map((line) => visibleWidth(line)));
+			expect(widths).toEqual(new Set([band, band - 1]));
 		});
 
 		it("never lets the cut edge eat a character", () => {

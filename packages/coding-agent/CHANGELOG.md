@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The cut-out themes' paper shadow reads as one edge again. Two defects made it
+  read as debris instead. The shadow's right-hand column followed the cut edge
+  in front of it, stepping in a column on roughly one row in five — and since
+  `▌` paints half a cell, a one-column step leaves *no* overlap between one
+  row's mark and the next, so what should have been an edge broke into a dashed
+  staircase. It was the loudest thing on the block, too: the sheet's own edge is
+  a quiet colour against the page, so the only part of the cut anyone could see
+  was the shadow coming apart. The cut now moves the sheet and never the shadow,
+  and a nicked row shows its cut as a column of page between the two, which is
+  what a nick looks like.
+
+  The bottom run also stopped a cell short of that column, leaving the corner
+  open where the two shadows should have met. It now ends underneath it. A theme
+  with `paperShadow` but no gutter is unchanged — there is no column there to
+  meet, and a run reaching past the last cell would wrap.
+
 ## [0.5.37] - 2026-08-25
 
 ### Fixed
