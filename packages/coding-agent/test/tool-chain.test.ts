@@ -190,6 +190,59 @@ describe("ToolChainComponent", () => {
 		expect(render(chain)).toContain("grep › read");
 	});
 
+	test("holds a radar run off whatever came before it", () => {
+		// Radar's rows stack without gaps between themselves, which left the
+		// first row of a run pressed against the prose that introduced it.
+		const chain = chainOf("radar", RUN, "lead");
+		chain.close("done");
+		const lines = chain.render(100);
+		expect(lines).toHaveLength(2);
+		expect(lines[0]).toBe("");
+		expect(stripAnsi(lines[1] ?? "")).toContain("Edited");
+	});
+
+	test("and only the one gap: the rows underneath still stack", () => {
+		const chain = chainOf("radar", RUN, "stack");
+		chain.close("done");
+		// Opened, but not expanded: the per-call rows are still radar rows.
+		chain.setOpened(true);
+		const lines = chain.render(100);
+		expect(lines[0]).toBe("");
+		expect(lines.slice(1).filter((line) => line === "")).toHaveLength(0);
+		expect(lines.slice(1)).toHaveLength(RUN.length);
+	});
+
+	test("a radar run of one gets the same lead-in", () => {
+		// A chain of one is not summarised, so it renders through its block —
+		// which is the path where the block's own spacer used to be the only
+		// thing that could have drawn the gap, and in radar it draws none.
+		const chain = chainOf("radar", [RUN[0]], "lead-one");
+		chain.close("done");
+		const lines = chain.render(100);
+		expect(lines[0]).toBe("");
+		expect(stripAnsi(lines[1] ?? "")).toContain("grep");
+	});
+
+	test("does not double the gap where the blocks already draw one", () => {
+		// Every other view gives each block a leading spacer, and so does a radar
+		// block that has been opened.
+		for (const view of ["glance", "full"] as ToolOutputView[]) {
+			const chain = chainOf(view, RUN, `nolead-${view}`);
+			chain.close("done");
+			const lines = chain.render(100);
+			expect(
+				lines.filter((line, i) => line === "" && i < 2),
+				view,
+			).toHaveLength(1);
+		}
+		const opened = chainOf("radar", RUN, "nolead-open");
+		opened.close("done");
+		opened.setOpened(true);
+		opened.setExpanded(true);
+		const lines = opened.render(100);
+		expect(lines.filter((line, i) => line === "" && i < 2)).toHaveLength(1);
+	});
+
 	test("reports whether it is still collecting calls", () => {
 		const chain = chainOf("radar", RUN, "s");
 		expect(chain.isOpen).toBe(true);

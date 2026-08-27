@@ -383,6 +383,20 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	/**
+	 * Whether this block draws its own blank row above itself.
+	 *
+	 * Radar rows do not — rows that are one line each only read as a map when
+	 * they stack without gaps — which leaves the first row of a run with nothing
+	 * between it and whatever introduced it. `ToolChainComponent` asks this so
+	 * the run can draw that one gap itself without doubling a gap the block was
+	 * already drawing, which is what happens in every other view and for a radar
+	 * block that has been opened.
+	 */
+	drawsLeadingGap(): boolean {
+		return !this.shouldShowSignalLine();
+	}
+
+	/**
 	 * A failure's body under a radar row hangs off the row; anywhere else it sits
 	 * directly under its own call line and needs no extra indent.
 	 */

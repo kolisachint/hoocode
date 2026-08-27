@@ -94,8 +94,10 @@ export class Box implements Component {
 	 * A terminal has no sub-pixel offsets, so the shadow is one extra row of
 	 * `▀` — an upper half-block, which paints solid color across the top half of
 	 * its cells and so hugs the box's bottom edge — indented one column to give
-	 * the offset. There is no matching right-hand column: these boxes render at
-	 * the full terminal width, and a column past the last cell has nowhere to go.
+	 * the offset. An inset box gets a matching column of `▌` down its right edge
+	 * and the bottom run reaches under it, so the two meet at the corner; with
+	 * no inset the band already owns the last cell, so the bottom edge is all
+	 * there is room for.
 	 *
 	 * Passing no function draws no shadow, which is the behavior of every theme
 	 * that does not opt in.
@@ -205,6 +207,9 @@ export class Box implements Component {
 		// A cut edge needs a seed that is stable for this block but different
 		// from its neighbours, or every sheet on screen is cut identically.
 		const seed = this.cutEdge ? hashString(childLines.join("\n")) : 0;
+		const shadowFn = this.shadowFn;
+		// The right-hand column only exists when a gutter was reserved for it.
+		const hasColumn = shadowFn !== undefined && this.inset > 0;
 		const result: string[] = [];
 		rows.forEach((line, index) => {
 			// Never let the cut reach into the content: the jitter comes out of
@@ -213,15 +218,24 @@ export class Box implements Component {
 			const cut = this.cutEdge && slack > 0 && hashString(`${seed}:${index}`) % CUT_EVERY === 0 ? 1 : 0;
 			const rowWidth = bandWidth - cut;
 			const band = this.applyBg(line, rowWidth);
-			// The shadow follows the edge it is cast by, so it jitters with it.
+			// The shadow holds one column whatever the cut does to the edge in
+			// front of it. Following the cut was the first attempt and it broke
+			// the shadow: `▌` paints half a cell, so a one-column step leaves no
+			// overlap at all between one row's mark and the next, and what the
+			// eye gets is a dashed staircase rather than an edge. A cut row
+			// shows its nick as a column of page between sheet and shadow —
+			// which is what a nick is — and the shadow stays a single line.
 			// The first row has none: the offset is down *and* right.
-			const column = this.shadowFn && this.inset > 0 && index > 0 ? this.shadowFn("▌") : "";
+			const column = hasColumn && index > 0 ? " ".repeat(cut) + shadowFn("▌") : "";
 			result.push(band + column);
 		});
 
-		// The shadow's bottom run, offset one column right of the band.
-		if (this.shadowFn && bandWidth > 1) {
-			result.push(` ${this.shadowFn("▀".repeat(bandWidth - 1))}`);
+		// The shadow's bottom run, offset one column right of the band. It ends
+		// under the right-hand column so the two close the corner; with no
+		// gutter there is no such column, and the run stops one cell short of
+		// the margin instead of wrapping past it.
+		if (shadowFn && bandWidth > 1) {
+			result.push(` ${shadowFn("▀".repeat(hasColumn ? bandWidth : bandWidth - 1))}`);
 		}
 
 		// Update cache

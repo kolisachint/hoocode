@@ -27,16 +27,24 @@ export class ToolChainComponent extends Container {
 	/** The newest run in the transcript; radar marks it. */
 	private latest = false;
 	private memo?: { width: number; out: string[] };
+	/** Lead-in memo, keyed on the rows it wraps, so the array stays stable. */
+	private leadIn?: { src: string[]; out: string[] };
 
 	constructor(view: ToolOutputView) {
 		super();
 		this.view = view;
 	}
 
+	/** Every cache this chain keeps. The two go stale for the same reasons. */
+	private forget(): void {
+		this.memo = undefined;
+		this.leadIn = undefined;
+	}
+
 	add(block: ToolExecutionComponent): void {
 		this.blocks.push(block);
 		this.addChild(block);
-		this.memo = undefined;
+		this.forget();
 	}
 
 	/** True until the agent speaks or the turn settles. */
@@ -71,26 +79,26 @@ export class ToolChainComponent extends Container {
 	 */
 	close(outcome: "done" | "interrupted"): void {
 		this.state = outcome;
-		this.memo = undefined;
+		this.forget();
 	}
 
 	setView(view: ToolOutputView): void {
 		this.view = view;
-		this.memo = undefined;
+		this.forget();
 		for (const block of this.blocks) block.setView(view);
 	}
 
 	/** The global expand key opens every block, which also opens the chain. */
 	setExpanded(expanded: boolean): void {
 		this.opened = expanded;
-		this.memo = undefined;
+		this.forget();
 		for (const block of this.blocks) block.setExpanded(expanded);
 	}
 
 	/** `alt+u` in radar: open this chain into its per-call rows, or fold it back. */
 	setOpened(opened: boolean): void {
 		this.opened = opened;
-		this.memo = undefined;
+		this.forget();
 	}
 
 	/**
@@ -104,12 +112,12 @@ export class ToolChainComponent extends Container {
 	setLatest(latest: boolean): void {
 		if (this.latest === latest) return;
 		this.latest = latest;
-		this.memo = undefined;
+		this.forget();
 	}
 
 	override invalidate(): void {
 		super.invalidate();
-		this.memo = undefined;
+		this.forget();
 	}
 
 	/**
@@ -126,7 +134,37 @@ export class ToolChainComponent extends Container {
 		return this.view === "radar" && !this.opened && this.blocks.length > 1;
 	}
 
+	/**
+	 * The blank row that holds a run off whatever came before it.
+	 *
+	 * Radar's rows stack without gaps on purpose, and that is right *between*
+	 * rows — but it left the first row of a run pressed against the prose that
+	 * introduced it, with the turn above and the run below reading as one
+	 * paragraph. The gap belongs to the run rather than to its rows: one blank
+	 * line at the top of the chain, and the rows go on stacking underneath it.
+	 *
+	 * Only radar needs it. Every other view gives each block a leading spacer of
+	 * its own, and so does a radar block that has been opened, so asking the
+	 * first block whether it draws one keeps the two from doubling up.
+	 */
+	private needsLeadIn(): boolean {
+		if (this.view !== "radar") return false;
+		if (this.isCollapsed()) return true;
+		return this.blocks[0]?.drawsLeadingGap() === false;
+	}
+
 	override render(width: number): string[] {
+		const rows = this.rows(width);
+		if (rows.length === 0 || !this.needsLeadIn()) return rows;
+		// Keep the wrapped array reference-stable: the TUI diffs whole subtrees
+		// by identity, and a fresh array every frame would defeat that.
+		if (this.leadIn?.src === rows) return this.leadIn.out;
+		const out = ["", ...rows];
+		this.leadIn = { src: rows, out };
+		return out;
+	}
+
+	private rows(width: number): string[] {
 		if (!this.isCollapsed()) return super.render(width);
 		if (this.memo && this.memo.width === width) return this.memo.out;
 
