@@ -9,6 +9,7 @@ import {
 	initTheme,
 	messageLabel,
 	PAPER_INSET,
+	setTheme,
 	theme,
 } from "../src/modes/interactive/theme/theme.js";
 
@@ -50,7 +51,10 @@ describe("cut-out token fallbacks", () => {
 
 		it("leaves headings as coloured text", () => {
 			const md = getMarkdownTheme();
-			expect(md.headingBlock).toBeUndefined();
+			// The block pass exists but does nothing: it is what a theme switch
+			// goes through, and a heading laid out under this theme has to come
+			// back exactly as it went in.
+			expect(md.headingBlock?.("Title", 2)).toBe("Title");
 			expect(md.heading("Title", 2)).toBe(theme.fg("mdHeading", "Title"));
 		});
 
@@ -120,8 +124,7 @@ describe("cut-out token fallbacks", () => {
 			// The nick moved off the shadow, not out of the theme: with the
 			// shadow's column left off, the rows that took one are narrower.
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
-			box.setInset(PAPER_INSET);
-			box.setCutEdge(true);
+			box.setPaper(() => ({ inset: PAPER_INSET, cutEdge: true }));
 			for (let i = 0; i < 12; i++) {
 				box.addChild(new Text(`row ${i}`, 0, 0));
 			}
@@ -231,5 +234,58 @@ describe("a chip painted inside a filled block", () => {
 		expect(tail.startsWith(blockOpener)).toBe(true);
 		// And the row still ends by closing the fill exactly once more.
 		expect(tail.endsWith("\x1b[49m")).toBe(true);
+	});
+});
+
+/**
+ * The tokens are optional per *theme*, and a session is not one theme: the user
+ * switches with the transcript already on screen, and every block up there was
+ * built under whichever theme was current at the time. Anything that reads an
+ * optional token has to read it at render time — a decision frozen when the
+ * block was built goes on asking a theme that never defined the token, which is
+ * a crash, not a fallback.
+ */
+describe("switching theme under blocks already on screen", () => {
+	const sheet = () => {
+		const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
+		applyPaperSheet(box);
+		box.addChild(new Text("hello", 0, 0));
+		return box;
+	};
+
+	it("drops the paper treatment when leaving a cut-out theme", () => {
+		initTheme("vox-cutout-dark", false);
+		const box = sheet();
+		expect(box.render(40)).toHaveLength(4);
+
+		setTheme("dark", false);
+		// Shadow row gone, gutter gone: the block a plain theme would have built.
+		const lines = box.render(40);
+		expect(lines).toHaveLength(3);
+		expect(lines.map((line) => visibleWidth(line))).toEqual([40, 40, 40]);
+	});
+
+	it("picks the paper treatment up when entering one", () => {
+		initTheme("dark", false);
+		const box = sheet();
+		expect(box.render(40)).toHaveLength(3);
+
+		setTheme("vox-cutout-dark", false);
+		const lines = box.render(40);
+		expect(lines).toHaveLength(4);
+		expect(visibleWidth(lines[3])).toBe(40 - PAPER_INSET + 1);
+	});
+
+	it("keeps a markdown theme rendering across the switch, both ways", () => {
+		initTheme("vox-cutout-dark", false);
+		const fromCutout = getMarkdownTheme();
+		setTheme("dark", false);
+		expect(fromCutout.heading("Title", 2)).toBe(theme.fg("mdHeading", "Title"));
+		expect(fromCutout.headingBlock?.("Title", 2)).toBe("Title");
+
+		const fromPlain = getMarkdownTheme();
+		setTheme("vox-cutout-dark", false);
+		expect(fromPlain.heading("Title", 2)).toBe(theme.fg("headlineText", "Title"));
+		expect(fromPlain.headingBlock?.("Title", 2)).toBe(theme.bg("headlineBg", " Title "));
 	});
 });

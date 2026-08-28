@@ -1318,12 +1318,18 @@ export const PAPER_INSET = 3;
  * edge to edge has no right edge to cut and nowhere to cast a shadow, so a
  * theme asking for paper is asking for the gutter that makes paper possible.
  * A theme without `paperShadow` gets the full-width band it has always drawn.
+ *
+ * The decision is handed to the box as a function, not as an answer, because
+ * blocks outlive themes: the messages already on screen when the user switches
+ * theme keep the boxes they were built with. Answering once meant a message
+ * pasted under a cut-out theme went on asking a plain theme for `paperShadow`,
+ * a token that theme never defined — which threw rather than rendering.
  */
 export function applyPaperSheet(box: Box): void {
-	const shadow = getPaperShadowFn();
-	box.setShadowFn(shadow);
-	box.setInset(shadow ? PAPER_INSET : 0);
-	box.setCutEdge(shadow !== undefined);
+	box.setPaper(() => {
+		const shadow = getPaperShadowFn();
+		return shadow ? { shadow, inset: PAPER_INSET, cutEdge: true } : undefined;
+	});
 }
 
 export function getMarkdownTheme(): MarkdownTheme {
@@ -1336,13 +1342,15 @@ export function getMarkdownTheme(): MarkdownTheme {
 	// the chip *is* the marker. A page of `###` bars is also just loud: two
 	// levels of chip and the rest as coloured text is the hierarchy a printed
 	// page would use.
-	const chip = theme.hasBg("headlineBg") && theme.has("headlineText");
-	const chipped = (level: number) => chip && level <= 2;
+	//
+	// The pair is looked up per call rather than once here: a markdown theme is
+	// built with the message that holds it and is still in use after the user
+	// switches theme, so a decision frozen at build time would have that message
+	// asking a plain theme for `headlineText`, which it never defined.
+	const chipped = (level: number) => level <= 2 && theme.hasBg("headlineBg") && theme.has("headlineText");
 	return {
 		heading: (text: string, level: number) => theme.fg(chipped(level) ? "headlineText" : "mdHeading", text),
-		headingBlock: chip
-			? (line: string, level: number) => (chipped(level) ? theme.bg("headlineBg", ` ${line} `) : line)
-			: undefined,
+		headingBlock: (line: string, level: number) => (chipped(level) ? theme.bg("headlineBg", ` ${line} `) : line),
 		link: (text: string) => theme.fg("mdLink", text),
 		linkUrl: (text: string) => theme.fg("mdLinkUrl", text),
 		code: (text: string) => theme.fg("mdCode", text),

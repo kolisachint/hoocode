@@ -388,6 +388,17 @@ renders exactly as it did before they existed; `test/theme-cutout-tokens.test.ts
 exercises both sides of each. The `vox-cutout-*` pair is the only built-in that
 sets them.
 
+Optional means optional *per frame*, not per session. Every renderer that reads
+one of these tokens asks whether the current theme defines it at the moment it
+draws, never once when the component was built: the transcript on screen when
+the user switches theme is full of blocks built under the old one, and a block
+that had decided it was paper would go on asking a plain theme for
+`paperShadow`, a token that theme never defined. `Box` takes the paper treatment
+as a function it calls each render (`applyPaperSheet`), and `getMarkdownTheme`
+checks for the headline pair inside its heading callbacks. So a switch in either
+direction repaints what is already on screen — a cut-out theme gives the blocks
+above the prompt their shadows, a plain one takes them away.
+
 **`paperShadow`** draws an offset band under a filled message block — a user
 message, an extension message, an error or warning notice — so the block reads
 as a sheet laid on the page rather than a colour printed into it. A terminal has

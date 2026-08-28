@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Switching away from a cut-out theme no longer crashes the UI with `Unknown
+  theme color: paperShadow` (or `headlineText`). The cut-out tokens are optional
+  per theme, and every renderer that reads one is supposed to check first — but
+  two of those checks were made once, when a message block was built, and the
+  answer outlived the theme that gave it. Every block already on screen when the
+  user picked another theme went on asking for the shadow ink and the heading
+  chip that only the `vox-cutout-*` pair defines, and the first repaint after the
+  switch threw. Both are now asked per frame instead: `Box` takes its paper
+  treatment as a function it calls each render, and the markdown theme looks for
+  the headline pair inside its heading callbacks. The blocks above the prompt
+  follow the switch in both directions — a cut-out theme gives them their
+  shadows, a plain one takes them away.
+
 ## [0.5.38] - 2026-08-27
 
 ### Fixed
