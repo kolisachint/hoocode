@@ -9,7 +9,7 @@ export {
 	type SlashCommand,
 } from "./autocomplete.js";
 // Components
-export { Box } from "./components/box.js";
+export { Box, type PaperSheet } from "./components/box.js";
 export { CancellableLoader } from "./components/cancellable-loader.js";
 export {
 	DEFAULT_EDITOR_BORDER_CHARS,
