@@ -44,9 +44,12 @@ Disable discovery with `--no-themes`.
 | `vox-light` | cream | Ink on paper; yellow survives as highlight and brand chip |
 | `vox-cutout-light` | cream / Solarized Light | Paper cut-outs: bold flat stocks, cut edges, AAA ink |
 | `vox-cutout-dark` | Solarized Dark | The same cut-outs on newsprint black; AAA ink |
+| `solarized-light` | Solarized Light | The canonical sixteen colors on `base3`; low, selective contrast |
+| `solarized-dark` | Solarized Dark | The same sixteen on `base03`; the accents do not change |
 
 The six accessible themes are `high-contrast-*`, `warm-*`, and `colorsafe-*`; the
-`vox-*` themes are style themes and are described separately below. The six are built
+`vox-*` and `solarized-*` themes are style themes and are described separately
+below. The six are built
 for low vision. Every color they
 draw clears **WCAG AAA (7:1)** against every surface the TUI paints behind it —
 the page, selected rows, user messages, and all three tool-box states — and none
@@ -144,6 +147,55 @@ holds; the sheets simply read a touch louder.
 
 Both themes set the four cut-out token groups described under
 [Optional Tokens](#optional-tokens).
+
+### The `solarized-*` pair
+
+Ethan Schoonover's Solarized, kept as it was designed rather than corrected. Two
+things define it, and both are enforced by `test/theme-contrast.test.ts`.
+
+**One palette, read from both ends.** Solarized is sixteen colors: eight
+monotones on a symmetric CIELAB lightness ramp, and eight accents. The two
+themes are the same ramp with the roles mirrored — `base03`↔`base3` for the
+page, `base02`↔`base2` for the highlight, `base01`↔`base1` for comments and
+tertiary chrome, `base00`↔`base0` for body text — and the eight accents are the
+*same hex* on both grounds. Nothing is retuned per mode: `success` is `green`
+`#859900` and `error` is `red` `#dc322f` whether you are on cream or on slate.
+That is the palette's whole claim, so the pair is checked against each other
+rather than only against their own surfaces.
+
+**Low contrast, spent selectively.** Those tones sit well below maximum contrast
+on purpose, and each mode has three content tones rather than a ramp of grays:
+emphasized, body, comment. `text` and `toolTitle` take the emphasized tone (5.6:1
+on `base03`, 5.0:1 on `base3`), `muted` and `toolOutput` the body tone (4.8:1 and
+4.1:1), and `dim` — with quotes, rules and syntax comments — the comment tone, at
+2.0-2.8:1, which is exactly where Solarized puts its comments. Holding this pair
+to the 7:1 floor the accessible themes clear would mean shipping something that
+is not Solarized, so what the tests enforce is the contrast Solarized actually
+has, tier by tier:
+**content inks 3.2:1, accents 2.3:1, the comment tone 1.9:1**, on every surface
+either theme paints *and* on both Solarized terminal stops. If you want a
+guaranteed floor rather than the original, use one of the six accessible themes.
+
+Two places where the TUI needs more than the palette ships:
+
+- **A sheet per tool state.** Solarized has two background stops and the
+  transcript needs one for each of pending, done, failed, extension and notice.
+  Each is mixed from the accent that already means that thing and then pulled
+  back to the highlight's own lightness, so a state reads through hue and not
+  through getting louder — which is what keeps the ink on a tool box at the same
+  contrast it has on the page. They are named in `vars` and are the only colors
+  in either file that are not canonical.
+- **A neutral for position.** `selectedBg` and the radar mark are neutrals on
+  the `base03`→`base01` axis (`base3`→`base1` on the light side), one step off
+  the page. Hue carries meaning in these themes; position does not get a hue.
+
+`solarized-light` sets `brandBg`/`brandText` so the footer's brand mark reads as
+a `base02` chip — a cyan bright enough to be the accent is not legible as text on
+cream. Neither theme sets the cut-out tokens: paper shadows and headline chips
+are the `vox-cutout-*` voice, and Solarized's is restraint.
+
+Point your terminal at the matching Solarized background and the themes sit on
+their own page; on pure white or pure black every floor above still holds.
 
 ## Selecting a Theme
 

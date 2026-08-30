@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Added
+
+- A `solarized-light` / `solarized-dark` pair: Ethan Schoonover's palette kept
+  as it was designed rather than corrected to a contrast floor.
+
+  Solarized is one palette read from both ends — eight monotones on a symmetric
+  CIELAB lightness ramp, and eight accents that are the *same hex* on either
+  ground. The two themes are that ramp with the roles mirrored (`base03`↔`base3`
+  for the page, `base02`↔`base2` for the highlight, `base01`↔`base1` for
+  comments, `base00`↔`base0` for body), and nothing is retuned per mode:
+  `success` is `green` `#859900` and `error` is `red` `#dc322f` on cream and on
+  slate alike. `test/theme-contrast.test.ts` checks the two files against each
+  other for exactly that, because a theme that drifts an accent between modes
+  has stopped being this palette.
+
+  Each mode has three content tones rather than a ramp of grays, and the tokens
+  are mapped onto them: `text`/`toolTitle` emphasized, `muted`/`toolOutput`
+  body, `dim` and the quotes, rules and syntax comments in the comment tone at
+  2.0-2.8:1. That is where Solarized puts its comments, so this pair is neither
+  AAA like the accessible themes nor AA like `vox-*` — it holds the contrast
+  Solarized actually has, tier by tier (content 3.2:1, accents 2.3:1, comments
+  1.9:1), on every surface it paints and on both Solarized terminal stops.
+  Anyone who needs a guaranteed floor still wants `warm-*`, `colorsafe-*` or
+  `high-contrast-*`, and the theme docs say so.
+
+  Two things the TUI needs that sixteen colors do not cover. The transcript
+  wants a surface per tool state where Solarized ships two background stops, so
+  each sheet is mixed from the accent that already means that state and then
+  pulled back to the highlight's own lightness — a state reads through hue
+  instead of by getting louder, which is what keeps the ink on a tool box at the
+  contrast it has on the page. And position gets no hue at all: `selectedBg` and
+  the radar mark are neutrals on the `base03`→`base01` axis, one step off the
+  page. Those surfaces are the only colors in either file that are not
+  canonical, and they are named in `vars`; the test rejects a non-canonical
+  *ink*.
+
 ## [0.5.39] - 2026-08-28
 
 ### Fixed
