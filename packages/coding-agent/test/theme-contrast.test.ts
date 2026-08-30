@@ -762,3 +762,351 @@ describe.each(CUTOUT_THEMES)("%s", (themeName) => {
 		expect(wrongSide).toEqual([]);
 	});
 });
+
+/**
+ * The `solarized-*` pair.
+ *
+ * Solarized is one palette read from both ends: sixteen fixed colors, eight
+ * monotones on a symmetric CIELAB lightness ramp and eight accents that are the
+ * *same hex* on either ground. Light and dark are not two palettes tuned
+ * separately — they are the same ramp with the roles mirrored, which is the one
+ * property these tests exist to keep. The second property is contrast: Ethan
+ * Schoonover picked those tones to sit well below maximum contrast on purpose,
+ * so holding this pair to the AAA bar the accessible themes clear would mean
+ * shipping something that is not Solarized. What is enforced instead is the
+ * contrast Solarized actually has, tier by tier, so a future edit cannot drift
+ * *below* the original while the theme still claims its name.
+ */
+const SOLARIZED_THEMES = ["solarized-light", "solarized-dark"] as const;
+
+/** The eight monotones, mirrored: dark's role tone and light's are a fixed pair. */
+const SOLARIZED_MIRROR: [dark: string, light: string][] = [
+	["#002b36", "#fdf6e3"], // base03 / base3  — page
+	["#073642", "#eee8d5"], // base02 / base2  — highlight
+	["#586e75", "#93a1a1"], // base01 / base1  — comments, tertiary
+	["#839496", "#657b83"], // base0  / base00 — body
+];
+
+/** The eight accents. Identical on both grounds — that is the whole claim. */
+const SOLARIZED_ACCENTS = {
+	yellow: "#b58900",
+	orange: "#cb4b16",
+	red: "#dc322f",
+	magenta: "#d33682",
+	violet: "#6c71c4",
+	blue: "#268bd2",
+	cyan: "#2aa198",
+	green: "#859900",
+} as const;
+
+/**
+ * Tokens drawn in the comment tone — `base01` on the dark ground, `base1` on the
+ * light one. Solarized puts its comments at ~2.8:1 and ~2.5:1 respectively, and
+ * a tinted surface takes a little more off that; measuring them against a body
+ * floor would only prove that Solarized is low contrast, which is the point of
+ * it, so they answer to the floor the original sets.
+ */
+const SOLARIZED_COMMENT_TIER = new Set([
+	"dim",
+	"thinkingText",
+	"thinkingOff",
+	"mdLinkUrl",
+	"mdQuote",
+	"mdHr",
+	"mdCodeBlockBorder",
+	"syntaxComment",
+	"toolDiffContext",
+	"borderMuted",
+]);
+
+/** Tiers, and the floor each one holds on every surface the pair paints. */
+const SOLARIZED_FLOORS = { content: 3.2, accent: 2.3, comment: 1.9 } as const;
+
+describe.each(SOLARIZED_THEMES)("%s", (themeName) => {
+	const isLight = themeName.endsWith("-light");
+	const ground = isLight ? "#fdf6e3" : "#002b36";
+	const highlight = isLight ? "#eee8d5" : "#073642";
+
+	/** Every surface the theme paints, plus the two Solarized grounds themselves. */
+	function solarizedSurfaces(): Record<string, string> {
+		const colors = getResolvedThemeColors(themeName);
+		return {
+			"solarized ground": ground,
+			"solarized highlight": highlight,
+			...surfaces(themeName),
+			"bg.activeToolBg": colors.activeToolBg,
+		};
+	}
+
+	it("defines every color token explicitly", () => {
+		const raw = JSON.parse(
+			readFileSync(new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url), "utf-8"),
+		) as { name: string; colors: Record<string, string | number> };
+
+		expect(raw.name).toBe(themeName);
+		expect(ALL_TOKENS.filter((token) => raw.colors[token] === undefined)).toEqual([]);
+		expect(ALL_TOKENS.filter((token) => raw.colors[token] === "")).toEqual([]);
+	});
+
+	it("spends nothing outside the sixteen Solarized colors", () => {
+		const raw = JSON.parse(
+			readFileSync(new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url), "utf-8"),
+		) as { colors: Record<string, string> };
+		// The surfaces are derived rather than canonical — Solarized ships two
+		// background stops and the TUI needs a sheet per tool state — so they are
+		// named in `vars` and excluded here. Every *ink* has to be canonical.
+		const derived = new Set<string>([...BG_TOKENS, "activeToolBg", "halftone"]);
+		const canonical = new Set<string>(Object.values(SOLARIZED_ACCENTS));
+		for (const pair of SOLARIZED_MIRROR) for (const tone of pair) canonical.add(tone);
+		const colors = getResolvedThemeColors(themeName);
+		const strays = Object.keys(raw.colors)
+			.filter((token) => !derived.has(token) && !canonical.has(colors[token]))
+			.map((token) => `${token} (${colors[token]})`);
+		expect(strays).toEqual([]);
+	});
+
+	it("keeps every ink at the contrast Solarized gives its tier", () => {
+		const colors = getResolvedThemeColors(themeName);
+		const backgrounds = solarizedSurfaces();
+		const accents: ReadonlySet<string> = new Set<string>(Object.values(SOLARIZED_ACCENTS));
+
+		const failures: string[] = [];
+		for (const [token, value] of Object.entries(colors)) {
+			if ((BG_TOKENS as readonly string[]).includes(token)) continue;
+			if (token === "activeToolBg" || token === "halftone" || CHIP_TOKENS.has(token)) continue;
+			const floor = SOLARIZED_COMMENT_TIER.has(token)
+				? SOLARIZED_FLOORS.comment
+				: accents.has(value)
+					? SOLARIZED_FLOORS.accent
+					: SOLARIZED_FLOORS.content;
+			for (const [surface, background] of Object.entries(backgrounds)) {
+				const ratio = contrast(value, background);
+				if (ratio < floor) {
+					failures.push(`${token} (${value}) on ${surface} (${background}): ${ratio.toFixed(2)}:1 < ${floor}`);
+				}
+			}
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("keeps tokens that mean different things apart", () => {
+		const colors = getResolvedThemeColors(themeName);
+		const groups: Record<string, string[]> = {
+			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
+			"agent identity": [...AGENT_TOKENS, "mcp"],
+			syntax: [
+				"syntaxComment",
+				"syntaxKeyword",
+				"syntaxFunction",
+				"syntaxVariable",
+				"syntaxString",
+				"syntaxNumber",
+				"syntaxType",
+			],
+			"thinking levels": [
+				"thinkingOff",
+				"thinkingMinimal",
+				"thinkingLow",
+				"thinkingMedium",
+				"thinkingHigh",
+				"thinkingXhigh",
+			],
+			diff: ["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
+		};
+
+		const collisions: string[] = [];
+		for (const [label, tokens] of Object.entries(groups)) {
+			for (let i = 0; i < tokens.length; i++) {
+				for (let j = i + 1; j < tokens.length; j++) {
+					const delta = difference(colors[tokens[i]], colors[tokens[j]]);
+					if (delta < MIN_DIFFERENCE) {
+						collisions.push(
+							`[${label}] ${tokens[i]} (${colors[tokens[i]]}) ~ ${tokens[j]} (${colors[tokens[j]]}): ΔE ${delta.toFixed(1)}`,
+						);
+					}
+				}
+			}
+		}
+		expect(collisions).toEqual([]);
+	});
+
+	it("keeps colors that mean different things apart after the 256-color downgrade", () => {
+		const groups = {
+			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
+			"agent identity": [...AGENT_TOKENS, "mcp"],
+			syntax: [
+				"syntaxComment",
+				"syntaxKeyword",
+				"syntaxFunction",
+				"syntaxVariable",
+				"syntaxString",
+				"syntaxNumber",
+				"syntaxType",
+			],
+		};
+		const quantized = loadThemeFromPath(
+			new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url).pathname,
+			"256color",
+		);
+
+		for (const [label, tokens] of Object.entries(groups)) {
+			const byIndex = new Map<string, string[]>();
+			for (const token of tokens) {
+				const index = quantized.getFgAnsi(token as ThemeColor);
+				byIndex.set(index, [...(byIndex.get(index) ?? []), token]);
+			}
+			const collisions = [...byIndex.values()].filter((members) => members.length > 1).map((m) => m.join(" = "));
+			expect(collisions, label).toEqual([]);
+		}
+	});
+
+	it("carries each tool state on a surface that reads as its own", () => {
+		// Solarized ships two background stops, and the TUI needs one per tool
+		// state. The sheets are mixed from the accents and pulled back to the
+		// highlight's lightness, so they carry their meaning through hue rather
+		// than by getting louder — which is what keeps the inks on them at the
+		// contrast they have on the page. That only works if they still separate.
+		const colors = getResolvedThemeColors(themeName);
+		const states = BG_TOKENS.filter((token) => token !== "userMessageBg");
+		const failures: string[] = [];
+		for (const token of states) {
+			const fromPage = difference(colors[token], ground);
+			if (fromPage < 6) failures.push(`${token} (${colors[token]}) vs the page: ΔE ${fromPage.toFixed(1)}`);
+		}
+		for (let i = 0; i < states.length; i++) {
+			for (let j = i + 1; j < states.length; j++) {
+				const delta = difference(colors[states[i]], colors[states[j]]);
+				if (delta < 6) {
+					failures.push(
+						`${states[i]} (${colors[states[i]]}) ~ ${states[j]} (${colors[states[j]]}): ΔE ${delta.toFixed(1)}`,
+					);
+				}
+			}
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("marks the selected row without turning it into a second page", () => {
+		const colors = getResolvedThemeColors(themeName);
+		expect(contrast(colors.selectedBg, ground)).toBeGreaterThan(1.2);
+		// The mark that walks down radar is meant to be quieter than the list
+		// selection, not a second one.
+		expect(contrast(colors.selectedBg, ground)).toBeGreaterThan(contrast(colors.activeToolBg, ground));
+	});
+
+	it("keeps the gauge track visible without letting it read as text", () => {
+		const colors = getResolvedThemeColors(themeName);
+		expect(contrast(colors.halftone, ground)).toBeGreaterThan(1.4);
+		expect(difference(colors.halftone, colors.dim)).toBeGreaterThan(MIN_DIFFERENCE);
+	});
+
+	it("keeps its surfaces on one side of the light/dark split", () => {
+		const wrongSide = Object.entries(surfaces(themeName))
+			.map(([surface, background]) => [surface, luminance(background)] as const)
+			.filter(([, value]) => (isLight ? value <= 0.5 : value >= 0.5))
+			.map(([surface, value]) => `${surface}: ${value.toFixed(3)}`);
+		expect(wrongSide).toEqual([]);
+	});
+});
+
+describe("the solarized pair", () => {
+	const dark = () => getResolvedThemeColors("solarized-dark");
+	const light = () => getResolvedThemeColors("solarized-light");
+
+	/** Tokens whose meaning is carried by an accent, so both modes must agree exactly. */
+	const ACCENT_TOKENS = [
+		"accent",
+		"border",
+		"borderAccent",
+		"success",
+		"error",
+		"warning",
+		"customMessageLabel",
+		"mdHeading",
+		"mdLink",
+		"mdCode",
+		"mdQuoteBorder",
+		"mdListBullet",
+		"toolDiffAdded",
+		"toolDiffRemoved",
+		"syntaxKeyword",
+		"syntaxFunction",
+		"syntaxVariable",
+		"syntaxString",
+		"syntaxNumber",
+		"syntaxType",
+		"thinkingLow",
+		"thinkingMedium",
+		"thinkingHigh",
+		"thinkingXhigh",
+		"bashMode",
+		...AGENT_TOKENS,
+		"mcp",
+	];
+
+	/** Tokens drawn in a monotone, which mirror rather than match. */
+	const MONOTONE_TOKENS = [
+		"text",
+		"muted",
+		"dim",
+		"thinkingText",
+		"toolTitle",
+		"toolOutput",
+		"userMessageText",
+		"customMessageText",
+		"borderMuted",
+		"mdLinkUrl",
+		"mdCodeBlock",
+		"mdCodeBlockBorder",
+		"mdQuote",
+		"mdHr",
+		"toolDiffContext",
+		"syntaxComment",
+		"syntaxOperator",
+		"syntaxPunctuation",
+		"thinkingOff",
+		"thinkingMinimal",
+	];
+
+	it("gives both grounds the same accents, hex for hex", () => {
+		// An accent that drifts between the two modes is the one thing Solarized
+		// does not do: the palette was fitted so a single set of eight sits at
+		// comparable perceived contrast on either ground.
+		const [d, l] = [dark(), light()];
+		const drifted = ACCENT_TOKENS.filter((token) => d[token] !== l[token]).map(
+			(token) => `${token}: dark ${d[token]} vs light ${l[token]}`,
+		);
+		expect(drifted).toEqual([]);
+	});
+
+	it("mirrors every monotone across the ramp", () => {
+		// base03↔base3, base02↔base2, base01↔base1, base00↔base0: whatever tone a
+		// role takes on one ground, it takes that tone's partner on the other.
+		const partner = new Map<string, string>();
+		for (const [darkTone, lightTone] of SOLARIZED_MIRROR) {
+			partner.set(darkTone, lightTone);
+			partner.set(lightTone, darkTone);
+		}
+		const [d, l] = [dark(), light()];
+		const broken = MONOTONE_TOKENS.filter((token) => partner.get(d[token]) !== l[token]).map(
+			(token) => `${token}: dark ${d[token]} should mirror to ${partner.get(d[token])}, got ${l[token]}`,
+		);
+		expect(broken).toEqual([]);
+	});
+
+	it("puts each theme's page and highlight at the palette's own stops", () => {
+		expect(getThemeExportColors("solarized-dark")).toMatchObject({ pageBg: "#002b36", cardBg: "#073642" });
+		expect(getThemeExportColors("solarized-light")).toMatchObject({ pageBg: "#fdf6e3", cardBg: "#eee8d5" });
+	});
+
+	it("keeps the light theme's brand chip legible on its own fill", () => {
+		const colors = light();
+		expect(colors.brandBg).toBeDefined();
+		expect(colors.brandText).toBeDefined();
+		expect(contrast(colors.brandText, colors.brandBg)).toBeGreaterThan(MIN_CONTRAST);
+	});
+
+	it("ships both halves as built-ins", () => {
+		expect(getAvailableThemes()).toEqual(expect.arrayContaining([...SOLARIZED_THEMES]));
+	});
+});
