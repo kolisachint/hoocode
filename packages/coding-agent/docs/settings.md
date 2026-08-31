@@ -371,6 +371,26 @@ Needs a `webtools` binary that supports `--outline` (v0.5.0 or newer). An older
 one rejects the flag, and hoocode reports that the binary needs updating rather
 than passing the parser message through.
 
+#### Finding a mention on a long page
+
+An outline helps when the page has headings and one names what you are after.
+`webfetch(url, grep: "pattern")` covers the rest — where does this page mention
+a thing, on a document whose headings do not say, or that has none:
+
+```
+offset 512 in "Configuration" (+2 nearby) — …the rate limit defaults to sixty…
+Read a match by fetching it at the offset shown.
+```
+
+Match offsets are the offsets `offset` reads, like outline offsets, so a hit is
+read by fetching at it. The pattern is a regular expression, case-insensitive
+unless it carries an uppercase letter. Occurrences close together collapse into
+one hit carrying a count, so a term repeated through a paragraph is one result
+rather than eight near-identical ones.
+
+`outline` and `grep` are alternatives, not a pair: asking for both is rejected
+before a subprocess is spawned. Needs `webtools` v0.6.0 or newer.
+
 #### Reading a long page
 
 `webfetch` budgets its output in tokens (`maxTokens`, default 4000, hard cap

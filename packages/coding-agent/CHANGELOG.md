@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added
+
+- `webfetch` takes `grep`, finding where a long page mentions something.
+
+  An outline maps a page by heading, which helps when the page has headings and
+  one of them names what you are after. `grep` covers the rest: it returns each
+  match with its offset, the text around it, and the section it falls in, so a
+  page with no headings — or whose headings do not name the thing — stops
+  needing a front-to-back read. Match offsets are the offsets `offset` reads, so
+  a hit is followed by fetching at it.
+
+  `outline` and `grep` are two views of one page, so asking for both is rejected
+  here rather than spending a subprocess to be told by the binary. A blank
+  pattern is not a search: it resolves to a plain fetch and never reaches the
+  binary. The TUI marks a search result with its hit count, as it marks an
+  outline with its section count.
+
+  Needs `webtools` v0.6.0 or newer; an older binary rejects the flag and the
+  error names the binary and how to update it.
+
 ## [0.5.46] - 2026-08-31
 
 ## [0.5.45] - 2026-08-31

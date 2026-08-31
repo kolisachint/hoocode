@@ -97,6 +97,17 @@ interface WebFetchMetadata {
 	site_name?: string;
 }
 
+/** One place a page matched a search pattern. */
+export interface WebFetchMatch {
+	/** Byte offset in the extracted text — the same space `offset` addresses. */
+	offset: number;
+	snippet: string;
+	/** The heading whose section contains the hit, when the page has one. */
+	section?: string;
+	/** Further occurrences close enough that this snippet already covers them. */
+	nearby?: number;
+}
+
 /** One heading in a page's outline, and the span of text it opens. */
 export interface WebFetchOutlineSection {
 	level: number;
@@ -127,6 +138,8 @@ export interface WebFetchResult {
 	truncated?: boolean;
 	/** The page's headings, when an outline was requested. */
 	outline?: WebFetchOutlineSection[];
+	/** Where the page matched, when a search pattern was given. */
+	matches?: WebFetchMatch[];
 	content: string;
 	content_type: string;
 	media: string;

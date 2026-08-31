@@ -29,7 +29,7 @@ if [ "$sub" = "fetch" ]; then
   if [ -n "$WEBTOOLS_FAKE_OLD_BINARY" ]; then
     for arg in "$@"; do
       case "$arg" in
-        --outline|--offset)
+        --outline|--offset|--grep)
           echo "error: unexpected argument '$arg' found" 1>&2
           exit 2
           ;;
@@ -37,6 +37,30 @@ if [ "$sub" = "fetch" ]; then
     done
   fi
   case " $* " in
+    *" --grep "*)
+      cat <<JSON
+{
+  "title": "Handbook",
+  "final_url": "https://example.com/handbook",
+  "content": "offset 512 in \\"Configuration\\" (+2 nearby) - ...the rate limit defaults to sixty...\\nRead a match by fetching it at the offset shown.",
+  "content_type": "text",
+  "media": "html",
+  "token_estimate": 25,
+  "total_token_estimate": 900,
+  "total_bytes": 4000,
+  "offset": 0,
+  "truncated": false,
+  "matches": [
+    { "offset": 512, "snippet": "...the rate limit defaults to sixty...", "section": "Configuration", "nearby": 2 }
+  ],
+  "status": "ok",
+  "references": [],
+  "metadata": {},
+  "source": "https://example.com/handbook"
+}
+JSON
+      exit 0
+      ;;
     *" --outline "*)
       cat <<JSON
 {
@@ -110,6 +134,18 @@ else
   exit 1
 fi
 `;
+
+/**
+ * The `fetch` invocations recorded in an argv log, dropping the `--version`
+ * probe the binary resolver makes once per process — which is not a call any
+ * test is asserting about, and whose position depends on test order.
+ */
+function fetchInvocations(log: string): string[] {
+	return readFileSync(log, "utf8")
+		.trim()
+		.split("\n")
+		.filter((line) => line.startsWith("fetch "));
+}
 
 function getText(result: { content: Array<{ type: string; text?: string }> }): string {
 	return result.content
@@ -295,7 +331,9 @@ describe("web tools", () => {
 				const tool = createWebFetchTool(cwd);
 				await tool.execute("call-outline-2", { url: "https://example.com" });
 				await tool.execute("call-outline-3", { url: "https://example.com/handbook", outline: true });
-				const argv = readFileSync(log, "utf8").trim().split("\n");
+				// Filtered, because the binary is also probed with --version once
+				// per process and that probe lands in the same log.
+				const argv = fetchInvocations(log);
 				expect(argv[0]).not.toContain("--outline");
 				expect(argv[1]).toContain("--outline");
 			} finally {
@@ -312,6 +350,65 @@ describe("web tools", () => {
 				await expect(tool.execute("call-outline-4", { url: "https://example.com", outline: true })).rejects.toThrow(
 					/does not support --outline/,
 				);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_OLD_BINARY;
+			}
+		});
+
+		// The third view: where a page mentions something, for a page whose
+		// headings do not name it.
+		it("returns where the page matches, with the offset that reads each hit", async () => {
+			const tool = createWebFetchTool(cwd);
+			const result = await tool.execute("call-grep-1", {
+				url: "https://example.com/handbook",
+				grep: "rate limit",
+			});
+
+			const text = getText(result);
+			expect(text).toContain("offset 512");
+			expect(text).toContain("(+2 nearby)");
+			const details = result.details as { matchCount?: number; truncated?: boolean };
+			expect(details.matchCount).toBe(1);
+			expect(details.truncated).toBe(false);
+		});
+
+		it("searches only when given a pattern", async () => {
+			const log = join(cwd, "grep-argv.log");
+			process.env.WEBTOOLS_ARGV_LOG = log;
+			try {
+				const tool = createWebFetchTool(cwd);
+				await tool.execute("call-grep-2", { url: "https://example.com" });
+				await tool.execute("call-grep-3", { url: "https://example.com/handbook", grep: "rate limit" });
+				// A blank pattern is not a search; it must not reach the binary.
+				await tool.execute("call-grep-4", { url: "https://example.com", grep: "   " });
+				const argv = fetchInvocations(log);
+				expect(argv[0]).not.toContain("--grep");
+				expect(argv[1]).toContain("--grep rate limit");
+				// The blank-pattern call spawned nothing at all: it resolved to the
+				// same cache key as the plain fetch, which is what "a blank pattern
+				// is not a search" means in practice.
+				expect(argv).toHaveLength(2);
+			} finally {
+				delete process.env.WEBTOOLS_ARGV_LOG;
+			}
+		});
+
+		// Two views of one page: the binary refuses both, so refuse before
+		// spending a subprocess to be told.
+		it("refuses an outline and a search in the same call", async () => {
+			const tool = createWebFetchTool(cwd);
+			await expect(
+				tool.execute("call-grep-5", { url: "https://example.com", outline: true, grep: "rate limit" }),
+			).rejects.toThrow(/outline or grep, not both/);
+		});
+
+		it("says the binary is too old when it rejects --grep", async () => {
+			process.env.WEBTOOLS_FAKE_OLD_BINARY = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				await expect(
+					tool.execute("call-grep-6", { url: "https://example.com", grep: "rate limit" }),
+				).rejects.toThrow(/does not support --grep/);
 			} finally {
 				delete process.env.WEBTOOLS_FAKE_OLD_BINARY;
 			}
