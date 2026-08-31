@@ -1,14 +1,17 @@
+import type { Text } from "@kolisachint/hoocode-tui";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import stripAnsi from "strip-ansi";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { clampMaxTokens, createWebFetchTool } from "../src/core/tools/webfetch.js";
-import { createWebSearchTool } from "../src/core/tools/websearch.js";
+import { createWebSearchTool, createWebSearchToolDefinition } from "../src/core/tools/websearch.js";
 import {
 	resolveWebtoolsTimeoutSecs,
 	resolveWebtoolsTLSConfig,
 	WebToolsCache,
 } from "../src/core/tools/webtools-shared.js";
+import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 // A fake `webtools` binary placed on PATH. It echoes canned --json output for
 // the fetch/search subcommands so the tools' spawn + parse + filter paths are
@@ -397,5 +400,42 @@ describe("WebToolsCache.getOrCompute", () => {
 		expect(await stayer).toBe(99);
 		expect(calls).toBe(1);
 		expect(computeAborted).toBe(false);
+	});
+});
+
+describe("web tool result rendering", () => {
+	/** Drive the real renderResult and read back the plain text it painted. */
+	function renderSearchResult(result: unknown): string {
+		initTheme("dark");
+		const definition = createWebSearchToolDefinition(process.cwd());
+		const component = definition.renderResult?.(
+			result as never,
+			{ expanded: false, isPartial: false },
+			undefined as never,
+			{ showImages: false } as never,
+		);
+		return stripAnsi((component as Text).render(120).join("\n"));
+	}
+
+	// Search has no token budget of its own, so the estimate is the only place an
+	// expensive query shows up before it is already in context. webfetch has
+	// always reported it; websearch reporting it too is what makes the two
+	// comparable at a glance.
+	it("reports what the search results cost, like webfetch does", () => {
+		const text = renderSearchResult({
+			content: [{ type: "text", text: "Result [1]\nA snippet\n\nReferences:\n[1] https://example.com" }],
+			details: { resultCount: 1, tokenEstimate: 1234 },
+		});
+
+		expect(text).toContain("~1234 tokens");
+	});
+
+	it("omits the estimate when the binary did not report one", () => {
+		const text = renderSearchResult({
+			content: [{ type: "text", text: "Result [1]" }],
+			details: { resultCount: 1 },
+		});
+
+		expect(text).not.toContain("tokens");
 	});
 });

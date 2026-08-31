@@ -6,6 +6,14 @@
 
 ### Added
 
+- `websearch` reports what its results cost, as `webfetch` already did.
+
+  Search is the one web tool with no token budget of its own — snippet length
+  is whatever the backend returns — so the estimate the binary already sends
+  back is the only thing that makes an expensive query visible before it is
+  already in context, and it is the number `maxResults` is tuned against. It
+  was being parsed into the result details and then dropped at render.
+
 - A startup notice when `websearch` is enabled with no search API key.
 
   The tool works with no configuration at all, which is the problem: the keyless

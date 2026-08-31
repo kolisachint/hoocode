@@ -104,6 +104,14 @@ function formatWebsearchResult(
 			text += `${appTheme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("app.tools.expand", "to expand")})`;
 		}
 	}
+	// What the results cost in context, as webfetch reports for a page. Search is
+	// the web tool with no token budget of its own — snippet length is whatever
+	// the backend returns — so the number is the only thing that makes an
+	// expensive query visible, and it is what `maxResults` is tuned against.
+	const tokenEstimate = result.details?.tokenEstimate;
+	if (tokenEstimate !== undefined) {
+		text += `\n${appTheme.fg("muted", `~${tokenEstimate} tokens`)}`;
+	}
 	return text;
 }
 
