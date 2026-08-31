@@ -49,7 +49,7 @@ export interface BuiltinSkill {
 
 export const BUILTIN_SKILLS: readonly BuiltinSkill[] = [
 	{
-		name: "design",
+		name: "artifact-design",
 		summary:
 			"Craft for a self-contained HTML visual: read the treatment the request calls for, write the color/type/layout plan before the markup, and avoid the looks generated design keeps landing on.",
 		// No feature switch to ride - a visual can be asked for in any session,

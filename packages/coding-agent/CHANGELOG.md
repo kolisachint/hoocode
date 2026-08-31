@@ -17,7 +17,7 @@
   `edit` and `write`, so a review reports and the caller decides. A test pins
   that.
 
-- A built-in `design` skill for building self-contained HTML visuals.
+- A built-in `artifact-design` skill for building self-contained HTML visuals.
 
   hoocode writes a visual as one `.html` file on disk that `/canvas` can open.
   The skill covers what that file needs to be good: reading the treatment the
@@ -25,8 +25,22 @@
   markup, designing both themes through custom properties, and avoiding the
   handful of looks generated design keeps landing on.
 
+  Named for the output rather than the activity: a bare `design` would sit in
+  the prompt next to `/new-canvas` and read as software design as readily as
+  visual design. Note that "artifact" is new vocabulary in hoocode; it names the
+  thing produced, not Claude's hosted artifacts.
+
+  Libraries get an explicit no by default. A hosted page and a file on disk fail
+  differently: a CDN dependency is free for a page that is always viewed online,
+  and fatal for a file opened offline, where Tailwind-from-a-CDN is an unstyled
+  document. Webfonts are the exception, because a fallback stack degrades
+  instead of collapsing.
+
+  Delivery is a `file://` markdown link, which hoocode's renderer turns into an
+  OSC 8 hyperlink wherever the terminal supports one.
+
   It is the first ungated built-in skill, because there is no feature switch
-  that predicts a request for a visual. Measured cost is +158 tokens per turn,
+  that predicts a request for a visual. Measured cost is +162 tokens per turn,
   of which part is the `<available_skills>` block header that no default session
   previously paid; the two agents add +180 together.
 

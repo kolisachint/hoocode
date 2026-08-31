@@ -111,9 +111,9 @@ describe("materializing", () => {
 describe("gating", () => {
 	it("withholds a gated skill when its feature is off", () => {
 		// plugin-authoring rides enablePluginTools, which is off by default, so
-		// the default user pays no per-turn description for it. design is ungated
-		// and is the only thing a default session contributes.
-		expect(builtinSkillPaths(OFF, agentDir)).toEqual([join(builtinSkillsCacheDir(agentDir), "design")]);
+		// the default user pays no per-turn description for it. artifact-design is
+		// ungated and is the only thing a default session contributes.
+		expect(builtinSkillPaths(OFF, agentDir)).toEqual([join(builtinSkillsCacheDir(agentDir), "artifact-design")]);
 	});
 
 	it("contributes the skill directory when the feature is on", () => {

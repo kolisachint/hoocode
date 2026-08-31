@@ -1,6 +1,6 @@
 ---
-name: design
-description: Build a self-contained HTML visual — a page, report, dashboard, mockup, diagram, or poster — written to disk and openable in canvas. Load before the first line of markup or CSS whenever the user asks for something that has to *look* right, or asks to redesign something that does not. Not for application code where the project's own design system already governs styling; there, follow that system instead.
+name: artifact-design
+description: Build a self-contained HTML visual — a page, report, dashboard, mockup, diagram, or poster — written to disk and opened in a browser. Load before the first line of markup or CSS whenever the user asks for something that has to *look* right, or asks to redesign something that does not. Not for application code where the project's own design system already governs styling; there, follow that system instead.
 allowed-tools: read, write, edit, grep, find, ls
 ---
 
@@ -122,6 +122,34 @@ do about it. Specific beats clever.
 Give the page a real `<title>` — a short, specific noun phrase, not a category
 label and not a name with an explainer bolted on after a dash.
 
+## Libraries, and why the answer is usually none
+
+A hosted page and a file on disk fail differently, and that decides this. A
+hosted page is always viewed online, so a CDN dependency is free. A file gets
+moved, attached to mail, and opened on a laptop in a tunnel — and there a
+runtime dependency does not degrade, it collapses. Tailwind from a CDN with no
+network is an unstyled document. React from a CDN with no network is a blank
+one.
+
+So the default is no runtime dependency at all. Write plain CSS; modern CSS has
+custom properties, grid, `clamp()`, and container queries, and a page that needs
+a utility framework to be laid out usually needs a clearer layout instead.
+
+There is no build step here and nothing bundles this file, so a framework that
+expects one — Vite, a JSX pipeline, anything importing bare module specifiers —
+is not an option regardless.
+
+When a library genuinely earns its place, and that is mostly charting or syntax
+highlighting rather than layout:
+
+- Inline it into the file if its licence permits, and the page stays whole.
+- Otherwise pin an exact version, give the feature a readable fallback for when
+  the script does not load, and tell the user the page needs network.
+
+Webfonts are the one dependency that degrades gracefully, because a real
+fallback stack keeps the page readable when the link fails. Use one, and always
+declare the stack.
+
 ## Build cleanly
 
 - Watch selector specificity. Type-level and element-level selectors fighting
@@ -140,8 +168,17 @@ Write one self-contained `.html` file. Inline the page's own CSS and JS; embed
 small assets as data URIs so the file survives being moved or sent to someone.
 
 Put it where the user would expect it — alongside the data it visualizes, or in
-the directory they named. Tell them the path when you are done, and offer to
-open it in their browser rather than opening it unasked.
+the directory they named. Then give them the path as a markdown link with a
+`file://` URL:
+
+```
+[tokens.html](file:///abs/path/to/tokens.html)
+```
+
+hoocode's markdown renderer turns that into an OSC 8 hyperlink wherever the
+terminal supports one, so it is clickable in kitty, iTerm2, WezTerm and others,
+and still readable as plain text everywhere else. Offer to open it rather than
+opening it unasked.
 
 Canvas is not a viewer for this. `/canvas` hosts canvas extensions — a directory
 with an `extension.mjs` speaking the canvas JSON-RPC protocol — and `/canvas
