@@ -14,7 +14,12 @@
     "",
     "The explore/plan pairs are deliberate. Those two agents ship with the same",
     "tools, the same isolation and the same background flag, so if the model cannot",
-    "separate them here, they are one agent with two names."
+    "separate them here, they are one agent with two names.",
+    "",
+    "code-review/security-review are the same kind of pair: same tools, same",
+    "read-only isolation, same background flag, same cost. The cases separate them",
+    "on what is being asked for — is this correct, versus can this be attacked —",
+    "because nothing else does."
   ],
   "cases": [
     { "prompt": "Where is rate limiting implemented in this codebase?", "expect": "explore" },
@@ -38,6 +43,14 @@
     { "prompt": "Set up a lint rule that bans console.log outside the logger module, then fix the violations.", "expect": "general-purpose" },
     { "prompt": "Upgrade the test framework to v3 and get everything green again.", "expect": "general-purpose" },
 
+    { "prompt": "Go over the diff on this branch before I open the PR and tell me what's wrong with it.", "expect": "code-review" },
+    { "prompt": "Take another pass over what I changed today - I have been staring at it too long to see it.", "expect": "code-review" },
+    { "prompt": "I rewrote the retry logic across the client. What did I miss?", "expect": "code-review" },
+
+    { "prompt": "We ship the file upload endpoint tomorrow. Is there anything here someone could abuse?", "expect": "security-review" },
+    { "prompt": "This change rewrites how we parse the auth header. Audit it before it goes out.", "expect": "security-review" },
+    { "prompt": "I added a shell-out to ffmpeg with a user-supplied filename. Check it for injection.", "expect": "security-review" },
+
     { "prompt": "Change the timeout on line 42 of config.ts from 30 to 60.", "expect": null },
     { "prompt": "What does this error message mean?", "expect": null },
     { "prompt": "Fix the typo in the README heading.", "expect": null },
@@ -45,6 +58,7 @@
     { "prompt": "Add a semicolon at the end of the import I just pasted.", "expect": null },
     { "prompt": "Walk me through this function line by line while I ask questions as we go.", "expect": null },
     { "prompt": "Rename this local variable from `x` to `count`.", "expect": null },
-    { "prompt": "What's the difference between the two approaches you just described?", "expect": null }
+    { "prompt": "What's the difference between the two approaches you just described?", "expect": null },
+    { "prompt": "Look at the three-line diff I just pasted and tell me if I have the comparison backwards.", "expect": null }
   ]
 }
