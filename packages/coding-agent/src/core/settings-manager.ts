@@ -19,6 +19,7 @@ import type {
 	WarningSettings,
 } from "./settings-types.js";
 import { isToolOutputView, LEGACY_TOOL_OUTPUT_VIEWS, type ToolOutputView } from "./tool-output-view.js";
+import type { WebtoolsSearchSettings } from "./tools/webtools-shared.js";
 
 /** The `/learn` thresholds, which are flat top-level numeric settings. */
 export type LearnSettingKey =
@@ -654,6 +655,22 @@ export class SettingsManager {
 			}
 		}
 		return fallback;
+	}
+
+	/**
+	 * The `webtools.search` block as the binary would read it (backend choice and
+	 * credentials). hoocode only reads it, to tell whether `websearch` has a keyed
+	 * provider; the binary itself resolves the actual key at call time.
+	 *
+	 * Deliberately the user-level file rather than the merged view: the binary
+	 * reads only `~/.hoocode/settings.json`, so a key in a project's
+	 * `.hoocode/settings.json` never reaches it, and treating one as configured
+	 * would silence the warning for a search that still runs keyless. (Contrast
+	 * {@link getWebtoolsTimeoutSecs}, which is hoocode's own setting forwarded as
+	 * a flag, so there the merged value is the effective one.)
+	 */
+	getWebtoolsSearch(): WebtoolsSearchSettings | undefined {
+		return this.globalSettings.webtools?.search;
 	}
 
 	setWebtoolsTimeoutSecs(secs: number): void {

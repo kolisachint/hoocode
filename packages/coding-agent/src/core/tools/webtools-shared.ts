@@ -6,9 +6,10 @@
  * This module owns:
  * - the spawn-and-parse runner,
  * - the locked JSON result types,
- * - a short-lived in-process result cache, and
+ * - a short-lived in-process result cache,
  * - the `.webtoolsignore` policy matcher (gitignore semantics) used to block
- *   hosts both before a fetch and when filtering search result links.
+ *   hosts both before a fetch and when filtering search result links, and
+ * - the read-only check for whether `websearch` has a keyed backend configured.
  */
 
 import { accessSync, constants, existsSync, readFileSync, statSync } from "node:fs";
@@ -178,6 +179,87 @@ export function resolveWebtoolsTimeoutSecs(override?: number): number {
 		}
 	}
 	return WEBTOOLS_DEFAULT_TIMEOUT_SECS;
+}
+
+// ============================================================================
+// Search provider credentials
+// ============================================================================
+
+/**
+ * The `webtools.search` block of `~/.hoocode/settings.json`.
+ *
+ * hoocode and the binary share that file: the binary reads its own `webtools`
+ * key (snake_case, per its own schema) and ignores everything else, so these
+ * keys are mirrored verbatim rather than camelCased. hoocode never writes them
+ * — it only reads them to tell whether `websearch` has a keyed backend.
+ */
+export interface WebtoolsSearchSettings {
+	/** Primary backend: "duckduckgo" | "brave" | "tavily" | "searxng". */
+	provider?: string;
+	/** Backend tried when the primary fails; "none" disables the fallback. */
+	fallback?: string;
+	providers?: {
+		brave?: { api_key?: string };
+		tavily?: { api_key?: string };
+		searxng?: { base_url?: string; api_key?: string };
+	};
+}
+
+/** A search backend that answers over an API contract instead of scraped HTML. */
+export type KeyedSearchProvider = "brave" | "tavily" | "searxng";
+
+export interface WebSearchCredentialStatus {
+	/** A keyed backend is reachable, so search does not depend on scraped DuckDuckGo. */
+	configured: boolean;
+	/** Which backend the credential belongs to, when one is configured. */
+	provider?: KeyedSearchProvider;
+	/** Where the credential came from — env wins over the settings file. */
+	source?: "env" | "settings";
+	/** The user explicitly asked for the keyless backend, so nothing is missing. */
+	explicitKeyless?: boolean;
+}
+
+/** Env var names per keyed provider, in the precedence the binary applies. */
+const SEARCH_CREDENTIAL_ENV: ReadonlyArray<{ provider: KeyedSearchProvider; vars: readonly string[] }> = [
+	{ provider: "brave", vars: ["WEBTOOLS_BRAVE_API_KEY", "BRAVE_API_KEY"] },
+	{ provider: "tavily", vars: ["WEBTOOLS_TAVILY_API_KEY", "TAVILY_API_KEY"] },
+	// SearXNG is self-hosted: the endpoint is the credential, its key optional.
+	{ provider: "searxng", vars: ["WEBTOOLS_SEARXNG_URL"] },
+];
+
+function hasText(value: string | undefined): boolean {
+	return typeof value === "string" && value.trim().length > 0;
+}
+
+/**
+ * Whether `websearch` has a keyed backend configured, and where it came from.
+ *
+ * Mirrors the binary's own resolution order (env over settings file) for the
+ * three keyed backends. This is a read-only check used to decide whether to
+ * tell the user that search is running on keyless DuckDuckGo — it never
+ * returns the credential itself, so a key cannot leak into the UI or a log.
+ *
+ * A provider pinned to `duckduckgo` (env or settings) is reported as
+ * `explicitKeyless`: the user chose the scraped backend, so nothing is missing.
+ */
+export function resolveWebSearchCredentials(search?: WebtoolsSearchSettings): WebSearchCredentialStatus {
+	const pinned = (process.env.WEBTOOLS_SEARCH_PROVIDER ?? search?.provider)?.trim().toLowerCase();
+	if (pinned === "duckduckgo") {
+		return { configured: false, explicitKeyless: true };
+	}
+
+	for (const { provider, vars } of SEARCH_CREDENTIAL_ENV) {
+		if (vars.some((name) => hasText(process.env[name]))) {
+			return { configured: true, provider, source: "env" };
+		}
+	}
+
+	const providers = search?.providers;
+	if (hasText(providers?.brave?.api_key)) return { configured: true, provider: "brave", source: "settings" };
+	if (hasText(providers?.tavily?.api_key)) return { configured: true, provider: "tavily", source: "settings" };
+	if (hasText(providers?.searxng?.base_url)) return { configured: true, provider: "searxng", source: "settings" };
+
+	return { configured: false };
 }
 
 // Warn at most once per distinct message for the life of the process.

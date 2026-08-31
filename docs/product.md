@@ -71,7 +71,7 @@ Four tool groups are **off by default** — turn them on per session with a flag
 
 | Tool group | Enable | What it does |
 |---|---|---|
-| **Web** (`webfetch` · `websearch`) | `--enable-webtools` or `"enableWebTools": true` | Fetch a URL as text and run web searches. |
+| **Web** (`webfetch` · `websearch`) | `--enable-webtools` or `"enableWebTools": true` | Fetch a URL as text and run web searches. Search defaults to keyless DuckDuckGo; with no Brave/Tavily/SearXNG credential configured the TUI says so once per session — see [Web search providers](../packages/coding-agent/docs/settings.md#web-search-providers). |
 | **Plugins** (`SearchPlugins` · `InstallPlugin` · `ProposePlugin` · ...) | `--enable-plugintools` or `"enablePluginTools": true` | The autonomous plugin lifecycle system — discover, install, and propose plugins, plus a runtime reuse nudge. |
 
 ### How much of a tool call you see
