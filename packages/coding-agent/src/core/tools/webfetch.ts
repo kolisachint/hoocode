@@ -49,6 +49,12 @@ const webfetchSchema = Type.Object({
 				"Byte offset into the page's extracted text to read from, for continuing a long page. Use the offset the previous fetch reported; windows tile the document exactly, so nothing is skipped or repeated.",
 		}),
 	),
+	outline: Type.Optional(
+		Type.Boolean({
+			description:
+				"Return the page's headings, each with the offset that reads its section and what that section costs, instead of the page body. Map a long page with this first, then fetch the one section you need at its offset.",
+		}),
+	),
 });
 
 type WebFetchToolInput = Static<typeof webfetchSchema>;
@@ -65,6 +71,8 @@ export interface WebFetchToolDetails {
 	totalTokenEstimate?: number;
 	/** Where to resume reading, when the binary reports paging offsets. */
 	nextOffset?: number;
+	/** How many sections an outline listed, for the TUI to show at a glance. */
+	sectionCount?: number;
 	contentType?: string;
 	media?: string;
 	/** Non-"ok" means extraction produced nothing usable; see {@link WebFetchContentStatus}. */
@@ -109,9 +117,32 @@ function formatWebfetchResult(
 		const cut = result.details?.truncated
 			? appTheme.fg("warning", ` (truncated at ${result.details.maxTokens ?? tokenEstimate})`)
 			: "";
-		text += `\n${appTheme.fg("muted", `~${tokenEstimate} tokens`)}${cut}`;
+		// An outline's cost is its own, not the page's, so say which was read.
+		const sections = result.details?.sectionCount;
+		const map = sections !== undefined ? appTheme.fg("muted", ` · outline, ${sections} sections`) : "";
+		text += `\n${appTheme.fg("muted", `~${tokenEstimate} tokens`)}${cut}${map}`;
 	}
 	return text;
+}
+
+/**
+ * Turn an older binary's argument-parsing error into advice.
+ *
+ * `--offset` and `--outline` postdate binaries already in the wild, which
+ * reject an unknown flag with a parser message naming it. That message says
+ * nothing about what to do, and the fix is never the call site — it is the
+ * binary — so name it here. Returns undefined for anything else, leaving the
+ * original error to speak for itself.
+ */
+function unsupportedFlagError(error: unknown, wantsOutline: boolean, offset: number): Error | undefined {
+	const message = error instanceof Error ? error.message : String(error);
+	if (!/unexpected argument|unrecognized|unknown (option|argument)/i.test(message)) return undefined;
+
+	const flag = wantsOutline && /outline/.test(message) ? "--outline" : offset > 0 ? "--offset" : undefined;
+	if (!flag) return undefined;
+	return new Error(
+		`the installed webtools binary does not support ${flag}; update it (or delete it from the hoocode bin directory to re-download). Original error: ${message}`,
+	);
 }
 
 /**
@@ -151,9 +182,10 @@ export function createWebFetchToolDefinition(
 		promptGuidelines: [
 			"Use webfetch to read a known URL instead of bash curl/wget; it returns clean extracted text with reference-style [N] links, not raw HTML.",
 			"A fetch that reports it stopped at its token budget returned a prefix, not the page. When it names a continue offset, pass that as `offset` to read the next window; windows tile exactly, so nothing is skipped or repeated. Only keep going while the answer is genuinely further down — a more specific URL or #anchor is usually cheaper than paging a whole document.",
+			"For a long page whose relevant part is unknown, fetch it once with `outline: true`: that costs a few dozen tokens and returns the headings with the offset and cost of each section. Then fetch the one section at its offset instead of paging the whole document.",
 		],
 		parameters: webfetchSchema,
-		async execute(_toolCallId, { url, maxTokens, output, offset }: WebFetchToolInput, signal?: AbortSignal) {
+		async execute(_toolCallId, { url, maxTokens, output, offset, outline }: WebFetchToolInput, signal?: AbortSignal) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
 			// Policy gate (.webtoolsignore). SSRF/private-address blocking lives in
@@ -166,15 +198,24 @@ export function createWebFetchToolDefinition(
 			const effectiveMaxTokens = clampMaxTokens(maxTokens);
 			const format = output ?? "text";
 			const effectiveOffset = Number.isFinite(offset) && offset !== undefined ? Math.max(0, Math.floor(offset)) : 0;
-			const cacheKey = `${format}:${effectiveMaxTokens}:${effectiveOffset}:${url}`;
+			const wantsOutline = outline === true;
+			const cacheKey = `${format}:${effectiveMaxTokens}:${effectiveOffset}:${wantsOutline}:${url}`;
 
 			const args = ["--url", url, "--max-tokens", String(effectiveMaxTokens), "--output", format];
-			// Only sent when non-zero: an older binary rejects the unknown flag,
-			// and a page read from the start never needs it.
+			// Both flags are sent only when asked for: an older binary rejects an
+			// unknown argument, and neither is needed to read a page from the start.
 			if (effectiveOffset > 0) args.push("--offset", String(effectiveOffset));
-			const result = await cache.getOrCompute(cacheKey, signal, (sig) =>
-				runWebtools<WebFetchResult>("fetch", args, cwd, sig, timeoutSecs, tlsConfig),
-			);
+			if (wantsOutline) args.push("--outline");
+			const result = await cache
+				.getOrCompute(cacheKey, signal, (sig) =>
+					runWebtools<WebFetchResult>("fetch", args, cwd, sig, timeoutSecs, tlsConfig),
+				)
+				.catch((error: unknown) => {
+					// A binary predating these flags rejects them as unknown arguments,
+					// which surfaces as an argument-parsing error naming the flag. Say
+					// what to do about it rather than passing the raw parser message on.
+					throw unsupportedFlagError(error, wantsOutline, effectiveOffset) ?? error;
+				});
 
 			const header = result.title ? `${result.title}\n${result.final_url}\n\n` : `${result.final_url}\n\n`;
 			// An empty body and a JavaScript-rendered shell look identical in the
@@ -204,6 +245,7 @@ export function createWebFetchToolDefinition(
 					tokenEstimate: result.token_estimate,
 					truncated,
 					maxTokens: effectiveMaxTokens,
+					sectionCount: result.outline?.length,
 					totalTokenEstimate: result.total_token_estimate,
 					nextOffset: result.next_offset,
 					contentType: result.content_type,

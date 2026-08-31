@@ -97,6 +97,16 @@ interface WebFetchMetadata {
 	site_name?: string;
 }
 
+/** One heading in a page's outline, and the span of text it opens. */
+export interface WebFetchOutlineSection {
+	level: number;
+	title: string;
+	/** Byte offset in the extracted text — the same space `offset` addresses. */
+	offset: number;
+	bytes: number;
+	token_estimate: number;
+}
+
 export interface WebFetchResult {
 	title?: string;
 	final_url: string;
@@ -115,6 +125,8 @@ export interface WebFetchResult {
 	total_token_estimate?: number;
 	/** The binary's own truncation flag; authoritative when present. */
 	truncated?: boolean;
+	/** The page's headings, when an outline was requested. */
+	outline?: WebFetchOutlineSection[];
 	content: string;
 	content_type: string;
 	media: string;
