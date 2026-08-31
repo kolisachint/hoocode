@@ -236,6 +236,27 @@ export const DEFAULT_EDITOR_BORDER_CHARS: EditorBorderChars = {
 	bottomRight: "┘",
 };
 
+/**
+ * A label laid into the editor's top border, flush right. `plain` drives the
+ * width math; `styled` is what is emitted and must occupy exactly
+ * `visibleWidth(plain)` cells — the same plain/styled discipline the footer uses.
+ */
+export interface EditorTopBorderLabel {
+	plain: string;
+	styled: string;
+}
+
+/** Border cells kept between the label and the top-right corner, so it reads as inset rather than jammed. */
+const LABEL_RIGHT_INSET = 2;
+
+/**
+ * Border cells required to the *left* of the label. Below this the label is
+ * dropped rather than drawn: a label butting straight up against the scroll
+ * indicator reads as one run-on string, and a border with no run of border in it
+ * has stopped looking like a border.
+ */
+const MIN_LABEL_LEAD_IN = 4;
+
 export interface EditorTheme {
 	borderColor: (str: string) => string;
 	borderChars?: Partial<EditorBorderChars>;
@@ -279,6 +300,13 @@ export class Editor implements Component, Focusable {
 
 	// Border color (can be changed dynamically)
 	public borderColor: (str: string) => string;
+
+	/**
+	 * Optional label laid into the top border, flush right — the session chip.
+	 * Set to undefined to draw a plain border. The editor decides whether it
+	 * fits; a caller never has to width-check before setting it.
+	 */
+	public topBorderLabel?: EditorTopBorderLabel;
 
 	// Prompt prefix shown on the first line (e.g. "> " or "! ")
 	public promptPrefix: string = "";
@@ -477,21 +505,40 @@ export class Editor implements Component, Focusable {
 	 */
 	private renderBorder(edge: "top" | "bottom", hidden: number, barWidth: number, box: boolean): string {
 		const chars = this.borderChars;
-		let bar: string;
+		let indicator = "";
 		if (hidden > 0) {
 			const arrow = edge === "top" ? "↑" : "↓";
-			const indicator = `${chars.horizontal.repeat(3)} ${arrow} ${hidden} more `;
-			const remaining = barWidth - visibleWidth(indicator);
-			bar = remaining >= 0 ? indicator + chars.horizontal.repeat(remaining) : truncateToWidth(indicator, barWidth);
-		} else {
-			bar = chars.horizontal.repeat(barWidth);
+			indicator = `${chars.horizontal.repeat(3)} ${arrow} ${hidden} more `;
 		}
-		if (!box) return this.borderColor(bar);
+		const indicatorWidth = visibleWidth(indicator);
+
+		// The label rides on the top border only, and yields to the scroll
+		// indicator: the indicator says the text is longer than the box, which the
+		// reader needs *now*, while the label says which session this is, which
+		// they can also read in the footer.
+		const label = edge === "top" ? this.topBorderLabel : undefined;
+		const leadIn = label ? barWidth - indicatorWidth - visibleWidth(label.plain) - LABEL_RIGHT_INSET : -1;
+
+		let bar: string;
+		if (label && leadIn >= MIN_LABEL_LEAD_IN) {
+			bar =
+				this.borderColor(indicator + chars.horizontal.repeat(leadIn)) +
+				label.styled +
+				this.borderColor(chars.horizontal.repeat(LABEL_RIGHT_INSET));
+		} else if (indicatorWidth > 0) {
+			const remaining = barWidth - indicatorWidth;
+			bar = this.borderColor(
+				remaining >= 0 ? indicator + chars.horizontal.repeat(remaining) : truncateToWidth(indicator, barWidth),
+			);
+		} else {
+			bar = this.borderColor(chars.horizontal.repeat(barWidth));
+		}
+		if (!box) return bar;
 		// Corners must stay aligned, so pad back any width lost to truncation.
-		bar += chars.horizontal.repeat(Math.max(0, barWidth - visibleWidth(bar)));
+		bar += this.borderColor(chars.horizontal.repeat(Math.max(0, barWidth - visibleWidth(bar))));
 		const left = edge === "top" ? chars.topLeft : chars.bottomLeft;
 		const right = edge === "top" ? chars.topRight : chars.bottomRight;
-		return this.borderColor(`${left}${bar}${right}`);
+		return this.borderColor(left) + bar + this.borderColor(right);
 	}
 
 	render(width: number): string[] {

@@ -2,6 +2,64 @@
 
 ## [Unreleased]
 
+### Added
+
+- Sessions record the git branch they started on, and the resume list shows it.
+
+  A session you never named, that opened with "look at this", was unfindable in
+  the list — the first message said nothing and there was nothing else to go on.
+  The branch usually says exactly what the work was, and it is the rare piece of
+  meaning that can be written down safely: unlike a derived title it is a fact,
+  so it is still true a month later.
+
+  It has to be recorded rather than derived, because by the time anyone reads the
+  list the working tree has moved on. One optional field on the session header,
+  read from `.git/HEAD` at session creation — a walk up to the repo and one file
+  read, no subprocess outside the reftable case, sharing the footer's
+  implementation so the branch a session remembers is the string the footer was
+  showing at the time.
+
+  Shown in the picker only where it adds something: a session with a chosen name
+  already says what it is, and `main` names no particular work. Also in
+  `/session`. Sessions recorded before this simply have no branch and read as
+  they did.
+
+- A session chip: the session's name, filled with its colour, laid into the
+  top-right of the input box.
+
+  The name used to live at the tail of the footer's busiest line — after the
+  brand mark, the mode, the path and the git branch, in `dim`, the quietest
+  colour a theme has. It answered *which session is this*, and it was the least
+  visible thing on screen. The chip puts the same fact where the cursor already
+  is, and gives it a colour so it can be recognised rather than read.
+
+  Every session now carries a name and a colour without anyone setting one. Both
+  are pure functions of the session id: a two-word slug from a 32x32 vocabulary
+  (`amber-harbor`), and a slot in the six-colour identity palette the agent tags
+  already use. Because they derive from the id, a resumed session comes back
+  wearing the same chip and a fork gets its own, with nothing to store. `/name`
+  and the new `/color` override either, and those choices are written to the
+  session's `session_info` entry, which now resolves its two fields
+  independently — setting a colour cannot clear a name, and renaming keeps the
+  colour you have already learned. `/color` on its own opens a swatch picker
+  that repaints the live chip as you move through it.
+
+  The chip is laid into border cells the box was already drawing, so it costs no
+  screen row, and it yields where it should: to the `↑ N more` scroll indicator
+  on the same border, and to the box itself below 48 columns, where the footer
+  takes the name back rather than leaving it nowhere. The editor's border colour
+  is untouched — it still carries thinking level and bash mode, so identity and
+  agent state never fight for the same pixels.
+
+  The fill's ink is picked from its own luminance, which is what lets one code
+  path render on a dark theme's bright hues and a light theme's deep inks alike.
+  `theme.fill()` is the new primitive for that: the palette lives on the
+  foreground side, where `theme.bg()` could not reach it.
+
+  The session picker shows the same colour as a swatch per row, and the slug for
+  sessions nobody has named, so a session recognised by its chip is found the
+  same way in the list.
+
 ## [0.5.40] - 2026-08-30
 
 ### Added

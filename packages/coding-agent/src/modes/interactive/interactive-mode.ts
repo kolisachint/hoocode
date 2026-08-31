@@ -92,6 +92,8 @@ import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
 import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+import { renderSessionChip } from "./components/session-chip.js";
+import { SessionColorSelectorComponent } from "./components/session-color-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
 import { SettingsSelectorComponent } from "./components/settings-selector.js";
 import { SkillInvocationMessageComponent } from "./components/skill-invocation-message.js";
@@ -934,6 +936,9 @@ export class InteractiveMode {
 		onThemeChange(() => {
 			this.ui.invalidate();
 			this.updateEditorBorderColor();
+			// The chip's fill and ink are baked in at build time, so a theme swap
+			// has to rebuild it or it keeps the old theme's colours.
+			this.updateSessionChip();
 			this.ui.requestRender();
 		});
 
@@ -962,6 +967,31 @@ export class InteractiveMode {
 
 		// Initialize available provider count for footer display
 		await this.modelController.updateAvailableProviderCount();
+	}
+
+	/**
+	 * Refresh everything in the chrome that says *which session this is*: the
+	 * terminal title and the chip on the input box. Both read from the same
+	 * source, so they can never disagree about a rename.
+	 */
+	private refreshSessionIdentity(): void {
+		this.updateTerminalTitle();
+		this.updateSessionChip();
+	}
+
+	/**
+	 * Rebuild the session chip and hand it to the editor, telling the footer to
+	 * stand down from showing the name itself. Cheap enough to call on any change
+	 * that could move the name, the colour, or the theme they are drawn in.
+	 */
+	private updateSessionChip(): void {
+		const chip = renderSessionChip(this.sessionManager.getDisplayName(), this.sessionManager.getSessionColorSlot());
+		this.defaultEditor.topBorderLabel = chip;
+		if (this.editor !== this.defaultEditor) {
+			this.editor.topBorderLabel = chip;
+		}
+		this.footer.setSessionChipShown(chip !== undefined);
+		this.ui.requestRender();
 	}
 
 	/**
@@ -1264,7 +1294,7 @@ export class InteractiveMode {
 		this.subscribeToAgent();
 		await this.modelController.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
-		this.updateTerminalTitle();
+		this.refreshSessionIdentity();
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -1452,7 +1482,7 @@ export class InteractiveMode {
 		this.setCustomEditorComponent(undefined);
 		this.setupAutocompleteProvider();
 		this.defaultEditor.onExtensionShortcut = undefined;
-		this.updateTerminalTitle();
+		this.refreshSessionIdentity();
 		this.workingMessage = undefined;
 		this.workingVisible = true;
 		this.setWorkingIndicator();
@@ -1629,6 +1659,7 @@ export class InteractiveMode {
 		}
 
 		this.editorContainer.addChild(this.editor as Component);
+		this.updateSessionChip();
 		this.ui.setFocus(this.editor as Component);
 		this.ui.requestRender();
 	}
@@ -1850,6 +1881,18 @@ export class InteractiveMode {
 					withArgs: true,
 					run: (text: string) => {
 						this.commandExecutor.handleName(text);
+						clearEditor();
+					},
+				},
+				"/color": {
+					withArgs: true,
+					run: (text: string) => {
+						// An argument sets the slot outright; bare `/color` opens the
+						// swatches, since a slot number is not something anyone knows
+						// by heart.
+						if (!this.commandExecutor.handleColor(text)) {
+							this.showSessionColorSelector();
+						}
 						clearEditor();
 					},
 				},
@@ -2177,7 +2220,7 @@ export class InteractiveMode {
 				break;
 
 			case "session_info_changed":
-				this.updateTerminalTitle();
+				this.refreshSessionIdentity();
 				this.footer.invalidate();
 				this.ui.requestRender();
 				break;
@@ -3900,6 +3943,43 @@ export class InteractiveMode {
 		});
 	}
 
+	/**
+	 * Swatch picker for the session chip's colour. Moving through the list
+	 * repaints the live chip, so the choice is made by looking at the real thing
+	 * in the real theme rather than at a preview of it.
+	 */
+	private showSessionColorSelector(): void {
+		const originalSlot = this.sessionManager.getSessionColorSlot();
+		this.showSelector((done) => {
+			const previewSlot = (slot: number) => {
+				const chip = renderSessionChip(this.sessionManager.getDisplayName(), slot);
+				this.defaultEditor.topBorderLabel = chip;
+				if (this.editor !== this.defaultEditor) {
+					this.editor.topBorderLabel = chip;
+				}
+				this.ui.requestRender();
+			};
+			const selector = new SessionColorSelectorComponent(
+				this.sessionManager.getDisplayName(),
+				originalSlot,
+				(slot) => {
+					done();
+					this.session.setSessionColor(slot);
+					this.showStatus(`Session color set to ${slot}`);
+				},
+				() => {
+					done();
+					// Cancelling must put back the colour the session actually has,
+					// not leave it wearing the last swatch the cursor passed over.
+					previewSlot(originalSlot);
+					this.ui.requestRender();
+				},
+				previewSlot,
+			);
+			return { component: selector, focus: selector.getSelectList() };
+		});
+	}
+
 	private showSessionSelector(): void {
 		this.showSelector((done) => {
 			const selector = new SessionSelectorComponent(
@@ -3923,7 +4003,7 @@ export class InteractiveMode {
 						const next = (nextName ?? "").trim();
 						if (!next) return;
 						const mgr = SessionManager.open(sessionFilePath);
-						mgr.appendSessionInfo(next);
+						mgr.appendSessionInfo({ name: next });
 					},
 					showRenameHint: true,
 					keybindings: this.keybindings,

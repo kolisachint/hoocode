@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { visibleWidth } from "@kolisachint/hoocode-tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.js";
@@ -48,6 +49,9 @@ function createSession(options: {
 		sessionManager: {
 			getEntries: () => entries,
 			getSessionName: () => options.sessionName,
+			// Every session has something to show: the chosen name if there is one,
+			// else the slug it was auto-assigned.
+			getDisplayName: () => options.sessionName || "amber-harbor",
 			getCwd: () => "/tmp/project",
 		},
 		settingsManager: {
@@ -92,6 +96,26 @@ describe("FooterComponent width handling", () => {
 		for (const line of lines) {
 			expect(visibleWidth(line)).toBeLessThanOrEqual(width);
 		}
+	});
+
+	it("hands the session name to the chip once the box is wide enough to carry one", () => {
+		const session = createSession({ sessionName: "refactor-auth" });
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setSessionChipShown(true);
+
+		// Wide: the chip has the name, so line 1 must not repeat it.
+		expect(stripVTControlCharacters(footer.render(120)[0]!)).not.toContain("refactor-auth");
+		// Narrow: no chip is drawn there, so the footer is the only place the name
+		// can appear and has to take it back — clipped by the width clamp, as
+		// every other segment on this line is.
+		expect(stripVTControlCharacters(footer.render(40)[0]!)).toContain("• refactor");
+	});
+
+	it("shows the auto-assigned name when no chip is set", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(session, createFooterData(1));
+
+		expect(stripVTControlCharacters(footer.render(120)[0]!)).toContain("amber-harbor");
 	});
 
 	it("keeps stats line within width for wide model and provider names", () => {

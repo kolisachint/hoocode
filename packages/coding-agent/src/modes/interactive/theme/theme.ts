@@ -244,6 +244,19 @@ export function agentColorFor(agentType: string): ThemeColor {
 	return AGENT_COLOR_TOKENS[hash % AGENT_COLOR_TOKENS.length] as ThemeColor;
 }
 
+/**
+ * The colour token for a session's slot (1-6). Sessions share the agent identity
+ * palette: a session chip and an agent tag never appear on the same surface, so a
+ * collision costs nothing but a coincidence, and reusing the tokens keeps every
+ * theme file untouched. A dedicated `session1…6` palette can be layered on later
+ * without breaking anything, since this is the only place the mapping lives.
+ */
+export function sessionColorToken(slot: number): ThemeColor {
+	const index = Number.isInteger(slot) ? slot - 1 : 0;
+	const wrapped = ((index % AGENT_COLOR_TOKENS.length) + AGENT_COLOR_TOKENS.length) % AGENT_COLOR_TOKENS.length;
+	return AGENT_COLOR_TOKENS[wrapped] as ThemeColor;
+}
+
 export type ThemeBg =
 	| "selectedBg"
 	| "userMessageBg"
@@ -412,6 +425,21 @@ function bgAnsi(color: string | number, mode: ColorMode): string {
 	throw new Error(`Invalid color value: ${color}`);
 }
 
+/**
+ * The ink to lay on a chip filled with `color`, or undefined when the fill's
+ * luminance cannot be worked out and we would be guessing at legibility.
+ *
+ * Chips are filled with palette hues that differ wildly between themes — a dark
+ * theme's agent1 is a bright cyan, a light theme's is a deep teal meant as ink on
+ * paper — so a fixed text colour is unreadable in one theme or the other. 0.179
+ * is the standard cutoff at which white and black swap places for best contrast.
+ */
+function fillInk(color: string | number): string | undefined {
+	const luminance = relativeLuminance(color);
+	if (luminance === undefined) return undefined;
+	return luminance > 0.179 ? "#0b0b0f" : "#ffffff";
+}
+
 function resolveVarRefs(
 	value: ColorValue,
 	vars: Record<string, ColorValue>,
@@ -451,6 +479,8 @@ export class Theme {
 	sourceInfo?: SourceInfo;
 	private fgColors: Map<ThemeColor, string>;
 	private bgColors: Map<ThemeBg, string>;
+	/** Foreground tokens usable as a chip fill: background ANSI plus a legible ink. */
+	private fillColors: Map<ThemeColor, string>;
 	private mode: ColorMode;
 
 	constructor(
@@ -463,26 +493,37 @@ export class Theme {
 		this.sourcePath = options.sourcePath;
 		this.sourceInfo = options.sourceInfo;
 		this.mode = mode;
-		this.fgColors = new Map();
-		for (const [key, value] of Object.entries(fgColors) as [ThemeColor, string | number][]) {
-			this.fgColors.set(key, fgAnsi(value, mode));
-		}
+		// Fallbacks are applied to the *raw* values rather than to the encoded
+		// ANSI, because a fill has to be derived from the colour itself: it needs
+		// the same value as both a background and a luminance to pick ink from.
+		const raw = new Map<ThemeColor, string | number>(Object.entries(fgColors) as [ThemeColor, string | number][]);
 		// Agent palette fallback for themes built before it existed (including
 		// Theme instances constructed directly by extensions): default to accent.
-		const accentAnsi = this.fgColors.get("accent");
-		if (accentAnsi !== undefined) {
+		const accentRaw = raw.get("accent");
+		if (accentRaw !== undefined) {
 			for (const token of AGENT_COLOR_TOKENS) {
-				if (!this.fgColors.has(token)) {
-					this.fgColors.set(token, accentAnsi);
+				if (!raw.has(token)) {
+					raw.set(token, accentRaw);
 				}
 			}
 		}
 		// A gauge always has an unfilled remainder to draw, so unlike the chip
 		// pairs there is no "skip it" rendering to fall back to. `dim` is what
 		// the tracks used before the token existed.
-		const dimAnsi = this.fgColors.get("dim");
-		if (dimAnsi !== undefined && !this.fgColors.has("halftone")) {
-			this.fgColors.set("halftone", dimAnsi);
+		const dimRaw = raw.get("dim");
+		if (dimRaw !== undefined && !raw.has("halftone")) {
+			raw.set("halftone", dimRaw);
+		}
+		this.fgColors = new Map();
+		this.fillColors = new Map();
+		for (const [key, value] of raw) {
+			this.fgColors.set(key, fgAnsi(value, mode));
+			// "" means the terminal's own foreground: there is no colour to fill
+			// with, so the token simply is not fillable.
+			const ink = value === "" ? undefined : fillInk(value);
+			if (ink !== undefined) {
+				this.fillColors.set(key, bgAnsi(value, mode) + fgAnsi(ink, mode));
+			}
 		}
 		this.bgColors = new Map();
 		for (const [key, value] of Object.entries(bgColors) as [ThemeBg, string | number][]) {
@@ -500,6 +541,28 @@ export class Theme {
 		const ansi = this.bgColors.get(color);
 		if (!ansi) throw new Error(`Unknown theme background color: ${color}`);
 		return `${ansi}${text}\x1b[49m`; // Reset only background color
+	}
+
+	/**
+	 * Paint `text` as a filled chip in a *foreground* token — the palette lives on
+	 * the foreground side, so `bg()`, which only knows the handful of surface
+	 * tokens, cannot do this. The ink comes from the fill's own luminance, which
+	 * is what lets one call render correctly on both a dark theme's bright hues
+	 * and a light theme's deep ones.
+	 *
+	 * Falls back to coloured text when the token is not fillable (see `canFill`):
+	 * a chip that loses its fill still reads, and callers that want the quieter
+	 * outline form should ask `canFill` first.
+	 */
+	fill(color: ThemeColor, text: string): string {
+		const ansi = this.fillColors.get(color);
+		if (!ansi) return this.fg(color, text);
+		return `${ansi}${text}\x1b[39m\x1b[49m`;
+	}
+
+	/** Whether `color` can be laid down as a fill with legible ink over it. */
+	canFill(color: ThemeColor): boolean {
+		return this.fillColors.has(color);
 	}
 
 	/** Whether the theme defines an optional token, so callers can pick a

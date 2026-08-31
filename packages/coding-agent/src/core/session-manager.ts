@@ -34,6 +34,8 @@ import { readdir, readFile, stat } from "fs/promises";
 import { join, resolve } from "path";
 import { v7 as uuidv7 } from "uuid";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
+import { readGitBranch } from "./git-branch.js";
+import { isSessionColorSlot, sessionColorSlotFor, sessionSlugFor } from "./session-identity.js";
 
 // Session entry types are shared with the agent harness; re-exported here under
 // their historical coding-agent names.
@@ -61,6 +63,13 @@ export interface SessionHeader {
 	timestamp: string;
 	cwd: string;
 	parentSession?: string;
+	/**
+	 * Git branch the session started on, absent outside a repo or on a detached
+	 * HEAD. Recorded because it cannot be recovered later — the working tree has
+	 * moved on by the time anyone reads the list — and because unlike a derived
+	 * title it is a fact, which is what makes it safe to write down.
+	 */
+	branch?: string;
 }
 
 export interface NewSessionOptions {
@@ -88,6 +97,10 @@ export interface SessionInfo {
 	cwd: string;
 	/** User-defined display name from session_info entries. */
 	name?: string;
+	/** User-chosen colour slot (1-6) from session_info entries, if one was set. */
+	color?: number;
+	/** Git branch the session started on. Absent for sessions recorded before this was kept. */
+	branch?: string;
 	/** Path to the parent session (if this session was forked). */
 	parentSessionPath?: string;
 	created: Date;
@@ -112,6 +125,10 @@ export type ReadonlySessionManager = Pick<
 	| "getEntries"
 	| "getTree"
 	| "getSessionName"
+	| "getSessionBranch"
+	| "getSessionSlug"
+	| "getDisplayName"
+	| "getSessionColorSlot"
 >;
 
 function createSessionId(): string {
@@ -432,12 +449,16 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 		let firstMessage = "";
 		const allMessages: string[] = [];
 		let name: string | undefined;
+		let color: number | undefined;
 
 		for (const entry of entries) {
-			// Extract session name (use latest, including explicit clears)
+			// Name and colour resolve independently: an entry written by `/color`
+			// carries no name and must not clear one, while an entry with an empty
+			// name still clears it explicitly.
 			if (entry.type === "session_info") {
 				const infoEntry = entry as SessionInfoEntry;
-				name = infoEntry.name?.trim() || undefined;
+				if (infoEntry.name !== undefined) name = infoEntry.name.trim() || undefined;
+				if (infoEntry.color !== undefined) color = infoEntry.color;
 			}
 
 			if (entry.type !== "message") continue;
@@ -466,6 +487,8 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			id: (header as SessionHeader).id,
 			cwd,
 			name,
+			color,
+			branch: typeof (header as SessionHeader).branch === "string" ? (header as SessionHeader).branch : undefined,
 			parentSessionPath,
 			created: new Date((header as SessionHeader).timestamp),
 			modified,
@@ -599,6 +622,7 @@ export class SessionManager {
 			timestamp,
 			cwd: this.cwd,
 			parentSession: options?.parentSession,
+			branch: readGitBranch(this.cwd),
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
@@ -771,31 +795,72 @@ export class SessionManager {
 		return entry.id;
 	}
 
-	/** Append a session info entry (e.g., display name). Returns entry id. */
-	appendSessionInfo(name: string): string {
+	/**
+	 * Append a session info entry (display name and/or colour slot). Fields left
+	 * undefined are simply not written, which is what keeps the two independent:
+	 * setting a colour must not clear a name the user chose earlier. Returns entry id.
+	 */
+	appendSessionInfo(info: { name?: string; color?: number }): string {
 		const entry: SessionInfoEntry = {
 			type: "session_info",
 			id: generateId(this.byId),
 			parentId: this.leafId,
 			timestamp: new Date().toISOString(),
-			name: name.trim(),
 		};
+		if (info.name !== undefined) entry.name = info.name.trim();
+		if (info.color !== undefined) entry.color = info.color;
 		this._appendEntry(entry);
 		return entry.id;
 	}
 
-	/** Get the current session name from the latest session_info entry, if any. */
+	/**
+	 * The user-chosen session name, if there is one. Undefined for a session
+	 * nobody has named — callers that want something to *show* want
+	 * getDisplayName(), which falls back to the auto-assigned slug.
+	 */
 	getSessionName(): string | undefined {
-		// Walk entries in reverse to find the latest session_info entry.
-		// Empty names explicitly clear the session title.
+		// Walk entries in reverse to the latest session_info entry that *defines*
+		// a name. An entry without the field is silent on the subject (it was
+		// written by `/color`); an entry with an empty one explicitly clears.
 		const entries = this.getEntries();
 		for (let i = entries.length - 1; i >= 0; i--) {
 			const entry = entries[i];
-			if (entry.type === "session_info") {
-				return entry.name?.trim() || undefined;
+			if (entry.type === "session_info" && entry.name !== undefined) {
+				return entry.name.trim() || undefined;
 			}
 		}
 		return undefined;
+	}
+
+	/** The git branch this session started on, if it was recorded. */
+	getSessionBranch(): string | undefined {
+		return this.getHeader()?.branch;
+	}
+
+	/** The auto-assigned name this session wears until someone runs `/name`. */
+	getSessionSlug(): string {
+		return sessionSlugFor(this.sessionId);
+	}
+
+	/** What to show for this session: the chosen name, else the auto-assigned slug. */
+	getDisplayName(): string {
+		return this.getSessionName() ?? this.getSessionSlug();
+	}
+
+	/**
+	 * The session's colour slot (1-6): the user's choice if `/color` set one,
+	 * otherwise the slot its id hashes into. Resolved independently of the name,
+	 * so renaming a session keeps the colour you have already learned.
+	 */
+	getSessionColorSlot(): number {
+		const entries = this.getEntries();
+		for (let i = entries.length - 1; i >= 0; i--) {
+			const entry = entries[i];
+			if (entry.type === "session_info" && entry.color !== undefined && isSessionColorSlot(entry.color)) {
+				return entry.color;
+			}
+		}
+		return sessionColorSlotFor(this.sessionId);
 	}
 
 	/**
@@ -1060,6 +1125,7 @@ export class SessionManager {
 			timestamp,
 			cwd: this.cwd,
 			parentSession: this.persist ? previousSessionFile : undefined,
+			branch: readGitBranch(this.cwd),
 		};
 
 		// Collect labels for entries in the path
@@ -1220,6 +1286,7 @@ export class SessionManager {
 			timestamp,
 			cwd: targetCwd,
 			parentSession: sourcePath,
+			branch: readGitBranch(targetCwd),
 		};
 		appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);
 

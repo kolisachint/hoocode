@@ -18,6 +18,7 @@ import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import { ChangeDirectoryError, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import type { KeybindingsManager } from "../../core/keybindings.js";
 import { MissingSessionCwdError } from "../../core/session-cwd.js";
+import { isSessionColorSlot, SESSION_COLOR_SLOTS } from "../../core/session-identity.js";
 import type { SessionManager } from "../../core/session-manager.js";
 import { getSubagentPool } from "../../core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../core/subagent-result.js";
@@ -27,6 +28,7 @@ import { BorderedLoader } from "./components/bordered-loader.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import type { FooterComponent } from "./components/footer.js";
 import { formatKeyText, keyDisplayText } from "./components/keybinding-hints.js";
+import { renderSessionChip } from "./components/session-chip.js";
 import { theme } from "./theme/theme.js";
 
 export interface CommandContext {
@@ -381,24 +383,59 @@ export class CommandExecutor {
 		}
 	}
 
+	/** The session's chip as it currently renders, for echoing back after a change. */
+	private currentChip(): string {
+		const chip = renderSessionChip(
+			this.ctx.sessionManager.getDisplayName(),
+			this.ctx.sessionManager.getSessionColorSlot(),
+		);
+		return chip?.styled ?? this.ctx.sessionManager.getDisplayName();
+	}
+
 	handleName(text: string): void {
 		const name = text.replace(/^\/name\s*/, "").trim();
 		if (!name) {
-			const currentName = this.ctx.sessionManager.getSessionName();
-			if (currentName) {
-				this.ctx.chatContainer.addChild(new Spacer(1));
-				this.ctx.chatContainer.addChild(new Text(theme.fg("dim", `Session name: ${currentName}`), 1, 0));
-			} else {
-				this.ctx.showWarning("Usage: /name <name>");
-			}
+			// Every session has a name now — an auto-assigned slug until someone
+			// picks one — so there is always something to report, and the reply
+			// shows the chip rather than describing it.
+			const chosen = this.ctx.sessionManager.getSessionName();
+			const label = chosen ? "Session name:" : "Session name (auto):";
+			this.ctx.chatContainer.addChild(new Spacer(1));
+			this.ctx.chatContainer.addChild(
+				new Text(
+					`${theme.fg("dim", label)} ${this.currentChip()}  ${theme.fg("dim", "/name <name> to change")}`,
+					1,
+					0,
+				),
+			);
 			this.ctx.ui.requestRender();
 			return;
 		}
 
 		this.ctx.session.setSessionName(name);
 		this.ctx.chatContainer.addChild(new Spacer(1));
-		this.ctx.chatContainer.addChild(new Text(theme.fg("dim", `Session name set: ${name}`), 1, 0));
+		this.ctx.chatContainer.addChild(new Text(`${theme.fg("dim", "Session name set:")} ${this.currentChip()}`, 1, 0));
 		this.ctx.ui.requestRender();
+	}
+
+	/**
+	 * `/color <1-6>` sets the session's chip colour directly. Bare `/color` is
+	 * handled by the caller, which opens the swatch picker instead — the slots
+	 * have no names worth typing, so seeing them is the point.
+	 */
+	handleColor(text: string): boolean {
+		const arg = text.replace(/^\/color\s*/, "").trim();
+		if (!arg) return false;
+		const slot = Number(arg);
+		if (!isSessionColorSlot(slot)) {
+			this.ctx.showWarning(`Usage: /color <1-${SESSION_COLOR_SLOTS}>, or /color on its own to pick one`);
+			return true;
+		}
+		this.ctx.session.setSessionColor(slot);
+		this.ctx.chatContainer.addChild(new Spacer(1));
+		this.ctx.chatContainer.addChild(new Text(`${theme.fg("dim", "Session color set:")} ${this.currentChip()}`, 1, 0));
+		this.ctx.ui.requestRender();
+		return true;
 	}
 
 	handleSession(): void {
@@ -406,8 +443,10 @@ export class CommandExecutor {
 		const sessionName = this.ctx.sessionManager.getSessionName();
 
 		let info = `${theme.bold("Session Info")}\n\n`;
-		if (sessionName) {
-			info += `${theme.fg("dim", "Name:")} ${sessionName}\n`;
+		info += `${theme.fg("dim", sessionName ? "Name:" : "Name (auto):")} ${this.currentChip()}\n`;
+		const branch = this.ctx.sessionManager.getSessionBranch();
+		if (branch) {
+			info += `${theme.fg("dim", "Branch:")} ${branch}\n`;
 		}
 		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
 		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;

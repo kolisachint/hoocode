@@ -1,12 +1,15 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
+import { Chalk } from "chalk";
 import { type AutocompleteProvider, CombinedAutocompleteProvider } from "../src/autocomplete.js";
 import { Editor, type EditorTheme, wordWrapLine } from "../src/components/editor.js";
 import { TUI } from "../src/tui.js";
 import { visibleWidth } from "../src/utils.js";
 import { defaultEditorTheme } from "./test-themes.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
+
+const chalk = new Chalk({ level: 3 });
 
 /** Create a TUI with a virtual terminal for testing */
 function createTestTUI(cols = 80, rows = 24): TUI {
@@ -3970,6 +3973,66 @@ describe("Editor component", () => {
 			assert.ok(bottom.startsWith("└─── ↓ "), `bottom indicator lost its corner: ${JSON.stringify(bottom)}`);
 			assert.ok(bottom.endsWith("┘"));
 			assert.strictEqual(visibleWidth(bottom), width);
+		});
+
+		it("lays a top-border label in flush right, inset from the corner", () => {
+			const width = 60;
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { border: "box" });
+			editor.topBorderLabel = { plain: " refactor-auth ", styled: chalk.inverse(" refactor-auth ") };
+
+			const lines = editor.render(width);
+			const top = stripVTControlCharacters(lines[0]!);
+
+			assert.strictEqual(visibleWidth(lines[0]!), width, `label pushed the border off width: ${top}`);
+			assert.ok(top.startsWith("┌───"), `label ate the left run of border: ${top}`);
+			assert.ok(top.endsWith(" refactor-auth ──┐"), `label not inset from the corner: ${top}`);
+			// Only the top border carries it.
+			assert.strictEqual(stripVTControlCharacters(lines[lines.length - 1]!), `└${"─".repeat(width - 2)}┘`);
+		});
+
+		it("keeps the label out of the way of the scroll indicator", () => {
+			const width = 60;
+			const editor = new Editor(createTestTUI(80, 20), defaultEditorTheme, { border: "box" });
+			editor.topBorderLabel = { plain: " refactor-auth ", styled: chalk.inverse(" refactor-auth ") };
+			editor.setText(Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n"));
+
+			const top = stripVTControlCharacters(editor.render(width)[0]!);
+
+			assert.ok(top.startsWith("┌─── ↑ "), `indicator lost to the label: ${top}`);
+			assert.ok(top.endsWith(" refactor-auth ──┐"), `label lost to the indicator: ${top}`);
+			assert.strictEqual(visibleWidth(top), width);
+		});
+
+		it("drops the label rather than crowding a narrow border", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { border: "box" });
+			editor.topBorderLabel = { plain: " refactor-auth ", styled: chalk.inverse(" refactor-auth ") };
+
+			// The label needs its own 15 cells, 2 of inset, and 4 of lead-in, plus
+			// the two corners: 23 columns. Below that the border is drawn plain.
+			for (let width = 1; width <= 40; width++) {
+				const lines = editor.render(width);
+				const top = stripVTControlCharacters(lines[0]!);
+				assert.strictEqual(
+					top.includes("refactor-auth"),
+					width >= 23,
+					`wrong label decision at width ${width}: ${top}`,
+				);
+				for (const line of lines) {
+					assert.ok(visibleWidth(line) <= width, `width drift at ${width}: ${JSON.stringify(line)}`);
+				}
+			}
+		});
+
+		it("carries the label in rule mode too, with no corners to inset from", () => {
+			const width = 60;
+			const editor = new Editor(createTestTUI(), defaultEditorTheme, { border: "rule" });
+			editor.topBorderLabel = { plain: " refactor-auth ", styled: chalk.inverse(" refactor-auth ") };
+
+			const top = stripVTControlCharacters(editor.render(width)[0]!);
+
+			assert.strictEqual(visibleWidth(top), width);
+			assert.ok(top.startsWith("───"), `label ate the left run of border: ${top}`);
+			assert.ok(top.endsWith(" refactor-auth ──"), `label not inset from the edge: ${top}`);
 		});
 
 		it("aligns the autocomplete dropdown to the inner text edge, outside the box", async () => {

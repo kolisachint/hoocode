@@ -18,6 +18,7 @@ export {
 	type EditorBorderStyle,
 	type EditorOptions,
 	type EditorTheme,
+	type EditorTopBorderLabel,
 } from "./components/editor.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
