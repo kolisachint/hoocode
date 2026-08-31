@@ -2,10 +2,9 @@
 name: code-review
 description: |
   Use this subagent when:
-  - Reviewing a diff, a branch, or specific files for defects before merge
-  - The user asks for a code review, a second pass, or "what did I miss"
-  - You want correctness and quality findings without spending the parent
-    context on reading every changed file
+  - Reviewing a diff, branch, or files for defects before merge
+  - The user asks for a review, a second pass, or what they missed
+  - Findings are wanted without spending parent context on every changed file
 
   DO NOT use for:
   - Applying the fixes (this agent reports; the parent decides)
@@ -14,7 +13,7 @@ description: |
   Output: Ranked findings, each with path:line, the defect, and how it fails.
   Cost: Medium (reads the full diff and surrounding code)
   Isolation: Read-only; can run in parallel with other review tasks
-tools: read, bash, grep, find, ls, search
+tools: read, bash, grep, find, ls
 model: capable
 background: true
 ---

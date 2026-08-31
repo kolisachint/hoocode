@@ -3,8 +3,7 @@ name: security-review
 description: |
   Use this subagent when:
   - Reviewing changes for vulnerabilities before merge or release
-  - The change touches auth, input parsing, file paths, subprocess execution,
-    network calls, secrets, or permissions
+  - The change touches auth, input parsing, paths, subprocesses, or secrets
   - The user asks for a security review or audit of pending work
 
   DO NOT use for:
@@ -15,7 +14,7 @@ description: |
   fix.
   Cost: Medium (reads the diff and traces untrusted input)
   Isolation: Read-only; can run in parallel with other review tasks
-tools: read, bash, grep, find, ls, search
+tools: read, bash, grep, find, ls
 model: capable
 background: true
 ---
