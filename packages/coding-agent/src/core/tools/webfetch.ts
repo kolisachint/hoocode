@@ -55,6 +55,12 @@ const webfetchSchema = Type.Object({
 				"Return the page's headings, each with the offset that reads its section and what that section costs, instead of the page body. Map a long page with this first, then fetch the one section you need at its offset.",
 		}),
 	),
+	grep: Type.Optional(
+		Type.String({
+			description:
+				"Return where the page matches this regular expression — offset, surrounding text, and the section it falls in — instead of the page body. Use it to find a mention on a page whose headings do not name it, then fetch the hit at its offset. Case-insensitive unless the pattern carries an uppercase letter.",
+		}),
+	),
 });
 
 type WebFetchToolInput = Static<typeof webfetchSchema>;
@@ -73,6 +79,8 @@ export interface WebFetchToolDetails {
 	nextOffset?: number;
 	/** How many sections an outline listed, for the TUI to show at a glance. */
 	sectionCount?: number;
+	/** How many places a search matched, likewise. */
+	matchCount?: number;
 	contentType?: string;
 	media?: string;
 	/** Non-"ok" means extraction produced nothing usable; see {@link WebFetchContentStatus}. */
@@ -119,8 +127,11 @@ function formatWebfetchResult(
 			: "";
 		// An outline's cost is its own, not the page's, so say which was read.
 		const sections = result.details?.sectionCount;
-		const map = sections !== undefined ? appTheme.fg("muted", ` · outline, ${sections} sections`) : "";
-		text += `\n${appTheme.fg("muted", `~${tokenEstimate} tokens`)}${cut}${map}`;
+		const hits = result.details?.matchCount;
+		let view = "";
+		if (sections !== undefined) view = appTheme.fg("muted", ` · outline, ${sections} sections`);
+		else if (hits !== undefined) view = appTheme.fg("muted", ` · ${hits} match${hits === 1 ? "" : "es"}`);
+		text += `\n${appTheme.fg("muted", `~${tokenEstimate} tokens`)}${cut}${view}`;
 	}
 	return text;
 }
@@ -134,11 +145,23 @@ function formatWebfetchResult(
  * binary — so name it here. Returns undefined for anything else, leaving the
  * original error to speak for itself.
  */
-function unsupportedFlagError(error: unknown, wantsOutline: boolean, offset: number): Error | undefined {
+function unsupportedFlagError(
+	error: unknown,
+	wantsOutline: boolean,
+	wantsGrep: boolean,
+	offset: number,
+): Error | undefined {
 	const message = error instanceof Error ? error.message : String(error);
 	if (!/unexpected argument|unrecognized|unknown (option|argument)/i.test(message)) return undefined;
 
-	const flag = wantsOutline && /outline/.test(message) ? "--outline" : offset > 0 ? "--offset" : undefined;
+	const flag =
+		wantsOutline && /outline/.test(message)
+			? "--outline"
+			: wantsGrep && /grep/.test(message)
+				? "--grep"
+				: offset > 0
+					? "--offset"
+					: undefined;
 	if (!flag) return undefined;
 	return new Error(
 		`the installed webtools binary does not support ${flag}; update it (or delete it from the hoocode bin directory to re-download). Original error: ${message}`,
@@ -183,9 +206,14 @@ export function createWebFetchToolDefinition(
 			"Use webfetch to read a known URL instead of bash curl/wget; it returns clean extracted text with reference-style [N] links, not raw HTML.",
 			"A fetch that reports it stopped at its token budget returned a prefix, not the page. When it names a continue offset, pass that as `offset` to read the next window; windows tile exactly, so nothing is skipped or repeated. Only keep going while the answer is genuinely further down — a more specific URL or #anchor is usually cheaper than paging a whole document.",
 			"For a long page whose relevant part is unknown, fetch it once with `outline: true`: that costs a few dozen tokens and returns the headings with the offset and cost of each section. Then fetch the one section at its offset instead of paging the whole document.",
+			"When the page has no headings, or none of them names what you are after, use `grep` instead: it returns each match with its offset and the text around it. Fetch the hit that looks right at its offset. Outline and grep are alternatives, not a pair — ask for one.",
 		],
 		parameters: webfetchSchema,
-		async execute(_toolCallId, { url, maxTokens, output, offset, outline }: WebFetchToolInput, signal?: AbortSignal) {
+		async execute(
+			_toolCallId,
+			{ url, maxTokens, output, offset, outline, grep }: WebFetchToolInput,
+			signal?: AbortSignal,
+		) {
 			if (signal?.aborted) throw new Error("Operation aborted");
 
 			// Policy gate (.webtoolsignore). SSRF/private-address blocking lives in
@@ -199,13 +227,22 @@ export function createWebFetchToolDefinition(
 			const format = output ?? "text";
 			const effectiveOffset = Number.isFinite(offset) && offset !== undefined ? Math.max(0, Math.floor(offset)) : 0;
 			const wantsOutline = outline === true;
-			const cacheKey = `${format}:${effectiveMaxTokens}:${effectiveOffset}:${wantsOutline}:${url}`;
+			const pattern = grep?.trim() ? grep : undefined;
+			// Two views of one page, and the binary refuses both. Say so here rather
+			// than spending a subprocess to be told.
+			if (wantsOutline && pattern !== undefined) {
+				throw new Error(
+					"webfetch takes outline or grep, not both: an outline maps the page by heading, grep finds where it mentions something. Ask for one, then fetch what it points at.",
+				);
+			}
+			const cacheKey = `${format}:${effectiveMaxTokens}:${effectiveOffset}:${wantsOutline}:${pattern ?? ""}:${url}`;
 
 			const args = ["--url", url, "--max-tokens", String(effectiveMaxTokens), "--output", format];
 			// Both flags are sent only when asked for: an older binary rejects an
 			// unknown argument, and neither is needed to read a page from the start.
 			if (effectiveOffset > 0) args.push("--offset", String(effectiveOffset));
 			if (wantsOutline) args.push("--outline");
+			if (pattern !== undefined) args.push("--grep", pattern);
 			const result = await cache
 				.getOrCompute(cacheKey, signal, (sig) =>
 					runWebtools<WebFetchResult>("fetch", args, cwd, sig, timeoutSecs, tlsConfig),
@@ -214,7 +251,7 @@ export function createWebFetchToolDefinition(
 					// A binary predating these flags rejects them as unknown arguments,
 					// which surfaces as an argument-parsing error naming the flag. Say
 					// what to do about it rather than passing the raw parser message on.
-					throw unsupportedFlagError(error, wantsOutline, effectiveOffset) ?? error;
+					throw unsupportedFlagError(error, wantsOutline, pattern !== undefined, effectiveOffset) ?? error;
 				});
 
 			const header = result.title ? `${result.title}\n${result.final_url}\n\n` : `${result.final_url}\n\n`;
@@ -246,6 +283,7 @@ export function createWebFetchToolDefinition(
 					truncated,
 					maxTokens: effectiveMaxTokens,
 					sectionCount: result.outline?.length,
+					matchCount: result.matches?.length,
 					totalTokenEstimate: result.total_token_estimate,
 					nextOffset: result.next_offset,
 					contentType: result.content_type,
