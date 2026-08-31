@@ -214,6 +214,13 @@ export interface LabelEntry extends SessionTreeEntryBase {
 export interface SessionInfoEntry extends SessionTreeEntryBase {
 	type: "session_info"; // legacy name, kept for backwards compatibility
 	name?: string;
+	/**
+	 * Display colour slot (1-6) chosen for this session, if the user set one.
+	 * Absent means "not set by this entry" — readers resolve name and colour
+	 * independently, walking back to the last entry that defines each, so
+	 * setting one never clears the other.
+	 */
+	color?: number;
 }
 
 export type SessionTreeEntry =

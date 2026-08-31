@@ -9,6 +9,7 @@ import { taskStore } from "../../../core/task-store.js";
 import type { ToolOutputView } from "../../../core/tool-output-view.js";
 import { theme } from "../theme/theme.js";
 import { renderDownloadProgress, renderProgressBar } from "./progress-bar.js";
+import { sessionChipFits } from "./session-chip.js";
 
 /**
  * Assemble one footer line: `left` flush left, `right` flush right when it fits
@@ -93,6 +94,7 @@ function renderStartupLine(entry: StartupProgress): string {
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
 	private toolOutputView: ToolOutputView = "glance";
+	private sessionChipShown = false;
 
 	constructor(
 		private session: AgentSession,
@@ -110,6 +112,15 @@ export class FooterComponent implements Component {
 	/** The view dial's current stop, shown so `alt+o` has somewhere to land. */
 	setToolOutputView(view: ToolOutputView): void {
 		this.toolOutputView = view;
+	}
+
+	/**
+	 * Whether the input box is carrying a session chip. When it is, line 1 drops
+	 * its own copy of the name: saying it twice, six rows apart, teaches the eye
+	 * to ignore both, and line 1 is the line that runs out of width first.
+	 */
+	setSessionChipShown(shown: boolean): void {
+		this.sessionChipShown = shown;
 	}
 
 	/**
@@ -157,7 +168,11 @@ export class FooterComponent implements Component {
 			pwd = `~${pwd.slice(home.length)}`;
 		}
 		const branch = this.footerData.getGitBranch();
-		const sessionName = this.session.sessionManager.getSessionName();
+		// The name is shown here only when the chip is not carrying it — either no
+		// chip is set, or the terminal is too narrow for one, in which case the
+		// footer is the only place left that says which session this is.
+		const sessionName =
+			this.sessionChipShown && sessionChipFits(width) ? undefined : this.session.sessionManager.getDisplayName();
 		const modeLabel = this.footerData.getActiveMode();
 
 		// ── Line 1 — identity & location ────────────────────────────────────────

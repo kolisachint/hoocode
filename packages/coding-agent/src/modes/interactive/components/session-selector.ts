@@ -14,9 +14,10 @@ import {
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import { KeybindingsManager } from "../../../core/keybindings.js";
+import { sessionColorSlotFor, sessionSlugFor } from "../../../core/session-identity.js";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
-import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, sessionColorToken, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.js";
@@ -447,10 +448,23 @@ class SessionList implements Component, Focusable {
 			const displayText = session.name ?? session.firstMessage;
 			const normalizedMessage = displayText.replace(/[\x00-\x1f\x7f]/g, " ").trim();
 
+			// A swatch in the session's own colour, so a session found by its chip
+			// in the input box is found the same way here. It resolves exactly as
+			// the chip does: the chosen slot if there is one, else the id's hash.
+			// It sits ahead of the tree prefix rather than between prefix and text,
+			// so the branch glyphs still run unbroken from parent to child.
+			const swatch = theme.fill(sessionColorToken(session.color ?? sessionColorSlotFor(session.id)), " ");
+
 			// Right side: message count and age
 			const age = formatSessionDate(session.modified);
 			const msgCount = String(session.messageCount);
 			let rightPart = `${msgCount} ${age}`;
+			// A session nobody named is showing its first message on the left, so
+			// its auto-assigned name — the word its chip actually says — goes here,
+			// or there would be no way to match the two.
+			if (!hasName) {
+				rightPart = `${sessionSlugFor(session.id)} ${rightPart}`;
+			}
 			if (this.showCwd && session.cwd) {
 				rightPart = `${shortenPath(session.cwd)} ${rightPart}`;
 			}
@@ -464,7 +478,7 @@ class SessionList implements Component, Focusable {
 			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);
 			const rightWidth = visibleWidth(rightPart) + 2; // +2 for spacing
-			const availableForMsg = width - 2 - prefixWidth - rightWidth; // -2 for cursor
+			const availableForMsg = width - 4 - prefixWidth - rightWidth; // -2 cursor, -2 swatch and its space
 
 			const truncatedMsg = truncateToWidth(normalizedMessage, Math.max(10, availableForMsg), "…");
 
@@ -483,7 +497,7 @@ class SessionList implements Component, Focusable {
 			}
 
 			// Build line
-			const leftPart = cursor + theme.fg("dim", prefix) + styledMsg;
+			const leftPart = `${cursor}${swatch} ${theme.fg("dim", prefix)}${styledMsg}`;
 			const leftWidth = visibleWidth(leftPart);
 			const spacing = Math.max(1, width - leftWidth - visibleWidth(rightPart));
 			const styledRight = theme.fg(isConfirmingDelete ? "error" : "dim", rightPart);

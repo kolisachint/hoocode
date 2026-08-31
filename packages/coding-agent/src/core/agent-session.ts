@@ -930,6 +930,16 @@ export class AgentSession {
 		return this.sessionManager.getSessionName();
 	}
 
+	/** What to show for this session: the chosen name, else its auto-assigned slug */
+	get displayName(): string {
+		return this.sessionManager.getDisplayName();
+	}
+
+	/** The session's colour slot (1-6), chosen or auto-assigned */
+	get sessionColorSlot(): number {
+		return this.sessionManager.getSessionColorSlot();
+	}
+
 	/** Scoped models for cycling (from --models flag) */
 	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> {
 		return this._scopedModels;
@@ -2361,7 +2371,17 @@ export class AgentSession {
 	 * Set a display name for the current session.
 	 */
 	setSessionName(name: string): void {
-		this.sessionManager.appendSessionInfo(name);
+		this.sessionManager.appendSessionInfo({ name });
+		this._emit({ type: "session_info_changed", name: this.sessionManager.getSessionName() });
+	}
+
+	/**
+	 * Set the colour slot (1-6) the session's chip is filled with. Written as its
+	 * own field so it survives a later rename, and so setting it never disturbs
+	 * the name.
+	 */
+	setSessionColor(slot: number): void {
+		this.sessionManager.appendSessionInfo({ color: slot });
 		this._emit({ type: "session_info_changed", name: this.sessionManager.getSessionName() });
 	}
 
