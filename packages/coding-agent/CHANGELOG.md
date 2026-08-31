@@ -85,7 +85,7 @@
   OSC 8 hyperlink wherever the terminal supports one.
 
   It is the first ungated built-in skill, because there is no feature switch
-  that predicts a request for a visual. Measured cost is +162 tokens per turn,
+  that predicts a request for a visual. Measured cost is +130 tokens per turn,
   of which part is the `<available_skills>` block header that no default session
   previously paid; the two agents add +180 together.
 
