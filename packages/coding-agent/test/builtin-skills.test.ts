@@ -17,9 +17,11 @@ import {
 	BUILTIN_SKILLS,
 	builtinSkillPaths,
 	builtinSkillsCacheDir,
+	canvasDesignGuidePath,
 	materializeBuiltinSkills,
 } from "../src/core/builtin-skills.js";
-import { loadSkillsFromDir } from "../src/core/skills.js";
+import { canvasBuildBrief } from "../src/core/canvas/scaffold.js";
+import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from "../src/core/skills.js";
 import { EMBEDDED_SKILLS } from "../src/init-templates.generated.js";
 
 let agentDir = "";
@@ -111,9 +113,29 @@ describe("materializing", () => {
 describe("gating", () => {
 	it("withholds a gated skill when its feature is off", () => {
 		// plugin-authoring rides enablePluginTools, which is off by default, so
-		// the default user pays no per-turn description for it. artifact-design is
-		// ungated and is the only thing a default session contributes.
-		expect(builtinSkillPaths(OFF, agentDir)).toEqual([join(builtinSkillsCacheDir(agentDir), "artifact-design")]);
+		// the default user pays no per-turn description for it. The two ungated
+		// skills are what a default session contributes.
+		expect(builtinSkillPaths(OFF, agentDir)).toEqual([
+			join(builtinSkillsCacheDir(agentDir), "artifact-design"),
+			join(builtinSkillsCacheDir(agentDir), "canvas-design"),
+		]);
+	});
+
+	it("keeps canvas-design out of the per-turn skill list", () => {
+		// It is contributed to the loader so /new-canvas can name its path, but
+		// `disable-model-invocation` keeps it out of <available_skills>, which is
+		// the whole reason it costs nothing until a canvas is being built.
+		const root = materializeBuiltinSkills(agentDir) as string;
+		const skill = loadSkillsFromDir({ dir: join(root, "canvas-design"), source: "user" }).skills[0];
+		expect(skill?.disableModelInvocation).toBe(true);
+		expect(formatSkillsForPrompt([skill as Skill])).toBe("");
+	});
+
+	it("points /new-canvas at the guide, and omits the line when it is missing", () => {
+		expect(canvasDesignGuidePath(agentDir)).toBe(join(builtinSkillsCacheDir(agentDir), "canvas-design", "SKILL.md"));
+		const brief = canvasBuildBrief("board", "a kanban board", "ext.mjs", undefined, canvasDesignGuidePath(agentDir));
+		expect(brief).toContain("canvas-design/SKILL.md");
+		expect(canvasBuildBrief("board", "a kanban board", "ext.mjs", undefined, undefined)).not.toContain("SKILL.md");
 	});
 
 	it("contributes the skill directory when the feature is on", () => {

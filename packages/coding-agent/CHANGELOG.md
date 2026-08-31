@@ -17,6 +17,31 @@
   `edit` and `write`, so a review reports and the caller decides. A test pins
   that.
 
+- A built-in `canvas-design` skill, loaded only when a canvas is being built.
+
+  `/new-canvas` handed the model a protocol contract and nothing about design,
+  and the scaffold serves `<p>0 note(s). TODO: build the UI.` — so whatever a
+  canvas looked like was improvised from nothing. `artifact-design` does not
+  cover it and would mislead if it fired: a canvas is a live page served from a
+  loopback server, not a file written to disk.
+
+  What is different is the whole skill: the markup lives in a JS template
+  string, `node_modules` and `package.json` are forbidden so there is nothing to
+  install and no build, the protocol carries no theme so the page owns its
+  palette outright, state is mutated by both the agent and the person, actions
+  are tool schemas that cost tokens while an instance is open, and a reload
+  issues a new URL that kills the open tab.
+
+  Grounded in the catalog rather than invented: 22 of GitHub's 23 canvas
+  extensions import nothing but the SDK and `node:` builtins, and the flagship
+  `pr-artifact-explorer` is a read surface that sidesteps concurrent editing
+  entirely. The skill takes both as the house style.
+
+  It costs nothing per turn. `disable-model-invocation` keeps it out of
+  `<available_skills>`, materialization is unconditional so the file is always
+  on disk, and `canvasBuildBrief` names its absolute path at the one moment it
+  is worth reading. Measured: the surface is unchanged at 8,470.
+
 - A built-in `artifact-design` skill for building self-contained HTML visuals.
 
   hoocode writes a visual as one `.html` file on disk that `/canvas` can open.

@@ -395,6 +395,7 @@ export function canvasBuildBrief(
 	description: string,
 	entryPath: string,
 	target: CanvasBriefTarget | undefined,
+	guidePath?: string,
 ): string {
 	const lines = [
 		`/new-canvas: build a canvas extension named "${name}".`,
@@ -404,6 +405,16 @@ export function canvasBuildBrief(
 		"",
 		`A working template is already at ${entryPath}. Edit it until it does what was asked.`,
 	];
+
+	// The craft half of this brief. It is a skill hidden from the per-turn skill
+	// list precisely so it costs nothing until a canvas is actually being built,
+	// which makes this line the only thing that surfaces it.
+	if (guidePath) {
+		lines.push(
+			"",
+			`Read ${guidePath} before you design the page. The template renders an unstyled placeholder on purpose; that guide covers what the surface needs — the markup lives in a template string, no dependencies and no build are available, nothing about the theme is inherited, and the page has to render state that you and the person both change.`,
+		);
+	}
 
 	if (target) {
 		lines.push(

@@ -24,6 +24,7 @@
 import { homedir } from "node:os";
 import { getAgentDir } from "../../config.js";
 import { CATEGORY_GLYPH } from "../../core/brand.js";
+import { canvasDesignGuidePath } from "../../core/builtin-skills.js";
 
 /** Canvas extensions are extensions, so they wear the extension glyph. */
 const GLYPH = CATEGORY_GLYPH.extensions;
@@ -515,6 +516,7 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 						request.description,
 						created[0] as string,
 						opened ? { instanceId: opened.instanceId, url: opened.url } : undefined,
+						canvasDesignGuidePath(),
 					),
 					{ deliverAs: "followUp" },
 				);
