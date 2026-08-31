@@ -264,6 +264,91 @@ const NAME = "${name}";
 /** Per-instance state. A canvas can be opened more than once at a time. */
 const instances = new Map();
 
+// Styling, in one chunk so it stays findable. Plain strings and concatenation
+// throughout this section rather than template literals: a backtick or a
+// dollar-brace in markup you are generating is an escaping hazard for no gain.
+// Nothing is loaded from a CDN — this page is served from 127.0.0.1 and works
+// with no network, which a remote script would throw away.
+const CSS = [
+	":root{--ground:#f7f8fa;--surface:#fff;--ink:#16191f;--muted:#5f6875;--line:#e2e6ec;--accent:#3862c4;color-scheme:light}",
+	"@media(prefers-color-scheme:dark){:root{--ground:#0f1216;--surface:#171b21;--ink:#e8ebf0;--muted:#9aa3b0;--line:#262c35;--accent:#7aa2f7;color-scheme:dark}}",
+	"*{box-sizing:border-box}",
+	"body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}",
+	"main{max-width:44rem;margin:0 auto;padding:2rem 1.25rem 3rem;display:flex;flex-direction:column;gap:1.25rem}",
+	"header{display:flex;flex-direction:column;gap:.25rem;border-bottom:1px solid var(--line);padding-bottom:1rem}",
+	"h1{margin:0;font-size:1.3rem;letter-spacing:-.01em}",
+	"p.sub{margin:0;color:var(--muted);font-size:.85rem}",
+	"ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:.5rem}",
+	"li{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);border-radius:4px;padding:.6rem .8rem}",
+	"li.new{animation:in .6s ease}",
+	"@keyframes in{from{background:color-mix(in srgb,var(--accent) 18%,var(--surface))}to{background:var(--surface)}}",
+	"@media(prefers-reduced-motion:reduce){li.new{animation:none}}",
+	"p.empty{margin:0;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:4px;padding:1.25rem;text-align:center}",
+].join("");
+
+// Polls /state so state the agent changed appears without anyone reloading. It
+// only updates what the server already rendered, so the page is correct before
+// this runs and stays correct if it never does.
+const CLIENT = [
+	"var seen=-1;",
+	"async function tick(){",
+	" try{",
+	"  var s=await (await fetch('/state'+location.search)).json();",
+	"  if(seen<0)seen=s.notes.length;",
+	"  var list=document.getElementById('list');",
+	"  document.getElementById('count').textContent=s.notes.length+' note(s)';",
+	"  document.getElementById('empty').hidden=s.notes.length>0;",
+	"  list.textContent='';",
+	"  s.notes.forEach(function(n,i){",
+	"   var li=document.createElement('li');",
+	"   li.textContent=n;",
+	"   if(i>=seen)li.className='new';",
+	"   list.appendChild(li);",
+	"  });",
+	"  seen=s.notes.length;",
+	" }catch(e){}",
+	" setTimeout(tick,1000);",
+	"}tick();",
+].join("");
+
+/** Escape anything that came from state before it goes into markup. */
+const esc = (s) =>
+	String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/**
+ * The served page, rendered from state on the server.
+ *
+ * Rendered here rather than left to the poll so the page is right the moment it
+ * loads, and stays right with scripting off. CLIENT only updates it.
+ */
+const page = (name, notes) =>
+	'<!doctype html><meta charset="utf-8">' +
+	'<meta name="viewport" content="width=device-width,initial-scale=1">' +
+	"<title>" +
+	esc(name) +
+	"</title><style>" +
+	CSS +
+	"</style>" +
+	"<main><header><h1>" +
+	esc(name) +
+	"</h1>" +
+	'<p class="sub"><span id="count">' +
+	notes.length +
+	" note(s)</span>. What is below changes when the agent acts.</p></header>" +
+	'<ul id="list">' +
+	notes
+		.map(function (n) {
+			return "<li>" + esc(n) + "</li>";
+		})
+		.join("") +
+	"</ul>" +
+	'<p class="empty" id="empty"' +
+	(notes.length > 0 ? " hidden" : "") +
+	">Nothing yet. TODO: replace this with the real UI.</p>" +
+	"</main><script>" +
+	CLIENT +
+	"</script>";
+
 const session = await joinSession({
 	canvases: [
 		createCanvas({
@@ -299,11 +384,15 @@ const session = await joinSession({
 						res.end("forbidden");
 						return;
 					}
+					// The page renders from this, and so does the poll. One source of
+					// truth means state the agent changed shows up without a reload.
+					if (url.pathname === "/state") {
+						res.writeHead(200, { "Content-Type": "application/json" });
+						res.end(JSON.stringify({ notes }));
+						return;
+					}
 					res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-					res.end(
-						\`<!doctype html><meta charset="utf-8"><title>\${NAME}</title>\` +
-							\`<p>\${notes.length} note(s). TODO: build the UI.\`,
-					);
+					res.end(page(NAME, notes));
 				});
 				// Port 0 on 127.0.0.1: an ephemeral port, reachable only from this machine.
 				await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

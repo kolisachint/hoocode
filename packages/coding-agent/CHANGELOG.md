@@ -17,6 +17,26 @@
   `edit` and `write`, so a review reports and the caller decides. A test pins
   that.
 
+- `/new-canvas` scaffolds a styled page instead of a placeholder.
+
+  The template served `<p>0 note(s). TODO: build the UI.` — unstyled, and with
+  no pattern to copy, so every canvas started by inventing one. It now ships a
+  small correct page: palette as custom properties with a
+  `prefers-color-scheme` block, an explicit `body` background, a list, an empty
+  state, and a reduced-motion-respecting highlight on rows that changed.
+
+  It also demonstrates the thing `canvas-design` asks for. State renders on the
+  server, so the page is right the moment it loads and stays right with
+  scripting off; a `/state` endpoint and a one-second poll update it in place so
+  what the agent changed appears without a reload. Everything from state goes
+  through an escape helper and `textContent`, never `innerHTML`.
+
+  No CDN and no webfont: the page is served from `127.0.0.1` and now works with
+  the network off, which a remote script or font would have thrown away. The
+  markup is built with plain strings and concatenation rather than template
+  literals, because this file is itself generated and a backtick or
+  dollar-brace in it is an escaping hazard for no gain.
+
 - A built-in `canvas-design` skill, loaded only when a canvas is being built.
 
   `/new-canvas` handed the model a protocol contract and nothing about design,
