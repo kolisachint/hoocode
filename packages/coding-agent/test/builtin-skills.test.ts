@@ -17,9 +17,11 @@ import {
 	BUILTIN_SKILLS,
 	builtinSkillPaths,
 	builtinSkillsCacheDir,
+	canvasDesignGuidePath,
 	materializeBuiltinSkills,
 } from "../src/core/builtin-skills.js";
-import { loadSkillsFromDir } from "../src/core/skills.js";
+import { canvasBuildBrief } from "../src/core/canvas/scaffold.js";
+import { formatSkillsForPrompt, loadSkillsFromDir, type Skill } from "../src/core/skills.js";
 import { EMBEDDED_SKILLS } from "../src/init-templates.generated.js";
 
 let agentDir = "";
@@ -109,10 +111,31 @@ describe("materializing", () => {
 });
 
 describe("gating", () => {
-	it("contributes nothing when the gated feature is off", () => {
+	it("withholds a gated skill when its feature is off", () => {
 		// plugin-authoring rides enablePluginTools, which is off by default, so
-		// the default user pays no per-turn description for it.
-		expect(builtinSkillPaths(OFF, agentDir)).toEqual([]);
+		// the default user pays no per-turn description for it. The two ungated
+		// skills are what a default session contributes.
+		expect(builtinSkillPaths(OFF, agentDir)).toEqual([
+			join(builtinSkillsCacheDir(agentDir), "artifact-design"),
+			join(builtinSkillsCacheDir(agentDir), "canvas-design"),
+		]);
+	});
+
+	it("keeps canvas-design out of the per-turn skill list", () => {
+		// It is contributed to the loader so /new-canvas can name its path, but
+		// `disable-model-invocation` keeps it out of <available_skills>, which is
+		// the whole reason it costs nothing until a canvas is being built.
+		const root = materializeBuiltinSkills(agentDir) as string;
+		const skill = loadSkillsFromDir({ dir: join(root, "canvas-design"), source: "user" }).skills[0];
+		expect(skill?.disableModelInvocation).toBe(true);
+		expect(formatSkillsForPrompt([skill as Skill])).toBe("");
+	});
+
+	it("points /new-canvas at the guide, and omits the line when it is missing", () => {
+		expect(canvasDesignGuidePath(agentDir)).toBe(join(builtinSkillsCacheDir(agentDir), "canvas-design", "SKILL.md"));
+		const brief = canvasBuildBrief("board", "a kanban board", "ext.mjs", undefined, canvasDesignGuidePath(agentDir));
+		expect(brief).toContain("canvas-design/SKILL.md");
+		expect(canvasBuildBrief("board", "a kanban board", "ext.mjs", undefined, undefined)).not.toContain("SKILL.md");
 	});
 
 	it("contributes the skill directory when the feature is on", () => {
@@ -120,11 +143,16 @@ describe("gating", () => {
 		expect(paths).toContain(join(builtinSkillsCacheDir(agentDir), "plugin-authoring"));
 	});
 
-	it("does not materialize anything when every skill is gated off", () => {
-		builtinSkillPaths(OFF, agentDir);
-		// Nothing written means nothing to clean up and no startup cost for the
-		// common case.
-		expect(() => readFileSync(join(builtinSkillsCacheDir(agentDir), "plugin-authoring", "SKILL.md"))).toThrow();
+	it("materializes the whole tree but contributes only enabled skills", () => {
+		const contributed = builtinSkillPaths(OFF, agentDir);
+		// materializeBuiltinSkills is hash-addressed over the entire embedded
+		// tree, so a gated-off skill's file still lands in the cache. What gating
+		// controls is whether the loader is pointed at it — the file on disk costs
+		// nothing per turn; a contributed path costs its description.
+		expect(readFileSync(join(builtinSkillsCacheDir(agentDir), "plugin-authoring", "SKILL.md"), "utf-8")).toContain(
+			"plugin-authoring",
+		);
+		expect(contributed).not.toContain(join(builtinSkillsCacheDir(agentDir), "plugin-authoring"));
 	});
 });
 

@@ -2,6 +2,93 @@
 
 ## [Unreleased]
 
+### Added
+
+- Two built-in review agents, `code-review` and `security-review`.
+
+  Both ride the existing `templates/agents/` channel, so they cost nothing to
+  wire: `embed-templates.mjs` already embeds that directory and `Task` already
+  dispatches by name. They are agents rather than skills because review is the
+  case isolation is for — a review reads far more code than its findings are
+  worth carrying, and in a subagent that reading never lands in the parent
+  context.
+
+  Their tool allowlists include `bash` for read-only git inspection but exclude
+  `edit` and `write`, so a review reports and the caller decides. A test pins
+  that.
+
+- `/new-canvas` scaffolds a styled page instead of a placeholder.
+
+  The template served `<p>0 note(s). TODO: build the UI.` — unstyled, and with
+  no pattern to copy, so every canvas started by inventing one. It now ships a
+  small correct page: palette as custom properties with a
+  `prefers-color-scheme` block, an explicit `body` background, a list, an empty
+  state, and a reduced-motion-respecting highlight on rows that changed.
+
+  It also demonstrates the thing `canvas-design` asks for. State renders on the
+  server, so the page is right the moment it loads and stays right with
+  scripting off; a `/state` endpoint and a one-second poll update it in place so
+  what the agent changed appears without a reload. Everything from state goes
+  through an escape helper and `textContent`, never `innerHTML`.
+
+  No CDN and no webfont: the page is served from `127.0.0.1` and now works with
+  the network off, which a remote script or font would have thrown away. The
+  markup is built with plain strings and concatenation rather than template
+  literals, because this file is itself generated and a backtick or
+  dollar-brace in it is an escaping hazard for no gain.
+
+- A built-in `canvas-design` skill, loaded only when a canvas is being built.
+
+  `/new-canvas` handed the model a protocol contract and nothing about design,
+  and the scaffold serves `<p>0 note(s). TODO: build the UI.` — so whatever a
+  canvas looked like was improvised from nothing. `artifact-design` does not
+  cover it and would mislead if it fired: a canvas is a live page served from a
+  loopback server, not a file written to disk.
+
+  What is different is the whole skill: the markup lives in a JS template
+  string, `node_modules` and `package.json` are forbidden so there is nothing to
+  install and no build, the protocol carries no theme so the page owns its
+  palette outright, state is mutated by both the agent and the person, actions
+  are tool schemas that cost tokens while an instance is open, and a reload
+  issues a new URL that kills the open tab.
+
+  Grounded in the catalog rather than invented: 22 of GitHub's 23 canvas
+  extensions import nothing but the SDK and `node:` builtins, and the flagship
+  `pr-artifact-explorer` is a read surface that sidesteps concurrent editing
+  entirely. The skill takes both as the house style.
+
+  It costs nothing per turn. `disable-model-invocation` keeps it out of
+  `<available_skills>`, materialization is unconditional so the file is always
+  on disk, and `canvasBuildBrief` names its absolute path at the one moment it
+  is worth reading. Measured: the surface is unchanged at 8,470.
+
+- A built-in `artifact-design` skill for building self-contained HTML visuals.
+
+  hoocode writes a visual as one `.html` file on disk that `/canvas` can open.
+  The skill covers what that file needs to be good: reading the treatment the
+  request actually calls for, writing the color/type/layout plan before the
+  markup, designing both themes through custom properties, and avoiding the
+  handful of looks generated design keeps landing on.
+
+  Named for the output rather than the activity: a bare `design` would sit in
+  the prompt next to `/new-canvas` and read as software design as readily as
+  visual design. Note that "artifact" is new vocabulary in hoocode; it names the
+  thing produced, not Claude's hosted artifacts.
+
+  Libraries get an explicit no by default. A hosted page and a file on disk fail
+  differently: a CDN dependency is free for a page that is always viewed online,
+  and fatal for a file opened offline, where Tailwind-from-a-CDN is an unstyled
+  document. Webfonts are the exception, because a fallback stack degrades
+  instead of collapsing.
+
+  Delivery is a `file://` markdown link, which hoocode's renderer turns into an
+  OSC 8 hyperlink wherever the terminal supports one.
+
+  It is the first ungated built-in skill, because there is no feature switch
+  that predicts a request for a visual. Measured cost is +130 tokens per turn,
+  of which part is the `<available_skills>` block header that no default session
+  previously paid; the two agents add +180 together.
+
 ## [0.5.41] - 2026-08-31
 
 ### Added

@@ -49,6 +49,23 @@ export interface BuiltinSkill {
 
 export const BUILTIN_SKILLS: readonly BuiltinSkill[] = [
 	{
+		name: "artifact-design",
+		summary:
+			"Craft for a self-contained HTML visual: read the treatment the request calls for, write the color/type/layout plan before the markup, and avoid the looks generated design keeps landing on.",
+		// No feature switch to ride - a visual can be asked for in any session,
+		// and there is no setting that predicts it. Ungated, with the cost kept
+		// to one tight description line.
+	},
+	{
+		name: "canvas-design",
+		summary:
+			"The canvas half of design craft: template-string markup, no dependencies and no build, owning the theme outright, rendering state two operators both mutate, and what actions cost while an instance is open.",
+		// Costs nothing per turn: `disable-model-invocation` keeps it out of
+		// <available_skills>, and canvasBuildBrief names its path at the one moment
+		// it is needed. Materialization is unconditional, so the path is always
+		// there to name.
+	},
+	{
 		name: "plugin-authoring",
 		summary:
 			"The craft half of ProposePlugin/UpdatePlugin: when a capability is worth extracting, naming it so it triggers again, portability, and the hook trap.",
@@ -110,6 +127,22 @@ export function materializeBuiltinSkills(agentDir: string = getAgentDir()): stri
 		} catch {}
 		return null;
 	}
+}
+
+/**
+ * Absolute path to the canvas-design guide, or undefined if it is not on disk.
+ *
+ * `canvas-design` is hidden from the per-turn skill list, so nothing would ever
+ * surface it without this: `/new-canvas` names the path in its build brief, at
+ * the one moment the guidance is worth loading. Materialization is
+ * unconditional, so the file is normally there whether or not any skill is
+ * contributed — but a degraded session (read-only home, full disk) has no cache
+ * at all, and then the brief simply ships without the line.
+ */
+export function canvasDesignGuidePath(agentDir: string = getAgentDir()): string | undefined {
+	if (!materializeBuiltinSkills(agentDir)) return undefined;
+	const guide = join(builtinSkillsCacheDir(agentDir), "canvas-design", "SKILL.md");
+	return existsSync(guide) ? guide : undefined;
 }
 
 /**

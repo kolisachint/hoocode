@@ -15,8 +15,25 @@ describe("built-in subagent tool allowlists (frontmatter)", () => {
 		return agentFor(name)?.tools ?? [];
 	}
 
-	test("defines the built-in agents matching Claude Code's roster", () => {
-		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual(["explore", "general-purpose", "plan"]);
+	test("defines the built-in agent roster", () => {
+		expect(Object.keys(EMBEDDED_AGENT_PROMPTS).sort()).toEqual([
+			"code-review",
+			"explore",
+			"general-purpose",
+			"plan",
+			"security-review",
+		]);
+	});
+
+	test("review agents report rather than edit", () => {
+		for (const name of ["code-review", "security-review"]) {
+			const tools = toolsFor(name);
+			// bash is allowed for read-only git inspection; edit and write are not,
+			// so a review can never quietly become a rewrite.
+			expect(tools).toContain("bash");
+			expect(tools).not.toContain("edit");
+			expect(tools).not.toContain("write");
+		}
 	});
 
 	test("plan is a read-only research agent", () => {
