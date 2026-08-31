@@ -2,8 +2,6 @@
 
 ## [Unreleased]
 
-## [0.5.43] - 2026-08-31
-
 ### Added
 
 - `webfetch` takes an `offset`, so a long page can be read to the end.
@@ -39,6 +37,10 @@
   back is the only thing that makes an expensive query visible before it is
   already in context, and it is the number `maxResults` is tuned against. It
   was being parsed into the result details and then dropped at render.
+
+## [0.5.43] - 2026-08-31
+
+### Added
 
 - A startup notice when `websearch` is enabled with no search API key.
 
