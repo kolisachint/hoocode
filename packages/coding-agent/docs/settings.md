@@ -352,6 +352,25 @@ Environment variables:
 On Android/Termux the published Linux builds do not run; install with
 `pkg install <name>` instead.
 
+#### Mapping a long page
+
+`webfetch(url, outline: true)` returns the page's headings instead of its body —
+each with the offset that reads its section and what that section costs:
+
+```
+  Installation — offset 0, ~143 tokens
+  Configuration — offset 557, ~145 tokens
+Read a section by fetching it at the offset shown.
+```
+
+A page maps for a few dozen tokens whatever its length, and the one section
+worth reading is then fetched at its own offset. Outline offsets are the same
+offsets paging uses, so a row feeds straight back into `offset`.
+
+Needs a `webtools` binary that supports `--outline` (v0.5.0 or newer). An older
+one rejects the flag, and hoocode reports that the binary needs updating rather
+than passing the parser message through.
+
 #### Reading a long page
 
 `webfetch` budgets its output in tokens (`maxTokens`, default 4000, hard cap

@@ -4,6 +4,23 @@
 
 ### Added
 
+- `webfetch` takes `outline: true`, mapping a long page instead of reading it.
+
+  Paging made a long document readable front to back, which is the wrong shape
+  when the answer is in one section and the rest is overhead. An outline returns
+  the headings with the offset that reads each section and what it costs, so a
+  page of any length maps for a few dozen tokens and only the section worth
+  reading is fetched. Outline offsets are the offsets paging already uses, so a
+  row feeds straight back into `offset`.
+
+  The TUI marks such a result `outline, N sections`, since an outline's token
+  cost is its own and not the page's. Needs `webtools` v0.5.0 or newer; an older
+  binary rejects the flag, and the error now names the binary and how to update
+  it rather than passing an argument-parser message through — the fix for an
+  unknown flag is never the call site.
+
+### Added
+
 - `webfetch` takes an `offset`, so a long page can be read to the end.
 
   With a `webtools` binary that reports paging offsets, a cut page comes back

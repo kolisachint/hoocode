@@ -25,6 +25,44 @@ if [ -n "$WEBTOOLS_ARGV_LOG" ]; then
   echo "$@" >> "$WEBTOOLS_ARGV_LOG"
 fi
 if [ "$sub" = "fetch" ]; then
+  # An older binary rejects flags it does not know, exactly as clap does.
+  if [ -n "$WEBTOOLS_FAKE_OLD_BINARY" ]; then
+    for arg in "$@"; do
+      case "$arg" in
+        --outline|--offset)
+          echo "error: unexpected argument '$arg' found" 1>&2
+          exit 2
+          ;;
+      esac
+    done
+  fi
+  case " $* " in
+    *" --outline "*)
+      cat <<JSON
+{
+  "title": "Handbook",
+  "final_url": "https://example.com/handbook",
+  "content": "  Installation - offset 0, ~40 tokens\\n  Configuration - offset 512, ~60 tokens\\nRead a section by fetching it at the offset shown.",
+  "content_type": "text",
+  "media": "html",
+  "token_estimate": 30,
+  "total_token_estimate": 900,
+  "total_bytes": 4000,
+  "offset": 0,
+  "truncated": false,
+  "outline": [
+    { "level": 2, "title": "Installation", "offset": 0, "bytes": 512, "token_estimate": 40 },
+    { "level": 2, "title": "Configuration", "offset": 512, "bytes": 600, "token_estimate": 60 }
+  ],
+  "status": "ok",
+  "references": [],
+  "metadata": {},
+  "source": "https://example.com/handbook"
+}
+JSON
+      exit 0
+      ;;
+  esac
   # Paging fields only when asked, so the older-binary path (no fields at all)
   # stays exercised by the tests that leave this unset.
   paging=""
@@ -231,6 +269,51 @@ describe("web tools", () => {
 				expect(text).not.toContain("continue with offset=");
 			} finally {
 				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
+			}
+		});
+
+		// The map, then the one section: what makes a long page navigable rather
+		// than only readable front to back.
+		it("returns the page outline with the offset that reads each section", async () => {
+			const tool = createWebFetchTool(cwd);
+			const result = await tool.execute("call-outline-1", { url: "https://example.com/handbook", outline: true });
+
+			const text = getText(result);
+			expect(text).toContain("Installation - offset 0");
+			expect(text).toContain("at the offset shown");
+			const details = result.details as { sectionCount?: number; truncated?: boolean };
+			expect(details.sectionCount).toBe(2);
+			// An outline is complete in itself, so it must not read as a cut page.
+			expect(details.truncated).toBe(false);
+			expect(text).not.toContain("continue with offset=");
+		});
+
+		it("asks for an outline only when told to", async () => {
+			const log = join(cwd, "outline-argv.log");
+			process.env.WEBTOOLS_ARGV_LOG = log;
+			try {
+				const tool = createWebFetchTool(cwd);
+				await tool.execute("call-outline-2", { url: "https://example.com" });
+				await tool.execute("call-outline-3", { url: "https://example.com/handbook", outline: true });
+				const argv = readFileSync(log, "utf8").trim().split("\n");
+				expect(argv[0]).not.toContain("--outline");
+				expect(argv[1]).toContain("--outline");
+			} finally {
+				delete process.env.WEBTOOLS_ARGV_LOG;
+			}
+		});
+
+		// The fix for an unknown flag is never the call site, so the error has to
+		// name the binary rather than pass a parser message through.
+		it("says the binary is too old when it rejects a flag it does not know", async () => {
+			process.env.WEBTOOLS_FAKE_OLD_BINARY = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				await expect(tool.execute("call-outline-4", { url: "https://example.com", outline: true })).rejects.toThrow(
+					/does not support --outline/,
+				);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_OLD_BINARY;
 			}
 		});
 
