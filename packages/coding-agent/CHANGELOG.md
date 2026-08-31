@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Added
+
+- `webfetch` takes an `offset`, so a long page can be read to the end.
+
+  With a `webtools` binary that reports paging offsets, a cut page comes back
+  with the window it covers and the offset that continues it, and passing that
+  offset back reads the next window. Windows tile the document exactly, so
+  nothing is skipped or repeated, and a whole document costs one budget per
+  window instead of one copy of the page per attempt.
+
+  Against an older binary the fields are absent and the note falls back to
+  advising a larger `maxTokens`, the only honest advice when there is no offset
+  to resume at. `--offset` is sent only when non-zero, so a read from the start
+  never passes a flag an older binary would reject.
+
+- `webfetch` says when a page was cut off, and how to get the rest.
+
+  A fetch that overran its token budget came back with the binary's bare
+  `…[truncated]` marker: enough to tell the model something was missing,
+  nothing it could act on, so a long document was a dead end rather than a
+  first page. The result now carries the budget the cut was made at and the
+  ways past it, `details.truncated` records it, and the TUI marks the token
+  line `(truncated at N)` instead of showing a prefix and a complete page
+  identically.
+
+  The note names the *clamped* budget, not the requested one — advice to raise
+  `maxTokens` past the 25000 cap would point somewhere that changes nothing.
+
+- `websearch` reports what its results cost, as `webfetch` already did.
+
+  Search is the one web tool with no token budget of its own — snippet length
+  is whatever the backend returns — so the estimate the binary already sends
+  back is the only thing that makes an expensive query visible before it is
+  already in context, and it is the number `maxResults` is tuned against. It
+  was being parsed into the result details and then dropped at render.
+
 ## [0.5.43] - 2026-08-31
 
 ### Added

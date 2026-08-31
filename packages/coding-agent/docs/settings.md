@@ -352,6 +352,23 @@ Environment variables:
 On Android/Termux the published Linux builds do not run; install with
 `pkg install <name>` instead.
 
+#### Reading a long page
+
+`webfetch` budgets its output in tokens (`maxTokens`, default 4000, hard cap
+25000). When a page runs past that, the result says so — the budget it stopped
+at, and the ways past it — so a long document reads as a first page rather than
+a dead end. The TUI marks the same fetch `~4000 tokens (truncated at 4000)`.
+
+When the `webtools` binary reports paging offsets, the note names the offset to
+continue at; pass it back as `offset` to read the next window. Windows tile the
+document exactly, so a long page costs one budget per window rather than one
+copy of the page per attempt. Against an older binary the note falls back to
+advising a larger `maxTokens`.
+
+Prefer a more specific URL or `#anchor` over paging a whole document: extraction
+has already dropped nav and boilerplate, so the first few thousand tokens are
+usually the article itself.
+
 #### Web search providers
 
 `websearch` needs no configuration: it defaults to keyless DuckDuckGo Lite.

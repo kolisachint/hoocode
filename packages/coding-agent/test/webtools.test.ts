@@ -1,14 +1,17 @@
+import type { Text } from "@kolisachint/hoocode-tui";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import stripAnsi from "strip-ansi";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { clampMaxTokens, createWebFetchTool } from "../src/core/tools/webfetch.js";
-import { createWebSearchTool } from "../src/core/tools/websearch.js";
+import { createWebSearchTool, createWebSearchToolDefinition } from "../src/core/tools/websearch.js";
 import {
 	resolveWebtoolsTimeoutSecs,
 	resolveWebtoolsTLSConfig,
 	WebToolsCache,
 } from "../src/core/tools/webtools-shared.js";
+import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 // A fake `webtools` binary placed on PATH. It echoes canned --json output for
 // the fetch/search subcommands so the tools' spawn + parse + filter paths are
@@ -22,14 +25,21 @@ if [ -n "$WEBTOOLS_ARGV_LOG" ]; then
   echo "$@" >> "$WEBTOOLS_ARGV_LOG"
 fi
 if [ "$sub" = "fetch" ]; then
+  # Paging fields only when asked, so the older-binary path (no fields at all)
+  # stays exercised by the tests that leave this unset.
+  paging=""
+  if [ -n "$WEBTOOLS_FAKE_FETCH_NEXT" ]; then
+    paging='"offset": 0, "next_offset": '$WEBTOOLS_FAKE_FETCH_NEXT', "total_bytes": 9000, "total_token_estimate": 2000, "truncated": true,'
+  fi
   cat <<JSON
 {
   "title": "Example Domain",
   "final_url": "https://example.com/",
-  "content": "Example Domain\\nSee more [1]\\n\\nReferences:\\n[1] https://iana.org/domains/example",
+  "content": "Example Domain\\nSee more [1]\${WEBTOOLS_FAKE_FETCH_CUT:+\\n…[truncated]}\\n\\nReferences:\\n[1] https://iana.org/domains/example",
   "content_type": "text",
   "media": "html",
   "token_estimate": 42,
+  \${paging}
   "status": "\${WEBTOOLS_FAKE_FETCH_STATUS:-ok}",
   "references": [{ "index": 1, "url": "https://iana.org/domains/example", "text": "See more" }],
   "metadata": { "lang": "en" },
@@ -140,6 +150,95 @@ describe("web tools", () => {
 			const result = await tool.execute("call-status-2", { url: "https://example.com" });
 			expect(getText(result)).not.toContain("[webtools:");
 			expect((result.details as { status?: string }).status).toBe("ok");
+		});
+
+		// A cut page used to arrive as a bare elision marker: the model could see
+		// that content was missing and had nothing to do about it. The budget and
+		// the way past it have to travel with the content.
+		it("says where a cut page stopped and how to continue past it", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_CUT = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				const result = await tool.execute("call-cut-1", { url: "https://example.com", maxTokens: 1000 });
+				const text = getText(result);
+				expect(text).toContain("stopped at the 1000-token budget");
+				expect(text).toContain("maxTokens");
+				const details = result.details as { truncated?: boolean; maxTokens?: number };
+				expect(details.truncated).toBe(true);
+				expect(details.maxTokens).toBe(1000);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
+			}
+		});
+
+		it("reports the budget actually applied, not the one requested", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_CUT = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				// Over the cap: the note has to name the clamped budget, or the
+				// advice ("raise maxTokens") points somewhere that changes nothing.
+				const result = await tool.execute("call-cut-2", { url: "https://example.com", maxTokens: 999_999 });
+				expect(getText(result)).toContain("stopped at the 25000-token budget");
+				expect((result.details as { maxTokens?: number }).maxTokens).toBe(25000);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
+			}
+		});
+
+		// The binary reports where the window sits, so the note becomes a position
+		// to resume at rather than "ask for more of the same page".
+		it("hands back the offset to continue at when the binary reports one", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_NEXT = "4096";
+			try {
+				const tool = createWebFetchTool(cwd);
+				const result = await tool.execute("call-page-1", { url: "https://example.com" });
+				const text = getText(result);
+				expect(text).toContain("continue with offset=4096");
+				expect(text).toContain("of 9000");
+				expect(text).toContain("~42 of ~2000 tokens");
+				const details = result.details as { truncated?: boolean; nextOffset?: number };
+				expect(details.truncated).toBe(true);
+				expect(details.nextOffset).toBe(4096);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_NEXT;
+			}
+		});
+
+		it("forwards a requested offset to the binary, and only when it is set", async () => {
+			const log = join(cwd, "argv.log");
+			process.env.WEBTOOLS_ARGV_LOG = log;
+			try {
+				const tool = createWebFetchTool(cwd);
+				await tool.execute("call-page-2", { url: "https://example.com" });
+				await tool.execute("call-page-3", { url: "https://example.com", offset: 4096 });
+				const argv = readFileSync(log, "utf8").trim().split("\n");
+				// An older binary rejects an unknown flag, so a read from the start
+				// must not send one.
+				expect(argv[0]).not.toContain("--offset");
+				expect(argv[1]).toContain("--offset 4096");
+			} finally {
+				delete process.env.WEBTOOLS_ARGV_LOG;
+			}
+		});
+
+		it("falls back to budget advice when the binary reports no offsets", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_CUT = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				const result = await tool.execute("call-page-4", { url: "https://example.com" });
+				const text = getText(result);
+				expect(text).toContain("stopped at the 4000-token budget");
+				expect(text).not.toContain("continue with offset=");
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
+			}
+		});
+
+		it("says nothing about truncation on a complete page", async () => {
+			const tool = createWebFetchTool(cwd);
+			const result = await tool.execute("call-cut-3", { url: "https://example.com" });
+			expect(getText(result)).not.toContain("budget");
+			expect((result.details as { truncated?: boolean }).truncated).toBe(false);
 		});
 	});
 
@@ -397,5 +496,42 @@ describe("WebToolsCache.getOrCompute", () => {
 		expect(await stayer).toBe(99);
 		expect(calls).toBe(1);
 		expect(computeAborted).toBe(false);
+	});
+});
+
+describe("web tool result rendering", () => {
+	/** Drive the real renderResult and read back the plain text it painted. */
+	function renderSearchResult(result: unknown): string {
+		initTheme("dark");
+		const definition = createWebSearchToolDefinition(process.cwd());
+		const component = definition.renderResult?.(
+			result as never,
+			{ expanded: false, isPartial: false },
+			undefined as never,
+			{ showImages: false } as never,
+		);
+		return stripAnsi((component as Text).render(120).join("\n"));
+	}
+
+	// Search has no token budget of its own, so the estimate is the only place an
+	// expensive query shows up before it is already in context. webfetch has
+	// always reported it; websearch reporting it too is what makes the two
+	// comparable at a glance.
+	it("reports what the search results cost, like webfetch does", () => {
+		const text = renderSearchResult({
+			content: [{ type: "text", text: "Result [1]\nA snippet\n\nReferences:\n[1] https://example.com" }],
+			details: { resultCount: 1, tokenEstimate: 1234 },
+		});
+
+		expect(text).toContain("~1234 tokens");
+	});
+
+	it("omits the estimate when the binary did not report one", () => {
+		const text = renderSearchResult({
+			content: [{ type: "text", text: "Result [1]" }],
+			details: { resultCount: 1 },
+		});
+
+		expect(text).not.toContain("tokens");
 	});
 });

@@ -50,6 +50,25 @@ export type WebFetchContentStatus = "ok" | "empty" | "needs_js" | "too_complex";
 /** Whether the search answered (`SearchOutput.status`). See {@link WebFetchContentStatus} on optionality. */
 export type WebSearchStatus = "ok" | "empty" | "blocked";
 
+/**
+ * The elision marker the binary appends when `--max-tokens` cuts a body
+ * (`compress::TRUNCATION_MARKER`). Both output formats hoocode asks for — text
+ * and markdown — route their budgeting through `truncate_to_tokens`, so its
+ * presence is what tells us a page continued past what we were handed. The
+ * binary reports no structured flag today; when it grows one, prefer that and
+ * keep this as the fallback for older binaries.
+ */
+export const WEBTOOLS_TRUNCATION_MARKER = "…[truncated]";
+
+/**
+ * Whether a fetch came back cut off. Substring rather than suffix: the marker
+ * lands at the end of the *body*, and the reference block is assembled after
+ * it.
+ */
+export function isTruncatedContent(content: string | undefined): boolean {
+	return typeof content === "string" && content.includes(WEBTOOLS_TRUNCATION_MARKER);
+}
+
 /** One-line explanation for a non-`ok` fetch status, mirroring the binary's own note. */
 export function fetchStatusNote(status: WebFetchContentStatus | undefined): string | undefined {
 	switch (status) {
@@ -81,6 +100,21 @@ interface WebFetchMetadata {
 export interface WebFetchResult {
 	title?: string;
 	final_url: string;
+	/**
+	 * Where this window sits in the extracted document. Absent on binaries
+	 * older than the paging fields, which is why every consumer falls back to
+	 * the elision marker (see {@link isTruncatedContent}) rather than treating
+	 * a missing `next_offset` as "the page ended here".
+	 */
+	offset?: number;
+	/** Byte offset to resume at, absent when the document ended in this window. */
+	next_offset?: number;
+	/** Size of the whole extracted body, the space offsets index into. */
+	total_bytes?: number;
+	/** Estimated tokens of the whole extracted body, before budget and window. */
+	total_token_estimate?: number;
+	/** The binary's own truncation flag; authoritative when present. */
+	truncated?: boolean;
 	content: string;
 	content_type: string;
 	media: string;
