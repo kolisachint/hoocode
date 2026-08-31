@@ -140,8 +140,11 @@ Write one self-contained `.html` file. Inline the page's own CSS and JS; embed
 small assets as data URIs so the file survives being moved or sent to someone.
 
 Put it where the user would expect it — alongside the data it visualizes, or in
-the directory they named. Tell them the path when you are done.
+the directory they named. Tell them the path when you are done, and offer to
+open it in their browser rather than opening it unasked.
 
-Then offer to open it in canvas rather than opening it unasked. If they take the
-offer, `/canvas` renders it locally and they can keep it open while you iterate
-on the file.
+Canvas is not a viewer for this. `/canvas` hosts canvas extensions — a directory
+with an `extension.mjs` speaking the canvas JSON-RPC protocol — and `/canvas
+open` takes an extension id, not a file path. A page you can hand someone is a
+file; reach for `/new-canvas` only when the user wants a live surface the agent
+can call typed actions on, which is a different and larger job than a visual.
