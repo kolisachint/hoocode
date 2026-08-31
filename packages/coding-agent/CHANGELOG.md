@@ -40,6 +40,25 @@
   already in context, and it is the number `maxResults` is tuned against. It
   was being parsed into the result details and then dropped at render.
 
+### Fixed
+
+- The agent-selection gold set covers `code-review` and `security-review`.
+
+  0.5.42 added both agents without cases for them, and the eval's coverage
+  assertion — every agent in the roster is expected by at least one case — has
+  failed on `main` ever since, so every branch cut from it inherits a red
+  `bun-test (coding-agent)`. The assertion earns its keep: an agent no case asks
+  for scores as a permanent miss, so a roster can grow agents nobody selects
+  while the eval reads as though the descriptions got worse.
+
+  Three cases each, plus one more `expect: null` — review phrasing over a diff
+  already pasted into the conversation, where a subagent that cannot see it is
+  strictly worse. All authored from how the ask is actually phrased rather than
+  from the agent descriptions, per the fixture's own circularity note. The two
+  review agents ship with identical tools, isolation, background flag and cost,
+  so like `explore`/`plan` they are separated on the ask itself: is this
+  correct, versus can this be attacked.
+
 ## [0.5.43] - 2026-08-31
 
 ### Added
