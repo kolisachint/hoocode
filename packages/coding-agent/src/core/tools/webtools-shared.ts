@@ -100,6 +100,21 @@ interface WebFetchMetadata {
 export interface WebFetchResult {
 	title?: string;
 	final_url: string;
+	/**
+	 * Where this window sits in the extracted document. Absent on binaries
+	 * older than the paging fields, which is why every consumer falls back to
+	 * the elision marker (see {@link isTruncatedContent}) rather than treating
+	 * a missing `next_offset` as "the page ended here".
+	 */
+	offset?: number;
+	/** Byte offset to resume at, absent when the document ended in this window. */
+	next_offset?: number;
+	/** Size of the whole extracted body, the space offsets index into. */
+	total_bytes?: number;
+	/** Estimated tokens of the whole extracted body, before budget and window. */
+	total_token_estimate?: number;
+	/** The binary's own truncation flag; authoritative when present. */
+	truncated?: boolean;
 	content: string;
 	content_type: string;
 	media: string;

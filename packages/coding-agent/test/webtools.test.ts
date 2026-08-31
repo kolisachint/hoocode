@@ -25,6 +25,12 @@ if [ -n "$WEBTOOLS_ARGV_LOG" ]; then
   echo "$@" >> "$WEBTOOLS_ARGV_LOG"
 fi
 if [ "$sub" = "fetch" ]; then
+  # Paging fields only when asked, so the older-binary path (no fields at all)
+  # stays exercised by the tests that leave this unset.
+  paging=""
+  if [ -n "$WEBTOOLS_FAKE_FETCH_NEXT" ]; then
+    paging='"offset": 0, "next_offset": '$WEBTOOLS_FAKE_FETCH_NEXT', "total_bytes": 9000, "total_token_estimate": 2000, "truncated": true,'
+  fi
   cat <<JSON
 {
   "title": "Example Domain",
@@ -33,6 +39,7 @@ if [ "$sub" = "fetch" ]; then
   "content_type": "text",
   "media": "html",
   "token_estimate": 42,
+  \${paging}
   "status": "\${WEBTOOLS_FAKE_FETCH_STATUS:-ok}",
   "references": [{ "index": 1, "url": "https://iana.org/domains/example", "text": "See more" }],
   "metadata": { "lang": "en" },
@@ -173,6 +180,55 @@ describe("web tools", () => {
 				const result = await tool.execute("call-cut-2", { url: "https://example.com", maxTokens: 999_999 });
 				expect(getText(result)).toContain("stopped at the 25000-token budget");
 				expect((result.details as { maxTokens?: number }).maxTokens).toBe(25000);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
+			}
+		});
+
+		// The binary reports where the window sits, so the note becomes a position
+		// to resume at rather than "ask for more of the same page".
+		it("hands back the offset to continue at when the binary reports one", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_NEXT = "4096";
+			try {
+				const tool = createWebFetchTool(cwd);
+				const result = await tool.execute("call-page-1", { url: "https://example.com" });
+				const text = getText(result);
+				expect(text).toContain("continue with offset=4096");
+				expect(text).toContain("of 9000");
+				expect(text).toContain("~42 of ~2000 tokens");
+				const details = result.details as { truncated?: boolean; nextOffset?: number };
+				expect(details.truncated).toBe(true);
+				expect(details.nextOffset).toBe(4096);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_NEXT;
+			}
+		});
+
+		it("forwards a requested offset to the binary, and only when it is set", async () => {
+			const log = join(cwd, "argv.log");
+			process.env.WEBTOOLS_ARGV_LOG = log;
+			try {
+				const tool = createWebFetchTool(cwd);
+				await tool.execute("call-page-2", { url: "https://example.com" });
+				await tool.execute("call-page-3", { url: "https://example.com", offset: 4096 });
+				const argv = readFileSync(log, "utf8").trim().split("\n");
+				// An older binary rejects an unknown flag, so a read from the start
+				// must not send one.
+				expect(argv[0]).not.toContain("--offset");
+				expect(argv[1]).toContain("--offset 4096");
+			} finally {
+				delete process.env.WEBTOOLS_ARGV_LOG;
+			}
+		});
+
+		it("falls back to budget advice when the binary reports no offsets", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_CUT = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				const result = await tool.execute("call-page-4", { url: "https://example.com" });
+				const text = getText(result);
+				expect(text).toContain("stopped at the 4000-token budget");
+				expect(text).not.toContain("continue with offset=");
 			} finally {
 				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
 			}
