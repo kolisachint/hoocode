@@ -49,6 +49,14 @@ export interface BuiltinSkill {
 
 export const BUILTIN_SKILLS: readonly BuiltinSkill[] = [
 	{
+		name: "design",
+		summary:
+			"Craft for a self-contained HTML visual: read the treatment the request calls for, write the color/type/layout plan before the markup, and avoid the looks generated design keeps landing on.",
+		// No feature switch to ride - a visual can be asked for in any session,
+		// and there is no setting that predicts it. Ungated, with the cost kept
+		// to one tight description line.
+	},
+	{
 		name: "plugin-authoring",
 		summary:
 			"The craft half of ProposePlugin/UpdatePlugin: when a capability is worth extracting, naming it so it triggers again, portability, and the hook trap.",

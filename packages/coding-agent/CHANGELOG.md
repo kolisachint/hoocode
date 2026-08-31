@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Added
+
+- Two built-in review agents, `code-review` and `security-review`.
+
+  Both ride the existing `templates/agents/` channel, so they cost nothing to
+  wire: `embed-templates.mjs` already embeds that directory and `Task` already
+  dispatches by name. They are agents rather than skills because review is the
+  case isolation is for — a review reads far more code than its findings are
+  worth carrying, and in a subagent that reading never lands in the parent
+  context.
+
+  Their tool allowlists include `bash` for read-only git inspection but exclude
+  `edit` and `write`, so a review reports and the caller decides. A test pins
+  that.
+
+- A built-in `design` skill for building self-contained HTML visuals.
+
+  hoocode writes a visual as one `.html` file on disk that `/canvas` can open.
+  The skill covers what that file needs to be good: reading the treatment the
+  request actually calls for, writing the color/type/layout plan before the
+  markup, designing both themes through custom properties, and avoiding the
+  handful of looks generated design keeps landing on.
+
+  It is the first ungated built-in skill, because there is no feature switch
+  that predicts a request for a visual. Measured cost is +158 tokens per turn,
+  of which part is the `<available_skills>` block header that no default session
+  previously paid; the two agents add +180 together.
+
 ## [0.5.41] - 2026-08-31
 
 ### Added

@@ -109,10 +109,11 @@ describe("materializing", () => {
 });
 
 describe("gating", () => {
-	it("contributes nothing when the gated feature is off", () => {
+	it("withholds a gated skill when its feature is off", () => {
 		// plugin-authoring rides enablePluginTools, which is off by default, so
-		// the default user pays no per-turn description for it.
-		expect(builtinSkillPaths(OFF, agentDir)).toEqual([]);
+		// the default user pays no per-turn description for it. design is ungated
+		// and is the only thing a default session contributes.
+		expect(builtinSkillPaths(OFF, agentDir)).toEqual([join(builtinSkillsCacheDir(agentDir), "design")]);
 	});
 
 	it("contributes the skill directory when the feature is on", () => {
@@ -120,11 +121,16 @@ describe("gating", () => {
 		expect(paths).toContain(join(builtinSkillsCacheDir(agentDir), "plugin-authoring"));
 	});
 
-	it("does not materialize anything when every skill is gated off", () => {
-		builtinSkillPaths(OFF, agentDir);
-		// Nothing written means nothing to clean up and no startup cost for the
-		// common case.
-		expect(() => readFileSync(join(builtinSkillsCacheDir(agentDir), "plugin-authoring", "SKILL.md"))).toThrow();
+	it("materializes the whole tree but contributes only enabled skills", () => {
+		const contributed = builtinSkillPaths(OFF, agentDir);
+		// materializeBuiltinSkills is hash-addressed over the entire embedded
+		// tree, so a gated-off skill's file still lands in the cache. What gating
+		// controls is whether the loader is pointed at it — the file on disk costs
+		// nothing per turn; a contributed path costs its description.
+		expect(readFileSync(join(builtinSkillsCacheDir(agentDir), "plugin-authoring", "SKILL.md"), "utf-8")).toContain(
+			"plugin-authoring",
+		);
+		expect(contributed).not.toContain(join(builtinSkillsCacheDir(agentDir), "plugin-authoring"));
 	});
 });
 
