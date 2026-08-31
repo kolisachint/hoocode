@@ -74,14 +74,19 @@ Set `HOOCODE_SKIP_VERSION_CHECK=1` to disable the HooCode version update check. 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `warnings.anthropicExtraUsage` | boolean | `true` | Show a warning when Anthropic subscription auth may use paid extra usage |
+| `warnings.websearchApiKey` | boolean | `true` | Show a warning when `websearch` is enabled with no search API key, so it falls back to keyless DuckDuckGo |
 
 ```json
 {
   "warnings": {
-    "anthropicExtraUsage": false
+    "anthropicExtraUsage": false,
+    "websearchApiKey": false
   }
 }
 ```
+
+Both warnings are shown once per session in the TUI and can also be toggled from
+`/settings` → Warnings.
 
 ### Compaction
 
@@ -329,6 +334,7 @@ there.
 |---------|------|---------|-------------|
 | `enableWebTools` | boolean | `false` | Enable `webfetch` + `websearch` (network access). Needs the `webtools` binary. |
 | `webtools.timeoutSecs` | number | `15` | Per-request timeout in seconds, clamped 1–120. Wins over `HOOCODE_WEBTOOLS_TIMEOUT`. |
+| `webtools.search` | object | — | Search backend and credentials, read by the `webtools` binary itself. See [Web search providers](#web-search-providers). |
 | `enableEmbsearchTools` | boolean | `true` | Build and fuse the semantic index into `search`. Set false to run `search` lexical-only. `grep`/`find` are unaffected. |
 | `embsearchBinaryPath` | string | — | Explicit path to the `embsearch` binary. Default: resolve from `PATH`. |
 | `embsearchThresholdBytes` | number | `0` | Minimum indexable source bytes before a repo is embedded. `0` indexes every repo. |
@@ -345,6 +351,49 @@ Environment variables:
 
 On Android/Termux the published Linux builds do not run; install with
 `pkg install <name>` instead.
+
+#### Web search providers
+
+`websearch` needs no configuration: it defaults to keyless DuckDuckGo Lite.
+That backend is scraped HTML, though — rate-limited hard, and it can fail
+outright — so when search reliability matters, point it at a backend with an
+actual API contract. With none configured, the TUI says so once per session
+(see [`warnings.websearchApiKey`](#warnings)).
+
+The `webtools` binary reads its own `webtools` key out of the user-level
+`~/.hoocode/settings.json`, using its own (snake_case) key names. HooCode never
+writes this block; it only reads it to tell whether a keyed backend exists. Put
+it in the user-level file — a project `.hoocode/settings.json` is not read by the
+binary, and a file holding credentials is worth keeping out of a working tree.
+
+```json
+{
+  "webtools": {
+    "search": {
+      "provider": "brave",
+      "fallback": "duckduckgo",
+      "providers": {
+        "brave": { "api_key": "..." },
+        "tavily": { "api_key": "..." },
+        "searxng": { "base_url": "https://searx.internal" }
+      }
+    }
+  }
+}
+```
+
+Environment variables win over the file, so a key can stay out of it entirely:
+
+| Variable | Effect |
+|---|---|
+| `WEBTOOLS_SEARCH_PROVIDER` | Backend to use: `duckduckgo` (default), `brave`, `tavily`, `searxng`. Pin `duckduckgo` to accept the keyless backend and silence the warning. |
+| `WEBTOOLS_SEARCH_FALLBACK` | Backend tried when the primary fails; `none` disables the fallback. |
+| `WEBTOOLS_BRAVE_API_KEY`, `BRAVE_API_KEY` | Brave Search key. |
+| `WEBTOOLS_TAVILY_API_KEY`, `TAVILY_API_KEY` | Tavily key. Returns cleaned page content, so a search often answers without a follow-up `webfetch`. |
+| `WEBTOOLS_SEARXNG_URL`, `WEBTOOLS_SEARXNG_API_KEY` | Self-hosted SearXNG endpoint (and optional key), for networks where the public APIs are unreachable. |
+
+Every result records the backend that answered it, so a fallback to the scraped
+backend is never silent.
 
 ### Resources
 
@@ -408,7 +457,8 @@ See [packages.md](packages.md) for package management details.
   },
   "enabledModels": ["claude-*", "gpt-4o"],
   "warnings": {
-    "anthropicExtraUsage": true
+    "anthropicExtraUsage": true,
+    "websearchApiKey": true
   },
   "packages": ["hoocode-skills"]
 }

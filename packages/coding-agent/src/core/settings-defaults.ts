@@ -80,6 +80,7 @@ export const DEFAULT_SETTINGS = {
 	},
 	warnings: {
 		anthropicExtraUsage: true,
+		websearchApiKey: true,
 	},
 	packages: [],
 	extensions: [],

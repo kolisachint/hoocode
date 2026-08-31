@@ -133,6 +133,7 @@ import {
 	theme,
 } from "./theme/theme.js";
 import { VoiceController } from "./voice/voice-controller.js";
+import { websearchApiKeyNotice } from "./websearch-warning.js";
 
 /** Interface for components that can be expanded/collapsed */
 
@@ -1052,6 +1053,7 @@ export class InteractiveMode {
 		}
 
 		void this.modelController.maybeWarnAboutAnthropicSubscriptionAuth();
+		this.maybeWarnAboutMissingWebSearchKey();
 
 		// Process initial messages
 		if (initialMessage) {
@@ -3369,6 +3371,20 @@ export class InteractiveMode {
 	 */
 	showNotice(title: string, body: string[]): void {
 		this.showBlock("warningBg", "warning", title, body);
+	}
+
+	/**
+	 * Say once, at startup, that `websearch` is running on the keyless backend.
+	 * Shown only while the tool is actually active and no keyed provider is
+	 * configured; silenced by `warnings.websearchApiKey`.
+	 */
+	private maybeWarnAboutMissingWebSearchKey(): void {
+		const notice = websearchApiKeyNotice({
+			activeToolNames: this.session.getActiveToolNames(),
+			warnings: this.settingsManager.getWarnings(),
+			search: this.settingsManager.getWebtoolsSearch(),
+		});
+		if (notice) this.showNotice(notice.title, notice.body);
 	}
 
 	showNewVersionNotification(newVersion: string): void {

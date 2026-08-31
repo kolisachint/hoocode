@@ -7,6 +7,7 @@
  */
 
 import type { Transport } from "@kolisachint/hoocode-ai";
+import type { WebtoolsSearchSettings } from "./tools/webtools-shared.js";
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -30,6 +31,11 @@ interface VoiceSettings {
 
 interface WebtoolsSettings {
 	timeoutSecs?: number; // default: 15 - per-request timeout (seconds) for the webfetch/websearch binary; clamped to 1-120. This setting wins over env HOOCODE_WEBTOOLS_TIMEOUT, which wins over the default.
+	// Search backend + credentials, read by the webtools binary itself out of the
+	// user-level settings.json this file shares with it. Keys are the binary's own
+	// (snake_case) and hoocode never writes them: it only reads them to tell
+	// whether websearch has a keyed backend or is falling back to scraped DuckDuckGo.
+	search?: WebtoolsSearchSettings;
 }
 
 export interface BranchSummarySettings {
@@ -76,6 +82,7 @@ interface MarkdownSettings {
 
 export interface WarningSettings {
 	anthropicExtraUsage?: boolean; // default: true
+	websearchApiKey?: boolean; // default: true - warn once per session when websearch is enabled with no keyed search provider configured (keyless DuckDuckGo is rate-limited)
 }
 
 /**

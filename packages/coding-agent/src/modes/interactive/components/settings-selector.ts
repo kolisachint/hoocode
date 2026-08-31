@@ -256,6 +256,14 @@ class WarningSettingsSubmenu extends Container {
 				currentValue: (this.state.anthropicExtraUsage ?? true) ? "true" : "false",
 				values: ["true", "false"],
 			},
+			{
+				id: "websearch-api-key",
+				label: "Web search API key",
+				description:
+					"Warn when websearch is enabled with no search API key, so it falls back to keyless DuckDuckGo",
+				currentValue: (this.state.websearchApiKey ?? true) ? "true" : "false",
+				values: ["true", "false"],
+			},
 		];
 
 		this.settingsList = new SettingsList(
@@ -266,6 +274,10 @@ class WarningSettingsSubmenu extends Container {
 				switch (id) {
 					case "anthropic-extra-usage":
 						this.state = { ...this.state, anthropicExtraUsage: newValue === "true" };
+						onChange({ ...this.state });
+						break;
+					case "websearch-api-key":
+						this.state = { ...this.state, websearchApiKey: newValue === "true" };
 						onChange({ ...this.state });
 						break;
 				}

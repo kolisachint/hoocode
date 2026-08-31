@@ -302,6 +302,28 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("webtools search", () => {
+		it("reads the user-level block only, because that is the file the binary reads", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ webtools: { search: { provider: "brave", providers: { brave: { api_key: "k" } } } } }),
+			);
+
+			const search = SettingsManager.create(projectDir, agentDir).getWebtoolsSearch();
+			expect(search?.provider).toBe("brave");
+			expect(search?.providers?.brave?.api_key).toBe("k");
+		});
+
+		it("ignores a project-level block, which the binary would never see", () => {
+			writeFileSync(
+				join(projectDir, ".hoocode", "settings.json"),
+				JSON.stringify({ webtools: { search: { providers: { tavily: { api_key: "k" } } } } }),
+			);
+
+			expect(SettingsManager.create(projectDir, agentDir).getWebtoolsSearch()).toBeUndefined();
+		});
+	});
+
 	describe("flag overrides", () => {
 		it("round-trips flag overrides and clears them", async () => {
 			const manager = SettingsManager.create(projectDir, agentDir);

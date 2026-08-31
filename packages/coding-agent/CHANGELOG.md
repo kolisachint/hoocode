@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added
+
+- A startup notice when `websearch` is enabled with no search API key.
+
+  The tool works with no configuration at all, which is the problem: the keyless
+  default is scraped DuckDuckGo HTML, rate-limited hard and liable to fail
+  outright, and the failure arrives as a bad search rather than as a setup
+  problem. The TUI now says so once per session when `websearch` is active and
+  no keyed backend is configured, naming `BRAVE_API_KEY` / `TAVILY_API_KEY` and
+  the `webtools.search` block of `~/.hoocode/settings.json` — the same file the
+  `webtools` binary reads its own credentials from.
+
+  Detection mirrors the binary's own resolution order (env over settings file)
+  across Brave, Tavily and SearXNG, and never returns the credential itself, so
+  a key cannot reach the UI or a log. Pinning `duckduckgo` as the provider is
+  read as a deliberate choice and stays quiet, as does the new
+  `warnings.websearchApiKey` switch — `/settings` → Warnings → Web search API
+  key, beside the Anthropic extra-usage toggle it is modelled on.
+
 ## [0.5.42] - 2026-08-31
 
 ### Added
