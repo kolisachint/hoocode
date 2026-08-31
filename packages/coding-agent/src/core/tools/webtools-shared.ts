@@ -50,6 +50,25 @@ export type WebFetchContentStatus = "ok" | "empty" | "needs_js" | "too_complex";
 /** Whether the search answered (`SearchOutput.status`). See {@link WebFetchContentStatus} on optionality. */
 export type WebSearchStatus = "ok" | "empty" | "blocked";
 
+/**
+ * The elision marker the binary appends when `--max-tokens` cuts a body
+ * (`compress::TRUNCATION_MARKER`). Both output formats hoocode asks for — text
+ * and markdown — route their budgeting through `truncate_to_tokens`, so its
+ * presence is what tells us a page continued past what we were handed. The
+ * binary reports no structured flag today; when it grows one, prefer that and
+ * keep this as the fallback for older binaries.
+ */
+export const WEBTOOLS_TRUNCATION_MARKER = "…[truncated]";
+
+/**
+ * Whether a fetch came back cut off. Substring rather than suffix: the marker
+ * lands at the end of the *body*, and the reference block is assembled after
+ * it.
+ */
+export function isTruncatedContent(content: string | undefined): boolean {
+	return typeof content === "string" && content.includes(WEBTOOLS_TRUNCATION_MARKER);
+}
+
 /** One-line explanation for a non-`ok` fetch status, mirroring the binary's own note. */
 export function fetchStatusNote(status: WebFetchContentStatus | undefined): string | undefined {
 	switch (status) {

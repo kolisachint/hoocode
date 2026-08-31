@@ -352,6 +352,17 @@ Environment variables:
 On Android/Termux the published Linux builds do not run; install with
 `pkg install <name>` instead.
 
+#### Reading a long page
+
+`webfetch` budgets its output in tokens (`maxTokens`, default 4000, hard cap
+25000). When a page runs past that, the result says so — the budget it stopped
+at, and the ways past it — so a long document reads as a first page rather than
+a dead end. The TUI marks the same fetch `~4000 tokens (truncated at 4000)`.
+
+Prefer a more specific URL or `#anchor` over re-fetching the same page at a
+larger budget: extraction has already dropped nav and boilerplate, so the first
+few thousand tokens are usually the article itself.
+
 #### Web search providers
 
 `websearch` needs no configuration: it defaults to keyless DuckDuckGo Lite.

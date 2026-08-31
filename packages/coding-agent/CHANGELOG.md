@@ -6,6 +6,19 @@
 
 ### Added
 
+- `webfetch` says when a page was cut off, and how to get the rest.
+
+  A fetch that overran its token budget came back with the binary's bare
+  `…[truncated]` marker: enough to tell the model something was missing,
+  nothing it could act on, so a long document was a dead end rather than a
+  first page. The result now carries the budget the cut was made at and the
+  ways past it, `details.truncated` records it, and the TUI marks the token
+  line `(truncated at N)` instead of showing a prefix and a complete page
+  identically.
+
+  The note names the *clamped* budget, not the requested one — advice to raise
+  `maxTokens` past the 25000 cap would point somewhere that changes nothing.
+
 - `websearch` reports what its results cost, as `webfetch` already did.
 
   Search is the one web tool with no token budget of its own — snippet length

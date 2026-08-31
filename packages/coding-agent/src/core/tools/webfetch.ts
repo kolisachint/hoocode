@@ -9,6 +9,7 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import {
 	blockedHostForUrl,
 	fetchStatusNote,
+	isTruncatedContent,
 	resolveWebtoolsTimeoutSecs,
 	resolveWebtoolsTLSConfig,
 	runWebtools,
@@ -50,6 +51,10 @@ export interface WebFetchToolDetails {
 	finalUrl?: string;
 	title?: string;
 	tokenEstimate?: number;
+	/** The page continued past the token budget: what came back is a prefix. */
+	truncated?: boolean;
+	/** The budget the cut was made at, so the TUI can say what to raise. */
+	maxTokens?: number;
 	contentType?: string;
 	media?: string;
 	/** Non-"ok" means extraction produced nothing usable; see {@link WebFetchContentStatus}. */
@@ -89,7 +94,12 @@ function formatWebfetchResult(
 	}
 	const tokenEstimate = result.details?.tokenEstimate;
 	if (tokenEstimate !== undefined) {
-		text += `\n${appTheme.fg("muted", `~${tokenEstimate} tokens`)}`;
+		// A cut page and a complete one cost the same at the budget, so the number
+		// alone reads as "this is the page". Mark the ones that are a prefix.
+		const cut = result.details?.truncated
+			? appTheme.fg("warning", ` (truncated at ${result.details.maxTokens ?? tokenEstimate})`)
+			: "";
+		text += `\n${appTheme.fg("muted", `~${tokenEstimate} tokens`)}${cut}`;
 	}
 	return text;
 }
@@ -111,6 +121,7 @@ export function createWebFetchToolDefinition(
 		promptSnippet: "Fetch a URL and return clean, token-efficient page content",
 		promptGuidelines: [
 			"Use webfetch to read a known URL instead of bash curl/wget; it returns clean extracted text with reference-style [N] links, not raw HTML.",
+			"A fetch that reports it stopped at its token budget returned a prefix, not the page. Only continue when the answer is genuinely further down: prefer a more specific URL or #anchor, and raise maxTokens when the whole document is the point.",
 		],
 		parameters: webfetchSchema,
 		async execute(_toolCallId, { url, maxTokens, output }: WebFetchToolInput, signal?: AbortSignal) {
@@ -137,13 +148,25 @@ export function createWebFetchToolDefinition(
 			// content alone. Say which it was, so the page is not read as "nothing
 			// to say" when it simply needs a browser.
 			const note = fetchStatusNote(result.status);
-			const body = note ? `${result.content}\n\n[webtools: ${note}]`.trimStart() : result.content;
+			let body = note ? `${result.content}\n\n[webtools: ${note}]`.trimStart() : result.content;
+
+			// A cut page used to end in a bare elision marker: the model could see
+			// that something was missing but had no way to act on it, so a long
+			// document was a dead end rather than a first page. Say what the cut
+			// was and how to continue past it.
+			const truncated = isTruncatedContent(result.content);
+			if (truncated) {
+				body += `\n\n[webtools: output stopped at the ${effectiveMaxTokens}-token budget; the page continues past this point. Re-fetch with a larger maxTokens (up to ${MAX_TOKENS_CAP}) for more, or fetch a more specific URL or #anchor.]`;
+			}
+
 			return {
 				content: [{ type: "text" as const, text: header + body }],
 				details: {
 					finalUrl: result.final_url,
 					title: result.title,
 					tokenEstimate: result.token_estimate,
+					truncated,
+					maxTokens: effectiveMaxTokens,
 					contentType: result.content_type,
 					media: result.media,
 					status: result.status,

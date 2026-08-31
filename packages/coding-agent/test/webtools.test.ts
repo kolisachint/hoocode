@@ -29,7 +29,7 @@ if [ "$sub" = "fetch" ]; then
 {
   "title": "Example Domain",
   "final_url": "https://example.com/",
-  "content": "Example Domain\\nSee more [1]\\n\\nReferences:\\n[1] https://iana.org/domains/example",
+  "content": "Example Domain\\nSee more [1]\${WEBTOOLS_FAKE_FETCH_CUT:+\\n…[truncated]}\\n\\nReferences:\\n[1] https://iana.org/domains/example",
   "content_type": "text",
   "media": "html",
   "token_estimate": 42,
@@ -143,6 +143,46 @@ describe("web tools", () => {
 			const result = await tool.execute("call-status-2", { url: "https://example.com" });
 			expect(getText(result)).not.toContain("[webtools:");
 			expect((result.details as { status?: string }).status).toBe("ok");
+		});
+
+		// A cut page used to arrive as a bare elision marker: the model could see
+		// that content was missing and had nothing to do about it. The budget and
+		// the way past it have to travel with the content.
+		it("says where a cut page stopped and how to continue past it", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_CUT = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				const result = await tool.execute("call-cut-1", { url: "https://example.com", maxTokens: 1000 });
+				const text = getText(result);
+				expect(text).toContain("stopped at the 1000-token budget");
+				expect(text).toContain("maxTokens");
+				const details = result.details as { truncated?: boolean; maxTokens?: number };
+				expect(details.truncated).toBe(true);
+				expect(details.maxTokens).toBe(1000);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
+			}
+		});
+
+		it("reports the budget actually applied, not the one requested", async () => {
+			process.env.WEBTOOLS_FAKE_FETCH_CUT = "1";
+			try {
+				const tool = createWebFetchTool(cwd);
+				// Over the cap: the note has to name the clamped budget, or the
+				// advice ("raise maxTokens") points somewhere that changes nothing.
+				const result = await tool.execute("call-cut-2", { url: "https://example.com", maxTokens: 999_999 });
+				expect(getText(result)).toContain("stopped at the 25000-token budget");
+				expect((result.details as { maxTokens?: number }).maxTokens).toBe(25000);
+			} finally {
+				delete process.env.WEBTOOLS_FAKE_FETCH_CUT;
+			}
+		});
+
+		it("says nothing about truncation on a complete page", async () => {
+			const tool = createWebFetchTool(cwd);
+			const result = await tool.execute("call-cut-3", { url: "https://example.com" });
+			expect(getText(result)).not.toContain("budget");
+			expect((result.details as { truncated?: boolean }).truncated).toBe(false);
 		});
 	});
 
