@@ -10,9 +10,10 @@
   default is scraped DuckDuckGo HTML, rate-limited hard and liable to fail
   outright, and the failure arrives as a bad search rather than as a setup
   problem. The TUI now says so once per session when `websearch` is active and
-  no keyed backend is configured, naming `BRAVE_API_KEY` / `TAVILY_API_KEY` and
+  no keyed backend is configured, in two lines: what is wrong, and the
+  `BRAVE_API_KEY` / `TAVILY_API_KEY` that fixes it. The remaining backends and
   the `webtools.search` block of `~/.hoocode/settings.json` — the same file the
-  `webtools` binary reads its own credentials from.
+  `webtools` binary reads its own credentials from — are in the docs.
 
   Detection mirrors the binary's own resolution order (env over settings file)
   across Brave, Tavily and SearXNG, and never returns the credential itself, so

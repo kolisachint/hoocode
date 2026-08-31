@@ -9,7 +9,6 @@
  * `/settings` switch that turns it off.
  */
 
-import { CONFIG_DIR_NAME } from "../../config.js";
 import type { WarningSettings } from "../../core/settings-types.js";
 import { resolveWebSearchCredentials, type WebtoolsSearchSettings } from "../../core/tools/webtools-shared.js";
 
@@ -46,9 +45,11 @@ export function websearchApiKeyNotice(input: WebSearchApiKeyNoticeInput): WebSea
 
 	return {
 		title: WEBSEARCH_API_KEY_TITLE,
+		// Two lines, like the Anthropic notice: what is wrong and the one setting
+		// that fixes it. The other backends and the settings.json block are in
+		// the docs — a startup notice is not the place to list them.
 		body: [
-			"Searching keyless DuckDuckGo: scraped HTML, rate-limited, and it can fail outright.",
-			`Set BRAVE_API_KEY or TAVILY_API_KEY, or webtools.search in ~/${CONFIG_DIR_NAME}/settings.json.`,
+			"Searching keyless DuckDuckGo, which is rate-limited. Set BRAVE_API_KEY or TAVILY_API_KEY.",
 			"Turn off in /settings → Web search API key.",
 		],
 	};
