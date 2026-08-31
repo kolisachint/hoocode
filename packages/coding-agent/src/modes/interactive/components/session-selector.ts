@@ -13,6 +13,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
+import { GIT_BRANCH_GLYPH } from "../../../core/brand.js";
 import { KeybindingsManager } from "../../../core/keybindings.js";
 import { sessionColorSlotFor, sessionSlugFor } from "../../../core/session-identity.js";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
@@ -23,6 +24,12 @@ import { keyHint, keyText } from "./keybinding-hints.js";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.js";
 
 type SessionScope = "current" | "all";
+
+/**
+ * Branches that name no particular piece of work, so showing them in a row costs
+ * width and returns nothing. Everything else is the whole point.
+ */
+const DEFAULT_BRANCHES = new Set(["main", "master", "trunk", "develop"]);
 
 function shortenPath(path: string): string {
 	const home = os.homedir();
@@ -455,6 +462,16 @@ class SessionList implements Component, Focusable {
 			// so the branch glyphs still run unbroken from parent to child.
 			const swatch = theme.fill(sessionColorToken(session.color ?? sessionColorSlotFor(session.id)), " ");
 
+			// The branch the session started on, ahead of its first message. Shown
+			// only where it adds something: a session with a chosen name already
+			// says what it was, and a default branch names no particular work. This
+			// is the one case the list could not answer before — an unnamed session
+			// whose opening message was vague, on a branch that says exactly what it
+			// was for.
+			const branch = hasName || !session.branch || DEFAULT_BRANCHES.has(session.branch) ? "" : session.branch;
+			const branchPart = branch ? `${GIT_BRANCH_GLYPH} ${branch}  ` : "";
+			const styledBranch = branch ? theme.fg("dim", `${GIT_BRANCH_GLYPH} `) + theme.fg("muted", branch) + "  " : "";
+
 			// Right side: message count and age
 			const age = formatSessionDate(session.modified);
 			const msgCount = String(session.messageCount);
@@ -478,7 +495,8 @@ class SessionList implements Component, Focusable {
 			// Calculate available width for message
 			const prefixWidth = visibleWidth(prefix);
 			const rightWidth = visibleWidth(rightPart) + 2; // +2 for spacing
-			const availableForMsg = width - 4 - prefixWidth - rightWidth; // -2 cursor, -2 swatch and its space
+			// -2 cursor, -2 swatch and its space, then whatever the branch takes.
+			const availableForMsg = width - 4 - prefixWidth - visibleWidth(branchPart) - rightWidth;
 
 			const truncatedMsg = truncateToWidth(normalizedMessage, Math.max(10, availableForMsg), "…");
 
@@ -497,7 +515,7 @@ class SessionList implements Component, Focusable {
 			}
 
 			// Build line
-			const leftPart = `${cursor}${swatch} ${theme.fg("dim", prefix)}${styledMsg}`;
+			const leftPart = `${cursor}${swatch} ${theme.fg("dim", prefix)}${styledBranch}${styledMsg}`;
 			const leftWidth = visibleWidth(leftPart);
 			const spacing = Math.max(1, width - leftWidth - visibleWidth(rightPart));
 			const styledRight = theme.fg(isConfirmingDelete ? "error" : "dim", rightPart);

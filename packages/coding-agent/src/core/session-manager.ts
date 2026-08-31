@@ -34,6 +34,7 @@ import { readdir, readFile, stat } from "fs/promises";
 import { join, resolve } from "path";
 import { v7 as uuidv7 } from "uuid";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.js";
+import { readGitBranch } from "./git-branch.js";
 import { isSessionColorSlot, sessionColorSlotFor, sessionSlugFor } from "./session-identity.js";
 
 // Session entry types are shared with the agent harness; re-exported here under
@@ -62,6 +63,13 @@ export interface SessionHeader {
 	timestamp: string;
 	cwd: string;
 	parentSession?: string;
+	/**
+	 * Git branch the session started on, absent outside a repo or on a detached
+	 * HEAD. Recorded because it cannot be recovered later — the working tree has
+	 * moved on by the time anyone reads the list — and because unlike a derived
+	 * title it is a fact, which is what makes it safe to write down.
+	 */
+	branch?: string;
 }
 
 export interface NewSessionOptions {
@@ -91,6 +99,8 @@ export interface SessionInfo {
 	name?: string;
 	/** User-chosen colour slot (1-6) from session_info entries, if one was set. */
 	color?: number;
+	/** Git branch the session started on. Absent for sessions recorded before this was kept. */
+	branch?: string;
 	/** Path to the parent session (if this session was forked). */
 	parentSessionPath?: string;
 	created: Date;
@@ -115,6 +125,7 @@ export type ReadonlySessionManager = Pick<
 	| "getEntries"
 	| "getTree"
 	| "getSessionName"
+	| "getSessionBranch"
 	| "getSessionSlug"
 	| "getDisplayName"
 	| "getSessionColorSlot"
@@ -477,6 +488,7 @@ async function buildSessionInfo(filePath: string): Promise<SessionInfo | null> {
 			cwd,
 			name,
 			color,
+			branch: typeof (header as SessionHeader).branch === "string" ? (header as SessionHeader).branch : undefined,
 			parentSessionPath,
 			created: new Date((header as SessionHeader).timestamp),
 			modified,
@@ -610,6 +622,7 @@ export class SessionManager {
 			timestamp,
 			cwd: this.cwd,
 			parentSession: options?.parentSession,
+			branch: readGitBranch(this.cwd),
 		};
 		this.fileEntries = [header];
 		this.byId.clear();
@@ -817,6 +830,11 @@ export class SessionManager {
 			}
 		}
 		return undefined;
+	}
+
+	/** The git branch this session started on, if it was recorded. */
+	getSessionBranch(): string | undefined {
+		return this.getHeader()?.branch;
 	}
 
 	/** The auto-assigned name this session wears until someone runs `/name`. */
@@ -1107,6 +1125,7 @@ export class SessionManager {
 			timestamp,
 			cwd: this.cwd,
 			parentSession: this.persist ? previousSessionFile : undefined,
+			branch: readGitBranch(this.cwd),
 		};
 
 		// Collect labels for entries in the path
@@ -1267,6 +1286,7 @@ export class SessionManager {
 			timestamp,
 			cwd: targetCwd,
 			parentSession: sourcePath,
+			branch: readGitBranch(targetCwd),
 		};
 		appendFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`);
 

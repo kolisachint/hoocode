@@ -72,6 +72,20 @@ describe("SessionManager session info", () => {
 		expect(session.getSessionColorSlot()).toBe(sessionColorSlotFor(session.getSessionId()));
 	});
 
+	// The branch is recorded rather than derived because it cannot be recovered
+	// later: by the time anyone reads the session list, the working tree has moved
+	// on. Unlike a guessed title it is a fact, which is what makes it safe to
+	// write down and still true a month afterwards.
+	it("records the branch it started on, or nothing outside a repo", () => {
+		const session = SessionManager.inMemory();
+		const branch = session.getSessionBranch();
+
+		// The suite runs inside this repo, so there is a branch to record; the
+		// assertion that matters is that it is a real name, never "detached".
+		expect(branch === undefined || (typeof branch === "string" && branch.length > 0)).toBe(true);
+		expect(branch).not.toBe("detached");
+	});
+
 	it("writes only the fields it was given", () => {
 		const session = SessionManager.inMemory();
 

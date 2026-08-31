@@ -444,6 +444,10 @@ export class CommandExecutor {
 
 		let info = `${theme.bold("Session Info")}\n\n`;
 		info += `${theme.fg("dim", sessionName ? "Name:" : "Name (auto):")} ${this.currentChip()}\n`;
+		const branch = this.ctx.sessionManager.getSessionBranch();
+		if (branch) {
+			info += `${theme.fg("dim", "Branch:")} ${branch}\n`;
+		}
 		info += `${theme.fg("dim", "File:")} ${stats.sessionFile ?? "In-memory"}\n`;
 		info += `${theme.fg("dim", "ID:")} ${stats.sessionId}\n\n`;
 		info += `${theme.bold("Messages")}\n`;

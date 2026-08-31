@@ -4,6 +4,26 @@
 
 ### Added
 
+- Sessions record the git branch they started on, and the resume list shows it.
+
+  A session you never named, that opened with "look at this", was unfindable in
+  the list — the first message said nothing and there was nothing else to go on.
+  The branch usually says exactly what the work was, and it is the rare piece of
+  meaning that can be written down safely: unlike a derived title it is a fact,
+  so it is still true a month later.
+
+  It has to be recorded rather than derived, because by the time anyone reads the
+  list the working tree has moved on. One optional field on the session header,
+  read from `.git/HEAD` at session creation — a walk up to the repo and one file
+  read, no subprocess outside the reftable case, sharing the footer's
+  implementation so the branch a session remembers is the string the footer was
+  showing at the time.
+
+  Shown in the picker only where it adds something: a session with a chosen name
+  already says what it is, and `main` names no particular work. Also in
+  `/session`. Sessions recorded before this simply have no branch and read as
+  they did.
+
 - A session chip: the session's name, filled with its colour, laid into the
   top-right of the input box.
 
