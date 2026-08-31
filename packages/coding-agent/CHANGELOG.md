@@ -6,6 +6,19 @@
 
 ### Added
 
+- `webfetch` takes an `offset`, so a long page can be read to the end.
+
+  With a `webtools` binary that reports paging offsets, a cut page comes back
+  with the window it covers and the offset that continues it, and passing that
+  offset back reads the next window. Windows tile the document exactly, so
+  nothing is skipped or repeated, and a whole document costs one budget per
+  window instead of one copy of the page per attempt.
+
+  Against an older binary the fields are absent and the note falls back to
+  advising a larger `maxTokens`, the only honest advice when there is no offset
+  to resume at. `--offset` is sent only when non-zero, so a read from the start
+  never passes a flag an older binary would reject.
+
 - `webfetch` says when a page was cut off, and how to get the rest.
 
   A fetch that overran its token budget came back with the binary's bare

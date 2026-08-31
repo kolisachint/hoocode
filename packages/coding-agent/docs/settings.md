@@ -359,9 +359,15 @@ On Android/Termux the published Linux builds do not run; install with
 at, and the ways past it — so a long document reads as a first page rather than
 a dead end. The TUI marks the same fetch `~4000 tokens (truncated at 4000)`.
 
-Prefer a more specific URL or `#anchor` over re-fetching the same page at a
-larger budget: extraction has already dropped nav and boilerplate, so the first
-few thousand tokens are usually the article itself.
+When the `webtools` binary reports paging offsets, the note names the offset to
+continue at; pass it back as `offset` to read the next window. Windows tile the
+document exactly, so a long page costs one budget per window rather than one
+copy of the page per attempt. Against an older binary the note falls back to
+advising a larger `maxTokens`.
+
+Prefer a more specific URL or `#anchor` over paging a whole document: extraction
+has already dropped nav and boilerplate, so the first few thousand tokens are
+usually the article itself.
 
 #### Web search providers
 
