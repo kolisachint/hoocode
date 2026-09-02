@@ -10,6 +10,7 @@ import * as path from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import { createCompactionSummaryMessage } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage, ImageContent, Message } from "@kolisachint/hoocode-ai";
+import { isLongRetryDelayError } from "@kolisachint/hoocode-ai";
 import type {
 	AutocompleteItem,
 	AutocompleteProvider,
@@ -3357,6 +3358,12 @@ export class InteractiveMode {
 
 	showError(errorMessage: string): void {
 		const { title, body } = this.splitBlockMessage(errorMessage);
+		// A wait measured in days is a dead end, not a delay, and the block that
+		// reports it is the only place the user finds out. Say what to do about
+		// it there, rather than leaving them to reread a 429 and guess.
+		if (isLongRetryDelayError(errorMessage)) {
+			body.push("Switch to another model with /model, or wait for the provider's quota to reset.");
+		}
 		this.showBlock("toolErrorBg", "error", `Error: ${title}`, body);
 	}
 
