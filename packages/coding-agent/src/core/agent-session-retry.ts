@@ -10,7 +10,7 @@
 
 import type { AgentEvent, AgentMessage } from "@kolisachint/hoocode-agent-core";
 import type { AssistantMessage, Model } from "@kolisachint/hoocode-ai";
-import { isContextOverflow } from "@kolisachint/hoocode-ai";
+import { isContextOverflow, isLongRetryDelayError } from "@kolisachint/hoocode-ai";
 import { sleep } from "../utils/sleep.js";
 import type { AgentSessionEvent } from "./agent-session.js";
 
@@ -62,6 +62,15 @@ export class AutoRetryController {
 		// Context overflow is handled by compaction, not retry
 		const contextWindow = this.deps.getModel()?.contextWindow ?? 0;
 		if (isContextOverflow(message, contextWindow)) return false;
+
+		// An exhausted quota answers 429 the same way a burst rate limit does,
+		// and the pattern below cannot tell them apart — both say "429". The
+		// difference is in how long the provider asked us to wait: seconds mean
+		// try again, weeks mean this session is not getting through no matter
+		// how patiently it backs off. Retrying the second kind spends the whole
+		// budget in a few seconds and reports failure as if the network were at
+		// fault.
+		if (isLongRetryDelayError(message.errorMessage)) return false;
 
 		return RETRYABLE_ERROR_PATTERN.test(message.errorMessage);
 	}

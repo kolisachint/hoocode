@@ -857,27 +857,56 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
 	return bgFn(withPadding);
 }
 
+/** Every SGR sequence in a line, with its parameters captured. */
+const SGR_SEQUENCE = /\x1b\[([0-9;]*)m/g;
+
+/**
+ * Whether an SGR sequence's parameters put the background back to the
+ * terminal's own.
+ *
+ * Two codes do it: `49` closes the background alone, and `0` closes everything
+ * including the background. Either can travel in a compound sequence
+ * (`ESC[0;32m`), and `0` can be written implicitly — `ESC[m` and an empty
+ * parameter are both spelled-out zeroes — so the test is per-parameter rather
+ * than against whole strings.
+ */
+function clearsBackground(params: string): boolean {
+	if (params === "") return true; // ESC[m is ESC[0m
+	return params.split(";").some((param) => param === "" || Number(param) === 0 || Number(param) === 49);
+}
+
 /**
  * Re-open the band's background after anything inside the line closed it.
  *
- * A background is a pair — an opener and `ESC[49m` — so a child that paints its
+ * A background is a pair — an opener and a close — so a child that paints its
  * own fill (a chip, a label strip, a highlighted span) has to close it, and that
  * close ends the *band's* background too. Everything after it, the padding
  * included, falls back to the terminal's own canvas: the block develops a hole
  * from the chip to the end of the row.
  *
- * The fix is to follow every inner reset with the band's opener again. The
- * opener is recovered from `bgFn` itself rather than assumed, so this works for
+ * Both spellings of the close have to be repaired, not just `ESC[49m`. A child
+ * that ends its styling with a full `ESC[0m` — `truncateToWidth` does, on every
+ * line too long for its band — clears the background just as thoroughly, and
+ * handling only the narrow reset left exactly the hole this function exists to
+ * prevent. It showed up as a filled block whose paint stopped mid-row and whose
+ * cut-out shadow was left stranded on bare terminal, on any theme whose page is
+ * not already the terminal's own colour.
+ *
+ * The fix is to follow every such reset with the band's opener again. The opener
+ * is recovered from `bgFn` itself rather than assumed, so this works for
  * whatever colour the caller is painting — and collapses to a no-op for a `bgFn`
- * that adds no codes at all.
+ * that adds no codes at all. Only the background is restored: the child closed
+ * its foreground and weight deliberately, and only the fill underneath it was
+ * ever the band's to own.
  */
 function repairNestedBgResets(line: string, bgFn: (text: string) => string): string {
-	const BG_RESET = "\x1b[49m";
-	if (!line.includes(BG_RESET)) return line;
+	if (!line.includes("\x1b[")) return line;
 	const sentinel = "\u0000";
 	const opener = bgFn(sentinel).split(sentinel)[0] ?? "";
 	if (opener === "") return line;
-	return line.split(BG_RESET).join(BG_RESET + opener);
+	// `replace` scans the original line, so the openers inserted here are never
+	// themselves rescanned.
+	return line.replace(SGR_SEQUENCE, (match, params: string) => (clearsBackground(params) ? match + opener : match));
 }
 
 /**

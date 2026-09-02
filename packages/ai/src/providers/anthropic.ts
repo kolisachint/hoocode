@@ -30,6 +30,7 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.js";
+import { describeProviderError, retryDelayCapFetch } from "../utils/retry-delay.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 
 import { resolveCacheRetention } from "./cache-retention.js";
@@ -458,6 +459,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					shouldUseFineGrainedToolStreamingBeta(model, context),
 					options?.headers,
 					copilotDynamicHeaders,
+					options?.maxRetryDelayMs,
 				);
 				client = created.client;
 				isOAuth = created.isOAuthToken;
@@ -654,7 +656,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 				delete (block as { partialJson?: string }).partialJson;
 			}
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			output.errorMessage = describeProviderError(error, options?.maxRetryDelayMs);
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
@@ -773,6 +775,7 @@ function createClient(
 	useFineGrainedToolStreamingBeta: boolean,
 	optionsHeaders?: Record<string, string>,
 	dynamicHeaders?: Record<string, string>,
+	maxRetryDelayMs?: number,
 ): { client: Anthropic; isOAuthToken: boolean } {
 	// Adaptive thinking models (Opus 4.6, Sonnet 4.6) have interleaved thinking built-in.
 	// The beta header is deprecated on Opus 4.6 and redundant on Sonnet 4.6, so skip it.
@@ -792,6 +795,7 @@ function createClient(
 			authToken: apiKey,
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
+			...retryDelayCapFetch(maxRetryDelayMs),
 			defaultHeaders: mergeHeaders(
 				{
 					accept: "application/json",
@@ -814,6 +818,7 @@ function createClient(
 			authToken: apiKey,
 			baseURL: model.baseUrl,
 			dangerouslyAllowBrowser: true,
+			...retryDelayCapFetch(maxRetryDelayMs),
 			defaultHeaders: mergeHeaders(
 				{
 					accept: "application/json",
@@ -835,6 +840,7 @@ function createClient(
 		apiKey,
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
+		...retryDelayCapFetch(maxRetryDelayMs),
 		defaultHeaders: mergeHeaders(
 			{
 				accept: "application/json",

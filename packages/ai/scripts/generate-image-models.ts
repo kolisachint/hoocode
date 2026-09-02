@@ -3,6 +3,7 @@
 import { writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { IMAGE_MODELS } from "../src/image-models.generated.js";
 import type { ImagesModel } from "../src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -26,10 +27,25 @@ interface OpenRouterModelRecord {
 	};
 }
 
+/**
+ * Whether a fallback is allowed to pass for a successful run. Matches
+ * `generate-models.ts`: right locally, a hard failure in automation.
+ */
+const STRICT = process.argv.includes("--strict");
+
 async function fetchOpenRouterImageModels(): Promise<ImagesModel<"openrouter-images">[]> {
 	try {
 		console.log("Fetching image models from OpenRouter API...");
 		const response = await fetch(`${OPENROUTER_BASE_URL}/models?output_modalities=image`);
+		if (!response.ok) {
+			// Checked before parsing, or an error page's HTML reaches `.json()` and
+			// the log blames the payload for what was really a transport failure.
+			const body = await response.text().catch(() => "");
+			const snippet = body.trim().slice(0, 200);
+			throw new Error(
+				`OpenRouter responded ${response.status} ${response.statusText}${snippet ? `: ${snippet}` : ""}`,
+			);
+		}
 		const data = (await response.json()) as { data?: OpenRouterModelRecord[] };
 		const models: ImagesModel<"openrouter-images">[] = [];
 
@@ -117,12 +133,43 @@ ${providerEntries}
 `;
 }
 
+/**
+ * The entries from the last successful run.
+ *
+ * OpenRouter always has at least one image model, so an empty fetch is a failed
+ * fetch — and writing that result out replaced the whole catalog with an empty
+ * one, exiting 0 as if it had worked. A single network blip was enough to
+ * delete every image model the agent knew about, which is a far worse outcome
+ * than keeping yesterday's list.
+ */
+function previouslyGeneratedImageModels(): ImagesModel<"openrouter-images">[] {
+	return Object.values(IMAGE_MODELS.openrouter ?? {}).map(
+		(model) => structuredClone(model) as ImagesModel<"openrouter-images">,
+	);
+}
+
 async function main(): Promise<void> {
-	const models = await fetchOpenRouterImageModels();
+	let models = await fetchOpenRouterImageModels();
+
+	if (models.length === 0) {
+		if (STRICT) {
+			console.error(
+				"ERROR: --strict: no image models were fetched from OpenRouter. " +
+					"Refusing to regenerate the catalog from previously generated entries.",
+			);
+			process.exit(1);
+		}
+		models = previouslyGeneratedImageModels();
+		console.warn(
+			`WARNING: OpenRouter returned no image models - reusing ${models.length} previously generated entries. ` +
+				`The image catalog is stale.`,
+		);
+	}
+
 	const output = generateImageModelsFile(models);
 	const outputPath = join(packageRoot, "src", "image-models.generated.ts");
 	writeFileSync(outputPath, output, "utf-8");
-	console.log(`Generated ${outputPath}`);
+	console.log(`Generated ${outputPath}${models.length === 0 ? "" : ` (${models.length} models)`}`);
 }
 
 main().catch((error) => {
