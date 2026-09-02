@@ -255,6 +255,26 @@ function findEditSpans(
 		const fuzzyOldText = normalizeForFuzzyMatch(edit.oldText);
 		const fuzzy = collectMatchIndices(indexes.normalized.text, fuzzyOldText);
 		if (fuzzy.length > 0) {
+			// oldText did not match the file byte-for-byte, so the whitespace the model
+			// used is its own rendering rather than a statement about the file. If
+			// newText normalizes to the same thing, it asked for no change: leave the
+			// span exactly as it is so the no-change error fires, instead of rewriting
+			// the line's indentation to match the model's rendering of it.
+			if (normalizeForFuzzyMatch(edit.newText) === fuzzyOldText) {
+				return {
+					spans: resolveFuzzySpans(
+						indexes.original,
+						indexes.normalized,
+						fuzzy,
+						fuzzyOldText.length,
+						edit.newText,
+					).map((span) => ({
+						...span,
+						replacement: content.slice(span.matchIndex, span.matchIndex + span.matchLength),
+					})),
+					occurrences: fuzzy.length,
+				};
+			}
 			return {
 				spans: resolveFuzzySpans(indexes.original, indexes.normalized, fuzzy, fuzzyOldText.length, edit.newText),
 				occurrences: fuzzy.length,

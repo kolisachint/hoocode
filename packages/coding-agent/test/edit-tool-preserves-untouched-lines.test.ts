@@ -99,6 +99,35 @@ describe("edit tool preserves untouched lines", () => {
 		).rejects.toThrow(/Found 2 occurrences/);
 	});
 
+	it("does not reindent a line for a fuzzy edit that asks for no change", async () => {
+		const testFile = join(testDir, "noop.ts");
+		const original = "function f() {\n\tconst x = 1;\n\treturn x;\n}\n";
+		writeFileSync(testFile, original);
+
+		// oldText only matches fuzzily (spaces vs tabs) and newText is identical to
+		// it, so the model asked for nothing. The tab must survive.
+		await expect(
+			editTool.execute("edit-noop", {
+				path: testFile,
+				edits: [{ oldText: "  const x = 1;", newText: "  const x = 1;" }],
+			}),
+		).rejects.toThrow(/No changes made/);
+		expect(readFileSync(testFile, "utf-8")).toBe(original);
+	});
+
+	it("still applies a deliberate whitespace-only edit matched exactly", async () => {
+		const testFile = join(testDir, "reindent.ts");
+		writeFileSync(testFile, "function f() {\n\tconst x = 1;\n}\n");
+
+		// oldText matches the file byte-for-byte, so the new indentation is intended.
+		const result = await editTool.execute("edit-reindent", {
+			path: testFile,
+			edits: [{ oldText: "\tconst x = 1;", newText: "    const x = 1;" }],
+		});
+		expect(textOf(result)).toContain("Successfully replaced");
+		expect(readFileSync(testFile, "utf-8")).toBe("function f() {\n    const x = 1;\n}\n");
+	});
+
 	it("reports a diff that matches what was actually written", async () => {
 		const testFile = join(testDir, "diagram.md");
 		const original = ["# Title", "", "\tconst a = 1;", "", "  entry:  0     1     2", "", "done", ""].join("\n");
