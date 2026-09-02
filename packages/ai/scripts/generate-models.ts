@@ -274,11 +274,34 @@ function getAnthropicMessagesCompat(provider: string, modelId: string): Anthropi
 		: undefined;
 }
 
+/**
+ * Fetch an upstream catalog as JSON, failing on an HTTP error rather than on
+ * the body that error came with.
+ *
+ * Without the status check, a 403 or a 502 hands its HTML error page straight
+ * to `.json()`, and the only thing that reaches the log is
+ * `SyntaxError: Failed to parse JSON` — which sends whoever reads it looking
+ * for malformed data when the real problem was the transport. An egress denial
+ * and a corrupt payload need different fixes, so they get different messages.
+ */
+async function fetchCatalogJson(source: string, url: string): Promise<any> {
+	const response = await fetch(url);
+	if (!response.ok) {
+		// A snippet of the body, because the status alone rarely names the cause:
+		// a proxy denial and an upstream outage are both plain 403s.
+		const body = await response.text().catch(() => "");
+		const snippet = body.trim().slice(0, 200);
+		throw new Error(
+			`${source} responded ${response.status} ${response.statusText} for ${url}${snippet ? `: ${snippet}` : ""}`,
+		);
+	}
+	return response.json();
+}
+
 async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from OpenRouter API...");
-		const response = await fetch("https://openrouter.ai/api/v1/models");
-		const data = await response.json();
+		const data = await fetchCatalogJson("OpenRouter", "https://openrouter.ai/api/v1/models");
 
 		const models: Model<any>[] = [];
 
@@ -335,8 +358,7 @@ async function fetchOpenRouterModels(): Promise<Model<any>[]> {
 async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from Vercel AI Gateway API...");
-		const response = await fetch(`${AI_GATEWAY_MODELS_URL}/models`);
-		const data = await response.json();
+		const data = await fetchCatalogJson("Vercel AI Gateway", `${AI_GATEWAY_MODELS_URL}/models`);
 		const models: Model<any>[] = [];
 
 		const toNumber = (value: string | number | undefined): number => {
@@ -393,8 +415,7 @@ async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 async function loadModelsDevData(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from models.dev API...");
-		const response = await fetch("https://models.dev/api.json");
-		const data = await response.json();
+		const data = await fetchCatalogJson("models.dev", "https://models.dev/api.json");
 
 		const models: Model<any>[] = [];
 
@@ -1041,6 +1062,20 @@ function previouslyGeneratedModels(providers: readonly string[]): Model<any>[] {
 }
 
 /**
+ * Whether a fallback is allowed to pass for a successful run.
+ *
+ * Locally it should: a developer regenerating the catalog over a flaky network
+ * wants the previous entries kept, not the catalog emptied. In automation it
+ * must not, or a frozen catalog ships as a green build — so CI passes
+ * `--strict` and a fallback becomes a hard failure.
+ */
+const STRICT = process.argv.includes("--strict");
+
+/** Sources that fell back this run, and the providers they carried over. */
+const staleSources: string[] = [];
+const reusedProviders = new Set<string>();
+
+/**
  * Every upstream source has at least one tool-capable model, so an empty result
  * always means the fetch failed (network, DNS, egress policy, upstream outage).
  * Reuse the previously generated entries for that source's providers so a
@@ -1054,6 +1089,8 @@ function withPreviousModelsOnFailure(
 ): Model<any>[] {
 	if (fetched.length > 0) return fetched;
 	const previous = previouslyGeneratedModels(providers);
+	staleSources.push(source);
+	for (const provider of providers) reusedProviders.add(provider);
 	console.warn(
 		`WARNING: ${source} returned no models - reusing ${previous.length} previously generated entries. ` +
 			`The catalog for these providers is stale: ${providers.join(", ")}`,
@@ -1071,6 +1108,17 @@ async function generateModels() {
 	const aiGatewayModels = withPreviousModelsOnFailure("Vercel AI Gateway", await fetchAiGatewayModels(), [
 		"vercel-ai-gateway",
 	]);
+
+	// Bail before writing rather than after: under --strict a run that fetched
+	// nothing has nothing to contribute, and rewriting the catalog from its own
+	// previous contents only makes a broken run look like a successful no-op.
+	if (STRICT && staleSources.length > 0) {
+		console.error(
+			`ERROR: --strict: no models were fetched from ${staleSources.join(", ")}. ` +
+				`Refusing to regenerate the catalog from previously generated entries.`,
+		);
+		process.exit(1);
+	}
 
 	// Combine models (models.dev has priority)
 	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels].filter(
@@ -1913,9 +1961,16 @@ export const MODELS = {
 
 	// Write file
 	writeFileSync(join(packageRoot, "src/models.generated.ts"), output);
-	console.log("Generated src/models.generated.ts");
+	console.log(
+		reusedProviders.size > 0
+			? `Generated src/models.generated.ts (${reusedProviders.size} providers carried over unchanged - see warnings above)`
+			: "Generated src/models.generated.ts",
+	);
 
-	// Print statistics
+	// Print statistics. Counts for a provider that fell back describe the
+	// previous catalog, not this run, so they are labelled: the statistics table
+	// is the most authoritative-looking part of the output and was the part most
+	// likely to be wrong.
 	const totalModels = allModels.length;
 	const reasoningModels = allModels.filter(m => m.reasoning).length;
 
@@ -1924,9 +1979,19 @@ export const MODELS = {
 	console.log(`  Reasoning-capable models: ${reasoningModels}`);
 
 	for (const [provider, models] of Object.entries(providers)) {
-		console.log(`  ${provider}: ${Object.keys(models).length} models`);
+		const carried = reusedProviders.has(provider) ? "  (reused - not fetched this run)" : "";
+		console.log(`  ${provider}: ${Object.keys(models).length} models${carried}`);
+	}
+
+	if (staleSources.length > 0) {
+		console.warn(`\nWARNING: catalog is stale - nothing was fetched from: ${staleSources.join(", ")}`);
 	}
 }
 
-// Run the generator
-generateModels().catch(console.error);
+// Run the generator. A crash has to leave a non-zero status behind, or a failed
+// regeneration is indistinguishable from a successful one to anything that
+// checks the exit code.
+generateModels().catch((error) => {
+	console.error(error);
+	process.exitCode = 1;
+});
