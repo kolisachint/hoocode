@@ -174,6 +174,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	}
 
 	// Always include these
+	addGuideline(
+		"Put independent tool calls in one message — they execute in parallel; only split them across turns when a call needs an earlier call's result",
+	);
 	addGuideline("Be concise in your responses");
 	addGuideline("No preamble or postamble; do not restate the task or summarize what you just did");
 	addGuideline('Do not add closers like "Let me know" or "Hope this helps"');
