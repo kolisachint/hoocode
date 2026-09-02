@@ -1,6 +1,5 @@
 import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } from "node:path";
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
-import { compressReadOutput } from "@kolisachint/hoocode-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@kolisachint/hoocode-ai";
 import { Text } from "@kolisachint/hoocode-tui";
 import { constants } from "fs";
@@ -369,9 +368,11 @@ export function createReadToolDefinition(
 									selectedContent = allLines.slice(startLine).join("\n");
 								}
 								// Apply truncation, respecting both line and byte limits.
-								// Apply lossless compression then truncation.
-								const compressedContent = compressReadOutput(selectedContent);
-								const truncation = truncateHead(compressedContent, { maxBytes, maxLines });
+								// The text is handed over byte-for-byte. Whatever the model reads here is
+								// what it sends back as an edit's `oldText`, so altering it (the trailing
+								// whitespace strip that used to run at this point) makes the model's own
+								// faithful copy fail to match the file it came from.
+								const truncation = truncateHead(selectedContent, { maxBytes, maxLines });
 								let outputText: string;
 								if (truncation.firstLineExceedsLimit) {
 									// First line alone exceeds the byte limit. Point the model at a bash fallback.

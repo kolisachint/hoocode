@@ -87,20 +87,44 @@ function normalizeForFuzzyMatch(text: string): string {
 	return normalized;
 }
 
-interface FuzzyMatchResult {
-	/** Whether a match was found */
-	found: boolean;
-	/** The index where the match starts (in the content that should be used for replacement) */
-	index: number;
-	/** Length of the matched text */
-	matchLength: number;
-	/** Whether fuzzy matching was used (false = exact match) */
-	usedFuzzyMatch: boolean;
-	/**
-	 * The content to use for replacement operations.
-	 * When exact match: original content. When fuzzy match: normalized content.
-	 */
-	contentForReplacement: string;
+/**
+ * Line starts and line texts for one string. Each entry in `lines` includes its
+ * own trailing newline, so `starts[i] + lines[i].length` is the start of line
+ * `i + 1`. Used to translate a fuzzy match back into original coordinates.
+ */
+interface LineIndex {
+	text: string;
+	starts: number[];
+	lines: string[];
+}
+
+function buildLineIndex(text: string): LineIndex {
+	const starts: number[] = [];
+	const lines: string[] = [];
+	let start = 0;
+	for (;;) {
+		const newline = text.indexOf("\n", start);
+		if (newline === -1) {
+			starts.push(start);
+			lines.push(text.slice(start));
+			return { text, starts, lines };
+		}
+		starts.push(start);
+		lines.push(text.slice(start, newline + 1));
+		start = newline + 1;
+	}
+}
+
+/** Index of the line containing `offset` (greatest `i` with `starts[i] <= offset`). */
+function lineIndexAt(starts: number[], offset: number): number {
+	let low = 0;
+	let high = starts.length - 1;
+	while (low < high) {
+		const mid = (low + high + 1) >> 1;
+		if (starts[mid] <= offset) low = mid;
+		else high = mid - 1;
+	}
+	return low;
 }
 
 export interface Edit {
@@ -117,7 +141,19 @@ interface MatchedEdit {
 	editIndex: number;
 	matchIndex: number;
 	matchLength: number;
-	newText: string;
+	/**
+	 * Text written over the span. Usually the edit's `newText` verbatim; for a
+	 * fuzzy match that covered only part of a line, the untouched remainder of
+	 * the first/last line rides along in normalized form (see `resolveFuzzySpan`).
+	 */
+	replacement: string;
+}
+
+/** A match located in, and expressed in coordinates of, the original content. */
+interface ResolvedSpan {
+	matchIndex: number;
+	matchLength: number;
+	replacement: string;
 }
 
 export interface AppliedEditsResult {
@@ -126,49 +162,113 @@ export interface AppliedEditsResult {
 }
 
 /**
- * Find oldText in content, trying exact match first, then fuzzy match.
- * When fuzzy matching is used, the returned contentForReplacement is the
- * fuzzy-normalized version of the content (trailing whitespace stripped,
- * Unicode quotes/dashes normalized to ASCII).
+ * Translate a match found in fuzzy-normalized space back into a span of the
+ * original content.
+ *
+ * Normalization never adds or removes a newline, so normalized line N always
+ * corresponds to original line N; only columns within a line can shift (a tab
+ * widens to two spaces, a run of spaces collapses, NFKC changes a character's
+ * length). Rather than track per-character offsets through those transforms,
+ * the span is widened to whole original lines, and whatever of the first and
+ * last line the match did not cover is re-attached around `newText` in
+ * normalized form.
+ *
+ * The practical effect: a match that covers whole lines - by far the common
+ * case - rewrites exactly those lines and leaves every other byte of the file
+ * untouched. Only a partial-line fuzzy match normalizes anything the edit did
+ * not ask for, and never beyond the lines it landed on.
  */
-function fuzzyFindText(content: string, oldText: string): FuzzyMatchResult {
-	// Try exact match first
-	const exactIndex = content.indexOf(oldText);
-	if (exactIndex !== -1) {
+function resolveFuzzySpans(
+	original: LineIndex,
+	normalized: LineIndex,
+	normStarts: number[],
+	normLength: number,
+	newText: string,
+): ResolvedSpan[] {
+	const spans: ResolvedSpan[] = [];
+	const lineOf = (offset: number) => lineIndexAt(normalized.starts, offset);
+
+	let i = 0;
+	while (i < normStarts.length) {
+		const firstLine = lineOf(normStarts[i]);
+		let lastLine = lineOf(normStarts[i] + normLength - 1);
+
+		// Matches are ascending and non-overlapping. Absorb any that land inside
+		// the same line block so the block is emitted once with every
+		// substitution applied, rather than as colliding same-line spans.
+		let end = i + 1;
+		while (end < normStarts.length && lineOf(normStarts[end]) <= lastLine) {
+			lastLine = Math.max(lastLine, lineOf(normStarts[end] + normLength - 1));
+			end++;
+		}
+
+		const blockStart = normalized.starts[firstLine];
+		const blockEnd = normalized.starts[lastLine] + normalized.lines[lastLine].length;
+		let replacement = "";
+		let cursor = blockStart;
+		for (let k = i; k < end; k++) {
+			replacement += normalized.text.slice(cursor, normStarts[k]) + newText;
+			cursor = normStarts[k] + normLength;
+		}
+		replacement += normalized.text.slice(cursor, blockEnd);
+
+		const matchIndex = original.starts[firstLine];
+		const matchEnd = original.starts[lastLine] + original.lines[lastLine].length;
+		spans.push({ matchIndex, matchLength: matchEnd - matchIndex, replacement });
+		i = end;
+	}
+
+	return spans;
+}
+
+/**
+ * Locate one edit's `oldText` in `content`, always returning spans in
+ * `content`'s own coordinates.
+ *
+ * Three tiers, tried in order: exact, fuzzy-normalized, then the
+ * indentation-tolerant line-block fallback. `occurrences` counts the matches the
+ * winning tier found, which is what the uniqueness guardrail tests; `spans` can
+ * be shorter, because two fuzzy matches sharing a line are emitted as one
+ * rewrite of that line.
+ */
+function findEditSpans(
+	content: string,
+	edit: { oldText: string; newText: string },
+	lineIndexes: () => { original: LineIndex; normalized: LineIndex } | null,
+): { spans: ResolvedSpan[]; occurrences: number } {
+	// Tier 1: exact. Already in original coordinates.
+	const exact = collectMatchIndices(content, edit.oldText);
+	if (exact.length > 0) {
 		return {
-			found: true,
-			index: exactIndex,
-			matchLength: oldText.length,
-			usedFuzzyMatch: false,
-			contentForReplacement: content,
+			spans: exact.map((matchIndex) => ({
+				matchIndex,
+				matchLength: edit.oldText.length,
+				replacement: edit.newText,
+			})),
+			occurrences: exact.length,
 		};
 	}
 
-	// Try fuzzy match - work entirely in normalized space
-	const fuzzyContent = normalizeForFuzzyMatch(content);
-	const fuzzyOldText = normalizeForFuzzyMatch(oldText);
-	const fuzzyIndex = fuzzyContent.indexOf(fuzzyOldText);
-
-	if (fuzzyIndex === -1) {
-		return {
-			found: false,
-			index: -1,
-			matchLength: 0,
-			usedFuzzyMatch: false,
-			contentForReplacement: content,
-		};
+	// Tier 2: fuzzy. Located in normalized space, then translated back.
+	const indexes = lineIndexes();
+	if (indexes) {
+		const fuzzyOldText = normalizeForFuzzyMatch(edit.oldText);
+		const fuzzy = collectMatchIndices(indexes.normalized.text, fuzzyOldText);
+		if (fuzzy.length > 0) {
+			return {
+				spans: resolveFuzzySpans(indexes.original, indexes.normalized, fuzzy, fuzzyOldText.length, edit.newText),
+				occurrences: fuzzy.length,
+			};
+		}
 	}
 
-	// When fuzzy matching, we work in the normalized space for replacement.
-	// This means the output will have normalized whitespace/quotes/dashes,
-	// which is acceptable since we're fixing minor formatting differences anyway.
-	return {
-		found: true,
-		index: fuzzyIndex,
-		matchLength: fuzzyOldText.length,
-		usedFuzzyMatch: true,
-		contentForReplacement: fuzzyContent,
-	};
+	// Tier 3: indentation-tolerant line blocks. Already in original coordinates.
+	const blocks = findLineBlockMatches(content, edit.oldText).map((span) => ({
+		matchIndex: span.matchIndex,
+		matchLength: span.matchLength,
+		replacement: edit.newText,
+	}));
+	return { spans: blocks, occurrences: blocks.length };
 }
 
 /** Strip UTF-8 BOM if present, return both the BOM (if any) and the text without it */
@@ -296,9 +396,13 @@ function getNoChangeError(path: string, totalEdits: number): Error {
  * Apply one or more exact-text replacements to LF-normalized content.
  *
  * All edits are matched against the same original content. Replacements are
- * then applied in reverse order so offsets remain stable. If any edit needs
- * fuzzy matching, the operation runs in fuzzy-normalized content space to
- * preserve current single-edit behavior.
+ * then applied in reverse order so offsets remain stable.
+ *
+ * Every match, however loosely it was found, is resolved back to a span of the
+ * *original* content before anything is written. A fuzzy or indentation-tolerant
+ * match therefore rewrites only the lines it landed on: the rest of the file
+ * keeps its exact bytes, and the diff callers render from `baseContent` is the
+ * real change on disk rather than a normalized-vs-normalized view of it.
  */
 export function applyEditsToNormalizedContent(
 	normalizedContent: string,
@@ -317,32 +421,28 @@ export function applyEditsToNormalizedContent(
 		}
 	}
 
-	const initialMatches = normalizedEdits.map((edit) => fuzzyFindText(normalizedContent, edit.oldText));
-	const baseContent = initialMatches.some((match) => match.usedFuzzyMatch)
-		? normalizeForFuzzyMatch(normalizedContent)
-		: normalizedContent;
+	const baseContent = normalizedContent;
+
+	// Both line indexes are needed only if some edit reaches the fuzzy tier, and
+	// they are identical for every edit, so build them at most once. Normalization
+	// is line-preserving; if that ever fails to hold, the fuzzy tier is skipped
+	// rather than risk translating a span against a mismatched line table.
+	let lineIndexesCache: { original: LineIndex; normalized: LineIndex } | null | undefined;
+	const lineIndexes = () => {
+		if (lineIndexesCache === undefined) {
+			const original = buildLineIndex(baseContent);
+			const normalized = buildLineIndex(normalizeForFuzzyMatch(baseContent));
+			lineIndexesCache = original.lines.length === normalized.lines.length ? { original, normalized } : null;
+		}
+		return lineIndexesCache;
+	};
 
 	const matchedEdits: MatchedEdit[] = [];
 	for (let i = 0; i < normalizedEdits.length; i++) {
 		const edit = normalizedEdits[i];
-		const matchResult = fuzzyFindText(baseContent, edit.oldText);
-
-		// Resolve the match spans for this edit, all in baseContent space.
-		// Tier 1/2: exact then fuzzy (fuzzyFindText). Tier 3: indentation-tolerant
-		// line-block fallback, only when both fail — the common cause of edit
-		// failures is leading-whitespace drift that survives fuzzy normalization.
-		let spans: LineBlockMatch[];
-		if (matchResult.found) {
-			const needle = matchResult.usedFuzzyMatch ? normalizeForFuzzyMatch(edit.oldText) : edit.oldText;
-			spans = collectMatchIndices(baseContent, needle).map((matchIndex) => ({
-				matchIndex,
-				matchLength: matchResult.matchLength,
-			}));
-		} else {
-			spans = findLineBlockMatches(baseContent, edit.oldText);
-			if (spans.length === 0) {
-				throw getNotFoundError(path, i, normalizedEdits.length);
-			}
+		const { spans, occurrences } = findEditSpans(baseContent, edit, lineIndexes);
+		if (spans.length === 0) {
+			throw getNotFoundError(path, i, normalizedEdits.length);
 		}
 
 		if (edit.replaceAll) {
@@ -352,21 +452,21 @@ export function applyEditsToNormalizedContent(
 					editIndex: i,
 					matchIndex: span.matchIndex,
 					matchLength: span.matchLength,
-					newText: edit.newText,
+					replacement: span.replacement,
 				});
 			}
 			continue;
 		}
 
-		if (spans.length > 1) {
-			throw getDuplicateError(path, i, normalizedEdits.length, spans.length);
+		if (occurrences > 1) {
+			throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
 		}
 
 		matchedEdits.push({
 			editIndex: i,
 			matchIndex: spans[0].matchIndex,
 			matchLength: spans[0].matchLength,
-			newText: edit.newText,
+			replacement: spans[0].replacement,
 		});
 	}
 
@@ -386,7 +486,7 @@ export function applyEditsToNormalizedContent(
 		const edit = matchedEdits[i];
 		newContent =
 			newContent.substring(0, edit.matchIndex) +
-			edit.newText +
+			edit.replacement +
 			newContent.substring(edit.matchIndex + edit.matchLength);
 	}
 
