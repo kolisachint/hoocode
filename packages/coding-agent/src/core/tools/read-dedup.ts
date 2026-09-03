@@ -192,6 +192,12 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 	const mutateCallPath = new Map<string, string>();
 	const reads: PriorRead[] = [];
 	let lastMutateIndex = -1;
+	// A *failed* edit/write is not a mutate - the GC is right to ignore it, since
+	// the file did not change. It is still the one moment the model most needs the
+	// real bytes: the failure usually means its copy of the text does not match the
+	// file. Serving a "not re-fetched, unchanged" pointer there leaves it retrying
+	// the same wrong text with no way to see what is actually on disk.
+	let lastFailedMutateIndex = -1;
 	let order = 0;
 
 	for (const entry of entries) {
@@ -222,6 +228,10 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 					mutateCallPath.set(b.id, resolved);
 				}
 			}
+		} else if (m.role === "toolResult" && m.isError && m.toolCallId) {
+			if (m.toolName && MUTATE_TOOLS.has(m.toolName) && mutateCallPath.get(m.toolCallId) === opts.resolvedPath) {
+				lastFailedMutateIndex = i;
+			}
 		} else if (m.role === "toolResult" && !m.isError && m.toolCallId) {
 			if (m.toolName === READ_TOOL) {
 				if (m.toolCallId === opts.currentCallId) continue;
@@ -247,6 +257,10 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 	// *declared* range — exactly the GC's own test — so predict it the same way.
 	const survivesGc = (r: PriorRead): boolean =>
 		lastMutateIndex <= r.index && !reads.some((o) => o.index > r.index && rangesOverlap(o.declared, r.declared));
+
+	// Nothing earlier can be trusted to satisfy this read once an edit against this
+	// path has failed: let the read run and hand the model the current bytes.
+	if (lastFailedMutateIndex > -1) return null;
 
 	let best: PriorRead | null = null;
 	for (const r of reads) {

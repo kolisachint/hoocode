@@ -29,6 +29,157 @@ export function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string 
 }
 
 /**
+ * A normalized string plus, for every one of its indices, the index in the
+ * source text that produced it. `map` has one extra trailing entry so a
+ * half-open normalized span `[a, b)` maps to the source span `[map[a], map[b])`.
+ *
+ * This is what lets a fuzzy match be written back over exactly the bytes it
+ * matched. Without it the only way to place a normalized match in the original
+ * was to widen it to whole lines and re-emit the untouched remainder in
+ * normalized form - which silently converted tabs, smart quotes and NFKC
+ * lookalikes on any line an edit happened to land on.
+ */
+interface NormalizedWithMap {
+	text: string;
+	map: number[];
+}
+
+/** Combining marks attach to the preceding base character and normalize with it. */
+const COMBINING_MARK = /\p{Mn}/u;
+
+/**
+ * NFKC, applied per grapheme cluster so each output character can be traced to
+ * the cluster that produced it. Clustering keeps `e` + U+0301 composing into
+ * `é` the way whole-string NFKC would, while `ﬁ` still expands to `fi` with both
+ * characters pointing at the single source ligature.
+ */
+function nfkcWithMap(text: string): NormalizedWithMap {
+	let out = "";
+	const map: number[] = [];
+	let i = 0;
+	while (i < text.length) {
+		const start = i;
+		const base = String.fromCodePoint(text.codePointAt(i) as number);
+		i += base.length;
+		let cluster = base;
+		while (i < text.length) {
+			const next = String.fromCodePoint(text.codePointAt(i) as number);
+			if (!COMBINING_MARK.test(next)) break;
+			cluster += next;
+			i += next.length;
+		}
+		const composed = cluster.normalize("NFKC");
+		for (let k = 0; k < composed.length; k++) map.push(start);
+		out += composed;
+	}
+	map.push(text.length);
+	return { text: out, map };
+}
+
+/** CRLF and lone CR collapse to LF. */
+function toLfWithMap(text: string): NormalizedWithMap {
+	let out = "";
+	const map: number[] = [];
+	for (let i = 0; i < text.length; i++) {
+		const ch = text[i];
+		if (ch === "\r") {
+			map.push(i);
+			out += "\n";
+			if (text[i + 1] === "\n") i++;
+			continue;
+		}
+		map.push(i);
+		out += ch;
+	}
+	map.push(text.length);
+	return { text: out, map };
+}
+
+/**
+ * The per-line whitespace pass: tabs widen to two spaces, interior runs of two
+ * or more spaces collapse to one (leading indentation is left alone), and
+ * trailing whitespace is dropped.
+ */
+function normalizeLineWhitespaceWithMap(text: string): NormalizedWithMap {
+	let out = "";
+	const map: number[] = [];
+	let lineStart = 0;
+	while (lineStart <= text.length) {
+		let lineEnd = text.indexOf("\n", lineStart);
+		const hasNewline = lineEnd !== -1;
+		if (!hasNewline) lineEnd = text.length;
+
+		// Tabs first, so indentation is measured the way the old chain measured it.
+		let expanded = "";
+		const expandedMap: number[] = [];
+		for (let i = lineStart; i < lineEnd; i++) {
+			if (text[i] === "\t") {
+				expanded += "  ";
+				expandedMap.push(i, i);
+			} else {
+				expanded += text[i];
+				expandedMap.push(i);
+			}
+		}
+
+		const leadingLength = (expanded.match(/^\s*/)?.[0] ?? "").length;
+		let emitted = "";
+		const emittedMap: number[] = [];
+		for (let i = 0; i < expanded.length; i++) {
+			// Collapse only runs that start past the indentation.
+			if (i >= leadingLength && expanded[i] === " " && emitted.endsWith(" ") && emitted.length > leadingLength) {
+				continue;
+			}
+			emitted += expanded[i];
+			emittedMap.push(expandedMap[i]);
+		}
+		// trimEnd
+		let end = emitted.length;
+		while (end > 0 && /\s/.test(emitted[end - 1])) end--;
+
+		out += emitted.slice(0, end);
+		for (let i = 0; i < end; i++) map.push(emittedMap[i]);
+
+		if (hasNewline) {
+			out += "\n";
+			map.push(lineEnd);
+			lineStart = lineEnd + 1;
+		} else {
+			break;
+		}
+	}
+	map.push(text.length);
+	return { text: out, map };
+}
+
+/** Compose `outer` (indices into `inner.text`) onto `inner`'s own source indices. */
+function composeMaps(outer: number[], inner: number[]): number[] {
+	return outer.map((i) => inner[i] ?? inner[inner.length - 1]);
+}
+
+/**
+ * Normalize text for fuzzy matching, keeping an index back to the source for
+ * every character produced. Same output text as `normalizeForFuzzyMatch`.
+ */
+function normalizeForFuzzyMatchWithMap(text: string): NormalizedWithMap {
+	const nfkc = nfkcWithMap(text);
+	const lf = toLfWithMap(nfkc.text);
+	const lines = normalizeLineWhitespaceWithMap(lf.text);
+	// The final substitutions are one-for-one, so they leave the map untouched.
+	const substituted = applyCharSubstitutions(lines.text);
+	return { text: substituted, map: composeMaps(composeMaps(lines.map, lf.map), nfkc.map) };
+}
+
+/** The one-for-one Unicode substitutions: quotes, dashes and exotic spaces. */
+function applyCharSubstitutions(text: string): string {
+	return text
+		.replace(/[\u2018\u2019\u201A\u201B]/g, "'")
+		.replace(/[\u201C\u201D\u201E\u201F]/g, '"')
+		.replace(/[\u2010\u2011\u2012\u2013\u2014\u2015\u2212]/g, "-")
+		.replace(/[\u00A0\u2002-\u200A\u202F\u205F\u3000]/g, " ");
+}
+
+/**
  * Normalize text for fuzzy matching. Applies progressive transformations:
  * - Normalize line endings to LF
  * - Strip trailing whitespace from each line
@@ -87,44 +238,18 @@ function normalizeForFuzzyMatch(text: string): string {
 	return normalized;
 }
 
+/** Whether `index` in `text` is the first character of a line. */
+function isAtLineStart(text: string, index: number): boolean {
+	return index === 0 || text[index - 1] === "\n";
+}
+
 /**
- * Line starts and line texts for one string. Each entry in `lines` includes its
- * own trailing newline, so `starts[i] + lines[i].length` is the start of line
- * `i + 1`. Used to translate a fuzzy match back into original coordinates.
+ * Indentation of `line`, with tabs widened the way `normalizeForFuzzyMatch`
+ * widens them, so a tab-indented file and a two-space rendering of it compare
+ * equal while genuinely different nesting levels do not.
  */
-interface LineIndex {
-	text: string;
-	starts: number[];
-	lines: string[];
-}
-
-function buildLineIndex(text: string): LineIndex {
-	const starts: number[] = [];
-	const lines: string[] = [];
-	let start = 0;
-	for (;;) {
-		const newline = text.indexOf("\n", start);
-		if (newline === -1) {
-			starts.push(start);
-			lines.push(text.slice(start));
-			return { text, starts, lines };
-		}
-		starts.push(start);
-		lines.push(text.slice(start, newline + 1));
-		start = newline + 1;
-	}
-}
-
-/** Index of the line containing `offset` (greatest `i` with `starts[i] <= offset`). */
-function lineIndexAt(starts: number[], offset: number): number {
-	let low = 0;
-	let high = starts.length - 1;
-	while (low < high) {
-		const mid = (low + high + 1) >> 1;
-		if (starts[mid] <= offset) low = mid;
-		else high = mid - 1;
-	}
-	return low;
+function normalizedIndent(line: string): string {
+	return (line.match(/^[ \t]*/)?.[0] ?? "").replace(/\t/g, "  ");
 }
 
 export interface Edit {
@@ -162,66 +287,6 @@ export interface AppliedEditsResult {
 }
 
 /**
- * Translate a match found in fuzzy-normalized space back into a span of the
- * original content.
- *
- * Normalization never adds or removes a newline, so normalized line N always
- * corresponds to original line N; only columns within a line can shift (a tab
- * widens to two spaces, a run of spaces collapses, NFKC changes a character's
- * length). Rather than track per-character offsets through those transforms,
- * the span is widened to whole original lines, and whatever of the first and
- * last line the match did not cover is re-attached around `newText` in
- * normalized form.
- *
- * The practical effect: a match that covers whole lines - by far the common
- * case - rewrites exactly those lines and leaves every other byte of the file
- * untouched. Only a partial-line fuzzy match normalizes anything the edit did
- * not ask for, and never beyond the lines it landed on.
- */
-function resolveFuzzySpans(
-	original: LineIndex,
-	normalized: LineIndex,
-	normStarts: number[],
-	normLength: number,
-	newText: string,
-): ResolvedSpan[] {
-	const spans: ResolvedSpan[] = [];
-	const lineOf = (offset: number) => lineIndexAt(normalized.starts, offset);
-
-	let i = 0;
-	while (i < normStarts.length) {
-		const firstLine = lineOf(normStarts[i]);
-		let lastLine = lineOf(normStarts[i] + normLength - 1);
-
-		// Matches are ascending and non-overlapping. Absorb any that land inside
-		// the same line block so the block is emitted once with every
-		// substitution applied, rather than as colliding same-line spans.
-		let end = i + 1;
-		while (end < normStarts.length && lineOf(normStarts[end]) <= lastLine) {
-			lastLine = Math.max(lastLine, lineOf(normStarts[end] + normLength - 1));
-			end++;
-		}
-
-		const blockStart = normalized.starts[firstLine];
-		const blockEnd = normalized.starts[lastLine] + normalized.lines[lastLine].length;
-		let replacement = "";
-		let cursor = blockStart;
-		for (let k = i; k < end; k++) {
-			replacement += normalized.text.slice(cursor, normStarts[k]) + newText;
-			cursor = normStarts[k] + normLength;
-		}
-		replacement += normalized.text.slice(cursor, blockEnd);
-
-		const matchIndex = original.starts[firstLine];
-		const matchEnd = original.starts[lastLine] + original.lines[lastLine].length;
-		spans.push({ matchIndex, matchLength: matchEnd - matchIndex, replacement });
-		i = end;
-	}
-
-	return spans;
-}
-
-/**
  * Locate one edit's `oldText` in `content`, always returning spans in
  * `content`'s own coordinates.
  *
@@ -234,10 +299,16 @@ function resolveFuzzySpans(
 function findEditSpans(
 	content: string,
 	edit: { oldText: string; newText: string },
-	lineIndexes: () => { original: LineIndex; normalized: LineIndex } | null,
-): { spans: ResolvedSpan[]; occurrences: number } {
+	fuzzyIndex: () => NormalizedWithMap | null,
+): { spans: ResolvedSpan[]; occurrences: number; noopFuzzySpan?: ResolvedSpan } {
+	// An oldText that opens with indentation is a statement about a whole line, so
+	// it must not match mid-line inside a more deeply indented one - that lands the
+	// edit in a different block entirely. An oldText that opens with a non-blank
+	// character claims nothing about indentation, so every tier stays tolerant.
+	const anchored = /^[ \t]/.test(edit.oldText);
+
 	// Tier 1: exact. Already in original coordinates.
-	const exact = collectMatchIndices(content, edit.oldText);
+	const exact = collectMatchIndices(content, edit.oldText).filter((i) => !anchored || isAtLineStart(content, i));
 	if (exact.length > 0) {
 		return {
 			spans: exact.map((matchIndex) => ({
@@ -249,11 +320,55 @@ function findEditSpans(
 		};
 	}
 
-	// Tier 2: fuzzy. Located in normalized space, then translated back.
-	const indexes = lineIndexes();
-	if (indexes) {
+	// Tier 2: fuzzy. Located in normalized space, then mapped straight back onto
+	// the bytes it matched - nothing outside the match is rewritten.
+	const normalized = fuzzyIndex();
+	if (normalized) {
 		const fuzzyOldText = normalizeForFuzzyMatch(edit.oldText);
-		const fuzzy = collectMatchIndices(indexes.normalized.text, fuzzyOldText);
+		const normalizedText = normalized.text;
+		const fuzzy = collectMatchIndices(normalizedText, fuzzyOldText).filter(
+			(i) => !anchored || isAtLineStart(normalizedText, i),
+		);
+		const spanAt = (index: number, replacement: string): ResolvedSpan => {
+			const start = normalized.map[index];
+			const end = normalized.map[index + fuzzyOldText.length];
+			return { matchIndex: start, matchLength: end - start, replacement };
+		};
+
+		/**
+		 * Build the replacement for a fuzzy match.
+		 *
+		 * newText is written as the model wrote it, with one exception: indentation.
+		 * A fuzzy match means oldText was not on disk byte-for-byte, so the whitespace
+		 * in it is the model's rendering of the line rather than a statement about the
+		 * file - and newText inherits that rendering. Writing it back re-indents lines
+		 * the edit never meant to touch, which in a tab-indented file means every
+		 * fuzzy edit silently converts tabs to spaces.
+		 *
+		 * So when newText's indentation says the same thing oldText's did, the file's
+		 * own indentation is kept. An edit that means to re-indent says so by giving
+		 * newText a different indentation from oldText, and that still applies.
+		 */
+		const replacementFor = (index: number): string => {
+			const start = normalized.map[index];
+			const end = normalized.map[index + fuzzyOldText.length];
+			if (!isAtLineStart(content, start)) return edit.newText;
+			const originalLines = content.slice(start, end).split("\n");
+			const newLines = edit.newText.split("\n");
+			const oldLines = edit.oldText.split("\n");
+			if (originalLines.length !== newLines.length || oldLines.length !== newLines.length) {
+				return edit.newText;
+			}
+			return newLines
+				.map((line, i) => {
+					const newIndent = line.match(/^[ \t]*/)?.[0] ?? "";
+					const oldIndent = oldLines[i].match(/^[ \t]*/)?.[0] ?? "";
+					if (normalizedIndent(newIndent) !== normalizedIndent(oldIndent)) return line;
+					return (originalLines[i].match(/^[ \t]*/)?.[0] ?? "") + line.slice(newIndent.length);
+				})
+				.join("\n");
+		};
+
 		if (fuzzy.length > 0) {
 			// oldText did not match the file byte-for-byte, so the whitespace the model
 			// used is its own rendering rather than a statement about the file. If
@@ -261,29 +376,25 @@ function findEditSpans(
 			// span exactly as it is so the no-change error fires, instead of rewriting
 			// the line's indentation to match the model's rendering of it.
 			if (normalizeForFuzzyMatch(edit.newText) === fuzzyOldText) {
-				return {
-					spans: resolveFuzzySpans(
-						indexes.original,
-						indexes.normalized,
-						fuzzy,
-						fuzzyOldText.length,
-						edit.newText,
-					).map((span) => ({
-						...span,
-						replacement: content.slice(span.matchIndex, span.matchIndex + span.matchLength),
-					})),
-					occurrences: fuzzy.length,
-				};
+				// oldText did not match byte-for-byte, so its whitespace is the model's
+				// rendering rather than a statement about the file, and newText asks for
+				// nothing the matcher can see. Leave the bytes alone and report the span
+				// so the caller can name the character the model failed to reproduce.
+				const untouched = fuzzy.map((index) => {
+					const span = spanAt(index, "");
+					return { ...span, replacement: content.slice(span.matchIndex, span.matchIndex + span.matchLength) };
+				});
+				return { spans: untouched, occurrences: fuzzy.length, noopFuzzySpan: untouched[0] };
 			}
 			return {
-				spans: resolveFuzzySpans(indexes.original, indexes.normalized, fuzzy, fuzzyOldText.length, edit.newText),
+				spans: fuzzy.map((index) => spanAt(index, replacementFor(index))),
 				occurrences: fuzzy.length,
 			};
 		}
 	}
 
 	// Tier 3: indentation-tolerant line blocks. Already in original coordinates.
-	const blocks = findLineBlockMatches(content, edit.oldText).map((span) => ({
+	const blocks = findLineBlockMatches(content, edit.oldText, anchored).map((span) => ({
 		matchIndex: span.matchIndex,
 		matchLength: span.matchLength,
 		replacement: edit.newText,
@@ -335,7 +446,7 @@ interface LineBlockMatch {
  * trimmed lines equal the trimmed oldText lines. Replacement still happens in
  * the original content space, so surrounding formatting is preserved.
  */
-function findLineBlockMatches(content: string, oldText: string): LineBlockMatch[] {
+function findLineBlockMatches(content: string, oldText: string, anchored = false): LineBlockMatch[] {
 	const hadTrailingNewline = oldText.endsWith("\n");
 	const oldLines = oldText.split("\n");
 	if (hadTrailingNewline) oldLines.pop();
@@ -359,6 +470,12 @@ function findLineBlockMatches(content: string, oldText: string): LineBlockMatch[
 		let ok = true;
 		for (let j = 0; j < k; j++) {
 			if (blockNormalizeLine(contentLines[i + j]) !== trimmedOld[j]) {
+				ok = false;
+				break;
+			}
+			// Tier 3 ignores indentation by design. When oldText stated its own
+			// indentation, honour that statement rather than matching any nesting level.
+			if (anchored && normalizedIndent(contentLines[i + j]) !== normalizedIndent(oldLines[j])) {
 				ok = false;
 				break;
 			}
@@ -403,6 +520,115 @@ function getEmptyOldTextError(path: string, editIndex: number, totalEdits: numbe
 	return new Error(`edits[${editIndex}].oldText must not be empty in ${path}.`);
 }
 
+/**
+ * Characters the fuzzy matcher erases. When an edit matched only fuzzily and its
+ * newText normalizes to the same text, one of these is why: the file holds a
+ * character the model reproduced as its plain-ASCII lookalike, so the change it
+ * asked for is invisible to the matcher and can never be applied by retrying the
+ * same text. Naming the character is the whole recovery - resend oldText with it.
+ */
+const NORMALIZED_AWAY_NAMES = new Map<number, string>([
+	[0x0009, "TAB"],
+	[0x00a0, "NO-BREAK SPACE"],
+	[0x2002, "EN SPACE"],
+	[0x2003, "EM SPACE"],
+	[0x2009, "THIN SPACE"],
+	[0x200a, "HAIR SPACE"],
+	[0x2010, "HYPHEN"],
+	[0x2011, "NON-BREAKING HYPHEN"],
+	[0x2012, "FIGURE DASH"],
+	[0x2013, "EN DASH"],
+	[0x2014, "EM DASH"],
+	[0x2015, "HORIZONTAL BAR"],
+	[0x2018, "LEFT SINGLE QUOTATION MARK"],
+	[0x2019, "RIGHT SINGLE QUOTATION MARK"],
+	[0x201a, "SINGLE LOW-9 QUOTATION MARK"],
+	[0x201b, "SINGLE HIGH-REVERSED-9 QUOTATION MARK"],
+	[0x201c, "LEFT DOUBLE QUOTATION MARK"],
+	[0x201d, "RIGHT DOUBLE QUOTATION MARK"],
+	[0x201e, "DOUBLE LOW-9 QUOTATION MARK"],
+	[0x201f, "DOUBLE HIGH-REVERSED-9 QUOTATION MARK"],
+	[0x202f, "NARROW NO-BREAK SPACE"],
+	[0x205f, "MEDIUM MATHEMATICAL SPACE"],
+	[0x2212, "MINUS SIGN"],
+	[0x3000, "IDEOGRAPHIC SPACE"],
+]);
+
+function formatCodePoint(ch: string): string {
+	const cp = ch.codePointAt(0) ?? 0;
+	const hex = `U+${cp.toString(16).toUpperCase().padStart(4, "0")}`;
+	const name = NORMALIZED_AWAY_NAMES.get(cp);
+	if (name) return `${hex} ${name}`;
+	// NFKC-only difference (ligature, full-width form, superscript, ...).
+	return `${hex} (normalizes to ${JSON.stringify(ch.normalize("NFKC"))})`;
+}
+
+/** Cap on how many offending characters one error names before summarising. */
+const MAX_REPORTED_CHARS = 5;
+
+/**
+ * Every character in `text` that fuzzy normalization would not leave alone.
+ *
+ * All of them are listed rather than just the first: the match span is widened to
+ * whole lines, so the first offender is often a leading tab the model never put
+ * in its oldText, while the character it actually needs sits further along the
+ * line. Naming one of them and guessing wrong is worse than naming them all.
+ */
+function findNormalizedAwayChars(text: string): Array<{ ch: string; index: number }> {
+	const found: Array<{ ch: string; index: number }> = [];
+	let index = 0;
+	for (const ch of text) {
+		const cp = ch.codePointAt(0) ?? 0;
+		if (NORMALIZED_AWAY_NAMES.has(cp) || ch.normalize("NFKC") !== ch) {
+			found.push({ ch, index });
+		}
+		index += ch.length;
+	}
+	return found;
+}
+
+/** 1-indexed line and column of `offset` within `content`. */
+function lineAndColumn(content: string, offset: number): { line: number; column: number } {
+	const before = content.slice(0, offset);
+	const line = before.split("\n").length;
+	const column = offset - (before.lastIndexOf("\n") + 1) + 1;
+	return { line, column };
+}
+
+/**
+ * The edit matched, but only after normalization erased the very difference it
+ * asked for. Retrying the same oldText can never succeed, so say which character
+ * is actually on disk and where.
+ */
+function getFuzzyNoopError(
+	path: string,
+	editIndex: number,
+	totalEdits: number,
+	content: string,
+	span: ResolvedSpan,
+): Error {
+	const matched = content.slice(span.matchIndex, span.matchIndex + span.matchLength);
+	const which = totalEdits === 1 ? "The edit" : `edits[${editIndex}]`;
+	const offenders = findNormalizedAwayChars(matched);
+	let detail: string;
+	if (offenders.length > 0) {
+		const shown = offenders.slice(0, MAX_REPORTED_CHARS).map((o) => {
+			const { line, column } = lineAndColumn(content, span.matchIndex + o.index);
+			return `${formatCodePoint(o.ch)} at line ${line}, column ${column}`;
+		});
+		const more = offenders.length - shown.length;
+		detail =
+			`the text it matched in ${path} contains ${shown.join("; ")}` +
+			`${more > 0 ? `; and ${more} more` : ""}, which your oldText spelled as plain-ASCII lookalikes. ` +
+			`Send oldText containing those exact characters and the replacement will apply.`;
+	} else {
+		detail =
+			`oldText matched ${path} only after whitespace normalization, and newText normalizes to the same text, ` +
+			`so nothing would change. Send oldText exactly as the file spells it.`;
+	}
+	return new Error(`No changes made to ${path}. ${which} asked for a change that is invisible to matching: ${detail}`);
+}
+
 function getNoChangeError(path: string, totalEdits: number): Error {
 	if (totalEdits === 1) {
 		return new Error(
@@ -443,26 +669,30 @@ export function applyEditsToNormalizedContent(
 
 	const baseContent = normalizedContent;
 
-	// Both line indexes are needed only if some edit reaches the fuzzy tier, and
-	// they are identical for every edit, so build them at most once. Normalization
-	// is line-preserving; if that ever fails to hold, the fuzzy tier is skipped
-	// rather than risk translating a span against a mismatched line table.
-	let lineIndexesCache: { original: LineIndex; normalized: LineIndex } | null | undefined;
-	const lineIndexes = () => {
-		if (lineIndexesCache === undefined) {
-			const original = buildLineIndex(baseContent);
-			const normalized = buildLineIndex(normalizeForFuzzyMatch(baseContent));
-			lineIndexesCache = original.lines.length === normalized.lines.length ? { original, normalized } : null;
+	// Needed only if some edit reaches the fuzzy tier, and identical for every
+	// edit, so build it at most once. A map that does not line up with its own
+	// text would put spans in the wrong place, so the tier is skipped rather than
+	// trusted if that ever fails to hold.
+	let normalizedCache: NormalizedWithMap | null | undefined;
+	const fuzzyIndex = () => {
+		if (normalizedCache === undefined) {
+			const built = normalizeForFuzzyMatchWithMap(baseContent);
+			normalizedCache = built.map.length === built.text.length + 1 ? built : null;
 		}
-		return lineIndexesCache;
+		return normalizedCache;
 	};
 
 	const matchedEdits: MatchedEdit[] = [];
 	for (let i = 0; i < normalizedEdits.length; i++) {
 		const edit = normalizedEdits[i];
-		const { spans, occurrences } = findEditSpans(baseContent, edit, lineIndexes);
+		const { spans, occurrences, noopFuzzySpan } = findEditSpans(baseContent, edit, fuzzyIndex);
 		if (spans.length === 0) {
 			throw getNotFoundError(path, i, normalizedEdits.length);
+		}
+		// Raised per edit, not once for the whole call: a no-op hidden among edits
+		// that do change bytes used to be swallowed and reported as a success.
+		if (noopFuzzySpan) {
+			throw getFuzzyNoopError(path, i, normalizedEdits.length, baseContent, noopFuzzySpan);
 		}
 
 		if (edit.replaceAll) {
