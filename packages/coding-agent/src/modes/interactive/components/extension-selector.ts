@@ -40,7 +40,6 @@ export class ExtensionSelectorComponent extends Container {
 		this.baseTitle = title;
 
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 
 		this.titleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
 		this.addChild(this.titleText);
@@ -69,7 +68,6 @@ export class ExtensionSelectorComponent extends Container {
 				0,
 			),
 		);
-		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
 		this.updateList();

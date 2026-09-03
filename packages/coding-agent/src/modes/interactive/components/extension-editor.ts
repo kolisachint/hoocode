@@ -56,11 +56,9 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 
 		// Add top border
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 
 		// Add title
 		this.addChild(new Text(theme.fg("accent", title), 1, 0));
-		this.addChild(new Spacer(1));
 
 		// Create editor
 		this.editor = new Editor(tui, getEditorTheme(), options);
@@ -85,8 +83,6 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 			keyHint("tui.select.cancel", "cancel") +
 			(hasExternalEditor ? `  ${keyHint("app.editor.external", "external editor")}` : "");
 		this.addChild(new Text(hint, 1, 0));
-
-		this.addChild(new Spacer(1));
 
 		// Add bottom border
 		this.addChild(new DynamicBorder());

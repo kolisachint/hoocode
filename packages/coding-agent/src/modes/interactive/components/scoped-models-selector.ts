@@ -126,12 +126,10 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 
 		// Header
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("accent", theme.bold("Model Configuration")), 0, 0));
 		this.addChild(
 			new Text(theme.fg("muted", `Session-only. ${keyText("app.models.save")} to save to settings.`), 0, 0),
 		);
-		this.addChild(new Spacer(1));
 
 		// Search input
 		this.searchInput = new Input();

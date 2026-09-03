@@ -130,9 +130,7 @@ export class UserMessageSelectorComponent extends Container {
 				0,
 			),
 		);
-		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 
 		// Create message list
 		this.messageList = new UserMessageList(messages, initialSelectedId);
@@ -142,7 +140,6 @@ export class UserMessageSelectorComponent extends Container {
 		this.addChild(this.messageList);
 
 		// Add bottom border
-		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
 		// Auto-cancel if no messages

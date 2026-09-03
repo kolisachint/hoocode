@@ -604,8 +604,6 @@ export class ConfigSelectorComponent extends Container implements Focusable {
 		this.resourceList.onExit = onExit;
 		this.resourceList.onToggle = () => requestRender();
 		this.addChild(this.resourceList);
-
-		this.addChild(new Spacer(1));
 	}
 
 	getResourceList(): ResourceList {

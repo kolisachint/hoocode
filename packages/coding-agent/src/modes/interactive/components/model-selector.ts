@@ -95,7 +95,6 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			const hintText = "Only showing models from configured providers. Use /login to add providers.";
 			this.addChild(new Text(theme.fg("warning", hintText), 0, 0));
 		}
-		this.addChild(new Spacer(1));
 
 		// Create search input
 		this.searchInput = new Input();
@@ -115,8 +114,6 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		// Create list container
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
-
-		this.addChild(new Spacer(1));
 
 		// Load models and do initial render
 		this.loadModels().then(() => {

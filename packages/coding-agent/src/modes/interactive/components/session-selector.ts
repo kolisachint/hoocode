@@ -752,13 +752,11 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.clear();
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
-		this.addChild(new Spacer(1));
 		if (options?.showHeader ?? true) {
 			this.addChild(this.header);
 			this.addChild(new Spacer(1));
 		}
 		this.addChild(content);
-		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
 	}
 

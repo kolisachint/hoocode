@@ -12,6 +12,11 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **TUI vertical rhythm**: one blank line separates two blocks, and it is
+  never paid for twice. A block's separator is the `Spacer(1)` before it (so
+  the block itself takes `paddingY: 0`), a `DynamicBorder` needs no blank
+  beside it, and nothing pads its own bottom edge. Rules and reference cases:
+  `docs/ui-map.md` -> "Vertical rhythm".
 - **`grep`/`find`/`ls` tools removed**: `search` is the only dedicated
   code-discovery tool; exact matching lines, counts, and raw directory listings
   are a shell job through `bash`. Claude Code's `Grep`/`Glob`/`Find` all
