@@ -136,6 +136,29 @@ Pickers presented over the main view:
 - `visual-truncate.ts` - app-level truncation helper.
 - `index.ts` - barrel exports for the components.
 
+## Vertical rhythm
+
+Screen rows are the scarcest thing in the UI: everything the transcript and the
+overlays spend is taken from the editor and from how much conversation stays
+visible. One blank line is the separator between two blocks. Three rules keep
+that from compounding:
+
+- **A block's separator is the `Spacer(1)` before it, not its own padding.**
+  A `Text`/`Markdown` added after a leading `Spacer(1)` takes `paddingY: 0` —
+  the pair `Spacer(1)` + `paddingY: 1` renders *two* blank rows above the block
+  and one below. `components/tool-execution.ts` is the reference case.
+- **A blank line next to a rule is a blank line wasted.** `DynamicBorder`
+  already separates; title text sits flush under the top rule and the last row
+  sits flush above the bottom one. (`components/login-dialog.ts` is the
+  reference case.)
+- **Nothing pads its own bottom edge.** The footer, the editor and a closing
+  rule are their own bands, so the last child of a selector or a transcript
+  block never ends with a `Spacer(1)`.
+
+The exception is a `Box` with a background: its `paddingY` rows are *painted*
+band, not empty space, and they are what makes a user message or a warning read
+as a sheet (`components/user-message.ts`, `showBlock` in `interactive-mode.ts`).
+
 ## Common "where is X" answers
 
 - The task pane / subagent list, status icons, warning cue: `components/task-panel.ts`.

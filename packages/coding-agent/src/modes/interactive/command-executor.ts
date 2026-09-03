@@ -519,7 +519,7 @@ export class CommandExecutor {
 		this.ctx.chatContainer.addChild(new DynamicBorder());
 		this.ctx.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "What's New")), 1, 0));
 		this.ctx.chatContainer.addChild(new Spacer(1));
-		this.ctx.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 1, this.ctx.getMarkdownThemeWithSettings()));
+		this.ctx.chatContainer.addChild(new Markdown(changelogMarkdown, 1, 0, this.ctx.getMarkdownThemeWithSettings()));
 		this.ctx.chatContainer.addChild(new DynamicBorder());
 		this.ctx.ui.requestRender();
 	}
@@ -667,7 +667,7 @@ verbs are on \`Alt\`, and its hint line names them.
 		this.ctx.chatContainer.addChild(new DynamicBorder());
 		this.ctx.chatContainer.addChild(new Text(theme.bold(theme.fg("accent", "Keyboard Shortcuts")), 1, 0));
 		this.ctx.chatContainer.addChild(new Spacer(1));
-		this.ctx.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 1, this.ctx.getMarkdownThemeWithSettings()));
+		this.ctx.chatContainer.addChild(new Markdown(hotkeys.trim(), 1, 0, this.ctx.getMarkdownThemeWithSettings()));
 		this.ctx.chatContainer.addChild(new DynamicBorder());
 		this.ctx.ui.requestRender();
 	}
@@ -682,7 +682,7 @@ verbs are on \`Alt\`, and its hint line names them.
 			}
 			this.ctx.renderCurrentSessionState();
 			this.ctx.chatContainer.addChild(new Spacer(1));
-			this.ctx.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 1));
+			this.ctx.chatContainer.addChild(new Text(`${theme.fg("accent", "✓ New session started")}`, 1, 0));
 			this.ctx.ui.requestRender();
 		} catch (error: unknown) {
 			await this.ctx.handleFatalRuntimeError("Failed to create session", error);
@@ -743,7 +743,7 @@ verbs are on \`Alt\`, and its hint line names them.
 							`New session started here. ${keyDisplayText("app.session.resume")} reopens the session you left in ${previousCwd}.`,
 						),
 					1,
-					1,
+					0,
 				),
 			);
 			this.ctx.ui.requestRender();
@@ -823,7 +823,7 @@ verbs are on \`Alt\`, and its hint line names them.
 
 		this.ctx.chatContainer.addChild(new Spacer(1));
 		this.ctx.chatContainer.addChild(
-			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 1),
+			new Text(`${theme.fg("accent", "✓ Debug log written")}\n${theme.fg("muted", debugLogPath)}`, 1, 0),
 		);
 		this.ctx.ui.requestRender();
 	}

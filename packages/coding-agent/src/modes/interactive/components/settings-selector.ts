@@ -726,7 +726,6 @@ class FlagStringEditSubmenu extends Container {
 		super();
 
 		this.addChild(new Text(theme.bold(theme.fg("accent", `Flag: --${flagName}`)), 0, 0));
-		this.addChild(new Spacer(1));
 		this.addChild(new Text(theme.fg("muted", "Enter a value · Enter to save · Esc to cancel"), 0, 0));
 		this.addChild(new Spacer(1));
 
@@ -848,7 +847,6 @@ class SelectSubmenu extends Container {
 
 		// Description
 		if (description) {
-			this.addChild(new Spacer(1));
 			this.addChild(new Text(theme.fg("muted", description), 0, 0));
 		}
 

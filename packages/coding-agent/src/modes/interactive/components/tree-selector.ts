@@ -1189,10 +1189,8 @@ export class TreeSelectorComponent extends Container implements Focusable {
 		);
 		this.addChild(new SearchLine(this.treeList));
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 		this.addChild(this.treeContainer);
 		this.addChild(this.labelInputContainer);
-		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 
 		if (tree.length === 0) {

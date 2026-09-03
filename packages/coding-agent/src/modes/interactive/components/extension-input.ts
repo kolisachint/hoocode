@@ -45,11 +45,9 @@ export class ExtensionInputComponent extends Container implements Focusable {
 		this.baseTitle = title;
 
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 
 		this.titleText = new Text(theme.fg("accent", title), 1, 0);
 		this.addChild(this.titleText);
-		this.addChild(new Spacer(1));
 
 		if (opts?.timeout && opts.timeout > 0 && opts.tui) {
 			this.countdown = new CountdownTimer(
@@ -66,7 +64,6 @@ export class ExtensionInputComponent extends Container implements Focusable {
 		this.addChild(
 			new Text(`${keyHint("tui.select.confirm", "submit")}  ${keyHint("tui.select.cancel", "cancel")}`, 1, 0),
 		);
-		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 	}
 

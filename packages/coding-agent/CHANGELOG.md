@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The TUI spends fewer rows on blank space.** One blank line separates two
+  blocks; it is no longer paid for twice. `/clear`, `/cd` and `/debug` each
+  drew two blank rows above their confirmation and two below it, and every
+  bordered picker padded the inside of its own rules — the rule was already
+  the separator. Two to three rows come back on each of: the `/model` and
+  `/models` pickers, the session, tree, fork, extension and `/login` provider
+  selectors, the extension input and editor dialogs, the `/reload` notice, and
+  `/clear`, `/cd`, `/debug`, `/changelog` and `/hotkeys` in the transcript.
+  Filled blocks (user messages, warnings, errors) keep their painted band —
+  those rows are the sheet, not empty space.
+
 ## [0.5.51] - 2026-09-03
 
 ### Removed

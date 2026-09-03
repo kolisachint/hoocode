@@ -64,12 +64,10 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 
 		// Add top border
 		this.addChild(new DynamicBorder());
-		this.addChild(new Spacer(1));
 
 		// Add title
 		const title = mode === "login" ? "Select provider to configure:" : "Select provider to logout:";
 		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
-		this.addChild(new Spacer(1));
 
 		this.searchInput = new Input();
 		this.searchInput.onSubmit = () => {
@@ -84,8 +82,6 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		// Create list container
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
-
-		this.addChild(new Spacer(1));
 
 		// Add bottom border
 		this.addChild(new DynamicBorder());
