@@ -1,9 +1,9 @@
 /**
  * The external (Rust) binaries hoocode can use, and what each one is worth.
  *
- * hoocode is self-sufficient without any of them: `grep`/`find`/`search` fall
- * back to pure-JS implementations, and the features that have no fallback
- * (web, voice) are off or inert rather than broken. These binaries are an
+ * hoocode is self-sufficient without any of them: `search` and @-file
+ * autocomplete fall back to pure-JS implementations, and the features that have
+ * no fallback (web, voice) are off or inert rather than broken. These binaries are an
  * *expansion* layer, which is exactly why they were invisible - nothing failed
  * loudly enough to tell anyone they existed.
  *
@@ -55,7 +55,7 @@ export const EXTERNAL_TOOLS: readonly ExternalToolDoc[] = [
 		tool: "rg",
 		label: "ripgrep (rg)",
 		summary: "Fast path for content search.",
-		enables: ["grep runs rg instead of the JS scanner", "the lexical half of search runs rg"],
+		enables: ["the lexical half of search runs rg instead of the JS scanner"],
 		fallback:
 			"A pure-JS scanner produces the same match shape, so results are identical - it is materially slower on large trees and respects fewer ignore-file edge cases.",
 		acquisition: "startup",
@@ -67,7 +67,7 @@ export const EXTERNAL_TOOLS: readonly ExternalToolDoc[] = [
 		tool: "fd",
 		label: "fd",
 		summary: "Fast path for filename search.",
-		enables: ["find runs fd instead of the JS directory walker"],
+		enables: ["@-file autocomplete lists paths with fd instead of the JS directory walker"],
 		fallback:
 			"A JS walker produces the same result shape - slower on large trees, and glob/ignore handling is the JS approximation rather than fd's.",
 		acquisition: "startup",

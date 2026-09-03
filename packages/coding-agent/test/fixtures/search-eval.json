@@ -84,8 +84,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/extensions/core/modes.ts",
-        "startLine": 130,
-        "endLine": 157,
+        "startLine": 131,
+        "endLine": 158,
         "anchor": "export function parsePlanSections"
       }
     ]
@@ -97,8 +97,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/extensions/core/modes.ts",
-        "startLine": 171,
-        "endLine": 195,
+        "startLine": 172,
+        "endLine": 196,
         "anchor": "export function buildApproveMessage"
       }
     ]
@@ -188,8 +188,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/tools/native-search.ts",
-        "startLine": 291,
-        "endLine": 354,
+        "startLine": 200,
+        "endLine": 263,
         "anchor": "export async function nativeGrep"
       }
     ]
@@ -286,15 +286,15 @@
     ]
   },
   {
-    "id": "error-grep-empty-pattern",
+    "id": "error-read-offset-beyond-eof",
     "class": "error-fragment",
-    "query": "\"pattern must not be empty\"",
+    "query": "\"is beyond end of file\"",
     "gold": [
       {
-        "path": "packages/coding-agent/src/core/tools/grep.ts",
-        "startLine": 191,
-        "endLine": 195,
-        "anchor": "\"pattern must not be empty\""
+        "path": "packages/coding-agent/src/core/tools/read.ts",
+        "startLine": 369,
+        "endLine": 373,
+        "anchor": "is beyond end of file"
       }
     ]
   },
@@ -442,14 +442,14 @@
     ]
   },
   {
-    "id": "path-grep-tool",
+    "id": "path-search-tool",
     "class": "path",
-    "query": "core/tools/grep.ts",
+    "query": "core/tools/search.ts",
     "gold": [
       {
-        "path": "packages/coding-agent/src/core/tools/grep.ts",
+        "path": "packages/coding-agent/src/core/tools/search.ts",
         "startLine": 1,
-        "endLine": 499,
+        "endLine": 170,
         "scope": "file"
       }
     ]
@@ -488,7 +488,7 @@
       {
         "path": "packages/coding-agent/src/utils/tools-manager.ts",
         "startLine": 1,
-        "endLine": 510,
+        "endLine": 569,
         "scope": "file"
       }
     ]
@@ -617,8 +617,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/tools/native-search.ts",
-        "startLine": 291,
-        "endLine": 354,
+        "startLine": 200,
+        "endLine": 263,
         "anchor": "export async function nativeGrep"
       }
     ]
@@ -643,8 +643,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/extensions/core/modes.ts",
-        "startLine": 171,
-        "endLine": 195,
+        "startLine": 172,
+        "endLine": 196,
         "anchor": "export function buildApproveMessage"
       }
     ]

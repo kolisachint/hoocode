@@ -25,14 +25,14 @@ describe("subagent task_progress → roster activity", () => {
 		pool.emit("task_progress", {
 			task_id: "run-1",
 			agent_type: "explore",
-			event: { type: "tool_execution_start", toolName: "grep" },
+			event: { type: "tool_execution_start", toolName: "search" },
 		});
-		expect(activityOf("run-1")).toBe("grep");
+		expect(activityOf("run-1")).toBe("search");
 
 		pool.emit("task_progress", {
 			task_id: "run-1",
 			agent_type: "explore",
-			event: { type: "tool_execution_end", toolName: "grep" },
+			event: { type: "tool_execution_end", toolName: "search" },
 		});
 		expect(activityOf("run-1")).toBe("");
 	});
@@ -69,19 +69,19 @@ describe("subagent task_progress → roster activity", () => {
 		pool.emit("task_progress", {
 			task_id: "run-1",
 			agent_type: "explore",
-			event: { type: "tool_execution_start", toolName: "grep" },
+			event: { type: "tool_execution_start", toolName: "search" },
 		});
 		pool.emit("task_progress", {
 			task_id: "run-2",
 			agent_type: "explore",
 			event: { type: "tool_execution_start", toolName: "bash" },
 		});
-		expect(activityOf("run-1")).toBe("grep");
+		expect(activityOf("run-1")).toBe("search");
 		expect(activityOf("run-2")).toBe("bash");
 
 		// One run finishing must not clear its sibling's activity.
 		pool.emit("task_done", { agent_type: "explore", task_id: "run-2" });
-		expect(activityOf("run-1")).toBe("grep");
+		expect(activityOf("run-1")).toBe("search");
 		expect(activityOf("run-2")).toBe("");
 	});
 
@@ -90,7 +90,7 @@ describe("subagent task_progress → roster activity", () => {
 		pool.emit("task_progress", {
 			task_id: "ghost-run",
 			agent_type: "ghost",
-			event: { type: "tool_execution_start", toolName: "grep" },
+			event: { type: "tool_execution_start", toolName: "search" },
 		});
 		expect(taskStore.agents().find((a) => a.id === "ghost-run")).toBeUndefined();
 	});

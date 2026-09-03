@@ -139,7 +139,7 @@ describe("task panel rendering", () => {
 	});
 
 	test("an in-progress subagent row shows the owner's live tool activity", () => {
-		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent", state: "running", activity: "grep" });
+		taskStore.upsertAgent({ id: "explore", name: "explore", kind: "subagent", state: "running", activity: "search" });
 		const sub = taskStore.create("trace the auth flow", {
 			source: "subagent",
 			subagentMode: "explore",
@@ -153,8 +153,8 @@ describe("task panel rendering", () => {
 			.find((l) => l.includes("trace the auth flow"));
 		// The live tool the subagent is running keeps the row reading as busy rather
 		// than stuck, and a delegated row also carries its own run clock.
-		expect(row).toContain("⋯ grep");
-		expect(row).toMatch(/⋯ grep · \d/);
+		expect(row).toContain("⋯ search");
+		expect(row).toMatch(/⋯ search · \d/);
 	});
 
 	test("an idle in-progress subagent row keeps its run clock so a wedged run is visible", () => {

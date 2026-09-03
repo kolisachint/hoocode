@@ -116,23 +116,35 @@ describe("buildSystemPrompt", () => {
 		});
 	});
 
-	describe("search/grep routing", () => {
-		test("emits the routing guideline only when both search and grep are active", () => {
+	describe("search/bash routing", () => {
+		test("emits the routing guideline only when both search and bash are active", () => {
 			const both = buildSystemPrompt({
-				selectedTools: ["search", "grep"],
+				selectedTools: ["search", "bash"],
 				contextFiles: [],
 				skills: [],
 				cwd: process.cwd(),
 			});
-			expect(both).toContain("Between search and grep:");
+			expect(both).toContain("Between search and bash:");
 
-			const grepOnly = buildSystemPrompt({
-				selectedTools: ["grep"],
+			const searchOnly = buildSystemPrompt({
+				selectedTools: ["search"],
 				contextFiles: [],
 				skills: [],
 				cwd: process.cwd(),
 			});
-			expect(grepOnly).not.toContain("Between search and grep:");
+			expect(searchOnly).toContain("For code discovery use search");
+			expect(searchOnly).not.toContain("Between search and bash:");
+		});
+
+		test("falls back to the shell guideline when search is absent", () => {
+			const bashOnly = buildSystemPrompt({
+				selectedTools: ["bash"],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+			expect(bashOnly).toContain("Use bash for file exploration");
+			expect(bashOnly).not.toContain("Between search and bash:");
 		});
 	});
 });

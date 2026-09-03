@@ -57,7 +57,7 @@ The agent and its project culture share one voice, codified in `AGENTS.md`:
 - **No emoji. Anywhere.** Not in UI, commits, issues, PRs, or code. (This is a
   hard rule and a defining trait — see Iconography.)
 - **Lowercase, mechanical labels.** Tool names render lowercase: `read`, `bash`,
-  `edit`, `write`, `find`, `grep`, `ls`. The bash tool literally prints `$ <cmd>`.
+  `edit`, `write`, `search`. The bash tool literally prints `$ <cmd>`.
 - **"You" address, imperative voice** in hints: `ctrl+r to expand`, `esc close`,
   `space toggle`, `Type to filter resources`, `Ctrl+P to cycle`.
 - **Numbers are first-class and exact.** The footer shows

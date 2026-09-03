@@ -104,7 +104,7 @@ export interface WarningSettings {
  * the agent's or parent's default model is used.
  */
 interface ModelCategories {
-	/** Quick, cheap models for read-only exploration (grep, find, file discovery) */
+	/** Quick, cheap models for read-only exploration (search, file discovery) */
 	fast?: string;
 	/** Balanced models for general work (planning, moderate complexity) */
 	standard?: string;
@@ -177,7 +177,7 @@ export interface Settings {
 	platform?: string | string[]; // Platform layout(s) hoocode targets when writing artifacts. Authored plugins take claude|github only (agents is filtered out - a plugin needs an ecosystem); /new-* scaffolds also accept agents|native. Same as the --platform CLI flag (which overrides this for one run). Editable in /settings -> Plugins -> Platform.
 	deferMcpSchemas?: boolean; // default: true - defer MCP tool schemas (inject names only + ResolveMcpTools on demand) instead of registering every schema up front; set false to eagerly register every schema
 	enableWebTools?: boolean; // default: false - enable the webfetch + websearch tools (network access)
-	enableEmbsearchTools?: boolean; // default: true - enable the semantic index layer for the always-on `search` tool: index the repo with the embsearch binary so search can fuse semantic hits. Set false to run search lexical-only. grep/find are unchanged.
+	enableEmbsearchTools?: boolean; // default: true - enable the semantic index layer for the always-on `search` tool: index the repo with the embsearch binary so search can fuse semantic hits. Set false to run search lexical-only.
 	embsearchBinaryPath?: string; // Path to the embsearch binary. Default: resolve "embsearch" from PATH.
 	embsearchThresholdBytes?: number; // default: 0 - minimum indexable source bytes before a repo is embedded; 0 means index every repo regardless of size. Raise it to skip embedding for repos under N bytes.
 	learnMaxSessions?: number; // default: 20 - how many recent sessions in this directory /learn mines. Raise it on a repo you touch rarely; lower it when only the last few days matter.

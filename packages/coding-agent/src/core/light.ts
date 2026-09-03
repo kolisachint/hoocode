@@ -7,7 +7,7 @@
  * subagents, TodoWrite, skills, context files, and the mode-prompt appendix.
  * The goal is the smallest possible fixed per-turn surface (system prompt +
  * serialized tool schemas) so weak tool-callers waste no context on harness
- * boilerplate. bash subsumes grep/find/ls: search happens via the shell.
+ * boilerplate. bash subsumes the search tool: discovery happens via the shell.
  */
 
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
@@ -24,7 +24,7 @@ export const LIGHT_TOOL_NAMES = ["read", "write", "edit", "bash"] as const;
  * light mode also disables skills, context files, and the mode appendix.
  */
 export const LIGHT_SYSTEM_PROMPT = `You are a coding agent. Use the tools to read, edit, and write files and run shell commands.
-Search with bash (grep/find/ls). Prefer edit for changes; write for new files.
+Search with bash (rg/find/ls). Prefer edit for changes; write for new files.
 Be concise. No preamble.`;
 
 /**

@@ -324,7 +324,7 @@ there.
 
 | Binary | Adds | Without it |
 |---|---|---|
-| `rg` | Fast path for `grep` and the lexical half of `search`. Fetched at startup. | A pure-JS scanner with identical output, slower on large trees. |
+| `rg` | Fast path for the lexical half of `search`. Fetched at startup. | A pure-JS scanner with identical output, slower on large trees. |
 | `fd` | Fast path for `find`. Fetched at startup. | A JS directory walker, slower, with approximated glob/ignore handling. |
 | `embsearch` | Semantic hits fused into `search`, and meaning-ranked capability/MCP lookup. Fetched on first use. Must be the ONNX build. | `search` runs lexical-only. Nothing errors; intent-phrased queries rank worse. |
 | `webtools` | The `webfetch` and `websearch` tools. Fetched on first use. | Both tools error when called. |
@@ -335,7 +335,7 @@ there.
 | `enableWebTools` | boolean | `false` | Enable `webfetch` + `websearch` (network access). Needs the `webtools` binary. |
 | `webtools.timeoutSecs` | number | `15` | Per-request timeout in seconds, clamped 1–120. Wins over `HOOCODE_WEBTOOLS_TIMEOUT`. |
 | `webtools.search` | object | — | Search backend and credentials, read by the `webtools` binary itself. See [Web search providers](#web-search-providers). |
-| `enableEmbsearchTools` | boolean | `true` | Build and fuse the semantic index into `search`. Set false to run `search` lexical-only. `grep`/`find` are unaffected. |
+| `enableEmbsearchTools` | boolean | `true` | Build and fuse the semantic index into `search`. Set false to run `search` lexical-only. |
 | `embsearchBinaryPath` | string | — | Explicit path to the `embsearch` binary. Default: resolve from `PATH`. |
 | `embsearchThresholdBytes` | number | `0` | Minimum indexable source bytes before a repo is embedded. `0` indexes every repo. |
 | `voice.silenceMs` | number | `800` | Trailing silence before voice capture auto-stops, clamped 300–10000. `VOICETOOLS_SILENCE_MS` overrides this. |

@@ -131,7 +131,7 @@ export class WarmSubagentWorker {
 	): Promise<WarmRunResult> {
 		if (!this.alive) throw new WarmWorkerError("worker is not alive");
 		// Mirror the cold pool's coarse progress: report the tool the child is
-		// currently running so a warm dispatch's task row reads "⋯ grep" rather than a
+		// currently running so a warm dispatch's task row reads "⋯ search" rather than a
 		// static "running…". Cleared between tools and at turn end.
 		const detachProgress = onActivity ? this.tapProgress(onActivity) : undefined;
 		try {

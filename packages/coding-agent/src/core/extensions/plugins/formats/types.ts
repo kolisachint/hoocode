@@ -54,7 +54,7 @@ interface AuthoredCommand {
 interface AuthoredAgent {
 	name: string;
 	description?: string;
-	/** Comma-separated `allowed-tools` string, e.g. "read, grep, glob". */
+	/** Comma-separated `allowed-tools` string, e.g. "read, search". */
 	tools?: string;
 	model?: string;
 	/** System-prompt / instruction body (markdown). */

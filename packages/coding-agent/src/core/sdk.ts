@@ -31,9 +31,6 @@ import {
 	createBashTool,
 	createCodingTools,
 	createEditTool,
-	createFindTool,
-	createGrepTool,
-	createLsTool,
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
@@ -139,9 +136,6 @@ export {
 	createBashTool,
 	createEditTool,
 	createWriteTool,
-	createGrepTool,
-	createFindTool,
-	createLsTool,
 };
 
 // Helper Functions
@@ -296,11 +290,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	}
 
 	// `search` is always active: it answers "find where X lives" with ranked
-	// results and degrades to grep-backed lexical retrieval when no semantic
+	// results and degrades to exact-text lexical retrieval when no semantic
 	// index is present, so it needs no binary to be useful. The
 	// `enableEmbsearchTools` flag only controls whether the semantic index is
 	// built and fused in (see main.ts) — not whether the tool exists.
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "search"];
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "search"];
 	// Web tools are registered as base tools but inactive by default; opt-in adds
 	// them to the default active set. An explicit allowlist (`tools`) takes over
 	// fully, so callers must list them there to enable in that mode.

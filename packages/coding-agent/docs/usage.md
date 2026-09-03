@@ -311,7 +311,7 @@ cat README.md | hoocode -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
-Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+Built-in tools: `read`, `bash`, `edit`, `write`, `search`.
 
 #### Optional tool bundles
 
@@ -376,7 +376,7 @@ trims the session to the smallest useful fixed per-turn surface, for small or
 local models that waste context on harness boilerplate:
 
 - Only `read`, `write`, `edit`, and `bash`, with short descriptions and stripped
-  parameter schemas. `bash` subsumes grep/find/ls — search happens via the shell.
+  parameter schemas. `bash` subsumes `search` — discovery happens via the shell.
 - A terse replacement system prompt.
 - No subagents, TodoWrite, skills, context files, mode appendix, or the
   self-documentation section.
@@ -418,7 +418,7 @@ hoocode --model sonnet:high "Solve this complex problem"
 hoocode --models "claude-*,gpt-4o"
 
 # Read-only mode
-hoocode --tools read,grep,find,ls -p "Review the code"
+hoocode --tools read,search -p "Review the code"
 ```
 
 ### Environment Variables

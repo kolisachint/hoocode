@@ -78,7 +78,7 @@ describe("loadAgentRegistry", () => {
 		const helper = reg.get("claude-helper");
 		expect(helper).toBeDefined();
 		expect(helper?.source).toBe("claude-project");
-		expect(helper?.tools).toEqual(["read", "find"]);
+		expect(helper?.tools).toEqual(["read", "search"]);
 	});
 
 	test("native project agents take precedence over imported .claude project agents", () => {

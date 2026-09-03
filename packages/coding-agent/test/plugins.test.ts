@@ -284,7 +284,7 @@ describe("copilot (.github) plugin format", () => {
 			version: "0.1.0",
 			description: "authored copilot plugin",
 			commands: [{ name: "greet", description: "say hi", body: "Say hello to the user." }],
-			agents: [{ name: "scout", description: "read-only scout", tools: "read, grep", body: "You explore." }],
+			agents: [{ name: "scout", description: "read-only scout", tools: "read, search", body: "You explore." }],
 			mcpServers: [{ name: "svc", command: "svc-bin", args: ["--port", "1"] }],
 		};
 		const root = path.join(tempDir, "rt");
@@ -299,7 +299,7 @@ describe("copilot (.github) plugin format", () => {
 		expect(fs.existsSync(path.join(root, "agents", "scout.agent.md"))).toBe(true);
 		// Copilot custom agents take `tools` as a YAML list (not the Claude comma string).
 		const agentMd = fs.readFileSync(path.join(root, "agents", "scout.agent.md"), "utf8");
-		expect(agentMd).toContain("tools: ['read', 'grep']");
+		expect(agentMd).toContain("tools: ['read', 'search']");
 
 		const parsed = parsePluginDir(root);
 		expect(parsed?.format).toBe("copilot");

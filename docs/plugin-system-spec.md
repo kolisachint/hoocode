@@ -139,7 +139,7 @@ used for install.
 execute, but invoking it spawns an autonomous actor with whatever `tools:`
 grants. Classify the requested allowlist and set the bar automatically:
 
-- Read-only grant (Read / Grep / Glob / WebFetch) → autonomous + transparent,
+- Read-only grant (Read / Search / WebFetch) → autonomous + transparent,
   as safe as a skill.
 - Mutating / exec / network grant (Bash, Write, Edit, MCP) or `tools: *` →
   **show the definition, especially the `tools:` line, and require human

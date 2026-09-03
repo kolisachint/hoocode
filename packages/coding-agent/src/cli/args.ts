@@ -362,7 +362,7 @@ ${chalk.bold("Options:")}
                                   embsearch binary (local MiniLM embeddings, stored under
                                   ~/.hoocode/embsearch), regardless of size; until the index is
                                   ready search runs lexical-only, then fuses semantic hits once
-                                  ready. grep/find are unchanged. Requires embsearch on PATH or
+                                  ready. Requires embsearch on PATH or
                                   the "embsearchBinaryPath" setting; degrades to lexical-only if
                                   the binary is unavailable. Disable via the "enableEmbsearchTools"
                                   setting (false), or raise "embsearchThresholdBytes" to skip
@@ -463,7 +463,7 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --thinking high "Solve this complex problem"
 
   # Read-only mode (no file modifications possible)
-  ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
+  ${APP_NAME} --tools read,search -p "Review the code in src/"
 
   # Export a session file to HTML
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
@@ -501,7 +501,7 @@ ${chalk.bold("Environment Variables:")}
   ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
   HOOCODE_PACKAGE_DIR              - Override package directory (for Nix/Guix store paths).
   HOOCODE_OFFLINE                  - Disable startup network operations when set to 1/true/yes.
-  HOOCODE_NATIVE_SEARCH            - Force the pure-JS find/grep fallback instead of the fd/rg binaries
+  HOOCODE_NATIVE_SEARCH            - Force the pure-JS search fallback instead of the fd/rg binaries
                                      when set to 1 (also used automatically when fd/rg are unavailable).
   HOOCODE_CA_CERT                  - Path to an extra PEM CA bundle to trust for hoocode's own TLS traffic
                                      (additive; verification stays on). Precedence: --ca-cert > this > NODE_EXTRA_CA_CERTS
@@ -517,8 +517,6 @@ ${chalk.bold("Built-in Tool Names:")}
   bash   - Execute bash commands
   edit   - Edit files with find/replace
   write  - Write files (creates/overwrites)
-  grep   - Search file contents (read-only, off by default)
-  find   - Find files by glob pattern (read-only, off by default)
-  ls     - List directory contents (read-only, off by default)
+  search - Ranked code search, keyword + semantic (read-only)
 `);
 }

@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -34,7 +34,7 @@ describe("getDefaultTools", () => {
 	it("returns the built-in tool bundle", () => {
 		expect(tools.length).toBeGreaterThanOrEqual(1);
 		const names = tools.map((tool) => tool.name);
-		expect(names).toEqual(["bash", "read", "edit", "write", "grep", "find", "ls"]);
+		expect(names).toEqual(["bash", "read", "edit", "write"]);
 		for (const tool of tools) {
 			expect(typeof tool.execute).toBe("function");
 			expect(tool.description.length).toBeGreaterThan(0);
@@ -77,34 +77,5 @@ describe("getDefaultTools", () => {
 		await executeText(getTool(tools, "write"), { path: "lines.txt", content: "one\ntwo\nthree\nfour\n" });
 		const output = await executeText(getTool(tools, "read"), { path: "lines.txt", offset: 2, limit: 2 });
 		expect(output).toBe("two\nthree");
-	});
-
-	it("grep finds matches with file and line info", async () => {
-		await executeText(getTool(tools, "write"), {
-			path: "src/code.ts",
-			content: "const needle = 1;\nconst hay = 2;\n",
-		});
-		const output = await executeText(getTool(tools, "grep"), { pattern: "needle", glob: "*.ts" });
-		expect(output).toContain("src/code.ts:1:");
-		expect(output).toContain("needle");
-	});
-
-	it("grep respects the root .gitignore", async () => {
-		await writeFile(join(cwd, ".gitignore"), "ignored/\n");
-		await executeText(getTool(tools, "write"), { path: "ignored/secret.ts", content: "const needle = 3;\n" });
-		const output = await executeText(getTool(tools, "grep"), { pattern: "needle" });
-		expect(output).not.toContain("ignored/secret.ts");
-	});
-
-	it("find matches glob patterns", async () => {
-		const output = await executeText(getTool(tools, "find"), { pattern: "**/*.ts" });
-		expect(output).toContain("src/code.ts");
-		expect(output).not.toContain("hello.txt");
-	});
-
-	it("ls lists directories with trailing slash", async () => {
-		const output = await executeText(getTool(tools, "ls"), {});
-		expect(output).toContain("notes/");
-		expect(output).toContain("dup.txt");
 	});
 });

@@ -10,7 +10,7 @@ import { formatSkillsForPrompt, type Skill } from "./skills.js";
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
-	/** Tools to include in prompt. Default: [read, bash, edit, write, search, grep, find, ls] */
+	/** Tools to include in prompt. Default: [read, bash, edit, write, search] */
 	selectedTools?: string[];
 	/** Optional one-line tool snippets keyed by tool name. */
 	toolSnippets?: Record<string, string>;
@@ -116,7 +116,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Build tools list based on selected tools.
 	// A tool appears in Available tools only when the caller provides a one-line snippet.
-	const tools = selectedTools || ["read", "bash", "edit", "write", "search", "grep", "find", "ls"];
+	const tools = selectedTools || ["read", "bash", "edit", "write", "search"];
 	const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
 	const toolsList =
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets![name]}`).join("\n") : "(none)";
@@ -134,36 +134,22 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	const hasBash = tools.includes("bash");
 	const hasSearch = tools.includes("search");
-	const hasGrep = tools.includes("grep");
-	const hasFind = tools.includes("find");
-	const hasLs = tools.includes("ls");
 	const hasRead = tools.includes("read");
 
-	// File exploration guidelines. Name only the tools that are actually
-	// registered (the condition used to OR the three but hardcode all three
-	// names, advertising tools that might not exist) and map each to its job so
-	// the model picks the right one instead of defaulting to its bash habit.
-	const explore: string[] = [];
-	if (hasSearch) explore.push("search (find where code lives by concept or identifier)");
-	if (hasGrep) explore.push("grep (exact line/regex search)");
-	if (hasFind) explore.push("find (locate files by name/glob)");
-	if (hasLs) explore.push("ls (list directory contents)");
-	if (explore.length > 0) {
+	// File exploration guidelines. `search` is the only dedicated discovery tool
+	// left, so name it when it is registered and fall back to the shell
+	// otherwise — never advertise a tool that isn't in the bundle.
+	if (hasSearch) {
 		addGuideline(
-			`For file exploration use the dedicated tools — ${explore.join(", ")} — instead of bash; they are faster, and respect .gitignore where applicable`,
+			"For code discovery use search (find where code lives by concept or identifier) instead of bash; it is faster and respects .gitignore",
 		);
+		if (hasBash) {
+			addGuideline(
+				"Between search and bash: search finds where code lives by concept, behavior, or half-known name (ranked results); shell out to rg/find/ls when you need exact matching lines, counts, or a raw directory listing",
+			);
+		}
 	} else if (hasBash) {
 		addGuideline("Use bash for file exploration (ls, rg/grep, find)");
-	}
-
-	// Single source of truth for the search↔grep decision. Gated on both tools
-	// being active so we never reference a tool that isn't registered — grep.ts
-	// and search.ts intentionally no longer cross-reference each other, since a
-	// tool factory can't know what else is in the bundle.
-	if (hasSearch && hasGrep) {
-		addGuideline(
-			"Between search and grep: search finds where code lives by concept, behavior, or half-known name (ranked results); grep enumerates exact matching lines, regexes, and counts (output proportional to matches)",
-		);
 	}
 
 	for (const guideline of promptGuidelines ?? []) {

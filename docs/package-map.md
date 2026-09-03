@@ -60,7 +60,7 @@ The reusable agent loop, independent of any specific UI or provider.
   - `messages.ts` - custom message types (`bashExecution`, `custom`, summaries) and
     `convertToLlm`; session entry types live in `harness/types.ts`.
   - `utils/output-compression.ts` - lossless tool-output compression (used by the CLI's
-    bash/grep/read tools and compaction).
+    bash/read tools and compaction).
   - `session/`, `skills.ts`, `system-prompt.ts`, `prompt-templates.ts` - harness-side
     session storage and resources. These are `ExecutionEnv`-abstracted designs, distinct
     from coding-agent's fs-based `core/` equivalents (not diverged copies).

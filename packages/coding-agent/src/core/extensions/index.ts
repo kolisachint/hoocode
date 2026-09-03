@@ -62,15 +62,12 @@ export type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
-	FindToolCallEvent,
-	GrepToolCallEvent,
 	// Events - Input
 	InputEvent,
 	InputEventResult,
 	InputSource,
 	KeybindingsManager,
 	LoadExtensionsResult,
-	LsToolCallEvent,
 	// Events - Message
 	MessageEndEvent,
 	// Message Rendering
@@ -130,9 +127,6 @@ export {
 	defineTool,
 	isBashToolResult,
 	isEditToolResult,
-	isFindToolResult,
-	isGrepToolResult,
-	isLsToolResult,
 	isReadToolResult,
 	isToolCallEventType,
 	isWriteToolResult,

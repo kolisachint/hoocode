@@ -19,27 +19,27 @@ describe("mergeConfigs", () => {
 		it("uses global enabled_tools when project has none", () => {
 			const global: HooConfig = {
 				modes: {
-					plan: { enabled_tools: ["read", "ls", "grep"] },
+					plan: { enabled_tools: ["read", "bash", "search"] },
 				},
 			};
 			const project: HooConfig = {};
 			const merged = mergeConfigs(global, project);
-			expect(merged.modes?.plan?.enabled_tools).toEqual(["read", "ls", "grep"]);
+			expect(merged.modes?.plan?.enabled_tools).toEqual(["read", "bash", "search"]);
 		});
 
 		it("project enabled_tools overrides global", () => {
 			const global: HooConfig = {
 				modes: {
-					plan: { enabled_tools: ["read", "ls"] },
+					plan: { enabled_tools: ["read", "bash"] },
 				},
 			};
 			const project: HooConfig = {
 				modes: {
-					plan: { enabled_tools: ["read", "grep"] },
+					plan: { enabled_tools: ["read", "search"] },
 				},
 			};
 			const merged = mergeConfigs(global, project);
-			expect(merged.modes?.plan?.enabled_tools).toEqual(["read", "grep"]);
+			expect(merged.modes?.plan?.enabled_tools).toEqual(["read", "search"]);
 		});
 
 		it("project enabled_tools is used even when global has different mode", () => {

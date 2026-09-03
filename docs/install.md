@@ -55,13 +55,14 @@ migration history and rules.
 ## Restricted / offline environments
 
 HooCode runs without network access. Two capabilities normally reach out to
-GitHub to download helper binaries (`fd` for the `find` tool and file
-autocomplete, `rg` for the `grep` tool); everything else is self-contained.
+GitHub to download helper binaries (`fd` for file autocomplete, `rg` for the
+lexical half of `search`); everything else is self-contained.
 
 - **`HOOCODE_OFFLINE=1`** (or `--offline`) disables all startup network
-  operations — no binary downloads, no version checks. The `find`/`grep` tools
-  fall back to a built-in pure-JS implementation, so search keeps working.
-- **`HOOCODE_NATIVE_SEARCH=1`** forces the pure-JS `find`/`grep` path even when
+  operations — no binary downloads, no version checks. `search` and file
+  autocomplete fall back to a built-in pure-JS implementation, so both keep
+  working.
+- **`HOOCODE_NATIVE_SEARCH=1`** forces the pure-JS path even when
   `fd`/`rg` could be downloaded. It also engages automatically whenever those
   binaries are unavailable.
 - **Pre-seed the binaries** to get native `fd`/`rg` speed offline: install them

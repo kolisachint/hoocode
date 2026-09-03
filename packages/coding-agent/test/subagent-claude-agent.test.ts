@@ -78,7 +78,7 @@ describe("Claude-format subagent definition", () => {
 		expect(def).toBeDefined();
 		expect(def?.source).toBe("claude-project");
 		// Glob -> find; order and the rest preserved.
-		expect(def?.tools).toEqual(["read", "grep", "find", "bash"]);
+		expect(def?.tools).toEqual(["read", "search", "bash"]);
 		expect(def?.model).toBe("sonnet");
 		expect(def?.prompt).toContain("You are a security reviewer.");
 	});
@@ -102,7 +102,7 @@ describe("Claude-format subagent definition", () => {
 
 		const toolsIdx = argv.indexOf("--tools");
 		expect(toolsIdx).toBeGreaterThanOrEqual(0);
-		expect(argv[toolsIdx + 1]).toBe("read,grep,find,bash");
+		expect(argv[toolsIdx + 1]).toBe("read,search,bash");
 
 		const modelIdx = argv.indexOf("--model");
 		expect(modelIdx).toBeGreaterThanOrEqual(0);

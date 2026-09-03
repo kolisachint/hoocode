@@ -10,14 +10,14 @@ import {
 
 describe("normalizeTools (D7 Claude Code shim)", () => {
 	test("maps Claude tool names (case-insensitive) to hoocode tools", () => {
-		const { tools, diagnostics } = normalizeTools("Read, Grep, Glob, Bash");
-		expect(tools).toEqual(["read", "grep", "find", "bash"]);
+		const { tools, diagnostics } = normalizeTools("Read, Grep, Bash");
+		expect(tools).toEqual(["read", "search", "bash"]);
 		expect(diagnostics).toHaveLength(0);
 	});
 
 	test("accepts a YAML list but emits a format warning", () => {
-		const { tools, diagnostics } = normalizeTools(["Read", "LS"]);
-		expect(tools).toEqual(["read", "ls"]);
+		const { tools, diagnostics } = normalizeTools(["Read", "Search"]);
+		expect(tools).toEqual(["read", "search"]);
 		expect(diagnostics).toHaveLength(1);
 		expect(diagnostics[0]!.type).toBe("warning");
 		expect(diagnostics[0]!.message).toMatch(/comma-separated string/);
@@ -37,9 +37,15 @@ describe("normalizeTools (D7 Claude Code shim)", () => {
 		expect(diagnostics).toHaveLength(0);
 	});
 
-	test("dedupes resolved tools (Glob and find both map to find)", () => {
-		const { tools } = normalizeTools("Glob, find");
-		expect(tools).toEqual(["find"]);
+	test("dedupes resolved tools (Grep, Glob and find all map to search)", () => {
+		const { tools } = normalizeTools("Grep, Glob, find");
+		expect(tools).toEqual(["search"]);
+	});
+
+	test("drops LS, which has no hoocode counterpart", () => {
+		const { tools, diagnostics } = normalizeTools("Read, LS");
+		expect(tools).toEqual(["read"]);
+		expect(diagnostics.some((d) => d.message.includes("LS"))).toBe(true);
 	});
 
 	test("alias map only targets known hoocode tools", () => {
@@ -78,7 +84,7 @@ You are a read-only explorer.`;
 		expect(diagnostics).toHaveLength(0);
 		expect(agent).not.toBeNull();
 		expect(agent?.name).toBe("explorer");
-		expect(agent?.tools).toEqual(["read", "grep", "find", "bash"]);
+		expect(agent?.tools).toEqual(["read", "search", "bash"]);
 		expect(agent?.model).toBe("sonnet");
 		expect(agent?.prompt).toBe("You are a read-only explorer.");
 		expect(agent?.source).toBe("claude-project");
@@ -128,7 +134,7 @@ body`;
 		const raw = `---
 name: limited
 description: An agent with a denied tool.
-tools: read, grep, find, ls, bash
+tools: read, search, bash
 disallowedTools: bash
 ---
 body`;

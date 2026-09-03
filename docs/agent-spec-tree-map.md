@@ -336,8 +336,8 @@ Full Claude key set (16): `name`, `description`, `tools`, `disallowedTools`,
 
 **hoocode honors today:** `name`, `description`, `tools`, `model`, `maxTurns`,
 `background`. Tool names are aliased to hoocode's lowercase tools
-(`Read`→`read`, `Write`→`write`, `Edit`→`edit`, `Bash`→`bash`, `Grep`→`grep`,
-`Glob`/`Find`→`find`, `LS`→`ls`); unsupported Claude tools (WebSearch,
+(`Read`→`read`, `Write`→`write`, `Edit`→`edit`, `Bash`→`bash`,
+`Grep`/`Glob`/`Find`→`search`); unsupported Claude tools (`LS`, WebSearch,
 WebFetch, Task, MultiEdit, ...) are dropped. The remaining keys are ignored.
 
 ---

@@ -17,15 +17,7 @@
  */
 
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
-import {
-	createBashTool,
-	createEditTool,
-	createFindTool,
-	createGrepTool,
-	createLsTool,
-	createReadTool,
-	createWriteTool,
-} from "@kolisachint/hoocode-agent";
+import { createBashTool, createEditTool, createReadTool, createWriteTool } from "@kolisachint/hoocode-agent";
 import { Text } from "@kolisachint/hoocode-tui";
 import { homedir } from "os";
 
@@ -49,9 +41,6 @@ function createBuiltInTools(cwd: string) {
 		bash: createBashTool(cwd),
 		edit: createEditTool(cwd),
 		write: createWriteTool(cwd),
-		find: createFindTool(cwd),
-		grep: createGrepTool(cwd),
-		ls: createLsTool(cwd),
 	};
 }
 
@@ -245,182 +234,6 @@ export default function (pi: ExtensionAPI) {
 
 			// Otherwise show the text (would be nice to show actual diff here)
 			return new Text(`\n${theme.fg("toolOutput", text)}`, 0, 0);
-		},
-	});
-
-	// =========================================================================
-	// Find Tool
-	// =========================================================================
-	pi.registerTool({
-		name: "find",
-		label: "find",
-		description:
-			"Find files by name pattern (glob). Searches recursively from the specified path. Output limited to 200 results.",
-		parameters: getBuiltInTools(process.cwd()).find.parameters,
-
-		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			const tools = getBuiltInTools(ctx.cwd);
-			return tools.find.execute(toolCallId, params, signal, onUpdate);
-		},
-
-		renderCall(args, theme, _context) {
-			const pattern = Array.isArray(args.pattern) ? args.pattern.join(", ") : args.pattern || "";
-			const path = shortenPath(args.path || ".");
-			const limit = args.limit;
-
-			let text = `${theme.fg("toolTitle", theme.bold("find"))} ${theme.fg("accent", pattern)}`;
-			text += theme.fg("toolOutput", ` in ${path}`);
-			if (limit !== undefined) {
-				text += theme.fg("toolOutput", ` (limit ${limit})`);
-			}
-
-			return new Text(text, 0, 0);
-		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			if (!expanded) {
-				// Minimal: just show count
-				const textContent = result.content.find((c) => c.type === "text");
-				if (textContent?.type === "text") {
-					const count = textContent.text.trim().split("\n").filter(Boolean).length;
-					if (count > 0) {
-						return new Text(theme.fg("muted", ` → ${count} files`), 0, 0);
-					}
-				}
-				return new Text("", 0, 0);
-			}
-
-			// Expanded: show full results
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const output = textContent.text
-				.trim()
-				.split("\n")
-				.map((line) => theme.fg("toolOutput", line))
-				.join("\n");
-
-			return new Text(`\n${output}`, 0, 0);
-		},
-	});
-
-	// =========================================================================
-	// Grep Tool
-	// =========================================================================
-	pi.registerTool({
-		name: "grep",
-		label: "grep",
-		description:
-			"Search file contents by regex pattern. Uses ripgrep for fast searching. Output limited to 200 matches.",
-		parameters: getBuiltInTools(process.cwd()).grep.parameters,
-
-		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			const tools = getBuiltInTools(ctx.cwd);
-			return tools.grep.execute(toolCallId, params, signal, onUpdate);
-		},
-
-		renderCall(args, theme, _context) {
-			const pattern = args.pattern || "";
-			const path = shortenPath(args.path || ".");
-			const glob = args.glob;
-			const limit = args.limit;
-
-			let text = `${theme.fg("toolTitle", theme.bold("grep"))} ${theme.fg("accent", `/${pattern}/`)}`;
-			text += theme.fg("toolOutput", ` in ${path}`);
-			if (glob) {
-				text += theme.fg("toolOutput", ` (${glob})`);
-			}
-			if (limit !== undefined) {
-				text += theme.fg("toolOutput", ` limit ${limit}`);
-			}
-
-			return new Text(text, 0, 0);
-		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			if (!expanded) {
-				// Minimal: just show match count
-				const textContent = result.content.find((c) => c.type === "text");
-				if (textContent?.type === "text") {
-					const count = textContent.text.trim().split("\n").filter(Boolean).length;
-					if (count > 0) {
-						return new Text(theme.fg("muted", ` → ${count} matches`), 0, 0);
-					}
-				}
-				return new Text("", 0, 0);
-			}
-
-			// Expanded: show full results
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const output = textContent.text
-				.trim()
-				.split("\n")
-				.map((line) => theme.fg("toolOutput", line))
-				.join("\n");
-
-			return new Text(`\n${output}`, 0, 0);
-		},
-	});
-
-	// =========================================================================
-	// Ls Tool
-	// =========================================================================
-	pi.registerTool({
-		name: "ls",
-		label: "ls",
-		description:
-			"List directory contents with file sizes. Shows files and directories with their sizes. Output limited to 500 entries.",
-		parameters: getBuiltInTools(process.cwd()).ls.parameters,
-
-		async execute(toolCallId, params, signal, onUpdate, ctx) {
-			const tools = getBuiltInTools(ctx.cwd);
-			return tools.ls.execute(toolCallId, params, signal, onUpdate);
-		},
-
-		renderCall(args, theme, _context) {
-			const path = shortenPath(args.path || ".");
-			const limit = args.limit;
-
-			let text = `${theme.fg("toolTitle", theme.bold("ls"))} ${theme.fg("accent", path)}`;
-			if (limit !== undefined) {
-				text += theme.fg("toolOutput", ` (limit ${limit})`);
-			}
-
-			return new Text(text, 0, 0);
-		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			if (!expanded) {
-				// Minimal: just show entry count
-				const textContent = result.content.find((c) => c.type === "text");
-				if (textContent?.type === "text") {
-					const count = textContent.text.trim().split("\n").filter(Boolean).length;
-					if (count > 0) {
-						return new Text(theme.fg("muted", ` → ${count} entries`), 0, 0);
-					}
-				}
-				return new Text("", 0, 0);
-			}
-
-			// Expanded: show full listing
-			const textContent = result.content.find((c) => c.type === "text");
-			if (!textContent || textContent.type !== "text") {
-				return new Text("", 0, 0);
-			}
-
-			const output = textContent.text
-				.trim()
-				.split("\n")
-				.map((line) => theme.fg("toolOutput", line))
-				.join("\n");
-
-			return new Text(`\n${output}`, 0, 0);
 		},
 	});
 }

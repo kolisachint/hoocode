@@ -20,30 +20,6 @@ export {
 } from "./edit.js";
 export { withFileMutationQueue } from "./file-mutation-queue.js";
 export {
-	createFindTool,
-	createFindToolDefinition,
-	type FindOperations,
-	type FindToolDetails,
-	type FindToolInput,
-	type FindToolOptions,
-} from "./find.js";
-export {
-	createGrepTool,
-	createGrepToolDefinition,
-	type GrepOperations,
-	type GrepToolDetails,
-	type GrepToolInput,
-	type GrepToolOptions,
-} from "./grep.js";
-export {
-	createLsTool,
-	createLsToolDefinition,
-	type LsOperations,
-	type LsToolDetails,
-	type LsToolInput,
-	type LsToolOptions,
-} from "./ls.js";
-export {
 	createReadTool,
 	createReadToolDefinition,
 	type ReadOperations,
@@ -81,9 +57,6 @@ import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { ToolDefinition } from "../extensions/types.js";
 import { type BashToolOptions, createBashToolDefinition } from "./bash.js";
 import { createEditToolDefinition, type EditToolOptions } from "./edit.js";
-import { createFindToolDefinition, type FindToolOptions } from "./find.js";
-import { createGrepToolDefinition, type GrepToolOptions } from "./grep.js";
-import { createLsToolDefinition, type LsToolOptions } from "./ls.js";
 import { createReadToolDefinition, type ReadToolOptions } from "./read.js";
 import { createSearchToolDefinition, type SearchToolOptions } from "./search.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
@@ -99,9 +72,6 @@ export interface ToolsOptions {
 	bash?: BashToolOptions;
 	write?: WriteToolOptions;
 	edit?: EditToolOptions;
-	grep?: GrepToolOptions;
-	find?: FindToolOptions;
-	ls?: LsToolOptions;
 	search?: SearchToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
@@ -118,9 +88,6 @@ const TOOL_FACTORIES = {
 	bash: createBashToolDefinition,
 	edit: createEditToolDefinition,
 	write: createWriteToolDefinition,
-	grep: createGrepToolDefinition,
-	find: createFindToolDefinition,
-	ls: createLsToolDefinition,
 	search: createSearchToolDefinition,
 	webfetch: createWebFetchToolDefinition,
 	websearch: createWebSearchToolDefinition,
@@ -131,10 +98,10 @@ export type ToolName = keyof typeof TOOL_FACTORIES;
 export const allToolNames: Set<ToolName> = new Set(Object.keys(TOOL_FACTORIES) as ToolName[]);
 
 /** The default coding bundle (read/write + shell + search). */
-const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls", "search"];
+const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "search"];
 
 /** Read-only exploration bundle. */
-const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "grep", "find", "ls", "search"];
+const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "search"];
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
 	const factory = TOOL_FACTORIES[toolName] as (cwd: string, options?: ToolsOptions[ToolName]) => ToolDef;

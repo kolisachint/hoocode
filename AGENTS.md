@@ -12,7 +12,12 @@ Before searching, check these maps:
 
 ## Recent Changes
 
-- **Browser + document tools removed**: `browser_*`, `Doc*`, `filetools-shared.ts`, and their `--enable-browsertools`/`--enable-browser-live-preview`/`--enable-filetools` flags are gone; `TOOL_FACTORIES` is 10 built-ins.
+- **`grep`/`find`/`ls` tools removed**: `search` is the only dedicated
+  code-discovery tool; exact matching lines, counts, and raw directory listings
+  are a shell job through `bash`. Claude Code's `Grep`/`Glob`/`Find` all
+  normalize to `search`; `LS` has no counterpart and is dropped with a
+  diagnostic. `TOOL_FACTORIES` is 7 built-ins.
+- **Browser + document tools removed**: `browser_*`, `Doc*`, `filetools-shared.ts`, and their `--enable-browsertools`/`--enable-browser-live-preview`/`--enable-filetools` flags are gone; `TOOL_FACTORIES` shrank accordingly.
 - **Providers removed**: `amazon-bedrock`, `mistral`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`. `mistralai/*` ids via OpenRouter still work.
 - **MCP Standard Config Support**: Now reads standard `mcp.json` format from:
   - `~/.agents/mcp.json` (user-level)
@@ -34,9 +39,11 @@ It reports the assembled system prompt plus each active tool's serialized
 `{name, description, parameters}`, estimated at chars/4. Treat it as a floor:
 providers add their own envelope, and schema JSON tokenizes worse than prose.
 
-Current baseline (default tools, no context files): **~4,140 tokens** — ~1,430
-system prompt, ~2,710 tool schemas. Adding this repo's `AGENTS.md` as a context
-file costs another ~3,600, which makes it the single largest line item.
+Current baseline (default tools, no context files): **~3,380 tokens** — ~1,350
+system prompt, ~2,030 tool schemas. (Dropping `grep`/`find`/`ls` took ~760 off
+the old ~4,140: ~680 of schema and ~80 of prompt.) Adding this repo's
+`AGENTS.md` as a context file costs another ~3,600, which makes it the single
+largest line item.
 
 **A tool's guidance belongs in exactly one place.** A tool contributes text
 through four channels, and it is easy to pay for the same sentence twice:
@@ -54,13 +61,14 @@ Rules that follow from that:
   every turn. `edit` carried five guidelines, four of which repeated its own
   `oldText`/`edits`/`replaceAll` descriptions verbatim.
 - **Never restate a cross-tool routing rule in a tool.** `buildSystemPrompt`
-  already emits the canonical search-vs-grep and file-exploration guidelines
-  whenever the relevant tools are registered. `grep`, `search`, `read`, and
-  `bash` each carried their own copy; that rule was shipping three times.
+  already emits the canonical search-vs-bash and file-exploration guidelines
+  whenever the relevant tools are registered. `search`, `read`, and `bash` each
+  carried their own copy; that rule was shipping three times.
 - **Don't spell out what the schema already encodes.** An enum of `f`/`d`/`l`
   does not need prose naming all three.
 - **Examples are the most expensive thing in a schema.** One is usually enough;
-  `find`'s `pattern` had three and was the priciest built-in schema in the repo.
+  the retired `find` tool's `pattern` had three and was the priciest built-in
+  schema in the repo.
 - Keep per-tool `promptGuidelines` under ~200 chars, and prefer adding to a
   tool's `description` over adding a guideline — descriptions at least stay next
   to the contract they describe.

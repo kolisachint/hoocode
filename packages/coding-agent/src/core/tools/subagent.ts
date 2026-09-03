@@ -415,7 +415,7 @@ export function createTaskToolDefinition(cwd: string = process.cwd()): ToolDefin
 								provider: ctx.model?.provider,
 							},
 							// Mirror the cold pool's live progress on the task panel roster so a
-							// warm dispatch reads as busy (⋯ grep), not stuck.
+							// warm dispatch reads as busy (⋯ search), not stuck.
 							(activity) => taskStore.patchAgent(poolTaskId, { activity }),
 						);
 						const dispatchResult = warmResultToTaskResult(warmResult, params.subagent_type, task.id);

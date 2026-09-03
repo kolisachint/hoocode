@@ -74,7 +74,7 @@ describe("skills are visible to subagents", () => {
 	});
 
 	it("injects the skill card into a read-capable subagent's system prompt (explore/plan tools)", () => {
-		const prompt = buildSubagentPrompt(["read", "grep", "find", "ls"]);
+		const prompt = buildSubagentPrompt(["read", "search"]);
 		expect(prompt).toContain("<available_skills>");
 		expect(prompt).toContain("<name>greeting</name>");
 		expect(prompt).toContain("Say hello in a friendly, on-brand way");
