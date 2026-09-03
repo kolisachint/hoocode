@@ -18,7 +18,12 @@ import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import { ChangeDirectoryError, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.js";
 import type { KeybindingsManager } from "../../core/keybindings.js";
 import { MissingSessionCwdError } from "../../core/session-cwd.js";
-import { isSessionColorSlot, SESSION_COLOR_SLOTS } from "../../core/session-identity.js";
+import {
+	parseSessionColorSlot,
+	SESSION_COLOR_NAME_LIST,
+	SESSION_COLOR_SLOTS,
+	sessionColorName,
+} from "../../core/session-identity.js";
 import type { SessionManager } from "../../core/session-manager.js";
 import { getSubagentPool } from "../../core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../core/subagent-result.js";
@@ -419,21 +424,37 @@ export class CommandExecutor {
 	}
 
 	/**
-	 * `/color <1-6>` sets the session's chip colour directly. Bare `/color` is
-	 * handled by the caller, which opens the swatch picker instead — the slots
-	 * have no names worth typing, so seeing them is the point.
+	 * `/color <slot>` sets the session's chip colour directly, where a slot is a
+	 * number, a name (`green`), or a name's initial (`g`). Bare `/color` is
+	 * handled by the caller, which opens the swatch picker instead — the names
+	 * describe a hue family rather than the exact colour a theme fills the slot
+	 * with, so which one reads best here is still a thing you look at.
+	 *
+	 * The confirmation names the slot it landed on, because the aliases fold
+	 * neighbouring hues together: `/color red` answering with "magenta" is how
+	 * you learn the palette has no red of its own.
 	 */
 	handleColor(text: string): boolean {
 		const arg = text.replace(/^\/color\s*/, "").trim();
 		if (!arg) return false;
-		const slot = Number(arg);
-		if (!isSessionColorSlot(slot)) {
-			this.ctx.showWarning(`Usage: /color <1-${SESSION_COLOR_SLOTS}>, or /color on its own to pick one`);
+		const slot = parseSessionColorSlot(arg);
+		if (slot === undefined) {
+			this.ctx.showWarning(
+				`Usage: /color <1-${SESSION_COLOR_SLOTS}> or /color <${SESSION_COLOR_NAME_LIST.join("|")}> ` +
+					"(first letter works too), or /color on its own to pick one",
+			);
 			return true;
 		}
 		this.ctx.session.setSessionColor(slot);
+		const name = sessionColorName(slot);
 		this.ctx.chatContainer.addChild(new Spacer(1));
-		this.ctx.chatContainer.addChild(new Text(`${theme.fg("dim", "Session color set:")} ${this.currentChip()}`, 1, 0));
+		this.ctx.chatContainer.addChild(
+			new Text(
+				`${theme.fg("dim", "Session color set:")} ${this.currentChip()}${name ? `  ${theme.fg("dim", name)}` : ""}`,
+				1,
+				0,
+			),
+		);
 		this.ctx.ui.requestRender();
 		return true;
 	}

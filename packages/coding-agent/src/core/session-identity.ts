@@ -142,3 +142,58 @@ export function sessionColorSlotFor(sessionId: string): number {
 export function isSessionColorSlot(slot: number): boolean {
 	return Number.isInteger(slot) && slot >= 1 && slot <= SESSION_COLOR_SLOTS;
 }
+
+/**
+ * The name each slot answers to, and the other spellings that reach it.
+ *
+ * A slot is a palette position, not a fixed hue — every theme fills
+ * `agent1…agent6` with its own colours — but across the built-in themes each
+ * position keeps a recognisable family, and that is what these names describe:
+ * slot 3 is the warm yellow/amber one wherever you are, slot 6 the blue. That
+ * is enough for the thing names are for, which is typing `/color green`
+ * instead of remembering that green is the fifth swatch.
+ *
+ * The aliases are deliberately generous, because a name only helps if the
+ * obvious spelling of it works. Each name's initial stands for it, and the
+ * hues that sit between slots (`orange`, `red`) resolve to the nearest slot
+ * rather than being rejected — the palette has six entries, not a full colour
+ * wheel, and refusing `/color red` because the swatch is officially magenta
+ * would be pedantry. A theme whose palette drifts from these names is still
+ * addressable by number, which is why the numbers never go away.
+ */
+const SESSION_COLOR_NAMES: ReadonlyArray<{
+	readonly slot: number;
+	readonly name: string;
+	readonly aliases: readonly string[];
+}> = [
+	{ slot: 1, name: "cyan", aliases: ["c", "teal", "aqua"] },
+	{ slot: 2, name: "purple", aliases: ["p", "violet"] },
+	{ slot: 3, name: "yellow", aliases: ["y", "amber", "gold", "orange", "o"] },
+	{ slot: 4, name: "magenta", aliases: ["m", "pink", "rose", "red", "r"] },
+	{ slot: 5, name: "green", aliases: ["g"] },
+	{ slot: 6, name: "blue", aliases: ["b"] },
+];
+
+/** The canonical slot names, in slot order. For usage lines and pickers. */
+export const SESSION_COLOR_NAME_LIST: readonly string[] = SESSION_COLOR_NAMES.map((entry) => entry.name);
+
+/** What to call `slot` when reporting it back, or undefined if it is not a slot. */
+export function sessionColorName(slot: number): string | undefined {
+	return SESSION_COLOR_NAMES.find((entry) => entry.slot === slot)?.name;
+}
+
+/**
+ * The slot an argument to `/color` asks for: a number (`4`), a name
+ * (`magenta`), or an initial (`m`). Case and surrounding space do not matter.
+ * Undefined when it names no slot at all.
+ */
+export function parseSessionColorSlot(input: string): number | undefined {
+	const normalized = input.trim().toLowerCase();
+	if (!normalized) return undefined;
+	if (/^\d+$/.test(normalized)) {
+		const slot = Number(normalized);
+		return isSessionColorSlot(slot) ? slot : undefined;
+	}
+	const match = SESSION_COLOR_NAMES.find((entry) => entry.name === normalized || entry.aliases.includes(normalized));
+	return match?.slot;
+}

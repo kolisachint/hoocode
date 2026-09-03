@@ -37,8 +37,8 @@ import { describeProviderError, retryDelayCapFetch } from "../utils/retry-delay.
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { toStrictJsonSchema } from "../utils/tool-constraints.js";
 import { resolveCacheRetention } from "./cache-retention.js";
-
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
+import { DROPPABLE_PARAMS, droppableParamsNamedBy, noteRejectedParams, rejectedParamsFor } from "./param-fallback.js";
 import { buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
@@ -155,9 +155,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
 				...(options?.maxRetries !== undefined ? { maxRetries: options.maxRetries } : {}),
 			};
-			const { data: openaiStream, response } = await client.chat.completions
-				.create(params, requestOptions)
-				.withResponse();
+			const { data: openaiStream, response } = await createWithParamFallback(client, model, params, requestOptions);
 			await options?.onResponse?.({ status: response.status, headers: headersToRecord(response.headers) }, model);
 			stream.push({ type: "start", partial: output });
 
@@ -488,6 +486,43 @@ function createClient(
 	});
 }
 
+/**
+ * Send the request, and when the endpoint answers a 4xx naming one of the
+ * optional params we added, drop those and send it again.
+ *
+ * A strict request validator usually reports only the first field it objects
+ * to, so a payload carrying several needs a pass each — hence the loop rather
+ * than a single retry. The bound is the number of params we are willing to
+ * drop, so an error that keeps naming the same field cannot spin: dropping it
+ * once removes it from the payload, and the next pass finds nothing left to
+ * drop and rethrows.
+ */
+async function createWithParamFallback(
+	client: OpenAI,
+	model: Model<"openai-completions">,
+	params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming,
+	requestOptions: Parameters<OpenAI["chat"]["completions"]["create"]>[1],
+) {
+	let attempt = params;
+	let passes: number = DROPPABLE_PARAMS.length;
+	for (;;) {
+		try {
+			return await client.chat.completions.create(attempt, requestOptions).withResponse();
+		} catch (error) {
+			const sent = attempt as unknown as Record<string, unknown>;
+			const named = droppableParamsNamedBy(error).filter((param) => sent[param] !== undefined);
+			if (named.length === 0 || passes === 0) throw error;
+			passes--;
+			noteRejectedParams(model.baseUrl, named);
+			const next: Record<string, unknown> = { ...sent };
+			for (const param of named) {
+				delete next[param];
+			}
+			attempt = next as unknown as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
+		}
+	}
+}
+
 function buildParams(
 	model: Model<"openai-completions">,
 	context: Context,
@@ -500,24 +535,32 @@ function buildParams(
 		appendPromptSuffix(messages, compat.promptSuffix);
 	}
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);
+	// An endpoint that already refused one of these keeps refusing it, so leave
+	// it out rather than spending a round trip re-learning that. This overrides
+	// `compat` on purpose: what the server rejected outranks what we assumed.
+	const rejected = rejectedParamsFor(model.baseUrl);
 
 	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
 		model: model.id,
 		messages,
 		stream: true,
 		prompt_cache_key:
-			(model.baseUrl.includes("api.openai.com") && cacheRetention !== "none") ||
-			(cacheRetention === "long" && compat.supportsLongCacheRetention)
+			!rejected.has("prompt_cache_key") &&
+			((model.baseUrl.includes("api.openai.com") && cacheRetention !== "none") ||
+				(cacheRetention === "long" && compat.supportsLongCacheRetention))
 				? options?.sessionId
 				: undefined,
-		prompt_cache_retention: cacheRetention === "long" && compat.supportsLongCacheRetention ? "24h" : undefined,
+		prompt_cache_retention:
+			cacheRetention === "long" && compat.supportsLongCacheRetention && !rejected.has("prompt_cache_retention")
+				? "24h"
+				: undefined,
 	};
 
-	if (compat.supportsUsageInStreaming !== false) {
+	if (compat.supportsUsageInStreaming !== false && !rejected.has("stream_options")) {
 		(params as any).stream_options = { include_usage: true };
 	}
 
-	if (compat.supportsStore) {
+	if (compat.supportsStore && !rejected.has("store")) {
 		params.store = false;
 	}
 

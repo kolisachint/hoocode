@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	isSessionColorSlot,
+	parseSessionColorSlot,
+	SESSION_COLOR_NAME_LIST,
 	SESSION_COLOR_SLOTS,
+	sessionColorName,
 	sessionColorSlotFor,
 	sessionSlugFor,
 } from "../src/core/session-identity.js";
@@ -71,5 +74,72 @@ describe("session identity", () => {
 		expect(isSessionColorSlot(SESSION_COLOR_SLOTS + 1)).toBe(false);
 		expect(isSessionColorSlot(2.5)).toBe(false);
 		expect(isSessionColorSlot(Number.NaN)).toBe(false);
+	});
+});
+
+describe("session colour names", () => {
+	it("names every slot, and only real slots", () => {
+		expect(SESSION_COLOR_NAME_LIST).toHaveLength(SESSION_COLOR_SLOTS);
+		for (let slot = 1; slot <= SESSION_COLOR_SLOTS; slot++) {
+			expect(sessionColorName(slot)).toBe(SESSION_COLOR_NAME_LIST[slot - 1]);
+		}
+		expect(sessionColorName(0)).toBeUndefined();
+		expect(sessionColorName(SESSION_COLOR_SLOTS + 1)).toBeUndefined();
+	});
+
+	it("gives each slot a name of its own", () => {
+		expect(new Set(SESSION_COLOR_NAME_LIST).size).toBe(SESSION_COLOR_SLOTS);
+	});
+
+	it("still takes the slot numbers", () => {
+		for (let slot = 1; slot <= SESSION_COLOR_SLOTS; slot++) {
+			expect(parseSessionColorSlot(String(slot))).toBe(slot);
+		}
+		expect(parseSessionColorSlot(" 3 ")).toBe(3);
+	});
+
+	it("takes a name, whatever its case", () => {
+		for (const name of SESSION_COLOR_NAME_LIST) {
+			const slot = parseSessionColorSlot(name);
+			expect(slot).toBeDefined();
+			expect(sessionColorName(slot!)).toBe(name);
+		}
+		expect(parseSessionColorSlot("GREEN")).toBe(parseSessionColorSlot("green"));
+		expect(parseSessionColorSlot("  Blue ")).toBe(parseSessionColorSlot("blue"));
+	});
+
+	// The shorthands people actually type. Each name's initial has to reach its
+	// own slot — two names starting with the same letter would make one of them
+	// unreachable, which is the failure this guards.
+	it("takes each name's initial, unambiguously", () => {
+		for (const name of SESSION_COLOR_NAME_LIST) {
+			expect(parseSessionColorSlot(name[0]!)).toBe(parseSessionColorSlot(name));
+		}
+		expect(parseSessionColorSlot("g")).toBe(parseSessionColorSlot("green"));
+		expect(parseSessionColorSlot("b")).toBe(parseSessionColorSlot("blue"));
+		expect(parseSessionColorSlot("y")).toBe(parseSessionColorSlot("yellow"));
+	});
+
+	// The palette has no red of its own, so `red` lands on the nearest slot
+	// rather than being rejected — refusing it would be pedantry.
+	it("resolves the hues between slots to the nearest one", () => {
+		expect(parseSessionColorSlot("red")).toBe(parseSessionColorSlot("magenta"));
+		expect(parseSessionColorSlot("r")).toBe(parseSessionColorSlot("magenta"));
+		expect(parseSessionColorSlot("orange")).toBe(parseSessionColorSlot("yellow"));
+		expect(parseSessionColorSlot("teal")).toBe(parseSessionColorSlot("cyan"));
+		expect(parseSessionColorSlot("violet")).toBe(parseSessionColorSlot("purple"));
+	});
+
+	it("always lands on a slot the session can actually be set to", () => {
+		const spellings = [...SESSION_COLOR_NAME_LIST, "red", "r", "g", "b", "y", "m", "orange", "pink", "1", "6"];
+		for (const spelling of spellings) {
+			expect(isSessionColorSlot(parseSessionColorSlot(spelling)!)).toBe(true);
+		}
+	});
+
+	it("names nothing for input that names no slot", () => {
+		for (const junk of ["", "   ", "0", String(SESSION_COLOR_SLOTS + 1), "2.5", "-1", "chartreuse", "z"]) {
+			expect(parseSessionColorSlot(junk)).toBeUndefined();
+		}
 	});
 });
