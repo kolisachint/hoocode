@@ -63,8 +63,49 @@ export function isDedupPointerText(text: string): boolean {
 	return text.trimStart().startsWith(DEDUP_POINTER_PREFIX);
 }
 
+/**
+ * Content stamps for reads that have already been delivered.
+ *
+ * The dedup pointer tells the model the file "has not changed since" the read it
+ * names. Nothing in the transcript can establish that: an editor, a formatter, a
+ * branch switch or a second agent can rewrite the file between two reads without
+ * leaving a trace in it. So each delivered read records a stamp of the file it
+ * saw, and the pointer is only served when the file still stamps the same.
+ *
+ * Keyed by tool call id rather than by path, so two sessions sharing a process
+ * cannot overwrite each other's observations. Bounded, and a missing entry
+ * counts as "cannot prove it is unchanged" - the read then simply runs.
+ */
+const MAX_TRACKED_READS = 500;
+const stampByCallId = new Map<string, string>();
+
+/** Remember the stamp of the file a read delivered. */
+export function recordReadStamp(callId: string, stamp: string): void {
+	if (stampByCallId.size >= MAX_TRACKED_READS) {
+		const oldest = stampByCallId.keys().next().value;
+		if (oldest !== undefined) stampByCallId.delete(oldest);
+	}
+	stampByCallId.set(callId, stamp);
+}
+
+/**
+ * Whether the file a read delivered still stamps the same. False when no stamp
+ * was recorded, so an unprovable case re-reads rather than asserting freshness.
+ */
+export function readStampMatches(callId: string, stamp: string): boolean {
+	const recorded = stampByCallId.get(callId);
+	return recorded !== undefined && recorded === stamp;
+}
+
+/** Test seam: drop all recorded stamps. */
+export function clearReadStamps(): void {
+	stampByCallId.clear();
+}
+
 /** A covering earlier read, described for the pointer message. */
 export interface CoveringRead {
+	/** Tool call id of the read being pointed at, used to check its stamp. */
+	callId: string;
 	/** The path as the earlier read spelled it (for a friendly pointer). */
 	display: string;
 	/** Delivered range start (1-indexed line). */
@@ -172,6 +213,7 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 		declared: ReadRange;
 		delivered: ReadRange;
 		display: string;
+		callId: string;
 	}
 
 	// Resolve each distinct raw path once — the resolver may hit the filesystem.
@@ -192,6 +234,12 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 	const mutateCallPath = new Map<string, string>();
 	const reads: PriorRead[] = [];
 	let lastMutateIndex = -1;
+	// A *failed* edit/write is not a mutate - the GC is right to ignore it, since
+	// the file did not change. It is still the one moment the model most needs the
+	// real bytes: the failure usually means its copy of the text does not match the
+	// file. Serving a "not re-fetched, unchanged" pointer there leaves it retrying
+	// the same wrong text with no way to see what is actually on disk.
+	let lastFailedMutateIndex = -1;
 	let order = 0;
 
 	for (const entry of entries) {
@@ -222,6 +270,10 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 					mutateCallPath.set(b.id, resolved);
 				}
 			}
+		} else if (m.role === "toolResult" && m.isError && m.toolCallId) {
+			if (m.toolName && MUTATE_TOOLS.has(m.toolName) && mutateCallPath.get(m.toolCallId) === opts.resolvedPath) {
+				lastFailedMutateIndex = i;
+			}
 		} else if (m.role === "toolResult" && !m.isError && m.toolCallId) {
 			if (m.toolName === READ_TOOL) {
 				if (m.toolCallId === opts.currentCallId) continue;
@@ -236,6 +288,7 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 					declared: info.declared,
 					delivered: deliveredRange(text, info.declared),
 					display: info.display,
+					callId: m.toolCallId,
 				});
 			} else if (m.toolName && MUTATE_TOOLS.has(m.toolName)) {
 				if (mutateCallPath.get(m.toolCallId) === opts.resolvedPath) lastMutateIndex = i;
@@ -248,6 +301,10 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 	const survivesGc = (r: PriorRead): boolean =>
 		lastMutateIndex <= r.index && !reads.some((o) => o.index > r.index && rangesOverlap(o.declared, r.declared));
 
+	// Nothing earlier can be trusted to satisfy this read once an edit against this
+	// path has failed: let the read run and hand the model the current bytes.
+	if (lastFailedMutateIndex > -1) return null;
+
 	let best: PriorRead | null = null;
 	for (const r of reads) {
 		// Coverage uses the *delivered* range: a truncated read only holds what it returned.
@@ -256,11 +313,14 @@ export function findCoveringRead(entries: readonly unknown[], opts: FindCovering
 		if (!best || r.index > best.index) best = r;
 	}
 	if (!best) return null;
-	return { display: best.display, start: best.delivered.start, end: best.delivered.end };
+	return { callId: best.callId, display: best.display, start: best.delivered.start, end: best.delivered.end };
 }
 
+/** The parts of a covering read the pointer message renders. */
+export type CoveringReadDisplay = Pick<CoveringRead, "display" | "start" | "end">;
+
 /** Build the pointer text returned in place of a re-fetch. */
-export function buildDedupPointerText(covering: CoveringRead): string {
+export function buildDedupPointerText(covering: CoveringReadDisplay): string {
 	const where =
 		covering.end === Number.POSITIVE_INFINITY
 			? "the entire file"

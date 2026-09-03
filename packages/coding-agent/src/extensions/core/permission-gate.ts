@@ -48,17 +48,32 @@ function matchesBashPattern(pattern: string, command: string): boolean {
 	}
 }
 
+/**
+ * The path an edit/write call targets.
+ *
+ * Both tools declare the argument as `path`; `file_path` is accepted only
+ * because some models emit that name and the renderers have long taken either.
+ * Reading `file_path` alone matched neither tool's schema, so the confirmation
+ * prompt read "edit (unknown)" and `allowed_write_paths` compared against an
+ * empty string - which matches no pattern, blocking every write in any mode
+ * that configured one.
+ */
+function mutationPath(input: unknown): string | undefined {
+	const args = input as { path?: unknown; file_path?: unknown } | undefined;
+	if (typeof args?.path === "string" && args.path.length > 0) return args.path;
+	if (typeof args?.file_path === "string" && args.file_path.length > 0) return args.file_path;
+	return undefined;
+}
+
 function describeTool(event: ToolCallEvent): string {
 	if (isToolCallEventType("bash", event)) {
 		return `$ ${event.input.command.replace(/\s+/g, " ").slice(0, 100)}`;
 	}
 	if (isToolCallEventType("edit", event)) {
-		const p = (event.input as { file_path?: string }).file_path ?? "(unknown)";
-		return `edit ${p}`;
+		return `edit ${mutationPath(event.input) ?? "(unknown)"}`;
 	}
 	if (isToolCallEventType("write", event)) {
-		const p = (event.input as { file_path?: string }).file_path ?? "(unknown)";
-		return `write ${p}`;
+		return `write ${mutationPath(event.input) ?? "(unknown)"}`;
 	}
 	if (event.toolName === "webfetch") {
 		const url = (event.input as { url?: string }).url ?? "(unknown)";
@@ -154,7 +169,9 @@ export function setupPermissionGate(pi: ExtensionAPI): void {
 
 		// Check allowed_write_paths for write/edit operations
 		if ((event.toolName === "write" || event.toolName === "edit") && modeCfg?.allowed_write_paths) {
-			const filePath = (event.input as { file_path?: string }).file_path ?? "";
+			// Absent path stays blocked: an unidentifiable write cannot be checked
+			// against an allowlist, and refusing is the safe direction.
+			const filePath = mutationPath(event.input) ?? "";
 			if (!matchesAllowedPath(filePath, modeCfg.allowed_write_paths)) {
 				return {
 					block: true,

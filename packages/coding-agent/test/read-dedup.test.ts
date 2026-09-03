@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { evictSupersededReads } from "../src/core/context-gc.js";
 import {
 	buildDedupPointerText,
-	type CoveringRead,
+	type CoveringReadDisplay,
 	findCoveringRead,
 	isDedupPointerText,
 	readRangeFromArgs,
@@ -159,9 +159,9 @@ describe("findCoveringRead", () => {
 
 describe("buildDedupPointerText / isDedupPointerText", () => {
 	it("round-trips the pointer marker for whole-file, range, and single-line", () => {
-		const whole: CoveringRead = { display: "/f.txt", start: 1, end: Number.POSITIVE_INFINITY };
-		const range: CoveringRead = { display: "/f.txt", start: 10, end: 21 };
-		const single: CoveringRead = { display: "/f.txt", start: 7, end: 8 };
+		const whole: CoveringReadDisplay = { display: "/f.txt", start: 1, end: Number.POSITIVE_INFINITY };
+		const range: CoveringReadDisplay = { display: "/f.txt", start: 10, end: 21 };
+		const single: CoveringReadDisplay = { display: "/f.txt", start: 7, end: 8 };
 		expect(buildDedupPointerText(whole)).toContain("the entire file");
 		expect(buildDedupPointerText(range)).toContain("lines 10-20");
 		expect(buildDedupPointerText(single)).toContain("line 7");

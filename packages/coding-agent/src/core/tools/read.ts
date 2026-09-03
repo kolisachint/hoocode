@@ -2,6 +2,7 @@ import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } 
 import type { AgentTool } from "@kolisachint/hoocode-agent-core";
 import type { Api, ImageContent, Model, TextContent } from "@kolisachint/hoocode-ai";
 import { Text } from "@kolisachint/hoocode-tui";
+import { createHash } from "crypto";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";
@@ -14,7 +15,13 @@ import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { resolveReadPath } from "./path-utils.js";
-import { buildDedupPointerText, findCoveringRead, readRangeFromArgs } from "./read-dedup.js";
+import {
+	buildDedupPointerText,
+	findCoveringRead,
+	readRangeFromArgs,
+	readStampMatches,
+	recordReadStamp,
+} from "./read-dedup.js";
 import { getTextOutput, invalidArgText, replaceTabs, shortenPath, str } from "./render-utils.js";
 import { wrapToolDefinition } from "./tool-definition-wrapper.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
@@ -298,9 +305,7 @@ export function createReadToolDefinition(
 											resolvePath: (raw) => resolveReadPath(raw, cwd),
 										})
 									: null;
-							if (dedupCovering) {
-								content = [{ type: "text", text: buildDedupPointerText(dedupCovering) }];
-							} else if (mimeType) {
+							if (mimeType) {
 								// Read image as binary.
 								const buffer = await ops.readFile(absolutePath);
 								const base64 = buffer.toString("base64");
@@ -343,6 +348,18 @@ export function createReadToolDefinition(
 							} else {
 								// Read text content.
 								const buffer = await ops.readFile(absolutePath);
+								// Stamp the bytes that are actually on disk. Deduping saves context
+								// tokens, not this read, so the file can be hashed for the price the
+								// call was already paying - and the pointer's "has not changed since"
+								// becomes something checked rather than assumed.
+								const stamp = createHash("sha1").update(buffer).digest("hex");
+								if (dedupCovering && readStampMatches(dedupCovering.callId, stamp)) {
+									content = [{ type: "text", text: buildDedupPointerText(dedupCovering) }];
+									if (aborted) return;
+									signal?.removeEventListener("abort", onAbort);
+									resolve({ content, details });
+									return;
+								}
 								const textContent = buffer.toString("utf-8");
 								const allLines = textContent.split("\n");
 								const totalFileLines = allLines.length;
@@ -400,6 +417,7 @@ export function createReadToolDefinition(
 									outputText = truncation.content;
 								}
 								content = [{ type: "text", text: outputText }];
+								recordReadStamp(toolCallId, stamp);
 							}
 
 							if (aborted) return;
