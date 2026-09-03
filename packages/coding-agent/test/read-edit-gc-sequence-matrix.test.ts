@@ -7,10 +7,11 @@
  * was still the model's only copy, a success reported for an edit that changed
  * nothing. Testing one ordering by hand misses the rest.
  *
- * So every sequence over {R, r, E, X, G} up to length three is run against a
+ * So every sequence over {R, r, E, X, G, U} up to length three is run against a
  * fresh file with the real tools, and each step is checked against the
- * invariants the trio is supposed to guarantee. 155 sequences; before the fixes
- * these covered 52 distinct dead-end orderings.
+ * invariants the trio is supposed to guarantee. 258 sequences; before the fixes
+ * these covered 52 distinct dead-end orderings and 32 in which a pointer told
+ * the model a file was unchanged after someone else had rewritten it.
  */
 
 import { mkdtemp, readFile, writeFile } from "fs/promises";
@@ -23,9 +24,9 @@ import { createEditToolDefinition, createReadToolDefinition } from "../src/index
 /**
  * R  read the whole file        r  read a line range
  * E  an edit that should apply  X  an edit invisible to matching, which can only fail
- * G  a context-GC pass over the transcript
+ * G  a context-GC pass         U  someone else rewrites the file behind the agent
  */
-const OPS = ["R", "r", "E", "X", "G"] as const;
+const OPS = ["R", "r", "E", "X", "G", "U"] as const;
 type Op = (typeof OPS)[number];
 
 // Line 4 carries a non-breaking space, so `X` (which spells it with an ordinary
@@ -169,6 +170,14 @@ async function runSequence(seq: Op[]): Promise<Violation[]> {
 			continue;
 		}
 
+		if (op === "U") {
+			// An editor, a formatter, a branch switch, a second agent. Nothing about
+			// this reaches the transcript, so only the file itself can reveal it.
+			await writeFile(abs, `${disk}line5 written by someone else\n`);
+			lastEditFailed = false;
+			continue;
+		}
+
 		view = evictSupersededReads(msgs as never, { cwd }) as never;
 		for (const r of readLog) {
 			if (!isStub(textOf(view[r.msgIndex]))) continue;
@@ -200,7 +209,7 @@ function allSequences(maxLength: number): Op[][] {
 describe("read/edit/gc sequence matrix", () => {
 	it("holds every invariant across all sequences up to length three", async () => {
 		const sequences = allSequences(3);
-		expect(sequences).toHaveLength(155);
+		expect(sequences).toHaveLength(258);
 
 		const violations: Violation[] = [];
 		for (const seq of sequences) violations.push(...(await runSequence(seq)));
@@ -208,4 +217,56 @@ describe("read/edit/gc sequence matrix", () => {
 		// Reported as `sequence: rule` so a failure names the exact ordering.
 		expect(violations.map((v) => `${v.sequence}: ${v.rule}`)).toEqual([]);
 	}, 120_000);
+
+	/**
+	 * The invariants above are all of the form "never serve a stale pointer", and
+	 * a dedup that never pointed at anything would satisfy every one of them. This
+	 * pins the other side: the pointer still fires whenever the file really is
+	 * unchanged, which is the whole reason the guard exists.
+	 */
+	it("still points at an earlier read when the file has not changed, and stops when it has", async () => {
+		const cwd = await mkdtemp(join(tmpdir(), "sequence-matrix-stamp-"));
+		const path = "f.txt";
+		const abs = join(cwd, path);
+		await writeFile(abs, "line1\nline2\nline3\nline4\n");
+
+		const readTool = createReadToolDefinition(cwd, { dedupReads: true });
+		const msgs: Array<Record<string, unknown>> = [];
+		let seq = 0;
+		const read = async (args: { offset?: number; limit?: number } = {}) => {
+			const id = `call-${++seq}`;
+			msgs.push({
+				role: "assistant",
+				content: [{ type: "toolCall", id, name: "read", arguments: { path, ...args } }],
+			});
+			const res = (await readTool.execute(id, { path, ...args }, undefined, undefined, {
+				sessionManager: { getBranch: () => msgs },
+			} as never)) as { content: Array<{ type: string; text?: string }> };
+			const text = res.content
+				.filter((c) => c.type === "text")
+				.map((c) => c.text ?? "")
+				.join("");
+			msgs.push({
+				role: "toolResult",
+				toolCallId: id,
+				toolName: "read",
+				content: [{ type: "text", text }],
+				isError: false,
+			});
+			return text.startsWith("[Already in context:") ? "pointer" : "content";
+		};
+
+		expect(await read()).toBe("content");
+		expect(await read()).toBe("pointer");
+		expect(await read({ offset: 2, limit: 2 })).toBe("pointer");
+
+		await writeFile(abs, "line1\nline2 changed\nline3\nline4\n");
+		expect(await read()).toBe("content");
+		expect(await read()).toBe("pointer");
+
+		// Same byte count, same millisecond. An mtime-and-size stamp would call this
+		// unchanged; the content stamp does not.
+		await writeFile(abs, "line1\nline2 CHANGED\nline3\nline4\n");
+		expect(await read()).toBe("content");
+	});
 });
