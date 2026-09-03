@@ -162,7 +162,7 @@ function commandExists(cmd: string): boolean {
 
 // Resolved tool paths are stable for the life of the process. Cache the first
 // successful resolution so we never re-run the synchronous spawnSync probe in
-// commandExists() on every grep/find/glob invocation, which blocks the event loop.
+// commandExists() on every search invocation, which blocks the event loop.
 const resolvedToolPathCache = new Map<ManagedTool, string>();
 
 /**

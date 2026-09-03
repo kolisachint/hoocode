@@ -63,7 +63,7 @@ function useTempHome(): (id: string) => string {
 
 describe("allowlist classification", () => {
 	it("treats read-only grants as low risk", () => {
-		expect(classifyAllowlist("read, grep, glob").risk).toBe("read-only");
+		expect(classifyAllowlist("read, search").risk).toBe("read-only");
 		expect(classifyAllowlist("webfetch").risk).toBe("read-only");
 		expect(classifyAllowlist(undefined).risk).toBe("read-only");
 	});
@@ -103,7 +103,7 @@ describe("ProposePlugin (scaffold path)", () => {
 				id: "myhelper",
 				description: "helper plugin",
 				skills: [{ name: "assist", description: "assists", body: "Assist the user." }],
-				subagents: [{ name: "scout", description: "reads code", tools: "read, grep", body: "You explore." }],
+				subagents: [{ name: "scout", description: "reads code", tools: "read, search", body: "You explore." }],
 			},
 			undefined,
 			undefined,

@@ -61,8 +61,7 @@ The agent works through a small, deterministic tool set. Available by default:
 |---|---|
 | `read` · `write` · `edit` | Read files, create new ones, and make exact-text edits. One `edit` call can apply several replacements at once, and an edit can set `replaceAll` to replace every occurrence instead of requiring a unique match. |
 | `bash` | Run shell commands — each one gated by the `Yes / No / Always` permission prompt. |
-| `search` | Ranked "find where code lives" — fuses exact-text and semantic (local embedding index) retrieval, returning `file:line-range` hits. Always available: it degrades to grep-backed lexical retrieval when no semantic index is present, so `--enable-embsearchtools` only controls whether the semantic index is built and fused in, not whether the tool exists. Use `search` to locate a concept or behavior; use `grep` for exact matching lines. |
-| `grep` · `find` · `ls` | Search file contents (ripgrep), find files by glob pattern (fd — one or more patterns, optional type/depth/exclude filters), and list directories. `grep`/`find` respect `.gitignore`; `ls` lists a single directory and takes an optional `ignore` list to skip noise like `node_modules`. |
+| `search` | The one code-discovery tool: ranked "find where code lives", fusing exact-text and semantic (local embedding index) retrieval and returning `file:line-range` hits. Respects `.gitignore`. Always available: it degrades to exact-text lexical retrieval when no semantic index is present, so `--enable-embsearchtools` only controls whether the semantic index is built and fused in, not whether the tool exists. Use `search` to locate a concept or behavior; shell out through `bash` (`rg`, `find`, `ls`) when you need exact matching lines, counts, or a raw directory listing. |
 | **Task** (subagents) · **TodoWrite** | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer, and maintain a live todo list shown in the task panel. Both are **on by default** — disable with `"enableSubagent": false` / `"enableTodoWrite": false`. |
 
 When running interactively, the agent can also ask you to make a decision through a multiple-choice prompt when it genuinely needs your input to proceed. In non-interactive (`-p`) runs it falls back to proceeding on its own.
@@ -80,7 +79,7 @@ One dial, `Alt+O`, with three stops from least to most (`Shift+Alt+O` goes back)
 
 | View | What a tool call looks like |
 |---|---|
-| **radar** | One line per *chain* — a run of consecutive tool calls. While it works the line shows its shape in order, `◐ grep › read › bash✗ › edit › bash…`; once the agent moves on it becomes what the run amounted to, `● Edited packages/tui/src/keys.ts`. Thinking traces are hidden here regardless of the `Ctrl+T` setting — a view that folds a whole run into a row cannot then spend forty lines on the reasoning behind it. |
+| **radar** | One line per *chain* — a run of consecutive tool calls. While it works the line shows its shape in order, `◐ search › read › bash✗ › edit › bash…`; once the agent moves on it becomes what the run amounted to, `● Edited packages/tui/src/keys.ts`. Thinking traces are hidden here regardless of the `Ctrl+T` setting — a view that folds a whole run into a row cannot then spend forty lines on the reasoning behind it. |
 | **glance** | The tool's own call line, one per call, body folded away. **The default.** |
 | **full** | Call line plus the result body. |
 
@@ -105,8 +104,8 @@ without its binary is marked `needs <binary>` there.
 
 | Binary | Adds | Without it |
 |---|---|---|
-| `rg` (ripgrep) | The fast path for `grep` and for the lexical half of `search`. Fetched at startup. | A pure-JS scanner with identical match output — materially slower on large trees. |
-| `fd` | The fast path for `find`. Fetched at startup. | A JS directory walker with the same result shape, slower and with approximated glob/ignore handling. |
+| `rg` (ripgrep) | The fast path for the lexical half of `search`. Fetched at startup. | A pure-JS scanner with identical match output — materially slower on large trees. |
+| `fd` | The fast path for `@`-file autocomplete in the TUI. Fetched at startup. | A JS directory walker with the same result shape, slower and with approximated glob/ignore handling. |
 | `embsearch` | The local embedding index: semantic hits fused into `search`, and meaning-ranked MCP/capability lookup. Fetched on first use. Requires the ONNX build; the mock build is rejected. | `search` runs lexical-only and capability lookup ranks lexically. Nothing errors; intent-phrased queries just rank worse. |
 | `webtools` | The `webfetch` and `websearch` tools — hoocode's only network path. Fetched on first use. | Both tools error when called. The web tool group is off by default, so this stays invisible until you enable it. |
 | `voicetools` | Push-to-talk voice input in the TUI. Fetched on first use. | Voice capture reports an error and never starts. |

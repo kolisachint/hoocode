@@ -41,10 +41,8 @@ export const MODEL_INHERIT = "inherit";
 export const HOOCODE_TOOL_NAMES: readonly string[] = [
 	"bash",
 	"edit",
-	"find",
-	"grep",
-	"ls",
 	"read",
+	"search",
 	"webfetch",
 	"websearch",
 	"write",
@@ -66,16 +64,21 @@ export const TODO_WRITE_TOOL_NAME = "TodoWrite";
  * Claude tools without a hoocode counterpart (MultiEdit, Task, TodoWrite,
  * NotebookEdit, MCP tools, ...) are intentionally absent and get dropped during
  * normalization.
+ *
+ * `grep`/`glob`/`find` all land on `search`, the single code-discovery tool
+ * that replaced the old grep/find/ls trio. `ls` has no counterpart at all —
+ * directory listing is a shell job now — so it is deliberately absent and gets
+ * dropped with a diagnostic rather than silently widening an agent to `bash`.
  */
 export const CLAUDE_TOOL_ALIASES: Readonly<Record<string, string>> = {
 	read: "read",
 	write: "write",
 	edit: "edit",
 	bash: "bash",
-	grep: "grep",
-	glob: "find",
-	find: "find",
-	ls: "ls",
+	search: "search",
+	grep: "search",
+	glob: "search",
+	find: "search",
 	webfetch: "webfetch",
 	websearch: "websearch",
 };

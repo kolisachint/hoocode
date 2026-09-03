@@ -76,7 +76,7 @@ const subagentSchema = Type.Object(
 		tools: Type.Optional(
 			Type.String({
 				description:
-					"Comma-separated allowed-tools, e.g. 'read, grep, glob'. Read-only grants are autonomous; " +
+					"Comma-separated allowed-tools, e.g. 'read, search'. Read-only grants are autonomous; " +
 					"mutating/exec/network grants (Bash, Write, Edit, MCP) or '*' require human confirmation. Omit for none.",
 			}),
 		),

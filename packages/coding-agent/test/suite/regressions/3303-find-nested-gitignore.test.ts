@@ -2,33 +2,28 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createFindToolDefinition } from "../../../src/core/tools/find.js";
+import { collectEntries } from "../../../src/core/tools/native-search.js";
 
 /**
  * Regression test for https://github.com/kolisachint/hoocode/issues/3303
  *
- * The `find` tool previously collected every `.gitignore` under the search
- * path and passed them to `fd` via `--ignore-file`. fd treats `--ignore-file`
- * entries as a single global ignore source, so rules from `a/.gitignore`
- * also filtered files under sibling `b/`. The fix switches to fd's
- * hierarchical `.gitignore` handling via `--no-require-git` and drops the
- * manual collection.
+ * File discovery previously collected every `.gitignore` under the search path
+ * and passed them to `fd` via `--ignore-file`. fd treats `--ignore-file`
+ * entries as a single global ignore source, so rules from `a/.gitignore` also
+ * filtered files under sibling `b/`. The fix was hierarchical `.gitignore`
+ * handling, scoping each file to its own subtree.
+ *
+ * The `find` tool that first hit this is gone; `collectEntries` — which now
+ * walks the tree for `search`'s lexical retriever and the embsearch repo scan —
+ * inherits the guarantee, so the regression is pinned here.
  */
 describe("issue #3303 nested .gitignore rules leak into sibling directories", () => {
 	let tempRoot: string;
 
-	async function runFind(pattern: string): Promise<string[]> {
-		const def = createFindToolDefinition(tempRoot);
-		const ctx = {} as Parameters<typeof def.execute>[4];
-		const result = (await def.execute("call-1", { pattern }, undefined, undefined, ctx)) as {
-			content: Array<{ type: string; text?: string }>;
-		};
-		const text = result.content[0]?.text ?? "";
-		if (text === "No files found matching pattern") return [];
-		return text
-			.split("\n")
-			.map((l) => l.trim())
-			.filter((l) => l.length > 0 && !l.startsWith("["))
+	function walk(): string[] {
+		return collectEntries(tempRoot)
+			.filter((entry) => entry.type === "f" && entry.rel.endsWith(".txt"))
+			.map((entry) => entry.rel)
 			.sort();
 	}
 
@@ -49,9 +44,8 @@ describe("issue #3303 nested .gitignore rules leak into sibling directories", ()
 			writeFileSync(join(tempRoot, "root.txt"), "");
 		});
 
-		it("applies a/.gitignore only inside a/ and leaves b/ untouched", async () => {
-			const files = await runFind("**/*.txt");
-			expect(files).toEqual(["a/kept.txt", "b/ignored.txt", "b/kept.txt", "root.txt"]);
+		it("applies a/.gitignore only inside a/ and leaves b/ untouched", () => {
+			expect(walk()).toEqual(["a/kept.txt", "b/ignored.txt", "b/kept.txt", "root.txt"]);
 		});
 	});
 
@@ -72,12 +66,11 @@ describe("issue #3303 nested .gitignore rules leak into sibling directories", ()
 			writeFileSync(join(tempRoot, "root.txt"), "");
 		});
 
-		it("scopes each .gitignore to its own subtree", async () => {
-			const files = await runFind("**/*.txt");
+		it("scopes each .gitignore to its own subtree", () => {
 			// a/.gitignore ignores 'ignored.txt' within a/ and a/deep/.
 			// a/deep/.gitignore additionally ignores 'secret.txt' within a/deep/.
 			// b/ is untouched by either.
-			expect(files).toEqual(["a/deep/kept.txt", "a/kept.txt", "b/ignored.txt", "b/kept.txt", "root.txt"]);
+			expect(walk()).toEqual(["a/deep/kept.txt", "a/kept.txt", "b/ignored.txt", "b/kept.txt", "root.txt"]);
 		});
 	});
 });

@@ -803,11 +803,11 @@ export class InteractiveMode {
 		});
 
 		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir).
-		// Both help — fd for autocomplete, rg for the grep tool — but neither is required
+		// Both help — fd for autocomplete, rg for the search tool — but neither is required
 		// to start: resolving them can hit a slow or failing network in restricted
 		// environments, and awaiting here froze first paint. Resolve in the background
 		// (never awaited, so a first-run download never blocks first paint) and wire fd
-		// in when ready; the grep/find tools resolve rg/fd on demand with a native
+		// in when ready; the search tool resolves rg on demand with a native
 		// fallback regardless. embsearch is intentionally NOT preloaded here: when the
 		// semantic index is enabled, EmbsearchService (main.ts) owns its download and
 		// build, reporting through the same startupProgress channel — preloading it too

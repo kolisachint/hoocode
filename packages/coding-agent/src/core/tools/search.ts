@@ -1,8 +1,9 @@
 /**
  * The unified `search` tool: ranked code discovery in lexical, semantic, or
  * hybrid (rank-fused) mode. Replaces the old `semantic_search` tool — see
- * docs/hybrid-retrieval-design.md, Decision 1. `grep` stays separate for
- * exact line-level mechanics; this tool answers "find where X lives".
+ * docs/hybrid-retrieval-design.md, Decision 1. It is the only dedicated
+ * discovery tool: this tool answers "find where X lives", and exact
+ * line-level mechanics are a shell job (rg/find/ls via bash).
  */
 
 import { Text } from "@kolisachint/hoocode-tui";
@@ -102,10 +103,10 @@ export function createSearchToolDefinition(
 	return {
 		name: "search",
 		label: "search",
-		// The search-vs-grep split is stated once, by buildSystemPrompt, whenever both
-		// tools are registered — so it is deliberately absent here and from grep's
-		// description. What stays is what only this tool knows: that the query is not
-		// a regex, and that it degrades to exact-text when the index is missing.
+		// The search-vs-bash split is stated once, by buildSystemPrompt, whenever both
+		// are registered — so it is deliberately absent here. What stays is what only
+		// this tool knows: that the query is not a regex, and that it degrades to
+		// exact-text when the index is missing.
 		description:
 			"Find where code lives: ranked file:line-range results, fusing keyword and semantic retrieval over a local index with exact-text search of files the index has not read yet. The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the index is unavailable, and still finds code written moments ago that no index has seen.",
 		promptSnippet: "Ranked code search (keyword + semantic, rank-fused)",

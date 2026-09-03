@@ -10,7 +10,7 @@
  * docs path into model context.
  *
  * That gap is not one the model can close by itself. Its cwd is the user's
- * project, so `grep`/`find` there discover the user's docs, never hoocode's,
+ * project, so `search` there discovers the user's docs, never hoocode's,
  * which live in an install directory whose path it cannot derive.
  *
  * Descriptions come from `docs/index.md` rather than being duplicated here.

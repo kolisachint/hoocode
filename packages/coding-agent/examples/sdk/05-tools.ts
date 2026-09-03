@@ -14,14 +14,14 @@ import { createAgentSession, SessionManager } from "@kolisachint/hoocode-agent";
 
 // Read-only mode (no edit/write)
 await createAgentSession({
-	tools: ["read", "grep", "find", "ls"],
+	tools: ["read", "search"],
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Read-only session created");
 
 // Custom tool selection
 await createAgentSession({
-	tools: ["read", "bash", "grep"],
+	tools: ["read", "bash", "search"],
 	sessionManager: SessionManager.inMemory(),
 });
 console.log("Custom tools session created");
@@ -38,7 +38,7 @@ console.log("Custom cwd session created");
 // Or pick specific tools for custom cwd
 await createAgentSession({
 	cwd: customCwd,
-	tools: ["read", "bash", "grep"],
+	tools: ["read", "bash", "search"],
 	sessionManager: SessionManager.inMemory(customCwd),
 });
 console.log("Specific tools with custom cwd session created");

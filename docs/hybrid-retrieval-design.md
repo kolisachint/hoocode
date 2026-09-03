@@ -61,6 +61,13 @@ diagnostics off the token path, and an eval gate before any reranker.
 
 ## Decision 1 — Tool surface: one `search` tool, grep untouched
 
+> **Superseded.** `grep`, `find` and `ls` have since been removed outright:
+> `search` is the only dedicated discovery tool, and exact matching lines,
+> counts, and directory listings are a shell job through `bash`. The rest of
+> this section records the decision as it stood, and the `"grep"` retriever
+> source below still names the lexical leg *inside* `search`, which is
+> unchanged.
+
 Three overlapping search tools would mean two stacked routers: the LLM
 choosing a tool, then a heuristic choosing retrievers. Since the tool
 description is hoocode's primary steering mechanism, collapse to:
@@ -921,8 +928,9 @@ behind the same signature — that model work belongs to
 
 ## Explicitly deferred
 
-- Folding `grep` into `search` — revisit only if evals show `search
-  --mode lexical` covers actual grep usage.
+- ~~Folding `grep` into `search`~~ — done, and further: `grep`/`find`/`ls`
+  were removed rather than folded in. `search --mode lexical` plus `bash`
+  covers what they did.
 - Cross-encoder reranking (step 7 gate).
 - Convex-combination fusion (needs labeled retrieval data).
 - Any Rust-side changes (belong in `kolisachint/embeddingsearchtools`).

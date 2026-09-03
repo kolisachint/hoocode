@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Removed
+
+- **`grep`, `find` and `ls` from the headless default tool bundle.**
+  `getDefaultTools()` now returns `bash`/`read`/`edit`/`write`, matching the
+  CLI's built-ins after the same removal there; discovery goes through the
+  shell. `globToRegExp` is gone with the file-walking helpers it served.
+
 ## [0.5.50] - 2026-09-03
 
 ## [0.5.49] - 2026-09-03

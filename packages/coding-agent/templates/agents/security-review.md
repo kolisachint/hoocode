@@ -14,7 +14,7 @@ description: |
   fix.
   Cost: Medium (reads the diff and traces untrusted input)
   Isolation: Read-only; can run in parallel with other review tasks
-tools: read, bash, grep, find, ls
+tools: read, bash, search
 model: capable
 background: true
 ---

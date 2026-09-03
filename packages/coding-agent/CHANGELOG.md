@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Removed
+
+- **`grep`, `find` and `ls` tools.** `search` is now the only dedicated
+  code-discovery tool; exact matching lines, counts, and raw directory listings
+  are a shell job through `bash` (`rg`/`find`/`ls`). This takes ~760 tokens off
+  the fixed per-turn surface.
+  - `--tools read,grep,find,ls` becomes `--tools read,search`; the read-only
+    bundle is now `read` + `search`.
+  - Claude Code's `Grep`, `Glob` and `Find` all normalize to `search` in agent
+    frontmatter. `LS` has no counterpart and is dropped with a diagnostic
+    rather than silently widening an agent to `bash`.
+  - SDK exports `createGrepTool`/`createFindTool`/`createLsTool`, their
+    `*ToolOptions`/`*ToolInput`/`*ToolDetails` types, the `grep`/`find`/`ls`
+    tool-call and tool-result event variants, and `isGrepToolResult`/
+    `isFindToolResult`/`isLsToolResult` are gone.
+
 ## [0.5.50] - 2026-09-03
 
 ## [0.5.49] - 2026-09-03
