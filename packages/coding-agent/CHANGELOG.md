@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/color` takes colour names, not just slot numbers: `/color green`,
+  `/color blue`, `/color magenta`, and the first letter of each on its own —
+  `/color g`, `/color b`, `/color y`, `/color r`.
+
+  The six slots are palette positions rather than fixed hues, but across the
+  built-in themes each position keeps a recognisable family, so the names
+  describe it: cyan, purple, yellow, magenta, green, blue. Spellings that sit
+  between slots resolve to the nearest one instead of being rejected — `red`
+  and `pink` reach magenta, `orange` and `amber` reach yellow — and the
+  confirmation names the slot it landed on, so `/color red` answering with
+  "magenta" is how you learn the palette has no red of its own. The numbers
+  still work, and the picker now labels each swatch with its name.
+
 ## [0.5.48] - 2026-09-03
 
 ## [0.5.47] - 2026-08-31

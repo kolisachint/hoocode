@@ -1,5 +1,5 @@
 import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@kolisachint/hoocode-tui";
-import { SESSION_COLOR_SLOTS } from "../../../core/session-identity.js";
+import { SESSION_COLOR_SLOTS, sessionColorName } from "../../../core/session-identity.js";
 import { getSelectListTheme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { renderSessionChip } from "./session-chip.js";
@@ -31,10 +31,13 @@ export class SessionColorSelectorComponent extends Container {
 		const items: SelectItem[] = [];
 		for (let slot = 1; slot <= SESSION_COLOR_SLOTS; slot++) {
 			const chip = renderSessionChip(sessionName, slot);
+			// The row carries its name as well as its swatch: the name is what
+			// `/color <name>` takes, so the picker is also where you learn it.
+			const name = sessionColorName(slot) ?? String(slot);
 			items.push({
 				value: String(slot),
 				label: chip?.styled ?? sessionName,
-				description: slot === currentSlot ? "current" : "",
+				description: slot === currentSlot ? `${name} · current` : name,
 			});
 		}
 

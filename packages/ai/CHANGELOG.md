@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- An OpenAI-compatible gateway that refuses the params we send for prompt
+  caching no longer fails the request.
+
+  Every chat-completions request carries a few params the endpoint does not
+  have to accept: `prompt_cache_retention` and `prompt_cache_key` buy the long
+  prompt cache, `store` opts out of server-side retention, `stream_options`
+  asks for usage in the stream. OpenAI ignores the ones it does not use. A
+  gateway that validates its request schema strictly does not — a LiteLLM-style
+  proxy in front of Qwen answers `422 prompt_cache_retention: Extra inputs are
+  not permitted` and the request never reaches the model, which is what turned
+  auto-compaction into `Compaction failed: Summarization failed: 422
+  prompt_cache_retention: Extra inputs are not permitted.`
+
+  None of these params change the answer, so a rejection is now recoverable:
+  the params the error names are dropped and the request is sent again. What an
+  endpoint refused is remembered per base URL, so it costs one round trip per
+  process rather than one per request, and every later request is built without
+  them from the start.
+
 ## [0.5.48] - 2026-09-03
 
 ## [0.5.47] - 2026-08-31
