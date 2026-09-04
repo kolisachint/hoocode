@@ -82,12 +82,12 @@
 
 		"bashMode": "bluishGreen",
 
-		"agent1": "sky",
-		"agent2": "purple",
-		"agent3": "orange",
-		"agent4": "bluishGreen",
-		"agent5": "blue",
-		"agent6": "yellow",
+		"agent1": "#7fd3f7",
+		"agent2": "#dca0e4",
+		"agent3": "#f2e26b",
+		"agent4": "#f0a3d0",
+		"agent5": "#4fd6b0",
+		"agent6": "#9db8ff",
 		"mcp": "purple"
 	},
 	"export": {

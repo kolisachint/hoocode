@@ -84,12 +84,12 @@
 
 		"bashMode": "moss",
 
-		"agent1": "amber",
-		"agent2": "orchid",
-		"agent3": "terracotta",
-		"agent4": "teal",
-		"agent5": "moss",
-		"agent6": "lilac",
+		"agent1": "#8fd6c4",
+		"agent2": "#d9c6ff",
+		"agent3": "#ffc46b",
+		"agent4": "#e6a8d8",
+		"agent5": "#b5e07a",
+		"agent6": "#7bc0ff",
 		"mcp": "#ffdbed"
 	},
 	"export": {

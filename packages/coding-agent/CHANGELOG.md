@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Session colour slots now hold the hue their name promises.** `/color` and the
+  `/color` picker address the six identity slots by name (`cyan`, `purple`,
+  `yellow`, `magenta`, `green`, `blue`), and the code documented that each slot
+  keeps a recognisable hue family across the built-in themes — but several
+  palettes had them in another order, so the names were only true on the dark
+  themes anyone happened to check.
+  - `light`'s slot 3 shipped a brick red (`#b5340e`), which both contradicted its
+    `yellow` name and sat one hue from slot 4's crimson, leaving two chips that
+    read the same at a glance. It is now the amber the dark theme's slot 3
+    already was (`#8a5a00`).
+  - `warm-light` and `high-contrast-light` had slots 2 and 4 swapped, so
+    `/color purple` painted a red chip. Reordered.
+  - `colorsafe-light` was scrambled outright: `magenta` was pure blue, `green`
+    was violet, and `blue` was a near-black khaki. Reordered, and slot 3 traded
+    that khaki for a gold (`#5a3f00`).
+  - `warm-dark` answered `/color cyan` with amber and `/color magenta` with
+    teal. Reordered, and slot 6 gained the blue (`#7bc0ff`) its light
+    counterpart already had, in place of a salmon that only repeated slot 3's
+    warmth.
+  - `colorsafe-dark` was reordered, and slot 2 gained a violet (`#dca0e4`) — the
+    palette had no purple at all, so some slot had to lie until it did. The
+    dropped `#ffbe5c` duplicated slot 3's yellow. The new hue clears AAA on
+    every surface and separates further under simulated dichromacy than the
+    palette's existing worst pair.
+
+  A test now locks the ordering: for every shipped theme, no rearrangement of
+  its own six identity colours fits the slot names better than the one it
+  ships. Palettes stay the theme's own — what cannot drift again is the order.
+
 ## [0.5.54] - 2026-09-04
 
 ### Changed
