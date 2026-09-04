@@ -101,20 +101,23 @@ describe("ToolChainComponent", () => {
 		expect(out).toContain("ASSERTION FAILED");
 	});
 
-	test("opening it turns the line back into the calls it stood for", () => {
+	test("the dial, not a per-chain toggle, is what turns the line back into calls", () => {
+		// A chain used to be openable on its own, one press peeling back from the
+		// newest. The dial does the same job with no per-chain state to hold: a
+		// run is a summary line in radar and its own calls at every other stop.
 		const chain = chainOf("radar", RUN, "o");
 		chain.close("done");
 		expect(render(chain)).not.toContain("SearchCodebase");
 
-		chain.setOpened(true);
+		chain.setView("peek");
 		const opened = render(chain);
 		expect(opened).toContain("SearchCodebase");
 		expect(opened).toContain("read");
 		expect(opened).toContain("edit");
 	});
 
-	test("is a plain pass-through in glance and full", () => {
-		for (const view of ["glance", "full"] as ToolOutputView[]) {
+	test("is a plain pass-through in peek and full", () => {
+		for (const view of ["peek", "full"] as ToolOutputView[]) {
 			const chain = chainOf(view, RUN, `p-${view}`);
 			chain.close("done");
 			const out = render(chain);
@@ -124,12 +127,12 @@ describe("ToolChainComponent", () => {
 	});
 
 	test("follows the dial when the view changes under it", () => {
-		const chain = chainOf("glance", RUN, "v");
+		const chain = chainOf("peek", RUN, "v");
 		chain.close("done");
 		expect(render(chain)).not.toContain("›");
 		chain.setView("radar");
 		expect(render(chain)).toContain("Edited");
-		chain.setView("glance");
+		chain.setView("peek");
 		expect(render(chain)).not.toContain("›");
 	});
 
@@ -138,7 +141,7 @@ describe("ToolChainComponent", () => {
 		// band to draw — a bare call line in a folded view — that padding was just
 		// an indent putting it one column right of every other tool.
 		const chain = chainOf(
-			"glance",
+			"peek",
 			[
 				{ tool: "SearchCodebase", args: { query: "docs" }, out: "a" },
 				{ tool: "read", args: { file_path: `${cwd}/a.ts` }, out: "a" },
@@ -155,16 +158,14 @@ describe("ToolChainComponent", () => {
 	});
 
 	test("a failure's reason hangs off its radar row rather than starting a new column", () => {
+		// A run of one is never summarised, so this is the radar row that still
+		// has to carry a body underneath it.
 		const chain = chainOf(
 			"radar",
-			[
-				{ tool: "SearchCodebase", args: { query: "docs" }, out: "a" },
-				{ tool: "bash", args: { command: "bun test" }, out: "ASSERTION FAILED", isError: true },
-			],
+			[{ tool: "bash", args: { command: "bun test" }, out: "ASSERTION FAILED", isError: true }],
 			"indent",
 		);
 		chain.close("done");
-		chain.setOpened(true);
 		const lines = render(chain).split("\n");
 		const row = lines.findIndex((line) => line.includes("bash"));
 		const body = lines.findIndex((line) => line.includes("ASSERTION FAILED"));
@@ -201,17 +202,6 @@ describe("ToolChainComponent", () => {
 		expect(stripAnsi(lines[1] ?? "")).toContain("Edited");
 	});
 
-	test("and only the one gap: the rows underneath still stack", () => {
-		const chain = chainOf("radar", RUN, "stack");
-		chain.close("done");
-		// Opened, but not expanded: the per-call rows are still radar rows.
-		chain.setOpened(true);
-		const lines = chain.render(100);
-		expect(lines[0]).toBe("");
-		expect(lines.slice(1).filter((line) => line === "")).toHaveLength(0);
-		expect(lines.slice(1)).toHaveLength(RUN.length);
-	});
-
 	test("a radar run of one gets the same lead-in", () => {
 		// A chain of one is not summarised, so it renders through its block —
 		// which is the path where the block's own spacer used to be the only
@@ -224,9 +214,8 @@ describe("ToolChainComponent", () => {
 	});
 
 	test("does not double the gap where the blocks already draw one", () => {
-		// Every other view gives each block a leading spacer, and so does a radar
-		// block that has been opened.
-		for (const view of ["glance", "full"] as ToolOutputView[]) {
+		// Every other view gives each block a leading spacer of its own.
+		for (const view of ["peek", "full"] as ToolOutputView[]) {
 			const chain = chainOf(view, RUN, `nolead-${view}`);
 			chain.close("done");
 			const lines = chain.render(100);
@@ -235,12 +224,6 @@ describe("ToolChainComponent", () => {
 				view,
 			).toHaveLength(1);
 		}
-		const opened = chainOf("radar", RUN, "nolead-open");
-		opened.close("done");
-		opened.setOpened(true);
-		opened.setExpanded(true);
-		const lines = opened.render(100);
-		expect(lines.filter((line, i) => line === "" && i < 2)).toHaveLength(1);
 	});
 
 	test("reports whether it is still collecting calls", () => {

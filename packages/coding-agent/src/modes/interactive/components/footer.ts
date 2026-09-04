@@ -6,7 +6,7 @@ import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provi
 import { formatTokens } from "../../../core/format-tokens.js";
 import { type StartupProgress, startupProgress } from "../../../core/startup-progress.js";
 import { taskStore } from "../../../core/task-store.js";
-import type { ToolOutputView } from "../../../core/tool-output-view.js";
+import { DEFAULT_TOOL_OUTPUT_VIEW, type ToolOutputView } from "../../../core/tool-output-view.js";
 import { theme } from "../theme/theme.js";
 import { renderDownloadProgress, renderProgressBar } from "./progress-bar.js";
 import { sessionChipFits } from "./session-chip.js";
@@ -47,7 +47,7 @@ function contextGauge(percent: number, errorLevel: number, warnLevel: number): {
  */
 const TOOL_OUTPUT_VIEW_GLYPHS: Record<ToolOutputView, string> = {
 	radar: "◌",
-	glance: "◍",
+	peek: "◍",
 	full: "◉",
 };
 
@@ -93,7 +93,7 @@ function renderStartupLine(entry: StartupProgress): string {
  */
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
-	private toolOutputView: ToolOutputView = "glance";
+	private toolOutputView: ToolOutputView = DEFAULT_TOOL_OUTPUT_VIEW;
 	private sessionChipShown = false;
 
 	constructor(

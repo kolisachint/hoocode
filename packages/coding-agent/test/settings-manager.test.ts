@@ -148,7 +148,7 @@ describe("SettingsManager", () => {
 	describe("toolOutputView", () => {
 		it("defaults to glance", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
-			expect(manager.getToolOutputView()).toBe("glance");
+			expect(manager.getToolOutputView()).toBe("peek");
 		});
 
 		it("round-trips a valid value and rejects an invalid one", async () => {
@@ -162,18 +162,20 @@ describe("SettingsManager", () => {
 
 			// An externally written bogus value falls back to the default.
 			writeFileSync(settingsPath, JSON.stringify({ toolOutputView: "bogus" }));
-			expect(SettingsManager.create(projectDir, agentDir).getToolOutputView()).toBe("glance");
+			expect(SettingsManager.create(projectDir, agentDir).getToolOutputView()).toBe("peek");
 		});
 
-		it("reads the pre-dial collapsed/peek/standard values", () => {
+		it("reads the retired collapsed/glance/standard values", () => {
 			const settingsPath = join(agentDir, "settings.json");
 			const read = (value: string) => {
 				writeFileSync(settingsPath, JSON.stringify({ toolOutputDisplay: value }));
 				return SettingsManager.create(projectDir, agentDir).getToolOutputView();
 			};
 			expect(read("collapsed")).toBe("radar");
-			expect(read("peek")).toBe("glance");
+			expect(read("glance")).toBe("peek");
 			expect(read("standard")).toBe("full");
+			// `peek` names a live stop again, so it loads as itself.
+			expect(read("peek")).toBe("peek");
 		});
 
 		it("prefers an explicit view over a stale legacy value", () => {

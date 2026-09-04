@@ -80,14 +80,16 @@ One dial, `Alt+O`, with three stops from least to most (`Shift+Alt+O` goes back)
 | View | What a tool call looks like |
 |---|---|
 | **radar** | One line per *chain* — a run of consecutive tool calls. While it works the line shows its shape in order, `◐ search › read › bash✗ › edit › bash…`; once the agent moves on it becomes what the run amounted to, `● Edited packages/tui/src/keys.ts`. Thinking traces are hidden here regardless of the `Ctrl+T` setting — a view that folds a whole run into a row cannot then spend forty lines on the reasoning behind it. |
-| **glance** | The tool's own call line, one per call, body folded away. **The default.** |
-| **full** | Call line plus the result body. |
+| **peek** | The tool's own call line and the first few lines of what came back. **The default.** |
+| **full** | The same, with nothing trimmed away. |
 
 **A failure always shows why**, in every view. That is the one thing none of them fold away: a red dot with no explanation is worse than no folding at all.
 
 A chain ends when the agent next speaks, or when the turn ends. A run that was interrupted keeps its working shape plus a marker rather than a tidy summary — the settled line is a claim about what the run amounted to, and a run cut off partway through has no such claim to make.
 
-Two keys open things without moving the dial. `Ctrl+O` expands everything at once — tool bodies, the header, summaries. `Alt+U` opens one thing, newest first, repeating to peel backwards (`Shift+Alt+U` re-folds): in radar that turns a chain back into its calls, elsewhere it opens a single body. It works from the newest backwards because the transcript is bottom-anchored — older output lives in your terminal's own scrollback, which the agent can neither scroll nor put a cursor into.
+`Ctrl+O` is the second way to move the same dial: from any stop it jumps straight to **full**, and pressing it again returns to the stop you came from. That is all "expand" is — the top of the dial, one keystroke away and one keystroke back — so there is no separate expanded state to keep track of, and `full` means full. The header, compaction and branch summaries and skill blocks open with it too: at **full**, nothing is held back.
+
+The difference between the two keys is what they remember. `Alt+O` is the decision you keep, and it is saved. `Ctrl+O` is the look you take, and it is not — quit while jumped and you come back to the stop you chose.
 
 ## External binaries
 
@@ -125,8 +127,8 @@ Bare `/cd` goes home, `/cd -` returns to where you came from, and the argument c
 
 Three rings, and a key's modifier says which ring it is in:
 
-- **`Ctrl` — the view.** What is on screen right now: expand everything (`Ctrl+O`), thinking blocks (`Ctrl+T`), the task panel (`Ctrl+N`), model cycling (`Ctrl+P`).
-- **`Alt` — the cockpit.** What the agent is and where it works: mode (`Alt+G`), model (`Alt+M`), directory (`Alt+W`), the view dial (`Alt+O`), unfold one block (`Alt+U`), settings (`Alt+S`), session tree (`Alt+T`), history (`Alt+H`), shortcuts (`Alt+K`).
+- **`Ctrl` — the view.** What is on screen right now: jump to full output and back (`Ctrl+O`), thinking blocks (`Ctrl+T`), the task panel (`Ctrl+N`), model cycling (`Ctrl+P`).
+- **`Alt` — the cockpit.** What the agent is and where it works: mode (`Alt+G`), model (`Alt+M`), directory (`Alt+W`), the view dial (`Alt+O`), settings (`Alt+S`), session tree (`Alt+T`), history (`Alt+H`), shortcuts (`Alt+K`).
 - **Inside a picker**, every `Ctrl` key still belongs to the query you are typing — `Ctrl+A`, `Ctrl+U`, `Ctrl+W` edit text, as they do everywhere else. A picker's own verbs are all on `Alt`, and its hint line names them.
 
 `Shift` reverses whatever the unshifted key does. Everything is rebindable in `~/.hoocode/keybindings.json`; `/hotkeys` lists the set currently in force.

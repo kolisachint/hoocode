@@ -74,7 +74,12 @@ import type { SourceInfo } from "../../core/source-info.js";
 import { startupProgress } from "../../core/startup-progress.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
-import { cycleToolOutputView, type ToolOutputView } from "../../core/tool-output-view.js";
+import {
+	cycleToolOutputView,
+	DEFAULT_TOOL_OUTPUT_VIEW,
+	MAX_TOOL_OUTPUT_VIEW,
+	type ToolOutputView,
+} from "../../core/tool-output-view.js";
 import { settleDanglingMainTasks } from "../../core/tools/todo.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
@@ -95,7 +100,7 @@ import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
-import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+import { appKeyLabel, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { renderSessionChip } from "./components/session-chip.js";
 import { SessionColorSelectorComponent } from "./components/session-color-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
@@ -281,6 +286,8 @@ export class InteractiveMode {
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
+	/** Dial reverses already named this session; see showDialStep. */
+	private dialReverseTaught = new Set<AppKeybinding>();
 	private lastStatusText: Text | undefined = undefined;
 
 	// Streaming message tracking
@@ -300,10 +307,22 @@ export class InteractiveMode {
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
 
-	// Tool output expansion state
-	private toolOutputExpanded = false;
-	// Persisted view dial (radar / glance / full). See core/tool-output-view.ts.
-	private toolOutputView: ToolOutputView = "glance";
+	// Persisted view dial (radar / peek / full). See core/tool-output-view.ts.
+	private toolOutputView: ToolOutputView = DEFAULT_TOOL_OUTPUT_VIEW;
+	// Where `app.tools.expand` came from, so the same key goes back there. Kept
+	// in memory only: the jump is the momentary look, the dial is the decision.
+	private viewBeforeJump?: ToolOutputView;
+
+	/**
+	 * Whether everything foldable is currently open.
+	 *
+	 * Not a state of its own any more — it is the top of the view dial. The
+	 * header, compaction and branch summaries and skill blocks follow the dial
+	 * for the same reason tool bodies do: `full` means nothing is held back.
+	 */
+	private get toolOutputExpanded(): boolean {
+		return this.toolOutputView === MAX_TOOL_OUTPUT_VIEW;
+	}
 	// The chain currently collecting tool calls, if the agent is mid-run.
 	private openChain?: ToolChainComponent;
 	/** The newest tool block in the transcript; radar marks it. */
@@ -572,6 +591,7 @@ export class InteractiveMode {
 			},
 			showSelector: (create) => this.showSelector(create),
 			showStatus: (message) => this.showStatus(message),
+			showDialStep: (backward, message) => this.showDialStep(backward, message),
 			showError: (message) => this.showError(message),
 			showWarning: (message) => this.showWarning(message),
 			showNotice: (title, body) => this.showNotice(title, body),
@@ -863,35 +883,59 @@ export class InteractiveMode {
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
+			// A dial as one line in one shape: the key steps it forward, the same
+			// key with shift steps it back. The banner is where that rule is first
+			// read, and it is the rule covering the most-pressed keys in the app,
+			// so the dials are listed together rather than scattered by topic.
+			// appKeyLabel, not keyText: the thinking dial answers to shift+tab as well,
+			// and splicing that into the middle of `alt+t/shift+alt+t` would hide the
+			// one shape these six lines exist to show.
+			const dial = (forward: AppKeybinding, backward: AppKeybinding, subject: string) =>
+				rawKeyHint(`${appKeyLabel(forward)}/${appKeyLabel(backward)}`, `to step ${subject}`);
 
+			// Grouped the way the map itself is (see core/keybindings.ts): by what you
+			// are trying to do, not by what the widget is. A flat list of thirty
+			// hints is a wall nobody reads; five short groups with a heading each is
+			// something a person can skim once and place a key in later.
+			const group = (title: string) => theme.fg("dim", `\n${title}`);
 			const expandedInstructions = [
+				group("Compose — the message in your hands"),
+				hint("app.editor.external", "for external editor"),
+				hint("app.input.voiceTranscribe", "to speak instead of type"),
+				hint("app.clipboard.pasteImage", "to paste image"),
+				hint("app.message.followUp", "to queue follow-up"),
+				hint("app.message.dequeue", "to edit all queued messages"),
+				rawKeyHint("drop files", "to attach"),
+				rawKeyHint("/", "for commands"),
+				rawKeyHint("!", "to run bash"),
+				rawKeyHint("!!", "to run bash (no context)"),
+
+				group("Steer — what the agent is before it runs"),
+				dial("app.mode.cycleForward", "app.mode.cycleBackward", "agent mode (ask/plan/build/debug)"),
+				dial("app.model.cycleForward", "app.model.cycleBackward", "model — /model to pick one"),
+				dial("app.thinking.cycleForward", "app.thinking.cycleBackward", "thinking level"),
+
+				group("Read — what you see of what it did"),
+				dial("app.view.cycleForward", "app.view.cycleBackward", "tool output (radar/peek/full)"),
+				dial("app.tasks.cycleForward", "app.tasks.cycleBackward", "task panel view"),
+				hint("app.tools.expand", "to jump to full output and back"),
+				hint("app.thinking.toggle", "to show or hide thinking"),
+				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
+
+				group("Go — sessions and places"),
+				hint("app.session.resume", "to resume a session"),
+				hint("app.session.changeDirectory", "to change working directory"),
+				dial("app.session.color.cycleForward", "app.session.color.cycleBackward", "session colour"),
+				hint("app.settings.open", "for settings"),
+				hint("app.hotkeys.open", "for all shortcuts"),
+
+				group("Flow — getting out, getting back"),
 				hint("app.interrupt", "to interrupt"),
 				hint("app.clear", "to clear"),
 				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
 				hint("app.exit", "to exit (empty)"),
 				hint("app.suspend", "to suspend"),
 				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
-				hint("app.thinking.cycle", "to cycle thinking level"),
-				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
-				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand all tool output"),
-				hint("app.tools.unfoldOne", "to open one chain or block (repeat to peel back)"),
-				hint("app.view.cycleForward", "to cycle tool output (radar/glance/full)"),
-				hint("app.thinking.toggle", "to expand thinking"),
-				hint("app.tasks.cycleView", "to cycle task panel view"),
-				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
-				hint("app.mode.cycle", "to cycle agent mode"),
-				hint("app.session.changeDirectory", "to change working directory"),
-				hint("app.settings.open", "for settings"),
-				hint("app.hotkeys.open", "for all shortcuts"),
-				hint("app.editor.external", "for external editor"),
-				rawKeyHint("/", "for commands"),
-				rawKeyHint("!", "to run bash"),
-				rawKeyHint("!!", "to run bash (no context)"),
-				hint("app.message.followUp", "to queue follow-up"),
-				hint("app.message.dequeue", "to edit all queued messages"),
-				hint("app.clipboard.pasteImage", "to paste image"),
-				rawKeyHint("drop files", "to attach"),
 			].join("\n");
 			const onboarding = theme.fg(
 				"dim",
@@ -1808,21 +1852,23 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
-		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
+		this.defaultEditor.onAction("app.thinking.cycleForward", () => this.cycleThinkingLevel("forward"));
+		this.defaultEditor.onAction("app.thinking.cycleBackward", () => this.cycleThinkingLevel("backward"));
 		this.defaultEditor.onAction("app.model.cycleForward", () => this.modelController.cycleModel("forward"));
 		this.defaultEditor.onAction("app.model.cycleBackward", () => this.modelController.cycleModel("backward"));
 
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.commandExecutor.handleDebug();
 		this.defaultEditor.onAction("app.model.select", () => this.modelController.showModelSelector());
-		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.tools.expand", () => this.jumpToFullView());
 		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
 		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
-		this.defaultEditor.onAction("app.tools.unfoldOne", () => this.stepToolOutput("unfold"));
-		this.defaultEditor.onAction("app.tools.foldOne", () => this.stepToolOutput("fold"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
-		this.defaultEditor.onAction("app.tasks.cycleView", () => {
-			this.taskPanel.cycleView();
+		this.defaultEditor.onAction("app.tasks.cycleForward", () => {
+			this.taskPanel.cycleView("forward");
+		});
+		this.defaultEditor.onAction("app.tasks.cycleBackward", () => {
+			this.taskPanel.cycleView("backward");
 		});
 		this.defaultEditor.onAction("app.team.focus", () => this.teamFocus.enterFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
@@ -1843,7 +1889,8 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.color.cycleBackward", () => this.cycleSessionColor("backward"));
 		this.defaultEditor.onAction("app.settings.open", () => this.showSettingsSelector());
 		this.defaultEditor.onAction("app.hotkeys.open", () => this.commandExecutor.handleHotkeys());
-		this.defaultEditor.onAction("app.mode.cycle", () => void this.cycleAgentMode());
+		this.defaultEditor.onAction("app.mode.cycleForward", () => void this.cycleAgentMode("forward"));
+		this.defaultEditor.onAction("app.mode.cycleBackward", () => void this.cycleAgentMode("backward"));
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -2371,7 +2418,6 @@ export class InteractiveMode {
 									this.ui,
 									this.sessionManager.getCwd(),
 								);
-								component.setExpanded(this.toolOutputExpanded);
 								this.attachToolBlock(component);
 								this.pendingTools.set(content.id, component);
 							} else {
@@ -2446,7 +2492,6 @@ export class InteractiveMode {
 						this.ui,
 						this.sessionManager.getCwd(),
 					);
-					component.setExpanded(this.toolOutputExpanded);
 					this.attachToolBlock(component);
 					this.pendingTools.set(event.toolCallId, component);
 				}
@@ -2651,6 +2696,29 @@ export class InteractiveMode {
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
 
+	/**
+	 * Report a dial step, and name the key that steps it back — once.
+	 *
+	 * The instant after someone moves a dial is the one moment they are primed to
+	 * learn its other half: they have just used one direction and can feel the
+	 * missing one. So the reverse rides along with the first step of each dial in
+	 * a session and never again. A hint that repeats forever stops being read,
+	 * and its cost falls entirely on the people who already know it.
+	 *
+	 * Only the three dials that announce their new value in the transcript come
+	 * through here. The other three announce themselves where they live — the
+	 * task panel prints its own key in its header, and the mode chip and view
+	 * glyph change in place in the footer.
+	 */
+	private showDialStep(backward: AppKeybinding, message: string): void {
+		if (this.dialReverseTaught.has(backward)) {
+			this.showStatus(message);
+			return;
+		}
+		this.dialReverseTaught.add(backward);
+		this.showStatus(theme.fg("dim", message) + theme.fg("halftone", `   ${keyText(backward)} steps back`));
+	}
+
 	private showStatus(message: string): void {
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
@@ -2809,7 +2877,6 @@ export class InteractiveMode {
 							this.ui,
 							this.sessionManager.getCwd(),
 						);
-						component.setExpanded(this.toolOutputExpanded);
 						this.attachToolBlock(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
@@ -3087,14 +3154,14 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private cycleThinkingLevel(): void {
-		const newLevel = this.session.cycleThinkingLevel();
+	private cycleThinkingLevel(direction: "forward" | "backward"): void {
+		const newLevel = this.session.cycleThinkingLevel(direction);
 		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
 		} else {
 			this.footer.invalidate();
 			this.updateEditorBorderColor();
-			this.showStatus(`Thinking level: ${newLevel}`);
+			this.showDialStep("app.thinking.cycleBackward", `Thinking level: ${newLevel}`);
 		}
 	}
 
@@ -3155,70 +3222,36 @@ export class InteractiveMode {
 		return blocks;
 	}
 
-	/** Every chain in the transcript, in order. */
-	private transcriptChains(): ToolChainComponent[] {
-		return this.chatContainer.children.filter(
-			(child): child is ToolChainComponent => child instanceof ToolChainComponent,
-		);
-	}
-
-	private toggleToolOutputExpansion(): void {
-		this.setToolsExpanded(!this.toolOutputExpanded);
-	}
-
 	/**
-	 * Open or close one tool block instead of all of them.
+	 * Jump to the full view, or back to where the jump started.
 	 *
-	 * `ctrl+o` is all-or-nothing, which left the ▸ caret on every glance and
-	 * radar row advertising something no key could do. This is the missing half:
-	 * unfold walks back from the newest block to the first one still folded,
-	 * fold walks back to the most recently opened one.
+	 * The dial's top stop is the whole result with nothing trimmed, which is what
+	 * "expand" always meant — so expand is not a second state layered over the
+	 * dial any more, it is a jump along it. From any stop the first press lands
+	 * on `full`; the next press returns to the stop you came from (`peek` if the
+	 * jump started there, so the key is never a no-op).
 	 *
-	 * Working from the tail is not a shortcut, it is the only thing this view can
-	 * honestly offer. The transcript is bottom-anchored and has no app-level
-	 * scrolling — anything far enough up is in the terminal's own scrollback,
-	 * where this process cannot put a cursor or scroll to a selection. So the
-	 * key peels backwards through what is actually on screen, and each block it
-	 * opens is its own marker for where you have got to.
+	 * Only `app.view.cycleForward` writes the setting. This key deliberately does
+	 * not: the dial is the decision you keep, the jump is the look you take.
 	 */
-	private stepToolOutput(direction: "unfold" | "fold"): void {
-		const wantOpen = direction === "unfold";
-
-		// Radar's unit is the chain: one press turns the newest summary line back
-		// into the calls it stands for. Its per-call bodies are a glance/full
-		// question, so the step stops there rather than cascading.
-		if (this.toolOutputView === "radar") {
-			const chains = this.transcriptChains();
-			for (let i = chains.length - 1; i >= 0; i--) {
-				if (chains[i].isEmpty || chains[i].isOpened === wantOpen) continue;
-				// A chain of one is never summarised, so there is nothing for unfold to
-				// reveal; skipping it keeps the press moving to a chain that will change.
-				if (wantOpen && !chains[i].isSummarised) continue;
-				chains[i].setOpened(wantOpen);
-				this.ui.requestRender();
-				return;
-			}
-			this.showStatus(wantOpen ? "No collapsed chains below this point" : "No open chains below this point");
+	private jumpToFullView(): void {
+		if (this.toolOutputView === MAX_TOOL_OUTPUT_VIEW) {
+			const back = this.viewBeforeJump ?? DEFAULT_TOOL_OUTPUT_VIEW;
+			this.viewBeforeJump = undefined;
+			this.applyToolOutputView(back, { persist: false });
 			return;
 		}
-
-		const blocks = this.transcriptToolBlocks();
-		for (let i = blocks.length - 1; i >= 0; i--) {
-			const block = blocks[i];
-			if (block.isRevealed() === wantOpen) continue;
-			block.setExpanded(wantOpen);
-			this.ui.requestRender();
-			return;
-		}
-		this.showStatus(wantOpen ? "No folded tool output below this point" : "No unfolded tool output below this point");
+		this.viewBeforeJump = this.toolOutputView;
+		this.applyToolOutputView(MAX_TOOL_OUTPUT_VIEW, { persist: false });
 	}
 
 	/**
-	 * Move the view dial one stop and report where it landed.
+	 * Move the view dial one stop; the footer shows where it landed.
 	 *
-	 * The dial is the persistent decision ("how much do I ever want to see"),
-	 * which is why it saves; `app.tools.expand` stays the momentary one ("open
-	 * what is in front of me"), which is why it does not.
+	 * This is the persistent decision ("how much do I ever want to see"), which
+	 * is why it saves. `app.tools.expand` jumps along the same dial without
+	 * saving, which is what keeps "the look I am taking now" from overwriting
+	 * "the view I live in".
 	 */
 	private cycleToolOutputView(direction: "forward" | "backward"): void {
 		const next = cycleToolOutputView(this.toolOutputView, direction);
@@ -3248,10 +3281,17 @@ export class InteractiveMode {
 		return this.hideThinkingBlock ? "label" : "full";
 	}
 
-	private applyToolOutputView(view: ToolOutputView): void {
+	private applyToolOutputView(view: ToolOutputView, options: { persist?: boolean } = {}): void {
 		const previousThinking = this.thinkingDisplayForView();
+		const wasExpanded = this.toolOutputExpanded;
 		this.toolOutputView = view;
-		this.settingsManager.setToolOutputView(view);
+		if (options.persist !== false) {
+			this.settingsManager.setToolOutputView(view);
+			// Anything that moves the dial deliberately — the cycle key, the
+			// settings pane — is a new home stop, so the jump has nowhere stale to
+			// return to.
+			this.viewBeforeJump = undefined;
+		}
 		this.footer.setToolOutputView(view);
 		const thinking = this.thinkingDisplayForView();
 		for (const child of this.chatContainer.children) {
@@ -3264,11 +3304,18 @@ export class InteractiveMode {
 		if (this.streamingComponent && thinking !== previousThinking) {
 			this.streamingComponent.setThinkingDisplay(thinking);
 		}
+		// The header and the summary blocks are not tool output, but "full" means
+		// nothing is held back, so they open and close with the dial's top stop.
+		if (this.toolOutputExpanded !== wasExpanded) this.setToolsExpanded(this.toolOutputExpanded);
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Open or close everything that folds but is not a tool call — the header,
+	 * compaction and branch summaries, skill blocks. Tool blocks and chains are
+	 * not in this sweep: they take the view dial directly.
+	 */
 	private setToolsExpanded(expanded: boolean): void {
-		this.toolOutputExpanded = expanded;
 		const activeHeader = this.chrome.customHeader ?? this.builtInHeader;
 		if (isExpandable(activeHeader)) {
 			activeHeader.setExpanded(expanded);
@@ -3291,7 +3338,7 @@ export class InteractiveMode {
 	 * is missing (a `--light` run strips the extension), the key says so instead
 	 * of guessing.
 	 */
-	private async cycleAgentMode(): Promise<void> {
+	private async cycleAgentMode(direction: "forward" | "backward"): Promise<void> {
 		const command = this.session.extensionRunner.getCommand("mode");
 		if (!command) {
 			this.showWarning("Modes are not available in this session");
@@ -3306,8 +3353,12 @@ export class InteractiveMode {
 		}
 
 		const current = this.footerDataProvider.getActiveMode();
+		// indexOf is -1 when the active mode is not in the list; stepping from
+		// there lands on the first mode going forward and the last going back,
+		// which is the useful answer either way.
 		const index = modes.indexOf(current);
-		const next = modes[(index + 1) % modes.length];
+		const step = direction === "forward" ? 1 : -1;
+		const next = modes[(index + step + modes.length) % modes.length];
 		await this.session.prompt(`/mode ${next}`);
 	}
 
@@ -3325,7 +3376,7 @@ export class InteractiveMode {
 		const slot = cycleSessionColorSlot(this.sessionManager.getSessionColorSlot(), direction);
 		this.session.setSessionColor(slot);
 		const name = sessionColorName(slot);
-		this.showStatus(`Session color: ${name ?? slot}`);
+		this.showDialStep("app.session.color.cycleBackward", `Session color: ${name ?? slot}`);
 	}
 
 	private toggleThinkingBlockVisibility(): void {

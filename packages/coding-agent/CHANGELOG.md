@@ -18,6 +18,202 @@
   references into the transcript it just replayed, the way a session swap always
   has.
 
+## [0.5.58] - 2026-09-04
+
+### Changed
+
+- **The keyboard map is grouped by intention, not by mechanism.** Sorting the
+  bindings by what the widget is — everything that cycles together — made a list
+  that was tidy on the page and useless at the keyboard, because "it cycles" is
+  not what anyone is thinking when they reach for a key. Sixty bindings is not a
+  thing anyone holds; five groups of at most five is.
+
+  The groups are the five things you are ever doing here, in the order the loop
+  runs:
+
+  | group | what it is | keys |
+  | --- | --- | --- |
+  | **Compose** | the message in your hands | `alt+e` `alt+r` `ctrl+v` `alt+enter` `alt+↑` |
+  | **Steer** | what the agent is before it runs | `alt+a` `alt+m` `alt+t` |
+  | **Read** | what you see of what it did | `alt+o` `alt+l` `ctrl+o` `ctrl+t` |
+  | **Go** | sessions and places | `alt+h` `alt+w` `alt+c` `alt+s` `alt+k` |
+  | **Flow** | getting out, getting back | `esc` `ctrl+c` `ctrl+d` `ctrl+z` |
+
+  Two of them cost nothing: **Flow** is what every terminal program already
+  taught you, and the overlays — pickers, the tree, the options pane — print
+  their own keys on their own hint lines, so they are read rather than recalled.
+  That leaves three groups to genuinely know.
+
+  No key moved. The grouping is now the source's own declaration order, which
+  matters beyond the file: `orderKeybindingsConfig` writes `keybindings.json` in
+  that order, so the file you open to rebind something is grouped the same way.
+  The startup banner, `/hotkeys` and `docs/keybindings.md` all lead with the same
+  five groups in the same order, instead of three different organisations.
+
+- **A dial names the key that steps it back, once.** The instant after you move a
+  dial is the one moment you are primed to learn its other half — you have used
+  one direction and can feel the missing one — so the reverse rides along with
+  the first step of each dial in a session and never again. A hint that repeats
+  forever stops being read, and its cost falls on the people who already know it.
+
+- **The task panel advertises the roster key.** It already printed `alt+l cycle`
+  in its header; on the teams lens it now prints the focus key too. That is what
+  lets `alt+n` stay: it is the one letter in the set that names nothing, and it
+  survives on the fallback every unmemorable key needs — being read off the
+  screen instead of remembered.
+
+- The layout test now holds the grouping as well as the keys: every binding
+  belongs to exactly one family, families are declared contiguously and in order,
+  and no learned family exceeds five subjects that carry a key. That last one
+  caught **Go** at eight before the count was corrected to ignore actions that
+  ship unbound — an action with no key costs no memory.
+
+- **Every dial is now `alt+<letter>`, and `shift+alt+<letter>` steps it back.**
+  The thinking level came off `shift+tab` and the task ledger off `ctrl+n`, so the
+  six most-pressed keys in the app share one modifier, one shape, and six letters
+  that each name their dial:
+
+  | dial | forward | back |
+  | --- | --- | --- |
+  | **a**gent mode | `alt+a` | `shift+alt+a` |
+  | **m**odel | `alt+m` | `shift+alt+m` |
+  | **t**hinking level | `alt+t` | `shift+alt+t` |
+  | tool **o**utput | `alt+o` | `shift+alt+o` |
+  | task **l**edger | `alt+l` | `shift+alt+l` |
+  | session **c**olor | `alt+c` | `shift+alt+c` |
+
+  `alt+t` also buys the pairing that `alt+o` already had: same letter on both
+  rings, `alt` walking the dial and saving where it lands, `ctrl` acting on what
+  is drawn right now. `alt+o` sets how much tool output there ever is and
+  `ctrl+o` jumps to all of it and back; `alt+t` sets how much thinking there ever
+  is and `ctrl+t` shows or hides what you have. Those two are all that is left on
+  the `ctrl` ring besides the flow keys.
+
+  The task ledger gains the reverse it could never have had on `ctrl`, where
+  `shift+ctrl+n` is Windows Terminal's "new window". `alt+l` names the pane's own
+  word for itself — the task ledger — where `ctrl+n` named nothing.
+
+  `shift+tab` still steps the thinking level as a second key. It is the only dial
+  with no slash command and the only one whose setting changes what the agent
+  does, so it keeps a way in on a terminal that does not send `alt`.
+
+  `app.session.tree` gave `alt+t` to the thinking dial and ships unbound; `/tree`
+  opens it, the same trade `app.model.select` makes for `/model`. `ctrl+n`,
+  `ctrl+p` and `shift+ctrl+p` are all free now, so the emacs config in
+  `docs/keybindings.md` collides with nothing.
+
+  `app.tasks.cycleView` became `app.tasks.cycleForward`; existing
+  `keybindings.json` files are migrated on startup.
+
+- **The six dials now work the same way.** Everything on screen with an ordered
+  set of stops — agent mode, model, thinking level, tool output, session colour,
+  the task panel's lens — is stepped with a key, and until now those six keys had
+  four different shapes between them (`alt+`, `ctrl+`, `shift+ctrl+`, `shift+tab`)
+  and only three could step backward at all. Nothing told you which was which, so
+  each one had to be memorised on its own.
+
+  They share one rule now: **a dial steps forward on its key and back with one
+  more modifier held, the letter names the dial, and the slash command picks a
+  stop outright.**
+
+  What moved: the model dial from `ctrl+p`/`shift+ctrl+p` to `alt+m`, because the
+  model is a cockpit dial — what the agent *is*, not what is on screen — and `p`
+  named nothing. Agent mode and thinking level gained the reverse halves they
+  never had.
+
+  `app.thinking.cycle` and `app.mode.cycle` became `…cycleForward` so every
+  two-direction dial reads the same; existing `keybindings.json` files are
+  migrated on startup.
+
+- **`app.model.select` ships unbound; `/model` opens the picker.** Its key went to
+  the dial that steps the model, on the principle the colour dial already
+  followed: the key steps, the slash command chooses. `/mode`, `/model` and
+  `/color` are the three pickers behind the dials.
+
+- **The startup banner, `/hotkeys` and `docs/keybindings.md` lead with the
+  dials.** `/hotkeys` gained a Dials table naming what each one steps through and
+  where to see its state, and spells out the ctrl/alt pairing: `ctrl+o` opens the
+  tool bodies you have and `alt+o` sets how much they ever show; `ctrl+t` shows
+  the thinking you have and `shift+tab` sets how much there ever is.
+
+### Fixed
+
+- **Searching the session tree no longer fires its verbs.** The tree's two
+  label keys were the last verbs left on `shift+<letter>`, and outside the
+  Kitty keyboard protocol that is not a chord at all — the terminal sends the
+  plain uppercase letter. The tree takes every printable key into its search
+  query, so typing `TODO` or `Logger` toggled label timestamps and opened the
+  label editor instead of searching. They move to `alt+l` ("label") and `alt+t`
+  ("time"), which is where every other picker verb already lives, and a layout
+  test now refuses a bare `shift+<letter>` outright.
+
+- **The options pane gave its arrow keys to the step, never to the text.** On
+  the free-text row `←` stepped back to the previous question — which clears
+  the field — so a cursor key could throw away a half-typed answer, and `→`
+  submitted rather than moving right. The text now gets first refusal and the
+  step takes what is left at the ends: `→` commits from the end of the answer
+  (an empty field is already at its end, so the plain custom row still
+  advances), `←` stays out while there is an answer to lose, and `enter`
+  commits from anywhere.
+
+### Changed
+
+- **`alt+a` cycles the agent mode**, replacing `alt+g`, which stood for
+  nothing. Mode and model are one letter apart and `alt+m` is the model
+  selector, so the letter has to carry the meaning: `a` for agent mode.
+
+- **The session tree's hint line is readable.** It printed every alias of every
+  key — `ctrl+left/alt+left/ctrl+right/alt+right` for one fold verb, five
+  spelled-out filter keys — in a style no other hint line used. It is now the
+  house style (dim key, muted description, `·` separated), one key per verb,
+  with the five lenses shown as the range `alt+1…alt+5`. The header chip that
+  said `[+label time]` says `[timestamps]`.
+
+- **`docs/keybindings.md` documents the keys that exist.** It still listed the
+  layout from before the cockpit rings: `ctrl+l` for the model selector,
+  `ctrl+g` for the external editor, the picker verbs on the `ctrl` letters they
+  were moved off, the session tree and `/resume` as unbound, and no mention at
+  all of the view dial, the mode cycle, voice, settings, `/cd`, the team roster
+  or the options pane. Rewritten from the definitions, grouped by ring, and it
+  now leads with the rule that decides which ring a key is in.
+
+- `app.options.next` and `app.options.back` are registered keybinding ids like
+  every other action, instead of being defined but missing from the type map
+  and reached through a cast. The layout test now checks that every id belongs
+  to a scope, so the next one cannot slip through unchecked.
+## [0.5.57] - 2026-09-04
+
+### Changed
+
+- **The tool output dial is three stops and two keys, and `full` finally means
+  full.** It had grown into three separate ideas: a dial (`alt+o`) with a
+  `radar` / `glance` / `full` scale, an all-or-nothing expand (`ctrl+o`), and a
+  one-at-a-time unfold (`alt+u` / `shift+alt+u`) that peeled backwards from the
+  newest block and meant something different in each view. Three states to hold,
+  and a `full` stop that was not full — `ctrl+o` was what made it full.
+
+  Now there is one value. The dial reads **radar → peek → full**: one line per
+  run of calls, the call line with the first few lines of its result, the same
+  with nothing trimmed. `glance` is gone as a stop — a handful of result lines
+  answers "did this find anything" better than a folded body did, so `peek`
+  replaces it as the default, and `PEEK_LINES` is the single knob every renderer
+  trims to (including tools with no renderer of their own, which used to print
+  their whole result whatever the dial said).
+
+  `ctrl+o` still exists and is still the reflex key: from any stop it jumps
+  straight to `full`, and pressing it again returns to the stop it came from.
+  The header, compaction and branch summaries and skill blocks follow it, since
+  `full` means nothing is held back. The two keys differ in what they remember:
+  `alt+o` saves where it lands, `ctrl+o` does not.
+
+  `alt+u` and `shift+alt+u` are gone, and with them the per-chain opened state,
+  the per-block revealed flag and the "a revealed block leaves radar while it is
+  open" special case. A run of calls is a summary line in radar and its own calls
+  at every other stop; nothing opens one chain or one block on its own any more.
+  Old `toolOutputView` settings still load: `glance` becomes `peek`, `collapsed`
+  becomes `radar`, `standard` becomes `full`, and a config that still says `peek`
+  needs no migration at all — it names a live stop again.
+
 ## [0.5.56] - 2026-09-04
 
 ### Added

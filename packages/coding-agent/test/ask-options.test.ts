@@ -10,6 +10,7 @@ const UP = "\x1b[A";
 const DOWN = "\x1b[B";
 const RIGHT = "\x1b[C";
 const LEFT = "\x1b[D";
+const ENTER = "\r";
 const ESC = "\x1b";
 
 const questions: AskQuestion[] = [
@@ -168,6 +169,65 @@ describe("AskOptionsComponent", () => {
 		expect(out).toContain("2/2 backoff strategy?");
 
 		c.handleInput("2"); // fixed 1s -> submit
+		expect(submitted).toEqual(["per-provider", "fixed 1s"]);
+	});
+
+	it("gives the arrows to the text once a custom answer is typed", () => {
+		let submitted: string[] | undefined;
+		const c = new AskOptionsComponent(
+			questions,
+			(a) => {
+				submitted = a;
+			},
+			() => {},
+		);
+
+		c.handleInput(DOWN);
+		c.handleInput(DOWN); // custom row
+		for (const ch of "per-provider") c.handleInput(ch);
+
+		// Left is the text cursor, not "go back": stepping back clears the field,
+		// and a cursor key must not be able to throw the answer away.
+		c.handleInput(LEFT);
+		let out = stripAnsi(c.render(80).join("\n"));
+		expect(out).toContain("1/2 where should retry logic live?");
+		expect(out).toContain("per-provider");
+
+		// Right walks the cursor back to the end rather than committing early...
+		c.handleInput(RIGHT);
+		out = stripAnsi(c.render(80).join("\n"));
+		expect(out).toContain("1/2 where should retry logic live?");
+
+		// ...and commits from there.
+		c.handleInput(RIGHT);
+		out = stripAnsi(c.render(80).join("\n"));
+		expect(out).toContain("2/2 backoff strategy?");
+
+		c.handleInput("2");
+		expect(submitted).toEqual(["per-provider", "fixed 1s"]);
+	});
+
+	it("commits a custom answer with enter from anywhere in the text", () => {
+		let submitted: string[] | undefined;
+		const c = new AskOptionsComponent(
+			questions,
+			(a) => {
+				submitted = a;
+			},
+			() => {},
+		);
+
+		c.handleInput(DOWN);
+		c.handleInput(DOWN); // custom row
+		for (const ch of "per-provider") c.handleInput(ch);
+		c.handleInput(LEFT);
+		c.handleInput(LEFT);
+		c.handleInput(ENTER);
+
+		const out = stripAnsi(c.render(80).join("\n"));
+		expect(out).toContain("2/2 backoff strategy?");
+
+		c.handleInput("2");
 		expect(submitted).toEqual(["per-provider", "fixed 1s"]);
 	});
 

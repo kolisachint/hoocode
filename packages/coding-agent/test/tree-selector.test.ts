@@ -20,21 +20,24 @@ beforeEach(() => {
 });
 
 /**
- * Raw input for a tree-filter lens, derived from the keybinding rather than
- * hardcoded: the lenses moved from ctrl+letters (which collided with the query
- * line's editing keys) to alt+digits, and a test spelling the escape sequence
- * out by hand would have gone on passing against the old layout.
+ * Raw input for one of the tree's verbs, derived from the keybinding rather
+ * than hardcoded: they have moved twice — the filter lenses off ctrl+letters,
+ * which collided with the query line's editing keys, and the label verbs off
+ * shift+letters, which a legacy terminal cannot tell from typing — and a test
+ * spelling the escape sequence out by hand would have gone on passing against
+ * the layout it was written for.
  */
-function filterKey(keybinding: Parameters<KeybindingsManager["getKeys"]>[0]): string {
+function altKey(keybinding: Parameters<KeybindingsManager["getKeys"]>[0]): string {
 	const key = new KeybindingsManager().getKeys(keybinding)[0];
 	const match = /^alt\+(.)$/.exec(key ?? "");
 	if (!match) throw new Error(`Expected an alt+<char> binding for ${keybinding}, got ${key}`);
 	return `\x1b${match[1]}`;
 }
 
-const FILTER_DEFAULT = filterKey("app.tree.filter.default");
-const FILTER_USER_ONLY = filterKey("app.tree.filter.userOnly");
-const FILTER_LABELED_ONLY = filterKey("app.tree.filter.labeledOnly");
+const FILTER_DEFAULT = altKey("app.tree.filter.default");
+const FILTER_USER_ONLY = altKey("app.tree.filter.userOnly");
+const FILTER_LABELED_ONLY = altKey("app.tree.filter.labeledOnly");
+const ALT_T = altKey("app.tree.toggleLabelTimestamp");
 
 // Helper to create a user message entry
 function userMessage(id: string, parentId: string | null, content: string): SessionMessageEntry {
@@ -287,11 +290,40 @@ describe("TreeSelectorComponent", () => {
 			expect(render).not.toContain("3/28 14:32");
 			expect(render).not.toContain("[+label time]");
 
-			selector.handleInput("T");
+			selector.handleInput(ALT_T);
 
 			render = list.render(200).join("\n");
 			expect(render).toContain("3/28 14:32");
-			expect(render).toContain("[+label time]");
+			expect(render).toContain("[timestamps]");
+		});
+
+		test("types an uppercase letter into the search instead of firing a verb", () => {
+			// The verbs used to sit on shift+l / shift+t, which a terminal without
+			// the Kitty protocol sends as the bare uppercase letter — so searching
+			// the tree for "TODO" toggled timestamps and opened the label editor.
+			const entries = [userMessage("user-1", null, "TODO ship it"), assistantMessage("asst-1", "user-1", "ok")];
+			const tree = buildTree(entries);
+			tree[0]!.label = "checkpoint";
+			tree[0]!.labelTimestamp = new Date(2026, 2, 28, 14, 32, 0).toISOString();
+
+			let labelEdits = 0;
+			const selector = new TreeSelectorComponent(
+				tree,
+				"asst-1",
+				24,
+				() => {},
+				() => {},
+			);
+			selector.getTreeList().onLabelEdit = () => {
+				labelEdits += 1;
+			};
+
+			for (const ch of "TL") selector.handleInput(ch);
+
+			const render = selector.getTreeList().render(200).join("\n");
+			expect(labelEdits).toBe(0);
+			expect(render).not.toContain("[timestamps]");
+			expect(render).not.toContain("3/28 14:32");
 		});
 	});
 

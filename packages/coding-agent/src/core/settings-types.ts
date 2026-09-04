@@ -145,11 +145,11 @@ export interface Settings {
 	voice?: VoiceSettings; // voice-to-text capture tuning (trailing-silence window)
 	webtools?: WebtoolsSettings; // webfetch/websearch binary tuning (request timeout)
 	disabledTools?: string[]; // Tool names disabled from the TUI; removed from the agent in every session (composes with the --tools allowlist / --disallowed-tools denylist)
-	// default: "glance". How much of a tool call the transcript shows, least to
-	// most: "radar" (one aligned signal line per call), "glance" (the call line
-	// with a ▸ caret, body folded away), "full" (call line plus result body).
-	// Legacy values collapsed/peek/standard still load and map onto the new dial.
-	toolOutputView?: "radar" | "glance" | "full";
+	// default: "peek". How much of a tool call the transcript shows, least to
+	// most: "radar" (one line per run of calls), "peek" (the call line and the
+	// first few lines of the result), "full" (the same, nothing trimmed).
+	// Legacy values collapsed/glance/standard still load and map onto the dial.
+	toolOutputView?: "radar" | "peek" | "full";
 	flags?: Record<string, boolean | string>; // Persisted overrides for extension-registered flags, applied at startup for known flags (CLI --flag still wins). Unknown/stale entries are ignored.
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;

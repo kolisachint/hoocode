@@ -6,12 +6,14 @@
  * "INPUT NEEDED" label, and the active row marked with the accent cursor.
  *
  * One decision per step:
- *   - tui.select.up / down  move between options (wraps)
- *   - tui.select.next (→)   confirm the highlighted option and advance; on the
- *                           last step it submits every answer
- *   - tui.select.back (←)   step back to the previous decision
- *   - 1-9                   quick-pick an option
- *   - drop onto the custom row and type a free-form answer when none fit
+ *   - tui.select.up / down    move between options (wraps)
+ *   - app.options.next (→)    confirm the highlighted option and advance; on the
+ *                             last step it submits every answer
+ *   - app.options.back (←)    step back to the previous decision
+ *   - 1-9                     quick-pick an option
+ *   - drop onto the custom row and type a free-form answer when none fit; there
+ *     the arrows move the text cursor first and only act on the step at its
+ *     ends, so enter is the key that always commits
  *   - tui.select.cancel (esc) skips the whole sequence
  *
  * Answered steps stay on screen as a deterministic breadcrumb so you always
@@ -23,7 +25,6 @@ import {
 	type Focusable,
 	getKeybindings,
 	Input,
-	type Keybinding,
 	truncateToWidth,
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
@@ -64,6 +65,23 @@ export class AskOptionsComponent implements Component, Focusable {
 		return !!q.allowCustom && this.index === q.options.length;
 	}
 
+	/**
+	 * How the arrow keys divide between the step and the text on the custom row.
+	 *
+	 * The step arrows and the text cursor want the same two keys, and they are
+	 * only ever in conflict on the free-text row with something typed in it.
+	 * There the text gets first refusal and the step takes what is left over at
+	 * the ends: `→` at the end of the answer commits it (with nothing typed the
+	 * end is also the start, which is why the plain custom row still advances),
+	 * and `←` never leaves the step while there is an answer to lose — stepping
+	 * back clears the field, which is not what a cursor key should do.
+	 */
+	private customArrows(): { next: boolean; back: boolean } {
+		if (!this.isOnCustomRow(this.questions[this.step])) return { next: true, back: true };
+		const typed = this.customInput.getValue().length;
+		return { next: this.customInput.getCursor() >= typed, back: typed === 0 };
+	}
+
 	private spread(left: string, right: string, width: number): string {
 		const gap = Math.max(1, width - visibleWidth(left) - visibleWidth(right));
 		return truncateToWidth(`${left}${" ".repeat(gap)}${right}`, width, "");
@@ -74,12 +92,14 @@ export class AskOptionsComponent implements Component, Focusable {
 		const sep = theme.fg("muted", " · ");
 		const hint = (keys: string, desc: string) => theme.fg("dim", keys) + theme.fg("muted", ` ${desc}`);
 		const upDown = `${kb.getKeys("tui.select.up").join("/")}/${kb.getKeys("tui.select.down").join("/")}`;
-		const parts = [
-			hint(upDown, "move"),
-			hint(kb.getKeys("app.options.next" as Keybinding).join("/"), last ? "submit" : "next"),
-		];
-		if (this.step > 0) {
-			parts.push(hint(kb.getKeys("app.options.back" as Keybinding).join("/"), "back"));
+		const arrows = this.customArrows();
+		const parts = [hint(upDown, "move")];
+		// Mid-answer on the free-text row the arrows are the text cursor's, so the
+		// hint names the key that does commit it.
+		const nextKeys = arrows.next ? kb.getKeys("app.options.next") : kb.getKeys("tui.select.confirm");
+		parts.push(hint(nextKeys.join("/"), last ? "submit" : "next"));
+		if (this.step > 0 && arrows.back) {
+			parts.push(hint(kb.getKeys("app.options.back").join("/"), "back"));
 		}
 		parts.push(hint(kb.getKeys("tui.select.cancel").join("/"), "skip"));
 		return parts.join(sep);
@@ -194,11 +214,12 @@ export class AskOptionsComponent implements Component, Focusable {
 			this.index = this.index === rows - 1 ? 0 : this.index + 1;
 			return;
 		}
-		if (kb.matches(data, "app.options.back" as Keybinding)) {
+		const arrows = this.customArrows();
+		if (arrows.back && kb.matches(data, "app.options.back")) {
 			this.back();
 			return;
 		}
-		if (kb.matches(data, "app.options.next" as Keybinding) || kb.matches(data, "tui.select.confirm")) {
+		if ((arrows.next && kb.matches(data, "app.options.next")) || kb.matches(data, "tui.select.confirm")) {
 			this.confirm();
 			return;
 		}

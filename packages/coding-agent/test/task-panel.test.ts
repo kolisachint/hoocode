@@ -415,7 +415,7 @@ describe("task panel rendering", () => {
 		expect(two).toContain("tasks 0/1");
 		expect(two).toContain("subagents 0/1");
 		expect(two).not.toContain("teams");
-		expect(two).toContain(`${appKeyLabel("app.tasks.cycleView")} cycle`);
+		expect(two).toContain(`${appKeyLabel("app.tasks.cycleForward")} cycle`);
 
 		// A role agent registers (hooteams): the full strip shows.
 		taskStore.upsertAgent({ id: "planner", name: "planner", kind: "role" });

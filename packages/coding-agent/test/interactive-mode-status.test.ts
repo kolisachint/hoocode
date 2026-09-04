@@ -7,6 +7,7 @@ import { beforeAll, describe, expect, test, vi } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.js";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.js";
 import type { SourceInfo } from "../src/core/source-info.js";
+import { DEFAULT_TOOL_OUTPUT_VIEW } from "../src/core/tool-output-view.js";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
@@ -84,10 +85,12 @@ describe("InteractiveMode.showStatus", () => {
 
 describe("InteractiveMode.setToolsExpanded", () => {
 	test("applies expansion state to the active header and chat entries", () => {
+		// Everything that folds but is not a tool call. Tool blocks and chains are
+		// deliberately not in this sweep: they take the view dial itself, and this
+		// sweep is what carries the dial's top stop across to the rest.
 		const header = { setExpanded: vi.fn() };
 		const chatChild = { setExpanded: vi.fn() };
 		const fakeThis: any = {
-			toolOutputExpanded: false,
 			chrome: { customHeader: undefined },
 			builtInHeader: header,
 			chatContainer: { children: [chatChild] },
@@ -96,10 +99,54 @@ describe("InteractiveMode.setToolsExpanded", () => {
 
 		(InteractiveMode as any).prototype.setToolsExpanded.call(fakeThis, true);
 
-		expect(fakeThis.toolOutputExpanded).toBe(true);
 		expect(header.setExpanded).toHaveBeenCalledWith(true);
 		expect(chatChild.setExpanded).toHaveBeenCalledWith(true);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("InteractiveMode.jumpToFullView", () => {
+	function harness(view: string) {
+		const applied: Array<{ view: string; persist: boolean }> = [];
+		const fakeThis: any = {
+			toolOutputView: view,
+			viewBeforeJump: undefined,
+			applyToolOutputView(next: string, options: { persist?: boolean } = {}) {
+				this.toolOutputView = next;
+				applied.push({ view: next, persist: options.persist !== false });
+			},
+		};
+		const jump = () => (InteractiveMode as any).prototype.jumpToFullView.call(fakeThis);
+		return { fakeThis, applied, jump };
+	}
+
+	test("lands on full from any stop, and goes back to the one it came from", () => {
+		for (const start of ["radar", "peek"]) {
+			const { fakeThis, jump } = harness(start);
+			jump();
+			expect(fakeThis.toolOutputView, start).toBe("full");
+			jump();
+			expect(fakeThis.toolOutputView, start).toBe(start);
+		}
+	});
+
+	test("is never a dead keystroke when the dial is already at full", () => {
+		// Nothing to return to — the session started here, or the dial was cycled
+		// here by hand — so it falls back to the default stop rather than sitting
+		// on a key that does nothing.
+		const { fakeThis, jump } = harness("full");
+		jump();
+		expect(fakeThis.toolOutputView).toBe(DEFAULT_TOOL_OUTPUT_VIEW);
+	});
+
+	test("does not save where it lands: the jump is a look, the dial is the decision", () => {
+		const { applied, jump } = harness("radar");
+		jump();
+		jump();
+		expect(applied).toEqual([
+			{ view: "full", persist: false },
+			{ view: "radar", persist: false },
+		]);
 	});
 });
 
