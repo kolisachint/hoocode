@@ -50,7 +50,8 @@ const GLOBAL_SCOPE = [
 	// app actions wired in InteractiveMode's editor action registration
 	"app.interrupt",
 	"app.suspend",
-	"app.thinking.cycle",
+	"app.thinking.cycleForward",
+	"app.thinking.cycleBackward",
 	"app.model.cycleForward",
 	"app.model.cycleBackward",
 	"app.model.select",
@@ -76,7 +77,8 @@ const GLOBAL_SCOPE = [
 	"app.session.color.cycleBackward",
 	"app.settings.open",
 	"app.hotkeys.open",
-	"app.mode.cycle",
+	"app.mode.cycleForward",
+	"app.mode.cycleBackward",
 ] as const;
 
 /** The session picker: a query line plus its own verbs. */
@@ -264,10 +266,12 @@ describe("keybinding layout", () => {
 		// already warns about ("extended-keys is off"), not a new gap.
 		expect(unreachable).toEqual([
 			"tui.input.newLine",
+			"app.thinking.cycleBackward",
 			"app.model.cycleBackward",
 			"app.view.cycleBackward",
 			"app.tools.foldOne",
 			"app.session.color.cycleBackward",
+			"app.mode.cycleBackward",
 			"app.tree.filter.cycleBackward",
 		]);
 	});
@@ -306,7 +310,9 @@ describe("keybinding layout", () => {
 		"tui.editor.jumpBackward",
 		"tui.editor.deleteWordForward",
 		"tui.editor.yankPop",
-		"app.model.select",
+		"app.thinking.cycleBackward",
+		"app.model.cycleForward",
+		"app.model.cycleBackward",
 		"app.view.cycleForward",
 		"app.view.cycleBackward",
 		"app.tools.unfoldOne",
@@ -323,7 +329,8 @@ describe("keybinding layout", () => {
 		"app.session.color.cycleBackward",
 		"app.settings.open",
 		"app.hotkeys.open",
-		"app.mode.cycle",
+		"app.mode.cycleForward",
+		"app.mode.cycleBackward",
 		"app.tree.editLabel",
 		"app.tree.toggleLabelTimestamp",
 		"app.session.togglePath",
@@ -401,6 +408,57 @@ describe("keybinding layout", () => {
 			manager.getKeys(id as never).some((key) => /^ctrl\+[a-z]$/.test(key)),
 		);
 		expect(ctrlLetterVerbs).toEqual([]);
+	});
+
+	/**
+	 * The dials: the ordered-set controls whose state is painted on screen, and
+	 * the most-pressed keys in the app. They carry one rule between them — step
+	 * forward on the key, back with one more modifier held — and this is what
+	 * holds it. A new dial belongs in this list; a dial that loses its reverse,
+	 * or grows a reverse that is not its forward key plus a modifier, is the
+	 * drift that made the set unlearnable the last time.
+	 */
+	const DIALS: Array<{ name: string; forward: string; backward?: string }> = [
+		{ name: "agent mode", forward: "app.mode.cycleForward", backward: "app.mode.cycleBackward" },
+		{ name: "model", forward: "app.model.cycleForward", backward: "app.model.cycleBackward" },
+		{ name: "thinking level", forward: "app.thinking.cycleForward", backward: "app.thinking.cycleBackward" },
+		{ name: "tool output", forward: "app.view.cycleForward", backward: "app.view.cycleBackward" },
+		{
+			name: "session colour",
+			forward: "app.session.color.cycleForward",
+			backward: "app.session.color.cycleBackward",
+		},
+		// The one without a reverse: shift+ctrl+n is Windows Terminal's "new
+		// window", and three stops that skip the empty ones make back one more
+		// press forward.
+		{ name: "task panel lens", forward: "app.tasks.cycleView" },
+	];
+
+	it("steps every dial back on its forward key plus one modifier", () => {
+		const manager = new KeybindingsManager();
+		const wrong: string[] = [];
+		for (const { name, forward, backward } of DIALS) {
+			if (!backward) continue;
+			const forwardKey = manager.getKeys(forward as never)[0];
+			const backwardKey = manager.getKeys(backward as never)[0];
+			// shift where the forward key has none; alt for shift+tab, which has
+			// already spent shift.
+			const expected = forwardKey?.startsWith("shift+") ? `shift+alt+${forwardKey.slice(6)}` : `shift+${forwardKey}`;
+			if (backwardKey !== expected) wrong.push(`${name}: ${forwardKey} -> ${backwardKey}, expected ${expected}`);
+		}
+		expect(wrong).toEqual([]);
+	});
+
+	it("leaves no dial unbound", () => {
+		const manager = new KeybindingsManager();
+		const unbound = DIALS.filter(({ forward }) => manager.getKeys(forward as never).length === 0).map((d) => d.name);
+		expect(unbound).toEqual([]);
+	});
+
+	it("keeps the dials off each other's keys", () => {
+		const ids = DIALS.flatMap(({ forward, backward }) => (backward ? [forward, backward] : [forward]));
+		expect(collisionsWithin(ids)).toEqual([]);
+		expect(legacyCollisionsWithin(ids)).toEqual([]);
 	});
 
 	it("gives every action a description for /hotkeys", () => {

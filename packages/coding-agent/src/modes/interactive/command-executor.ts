@@ -556,9 +556,9 @@ export class CommandExecutor {
 		const clear = keyDisplayText("app.clear");
 		const exit = keyDisplayText("app.exit");
 		const suspend = keyDisplayText("app.suspend");
-		const cycleThinkingLevel = keyDisplayText("app.thinking.cycle");
+		const cycleThinkingLevel = keyDisplayText("app.thinking.cycleForward");
+		const cycleThinkingLevelBack = keyDisplayText("app.thinking.cycleBackward");
 		const cycleModelForward = keyDisplayText("app.model.cycleForward");
-		const selectModel = keyDisplayText("app.model.select");
 		const expandTools = keyDisplayText("app.tools.expand");
 		const toggleThinking = keyDisplayText("app.thinking.toggle");
 		const cycleTaskView = keyDisplayText("app.tasks.cycleView");
@@ -578,7 +578,8 @@ export class CommandExecutor {
 		const changeDirectory = keyDisplayText("app.session.changeDirectory");
 		const openSettings = keyDisplayText("app.settings.open");
 		const openHotkeys = keyDisplayText("app.hotkeys.open");
-		const cycleMode = keyDisplayText("app.mode.cycle");
+		const cycleMode = keyDisplayText("app.mode.cycleForward");
+		const cycleModeBack = keyDisplayText("app.mode.cycleBackward");
 		const sessionTree = keyDisplayText("app.session.tree");
 		const sessionResume = keyDisplayText("app.session.resume");
 		const cycleSessionColor = keyDisplayText("app.session.color.cycleForward");
@@ -624,27 +625,39 @@ export class CommandExecutor {
 | \`!\` | Run bash command |
 | \`!!\` | Run bash command (excluded from context) |
 
+**Dials** — step forward on the first key, back on the second. Each one's state is on screen.
+| Key | Steps | Through |
+|-----|-------|---------|
+| \`${cycleMode}\` / \`${cycleModeBack}\` | Agent mode | ask → plan → build → debug (\`/mode\` to pick one) |
+| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Model | your enabled models (\`/model\` to pick one) |
+| \`${cycleThinkingLevel}\` / \`${cycleThinkingLevelBack}\` | Thinking level | off → … → high |
+| \`${viewForward}\` / \`${viewBackward}\` | Tool output | radar → glance → full |
+| \`${cycleSessionColor}\` / \`${cycleSessionColorBackward}\` | Session color | the six chip slots (\`/color\` to pick one) |
+| \`${cycleTaskView}\` | Task panel | tasks → subagents → teams (no reverse — see below) |
+
+The task panel is the one dial without a reverse: \`Shift+Ctrl+N\` is Windows
+Terminal's "new window", and with three stops that skip the empty ones, back is
+one more press forward.
+
 **View** — what is on screen right now (\`Ctrl\`)
 | Key | Action |
 |-----|--------|
 | \`${expandTools}\` | Expand or collapse every tool block at once |
 | \`${unfoldOne}\` / \`${foldOne}\` | Open / re-fold one thing, newest first — a chain in radar, a tool body otherwise |
-| \`${viewForward}\` / \`${viewBackward}\` | Cycle tool output: radar → glance → full |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
-| \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |
 | \`${teamFocus}\` | Focus the team roster — then \`${teamNudge}\` nudges, \`${teamAttach}\` attaches, \`q\`/\`${interrupt}\` leaves (\`--team\`) |
-| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
-| \`${cycleThinkingLevel}\` | Cycle thinking level |
+
+Same letter on both rings is the same subject twice: \`${expandTools}\` opens the
+tool bodies you have, \`${viewForward}\` sets how much they ever show;
+\`${toggleThinking}\` shows the thinking you have, \`${cycleThinkingLevel}\` sets how
+much there ever is.
 
 **Cockpit** — what the agent is, and where it works (\`Alt\`)
 | Key | Action |
 |-----|--------|
-| \`${cycleMode}\` | Cycle agent mode (ask → plan → build → debug) |
-| \`${selectModel}\` | Open model selector |
 | \`${changeDirectory}\` | Change working directory (\`/cd\`) |
 | \`${sessionTree}\` | Open session tree |
 | \`${sessionResume}\` | Resume a session from history |
-| \`${cycleSessionColor}\` / \`${cycleSessionColorBackward}\` | Cycle the session chip's color (\`/color\` to pick one) |
 | \`${openSettings}\` | Open settings |
 | \`${openHotkeys}\` | Show this list |
 | \`${externalEditor}\` | Edit message in external editor |

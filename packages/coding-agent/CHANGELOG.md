@@ -2,6 +2,53 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The six dials now work the same way.** Everything on screen with an ordered
+  set of stops — agent mode, model, thinking level, tool output, session colour,
+  the task panel's lens — is stepped with a key, and until now those six keys had
+  four different shapes between them (`alt+`, `ctrl+`, `shift+ctrl+`, `shift+tab`)
+  and only three could step backward at all. Nothing told you which was which, so
+  each one had to be memorised on its own.
+
+  They share one rule now: **a dial steps forward on its key and back with one
+  more modifier held, the letter names the dial, and the slash command picks a
+  stop outright.**
+
+  | dial | readout | forward | back |
+  | --- | --- | --- | --- |
+  | agent mode | footer, bold, left | `alt+a` | `shift+alt+a` |
+  | model | footer, right | `alt+m` | `shift+alt+m` |
+  | thinking level | footer, right | `shift+tab` | `shift+alt+tab` |
+  | tool output | footer, right | `alt+o` | `shift+alt+o` |
+  | session colour | session chip | `alt+c` | `shift+alt+c` |
+  | task panel lens | task panel | `ctrl+n` | — |
+
+  What moved: the model dial from `ctrl+p`/`shift+ctrl+p` to `alt+m`, because the
+  model is a cockpit dial — what the agent *is*, not what is on screen — and `p`
+  named nothing. Agent mode and thinking level gained the reverse halves they
+  never had. `ctrl+p` and `shift+ctrl+p` are now free, so the emacs config in
+  `docs/keybindings.md` no longer collides with anything.
+
+  The task panel is the one dial without a reverse, and it says so wherever it is
+  documented: `shift+ctrl+n` is Windows Terminal's "new window", and with three
+  stops that skip the empty ones, back is one more press forward.
+
+  `app.thinking.cycle` and `app.mode.cycle` became `…cycleForward` so every
+  two-direction dial reads the same; existing `keybindings.json` files are
+  migrated on startup.
+
+- **`app.model.select` ships unbound; `/model` opens the picker.** Its key went to
+  the dial that steps the model, on the principle the colour dial already
+  followed: the key steps, the slash command chooses. `/mode`, `/model` and
+  `/color` are the three pickers behind the dials.
+
+- **The startup banner, `/hotkeys` and `docs/keybindings.md` lead with the
+  dials.** `/hotkeys` gained a Dials table naming what each one steps through and
+  where to see its state, and spells out the ctrl/alt pairing: `ctrl+o` opens the
+  tool bodies you have and `alt+o` sets how much they ever show; `ctrl+t` shows
+  the thinking you have and `shift+tab` sets how much there ever is.
+
 ### Fixed
 
 - **Searching the session tree no longer fires its verbs.** The tree's two

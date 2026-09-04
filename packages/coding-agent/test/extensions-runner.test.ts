@@ -107,9 +107,14 @@ describe("ExtensionRunner", () => {
 		});
 
 		it("allows a shortcut when the reserved set no longer contains the default key", async () => {
+			// The extension claims the model dial's own default key, and the config
+			// moves that dial off it — so the key is free by rebinding, which is the
+			// thing under test. Taking a key that is unbound to begin with would
+			// pass whether or not the rebinding was honoured.
+			const modelDialDefault = new KeybindingsManager().getKeys("app.model.cycleForward")[0];
 			const extCode = `
 				export default function(pi) {
-					pi.registerShortcut("ctrl+p", {
+					pi.registerShortcut("${modelDialDefault}", {
 						description: "Uses freed default",
 						handler: async () => {},
 					});
@@ -121,10 +126,10 @@ describe("ExtensionRunner", () => {
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
-			const keybindings = { ...defaultKeybindings, "app.model.cycleForward": "ctrl+n" as KeyId };
+			const keybindings = { ...defaultKeybindings, "app.model.cycleForward": "ctrl+p" as KeyId };
 			const shortcuts = runner.getShortcuts(keybindings);
 
-			expect(shortcuts.has("ctrl+p")).toBe(true);
+			expect(shortcuts.has(modelDialDefault as KeyId)).toBe(true);
 			expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
 
 			warnSpy.mockRestore();
@@ -183,9 +188,14 @@ describe("ExtensionRunner", () => {
 		});
 
 		it("blocks shortcuts when reserved key is also bound to non-reserved actions", async () => {
+			// alt+r is the shared case: reserved for app.input.voiceTranscribe
+			// globally, and also the session picker's rename verb, which is not
+			// reserved. Whichever the map hits second, the reserved one must win.
+			// (It used to be ctrl+p, which stopped being bound at all when the
+			// model dial moved to alt+m — a key bound to nothing proves nothing.)
 			const extCode = `
 				export default function(pi) {
-					pi.registerShortcut("ctrl+p", {
+					pi.registerShortcut("alt+r", {
 						description: "Conflicts with shared reserved default",
 						handler: async () => {},
 					});
@@ -200,7 +210,7 @@ describe("ExtensionRunner", () => {
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
-			expect(shortcuts.has("ctrl+p")).toBe(false);
+			expect(shortcuts.has("alt+r")).toBe(false);
 
 			warnSpy.mockRestore();
 		});

@@ -15,7 +15,8 @@ interface AppKeybindings {
 	"app.clear": true;
 	"app.exit": true;
 	"app.suspend": true;
-	"app.thinking.cycle": true;
+	"app.thinking.cycleForward": true;
+	"app.thinking.cycleBackward": true;
 	"app.model.cycleForward": true;
 	"app.model.cycleBackward": true;
 	"app.model.select": true;
@@ -44,7 +45,8 @@ interface AppKeybindings {
 	"app.session.color.cycleBackward": true;
 	"app.settings.open": true;
 	"app.hotkeys.open": true;
-	"app.mode.cycle": true;
+	"app.mode.cycleForward": true;
+	"app.mode.cycleBackward": true;
 	"app.options.next": true;
 	"app.options.back": true;
 	"app.tree.foldOrUp": true;
@@ -80,21 +82,60 @@ declare module "@kolisachint/hoocode-tui" {
 /**
  * The cockpit layout.
  *
- * Three rings, and which ring a key belongs to is decided by its modifier:
+ * ## The dials
+ *
+ * Six things on screen are dials — an ordered set of stops you step through,
+ * each with its state painted where you can see it. They are the most-pressed
+ * keys in the app, so they get the one rule worth memorising:
+ *
+ * > **A dial steps forward on its key and back with one more modifier held.
+ * > The letter names the dial. The slash command picks a stop outright.**
+ *
+ * That modifier is shift everywhere but the thinking level, whose forward key
+ * has already spent shift, so its reverse takes alt instead.
+ *
+ *   | dial            | readout            | forward     | back              |
+ *   | --------------- | ------------------ | ----------- | ----------------- |
+ *   | agent mode      | footer, bold, left | `alt+a`     | `shift+alt+a`     |
+ *   | model           | footer, right      | `alt+m`     | `shift+alt+m`     |
+ *   | thinking level  | footer, right      | `shift+tab` | `shift+alt+tab`   |
+ *   | tool output     | footer, right      | `alt+o`     | `shift+alt+o`     |
+ *   | session colour  | session chip       | `alt+c`     | `shift+alt+c`     |
+ *   | task panel lens | task panel header  | `ctrl+n`    | — see below       |
+ *
+ * `/mode`, `/model`, `/color` and `/tree` are the pickers behind the first
+ * four: the key steps, the command chooses. That is why `app.model.select`
+ * ships unbound — alt+m stepping the model is worth more than alt+m opening a
+ * list of them.
+ *
+ * The task lens is the one dial with no reverse. `shift+ctrl+n` is Windows
+ * Terminal's "new window" (the same trap that kept `app.team.focus` off
+ * `shift+ctrl+n`), and the lens has three stops and skips the empty ones, so
+ * going back is one extra press forward. It is also the one arbitrary letter
+ * left in the set: `ctrl` had nothing better free.
+ *
+ * ## The rings
+ *
+ * Which ring a key belongs to is decided by its modifier:
  *
  * - **ctrl — the view.** What is on screen right now: expand, thinking blocks,
- *   task panel, model cycling. Pressed many times a minute, so they sit under
- *   the hand and never require a second modifier.
- * - **alt — the cockpit.** What the agent *is* and where it works: model,
- *   mode, working directory, settings, sessions. Pressed a few times a session.
+ *   the task panel. Pressed many times a minute, so they sit under the hand and
+ *   never require a second modifier.
+ * - **alt — the cockpit.** What the agent *is* and where it works: mode, model,
+ *   working directory, settings, sessions. Pressed a few times a session.
  * - **overlays.** Inside a picker, the query line is a text field, so every
  *   `ctrl+<letter>` there belongs to the *text* (ctrl+a start of line, ctrl+u
  *   kill line, ctrl+w kill word). A picker's own verbs are therefore all on
  *   `alt+<letter>`, mnemonic to that picker; the picker captures keys while it
  *   is open, so reusing a global letter there is unambiguous.
  *
- * Two rules keep the set learnable: shift reverses whatever the unshifted key
- * does, and no binding takes a key the editor or the terminal already owns
+ * Where the same letter appears on both rings it is the same subject seen
+ * twice — ctrl acts on what is already drawn, alt on how much is ever drawn:
+ * `ctrl+o` opens the tool bodies you have, `alt+o` sets how much they ever
+ * show; `ctrl+t` shows the thinking you have, `shift+tab` sets how much there
+ * ever is.
+ *
+ * One more rule: no binding takes a key the editor or the terminal already owns
  * (ctrl+a/e/b/f/k/u/w/y/d/l/r/g, ctrl+s XOFF, ctrl+m == enter, ctrl+i == tab).
  *
  * Three constraints from the key parser shape which keys are usable at all, and
@@ -121,22 +162,35 @@ export const KEYBINDINGS = {
 		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
 		description: "Suspend to background",
 	},
-	"app.thinking.cycle": {
+	// The one dial without a letter, and it does not need one: shift+tab is the
+	// cycle key every terminal agent has taught, it is the only one of the six
+	// that works on a terminal which eats alt, and tab's own reverse is already
+	// shift+tab — so the dial and the key agree. The backward half needs Kitty,
+	// like every other reverse half here.
+	"app.thinking.cycleForward": {
 		defaultKeys: "shift+tab",
-		description: "Cycle thinking level",
+		description: "Cycle thinking level (off → … → high)",
 	},
+	"app.thinking.cycleBackward": {
+		defaultKeys: "shift+alt+tab",
+		description: "Cycle thinking level backward",
+	},
+	// alt+m, not ctrl+p: the model is a cockpit dial — it is what the agent *is*,
+	// not what is on screen — and p named nothing. The letter names the dial now,
+	// which is the whole rule for the six of them. `/model` opens the picker that
+	// used to be on this key, exactly as `/color` backs alt+c.
 	"app.model.cycleForward": {
-		defaultKeys: "ctrl+p",
+		defaultKeys: "alt+m",
 		description: "Cycle to next model",
 	},
 	"app.model.cycleBackward": {
-		defaultKeys: "shift+ctrl+p",
+		defaultKeys: "shift+alt+m",
 		description: "Cycle to previous model",
 	},
-	// alt+m, not ctrl+l: ctrl+l is "clear the screen" in every shell and every
-	// full-screen terminal app, and users press it reflexively to tidy up. It
-	// opening a model dialog is the single most surprising key in the old set.
-	"app.model.select": { defaultKeys: "alt+m", description: "Open model selector" },
+	// Unbound by default: a dial's key steps it, and its slash command chooses.
+	// alt+m stepping the model is worth more than alt+m opening a list of them,
+	// and `/model` is one keystroke further with completion on the name.
+	"app.model.select": { defaultKeys: [], description: "Open model selector" },
 	"app.tools.expand": {
 		defaultKeys: "ctrl+o",
 		description: "Expand or collapse what is in front of you (tool bodies, header, summaries)",
@@ -241,12 +295,16 @@ export const KEYBINDINGS = {
 	},
 	"app.settings.open": { defaultKeys: "alt+s", description: "Open settings" },
 	"app.hotkeys.open": { defaultKeys: "alt+k", description: "Show keyboard shortcuts" },
-	// alt+a for "agent mode". It was alt+g, which stood for nothing: the letter
-	// has to carry the meaning here because mode and model are one letter apart
-	// in English and alt+m is already the model selector.
-	"app.mode.cycle": {
+	// alt+a for "agent mode", and it is the dial the footer leads with. Not alt+m:
+	// mode and model are one letter apart and the model has the better claim on
+	// m, so this one takes the letter of what it selects — the agent's stance.
+	"app.mode.cycleForward": {
 		defaultKeys: "alt+a",
 		description: "Cycle agent mode (ask → plan → build → debug)",
+	},
+	"app.mode.cycleBackward": {
+		defaultKeys: "shift+alt+a",
+		description: "Cycle agent mode backward",
 	},
 	"app.tree.foldOrUp": {
 		defaultKeys: ["ctrl+left", "alt+left"],
@@ -404,11 +462,15 @@ const KEYBINDING_NAME_MIGRATIONS = {
 	selectPageDown: "tui.select.pageDown",
 	selectConfirm: "tui.select.confirm",
 	selectCancel: "tui.select.cancel",
+	// Renamed when each gained a backward half, so that every two-direction dial
+	// reads <dial>.cycleForward / <dial>.cycleBackward.
+	"app.thinking.cycle": "app.thinking.cycleForward",
+	"app.mode.cycle": "app.mode.cycleForward",
 	interrupt: "app.interrupt",
 	clear: "app.clear",
 	exit: "app.exit",
 	suspend: "app.suspend",
-	cycleThinkingLevel: "app.thinking.cycle",
+	cycleThinkingLevel: "app.thinking.cycleForward",
 	cycleModelForward: "app.model.cycleForward",
 	cycleModelBackward: "app.model.cycleBackward",
 	selectModel: "app.model.select",

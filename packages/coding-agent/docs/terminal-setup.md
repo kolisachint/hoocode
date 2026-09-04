@@ -8,14 +8,17 @@ Work out of the box.
 
 ## Alt keys
 
-41 actions are reachable only with `Alt` — the model selector (`Alt+M`), settings
-(`Alt+S`), the shortcut list (`Alt+K`), every picker verb, and the tree filters.
+44 actions are reachable only with `Alt` — the model and agent-mode dials
+(`Alt+M`, `Alt+A`), settings (`Alt+S`), the shortcut list (`Alt+K`), every picker
+verb, and the tree filters.
 A terminal that speaks the Kitty keyboard protocol reports `Alt` correctly and
 needs nothing here.
 
 Interrupt (`Esc`), clear (`Ctrl+C`), exit (`Ctrl+D`), expand (`Ctrl+O`) and
 submit (`Enter`) are deliberately never on `Alt`, so a misconfigured terminal
-is recoverable.
+is recoverable. Of the six dials, the thinking level (`Shift+Tab`) and the task
+panel (`Ctrl+N`) still step without it, and `/mode`, `/model` and `/color` reach
+the other three.
 
 ### macOS
 

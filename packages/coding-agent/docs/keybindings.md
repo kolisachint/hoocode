@@ -4,20 +4,51 @@ All keyboard shortcuts can be customized via `~/.hoocode/keybindings.json`. Each
 
 The config file uses the same namespaced keybinding ids that hoocode uses internally and that extension authors use in `keyHint()` and injected `keybindings` managers.
 
-Older configs using pre-namespaced ids such as `cursorUp` or `expandTools` are migrated automatically to the namespaced ids on startup.
+Older configs using pre-namespaced ids such as `cursorUp` or `expandTools` are migrated automatically to the namespaced ids on startup, as are `app.thinking.cycle` and `app.mode.cycle`, which became `…cycleForward` when each gained a backward half.
 
 After editing `keybindings.json`, run `/reload` in hoocode to apply the changes without restarting the session.
 
-## The layout
+## The dials
+
+Six things on screen are dials — an ordered set of stops you step through, with
+the current stop painted where you can see it. They are the most-pressed keys in
+the app, and they follow one rule:
+
+> **A dial steps forward on its key and back with one more modifier held. The
+> letter names the dial. The slash command picks a stop outright.**
+
+That modifier is `Shift` everywhere but the thinking level: its forward key has
+already spent `Shift`, so its reverse takes `Alt` instead.
+
+| Dial | Where you see it | Forward | Back | Steps through |
+|---|---|---|---|---|
+| Agent mode | footer, bold, top left | `Alt+A` | `Shift+Alt+A` | ask → plan → build → debug |
+| Model | footer, bottom right | `Alt+M` | `Shift+Alt+M` | your enabled models |
+| Thinking level | footer, bottom right | `Shift+Tab` | `Shift+Alt+Tab` | off → … → high |
+| Tool output | footer, top right | `Alt+O` | `Shift+Alt+O` | radar → glance → full |
+| Session color | the session chip | `Alt+C` | `Shift+Alt+C` | six chip slots |
+| Task panel | task panel header | `Ctrl+N` | — | tasks → subagents → teams |
+
+`/mode`, `/model` and `/color` are the pickers behind the first two and the
+fifth: **the key steps, the command chooses.** That is why `app.model.select`
+ships unbound — `Alt+M` stepping the model is worth more than `Alt+M` opening a
+list of them, and `/model` completes on the name.
+
+The task panel is the one dial with no reverse. `Shift+Ctrl+N` is Windows
+Terminal's "new window", and the lens has three stops and skips the empty ones,
+so back is one more press forward. It is also the one arbitrary letter left in
+the set — `Ctrl` had nothing better free.
+
+## The rings
 
 Which ring a key is in is decided by its modifier, so the modifier tells you
 what kind of thing the key does before you remember the key itself.
 
 - **`Ctrl` is the view** — what is on screen right now: expand a tool block,
-  show thinking, cycle the task panel, step through models. Pressed many times
-  a minute, so they never need a second modifier.
-- **`Alt` is the cockpit** — what the agent *is* and where it works: model,
-  mode, working directory, settings, sessions. Pressed a few times a session.
+  show thinking, step the task panel. Pressed many times a minute, so they
+  never need a second modifier.
+- **`Alt` is the cockpit** — what the agent *is* and where it works: mode,
+  model, working directory, settings, sessions. Pressed a few times a session.
 - **`Shift` reverses** whatever the unshifted key does. `Shift+Alt+O` cycles
   the tool view backward, `Shift+Alt+U` re-folds what `Alt+U` opened.
 - **Inside a picker, `Ctrl` belongs to the query you are typing** — `Ctrl+A` is
@@ -25,6 +56,12 @@ what kind of thing the key does before you remember the key itself.
   verbs are therefore all on `Alt`, mnemonic to that picker. The picker
   captures keys while it is open, so a verb may reuse a letter the global set
   already has.
+
+Where the same letter appears on both rings it is the same subject seen twice —
+`Ctrl` acts on what is already drawn, `Alt` on how much is ever drawn:
+
+- `Ctrl+O` opens the tool bodies you have; `Alt+O` sets how much they ever show.
+- `Ctrl+T` shows the thinking you have; `Shift+Tab` sets how much there ever is.
 
 Two consequences worth knowing before rebinding:
 
@@ -74,6 +111,22 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.message.dequeue` | `alt+up` | Restore queued messages to the editor |
 | `app.clipboard.pasteImage` | `ctrl+v` (`alt+v` on Windows) | Paste image from clipboard |
 
+### The dials — step forward, `shift` steps back
+
+| Keybinding id | Default | Description |
+|--------|---------|-------------|
+| `app.mode.cycleForward` | `alt+a` | Step agent mode: ask → plan → build → debug |
+| `app.mode.cycleBackward` | `shift+alt+a` | Step agent mode backward |
+| `app.model.cycleForward` | `alt+m` | Step to the next model |
+| `app.model.cycleBackward` | `shift+alt+m` | Step to the previous model |
+| `app.thinking.cycleForward` | `shift+tab` | Step thinking level: off → … → high |
+| `app.thinking.cycleBackward` | `shift+alt+tab` | Step thinking level backward |
+| `app.view.cycleForward` | `alt+o` | Step tool output: radar → glance → full |
+| `app.view.cycleBackward` | `shift+alt+o` | Step tool output backward |
+| `app.session.color.cycleForward` | `alt+c` | Step the session chip's color |
+| `app.session.color.cycleBackward` | `shift+alt+c` | Step the session chip's color backward |
+| `app.tasks.cycleView` | `ctrl+n` | Step task panel view: tasks → subagents → teams |
+
 ### View — what is on screen right now (`Ctrl`)
 
 | Keybinding id | Default | Description |
@@ -81,26 +134,17 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.tools.expand` | `ctrl+o` | Expand or collapse every tool block at once |
 | `app.tools.unfoldOne` | `alt+u` | Open the newest folded thing; repeat to peel backwards |
 | `app.tools.foldOne` | `shift+alt+u` | Re-fold the most recently opened chain or block |
-| `app.view.cycleForward` | `alt+o` | Cycle tool output: radar → glance → full |
-| `app.view.cycleBackward` | `shift+alt+o` | Cycle tool output backward |
 | `app.thinking.toggle` | `ctrl+t` | Show or hide thinking blocks |
-| `app.thinking.cycle` | `shift+tab` | Cycle thinking level |
-| `app.tasks.cycleView` | `ctrl+n` | Cycle task panel view: tasks → subagents → teams |
 | `app.team.focus` | `alt+n` | Focus the team roster (`--team`) |
-| `app.model.cycleForward` | `ctrl+p` | Cycle to the next model |
-| `app.model.cycleBackward` | `shift+ctrl+p` | Cycle to the previous model |
 
 ### Cockpit — what the agent is, and where it works (`Alt`)
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.mode.cycle` | `alt+a` | Cycle agent mode: ask → plan → build → debug |
-| `app.model.select` | `alt+m` | Open the model selector |
+| `app.model.select` | *(none)* | Open the model selector (`/model`) |
 | `app.session.changeDirectory` | `alt+w` | Change working directory (`/cd`) |
 | `app.session.tree` | `alt+t` | Open the session tree |
 | `app.session.resume` | `alt+h` | Resume a session from history |
-| `app.session.color.cycleForward` | `alt+c` | Cycle the session chip's color |
-| `app.session.color.cycleBackward` | `shift+alt+c` | Cycle the session chip's color backward |
 | `app.settings.open` | `alt+s` | Open settings |
 | `app.hotkeys.open` | `alt+k` | Show the shortcut list (`/hotkeys`) |
 | `app.editor.external` | `alt+e` | Edit the message in `$VISUAL` / `$EDITOR` |
@@ -110,7 +154,9 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 
 `app.session.new` and `app.session.fork` ship unbound: one replaces the
 transcript and the other needs a message picked out of it, so neither wants to
-be one stray chord away. Both are bindable by hand.
+be one stray chord away. `app.model.select` is unbound for the opposite reason —
+its key went to the dial that steps the model, and `/model` opens the picker.
+All three are bindable by hand.
 
 ### Prompt editor
 
@@ -255,9 +301,9 @@ On native Windows, `app.suspend` has no default binding because Windows terminal
 }
 ```
 
-Rebinding `tui.editor.cursorUp` to `ctrl+p` takes that key from
-`app.model.cycleForward`, which then has none. Give it another key in the same
-file if you want to keep it.
+`ctrl+p` and `ctrl+n` in that example are free of app bindings by default,
+except that `ctrl+n` steps the task panel — give `app.tasks.cycleView` another
+key in the same file if you rebind `tui.editor.cursorDown` onto it.
 
 ### Vim Example
 
