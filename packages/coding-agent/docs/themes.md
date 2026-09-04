@@ -416,7 +416,7 @@ themes keep working.
 
 | Token | Purpose | If omitted |
 |-------|---------|------------|
-| `agent1`–`agent6` | Subagent identity palette; agent types hash into these slots | Falls back to `accent` |
+| `agent1`–`agent6` | Subagent and session identity palette; agent types and session colour slots hash into these | Falls back to `accent` |
 | `mcp` | MCP server identity color | Falls back to `accent` |
 | `brandBg` | Background of the footer brand chip | Brand mark renders as `accent`-colored text |
 | `brandText` | Text color of the footer brand chip | Brand mark renders as `accent`-colored text |
@@ -431,6 +431,23 @@ the body, so it wants a low-chroma tint of the theme's warning hue rather than t
 warning color itself. Every built-in sets it, and all six accessible themes keep
 every foreground at AAA against it (`test/theme-contrast.test.ts` sweeps it with
 the other surfaces).
+
+`agent1`–`agent6` double as the session colour slots, which `/color` addresses by
+name: slot 1 is `cyan`, then `purple`, `yellow`, `magenta`, `green`, `blue`. What
+counts as a theme's cyan or its green is the theme's own business — a light
+theme's slot 1 is deep enough to be ink, and an accessible theme may have no true
+purple at all — but the *order* is not: put each hue in the slot whose name points
+at it, or `/color purple` paints a red chip. `test/theme-contrast.test.ts` holds
+the line by checking that no rearrangement of a theme's own six colours fits the
+names better than the order it ships.
+
+On a light theme these entries are ink — dark enough to read on paper — and a
+session chip is not text but a filled block, so it is not painted with the token
+directly: the fill keeps the token's hue and saturation and is lifted to a
+lightness where that hue reads as itself. Set the token for the text role, at
+whatever contrast the page needs, and pick its *hue* for the slot's name; the
+chip takes care of itself. Dark palettes are already bright and are used as the
+fill unchanged.
 
 ### The cut-out tokens
 

@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
+import { SESSION_COLOR_NAME_LIST } from "../src/core/session-identity.js";
 import {
 	getAvailableThemes,
 	getResolvedThemeColors,
@@ -1108,5 +1109,127 @@ describe("the solarized pair", () => {
 
 	it("ships both halves as built-ins", () => {
 		expect(getAvailableThemes()).toEqual(expect.arrayContaining([...SOLARIZED_THEMES]));
+	});
+});
+
+/**
+ * Where each session colour name points on the hue wheel. `/color <name>` and the
+ * `/color` picker address the six identity slots by these names, so a slot has to
+ * hold the hue its name claims — otherwise `/color purple` paints a red chip, as
+ * it did in warm-light and high-contrast-light.
+ */
+const SLOT_HUE_ANCHORS: Record<string, number> = {
+	cyan: 180,
+	purple: 285,
+	yellow: 50,
+	magenta: 330,
+	green: 120,
+	blue: 220,
+};
+
+/** Hue (0-360) of a resolved color. Meaningless for a gray, which none of these are. */
+function hue(hex: string): number {
+	const value = hex.replace("#", "");
+	const [r, g, b] = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+	const max = Math.max(r, g, b);
+	const delta = max - Math.min(r, g, b);
+	if (delta === 0) return 0;
+	const raw = max === r ? (g - b) / delta + (g < b ? 6 : 0) : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+	return raw * 60;
+}
+
+/** HSL lightness (0-1): how much colour there is, independent of which hue it is. */
+function lightness(hex: string): number {
+	const value = hex.replace("#", "");
+	const [r, g, b] = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+	return (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
+}
+
+/** Distance between two hues the short way round the wheel. */
+function hueDistance(a: number, b: number): number {
+	const delta = Math.abs(a - b) % 360;
+	return delta > 180 ? 360 - delta : delta;
+}
+
+function permutations<T>(items: T[]): T[][] {
+	if (items.length <= 1) return [items];
+	return items.flatMap((item, index) =>
+		permutations([...items.slice(0, index), ...items.slice(index + 1)]).map((rest) => [item, ...rest]),
+	);
+}
+
+describe("session colour slots", () => {
+	it("names the same six hues the identity palette is addressed by", () => {
+		expect(SESSION_COLOR_NAME_LIST).toEqual(Object.keys(SLOT_HUE_ANCHORS));
+		expect(SESSION_COLOR_NAME_LIST).toHaveLength(AGENT_TOKENS.length);
+	});
+
+	// A palette is the theme's own: what counts as its cyan or its green differs,
+	// and an accessible theme may have no true purple at all. What must not differ
+	// is the *order* — that no rearrangement of a theme's own six colors would fit
+	// the names better than the one it ships. That is the check a palette can
+	// always satisfy, and the one that catches a scrambled theme: warm-dark used
+	// to answer `/color cyan` with amber and `/color magenta` with teal.
+	it.each(getAvailableThemes())("%s puts each hue in the slot its name points at", (themeName) => {
+		const colors = getResolvedThemeColors(themeName);
+		const hues = AGENT_TOKENS.map((token) => hue(colors[token]));
+		const anchors = SESSION_COLOR_NAME_LIST.map((name) => SLOT_HUE_ANCHORS[name]);
+		const cost = (order: number[]) =>
+			order.reduce((total, source, slot) => total + hueDistance(hues[source], anchors[slot]) ** 2, 0);
+
+		const shipped = cost([0, 1, 2, 3, 4, 5]);
+		const best = Math.min(...permutations([0, 1, 2, 3, 4, 5]).map(cost));
+		const better = permutations([0, 1, 2, 3, 4, 5])
+			.filter((order) => cost(order) < shipped)
+			.map((order) => order.map((source, slot) => `${SESSION_COLOR_NAME_LIST[slot]}=agent${source + 1}`).join(" "));
+
+		expect(better, `a better fit than the shipped order (cost ${shipped.toFixed(0)} vs ${best.toFixed(0)})`).toEqual(
+			[],
+		);
+	});
+
+	// A light theme's palette is ink: dark enough to read on paper, which turns its
+	// yellow into brown and its cyan into navy. A chip does not have that problem —
+	// it only has to out-contrast the ink laid on it — so the fill is lifted off
+	// the token. Without the lift a light theme's `/color` picker is six dark
+	// smudges whose names nobody can check.
+	it.each(getAvailableThemes())("%s fills a chip light enough to name its hue", (themeName) => {
+		const theme = loadThemeFromPath(
+			new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url).pathname,
+			"truecolor",
+		);
+		const rgb = (params: string) => {
+			const [, , r, g, b] = params.split(";").map(Number);
+			return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+		};
+
+		// Only a light theme's palette is ink, so only there is a fill lifted. A dark
+		// theme's is already bright and is used as-is, whatever lightness it sits at.
+		const isLight = luminance(getResolvedThemeColors(themeName).userMessageBg) > 0.5;
+
+		const failures: string[] = [];
+		for (let slot = 1; slot <= AGENT_TOKENS.length; slot++) {
+			const styled = theme.fill(AGENT_TOKENS[slot - 1] as ThemeColor, " ");
+			const fillMatch = /\x1b\[(48;2;[0-9;]+)m/.exec(styled);
+			const inkMatch = /\x1b\[(38;2;[0-9;]+)m/.exec(styled);
+			if (!fillMatch || !inkMatch) {
+				failures.push(`slot ${slot}: not filled`);
+				continue;
+			}
+			const fill = rgb(fillMatch[1]);
+			const ink = rgb(inkMatch[1]);
+			// Lightness, not contrast against the page: a chip is a block of colour,
+			// and what makes a hue nameable is how much of it there is.
+			if (isLight && lightness(fill) < 0.5) {
+				failures.push(`slot ${slot} fill ${fill}: lightness ${lightness(fill).toFixed(2)}`);
+			}
+			// Whatever it ended up filled with, the name written on it has to read.
+			// Only asserted where the fill is ours to choose: a dark theme's palette
+			// is used as-is, so its ink contrast is whatever the palette gives.
+			if (isLight && contrast(fill, ink) < 4.5) {
+				failures.push(`slot ${slot} ink ${ink} on ${fill}: ${contrast(fill, ink).toFixed(2)}:1`);
+			}
+		}
+		expect(failures).toEqual([]);
 	});
 });

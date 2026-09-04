@@ -49,15 +49,16 @@ describe("session chip", () => {
 		expect(chip!.styled).not.toBe(other!.styled);
 	});
 
-	// A dark theme's palette is bright and a light theme's is deep ink, so a fixed
-	// text colour would be unreadable in one of them. Ink comes from the fill.
-	it("inks against the fill, not against the theme", () => {
-		// Written in both encodings because the ink is emitted as truecolour or as
-		// a 256-colour index depending on what the terminal running the tests
+	// A light theme's palette is ink — dark enough to read on paper, which makes a
+	// dark yellow into brown and a dark cyan into navy. The chip lifts the fill off
+	// that ink so the hue reads as itself, and takes its ink from the lifted fill.
+	it("lifts a light theme's fill off the ink it is drawn from", () => {
+		// Written in both encodings because a fill is emitted as truecolour or as a
+		// 256-colour index depending on what the terminal running the tests
 		// advertises; the colour it stands for is the same either way.
-		const DARK_INK = ["38;2;11;11;15", "38;5;232"];
-		const LIGHT_INK = ["38;2;255;255;255", "38;5;231"];
+		const bgOf = (styled: string) => /\x1b\[(48;[^m]*)m/.exec(styled)?.[1];
 		const inkOf = (styled: string) => /\x1b\[(38;[^m]*)m/.exec(styled)?.[1];
+		const DARK_INK = ["38;2;11;11;15", "38;5;232"];
 
 		const dark = getThemeByName("dark");
 		const light = getThemeByName("light");
@@ -66,13 +67,22 @@ describe("session chip", () => {
 
 		setThemeInstance(dark!);
 		const onDark = renderSessionChip("refactor-auth", 1)!.styled;
+		const darkToken = dark!.getFgAnsi(sessionColorToken(1)).replace("38;", "48;");
+
 		setThemeInstance(light!);
 		const onLight = renderSessionChip("refactor-auth", 1)!.styled;
+		const lightToken = light!.getFgAnsi(sessionColorToken(1)).replace("38;", "48;");
 
-		// Dark themes fill with a bright hue and take dark ink; light themes fill
-		// with a deep one and take white.
+		// A dark theme's palette is already bright, so the chip is filled with the
+		// token itself and nothing is lifted.
+		expect(`\x1b[${bgOf(onDark)}m`).toBe(darkToken);
+		// A light theme's is not, so the fill is a lifted version of it — same hue,
+		// enough lightness to be recognisable as that hue.
+		expect(`\x1b[${bgOf(onLight)}m`).not.toBe(lightToken);
+
+		// Either way the ink is picked from whatever the chip ended up filled with.
 		expect(DARK_INK).toContain(inkOf(onDark));
-		expect(LIGHT_INK).toContain(inkOf(onLight));
+		expect(DARK_INK).toContain(inkOf(onLight));
 
 		initTheme(undefined, false);
 	});
