@@ -123,7 +123,9 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.tools.expand` | `ctrl+o` | Collapse or expand tool output |
+| `app.tools.expand` | `ctrl+o` | Jump to the full tool-output view, and back to the stop you came from |
+| `app.view.cycleForward` | `alt+o` | Cycle the tool output view (radar → peek → full) |
+| `app.view.cycleBackward` | `shift+alt+o` | Cycle the tool output view backward |
 | `app.message.followUp` | `alt+enter` | Queue follow-up message |
 | `app.message.dequeue` | `alt+up` | Restore queued messages to editor |
 

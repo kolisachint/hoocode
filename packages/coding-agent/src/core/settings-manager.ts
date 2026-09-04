@@ -703,7 +703,7 @@ export class SettingsManager {
 	}
 
 	/**
-	 * How much of a tool call the transcript shows (radar / glance / full).
+	 * How much of a tool call the transcript shows (radar / peek / full).
 	 *
 	 * Settings files written before the dial existed carry the old three-value
 	 * `toolOutputDisplay` key. They are read here rather than rewritten on load,

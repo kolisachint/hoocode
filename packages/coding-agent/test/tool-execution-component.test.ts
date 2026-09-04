@@ -5,7 +5,7 @@ import { Type } from "typebox";
 import { beforeAll, describe, expect, test } from "vitest";
 import { getReadmePath } from "../src/config.js";
 import type { ToolDefinition } from "../src/core/extensions/types.js";
-import type { ToolOutputView } from "../src/core/tool-output-view.js";
+import { PEEK_LINES, type ToolOutputView } from "../src/core/tool-output-view.js";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.js";
 import { createWriteToolDefinition } from "../src/core/tools/write.js";
@@ -423,7 +423,7 @@ describe("ToolExecutionComponent parity", () => {
 				"read",
 				`tool-compact-${scenario.title}`,
 				{ path: scenario.path },
-				{ view: "full" },
+				{ view: "peek" },
 				createReadToolDefinition(process.cwd()),
 				createFakeTui(),
 				process.cwd(),
@@ -440,7 +440,7 @@ describe("ToolExecutionComponent parity", () => {
 				expect(collapsed).not.toContain(scenario.absent);
 			}
 
-			component.setExpanded(true);
+			component.setView("full");
 			const expanded = stripAnsi(component.render(120).join("\n"));
 			expect(expanded).toContain(scenario.hidden);
 		});
@@ -455,7 +455,7 @@ describe("ToolExecutionComponent parity", () => {
 				"read",
 				`tool-compact-range-${scenario.title}`,
 				{ path: scenario.path, offset: 120, limit: 210 },
-				{ view: "full" },
+				{ view: "peek" },
 				createReadToolDefinition(process.cwd()),
 				createFakeTui(),
 				process.cwd(),
@@ -477,7 +477,9 @@ describe("ToolExecutionComponent view dial", () => {
 		const toolDefinition: ToolDefinition = {
 			...createBaseToolDefinition(),
 			renderCall: () => new Text("custom call", 0, 0),
-			renderResult: () => new Text("RESULT BODY", 0, 0),
+			// What every built-in renderer does with the flag: trim to the peek
+			// budget, or print the lot. `full` is the stop that sets it.
+			renderResult: (_result, options) => new Text(options.expanded ? "RESULT BODY" : "TRIMMED BODY", 0, 0),
 		};
 		const component = new ToolExecutionComponent(
 			"custom_tool",
@@ -495,29 +497,32 @@ describe("ToolExecutionComponent view dial", () => {
 		return component;
 	}
 
-	test("full shows the result body", () => {
+	test("full shows the whole result body", () => {
 		const rendered = stripAnsi(build("full").render(120).join("\n"));
 		expect(rendered).toContain("custom call");
 		expect(rendered).toContain("RESULT BODY");
 	});
 
-	test("glance shows the call line alone, with no disclosure caret", () => {
-		const component = build("glance");
-		const folded = stripAnsi(component.render(120).join("\n"));
-		expect(folded).toContain("custom call");
-		expect(folded).not.toContain("RESULT BODY");
+	test("peek shows the call line and a trimmed body, with no disclosure caret", () => {
+		const component = build("peek");
+		const trimmed = stripAnsi(component.render(120).join("\n"));
+		expect(trimmed).toContain("custom call");
+		expect(trimmed).toContain("TRIMMED BODY");
+		expect(trimmed).not.toContain("RESULT BODY");
 		// The caret was a click-target idiom in a TUI with no pointer.
-		expect(folded).not.toContain("▸");
-		expect(folded).not.toContain("▾");
+		expect(trimmed).not.toContain("▸");
+		expect(trimmed).not.toContain("▾");
 
-		component.setExpanded(true);
+		// Nothing opens a single block on its own any more: the dial is the only
+		// thing that decides, and `app.tools.expand` moves the dial.
+		component.setView("full");
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
 	});
 
 	test("a failure shows why it failed in every view, unasked", () => {
 		// The one thing the folded views must never hide: a red dot with no
 		// explanation is worse than no folding at all.
-		for (const view of ["radar", "glance", "full"] as ToolOutputView[]) {
+		for (const view of ["radar", "peek", "full"] as ToolOutputView[]) {
 			const toolDefinition: ToolDefinition = {
 				...createBaseToolDefinition(),
 				renderCall: () => new Text("custom call", 0, 0),
@@ -546,22 +551,24 @@ describe("ToolExecutionComponent view dial", () => {
 		expect(rendered).toContain("3 lines"); // signal column
 	});
 
-	test("expanding a radar block leaves radar for as long as it is open", () => {
+	test("a radar row stays a row until the dial itself moves", () => {
 		const component = build("radar", { command: "npm run check" });
-		component.setExpanded(true);
-		const revealed = stripAnsi(component.render(120).join("\n"));
-		expect(revealed).toContain("custom call");
-		expect(revealed).toContain("RESULT BODY");
+		expect(stripAnsi(component.render(120).join("\n"))).toContain("npm run check");
 
-		component.setExpanded(false);
+		component.setView("full");
+		const opened = stripAnsi(component.render(120).join("\n"));
+		expect(opened).toContain("custom call");
+		expect(opened).toContain("RESULT BODY");
+
+		component.setView("radar");
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("npm run check");
 	});
 
 	test("radar rows stack without the separator the other views keep", () => {
 		const radar = build("radar", { command: "npm run check" }).render(120);
 		expect(radar.filter((line) => stripAnsi(line).trim() === "")).toEqual([]);
-		// The same block in glance keeps its leading blank separator line.
-		expect(stripAnsi(build("glance", { command: "npm run check" }).render(120)[0]!).trim()).toBe("");
+		// The same block in peek keeps its leading blank separator line.
+		expect(stripAnsi(build("peek", { command: "npm run check" }).render(120)[0]!).trim()).toBe("");
 	});
 
 	test("radar gives a self-rendering tool the same row framing as every other", () => {
@@ -594,28 +601,38 @@ describe("ToolExecutionComponent view dial", () => {
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
 	});
 
-	test("reports its own fold state, so one block can be opened without the rest", () => {
-		// The regression this guards: ctrl+o expands every block at once, which
-		// left the ▸ caret on each row advertising a per-block action no key
-		// could perform. `app.tools.unfoldOne` walks back from the newest block
-		// to the first one still folded, which needs this to be readable.
-		const first = build("glance", { command: "one" });
-		const second = build("glance", { command: "two" });
-		expect([first.isRevealed(), second.isRevealed()]).toEqual([false, false]);
+	test("a tool with no renderer of its own is trimmed to the same peek budget", () => {
+		// This path used to print whatever came back in full, which nothing
+		// noticed while the middle stop folded every body away. Now it would be
+		// the one block on screen ignoring where the dial is set.
+		const lines = Array.from({ length: PEEK_LINES + 4 }, (_, i) => `line ${i + 1}`);
+		const component = new ToolExecutionComponent(
+			"renderless_tool",
+			"view-fallback",
+			{ command: "npm run check" },
+			{ view: "peek" },
+			{ ...createBaseToolDefinition(), renderCall: () => new Text("custom call", 0, 0) },
+			createFakeTui(),
+			process.cwd(),
+		);
+		component.updateResult(
+			{ content: [{ type: "text", text: lines.join("\n") }], details: {}, isError: false },
+			false,
+		);
 
-		second.setExpanded(true);
-		expect([first.isRevealed(), second.isRevealed()]).toEqual([false, true]);
-		expect(stripAnsi(first.render(120).join("\n"))).not.toContain("RESULT BODY");
-		expect(stripAnsi(second.render(120).join("\n"))).toContain("RESULT BODY");
+		const trimmed = stripAnsi(component.render(120).join("\n"));
+		expect(trimmed).toContain(`line ${PEEK_LINES}`);
+		expect(trimmed).not.toContain(`line ${PEEK_LINES + 1}`);
+		expect(trimmed).toContain("4 more lines");
 
-		second.setExpanded(false);
-		expect(second.isRevealed()).toBe(false);
+		component.setView("full");
+		expect(stripAnsi(component.render(120).join("\n"))).toContain(`line ${PEEK_LINES + 4}`);
 	});
 
 	test("setView switches an existing block live", () => {
 		const component = build("full");
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");
-		component.setView("glance");
+		component.setView("peek");
 		expect(stripAnsi(component.render(120).join("\n"))).not.toContain("RESULT BODY");
 		component.setView("full");
 		expect(stripAnsi(component.render(120).join("\n"))).toContain("RESULT BODY");

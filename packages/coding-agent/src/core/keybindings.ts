@@ -22,8 +22,6 @@ interface AppKeybindings {
 	"app.tools.expand": true;
 	"app.view.cycleForward": true;
 	"app.view.cycleBackward": true;
-	"app.tools.unfoldOne": true;
-	"app.tools.foldOne": true;
 	"app.thinking.toggle": true;
 	"app.tasks.cycleView": true;
 	"app.team.focus": true;
@@ -132,30 +130,19 @@ export const KEYBINDINGS = {
 	"app.model.select": { defaultKeys: "alt+m", description: "Open model selector" },
 	"app.tools.expand": {
 		defaultKeys: "ctrl+o",
-		description: "Expand or collapse what is in front of you (tool bodies, header, summaries)",
+		description: "Jump to the full view from wherever you are, and back again",
 	},
 	// The view dial pairs with ctrl+o on purpose: same letter, different ring.
-	// ctrl+o opens what is already there; alt+o decides how much is ever there.
+	// alt+o walks the dial a stop at a time and saves where it lands; ctrl+o
+	// jumps to the far end and back without moving your home stop. One value
+	// between them, so there is no second "expanded" state to keep in sync.
 	"app.view.cycleForward": {
 		defaultKeys: "alt+o",
-		description: "Cycle tool output view (radar → glance → full)",
+		description: "Cycle tool output view (radar → peek → full)",
 	},
 	"app.view.cycleBackward": {
 		defaultKeys: "shift+alt+o",
 		description: "Cycle tool output view backward",
-	},
-	// The one-at-a-time counterpart to ctrl+o's all-or-nothing. The transcript is
-	// bottom-anchored with no app-level scrolling — anything far enough up is in
-	// the terminal's own scrollback, which this process cannot address — so "open
-	// one" can only ever mean "open one at the tail". Repeating the key peels
-	// backwards from there.
-	"app.tools.unfoldOne": {
-		defaultKeys: "alt+u",
-		description: "Open the newest folded thing — a chain in radar, a tool body otherwise",
-	},
-	"app.tools.foldOne": {
-		defaultKeys: "shift+alt+u",
-		description: "Re-fold the most recently opened chain or tool block",
 	},
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
