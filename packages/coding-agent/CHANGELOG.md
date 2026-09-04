@@ -2,6 +2,52 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Searching the session tree no longer fires its verbs.** The tree's two
+  label keys were the last verbs left on `shift+<letter>`, and outside the
+  Kitty keyboard protocol that is not a chord at all — the terminal sends the
+  plain uppercase letter. The tree takes every printable key into its search
+  query, so typing `TODO` or `Logger` toggled label timestamps and opened the
+  label editor instead of searching. They move to `alt+l` ("label") and `alt+t`
+  ("time"), which is where every other picker verb already lives, and a layout
+  test now refuses a bare `shift+<letter>` outright.
+
+- **The options pane gave its arrow keys to the step, never to the text.** On
+  the free-text row `←` stepped back to the previous question — which clears
+  the field — so a cursor key could throw away a half-typed answer, and `→`
+  submitted rather than moving right. The text now gets first refusal and the
+  step takes what is left at the ends: `→` commits from the end of the answer
+  (an empty field is already at its end, so the plain custom row still
+  advances), `←` stays out while there is an answer to lose, and `enter`
+  commits from anywhere.
+
+### Changed
+
+- **`alt+a` cycles the agent mode**, replacing `alt+g`, which stood for
+  nothing. Mode and model are one letter apart and `alt+m` is the model
+  selector, so the letter has to carry the meaning: `a` for agent mode.
+
+- **The session tree's hint line is readable.** It printed every alias of every
+  key — `ctrl+left/alt+left/ctrl+right/alt+right` for one fold verb, five
+  spelled-out filter keys — in a style no other hint line used. It is now the
+  house style (dim key, muted description, `·` separated), one key per verb,
+  with the five lenses shown as the range `alt+1…alt+5`. The header chip that
+  said `[+label time]` says `[timestamps]`.
+
+- **`docs/keybindings.md` documents the keys that exist.** It still listed the
+  layout from before the cockpit rings: `ctrl+l` for the model selector,
+  `ctrl+g` for the external editor, the picker verbs on the `ctrl` letters they
+  were moved off, the session tree and `/resume` as unbound, and no mention at
+  all of the view dial, the mode cycle, voice, settings, `/cd`, the team roster
+  or the options pane. Rewritten from the definitions, grouped by ring, and it
+  now leads with the rule that decides which ring a key is in.
+
+- `app.options.next` and `app.options.back` are registered keybinding ids like
+  every other action, instead of being defined but missing from the type map
+  and reached through a cast. The layout test now checks that every id belongs
+  to a scope, so the next one cannot slip through unchecked.
+
 ## [0.5.56] - 2026-09-04
 
 ### Added

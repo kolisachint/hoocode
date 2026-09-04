@@ -12,7 +12,7 @@ import {
 import type { SessionTreeNode } from "../../../core/session-manager.js";
 import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
-import { keyHint, keyText } from "./keybinding-hints.js";
+import { appKeyLabel, formatKeyText, keyHint, rawKeyHint } from "./keybinding-hints.js";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
 interface GutterInfo {
@@ -594,7 +594,7 @@ class TreeList implements Component {
 				break;
 		}
 		if (this.showLabelTimestamps) {
-			labels += " [+label time]";
+			labels += " [timestamps]";
 		}
 		return labels;
 	}
@@ -1168,21 +1168,35 @@ export class TreeSelectorComponent extends Container implements Focusable {
 		this.addChild(new Spacer(1));
 		this.addChild(new DynamicBorder());
 		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
-		const filterKeys = [
-			keyText("app.tree.filter.default"),
-			keyText("app.tree.filter.noTools"),
-			keyText("app.tree.filter.userOnly"),
-			keyText("app.tree.filter.labeledOnly"),
-			keyText("app.tree.filter.all"),
-		].join("/");
-		const cycleKeys = `${keyText("app.tree.filter.cycleForward")}/${keyText("app.tree.filter.cycleBackward")}`;
-		const branchKeys = `${keyText("app.tree.foldOrUp")}/${keyText("app.tree.unfoldOrDown")}`;
+		// House hint style (see keybinding-hints): dim key + muted description,
+		// muted · separators. One key per verb — the tree binds ctrl+left and
+		// alt+left to the same fold, and printing every alias is what made this
+		// line unreadable — and the five filter lenses as the range they are.
+		const sep = theme.fg("muted", " · ");
+		// Each end is formatted before joining: the ellipsis is not a key separator,
+		// so formatKeyText would read "alt+1…alt+5" as one key and leave the second
+		// "alt" un-renamed on macOS, where it is shown as "option".
+		const filterRange = [appKeyLabel("app.tree.filter.default"), appKeyLabel("app.tree.filter.all")]
+			.map((key) => formatKeyText(key))
+			.join("…");
+		// Arrows as glyphs, matching the literal ↑/↓ and ←/→ beside them — and the
+		// line is long enough that "ctrl+left/ctrl+right" costs a verb off its end.
+		const arrowGlyph = (key: string) => key.replace(/left$/, "←").replace(/right$/, "→");
+		const foldKeys = [appKeyLabel("app.tree.foldOrUp"), appKeyLabel("app.tree.unfoldOrDown")]
+			.map(arrowGlyph)
+			.join("/");
 		this.addChild(
 			new TruncatedText(
-				theme.fg(
-					"muted",
-					`  ↑/↓: move. ←/→: page. ${branchKeys}: fold/branch. ${keyText("app.tree.editLabel")}: label. ${filterKeys}: filters (${cycleKeys} cycle). ${keyText("app.tree.toggleLabelTimestamp")}: label time`,
-				),
+				"  " +
+					[
+						rawKeyHint("↑/↓", "move"),
+						rawKeyHint("←/→", "page"),
+						rawKeyHint(foldKeys, "fold"),
+						rawKeyHint(filterRange, "filter"),
+						rawKeyHint(appKeyLabel("app.tree.filter.cycleForward"), "cycle"),
+						rawKeyHint(appKeyLabel("app.tree.editLabel"), "label"),
+						rawKeyHint(appKeyLabel("app.tree.toggleLabelTimestamp"), "timestamps"),
+					].join(sep),
 				0,
 				0,
 			),

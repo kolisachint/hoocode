@@ -12,6 +12,14 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Keybinding rings**: `ctrl` is the view, `alt` is the cockpit, `shift`
+  reverses, and inside a picker every `ctrl` key belongs to the query line —
+  so a picker's verbs are all on `alt`. A bare `shift+<letter>` is banned
+  outright: a legacy terminal sends it as the plain uppercase letter, which no
+  scope with a query line can tell from typing. Every id must appear in a scope
+  in `test/keybinding-layout.test.ts`; defaults and the ring story live in
+  `core/keybindings.ts` and `docs/keybindings.md`.
+
 - **TUI vertical rhythm**: one blank line separates two blocks, and it is
   never paid for twice. A block's separator is the `Spacer(1)` before it (so
   the block itself takes `paddingY: 0`), a `DynamicBorder` needs no blank

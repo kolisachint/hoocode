@@ -45,6 +45,8 @@ interface AppKeybindings {
 	"app.settings.open": true;
 	"app.hotkeys.open": true;
 	"app.mode.cycle": true;
+	"app.options.next": true;
+	"app.options.back": true;
 	"app.tree.foldOrUp": true;
 	"app.tree.unfoldOrDown": true;
 	"app.tree.editLabel": true;
@@ -95,14 +97,17 @@ declare module "@kolisachint/hoocode-tui" {
  * does, and no binding takes a key the editor or the terminal already owns
  * (ctrl+a/e/b/f/k/u/w/y/d/l/r/g, ctrl+s XOFF, ctrl+m == enter, ctrl+i == tab).
  *
- * Two constraints from the key parser shape which alt keys are usable at all,
- * and `test/keybinding-layout.test.ts` holds both:
+ * Three constraints from the key parser shape which keys are usable at all, and
+ * `test/keybinding-layout.test.ts` holds all three:
  *
  * - Only `alt+<letter>` and `alt+<digit>` survive a terminal without the Kitty
  *   keyboard protocol. `alt+[` and `alt+]` arrive as the CSI and OSC
- *   introducers and are not parsed as keys; nor is any shift-modified key, so a
- *   `shift+…` default is a Kitty-only convenience on top of an unshifted key
- *   that works everywhere (as `shift+ctrl+p` has always been).
+ *   introducers and are not parsed as keys.
+ * - `shift+<non-letter>` needs Kitty too (`shift+ctrl+p`, `shift+alt+o`), so a
+ *   `shift+…` default is a convenience on top of an unshifted key that works
+ *   everywhere. `shift+<letter>` is the exception and is *not* safe for the
+ *   opposite reason: without Kitty it arrives as the plain uppercase letter, so
+ *   it is indistinguishable from typing in any scope that has a query line.
  * - Legacy `alt+p` and `alt+n` are also accepted as `alt+up` and `alt+down`
  *   (the emacs previous/next aliases), so no scope may bind both halves of
  *   either pair.
@@ -236,8 +241,11 @@ export const KEYBINDINGS = {
 	},
 	"app.settings.open": { defaultKeys: "alt+s", description: "Open settings" },
 	"app.hotkeys.open": { defaultKeys: "alt+k", description: "Show keyboard shortcuts" },
+	// alt+a for "agent mode". It was alt+g, which stood for nothing: the letter
+	// has to carry the meaning here because mode and model are one letter apart
+	// in English and alt+m is already the model selector.
 	"app.mode.cycle": {
-		defaultKeys: "alt+g",
+		defaultKeys: "alt+a",
 		description: "Cycle agent mode (ask → plan → build → debug)",
 	},
 	"app.tree.foldOrUp": {
@@ -248,12 +256,19 @@ export const KEYBINDINGS = {
 		defaultKeys: ["ctrl+right", "alt+right"],
 		description: "Unfold tree branch or move down",
 	},
+	// alt+l ("label") and alt+t ("time"), not shift+l / shift+t. The tree has a
+	// search query that takes every printable key, and outside the Kitty protocol
+	// shift+<letter> *is* the plain uppercase letter — so typing "TODO" or
+	// "Logger" into the query opened the label editor instead of searching. Same
+	// rule as every other picker verb: the query owns the letters, the verbs take
+	// alt. Global alt+t opens the tree; inside the tree it toggles timestamps,
+	// which is unambiguous because the tree captures keys while it is open.
 	"app.tree.editLabel": {
-		defaultKeys: "shift+l",
+		defaultKeys: "alt+l",
 		description: "Edit tree label",
 	},
 	"app.tree.toggleLabelTimestamp": {
-		defaultKeys: "shift+t",
+		defaultKeys: "alt+t",
 		description: "Toggle tree label timestamps",
 	},
 	// Session picker verbs. All on alt so the picker's query line keeps the
@@ -313,6 +328,10 @@ export const KEYBINDINGS = {
 		defaultKeys: "alt+down",
 		description: "Move model down in order",
 	},
+	// The options pane reads as a horizontal wizard, so the arrows point the way
+	// the steps run: → commits the highlighted answer and moves on, ← goes back.
+	// On the free-text row they only mean that while the field is empty —
+	// otherwise they move the text cursor, and enter is what commits.
 	"app.options.next": { defaultKeys: "right", description: "Confirm and advance to the next question" },
 	"app.options.back": { defaultKeys: "left", description: "Go back to the previous question" },
 	// Five lenses in a fixed order, so they are numbered rather than lettered:

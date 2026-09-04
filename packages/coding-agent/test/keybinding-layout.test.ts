@@ -10,7 +10,9 @@ import { KEYBINDINGS, KeybindingsManager } from "../src/core/keybindings.js";
  * ids in the *same* scope sharing a key is a bug: whichever handler is
  * registered first wins silently, and `/hotkeys` then documents a lie.
  *
- * Update these lists when a binding is added, moved between scopes, or removed.
+ * Every id must appear in a scope or in DELIBERATELY_UNSCOPED — a binding that
+ * is in neither is one nothing here checks. Update these lists when a binding
+ * is added, moved between scopes, or removed.
  */
 
 /** Live while the prompt editor has focus — the main editor plus every global action. */
@@ -45,7 +47,7 @@ const GLOBAL_SCOPE = [
 	// meaning (exit only on an empty editor, cancel only with a selection), not
 	// two handlers racing for the same keystroke.
 	//
-	// app actions wired in InteractiveMode.setupEditorActions
+	// app actions wired in InteractiveMode's editor action registration
 	"app.interrupt",
 	"app.suspend",
 	"app.thinking.cycle",
@@ -118,6 +120,34 @@ const TREE_SCOPE = [
 	"app.tree.filter.all",
 	"app.tree.filter.cycleForward",
 	"app.tree.filter.cycleBackward",
+	"app.tree.editLabel",
+	"app.tree.toggleLabelTimestamp",
+	"tui.select.confirm",
+	"tui.select.cancel",
+	"tui.select.pageUp",
+	"tui.select.pageDown",
+	"tui.editor.cursorLeft",
+	"tui.editor.cursorRight",
+	"tui.editor.deleteCharBackward",
+] as const;
+
+/** The task panel with the team roster focused: plain letters, no query line. */
+const TEAM_FOCUS_SCOPE = [
+	"tui.select.up",
+	"tui.select.down",
+	"tui.select.cancel",
+	"app.team.nudge",
+	"app.team.attach",
+] as const;
+
+/** The options pane the agent raises to ask the user a question. */
+const OPTIONS_SCOPE = [
+	"tui.select.up",
+	"tui.select.down",
+	"tui.select.confirm",
+	"tui.select.cancel",
+	"app.options.next",
+	"app.options.back",
 ] as const;
 
 const SCOPES: Array<[string, readonly string[]]> = [
@@ -125,7 +155,20 @@ const SCOPES: Array<[string, readonly string[]]> = [
 	["session picker", SESSION_PICKER_SCOPE],
 	["models picker", MODELS_PICKER_SCOPE],
 	["session tree", TREE_SCOPE],
+	["team focus", TEAM_FOCUS_SCOPE],
+	["options pane", OPTIONS_SCOPE],
 ];
+
+/**
+ * Ids no scope lists, each because it shares a key with another id on purpose.
+ *
+ * These are one key with a state-dependent meaning, not two handlers racing:
+ * `app.exit` fires on ctrl+d only when the editor is empty and
+ * `tui.editor.deleteCharForward` otherwise; `app.clear` takes ctrl+c unless
+ * `tui.input.copy` has a selection to copy. Listing either half in the global
+ * scope would report a collision that users never experience.
+ */
+const DELIBERATELY_UNSCOPED = ["tui.editor.deleteCharForward", "tui.input.copy", "app.exit", "app.clear"] as const;
 
 function collisionsWithin(ids: readonly string[]): string[] {
 	const manager = new KeybindingsManager();
@@ -186,6 +229,26 @@ describe("keybinding layout", () => {
 		expect(legacyCollisionsWithin(ids)).toEqual([]);
 	});
 
+	it("checks every binding in some scope", () => {
+		const scoped = new Set(SCOPES.flatMap(([, ids]) => ids));
+		const unchecked = Object.keys(KEYBINDINGS).filter(
+			(id) => !scoped.has(id) && !DELIBERATELY_UNSCOPED.includes(id as never),
+		);
+		expect(unchecked).toEqual([]);
+	});
+
+	/**
+	 * A key a terminal without the Kitty protocol can actually send.
+	 *
+	 * `shift+<letter>` is the odd one out and is deliberately not counted here:
+	 * legacy terminals do send it, as the plain uppercase letter, which makes it
+	 * reachable but indistinguishable from typing. It is banned outright below
+	 * rather than treated as a fallback.
+	 */
+	function reachableWithoutKitty(key: string): boolean {
+		return !key.startsWith("shift+") || key === "shift+tab";
+	}
+
 	it("gives every action at least one key a non-Kitty terminal can send", () => {
 		const manager = new KeybindingsManager();
 		const unreachable = Object.keys(KEYBINDINGS).filter((id) => {
@@ -193,7 +256,7 @@ describe("keybinding layout", () => {
 			// Unbound by default is a choice, not a gap; a shift-modified key is a
 			// Kitty-only convenience and only counts as a gap when it is the only key.
 			if (keys.length === 0) return false;
-			return !keys.some((key) => !key.startsWith("shift+") || key === "shift+tab");
+			return !keys.some(reachableWithoutKitty);
 		});
 		// The reverse halves of the cycles: each pairs with an unshifted key that
 		// does work everywhere, so losing them costs an extra press, not an action.
@@ -205,10 +268,23 @@ describe("keybinding layout", () => {
 			"app.view.cycleBackward",
 			"app.tools.foldOne",
 			"app.session.color.cycleBackward",
-			"app.tree.editLabel",
-			"app.tree.toggleLabelTimestamp",
 			"app.tree.filter.cycleBackward",
 		]);
+	});
+
+	it("binds no verb to a bare shift+letter", () => {
+		// Without the Kitty protocol shift+<letter> arrives as the uppercase
+		// letter and nothing more, so any scope with a query line cannot tell the
+		// verb from someone typing. The tree's label keys were exactly that bug:
+		// searching it for "TODO" opened the label editor.
+		const manager = new KeybindingsManager();
+		const shiftLetters: string[] = [];
+		for (const id of Object.keys(KEYBINDINGS)) {
+			for (const key of manager.getKeys(id as never)) {
+				if (/^shift\+[a-z]$/.test(key)) shiftLetters.push(`${id}: ${key}`);
+			}
+		}
+		expect(shiftLetters).toEqual([]);
 	});
 
 	/**
@@ -248,6 +324,8 @@ describe("keybinding layout", () => {
 		"app.settings.open",
 		"app.hotkeys.open",
 		"app.mode.cycle",
+		"app.tree.editLabel",
+		"app.tree.toggleLabelTimestamp",
 		"app.session.togglePath",
 		"app.session.toggleSort",
 		"app.session.rename",

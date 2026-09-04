@@ -562,6 +562,9 @@ export class CommandExecutor {
 		const expandTools = keyDisplayText("app.tools.expand");
 		const toggleThinking = keyDisplayText("app.thinking.toggle");
 		const cycleTaskView = keyDisplayText("app.tasks.cycleView");
+		const teamFocus = keyDisplayText("app.team.focus");
+		const teamNudge = keyDisplayText("app.team.nudge");
+		const teamAttach = keyDisplayText("app.team.attach");
 		const externalEditor = keyDisplayText("app.editor.external");
 		const cycleModelBackward = keyDisplayText("app.model.cycleBackward");
 		const followUp = keyDisplayText("app.message.followUp");
@@ -629,6 +632,7 @@ export class CommandExecutor {
 | \`${viewForward}\` / \`${viewBackward}\` | Cycle tool output: radar → glance → full |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |
+| \`${teamFocus}\` | Focus the team roster — then \`${teamNudge}\` nudges, \`${teamAttach}\` attaches, \`q\`/\`${interrupt}\` leaves (\`--team\`) |
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
 
