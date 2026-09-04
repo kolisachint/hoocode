@@ -197,3 +197,19 @@ export function parseSessionColorSlot(input: string): number | undefined {
 	const match = SESSION_COLOR_NAMES.find((entry) => entry.name === normalized || entry.aliases.includes(normalized));
 	return match?.slot;
 }
+
+/**
+ * The slot one step away from `current`, wrapping at both ends.
+ *
+ * The keyboard cycle needs this rather than a picker because picking a colour is
+ * usually a two-second decision made while looking at four terminals: step until
+ * the chip stops looking like its neighbour's, then stop. Wrapping means the
+ * cycle has no dead end to back out of, and a session sitting on a slot no theme
+ * defines — or on nothing at all — starts from the first one rather than
+ * refusing to move.
+ */
+export function cycleSessionColorSlot(current: number, direction: "forward" | "backward"): number {
+	if (!isSessionColorSlot(current)) return 1;
+	const step = direction === "forward" ? 1 : SESSION_COLOR_SLOTS - 1;
+	return ((current - 1 + step) % SESSION_COLOR_SLOTS) + 1;
+}
