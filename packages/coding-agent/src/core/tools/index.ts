@@ -72,7 +72,7 @@ export interface ToolsOptions {
 	bash?: BashToolOptions;
 	write?: WriteToolOptions;
 	edit?: EditToolOptions;
-	search?: SearchToolOptions;
+	SearchCodebase?: SearchToolOptions;
 	webfetch?: WebFetchToolOptions;
 	websearch?: WebSearchToolOptions;
 }
@@ -88,7 +88,7 @@ const TOOL_FACTORIES = {
 	bash: createBashToolDefinition,
 	edit: createEditToolDefinition,
 	write: createWriteToolDefinition,
-	search: createSearchToolDefinition,
+	SearchCodebase: createSearchToolDefinition,
 	webfetch: createWebFetchToolDefinition,
 	websearch: createWebSearchToolDefinition,
 } satisfies { [K in keyof ToolsOptions]-?: (cwd: string, options?: ToolsOptions[K]) => ToolDef };
@@ -98,10 +98,10 @@ export type ToolName = keyof typeof TOOL_FACTORIES;
 export const allToolNames: Set<ToolName> = new Set(Object.keys(TOOL_FACTORIES) as ToolName[]);
 
 /** The default coding bundle (read/write + shell + search). */
-const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "search"];
+const CODING_TOOL_NAMES: ToolName[] = ["read", "bash", "edit", "write", "SearchCodebase"];
 
 /** Read-only exploration bundle. */
-const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "search"];
+const READ_ONLY_TOOL_NAMES: ToolName[] = ["read", "SearchCodebase"];
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
 	const factory = TOOL_FACTORIES[toolName] as (cwd: string, options?: ToolsOptions[ToolName]) => ToolDef;

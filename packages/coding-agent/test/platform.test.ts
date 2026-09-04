@@ -228,9 +228,14 @@ describe("workspace layouts (per-adapter conventions)", () => {
 		expect(skill.path).toBe(path.join(".github", "skills", "review-db", "SKILL.md"));
 		expect(skill.content).toContain("name: review-db");
 
-		const agent = ws.emitAgent({ name: "scout", description: "explores", tools: "read, search", body: "Explore." });
+		const agent = ws.emitAgent({
+			name: "scout",
+			description: "explores",
+			tools: "read, SearchCodebase",
+			body: "Explore.",
+		});
 		expect(agent.path).toBe(path.join(".github", "agents", "scout.agent.md"));
-		expect(agent.content).toContain("tools: ['read', 'search']");
+		expect(agent.content).toContain("tools: ['read', 'SearchCodebase']");
 
 		const cmd = ws.emitCommand({ name: "ship", description: "ships it", body: "Ship." });
 		expect(cmd.path).toBe(path.join(".github", "prompts", "ship.prompt.md"));
@@ -242,9 +247,9 @@ describe("workspace layouts (per-adapter conventions)", () => {
 		expect(ws.emitSkill({ name: "review-db", body: "R." }).path).toBe(
 			path.join(".claude", "skills", "review-db", "SKILL.md"),
 		);
-		const agent = ws.emitAgent({ name: "scout", tools: "read, search", body: "E." });
+		const agent = ws.emitAgent({ name: "scout", tools: "read, SearchCodebase", body: "E." });
 		expect(agent.path).toBe(path.join(".claude", "agents", "scout.md"));
-		expect(agent.content).toContain("tools: read, search");
+		expect(agent.content).toContain("tools: read, SearchCodebase");
 		expect(ws.emitCommand({ name: "ship", body: "S." }).path).toBe(path.join(".claude", "commands", "ship.md"));
 	});
 

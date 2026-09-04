@@ -13,7 +13,7 @@ description: |
   Output: Ranked findings, each with path:line, the defect, and how it fails.
   Cost: Medium (reads the full diff and surrounding code)
   Isolation: Read-only; can run in parallel with other review tasks
-tools: read, bash, search
+tools: read, bash, SearchCodebase
 model: capable
 background: true
 ---

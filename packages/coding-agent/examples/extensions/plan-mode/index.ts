@@ -19,7 +19,7 @@ import { Key } from "@kolisachint/hoocode-tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.js";
 
 // Tools
-const PLAN_MODE_TOOLS = ["read", "bash", "search", "questionnaire"];
+const PLAN_MODE_TOOLS = ["read", "bash", "SearchCodebase", "questionnaire"];
 const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write"];
 
 // Type guard for assistant messages

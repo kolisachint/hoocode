@@ -14,7 +14,7 @@ import { collectEntries } from "../../../src/core/tools/native-search.js";
  * handling, scoping each file to its own subtree.
  *
  * The `find` tool that first hit this is gone; `collectEntries` — which now
- * walks the tree for `search`'s lexical retriever and the embsearch repo scan —
+ * walks the tree for `SearchCodebase`'s lexical retriever and the embsearch repo scan —
  * inherits the guarantee, so the regression is pinned here.
  */
 describe("issue #3303 nested .gitignore rules leak into sibling directories", () => {

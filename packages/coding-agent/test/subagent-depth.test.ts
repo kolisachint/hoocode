@@ -118,7 +118,7 @@ describe("MCP skip for subagents", () => {
 	});
 
 	it("does not need MCP when the explicit allowlist is MCP-free", () => {
-		expect(toolAllowlistNeedsMcp(["read", "search"])).toBe(false);
+		expect(toolAllowlistNeedsMcp(["read", "SearchCodebase"])).toBe(false);
 		expect(toolAllowlistNeedsMcp([])).toBe(false);
 		// Delegating agents get Task/TaskOutput appended — still not MCP.
 		expect(toolAllowlistNeedsMcp(["read", "Task", "TaskOutput"])).toBe(false);

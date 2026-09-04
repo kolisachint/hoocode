@@ -11,7 +11,7 @@
  * 4. Custom rendering of tool calls and results
  *
  * The `rg` tool here wraps ripgrep with proper truncation. Compare this to the
- * built-in `search` tool in src/core/tools/search.ts for a more complete implementation.
+ * built-in `SearchCodebase` tool in src/core/tools/search.ts for a more complete implementation.
  */
 
 import { mkdtemp, writeFile } from "node:fs/promises";

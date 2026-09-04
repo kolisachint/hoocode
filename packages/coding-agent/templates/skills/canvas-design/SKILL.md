@@ -2,7 +2,7 @@
 name: canvas-design
 description: How to make a canvas extension's page good — layout, styling, live state, and the dependency and token constraints the surface imposes. Read when building or editing a canvas; the /new-canvas brief points here.
 disable-model-invocation: true
-allowed-tools: read, write, edit, search
+allowed-tools: read, write, edit, SearchCodebase
 ---
 
 # Designing a canvas

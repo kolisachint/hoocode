@@ -1,5 +1,5 @@
 /**
- * The unified `search` tool: ranked code discovery in lexical, semantic, or
+ * The unified `SearchCodebase` tool: ranked code discovery in lexical, semantic, or
  * hybrid (rank-fused) mode. Replaces the old `semantic_search` tool — see
  * docs/hybrid-retrieval-design.md, Decision 1. It is the only dedicated
  * discovery tool: this tool answers "find where X lives", and exact
@@ -67,7 +67,7 @@ function formatSearchCall(
 ): string {
 	const query = str(args?.query);
 	const queryDisplay = query === null ? invalidArgText(theme) : `"${query}"`;
-	let text = theme.fg("toolTitle", theme.bold("search ")) + theme.fg("accent", queryDisplay);
+	let text = theme.fg("toolTitle", theme.bold("SearchCodebase ")) + theme.fg("accent", queryDisplay);
 	const extras: string[] = [];
 	if (args?.mode && args.mode !== "auto") extras.push(args.mode);
 	if (args?.limit !== undefined) extras.push(String(args.limit));
@@ -101,8 +101,8 @@ export function createSearchToolDefinition(
 	options?: SearchToolOptions,
 ): ToolDefinition<typeof searchSchema, SearchToolDetails | undefined> {
 	return {
-		name: "search",
-		label: "search",
+		name: "SearchCodebase",
+		label: "SearchCodebase",
 		// The search-vs-bash split is stated once, by buildSystemPrompt, whenever both
 		// are registered — so it is deliberately absent here. What stays is what only
 		// this tool knows: that the query is not a regex, and that it degrades to
@@ -111,7 +111,7 @@ export function createSearchToolDefinition(
 			"Find where code lives: ranked file:line-range results, fusing keyword and semantic retrieval over a local index with exact-text search of files the index has not read yet. The query is plain text, not a regex — regex metacharacters are matched literally. Falls back to exact-text retrieval automatically when the index is unavailable, and still finds code written moments ago that no index has seen.",
 		promptSnippet: "Ranked code search (keyword + semantic, rank-fused)",
 		promptGuidelines: [
-			"search defaults to mode=auto, which is almost always right. Use limit=3 for targeted lookups, 10–20 when exploring a broad topic — past ~15 results the deeper ones arrive as ranked file:line-range headers without a snippet, which is still enough to choose what to read.",
+			"SearchCodebase defaults to mode=auto, which is almost always right. Use limit=3 for targeted lookups, 10–20 when exploring a broad topic — past ~15 results the deeper ones arrive as ranked file:line-range headers without a snippet, which is still enough to choose what to read.",
 		],
 		parameters: searchSchema,
 		async execute(_toolCallId, { query, mode, glob, limit }: SearchToolInput, signal?: AbortSignal) {

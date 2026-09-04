@@ -20,12 +20,14 @@ const chain = (entries: ChainEntry[]) =>
 
 describe("chain segments (the running line)", () => {
 	test("keeps the order of the run", () => {
-		expect(chain([call("search", "x"), call("read", "a.ts"), call("edit", "a.ts")])).toBe("search › read › edit");
+		expect(chain([call("SearchCodebase", "x"), call("read", "a.ts"), call("edit", "a.ts")])).toBe(
+			"SearchCodebase › read › edit",
+		);
 	});
 
 	test("collapses a consecutive repeat", () => {
-		expect(chain([call("search", "x"), call("read", "a"), call("read", "b"), call("read", "c")])).toBe(
-			"search › read ×3",
+		expect(chain([call("SearchCodebase", "x"), call("read", "a"), call("read", "b"), call("read", "c")])).toBe(
+			"SearchCodebase › read ×3",
 		);
 	});
 
@@ -36,7 +38,7 @@ describe("chain segments (the running line)", () => {
 
 	test("elides the middle of a long chain but never a failure", () => {
 		const entries = Array.from({ length: 27 }, (_, i) =>
-			i === 9 ? call("bash", "check", 0, true) : call(["bash", "search", "read", "edit"][i % 4], `f${i}`),
+			i === 9 ? call("bash", "check", 0, true) : call(["bash", "SearchCodebase", "read", "edit"][i % 4], `f${i}`),
 		);
 		const rendered = chain(entries);
 		expect(rendered).toContain("bash✗");
@@ -52,9 +54,9 @@ describe("chain segments (the running line)", () => {
 
 describe("chain stats", () => {
 	test("counts progress while running, totals once done", () => {
-		const entries = [call("search", "x", 5), call("bash", "y", 0, false, true)];
+		const entries = [call("SearchCodebase", "x", 5), call("bash", "y", 0, false, true)];
 		expect(chainStats(entries, "running")).toBe("1 done · running");
-		expect(chainStats([call("search", "x", 5), call("bash", "y", 7)], "done")).toBe("2 calls · 12 lines");
+		expect(chainStats([call("SearchCodebase", "x", 5), call("bash", "y", 7)], "done")).toBe("2 calls · 12 lines");
 	});
 
 	test("always surfaces failures", () => {
@@ -62,7 +64,7 @@ describe("chain stats", () => {
 	});
 
 	test("says an interrupted chain was interrupted", () => {
-		expect(chainStats([call("search", "x", 1)], "interrupted")).toContain("interrupted");
+		expect(chainStats([call("SearchCodebase", "x", 1)], "interrupted")).toContain("interrupted");
 	});
 });
 
@@ -88,12 +90,12 @@ describe("chain phrase (the settled line)", () => {
 	});
 
 	test("never presents a glob as a location", () => {
-		expect(chainPhrase([call("search", "*.test.ts", 4), call("search", "keys", 2)])).toBe("Explored");
+		expect(chainPhrase([call("SearchCodebase", "*.test.ts", 4), call("SearchCodebase", "keys", 2)])).toBe("Explored");
 	});
 
 	test("gives a lone call its own subject, whatever shape it is", () => {
 		expect(chainPhrase([call("bash", "bun run check", 40)])).toBe("Ran bun run check");
-		expect(chainPhrase([call("search", "toolOutputView", 27)])).toBe("Searched toolOutputView");
+		expect(chainPhrase([call("SearchCodebase", "toolOutputView", 27)])).toBe("Searched toolOutputView");
 	});
 
 	test("falls back to a count for several commands", () => {
@@ -139,7 +141,7 @@ describe("chain phrase (long chains)", () => {
 		// happened to change something, not an edit. Naming the edit describes one
 		// call out of 66.
 		const entries = [
-			...many(28, "search", (i) => `symbol${i}`),
+			...many(28, "SearchCodebase", (i) => `symbol${i}`),
 			...reads(37, "packages/coding-agent/src"),
 			call("edit", "packages/coding-agent/src/core/tools/subagent.ts"),
 		];
@@ -202,7 +204,7 @@ describe("chain phrase (long chains)", () => {
 			...many(4, "edit", (i) => `src/x${i}.ts`),
 			...many(2, "bash", () => "check"),
 			...many(2, "read", (i) => `src/y${i}.ts`),
-			...many(2, "search", (i) => `sym${i}`),
+			...many(2, "SearchCodebase", (i) => `sym${i}`),
 			...many(2, "webfetch", () => "https://example.com"),
 		];
 		expect(chainPhrase(entries)).not.toContain("·");

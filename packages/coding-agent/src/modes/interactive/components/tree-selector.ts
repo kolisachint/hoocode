@@ -874,10 +874,10 @@ class TreeList implements Component {
 					.slice(0, 50);
 				return `[bash: ${cmd}${rawCmd.length > 50 ? "..." : ""}]`;
 			}
-			case "search": {
+			case "SearchCodebase": {
 				const query = String(args.query || "");
 				const glob = args.glob ? ` in ${shortenPath(String(args.glob))}` : "";
-				return `[search: ${query}${glob}]`;
+				return `[SearchCodebase: ${query}${glob}]`;
 			}
 			default: {
 				// Custom tool - show name and truncated JSON args

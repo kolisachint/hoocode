@@ -9,7 +9,7 @@ description: |
   DO NOT use for:
   - A single focused change (use general-purpose directly)
   - Read-only exploration of one area (use explore directly)
-tools: read, search
+tools: read, SearchCodebase
 delegate: true
 model: sonnet
 ---

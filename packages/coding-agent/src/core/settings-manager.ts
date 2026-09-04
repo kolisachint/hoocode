@@ -1064,13 +1064,13 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getEnableEmbsearchTools(): boolean {
-		return this.settings.enableEmbsearchTools ?? DEFAULT_SETTINGS.enableEmbsearchTools!;
+	getEnableSemanticIndex(): boolean {
+		return this.settings.enableSemanticIndex ?? DEFAULT_SETTINGS.enableSemanticIndex!;
 	}
 
-	setEnableEmbsearchTools(enabled: boolean): void {
-		this.globalSettings.enableEmbsearchTools = enabled;
-		this.markModified("enableEmbsearchTools");
+	setEnableSemanticIndex(enabled: boolean): void {
+		this.globalSettings.enableSemanticIndex = enabled;
+		this.markModified("enableSemanticIndex");
 		this.save();
 	}
 

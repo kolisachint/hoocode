@@ -42,7 +42,7 @@ export const HOOCODE_TOOL_NAMES: readonly string[] = [
 	"bash",
 	"edit",
 	"read",
-	"search",
+	"SearchCodebase",
 	"webfetch",
 	"websearch",
 	"write",
@@ -65,20 +65,26 @@ export const TODO_WRITE_TOOL_NAME = "TodoWrite";
  * NotebookEdit, MCP tools, ...) are intentionally absent and get dropped during
  * normalization.
  *
- * `grep`/`glob`/`find` all land on `search`, the single code-discovery tool
- * that replaced the old grep/find/ls trio. `ls` has no counterpart at all —
+ * `grep`/`glob`/`find` all land on `SearchCodebase`, the single code-discovery
+ * tool that replaced the old grep/find/ls trio. `ls` has no counterpart at all —
  * directory listing is a shell job now — so it is deliberately absent and gets
  * dropped with a diagnostic rather than silently widening an agent to `bash`.
+ *
+ * Lookups are lower-cased, so every hoocode tool needs its own lower-case key
+ * here to survive normalization; the `searchcodebase` entry is that case-folding
+ * for `SearchCodebase`, not a legacy alias. `search` is deliberately absent: the
+ * tool was renamed with no backward lookup, so an agent still naming it is
+ * dropped with a diagnostic.
  */
 export const CLAUDE_TOOL_ALIASES: Readonly<Record<string, string>> = {
 	read: "read",
 	write: "write",
 	edit: "edit",
 	bash: "bash",
-	search: "search",
-	grep: "search",
-	glob: "search",
-	find: "search",
+	searchcodebase: "SearchCodebase",
+	grep: "SearchCodebase",
+	glob: "SearchCodebase",
+	find: "SearchCodebase",
 	webfetch: "webfetch",
 	websearch: "websearch",
 };

@@ -51,7 +51,7 @@ export const DEFAULT_SETTINGS = {
 	pluginInstallScope: "user",
 	deferMcpSchemas: true,
 	enableWebTools: false,
-	enableEmbsearchTools: true,
+	enableSemanticIndex: true,
 	embsearchThresholdBytes: 0,
 	learnMaxSessions: 20,
 	learnMaxAgeDays: 30,

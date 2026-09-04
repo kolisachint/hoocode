@@ -1,5 +1,12 @@
 # Design Note: Hybrid retrieval — one `search` tool, RRF fusion
 
+> **Naming note (superseded):** this note is the historical record of the
+> decision and uses the tool's original name, `search`. That tool has since
+> been renamed `SearchCodebase` (clean break, no alias), and the gating flag
+> `--enable-search-tool` / `--enable-embsearchtools` is now
+> `--enable-semantic-index`. Read every `search` below as `SearchCodebase`.
+
+
 **Status:** All seven steps of the shipping order implemented in
 `packages/coding-agent/src/core/search/` (rrf.ts, adapter.ts, mode.ts,
 lexical-retriever.ts, context-assembler.ts, hybrid-search.ts, rerank.ts,

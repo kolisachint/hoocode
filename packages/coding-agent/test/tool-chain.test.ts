@@ -46,7 +46,7 @@ function chainOf(view: ToolOutputView, calls: Call[], id = "c"): ToolChainCompon
 const render = (chain: ToolChainComponent) => stripAnsi(chain.render(100).join("\n"));
 
 const RUN: Call[] = [
-	{ tool: "search", args: { query: "toolOutputView", glob: "packages/**" }, out: "a\nb" },
+	{ tool: "SearchCodebase", args: { query: "toolOutputView", glob: "packages/**" }, out: "a\nb" },
 	{ tool: "read", args: { file_path: `${cwd}/src/keys.ts` }, out: "x\ny\nz" },
 	{ tool: "edit", args: { path: `${cwd}/src/keys.ts`, edits: [] }, out: "" },
 ];
@@ -63,19 +63,19 @@ describe("ToolChainComponent", () => {
 			.split("\n")
 			.filter((l) => l.trim());
 		expect(lines).toHaveLength(1);
-		expect(lines[0]).toContain("search › read › edit");
+		expect(lines[0]).toContain("SearchCodebase › read › edit");
 	});
 
 	test("shows the shape while running and what it amounted to once done", () => {
 		const running = chainOf("radar", [...RUN, { tool: "bash", args: { command: "x" }, out: "", pending: true }], "r");
-		expect(render(running)).toContain("search › read › edit › bash");
+		expect(render(running)).toContain("SearchCodebase › read › edit › bash");
 		expect(render(running)).toContain("running");
 
 		const done = chainOf("radar", RUN, "d");
 		done.close("done");
 		const settled = render(done);
 		expect(settled).toContain("Edited");
-		expect(settled).not.toContain("search › read");
+		expect(settled).not.toContain("SearchCodebase › read");
 	});
 
 	test("an interrupted chain keeps the shape and says so, claiming nothing", () => {
@@ -84,7 +84,7 @@ describe("ToolChainComponent", () => {
 		const chain = chainOf("radar", RUN, "i");
 		chain.close("interrupted");
 		const out = render(chain);
-		expect(out).toContain("search › read › edit");
+		expect(out).toContain("SearchCodebase › read › edit");
 		expect(out).toContain("interrupted");
 		expect(out).not.toContain("Edited src");
 	});
@@ -104,11 +104,11 @@ describe("ToolChainComponent", () => {
 	test("opening it turns the line back into the calls it stood for", () => {
 		const chain = chainOf("radar", RUN, "o");
 		chain.close("done");
-		expect(render(chain)).not.toContain("search");
+		expect(render(chain)).not.toContain("SearchCodebase");
 
 		chain.setOpened(true);
 		const opened = render(chain);
-		expect(opened).toContain("search");
+		expect(opened).toContain("SearchCodebase");
 		expect(opened).toContain("read");
 		expect(opened).toContain("edit");
 	});
@@ -119,7 +119,7 @@ describe("ToolChainComponent", () => {
 			chain.close("done");
 			const out = render(chain);
 			expect(out, view).not.toContain("›");
-			expect(out, view).toContain("search");
+			expect(out, view).toContain("SearchCodebase");
 		}
 	});
 
@@ -140,7 +140,7 @@ describe("ToolChainComponent", () => {
 		const chain = chainOf(
 			"glance",
 			[
-				{ tool: "search", args: { query: "docs" }, out: "a" },
+				{ tool: "SearchCodebase", args: { query: "docs" }, out: "a" },
 				{ tool: "read", args: { file_path: `${cwd}/a.ts` }, out: "a" },
 				{ tool: "edit", args: { path: `${cwd}/a.ts`, edits: [] }, out: "" },
 			],
@@ -158,7 +158,7 @@ describe("ToolChainComponent", () => {
 		const chain = chainOf(
 			"radar",
 			[
-				{ tool: "search", args: { query: "docs" }, out: "a" },
+				{ tool: "SearchCodebase", args: { query: "docs" }, out: "a" },
 				{ tool: "bash", args: { command: "bun test" }, out: "ASSERTION FAILED", isError: true },
 			],
 			"indent",
@@ -178,7 +178,7 @@ describe("ToolChainComponent", () => {
 		const chain = chainOf("radar", [RUN[0]], "one");
 		chain.close("done");
 		const out = render(chain);
-		expect(out).toContain("search");
+		expect(out).toContain("SearchCodebase");
 		expect(out).toContain("2 lines");
 		expect(out).not.toContain("Explored");
 		expect(chain.isSummarised).toBe(false);
@@ -187,7 +187,7 @@ describe("ToolChainComponent", () => {
 	test("two calls are still worth folding", () => {
 		const chain = chainOf("radar", RUN.slice(0, 2), "two");
 		expect(chain.isSummarised).toBe(true);
-		expect(render(chain)).toContain("search › read");
+		expect(render(chain)).toContain("SearchCodebase › read");
 	});
 
 	test("holds a radar run off whatever came before it", () => {
@@ -220,7 +220,7 @@ describe("ToolChainComponent", () => {
 		chain.close("done");
 		const lines = chain.render(100);
 		expect(lines[0]).toBe("");
-		expect(stripAnsi(lines[1] ?? "")).toContain("search");
+		expect(stripAnsi(lines[1] ?? "")).toContain("SearchCodebase");
 	});
 
 	test("does not double the gap where the blocks already draw one", () => {

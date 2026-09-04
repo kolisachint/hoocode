@@ -1,7 +1,7 @@
 /**
  * Orchestrates semantic indexing and search for a repository.
  *
- * Lifecycle (all behind --enable-embsearchtools):
+ * Lifecycle (all behind --enable-semantic-index):
  *  1. `start()` — resolve the embsearch binary, scan the repo (ignore-aware),
  *     apply the byte threshold. Under threshold → dormant. Over → spawn the
  *     daemon, verify the backend is not the mock embedder, then index changed
