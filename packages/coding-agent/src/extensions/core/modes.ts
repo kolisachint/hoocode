@@ -23,6 +23,7 @@ import type {
 } from "../../core/extensions/types.js";
 import { isLightModeEnv } from "../../core/light.js";
 import { DEFAULT_MODE, DEFAULT_MODE_PROMPTS as MODE_DEFAULTS } from "../../core/mode-prompts.js";
+import { SUBAGENT_DEPTH_ENV } from "../../core/subagent-depth.js";
 import { EMBEDDED_PROMPTS } from "../../init-templates.generated.js";
 import { mergeSearchPaths, readConfig, readMergedConfig, writeConfig } from "./config.js";
 import { AUTO_LOOP_DONE_TOKEN, LOOP_AUTO_CHANGED, LOOP_AUTO_START, type LoopAutoStartPayload } from "./loop.js";
@@ -357,6 +358,15 @@ export function setupMode(pi: ExtensionAPI): void {
 		// cachedSystemPrompt unset makes before_agent_start a no-op, so no
 		// `<!-- hoo-core: mode= -->` block is appended.
 		if (isLightModeEnv()) {
+			return;
+		}
+
+		// A spawned subagent already carries its own system prompt (from its agent
+		// definition) and its own tool allowlist. Appending the parent's mode prompt
+		// on top contradicts it — a read-only `explore` child would be told to "read
+		// before editing" and "run tests after every change" — and spends tokens on
+		// rules for tools the child does not have. The pool sets this on every child.
+		if (process.env[SUBAGENT_DEPTH_ENV]) {
 			return;
 		}
 

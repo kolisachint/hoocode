@@ -109,6 +109,74 @@ describe("permission gate: which file a mutation names", () => {
 		expect(blocked?.reason).toContain("src/app.ts");
 	});
 
+	it("accepts a Windows-style relative path against a forward-slash pattern", async () => {
+		// `allowed_write_paths` is checked BEFORE `auto_allow`, so a non-match is a
+		// hard block, not a prompt. Plan mode hands the model a path from
+		// `relative()`, which is backslash-separated on Windows — matching it
+		// literally against a `/` pattern would make plan mode unable to write its
+		// own plan file there.
+		const cwd = await projectWith({
+			active_mode: "plan",
+			modes: { plan: { allowed_write_paths: [".hoocode/plans/*"], auto_allow: ["write"] } },
+		});
+		const ctx = { cwd, hasUI: true, ui: { select: async () => "No (block)" } };
+
+		const allowed = await handler(
+			{ type: "tool_call", toolName: "write", toolCallId: "c1", input: { path: ".hoocode\\plans\\s1.md" } },
+			ctx,
+		);
+		expect(allowed).toBeUndefined();
+	});
+
+	it("accepts an absolute path that resolves inside an allowed relative pattern", async () => {
+		const cwd = await projectWith({
+			active_mode: "plan",
+			modes: { plan: { allowed_write_paths: [".hoocode/plans/*"], auto_allow: ["write"] } },
+		});
+		const ctx = { cwd, hasUI: true, ui: { select: async () => "No (block)" } };
+
+		const allowed = await handler(
+			{
+				type: "tool_call",
+				toolName: "write",
+				toolCallId: "c1",
+				input: { path: join(cwd, ".hoocode", "plans", "s1.md") },
+			},
+			ctx,
+		);
+		expect(allowed).toBeUndefined();
+	});
+
+	it("still blocks an absolute path that escapes the project root", async () => {
+		const cwd = await projectWith({
+			active_mode: "plan",
+			modes: { plan: { allowed_write_paths: [".hoocode/plans/*"], auto_allow: ["write"] } },
+		});
+		const ctx = { cwd, hasUI: true, ui: { select: async () => "No (block)" } };
+
+		const blocked = (await handler(
+			{ type: "tool_call", toolName: "write", toolCallId: "c1", input: { path: "/etc/passwd" } },
+			ctx,
+		)) as { block?: boolean };
+		expect(blocked?.block).toBe(true);
+	});
+
+	it("does not let a pattern's dots match arbitrary characters", async () => {
+		// `.hoocode/plans/*` compiled to `^.hoocode/plans/.*$`, where the leading
+		// `.` matched any character — so `Xhoocode/plans/evil.md` passed.
+		const cwd = await projectWith({
+			active_mode: "plan",
+			modes: { plan: { allowed_write_paths: [".hoocode/plans/*"], auto_allow: ["write"] } },
+		});
+		const ctx = { cwd, hasUI: true, ui: { select: async () => "No (block)" } };
+
+		const blocked = (await handler(
+			{ type: "tool_call", toolName: "write", toolCallId: "c1", input: { path: "Xhoocode/plans/evil.md" } },
+			ctx,
+		)) as { block?: boolean };
+		expect(blocked?.block).toBe(true);
+	});
+
 	it("blocks a mutation whose path cannot be identified at all", async () => {
 		const cwd = await projectWith({
 			active_mode: "docs",

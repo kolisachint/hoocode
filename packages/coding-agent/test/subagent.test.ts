@@ -179,7 +179,8 @@ describe("buildTaskMainPrompt", () => {
 
 	test("guides the agent to delegate proactively", () => {
 		const prompt = buildTaskMainPrompt();
-		expect(prompt).toContain("Delegate proactively");
+		expect(prompt).toContain("Dispatch independent subtasks in the same turn");
+		expect(prompt).toContain("Keep inline only trivial single-step edits");
 		expect(prompt).not.toContain("Default to handling small, quick, or single-file work inline");
 	});
 
@@ -188,7 +189,7 @@ describe("buildTaskMainPrompt", () => {
 		// (linkedTaskId); the prompt must teach the ordering that makes the link
 		// land instead of leaving it to chance.
 		const prompt = buildTaskMainPrompt();
-		expect(prompt).toContain("mark the plan item in_progress BEFORE dispatching");
+		expect(prompt).toContain("mark the item in_progress BEFORE dispatching");
 	});
 
 	test("emits the (tightened) background/barrier guidance when background agents exist (built-in explore/plan)", () => {
@@ -206,7 +207,18 @@ describe("buildTaskMainPrompt", () => {
 		// The when-to-use / when-not lives once here; the Task tool description was
 		// trimmed to mechanics to stop double-charging the same guidance every turn.
 		const prompt = buildTaskMainPrompt();
-		expect(prompt).toContain("When to delegate:");
+		expect(prompt).toContain("Delegate when you need only the final result");
 		expect(prompt).not.toContain("WHEN TO USE:");
+	});
+
+	test("states the isolation contract once, not three times", () => {
+		// "cannot see this conversation" and "returns ONLY its final answer" each
+		// appeared twice in the old appendix, on top of the parameter schemas that
+		// already say both. One statement each is the budget.
+		const prompt = buildTaskMainPrompt();
+		expect(prompt.match(/cannot see this conversation/g)).toHaveLength(1);
+		expect(prompt.match(/final answer/g)).toHaveLength(2); // opening para + guideline
+		expect(prompt).not.toContain("When to delegate:");
+		expect(prompt).not.toContain("Delegate proactively when work is self-contained");
 	});
 });

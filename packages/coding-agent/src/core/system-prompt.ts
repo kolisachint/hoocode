@@ -108,7 +108,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		}
 
 		// Add date and working directory last
-		prompt += `\nCurrent date: ${date}`;
+		prompt += `\n\nCurrent date: ${date}`;
 		prompt += `\nCurrent working directory: ${promptCwd}`;
 
 		return prompt;
@@ -140,14 +140,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// left, so name it when it is registered and fall back to the shell
 	// otherwise — never advertise a tool that isn't in the bundle.
 	if (hasSearch) {
+		// One bullet, not two. The split version stated the same preference twice —
+		// "use SearchCodebase instead of bash" and then the fuller contrast — which
+		// cost ~45 tokens every turn to say it again.
 		addGuideline(
-			"For code discovery use SearchCodebase (find where code lives by concept or identifier) instead of bash; it is faster and respects .gitignore",
+			hasBash
+				? "SearchCodebase finds where code lives by concept, behavior, or half-known name (ranked, respects .gitignore); shell out to rg/find/ls only for exact matching lines, counts, or a raw listing"
+				: "For code discovery use SearchCodebase — it finds where code lives by concept, behavior, or half-known name, and respects .gitignore",
 		);
-		if (hasBash) {
-			addGuideline(
-				"Between SearchCodebase and bash: SearchCodebase finds where code lives by concept, behavior, or half-known name (ranked results); shell out to rg/find/ls when you need exact matching lines, counts, or a raw directory listing",
-			);
-		}
 	} else if (hasBash) {
 		addGuideline("Use bash for file exploration (ls, rg/grep, find)");
 	}
@@ -163,16 +163,17 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	addGuideline(
 		"Put independent tool calls in one message — they execute in parallel; only split them across turns when a call needs an earlier call's result",
 	);
-	addGuideline("Be concise in your responses");
-	addGuideline("No preamble or postamble; do not restate the task or summarize what you just did");
-	addGuideline('Do not add closers like "Let me know" or "Hope this helps"');
+	addGuideline(
+		'Be concise: no preamble or postamble, no restating the task or summarizing what you just did, no closers like "Let me know"',
+	);
 	addGuideline(
 		"Do not narrate routine tool calls or results — the permission gate already shows them; speak when you have the answer or need a decision",
 	);
 	addGuideline(
 		"Match the surrounding code's conventions for comments, docstrings, and types — do not add or strip them by default",
 	);
-	addGuideline("Show file paths clearly when working with files");
+	addGuideline("Cite path:line when referring to code");
+	addGuideline("If a command failed, a test is still red, or you did not verify something, say so plainly");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
@@ -180,8 +181,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 Available tools:
 ${toolsList}
-
-In addition to the tools above, you may have access to other custom tools depending on the project.
 
 Guidelines:
 ${guidelines}`;
@@ -216,7 +215,7 @@ ${guidelines}`;
 	}
 
 	// Add date and working directory last
-	prompt += `\nCurrent date: ${date}`;
+	prompt += `\n\nCurrent date: ${date}`;
 	prompt += `\nCurrent working directory: ${promptCwd}`;
 
 	return prompt;
