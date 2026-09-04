@@ -6,6 +6,7 @@
  * applies even without a UI.
  */
 
+import { isAbsolute, relative } from "node:path";
 import type {
 	ExtensionAPI,
 	ExtensionContext,
@@ -19,18 +20,46 @@ import { readConfig, readMergedConfig, writeConfig } from "./config.js";
 const GATED_TOOLS = new Set(["bash", "write", "edit", "webfetch", "websearch"]);
 
 /**
- * Checks if a file path matches any of the allowed patterns.
- * Supports glob patterns with * and exact paths.
+ * Checks if a file path matches any of the mode's `allowed_write_paths`.
+ * Supports glob patterns with `*` and exact paths.
+ *
+ * Both sides are normalized to forward slashes first. Patterns are written with
+ * `/`, but the paths a model is handed come from `relative()`, which yields
+ * backslashes on Windows — and because this check runs *before* `auto_allow`, a
+ * non-match is a hard block rather than a prompt. Without normalizing, a mode
+ * that sets `allowed_write_paths` could not write anything at all on Windows.
+ *
+ * An absolute path is also tried in its cwd-relative form, so a model that
+ * resolves the relative path it was given still matches. A target outside cwd
+ * relativizes to `../…` and correctly fails to match.
  */
-function matchesAllowedPath(filePath: string, allowedPatterns: string[]): boolean {
+function matchesAllowedPath(filePath: string, allowedPatterns: string[], cwd: string): boolean {
 	if (allowedPatterns.length === 0) return true;
+	if (!filePath) return false;
+
+	const toPosix = (value: string): string => value.replace(/\\/g, "/");
+
+	const candidates = new Set<string>([toPosix(filePath)]);
+	if (isAbsolute(filePath)) {
+		const rel = toPosix(relative(cwd, filePath));
+		if (rel) candidates.add(rel);
+	}
+
 	for (const pattern of allowedPatterns) {
-		// Exact match
-		if (pattern === filePath) return true;
-		// Glob pattern matching for *
-		if (pattern.includes("*")) {
-			const regex = new RegExp(`^${pattern.replace(/\*/g, ".*")}$`);
-			if (regex.test(filePath)) return true;
+		const normalizedPattern = toPosix(pattern);
+		if (candidates.has(normalizedPattern)) return true;
+		if (!normalizedPattern.includes("*")) continue;
+		// Escape regex metacharacters before letting `*` mean "any run of chars",
+		// so a pattern like `.hoocode/plans/*` cannot also match `Xhoocode/...`.
+		const source = `^${normalizedPattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*")}$`;
+		let regex: RegExp;
+		try {
+			regex = new RegExp(source);
+		} catch {
+			continue;
+		}
+		for (const candidate of candidates) {
+			if (regex.test(candidate)) return true;
 		}
 	}
 	return false;
@@ -172,7 +201,7 @@ export function setupPermissionGate(pi: ExtensionAPI): void {
 			// Absent path stays blocked: an unidentifiable write cannot be checked
 			// against an allowlist, and refusing is the safe direction.
 			const filePath = mutationPath(event.input) ?? "";
-			if (!matchesAllowedPath(filePath, modeCfg.allowed_write_paths)) {
+			if (!matchesAllowedPath(filePath, modeCfg.allowed_write_paths, ctx.cwd)) {
 				return {
 					block: true,
 					reason:

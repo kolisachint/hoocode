@@ -48,11 +48,14 @@ It reports the assembled system prompt plus each active tool's serialized
 `{name, description, parameters}`, estimated at chars/4. Treat it as a floor:
 providers add their own envelope, and schema JSON tokenizes worse than prose.
 
-Current baseline (default tools, no context files): **~3,380 tokens** — ~1,350
-system prompt, ~2,030 tool schemas. (Dropping `grep`/`find`/`ls` took ~760 off
-the old ~4,140: ~680 of schema and ~80 of prompt.) Adding this repo's
-`AGENTS.md` as a context file costs another ~3,600, which makes it the single
-largest line item.
+Current baseline, measured with the default tool set and no context files:
+**~6,690 tokens** — ~3,660 system prompt, ~3,040 tool schemas. Adding this
+repo's `AGENTS.md` as a context file costs another ~4,740, which makes it the
+single largest line item by a wide margin.
+
+Re-measure rather than trusting that number: it is a snapshot, and every tool
+added since it was last written moved it. Run the command above in an empty
+directory for the clean figure, and in the repo root for the with-context one.
 
 **A tool's guidance belongs in exactly one place.** A tool contributes text
 through four channels, and it is easy to pay for the same sentence twice:
@@ -85,8 +88,8 @@ Rules that follow from that:
 When adding a tool, budget it: a built-in should land under ~250 tokens
 serialized. Anything materially above that needs a reason, and the
 when-to-use guidance probably belongs in a system-prompt block instead — that
-is why `Task` keeps its mechanics in `description` and its 2.5KB of
-when-to-delegate guidance in `buildTaskMainPrompt`.
+is why `Task` keeps its mechanics in `description` and its when-to-delegate
+guidance (~1.6KB) in `buildTaskMainPrompt`.
 
 ## Where a capability belongs
 

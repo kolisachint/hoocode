@@ -9,9 +9,12 @@
     }
   },
   "modes": {
-    "ask": { "auto_allow": ["read"] },
-    "plan": { "auto_allow": ["read", "write"] },
+    "ask": { "auto_allow": ["read"], "denied_tools": ["edit", "write"] },
+    "plan": {
+      "auto_allow": ["read", "write"],
+      "allowed_write_paths": [".hoocode/plans/*", ".hoocode/plan.md"]
+    },
     "build": { "auto_allow": ["read"] },
-    "debug": { "auto_allow": ["read", "bash"] }
+    "debug": { "auto_allow": ["read", "bash"], "denied_tools": ["edit", "write"] }
   }
 }

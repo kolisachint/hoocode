@@ -14,7 +14,7 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("Available tools:\n(none)");
 		});
 
-		test("shows file paths guideline even with no tools", () => {
+		test("shows the code-citation guideline even with no tools", () => {
 			const prompt = buildSystemPrompt({
 				selectedTools: [],
 				contextFiles: [],
@@ -22,7 +22,23 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 
-			expect(prompt).toContain("Show file paths clearly");
+			expect(prompt).toContain("Cite path:line when referring to code");
+		});
+	});
+
+	describe("trailing session facts", () => {
+		test("separates the date/cwd block from the guidelines list", () => {
+			// A single \n glued "Current date:" onto the last guideline, so it
+			// rendered as a malformed final bullet.
+			const prompt = buildSystemPrompt({
+				selectedTools: [],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("\n\nCurrent date: ");
+			expect(prompt).not.toMatch(/[^\n]\nCurrent date: /);
 		});
 	});
 
@@ -35,10 +51,15 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 
-			expect(prompt).toContain("do not restate the task");
+			// One merged concision bullet, not three — the old trio said the same
+			// thing three ways and was charged three times per turn.
+			expect(prompt).toContain("no restating the task or summarizing what you just did");
 			expect(prompt).toContain('"Let me know"');
+			expect(prompt).not.toContain("Be concise in your responses");
 			expect(prompt).toContain("Do not narrate routine tool calls or results");
 			expect(prompt).toContain("Match the surrounding code's conventions");
+			// Honesty about unverified or failed work is a default, not an add-on.
+			expect(prompt).toContain("say so plainly");
 		});
 	});
 
@@ -124,7 +145,7 @@ describe("buildSystemPrompt", () => {
 				skills: [],
 				cwd: process.cwd(),
 			});
-			expect(both).toContain("Between SearchCodebase and bash:");
+			expect(both).toContain("shell out to rg/find/ls only for");
 
 			const searchOnly = buildSystemPrompt({
 				selectedTools: ["SearchCodebase"],
@@ -133,7 +154,7 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 			expect(searchOnly).toContain("For code discovery use SearchCodebase");
-			expect(searchOnly).not.toContain("Between SearchCodebase and bash:");
+			expect(searchOnly).not.toContain("shell out to rg/find/ls only for");
 		});
 
 		test("falls back to the shell guideline when SearchCodebase is absent", () => {
@@ -144,7 +165,7 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 			expect(bashOnly).toContain("Use bash for file exploration");
-			expect(bashOnly).not.toContain("Between SearchCodebase and bash:");
+			expect(bashOnly).not.toContain("SearchCodebase");
 		});
 	});
 });

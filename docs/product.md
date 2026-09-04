@@ -26,14 +26,14 @@ HooCode is a terminal coding agent built around a single idea: **you stay in con
 Four modes, switched any time with `/mode <name>`:
 
 1. **ask** — read-only Q&A. The agent explains, never writes.
-2. **plan** — explores the repo and writes `.hoocode/plan.md` for you to review.
+2. **plan** — explores the repo and writes `.hoocode/plans/<session-id>.md` for you to review.
 3. **build** — executes the approved plan, gating each edit and command.
 4. **debug** — root-causes a failure without touching files.
 
 ```bash
 hoocode               # start in build mode
 hoocode /mode plan    # or draft a plan first
-hoocode /approve      # review .hoocode/plan.md, then execute it
+hoocode /approve      # review the plan, then execute it
 ```
 
 ### From plan to execution

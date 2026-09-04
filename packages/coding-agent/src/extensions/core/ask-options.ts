@@ -62,6 +62,7 @@ export function setupAskOptions(pi: ExtensionAPI): void {
 			"in an interactive options pane where the user selects an option (or types a custom answer). " +
 			"Use this when you genuinely need input to proceed and cannot reasonably decide yourself. " +
 			"Returns the user's answer for each question; if the user skips, no answers are returned.",
+		promptSnippet: "Put a decision to the user as selectable options",
 		parameters: askOptionsSchema,
 		async execute(
 			_toolCallId: string,

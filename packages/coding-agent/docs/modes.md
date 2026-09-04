@@ -1,10 +1,12 @@
 # Modes
 
 A mode swaps the system prompt hoocode runs under, so the same session can be
-steered between answering questions, designing a change, and making it. Modes
-change *instructions*, not permissions: the tool policy in
-[Settings](settings.md) is what actually blocks a write. A read-only mode tells
-the model not to edit; it does not stop a tool call on its own.
+steered between answering questions, designing a change, and making it.
+
+A mode prompt is instructions; what actually blocks a tool call is the mode's
+entry in `hoo-config.json`. The two are meant to agree, and the shipped defaults
+below make them agree for the read-only modes — but if you write a custom mode
+prompt that forbids something, add the matching policy or nothing enforces it.
 
 The active mode is `build` unless configured otherwise.
 
@@ -26,9 +28,33 @@ back to `build` clears the key rather than writing the default.
 | Mode | For | Tells the model to |
 |------|-----|--------------------|
 | `ask` | Questions about a codebase | Read, SearchCodebase, trace, and explain, citing paths and line numbers; decline edits and suggest `/mode build` |
-| `plan` | Designing a change before making it | Explore, ask clarifying questions, then write a plan with Goal / Files to modify / New files / Tests / Verification |
-| `build` | Implementing | One tool per turn, read before editing, show diffs, confirm destructive operations, run tests after each unit of work |
+| `plan` | Designing a change before making it | Explore, ask blocking questions with `ask_options`, then write a plan with Goal / Files to modify / New files / Tests / Verification |
+| `build` | Implementing | Read before editing, one verified change at a time, name what an irreversible operation destroys before running it, never commit or push unasked, run tests after each unit of work |
 | `debug` | Finding a root cause | Gather evidence, reproduce, trace the call path, state the root cause in one sentence, describe the fix without applying it |
+
+## What each mode actually permits
+
+The mode prompts above say what the model should do; these are the shipped
+defaults in `hoo-config.json` that decide what it *can* do. Edit them per mode,
+globally in `~/.hoocode/hoo-config.json` or per project in
+`./.hoocode/hoo-config.json`.
+
+| Mode | `auto_allow` (runs without a prompt) | Hard policy |
+|------|--------------------------------------|-------------|
+| `ask` | `read` | `denied_tools: [edit, write]` |
+| `plan` | `read`, `write` | `allowed_write_paths: [.hoocode/plans/*, .hoocode/plan.md]` |
+| `build` | `read` | none — every `bash`/`edit`/`write` is gated |
+| `debug` | `read`, `bash` | `denied_tools: [edit, write]` |
+
+- `denied_tools` is hard enforcement: it applies with or without a UI, so it
+  holds in `--print` runs too.
+- `allowed_write_paths` covers both `edit` and `write`, and is checked *before*
+  `auto_allow` — which is what confines plan mode to its plan file even though
+  `write` is auto-allowed there. It is currently only applied in interactive
+  sessions.
+- `bash` is not restricted by tool policy in any shipped mode. In `ask` and
+  `debug` the prompt is what keeps it read-only; if you need that enforced, set
+  `allowed_bash_commands` (a hard-enforced regex allowlist) for the mode.
 
 ## The planning workflow
 
