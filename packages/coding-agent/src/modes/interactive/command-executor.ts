@@ -32,7 +32,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import type { FooterComponent } from "./components/footer.js";
-import { formatKeyText, keyDisplayText } from "./components/keybinding-hints.js";
+import { formatKeyText, keyDisplayLabel, keyDisplayText } from "./components/keybinding-hints.js";
 import { renderSessionChip } from "./components/session-chip.js";
 import { theme } from "./theme/theme.js";
 
@@ -556,95 +556,128 @@ export class CommandExecutor {
 		const clear = keyDisplayText("app.clear");
 		const exit = keyDisplayText("app.exit");
 		const suspend = keyDisplayText("app.suspend");
-		const cycleThinkingLevel = keyDisplayText("app.thinking.cycle");
-		const cycleModelForward = keyDisplayText("app.model.cycleForward");
-		const selectModel = keyDisplayText("app.model.select");
+		const cycleThinkingLevel = keyDisplayLabel("app.thinking.cycleForward");
+		const cycleThinkingLevelBack = keyDisplayLabel("app.thinking.cycleBackward");
+		const cycleModelForward = keyDisplayLabel("app.model.cycleForward");
 		const expandTools = keyDisplayText("app.tools.expand");
 		const toggleThinking = keyDisplayText("app.thinking.toggle");
-		const cycleTaskView = keyDisplayText("app.tasks.cycleView");
+		const cycleTaskView = keyDisplayLabel("app.tasks.cycleForward");
+		const cycleTaskViewBack = keyDisplayLabel("app.tasks.cycleBackward");
+		const teamFocus = keyDisplayText("app.team.focus");
+		const teamNudge = keyDisplayText("app.team.nudge");
+		const teamAttach = keyDisplayText("app.team.attach");
 		const externalEditor = keyDisplayText("app.editor.external");
-		const cycleModelBackward = keyDisplayText("app.model.cycleBackward");
+		const cycleModelBackward = keyDisplayLabel("app.model.cycleBackward");
 		const followUp = keyDisplayText("app.message.followUp");
 		const dequeue = keyDisplayText("app.message.dequeue");
 		const pasteImage = keyDisplayText("app.clipboard.pasteImage");
-		const viewForward = keyDisplayText("app.view.cycleForward");
-		const viewBackward = keyDisplayText("app.view.cycleBackward");
+		const viewForward = keyDisplayLabel("app.view.cycleForward");
+		const viewBackward = keyDisplayLabel("app.view.cycleBackward");
 		const voice = keyDisplayText("app.input.voiceTranscribe");
 		const changeDirectory = keyDisplayText("app.session.changeDirectory");
 		const openSettings = keyDisplayText("app.settings.open");
 		const openHotkeys = keyDisplayText("app.hotkeys.open");
-		const cycleMode = keyDisplayText("app.mode.cycle");
-		const sessionTree = keyDisplayText("app.session.tree");
+		const cycleMode = keyDisplayLabel("app.mode.cycleForward");
+		const cycleModeBack = keyDisplayLabel("app.mode.cycleBackward");
 		const sessionResume = keyDisplayText("app.session.resume");
-		const cycleSessionColor = keyDisplayText("app.session.color.cycleForward");
-		const cycleSessionColorBackward = keyDisplayText("app.session.color.cycleBackward");
+		const cycleSessionColor = keyDisplayLabel("app.session.color.cycleForward");
+		const cycleSessionColorBackward = keyDisplayLabel("app.session.color.cycleBackward");
 
 		let hotkeys = `
-**Navigation**
-| Key | Action |
-|-----|--------|
-| \`${cursorUp}\` / \`${cursorDown}\` / \`${cursorLeft}\` / \`${cursorRight}\` | Move cursor / browse history (Up when empty) |
-| \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
-| \`${cursorLineStart}\` | Start of line |
-| \`${cursorLineEnd}\` | End of line |
-| \`${jumpForward}\` | Jump forward to character |
-| \`${jumpBackward}\` | Jump backward to character |
-| \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
+Grouped by what you are doing, not by what the key is. Five groups, none bigger
+than five — the size a person can actually hold. Two of them are free: **Flow**
+is what every terminal program already taught you, and every picker prints its
+own keys on its own hint line, so you read those instead of remembering them.
 
-**Editing**
+**Compose** — the message in your hands
 | Key | Action |
 |-----|--------|
 | \`${submit}\` | Send message |
 | \`${newLine}\` | New line${process.platform === "win32" ? " (Ctrl+Enter on Windows Terminal)" : ""} |
-| \`${deleteWordBackward}\` | Delete word backwards |
-| \`${deleteWordForward}\` | Delete word forwards |
-| \`${deleteToLineStart}\` | Delete to start of line |
-| \`${deleteToLineEnd}\` | Delete to end of line |
-| \`${yank}\` | Paste the most-recently-deleted text |
-| \`${yankPop}\` | Cycle through the deleted text after pasting |
-| \`${undo}\` | Undo |
+| \`${tab}\` | Path completion / accept autocomplete |
+| \`${externalEditor}\` | Edit the message in \`$VISUAL\` / \`$EDITOR\` |
+| \`${voice}\` | Speak instead of type |
+| \`${pasteImage}\` | Paste image from clipboard |
+| \`${followUp}\` | Queue a follow-up while the agent works |
+| \`${dequeue}\` | Bring every queued message back to the editor |
+| \`/\` \`!\` \`!!\` | Slash commands · run bash · run bash off the record |
 
-**Flow** — the keys you hit without thinking
+**Steer** — what the agent is before it runs
+The only three keys that change what happens next, and the only three that cost
+anything. Step forward on the first key, back on the second; the footer shows
+all three.
+
+| Key | Steps | Through |
+|-----|-------|---------|
+| \`${cycleMode}\` / \`${cycleModeBack}\` | Agent mode | ask → plan → build → debug (\`/mode\` picks one) |
+| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Model | your enabled models (\`/model\` picks one) |
+| \`${cycleThinkingLevel}\` / \`${cycleThinkingLevelBack}\` | Thinking level | off → … → high |
+
+**Read** — what you see of what it did
+Free and reversible, every one: nothing here touches the work, only the window
+onto it. Press again or add \`Shift\` and you are back where you were.
+
 | Key | Action |
 |-----|--------|
-| \`${tab}\` | Path completion / accept autocomplete |
+| \`${viewForward}\` / \`${viewBackward}\` | Step tool output: radar → peek → full |
+| \`${cycleTaskView}\` / \`${cycleTaskViewBack}\` | Step the task panel: tasks → subagents → teams |
+| \`${expandTools}\` | Jump to the full view and back, without moving the dial |
+| \`${toggleThinking}\` | Show or hide thinking blocks |
+| \`${teamFocus}\` | Focus the team roster — \`${teamNudge}\` nudges, \`${teamAttach}\` attaches, \`q\`/\`${interrupt}\` leaves (\`--team\`) |
+
+**Go** — sessions and places
+Each takes the screen and hands it back on \`${interrupt}\`, and each has a slash
+command that does the same thing.
+
+| Key | Action |
+|-----|--------|
+| \`${sessionResume}\` | Resume a session from history (\`/resume\`) |
+| \`${changeDirectory}\` | Change working directory (\`/cd\`) |
+| \`${cycleSessionColor}\` / \`${cycleSessionColorBackward}\` | Step the session chip's color (\`/color\` picks one) |
+| \`${openSettings}\` | Open settings (\`/settings\`) |
+| \`${openHotkeys}\` | Show this list (\`/hotkeys\`) |
+| \`/tree\` | Open the session tree |
+
+**Flow** — getting out, getting back
+| Key | Action |
+|-----|--------|
 | \`${interrupt}\` | Cancel autocomplete / abort streaming |
 | \`${clear}\` | Clear editor (first) / exit (second) |
-| \`${exit}\` | Exit (when editor is empty) |
+| \`${exit}\` | Exit when the editor is empty |
 | \`${suspend}\` | Suspend to background |
-| \`${followUp}\` | Queue follow-up message |
-| \`${dequeue}\` | Restore queued messages |
-| \`${pasteImage}\` | Paste image from clipboard |
-| \`/\` | Slash commands |
-| \`!\` | Run bash command |
-| \`!!\` | Run bash command (excluded from context) |
 
-**View** — what is on screen right now (\`Ctrl\`)
+### What the chord tells you
+
+\`Alt\`+letter **sets a value** and nothing takes the screen — you keep typing.
+Six of those are dials, and \`Shift\` always steps one back: **a**gent mode,
+**m**odel, **t**hinking, tool **o**utput, task **l**ist, session **c**olor.
+
+\`Ctrl\`+letter **acts on what is drawn right now** and shares its letter with the
+\`Alt\` key for the same subject. \`${viewForward}\` sets how much tool output there
+ever is, \`${expandTools}\` jumps to all of it and back; \`${cycleThinkingLevel}\`
+sets how much thinking there ever is, \`${toggleThinking}\` shows or hides what you
+have. Two subjects, two letters, four keys.
+
+The thinking level also answers to \`Shift+Tab\` — it is the one dial with no
+slash command, so that is the way to it on a terminal that does not send \`Alt\`.
+
+Inside a picker every \`Ctrl\` key still edits the query, so the picker's own verbs
+are on \`Alt\` and its hint line names them.
+
+### The editor
+Standard readline/emacs bindings — reference, not something to memorise.
+
 | Key | Action |
 |-----|--------|
-| \`${expandTools}\` | Jump to the full view and back |
-| \`${viewForward}\` / \`${viewBackward}\` | Cycle tool output: radar → peek → full |
-| \`${toggleThinking}\` | Toggle thinking block visibility |
-| \`${cycleTaskView}\` | Cycle task panel view (tasks → subagents → teams) |
-| \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Cycle models |
-| \`${cycleThinkingLevel}\` | Cycle thinking level |
-
-**Cockpit** — what the agent is, and where it works (\`Alt\`)
-| Key | Action |
-|-----|--------|
-| \`${cycleMode}\` | Cycle agent mode (ask → plan → build → debug) |
-| \`${selectModel}\` | Open model selector |
-| \`${changeDirectory}\` | Change working directory (\`/cd\`) |
-| \`${sessionTree}\` | Open session tree |
-| \`${sessionResume}\` | Resume a session from history |
-| \`${cycleSessionColor}\` / \`${cycleSessionColorBackward}\` | Cycle the session chip's color (\`/color\` to pick one) |
-| \`${openSettings}\` | Open settings |
-| \`${openHotkeys}\` | Show this list |
-| \`${externalEditor}\` | Edit message in external editor |
-| \`${voice}\` | Record voice and transcribe |
-
-Inside a picker, every \`Ctrl\` key still edits the query — the picker's own
-verbs are on \`Alt\`, and its hint line names them.
+| \`${cursorUp}\` / \`${cursorDown}\` / \`${cursorLeft}\` / \`${cursorRight}\` | Move cursor / browse history (Up when empty) |
+| \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
+| \`${cursorLineStart}\` / \`${cursorLineEnd}\` | Start / end of line |
+| \`${jumpForward}\` / \`${jumpBackward}\` | Jump forward / backward to character |
+| \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
+| \`${deleteWordBackward}\` / \`${deleteWordForward}\` | Delete word backwards / forwards |
+| \`${deleteToLineStart}\` / \`${deleteToLineEnd}\` | Delete to start / end of line |
+| \`${yank}\` / \`${yankPop}\` | Paste the most-recently-deleted text / cycle older ones |
+| \`${undo}\` | Undo |
 `;
 
 		// Add extension-registered shortcuts

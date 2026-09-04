@@ -98,7 +98,7 @@ import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
-import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+import { appKeyLabel, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { renderSessionChip } from "./components/session-chip.js";
 import { SessionColorSelectorComponent } from "./components/session-color-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
@@ -279,6 +279,8 @@ export class InteractiveMode {
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
+	/** Dial reverses already named this session; see showDialStep. */
+	private dialReverseTaught = new Set<AppKeybinding>();
 	private lastStatusText: Text | undefined = undefined;
 
 	// Streaming message tracking
@@ -582,6 +584,7 @@ export class InteractiveMode {
 			},
 			showSelector: (create) => this.showSelector(create),
 			showStatus: (message) => this.showStatus(message),
+			showDialStep: (backward, message) => this.showDialStep(backward, message),
 			showError: (message) => this.showError(message),
 			showWarning: (message) => this.showWarning(message),
 			showNotice: (title, body) => this.showNotice(title, body),
@@ -873,34 +876,59 @@ export class InteractiveMode {
 
 			// Build startup instructions using keybinding hint helpers
 			const hint = (keybinding: AppKeybinding, description: string) => keyHint(keybinding, description);
+			// A dial as one line in one shape: the key steps it forward, the same
+			// key with shift steps it back. The banner is where that rule is first
+			// read, and it is the rule covering the most-pressed keys in the app,
+			// so the dials are listed together rather than scattered by topic.
+			// appKeyLabel, not keyText: the thinking dial answers to shift+tab as well,
+			// and splicing that into the middle of `alt+t/shift+alt+t` would hide the
+			// one shape these six lines exist to show.
+			const dial = (forward: AppKeybinding, backward: AppKeybinding, subject: string) =>
+				rawKeyHint(`${appKeyLabel(forward)}/${appKeyLabel(backward)}`, `to step ${subject}`);
 
+			// Grouped the way the map itself is (see core/keybindings.ts): by what you
+			// are trying to do, not by what the widget is. A flat list of thirty
+			// hints is a wall nobody reads; five short groups with a heading each is
+			// something a person can skim once and place a key in later.
+			const group = (title: string) => theme.fg("dim", `\n${title}`);
 			const expandedInstructions = [
+				group("Compose — the message in your hands"),
+				hint("app.editor.external", "for external editor"),
+				hint("app.input.voiceTranscribe", "to speak instead of type"),
+				hint("app.clipboard.pasteImage", "to paste image"),
+				hint("app.message.followUp", "to queue follow-up"),
+				hint("app.message.dequeue", "to edit all queued messages"),
+				rawKeyHint("drop files", "to attach"),
+				rawKeyHint("/", "for commands"),
+				rawKeyHint("!", "to run bash"),
+				rawKeyHint("!!", "to run bash (no context)"),
+
+				group("Steer — what the agent is before it runs"),
+				dial("app.mode.cycleForward", "app.mode.cycleBackward", "agent mode (ask/plan/build/debug)"),
+				dial("app.model.cycleForward", "app.model.cycleBackward", "model — /model to pick one"),
+				dial("app.thinking.cycleForward", "app.thinking.cycleBackward", "thinking level"),
+
+				group("Read — what you see of what it did"),
+				dial("app.view.cycleForward", "app.view.cycleBackward", "tool output (radar/peek/full)"),
+				dial("app.tasks.cycleForward", "app.tasks.cycleBackward", "task panel view"),
+				hint("app.tools.expand", "to jump to full output and back"),
+				hint("app.thinking.toggle", "to show or hide thinking"),
+				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
+
+				group("Go — sessions and places"),
+				hint("app.session.resume", "to resume a session"),
+				hint("app.session.changeDirectory", "to change working directory"),
+				dial("app.session.color.cycleForward", "app.session.color.cycleBackward", "session colour"),
+				hint("app.settings.open", "for settings"),
+				hint("app.hotkeys.open", "for all shortcuts"),
+
+				group("Flow — getting out, getting back"),
 				hint("app.interrupt", "to interrupt"),
 				hint("app.clear", "to clear"),
 				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
 				hint("app.exit", "to exit (empty)"),
 				hint("app.suspend", "to suspend"),
 				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
-				hint("app.thinking.cycle", "to cycle thinking level"),
-				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
-				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to jump to full output and back"),
-				hint("app.view.cycleForward", "to cycle tool output (radar/peek/full)"),
-				hint("app.thinking.toggle", "to expand thinking"),
-				hint("app.tasks.cycleView", "to cycle task panel view"),
-				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
-				hint("app.mode.cycle", "to cycle agent mode"),
-				hint("app.session.changeDirectory", "to change working directory"),
-				hint("app.settings.open", "for settings"),
-				hint("app.hotkeys.open", "for all shortcuts"),
-				hint("app.editor.external", "for external editor"),
-				rawKeyHint("/", "for commands"),
-				rawKeyHint("!", "to run bash"),
-				rawKeyHint("!!", "to run bash (no context)"),
-				hint("app.message.followUp", "to queue follow-up"),
-				hint("app.message.dequeue", "to edit all queued messages"),
-				hint("app.clipboard.pasteImage", "to paste image"),
-				rawKeyHint("drop files", "to attach"),
 			].join("\n");
 			const onboarding = theme.fg(
 				"dim",
@@ -1756,7 +1784,8 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
-		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
+		this.defaultEditor.onAction("app.thinking.cycleForward", () => this.cycleThinkingLevel("forward"));
+		this.defaultEditor.onAction("app.thinking.cycleBackward", () => this.cycleThinkingLevel("backward"));
 		this.defaultEditor.onAction("app.model.cycleForward", () => this.modelController.cycleModel("forward"));
 		this.defaultEditor.onAction("app.model.cycleBackward", () => this.modelController.cycleModel("backward"));
 
@@ -1767,8 +1796,11 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
 		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
-		this.defaultEditor.onAction("app.tasks.cycleView", () => {
-			this.taskPanel.cycleView();
+		this.defaultEditor.onAction("app.tasks.cycleForward", () => {
+			this.taskPanel.cycleView("forward");
+		});
+		this.defaultEditor.onAction("app.tasks.cycleBackward", () => {
+			this.taskPanel.cycleView("backward");
 		});
 		this.defaultEditor.onAction("app.team.focus", () => this.teamFocus.enterFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
@@ -1789,7 +1821,8 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.session.color.cycleBackward", () => this.cycleSessionColor("backward"));
 		this.defaultEditor.onAction("app.settings.open", () => this.showSettingsSelector());
 		this.defaultEditor.onAction("app.hotkeys.open", () => this.commandExecutor.handleHotkeys());
-		this.defaultEditor.onAction("app.mode.cycle", () => void this.cycleAgentMode());
+		this.defaultEditor.onAction("app.mode.cycleForward", () => void this.cycleAgentMode("forward"));
+		this.defaultEditor.onAction("app.mode.cycleBackward", () => void this.cycleAgentMode("backward"));
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;
@@ -2595,6 +2628,29 @@ export class InteractiveMode {
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
 
+	/**
+	 * Report a dial step, and name the key that steps it back — once.
+	 *
+	 * The instant after someone moves a dial is the one moment they are primed to
+	 * learn its other half: they have just used one direction and can feel the
+	 * missing one. So the reverse rides along with the first step of each dial in
+	 * a session and never again. A hint that repeats forever stops being read,
+	 * and its cost falls entirely on the people who already know it.
+	 *
+	 * Only the three dials that announce their new value in the transcript come
+	 * through here. The other three announce themselves where they live — the
+	 * task panel prints its own key in its header, and the mode chip and view
+	 * glyph change in place in the footer.
+	 */
+	private showDialStep(backward: AppKeybinding, message: string): void {
+		if (this.dialReverseTaught.has(backward)) {
+			this.showStatus(message);
+			return;
+		}
+		this.dialReverseTaught.add(backward);
+		this.showStatus(theme.fg("dim", message) + theme.fg("halftone", `   ${keyText(backward)} steps back`));
+	}
+
 	private showStatus(message: string): void {
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
@@ -3030,14 +3086,14 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private cycleThinkingLevel(): void {
-		const newLevel = this.session.cycleThinkingLevel();
+	private cycleThinkingLevel(direction: "forward" | "backward"): void {
+		const newLevel = this.session.cycleThinkingLevel(direction);
 		if (newLevel === undefined) {
 			this.showStatus("Current model does not support thinking");
 		} else {
 			this.footer.invalidate();
 			this.updateEditorBorderColor();
-			this.showStatus(`Thinking level: ${newLevel}`);
+			this.showDialStep("app.thinking.cycleBackward", `Thinking level: ${newLevel}`);
 		}
 	}
 
@@ -3214,7 +3270,7 @@ export class InteractiveMode {
 	 * is missing (a `--light` run strips the extension), the key says so instead
 	 * of guessing.
 	 */
-	private async cycleAgentMode(): Promise<void> {
+	private async cycleAgentMode(direction: "forward" | "backward"): Promise<void> {
 		const command = this.session.extensionRunner.getCommand("mode");
 		if (!command) {
 			this.showWarning("Modes are not available in this session");
@@ -3229,8 +3285,12 @@ export class InteractiveMode {
 		}
 
 		const current = this.footerDataProvider.getActiveMode();
+		// indexOf is -1 when the active mode is not in the list; stepping from
+		// there lands on the first mode going forward and the last going back,
+		// which is the useful answer either way.
 		const index = modes.indexOf(current);
-		const next = modes[(index + 1) % modes.length];
+		const step = direction === "forward" ? 1 : -1;
+		const next = modes[(index + step + modes.length) % modes.length];
 		await this.session.prompt(`/mode ${next}`);
 	}
 
@@ -3248,7 +3308,7 @@ export class InteractiveMode {
 		const slot = cycleSessionColorSlot(this.sessionManager.getSessionColorSlot(), direction);
 		this.session.setSessionColor(slot);
 		const name = sessionColorName(slot);
-		this.showStatus(`Session color: ${name ?? slot}`);
+		this.showDialStep("app.session.color.cycleBackward", `Session color: ${name ?? slot}`);
 	}
 
 	private toggleThinkingBlockVisibility(): void {

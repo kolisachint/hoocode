@@ -44,6 +44,17 @@ export class Input implements Component, Focusable {
 		this.cursor = Math.min(this.cursor, value.length);
 	}
 
+	/**
+	 * Cursor offset into the value.
+	 *
+	 * Exposed for hosts that put their own meaning on the arrow keys: knowing
+	 * whether the cursor still has text to move through is what lets them hand
+	 * the key to the text first and only act on it at the ends.
+	 */
+	getCursor(): number {
+		return this.cursor;
+	}
+
 	handleInput(data: string): void {
 		// Handle bracketed paste mode
 		// Start of paste: \x1b[200~

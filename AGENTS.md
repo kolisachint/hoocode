@@ -12,6 +12,27 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Keybinding families**: the map is grouped by intention, not mechanism —
+  Compose, Steer, Read, Go, Flow, plus overlays that print their own keys. Five
+  learned groups, none over five subjects, because that is what a person holds.
+  Declaration order in `core/keybindings.ts` *is* the grouping and is also what
+  `keybindings.json` is written in; the banner, `/hotkeys` and
+  `docs/keybindings.md` follow the same order. The layout test enforces all of it.
+- **Keybinding dials**: the six on-screen ordered-set controls are all
+  `alt+<letter>` forward and `shift+alt+<letter>` back, the letter naming the
+  dial — **a**gent mode, **m**odel, **t**hinking, tool **o**utput, task
+  **l**edger, session **c**olour. Nothing else steps a dial and no dial is
+  anywhere else. `ctrl+o` and `ctrl+t` pair by letter with their dials and act
+  on what is drawn right now. `test/keybinding-layout.test.ts` holds the rule;
+  a new dial goes in its `DIALS` list.
+- **Keybinding rings**: `ctrl` is the view, `alt` is the cockpit, `shift`
+  reverses, and inside a picker every `ctrl` key belongs to the query line —
+  so a picker's verbs are all on `alt`. A bare `shift+<letter>` is banned
+  outright: a legacy terminal sends it as the plain uppercase letter, which no
+  scope with a query line can tell from typing. Every id must appear in a scope
+  in `test/keybinding-layout.test.ts`; defaults and the ring story live in
+  `core/keybindings.ts` and `docs/keybindings.md`.
+
 - **TUI vertical rhythm**: one blank line separates two blocks, and it is
   never paid for twice. A block's separator is the `Spacer(1)` before it (so
   the block itself takes `paddingY: 0`), a `DynamicBorder` needs no blank

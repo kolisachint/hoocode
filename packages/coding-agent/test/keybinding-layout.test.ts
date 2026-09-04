@@ -10,7 +10,9 @@ import { KEYBINDINGS, KeybindingsManager } from "../src/core/keybindings.js";
  * ids in the *same* scope sharing a key is a bug: whichever handler is
  * registered first wins silently, and `/hotkeys` then documents a lie.
  *
- * Update these lists when a binding is added, moved between scopes, or removed.
+ * Every id must appear in a scope or in DELIBERATELY_UNSCOPED — a binding that
+ * is in neither is one nothing here checks. Update these lists when a binding
+ * is added, moved between scopes, or removed.
  */
 
 /** Live while the prompt editor has focus — the main editor plus every global action. */
@@ -45,10 +47,11 @@ const GLOBAL_SCOPE = [
 	// meaning (exit only on an empty editor, cancel only with a selection), not
 	// two handlers racing for the same keystroke.
 	//
-	// app actions wired in InteractiveMode.setupEditorActions
+	// app actions wired in InteractiveMode's editor action registration
 	"app.interrupt",
 	"app.suspend",
-	"app.thinking.cycle",
+	"app.thinking.cycleForward",
+	"app.thinking.cycleBackward",
 	"app.model.cycleForward",
 	"app.model.cycleBackward",
 	"app.model.select",
@@ -56,7 +59,8 @@ const GLOBAL_SCOPE = [
 	"app.view.cycleForward",
 	"app.view.cycleBackward",
 	"app.thinking.toggle",
-	"app.tasks.cycleView",
+	"app.tasks.cycleForward",
+	"app.tasks.cycleBackward",
 	"app.team.focus",
 	"app.editor.external",
 	"app.input.voiceTranscribe",
@@ -72,7 +76,8 @@ const GLOBAL_SCOPE = [
 	"app.session.color.cycleBackward",
 	"app.settings.open",
 	"app.hotkeys.open",
-	"app.mode.cycle",
+	"app.mode.cycleForward",
+	"app.mode.cycleBackward",
 ] as const;
 
 /** The session picker: a query line plus its own verbs. */
@@ -116,6 +121,34 @@ const TREE_SCOPE = [
 	"app.tree.filter.all",
 	"app.tree.filter.cycleForward",
 	"app.tree.filter.cycleBackward",
+	"app.tree.editLabel",
+	"app.tree.toggleLabelTimestamp",
+	"tui.select.confirm",
+	"tui.select.cancel",
+	"tui.select.pageUp",
+	"tui.select.pageDown",
+	"tui.editor.cursorLeft",
+	"tui.editor.cursorRight",
+	"tui.editor.deleteCharBackward",
+] as const;
+
+/** The task panel with the team roster focused: plain letters, no query line. */
+const TEAM_FOCUS_SCOPE = [
+	"tui.select.up",
+	"tui.select.down",
+	"tui.select.cancel",
+	"app.team.nudge",
+	"app.team.attach",
+] as const;
+
+/** The options pane the agent raises to ask the user a question. */
+const OPTIONS_SCOPE = [
+	"tui.select.up",
+	"tui.select.down",
+	"tui.select.confirm",
+	"tui.select.cancel",
+	"app.options.next",
+	"app.options.back",
 ] as const;
 
 const SCOPES: Array<[string, readonly string[]]> = [
@@ -123,7 +156,20 @@ const SCOPES: Array<[string, readonly string[]]> = [
 	["session picker", SESSION_PICKER_SCOPE],
 	["models picker", MODELS_PICKER_SCOPE],
 	["session tree", TREE_SCOPE],
+	["team focus", TEAM_FOCUS_SCOPE],
+	["options pane", OPTIONS_SCOPE],
 ];
+
+/**
+ * Ids no scope lists, each because it shares a key with another id on purpose.
+ *
+ * These are one key with a state-dependent meaning, not two handlers racing:
+ * `app.exit` fires on ctrl+d only when the editor is empty and
+ * `tui.editor.deleteCharForward` otherwise; `app.clear` takes ctrl+c unless
+ * `tui.input.copy` has a selection to copy. Listing either half in the global
+ * scope would report a collision that users never experience.
+ */
+const DELIBERATELY_UNSCOPED = ["tui.editor.deleteCharForward", "tui.input.copy", "app.exit", "app.clear"] as const;
 
 function collisionsWithin(ids: readonly string[]): string[] {
 	const manager = new KeybindingsManager();
@@ -184,6 +230,26 @@ describe("keybinding layout", () => {
 		expect(legacyCollisionsWithin(ids)).toEqual([]);
 	});
 
+	it("checks every binding in some scope", () => {
+		const scoped = new Set(SCOPES.flatMap(([, ids]) => ids));
+		const unchecked = Object.keys(KEYBINDINGS).filter(
+			(id) => !scoped.has(id) && !DELIBERATELY_UNSCOPED.includes(id as never),
+		);
+		expect(unchecked).toEqual([]);
+	});
+
+	/**
+	 * A key a terminal without the Kitty protocol can actually send.
+	 *
+	 * `shift+<letter>` is the odd one out and is deliberately not counted here:
+	 * legacy terminals do send it, as the plain uppercase letter, which makes it
+	 * reachable but indistinguishable from typing. It is banned outright below
+	 * rather than treated as a fallback.
+	 */
+	function reachableWithoutKitty(key: string): boolean {
+		return !key.startsWith("shift+") || key === "shift+tab";
+	}
+
 	it("gives every action at least one key a non-Kitty terminal can send", () => {
 		const manager = new KeybindingsManager();
 		const unreachable = Object.keys(KEYBINDINGS).filter((id) => {
@@ -191,7 +257,7 @@ describe("keybinding layout", () => {
 			// Unbound by default is a choice, not a gap; a shift-modified key is a
 			// Kitty-only convenience and only counts as a gap when it is the only key.
 			if (keys.length === 0) return false;
-			return !keys.some((key) => !key.startsWith("shift+") || key === "shift+tab");
+			return !keys.some(reachableWithoutKitty);
 		});
 		// The reverse halves of the cycles: each pairs with an unshifted key that
 		// does work everywhere, so losing them costs an extra press, not an action.
@@ -199,13 +265,29 @@ describe("keybinding layout", () => {
 		// already warns about ("extended-keys is off"), not a new gap.
 		expect(unreachable).toEqual([
 			"tui.input.newLine",
+			"app.mode.cycleBackward",
 			"app.model.cycleBackward",
+			"app.thinking.cycleBackward",
 			"app.view.cycleBackward",
+			"app.tasks.cycleBackward",
 			"app.session.color.cycleBackward",
-			"app.tree.editLabel",
-			"app.tree.toggleLabelTimestamp",
 			"app.tree.filter.cycleBackward",
 		]);
+	});
+
+	it("binds no verb to a bare shift+letter", () => {
+		// Without the Kitty protocol shift+<letter> arrives as the uppercase
+		// letter and nothing more, so any scope with a query line cannot tell the
+		// verb from someone typing. The tree's label keys were exactly that bug:
+		// searching it for "TODO" opened the label editor.
+		const manager = new KeybindingsManager();
+		const shiftLetters: string[] = [];
+		for (const id of Object.keys(KEYBINDINGS)) {
+			for (const key of manager.getKeys(id as never)) {
+				if (/^shift\+[a-z]$/.test(key)) shiftLetters.push(`${id}: ${key}`);
+			}
+		}
+		expect(shiftLetters).toEqual([]);
 	});
 
 	/**
@@ -227,22 +309,28 @@ describe("keybinding layout", () => {
 		"tui.editor.jumpBackward",
 		"tui.editor.deleteWordForward",
 		"tui.editor.yankPop",
-		"app.model.select",
+		"app.thinking.cycleBackward",
+		"app.model.cycleForward",
+		"app.model.cycleBackward",
 		"app.view.cycleForward",
 		"app.view.cycleBackward",
+		"app.tasks.cycleForward",
+		"app.tasks.cycleBackward",
 		"app.team.focus",
 		"app.editor.external",
 		"app.message.followUp",
 		"app.message.dequeue",
 		"app.input.voiceTranscribe",
-		"app.session.tree",
 		"app.session.resume",
 		"app.session.changeDirectory",
 		"app.session.color.cycleForward",
 		"app.session.color.cycleBackward",
 		"app.settings.open",
 		"app.hotkeys.open",
-		"app.mode.cycle",
+		"app.mode.cycleForward",
+		"app.mode.cycleBackward",
+		"app.tree.editLabel",
+		"app.tree.toggleLabelTimestamp",
 		"app.session.togglePath",
 		"app.session.toggleSort",
 		"app.session.rename",
@@ -318,6 +406,142 @@ describe("keybinding layout", () => {
 			manager.getKeys(id as never).some((key) => /^ctrl\+[a-z]$/.test(key)),
 		);
 		expect(ctrlLetterVerbs).toEqual([]);
+	});
+
+	/**
+	 * The dials: the ordered-set controls whose state is painted on screen, and
+	 * the most-pressed keys in the app. They carry one rule between them — step
+	 * forward on the key, back with one more modifier held — and this is what
+	 * holds it. A new dial belongs in this list; a dial that loses its reverse,
+	 * or grows a reverse that is not its forward key plus a modifier, is the
+	 * drift that made the set unlearnable the last time.
+	 */
+	const DIALS: Array<{ name: string; forward: string; backward: string }> = [
+		{ name: "agent mode", forward: "app.mode.cycleForward", backward: "app.mode.cycleBackward" },
+		{ name: "model", forward: "app.model.cycleForward", backward: "app.model.cycleBackward" },
+		{ name: "thinking level", forward: "app.thinking.cycleForward", backward: "app.thinking.cycleBackward" },
+		{ name: "tool output", forward: "app.view.cycleForward", backward: "app.view.cycleBackward" },
+		{
+			name: "session colour",
+			forward: "app.session.color.cycleForward",
+			backward: "app.session.color.cycleBackward",
+		},
+		{ name: "task ledger", forward: "app.tasks.cycleForward", backward: "app.tasks.cycleBackward" },
+	];
+
+	it("puts every dial on alt+<letter>, back on shift+alt+<letter>", () => {
+		const manager = new KeybindingsManager();
+		const wrong: string[] = [];
+		for (const { name, forward, backward } of DIALS) {
+			// The taught key is the first one; a dial may carry a second for
+			// terminals that do not send alt (see the thinking level's shift+tab).
+			const forwardKey = manager.getKeys(forward as never)[0];
+			const backwardKey = manager.getKeys(backward as never)[0];
+			if (!/^alt\+[a-z]$/.test(forwardKey ?? "")) {
+				wrong.push(`${name}: forward is ${forwardKey}, expected alt+<letter>`);
+				continue;
+			}
+			if (backwardKey !== `shift+${forwardKey}`) {
+				wrong.push(`${name}: ${forwardKey} -> ${backwardKey}, expected shift+${forwardKey}`);
+			}
+		}
+		expect(wrong).toEqual([]);
+	});
+
+	it("gives each dial a letter no other dial claims", () => {
+		const manager = new KeybindingsManager();
+		const letters = DIALS.map(({ forward }) => manager.getKeys(forward as never)[0]);
+		expect(letters).toEqual([...new Set(letters)]);
+	});
+
+	it("leaves every dial reachable on a terminal that does not send alt", () => {
+		// Each dial is either steppable without alt, or has a slash command that
+		// reaches the same setting. Losing both would strand the setting on
+		// Terminal.app, which composes characters instead of sending alt.
+		const withSlashCommand = new Set(["agent mode", "model", "session colour"]);
+		const manager = new KeybindingsManager();
+		const stranded = DIALS.filter(({ name, forward }) => {
+			if (withSlashCommand.has(name)) return false;
+			return manager.getKeys(forward as never).every((key) => key.split("+").includes("alt"));
+		}).map((d) => d.name);
+		// Both are about what is drawn, not what the agent does. ctrl+o still
+		// reaches the tool dial's far stop and back without alt, and the task
+		// ledger's lens only regroups rows that are all on screen either way.
+		expect(stranded).toEqual(["tool output", "task ledger"]);
+	});
+
+	it("leaves no dial unbound", () => {
+		const manager = new KeybindingsManager();
+		const unbound = DIALS.filter(({ forward }) => manager.getKeys(forward as never).length === 0).map((d) => d.name);
+		expect(unbound).toEqual([]);
+	});
+
+	it("keeps the dials off each other's keys", () => {
+		const ids = DIALS.flatMap(({ forward, backward }) => (backward ? [forward, backward] : [forward]));
+		expect(collisionsWithin(ids)).toEqual([]);
+		expect(legacyCollisionsWithin(ids)).toEqual([]);
+	});
+
+	/**
+	 * The families, in declaration order.
+	 *
+	 * Grouping is by intention — the five things a person is ever doing here —
+	 * because "it cycles" is a fact about the widget and not what anyone is
+	 * thinking when they reach for the key. Sixty bindings is not holdable; five
+	 * groups of at most five is.
+	 *
+	 * This is also the order `orderKeybindingsConfig` writes `keybindings.json`
+	 * in, so a user's own config file is grouped the same way the source is.
+	 */
+	const FAMILIES: Array<[string, RegExp]> = [
+		["Flow", /^app\.(interrupt|clear|exit|suspend)$/],
+		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.pasteImage|message\.)/],
+		["Steer", /^app\.(mode|model)\.|^app\.thinking\.cycle/],
+		["Read", /^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|team\.focus)/],
+		["Go", /^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)/],
+		["Overlays", /^app\.(team\.(nudge|attach)|options\.|session\.(toggle|rename|delete)|models\.|tree\.)/],
+	];
+
+	it("puts every app binding in exactly one family", () => {
+		const misfiled: string[] = [];
+		for (const id of Object.keys(KEYBINDINGS)) {
+			if (!id.startsWith("app.")) continue;
+			const hits = FAMILIES.filter(([, pattern]) => pattern.test(id)).map(([name]) => name);
+			if (hits.length !== 1) misfiled.push(`${id}: ${hits.length === 0 ? "no family" : hits.join(" + ")}`);
+		}
+		expect(misfiled).toEqual([]);
+	});
+
+	it("declares the families in order, contiguously", () => {
+		// The source order is the grouping, and it is what a user's keybindings.json
+		// is written in. A binding declared away from its family would scatter both.
+		const seen: string[] = [];
+		for (const id of Object.keys(KEYBINDINGS)) {
+			if (!id.startsWith("app.")) continue;
+			const family = FAMILIES.find(([, pattern]) => pattern.test(id))?.[0] ?? "?";
+			if (seen[seen.length - 1] !== family) seen.push(family);
+		}
+		expect(seen).toEqual(FAMILIES.map(([name]) => name));
+	});
+
+	it("keeps every learned family small enough to hold", () => {
+		// Cowan's 4±1: past about five a group stops being one chunk and becomes a
+		// list to search. What counts is subjects with a key on them — an action
+		// that ships unbound costs nothing to remember, and the two dial halves of
+		// one subject are one thing. Overlays are exempt entirely: they are read
+		// off each surface's own hint line, never recalled.
+		const manager = new KeybindingsManager();
+		const oversized = FAMILIES.filter(([name]) => name !== "Overlays")
+			.map(([name, pattern]) => {
+				const subjects = new Set(
+					Object.keys(KEYBINDINGS)
+						.filter((id) => pattern.test(id) && manager.getKeys(id as never).length > 0)
+						.map((id) => id.replace(/\.cycle(Forward|Backward)$/, "")),
+				);
+				return [name, subjects.size] as const;
+			})
+			.filter(([, size]) => size > 5);
+		expect(oversized).toEqual([]);
 	});
 
 	it("gives every action a description for /hotkeys", () => {
