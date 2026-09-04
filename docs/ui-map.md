@@ -101,6 +101,22 @@ Rendered in order as the conversation scrolls:
   splash's. Live MCP servers come from `core/mcp-status.ts`, which
   the hoo-core `mcp-loader` fills on connect. `../startup-checks.ts` -
   update/tmux/changelog startup probes.
+- **One surface for startup, a session swap, and `/reload`.** All three rebuild the
+  same things from disk, so all three repaint from the same list in
+  `interactive-mode.ts`: `applyRuntimeSettings` (keybindings, footer, editor,
+  cursor) before extensions bind, `applySessionTheme` (registered themes, the
+  settings theme, the banner) after they bind, and `finishRuntimeSettings`
+  (provider count, editor border colour, session identity) last. The transcript
+  side is `resetTranscriptView` plus one `showLoadedResources` call per path -
+  never two. Two hand-kept copies of that list is what let `/reload` keep a
+  footer promising auto-compaction after the setting was turned off, and let the
+  banner keep a retired theme's colours (a `Text` holds its string with the
+  escapes already in it, so invalidating is not repainting). The theme is applied
+  after binding on purpose: an extension's `resources_discover` handler can
+  contribute the directory the theme name resolves in. Guarded by
+  `test/suite/session-surface-sync.test.ts`, which drives every chain of `/new`
+  and `/reload` through a real mode against a capturing terminal
+  (`test/suite/interactive-surface-harness.ts`) and compares rendered frames.
 - `task-panel.ts` - the task ledger shown above the prompt (status icons, usage
   stamps, and the warning cue). Owns `formatTaskLine`. Has three views cycled with
   `app.tasks.cycleView` (ctrl+n; the cycle and the header switcher skip lenses

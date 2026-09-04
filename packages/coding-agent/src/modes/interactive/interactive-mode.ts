@@ -18,6 +18,7 @@ import type {
 	KeyId,
 	MarkdownTheme,
 	SlashCommand,
+	Terminal,
 } from "@kolisachint/hoocode-tui";
 import {
 	Box,
@@ -39,6 +40,7 @@ import {
 } from "@kolisachint/hoocode-tui";
 import { spawnSync } from "child_process";
 import { APP_NAME, APP_TITLE, VERSION } from "../../config.js";
+import { TASK_TOOL_NAME } from "../../core/agent-frontmatter.js";
 import { setTerminalOwnedByTui } from "../../core/agent-log.js";
 import { loadAgentRegistry } from "../../core/agent-registry.js";
 import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.js";
@@ -182,6 +184,11 @@ export interface InteractiveModeOptions {
 	initialMessages?: string[];
 	/** Force verbose startup (overrides quietStartup setting) */
 	verbose?: boolean;
+	/**
+	 * Terminal the TUI draws to. Defaults to the real process terminal; tests
+	 * pass a capturing one to mount the whole mode headlessly and screenshot it.
+	 */
+	terminal?: Terminal;
 }
 
 // How often the streaming assistant message re-parses its markdown. Deltas can
@@ -479,7 +486,7 @@ export class InteractiveMode {
 			await this.rebindCurrentSession();
 		});
 		this.version = VERSION;
-		this.ui = new TUI(new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
+		this.ui = new TUI(options.terminal ?? new ProcessTerminal(), this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
 		this.headerContainer = new Container();
 		this.chatContainer = new Container();
@@ -929,7 +936,7 @@ export class InteractiveMode {
 		this.isInitialized = true;
 
 		// Initialize extensions first so resources are shown before messages
-		await this.rebindCurrentSession();
+		await this.rebindCurrentSession({ renderResources: true });
 
 		// Render initial messages AFTER showing loaded resources
 		this.renderInitialMessages();
@@ -1251,28 +1258,29 @@ export class InteractiveMode {
 			},
 		});
 
-		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
 		this.setupAutocompleteProvider();
-
-		const extensionRunner = this.session.extensionRunner;
-		this.setupExtensionShortcuts(extensionRunner);
-		// The startup path draws the listing here, because it renders messages
-		// without clearing. A *rebind* (/new, /resume, /fork) clears the transcript
-		// straight afterwards, so `renderCurrentSessionState` draws it again — this
-		// call is the one startup keeps.
-		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
-		this.showStartupNoticesIfNeeded();
+		this.setupExtensionShortcuts(this.session.extensionRunner);
 	}
 
+	/**
+	 * Push the current settings and session onto the chrome: keybindings, footer,
+	 * editor, cursor.
+	 *
+	 * Startup, a session swap (/new, /resume, /fork, /cd) and /reload all rebuild
+	 * the same things from disk, so they must all repaint the same way. They used
+	 * to do it with two hand-kept copies of this list, and the /reload copy was
+	 * missing pieces — a `compaction.enabled` edit left the footer still
+	 * promising auto-compaction. One list, called from both paths; the theme is
+	 * the second half, in `applySessionTheme`.
+	 */
 	private applyRuntimeSettings(): void {
+		// Keybindings first: what follows is drawn with the hints they name.
+		this.keybindings.reload();
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footer.setToolOutputView(this.toolOutputView);
-		// The startup banner names the cwd, which `/cd` changes under it.
-		if (this.builtInHeader instanceof ExpandableText) {
-			this.builtInHeader.refresh();
-		}
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
+		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes(TASK_TOOL_NAME));
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
 		this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
@@ -1289,15 +1297,65 @@ export class InteractiveMode {
 		}
 	}
 
-	private async rebindCurrentSession(): Promise<void> {
+	/**
+	 * Load the theme the settings name, and rebuild what holds colour baked in.
+	 *
+	 * Runs after extensions are bound (and after `session.reload()`), because a
+	 * `resources_discover` handler can contribute the very theme directory the
+	 * name resolves in — resolving it earlier would fall back to dark for anyone
+	 * whose theme ships with an extension.
+	 *
+	 * The banner is rebuilt rather than invalidated: a `Text` holds its string
+	 * with the escapes already in it, so invalidating only drops the line cache
+	 * and the old theme's colours come straight back. It also names the working
+	 * directory, which `/cd` moves.
+	 */
+	private applySessionTheme(): void {
+		setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
+		const themeName = this.settingsManager.getTheme();
+		if (themeName) {
+			const themeResult = setTheme(themeName, true);
+			if (!themeResult.success) {
+				this.showError(`Failed to load theme "${themeName}": ${themeResult.error}\nFell back to dark theme.`);
+			}
+		}
+		const activeHeader = this.chrome.customHeader ?? this.builtInHeader;
+		if (isExpandable(activeHeader)) {
+			activeHeader.setExpanded(this.getStartupExpansionState());
+		}
+	}
+
+	/**
+	 * The half of the chrome refresh that has to wait for extensions to bind:
+	 * they can swap the editor out from under us, and the provider count is only
+	 * final once their `registerProvider` calls have run.
+	 */
+	private async finishRuntimeSettings(): Promise<void> {
+		await this.modelController.updateAvailableProviderCount();
+		this.updateEditorBorderColor();
+		this.refreshSessionIdentity();
+	}
+
+	/**
+	 * Rebind the mode to whatever session the runtime now holds.
+	 *
+	 * `renderResources` belongs to startup alone: it renders into a transcript it
+	 * never clears, so the listing has to be drawn here. Every other caller
+	 * clears the transcript straight afterwards and draws the listing itself
+	 * through `renderCurrentSessionState`.
+	 */
+	private async rebindCurrentSession(options?: { renderResources?: boolean }): Promise<void> {
 		this.unsubscribe?.();
 		this.unsubscribe = undefined;
 		this.applyRuntimeSettings();
 		await this.bindCurrentSessionExtensions();
+		this.applySessionTheme();
+		if (options?.renderResources) {
+			this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
+			this.showStartupNoticesIfNeeded();
+		}
 		this.subscribeToAgent();
-		await this.modelController.updateAvailableProviderCount();
-		this.updateEditorBorderColor();
-		this.refreshSessionIdentity();
+		await this.finishRuntimeSettings();
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -1309,26 +1367,36 @@ export class InteractiveMode {
 	}
 
 	/**
-	 * Reset the transcript to whatever the (possibly just-swapped) session holds.
-	 *
-	 * Every caller — /new, /resume, /fork — reaches here *after* the runtime has
-	 * rebound extensions, and rebinding is what renders the loaded-resource
-	 * listing. Clearing the chat therefore wiped the listing a moment after it was
-	 * drawn, which is why /reload showed skills, agents and plugins and starting a
-	 * new session showed nothing. Re-rendering it here is what makes the surface
-	 * common: one call site, so a session change of any kind reports the same
-	 * capabilities /reload does.
+	 * Drop every view-layer reference into the transcript that is about to be
+	 * rebuilt. Shared by the session swaps and by /reload: a component that
+	 * survives the clear is detached, so anything still pointing at it (the open
+	 * chain the next tool call would join, the block the unfold key peels back)
+	 * would be writing to a frame nobody renders.
 	 */
-	private renderCurrentSessionState(): void {
+	private resetTranscriptView(): void {
 		this.chatContainer.clear();
 		this.openChain = undefined;
 		this.latestToolBlock = undefined;
 		this.latestChain = undefined;
-		this.pendingMessagesContainer.clear();
-		this.messageQueue.resetCompactionQueue();
 		this.streamingComponent = undefined;
 		this.streamingMessage = undefined;
 		this.pendingTools.clear();
+	}
+
+	/**
+	 * Reset the transcript to whatever the just-swapped session holds.
+	 *
+	 * Every caller — /new, /resume, /fork, /cd, /import — reaches here after the
+	 * runtime has rebound extensions. Drawing the listing here rather than in the
+	 * rebind is what makes the surface common: one call site, so a session change
+	 * of any kind reports the same capabilities /reload does, and neither path
+	 * draws the listing twice.
+	 */
+	private renderCurrentSessionState(): void {
+		this.resetTranscriptView();
+		// Queues belong to the session that is going away, not to the new one.
+		this.pendingMessagesContainer.clear();
+		this.messageQueue.resetCompactionQueue();
 		this.showLoadedResources({ force: false, showDiagnosticsWhenQuiet: true });
 		this.renderInitialMessages();
 	}
@@ -4138,40 +4206,25 @@ export class InteractiveMode {
 
 		try {
 			await this.session.reload();
-			this.keybindings.reload();
-			const activeHeader = this.chrome.customHeader ?? this.builtInHeader;
-			if (isExpandable(activeHeader)) {
-				activeHeader.setExpanded(this.toolOutputExpanded);
-			}
-			setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
-			this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
-			const themeName = this.settingsManager.getTheme();
-			const themeResult = themeName ? setTheme(themeName, true) : { success: true };
-			if (!themeResult.success) {
-				this.showError(`Failed to load theme "${themeName}": ${themeResult.error}\nFell back to dark theme.`);
-			}
-			const editorBorder = this.settingsManager.getEditorBorder();
-			const editorPaddingX = this.settingsManager.getEditorPaddingX();
-			const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
-			this.defaultEditor.setBorder(editorBorder);
-			this.defaultEditor.setPaddingX(editorPaddingX);
-			this.defaultEditor.setAutocompleteMaxVisible(autocompleteMaxVisible);
-			if (this.editor !== this.defaultEditor) {
-				this.editor.setBorder?.(editorBorder);
-				this.editor.setPaddingX?.(editorPaddingX);
-				this.editor.setAutocompleteMaxVisible?.(autocompleteMaxVisible);
-			}
-			this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
-			this.ui.setClearOnShrink(this.settingsManager.getClearOnShrink());
+			// The same chrome refresh a session swap runs, in the same order, so the
+			// two paths cannot report different capabilities or settings.
+			this.applyRuntimeSettings();
+			this.applySessionTheme();
 			this.setupAutocompleteProvider();
-			const runner = this.session.extensionRunner;
-			this.setupExtensionShortcuts(runner);
-			this.rebuildChatFromMessages();
+			this.setupExtensionShortcuts(this.session.extensionRunner);
+			// The session itself is not replaced, so the transcript is replayed
+			// rather than rebuilt from a new one — but the view state pointing into
+			// it is just as stale, and gets the same reset.
+			this.resetTranscriptView();
+			this.renderSessionContext(this.sessionManager.buildSessionContext());
 			dismissReloadBox(this.editor as Component);
+			// Below the replayed transcript, not above it: /reload is asked for to
+			// see what just loaded, and that answer belongs where you are looking.
 			this.showLoadedResources({
 				force: false,
 				showDiagnosticsWhenQuiet: true,
 			});
+			await this.finishRuntimeSettings();
 			const modelsJsonError = this.session.modelRegistry.getError();
 			if (modelsJsonError) {
 				this.showError(`models.json error: ${modelsJsonError}`);
