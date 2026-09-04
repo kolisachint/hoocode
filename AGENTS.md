@@ -12,6 +12,12 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Keybinding families**: the map is grouped by intention, not mechanism —
+  Compose, Steer, Read, Go, Flow, plus overlays that print their own keys. Five
+  learned groups, none over five subjects, because that is what a person holds.
+  Declaration order in `core/keybindings.ts` *is* the grouping and is also what
+  `keybindings.json` is written in; the banner, `/hotkeys` and
+  `docs/keybindings.md` follow the same order. The layout test enforces all of it.
 - **Keybinding dials**: the six on-screen ordered-set controls are all
   `alt+<letter>` forward and `shift+alt+<letter>` back, the letter naming the
   dial — **a**gent mode, **m**odel, **t**hinking, tool **o**utput, task

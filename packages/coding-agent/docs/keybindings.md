@@ -8,14 +8,40 @@ Older configs using pre-namespaced ids such as `cursorUp` or `expandTools` are m
 
 After editing `keybindings.json`, run `/reload` in hoocode to apply the changes without restarting the session.
 
-## The dials
+## How this is grouped
 
-Six things on screen are dials — an ordered set of stops you step through, with
-the current stop painted where you can see it. They are the most-pressed keys in
-the app, and they follow one rule:
+There are around sixty bindings. Nobody holds sixty of anything, and the obvious
+answer — sort them by mechanism, so everything that cycles sits together — makes
+a list that is tidy on the page and useless at the keyboard. "It cycles" is a
+fact about the widget. It is not what you are thinking when you reach for a key.
 
-> **`Alt+<letter>` steps a dial forward, `Shift+Alt+<letter>` steps it back. The
-> letter names the dial. The slash command picks a stop outright.**
+So the grouping is by **intention**: the five things you are ever doing here, in
+the order the loop runs.
+
+| Group | What it is | Keys |
+|---|---|---|
+| **Compose** | the message in your hands | `Alt+E` `Alt+R` `Ctrl+V` `Alt+Enter` `Alt+↑` |
+| **Steer** | what the agent is before it runs | `Alt+A` `Alt+M` `Alt+T` |
+| **Read** | what you see of what it did | `Alt+O` `Alt+L` `Ctrl+O` `Ctrl+T` |
+| **Go** | sessions and places | `Alt+H` `Alt+W` `Alt+C` `Alt+S` `Alt+K` |
+| **Flow** | getting out, getting back | `Esc` `Ctrl+C` `Ctrl+D` `Ctrl+Z` |
+
+Five groups, none bigger than five, which is about the size a person can hold at
+once. Two of them cost nothing to learn: **Flow** is the set every terminal
+program already taught you, and the pickers print their own keys on their own
+hint lines — read, never remembered. That leaves three groups to genuinely know.
+
+The declaration order in `core/keybindings.ts` is this grouping, and it is not
+cosmetic: your `keybindings.json` is written in the same order, so the file you
+open to rebind something is grouped the way this page is.
+
+## What the chord tells you
+
+The modifier says what kind of thing will happen; the letter says to what.
+
+**`Alt`+letter sets a value.** Nothing takes the screen, nothing loses focus, you
+keep typing. Six of these are dials — an ordered set of stops with the current
+one painted where you can see it — and `Shift+Alt`+letter always steps back:
 
 | Dial | Where you see it | Forward | Back | Steps through |
 |---|---|---|---|---|
@@ -23,50 +49,43 @@ the app, and they follow one rule:
 | **M**odel | footer, bottom right | `Alt+M` | `Shift+Alt+M` | your enabled models |
 | **T**hinking level | footer, bottom right | `Alt+T` | `Shift+Alt+T` | off → … → high |
 | Tool **o**utput | footer, top right | `Alt+O` | `Shift+Alt+O` | radar → peek → full |
-| Task **l**edger | task panel header | `Alt+L` | `Shift+Alt+L` | tasks → subagents → teams |
+| Task **l**ist | task panel header | `Alt+L` | `Shift+Alt+L` | tasks → subagents → teams |
 | Session **c**olor | the session chip | `Alt+C` | `Shift+Alt+C` | six chip slots |
 
-One modifier, one shape, six letters that each name their dial. Nothing else in
-the app steps a dial and no dial is anywhere else, which is what makes that
-table worth learning once instead of looking up.
+Reversibility is the point, not symmetry. A control you can undo invites you to
+try it; a one-way control makes you stop and think first, which is the wrong tax
+on a key you press all day. The first time you step each dial in a session, the
+status line names the key that steps it back — once, at the moment you are
+primed to learn it, and never again after that.
 
-`/mode`, `/model` and `/color` are the pickers behind three of them: **the key
-steps, the command chooses.** That is why `app.model.select` ships unbound —
-`Alt+M` stepping the model is worth more than `Alt+M` opening a list of them —
-and why `app.session.tree` gave `Alt+T` to the thinking dial and kept `/tree`.
-
-The thinking level is the one dial with a second key: `Shift+Tab` still steps it.
-Every other dial is either reachable through a slash command or is about what is
-drawn rather than what the agent does, so on a terminal that does not send `Alt`
-(see below) this is the one setting that would otherwise be stranded.
-
-## The rings
-
-Which ring a key is in is decided by its modifier, so the modifier tells you
-what kind of thing the key does before you remember the key itself.
-
-- **`Ctrl` is the view** — what is on screen right now: expand a tool block,
-  show thinking, step the task panel. Pressed many times a minute, so they
-  never need a second modifier.
-- **`Alt` is the cockpit** — what the agent *is* and where it works: mode,
-  model, working directory, settings, sessions. Pressed a few times a session.
-- **`Shift` reverses** whatever the unshifted key does. `Shift+Alt+O` cycles
-  the tool view backward, `Shift+Alt+U` re-folds what `Alt+U` opened.
-- **Inside a picker, `Ctrl` belongs to the query you are typing** — `Ctrl+A` is
-  start of line, `Ctrl+U` kills the line, `Ctrl+W` kills a word. A picker's own
-  verbs are therefore all on `Alt`, mnemonic to that picker. The picker
-  captures keys while it is open, so a verb may reuse a letter the global set
-  already has.
-
-Where the same letter appears on both rings it is the same subject seen twice —
-`Ctrl` acts on what is already drawn, `Alt` on how much is ever drawn:
+**`Ctrl`+letter acts on what is drawn right now**, and shares its letter with the
+`Alt` key for the same subject:
 
 - `Alt+O` sets how much tool output there ever is and saves where it lands;
   `Ctrl+O` jumps to all of it and back, leaving the dial where it was.
 - `Alt+T` sets how much thinking there ever is; `Ctrl+T` shows or hides the
   thinking you have.
 
-Two consequences worth knowing before rebinding:
+Two subjects, two letters, four keys — half what four unrelated chords cost.
+
+**A slash command picks a stop outright.** `/mode`, `/model`, `/color`, `/tree`.
+The key steps, the command chooses; that is why `app.model.select` and
+`app.session.tree` ship unbound, each having given its letter to a dial.
+
+**Inside a picker, `Ctrl` belongs to the query you are typing** — `Ctrl+A` is
+start of line, `Ctrl+U` kills the line, `Ctrl+W` kills a word. A picker's verbs
+are therefore all on `Alt`, mnemonic to that picker. The picker captures keys
+while it is open, so a verb may reuse a letter the global set already has.
+
+One letter in the whole set names nothing: `Alt+N`, the team roster. It survives
+because the task panel prints it in its own header — read off the screen rather
+than remembered, which is the fallback for anything that cannot earn a mnemonic.
+
+The thinking level is the one dial with a second key: `Shift+Tab` still steps it.
+It is the only dial with no slash command, so on a terminal that does not send
+`Alt` that is the way to it.
+
+Two consequences worth knowing before rebinding:Two consequences worth knowing before rebinding:
 
 - No default takes a key the editor or the terminal already owns —
   `Ctrl+A/E/B/F/K/U/W/Y/D/L/R/G`, `Ctrl+S` (XOFF), `Ctrl+M` (enter), `Ctrl+I`
@@ -99,22 +118,26 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 
 ## All Actions
 
-### Flow — the keys you hit without thinking
+Listed in the five families, in the order `core/keybindings.ts` declares them —
+which is also the order your `keybindings.json` is written in.
+
+### Compose — the message in your hands
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
 | `tui.input.submit` | `enter` | Send message |
 | `tui.input.newLine` | `shift+enter` | Insert new line |
 | `tui.input.tab` | `tab` | Path completion / accept autocomplete |
-| `app.interrupt` | `escape` | Cancel autocomplete / abort streaming |
-| `app.clear` | `ctrl+c` | Clear editor (press twice to exit) |
-| `app.exit` | `ctrl+d` | Exit when the editor is empty |
-| `app.suspend` | `ctrl+z` (none on Windows) | Suspend to background |
-| `app.message.followUp` | `alt+enter` | Queue a follow-up message |
-| `app.message.dequeue` | `alt+up` | Restore queued messages to the editor |
+| `app.editor.external` | `alt+e` | Edit the message in `$VISUAL` / `$EDITOR` |
+| `app.input.voiceTranscribe` | `alt+r` | Speak instead of type |
 | `app.clipboard.pasteImage` | `ctrl+v` (`alt+v` on Windows) | Paste image from clipboard |
+| `app.message.followUp` | `alt+enter` | Queue a follow-up while the agent works |
+| `app.message.dequeue` | `alt+up` | Bring every queued message back to the editor |
 
-### The dials — step forward, `shift` steps back
+### Steer — what the agent is before it runs
+
+The only three that change what happens next, and the only three that cost
+anything. The footer shows all three.
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
@@ -122,45 +145,65 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.mode.cycleBackward` | `shift+alt+a` | Step agent mode backward |
 | `app.model.cycleForward` | `alt+m` | Step to the next model |
 | `app.model.cycleBackward` | `shift+alt+m` | Step to the previous model |
+| `app.model.select` | *(none)* | Open the model selector (`/model`) |
 | `app.thinking.cycleForward` | `alt+t`, `shift+tab` | Step thinking level: off → … → high |
 | `app.thinking.cycleBackward` | `shift+alt+t` | Step thinking level backward |
+
+### Read — what you see of what it did
+
+Free and reversible, every one: nothing here touches the work, only the window
+onto it.
+
+| Keybinding id | Default | Description |
+|--------|---------|-------------|
 | `app.view.cycleForward` | `alt+o` | Step tool output: radar → peek → full |
 | `app.view.cycleBackward` | `shift+alt+o` | Step tool output backward |
-| `app.session.color.cycleForward` | `alt+c` | Step the session chip's color |
-| `app.session.color.cycleBackward` | `shift+alt+c` | Step the session chip's color backward |
+| `app.tools.expand` | `ctrl+o` | Jump to the full view and back, without moving the dial |
+| `app.thinking.toggle` | `ctrl+t` | Show or hide thinking blocks |
 | `app.tasks.cycleForward` | `alt+l` | Step task panel view: tasks → subagents → teams |
 | `app.tasks.cycleBackward` | `shift+alt+l` | Step task panel view backward |
-
-### View — what is on screen right now (`Ctrl`)
-
-| Keybinding id | Default | Description |
-|--------|---------|-------------|
-| `app.tools.expand` | `ctrl+o` | Jump to the full tool-output view and back, without moving the dial |
-| `app.thinking.toggle` | `ctrl+t` | Show or hide thinking blocks |
 | `app.team.focus` | `alt+n` | Focus the team roster (`--team`) |
 
-### Cockpit — what the agent is, and where it works (`Alt`)
+### Go — sessions and places
+
+Each takes the screen and hands it back on `escape`, and each has a slash command
+that does the same thing.
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.model.select` | *(none)* | Open the model selector (`/model`) |
-| `app.session.changeDirectory` | `alt+w` | Change working directory (`/cd`) |
+| `app.session.resume` | `alt+h` | Resume a session from history (`/resume`) |
 | `app.session.tree` | *(none)* | Open the session tree (`/tree`) |
-| `app.session.resume` | `alt+h` | Resume a session from history |
-| `app.settings.open` | `alt+s` | Open settings |
-| `app.hotkeys.open` | `alt+k` | Show the shortcut list (`/hotkeys`) |
-| `app.editor.external` | `alt+e` | Edit the message in `$VISUAL` / `$EDITOR` |
-| `app.input.voiceTranscribe` | `alt+r` | Record voice and transcribe into the editor |
 | `app.session.new` | *(none)* | Start a new session (`/new`) |
 | `app.session.fork` | *(none)* | Fork the current session (`/fork`) |
+| `app.session.changeDirectory` | `alt+w` | Change working directory (`/cd`) |
+| `app.session.color.cycleForward` | `alt+c` | Step the session chip's color |
+| `app.session.color.cycleBackward` | `shift+alt+c` | Step the session chip's color backward |
+| `app.settings.open` | `alt+s` | Open settings (`/settings`) |
+| `app.hotkeys.open` | `alt+k` | Show the shortcut list (`/hotkeys`) |
 
-`app.session.new` and `app.session.fork` ship unbound: one replaces the
-transcript and the other needs a message picked out of it, so neither wants to
-be one stray chord away. `app.model.select` and `app.session.tree` are unbound
-for a different reason — each gave its letter to the dial that shares it, and
-`/model` and `/tree` open them. All four are bindable by hand.
+`app.session.new` and `app.session.fork` ship unbound because one replaces the
+transcript and the other needs a message picked out of it, so neither wants to be
+one stray chord away. `app.model.select` and `app.session.tree` are unbound for a
+different reason — each gave its letter to the dial that shares it. All four are
+bindable by hand.
 
-### Prompt editor
+### Flow — getting out, getting back
+
+Every terminal program already bound these, so they cost nothing to learn and
+never move: whatever else is misconfigured, you can still stop the agent, clear
+the line, and leave.
+
+| Keybinding id | Default | Description |
+|--------|---------|-------------|
+| `app.interrupt` | `escape` | Cancel autocomplete / abort streaming |
+| `app.clear` | `ctrl+c` | Clear editor (press twice to exit) |
+| `app.exit` | `ctrl+d` | Exit when the editor is empty |
+| `app.suspend` | `ctrl+z` (none on Windows) | Suspend to background |
+
+### The editor
+
+Standard readline/emacs bindings. Reference, not something to memorise — which
+is why they are not one of the five groups.
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
@@ -192,7 +235,13 @@ state-dependent meaning, not a conflict: `ctrl+d` exits only on an empty
 editor and deletes a character otherwise, and `ctrl+c` copies when there is a
 selection and clears the editor when there is not.
 
-### Lists and pickers, everywhere
+### Overlays — live only while their surface is open
+
+Never a memory burden: each surface prints its own keys on its own hint line, so
+these are recognised, not recalled. They may reuse a letter the global set
+already has, because the surface captures keys while it is up.
+
+#### Lists and pickers, everywhere
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
@@ -203,7 +252,7 @@ selection and clears the editor when there is not.
 | `tui.select.confirm` | `enter` | Confirm selection |
 | `tui.select.cancel` | `escape`, `ctrl+c` | Cancel selection |
 
-### Session picker (`/resume`)
+#### Session picker (`/resume`)
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
@@ -214,7 +263,7 @@ selection and clears the editor when there is not.
 | `app.session.delete` | `alt+x` | Delete the selected session |
 | `app.session.deleteNoninvasive` | `ctrl+backspace` | Delete, but only while the query is empty |
 
-### Session tree (`/tree`)
+#### Session tree (`/tree`)
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
@@ -234,7 +283,7 @@ The five lenses are numbered rather than lettered because they are an ordered
 set: `alt+1`-`alt+5` needs no mnemonic. Everything else the tree types goes
 into its search query.
 
-### Scoped models picker (`/models`)
+#### Scoped models picker (`/models`)
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
@@ -249,7 +298,7 @@ into its search query.
 `alt+p` arrives as `ESC-p`, which the parser also reads as `alt+up` — this
 picker's reorder key.
 
-### Team roster (`--team`)
+#### Team roster (`--team`)
 
 Live only while the task panel holds focus, which is why they are plain
 letters: you are never typing there.
@@ -259,7 +308,7 @@ letters: you are never typing there.
 | `app.team.nudge` | `n` | Nudge the selected role |
 | `app.team.attach` | `a` | Attach to the selected role |
 
-### Options pane
+#### Options pane
 
 The pane the agent raises to ask you a question.
 

@@ -4,6 +4,52 @@
 
 ### Changed
 
+- **The keyboard map is grouped by intention, not by mechanism.** Sorting the
+  bindings by what the widget is — everything that cycles together — made a list
+  that was tidy on the page and useless at the keyboard, because "it cycles" is
+  not what anyone is thinking when they reach for a key. Sixty bindings is not a
+  thing anyone holds; five groups of at most five is.
+
+  The groups are the five things you are ever doing here, in the order the loop
+  runs:
+
+  | group | what it is | keys |
+  | --- | --- | --- |
+  | **Compose** | the message in your hands | `alt+e` `alt+r` `ctrl+v` `alt+enter` `alt+↑` |
+  | **Steer** | what the agent is before it runs | `alt+a` `alt+m` `alt+t` |
+  | **Read** | what you see of what it did | `alt+o` `alt+l` `ctrl+o` `ctrl+t` |
+  | **Go** | sessions and places | `alt+h` `alt+w` `alt+c` `alt+s` `alt+k` |
+  | **Flow** | getting out, getting back | `esc` `ctrl+c` `ctrl+d` `ctrl+z` |
+
+  Two of them cost nothing: **Flow** is what every terminal program already
+  taught you, and the overlays — pickers, the tree, the options pane — print
+  their own keys on their own hint lines, so they are read rather than recalled.
+  That leaves three groups to genuinely know.
+
+  No key moved. The grouping is now the source's own declaration order, which
+  matters beyond the file: `orderKeybindingsConfig` writes `keybindings.json` in
+  that order, so the file you open to rebind something is grouped the same way.
+  The startup banner, `/hotkeys` and `docs/keybindings.md` all lead with the same
+  five groups in the same order, instead of three different organisations.
+
+- **A dial names the key that steps it back, once.** The instant after you move a
+  dial is the one moment you are primed to learn its other half — you have used
+  one direction and can feel the missing one — so the reverse rides along with
+  the first step of each dial in a session and never again. A hint that repeats
+  forever stops being read, and its cost falls on the people who already know it.
+
+- **The task panel advertises the roster key.** It already printed `alt+l cycle`
+  in its header; on the teams lens it now prints the focus key too. That is what
+  lets `alt+n` stay: it is the one letter in the set that names nothing, and it
+  survives on the fallback every unmemorable key needs — being read off the
+  screen instead of remembered.
+
+- The layout test now holds the grouping as well as the keys: every binding
+  belongs to exactly one family, families are declared contiguously and in order,
+  and no learned family exceeds five subjects that carry a key. That last one
+  caught **Go** at eight before the count was corrected to ignore actions that
+  ship unbound — an action with no key costs no memory.
+
 - **Every dial is now `alt+<letter>`, and `shift+alt+<letter>` steps it back.**
   The thinking level came off `shift+tab` and the task ledger off `ctrl+n`, so the
   six most-pressed keys in the app share one modifier, one shape, and six letters

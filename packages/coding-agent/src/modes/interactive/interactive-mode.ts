@@ -279,6 +279,8 @@ export class InteractiveMode {
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
+	/** Dial reverses already named this session; see showDialStep. */
+	private dialReverseTaught = new Set<AppKeybinding>();
 	private lastStatusText: Text | undefined = undefined;
 
 	// Streaming message tracking
@@ -582,6 +584,7 @@ export class InteractiveMode {
 			},
 			showSelector: (create) => this.showSelector(create),
 			showStatus: (message) => this.showStatus(message),
+			showDialStep: (backward, message) => this.showDialStep(backward, message),
 			showError: (message) => this.showError(message),
 			showWarning: (message) => this.showWarning(message),
 			showNotice: (title, body) => this.showNotice(title, body),
@@ -880,41 +883,52 @@ export class InteractiveMode {
 			// appKeyLabel, not keyText: the thinking dial answers to shift+tab as well,
 			// and splicing that into the middle of `alt+t/shift+alt+t` would hide the
 			// one shape these six lines exist to show.
-			const dial = (forward: AppKeybinding, backward: AppKeybinding, description: string) =>
-				rawKeyHint(`${appKeyLabel(forward)}/${appKeyLabel(backward)}`, description);
+			const dial = (forward: AppKeybinding, backward: AppKeybinding, subject: string) =>
+				rawKeyHint(`${appKeyLabel(forward)}/${appKeyLabel(backward)}`, `to step ${subject}`);
 
+			// Grouped the way the map itself is (see core/keybindings.ts): by what you
+			// are trying to do, not by what the widget is. A flat list of thirty
+			// hints is a wall nobody reads; five short groups with a heading each is
+			// something a person can skim once and place a key in later.
+			const group = (title: string) => theme.fg("dim", `\n${title}`);
 			const expandedInstructions = [
+				group("Compose — the message in your hands"),
+				hint("app.editor.external", "for external editor"),
+				hint("app.input.voiceTranscribe", "to speak instead of type"),
+				hint("app.clipboard.pasteImage", "to paste image"),
+				hint("app.message.followUp", "to queue follow-up"),
+				hint("app.message.dequeue", "to edit all queued messages"),
+				rawKeyHint("drop files", "to attach"),
+				rawKeyHint("/", "for commands"),
+				rawKeyHint("!", "to run bash"),
+				rawKeyHint("!!", "to run bash (no context)"),
+
+				group("Steer — what the agent is before it runs"),
+				dial("app.mode.cycleForward", "app.mode.cycleBackward", "agent mode (ask/plan/build/debug)"),
+				dial("app.model.cycleForward", "app.model.cycleBackward", "model — /model to pick one"),
+				dial("app.thinking.cycleForward", "app.thinking.cycleBackward", "thinking level"),
+
+				group("Read — what you see of what it did"),
+				dial("app.view.cycleForward", "app.view.cycleBackward", "tool output (radar/peek/full)"),
+				dial("app.tasks.cycleForward", "app.tasks.cycleBackward", "task panel view"),
+				hint("app.tools.expand", "to jump to full output and back"),
+				hint("app.thinking.toggle", "to show or hide thinking"),
+				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
+
+				group("Go — sessions and places"),
+				hint("app.session.resume", "to resume a session"),
+				hint("app.session.changeDirectory", "to change working directory"),
+				dial("app.session.color.cycleForward", "app.session.color.cycleBackward", "session colour"),
+				hint("app.settings.open", "for settings"),
+				hint("app.hotkeys.open", "for all shortcuts"),
+
+				group("Flow — getting out, getting back"),
 				hint("app.interrupt", "to interrupt"),
 				hint("app.clear", "to clear"),
 				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
 				hint("app.exit", "to exit (empty)"),
 				hint("app.suspend", "to suspend"),
 				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
-				// The dials — step forward, shift steps back.
-				dial("app.mode.cycleForward", "app.mode.cycleBackward", "to step agent mode (ask/plan/build/debug)"),
-				dial("app.model.cycleForward", "app.model.cycleBackward", "to step model (/model to pick one)"),
-				dial("app.thinking.cycleForward", "app.thinking.cycleBackward", "to step thinking level"),
-				dial("app.view.cycleForward", "app.view.cycleBackward", "to step tool output (radar/peek/full)"),
-				dial("app.tasks.cycleForward", "app.tasks.cycleBackward", "to step task panel view"),
-				dial(
-					"app.session.color.cycleForward",
-					"app.session.color.cycleBackward",
-					"to step the session colour (/color to pick one)",
-				),
-				hint("app.tools.expand", "to jump to full output and back"),
-				hint("app.thinking.toggle", "to expand thinking"),
-				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
-				hint("app.session.changeDirectory", "to change working directory"),
-				hint("app.settings.open", "for settings"),
-				hint("app.hotkeys.open", "for all shortcuts"),
-				hint("app.editor.external", "for external editor"),
-				rawKeyHint("/", "for commands"),
-				rawKeyHint("!", "to run bash"),
-				rawKeyHint("!!", "to run bash (no context)"),
-				hint("app.message.followUp", "to queue follow-up"),
-				hint("app.message.dequeue", "to edit all queued messages"),
-				hint("app.clipboard.pasteImage", "to paste image"),
-				rawKeyHint("drop files", "to attach"),
 			].join("\n");
 			const onboarding = theme.fg(
 				"dim",
@@ -2614,6 +2628,29 @@ export class InteractiveMode {
 	 * we update the previous status line instead of appending new ones to avoid log spam.
 	 */
 
+	/**
+	 * Report a dial step, and name the key that steps it back — once.
+	 *
+	 * The instant after someone moves a dial is the one moment they are primed to
+	 * learn its other half: they have just used one direction and can feel the
+	 * missing one. So the reverse rides along with the first step of each dial in
+	 * a session and never again. A hint that repeats forever stops being read,
+	 * and its cost falls entirely on the people who already know it.
+	 *
+	 * Only the three dials that announce their new value in the transcript come
+	 * through here. The other three announce themselves where they live — the
+	 * task panel prints its own key in its header, and the mode chip and view
+	 * glyph change in place in the footer.
+	 */
+	private showDialStep(backward: AppKeybinding, message: string): void {
+		if (this.dialReverseTaught.has(backward)) {
+			this.showStatus(message);
+			return;
+		}
+		this.dialReverseTaught.add(backward);
+		this.showStatus(theme.fg("dim", message) + theme.fg("halftone", `   ${keyText(backward)} steps back`));
+	}
+
 	private showStatus(message: string): void {
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
@@ -3056,7 +3093,7 @@ export class InteractiveMode {
 		} else {
 			this.footer.invalidate();
 			this.updateEditorBorderColor();
-			this.showStatus(`Thinking level: ${newLevel}`);
+			this.showDialStep("app.thinking.cycleBackward", `Thinking level: ${newLevel}`);
 		}
 	}
 
@@ -3271,7 +3308,7 @@ export class InteractiveMode {
 		const slot = cycleSessionColorSlot(this.sessionManager.getSessionColorSlot(), direction);
 		this.session.setSessionColor(slot);
 		const name = sessionColorName(slot);
-		this.showStatus(`Session color: ${name ?? slot}`);
+		this.showDialStep("app.session.color.cycleBackward", `Session color: ${name ?? slot}`);
 	}
 
 	private toggleThinkingBlockVisibility(): void {

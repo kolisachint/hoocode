@@ -11,6 +11,7 @@
 import type { Model } from "@kolisachint/hoocode-ai";
 import type { Component, TUI } from "@kolisachint/hoocode-tui";
 import type { AgentSession } from "../../core/agent-session.js";
+import type { AppKeybinding } from "../../core/keybindings.js";
 import { findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.js";
 import { ModelSelectorComponent } from "./components/model-selector.js";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.js";
@@ -32,6 +33,8 @@ export interface ModelControllerDeps {
 	get session(): AgentSession;
 	showSelector(create: (done: () => void) => { component: Component; focus: Component }): void;
 	showStatus(message: string): void;
+	/** Report a dial step, naming its reverse key the first time. */
+	showDialStep(backward: AppKeybinding, message: string): void;
 	showError(errorMessage: string): void;
 	showWarning(warningMessage: string): void;
 	/** A filled notice, for warnings that cost money if ignored. */
@@ -125,7 +128,10 @@ export class ModelController {
 				this.deps.updateEditorBorderColor();
 				const thinkingStr =
 					result.model.reasoning && result.thinkingLevel !== "off" ? ` (thinking: ${result.thinkingLevel})` : "";
-				this.deps.showStatus(`Switched to ${result.model.name || result.model.id}${thinkingStr}`);
+				this.deps.showDialStep(
+					direction === "forward" ? "app.model.cycleBackward" : "app.model.cycleForward",
+					`Switched to ${result.model.name || result.model.id}${thinkingStr}`,
+				);
 				void this.maybeWarnAboutAnthropicSubscriptionAuth(result.model);
 			}
 		} catch (error) {

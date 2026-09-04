@@ -215,6 +215,7 @@ function formatLensTabs(
 	view: TaskPanelView,
 	tabViews: readonly TaskPanelView[],
 	showCycleHint: boolean,
+	showFocusHint: boolean,
 ): string {
 	const tabs = tabViews.map((v) => {
 		const lensTasks = filterTasksForLens(tasks, agents, v);
@@ -236,15 +237,24 @@ function formatLensTabs(
 		styled: tabs.map((t) => t.styled).join(""),
 	};
 
-	let hintPlain = "";
-	let hintStyled = "";
+	// The pane names its own keys, which is the whole reason they can be letters
+	// nobody could guess: alt+l is the task *list* and alt+n names nothing at all,
+	// and neither has to be recalled while the header is printing them. The focus
+	// hint only appears where the key does something — the teams lens, unfocused.
+	const parts: Array<{ plain: string; styled: string }> = [];
 	if (showCycleHint) {
 		const key = appKeyLabel("app.tasks.cycleForward");
-		hintPlain = `${formatKeyText(key)} cycle`;
-		hintStyled = rawKeyHint(key, "cycle");
+		parts.push({ plain: `${formatKeyText(key)} cycle`, styled: rawKeyHint(key, "cycle") });
 	}
+	if (showFocusHint) {
+		const key = appKeyLabel("app.team.focus");
+		parts.push({ plain: `${formatKeyText(key)} focus`, styled: rawKeyHint(key, "focus") });
+	}
+	const sep = "  ";
+	const hintPlain = parts.map((p) => p.plain).join(sep);
+	const hintStyled = parts.map((p) => p.styled).join(theme.fg("muted", sep));
 
-	// Narrowing order: drop the cycle hint, then the unselected tabs. Each tab
+	// Narrowing order: drop the hints, then the unselected tabs. Each tab
 	// closes its own background, so a variant is never cut mid-escape; only the
 	// final unstyled fallback truncates. This inverts the old priority, where the
 	// switcher was the FIRST thing dropped — the pane's only navigation affordance
@@ -914,7 +924,10 @@ export class TaskPanelComponent implements Component, Focusable {
 		if (available.length >= 2 || view === "teams") {
 			const tabViews = available.includes(view) ? available : [...available, view];
 			const showCycleHint = available.length >= 2 && !this.focused;
-			lines.push(gutter + formatLensTabs(tasks, allAgents, inner, view, tabViews, showCycleHint));
+			// alt+n only does something on the teams lens, so it is only advertised
+			// there — a key hint for a key that would do nothing teaches the wrong thing.
+			const showFocusHint = view === "teams" && !this.focused && this.roleAgents().length > 0;
+			lines.push(gutter + formatLensTabs(tasks, allAgents, inner, view, tabViews, showCycleHint, showFocusHint));
 		}
 
 		if (view === "flat") {

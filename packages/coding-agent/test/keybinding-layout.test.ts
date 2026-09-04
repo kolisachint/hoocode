@@ -265,12 +265,12 @@ describe("keybinding layout", () => {
 		// already warns about ("extended-keys is off"), not a new gap.
 		expect(unreachable).toEqual([
 			"tui.input.newLine",
-			"app.thinking.cycleBackward",
+			"app.mode.cycleBackward",
 			"app.model.cycleBackward",
+			"app.thinking.cycleBackward",
 			"app.view.cycleBackward",
 			"app.tasks.cycleBackward",
 			"app.session.color.cycleBackward",
-			"app.mode.cycleBackward",
 			"app.tree.filter.cycleBackward",
 		]);
 	});
@@ -480,6 +480,68 @@ describe("keybinding layout", () => {
 		const ids = DIALS.flatMap(({ forward, backward }) => (backward ? [forward, backward] : [forward]));
 		expect(collisionsWithin(ids)).toEqual([]);
 		expect(legacyCollisionsWithin(ids)).toEqual([]);
+	});
+
+	/**
+	 * The families, in declaration order.
+	 *
+	 * Grouping is by intention — the five things a person is ever doing here —
+	 * because "it cycles" is a fact about the widget and not what anyone is
+	 * thinking when they reach for the key. Sixty bindings is not holdable; five
+	 * groups of at most five is.
+	 *
+	 * This is also the order `orderKeybindingsConfig` writes `keybindings.json`
+	 * in, so a user's own config file is grouped the same way the source is.
+	 */
+	const FAMILIES: Array<[string, RegExp]> = [
+		["Flow", /^app\.(interrupt|clear|exit|suspend)$/],
+		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.pasteImage|message\.)/],
+		["Steer", /^app\.(mode|model)\.|^app\.thinking\.cycle/],
+		["Read", /^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|team\.focus)/],
+		["Go", /^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)/],
+		["Overlays", /^app\.(team\.(nudge|attach)|options\.|session\.(toggle|rename|delete)|models\.|tree\.)/],
+	];
+
+	it("puts every app binding in exactly one family", () => {
+		const misfiled: string[] = [];
+		for (const id of Object.keys(KEYBINDINGS)) {
+			if (!id.startsWith("app.")) continue;
+			const hits = FAMILIES.filter(([, pattern]) => pattern.test(id)).map(([name]) => name);
+			if (hits.length !== 1) misfiled.push(`${id}: ${hits.length === 0 ? "no family" : hits.join(" + ")}`);
+		}
+		expect(misfiled).toEqual([]);
+	});
+
+	it("declares the families in order, contiguously", () => {
+		// The source order is the grouping, and it is what a user's keybindings.json
+		// is written in. A binding declared away from its family would scatter both.
+		const seen: string[] = [];
+		for (const id of Object.keys(KEYBINDINGS)) {
+			if (!id.startsWith("app.")) continue;
+			const family = FAMILIES.find(([, pattern]) => pattern.test(id))?.[0] ?? "?";
+			if (seen[seen.length - 1] !== family) seen.push(family);
+		}
+		expect(seen).toEqual(FAMILIES.map(([name]) => name));
+	});
+
+	it("keeps every learned family small enough to hold", () => {
+		// Cowan's 4±1: past about five a group stops being one chunk and becomes a
+		// list to search. What counts is subjects with a key on them — an action
+		// that ships unbound costs nothing to remember, and the two dial halves of
+		// one subject are one thing. Overlays are exempt entirely: they are read
+		// off each surface's own hint line, never recalled.
+		const manager = new KeybindingsManager();
+		const oversized = FAMILIES.filter(([name]) => name !== "Overlays")
+			.map(([name, pattern]) => {
+				const subjects = new Set(
+					Object.keys(KEYBINDINGS)
+						.filter((id) => pattern.test(id) && manager.getKeys(id as never).length > 0)
+						.map((id) => id.replace(/\.cycle(Forward|Backward)$/, "")),
+				);
+				return [name, subjects.size] as const;
+			})
+			.filter(([, size]) => size > 5);
+		expect(oversized).toEqual([]);
 	});
 
 	it("gives every action a description for /hotkeys", () => {
