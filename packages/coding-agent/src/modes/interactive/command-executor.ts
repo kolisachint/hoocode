@@ -578,6 +578,8 @@ export class CommandExecutor {
 		const cycleMode = keyDisplayText("app.mode.cycle");
 		const sessionTree = keyDisplayText("app.session.tree");
 		const sessionResume = keyDisplayText("app.session.resume");
+		const cycleSessionColor = keyDisplayText("app.session.color.cycleForward");
+		const cycleSessionColorBackward = keyDisplayText("app.session.color.cycleBackward");
 
 		let hotkeys = `
 **Navigation**
@@ -638,6 +640,7 @@ export class CommandExecutor {
 | \`${changeDirectory}\` | Change working directory (\`/cd\`) |
 | \`${sessionTree}\` | Open session tree |
 | \`${sessionResume}\` | Resume a session from history |
+| \`${cycleSessionColor}\` / \`${cycleSessionColorBackward}\` | Cycle the session chip's color (\`/color\` to pick one) |
 | \`${openSettings}\` | Open settings |
 | \`${openHotkeys}\` | Show this list |
 | \`${externalEditor}\` | Edit message in external editor |

@@ -108,6 +108,8 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.session.rename` | `ctrl+r` | Rename session |
 | `app.session.delete` | `ctrl+d` | Delete session |
 | `app.session.deleteNoninvasive` | `ctrl+backspace` | Delete session when query is empty |
+| `app.session.color.cycleForward` | `alt+c` | Cycle the session chip's color |
+| `app.session.color.cycleBackward` | `shift+alt+c` | Cycle the session chip's color backward |
 
 ### Models and Thinking
 
