@@ -27,6 +27,10 @@
   said "search tool" but never gated the tool: `SearchCodebase` is always
   registered and cannot be turned off. The flag only controls whether the
   semantic index is built and fused in, which is what the new name says.
+  - An existing `enableEmbsearchTools` in `settings.json` migrates to the new
+    key on load, so a deliberate `false` keeps indexing off. The tool rename is
+    a clean break; this key is a stored choice rather than a tool name, and
+    dropping it would silently turn indexing back on.
 
 ### Removed
 

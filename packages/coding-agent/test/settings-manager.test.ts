@@ -302,6 +302,26 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("enableEmbsearchTools -> enableSemanticIndex migration", () => {
+		it("carries a deliberate false through the rename", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ enableEmbsearchTools: false }));
+			expect(SettingsManager.create(projectDir, agentDir).getEnableSemanticIndex()).toBe(false);
+		});
+
+		it("lets an explicit new key win over the legacy one", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({ enableEmbsearchTools: false, enableSemanticIndex: true }),
+			);
+			expect(SettingsManager.create(projectDir, agentDir).getEnableSemanticIndex()).toBe(true);
+		});
+
+		it("defaults to true when neither key is set", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({}));
+			expect(SettingsManager.create(projectDir, agentDir).getEnableSemanticIndex()).toBe(true);
+		});
+	});
+
 	describe("webtools search", () => {
 		it("reads the user-level block only, because that is the file the binary reads", () => {
 			writeFileSync(
