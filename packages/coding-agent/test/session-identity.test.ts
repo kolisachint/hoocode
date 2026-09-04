@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	cycleSessionColorSlot,
 	isSessionColorSlot,
 	parseSessionColorSlot,
 	SESSION_COLOR_NAME_LIST,
@@ -140,6 +141,41 @@ describe("session colour names", () => {
 	it("names nothing for input that names no slot", () => {
 		for (const junk of ["", "   ", "0", String(SESSION_COLOR_SLOTS + 1), "2.5", "-1", "chartreuse", "z"]) {
 			expect(parseSessionColorSlot(junk)).toBeUndefined();
+		}
+	});
+
+	// The keyboard cycle. Stepping is what tells two terminals apart, so it has to
+	// visit every slot, come back to where it started, and never stall.
+	it("steps through every slot and returns to where it started", () => {
+		let slot = 1;
+		const seen = new Set<number>([slot]);
+		for (let i = 0; i < SESSION_COLOR_SLOTS - 1; i++) {
+			slot = cycleSessionColorSlot(slot, "forward");
+			expect(isSessionColorSlot(slot)).toBe(true);
+			seen.add(slot);
+		}
+		expect(seen.size).toBe(SESSION_COLOR_SLOTS);
+		expect(cycleSessionColorSlot(slot, "forward")).toBe(1);
+	});
+
+	it("undoes a forward step with a backward one", () => {
+		for (let slot = 1; slot <= SESSION_COLOR_SLOTS; slot++) {
+			expect(cycleSessionColorSlot(cycleSessionColorSlot(slot, "forward"), "backward")).toBe(slot);
+			expect(cycleSessionColorSlot(cycleSessionColorSlot(slot, "backward"), "forward")).toBe(slot);
+		}
+	});
+
+	it("wraps at both ends", () => {
+		expect(cycleSessionColorSlot(SESSION_COLOR_SLOTS, "forward")).toBe(1);
+		expect(cycleSessionColorSlot(1, "backward")).toBe(SESSION_COLOR_SLOTS);
+	});
+
+	// A session wearing a slot this build has no colour for — a downgrade, a
+	// hand-edited session file — still has to move when the key is pressed.
+	it("starts from the first slot when the current one is not a slot at all", () => {
+		for (const junk of [0, -1, 2.5, SESSION_COLOR_SLOTS + 1, Number.NaN]) {
+			expect(cycleSessionColorSlot(junk, "forward")).toBe(1);
+			expect(cycleSessionColorSlot(junk, "backward")).toBe(1);
 		}
 	});
 });

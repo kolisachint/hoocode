@@ -38,6 +38,8 @@ interface AppKeybindings {
 	"app.session.fork": true;
 	"app.session.resume": true;
 	"app.session.changeDirectory": true;
+	"app.session.color.cycleForward": true;
+	"app.session.color.cycleBackward": true;
 	"app.settings.open": true;
 	"app.hotkeys.open": true;
 	"app.mode.cycle": true;
@@ -206,6 +208,18 @@ export const KEYBINDINGS = {
 	"app.session.changeDirectory": {
 		defaultKeys: "alt+w",
 		description: "Change working directory (move to another repo without quitting)",
+	},
+	// alt+c ("colour"), and the tree's filter cycle has the same letter on
+	// purpose: the tree captures keys while it is open, so the two are never live
+	// at once, and both mean "step to the next one" wherever you press them. The
+	// backward half needs Kitty, like every other shift-modified default here.
+	"app.session.color.cycleForward": {
+		defaultKeys: "alt+c",
+		description: "Cycle the session chip's color",
+	},
+	"app.session.color.cycleBackward": {
+		defaultKeys: "shift+alt+c",
+		description: "Cycle the session chip's color backward",
 	},
 	"app.settings.open": { defaultKeys: "alt+s", description: "Open settings" },
 	"app.hotkeys.open": { defaultKeys: "alt+k", description: "Show keyboard shortcuts" },

@@ -33,6 +33,17 @@
   becomes `radar`, `standard` becomes `full`, and a config that still says `peek`
   needs no migration at all — it names a live stop again.
 
+## [0.5.56] - 2026-09-04
+
+### Added
+
+- **The session chip's color cycles from the keyboard.** `Alt+C` steps it to the
+  next slot and `Shift+Alt+C` back, wrapping at both ends, with no picker in the
+  way — telling two terminals apart is a matter of pressing until the two chips
+  stop looking alike, not of choosing a color. `/color` still opens the swatches
+  and still takes a name, and both bindings are rebindable as
+  `app.session.color.cycleForward` / `app.session.color.cycleBackward`.
+
 ## [0.5.55] - 2026-09-04
 
 ### Fixed

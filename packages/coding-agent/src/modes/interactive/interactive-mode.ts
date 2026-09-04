@@ -64,6 +64,7 @@ import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.j
 import { measurePromptSurface, measureToolSchemaTokens } from "../../core/light.js";
 import type { ResourceDiagnostic } from "../../core/resource-loader.js";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.js";
+import { cycleSessionColorSlot, sessionColorName } from "../../core/session-identity.js";
 import { type SessionContext, SessionManager } from "../../core/session-manager.js";
 import type { SettingsManager } from "../../core/settings-manager.js";
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.js";
@@ -1784,6 +1785,8 @@ export class InteractiveMode {
 			this.editor.setText("/cd ");
 			this.ui.requestRender();
 		});
+		this.defaultEditor.onAction("app.session.color.cycleForward", () => this.cycleSessionColor("forward"));
+		this.defaultEditor.onAction("app.session.color.cycleBackward", () => this.cycleSessionColor("backward"));
 		this.defaultEditor.onAction("app.settings.open", () => this.showSettingsSelector());
 		this.defaultEditor.onAction("app.hotkeys.open", () => this.commandExecutor.handleHotkeys());
 		this.defaultEditor.onAction("app.mode.cycle", () => void this.cycleAgentMode());
@@ -3231,6 +3234,23 @@ export class InteractiveMode {
 		await this.session.prompt(`/mode ${next}`);
 	}
 
+	/**
+	 * Step the session chip to the next colour slot, no picker involved.
+	 *
+	 * The picker exists for choosing a colour; this exists for telling two
+	 * terminals apart, which is a different job — you press the key until the two
+	 * chips stop looking alike, and the chip repaints on each press because
+	 * setSessionColor writes the slot and the session_info event refreshes the
+	 * identity. The status line names the slot as well, since the point of the
+	 * names is that `/color <name>` takes them.
+	 */
+	private cycleSessionColor(direction: "forward" | "backward"): void {
+		const slot = cycleSessionColorSlot(this.sessionManager.getSessionColorSlot(), direction);
+		this.session.setSessionColor(slot);
+		const name = sessionColorName(slot);
+		this.showStatus(`Session color: ${name ?? slot}`);
+	}
+
 	private toggleThinkingBlockVisibility(): void {
 		this.hideThinkingBlock = !this.hideThinkingBlock;
 		this.settingsManager.setHideThinkingBlock(this.hideThinkingBlock);
@@ -3978,7 +3998,7 @@ export class InteractiveMode {
 				(slot) => {
 					done();
 					this.session.setSessionColor(slot);
-					this.showStatus(`Session color set to ${slot}`);
+					this.showStatus(`Session color: ${sessionColorName(slot) ?? slot}`);
 				},
 				() => {
 					done();
