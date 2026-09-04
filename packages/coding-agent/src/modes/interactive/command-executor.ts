@@ -32,7 +32,7 @@ import { copyToClipboard } from "../../utils/clipboard.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import type { FooterComponent } from "./components/footer.js";
-import { formatKeyText, keyDisplayText } from "./components/keybinding-hints.js";
+import { formatKeyText, keyDisplayLabel, keyDisplayText } from "./components/keybinding-hints.js";
 import { renderSessionChip } from "./components/session-chip.js";
 import { theme } from "./theme/theme.js";
 
@@ -556,32 +556,33 @@ export class CommandExecutor {
 		const clear = keyDisplayText("app.clear");
 		const exit = keyDisplayText("app.exit");
 		const suspend = keyDisplayText("app.suspend");
-		const cycleThinkingLevel = keyDisplayText("app.thinking.cycleForward");
-		const cycleThinkingLevelBack = keyDisplayText("app.thinking.cycleBackward");
-		const cycleModelForward = keyDisplayText("app.model.cycleForward");
+		const cycleThinkingLevel = keyDisplayLabel("app.thinking.cycleForward");
+		const cycleThinkingLevelBack = keyDisplayLabel("app.thinking.cycleBackward");
+		const cycleModelForward = keyDisplayLabel("app.model.cycleForward");
 		const expandTools = keyDisplayText("app.tools.expand");
 		const toggleThinking = keyDisplayText("app.thinking.toggle");
-		const cycleTaskView = keyDisplayText("app.tasks.cycleView");
+		const cycleTaskView = keyDisplayLabel("app.tasks.cycleForward");
+		const cycleTaskViewBack = keyDisplayLabel("app.tasks.cycleBackward");
 		const teamFocus = keyDisplayText("app.team.focus");
 		const teamNudge = keyDisplayText("app.team.nudge");
 		const teamAttach = keyDisplayText("app.team.attach");
 		const externalEditor = keyDisplayText("app.editor.external");
-		const cycleModelBackward = keyDisplayText("app.model.cycleBackward");
+		const cycleModelBackward = keyDisplayLabel("app.model.cycleBackward");
 		const followUp = keyDisplayText("app.message.followUp");
 		const dequeue = keyDisplayText("app.message.dequeue");
 		const pasteImage = keyDisplayText("app.clipboard.pasteImage");
-		const viewForward = keyDisplayText("app.view.cycleForward");
-		const viewBackward = keyDisplayText("app.view.cycleBackward");
+		const viewForward = keyDisplayLabel("app.view.cycleForward");
+		const viewBackward = keyDisplayLabel("app.view.cycleBackward");
 		const voice = keyDisplayText("app.input.voiceTranscribe");
 		const changeDirectory = keyDisplayText("app.session.changeDirectory");
 		const openSettings = keyDisplayText("app.settings.open");
 		const openHotkeys = keyDisplayText("app.hotkeys.open");
-		const cycleMode = keyDisplayText("app.mode.cycleForward");
-		const cycleModeBack = keyDisplayText("app.mode.cycleBackward");
+		const cycleMode = keyDisplayLabel("app.mode.cycleForward");
+		const cycleModeBack = keyDisplayLabel("app.mode.cycleBackward");
 		const sessionTree = keyDisplayText("app.session.tree");
 		const sessionResume = keyDisplayText("app.session.resume");
-		const cycleSessionColor = keyDisplayText("app.session.color.cycleForward");
-		const cycleSessionColorBackward = keyDisplayText("app.session.color.cycleBackward");
+		const cycleSessionColor = keyDisplayLabel("app.session.color.cycleForward");
+		const cycleSessionColorBackward = keyDisplayLabel("app.session.color.cycleBackward");
 
 		let hotkeys = `
 **Navigation**
@@ -631,11 +632,12 @@ export class CommandExecutor {
 | \`${cycleThinkingLevel}\` / \`${cycleThinkingLevelBack}\` | Thinking level | off → … → high |
 | \`${viewForward}\` / \`${viewBackward}\` | Tool output | radar → peek → full |
 | \`${cycleSessionColor}\` / \`${cycleSessionColorBackward}\` | Session color | the six chip slots (\`/color\` to pick one) |
-| \`${cycleTaskView}\` | Task panel | tasks → subagents → teams (no reverse — see below) |
+| \`${cycleTaskView}\` / \`${cycleTaskViewBack}\` | Task panel | tasks → subagents → teams |
 
-The task panel is the one dial without a reverse: \`Shift+Ctrl+N\` is Windows
-Terminal's "new window", and with three stops that skip the empty ones, back is
-one more press forward.
+One modifier, one shape, six letters that each name their dial — agent mode,
+model, thinking, output, ledger, color. \`/mode\`, \`/model\` and \`/color\` pick a
+stop outright. The thinking level also answers to \`Shift+Tab\`, which is the only
+way to reach it on a terminal that does not send \`Alt\`.
 
 **View** — what is on screen right now (\`Ctrl\`)
 | Key | Action |

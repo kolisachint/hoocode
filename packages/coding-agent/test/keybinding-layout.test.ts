@@ -59,7 +59,8 @@ const GLOBAL_SCOPE = [
 	"app.view.cycleForward",
 	"app.view.cycleBackward",
 	"app.thinking.toggle",
-	"app.tasks.cycleView",
+	"app.tasks.cycleForward",
+	"app.tasks.cycleBackward",
 	"app.team.focus",
 	"app.editor.external",
 	"app.input.voiceTranscribe",
@@ -267,6 +268,7 @@ describe("keybinding layout", () => {
 			"app.thinking.cycleBackward",
 			"app.model.cycleBackward",
 			"app.view.cycleBackward",
+			"app.tasks.cycleBackward",
 			"app.session.color.cycleBackward",
 			"app.mode.cycleBackward",
 			"app.tree.filter.cycleBackward",
@@ -312,12 +314,13 @@ describe("keybinding layout", () => {
 		"app.model.cycleBackward",
 		"app.view.cycleForward",
 		"app.view.cycleBackward",
+		"app.tasks.cycleForward",
+		"app.tasks.cycleBackward",
 		"app.team.focus",
 		"app.editor.external",
 		"app.message.followUp",
 		"app.message.dequeue",
 		"app.input.voiceTranscribe",
-		"app.session.tree",
 		"app.session.resume",
 		"app.session.changeDirectory",
 		"app.session.color.cycleForward",
@@ -413,7 +416,7 @@ describe("keybinding layout", () => {
 	 * or grows a reverse that is not its forward key plus a modifier, is the
 	 * drift that made the set unlearnable the last time.
 	 */
-	const DIALS: Array<{ name: string; forward: string; backward?: string }> = [
+	const DIALS: Array<{ name: string; forward: string; backward: string }> = [
 		{ name: "agent mode", forward: "app.mode.cycleForward", backward: "app.mode.cycleBackward" },
 		{ name: "model", forward: "app.model.cycleForward", backward: "app.model.cycleBackward" },
 		{ name: "thinking level", forward: "app.thinking.cycleForward", backward: "app.thinking.cycleBackward" },
@@ -423,25 +426,48 @@ describe("keybinding layout", () => {
 			forward: "app.session.color.cycleForward",
 			backward: "app.session.color.cycleBackward",
 		},
-		// The one without a reverse: shift+ctrl+n is Windows Terminal's "new
-		// window", and three stops that skip the empty ones make back one more
-		// press forward.
-		{ name: "task panel lens", forward: "app.tasks.cycleView" },
+		{ name: "task ledger", forward: "app.tasks.cycleForward", backward: "app.tasks.cycleBackward" },
 	];
 
-	it("steps every dial back on its forward key plus one modifier", () => {
+	it("puts every dial on alt+<letter>, back on shift+alt+<letter>", () => {
 		const manager = new KeybindingsManager();
 		const wrong: string[] = [];
 		for (const { name, forward, backward } of DIALS) {
-			if (!backward) continue;
+			// The taught key is the first one; a dial may carry a second for
+			// terminals that do not send alt (see the thinking level's shift+tab).
 			const forwardKey = manager.getKeys(forward as never)[0];
 			const backwardKey = manager.getKeys(backward as never)[0];
-			// shift where the forward key has none; alt for shift+tab, which has
-			// already spent shift.
-			const expected = forwardKey?.startsWith("shift+") ? `shift+alt+${forwardKey.slice(6)}` : `shift+${forwardKey}`;
-			if (backwardKey !== expected) wrong.push(`${name}: ${forwardKey} -> ${backwardKey}, expected ${expected}`);
+			if (!/^alt\+[a-z]$/.test(forwardKey ?? "")) {
+				wrong.push(`${name}: forward is ${forwardKey}, expected alt+<letter>`);
+				continue;
+			}
+			if (backwardKey !== `shift+${forwardKey}`) {
+				wrong.push(`${name}: ${forwardKey} -> ${backwardKey}, expected shift+${forwardKey}`);
+			}
 		}
 		expect(wrong).toEqual([]);
+	});
+
+	it("gives each dial a letter no other dial claims", () => {
+		const manager = new KeybindingsManager();
+		const letters = DIALS.map(({ forward }) => manager.getKeys(forward as never)[0]);
+		expect(letters).toEqual([...new Set(letters)]);
+	});
+
+	it("leaves every dial reachable on a terminal that does not send alt", () => {
+		// Each dial is either steppable without alt, or has a slash command that
+		// reaches the same setting. Losing both would strand the setting on
+		// Terminal.app, which composes characters instead of sending alt.
+		const withSlashCommand = new Set(["agent mode", "model", "session colour"]);
+		const manager = new KeybindingsManager();
+		const stranded = DIALS.filter(({ name, forward }) => {
+			if (withSlashCommand.has(name)) return false;
+			return manager.getKeys(forward as never).every((key) => key.split("+").includes("alt"));
+		}).map((d) => d.name);
+		// Both are about what is drawn, not what the agent does. ctrl+o still
+		// reaches the tool dial's far stop and back without alt, and the task
+		// ledger's lens only regroups rows that are all on screen either way.
+		expect(stranded).toEqual(["tool output", "task ledger"]);
 	});
 
 	it("leaves no dial unbound", () => {

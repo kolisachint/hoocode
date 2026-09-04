@@ -239,7 +239,7 @@ function formatLensTabs(
 	let hintPlain = "";
 	let hintStyled = "";
 	if (showCycleHint) {
-		const key = appKeyLabel("app.tasks.cycleView");
+		const key = appKeyLabel("app.tasks.cycleForward");
 		hintPlain = `${formatKeyText(key)} cycle`;
 		hintStyled = rawKeyHint(key, "cycle");
 	}
@@ -643,7 +643,7 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   origin tag before the title names the owner: the subagent type
  *   ("[explore]"), the team role ("[planner]", fed by `--team <url>`), or the
  *   MCP server ("[github]").
- * - Three views split by ownership (cycled via app.tasks.cycleView, shown as a
+ * - Three views split by ownership (cycled via app.tasks.cycleForward, shown as a
  *   `tasks · subagents · teams` switcher in the header):
  *     - flat ("tasks") — the main agent's own TodoWrite plan, with each
  *       dispatched subagent run nested under the plan item it was dispatched
@@ -817,10 +817,11 @@ export class TaskPanelComponent implements Component, Focusable {
 	 * flat), skipping empty lenses. With nothing delegated this is a no-op on
 	 * flat; a stale view (its lens emptied since selection) snaps back to flat.
 	 */
-	cycleView(): TaskPanelView {
+	cycleView(direction: "forward" | "backward" = "forward"): TaskPanelView {
 		const available = availableViews(taskStore.list(), taskStore.agents());
 		const idx = available.indexOf(this.view);
-		this.view = available[(idx + 1) % available.length] ?? "flat";
+		const step = direction === "forward" ? 1 : -1;
+		this.view = available[(idx + step + available.length) % available.length] ?? "flat";
 		this.ui?.requestRender();
 		return this.view;
 	}

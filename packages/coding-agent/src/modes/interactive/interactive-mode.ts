@@ -98,7 +98,7 @@ import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
-import { keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+import { appKeyLabel, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { renderSessionChip } from "./components/session-chip.js";
 import { SessionColorSelectorComponent } from "./components/session-color-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
@@ -877,8 +877,11 @@ export class InteractiveMode {
 			// key with shift steps it back. The banner is where that rule is first
 			// read, and it is the rule covering the most-pressed keys in the app,
 			// so the dials are listed together rather than scattered by topic.
+			// appKeyLabel, not keyText: the thinking dial answers to shift+tab as well,
+			// and splicing that into the middle of `alt+t/shift+alt+t` would hide the
+			// one shape these six lines exist to show.
 			const dial = (forward: AppKeybinding, backward: AppKeybinding, description: string) =>
-				rawKeyHint(`${keyText(forward)}/${keyText(backward)}`, description);
+				rawKeyHint(`${appKeyLabel(forward)}/${appKeyLabel(backward)}`, description);
 
 			const expandedInstructions = [
 				hint("app.interrupt", "to interrupt"),
@@ -892,7 +895,7 @@ export class InteractiveMode {
 				dial("app.model.cycleForward", "app.model.cycleBackward", "to step model (/model to pick one)"),
 				dial("app.thinking.cycleForward", "app.thinking.cycleBackward", "to step thinking level"),
 				dial("app.view.cycleForward", "app.view.cycleBackward", "to step tool output (radar/peek/full)"),
-				hint("app.tasks.cycleView", "to step task panel view"),
+				dial("app.tasks.cycleForward", "app.tasks.cycleBackward", "to step task panel view"),
 				dial(
 					"app.session.color.cycleForward",
 					"app.session.color.cycleBackward",
@@ -1779,8 +1782,11 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
 		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
-		this.defaultEditor.onAction("app.tasks.cycleView", () => {
-			this.taskPanel.cycleView();
+		this.defaultEditor.onAction("app.tasks.cycleForward", () => {
+			this.taskPanel.cycleView("forward");
+		});
+		this.defaultEditor.onAction("app.tasks.cycleBackward", () => {
+			this.taskPanel.cycleView("backward");
 		});
 		this.defaultEditor.onAction("app.team.focus", () => this.teamFocus.enterFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());

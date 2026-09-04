@@ -14,30 +14,31 @@ Six things on screen are dials — an ordered set of stops you step through, wit
 the current stop painted where you can see it. They are the most-pressed keys in
 the app, and they follow one rule:
 
-> **A dial steps forward on its key and back with one more modifier held. The
+> **`Alt+<letter>` steps a dial forward, `Shift+Alt+<letter>` steps it back. The
 > letter names the dial. The slash command picks a stop outright.**
-
-That modifier is `Shift` everywhere but the thinking level: its forward key has
-already spent `Shift`, so its reverse takes `Alt` instead.
 
 | Dial | Where you see it | Forward | Back | Steps through |
 |---|---|---|---|---|
-| Agent mode | footer, bold, top left | `Alt+A` | `Shift+Alt+A` | ask → plan → build → debug |
-| Model | footer, bottom right | `Alt+M` | `Shift+Alt+M` | your enabled models |
-| Thinking level | footer, bottom right | `Shift+Tab` | `Shift+Alt+Tab` | off → … → high |
-| Tool output | footer, top right | `Alt+O` | `Shift+Alt+O` | radar → peek → full |
-| Session color | the session chip | `Alt+C` | `Shift+Alt+C` | six chip slots |
-| Task panel | task panel header | `Ctrl+N` | — | tasks → subagents → teams |
+| **A**gent mode | footer, bold, top left | `Alt+A` | `Shift+Alt+A` | ask → plan → build → debug |
+| **M**odel | footer, bottom right | `Alt+M` | `Shift+Alt+M` | your enabled models |
+| **T**hinking level | footer, bottom right | `Alt+T` | `Shift+Alt+T` | off → … → high |
+| Tool **o**utput | footer, top right | `Alt+O` | `Shift+Alt+O` | radar → peek → full |
+| Task **l**edger | task panel header | `Alt+L` | `Shift+Alt+L` | tasks → subagents → teams |
+| Session **c**olor | the session chip | `Alt+C` | `Shift+Alt+C` | six chip slots |
 
-`/mode`, `/model` and `/color` are the pickers behind the first two and the
-fifth: **the key steps, the command chooses.** That is why `app.model.select`
-ships unbound — `Alt+M` stepping the model is worth more than `Alt+M` opening a
-list of them, and `/model` completes on the name.
+One modifier, one shape, six letters that each name their dial. Nothing else in
+the app steps a dial and no dial is anywhere else, which is what makes that
+table worth learning once instead of looking up.
 
-The task panel is the one dial with no reverse. `Shift+Ctrl+N` is Windows
-Terminal's "new window", and the lens has three stops and skips the empty ones,
-so back is one more press forward. It is also the one arbitrary letter left in
-the set — `Ctrl` had nothing better free.
+`/mode`, `/model` and `/color` are the pickers behind three of them: **the key
+steps, the command chooses.** That is why `app.model.select` ships unbound —
+`Alt+M` stepping the model is worth more than `Alt+M` opening a list of them —
+and why `app.session.tree` gave `Alt+T` to the thinking dial and kept `/tree`.
+
+The thinking level is the one dial with a second key: `Shift+Tab` still steps it.
+Every other dial is either reachable through a slash command or is about what is
+drawn rather than what the agent does, so on a terminal that does not send `Alt`
+(see below) this is the one setting that would otherwise be stranded.
 
 ## The rings
 
@@ -62,8 +63,8 @@ Where the same letter appears on both rings it is the same subject seen twice �
 
 - `Alt+O` sets how much tool output there ever is and saves where it lands;
   `Ctrl+O` jumps to all of it and back, leaving the dial where it was.
-- `Shift+Tab` sets how much thinking there ever is; `Ctrl+T` shows or hides
-  the thinking you have.
+- `Alt+T` sets how much thinking there ever is; `Ctrl+T` shows or hides the
+  thinking you have.
 
 Two consequences worth knowing before rebinding:
 
@@ -121,13 +122,14 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.mode.cycleBackward` | `shift+alt+a` | Step agent mode backward |
 | `app.model.cycleForward` | `alt+m` | Step to the next model |
 | `app.model.cycleBackward` | `shift+alt+m` | Step to the previous model |
-| `app.thinking.cycleForward` | `shift+tab` | Step thinking level: off → … → high |
-| `app.thinking.cycleBackward` | `shift+alt+tab` | Step thinking level backward |
+| `app.thinking.cycleForward` | `alt+t`, `shift+tab` | Step thinking level: off → … → high |
+| `app.thinking.cycleBackward` | `shift+alt+t` | Step thinking level backward |
 | `app.view.cycleForward` | `alt+o` | Step tool output: radar → peek → full |
 | `app.view.cycleBackward` | `shift+alt+o` | Step tool output backward |
 | `app.session.color.cycleForward` | `alt+c` | Step the session chip's color |
 | `app.session.color.cycleBackward` | `shift+alt+c` | Step the session chip's color backward |
-| `app.tasks.cycleView` | `ctrl+n` | Step task panel view: tasks → subagents → teams |
+| `app.tasks.cycleForward` | `alt+l` | Step task panel view: tasks → subagents → teams |
+| `app.tasks.cycleBackward` | `shift+alt+l` | Step task panel view backward |
 
 ### View — what is on screen right now (`Ctrl`)
 
@@ -143,7 +145,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 |--------|---------|-------------|
 | `app.model.select` | *(none)* | Open the model selector (`/model`) |
 | `app.session.changeDirectory` | `alt+w` | Change working directory (`/cd`) |
-| `app.session.tree` | `alt+t` | Open the session tree |
+| `app.session.tree` | *(none)* | Open the session tree (`/tree`) |
 | `app.session.resume` | `alt+h` | Resume a session from history |
 | `app.settings.open` | `alt+s` | Open settings |
 | `app.hotkeys.open` | `alt+k` | Show the shortcut list (`/hotkeys`) |
@@ -154,9 +156,9 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 
 `app.session.new` and `app.session.fork` ship unbound: one replaces the
 transcript and the other needs a message picked out of it, so neither wants to
-be one stray chord away. `app.model.select` is unbound for the opposite reason —
-its key went to the dial that steps the model, and `/model` opens the picker.
-All three are bindable by hand.
+be one stray chord away. `app.model.select` and `app.session.tree` are unbound
+for a different reason — each gave its letter to the dial that shares it, and
+`/model` and `/tree` open them. All four are bindable by hand.
 
 ### Prompt editor
 
@@ -301,9 +303,9 @@ On native Windows, `app.suspend` has no default binding because Windows terminal
 }
 ```
 
-`ctrl+p` and `ctrl+n` in that example are free of app bindings by default,
-except that `ctrl+n` steps the task panel — give `app.tasks.cycleView` another
-key in the same file if you rebind `tui.editor.cursorDown` onto it.
+`ctrl+p` and `ctrl+n` are both free of app bindings by default — the model and
+task-ledger dials that used to hold them are on `alt+m` and `alt+l` now — so
+this config collides with nothing.
 
 ### Vim Example
 

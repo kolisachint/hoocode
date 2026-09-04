@@ -4,6 +4,43 @@
 
 ### Changed
 
+- **Every dial is now `alt+<letter>`, and `shift+alt+<letter>` steps it back.**
+  The thinking level came off `shift+tab` and the task ledger off `ctrl+n`, so the
+  six most-pressed keys in the app share one modifier, one shape, and six letters
+  that each name their dial:
+
+  | dial | forward | back |
+  | --- | --- | --- |
+  | **a**gent mode | `alt+a` | `shift+alt+a` |
+  | **m**odel | `alt+m` | `shift+alt+m` |
+  | **t**hinking level | `alt+t` | `shift+alt+t` |
+  | tool **o**utput | `alt+o` | `shift+alt+o` |
+  | task **l**edger | `alt+l` | `shift+alt+l` |
+  | session **c**olor | `alt+c` | `shift+alt+c` |
+
+  `alt+t` also buys the pairing that `alt+o` already had: same letter on both
+  rings, `alt` walking the dial and saving where it lands, `ctrl` acting on what
+  is drawn right now. `alt+o` sets how much tool output there ever is and
+  `ctrl+o` jumps to all of it and back; `alt+t` sets how much thinking there ever
+  is and `ctrl+t` shows or hides what you have. Those two are all that is left on
+  the `ctrl` ring besides the flow keys.
+
+  The task ledger gains the reverse it could never have had on `ctrl`, where
+  `shift+ctrl+n` is Windows Terminal's "new window". `alt+l` names the pane's own
+  word for itself — the task ledger — where `ctrl+n` named nothing.
+
+  `shift+tab` still steps the thinking level as a second key. It is the only dial
+  with no slash command and the only one whose setting changes what the agent
+  does, so it keeps a way in on a terminal that does not send `alt`.
+
+  `app.session.tree` gave `alt+t` to the thinking dial and ships unbound; `/tree`
+  opens it, the same trade `app.model.select` makes for `/model`. `ctrl+n`,
+  `ctrl+p` and `shift+ctrl+p` are all free now, so the emacs config in
+  `docs/keybindings.md` collides with nothing.
+
+  `app.tasks.cycleView` became `app.tasks.cycleForward`; existing
+  `keybindings.json` files are migrated on startup.
+
 - **The six dials now work the same way.** Everything on screen with an ordered
   set of stops — agent mode, model, thinking level, tool output, session colour,
   the task panel's lens — is stepped with a key, and until now those six keys had
@@ -15,24 +52,10 @@
   more modifier held, the letter names the dial, and the slash command picks a
   stop outright.**
 
-  | dial | readout | forward | back |
-  | --- | --- | --- | --- |
-  | agent mode | footer, bold, left | `alt+a` | `shift+alt+a` |
-  | model | footer, right | `alt+m` | `shift+alt+m` |
-  | thinking level | footer, right | `shift+tab` | `shift+alt+tab` |
-  | tool output | footer, right | `alt+o` | `shift+alt+o` |
-  | session colour | session chip | `alt+c` | `shift+alt+c` |
-  | task panel lens | task panel | `ctrl+n` | — |
-
   What moved: the model dial from `ctrl+p`/`shift+ctrl+p` to `alt+m`, because the
   model is a cockpit dial — what the agent *is*, not what is on screen — and `p`
   named nothing. Agent mode and thinking level gained the reverse halves they
-  never had. `ctrl+p` and `shift+ctrl+p` are now free, so the emacs config in
-  `docs/keybindings.md` no longer collides with anything.
-
-  The task panel is the one dial without a reverse, and it says so wherever it is
-  documented: `shift+ctrl+n` is Windows Terminal's "new window", and with three
-  stops that skip the empty ones, back is one more press forward.
+  never had.
 
   `app.thinking.cycle` and `app.mode.cycle` became `…cycleForward` so every
   two-direction dial reads the same; existing `keybindings.json` files are

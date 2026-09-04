@@ -40,6 +40,19 @@ export function keyDisplayText(keybinding: Keybinding): string {
 	return formatKeys(getKeybindings().getKeys(keybinding), { capitalize: true });
 }
 
+/**
+ * The taught key for a binding — the first one — and nothing else.
+ *
+ * `keyDisplayText` names every key an action answers to, which is right for a
+ * reference row and wrong wherever the shape of the hint is the thing being
+ * taught: the dials read `alt+t/shift+alt+t`, and a second forward key spliced
+ * into the middle of that is what the one-shape rule exists to avoid.
+ */
+export function keyDisplayLabel(keybinding: Keybinding): string {
+	const keys = getKeybindings().getKeys(keybinding);
+	return keys.length > 0 ? formatKeyText(keys[0] as string, { capitalize: true }) : "";
+}
+
 export function keyHint(keybinding: Keybinding, description: string): string {
 	return theme.fg("dim", keyText(keybinding)) + theme.fg("muted", ` ${description}`);
 }

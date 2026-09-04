@@ -12,11 +12,13 @@ Before searching, check these maps:
 
 ## Recent Changes
 
-- **Keybinding dials**: the six on-screen ordered-set controls (agent mode,
-  model, thinking level, tool output, session colour, task panel lens) share one
-  rule — step forward on the key, back with one more modifier, the letter names
-  the dial, the slash command picks a stop. `test/keybinding-layout.test.ts`
-  holds it; a new dial goes in its `DIALS` list.
+- **Keybinding dials**: the six on-screen ordered-set controls are all
+  `alt+<letter>` forward and `shift+alt+<letter>` back, the letter naming the
+  dial — **a**gent mode, **m**odel, **t**hinking, tool **o**utput, task
+  **l**edger, session **c**olour. Nothing else steps a dial and no dial is
+  anywhere else. `ctrl+o` and `ctrl+t` pair by letter with their dials and act
+  on what is drawn right now. `test/keybinding-layout.test.ts` holds the rule;
+  a new dial goes in its `DIALS` list.
 - **Keybinding rings**: `ctrl` is the view, `alt` is the cockpit, `shift`
   reverses, and inside a picker every `ctrl` key belongs to the query line —
   so a picker's verbs are all on `alt`. A bare `shift+<letter>` is banned

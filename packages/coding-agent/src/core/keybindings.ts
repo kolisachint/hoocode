@@ -24,7 +24,8 @@ interface AppKeybindings {
 	"app.view.cycleForward": true;
 	"app.view.cycleBackward": true;
 	"app.thinking.toggle": true;
-	"app.tasks.cycleView": true;
+	"app.tasks.cycleForward": true;
+	"app.tasks.cycleBackward": true;
 	"app.team.focus": true;
 	"app.team.nudge": true;
 	"app.team.attach": true;
@@ -86,39 +87,40 @@ declare module "@kolisachint/hoocode-tui" {
  * each with its state painted where you can see it. They are the most-pressed
  * keys in the app, so they get the one rule worth memorising:
  *
- * > **A dial steps forward on its key and back with one more modifier held.
- * > The letter names the dial. The slash command picks a stop outright.**
+ * > **`alt+<letter>` steps a dial forward and `shift+alt+<letter>` steps it
+ * > back. The letter names the dial. The slash command picks a stop outright.**
  *
- * That modifier is shift everywhere but the thinking level, whose forward key
- * has already spent shift, so its reverse takes alt instead.
+ *   | dial            | readout            | forward | back          |
+ *   | --------------- | ------------------ | ------- | ------------- |
+ *   | **a**gent mode  | footer, bold, left | `alt+a` | `shift+alt+a` |
+ *   | **m**odel       | footer, right      | `alt+m` | `shift+alt+m` |
+ *   | **t**hinking    | footer, right      | `alt+t` | `shift+alt+t` |
+ *   | tool **o**utput | footer, right      | `alt+o` | `shift+alt+o` |
+ *   | task **l**edger | task panel header  | `alt+l` | `shift+alt+l` |
+ *   | session **c**olour | session chip    | `alt+c` | `shift+alt+c` |
  *
- *   | dial            | readout            | forward     | back              |
- *   | --------------- | ------------------ | ----------- | ----------------- |
- *   | agent mode      | footer, bold, left | `alt+a`     | `shift+alt+a`     |
- *   | model           | footer, right      | `alt+m`     | `shift+alt+m`     |
- *   | thinking level  | footer, right      | `shift+tab` | `shift+alt+tab`   |
- *   | tool output     | footer, right      | `alt+o`     | `shift+alt+o`     |
- *   | session colour  | session chip       | `alt+c`     | `shift+alt+c`     |
- *   | task panel lens | task panel header  | `ctrl+n`    | — see below       |
+ * One modifier, one shape, six letters that each name their dial. Nothing else
+ * in the app steps a dial, and no dial is anywhere else — that is what makes
+ * the row above worth memorising instead of looking up. It cost the tab and
+ * ctrl keys these used to be on: `shift+tab` survives as a second key for the
+ * thinking level (below), and `ctrl+n`, `ctrl+p` and `shift+ctrl+p` are free.
  *
- * `/mode`, `/model`, `/color` and `/tree` are the pickers behind the first
- * four: the key steps, the command chooses. That is why `app.model.select`
- * ships unbound — alt+m stepping the model is worth more than alt+m opening a
- * list of them.
+ * `/mode`, `/model` and `/color` are the pickers behind three of them: the key
+ * steps, the command chooses. That is why `app.model.select` ships unbound —
+ * alt+m stepping the model is worth more than alt+m opening a list of them,
+ * and `app.session.tree` makes the same trade with `/tree` for alt+t.
  *
- * The task lens is the one dial with no reverse. `shift+ctrl+n` is Windows
- * Terminal's "new window" (the same trap that kept `app.team.focus` off
- * `shift+ctrl+n`), and the lens has three stops and skips the empty ones, so
- * going back is one extra press forward. It is also the one arbitrary letter
- * left in the set: `ctrl` had nothing better free.
+ * The one place a dial has a second key is the thinking level's `shift+tab`.
+ * Every other dial is reachable without alt through its slash command; this one
+ * has none, so on a terminal that eats alt `shift+tab` is the only way to it.
  *
  * ## The rings
  *
  * Which ring a key belongs to is decided by its modifier:
  *
- * - **ctrl — the view.** What is on screen right now: expand, thinking blocks,
- *   the task panel. Pressed many times a minute, so they sit under the hand and
- *   never require a second modifier.
+ * - **ctrl — the view.** What is on screen right now, and only that: the jump to
+ *   full output, and thinking blocks. Two keys, both of which pair by letter
+ *   with a dial on alt.
  * - **alt — the cockpit.** What the agent *is* and where it works: mode, model,
  *   working directory, settings, sessions. Pressed a few times a session.
  * - **overlays.** Inside a picker, the query line is a text field, so every
@@ -127,11 +129,11 @@ declare module "@kolisachint/hoocode-tui" {
  *   `alt+<letter>`, mnemonic to that picker; the picker captures keys while it
  *   is open, so reusing a global letter there is unambiguous.
  *
- * Where the same letter appears on both rings it is the same subject seen
- * twice — ctrl acts on what is already drawn, alt on how much is ever drawn:
- * `ctrl+o` opens the tool bodies you have, `alt+o` sets how much they ever
- * show; `ctrl+t` shows the thinking you have, `shift+tab` sets how much there
- * ever is.
+ * Both ctrl keys share a letter with the dial they belong to, and the split is
+ * the same in each pair: alt walks the dial and saves where it lands, ctrl acts
+ * on what is drawn right now and leaves the dial alone. `alt+o` sets how much
+ * tool output there ever is, `ctrl+o` jumps to all of it and back; `alt+t` sets
+ * how much thinking there ever is, `ctrl+t` shows or hides what you have.
  *
  * One more rule: no binding takes a key the editor or the terminal already owns
  * (ctrl+a/e/b/f/k/u/w/y/d/l/r/g, ctrl+s XOFF, ctrl+m == enter, ctrl+i == tab).
@@ -160,17 +162,18 @@ export const KEYBINDINGS = {
 		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
 		description: "Suspend to background",
 	},
-	// The one dial without a letter, and it does not need one: shift+tab is the
-	// cycle key every terminal agent has taught, it is the only one of the six
-	// that works on a terminal which eats alt, and tab's own reverse is already
-	// shift+tab — so the dial and the key agree. The backward half needs Kitty,
-	// like every other reverse half here.
+	// alt+t pairs with ctrl+t the way alt+o pairs with ctrl+o: same letter, same
+	// subject, ctrl acting on what is drawn right now and alt on how much there
+	// ever is. shift+tab stays as a second key rather than the first — it is the
+	// cycle key every terminal agent has taught, and with no slash command for
+	// the thinking level it is the only way to reach this dial on a terminal
+	// that eats alt. Hints and /hotkeys name alt+t, which is the taught key.
 	"app.thinking.cycleForward": {
-		defaultKeys: "shift+tab",
+		defaultKeys: ["alt+t", "shift+tab"],
 		description: "Cycle thinking level (off → … → high)",
 	},
 	"app.thinking.cycleBackward": {
-		defaultKeys: "shift+alt+tab",
+		defaultKeys: "shift+alt+t",
 		description: "Cycle thinking level backward",
 	},
 	// alt+m, not ctrl+p: the model is a cockpit dial — it is what the agent *is*,
@@ -209,10 +212,18 @@ export const KEYBINDINGS = {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking blocks",
 	},
-	"app.tasks.cycleView": {
-		// ctrl+n is free in the main editor (no emacs next-line binding here).
-		defaultKeys: "ctrl+n",
+	// alt+l for the task *ledger* — the pane's own name for itself. It was
+	// ctrl+n, which named nothing and was the last dial off the alt ring; moving
+	// it also gives the lens the reverse it could never have on ctrl, where
+	// shift+ctrl+n is Windows Terminal's "new window". ctrl+n is free now, so an
+	// emacs config can take it for cursorDown without colliding.
+	"app.tasks.cycleForward": {
+		defaultKeys: "alt+l",
 		description: "Cycle task panel view (tasks → subagents → teams, skips empty lenses)",
+	},
+	"app.tasks.cycleBackward": {
+		defaultKeys: "shift+alt+l",
+		description: "Cycle task panel view backward",
 	},
 	"app.team.focus": {
 		// Pairs with ctrl+n (cycle task panel view): alt+n steps INTO the teams
@@ -261,8 +272,10 @@ export const KEYBINDINGS = {
 	// neither wants to be one stray chord away; both remain bindable by hand.
 	"app.session.new": { defaultKeys: [], description: "Start a new session" },
 	"app.session.fork": { defaultKeys: [], description: "Fork current session" },
-	// Navigation is non-destructive, so it gets keys: t for tree, h for history.
-	"app.session.tree": { defaultKeys: "alt+t", description: "Open session tree" },
+	// Unbound since alt+t became the thinking dial: the letter is worth more to a
+	// dial pressed through the day than to a surface `/tree` opens with
+	// completion, the same trade `app.model.select` makes for `/model`.
+	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
 	"app.session.resume": { defaultKeys: "alt+h", description: "Resume a session from history" },
 	"app.session.changeDirectory": {
 		defaultKeys: "alt+w",
@@ -453,6 +466,7 @@ const KEYBINDING_NAME_MIGRATIONS = {
 	// reads <dial>.cycleForward / <dial>.cycleBackward.
 	"app.thinking.cycle": "app.thinking.cycleForward",
 	"app.mode.cycle": "app.mode.cycleForward",
+	"app.tasks.cycleView": "app.tasks.cycleForward",
 	interrupt: "app.interrupt",
 	clear: "app.clear",
 	exit: "app.exit",
