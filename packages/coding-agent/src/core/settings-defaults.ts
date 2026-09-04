@@ -24,7 +24,7 @@ export const DEFAULT_SETTINGS = {
 		timeoutSecs: 15,
 	},
 	disabledTools: [],
-	toolOutputView: "glance",
+	toolOutputView: "peek",
 	branchSummary: {
 		reserveTokens: 16384,
 		skipPrompt: false,

@@ -6,7 +6,7 @@ import { theme } from "../theme/theme.js";
 /**
  * The "radar" view's one-line signal for a tool call.
  *
- * Radar answers a different question than the other two views. `glance` and
+ * Radar answers a different question than the other two views. `peek` and
  * `full` show what a tool *said*; radar shows the *shape of the run* — the same
  * three columns for every tool, so a screen of them reads as a map:
  *

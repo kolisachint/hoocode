@@ -319,7 +319,8 @@ function largestOtherFamily(
  *
  * Deliberately close to one clause, not an inventory. "Edited packages/tui, read
  * 6 files, searched packages" is a worse line than "Edited packages/tui" — the
- * count is already in the stats, and the per-call detail is one `alt+u` away.
+ * count is already in the stats, and the per-call detail is one stop down the
+ * view dial.
  *
  * A long chain earns at most one more clause, and only when its headline family
  * is a minority of the calls. That is the case where a single clause stops being

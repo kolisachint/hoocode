@@ -14,6 +14,7 @@ import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
+import { PEEK_LINES } from "../tool-output-view.js";
 import { resolveReadPath } from "./path-utils.js";
 import {
 	buildDedupPointerText,
@@ -220,7 +221,7 @@ function formatReadResult(
 	const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 	const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 	const lines = trimTrailingEmptyLines(renderedLines);
-	const maxLines = options.expanded ? lines.length : 10;
+	const maxLines = options.expanded ? lines.length : PEEK_LINES;
 	const displayLines = lines.slice(0, maxLines);
 	const remaining = lines.length - maxLines;
 	// Calculate starting line number from args

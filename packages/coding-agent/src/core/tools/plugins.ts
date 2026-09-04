@@ -41,6 +41,7 @@ import { isWorkspaceTrusted } from "../extensions/plugins/trust.js";
 import { defineTool, type ToolDefinition, type ToolRenderResultOptions } from "../extensions/types.js";
 import { plural, renderList } from "../format-list.js";
 import { SettingsManager } from "../settings-manager.js";
+import { PEEK_LINES } from "../tool-output-view.js";
 import {
 	INSTALL_PLUGIN_TOOL_NAME,
 	LIST_PLUGINS_TOOL_NAME,
@@ -85,7 +86,7 @@ function formatPluginToolResult(
 	if (!output) return "";
 
 	const lines = output.split("\n");
-	const maxLines = options.expanded ? lines.length : 20;
+	const maxLines = options.expanded ? lines.length : PEEK_LINES;
 	const shown = lines.slice(0, maxLines);
 	const remaining = lines.length - shown.length;
 

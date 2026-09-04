@@ -72,7 +72,12 @@ import type { SourceInfo } from "../../core/source-info.js";
 import { startupProgress } from "../../core/startup-progress.js";
 import { taskStore } from "../../core/task-store.js";
 import type { TeamViewConnection } from "../../core/team-view.js";
-import { cycleToolOutputView, type ToolOutputView } from "../../core/tool-output-view.js";
+import {
+	cycleToolOutputView,
+	DEFAULT_TOOL_OUTPUT_VIEW,
+	MAX_TOOL_OUTPUT_VIEW,
+	type ToolOutputView,
+} from "../../core/tool-output-view.js";
 import { settleDanglingMainTasks } from "../../core/tools/todo.js";
 import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
@@ -293,10 +298,22 @@ export class InteractiveMode {
 	// Tool execution tracking: toolCallId -> component
 	private pendingTools = new Map<string, ToolExecutionComponent>();
 
-	// Tool output expansion state
-	private toolOutputExpanded = false;
-	// Persisted view dial (radar / glance / full). See core/tool-output-view.ts.
-	private toolOutputView: ToolOutputView = "glance";
+	// Persisted view dial (radar / peek / full). See core/tool-output-view.ts.
+	private toolOutputView: ToolOutputView = DEFAULT_TOOL_OUTPUT_VIEW;
+	// Where `app.tools.expand` came from, so the same key goes back there. Kept
+	// in memory only: the jump is the momentary look, the dial is the decision.
+	private viewBeforeJump?: ToolOutputView;
+
+	/**
+	 * Whether everything foldable is currently open.
+	 *
+	 * Not a state of its own any more — it is the top of the view dial. The
+	 * header, compaction and branch summaries and skill blocks follow the dial
+	 * for the same reason tool bodies do: `full` means nothing is held back.
+	 */
+	private get toolOutputExpanded(): boolean {
+		return this.toolOutputView === MAX_TOOL_OUTPUT_VIEW;
+	}
 	// The chain currently collecting tool calls, if the agent is mid-run.
 	private openChain?: ToolChainComponent;
 	/** The newest tool block in the transcript; radar marks it. */
@@ -867,9 +884,8 @@ export class InteractiveMode {
 				hint("app.thinking.cycle", "to cycle thinking level"),
 				rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
 				hint("app.model.select", "to select model"),
-				hint("app.tools.expand", "to expand all tool output"),
-				hint("app.tools.unfoldOne", "to open one chain or block (repeat to peel back)"),
-				hint("app.view.cycleForward", "to cycle tool output (radar/glance/full)"),
+				hint("app.tools.expand", "to jump to full output and back"),
+				hint("app.view.cycleForward", "to cycle tool output (radar/peek/full)"),
 				hint("app.thinking.toggle", "to expand thinking"),
 				hint("app.tasks.cycleView", "to cycle task panel view"),
 				...(this.teamFocus.connected ? [hint("app.team.focus", "to focus team roster")] : []),
@@ -1747,11 +1763,9 @@ export class InteractiveMode {
 		// Global debug handler on TUI (works regardless of focus)
 		this.ui.onDebug = () => this.commandExecutor.handleDebug();
 		this.defaultEditor.onAction("app.model.select", () => this.modelController.showModelSelector());
-		this.defaultEditor.onAction("app.tools.expand", () => this.toggleToolOutputExpansion());
+		this.defaultEditor.onAction("app.tools.expand", () => this.jumpToFullView());
 		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
 		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
-		this.defaultEditor.onAction("app.tools.unfoldOne", () => this.stepToolOutput("unfold"));
-		this.defaultEditor.onAction("app.tools.foldOne", () => this.stepToolOutput("fold"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
 		this.defaultEditor.onAction("app.tasks.cycleView", () => {
 			this.taskPanel.cycleView();
@@ -2303,7 +2317,6 @@ export class InteractiveMode {
 									this.ui,
 									this.sessionManager.getCwd(),
 								);
-								component.setExpanded(this.toolOutputExpanded);
 								this.attachToolBlock(component);
 								this.pendingTools.set(content.id, component);
 							} else {
@@ -2378,7 +2391,6 @@ export class InteractiveMode {
 						this.ui,
 						this.sessionManager.getCwd(),
 					);
-					component.setExpanded(this.toolOutputExpanded);
 					this.attachToolBlock(component);
 					this.pendingTools.set(event.toolCallId, component);
 				}
@@ -2741,7 +2753,6 @@ export class InteractiveMode {
 							this.ui,
 							this.sessionManager.getCwd(),
 						);
-						component.setExpanded(this.toolOutputExpanded);
 						this.attachToolBlock(component);
 
 						if (message.stopReason === "aborted" || message.stopReason === "error") {
@@ -3087,70 +3098,36 @@ export class InteractiveMode {
 		return blocks;
 	}
 
-	/** Every chain in the transcript, in order. */
-	private transcriptChains(): ToolChainComponent[] {
-		return this.chatContainer.children.filter(
-			(child): child is ToolChainComponent => child instanceof ToolChainComponent,
-		);
-	}
-
-	private toggleToolOutputExpansion(): void {
-		this.setToolsExpanded(!this.toolOutputExpanded);
-	}
-
 	/**
-	 * Open or close one tool block instead of all of them.
+	 * Jump to the full view, or back to where the jump started.
 	 *
-	 * `ctrl+o` is all-or-nothing, which left the ▸ caret on every glance and
-	 * radar row advertising something no key could do. This is the missing half:
-	 * unfold walks back from the newest block to the first one still folded,
-	 * fold walks back to the most recently opened one.
+	 * The dial's top stop is the whole result with nothing trimmed, which is what
+	 * "expand" always meant — so expand is not a second state layered over the
+	 * dial any more, it is a jump along it. From any stop the first press lands
+	 * on `full`; the next press returns to the stop you came from (`peek` if the
+	 * jump started there, so the key is never a no-op).
 	 *
-	 * Working from the tail is not a shortcut, it is the only thing this view can
-	 * honestly offer. The transcript is bottom-anchored and has no app-level
-	 * scrolling — anything far enough up is in the terminal's own scrollback,
-	 * where this process cannot put a cursor or scroll to a selection. So the
-	 * key peels backwards through what is actually on screen, and each block it
-	 * opens is its own marker for where you have got to.
+	 * Only `app.view.cycleForward` writes the setting. This key deliberately does
+	 * not: the dial is the decision you keep, the jump is the look you take.
 	 */
-	private stepToolOutput(direction: "unfold" | "fold"): void {
-		const wantOpen = direction === "unfold";
-
-		// Radar's unit is the chain: one press turns the newest summary line back
-		// into the calls it stands for. Its per-call bodies are a glance/full
-		// question, so the step stops there rather than cascading.
-		if (this.toolOutputView === "radar") {
-			const chains = this.transcriptChains();
-			for (let i = chains.length - 1; i >= 0; i--) {
-				if (chains[i].isEmpty || chains[i].isOpened === wantOpen) continue;
-				// A chain of one is never summarised, so there is nothing for unfold to
-				// reveal; skipping it keeps the press moving to a chain that will change.
-				if (wantOpen && !chains[i].isSummarised) continue;
-				chains[i].setOpened(wantOpen);
-				this.ui.requestRender();
-				return;
-			}
-			this.showStatus(wantOpen ? "No collapsed chains below this point" : "No open chains below this point");
+	private jumpToFullView(): void {
+		if (this.toolOutputView === MAX_TOOL_OUTPUT_VIEW) {
+			const back = this.viewBeforeJump ?? DEFAULT_TOOL_OUTPUT_VIEW;
+			this.viewBeforeJump = undefined;
+			this.applyToolOutputView(back, { persist: false });
 			return;
 		}
-
-		const blocks = this.transcriptToolBlocks();
-		for (let i = blocks.length - 1; i >= 0; i--) {
-			const block = blocks[i];
-			if (block.isRevealed() === wantOpen) continue;
-			block.setExpanded(wantOpen);
-			this.ui.requestRender();
-			return;
-		}
-		this.showStatus(wantOpen ? "No folded tool output below this point" : "No unfolded tool output below this point");
+		this.viewBeforeJump = this.toolOutputView;
+		this.applyToolOutputView(MAX_TOOL_OUTPUT_VIEW, { persist: false });
 	}
 
 	/**
-	 * Move the view dial one stop and report where it landed.
+	 * Move the view dial one stop; the footer shows where it landed.
 	 *
-	 * The dial is the persistent decision ("how much do I ever want to see"),
-	 * which is why it saves; `app.tools.expand` stays the momentary one ("open
-	 * what is in front of me"), which is why it does not.
+	 * This is the persistent decision ("how much do I ever want to see"), which
+	 * is why it saves. `app.tools.expand` jumps along the same dial without
+	 * saving, which is what keeps "the look I am taking now" from overwriting
+	 * "the view I live in".
 	 */
 	private cycleToolOutputView(direction: "forward" | "backward"): void {
 		const next = cycleToolOutputView(this.toolOutputView, direction);
@@ -3180,10 +3157,17 @@ export class InteractiveMode {
 		return this.hideThinkingBlock ? "label" : "full";
 	}
 
-	private applyToolOutputView(view: ToolOutputView): void {
+	private applyToolOutputView(view: ToolOutputView, options: { persist?: boolean } = {}): void {
 		const previousThinking = this.thinkingDisplayForView();
+		const wasExpanded = this.toolOutputExpanded;
 		this.toolOutputView = view;
-		this.settingsManager.setToolOutputView(view);
+		if (options.persist !== false) {
+			this.settingsManager.setToolOutputView(view);
+			// Anything that moves the dial deliberately — the cycle key, the
+			// settings pane — is a new home stop, so the jump has nowhere stale to
+			// return to.
+			this.viewBeforeJump = undefined;
+		}
 		this.footer.setToolOutputView(view);
 		const thinking = this.thinkingDisplayForView();
 		for (const child of this.chatContainer.children) {
@@ -3196,11 +3180,18 @@ export class InteractiveMode {
 		if (this.streamingComponent && thinking !== previousThinking) {
 			this.streamingComponent.setThinkingDisplay(thinking);
 		}
+		// The header and the summary blocks are not tool output, but "full" means
+		// nothing is held back, so they open and close with the dial's top stop.
+		if (this.toolOutputExpanded !== wasExpanded) this.setToolsExpanded(this.toolOutputExpanded);
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Open or close everything that folds but is not a tool call — the header,
+	 * compaction and branch summaries, skill blocks. Tool blocks and chains are
+	 * not in this sweep: they take the view dial directly.
+	 */
 	private setToolsExpanded(expanded: boolean): void {
-		this.toolOutputExpanded = expanded;
 		const activeHeader = this.chrome.customHeader ?? this.builtInHeader;
 		if (isExpandable(activeHeader)) {
 			activeHeader.setExpanded(expanded);

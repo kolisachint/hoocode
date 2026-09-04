@@ -13,6 +13,7 @@ import type { EmbsearchService } from "../embsearch/embsearch-service.js";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.js";
 import { runSearch } from "../search/hybrid-search.js";
 import type { ResolvedSearchMode } from "../search/types.js";
+import { PEEK_LINES } from "../tool-output-view.js";
 import { getTextOutput, invalidArgText, str } from "./render-utils.js";
 
 // Default of 5 balances recall against context cost. Measured on the 62-query
@@ -85,7 +86,7 @@ function formatSearchResult(
 	let text = "";
 	if (output) {
 		const lines = output.split("\n");
-		const maxLines = options.expanded ? lines.length : 15;
+		const maxLines = options.expanded ? lines.length : PEEK_LINES;
 		const displayLines = lines.slice(0, maxLines);
 		const remaining = lines.length - maxLines;
 		text += `\n${displayLines.map((line) => theme.fg("toolOutput", line)).join("\n")}`;

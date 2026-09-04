@@ -4,38 +4,59 @@
  *
  * - `radar` — one line per *chain*: a run of consecutive tool calls collapsed to
  *   the shape it had while working, or what it amounted to once it is over.
- * - `glance` — the tool's own call line, body folded away. The default.
- * - `full` — call line plus the result body, truncated then expandable.
+ * - `peek` — the tool's own call line and the first few lines of what came back.
+ *   The default.
+ * - `full` — the same call line with nothing trimmed away.
  *
- * The expand key (`app.tools.expand`) is orthogonal: it opens what is in front
- * of you without moving the dial.
+ * There is no separate expand state. `full` *is* the expanded view, and
+ * `app.tools.expand` jumps straight to it from any stop and back again — which
+ * is why the dial is the only thing that has to be remembered, and why `full`
+ * can finally mean full.
  *
  * This lives in core rather than next to the renderer because the settings
  * manager persists it, and core must not reach into the interactive UI.
  */
-export type ToolOutputView = "radar" | "glance" | "full";
+export type ToolOutputView = "radar" | "peek" | "full";
 
 /** The dial's order, least to most. Cycling wraps at both ends. */
-export const TOOL_OUTPUT_VIEWS: readonly ToolOutputView[] = ["radar", "glance", "full"];
+export const TOOL_OUTPUT_VIEWS: readonly ToolOutputView[] = ["radar", "peek", "full"];
+
+/**
+ * How many lines of a result the `peek` stop shows.
+ *
+ * Short on purpose. `peek` is the working view — it replaced one that folded
+ * the body away entirely — so it has to stay scannable while a run of a dozen
+ * calls lands. Its job is "did this find anything, and roughly what", not
+ * "read the output"; the whole result is one `app.tools.expand` away.
+ */
+export const PEEK_LINES = 5;
+
+/** Where a fresh install starts: enough of the result to judge it, no wall of text. */
+export const DEFAULT_TOOL_OUTPUT_VIEW: ToolOutputView = "peek";
+
+/** The stop `app.tools.expand` jumps to, and returns from. */
+export const MAX_TOOL_OUTPUT_VIEW: ToolOutputView = "full";
 
 /** One-line description per view, shared by the settings pane and `/hotkeys`. */
 export const TOOL_OUTPUT_VIEW_DESCRIPTIONS: Record<ToolOutputView, string> = {
 	radar: "one line per run of tool calls; failures still show why they failed",
-	glance: "the call line alone; failures still show why they failed",
-	full: "call line plus the result body",
+	peek: "the call line and the first few lines of the result",
+	full: "the call line and the whole result",
 };
 
 /**
- * Values written by versions that had `collapsed` / `peek` / `standard`.
+ * Values written by versions that had `collapsed` / `peek` / `standard` / `glance`.
  *
- * `peek` was already what most people wanted and `standard` was the default
- * nobody kept, so the mapping is not a rename: `peek` becomes the new default
- * `glance`, and `collapsed` — which hid a call's result with no way to see it —
- * becomes `radar`, which hides the same body but says what came back.
+ * `peek` is a live name again and needs no entry: a config that still says it
+ * lands on the stop it always meant, the light one. `glance` — the call line
+ * with its body folded away — becomes that same stop, because a handful of
+ * result lines answers "did this find anything" better than a folded body did.
+ * `collapsed`, which hid a call's result with no way to see it, becomes `radar`,
+ * which hides the same body but says what came back.
  */
 export const LEGACY_TOOL_OUTPUT_VIEWS: Record<string, ToolOutputView> = {
 	collapsed: "radar",
-	peek: "glance",
+	glance: "peek",
 	standard: "full",
 };
 
