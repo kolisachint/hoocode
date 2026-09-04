@@ -440,6 +440,126 @@ function fillInk(color: string | number): string | undefined {
 	return luminance > 0.179 ? "#0b0b0f" : "#ffffff";
 }
 
+/**
+ * How light a chip fill has to be before its hue reads as that hue.
+ *
+ * A colour has two jobs in a light theme and they pull in opposite directions.
+ * As *text* on paper it has to clear 4.5:1, which forces it dark — and a dark
+ * yellow is brown, a dark cyan is navy, a dark green is bottle. As a *fill* it
+ * only has to out-contrast the ink laid on it, which leaves it free to be the
+ * hue it is named after. Lifting the fill to a floor lightness settles the
+ * argument: the token stays ink where it is drawn as text, and the chip built
+ * from it is recognisably yellow, cyan, green.
+ *
+ * 0.5 is where a fully saturated hue stops reading as a shade of brown and starts
+ * reading as itself.
+ */
+const MIN_CHIP_FILL_LIGHTNESS = 0.5;
+
+/**
+ * How bright a chip has to end up before its ink is comfortable on it.
+ *
+ * Lightness alone is not enough, because hues do not carry the same brightness
+ * at the same lightness: a blue or a magenta at 0.5 lands near luminance 0.2,
+ * which is the crossover where black ink and white ink are equally poor and the
+ * name on the chip goes soft either way. Lifting a little further past that band
+ * costs nothing — the hue is already established — and buys the ink real room.
+ */
+const MIN_CHIP_FILL_LUMINANCE = 0.25;
+
+/** Lightness past which lifting stops, so a pale hue is never bleached to paper. */
+const MAX_CHIP_FILL_LIGHTNESS = 0.78;
+
+/** HSL of a hex colour, in 0-360 / 0-1 / 0-1. */
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+	const { r, g, b } = hexToRgb(hex);
+	const [red, green, blue] = [r / 255, g / 255, b / 255];
+	const max = Math.max(red, green, blue);
+	const min = Math.min(red, green, blue);
+	const delta = max - min;
+	const l = (max + min) / 2;
+	if (delta === 0) return { h: 0, s: 0, l };
+	const raw =
+		max === red
+			? (green - blue) / delta + (green < blue ? 6 : 0)
+			: max === green
+				? (blue - red) / delta + 2
+				: (red - green) / delta + 4;
+	return { h: raw * 60, s: delta / (1 - Math.abs(2 * l - 1)), l };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+	const chroma = (1 - Math.abs(2 * l - 1)) * s;
+	const sector = ((((h % 360) + 360) % 360) / 60) % 6;
+	const second = chroma * (1 - Math.abs((sector % 2) - 1));
+	const [r, g, b] = (
+		sector < 1
+			? [chroma, second, 0]
+			: sector < 2
+				? [second, chroma, 0]
+				: sector < 3
+					? [0, chroma, second]
+					: sector < 4
+						? [0, second, chroma]
+						: sector < 5
+							? [second, 0, chroma]
+							: [chroma, 0, second]
+	) as [number, number, number];
+	const offset = l - chroma / 2;
+	return `#${[r, g, b]
+		.map((channel) =>
+			Math.round((channel + offset) * 255)
+				.toString(16)
+				.padStart(2, "0"),
+		)
+		.join("")}`;
+}
+
+/**
+ * The colour a chip is actually filled with for a palette entry.
+ *
+ * On a dark theme the palette is already bright, so the entry is its own fill and
+ * nothing here changes. On a light one it is ink, and ink laid down as a swatch
+ * is a dark smudge whose hue nobody can name — see `MIN_CHIP_FILL_LIGHTNESS`.
+ * Only the lightness moves; hue and saturation are the theme's, so a lifted fill
+ * is still recognisably that theme's colour and not a generic one.
+ */
+function chipFill(color: string | number, lightBackdrop: boolean): string | number {
+	if (!lightBackdrop) return color;
+	const hex = typeof color === "number" ? ansi256ToHex(color) : color;
+	if (!hex.startsWith("#")) return color;
+	let hsl: { h: number; s: number; l: number };
+	try {
+		hsl = hexToHsl(hex);
+	} catch {
+		return color;
+	}
+	// A gray has no hue to rescue, and lifting it would only wash the chip out.
+	if (hsl.s === 0) return color;
+	// Up to the floor where the hue reads, then on a step at a time until the ink
+	// has room, stopping as soon as the lift has what it came for.
+	let lightness = Math.max(hsl.l, MIN_CHIP_FILL_LIGHTNESS);
+	while (lightness < MAX_CHIP_FILL_LIGHTNESS) {
+		if ((relativeLuminance(hslToHex(hsl.h, hsl.s, lightness)) ?? 1) >= MIN_CHIP_FILL_LUMINANCE) break;
+		lightness += 0.02;
+	}
+	return lightness > hsl.l ? hslToHex(hsl.h, hsl.s, lightness) : color;
+}
+
+/**
+ * Whether the theme paints on paper rather than on a dark terminal, judged from
+ * the surfaces it defines rather than from its name. `userMessageBg` is the one
+ * surface every theme sets, so it is the reliable witness.
+ */
+function hasLightSurfaces(bgColors: Record<ThemeBg, string | number>): boolean {
+	for (const candidate of [bgColors.userMessageBg, bgColors.selectedBg]) {
+		if (candidate === undefined || candidate === "") continue;
+		const luminance = relativeLuminance(candidate);
+		if (luminance !== undefined) return luminance > 0.5;
+	}
+	return false;
+}
+
 function resolveVarRefs(
 	value: ColorValue,
 	vars: Record<string, ColorValue>,
@@ -516,13 +636,17 @@ export class Theme {
 		}
 		this.fgColors = new Map();
 		this.fillColors = new Map();
+		// A light theme's palette is ink, and ink does not read as its own hue when
+		// it is laid down as a swatch, so a chip fill is lifted off it.
+		const lightBackdrop = hasLightSurfaces(bgColors);
 		for (const [key, value] of raw) {
 			this.fgColors.set(key, fgAnsi(value, mode));
 			// "" means the terminal's own foreground: there is no colour to fill
 			// with, so the token simply is not fillable.
-			const ink = value === "" ? undefined : fillInk(value);
+			const fill = value === "" ? value : chipFill(value, lightBackdrop);
+			const ink = fill === "" ? undefined : fillInk(fill);
 			if (ink !== undefined) {
-				this.fillColors.set(key, bgAnsi(value, mode) + fgAnsi(ink, mode));
+				this.fillColors.set(key, bgAnsi(fill, mode) + fgAnsi(ink, mode));
 			}
 		}
 		this.bgColors = new Map();

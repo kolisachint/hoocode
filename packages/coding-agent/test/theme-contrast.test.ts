@@ -1138,6 +1138,13 @@ function hue(hex: string): number {
 	return raw * 60;
 }
 
+/** HSL lightness (0-1): how much colour there is, independent of which hue it is. */
+function lightness(hex: string): number {
+	const value = hex.replace("#", "");
+	const [r, g, b] = [0, 2, 4].map((offset) => Number.parseInt(value.slice(offset, offset + 2), 16) / 255);
+	return (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
+}
+
 /** Distance between two hues the short way round the wheel. */
 function hueDistance(a: number, b: number): number {
 	const delta = Math.abs(a - b) % 360;
@@ -1179,5 +1186,50 @@ describe("session colour slots", () => {
 		expect(better, `a better fit than the shipped order (cost ${shipped.toFixed(0)} vs ${best.toFixed(0)})`).toEqual(
 			[],
 		);
+	});
+
+	// A light theme's palette is ink: dark enough to read on paper, which turns its
+	// yellow into brown and its cyan into navy. A chip does not have that problem —
+	// it only has to out-contrast the ink laid on it — so the fill is lifted off
+	// the token. Without the lift a light theme's `/color` picker is six dark
+	// smudges whose names nobody can check.
+	it.each(getAvailableThemes())("%s fills a chip light enough to name its hue", (themeName) => {
+		const theme = loadThemeFromPath(
+			new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url).pathname,
+			"truecolor",
+		);
+		const rgb = (params: string) => {
+			const [, , r, g, b] = params.split(";").map(Number);
+			return `#${[r, g, b].map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+		};
+
+		// Only a light theme's palette is ink, so only there is a fill lifted. A dark
+		// theme's is already bright and is used as-is, whatever lightness it sits at.
+		const isLight = luminance(getResolvedThemeColors(themeName).userMessageBg) > 0.5;
+
+		const failures: string[] = [];
+		for (let slot = 1; slot <= AGENT_TOKENS.length; slot++) {
+			const styled = theme.fill(AGENT_TOKENS[slot - 1] as ThemeColor, " ");
+			const fillMatch = /\x1b\[(48;2;[0-9;]+)m/.exec(styled);
+			const inkMatch = /\x1b\[(38;2;[0-9;]+)m/.exec(styled);
+			if (!fillMatch || !inkMatch) {
+				failures.push(`slot ${slot}: not filled`);
+				continue;
+			}
+			const fill = rgb(fillMatch[1]);
+			const ink = rgb(inkMatch[1]);
+			// Lightness, not contrast against the page: a chip is a block of colour,
+			// and what makes a hue nameable is how much of it there is.
+			if (isLight && lightness(fill) < 0.5) {
+				failures.push(`slot ${slot} fill ${fill}: lightness ${lightness(fill).toFixed(2)}`);
+			}
+			// Whatever it ended up filled with, the name written on it has to read.
+			// Only asserted where the fill is ours to choose: a dark theme's palette
+			// is used as-is, so its ink contrast is whatever the palette gives.
+			if (isLight && contrast(fill, ink) < 4.5) {
+				failures.push(`slot ${slot} ink ${ink} on ${fill}: ${contrast(fill, ink).toFixed(2)}:1`);
+			}
+		}
+		expect(failures).toEqual([]);
 	});
 });

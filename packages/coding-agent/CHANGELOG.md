@@ -4,6 +4,28 @@
 
 ### Fixed
 
+- **A light theme's session chip is no longer filled with ink.** A palette entry
+  has two jobs on a light theme and they pull opposite ways: as text on paper it
+  has to clear 4.5:1, which forces it dark — and a dark yellow is brown, a dark
+  cyan is navy, a dark green is bottle. As a chip fill it only has to
+  out-contrast the ink laid on it. So the fill is now lifted off the token: same
+  hue and saturation, raised to a lightness where the hue reads as itself, then
+  a step further if the result sits in the luminance band where black ink and
+  white ink are equally poor. `/color yellow` paints a yellow chip.
+
+  Only the fill moves. The token itself is untouched wherever it is drawn as
+  text — agent tags, tool rows, the task panel — and dark themes, whose palettes
+  are already bright, are used exactly as before.
+
+  With the fill lifted, hues that had been dark enough to be ambiguous showed
+  their real family, so several light palettes needed correcting too: slot 3 was
+  an orange rather than a yellow in `light`, `vox-light`, `vox-cutout-light`,
+  `warm-light`, `high-contrast-light` and `colorsafe-light`; `light`'s slot 5 was
+  a teal called green; `colorsafe-light`'s slot 5 was an olive; and `warm-light`
+  and `high-contrast-light` had no violet at all, so a plum stood in for
+  `purple` and a plain red for `magenta`. `solarized-light` is left as it is —
+  its slot 2 and slot 5 are Solarized's own violet and green.
+
 - **Session colour slots now hold the hue their name promises.** `/color` and the
   `/color` picker address the six identity slots by name (`cyan`, `purple`,
   `yellow`, `magenta`, `green`, `blue`), and the code documented that each slot
@@ -12,13 +34,11 @@
   themes anyone happened to check.
   - `light`'s slot 3 shipped a brick red (`#b5340e`), which both contradicted its
     `yellow` name and sat one hue from slot 4's crimson, leaving two chips that
-    read the same at a glance. It is now the amber the dark theme's slot 3
-    already was (`#8a5a00`).
+    read the same at a glance. It is a yellow now.
   - `warm-light` and `high-contrast-light` had slots 2 and 4 swapped, so
     `/color purple` painted a red chip. Reordered.
   - `colorsafe-light` was scrambled outright: `magenta` was pure blue, `green`
-    was violet, and `blue` was a near-black khaki. Reordered, and slot 3 traded
-    that khaki for a gold (`#5a3f00`).
+    was violet, and `blue` was a near-black khaki. Reordered.
   - `warm-dark` answered `/color cyan` with amber and `/color magenta` with
     teal. Reordered, and slot 6 gained the blue (`#7bc0ff`) its light
     counterpart already had, in place of a salmon that only repeated slot 3's
