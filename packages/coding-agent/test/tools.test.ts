@@ -5,6 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.js";
 import { type BashOperations, createBashTool, createLocalBashOperations } from "../src/core/tools/bash.js";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.js";
+import {
+	allToolNames,
+	createCodingToolDefinitions,
+	createReadOnlyToolDefinitions,
+	createToolDefinition,
+	type ToolName,
+} from "../src/core/tools/index.js";
 import { DEFAULT_MAX_LINES } from "../src/core/tools/truncate.js";
 import { createEditTool, createReadTool, createWriteTool } from "../src/index.js";
 import * as shellModule from "../src/utils/shell.js";
@@ -1029,5 +1036,33 @@ describe("edit tool CRLF handling", () => {
 
 		const content = readFileSync(testFile, "utf-8");
 		expect(content).toBe("\uFEFFfirst\r\nSECOND\r\nthird\r\nFOURTH\r\n");
+	});
+});
+
+describe("built-in tool registry names", () => {
+	// The registration in TOOL_FACTORIES is the load-bearing line of the
+	// search -> SearchCodebase rename: the ToolName union, both bundles, the
+	// options lookup and the system-prompt tool list all derive from it. Before
+	// this block only one incidental radar-rendering assertion failed when the
+	// key was reverted, so the rename is pinned here directly.
+	it("registers SearchCodebase and nothing named search", () => {
+		expect([...allToolNames]).toContain("SearchCodebase");
+		expect([...allToolNames]).not.toContain("search");
+	});
+
+	it("refuses to build the tool under its pre-rename name", () => {
+		expect(() => createToolDefinition("search" as ToolName, process.cwd())).toThrow(/Unknown tool name: search/);
+		expect(() => createToolDefinition("SearchCodebase", process.cwd())).not.toThrow();
+	});
+
+	it("carries the new name through the definition the model sees", () => {
+		const def = createToolDefinition("SearchCodebase", process.cwd());
+		expect(def.name).toBe("SearchCodebase");
+		expect(def.label).toBe("SearchCodebase");
+	});
+
+	it("puts it in both built-in bundles", () => {
+		expect(createCodingToolDefinitions(process.cwd()).map((d) => d.name)).toContain("SearchCodebase");
+		expect(createReadOnlyToolDefinitions(process.cwd()).map((d) => d.name)).toContain("SearchCodebase");
 	});
 });
