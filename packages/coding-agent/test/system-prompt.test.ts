@@ -165,7 +165,7 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 			expect(bashOnly).toContain("Use bash for file exploration");
-			expect(bashOnly).not.toContain("Between SearchCodebase and bash:");
+			expect(bashOnly).not.toContain("SearchCodebase");
 		});
 	});
 });

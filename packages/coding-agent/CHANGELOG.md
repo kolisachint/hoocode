@@ -2,6 +2,57 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Prompt surface trimmed by ~384 tokens per turn** (measured with
+  `--print-token-surface`: 7,077 -> 6,693 on the default tool set). The savings
+  are all deduplication, not lost guidance:
+  - `task-main.md` restated its own parameter schemas three times — the "When to
+    delegate" list was duplicated wholesale by a later "Delegate proactively"
+    bullet, and "cannot see this conversation" / "returns ONLY its final answer"
+    each appeared twice (-206).
+  - `TodoWrite` stated the same three rules in both `description` and
+    `promptGuidelines`, which ship together on every turn (-131).
+  - The base prompt carried two SearchCodebase-vs-bash guidelines saying the
+    same thing and three concision guidelines saying the same thing. Merging
+    both funded a new guideline about reporting failed or unverified work, and
+    still came out ahead (-61).
+- **`build` mode no longer says "One tool per turn."** It contradicted the base
+  prompt's instruction to batch independent tool calls, and since `build` is the
+  default and the mode prompt is appended last, that made the base guideline
+  dead text in every default install. Edits stay sequential; reads and searches
+  batch. The mode also dropped "show diffs / wait for implicit acceptance",
+  which duplicated the permission gate, and gained "never commit or push unless
+  asked".
+- **`ask`, `debug` and `plan` prompts tightened**, each now smaller than before:
+  `ask` and `debug` state which read-only shell commands are fine rather than
+  leaving the model to guess, `debug` no longer calls `read` and
+  `SearchCodebase` "commands", and both now say that "I could not determine it"
+  beats an invented answer. `plan` points at `ask_options` for blocking
+  questions and asks for verification steps that prove the goal, not just that
+  the code runs.
+
+### Fixed
+
+- **Read-only modes are now actually enforced.** `ask` and `debug` ship
+  `denied_tools: [edit, write]`, and `plan` confines writes with
+  `allowed_write_paths`. Previously `plan` auto-allowed `write` with no path
+  restriction, so overwriting a source file in plan mode raised no prompt at
+  all. `bash` remains prompt-governed in `ask`/`debug`; see `docs/modes.md`.
+- **`allowed_write_paths` no longer blocks every write on Windows.** Patterns
+  are written with `/` but the paths handed to the model come from `relative()`,
+  which is backslash-separated on Windows — and this check runs before
+  `auto_allow`, so a mismatch is a hard block rather than a prompt. Both sides
+  are now normalized, absolute paths are also tried in their cwd-relative form,
+  and pattern metacharacters are escaped so `.hoocode/plans/*` no longer also
+  matches `Xhoocode/plans/`.
+- **The active mode's prompt no longer leaks into spawned subagents.** A
+  read-only `explore` child was being told to "read before editing" and "run
+  tests after every change" by the parent's `build` mode prompt, on top of its
+  own system prompt and against a tool allowlist that has no edit tool.
+- The system prompt joined `Current date:` to the guidelines list with a single
+  newline, so it rendered as a malformed final bullet.
+
 ## [0.5.53] - 2026-09-04
 
 ### Changed
