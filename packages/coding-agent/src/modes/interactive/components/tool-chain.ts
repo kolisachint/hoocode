@@ -22,8 +22,6 @@ export class ToolChainComponent extends Container {
 	private blocks: ToolExecutionComponent[] = [];
 	private view: ToolOutputView;
 	private state: ChainState = "running";
-	/** Opened into its per-call rows by `app.tools.unfoldOne`. */
-	private opened = false;
 	/** The newest run in the transcript; radar marks it. */
 	private latest = false;
 	private memo?: { width: number; out: string[] };
@@ -50,10 +48,6 @@ export class ToolChainComponent extends Container {
 	/** True until the agent speaks or the turn settles. */
 	get isOpen(): boolean {
 		return this.state === "running";
-	}
-
-	get isOpened(): boolean {
-		return this.opened;
 	}
 
 	/** Whether a summary line is standing in for this chain's calls right now. */
@@ -88,19 +82,6 @@ export class ToolChainComponent extends Container {
 		for (const block of this.blocks) block.setView(view);
 	}
 
-	/** The global expand key opens every block, which also opens the chain. */
-	setExpanded(expanded: boolean): void {
-		this.opened = expanded;
-		this.forget();
-		for (const block of this.blocks) block.setExpanded(expanded);
-	}
-
-	/** `alt+u` in radar: open this chain into its per-call rows, or fold it back. */
-	setOpened(opened: boolean): void {
-		this.opened = opened;
-		this.forget();
-	}
-
 	/**
 	 * Mark this run as the newest in the transcript, or no longer it.
 	 *
@@ -131,7 +112,7 @@ export class ToolChainComponent extends Container {
 	 * one, so this is the common case, not an edge.
 	 */
 	private isCollapsed(): boolean {
-		return this.view === "radar" && !this.opened && this.blocks.length > 1;
+		return this.view === "radar" && this.blocks.length > 1;
 	}
 
 	/**
@@ -144,8 +125,8 @@ export class ToolChainComponent extends Container {
 	 * line at the top of the chain, and the rows go on stacking underneath it.
 	 *
 	 * Only radar needs it. Every other view gives each block a leading spacer of
-	 * its own, and so does a radar block that has been opened, so asking the
-	 * first block whether it draws one keeps the two from doubling up.
+	 * its own, so asking the first block whether it draws one keeps the two from
+	 * doubling up.
 	 */
 	private needsLeadIn(): boolean {
 		if (this.view !== "radar") return false;

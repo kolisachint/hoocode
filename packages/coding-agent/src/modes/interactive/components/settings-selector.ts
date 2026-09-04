@@ -665,7 +665,7 @@ class ToolSettingsSubmenu extends Container {
 			{
 				id: "tool-output-view",
 				label: "View",
-				description: `How much of a tool call the transcript shows, least to most. 'radar': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.radar}. 'glance': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.glance}. 'full': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.full}.`,
+				description: `How much of a tool call the transcript shows, least to most. 'radar': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.radar}. 'peek': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.peek}. 'full': ${TOOL_OUTPUT_VIEW_DESCRIPTIONS.full}.`,
 				currentValue: config.toolOutputView,
 				values: [...TOOL_OUTPUT_VIEWS],
 			},

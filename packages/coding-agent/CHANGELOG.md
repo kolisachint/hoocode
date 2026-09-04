@@ -94,6 +94,38 @@
   every other action, instead of being defined but missing from the type map
   and reached through a cast. The layout test now checks that every id belongs
   to a scope, so the next one cannot slip through unchecked.
+## [0.5.57] - 2026-09-04
+
+### Changed
+
+- **The tool output dial is three stops and two keys, and `full` finally means
+  full.** It had grown into three separate ideas: a dial (`alt+o`) with a
+  `radar` / `glance` / `full` scale, an all-or-nothing expand (`ctrl+o`), and a
+  one-at-a-time unfold (`alt+u` / `shift+alt+u`) that peeled backwards from the
+  newest block and meant something different in each view. Three states to hold,
+  and a `full` stop that was not full — `ctrl+o` was what made it full.
+
+  Now there is one value. The dial reads **radar → peek → full**: one line per
+  run of calls, the call line with the first few lines of its result, the same
+  with nothing trimmed. `glance` is gone as a stop — a handful of result lines
+  answers "did this find anything" better than a folded body did, so `peek`
+  replaces it as the default, and `PEEK_LINES` is the single knob every renderer
+  trims to (including tools with no renderer of their own, which used to print
+  their whole result whatever the dial said).
+
+  `ctrl+o` still exists and is still the reflex key: from any stop it jumps
+  straight to `full`, and pressing it again returns to the stop it came from.
+  The header, compaction and branch summaries and skill blocks follow it, since
+  `full` means nothing is held back. The two keys differ in what they remember:
+  `alt+o` saves where it lands, `ctrl+o` does not.
+
+  `alt+u` and `shift+alt+u` are gone, and with them the per-chain opened state,
+  the per-block revealed flag and the "a revealed block leaves radar while it is
+  open" special case. A run of calls is a summary line in radar and its own calls
+  at every other stop; nothing opens one chain or one block on its own any more.
+  Old `toolOutputView` settings still load: `glance` becomes `peek`, `collapsed`
+  becomes `radar`, `standard` becomes `full`, and a config that still says `peek`
+  needs no migration at all — it names a live stop again.
 
 ## [0.5.56] - 2026-09-04
 

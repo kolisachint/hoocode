@@ -2,8 +2,10 @@ import stripAnsi from "strip-ansi";
 import { describe, expect, test } from "vitest";
 import {
 	cycleToolOutputView,
+	DEFAULT_TOOL_OUTPUT_VIEW,
 	isToolOutputView,
 	LEGACY_TOOL_OUTPUT_VIEWS,
+	MAX_TOOL_OUTPUT_VIEW,
 	TOOL_OUTPUT_VIEWS,
 } from "../src/core/tool-output-view.js";
 import { renderToolSignalLine, toolSignal, toolSubject } from "../src/modes/interactive/components/tool-signal.js";
@@ -11,22 +13,31 @@ import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 describe("tool output view dial", () => {
 	test("cycles forward and backward, wrapping at both ends", () => {
-		expect(TOOL_OUTPUT_VIEWS).toEqual(["radar", "glance", "full"]);
-		expect(cycleToolOutputView("radar", "forward")).toBe("glance");
-		expect(cycleToolOutputView("glance", "forward")).toBe("full");
+		expect(TOOL_OUTPUT_VIEWS).toEqual(["radar", "peek", "full"]);
+		expect(cycleToolOutputView("radar", "forward")).toBe("peek");
+		expect(cycleToolOutputView("peek", "forward")).toBe("full");
 		expect(cycleToolOutputView("full", "forward")).toBe("radar");
 		expect(cycleToolOutputView("radar", "backward")).toBe("full");
-		expect(cycleToolOutputView("full", "backward")).toBe("glance");
+		expect(cycleToolOutputView("full", "backward")).toBe("peek");
 	});
 
 	test("recognises its own values and nothing else", () => {
-		expect(isToolOutputView("glance")).toBe(true);
-		expect(isToolOutputView("peek")).toBe(false);
+		expect(isToolOutputView("peek")).toBe(true);
+		expect(isToolOutputView("glance")).toBe(false);
 		expect(isToolOutputView(undefined)).toBe(false);
 	});
 
-	test("maps every pre-dial value", () => {
-		expect(LEGACY_TOOL_OUTPUT_VIEWS).toEqual({ collapsed: "radar", peek: "glance", standard: "full" });
+	test("maps every retired value, and leaves the live ones alone", () => {
+		expect(LEGACY_TOOL_OUTPUT_VIEWS).toEqual({ collapsed: "radar", glance: "peek", standard: "full" });
+		// `peek` is a live name again, so an old config carrying it needs no
+		// migration at all — it already names the stop it always meant.
+		expect(LEGACY_TOOL_OUTPUT_VIEWS.peek).toBeUndefined();
+	});
+
+	test("the jump key's target is the top of the dial", () => {
+		expect(MAX_TOOL_OUTPUT_VIEW).toBe(TOOL_OUTPUT_VIEWS[TOOL_OUTPUT_VIEWS.length - 1]);
+		expect(TOOL_OUTPUT_VIEWS).toContain(DEFAULT_TOOL_OUTPUT_VIEW);
+		expect(DEFAULT_TOOL_OUTPUT_VIEW).not.toBe(MAX_TOOL_OUTPUT_VIEW);
 	});
 });
 

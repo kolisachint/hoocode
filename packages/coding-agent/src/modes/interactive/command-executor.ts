@@ -571,8 +571,6 @@ export class CommandExecutor {
 		const dequeue = keyDisplayText("app.message.dequeue");
 		const pasteImage = keyDisplayText("app.clipboard.pasteImage");
 		const viewForward = keyDisplayText("app.view.cycleForward");
-		const unfoldOne = keyDisplayText("app.tools.unfoldOne");
-		const foldOne = keyDisplayText("app.tools.foldOne");
 		const viewBackward = keyDisplayText("app.view.cycleBackward");
 		const voice = keyDisplayText("app.input.voiceTranscribe");
 		const changeDirectory = keyDisplayText("app.session.changeDirectory");
@@ -631,7 +629,7 @@ export class CommandExecutor {
 | \`${cycleMode}\` / \`${cycleModeBack}\` | Agent mode | ask → plan → build → debug (\`/mode\` to pick one) |
 | \`${cycleModelForward}\` / \`${cycleModelBackward}\` | Model | your enabled models (\`/model\` to pick one) |
 | \`${cycleThinkingLevel}\` / \`${cycleThinkingLevelBack}\` | Thinking level | off → … → high |
-| \`${viewForward}\` / \`${viewBackward}\` | Tool output | radar → glance → full |
+| \`${viewForward}\` / \`${viewBackward}\` | Tool output | radar → peek → full |
 | \`${cycleSessionColor}\` / \`${cycleSessionColorBackward}\` | Session color | the six chip slots (\`/color\` to pick one) |
 | \`${cycleTaskView}\` | Task panel | tasks → subagents → teams (no reverse — see below) |
 
@@ -642,15 +640,15 @@ one more press forward.
 **View** — what is on screen right now (\`Ctrl\`)
 | Key | Action |
 |-----|--------|
-| \`${expandTools}\` | Expand or collapse every tool block at once |
-| \`${unfoldOne}\` / \`${foldOne}\` | Open / re-fold one thing, newest first — a chain in radar, a tool body otherwise |
+| \`${expandTools}\` | Jump to the full view and back, without moving the dial |
 | \`${toggleThinking}\` | Toggle thinking block visibility |
 | \`${teamFocus}\` | Focus the team roster — then \`${teamNudge}\` nudges, \`${teamAttach}\` attaches, \`q\`/\`${interrupt}\` leaves (\`--team\`) |
 
-Same letter on both rings is the same subject twice: \`${expandTools}\` opens the
-tool bodies you have, \`${viewForward}\` sets how much they ever show;
-\`${toggleThinking}\` shows the thinking you have, \`${cycleThinkingLevel}\` sets how
-much there ever is.
+Same letter on both rings is the same subject twice — \`Alt\` walks the dial and
+saves where it lands, \`Ctrl\` acts on what is drawn right now:
+\`${viewForward}\` sets how much tool output there ever is and \`${expandTools}\`
+jumps to all of it and back; \`${cycleThinkingLevel}\` sets how much thinking there
+ever is and \`${toggleThinking}\` shows or hides what you have.
 
 **Cockpit** — what the agent is, and where it works (\`Alt\`)
 | Key | Action |

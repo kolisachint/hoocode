@@ -25,7 +25,7 @@ already spent `Shift`, so its reverse takes `Alt` instead.
 | Agent mode | footer, bold, top left | `Alt+A` | `Shift+Alt+A` | ask → plan → build → debug |
 | Model | footer, bottom right | `Alt+M` | `Shift+Alt+M` | your enabled models |
 | Thinking level | footer, bottom right | `Shift+Tab` | `Shift+Alt+Tab` | off → … → high |
-| Tool output | footer, top right | `Alt+O` | `Shift+Alt+O` | radar → glance → full |
+| Tool output | footer, top right | `Alt+O` | `Shift+Alt+O` | radar → peek → full |
 | Session color | the session chip | `Alt+C` | `Shift+Alt+C` | six chip slots |
 | Task panel | task panel header | `Ctrl+N` | — | tasks → subagents → teams |
 
@@ -60,8 +60,10 @@ what kind of thing the key does before you remember the key itself.
 Where the same letter appears on both rings it is the same subject seen twice —
 `Ctrl` acts on what is already drawn, `Alt` on how much is ever drawn:
 
-- `Ctrl+O` opens the tool bodies you have; `Alt+O` sets how much they ever show.
-- `Ctrl+T` shows the thinking you have; `Shift+Tab` sets how much there ever is.
+- `Alt+O` sets how much tool output there ever is and saves where it lands;
+  `Ctrl+O` jumps to all of it and back, leaving the dial where it was.
+- `Shift+Tab` sets how much thinking there ever is; `Ctrl+T` shows or hides
+  the thinking you have.
 
 Two consequences worth knowing before rebinding:
 
@@ -121,7 +123,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | `app.model.cycleBackward` | `shift+alt+m` | Step to the previous model |
 | `app.thinking.cycleForward` | `shift+tab` | Step thinking level: off → … → high |
 | `app.thinking.cycleBackward` | `shift+alt+tab` | Step thinking level backward |
-| `app.view.cycleForward` | `alt+o` | Step tool output: radar → glance → full |
+| `app.view.cycleForward` | `alt+o` | Step tool output: radar → peek → full |
 | `app.view.cycleBackward` | `shift+alt+o` | Step tool output backward |
 | `app.session.color.cycleForward` | `alt+c` | Step the session chip's color |
 | `app.session.color.cycleBackward` | `shift+alt+c` | Step the session chip's color backward |
@@ -131,9 +133,7 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
-| `app.tools.expand` | `ctrl+o` | Expand or collapse every tool block at once |
-| `app.tools.unfoldOne` | `alt+u` | Open the newest folded thing; repeat to peel backwards |
-| `app.tools.foldOne` | `shift+alt+u` | Re-fold the most recently opened chain or block |
+| `app.tools.expand` | `ctrl+o` | Jump to the full tool-output view and back, without moving the dial |
 | `app.thinking.toggle` | `ctrl+t` | Show or hide thinking blocks |
 | `app.team.focus` | `alt+n` | Focus the team roster (`--team`) |
 

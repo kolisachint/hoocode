@@ -12,11 +12,12 @@ import {
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.js";
-import type { ToolOutputView } from "../../../core/tool-output-view.js";
+import { DEFAULT_TOOL_OUTPUT_VIEW, PEEK_LINES, type ToolOutputView } from "../../../core/tool-output-view.js";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.js";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
+import { keyHint } from "./keybinding-hints.js";
 import type { ChainEntry } from "./tool-chain-summary.js";
 import { ToolSignalComponent, toolSubject } from "./tool-signal.js";
 
@@ -114,12 +115,11 @@ export class ToolExecutionComponent extends Container {
 	private toolName: string;
 	private toolCallId: string;
 	private args: any;
-	private expanded = false;
-	// Persisted view (radar/glance/full). Controls how the call line is drawn and
-	// whether the result body renders at all; `revealed` is the per-block override
-	// the global expand key flips for radar/glance blocks.
+	// Persisted view (radar/peek/full). The block's only display state: it decides
+	// whether the call line is the uniform radar row or the tool's own renderer,
+	// whether the result body renders at all, and whether that body is trimmed.
+	// There is no per-block override — `app.tools.expand` moves the dial itself.
 	private view: ToolOutputView;
-	private revealed = false;
 	private signalComponent?: ToolSignalComponent;
 	private leadingSpacer: Spacer;
 	private showImages: boolean;
@@ -170,7 +170,7 @@ export class ToolExecutionComponent extends Container {
 		this.builtInToolDefinition = createAllToolDefinitions(cwd)[toolName as ToolName];
 		this.showImages = options.showImages ?? true;
 		this.imageWidthCells = options.imageWidthCells ?? 60;
-		this.view = options.view ?? "glance";
+		this.view = options.view ?? DEFAULT_TOOL_OUTPUT_VIEW;
 		this.ui = ui;
 		this.cwd = cwd;
 
@@ -246,7 +246,7 @@ export class ToolExecutionComponent extends Container {
 			executionStarted: this.executionStarted,
 			argsComplete: this.argsComplete,
 			isPartial: this.isPartial,
-			expanded: this.expanded,
+			expanded: this.view === "full",
 			showImages: this.showImages,
 			isError: this.result?.isError ?? false,
 		};
@@ -256,12 +256,32 @@ export class ToolExecutionComponent extends Container {
 		return new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0);
 	}
 
+	/**
+	 * The body for a tool with no result renderer of its own.
+	 *
+	 * It gets the same peek budget as every renderer that trims itself. Before
+	 * the dial had a trimmed stop this path could print its whole result and
+	 * nothing looked wrong; now an untrimmed extension tool would be the one
+	 * thing on screen that ignores where the dial is set.
+	 */
 	private createResultFallback(): Component | undefined {
 		const output = this.getTextOutput();
 		if (!output) {
 			return undefined;
 		}
-		return new Text(theme.fg("toolOutput", output), 0, 0);
+		if (this.view === "full") return new Text(theme.fg("toolOutput", output), 0, 0);
+		const lines = output.split("\n");
+		if (lines.length <= PEEK_LINES) return new Text(theme.fg("toolOutput", output), 0, 0);
+		const shown = lines.slice(0, PEEK_LINES).join("\n");
+		const remaining = lines.length - PEEK_LINES;
+		return new Text(
+			theme.fg("toolOutput", shown) +
+				theme.fg("muted", `\n... (${remaining} more lines, `) +
+				keyHint("app.tools.expand", "to expand") +
+				theme.fg("muted", ")"),
+			0,
+			0,
+		);
 	}
 
 	updateArgs(args: any): void {
@@ -319,27 +339,9 @@ export class ToolExecutionComponent extends Container {
 		}
 	}
 
-	setExpanded(expanded: boolean): void {
-		this.expanded = expanded;
-		// For radar/glance blocks the same global toggle reveals the hidden body;
-		// for full blocks `expanded` alone switches truncated ↔ everything.
-		this.revealed = expanded;
-		this.updateDisplay();
-	}
-
 	setView(view: ToolOutputView): void {
 		this.view = view;
 		this.updateDisplay();
-	}
-
-	/**
-	 * Whether this block is currently opened up.
-	 *
-	 * Read by the one-at-a-time unfold, which walks back from the newest block
-	 * to find the first one still folded.
-	 */
-	isRevealed(): boolean {
-		return this.revealed;
 	}
 
 	/** This call's contribution to its chain's summary line. */
@@ -368,18 +370,17 @@ export class ToolExecutionComponent extends Container {
 	 * the folded views got wrong.
 	 */
 	private shouldShowBody(): boolean {
-		return this.view === "full" || this.revealed || this.result?.isError === true;
+		return this.view !== "radar" || this.result?.isError === true;
 	}
 
 	/**
 	 * Whether this block draws its radar signal line instead of the tool's own
-	 * call renderer. A revealed block leaves radar for as long as it is open, so
-	 * "expand" means the same thing in every view.
+	 * call renderer.
 	 */
 	private isLatest = false;
 
 	private shouldShowSignalLine(): boolean {
-		return this.view === "radar" && !this.revealed;
+		return this.view === "radar";
 	}
 
 	/**
@@ -509,16 +510,15 @@ export class ToolExecutionComponent extends Container {
 	/**
 	 * The container this block renders into.
 	 *
-	 * A self-rendering tool (`edit` draws its own framed diff) normally gets the
-	 * bare container so its frame can use the full width; everything else gets
-	 * the padded box. That only matters while the body is on screen. With the
-	 * body folded away the block is a single line, and the unpadded container
-	 * put it one column left of every other row — invisible while `peek` was an
-	 * opt-in, glaring now that `glance` is the default. So: padded box whenever
-	 * nothing is expanded, which also gives radar the uniform rows it exists for.
+	 * A self-rendering tool (`edit` draws its own framed diff) gets the bare
+	 * container so its frame can use the full width; everything else gets the
+	 * padded box. The bare container costs a column of alignment, though — its
+	 * status dot sits one left of every other row — so only the stop that exists
+	 * for reading pays it. Below `full` every block takes the padded box, which
+	 * is what lets radar's rows and peek's call lines line up into a column.
 	 */
 	private activeShell(): Box | Container {
-		if (!this.shouldShowBody()) return this.contentBox;
+		if (this.view !== "full") return this.contentBox;
 		return this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox;
 	}
 
@@ -593,7 +593,7 @@ export class ToolExecutionComponent extends Container {
 					try {
 						const component = resultRenderer(
 							{ content: this.result.content as any, details: this.result.details },
-							{ expanded: this.expanded, isPartial: this.isPartial },
+							{ expanded: this.view === "full", isPartial: this.isPartial },
 							theme,
 							this.getRenderContext(this.resultRendererComponent),
 						);
