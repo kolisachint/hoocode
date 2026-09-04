@@ -1,7 +1,7 @@
 ---
 name: plugin-authoring
 description: How to author a portable, reusable hoocode plugin — when a capability is worth extracting, how to name and describe it so it triggers again, and what makes content portable across repos and machines. Use before calling ProposePlugin or UpdatePlugin, or when deciding whether a recipe you just completed is worth keeping.
-allowed-tools: read, write, edit, search
+allowed-tools: read, write, edit, SearchCodebase
 ---
 
 # Authoring a plugin

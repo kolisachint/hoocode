@@ -10,11 +10,11 @@ import { theme } from "../theme/theme.js";
  * `full` show what a tool *said*; radar shows the *shape of the run* — the same
  * three columns for every tool, so a screen of them reads as a map:
  *
- *   ● bash    npm run check                                     412 lines
- *   ● read    packages/tui/src/keys.ts                          1451 lines
- *   ● grep    toolOutputView                                     27 lines
- *   ● edit    src/core/keybindings.ts                                  ok
- *   ● find    src/**.test.ts                                        error
+ *   ● bash            npm run check                             412 lines
+ *   ● read            packages/tui/src/keys.ts                 1451 lines
+ *   ● SearchCodebase  toolOutputView                             27 lines
+ *   ● edit            src/core/keybindings.ts                         ok
+ *   ● websearch       release notes                                error
  *
  * Column 1 is the status dot the other views already use. Column 2 is the tool,
  * padded to a fixed width so the verbs line up and a run of reads is a visible
@@ -23,8 +23,8 @@ import { theme } from "../theme/theme.js";
  * without opening it.
  */
 
-/** Width of the tool-name column. Fits every built-in name (`websearch`, `TodoWrite`). */
-const VERB_WIDTH = 9;
+/** Width of the tool-name column. Fits every built-in name — `SearchCodebase` is the longest. */
+const VERB_WIDTH = 14;
 
 /** Gap between the verb column and the subject. */
 const VERB_GAP = 2;

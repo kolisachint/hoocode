@@ -43,7 +43,7 @@ function existingLayout(existing: NormalizedPlugin, explicit?: readonly Marketpl
 }
 
 /** hoocode tool names that only read (no mutation, no exec). Grants limited to these are low-risk. */
-const READONLY_TOOLS = new Set(["read", "search", "webfetch", "websearch"]);
+const READONLY_TOOLS = new Set(["read", "SearchCodebase", "webfetch", "websearch"]);
 
 export interface AllowlistClassification {
 	/** read-only grants are as safe as a skill; mutating/exec/network/`*` grants need confirmation. */

@@ -84,13 +84,13 @@ export interface CreateAgentSessionOptions {
 	 */
 	enableWebTools?: boolean;
 	/**
-	 * Enable the semantic index layer for the built-in `search` tool (ranked
+	 * Enable the semantic index layer for the built-in `SearchCodebase` tool (ranked
 	 * lexical + semantic retrieval, rank-fused). The search tool is active by
 	 * default; this flag only toggles the optional embedding index. When false,
 	 * search degrades to lexical-only. Ignored when an explicit `tools` allowlist
 	 * is provided (list it there instead).
 	 */
-	enableEmbsearchTools?: boolean;
+	enableSemanticIndex?: boolean;
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
 	/**
@@ -289,12 +289,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	// `search` is always active: it answers "find where X lives" with ranked
+	// `SearchCodebase` is always active: it answers "find where X lives" with ranked
 	// results and degrades to exact-text lexical retrieval when no semantic
 	// index is present, so it needs no binary to be useful. The
-	// `enableEmbsearchTools` flag only controls whether the semantic index is
+	// `enableSemanticIndex` flag only controls whether the semantic index is
 	// built and fused in (see main.ts) — not whether the tool exists.
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "search"];
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "SearchCodebase"];
 	// Web tools are registered as base tools but inactive by default; opt-in adds
 	// them to the default active set. An explicit allowlist (`tools`) takes over
 	// fully, so callers must list them there to enable in that mode.

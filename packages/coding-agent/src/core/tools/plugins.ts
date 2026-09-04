@@ -71,7 +71,7 @@ function describeAvailable(plugins: readonly AvailablePlugin[], installed: Reado
 /**
  * Shared result renderer for the plugin tools.
  *
- * Every other built-in tool (`ls`, `grep`, `read`, `search`, …) defines one;
+ * Every other built-in tool (`ls`, `grep`, `read`, `SearchCodebase`, …) defines one;
  * these five did not, so they fell back to dumping the entire result into the
  * chat uncapped. This gives them the house treatment: bounded height with an
  * expand hint, and a summary line that stands out from its rows.
@@ -106,7 +106,7 @@ function pluginResultText(context: { lastComponent?: unknown }): Text {
 
 // A catalog listing is not a search result set: with no query every plugin in
 // every registered marketplace matched, and the two well-known indices alone run
-// to dozens of entries, each two or three lines. Bound it like the `search` tool
+// to dozens of entries, each two or three lines. Bound it like the `SearchCodebase` tool
 // does, and say how many were held back so the model can ask for more.
 const DEFAULT_SEARCH_LIMIT = 10;
 const MAX_SEARCH_LIMIT = 50;

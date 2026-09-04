@@ -9,7 +9,7 @@ description: |
   DO NOT use for:
   - Self-contained work that does not need the conversation history (use a normal
     subagent — it is cheaper and isolated)
-tools: read, search
+tools: read, SearchCodebase
 fork: true
 model: inherit
 ---

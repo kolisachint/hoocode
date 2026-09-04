@@ -465,10 +465,10 @@ function buildSessionOptions(
 		options.enableWebTools = true;
 	}
 	// Ranked code search (search tool, lexical + semantic hybrid). The search tool
-	// is active by default. The enableEmbsearchTools setting controls whether the
+	// is active by default. The enableSemanticIndex setting controls whether the
 	// optional semantic index layer starts; when off, search degrades to lexical-only.
-	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
-		options.enableEmbsearchTools = true;
+	if (parsed.enableSemanticIndex ?? settingsManager.getEnableSemanticIndex()) {
+		options.enableSemanticIndex = true;
 	}
 
 	// Optional Task (subagent) tool: opt-in via --enable-subagents flag or the enableSubagent setting.
@@ -861,7 +861,7 @@ export async function main(args: string[], options?: MainOptions) {
 			disallowedTools: sessionOptions.disallowedTools,
 			customTools: sessionOptions.customTools,
 			enableWebTools: sessionOptions.enableWebTools,
-			enableEmbsearchTools: sessionOptions.enableEmbsearchTools,
+			enableSemanticIndex: sessionOptions.enableSemanticIndex,
 			baseToolsOverride: sessionOptions.baseToolsOverride,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
@@ -974,12 +974,12 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	// Start the optional local embedding index service in the background. The
-	// `search` tool is always available and runs lexical-only by default; this
-	// semantic-index layer is completely off unless --enable-search-tool (or the
+	// `SearchCodebase` tool is always available and runs lexical-only by default; this
+	// semantic-index layer is completely off unless --enable-semantic-index (or the
 	// setting) is true. When on, the tool fuses semantic hits once the index
 	// reports available.
 	let embsearchService: EmbsearchService | undefined;
-	if (parsed.enableEmbsearchTools ?? settingsManager.getEnableEmbsearchTools()) {
+	if (parsed.enableSemanticIndex ?? settingsManager.getEnableSemanticIndex()) {
 		const isInteractive = appMode === "interactive";
 		embsearchService = new EmbsearchService({
 			cwd: sessionManager.getCwd(),

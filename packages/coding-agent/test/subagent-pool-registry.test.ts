@@ -110,10 +110,10 @@ describe("SubagentPool registry wiring", () => {
 		expect(promptIdx).toBeGreaterThanOrEqual(0);
 		expect(argv[promptIdx + 1]).toBe("PROJECT EXPLORE PROMPT");
 
-		// Normalized tool allowlist (Glob -> search), not the built-in MODE_TOOLS set.
+		// Normalized tool allowlist (Glob -> SearchCodebase), not the built-in MODE_TOOLS set.
 		const toolsIdx = argv.indexOf("--tools");
 		expect(toolsIdx).toBeGreaterThanOrEqual(0);
-		expect(argv[toolsIdx + 1]).toBe("read,search");
+		expect(argv[toolsIdx + 1]).toBe("read,SearchCodebase");
 
 		// Declared model wins over any caller default. A concrete (non-category)
 		// model id is passed through unchanged.
@@ -132,7 +132,7 @@ describe("SubagentPool registry wiring", () => {
 		// Built-in explore template declares its read-only allowlist in frontmatter.
 		const toolsIdx = argv.indexOf("--tools");
 		expect(toolsIdx).toBeGreaterThanOrEqual(0);
-		expect(argv[toolsIdx + 1]).toBe("read,search");
+		expect(argv[toolsIdx + 1]).toBe("read,SearchCodebase");
 	});
 
 	test("retries built-in agents with the inherited model when the preferred model is unavailable", async () => {

@@ -116,7 +116,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Build tools list based on selected tools.
 	// A tool appears in Available tools only when the caller provides a one-line snippet.
-	const tools = selectedTools || ["read", "bash", "edit", "write", "search"];
+	const tools = selectedTools || ["read", "bash", "edit", "write", "SearchCodebase"];
 	const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
 	const toolsList =
 		visibleTools.length > 0 ? visibleTools.map((name) => `- ${name}: ${toolSnippets![name]}`).join("\n") : "(none)";
@@ -133,19 +133,19 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	};
 
 	const hasBash = tools.includes("bash");
-	const hasSearch = tools.includes("search");
+	const hasSearch = tools.includes("SearchCodebase");
 	const hasRead = tools.includes("read");
 
-	// File exploration guidelines. `search` is the only dedicated discovery tool
+	// File exploration guidelines. `SearchCodebase` is the only dedicated discovery tool
 	// left, so name it when it is registered and fall back to the shell
 	// otherwise — never advertise a tool that isn't in the bundle.
 	if (hasSearch) {
 		addGuideline(
-			"For code discovery use search (find where code lives by concept or identifier) instead of bash; it is faster and respects .gitignore",
+			"For code discovery use SearchCodebase (find where code lives by concept or identifier) instead of bash; it is faster and respects .gitignore",
 		);
 		if (hasBash) {
 			addGuideline(
-				"Between search and bash: search finds where code lives by concept, behavior, or half-known name (ranked results); shell out to rg/find/ls when you need exact matching lines, counts, or a raw directory listing",
+				"Between SearchCodebase and bash: SearchCodebase finds where code lives by concept, behavior, or half-known name (ranked results); shell out to rg/find/ls when you need exact matching lines, counts, or a raw directory listing",
 			);
 		}
 	} else if (hasBash) {

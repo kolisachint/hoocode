@@ -17,11 +17,15 @@ Before searching, check these maps:
   the block itself takes `paddingY: 0`), a `DynamicBorder` needs no blank
   beside it, and nothing pads its own bottom edge. Rules and reference cases:
   `docs/ui-map.md` -> "Vertical rhythm".
-- **`grep`/`find`/`ls` tools removed**: `search` is the only dedicated
+- **`grep`/`find`/`ls` tools removed**: `SearchCodebase` is the only dedicated
   code-discovery tool; exact matching lines, counts, and raw directory listings
   are a shell job through `bash`. Claude Code's `Grep`/`Glob`/`Find` all
-  normalize to `search`; `LS` has no counterpart and is dropped with a
+  normalize to `SearchCodebase`; `LS` has no counterpart and is dropped with a
   diagnostic. `TOOL_FACTORIES` is 7 built-ins.
+- **`search` renamed to `SearchCodebase`**: a clean break, no alias. The old
+  name resolves nowhere and is dropped from an allowlist with a diagnostic. It
+  pairs with the `SearchHooCode` extension tool, and it is the one built-in
+  that is not lowercase.
 - **Browser + document tools removed**: `browser_*`, `Doc*`, `filetools-shared.ts`, and their `--enable-browsertools`/`--enable-browser-live-preview`/`--enable-filetools` flags are gone; `TOOL_FACTORIES` shrank accordingly.
 - **Providers removed**: `amazon-bedrock`, `mistral`, `cloudflare-workers-ai`, `cloudflare-ai-gateway`. `mistralai/*` ids via OpenRouter still work.
 - **MCP Standard Config Support**: Now reads standard `mcp.json` format from:
@@ -67,7 +71,7 @@ Rules that follow from that:
   `oldText`/`edits`/`replaceAll` descriptions verbatim.
 - **Never restate a cross-tool routing rule in a tool.** `buildSystemPrompt`
   already emits the canonical search-vs-bash and file-exploration guidelines
-  whenever the relevant tools are registered. `search`, `read`, and `bash` each
+  whenever the relevant tools are registered. `SearchCodebase`, `read`, and `bash` each
   carried their own copy; that rule was shipping three times.
 - **Don't spell out what the schema already encodes.** An enum of `f`/`d`/`l`
   does not need prose naming all three.

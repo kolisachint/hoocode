@@ -2058,7 +2058,7 @@ export class AgentSession {
 						maxOutputBytes: toolMaxOutputBytes,
 						maxOutputLines: toolMaxOutputLines,
 					},
-					search: { getService: () => getEmbsearchService(this._cwd) },
+					SearchCodebase: { getService: () => getEmbsearchService(this._cwd) },
 					webfetch: { timeoutSecs: webtoolsTimeoutSecs },
 					websearch: { timeoutSecs: webtoolsTimeoutSecs },
 				});
@@ -2089,7 +2089,7 @@ export class AgentSession {
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "search"];
+			: ["read", "bash", "edit", "write", "SearchCodebase"];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

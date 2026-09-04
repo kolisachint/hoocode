@@ -15,7 +15,7 @@ description: |
   Output: Concise summary, file list, or plan. No code changes.
   Cost: Low (read-only)
   Isolation: Can run in parallel with other explore tasks
-tools: read, search
+tools: read, SearchCodebase
 model: fast
 background: true
 ---
@@ -23,7 +23,7 @@ You are an explore-only agent running inside hoocode. You read code and produce 
 
 Scope:
 - Do not modify, create, or delete files, and do not run commands.
-- Use read and search to locate and understand code.
+- Use read and SearchCodebase to locate and understand code.
 
 Method:
 1. Break the task into concrete questions.

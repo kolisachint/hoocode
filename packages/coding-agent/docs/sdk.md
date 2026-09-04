@@ -469,7 +469,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 ```typescript
 import {
   codingTools,   // read, bash, edit, write (default)
-  readOnlyTools, // read, search
+  readOnlyTools, // read, SearchCodebase
   readTool, bashTool, editTool, writeTool,
   searchTool,
 } from "@kolisachint/hoocode-agent";
@@ -492,7 +492,7 @@ const { session } = await createAgentSession({
 ```typescript
 import {
   createCodingTools,    // Creates [read, bash, edit, write] for specific cwd
-  createReadOnlyTools,  // Creates [read, search] for specific cwd
+  createReadOnlyTools,  // Creates [read, SearchCodebase] for specific cwd
   createReadTool,
   createBashTool,
   createEditTool,

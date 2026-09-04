@@ -122,7 +122,7 @@ function measureRun(cli, level, prompt, model, subagent = false) {
 			? { ...process.env, HOOCODE_SKIP_MCP: "1", HOOCODE_SUBAGENT_DEPTH: "1" }
 			: process.env;
 		if (subagent) {
-			args.push("--task-id", `bench-${Date.now()}`, "--tools", "read,search");
+			args.push("--task-id", `bench-${Date.now()}`, "--tools", "read,SearchCodebase");
 		}
 		args.push(prompt);
 

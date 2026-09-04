@@ -72,7 +72,7 @@ describe("WarmSubagentPool", () => {
 		await pool.dispatch("trace the bug", opts, (a) => activity.push(a));
 
 		// The child runs grep, so the callback sees the tool name then a clear ("").
-		expect(activity).toContain("search");
+		expect(activity).toContain("SearchCodebase");
 		// Always cleared at the end so the row doesn't linger on a stale tool.
 		expect(activity[activity.length - 1]).toBe("");
 	});

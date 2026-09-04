@@ -471,7 +471,7 @@ describe("SubagentPool", () => {
 		mkdirSync(agentsDir, { recursive: true });
 		writeFileSync(
 			join(agentsDir, "orchestrator.md"),
-			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, search\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
+			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, SearchCodebase\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
 		);
 		// Cap raised to 2 (as --max-subagent-depth 2 would seed): the depth-1 child may still nest.
 		const env: NodeJS.ProcessEnv = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
@@ -495,7 +495,7 @@ describe("SubagentPool", () => {
 		mkdirSync(agentsDir, { recursive: true });
 		writeFileSync(
 			join(agentsDir, "orchestrator.md"),
-			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, search\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
+			`---\nname: orchestrator\ndescription: Breaks work into subtasks and delegates each.\ntools: read, SearchCodebase\ndelegate: true\n---\nDelegate subtasks via the Task tool.\n`,
 		);
 		// Default cap (1): the spawned child is at depth 1 == cap, so it cannot nest further.
 		const env: NodeJS.ProcessEnv = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "1" };
@@ -516,7 +516,7 @@ describe("SubagentPool", () => {
 		mkdirSync(agentsDir, { recursive: true });
 		writeFileSync(
 			join(agentsDir, "scoped.md"),
-			`---\nname: scoped\ndescription: delegates only to explore.\ntools: read, search\ndelegate: explore\n---\nbody`,
+			`---\nname: scoped\ndescription: delegates only to explore.\ntools: read, SearchCodebase\ndelegate: explore\n---\nbody`,
 		);
 		const env: NodeJS.ProcessEnv = { ...process.env, HOOCODE_SUBAGENT_MAX_DEPTH: "2" };
 		delete env.HOOCODE_SUBAGENT_DEPTH;
@@ -537,7 +537,7 @@ describe("SubagentPool", () => {
 		mkdirSync(agentsDir, { recursive: true });
 		writeFileSync(
 			join(agentsDir, "limited.md"),
-			`---\nname: limited\ndescription: restricted agent.\ntools: read, search, bash\ndisallowedTools: bash\n---\nbody`,
+			`---\nname: limited\ndescription: restricted agent.\ntools: read, SearchCodebase, bash\ndisallowedTools: bash\n---\nbody`,
 		);
 		pool = new SubagentPool({ executable: exe, maxConcurrency: 1, cwd: tmpDir });
 		createValidResultJson(tmpDir, "lim-task");

@@ -173,6 +173,15 @@ export class SettingsManager {
 			delete settings.queueMode;
 		}
 
+		// Migrate enableEmbsearchTools -> enableSemanticIndex. The tool rename to
+		// `SearchCodebase` was a clean break, but this key is a user's stored
+		// choice, not a tool name: dropping it would silently flip indexing back
+		// on for anyone who had deliberately turned it off.
+		if ("enableEmbsearchTools" in settings && !("enableSemanticIndex" in settings)) {
+			settings.enableSemanticIndex = settings.enableEmbsearchTools;
+			delete settings.enableEmbsearchTools;
+		}
+
 		// Migrate legacy websockets boolean -> transport enum
 		if (!("transport" in settings) && typeof settings.websockets === "boolean") {
 			settings.transport = settings.websockets ? "websocket" : "sse";
@@ -1064,13 +1073,13 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getEnableEmbsearchTools(): boolean {
-		return this.settings.enableEmbsearchTools ?? DEFAULT_SETTINGS.enableEmbsearchTools!;
+	getEnableSemanticIndex(): boolean {
+		return this.settings.enableSemanticIndex ?? DEFAULT_SETTINGS.enableSemanticIndex!;
 	}
 
-	setEnableEmbsearchTools(enabled: boolean): void {
-		this.globalSettings.enableEmbsearchTools = enabled;
-		this.markModified("enableEmbsearchTools");
+	setEnableSemanticIndex(enabled: boolean): void {
+		this.globalSettings.enableSemanticIndex = enabled;
+		this.markModified("enableSemanticIndex");
 		this.save();
 	}
 

@@ -56,10 +56,10 @@ migration history and rules.
 
 HooCode runs without network access. Two capabilities normally reach out to
 GitHub to download helper binaries (`fd` for file autocomplete, `rg` for the
-lexical half of `search`); everything else is self-contained.
+lexical half of `SearchCodebase`); everything else is self-contained.
 
 - **`HOOCODE_OFFLINE=1`** (or `--offline`) disables all startup network
-  operations — no binary downloads, no version checks. `search` and file
+  operations — no binary downloads, no version checks. `SearchCodebase` and file
   autocomplete fall back to a built-in pure-JS implementation, so both keep
   working.
 - **`HOOCODE_NATIVE_SEARCH=1`** forces the pure-JS path even when

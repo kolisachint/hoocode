@@ -57,7 +57,7 @@ export interface CreateAgentSessionFromServicesOptions {
 	disallowedTools?: string[];
 	customTools?: ToolDefinition[];
 	enableWebTools?: boolean;
-	enableEmbsearchTools?: boolean;
+	enableSemanticIndex?: boolean;
 	baseToolsOverride?: Record<string, AgentTool>;
 }
 
@@ -218,7 +218,7 @@ export async function createAgentSessionFromServices(
 		customTools: options.customTools,
 		sessionStartEvent: options.sessionStartEvent,
 		enableWebTools: options.enableWebTools,
-		enableEmbsearchTools: options.enableEmbsearchTools,
+		enableSemanticIndex: options.enableSemanticIndex,
 		baseToolsOverride: options.baseToolsOverride,
 	});
 }

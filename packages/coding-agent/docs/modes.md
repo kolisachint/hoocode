@@ -25,7 +25,7 @@ back to `build` clears the key rather than writing the default.
 
 | Mode | For | Tells the model to |
 |------|-----|--------------------|
-| `ask` | Questions about a codebase | Read, search, trace, and explain, citing paths and line numbers; decline edits and suggest `/mode build` |
+| `ask` | Questions about a codebase | Read, SearchCodebase, trace, and explain, citing paths and line numbers; decline edits and suggest `/mode build` |
 | `plan` | Designing a change before making it | Explore, ask clarifying questions, then write a plan with Goal / Files to modify / New files / Tests / Verification |
 | `build` | Implementing | One tool per turn, read before editing, show diffs, confirm destructive operations, run tests after each unit of work |
 | `debug` | Finding a root cause | Gather evidence, reproduce, trace the call path, state the root cause in one sentence, describe the fix without applying it |

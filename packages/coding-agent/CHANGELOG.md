@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The `search` tool is now `SearchCodebase`.** A clean break: there is no
+  alias, no compatibility shim, and no deprecated path. The old name resolves
+  nowhere — `--tools search` and a `tools: search` agent allowlist now drop the
+  tool with a diagnostic rather than silently mapping it. Update any agent,
+  skill, mode, or SDK caller that names it.
+  - Rename `search` to `SearchCodebase` in agent frontmatter (`tools:`), skill
+    frontmatter (`allowed-tools:`), mode `enabled_tools` allowlists in
+    `settings.json`, `--tools`/`--disallowed-tools`, and SDK
+    `activeToolNames`. Shipped templates are already updated.
+  - Claude Code's `Grep`, `Glob` and `Find` still normalize to the tool, now
+    under its new name. `SearchCodebase` pairs with `SearchHooCode`, which is
+    unchanged: one searches your codebase, the other searches hoocode's docs.
+  - Extensions that override the built-in tool must register `SearchCodebase`;
+    an extension still registering `search` now adds a new tool alongside the
+    built-in instead of replacing it.
+  - The radar view's tool-name column widens from 9 to 14 columns to fit the
+    longer name.
+
+- **`--enable-search-tool` is now `--enable-semantic-index`,** and the
+  `enableEmbsearchTools` setting is now `enableSemanticIndex`. The old names
+  said "search tool" but never gated the tool: `SearchCodebase` is always
+  registered and cannot be turned off. The flag only controls whether the
+  semantic index is built and fused in, which is what the new name says.
+  - An existing `enableEmbsearchTools` in `settings.json` migrates to the new
+    key on load, so a deliberate `false` keeps indexing off. The tool rename is
+    a clean break; this key is a stored choice rather than a tool name, and
+    dropping it would silently turn indexing back on.
+
+### Removed
+
+- **The legacy `--enable-embsearchtools` flag alias.** It has been a spelling
+  of `--enable-search-tool` since the two semantic-search tools were unified;
+  both are now `--enable-semantic-index`.
+
 ## [0.5.52] - 2026-09-03
 
 ### Changed

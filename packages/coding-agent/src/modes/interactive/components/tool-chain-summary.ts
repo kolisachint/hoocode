@@ -218,7 +218,7 @@ const FAMILIES: ToolFamily[] = [
 	{ verb: "Delegated", noun: "task", tail: "task", tools: ["Task", "TaskOutput"], subjectIsPath: false },
 	{ verb: "Fetched", noun: "page", tail: "fetch", tools: ["webfetch", "websearch"], subjectIsPath: false },
 	{ verb: "Read", noun: "file", tail: "read", tools: ["read"], subjectIsPath: true },
-	{ verb: "Searched", noun: "search", tail: "search", tools: ["search"], subjectIsPath: true },
+	{ verb: "Searched", noun: "search", tail: "search", tools: ["SearchCodebase"], subjectIsPath: true },
 ];
 
 /**

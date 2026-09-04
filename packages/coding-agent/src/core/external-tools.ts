@@ -1,7 +1,7 @@
 /**
  * The external (Rust) binaries hoocode can use, and what each one is worth.
  *
- * hoocode is self-sufficient without any of them: `search` and @-file
+ * hoocode is self-sufficient without any of them: `SearchCodebase` and @-file
  * autocomplete fall back to pure-JS implementations, and the features that have
  * no fallback (web, voice) are off or inert rather than broken. These binaries are an
  * *expansion* layer, which is exactly why they were invisible - nothing failed
@@ -88,7 +88,7 @@ export const EXTERNAL_TOOLS: readonly ExternalToolDoc[] = [
 		acquisition: "on-demand",
 		env: ["HOOCODE_EMBSEARCH_BINARY"],
 		dependentRows: ["group:embsearch"],
-		settingsKeys: ["enableEmbsearchTools", "embsearchBinaryPath", "embsearchThresholdBytes"],
+		settingsKeys: ["enableSemanticIndex", "embsearchBinaryPath", "embsearchThresholdBytes"],
 	},
 	{
 		tool: "webtools",

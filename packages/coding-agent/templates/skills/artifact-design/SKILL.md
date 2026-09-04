@@ -1,7 +1,7 @@
 ---
 name: artifact-design
 description: Build a self-contained HTML visual written to disk — page, report, dashboard, mockup, diagram, or poster. Load before the first line of markup or CSS whenever something has to look right, or a redesign is asked for. Not for app code the project's own design system already governs.
-allowed-tools: read, write, edit, search
+allowed-tools: read, write, edit, SearchCodebase
 ---
 
 # Designing a visual

@@ -48,8 +48,8 @@ export interface Args {
 	enableWebTools?: boolean;
 	/** Enable the autonomous plugin system — plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and ProposePlugin (off by default). */
 	enablePluginTools?: boolean;
-	/** Enable ranked code search: register the unified search tool (lexical + semantic hybrid) and index the repo with the embsearch binary (off by default). */
-	enableEmbsearchTools?: boolean;
+	/** Build the semantic index and fuse it into `SearchCodebase`; the tool itself is always registered and runs lexical-only without it. */
+	enableSemanticIndex?: boolean;
 	/** Minimal low-token preset for small/local models: read/write/edit/bash only, terse prompt, no subagents/todo/skills/context files/mode appendix. */
 	light?: boolean;
 	/** Print the fixed per-turn surface (system prompt + serialized tool schema token estimate) and exit. */
@@ -171,8 +171,8 @@ export function parseArgs(args: string[]): Args {
 			result.todoWrite = true;
 		} else if (arg === "--enable-webtools") {
 			result.enableWebTools = true;
-		} else if (arg === "--enable-search-tool" || arg === "--enable-embsearchtools") {
-			result.enableEmbsearchTools = true;
+		} else if (arg === "--enable-semantic-index") {
+			result.enableSemanticIndex = true;
 		} else if (arg === "--enable-plugintools") {
 			result.enablePluginTools = true;
 		} else if (arg === "--light") {
@@ -355,19 +355,20 @@ ${chalk.bold("Options:")}
   --enable-webtools              Enable the webfetch + websearch tools (network access, off by default)
                                   Can also be enabled via the "enableWebTools" setting
                                   Block hosts with a .webtoolsignore file (gitignore syntax)
-  --enable-search-tool           Enable the semantic index for the search tool (on by default)
-                                  The unified search tool (lexical, semantic, hybrid rank-fused
-                                  modes) is always available. The semantic layer is now ON by
+  --enable-semantic-index        Enable the semantic index layer (on by default)
+                                  The unified SearchCodebase tool (lexical, semantic, hybrid
+                                  rank-fused modes) is always available and cannot be turned
+                                  off; this flag only controls whether the semantic index is
+                                  built and fused in. The semantic layer is ON by
                                   default: on session start every repo is indexed with the
                                   embsearch binary (local MiniLM embeddings, stored under
                                   ~/.hoocode/embsearch), regardless of size; until the index is
                                   ready search runs lexical-only, then fuses semantic hits once
                                   ready. Requires embsearch on PATH or
                                   the "embsearchBinaryPath" setting; degrades to lexical-only if
-                                  the binary is unavailable. Disable via the "enableEmbsearchTools"
+                                  the binary is unavailable. Disable via the "enableSemanticIndex"
                                   setting (false), or raise "embsearchThresholdBytes" to skip
                                   small repos.
-                                  Alias: --enable-embsearchtools (legacy)
   --enable-plugintools           Enable the autonomous plugin system (off by default)
                                   Plugin lifecycle tools (SearchPlugins, InstallPlugin, ...) and
                                   ProposePlugin, plus the runtime plugin-reuse nudge
@@ -463,7 +464,7 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --thinking high "Solve this complex problem"
 
   # Read-only mode (no file modifications possible)
-  ${APP_NAME} --tools read,search -p "Review the code in src/"
+  ${APP_NAME} --tools read,SearchCodebase -p "Review the code in src/"
 
   # Export a session file to HTML
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl

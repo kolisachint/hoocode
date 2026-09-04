@@ -3488,7 +3488,7 @@ export class InteractiveMode {
 					id: "embsearch",
 					label: "Semantic search",
 					description: "Semantic index layer fused into the always-on search tool.",
-					enabled: this.settingsManager.getEnableEmbsearchTools(),
+					enabled: this.settingsManager.getEnableSemanticIndex(),
 				},
 			];
 
@@ -3607,7 +3607,7 @@ export class InteractiveMode {
 								this.settingsManager.setEnableWebTools(enabled);
 								break;
 							case "embsearch":
-								this.settingsManager.setEnableEmbsearchTools(enabled);
+								this.settingsManager.setEnableSemanticIndex(enabled);
 								break;
 						}
 					},

@@ -116,27 +116,27 @@ describe("buildSystemPrompt", () => {
 		});
 	});
 
-	describe("search/bash routing", () => {
-		test("emits the routing guideline only when both search and bash are active", () => {
+	describe("SearchCodebase/bash routing", () => {
+		test("emits the routing guideline only when both SearchCodebase and bash are active", () => {
 			const both = buildSystemPrompt({
-				selectedTools: ["search", "bash"],
+				selectedTools: ["SearchCodebase", "bash"],
 				contextFiles: [],
 				skills: [],
 				cwd: process.cwd(),
 			});
-			expect(both).toContain("Between search and bash:");
+			expect(both).toContain("Between SearchCodebase and bash:");
 
 			const searchOnly = buildSystemPrompt({
-				selectedTools: ["search"],
+				selectedTools: ["SearchCodebase"],
 				contextFiles: [],
 				skills: [],
 				cwd: process.cwd(),
 			});
-			expect(searchOnly).toContain("For code discovery use search");
-			expect(searchOnly).not.toContain("Between search and bash:");
+			expect(searchOnly).toContain("For code discovery use SearchCodebase");
+			expect(searchOnly).not.toContain("Between SearchCodebase and bash:");
 		});
 
-		test("falls back to the shell guideline when search is absent", () => {
+		test("falls back to the shell guideline when SearchCodebase is absent", () => {
 			const bashOnly = buildSystemPrompt({
 				selectedTools: ["bash"],
 				contextFiles: [],
@@ -144,7 +144,7 @@ describe("buildSystemPrompt", () => {
 				cwd: process.cwd(),
 			});
 			expect(bashOnly).toContain("Use bash for file exploration");
-			expect(bashOnly).not.toContain("Between search and bash:");
+			expect(bashOnly).not.toContain("Between SearchCodebase and bash:");
 		});
 	});
 });

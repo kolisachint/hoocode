@@ -182,12 +182,18 @@ describe("elapsed time displays", () => {
 		const panel = new TaskPanelComponent();
 		panel.setView("subagents");
 		const run = taskStore.create("scan the repo", { source: "subagent", subagentMode: "explore", agent: "run-1" });
-		taskStore.upsertAgent({ id: "run-1", name: "explore#1", kind: "subagent", state: "running", activity: "search" });
+		taskStore.upsertAgent({
+			id: "run-1",
+			name: "explore#1",
+			kind: "subagent",
+			state: "running",
+			activity: "SearchCodebase",
+		});
 		taskStore.update(run.id, { status: "in_progress" });
 
 		vi.advanceTimersByTime(34_000);
 		const row = stripAnsi(panel.render(120).find((l) => l.includes("scan the repo")) as string);
-		expect(row).toContain("⋯ search · 34s");
+		expect(row).toContain("⋯ SearchCodebase · 34s");
 		panel.dispose();
 	});
 
@@ -262,7 +268,13 @@ describe("todo ↔ subagent linkage", () => {
 			agent: "run-1",
 			linkedTaskId: todo.id,
 		});
-		taskStore.upsertAgent({ id: "run-1", name: "explore#1", kind: "subagent", state: "running", activity: "search" });
+		taskStore.upsertAgent({
+			id: "run-1",
+			name: "explore#1",
+			kind: "subagent",
+			state: "running",
+			activity: "SearchCodebase",
+		});
 		taskStore.update(run.id, { status: "in_progress" });
 		// An unlinked run must stay out of the flat lens entirely.
 		const unlinked = taskStore.create("free-floating run", { source: "subagent", subagentMode: "plan" });
@@ -276,7 +288,7 @@ describe("todo ↔ subagent linkage", () => {
 		expect(runIdx).toBe(todoIdx + 1); // directly under its plan item
 		expect(lines[runIdx]).toContain("└─"); // drawn as a nested child
 		expect(lines[runIdx]).toContain("[explore]");
-		expect(lines[runIdx]).toContain("⋯ search"); // live activity flows through
+		expect(lines[runIdx]).toContain("⋯ SearchCodebase"); // live activity flows through
 		expect(lines.some((l) => l.includes("free-floating run"))).toBe(false);
 		// Header counts what the lens shows: todo + linked run + pending todo = 0/3.
 		expect(lines[0]).toContain("0/3");

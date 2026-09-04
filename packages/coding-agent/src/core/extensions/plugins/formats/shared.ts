@@ -323,7 +323,7 @@ export function slug(name: string): string {
 
 /**
  * Render a comma-separated tool allowlist (Claude Code convention, e.g.
- * "read, search") as a YAML flow sequence (`['read', 'search']`) for formats whose
+ * "read, SearchCodebase") as a YAML flow sequence (`['read', 'SearchCodebase']`) for formats whose
  * frontmatter takes tools as a list (Copilot custom agents / prompt files).
  */
 export function toolsYamlList(tools: string | undefined): string | undefined {

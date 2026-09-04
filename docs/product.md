@@ -61,7 +61,7 @@ The agent works through a small, deterministic tool set. Available by default:
 |---|---|
 | `read` · `write` · `edit` | Read files, create new ones, and make exact-text edits. One `edit` call can apply several replacements at once, and an edit can set `replaceAll` to replace every occurrence instead of requiring a unique match. |
 | `bash` | Run shell commands — each one gated by the `Yes / No / Always` permission prompt. |
-| `search` | The one code-discovery tool: ranked "find where code lives", fusing exact-text and semantic (local embedding index) retrieval and returning `file:line-range` hits. Respects `.gitignore`. Always available: it degrades to exact-text lexical retrieval when no semantic index is present, so `--enable-embsearchtools` only controls whether the semantic index is built and fused in, not whether the tool exists. Use `search` to locate a concept or behavior; shell out through `bash` (`rg`, `find`, `ls`) when you need exact matching lines, counts, or a raw directory listing. |
+| `SearchCodebase` | The one code-discovery tool: ranked "find where code lives", fusing exact-text and semantic (local embedding index) retrieval and returning `file:line-range` hits. Respects `.gitignore`. Always available: it degrades to exact-text lexical retrieval when no semantic index is present, so `--enable-semantic-index` only controls whether the semantic index is built and fused in, not whether the tool exists. Use `SearchCodebase` to locate a concept or behavior; shell out through `bash` (`rg`, `find`, `ls`) when you need exact matching lines, counts, or a raw directory listing. |
 | **Task** (subagents) · **TodoWrite** | Delegate a self-contained task to a specialized agent that runs in its own isolated context and returns only its final answer, and maintain a live todo list shown in the task panel. Both are **on by default** — disable with `"enableSubagent": false` / `"enableTodoWrite": false`. |
 
 When running interactively, the agent can also ask you to make a decision through a multiple-choice prompt when it genuinely needs your input to proceed. In non-interactive (`-p`) runs it falls back to proceeding on its own.
@@ -104,9 +104,9 @@ without its binary is marked `needs <binary>` there.
 
 | Binary | Adds | Without it |
 |---|---|---|
-| `rg` (ripgrep) | The fast path for the lexical half of `search`. Fetched at startup. | A pure-JS scanner with identical match output — materially slower on large trees. |
+| `rg` (ripgrep) | The fast path for the lexical half of `SearchCodebase`. Fetched at startup. | A pure-JS scanner with identical match output — materially slower on large trees. |
 | `fd` | The fast path for `@`-file autocomplete in the TUI. Fetched at startup. | A JS directory walker with the same result shape, slower and with approximated glob/ignore handling. |
-| `embsearch` | The local embedding index: semantic hits fused into `search`, and meaning-ranked MCP/capability lookup. Fetched on first use. Requires the ONNX build; the mock build is rejected. | `search` runs lexical-only and capability lookup ranks lexically. Nothing errors; intent-phrased queries just rank worse. |
+| `embsearch` | The local embedding index: semantic hits fused into `SearchCodebase`, and meaning-ranked MCP/capability lookup. Fetched on first use. Requires the ONNX build; the mock build is rejected. | `SearchCodebase` runs lexical-only and capability lookup ranks lexically. Nothing errors; intent-phrased queries just rank worse. |
 | `webtools` | The `webfetch` and `websearch` tools — hoocode's only network path. Fetched on first use. | Both tools error when called. The web tool group is off by default, so this stays invisible until you enable it. |
 | `voicetools` | Push-to-talk voice input in the TUI. Fetched on first use. | Voice capture reports an error and never starts. |
 

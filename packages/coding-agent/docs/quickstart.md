@@ -59,7 +59,7 @@ By default, hoocode gives the model four tools:
 - `edit` - patch files
 - `bash` - run shell commands
 
-The built-in read-only `search` tool is available through tool options. HooCode runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
+The built-in read-only `SearchCodebase` tool is available through tool options. HooCode runs in your current working directory and can modify files there. Use git or another checkpointing workflow if you want easy rollback.
 
 ## Give hoocode project instructions
 
