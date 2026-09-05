@@ -19,7 +19,9 @@
   error stands, because deleting an index is the wrong answer to an unknown
   fault. This was about to bite: embsearch 0.3.2 changed its model id, and only
   the fact that an already-installed binary is never upgraded in place kept
-  anyone from hitting it.
+  anyone from hitting it. `store-info` ships in **embsearch 0.3.3**; against an
+  older binary the probe simply fails and the previous behaviour stands, so no
+  version floor is needed and nothing regresses on an older daemon.
 - **A chunker change no longer leaves dead text in the index.** Bumping
   `CHUNKER_VERSION` resets the sidecar, and the sidecar is the only record of how
   many chunks each file produced — so it reported zero for every file, and the

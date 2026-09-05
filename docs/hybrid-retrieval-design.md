@@ -856,6 +856,32 @@ signature — rather than at anything the retrieval pipeline controls. Testing i
 means swapping the embedding model, which is the first open question here that
 neither fusion, reranking, nor chunking can reach.
 
+**Answered, 2026-09-05, and the answer was "probably, but not on this
+evidence."** bge-small-en-v1.5 was measured against MiniLM over the arms
+pre-registered in embeddingsearchtools' `docs/embedder-strategy.md`. It beat
+MiniLM on every endpoint — semantic-subgroup MRR 0.173→0.273, R@10
+0.333→0.479 — and cleared none of them at p≤0.05. Records:
+`packages/coding-agent/runs/a{0,1,2}-*.json`. The embedder hypothesis above
+survives its own falsification test; it is not proven.
+
+The blocker moved. It is no longer the model but **this gold set**: 42 of 62
+queries tied, so the eval cannot resolve a difference of that size. Growing the
+semantic classes — conceptual, cross-file, boundary, 24 queries between them
+and where the entire effect lives — is now worth more than another model.
+
+### Parked: the index-recovery path has no CI coverage
+
+`EmbsearchService.start` recovers from a store the daemon refuses to open, by
+confirming through `embsearch store-info` and rebuilding. It is exercised only
+by `scripts/verify-store-recovery.ts`, which needs a real embsearch binary and
+so cannot run in CI — the binary is downloaded on demand and the default build
+is a mock the service rejects outright.
+
+That is how the original bug shipped: nothing on any PR touches this path. The
+fix is a stub daemon speaking enough of the NDJSON protocol to drive `start()`,
+including a `store-info` that reports a foreign `model_id`. Not built here
+because a half-finished fake daemon is worse than an honest gap.
+
 ## Eval results (2026-07-18, full index: 16.5k chunks over this repo)
 
 Superseded — kept for the decision history, not as evidence. Measured with
