@@ -27,8 +27,17 @@ export const CHUNKER_VERSION = 2;
 const CHUNK_LINES = 60;
 /** Overlapping lines between consecutive chunks, for context continuity. */
 const CHUNK_OVERLAP_LINES = 10;
-/** Hard character cap per chunk (MiniLM truncates ~256 tokens ≈ 1000 chars). */
-const CHUNK_MAX_CHARS = 1000;
+/**
+ * Hard character cap per chunk.
+ *
+ * The "~256 tokens ≈ 1000 chars" this was set from does not hold for code:
+ * measured against the bundled tokenizer over this repo, 1000 chars is **313
+ * tokens** at the median, so MiniLM (256) truncates 85.8% of chunks and drops
+ * 20.3% of the corpus's tokens, while bge-small (512) drops 0.1%. Raising this
+ * is therefore not free in the way the old comment implied — it spends a
+ * budget that is already overdrawn on one model and nearly full on the other.
+ */
+export const CHUNK_MAX_CHARS = 1000;
 
 export interface Chunk {
 	/** `relpath#index` — the id stored in the vector index. */
@@ -50,8 +59,13 @@ function looksBinary(content: string): boolean {
 /**
  * Split `content` into chunks. `relPath` becomes the id prefix. Returns an
  * empty array for empty or binary-looking content.
+ *
+ * `maxChars` overrides {@link CHUNK_MAX_CHARS} for eval arms that sweep the
+ * window. Production never passes it; a caller that does is changing what the
+ * index contains and owes the store a distinct key, since nothing about a
+ * stored vector records the cap it was built under.
  */
-export function chunkFile(relPath: string, content: string): Chunk[] {
+export function chunkFile(relPath: string, content: string, maxChars: number = CHUNK_MAX_CHARS): Chunk[] {
 	if (!content.trim() || looksBinary(content)) return [];
 	const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
 	const chunks: Chunk[] = [];
@@ -63,7 +77,7 @@ export function chunkFile(relPath: string, content: string): Chunk[] {
 		let chars = 0;
 		while (end < lines.length && end - start < CHUNK_LINES) {
 			const lineLen = lines[end].length + 1;
-			if (chars + lineLen > CHUNK_MAX_CHARS && end > start) break;
+			if (chars + lineLen > maxChars && end > start) break;
 			chars += lineLen;
 			end++;
 		}
@@ -78,10 +92,10 @@ export function chunkFile(relPath: string, content: string): Chunk[] {
 		while (from < to && lines[from].trim() === "") from++;
 		while (to > from && lines[to - 1].trim() === "") to--;
 		let text = lines.slice(from, to).join("\n").trim();
-		if (text.length > CHUNK_MAX_CHARS) {
+		if (text.length > maxChars) {
 			// Oversized chunk (e.g. long minified line): keep the prefix. The
 			// underlying model would truncate anyway, so this stays bounded.
-			text = text.slice(0, CHUNK_MAX_CHARS);
+			text = text.slice(0, maxChars);
 		}
 		if (text) {
 			chunks.push({

@@ -102,6 +102,15 @@ export interface EmbsearchServiceOptions {
 	 * model rather than mixing them.
 	 */
 	modelDir?: string;
+	/**
+	 * Override the chunker's character cap.
+	 *
+	 * Only the eval harness sets this, to sweep the chunk window. It changes
+	 * what every vector in the store *is*, and nothing stored records it, so it
+	 * must be paired with a distinct `storeDir` exactly as `modelDir` is —
+	 * otherwise a run silently scores an index built at another cap.
+	 */
+	chunkMaxChars?: number;
 	/** Minimum indexable bytes before indexing kicks in. */
 	thresholdBytes: number;
 	/**
@@ -457,7 +466,7 @@ export class EmbsearchService {
 		const work: Array<{ rel: string; fileMeta: FileMeta; chunks: Array<{ id: string; text: string }> }> = [];
 		let totalChunks = 0;
 		for (const { file, content, hash } of toIndex) {
-			const chunks = chunkFile(file.rel, content);
+			const chunks = chunkFile(file.rel, content, this.options.chunkMaxChars);
 			work.push({
 				rel: file.rel,
 				fileMeta: {
