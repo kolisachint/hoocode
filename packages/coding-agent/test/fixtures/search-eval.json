@@ -656,8 +656,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 370,
-        "endLine": 374,
+        "startLine": 437,
+        "endLine": 441,
         "anchor": "const hash = hashContent"
       }
     ]
@@ -707,8 +707,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 492,
-        "endLine": 495,
+        "startLine": 559,
+        "endLine": 562,
         "anchor": "findEnclosingChunk"
       }
     ]
@@ -835,8 +835,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 344,
-        "endLine": 346,
+        "startLine": 394,
+        "endLine": 396,
         "anchor": "if (info.modelId === MOCK_MODEL_ID)"
       }
     ]
