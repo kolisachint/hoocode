@@ -11,6 +11,7 @@
  *   bun scripts/search-eval.ts --corpus-ref HEAD --out runs/baseline.json
  *   bun scripts/search-eval.ts --no-embed          # fast lexical-only check
  *   bun scripts/search-eval.ts --embsearch-binary ./embsearch --corpus-ref HEAD
+ *   bun scripts/search-eval.ts --embsearch-binary ./embsearch --model-dir ./pack/bge-small
  *
  * `--corpus-ref` checks the corpus out into a detached worktree so the run is
  * reproducible. Without it the live working tree is used and the record is
@@ -23,6 +24,7 @@
  * be mistaken for a full sweep.
  */
 
+import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,6 +58,30 @@ const skipEmbed = has("no-embed");
 // Explicit binary beats the on-demand release download, so a semantic run is
 // reproducible from a known artifact rather than "whatever latest resolved to".
 const embsearchBinary = flag("embsearch-binary");
+// Overrides the model bundled in the binary, so one binary can score several
+// embedding models. Requires an onnx build and a directory holding
+// `model.onnx`, `tokenizer.json` and `model.json`.
+const modelDir = flag("model-dir");
+/**
+ * Store suffix isolating one model's index from another's.
+ *
+ * The store directory is keyed by the corpus path alone, so without this two
+ * model arms on the same corpus would land in the same store — and the second
+ * would find vectors built by the first. The daemon refuses to open a store
+ * whose recorded model disagrees, so the arm would not silently mix models; it
+ * would fail to start at all. Either way the suffix is what makes back-to-back
+ * arms work.
+ *
+ * Basename for legibility, plus a hash of the resolved path so two directories
+ * that happen to share a name cannot share a store. Empty without `--model-dir`,
+ * so an ordinary run reuses exactly the store it always did.
+ */
+const storeSuffix = modelDir
+	? `-${path.basename(path.resolve(modelDir))}-${createHash("sha256")
+			.update(path.resolve(modelDir))
+			.digest("hex")
+			.slice(0, 6)}`
+	: "";
 // Builds a SECOND index whose store carries the daemon's BM25 lexical index,
 // enabling the `daemon-hybrid` configs. Separate store dir because hybrid-ness
 // is fixed at store creation; costs a full re-index the first time.
@@ -108,6 +134,8 @@ try {
 			cwd: corpus.cwd,
 			thresholdBytes: 0,
 			binaryPath: embsearchBinary,
+			modelDir,
+			storeDir: `${getEmbsearchStoreDir(corpus.cwd)}${storeSuffix}`,
 			// Dense-only on purpose. Production now builds a hybrid store by
 			// default; here that would silently make this the same store as the
 			// `-bm25` one below, index the corpus twice, and leave no dense-only
@@ -135,7 +163,8 @@ try {
 			cwd: corpus.cwd,
 			thresholdBytes: 0,
 			binaryPath: embsearchBinary,
-			storeDir: `${getEmbsearchStoreDir(corpus.cwd)}-bm25`,
+			modelDir,
+			storeDir: `${getEmbsearchStoreDir(corpus.cwd)}${storeSuffix}-bm25`,
 			hybridStore: true,
 			onProgress: (state) => {
 				if (state.phase === "indexing" && state.done >= nextHybridProgressAt) {
@@ -172,6 +201,7 @@ try {
 			service,
 			embsearchBinary,
 			hybridService,
+			modelDir,
 		),
 		goldSet: summarizeGoldSet(dataset),
 		configs,

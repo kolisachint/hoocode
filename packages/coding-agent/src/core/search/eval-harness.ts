@@ -80,11 +80,25 @@ export interface EvalProvenance {
 		/** Indexed chunk count when the index reached `ready`. */
 		chunkCount?: number;
 		phase: string;
-		/** Binary that served the embeddings, and its self-reported version.
-		 *  The embedding model is baked into the binary at build time, so this
-		 *  is the only thing that identifies which model produced a score. */
+		/** Binary that served the embeddings, and its self-reported version. */
 		binaryPath?: string;
 		binaryVersion?: string;
+		/**
+		 * Model id the daemon reported — the thing that actually identifies
+		 * which model produced these scores.
+		 *
+		 * This used to be inferred from `binaryVersion`, on the reasoning that
+		 * the model was baked into the binary at build time. `--model <dir>`
+		 * ends that: one binary now serves any number of models, so two arms of
+		 * a model comparison would have carried identical provenance and been
+		 * indistinguishable in the record. The id is a hash over the model's
+		 * whole spec (pooling, token limit, prefixes), so a change to any of
+		 * them shows up here.
+		 */
+		modelId?: string;
+		/** Model directory passed as `--model`, when the run overrode the
+		 *  bundled model. Absent means the binary's own model was used. */
+		modelDir?: string;
 	};
 	/** Daemon-side BM25 hybrid store, when the run included one. Absent means
 	 *  the record has no `daemon-hybrid` rows. */
@@ -260,6 +274,7 @@ export function collectProvenance(
 	service: EmbsearchService | undefined,
 	embsearchBinary?: string,
 	hybridService?: EmbsearchService,
+	modelDir?: string,
 ): EvalProvenance {
 	const state = service?.getState();
 	const phase = state?.phase ?? "absent";
@@ -282,6 +297,8 @@ export function collectProvenance(
 			phase,
 			binaryPath: embsearchBinary,
 			binaryVersion: probeBinaryVersion(embsearchBinary),
+			modelId: service?.modelId(),
+			modelDir,
 		},
 		daemonHybrid: hybridService
 			? { available: hybridService.isAvailable(), phase: hybridService.getState().phase }

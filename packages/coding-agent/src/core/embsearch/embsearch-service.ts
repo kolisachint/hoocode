@@ -92,6 +92,16 @@ export interface EmbsearchServiceOptions {
 	cwd: string;
 	/** Explicit binary path (settings override). Default: "embsearch" from PATH. */
 	binaryPath?: string;
+	/**
+	 * Model directory handed to the daemon as `--model`, overriding the model
+	 * bundled in the binary.
+	 *
+	 * Only the eval harness sets this, to score two embedding models from one
+	 * binary. Pair it with a distinct `storeDir`: vectors from different models
+	 * are incompatible, and the daemon refuses to open a store built by another
+	 * model rather than mixing them.
+	 */
+	modelDir?: string;
 	/** Minimum indexable bytes before indexing kicks in. */
 	thresholdBytes: number;
 	/**
@@ -147,6 +157,16 @@ export class EmbsearchService {
 	}
 
 	/** Semantic search is usable (index ready, or still building with partial data). */
+	/**
+	 * Model id reported by the running daemon, once it is up.
+	 *
+	 * This — not the binary's version — identifies which model produced the
+	 * vectors in the store, because `--model` decouples the two.
+	 */
+	modelId(): string | undefined {
+		return this.meta?.modelId;
+	}
+
 	isAvailable(): boolean {
 		return this.state.phase === "ready" || this.state.phase === "indexing";
 	}
@@ -235,6 +255,31 @@ export class EmbsearchService {
 		}
 	}
 
+	/**
+	 * What the store on disk says about itself, read straight from its manifest.
+	 *
+	 * `store-info` exists precisely for the case where the daemon will not open
+	 * the store: a `serve` pairs a store with an embedder and refuses the pair
+	 * when their models disagree, so at that moment nothing else can tell us
+	 * what built it. Returns undefined when there is no readable store — which
+	 * includes a binary too old to have the subcommand, and so degrades to the
+	 * previous behaviour rather than guessing.
+	 */
+	private probeStore(binary: string, storeDir: string): { modelId: string; live: number } | undefined {
+		try {
+			const out = execFileSync(binary, ["store-info", "--path", getVectorStoreDir(storeDir), "--json"], {
+				encoding: "utf-8",
+				timeout: 10_000,
+				stdio: ["ignore", "pipe", "ignore"],
+			});
+			const parsed = JSON.parse(out) as { model_id?: string; live?: number };
+			if (typeof parsed.model_id !== "string") return undefined;
+			return { modelId: parsed.model_id, live: parsed.live ?? 0 };
+		} catch {
+			return undefined;
+		}
+	}
+
 	private async resolveBinary(): Promise<string | undefined> {
 		if (this.options.binaryPath) {
 			return this.options.binaryPath;
@@ -297,12 +342,41 @@ export class EmbsearchService {
 				binaryPath: binary,
 				storePath: getVectorStoreDir(storeDir),
 				hybrid: wantHybrid,
+				modelDir: this.options.modelDir,
 			});
 			await this.client.ready();
 			return await this.client.info();
 		};
 
-		let info = await openClient();
+		/** Discard the store and start clean. The only recovery from a store the
+		 *  current binary cannot use — and the only way to be rid of vectors that
+		 *  outlived the metadata describing them. */
+		const rebuildFrom = async (why: string): Promise<EmbSearchDaemonInfo> => {
+			console.error(`embsearch: rebuilding the index (${why})`);
+			this.setState({ phase: "indexing", done: 0, total: 0 });
+			await this.closeClient();
+			rmSync(storeDir, { recursive: true, force: true });
+			return await openClient();
+		};
+
+		let info: EmbSearchDaemonInfo;
+		try {
+			info = await openClient();
+		} catch (err) {
+			// The daemon refuses to open a store whose recorded model disagrees
+			// with its own — correctly, since vectors from different models are
+			// not comparable. But refusing is where it stopped: the store stayed
+			// on disk, the daemon never came up, and this service went
+			// permanently unavailable with a rebuild one directory-removal away.
+			//
+			// Only a store that is present and *readable* is treated this way. If
+			// `store-info` cannot read it either, the problem is not a model
+			// mismatch and destroying an index would be the wrong response, so
+			// the original failure stands.
+			const store = this.probeStore(binary, storeDir);
+			if (!store) throw err;
+			info = await rebuildFrom(`built by model '${store.modelId}', which this binary cannot read`);
+		}
 
 		// Hybrid-ness is fixed when a store is created and `--hybrid` against an
 		// existing plain store only warns, so an index built before this was the
@@ -311,10 +385,7 @@ export class EmbsearchService {
 		// rebuild once when it disagrees. `info.hybrid` is undefined on daemons
 		// too old to report it — those cannot serve BM25 anyway, so leave them be.
 		if (wantHybrid && info.hybrid === false) {
-			this.setState({ phase: "indexing", done: 0, total: 0 });
-			await this.closeClient();
-			rmSync(storeDir, { recursive: true, force: true });
-			info = await openClient();
+			info = await rebuildFrom("the existing store carries no BM25 index");
 		}
 		this.hybridStore = info.hybrid === true;
 		// A daemon old enough to omit the field is left on the version verdict —
@@ -325,7 +396,24 @@ export class EmbsearchService {
 		}
 
 		// Missing/stale sidecar (format, chunker, or model changed) → clean rebuild.
-		this.meta = loadIndexMeta(storeDir, info.modelId) ?? emptyIndexMeta(this.options.cwd, info.modelId);
+		//
+		// Resetting the sidecar alone is not enough, and used to be all this did.
+		// The sidecar is the only record of how many chunks each file produced,
+		// so an empty one reports zero for every file — and `indexChangedFiles`
+		// removes stale chunks by counting down from that number. Re-chunking a
+		// file into *fewer* pieces then leaves its tail vectors (`path#N`,
+		// `path#N+1`, …) in the store, holding text that no longer exists
+		// anywhere, retrievable forever. Upserts hide it: chunk counts look
+		// right, the sidecar looks right, and only search results are wrong.
+		//
+		// So when the sidecar cannot be trusted and the store is not already
+		// empty, the store goes too.
+		let meta = loadIndexMeta(storeDir, info.modelId);
+		if (!meta && info.count > 0) {
+			info = await rebuildFrom("index metadata is missing or was written by a different chunker or model");
+			meta = loadIndexMeta(storeDir, info.modelId);
+		}
+		this.meta = meta ?? emptyIndexMeta(this.options.cwd, info.modelId);
 		this.meta.lastUsedMs = Date.now();
 
 		await this.indexChangedFiles(scan.files, storeDir, signal);
