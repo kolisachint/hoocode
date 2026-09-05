@@ -17,14 +17,25 @@ for (const cap of [1000, 1500, 2000]) {
 	for (const f of scanRepo(cwd).files) {
 		if (f.rel === ".git") continue;
 		let c: string;
-		try { c = readFileSync(path.join(cwd, f.rel), "utf8"); } catch { continue; }
+		try {
+			c = readFileSync(path.join(cwd, f.rel), "utf8");
+		} catch {
+			continue;
+		}
 		for (const ch of chunkFile(f.rel, c, cap)) texts.push(ch.text);
 	}
 	const L = [...texts].map((t) => t.length).sort((a, b) => a - b);
-	console.log(JSON.stringify({
-		cap, chunks: texts.length,
-		meanChars: Math.round(L.reduce((a, b) => a + b, 0) / L.length),
-		p50: L[Math.floor(L.length / 2)], p90: L[Math.floor(L.length * 0.9)],
-	}));
-	writeFileSync(`/tmp/chunks-cap${cap}.jsonl`, `${texts.map((t, i) => JSON.stringify({ id: `c${i}`, text: t })).join("\n")}\n`);
+	console.log(
+		JSON.stringify({
+			cap,
+			chunks: texts.length,
+			meanChars: Math.round(L.reduce((a, b) => a + b, 0) / L.length),
+			p50: L[Math.floor(L.length / 2)],
+			p90: L[Math.floor(L.length * 0.9)],
+		}),
+	);
+	writeFileSync(
+		`/tmp/chunks-cap${cap}.jsonl`,
+		`${texts.map((t, i) => JSON.stringify({ id: `c${i}`, text: t })).join("\n")}\n`,
+	);
 }

@@ -380,17 +380,15 @@ export const CORPUS_EXCLUSIONS: readonly string[] = [
  * every metric — so it is recorded in the record and folded into the worktree
  * path, and it needs a `ref`.
  */
-export function pinCorpus(
-	repoRoot: string,
-	ref: string | undefined,
-	subsample?: CorpusSubsampleRequest,
-): PinnedCorpus {
+export function pinCorpus(repoRoot: string, ref: string | undefined, subsample?: CorpusSubsampleRequest): PinnedCorpus {
 	const dirty = git(repoRoot, ["status", "--porcelain"]).length > 0;
 	if (!ref) {
 		if (subsample) {
 			// Subsampling deletes files. Against the live checkout that is the
 			// user's source tree, so this refuses rather than asks.
-			throw new Error("subsampling requires --corpus-ref: it deletes files, and the working tree is not ours to cut");
+			throw new Error(
+				"subsampling requires --corpus-ref: it deletes files, and the working tree is not ours to cut",
+			);
 		}
 		// The live working tree is the user's checkout; deleting files from it to
 		// tidy a measurement would be an unforgivable trade. Working-tree runs

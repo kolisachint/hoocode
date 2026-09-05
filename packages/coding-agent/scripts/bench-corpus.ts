@@ -50,9 +50,7 @@ writeFileSync(out, `${lines.join("\n")}\n`);
 // Character length is the honest proxy for embedding cost here: the tokenizer
 // pads each batch to its longest member, so the spread matters as much as the
 // mean.
-const lengths = lines
-	.map((l) => (JSON.parse(l) as { text: string }).text.length)
-	.sort((a, b) => a - b);
+const lengths = lines.map((l) => (JSON.parse(l) as { text: string }).text.length).sort((a, b) => a - b);
 const sum = lengths.reduce((a, b) => a + b, 0);
 const pct = (p: number) => lengths[Math.min(lengths.length - 1, Math.floor((p / 100) * lengths.length))];
 
