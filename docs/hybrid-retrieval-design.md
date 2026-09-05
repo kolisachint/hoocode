@@ -846,6 +846,10 @@ That leaves it a fix that costs every user a full re-index — `CHUNKER_VERSION`
 must bump — for no measured gain. It should ride along the next time something
 else earns the rebuild, which the hybrid BM25 store will.
 
+**It did, and this section is now history rather than a plan.** The fix is in
+`chunker.ts:68-89` and `CHUNKER_VERSION` is 2. Treat any note that still calls
+it parked as stale.
+
 ### What this leaves
 
 Neither chunk size nor chunk metadata explains the boundary failures. The
@@ -860,7 +864,20 @@ neither fusion, reranking, nor chunking can reach.
 evidence."** bge-small-en-v1.5 was measured against MiniLM over the arms
 pre-registered in embeddingsearchtools' `docs/embedder-strategy.md`. It beat
 MiniLM on every endpoint — semantic-subgroup MRR 0.173→0.273, R@10
-0.333→0.479 — and cleared none of them at p≤0.05. Records:
+0.333→0.479 — and cleared none of them at p≤0.05.
+
+One loose end in that answer has since been pulled, and it held. The paragraph
+above blames "a 384-dim MiniLM", but MiniLM was also *truncating*: chunks are
+capped at 1000 characters on the belief that this is about 256 tokens, and code
+actually runs 313 tokens at the median, so MiniLM never read the last fifth of
+86% of chunks — always the tail, which is where these boundary answers live.
+That made the comparison a test of two things at once.
+
+A control with MiniLM's own weights at a 512-token window separates them, and
+the extra coverage turns out to buy nothing: semantic MRR +0.023 against
+bge-small's +0.131, with semantic R@10 slightly *worse*. So the diagnosis in
+this section stands as written — it is the embedder, not the amount of text it
+was given. Records:
 `packages/coding-agent/runs/a{0,1,2}-*.json`. The embedder hypothesis above
 survives its own falsification test; it is not proven.
 

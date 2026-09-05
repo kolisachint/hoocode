@@ -27,7 +27,9 @@ import { execFileSync } from "child_process";
 import { rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
+import { chunkFile } from "../embsearch/chunker.js";
 import type { EmbsearchService } from "../embsearch/embsearch-service.js";
+import { scanRepo } from "../embsearch/repo-scan.js";
 import { type EvalConfig, type EvalQuery, type EvalQueryResult, evaluateQuery } from "./eval.js";
 
 /** Metrics aggregated per config across the whole gold set. */
@@ -61,6 +63,15 @@ export interface EvalProvenance {
 	 *  {@link CORPUS_EXCLUSIONS}. A score against a different exclusion list is
 	 *  a score against a different corpus, so it is recorded, not assumed. */
 	corpusExcluded: string[];
+	/**
+	 * Set only when the run scored a deliberately shrunk corpus.
+	 *
+	 * A smaller distractor pool makes every query easier, so these metrics are
+	 * higher than a full-corpus run's and are **not** comparable to one. They
+	 * are comparable to another subsampled run with the same target and seed,
+	 * which is what makes this useful for screening model arms.
+	 */
+	corpusSubsample?: CorpusSubsampleInfo;
 	/** SHA of the tree whose retrieval code ran. Usually equals `corpusSha`,
 	 *  but differs when pinning an old corpus with today's code. */
 	harnessSha: string;
@@ -103,6 +114,34 @@ export interface EvalProvenance {
 	/** Daemon-side BM25 hybrid store, when the run included one. Absent means
 	 *  the record has no `daemon-hybrid` rows. */
 	daemonHybrid?: { available: boolean; phase: string };
+	/**
+	 * Wall time, split at the seam between building the index and scoring the
+	 * gold set.
+	 *
+	 * Recorded because the cost side of a model comparison is almost entirely
+	 * indexing, and a single total cannot show it: the first such comparison
+	 * could only report "17 -> 60 min" for whole runs and had to note that the
+	 * figure was "not isolated from query work", which left the headline cost
+	 * of the change unmeasured. These two numbers are machine- and
+	 * load-dependent and say nothing about retrieval quality; they are a budget,
+	 * not a metric.
+	 */
+	/**
+	 * Chunker character cap, when an arm overrode it. Absent means the shipped
+	 * `CHUNK_MAX_CHARS`. Records differing here are not comparable: the chunks
+	 * are different text, so every id, span and vector differs.
+	 */
+	chunkMaxChars?: number;
+	timing?: {
+		/** Seconds spent bringing the index(es) to `ready`, model load included. */
+		indexSeconds: number;
+		/** Seconds spent running every config over every gold query. */
+		querySeconds: number;
+		/** True when one hybrid store served both the dense and BM25 roles
+		 *  rather than the corpus being embedded twice. Runs with this false
+		 *  paid roughly double the indexing time. */
+		sharedStore: boolean;
+	};
 	runtime: { node: string; platform: string; arch: string };
 }
 
@@ -162,8 +201,143 @@ export interface PinnedCorpus {
 	/** Files removed from the corpus before indexing. Empty when the corpus is
 	 *  the live working tree, which is never mutated. */
 	excluded: string[];
+	/** Present only on a subsampled run. Its presence is what marks a record as
+	 *  incomparable to a full-corpus one. */
+	subsample?: CorpusSubsampleInfo;
 	/** Removes the worktree, if one was created. */
 	dispose: () => void;
+}
+
+/** Request to shrink the corpus to a chunk budget. See {@link pinCorpus}. */
+export interface CorpusSubsampleRequest {
+	/** Approximate chunk budget. Gold-bearing files are kept past it. */
+	targetChunks: number;
+	/** Files that must survive regardless of budget — the gold-bearing ones. */
+	keepRelPaths: readonly string[];
+	/** Seed for the distractor draw, so a budget reproduces exactly. */
+	seed: number;
+}
+
+/** What a subsampled run did, recorded so it can never be read as a full one. */
+export interface CorpusSubsampleInfo {
+	targetChunks: number;
+	/** Chunks actually kept. Exceeds the target when gold files alone do. */
+	chunkCount: number;
+	filesKept: number;
+	filesDropped: number;
+	/** Gold-bearing files, all of which are kept unconditionally. */
+	goldFilesKept: number;
+	seed: number;
+}
+
+/**
+ * Cut `dir` down to a chunk budget, in place.
+ *
+ * Counts chunks with the indexer's own chunker rather than estimating from
+ * file size, because the budget is meant to predict indexing time and
+ * indexing time is per chunk. Gold-bearing files are never candidates for
+ * removal: dropping one would make its queries unanswerable and score the
+ * arm on a corpus that cannot contain the answer.
+ *
+ * Deletion is what makes this apply to every leg at once. Filtering the
+ * indexer's file list instead would shrink the dense and BM25 legs while grep
+ * still walked the full tree, and the legs would then be answering about
+ * different corpora.
+ */
+function applySubsample(dir: string, request: CorpusSubsampleRequest): CorpusSubsampleInfo {
+	const gold = new Set(request.keepRelPaths);
+	const counts = new Map<string, number>();
+	for (const file of scanRepo(dir).files) {
+		// The scanner skips `.git` as a *directory*, but a linked worktree's
+		// `.git` is a file holding the path to the real gitdir — so it comes back
+		// as an ordinary indexable file. Deleting it detaches the worktree from
+		// the repo, and `worktree remove` then fails on a tree git can no longer
+		// validate. Never a candidate.
+		if (file.rel === ".git" || file.rel.startsWith(`.git${path.sep}`) || file.rel.startsWith(".git/")) {
+			continue;
+		}
+		let content: string;
+		try {
+			content = readFileSync(path.join(dir, file.rel), "utf8");
+		} catch {
+			continue;
+		}
+		// Deliberately the *default* cap, never the arm's.
+		//
+		// The budget picks which files survive, and a chunk-cap sweep must
+		// compare caps over identical source text. Counting at the arm's cap
+		// would let a cap-2000 arm — whose chunks are bigger, so fewer fit the
+		// budget — keep far more of the repo than a cap-1000 arm, and the two
+		// would then differ by corpus as well as by cap. Sizing is a secondary
+		// concern to that: bigger caps produce fewer chunks and index faster
+		// anyway, so the budget only ever overestimates their cost.
+		const n = chunkFile(file.rel, content).length;
+		if (n > 0) counts.set(file.rel, n);
+	}
+
+	const keep = new Set<string>();
+	let chunks = 0;
+	let goldFilesKept = 0;
+	for (const rel of counts.keys()) {
+		if (!gold.has(rel)) continue;
+		keep.add(rel);
+		chunks += counts.get(rel) ?? 0;
+		goldFilesKept++;
+	}
+
+	// Shuffle the distractors rather than taking the scan's order, which is
+	// directory order — that would keep a few whole subtrees and drop the rest,
+	// making the sample a slice of the repo instead of a sample of it.
+	const rng = seededRandom(request.seed);
+	const others = [...counts.keys()].filter((rel) => !gold.has(rel));
+	for (let i = others.length - 1; i > 0; i--) {
+		const j = Math.floor(rng() * (i + 1));
+		[others[i], others[j]] = [others[j], others[i]];
+	}
+	for (const rel of others) {
+		if (chunks >= request.targetChunks) break;
+		keep.add(rel);
+		chunks += counts.get(rel) ?? 0;
+	}
+
+	let filesDropped = 0;
+	for (const rel of counts.keys()) {
+		if (keep.has(rel)) continue;
+		try {
+			rmSync(path.join(dir, rel), { force: true });
+			filesDropped++;
+		} catch {
+			// A file the scanner listed but cannot be removed stays in the
+			// corpus; it inflates the sample slightly and is not worth failing
+			// the run over.
+		}
+	}
+
+	return {
+		targetChunks: request.targetChunks,
+		chunkCount: chunks,
+		filesKept: keep.size,
+		filesDropped,
+		goldFilesKept,
+		seed: request.seed,
+	};
+}
+
+/**
+ * Deterministic PRNG (mulberry32).
+ *
+ * `Math.random()` would make a "reproducible" subsample a different corpus on
+ * every run, which is the one property this must not have.
+ */
+function seededRandom(seed: number): () => number {
+	let a = seed >>> 0;
+	return () => {
+		a = (a + 0x6d2b79f5) >>> 0;
+		let t = a;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
 }
 
 /**
@@ -198,10 +372,26 @@ export const CORPUS_EXCLUSIONS: readonly string[] = [
  * With a `ref`, checks out a detached worktree at that commit so the corpus is
  * byte-identical on every rerun. Without one, falls back to the live working
  * tree and reports `dirty` so the record shows the run was not reproducible.
+ *
+ * `subsample` shrinks the corpus to a chunk budget, for screening runs where a
+ * full arm costs too much to iterate on. It keeps every gold-bearing file and
+ * draws distractors deterministically. This is a real change to what is being
+ * measured — a smaller distractor pool makes retrieval easier and inflates
+ * every metric — so it is recorded in the record and folded into the worktree
+ * path, and it needs a `ref`.
  */
-export function pinCorpus(repoRoot: string, ref: string | undefined): PinnedCorpus {
+export function pinCorpus(
+	repoRoot: string,
+	ref: string | undefined,
+	subsample?: CorpusSubsampleRequest,
+): PinnedCorpus {
 	const dirty = git(repoRoot, ["status", "--porcelain"]).length > 0;
 	if (!ref) {
+		if (subsample) {
+			// Subsampling deletes files. Against the live checkout that is the
+			// user's source tree, so this refuses rather than asks.
+			throw new Error("subsampling requires --corpus-ref: it deletes files, and the working tree is not ours to cut");
+		}
 		// The live working tree is the user's checkout; deleting files from it to
 		// tidy a measurement would be an unforgivable trade. Working-tree runs
 		// are already stamped non-reproducible, so they carry the contamination.
@@ -220,7 +410,16 @@ export function pinCorpus(repoRoot: string, ref: string | undefined): PinnedCorp
 	// the corpus directory, so a fresh temp path every run would re-embed all
 	// ~17k chunks (minutes) instead of reusing the store built for this exact
 	// SHA. The worktree is still removed afterwards; only the store persists.
-	const dir = path.join(tmpdir(), `hoocode-search-eval-${sha.slice(0, 12)}`);
+	//
+	// The subsample is part of the key. Without it a screening run and a full
+	// run at the same SHA would share this path *and* the store derived from it,
+	// so the second would silently score the first's index — a wrong number that
+	// looks entirely normal.
+	// No chunk cap in the key: the file set is cap-independent by construction
+	// (see `applySubsample`), so cap arms share one worktree. The *store* key
+	// does carry the cap, because the vectors differ.
+	const subsampleKey = subsample ? `-fast${subsample.targetChunks}s${subsample.seed}` : "";
+	const dir = path.join(tmpdir(), `hoocode-search-eval-${sha.slice(0, 12)}${subsampleKey}`);
 	if (existsSync(dir)) {
 		// Left behind by an interrupted run — drop it so `worktree add` succeeds.
 		try {
@@ -241,12 +440,15 @@ export function pinCorpus(repoRoot: string, ref: string | undefined): PinnedCorp
 		}
 	}
 
+	const subsampleInfo = subsample ? applySubsample(dir, subsample) : undefined;
+
 	return {
 		cwd: dir,
 		sha,
 		fromWorkingTree: false,
 		dirty: false,
 		excluded,
+		subsample: subsampleInfo,
 		dispose: () => {
 			try {
 				git(repoRoot, ["worktree", "remove", "--force", dir]);
@@ -275,6 +477,8 @@ export function collectProvenance(
 	embsearchBinary?: string,
 	hybridService?: EmbsearchService,
 	modelDir?: string,
+	timing?: EvalProvenance["timing"],
+	chunkMaxChars?: number,
 ): EvalProvenance {
 	const state = service?.getState();
 	const phase = state?.phase ?? "absent";
@@ -285,6 +489,7 @@ export function collectProvenance(
 		corpusFromWorkingTree: corpus.fromWorkingTree,
 		corpusDirty: corpus.dirty,
 		corpusExcluded: corpus.excluded,
+		corpusSubsample: corpus.subsample,
 		harnessSha: git(repoRoot, ["rev-parse", "HEAD"]),
 		retrievalSourceHash: hashRetrievalSource(repoRoot),
 		embedder: {
@@ -303,6 +508,8 @@ export function collectProvenance(
 		daemonHybrid: hybridService
 			? { available: hybridService.isAvailable(), phase: hybridService.getState().phase }
 			: undefined,
+		timing,
+		chunkMaxChars,
 		runtime: { node: process.version, platform: process.platform, arch: process.arch },
 	};
 }

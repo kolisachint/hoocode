@@ -214,8 +214,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
-        "startLine": 54,
-        "endLine": 100,
+        "startLine": 68,
+        "endLine": 114,
         "anchor": "export function chunkFile"
       }
     ]
@@ -436,7 +436,7 @@
       {
         "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
         "startLine": 1,
-        "endLine": 101,
+        "endLine": 115,
         "scope": "file"
       }
     ]
@@ -526,8 +526,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/chunker.ts",
-        "startLine": 54,
-        "endLine": 100,
+        "startLine": 68,
+        "endLine": 114,
         "anchor": "export function chunkFile"
       }
     ]
@@ -656,8 +656,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 437,
-        "endLine": 441,
+        "startLine": 446,
+        "endLine": 450,
         "anchor": "const hash = hashContent"
       }
     ]
@@ -707,8 +707,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 559,
-        "endLine": 562,
+        "startLine": 568,
+        "endLine": 571,
         "anchor": "findEnclosingChunk"
       }
     ]
@@ -835,8 +835,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 394,
-        "endLine": 396,
+        "startLine": 403,
+        "endLine": 405,
         "anchor": "if (info.modelId === MOCK_MODEL_ID)"
       }
     ]

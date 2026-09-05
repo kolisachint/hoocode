@@ -12,6 +12,13 @@
  *   bun scripts/search-eval.ts --no-embed          # fast lexical-only check
  *   bun scripts/search-eval.ts --embsearch-binary ./embsearch --corpus-ref HEAD
  *   bun scripts/search-eval.ts --embsearch-binary ./embsearch --model-dir ./pack/bge-small
+ *   bun scripts/search-eval.ts --corpus-ref HEAD --fast 6000   # screening sweep
+ *
+ * `--fast <chunks>` shrinks the corpus to a chunk budget, keeping every
+ * gold-bearing file, so a model sweep costs minutes instead of hours. It makes
+ * retrieval easier and inflates every metric, so it compares arms to each
+ * other and never states an absolute; records carry `corpusSubsample` to keep
+ * the two kinds apart.
  *
  * `--corpus-ref` checks the corpus out into a detached worktree so the run is
  * reproducible. Without it the live working tree is used and the record is
@@ -76,16 +83,41 @@ const modelDir = flag("model-dir");
  * that happen to share a name cannot share a store. Empty without `--model-dir`,
  * so an ordinary run reuses exactly the store it always did.
  */
-const storeSuffix = modelDir
-	? `-${path.basename(path.resolve(modelDir))}-${createHash("sha256")
-			.update(path.resolve(modelDir))
-			.digest("hex")
-			.slice(0, 6)}`
-	: "";
-// Builds a SECOND index whose store carries the daemon's BM25 lexical index,
-// enabling the `daemon-hybrid` configs. Separate store dir because hybrid-ness
-// is fixed at store creation; costs a full re-index the first time.
+/**
+ * Chunker character cap, for arms that sweep the window.
+ *
+ * Changing this changes what every vector is, so it is folded into the store
+ * key below and recorded in provenance. Note what it does *not* do: raise the
+ * number of tokens a model will read. At cap 2000 the median chunk is 581
+ * tokens against bge-small's 512-token window, so two thirds of chunks are
+ * truncated and 17.6% of the corpus's tokens are dropped — a cap sweep past
+ * ~1100 chars is partly a truncation experiment, whatever it is labelled.
+ */
+const chunkMaxChars = flag("chunk-max-chars") ? Number(flag("chunk-max-chars")) : undefined;
+if (chunkMaxChars !== undefined && (!Number.isFinite(chunkMaxChars) || chunkMaxChars <= 0)) {
+	console.error("--chunk-max-chars takes a positive character cap, e.g. --chunk-max-chars 1500");
+	process.exit(1);
+}
+const storeSuffix =
+	(modelDir
+		? `-${path.basename(path.resolve(modelDir))}-${createHash("sha256")
+				.update(path.resolve(modelDir))
+				.digest("hex")
+				.slice(0, 6)}`
+		: "") +
+	// The cap belongs in the key for the same reason the model does: vectors
+	// built under a different one are a different index, and nothing in the
+	// store says which cap produced it.
+	(chunkMaxChars ? `-c${chunkMaxChars}` : "");
+// Enables the `daemon-hybrid` configs, which need a store carrying the
+// daemon's BM25 lexical index. Hybrid-ness is fixed at store creation, so this
+// selects which kind of store the run builds; see `shareOneStore` below for
+// why it no longer builds two.
 const withDaemonHybrid = has("daemon-hybrid");
+// Restores the old two-store layout: a dense-only index plus a separate hybrid
+// one. Kept as an escape hatch so the equivalence that `shareOneStore` relies
+// on can be re-verified against a future daemon rather than taken on trust.
+const separateStores = has("separate-stores");
 // Applies edits to the corpus AFTER indexing and scores queries only those
 // edits can answer — the grep leg's unique contribution, which the main sweep
 // cannot see because its corpus matches the index exactly.
@@ -97,6 +129,29 @@ const configFilter = flag("configs")
 	?.split(",")
 	.map((s) => s.trim())
 	.filter(Boolean);
+/**
+ * Screening mode: shrink the corpus to roughly this many chunks.
+ *
+ * A full arm costs about 5 minutes of indexing on MiniLM, 22 on bge-small and
+ * nearly two hours on nomic, which is too slow to iterate against. This trades
+ * the thing that makes those numbers expensive — corpus size — for turnaround.
+ *
+ * It is not a cheaper version of the real eval. Every gold-bearing file is
+ * kept but most distractors are gone, so retrieval gets easier and every
+ * metric reads high; more queries also tie, which costs the paired sign test
+ * the power it was already short of. Use it to compare arms against each other
+ * under identical conditions, never to make a claim about absolute quality.
+ * The record carries `corpusSubsample` so the two kinds cannot be confused.
+ */
+const fastChunks = has("fast") ? Number(flag("fast") ?? 6000) : undefined;
+if (fastChunks !== undefined && (!Number.isFinite(fastChunks) || fastChunks <= 0)) {
+	console.error("--fast takes a positive chunk budget, e.g. --fast 6000");
+	process.exit(1);
+}
+// Fixed rather than exposed: two arms drawing different distractors would not
+// be comparable, and that is the whole purpose of this mode. Change it only to
+// check that a result is not an artifact of one particular draw.
+const fastSeed = Number(flag("fast-seed") ?? 1);
 
 const fixturePath = path.join(packageRoot, "test", "fixtures", "search-eval.json");
 const dataset = loadGoldSet(fixturePath);
@@ -107,13 +162,33 @@ if (configs.length === 0) {
 	process.exit(1);
 }
 
-const corpus = pinCorpus(repoRoot, corpusRef);
+const corpus = pinCorpus(
+	repoRoot,
+	corpusRef,
+	fastChunks === undefined
+		? undefined
+		: {
+				targetChunks: fastChunks,
+				// Every file the gold set points at, so no query is made
+				// unanswerable by the draw.
+				keepRelPaths: [...new Set(dataset.flatMap((q) => q.gold.map((g) => g.path)))],
+				seed: fastSeed,
+			},
+);
 try {
 	console.error(
 		`search-eval: ${dataset.length} queries, corpus=${corpus.sha.slice(0, 12)}` +
 			`${corpus.fromWorkingTree ? " (WORKING TREE — not reproducible)" : " (pinned worktree)"}` +
 			`${corpus.dirty ? " [dirty]" : ""}`,
 	);
+	if (corpus.subsample) {
+		const s = corpus.subsample;
+		console.error(
+			`  SUBSAMPLED: ${s.chunkCount} chunks from ${s.filesKept} files ` +
+				`(${s.goldFilesKept} gold-bearing, ${s.filesDropped} files dropped, seed ${s.seed})`,
+		);
+		console.error("  metrics are inflated by the smaller distractor pool — compare only to another --fast run");
+	}
 
 	// Gold must be valid against the corpus actually being scored — a stale
 	// fixture depresses every number without failing anything.
@@ -128,19 +203,43 @@ try {
 	const PROGRESS_STEP = 2000;
 	let nextProgressAt = 0;
 	let nextHybridProgressAt = 0;
+	/**
+	 * One store serving both roles, instead of a dense-only index plus a hybrid
+	 * one.
+	 *
+	 * Building both embedded the whole corpus twice to produce the *same*
+	 * vectors — half of every arm's indexing budget spent on a duplicate. A
+	 * hybrid store answers `retriever: "dense"` from the same vector index a
+	 * dense-only store uses, so the dense rows are unchanged: verified over
+	 * 1,500 chunks and six queries, where both stores returned bit-identical
+	 * ids and scores at k=10.
+	 *
+	 * This is what the old comment here worried about ("leave no dense-only
+	 * baseline to compare the BM25 rows against"). The baseline survives
+	 * because it was never a property of the *store* — the dense configs still
+	 * query the dense leg alone, and only the `daemon-hybrid`/`bm25Leg` configs
+	 * ask for BM25. `--separate-stores` restores the two-store layout to
+	 * re-check that if the daemon's query path ever changes.
+	 */
+	const shareOneStore = withDaemonHybrid && !skipEmbed && !separateStores;
+	// Indexing and query cost are billed separately. A model comparison is
+	// mostly a question about indexing, and one wall-clock total hides it behind
+	// 62 queries' worth of work — which is exactly why the last run could only
+	// report "17 -> 60 min total" and could not say how much of that was either.
+	let indexSeconds = 0;
 	let service: EmbsearchService | undefined;
 	if (!skipEmbed) {
+		const startedAt = Date.now();
 		service = new EmbsearchService({
 			cwd: corpus.cwd,
 			thresholdBytes: 0,
 			binaryPath: embsearchBinary,
 			modelDir,
-			storeDir: `${getEmbsearchStoreDir(corpus.cwd)}${storeSuffix}`,
-			// Dense-only on purpose. Production now builds a hybrid store by
-			// default; here that would silently make this the same store as the
-			// `-bm25` one below, index the corpus twice, and leave no dense-only
-			// baseline to compare the BM25 rows against.
-			hybridStore: false,
+			chunkMaxChars,
+			storeDir: shareOneStore
+				? `${getEmbsearchStoreDir(corpus.cwd)}${storeSuffix}-bm25`
+				: `${getEmbsearchStoreDir(corpus.cwd)}${storeSuffix}`,
+			hybridStore: shareOneStore,
 			// `done` advances by the bulk batch size, so a modulo test on a
 			// non-multiple silently never fires — track a threshold instead.
 			onProgress: (state) => {
@@ -151,6 +250,7 @@ try {
 			},
 		});
 		await service.start();
+		indexSeconds += (Date.now() - startedAt) / 1000;
 		const state = service.getState();
 		console.error(`  embsearch: ${state.phase}${"reason" in state ? ` (${state.reason})` : ""}`);
 	} else {
@@ -158,12 +258,22 @@ try {
 	}
 
 	let hybridService: EmbsearchService | undefined;
-	if (withDaemonHybrid && !skipEmbed) {
+	if (shareOneStore) {
+		hybridService = service;
+		if (hybridService?.isAvailable()) {
+			console.error("  embsearch(bm25): served by the same store (one index, both roles)");
+		} else {
+			console.error("  daemon-hybrid rows will be omitted: hybrid store did not come up");
+			hybridService = undefined;
+		}
+	} else if (withDaemonHybrid && !skipEmbed) {
+		const startedAt = Date.now();
 		hybridService = new EmbsearchService({
 			cwd: corpus.cwd,
 			thresholdBytes: 0,
 			binaryPath: embsearchBinary,
 			modelDir,
+			chunkMaxChars,
 			storeDir: `${getEmbsearchStoreDir(corpus.cwd)}${storeSuffix}-bm25`,
 			hybridStore: true,
 			onProgress: (state) => {
@@ -174,6 +284,7 @@ try {
 			},
 		});
 		await hybridService.start();
+		indexSeconds += (Date.now() - startedAt) / 1000;
 		const hs = hybridService.getState();
 		console.error(`  embsearch(bm25): ${hs.phase}${"reason" in hs ? ` (${hs.reason})` : ""}`);
 		if (!hybridService.isAvailable()) {
@@ -182,6 +293,7 @@ try {
 		}
 	}
 
+	const querySeconds0 = Date.now();
 	const { aggregates, perQuery } = await runEvalSuite({
 		cwd: corpus.cwd,
 		dataset,
@@ -202,6 +314,12 @@ try {
 			embsearchBinary,
 			hybridService,
 			modelDir,
+			{
+				indexSeconds: Number(indexSeconds.toFixed(1)),
+				querySeconds: Number(((Date.now() - querySeconds0) / 1000).toFixed(1)),
+				sharedStore: shareOneStore,
+			},
+			chunkMaxChars,
 		),
 		goldSet: summarizeGoldSet(dataset),
 		configs,
