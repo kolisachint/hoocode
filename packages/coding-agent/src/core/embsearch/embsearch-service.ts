@@ -92,6 +92,16 @@ export interface EmbsearchServiceOptions {
 	cwd: string;
 	/** Explicit binary path (settings override). Default: "embsearch" from PATH. */
 	binaryPath?: string;
+	/**
+	 * Model directory handed to the daemon as `--model`, overriding the model
+	 * bundled in the binary.
+	 *
+	 * Only the eval harness sets this, to score two embedding models from one
+	 * binary. Pair it with a distinct `storeDir`: vectors from different models
+	 * are incompatible, and the daemon refuses to open a store built by another
+	 * model rather than mixing them.
+	 */
+	modelDir?: string;
 	/** Minimum indexable bytes before indexing kicks in. */
 	thresholdBytes: number;
 	/**
@@ -147,6 +157,16 @@ export class EmbsearchService {
 	}
 
 	/** Semantic search is usable (index ready, or still building with partial data). */
+	/**
+	 * Model id reported by the running daemon, once it is up.
+	 *
+	 * This — not the binary's version — identifies which model produced the
+	 * vectors in the store, because `--model` decouples the two.
+	 */
+	modelId(): string | undefined {
+		return this.meta?.modelId;
+	}
+
 	isAvailable(): boolean {
 		return this.state.phase === "ready" || this.state.phase === "indexing";
 	}
@@ -297,6 +317,7 @@ export class EmbsearchService {
 				binaryPath: binary,
 				storePath: getVectorStoreDir(storeDir),
 				hybrid: wantHybrid,
+				modelDir: this.options.modelDir,
 			});
 			await this.client.ready();
 			return await this.client.info();

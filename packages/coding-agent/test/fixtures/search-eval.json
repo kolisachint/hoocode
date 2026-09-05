@@ -84,8 +84,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/extensions/core/modes.ts",
-        "startLine": 131,
-        "endLine": 158,
+        "startLine": 132,
+        "endLine": 159,
         "anchor": "export function parsePlanSections"
       }
     ]
@@ -97,8 +97,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/extensions/core/modes.ts",
-        "startLine": 172,
-        "endLine": 196,
+        "startLine": 173,
+        "endLine": 197,
         "anchor": "export function buildApproveMessage"
       }
     ]
@@ -292,8 +292,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/tools/read.ts",
-        "startLine": 369,
-        "endLine": 373,
+        "startLine": 370,
+        "endLine": 374,
         "anchor": "is beyond end of file"
       }
     ]
@@ -318,8 +318,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/modes/interactive/theme/theme.ts",
-        "startLine": 1034,
-        "endLine": 1038,
+        "startLine": 1032,
+        "endLine": 1036,
         "anchor": "\"Theme not initialized. Call initTheme() first.\""
       }
     ]
@@ -449,7 +449,7 @@
       {
         "path": "packages/coding-agent/src/core/tools/search.ts",
         "startLine": 1,
-        "endLine": 170,
+        "endLine": 172,
         "scope": "file"
       }
     ]
@@ -643,8 +643,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/extensions/core/modes.ts",
-        "startLine": 172,
-        "endLine": 196,
+        "startLine": 173,
+        "endLine": 197,
         "anchor": "export function buildApproveMessage"
       }
     ]
@@ -656,8 +656,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 349,
-        "endLine": 353,
+        "startLine": 370,
+        "endLine": 374,
         "anchor": "const hash = hashContent"
       }
     ]
@@ -707,8 +707,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 471,
-        "endLine": 474,
+        "startLine": 492,
+        "endLine": 495,
         "anchor": "findEnclosingChunk"
       }
     ]
@@ -726,8 +726,8 @@
       },
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 105,
-        "endLine": 109,
+        "startLine": 114,
+        "endLine": 118,
         "anchor": "const args = [\"serve\""
       }
     ]
@@ -796,8 +796,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 169,
-        "endLine": 175,
+        "startLine": 179,
+        "endLine": 185,
         "anchor": "private send("
       }
     ]
@@ -809,8 +809,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 216,
-        "endLine": 219,
+        "startLine": 226,
+        "endLine": 229,
         "anchor": "async bulk"
       }
     ]
@@ -822,8 +822,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/client.ts",
-        "startLine": 222,
-        "endLine": 231,
+        "startLine": 232,
+        "endLine": 241,
         "anchor": "async info"
       }
     ]
@@ -835,8 +835,8 @@
     "gold": [
       {
         "path": "packages/coding-agent/src/core/embsearch/embsearch-service.ts",
-        "startLine": 323,
-        "endLine": 325,
+        "startLine": 344,
+        "endLine": 346,
         "anchor": "if (info.modelId === MOCK_MODEL_ID)"
       }
     ]

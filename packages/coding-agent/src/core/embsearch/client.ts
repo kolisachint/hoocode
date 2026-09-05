@@ -66,6 +66,15 @@ export interface EmbSearchClientOptions {
 	binaryPath: string;
 	/** Store directory passed as `--path`. */
 	storePath: string;
+	/**
+	 * Model directory passed as `--model` (onnx builds only): a dir holding
+	 * `model.onnx`, `tokenizer.json` and `model.json`.
+	 *
+	 * Omitted, the daemon uses the model bundled into the binary. Set, the
+	 * binary no longer determines which model produced a vector — which is why
+	 * the eval harness records `info.model_id` rather than the binary version.
+	 */
+	modelDir?: string;
 	/** Metric for a freshly created store. Default: "cosine". */
 	metric?: "cosine" | "dot" | "euclidean";
 }
@@ -106,6 +115,7 @@ export class EmbSearchClient {
 	constructor(opts: EmbSearchClientOptions) {
 		const args = ["serve", "--path", opts.storePath];
 		if (opts.metric) args.push("--metric", opts.metric);
+		if (opts.modelDir) args.push("--model", opts.modelDir);
 		// Hybrid-ness is fixed when a store is created: passing --hybrid against
 		// an existing non-hybrid store warns and is ignored daemon-side, so a
 		// hybrid store needs its own directory.
