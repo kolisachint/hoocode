@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A semantic index built by an older embedding model now rebuilds instead of
+  switching semantic search off for good.** The embsearch daemon refuses to open
+  a store whose recorded model disagrees with its own — rightly, since vectors
+  from two models are not comparable — but refusing was where it stopped: the
+  store stayed on disk, the daemon never came up, and the service parked itself
+  in `unavailable` with a rebuild one directory-removal away. The check meant to
+  catch this ran *after* the spawn and reset only the sidecar, never the store,
+  so on a model change it was unreachable anyway. Recovery now catches the
+  refusal and confirms, via embsearch's `store-info` — which reads a store's
+  manifest without loading a model, and so is the only thing that can still
+  identify a store nothing will open — that a readable store is what the daemon
+  choked on, then rebuilds. A store it cannot read is left alone and the original
+  error stands, because deleting an index is the wrong answer to an unknown
+  fault. This was about to bite: embsearch 0.3.2 changed its model id, and only
+  the fact that an already-installed binary is never upgraded in place kept
+  anyone from hitting it.
+- **A chunker change no longer leaves dead text in the index.** Bumping
+  `CHUNKER_VERSION` resets the sidecar, and the sidecar is the only record of how
+  many chunks each file produced — so it reported zero for every file, and the
+  loop that drops superseded chunks counts down from that number. Any file that
+  re-chunked into fewer pieces left its tail vectors behind holding text that no
+  longer existed anywhere, retrievable forever. Upserts hid it: chunk counts
+  looked right, the sidecar looked right, only the search results were wrong.
+
 ## [0.5.59] - 2026-09-05
 
 ### Fixed
