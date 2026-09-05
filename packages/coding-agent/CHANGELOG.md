@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`hoo`, `/new` and `/reload` now leave you looking at the same thing.** All
+  three rebuild the session's resources and repaint the chrome, and they did it
+  from two hand-kept lists, so an edit to `settings.json` reached one and not the
+  other: after `/reload` the footer went on promising auto-compaction that was
+  switched off, and the model count, the subagent indicator and the session chip
+  kept the state of the session before it; after `/new` a changed `theme` never
+  loaded at all. A theme that did load left the banner in the retired theme's
+  colours, on either path — a `Text` holds its string with the escapes already in
+  it, so invalidating it is not repainting it. One list now, applied by every
+  path, and the resource listing is drawn once per session change instead of
+  drawn and immediately wiped. `/reload` also drops the stale view-layer
+  references into the transcript it just replayed, the way a session swap always
+  has.
+
 ## [0.5.58] - 2026-09-04
 
 ### Changed

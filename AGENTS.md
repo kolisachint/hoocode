@@ -32,7 +32,14 @@ Before searching, check these maps:
   scope with a query line can tell from typing. Every id must appear in a scope
   in `test/keybinding-layout.test.ts`; defaults and the ring story live in
   `core/keybindings.ts` and `docs/keybindings.md`.
-
+- **One surface for startup, `/new` and `/reload`**: all three repaint from the
+  same list in `interactive-mode.ts` (`applyRuntimeSettings` ->
+  `applySessionTheme` -> `finishRuntimeSettings`) and draw the resource listing
+  exactly once. Never add a settings-to-chrome line to one path only. Rules and
+  the reason each step sits where it does: `docs/ui-map.md` -> "One surface for
+  startup, a session swap, and `/reload`". `test/suite/session-surface-sync.test.ts`
+  drives every chain of the two commands through a real mode against a capturing
+  terminal and compares rendered frames.
 - **TUI vertical rhythm**: one blank line separates two blocks, and it is
   never paid for twice. A block's separator is the `Spacer(1)` before it (so
   the block itself takes `paddingY: 0`), a `DynamicBorder` needs no blank
