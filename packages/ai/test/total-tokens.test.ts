@@ -217,10 +217,10 @@ describe("totalTokens field", () => {
 
 	describe.skipIf(!process.env.GEMINI_API_KEY)("Google", () => {
 		it(
-			"gemini-2.0-flash - should return totalTokens equal to sum of components",
+			"gemini-2.5-flash - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("google", "gemini-2.0-flash");
+				const llm = getModel("google", "gemini-2.5-flash");
 
 				console.log(`\nGoogle / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm);
@@ -372,22 +372,18 @@ describe("totalTokens field", () => {
 	// =========================================================================
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("z.ai", () => {
-		it(
-			"glm-4.5-air - should return totalTokens equal to sum of components",
-			{ retry: 3, timeout: 60000 },
-			async () => {
-				const llm = getModel("zai", "glm-4.5-air");
+		it("glm-5.2 - should return totalTokens equal to sum of components", { retry: 3, timeout: 60000 }, async () => {
+			const llm = getModel("zai", "glm-5.2");
 
-				console.log(`\nz.ai / ${llm.id}:`);
-				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_API_KEY });
+			console.log(`\nz.ai / ${llm.id}:`);
+			const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.ZAI_API_KEY });
 
-				logUsage("First request", first);
-				logUsage("Second request", second);
+			logUsage("First request", first);
+			logUsage("Second request", second);
 
-				assertTotalTokensEqualsComponents(first);
-				assertTotalTokensEqualsComponents(second);
-			},
-		);
+			assertTotalTokensEqualsComponents(first);
+			assertTotalTokensEqualsComponents(second);
+		});
 	});
 
 	// =========================================================================
@@ -517,10 +513,10 @@ describe("totalTokens field", () => {
 
 	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding", () => {
 		it(
-			"kimi-k2-thinking - should return totalTokens equal to sum of components",
+			"kimi-for-coding - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("kimi-coding", "kimi-k2-thinking");
+				const llm = getModel("kimi-coding", "kimi-for-coding");
 
 				console.log(`\nKimi For Coding / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: process.env.KIMI_API_KEY });
@@ -614,7 +610,7 @@ describe("totalTokens field", () => {
 		);
 
 		it(
-			"google/gemini-2.0-flash-001 - should return totalTokens equal to sum of components",
+			"google/gemini-2.5-flash-001 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
 				const llm = getModel("openrouter", "google/gemini-2.5-flash");
@@ -657,7 +653,7 @@ describe("totalTokens field", () => {
 			"gpt-4o - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("github-copilot", "claude-sonnet-4.5");
+				const llm = getModel("github-copilot", "gpt-5.3-codex");
 
 				console.log(`\nGitHub Copilot / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: githubCopilotToken });
@@ -674,7 +670,7 @@ describe("totalTokens field", () => {
 			"claude-sonnet-4 - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("github-copilot", "claude-sonnet-4.5");
+				const llm = getModel("github-copilot", "gpt-5.3-codex");
 
 				console.log(`\nGitHub Copilot / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: githubCopilotToken });
@@ -700,10 +696,10 @@ describe("totalTokens field", () => {
 
 	describe("OpenAI Codex (OAuth)", () => {
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should return totalTokens equal to sum of components",
+			"gpt-5.3-codex - should return totalTokens equal to sum of components",
 			{ retry: 3, timeout: 60000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				const llm = getModel("openai-codex", "gpt-5.3-codex");
 
 				console.log(`\nOpenAI Codex / ${llm.id}:`);
 				const { first, second } = await testTotalTokensWithCache(llm, { apiKey: openaiCodexToken });

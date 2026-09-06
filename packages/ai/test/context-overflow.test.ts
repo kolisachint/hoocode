@@ -127,7 +127,7 @@ describe("Context overflow error handling", () => {
 		it.skipIf(!githubCopilotToken)(
 			"gpt-4o - should detect overflow via isContextOverflow",
 			async () => {
-				const model = getModel("github-copilot", "claude-sonnet-4.5");
+				const model = getModel("github-copilot", "gpt-5.3-codex");
 				const result = await testContextOverflow(model, githubCopilotToken!);
 				logResult(result);
 
@@ -142,7 +142,7 @@ describe("Context overflow error handling", () => {
 		it.skipIf(!githubCopilotToken)(
 			"claude-sonnet-4 - should detect overflow via isContextOverflow",
 			async () => {
-				const model = getModel("github-copilot", "claude-sonnet-4.5");
+				const model = getModel("github-copilot", "gpt-5.3-codex");
 				const result = await testContextOverflow(model, githubCopilotToken!);
 				logResult(result);
 
@@ -202,8 +202,8 @@ describe("Context overflow error handling", () => {
 	// =============================================================================
 
 	describe.skipIf(!process.env.GEMINI_API_KEY)("Google", () => {
-		it("gemini-2.0-flash - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("google", "gemini-2.0-flash");
+		it("gemini-2.5-flash - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("google", "gemini-2.5-flash");
 			const result = await testContextOverflow(model, process.env.GEMINI_API_KEY!);
 			logResult(result);
 
@@ -227,9 +227,9 @@ describe("Context overflow error handling", () => {
 
 	describe("OpenAI Codex (OAuth)", () => {
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should detect overflow via isContextOverflow",
+			"gpt-5.3-codex - should detect overflow via isContextOverflow",
 			async () => {
-				const model = getModel("openai-codex", "gpt-5.2-codex");
+				const model = getModel("openai-codex", "gpt-5.3-codex");
 				const result = await testContextOverflow(model, openaiCodexToken!);
 				logResult(result);
 
@@ -346,8 +346,8 @@ describe("Context overflow error handling", () => {
 	// =============================================================================
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("z.ai", () => {
-		it("glm-4.5-air - should detect overflow via isContextOverflow when z.ai reports it", async () => {
-			const model = getModel("zai", "glm-4.5-air");
+		it("glm-5.2 - should detect overflow via isContextOverflow when z.ai reports it", async () => {
+			const model = getModel("zai", "glm-5.2");
 			const result = await testContextOverflow(model, process.env.ZAI_API_KEY!);
 			logResult(result);
 
@@ -447,8 +447,8 @@ describe("Context overflow error handling", () => {
 	// =============================================================================
 
 	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding", () => {
-		it("kimi-k2-thinking - should detect overflow via isContextOverflow", async () => {
-			const model = getModel("kimi-coding", "kimi-k2-thinking");
+		it("kimi-for-coding - should detect overflow via isContextOverflow", async () => {
+			const model = getModel("kimi-coding", "kimi-for-coding");
 			const result = await testContextOverflow(model, process.env.KIMI_API_KEY!);
 			logResult(result);
 

@@ -190,7 +190,7 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!process.env.ZAI_API_KEY)("zAI Provider", () => {
-		const model = getModel("zai", "glm-4.5-air");
+		const model = getModel("zai", "glm-5.2");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
@@ -238,7 +238,7 @@ describe("Tool Call Without Result Tests", () => {
 	});
 
 	describe.skipIf(!process.env.KIMI_API_KEY)("Kimi For Coding Provider", () => {
-		const model = getModel("kimi-coding", "kimi-k2-thinking");
+		const model = getModel("kimi-coding", "kimi-for-coding");
 
 		it("should filter out tool calls without corresponding tool results", { retry: 3, timeout: 30000 }, async () => {
 			await testToolCallWithoutResult(model);
@@ -274,7 +274,7 @@ describe("Tool Call Without Result Tests", () => {
 			"gpt-4o - should filter out tool calls without corresponding tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const model = getModel("github-copilot", "claude-sonnet-4.5");
+				const model = getModel("github-copilot", "gpt-5.3-codex");
 				await testToolCallWithoutResult(model, { apiKey: githubCopilotToken });
 			},
 		);
@@ -283,7 +283,7 @@ describe("Tool Call Without Result Tests", () => {
 			"claude-sonnet-4 - should filter out tool calls without corresponding tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const model = getModel("github-copilot", "claude-sonnet-4.5");
+				const model = getModel("github-copilot", "gpt-5.3-codex");
 				await testToolCallWithoutResult(model, { apiKey: githubCopilotToken });
 			},
 		);
@@ -291,10 +291,10 @@ describe("Tool Call Without Result Tests", () => {
 
 	describe("OpenAI Codex Provider", () => {
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should filter out tool calls without corresponding tool results",
+			"gpt-5.3-codex - should filter out tool calls without corresponding tool results",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const model = getModel("openai-codex", "gpt-5.2-codex");
+				const model = getModel("openai-codex", "gpt-5.3-codex");
 				await testToolCallWithoutResult(model, { apiKey: openaiCodexToken });
 			},
 		);
