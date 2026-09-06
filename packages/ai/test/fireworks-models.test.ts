@@ -33,7 +33,7 @@ describe("Fireworks models", () => {
 	});
 
 	it("registers the Fire Pass turbo router model", () => {
-		const model = getModel("fireworks", "accounts/fireworks/routers/kimi-k2p7-code-fast");
+		const model = getModel("fireworks", "accounts/fireworks/routers/kimi-k3-fast");
 
 		expect(model).toBeDefined();
 		expect(model.api).toBe("anthropic-messages");
