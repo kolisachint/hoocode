@@ -470,7 +470,7 @@ class SessionList implements Component, Focusable {
 			// was for.
 			const branch = hasName || !session.branch || DEFAULT_BRANCHES.has(session.branch) ? "" : session.branch;
 			const branchPart = branch ? `${GIT_BRANCH_GLYPH} ${branch}  ` : "";
-			const styledBranch = branch ? theme.fg("dim", `${GIT_BRANCH_GLYPH} `) + theme.fg("muted", branch) + "  " : "";
+			const styledBranch = branch ? `${theme.fg("dim", `${GIT_BRANCH_GLYPH} `)}${theme.fg("muted", branch)}  ` : "";
 
 			// Right side: message count and age
 			const age = formatSessionDate(session.modified);

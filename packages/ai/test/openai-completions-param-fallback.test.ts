@@ -56,8 +56,6 @@ vi.mock("openai", () => {
 				},
 			},
 		};
-
-		constructor(_options: unknown) {}
 	}
 
 	return { default: FakeOpenAI };

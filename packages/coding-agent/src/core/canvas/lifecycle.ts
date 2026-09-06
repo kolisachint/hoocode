@@ -99,7 +99,7 @@ function rewriteEntrySource(source: string, from: string, to: string): { source:
 		// A quoted string that is *only* the old name. Backticks included, but only
 		// without interpolation — `${x}-${from}` is a computed value, not a literal.
 		[new RegExp(`(["'])${name}\\1`, "g"), `$1${to}$1`],
-		[new RegExp("`" + name + "`", "g"), `\`${to}\``],
+		[new RegExp(`\`${name}\``, "g"), `\`${to}\``],
 		// Instructions in a comment: /canvas open <old>, /canvas reload <old>, …
 		[new RegExp(`(/canvas\\s+(?:open|reload|rename|remove|close)\\s+)${name}\\b`, "g"), `$1${to}`],
 	];
