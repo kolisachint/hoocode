@@ -421,7 +421,7 @@ describe("Tool Results with Images", () => {
 			"gpt-4o - should handle tool result with only image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "claude-sonnet-4.5");
+				const llm = getModel("github-copilot", "gpt-5.3-codex");
 				await handleToolWithImageResult(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -430,7 +430,7 @@ describe("Tool Results with Images", () => {
 			"gpt-4o - should handle tool result with text and image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "claude-sonnet-4.5");
+				const llm = getModel("github-copilot", "gpt-5.3-codex");
 				await handleToolWithTextAndImageResult(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -439,7 +439,7 @@ describe("Tool Results with Images", () => {
 			"claude-sonnet-4 - should handle tool result with only image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "claude-sonnet-4.5");
+				const llm = getModel("github-copilot", "gpt-5.3-codex");
 				await handleToolWithImageResult(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -448,7 +448,7 @@ describe("Tool Results with Images", () => {
 			"claude-sonnet-4 - should handle tool result with text and image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "claude-sonnet-4.5");
+				const llm = getModel("github-copilot", "gpt-5.3-codex");
 				await handleToolWithTextAndImageResult(llm, { apiKey: githubCopilotToken });
 			},
 		);
@@ -456,19 +456,19 @@ describe("Tool Results with Images", () => {
 
 	describe("OpenAI Codex Provider", () => {
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should handle tool result with only image",
+			"gpt-5.3-codex - should handle tool result with only image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				const llm = getModel("openai-codex", "gpt-5.3-codex");
 				await handleToolWithImageResult(llm, { apiKey: openaiCodexToken });
 			},
 		);
 
 		it.skipIf(!openaiCodexToken)(
-			"gpt-5.2-codex - should handle tool result with text and image",
+			"gpt-5.3-codex - should handle tool result with text and image",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("openai-codex", "gpt-5.2-codex");
+				const llm = getModel("openai-codex", "gpt-5.3-codex");
 				await handleToolWithTextAndImageResult(llm, { apiKey: openaiCodexToken });
 			},
 		);

@@ -1,11 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
-import { getModel } from "../src/models.js";
-import type { Context } from "../src/types.js";
+import type { Context, Model } from "../src/types.js";
 
 const mockState = vi.hoisted(() => ({
 	constructorOpts: undefined as Record<string, unknown> | undefined,
 	createParams: undefined as Record<string, unknown> | undefined,
 }));
+
+function makeCopilotAnthropicModel(id: string, name: string): Model<"anthropic-messages"> {
+	return {
+		id,
+		name,
+		api: "anthropic-messages",
+		provider: "github-copilot",
+		baseUrl: "https://api.individual.githubcopilot.com",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: {
+			input: 0,
+			output: 0,
+			cacheRead: 0,
+			cacheWrite: 0,
+		},
+		contextWindow: 128000,
+		maxTokens: 16000,
+		headers: {
+			"User-Agent": "GitHubCopilotChat/0.35.0",
+			"Editor-Version": "vscode/1.107.0",
+			"Editor-Plugin-Version": "copilot-chat/0.35.0",
+			"Copilot-Integration-Id": "vscode-chat",
+		},
+	};
+}
 
 vi.mock("@anthropic-ai/sdk", () => {
 	function createSseResponse(): Response {
@@ -54,7 +79,7 @@ describe("Copilot Claude via Anthropic Messages", () => {
 	};
 
 	it("uses Bearer auth, Copilot headers, and valid Anthropic Messages payload", async () => {
-		const model = getModel("github-copilot", "claude-sonnet-4.5");
+		const model = makeCopilotAnthropicModel("claude-sonnet-4.5", "Claude Sonnet 4.5");
 		expect(model.api).toBe("anthropic-messages");
 
 		const { streamAnthropic } = await import("../src/providers/anthropic.js");
@@ -95,7 +120,7 @@ describe("Copilot Claude via Anthropic Messages", () => {
 		// Regression for the Copilot Opus 4.8 error:
 		// `"thinking.type.enabled" is not supported for this model.`
 		// Opus 4.8 must use adaptive thinking with output_config.effort.
-		const model = getModel("github-copilot", "claude-opus-4.8");
+		const model = makeCopilotAnthropicModel("claude-opus-4.8", "Claude Opus 4.8");
 		expect(model.api).toBe("anthropic-messages");
 
 		const { streamAnthropic } = await import("../src/providers/anthropic.js");
@@ -115,7 +140,7 @@ describe("Copilot Claude via Anthropic Messages", () => {
 	});
 
 	it("includes interleaved-thinking beta when reasoning is enabled", async () => {
-		const model = getModel("github-copilot", "claude-sonnet-4.5");
+		const model = makeCopilotAnthropicModel("claude-sonnet-4.5", "Claude Sonnet 4.5");
 		const { streamAnthropic } = await import("../src/providers/anthropic.js");
 		const s = streamAnthropic(model, context, {
 			apiKey: "tid_copilot_session_test_token",

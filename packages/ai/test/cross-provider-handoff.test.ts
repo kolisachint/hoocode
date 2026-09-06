@@ -66,9 +66,9 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "openai", model: "gpt-5-mini", label: "openai-responses-gpt-5-mini" },
 	{ provider: "azure-openai-responses", model: "gpt-4o-mini", label: "azure-openai-responses-gpt-4o-mini" },
 	// OpenAI Codex
-	{ provider: "openai-codex", model: "gpt-5.2-codex", label: "openai-codex-gpt-5.2-codex" },
+	{ provider: "openai-codex", model: "gpt-5.3-codex", label: "openai-codex-gpt-5.3-codex" },
 	// GitHub Copilot
-	{ provider: "github-copilot", model: "claude-sonnet-4.5", label: "copilot-claude-sonnet-4.5" },
+	{ provider: "github-copilot", model: "gpt-5.3-codex", label: "copilot-gpt-5.3-codex" },
 	{ provider: "github-copilot", model: "gpt-5.1-codex", label: "copilot-gpt-5.1-codex" },
 	{ provider: "github-copilot", model: "gemini-3-flash-preview", label: "copilot-gemini-3-flash-preview" },
 	{ provider: "github-copilot", model: "grok-code-fast-1", label: "copilot-grok-code-fast-1" },
@@ -85,7 +85,7 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	// Together AI
 	{ provider: "together", model: "moonshotai/Kimi-K2.6", label: "together-kimi-k2.6" },
 	// Kimi For Coding
-	{ provider: "kimi-coding", model: "kimi-k2-thinking", label: "kimi-coding-k2-thinking" },
+	{ provider: "kimi-coding", model: "kimi-for-coding", label: "kimi-coding-for-coding" },
 	// MiniMax
 	{ provider: "minimax", model: "MiniMax-M2.7", label: "minimax-m2.7" },
 	{ provider: "minimax-cn", model: "MiniMax-M2.7", label: "minimax-m2.7" },
@@ -94,7 +94,7 @@ const PROVIDER_MODEL_PAIRS: ProviderModelPair[] = [
 	{ provider: "opencode", model: "claude-sonnet-4-5", label: "zen-claude-sonnet-4-5" },
 	{ provider: "opencode", model: "gemini-3-flash", label: "zen-gemini-3-flash" },
 	{ provider: "opencode", model: "glm-4.7-free", label: "zen-glm-4.7-free" },
-	{ provider: "opencode", model: "gpt-5.2-codex", label: "zen-gpt-5.2-codex" },
+	{ provider: "opencode", model: "gpt-5.3-codex", label: "zen-gpt-5.3-codex" },
 	{ provider: "opencode", model: "minimax-m2.1-free", label: "zen-minimax-m2.1-free" },
 	// OpenCode Go
 	{ provider: "opencode-go", model: "kimi-k2.6", label: "go-kimi-k2.6" },
