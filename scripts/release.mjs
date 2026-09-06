@@ -8,12 +8,13 @@
  *
  * Steps:
  * 1. Check for uncommitted changes
- * 2. Bump version via npm run version:xxx or set an explicit version
- * 3. Update CHANGELOG.md files: [Unreleased] -> [version] - date
- * 4. Commit and tag
- * 5. Publish to npm
- * 6. Add new [Unreleased] section to changelogs
- * 7. Commit
+ * 2. Regenerate model catalogs from upstream
+ * 3. Bump version via npm run version:xxx or set an explicit version
+ * 4. Update CHANGELOG.md files: [Unreleased] -> [version] - date
+ * 5. Commit and tag
+ * 6. Publish to npm
+ * 7. Add new [Unreleased] section to changelogs
+ * 8. Commit
  */
 
 import { execSync } from "child_process";
@@ -40,6 +41,13 @@ function run(cmd, options = {}) {
 		}
 		return null;
 	}
+}
+
+function regenerateModelCatalogs() {
+	console.log("  Regenerating packages/ai model catalogs...");
+	run("cd packages/ai && bun run generate-models -- --strict");
+	run("cd packages/ai && bun run generate-image-models -- --strict");
+	run("bunx biome check --write packages/ai/src/models.generated.ts packages/ai/src/image-models.generated.ts");
 }
 
 function getVersion() {
@@ -155,11 +163,16 @@ if (status && status.trim()) {
 	console.log("  Working directory clean\n");
 }
 
-// 2. Bump or set version
+// 2. Regenerate model catalogs so every release ships current upstream models
+console.log("Regenerating model catalogs...");
+regenerateModelCatalogs();
+console.log();
+
+// 3. Bump or set version
 const version = bumpOrSetVersion(RELEASE_TARGET);
 console.log(`  New version: ${version}\n`);
 
-// 3. Update changelogs
+// 4. Update changelogs
 console.log("Updating CHANGELOG.md files...");
 updateChangelogsForRelease(version);
 console.log();
