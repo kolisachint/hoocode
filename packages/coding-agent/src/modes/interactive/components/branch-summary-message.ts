@@ -1,6 +1,6 @@
 import type { BranchSummaryMessage } from "@kolisachint/hoocode-agent-core";
 import { Box, Markdown, type MarkdownTheme, Spacer, Text } from "@kolisachint/hoocode-tui";
-import { getMarkdownTheme, messageLabel, theme } from "../theme/theme.js";
+import { applyBlockFill, getMarkdownTheme, messageLabel, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 
 /**
@@ -13,7 +13,8 @@ export class BranchSummaryMessageComponent extends Box {
 	private markdownTheme: MarkdownTheme;
 
 	constructor(message: BranchSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
-		super(1, 1, (t) => theme.bg("customMessageBg", t));
+		super(1, 1);
+		applyBlockFill(this, "customMessageBg");
 		this.message = message;
 		this.markdownTheme = markdownTheme;
 		this.updateDisplay();

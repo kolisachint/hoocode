@@ -70,6 +70,40 @@ const PROGRESS_KEY = "learn-mining";
 const ESCAPE = "\x1b";
 
 /**
+ * One `/learn` run that is still reading transcripts, and whether the session
+ * that started it is gone.
+ */
+type LearnRun = { controller: AbortController; stale: boolean };
+
+/**
+ * The mining runs currently in flight.
+ *
+ * `/learn` is the one command here that runs for minutes on end, and the session
+ * it was started in can be replaced while it does — a `/new`, a `/resume`, a
+ * `/fork`, a `/mode` that swaps the session. Whatever replaces it disposes the
+ * old session, and disposal invalidates the command ctx this run captured: the
+ * next line it tries to print throws instead, and a run the user waited minutes
+ * for surfaces as `Extension "command:learn" error: This extension ctx is
+ * stale…` with its digest thrown away.
+ *
+ * `session_shutdown` is emitted before that disposal, which makes it the one
+ * point where a run in flight can still find out. It aborts the mining pass and
+ * marks the run stale; from there the run reports nothing at all, because there
+ * is no longer anywhere to report to. Nothing is lost but time — every
+ * transcript already read is in the on-disk cache, so the next `/learn`, in
+ * whatever session replaced this one, resumes from it.
+ */
+const IN_FLIGHT = new Set<LearnRun>();
+
+/** Tell every run in flight that its session is going away. */
+function abortInFlightRuns(): void {
+	for (const run of IN_FLIGHT) {
+		run.stale = true;
+		run.controller.abort();
+	}
+}
+
+/**
  * Sessions that can be read without asking first.
  *
  * A run that has one or two new transcripts to read is the normal daily case
@@ -439,6 +473,195 @@ function reportSettings(ctx: ExtensionCommandContext): void {
 	ctx.ui.notify(lines.join("\n"), "info");
 }
 
+/**
+ * `/learn` (and `/learn all`) — read the window, rank what recurred, hand it to
+ * the model.
+ *
+ * Lives out here rather than inside the handler so the run it registers has one
+ * `finally` covering every exit, and so the staleness checks below read as the
+ * sequence of points at which the session can vanish: the auth round-trip, the
+ * confirmation prompt, and the mining pass itself. Every one of them is an
+ * `await` long enough for a `/new` or a `/mode` to land in the middle of it.
+ */
+async function runMining(pi: ExtensionAPI, ctx: ExtensionCommandContext, ignoreState: boolean): Promise<void> {
+	// Read per-invocation so a settings edit takes effect without a reload,
+	// and so a project settings.json can narrow the window for one repo.
+	const agentDir = getHooCodeDir();
+	const settings = SettingsManager.create(ctx.cwd, agentDir);
+	const window = settings.getLearnSettings();
+	const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
+
+	// Registered before the first await: a run that is not in the set is a run
+	// `session_shutdown` cannot reach.
+	const run: LearnRun = { controller: new AbortController(), stale: false };
+	IN_FLIGHT.add(run);
+	try {
+		const pipeline = await buildPipeline(ctx, settings, loadReplayFingerprints(pi));
+		if (run.stale) return;
+		if ("error" in pipeline) {
+			ctx.ui.notify(pipeline.error, "error");
+			return;
+		}
+
+		// State the price before charging it. A first run in a busy repo reads
+		// every transcript in the window, which is the expensive path by design
+		// — but it should never be a surprise, and the cache means it is paid
+		// once rather than on every run.
+		const { pending } = pendingWork(ctx, agentDir, window);
+		if (pending > CONFIRM_ABOVE_PENDING) {
+			const proceed = await ctx.ui.confirm(
+				"Read session transcripts?",
+				`${pending} session(s) have not been read yet. /learn reads each one with a model ` +
+					`(${pipeline.model.provider}/${pipeline.model.id}) and caches the result, so this cost is paid once ` +
+					`per session. Later runs reuse it.`,
+			);
+			if (run.stale) return;
+			if (!proceed) {
+				ctx.ui.notify("/learn cancelled — nothing was read.", "info");
+				return;
+			}
+		}
+
+		// A backfill can run for minutes across dozens of transcripts, and the
+		// agent is idle throughout — so `ctx.signal` is undefined and there is no
+		// ambient way out. Escape gets one, and so does a session replacement,
+		// through the same controller.
+		const unsubscribe = ctx.ui.onTerminalInput((data) => {
+			if (data !== ESCAPE) return undefined;
+			run.controller.abort();
+			return { consume: true };
+		});
+
+		let digest: LearnDigest;
+		try {
+			digest = await mineLearnDigest({
+				cwd: ctx.cwd,
+				agentDir,
+				// Searched in addition to the per-cwd default directory, so a session
+				// manager pointing elsewhere (`--session`, a custom `sessionDir`, or
+				// an in-memory session reporting none at all) cannot hide the history.
+				sessionDir: ctx.sessionManager.getSessionDir(),
+				maxSessions: window.maxSessions,
+				maxAgeDays: window.maxAgeDays,
+				minRepeats: window.minRepeats,
+				minRequestRepeats: window.minRequestRepeats,
+				maxProposals: window.maxProposals,
+				state: readLearnState(statePath),
+				ignoreState,
+				miner: pipeline.miner,
+				clusterer: pipeline.clusterer,
+				coverageJudge: pipeline.coverageJudge,
+				signal: run.controller.signal,
+				onProgress: ({ done, total, cached }) => {
+					// The same footer bar the semantic index uses. Cached sessions are
+					// counted as done because they are: the bar measures progress
+					// through the window, not money spent, and a run that is mostly
+					// cache should look nearly finished from the start.
+					startupProgress.set({
+						key: PROGRESS_KEY,
+						kind: "work",
+						label:
+							cached > 0
+								? `Reading sessions (${cached} cached) — esc to stop`
+								: "Reading sessions — esc to stop",
+						done,
+						total,
+						unit: "sessions",
+					});
+				},
+			});
+		} catch (error) {
+			// A session that went away mid-read is not a failure to report: the
+			// place it would be reported to is exactly what stopped existing.
+			if (run.stale) return;
+			ctx.ui.notify(`/learn could not read session history: ${error}`, "error");
+			return;
+		} finally {
+			unsubscribe();
+			startupProgress.remove(PROGRESS_KEY);
+		}
+
+		// The session this run belongs to has been replaced. Say nothing and write
+		// nothing: `ctx` throws on use from here, the bookmark would record
+		// proposals nobody was shown, and every transcript read is already cached
+		// for whichever session runs /learn next.
+		if (run.stale) return;
+
+		// A cancelled run counted only part of the window, so its numbers are not
+		// merely incomplete — they are low. Showing them would be misleading and
+		// bookmarking them would hide those items on the next, complete run.
+		// Everything read so far is cached, so stopping costs nothing but time.
+		if (digest.aborted) {
+			ctx.ui.notify(
+				`/learn stopped — ${digest.mining.mined} session(s) were read and cached, so resuming picks up where this left off.`,
+				"info",
+			);
+			return;
+		}
+
+		if (digest.scannedSessions === 0) {
+			reportNoSessions(ctx, agentDir, digest, window);
+			return;
+		}
+
+		if (isEmptyDigest(digest)) {
+			const lines: string[] = [];
+			lines.push(
+				digest.suppressed > 0
+					? `Read ${digest.scannedSessions} session(s) — nothing new since last time (${digest.suppressed} already shown). Run /learn all to see them again.`
+					: `Read ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
+			);
+			if (digest.suppressed === 0) {
+				// Which of the two empty results this is. "Nothing was said" and "a
+				// lot was said and none of it repeated" read identically otherwise,
+				// and they point at completely different knobs.
+				lines.push(
+					`  ${digest.funnel.candidates} occurrence(s) → ${digest.funnel.points} distinct point(s) → ` +
+						`${digest.funnel.belowThreshold} below the repeat threshold`,
+				);
+				lines.push("");
+				lines.push(...settingsLines(ctx, agentDir, window));
+			}
+			ctx.ui.notify(lines.join("\n"), "info");
+			return;
+		}
+
+		const counts = [
+			digest.directives.length > 0 ? `${digest.directives.length} directive(s)` : undefined,
+			digest.fixes.length > 0 ? `${digest.fixes.length} fix(es)` : undefined,
+			digest.requests.length > 0 ? `${digest.requests.length} request(s)` : undefined,
+		].filter((part): part is string => !!part);
+		const held = digest.suppressed > 0 ? `, ${digest.suppressed} held back` : "";
+		const cut = digest.cut > 0 ? `, ${digest.cut} cut to fit the cap` : "";
+		ctx.ui.notify(
+			`Mined ${digest.scannedSessions} session(s) (${digest.mining.mined} read, ${digest.mining.cached} cached): ${counts.join(", ")}${held}${cut}.`,
+			"info",
+		);
+
+		// Record before delivering: what matters is that these were put in front
+		// of the user, which is true whether or not they act on the digest.
+		//
+		// Unless coverage could not be read. The bookmark stores whether an item
+		// was already written down when it was shown, and that is what later tells
+		// an adopted proposal from one passed over. Recording a guess as a reading
+		// would have a later run tell the user they passed on something they were
+		// never shown. Skipping costs one round of re-proposing.
+		if (!digest.coverageFailed) {
+			writeLearnState(statePath, recordSurfaced(readLearnState(statePath), digest.surfaced));
+		}
+
+		pi.sendUserMessage(
+			renderLearnDigest(digest, {
+				userScopePath: displayPath(USER_SCOPE_PATH),
+				mode: ignoreState ? "all" : "incremental",
+			}),
+			{ deliverAs: "followUp" },
+		);
+	} finally {
+		IN_FLIGHT.delete(run);
+	}
+}
+
 export function setupLearn(pi: ExtensionAPI): void {
 	const guarded = pi as unknown as Record<symbol, boolean>;
 	if (guarded[REGISTERED]) return;
@@ -475,165 +698,15 @@ export function setupLearn(pi: ExtensionAPI): void {
 				reportSettings(ctx);
 				return;
 			}
-			const ignoreState = argument === "all";
-
-			// Read per-invocation so a settings edit takes effect without a reload,
-			// and so a project settings.json can narrow the window for one repo.
-			const agentDir = getHooCodeDir();
-			const settings = SettingsManager.create(ctx.cwd, agentDir);
-			const window = settings.getLearnSettings();
-			const statePath = getLearnStatePath(agentDir, stateKeyDir(ctx, agentDir));
-
-			const pipeline = await buildPipeline(ctx, settings, loadReplayFingerprints(pi));
-			if ("error" in pipeline) {
-				ctx.ui.notify(pipeline.error, "error");
-				return;
-			}
-
-			// State the price before charging it. A first run in a busy repo reads
-			// every transcript in the window, which is the expensive path by design
-			// — but it should never be a surprise, and the cache means it is paid
-			// once rather than on every run.
-			const { pending } = pendingWork(ctx, agentDir, window);
-			if (pending > CONFIRM_ABOVE_PENDING) {
-				const proceed = await ctx.ui.confirm(
-					"Read session transcripts?",
-					`${pending} session(s) have not been read yet. /learn reads each one with a model ` +
-						`(${pipeline.model.provider}/${pipeline.model.id}) and caches the result, so this cost is paid once ` +
-						`per session. Later runs reuse it.`,
-				);
-				if (!proceed) {
-					ctx.ui.notify("/learn cancelled — nothing was read.", "info");
-					return;
-				}
-			}
-
-			// A backfill can run for minutes across dozens of transcripts, and the
-			// agent is idle throughout — so `ctx.signal` is undefined and there is no
-			// ambient way out. Escape gets one.
-			const controller = new AbortController();
-			const unsubscribe = ctx.ui.onTerminalInput((data) => {
-				if (data !== ESCAPE) return undefined;
-				controller.abort();
-				return { consume: true };
-			});
-
-			let digest: LearnDigest;
-			try {
-				digest = await mineLearnDigest({
-					cwd: ctx.cwd,
-					agentDir,
-					// Searched in addition to the per-cwd default directory, so a session
-					// manager pointing elsewhere (`--session`, a custom `sessionDir`, or
-					// an in-memory session reporting none at all) cannot hide the history.
-					sessionDir: ctx.sessionManager.getSessionDir(),
-					maxSessions: window.maxSessions,
-					maxAgeDays: window.maxAgeDays,
-					minRepeats: window.minRepeats,
-					minRequestRepeats: window.minRequestRepeats,
-					maxProposals: window.maxProposals,
-					state: readLearnState(statePath),
-					ignoreState,
-					miner: pipeline.miner,
-					clusterer: pipeline.clusterer,
-					coverageJudge: pipeline.coverageJudge,
-					signal: controller.signal,
-					onProgress: ({ done, total, cached }) => {
-						// The same footer bar the semantic index uses. Cached sessions are
-						// counted as done because they are: the bar measures progress
-						// through the window, not money spent, and a run that is mostly
-						// cache should look nearly finished from the start.
-						startupProgress.set({
-							key: PROGRESS_KEY,
-							kind: "work",
-							label:
-								cached > 0
-									? `Reading sessions (${cached} cached) — esc to stop`
-									: "Reading sessions — esc to stop",
-							done,
-							total,
-							unit: "sessions",
-						});
-					},
-				});
-			} catch (error) {
-				ctx.ui.notify(`/learn could not read session history: ${error}`, "error");
-				return;
-			} finally {
-				unsubscribe();
-				startupProgress.remove(PROGRESS_KEY);
-			}
-
-			// A cancelled run counted only part of the window, so its numbers are not
-			// merely incomplete — they are low. Showing them would be misleading and
-			// bookmarking them would hide those items on the next, complete run.
-			// Everything read so far is cached, so stopping costs nothing but time.
-			if (digest.aborted) {
-				ctx.ui.notify(
-					`/learn stopped — ${digest.mining.mined} session(s) were read and cached, so resuming picks up where this left off.`,
-					"info",
-				);
-				return;
-			}
-
-			if (digest.scannedSessions === 0) {
-				reportNoSessions(ctx, agentDir, digest, window);
-				return;
-			}
-
-			if (isEmptyDigest(digest)) {
-				const lines: string[] = [];
-				lines.push(
-					digest.suppressed > 0
-						? `Read ${digest.scannedSessions} session(s) — nothing new since last time (${digest.suppressed} already shown). Run /learn all to see them again.`
-						: `Read ${digest.scannedSessions} session(s) — nothing repeated often enough to be worth a rule yet.`,
-				);
-				if (digest.suppressed === 0) {
-					// Which of the two empty results this is. "Nothing was said" and "a
-					// lot was said and none of it repeated" read identically otherwise,
-					// and they point at completely different knobs.
-					lines.push(
-						`  ${digest.funnel.candidates} occurrence(s) → ${digest.funnel.points} distinct point(s) → ` +
-							`${digest.funnel.belowThreshold} below the repeat threshold`,
-					);
-					lines.push("");
-					lines.push(...settingsLines(ctx, agentDir, window));
-				}
-				ctx.ui.notify(lines.join("\n"), "info");
-				return;
-			}
-
-			const counts = [
-				digest.directives.length > 0 ? `${digest.directives.length} directive(s)` : undefined,
-				digest.fixes.length > 0 ? `${digest.fixes.length} fix(es)` : undefined,
-				digest.requests.length > 0 ? `${digest.requests.length} request(s)` : undefined,
-			].filter((part): part is string => !!part);
-			const held = digest.suppressed > 0 ? `, ${digest.suppressed} held back` : "";
-			const cut = digest.cut > 0 ? `, ${digest.cut} cut to fit the cap` : "";
-			ctx.ui.notify(
-				`Mined ${digest.scannedSessions} session(s) (${digest.mining.mined} read, ${digest.mining.cached} cached): ${counts.join(", ")}${held}${cut}.`,
-				"info",
-			);
-
-			// Record before delivering: what matters is that these were put in front
-			// of the user, which is true whether or not they act on the digest.
-			//
-			// Unless coverage could not be read. The bookmark stores whether an item
-			// was already written down when it was shown, and that is what later tells
-			// an adopted proposal from one passed over. Recording a guess as a reading
-			// would have a later run tell the user they passed on something they were
-			// never shown. Skipping costs one round of re-proposing.
-			if (!digest.coverageFailed) {
-				writeLearnState(statePath, recordSurfaced(readLearnState(statePath), digest.surfaced));
-			}
-
-			pi.sendUserMessage(
-				renderLearnDigest(digest, {
-					userScopePath: displayPath(USER_SCOPE_PATH),
-					mode: ignoreState ? "all" : "incremental",
-				}),
-				{ deliverAs: "followUp" },
-			);
+			await runMining(pi, ctx, argument === "all");
 		},
+	});
+
+	// The one notice a run in flight gets that its session is being replaced.
+	// Emitted before the session is disposed, which is what makes it usable: a
+	// run told here still has a live ctx to stop cleanly with, where one told
+	// afterwards has none.
+	pi.on("session_shutdown", () => {
+		abortInFlightRuns();
 	});
 }

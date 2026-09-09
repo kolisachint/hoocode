@@ -181,15 +181,28 @@ export class Box implements Component {
 		// follows a theme switch instead of holding the treatment it was built
 		// with.
 		const paper = this.paperFn?.();
-		const shadowFn = paper?.shadow;
-		const inset = Math.max(0, paper?.inset ?? 0);
-		const cutEdge = paper?.cutEdge === true;
+		// A sheet needs a band wide enough to carry its own bottom run. Narrower
+		// than that the gutter has nowhere to go: the treatment degenerated into
+		// a one-column band with a shadow beside it and no run under it. Below
+		// the threshold the box falls back to the plain full-width band a theme
+		// without paper draws, which is the honest answer at that size.
+		const wide = width - Math.max(0, paper?.inset ?? 0) > 1;
+		const shadowFn = wide ? paper?.shadow : undefined;
+		const inset = wide ? Math.max(0, paper?.inset ?? 0) : 0;
+		const cutEdge = wide && paper?.cutEdge === true;
 
 		// The band stops short of the right margin when inset, leaving a gutter of
 		// page for the sheet's own edge and the shadow that follows it.
 		const bandWidth = Math.max(1, width - inset);
-		const contentWidth = Math.max(1, bandWidth - this.paddingX * 2);
-		const leftPad = " ".repeat(this.paddingX);
+		// Padding only exists to carry the band, so it gives way rather than
+		// pushing content off the end of it. Clamping `contentWidth` alone was
+		// not enough: at a width where the gutter and two columns of padding
+		// leave no room, the row came out wider than the band it was supposed
+		// to fill, the shadow's column went with it, and the line wrapped past
+		// the right margin. Both halves are derived from the band instead.
+		const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((bandWidth - 1) / 2)));
+		const contentWidth = Math.max(1, bandWidth - paddingX * 2);
+		const leftPad = " ".repeat(paddingX);
 
 		// Render all children
 		const childLines: string[] = [];
@@ -236,11 +249,18 @@ export class Box implements Component {
 			// front of it. Following the cut was the first attempt and it broke
 			// the shadow: `▌` paints half a cell, so a one-column step leaves no
 			// overlap at all between one row's mark and the next, and what the
-			// eye gets is a dashed staircase rather than an edge. A cut row
-			// shows its nick as a column of page between sheet and shadow —
-			// which is what a nick is — and the shadow stays a single line.
-			// The first row has none: the offset is down *and* right.
-			const column = hasColumn && index > 0 ? " ".repeat(cut) + shadowFn("▌") : "";
+			// eye gets is a dashed staircase rather than an edge.
+			//
+			// The column the cut gives back is inked too, as a full block. A nick
+			// is a notch scissors took out of the *sheet*, not a hole punched in
+			// the shadow behind it, so what the notch exposes is more shadow.
+			// Leaving that column as bare page — which is what it used to be —
+			// parked a gutter of paper between the sheet and its own shadow, and
+			// a shadow detached from the thing casting it reads as a rendering
+			// fault rather than as an edge.
+			//
+			// The first row has no column at all: the offset is down *and* right.
+			const column = hasColumn && index > 0 ? shadowFn(`${"█".repeat(cut)}▌`) : "";
 			result.push(band + column);
 		});
 
@@ -248,8 +268,15 @@ export class Box implements Component {
 		// under the right-hand column so the two close the corner; with no
 		// gutter there is no such column, and the run stops one cell short of
 		// the margin instead of wrapping past it.
+		//
+		// That last cell is `▘`, not `▀`. The run is a full-width glyph and the
+		// column above it is a half-width one, so a run that ended on `▀`
+		// overshot the column by half a cell and left a tip poking out past the
+		// corner — a stray line coming out of the shadow. `▘` is the same top
+		// half narrowed to the column's own width, so the two edges close flush.
 		if (shadowFn && bandWidth > 1) {
-			result.push(` ${shadowFn("▀".repeat(hasColumn ? bandWidth : bandWidth - 1))}`);
+			const run = "▀".repeat(bandWidth - 1);
+			result.push(` ${shadowFn(hasColumn ? `${run}▘` : run)}`);
 		}
 
 		// Update cache

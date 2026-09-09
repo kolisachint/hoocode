@@ -1519,6 +1519,36 @@ export function applyPaperSheet(box: Box): void {
 	});
 }
 
+/**
+ * The fills that make a *block* — a pasted sheet of message — as opposed to a
+ * chip or a row stroke.
+ *
+ * `selectedBg` and `activeToolBg` mark part of a row and `brandBg`, `headlineBg`
+ * and `tapeBg` are chips laid on top of one; none of them is a sheet and none
+ * takes a shadow. These four are, and every one of them has to look like the
+ * others or the page stops reading as paper.
+ */
+export type BlockFill = "userMessageBg" | "customMessageBg" | "warningBg" | "toolErrorBg";
+
+/**
+ * Fill a message block, and give it the edge that goes with the fill.
+ *
+ * These are one decision, so they are made in one call. Kept apart they drifted
+ * exactly as you would expect: `[skill]`, `[compaction]` and `[branch]` blocks
+ * were each written to use "the same background colour as custom messages for
+ * visual consistency" and each stopped there, so under a cut-out theme they
+ * rendered as flat full-width bands beside the sheets they were copying —
+ * same paint, no gutter, no cut edge, no shadow, in the same transcript.
+ *
+ * A theme with no `paperShadow` still gets the full-width band it always had:
+ * `applyPaperSheet` resolves that per frame, so this is safe on every theme and
+ * survives a theme switch under blocks already on screen.
+ */
+export function applyBlockFill(box: Box, fill: BlockFill): void {
+	box.setBgFn((text: string) => theme.bg(fill, text));
+	applyPaperSheet(box);
+}
+
 export function getMarkdownTheme(): MarkdownTheme {
 	// A theme that sets the headline pair renders headings as a filled chip: the
 	// text takes the chip's ink, and the fill is applied to the finished line so
