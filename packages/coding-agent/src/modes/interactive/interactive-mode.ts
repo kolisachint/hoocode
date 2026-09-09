@@ -126,7 +126,7 @@ import {
 import { checkForPackageUpdates, checkTmuxKeyboardSetup, getChangelogForDisplay } from "./startup-checks.js";
 import { TeamFocusController } from "./team-focus.js";
 import {
-	applyPaperSheet,
+	applyBlockFill,
 	getAvailableThemes,
 	getAvailableThemesWithPaths,
 	getEditorTheme,
@@ -3471,8 +3471,8 @@ export class InteractiveMode {
 	 * a single coloured line is easy to scroll straight past.
 	 */
 	private showBlock(bg: "warningBg" | "toolErrorBg", fg: "warning" | "error", title: string, body: string[]): void {
-		const box = new Box(1, 1, (t) => theme.bg(bg, t));
-		applyPaperSheet(box);
+		const box = new Box(1, 1);
+		applyBlockFill(box, bg);
 		box.addChild(new Text(theme.bold(theme.fg(fg, title)), 0, 0));
 		for (const line of body) {
 			box.addChild(new Text(theme.fg("muted", line), 0, 0));

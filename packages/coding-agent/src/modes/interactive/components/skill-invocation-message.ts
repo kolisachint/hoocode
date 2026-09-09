@@ -1,6 +1,6 @@
 import { Box, Markdown, type MarkdownTheme, Text } from "@kolisachint/hoocode-tui";
 import type { ParsedSkillBlock } from "../../../core/agent-session.js";
-import { getMarkdownTheme, messageLabel, theme } from "../theme/theme.js";
+import { applyBlockFill, getMarkdownTheme, messageLabel, theme } from "../theme/theme.js";
 import { keyText } from "./keybinding-hints.js";
 
 /**
@@ -14,7 +14,8 @@ export class SkillInvocationMessageComponent extends Box {
 	private markdownTheme: MarkdownTheme;
 
 	constructor(skillBlock: ParsedSkillBlock, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
-		super(1, 1, (t) => theme.bg("customMessageBg", t));
+		super(1, 1);
+		applyBlockFill(this, "customMessageBg");
 		this.skillBlock = skillBlock;
 		this.markdownTheme = markdownTheme;
 		this.updateDisplay();

@@ -181,15 +181,28 @@ export class Box implements Component {
 		// follows a theme switch instead of holding the treatment it was built
 		// with.
 		const paper = this.paperFn?.();
-		const shadowFn = paper?.shadow;
-		const inset = Math.max(0, paper?.inset ?? 0);
-		const cutEdge = paper?.cutEdge === true;
+		// A sheet needs a band wide enough to carry its own bottom run. Narrower
+		// than that the gutter has nowhere to go: the treatment degenerated into
+		// a one-column band with a shadow beside it and no run under it. Below
+		// the threshold the box falls back to the plain full-width band a theme
+		// without paper draws, which is the honest answer at that size.
+		const wide = width - Math.max(0, paper?.inset ?? 0) > 1;
+		const shadowFn = wide ? paper?.shadow : undefined;
+		const inset = wide ? Math.max(0, paper?.inset ?? 0) : 0;
+		const cutEdge = wide && paper?.cutEdge === true;
 
 		// The band stops short of the right margin when inset, leaving a gutter of
 		// page for the sheet's own edge and the shadow that follows it.
 		const bandWidth = Math.max(1, width - inset);
-		const contentWidth = Math.max(1, bandWidth - this.paddingX * 2);
-		const leftPad = " ".repeat(this.paddingX);
+		// Padding only exists to carry the band, so it gives way rather than
+		// pushing content off the end of it. Clamping `contentWidth` alone was
+		// not enough: at a width where the gutter and two columns of padding
+		// leave no room, the row came out wider than the band it was supposed
+		// to fill, the shadow's column went with it, and the line wrapped past
+		// the right margin. Both halves are derived from the band instead.
+		const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((bandWidth - 1) / 2)));
+		const contentWidth = Math.max(1, bandWidth - paddingX * 2);
+		const leftPad = " ".repeat(paddingX);
 
 		// Render all children
 		const childLines: string[] = [];
@@ -247,7 +260,7 @@ export class Box implements Component {
 			// fault rather than as an edge.
 			//
 			// The first row has no column at all: the offset is down *and* right.
-			const column = hasColumn && index > 0 ? shadowFn("█".repeat(cut) + "▌") : "";
+			const column = hasColumn && index > 0 ? shadowFn(`${"█".repeat(cut)}▌`) : "";
 			result.push(band + column);
 		});
 

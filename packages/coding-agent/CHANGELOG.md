@@ -4,6 +4,25 @@
 
 ### Fixed
 
+- **`[skill]`, `[compaction]` and `[branch]` blocks are sheets like every other
+  message block.** All three were written to use "the same background colour as
+  custom messages for visual consistency" and all three stopped at the colour:
+  they got the fill and none of the edge, so under a cut-out theme they rendered
+  as flat full-width bands sitting beside the sheets they were copying — no
+  gutter, no cut edge, no shadow — in the same transcript. The fill and the
+  paper treatment were two independent decisions made at each call site, which
+  is why they drifted; they are now one call, `applyBlockFill`, and a test walks
+  every block component plus the source of every component file so a new block
+  cannot take the fill without the edge again.
+- **A filled block no longer wraps past the right margin in a narrow terminal.**
+  Below a width where the gutter and two columns of padding still leave room for
+  content, the padding kept its columns and pushed the row wider than the band
+  it was meant to fill: the shadow's column went with it and the line wrapped.
+  Padding is now derived from the band, and where the band is too narrow to
+  carry its own bottom run the box gives the paper treatment up and draws the
+  plain full-width band a theme without paper draws, rather than degenerating
+  into a one-column band with a shadow beside it.
+
 - **`/learn` no longer ends as an extension error when the session it was
   started in is replaced mid-run.** Mining reads transcripts with a model and
   can run for minutes, and nothing stops a `/new`, a `/resume`, a `/fork` or a

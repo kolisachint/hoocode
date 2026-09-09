@@ -82,6 +82,41 @@ describe("a sheet's shadow", () => {
 		}
 	});
 
+	it("gives the treatment up rather than degenerate when the band is too narrow", () => {
+		// Below a band that can carry its own bottom run there is nowhere for the
+		// gutter to go: the sheet came out as a one-column band with a shadow
+		// beside it and no run under it, and the row it drew ran past the right
+		// margin and wrapped. At that size the plain full-width band — what a
+		// theme without paper draws — is the honest answer.
+		for (const width of [1, 2, 3, 4]) {
+			const box = new Box(1, 1, SHEET);
+			box.setPaper(() => ({ shadow: SHADOW, inset: INSET, cutEdge: true }));
+			box.addChild(new Text("hello there", 0, 0));
+			const lines = box.render(width);
+			for (const line of lines) {
+				assert.ok(
+					visibleWidth(plain(line)) <= width,
+					`@${width}: row is ${visibleWidth(plain(line))} cells wide and will wrap`,
+				);
+				assert.ok(!/[▌▀▘█]/.test(line), `@${width}: drew shadow ink with no room for it`);
+			}
+		}
+	});
+
+	it("keeps every row inside the terminal at the widths where it is a sheet", () => {
+		for (const width of [5, 6, 8, 12, 20, 40, 120]) {
+			const box = new Box(1, 1, SHEET);
+			box.setPaper(() => ({ shadow: SHADOW, inset: INSET, cutEdge: true }));
+			for (let i = 0; i < 12; i++) box.addChild(new Text(`a row of text ${i}`, 0, 0));
+			for (const line of box.render(width)) {
+				assert.ok(
+					visibleWidth(plain(line)) <= width,
+					`@${width}: row is ${visibleWidth(plain(line))} cells wide and will wrap`,
+				);
+			}
+		}
+	});
+
 	it("stops one cell short of the margin when there is no gutter to close", () => {
 		// With no inset there is no right-hand column, so there is no corner to
 		// close and nothing for `▘` to line up with.
