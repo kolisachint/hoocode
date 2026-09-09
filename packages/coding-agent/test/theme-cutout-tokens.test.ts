@@ -98,8 +98,47 @@ describe("cut-out token fallbacks", () => {
 			// And the bottom run is offset one column right of the band, ending
 			// under the right-hand column so the two close the corner.
 			expect(lines[3].startsWith(" ")).toBe(true);
-			expect(lines[3].match(/▀/g)).toHaveLength(band);
+			expect(lines[3].match(/▀/g)).toHaveLength(band - 1);
 			expect(visibleWidth(lines[3])).toBe(band + 1);
+		});
+
+		it("closes the bottom corner flush with the shadow's column", () => {
+			// `▀` fills a cell edge to edge and `▌` fills half of one, so a run
+			// that ended on `▀` under the column overshot it by half a cell and
+			// left a tip poking out past the corner. `▘` is that same top half
+			// cut back to the column's width, so the run stops where the column
+			// stops.
+			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
+			applyPaperSheet(box);
+			box.addChild(new Text("hello", 0, 0));
+			const lines = box.render(40);
+			const run = stripAnsi(lines[3]);
+			expect(run.endsWith("▘")).toBe(true);
+			expect(run).not.toContain("▀▀▘▀");
+			// The corner glyph sits in the same cell as the column above it.
+			expect(run.indexOf("▘")).toBe(stripAnsi(lines[2]).indexOf("▌"));
+		});
+
+		it("inks the cut column rather than leaving page between sheet and shadow", () => {
+			// The nick is a notch taken out of the sheet, not a hole in the
+			// shadow behind it: what it exposes is more shadow. Left as bare
+			// page — which it used to be — it parked a gutter of paper between
+			// the sheet and its own shadow, and a detached shadow reads as a
+			// rendering fault rather than as an edge.
+			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
+			applyPaperSheet(box);
+			for (let i = 0; i < 24; i++) {
+				box.addChild(new Text(`row ${i}`, 0, 0));
+			}
+			const lines = box.render(40).slice(1, -1);
+			// A nicked row now reads sheet, shadow, shadow — no page in between.
+			// The sample has to contain at least one nick or it proves nothing.
+			expect(lines.some((line) => stripAnsi(line).includes("█▌"))).toBe(true);
+			// And the column never moves, nicked or not.
+			const edge = 40 - PAPER_INSET + 1;
+			for (const line of lines) {
+				expect(stripAnsi(line).indexOf("▌")).toBe(edge - 1);
+			}
 		});
 
 		it("holds the shadow in one column, whatever the cut does to the edge", () => {

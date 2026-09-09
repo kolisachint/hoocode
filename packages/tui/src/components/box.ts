@@ -236,11 +236,18 @@ export class Box implements Component {
 			// front of it. Following the cut was the first attempt and it broke
 			// the shadow: `▌` paints half a cell, so a one-column step leaves no
 			// overlap at all between one row's mark and the next, and what the
-			// eye gets is a dashed staircase rather than an edge. A cut row
-			// shows its nick as a column of page between sheet and shadow —
-			// which is what a nick is — and the shadow stays a single line.
-			// The first row has none: the offset is down *and* right.
-			const column = hasColumn && index > 0 ? " ".repeat(cut) + shadowFn("▌") : "";
+			// eye gets is a dashed staircase rather than an edge.
+			//
+			// The column the cut gives back is inked too, as a full block. A nick
+			// is a notch scissors took out of the *sheet*, not a hole punched in
+			// the shadow behind it, so what the notch exposes is more shadow.
+			// Leaving that column as bare page — which is what it used to be —
+			// parked a gutter of paper between the sheet and its own shadow, and
+			// a shadow detached from the thing casting it reads as a rendering
+			// fault rather than as an edge.
+			//
+			// The first row has no column at all: the offset is down *and* right.
+			const column = hasColumn && index > 0 ? shadowFn("█".repeat(cut) + "▌") : "";
 			result.push(band + column);
 		});
 
@@ -248,8 +255,15 @@ export class Box implements Component {
 		// under the right-hand column so the two close the corner; with no
 		// gutter there is no such column, and the run stops one cell short of
 		// the margin instead of wrapping past it.
+		//
+		// That last cell is `▘`, not `▀`. The run is a full-width glyph and the
+		// column above it is a half-width one, so a run that ended on `▀`
+		// overshot the column by half a cell and left a tip poking out past the
+		// corner — a stray line coming out of the shadow. `▘` is the same top
+		// half narrowed to the column's own width, so the two edges close flush.
 		if (shadowFn && bandWidth > 1) {
-			result.push(` ${shadowFn("▀".repeat(hasColumn ? bandWidth : bandWidth - 1))}`);
+			const run = "▀".repeat(bandWidth - 1);
+			result.push(` ${shadowFn(hasColumn ? `${run}▘` : run)}`);
 		}
 
 		// Update cache

@@ -2,6 +2,40 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`/learn` no longer ends as an extension error when the session it was
+  started in is replaced mid-run.** Mining reads transcripts with a model and
+  can run for minutes, and nothing stops a `/new`, a `/resume`, a `/fork` or a
+  `/mode` landing in the middle of it. What replaces the session disposes the
+  old one, which invalidates the command ctx the run captured, so the first line
+  the finished run tried to print threw instead: the user got
+  `Extension "command:learn" error: This extension ctx is stale after session
+  replacement or reload` under the banner of the session that had just replaced
+  theirs, and the digest they had waited for was discarded. The run now learns
+  about the replacement from `session_shutdown` — emitted just before the
+  disposal, which is what makes it the last moment a run can still be told —
+  aborts its mining pass there, and reports nothing, because there is no longer
+  anywhere to report to. Only time is lost: every transcript already read is in
+  the on-disk cache, so `/learn` in the replacing session resumes from it.
+- **A cut-out theme's shadow no longer pokes out past its own corner.** The
+  bottom run of a paper sheet's shadow is drawn with `▀`, which fills a cell
+  edge to edge, while the column down its right edge is `▌`, which fills half of
+  one. Ending the run on `▀` under that column overshot it by half a cell, and
+  what the eye got at the bottom-right of every filled block — user messages,
+  extension blocks, error and warning frames — was a stray tip coming out of the
+  shadow. The run now ends on `▘`, the same top half cut back to the column's
+  width, so the two edges close flush.
+- **And no longer floats a column of page between a sheet and its shadow.** A
+  hand-cut right edge nicks one column out of roughly one row in five, and that
+  column used to be left as bare page in front of the shadow, which detached the
+  shadow from the sheet casting it at exactly the rows the cut was meant to make
+  look hand-made. A nick is a notch taken out of the sheet, not a hole punched in
+  the shadow behind it, so the column it gives back is now inked as shadow. The
+  shadow's own column stays in the one cell it always occupied — stepping it in
+  with the cut leaves no overlap between one row's half-cell mark and the next,
+  and reads as a dashed staircase.
+
 ## [0.5.61] - 2026-09-06
 
 ## [0.5.60] - 2026-09-05
