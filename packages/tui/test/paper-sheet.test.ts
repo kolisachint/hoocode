@@ -21,7 +21,7 @@ const WIDTH = 40;
 /** A sheet with the full paper treatment, `rows` lines of content deep. */
 function sheet(rows: number): string[] {
 	const box = new Box(1, 1, SHEET);
-	box.setPaper(() => ({ shadow: SHADOW, inset: INSET, cutEdge: true }));
+	box.setPaper(() => ({ shadow: SHADOW, inset: INSET }));
 	for (let i = 0; i < rows; i++) box.addChild(new Text(`row ${i}`, 0, 0));
 	return box.render(WIDTH);
 }
@@ -52,29 +52,32 @@ describe("a sheet's shadow", () => {
 		assert.equal(plain(run).indexOf("▘"), plain(lines[lines.length - 2]).indexOf("▌"));
 	});
 
-	it("leaves no page between the sheet and its own shadow", () => {
-		// A nick is a notch scissors took out of the sheet, not a hole in the
-		// shadow behind it, so the column it gives back is inked. Left as page
-		// — which it used to be — it parked a gutter of paper between the sheet
-		// and its shadow, and a detached shadow reads as a rendering fault.
+	it("draws one half-cell of shadow beside the sheet and nothing more", () => {
+		// The edge used to step one column in on roughly every fifth row, to
+		// read as cut by hand rather than ruled. A terminal cell is far too
+		// coarse a step for that: it read as damage, and the block of shadow ink
+		// that backfilled the gap put a tooth of shadow inside the sheet's own
+		// outline. The fill was leaving holes and the shadow was covering for
+		// them; a ruled edge has neither.
 		const lines = sheet(24).slice(1, -1);
-		const segments = lines.map(shadowSegment);
-		assert.ok(
-			segments.some((segment) => segment === "<s>█▌</s>"),
-			"the sample needs at least one nicked row to prove anything",
-		);
-		for (const segment of segments) {
-			assert.ok(
-				segment === "<s>▌</s>" || segment === "<s>█▌</s>",
-				`shadow segment should carry no page, got ${JSON.stringify(segment)}`,
-			);
+		for (const segment of lines.map(shadowSegment)) {
+			assert.equal(segment, "<s>▌</s>", `shadow segment should be one column, got ${JSON.stringify(segment)}`);
 		}
 	});
 
-	it("holds every shadowed row to the same width, nick or no nick", () => {
-		// The column stays in one cell whatever the cut does to the edge in
-		// front of it: a one-column step leaves no overlap between one row's
-		// half-cell mark and the next, and the edge reads as a dashed staircase.
+	it("leaves the sheet's top-right corner whole", () => {
+		// The top row is the one row with no shadow behind it, because the
+		// offset is down as well as right. A nick there had nothing to fall back
+		// on and showed as a bite taken out of the corner.
+		const lines = sheet(24);
+		assert.equal(visibleWidth(plain(lines[0])), WIDTH - INSET);
+		assert.equal(shadowSegment(lines[0]), "");
+	});
+
+	it("holds every shadowed row to the same width", () => {
+		// The column stays in one cell: a one-column step leaves no overlap
+		// between one row's half-cell mark and the next, and the edge reads as a
+		// dashed staircase.
 		const lines = sheet(24);
 		const edge = WIDTH - INSET + 1;
 		for (const line of lines.slice(1)) {
@@ -90,7 +93,7 @@ describe("a sheet's shadow", () => {
 		// theme without paper draws — is the honest answer.
 		for (const width of [1, 2, 3, 4]) {
 			const box = new Box(1, 1, SHEET);
-			box.setPaper(() => ({ shadow: SHADOW, inset: INSET, cutEdge: true }));
+			box.setPaper(() => ({ shadow: SHADOW, inset: INSET }));
 			box.addChild(new Text("hello there", 0, 0));
 			const lines = box.render(width);
 			for (const line of lines) {
@@ -98,7 +101,7 @@ describe("a sheet's shadow", () => {
 					visibleWidth(plain(line)) <= width,
 					`@${width}: row is ${visibleWidth(plain(line))} cells wide and will wrap`,
 				);
-				assert.ok(!/[▌▀▘█]/.test(line), `@${width}: drew shadow ink with no room for it`);
+				assert.ok(!/[▌▀▘]/.test(line), `@${width}: drew shadow ink with no room for it`);
 			}
 		}
 	});
@@ -106,7 +109,7 @@ describe("a sheet's shadow", () => {
 	it("keeps every row inside the terminal at the widths where it is a sheet", () => {
 		for (const width of [5, 6, 8, 12, 20, 40, 120]) {
 			const box = new Box(1, 1, SHEET);
-			box.setPaper(() => ({ shadow: SHADOW, inset: INSET, cutEdge: true }));
+			box.setPaper(() => ({ shadow: SHADOW, inset: INSET }));
 			for (let i = 0; i < 12; i++) box.addChild(new Text(`a row of text ${i}`, 0, 0));
 			for (const line of box.render(width)) {
 				assert.ok(

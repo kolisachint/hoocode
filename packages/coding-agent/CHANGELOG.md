@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The cut-out themes' message blocks no longer have holes in their fill, and
+  the shadow no longer reaches inside the sheet to hide them.** The right edge
+  of a sheet was nicked one column in on roughly every fifth row, to read as cut
+  by hand rather than ruled. A terminal cell is far too coarse a step for that,
+  so it never read as scissors — it read as damage, in two shapes. On the top
+  row, the one row with no shadow behind it because the offset is down as well
+  as right, the nick showed as a bite taken out of the sheet's top-right corner:
+  bare page inside the block's own outline. On every other row the nick was
+  backfilled with a block of shadow ink, which put a tooth of shadow *inside*
+  the fill — a dark step that reads as a rendering fault, not an edge. Both are
+  the same mistake seen from two sides: the fill was leaving gaps and the shadow
+  was covering for them. The edge is now ruled, every row of a sheet ends in the
+  same column, and the shadow is one half-cell column beside the sheet and
+  nothing more. The gutter, the shadow's column, the offset bottom run and its
+  closed corner are unchanged, and so is every theme that sets no `paperShadow`
+  — the twelve shipped themes without it render byte for byte as they did.
+
 ## [0.5.62] - 2026-09-09
 
 ### Fixed

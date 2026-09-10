@@ -7,25 +7,13 @@ type RenderCache = {
 	bgSample: string | undefined;
 	shadowSample: string | undefined;
 	inset: number;
-	cutEdge: boolean;
 	lines: string[];
 };
 
 /**
- * Roughly one row in this many takes the cut.
- *
- * A coin flip per row is not a cut edge, it is a sawtooth: the eye reads
- * alternating columns as a pattern, which is the opposite of hand-made. Scissors
- * leave a mostly straight line with the occasional nick, so the deviation has to
- * be rare enough to read as an accident.
- */
-const CUT_EVERY = 5;
-
-/**
  * The paper treatment a box asks its owner for on every frame: the ink of its
- * shadow, the gutter it holds back from the right margin, and whether its right
- * edge is cut by hand. Each part is optional, and a sheet with none of them is
- * the plain full-width band.
+ * shadow and the gutter it holds back from the right margin. Both are optional,
+ * and a sheet with neither is the plain full-width band.
  */
 export interface PaperSheet {
 	/** Paints the shadow's own glyphs. Omitted, the sheet casts no shadow. */
@@ -36,27 +24,9 @@ export interface PaperSheet {
 	 * A block that runs the full width of the terminal has no right edge to
 	 * show: it is a band of colour between two screen edges, not a sheet on a
 	 * page. Reserving a few columns gives it one, which is what makes both the
-	 * shadow's right-hand column and a cut edge possible at all.
+	 * shadow's right-hand column and a visible right edge possible at all.
 	 */
 	inset?: number;
-	/**
-	 * Cut the right edge by hand rather than ruling it.
-	 *
-	 * The jitter is one column at most and it only ever eats padding, never
-	 * content, so a cut edge cannot cost a character. It is derived from the row
-	 * index and the block's own content, which keeps it identical between frames
-	 * — an edge that reshuffled on every render would read as noise, not paper.
-	 */
-	cutEdge?: boolean;
-}
-
-/** djb2. Small, stable, and good enough to decide one column of a paper edge. */
-function hashString(value: string): number {
-	let hash = 5381;
-	for (let i = 0; i < value.length; i++) {
-		hash = ((hash << 5) + hash + value.charCodeAt(i)) >>> 0;
-	}
-	return hash;
 }
 
 /**
@@ -117,7 +87,7 @@ export class Box implements Component {
 	/**
 	 * Give the box the paper treatment, resolved on every frame.
 	 *
-	 * A shadow, a gutter and a cut edge arrive together because they are one
+	 * A shadow and the gutter it needs arrive together because they are one
 	 * decision, and it is a decision the *theme* makes — so the box asks for it
 	 * at render time rather than being told once. A box built under one theme
 	 * outlives it: the user switches theme with the block already on screen, and
@@ -150,7 +120,6 @@ export class Box implements Component {
 		bgSample: string | undefined,
 		shadowSample: string | undefined,
 		inset: number,
-		cutEdge: boolean,
 	): boolean {
 		const cache = this.cache;
 		return (
@@ -159,7 +128,6 @@ export class Box implements Component {
 			cache.bgSample === bgSample &&
 			cache.shadowSample === shadowSample &&
 			cache.inset === inset &&
-			cache.cutEdge === cutEdge &&
 			cache.childLines.length === childLines.length &&
 			cache.childLines.every((line, i) => line === childLines[i])
 		);
@@ -189,7 +157,6 @@ export class Box implements Component {
 		const wide = width - Math.max(0, paper?.inset ?? 0) > 1;
 		const shadowFn = wide ? paper?.shadow : undefined;
 		const inset = wide ? Math.max(0, paper?.inset ?? 0) : 0;
-		const cutEdge = wide && paper?.cutEdge === true;
 
 		// The band stops short of the right margin when inset, leaving a gutter of
 		// page for the sheet's own edge and the shadow that follows it.
@@ -222,7 +189,7 @@ export class Box implements Component {
 		const shadowSample = shadowFn ? shadowFn("test") : undefined;
 
 		// Check cache validity
-		if (this.matchCache(width, childLines, bgSample, shadowSample, inset, cutEdge)) {
+		if (this.matchCache(width, childLines, bgSample, shadowSample, inset)) {
 			return this.cache!.lines;
 		}
 
@@ -232,35 +199,28 @@ export class Box implements Component {
 		rows.push(...childLines);
 		for (let i = 0; i < this.paddingY; i++) rows.push("");
 
-		// A cut edge needs a seed that is stable for this block but different
-		// from its neighbours, or every sheet on screen is cut identically.
-		const seed = cutEdge ? hashString(childLines.join("\n")) : 0;
 		// The right-hand column only exists when a gutter was reserved for it.
 		const hasColumn = shadowFn !== undefined && inset > 0;
 		const result: string[] = [];
 		rows.forEach((line, index) => {
-			// Never let the cut reach into the content: the jitter comes out of
-			// the padding the row was going to draw anyway.
-			const slack = Math.max(0, bandWidth - visibleWidth(line));
-			const cut = cutEdge && slack > 0 && hashString(`${seed}:${index}`) % CUT_EVERY === 0 ? 1 : 0;
-			const rowWidth = bandWidth - cut;
-			const band = this.applyBg(line, rowWidth);
-			// The shadow holds one column whatever the cut does to the edge in
-			// front of it. Following the cut was the first attempt and it broke
-			// the shadow: `▌` paints half a cell, so a one-column step leaves no
-			// overlap at all between one row's mark and the next, and what the
-			// eye gets is a dashed staircase rather than an edge.
+			// Every row of the sheet ends in the same column.
 			//
-			// The column the cut gives back is inked too, as a full block. A nick
-			// is a notch scissors took out of the *sheet*, not a hole punched in
-			// the shadow behind it, so what the notch exposes is more shadow.
-			// Leaving that column as bare page — which is what it used to be —
-			// parked a gutter of paper between the sheet and its own shadow, and
-			// a shadow detached from the thing casting it reads as a rendering
-			// fault rather than as an edge.
-			//
-			// The first row has no column at all: the offset is down *and* right.
-			const column = hasColumn && index > 0 ? shadowFn(`${"█".repeat(cut)}▌`) : "";
+			// The edge used to be nicked one column in on roughly every fifth
+			// row, to read as cut by hand rather than ruled. At a terminal's
+			// resolution it could not: a nick is a whole cell, which is a step
+			// far too coarse to read as the wobble of a pair of scissors, and it
+			// landed as damage instead. On the top row — the one row with no
+			// shadow behind it, because the offset is down as well as right — it
+			// showed as a bite taken out of the sheet's corner. Everywhere else
+			// it was backfilled with a block of shadow ink, which put a tooth of
+			// shadow *inside* the sheet's own outline. Both are the same mistake
+			// seen from two sides: the fill was leaving holes and the shadow was
+			// covering for them. A ruled edge has neither.
+			const band = this.applyBg(line, bandWidth);
+			// `▌` paints the left half of its cell, so the column reads as a thin
+			// line hugging the sheet rather than a second band beside it. The
+			// first row has no column at all: the offset is down *and* right.
+			const column = hasColumn && index > 0 ? shadowFn("▌") : "";
 			result.push(band + column);
 		});
 
@@ -286,7 +246,6 @@ export class Box implements Component {
 			bgSample,
 			shadowSample,
 			inset,
-			cutEdge,
 			lines: result,
 		};
 

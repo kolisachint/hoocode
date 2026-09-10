@@ -72,7 +72,7 @@ function scan(line: string): Cell[] {
 	return out;
 }
 
-const SHADOW_GLYPHS = new Set(["▌", "█", "▀", "▘"]);
+const SHADOW_GLYPHS = new Set(["▌", "▀", "▘"]);
 
 function faultsIn(label: string, lines: string[], width: number): string[] {
 	const faults: string[] = [];
@@ -103,24 +103,26 @@ function faultsIn(label: string, lines: string[], width: number): string[] {
 			if (cells.at(-1)?.glyph !== "▘") faults.push(`bottom run: ends on ${cells.at(-1)?.glyph}, expected ▘`);
 			continue;
 		}
-		// Where the sheet's fill stops.
+		// Where the sheet's fill stops. Every row stops in the same cell: the
+		// edge is ruled, so a fill that ends short is a hole, not a nick.
 		let fillEnd = 0;
 		while (fillEnd < cells.length && cells[fillEnd].bg !== "" && !SHADOW_GLYPHS.has(cells[fillEnd].glyph)) fillEnd++;
-		if (fillEnd !== band && fillEnd !== band - 1) {
-			faults.push(`row ${i}: fill ends at ${fillEnd}, expected ${band} or ${band - 1} (cut)`);
+		if (fillEnd !== band) {
+			faults.push(`row ${i}: fill ends at ${fillEnd}, expected ${band}`);
 		}
 		for (let c = 0; c < fillEnd; c++) {
 			if (cells[c].bg === "") faults.push(`row ${i}: hole in the fill at cell ${c}`);
 		}
-		// The shadow column, and the ink that closes a nick in front of it.
+		// The shadow column — one half-cell of ink, and never a block of it
+		// backfilling a gap the sheet left.
 		const rest = cells
 			.slice(fillEnd)
 			.map((c) => c.glyph)
 			.join("");
 		if (i === 0) {
 			if (rest !== "") faults.push(`row 0: casts a shadow (${JSON.stringify(rest)}) but should not`);
-		} else if (fillEnd === band ? rest !== "▌" : rest !== "█▌") {
-			faults.push(`row ${i}: shadow segment is ${JSON.stringify(rest)} after a fill ending at ${fillEnd}`);
+		} else if (rest !== "▌") {
+			faults.push(`row ${i}: shadow segment is ${JSON.stringify(rest)}, expected "▌"`);
 		}
 	}
 	void shadowRun;

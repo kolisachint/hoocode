@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **`Box`'s paper treatment rules the sheet's right edge instead of nicking it.**
+  The `cutEdge` option jittered the band one column in on roughly every fifth
+  row. At a terminal's resolution a whole cell is too coarse a step to read as a
+  hand-cut edge: it left bare page inside the sheet's outline on the top row —
+  the one row that draws no shadow column — and elsewhere was plugged with a
+  block of shadow ink that stepped into the fill. `PaperSheet.cutEdge` is gone;
+  a sheet is now its shadow and its gutter, every row ends in the same column,
+  and the shadow segment beside a row is exactly one `▌`.
+
 ## [0.5.62] - 2026-09-09
 
 ## [0.5.61] - 2026-09-06
