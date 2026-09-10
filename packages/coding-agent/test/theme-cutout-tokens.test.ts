@@ -86,10 +86,10 @@ describe("cut-out token fallbacks", () => {
 
 			// The band holds back from the right margin, so the sheet has an edge.
 			const band = 40 - PAPER_INSET;
-			for (const line of lines.slice(0, 3)) {
-				// A cut edge takes at most one column, and only out of padding.
-				expect(visibleWidth(line)).toBeGreaterThanOrEqual(band - 1);
-				expect(visibleWidth(line)).toBeLessThanOrEqual(band + 1);
+			// The top row is the band alone; the rows under it add the column.
+			expect(visibleWidth(lines[0])).toBe(band);
+			for (const line of lines.slice(1, 3)) {
+				expect(visibleWidth(line)).toBe(band + 1);
 			}
 			// Rows below the first cast a shadow along the right edge; the first
 			// does not, because the offset is down as well as right.
@@ -119,33 +119,41 @@ describe("cut-out token fallbacks", () => {
 			expect(run.indexOf("▘")).toBe(stripAnsi(lines[2]).indexOf("▌"));
 		});
 
-		it("inks the cut column rather than leaving page between sheet and shadow", () => {
-			// The nick is a notch taken out of the sheet, not a hole in the
-			// shadow behind it: what it exposes is more shadow. Left as bare
-			// page — which it used to be — it parked a gutter of paper between
-			// the sheet and its own shadow, and a detached shadow reads as a
-			// rendering fault rather than as an edge.
+		it("rules the sheet's right edge instead of nicking it", () => {
+			// The edge used to step one column in on roughly every fifth row, to
+			// read as cut by hand. A terminal cell is far too coarse a step for
+			// that, so it landed as damage: a bite out of the sheet's top-right
+			// corner on the one row with no shadow behind it, and everywhere
+			// else a tooth of shadow ink backfilling the gap — the fill leaving
+			// holes and the shadow covering for them. Every row now ends in the
+			// same cell, and the shadow never reaches inside the sheet.
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
 			applyPaperSheet(box);
 			for (let i = 0; i < 24; i++) {
 				box.addChild(new Text(`row ${i}`, 0, 0));
 			}
-			const lines = box.render(40).slice(1, -1);
-			// A nicked row now reads sheet, shadow, shadow — no page in between.
-			// The sample has to contain at least one nick or it proves nothing.
-			expect(lines.some((line) => stripAnsi(line).includes("█▌"))).toBe(true);
-			// And the column never moves, nicked or not.
-			const edge = 40 - PAPER_INSET + 1;
-			for (const line of lines) {
-				expect(stripAnsi(line).indexOf("▌")).toBe(edge - 1);
+			const rendered = box.render(40);
+			const band = 40 - PAPER_INSET;
+			// No block of shadow ink anywhere: that glyph only ever existed to
+			// plug a nick.
+			expect(rendered.some((line) => stripAnsi(line).includes("█"))).toBe(false);
+			// The top row is the full band, with no shadow beside it, so its
+			// corner is whole.
+			expect(visibleWidth(rendered[0])).toBe(band);
+			expect(rendered[0]).not.toContain("▌");
+			// And every row below it is band plus exactly one column of shadow,
+			// in the same cell every time.
+			for (const line of rendered.slice(1, -1)) {
+				expect(visibleWidth(line)).toBe(band + 1);
+				expect(stripAnsi(line).indexOf("▌")).toBe(band);
 			}
 		});
 
-		it("holds the shadow in one column, whatever the cut does to the edge", () => {
-			// A shadow that stepped in and out with the nick was not a shadow:
-			// the glyph is half a cell wide, so a one-column step leaves no
-			// overlap between one row's mark and the next, and the edge reads as
-			// a dashed staircase. Every shadowed row ends in the same cell.
+		it("holds every row of the sheet to one width", () => {
+			// A shadow that stepped in and out was not a shadow: the glyph is
+			// half a cell wide, so a one-column step leaves no overlap between
+			// one row's mark and the next, and the edge reads as a dashed
+			// staircase. Every shadowed row ends in the same cell.
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
 			applyPaperSheet(box);
 			for (let i = 0; i < 12; i++) {
@@ -159,20 +167,7 @@ describe("cut-out token fallbacks", () => {
 			expect(lines.slice(1, -1).every((line) => line.includes("▌"))).toBe(true);
 		});
 
-		it("still cuts the sheet's own edge", () => {
-			// The nick moved off the shadow, not out of the theme: with the
-			// shadow's column left off, the rows that took one are narrower.
-			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
-			box.setPaper(() => ({ inset: PAPER_INSET, cutEdge: true }));
-			for (let i = 0; i < 12; i++) {
-				box.addChild(new Text(`row ${i}`, 0, 0));
-			}
-			const band = 40 - PAPER_INSET;
-			const widths = new Set(box.render(40).map((line) => visibleWidth(line)));
-			expect(widths).toEqual(new Set([band, band - 1]));
-		});
-
-		it("never lets the cut edge eat a character", () => {
+		it("keeps the gutter off the content", () => {
 			const text = "x".repeat(30);
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
 			applyPaperSheet(box);

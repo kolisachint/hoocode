@@ -1498,12 +1498,12 @@ export function getPaperShadowFn(): ((text: string) => string) | undefined {
 export const PAPER_INSET = 3;
 
 /**
- * Give a filled block the paper treatment: a gutter of page at its right, a cut
- * edge, and a shadow along both of them.
+ * Give a filled block the paper treatment: a gutter of page at its right, and a
+ * shadow down that edge and along the bottom.
  *
- * The three arrive together because they are one decision. A block that runs
- * edge to edge has no right edge to cut and nowhere to cast a shadow, so a
- * theme asking for paper is asking for the gutter that makes paper possible.
+ * The two arrive together because they are one decision. A block that runs edge
+ * to edge has no right edge to show and nowhere to cast a shadow, so a theme
+ * asking for paper is asking for the gutter that makes paper possible.
  * A theme without `paperShadow` gets the full-width band it has always drawn.
  *
  * The decision is handed to the box as a function, not as an answer, because
@@ -1515,7 +1515,7 @@ export const PAPER_INSET = 3;
 export function applyPaperSheet(box: Box): void {
 	box.setPaper(() => {
 		const shadow = getPaperShadowFn();
-		return shadow ? { shadow, inset: PAPER_INSET, cutEdge: true } : undefined;
+		return shadow ? { shadow, inset: PAPER_INSET } : undefined;
 	});
 }
 
@@ -1538,7 +1538,7 @@ export type BlockFill = "userMessageBg" | "customMessageBg" | "warningBg" | "too
  * were each written to use "the same background colour as custom messages for
  * visual consistency" and each stopped there, so under a cut-out theme they
  * rendered as flat full-width bands beside the sheets they were copying —
- * same paint, no gutter, no cut edge, no shadow, in the same transcript.
+ * same paint, no gutter, no edge, no shadow, in the same transcript.
  *
  * A theme with no `paperShadow` still gets the full-width band it always had:
  * `applyPaperSheet` resolves that per frame, so this is safe on every theme and
