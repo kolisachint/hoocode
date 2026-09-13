@@ -4,20 +4,20 @@
 	"description": "Default dark theme",
 	"vars": {
 		"cyan": "#00d7ff",
-		"blue": "#5f87ff",
+		"blue": "#6e93ff",
 		"green": "#b5bd68",
-		"red": "#cc6666",
+		"red": "#d58181",
 		"yellow": "#ffff00",
-		"gray": "#808080",
-		"dimGray": "#666666",
-		"darkGray": "#505050",
+		"gray": "#a8a8a8",
+		"dimGray": "#989898",
+		"darkGray": "#757575",
 		"accent": "#5cc8bb",
-		"selectedBg": "#3a3a4a",
+		"selectedBg": "#2a2a36",
 		"userMsgBg": "#1c1c26",
 		"toolPendingBg": "#1a1a24",
 		"toolSuccessBg": "#1a241a",
 		"toolErrorBg": "#241a1a",
-		"warningBg": "#3d3d19",
+		"warningBg": "#2e2e13",
 		"customMsgBg": "#1e1a28"
 	},
 	"colors": {
@@ -38,7 +38,7 @@
 		"userMessageText": "",
 		"customMessageBg": "customMsgBg",
 		"customMessageText": "",
-		"customMessageLabel": "#9575cd",
+		"customMessageLabel": "#a68cd5",
 		"toolPendingBg": "toolPendingBg",
 		"toolSuccessBg": "toolSuccessBg",
 		"toolErrorBg": "toolErrorBg",
@@ -54,34 +54,34 @@
 		"mdCodeBlockBorder": "gray",
 		"mdQuote": "gray",
 		"mdQuoteBorder": "gray",
-		"mdHr": "gray",
+		"mdHr": "darkGray",
 		"mdListBullet": "accent",
 
 		"toolDiffAdded": "green",
 		"toolDiffRemoved": "red",
 		"toolDiffContext": "gray",
 
-		"syntaxComment": "#6A9955",
-		"syntaxKeyword": "#569CD6",
+		"syntaxComment": "#74a55d",
+		"syntaxKeyword": "#599ed7",
 		"syntaxFunction": "#DCDCAA",
 		"syntaxVariable": "#9CDCFE",
 		"syntaxString": "#CE9178",
-		"syntaxNumber": "#B5CEA8",
+		"syntaxNumber": "#9fd45f",
 		"syntaxType": "#4EC9B0",
 		"syntaxOperator": "#D4D4D4",
 		"syntaxPunctuation": "#D4D4D4",
 
 		"thinkingOff": "darkGray",
-		"thinkingMinimal": "#6e6e6e",
-		"thinkingLow": "#5f87af",
-		"thinkingMedium": "#81a2be",
-		"thinkingHigh": "#b294bb",
+		"thinkingMinimal": "dimGray",
+		"thinkingLow": "blue",
+		"thinkingMedium": "accent",
+		"thinkingHigh": "#e8794a",
 		"thinkingXhigh": "#d183e8",
 
 		"bashMode": "green",
 
 		"agent1": "#56b6c2",
-		"agent2": "#c678dd",
+		"agent2": "#c77bde",
 		"agent3": "#d19a66",
 		"agent4": "#ff87af",
 		"agent5": "#4ec9b0",
@@ -89,8 +89,8 @@
 		"mcp": "#b48ead"
 	},
 	"export": {
-		"pageBg": "#18181e",
+		"pageBg": "#141419",
 		"cardBg": "#1e1e24",
-		"infoBg": "#3c3728"
+		"infoBg": "#2e2a1d"
 	}
 }

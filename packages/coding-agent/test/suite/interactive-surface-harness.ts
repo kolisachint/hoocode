@@ -66,8 +66,13 @@ export interface SurfaceHarness {
 	 * Every distinct foreground escape in the frame, sorted. Two frames drawn
 	 * with the same theme share a palette, and `screenshot()` throws exactly this
 	 * away — so a theme that failed to reach one surface is invisible without it.
-	 * Background fills are left out: the session chip picks one at random per
-	 * session, which says nothing about the theme.
+	 *
+	 * The editor's top border is left out whole, for the same reason
+	 * `maskVolatile` blanks it: the session chip on it is a palette slot picked
+	 * per session, and it brings both its fill *and* its ink — the ink is
+	 * measured off the fill, so two sessions on different slots legitimately
+	 * write their names in different colours. None of that says anything about
+	 * whether the theme reached a surface.
 	 */
 	palette(): string[];
 	cleanup(): void;
@@ -207,7 +212,13 @@ export async function createSurfaceHarness(options: SurfaceHarnessOptions = {}):
 		screenshot,
 		surface: () => maskVolatile(screenshot(), root),
 		rawFrame,
-		palette: () => [...new Set(rawFrame().match(ANSI) ?? [])].filter((code) => !code.includes("[48;")).sort(),
+		palette: () => {
+			const withoutChip = rawFrame()
+				.split("\n")
+				.filter((line) => !line.replace(ANSI, "").startsWith("┌"))
+				.join("\n");
+			return [...new Set(withoutChip.match(ANSI) ?? [])].filter((code) => !code.includes("[48;")).sort();
+		},
 		cleanup: () => {
 			mode.stop();
 			runtime.session.dispose();

@@ -1,9 +1,9 @@
 /**
  * Every theme loads, and every message block renders under it.
  *
- * The cut-out tokens are optional, which is a promise about the twelve themes
- * that do not set them: they have to render exactly as they did before the
- * tokens existed. Pairing a block's fill with its paper edge made that promise
+ * The cut-out tokens are optional, which is a promise about the themes that do
+ * not set them: they have to render exactly as they did before the tokens
+ * existed. Pairing a block's fill with its paper edge made that promise
  * load-bearing in six components at once, so it is checked here against every
  * theme the package ships — discovered from disk, so a theme added later is
  * covered the day it lands — and against a custom theme that sets only what the
@@ -107,7 +107,7 @@ describe("every theme the package ships", () => {
 	it("has at least the themes this suite expects", () => {
 		// A guard on the guard: if the discovery ever came back empty, every
 		// theme case below would vacuously pass.
-		expect(BUILT_INS.length).toBeGreaterThanOrEqual(14);
+		expect(BUILT_INS.length).toBeGreaterThanOrEqual(8);
 		expect(BUILT_INS).toContain("dark");
 		expect(BUILT_INS).toContain("vox-cutout-dark");
 		expect(getAvailableThemes()).toEqual(expect.arrayContaining(BUILT_INS));

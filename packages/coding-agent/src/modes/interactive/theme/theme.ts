@@ -425,19 +425,38 @@ function bgAnsi(color: string | number, mode: ColorMode): string {
 	throw new Error(`Invalid color value: ${color}`);
 }
 
+/** The two inks a chip can be written in: the darker one, and the lighter one. */
+const CHIP_INK_DARK = "#0b0b0f";
+const CHIP_INK_LIGHT = "#ffffff";
+
 /**
- * The ink to lay on a chip filled with `color`, or undefined when the fill's
- * luminance cannot be worked out and we would be guessing at legibility.
+ * WCAG contrast between two resolved colours, or undefined if either is
+ * unparseable.
+ */
+function contrastRatio(a: string | number, b: string | number): number | undefined {
+	const [first, second] = [relativeLuminance(a), relativeLuminance(b)];
+	if (first === undefined || second === undefined) return undefined;
+	return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
+}
+
+/**
+ * The ink to lay on a chip filled with `color`, and how well it reads there —
+ * or undefined when the fill's luminance cannot be worked out and we would be
+ * guessing at legibility.
  *
  * Chips are filled with palette hues that differ wildly between themes — a dark
  * theme's agent1 is a bright cyan, a light theme's is a deep teal meant as ink on
- * paper — so a fixed text colour is unreadable in one theme or the other. 0.179
- * is the standard cutoff at which white and black swap places for best contrast.
+ * paper — so a fixed text colour is unreadable in one theme or the other. The
+ * ink is therefore whichever of the two actually measures better against this
+ * fill, rather than whichever a fixed luminance cutoff nominates: near the
+ * crossover the cutoff and the measurement disagree by a hair, and a hair is the
+ * difference between a name that reads and one that does not.
  */
-function fillInk(color: string | number): string | undefined {
-	const luminance = relativeLuminance(color);
-	if (luminance === undefined) return undefined;
-	return luminance > 0.179 ? "#0b0b0f" : "#ffffff";
+function fillInk(color: string | number): { ink: string; ratio: number } | undefined {
+	const dark = contrastRatio(color, CHIP_INK_DARK);
+	const light = contrastRatio(color, CHIP_INK_LIGHT);
+	if (dark === undefined || light === undefined) return undefined;
+	return dark >= light ? { ink: CHIP_INK_DARK, ratio: dark } : { ink: CHIP_INK_LIGHT, ratio: light };
 }
 
 /**
@@ -457,18 +476,60 @@ function fillInk(color: string | number): string | undefined {
 const MIN_CHIP_FILL_LIGHTNESS = 0.5;
 
 /**
- * How bright a chip has to end up before its ink is comfortable on it.
+ * How well the name written on a chip has to read against the fill under it.
  *
- * Lightness alone is not enough, because hues do not carry the same brightness
- * at the same lightness: a blue or a magenta at 0.5 lands near luminance 0.2,
- * which is the crossover where black ink and white ink are equally poor and the
- * name on the chip goes soft either way. Lifting a little further past that band
- * costs nothing — the hue is already established — and buys the ink real room.
+ * Lightness alone is not a legibility test, because hues do not carry the same
+ * brightness at the same lightness: a blue or a violet at 0.5 lands near
+ * luminance 0.2, which is the crossover where dark ink and light ink are
+ * *equally poor* — around 4.3:1 either way, under the 4.5:1 floor for body text
+ * and well under what a two-word name on a 22-cell chip wants. Solarized Dark's
+ * violet and magenta slots sat exactly there, which is what made a session's own
+ * name the hardest thing on its input box to read.
+ *
+ * So the fill is measured rather than guessed at: it is moved until the better
+ * of the two inks clears this bar. 5.5 leaves real headroom over AA without
+ * forcing every chip to the top of the lightness range, where six hues start
+ * looking like six pastels.
  */
-const MIN_CHIP_FILL_LUMINANCE = 0.25;
+const MIN_CHIP_INK_CONTRAST = 5.5;
 
-/** Lightness past which lifting stops, so a pale hue is never bleached to paper. */
-const MAX_CHIP_FILL_LIGHTNESS = 0.78;
+/**
+ * The same bar, as a 256-colour terminal is able to keep it.
+ *
+ * Apple Terminal, GNU screen and TERM=linux round every fill to the nearest
+ * entry of a 6×6×6 cube, and that rounding moves luminance. Holding the rounded
+ * fill to the full 5.5 would mean lifting until it lands in a *different* cube
+ * cell — and the cells these palettes round into are shared, so the lift that
+ * bought contrast spent the thing the chip is for: Solarized's violet and blue
+ * slots came out as the same swatch. The rounded fill answers to AA for body
+ * text instead, which is a floor it can clear without leaving its own cell.
+ */
+const MIN_CHIP_INK_CONTRAST_QUANTIZED = 4.5;
+
+/**
+ * Lightness past which lifting stops, so a hue is never bleached to paper.
+ *
+ * Nothing in the shipped palettes gets anywhere near it — the deepest ink in
+ * them settles by 0.55. It is the backstop for a custom theme whose palette
+ * entry is so dark that the walk would otherwise run to white.
+ */
+const MAX_CHIP_FILL_LIGHTNESS = 0.88;
+
+/**
+ * Saturation a lifted fill is held under.
+ *
+ * Lifting at the token's own saturation is what turns a light theme's deep
+ * inks into highlighter pen: `#00382d` (a bottle teal) at full saturation and
+ * half lightness is `#00ffcd`, and `#035500` is `#09ff00`. Those are nobody's
+ * idea of the theme's green. Pulling a lifted fill back to this ceiling is the
+ * same move as mixing the ink with white — the hue survives, the fluorescence
+ * does not. Only *lifted* fills are capped: a palette entry bright enough to be
+ * its own chip is left exactly as the theme wrote it.
+ */
+const MAX_CHIP_FILL_SATURATION = 0.72;
+
+/** Step the lift walks in. Small enough that a fill never overshoots visibly. */
+const CHIP_FILL_LIGHTNESS_STEP = 0.02;
 
 /** HSL of a hex colour, in 0-360 / 0-1 / 0-1. */
 function hexToHsl(hex: string): { h: number; s: number; l: number } {
@@ -516,16 +577,56 @@ function hslToHex(h: number, s: number, l: number): string {
 }
 
 /**
+ * What a colour looks like once the terminal has actually painted it.
+ *
+ * On a 256-colour terminal every fill is rounded to the nearest cube entry
+ * first, and that rounding moves luminance — so an ink chosen against the
+ * unrounded hex is an ink chosen against a colour nobody sees. Measuring the
+ * rounded value instead keeps the chip's contrast honest on Apple Terminal,
+ * GNU screen and TERM=linux, which is where it was least honest before.
+ */
+function renderedColor(color: string | number, mode: ColorMode): string | number {
+	if (mode !== "256color") return color;
+	if (typeof color === "number") return color;
+	if (!color.startsWith("#")) return color;
+	try {
+		return ansi256ToHex(hexTo256(color));
+	} catch {
+		return color;
+	}
+}
+
+/**
  * The colour a chip is actually filled with for a palette entry.
  *
- * On a dark theme the palette is already bright, so the entry is its own fill and
- * nothing here changes. On a light one it is ink, and ink laid down as a swatch
- * is a dark smudge whose hue nobody can name — see `MIN_CHIP_FILL_LIGHTNESS`.
- * Only the lightness moves; hue and saturation are the theme's, so a lifted fill
- * is still recognisably that theme's colour and not a generic one.
+ * Two things can be wrong with a palette entry used as a fill, and a theme's own
+ * light/dark polarity does not decide which:
+ *
+ *  - On a light theme the entry is *ink* — dark enough to read on paper — and
+ *    ink laid down as a swatch is a smudge whose hue nobody can name. That is
+ *    what `MIN_CHIP_FILL_LIGHTNESS` answers.
+ *  - On either polarity the entry can land in the luminance band where neither
+ *    ink reads on it. That is what `MIN_CHIP_INK_CONTRAST` answers, and it is
+ *    the case the old code did not check at all on a dark theme — which is
+ *    precisely where Solarized Dark's violet and magenta chips lived.
+ *
+ * So the lift runs for every theme, and it runs against the *rendered* fill, but
+ * it only moves a fill that has one of those problems: an entry already bright
+ * enough to carry its ink comes back exactly as the theme wrote it. Only
+ * lightness and (once lifted) saturation move; the hue is always the theme's, so
+ * a lifted fill still reads as that theme's colour rather than a generic one.
  */
-function chipFill(color: string | number, lightBackdrop: boolean): string | number {
-	if (!lightBackdrop) return color;
+function chipFill(color: string | number, lightBackdrop: boolean, mode: ColorMode): string | number {
+	// Both the colour asked for and the colour the terminal will round it to have
+	// to carry the ink — the first to the full bar, the second to the one it can
+	// hold without being pushed out of its own cube cell.
+	const clears = (candidate: string | number) =>
+		(fillInk(candidate)?.ratio ?? 0) >= MIN_CHIP_INK_CONTRAST &&
+		(fillInk(renderedColor(candidate, mode))?.ratio ?? 0) >= MIN_CHIP_INK_CONTRAST_QUANTIZED;
+	// The hue floor only applies where the palette is ink. A dark theme's entry
+	// that already carries its ink is left alone however dark it is.
+	if (!lightBackdrop && clears(color)) return color;
+
 	const hex = typeof color === "number" ? ansi256ToHex(color) : color;
 	if (!hex.startsWith("#")) return color;
 	let hsl: { h: number; s: number; l: number };
@@ -534,16 +635,23 @@ function chipFill(color: string | number, lightBackdrop: boolean): string | numb
 	} catch {
 		return color;
 	}
-	// A gray has no hue to rescue, and lifting it would only wash the chip out.
-	if (hsl.s === 0) return color;
-	// Up to the floor where the hue reads, then on a step at a time until the ink
-	// has room, stopping as soon as the lift has what it came for.
-	let lightness = Math.max(hsl.l, MIN_CHIP_FILL_LIGHTNESS);
-	while (lightness < MAX_CHIP_FILL_LIGHTNESS) {
-		if ((relativeLuminance(hslToHex(hsl.h, hsl.s, lightness)) ?? 1) >= MIN_CHIP_FILL_LUMINANCE) break;
-		lightness += 0.02;
+
+	// A gray has no hue to rescue, so on a light theme there is nothing to lift it
+	// for — but a mid-gray still sits in the band where neither ink reads, and
+	// that has to be fixed wherever it happens.
+	const floor = lightBackdrop && hsl.s > 0 ? Math.max(hsl.l, MIN_CHIP_FILL_LIGHTNESS) : hsl.l;
+	const saturation = floor > hsl.l ? Math.min(hsl.s, MAX_CHIP_FILL_SATURATION) : hsl.s;
+
+	// Up from the floor a step at a time, stopping as soon as the ink has room.
+	// Lifting rather than darkening because a chip is a mark on a page in both
+	// polarities: a fill darker than the terminal's own ground stops being one.
+	for (let lightness = floor; lightness <= MAX_CHIP_FILL_LIGHTNESS; lightness += CHIP_FILL_LIGHTNESS_STEP) {
+		const candidate = lightness <= hsl.l && saturation === hsl.s ? color : hslToHex(hsl.h, saturation, lightness);
+		if (clears(candidate)) return candidate;
 	}
-	return lightness > hsl.l ? hslToHex(hsl.h, hsl.s, lightness) : color;
+	// Nothing in range carried the ink — take the top of the range, which is the
+	// brightest the hue is allowed to get, over leaving the chip illegible.
+	return hslToHex(hsl.h, saturation, MAX_CHIP_FILL_LIGHTNESS);
 }
 
 /**
@@ -643,10 +751,12 @@ export class Theme {
 			this.fgColors.set(key, fgAnsi(value, mode));
 			// "" means the terminal's own foreground: there is no colour to fill
 			// with, so the token simply is not fillable.
-			const fill = value === "" ? value : chipFill(value, lightBackdrop);
-			const ink = fill === "" ? undefined : fillInk(fill);
+			const fill = value === "" ? value : chipFill(value, lightBackdrop, mode);
+			// The ink answers to what the terminal will actually paint, which on a
+			// 256-colour terminal is the rounded fill rather than the exact one.
+			const ink = fill === "" ? undefined : fillInk(renderedColor(fill, mode));
 			if (ink !== undefined) {
-				this.fillColors.set(key, bgAnsi(fill, mode) + fgAnsi(ink, mode));
+				this.fillColors.set(key, bgAnsi(fill, mode) + fgAnsi(ink.ink, mode));
 			}
 		}
 		this.bgColors = new Map();
@@ -797,6 +907,51 @@ function isBuiltinTheme(name: string): boolean {
 	return name in getBuiltinThemes();
 }
 
+/**
+ * Built-ins that were retired, and what each one resolves to now.
+ *
+ * The shipped set is eight — four light, four dark — because a picker of
+ * fourteen is a picker nobody reads to the end of, and half of those fourteen
+ * were a second opinion on a theme already in the list. Retiring a name is not
+ * the same as taking it away, though: somebody has `"theme": "warm-light"` in
+ * their settings, and the loader's own failure path falls back to `dark`, which
+ * would flip a light terminal to a dark theme on next launch.
+ *
+ * So a retired name still loads — as its nearest surviving relative, matched on
+ * the thing that actually mattered about it: the accessibility pair keeps its
+ * AAA floor (and gains colour-blind-safe hues), the `vox-*` pair keeps its
+ * explanatory-journalism voice at the cut-out pair's stronger contrast, and
+ * every one of them stays on the side of the light/dark split it was on.
+ *
+ * This is the last resort, consulted only after built-ins, extension-registered
+ * themes and the user's own `themes/` directory have all been asked — so
+ * somebody who keeps a copy of `warm-light.json` of their own still gets theirs.
+ */
+const RETIRED_THEMES: Readonly<Record<string, string>> = {
+	"high-contrast-dark": "colorsafe-dark",
+	"high-contrast-light": "colorsafe-light",
+	"warm-dark": "colorsafe-dark",
+	"warm-light": "colorsafe-light",
+	"vox-dark": "vox-cutout-dark",
+	"vox-light": "vox-cutout-light",
+};
+
+/** The theme a retired name now stands for, or undefined if the name is not retired. */
+export function successorThemeFor(name: string): string | undefined {
+	const successor = RETIRED_THEMES[name];
+	return successor !== undefined && successor in getBuiltinThemes() ? successor : undefined;
+}
+
+/**
+ * The theme `name` actually names today: itself if anything still defines it,
+ * its successor if we retired it, and itself again if it is simply unknown —
+ * the caller's own not-found handling is the right answer for that.
+ */
+export function resolveThemeName(name: string): string {
+	if (getAvailableThemes().includes(name)) return name;
+	return successorThemeFor(name) ?? name;
+}
+
 export function getAvailableThemes(): string[] {
 	const themes = new Set<string>(Object.keys(getBuiltinThemes()));
 	const customThemesDir = getCustomThemesDir();
@@ -928,6 +1083,11 @@ function loadThemeJson(name: string): ThemeJson {
 	const customThemesDir = getCustomThemesDir();
 	const themePath = path.join(customThemesDir, `${name}.json`);
 	if (!fs.existsSync(themePath)) {
+		// Nobody defines this name any more. If we retired it ourselves, hand back
+		// what it was retired in favour of rather than letting the caller fall all
+		// the way back to `dark` — see RETIRED_THEMES.
+		const successor = successorThemeFor(name);
+		if (successor) return builtinThemes[successor];
 		throw new Error(`Theme not found: ${name}`);
 	}
 	const content = fs.readFileSync(themePath, "utf-8");
@@ -1056,7 +1216,11 @@ export function setRegisteredThemes(themes: Theme[]): void {
 }
 
 export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
-	const name = themeName ?? getDefaultTheme();
+	const requested = themeName ?? getDefaultTheme();
+	// A retired name loads as its successor (see RETIRED_THEMES), so record the
+	// successor as the current theme too — otherwise the picker would have no row
+	// to mark as current and `/theme` would report a name that is no longer real.
+	const name = resolveThemeName(requested);
 	currentThemeName = name;
 	try {
 		setGlobalTheme(loadTheme(name));
@@ -1071,7 +1235,8 @@ export function initTheme(themeName?: string, enableWatcher: boolean = false): v
 	}
 }
 
-export function setTheme(name: string, enableWatcher: boolean = false): { success: boolean; error?: string } {
+export function setTheme(requested: string, enableWatcher: boolean = false): { success: boolean; error?: string } {
+	const name = resolveThemeName(requested);
 	currentThemeName = name;
 	try {
 		setGlobalTheme(loadTheme(name));

@@ -7,6 +7,8 @@ import {
 	getThemeByName,
 	getThemeExportColors,
 	loadThemeFromPath,
+	resolveThemeName,
+	successorThemeFor,
 	type ThemeColor,
 } from "../src/modes/interactive/theme/theme.js";
 
@@ -15,17 +17,26 @@ import {
  * AAA (7:1) against every surface the TUI paints behind it, so a theme change
  * cannot quietly reintroduce a washed-out token.
  */
-const ACCESSIBLE_THEMES = [
-	"colorsafe-dark",
-	"colorsafe-light",
-	"high-contrast-dark",
-	"high-contrast-light",
-	"warm-dark",
-	"warm-light",
-] as const;
+const ACCESSIBLE_THEMES = ["colorsafe-dark", "colorsafe-light"] as const;
 
-const DARK_THEMES = ACCESSIBLE_THEMES.filter((name) => name.endsWith("-dark"));
-const LIGHT_THEMES = ACCESSIBLE_THEMES.filter((name) => name.endsWith("-light"));
+/**
+ * Everything the package ships, and which side of the split each one is on.
+ * Four and four: a picker is read at a glance or not at all, and a fourteen-row
+ * one was four opinions about contrast and three about journalism.
+ */
+const LIGHT_THEMES = ["colorsafe-light", "light", "solarized-light", "vox-cutout-light"] as const;
+const DARK_THEMES = ["colorsafe-dark", "dark", "solarized-dark", "vox-cutout-dark"] as const;
+const SHIPPED_THEMES = [...LIGHT_THEMES, ...DARK_THEMES].sort();
+
+/** Built-ins that were dropped, and the surviving theme each name now loads as. */
+const RETIRED_THEMES: Record<string, string> = {
+	"high-contrast-dark": "colorsafe-dark",
+	"high-contrast-light": "colorsafe-light",
+	"warm-dark": "colorsafe-dark",
+	"warm-light": "colorsafe-light",
+	"vox-dark": "vox-cutout-dark",
+	"vox-light": "vox-cutout-light",
+};
 
 /** AAA for body text. Large text would allow 4.5, but the TUI has none. */
 const MIN_CONTRAST = 7;
@@ -49,6 +60,55 @@ const BG_TOKENS = [
 ] as const;
 
 const AGENT_TOKENS = ["agent1", "agent2", "agent3", "agent4", "agent5", "agent6"];
+
+/**
+ * Sets a reader holds against themselves: six agent identities in one task
+ * panel, added vs removed vs context in one diff. Contrast says a token is
+ * readable and nothing about whether two tokens read as the *same* colour, so
+ * every theme is swept for collisions inside each of these.
+ */
+const MEANING_GROUPS: Record<string, string[]> = {
+	"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
+	"agent identity": [...AGENT_TOKENS, "mcp"],
+	syntax: [
+		"syntaxComment",
+		"syntaxKeyword",
+		"syntaxFunction",
+		"syntaxVariable",
+		"syntaxString",
+		"syntaxNumber",
+		"syntaxType",
+	],
+	"thinking levels": [
+		"thinkingOff",
+		"thinkingMinimal",
+		"thinkingLow",
+		"thinkingMedium",
+		"thinkingHigh",
+		"thinkingXhigh",
+	],
+	diff: ["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
+};
+
+/**
+ * The groups that also have to survive the 6x6x6 cube. The thinking ramp and the
+ * diff tones are deliberately close in hue — they are read as a sequence, not
+ * against each other — so they are not held to a distinct-index bar.
+ */
+const QUANTIZED_GROUPS: Record<string, string[]> = {
+	"core UI": MEANING_GROUPS["core UI"],
+	"agent identity": MEANING_GROUPS["agent identity"],
+	syntax: MEANING_GROUPS.syntax,
+};
+
+/**
+ * Tokens the default dark theme draws as rules and inactive chrome. They are
+ * meant to recede, so they answer to a separation bar rather than a text one.
+ */
+const DARK_DECORATIVE_TOKENS = new Set(["borderMuted", "mdHr", "thinkingOff"]);
+
+/** Tokens the default dark theme deliberately keeps neutral, carrying no meaning through hue. */
+const DARK_NEUTRAL_TOKENS = new Set(["mdQuoteBorder"]);
 
 const schema = JSON.parse(
 	readFileSync(new URL("../src/modes/interactive/theme/theme-schema.json", import.meta.url), "utf-8"),
@@ -258,6 +318,93 @@ const LIGHT_HUE_TOKENS = [
 	"mcp",
 ];
 
+/**
+ * The default dark theme.
+ *
+ * It shipped without a contrast sweep of its own — the accessible themes had the
+ * AAA one and `light` had an AA one, and `dark`, the theme most people actually
+ * run, had neither. It answers to the same AA bar `light` does: 4.5:1 for
+ * anything that is read, 2.8:1 for rules and inactive chrome that only have to
+ * separate from what is behind them.
+ */
+describe("default dark theme", () => {
+	const MIN_TEXT_CONTRAST = 4.5;
+	const MIN_DECORATIVE_CONTRAST = 2.8;
+	/** Below this a hue stops reading as a hue and reads as another shade of gray. */
+	const MIN_SATURATION = 0.2;
+
+	it("keeps every foreground legible on every surface it paints", () => {
+		const colors = getResolvedThemeColors("dark");
+		const backgrounds = surfaces("dark");
+
+		const failures: string[] = [];
+		for (const [token, value] of Object.entries(colors)) {
+			if ((BG_TOKENS as readonly string[]).includes(token)) continue;
+			if (token === "activeToolBg") continue;
+			if (CHIP_TOKENS.has(token)) continue;
+			const minimum = DARK_DECORATIVE_TOKENS.has(token) ? MIN_DECORATIVE_CONTRAST : MIN_TEXT_CONTRAST;
+			for (const [surface, background] of Object.entries(backgrounds)) {
+				const ratio = contrast(value, background);
+				if (ratio < minimum) {
+					failures.push(`${token} (${value}) on ${surface} (${background}): ${ratio.toFixed(2)}:1`);
+				}
+			}
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it("keeps meaning-carrying tokens saturated enough to read as color", () => {
+		const colors = getResolvedThemeColors("dark");
+		const washedOut = LIGHT_HUE_TOKENS.filter(
+			(token) => !DARK_NEUTRAL_TOKENS.has(token) && saturation(colors[token]) < MIN_SATURATION,
+		).map((token) => `${token} (${colors[token]}): ${(saturation(colors[token]) * 100).toFixed(0)}% saturation`);
+		expect(washedOut).toEqual([]);
+	});
+
+	it("keeps tokens that mean different things apart", () => {
+		const colors = getResolvedThemeColors("dark");
+		const collisions: string[] = [];
+		for (const [label, tokens] of Object.entries(MEANING_GROUPS)) {
+			for (let i = 0; i < tokens.length; i++) {
+				for (let j = i + 1; j < tokens.length; j++) {
+					const delta = difference(colors[tokens[i]], colors[tokens[j]]);
+					if (delta < MIN_DIFFERENCE) {
+						collisions.push(
+							`[${label}] ${tokens[i]} (${colors[tokens[i]]}) ~ ${tokens[j]} (${colors[tokens[j]]}): \u0394E ${delta.toFixed(1)}`,
+						);
+					}
+				}
+			}
+		}
+		expect(collisions).toEqual([]);
+	});
+
+	it("keeps colors that mean different things apart after the 256-color downgrade", () => {
+		const quantized = loadThemeFromPath(
+			new URL("../src/modes/interactive/theme/dark.json", import.meta.url).pathname,
+			"256color",
+		);
+		for (const [label, tokens] of Object.entries(MEANING_GROUPS)) {
+			if (label === "thinking levels" || label === "diff") continue;
+			const byIndex = new Map<string, string[]>();
+			for (const token of tokens) {
+				const index = quantized.getFgAnsi(token as ThemeColor);
+				byIndex.set(index, [...(byIndex.get(index) ?? []), token]);
+			}
+			const collisions = [...byIndex.values()].filter((members) => members.length > 1).map((m) => m.join(" = "));
+			expect(collisions, label).toEqual([]);
+		}
+	});
+
+	it("marks selection visibly against the page without lightening it into paper", () => {
+		const colors = getResolvedThemeColors("dark");
+		const pageBg = getThemeExportColors("dark").pageBg as string;
+		expect(pageBg).toBeDefined();
+		expect(contrast(colors.selectedBg, pageBg)).toBeGreaterThan(1.2);
+		expect(luminance(colors.selectedBg)).toBeLessThan(0.5);
+	});
+});
+
 describe("default light theme", () => {
 	/** AA for body text. The accessible light themes exist for the AAA bar. */
 	const MIN_TEXT_CONTRAST = 4.5;
@@ -294,28 +441,7 @@ describe("default light theme", () => {
 
 	it("keeps tokens that mean different things apart", () => {
 		const colors = getResolvedThemeColors("light");
-		const groups: Record<string, string[]> = {
-			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
-			"agent identity": [...AGENT_TOKENS, "mcp"],
-			syntax: [
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-			],
-			"thinking levels": [
-				"thinkingOff",
-				"thinkingMinimal",
-				"thinkingLow",
-				"thinkingMedium",
-				"thinkingHigh",
-				"thinkingXhigh",
-			],
-			diff: ["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
-		};
+		const groups = MEANING_GROUPS;
 
 		const collisions: string[] = [];
 		for (const [label, tokens] of Object.entries(groups)) {
@@ -337,19 +463,7 @@ describe("default light theme", () => {
 		// Apple Terminal, GNU screen and TERM=linux get the quantized palette, and
 		// two hues that round to the same cube index become the same color there.
 		// These groups are the ones a user reads against each other.
-		const groups = {
-			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
-			"agent identity": [...AGENT_TOKENS, "mcp"],
-			syntax: [
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-			],
-		};
+		const groups = QUANTIZED_GROUPS;
 		const quantized = loadThemeFromPath(
 			new URL("../src/modes/interactive/theme/light.json", import.meta.url).pathname,
 			"256color",
@@ -376,14 +490,63 @@ describe("default light theme", () => {
 	});
 });
 
-describe("accessible themes", () => {
-	it("ships three light and three dark themes alongside the originals", () => {
-		const available = getAvailableThemes();
-		expect(available).toEqual(expect.arrayContaining([...ACCESSIBLE_THEMES, "dark", "light"]));
-		expect(DARK_THEMES).toHaveLength(3);
-		expect(LIGHT_THEMES).toHaveLength(3);
+describe("the shipped roster", () => {
+	it("is eight themes, four light and four dark", () => {
+		// The built-in set is whatever `*.json` is in the theme directory, so this
+		// is the only thing standing between a roster decision and a stray file.
+		expect(getAvailableThemes()).toEqual(SHIPPED_THEMES);
+		expect(LIGHT_THEMES).toHaveLength(4);
+		expect(DARK_THEMES).toHaveLength(4);
 	});
 
+	it.each([...LIGHT_THEMES, ...DARK_THEMES])("%s sits on the side of the split it claims", (themeName) => {
+		const isLight = (LIGHT_THEMES as readonly string[]).includes(themeName);
+		const wrongSide = Object.entries(surfaces(themeName))
+			.map(([surface, background]) => [surface, luminance(background)] as const)
+			.filter(([, value]) => (isLight ? value <= 0.5 : value >= 0.5))
+			.map(([surface, value]) => `${surface}: ${value.toFixed(3)}`);
+		expect(wrongSide).toEqual([]);
+	});
+
+	it.each(Object.entries(RETIRED_THEMES))("loads %s as %s rather than dropping to the fallback", (retired, heir) => {
+		// Somebody has the retired name in their settings. Falling back to `dark`
+		// the way an unreadable theme file does would flip a light terminal to a
+		// dark theme on next launch, so a retired name resolves to its successor.
+		expect(getAvailableThemes()).not.toContain(retired);
+		expect(successorThemeFor(retired)).toBe(heir);
+		expect(resolveThemeName(retired)).toBe(heir);
+		expect(getResolvedThemeColors(retired)).toEqual(getResolvedThemeColors(heir));
+	});
+
+	it.each([...LIGHT_THEMES, ...DARK_THEMES])("%s defines every token and renders all of them", (themeName) => {
+		// Every theme, not just the accessible ones: a token a theme forgets is a
+		// crash the first time the component that draws it appears on screen.
+		const raw = JSON.parse(
+			readFileSync(new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url), "utf-8"),
+		) as { name: string; colors: Record<string, string | number> };
+		expect(raw.name).toBe(themeName);
+		expect(ALL_TOKENS.filter((token) => raw.colors[token] === undefined)).toEqual([]);
+
+		const theme = getThemeByName(themeName);
+		expect(theme).toBeDefined();
+		for (const token of ALL_TOKENS) {
+			if ((BG_TOKENS as readonly string[]).includes(token)) {
+				expect(() => theme?.bg(token as (typeof BG_TOKENS)[number], "x"), token).not.toThrow();
+			} else {
+				expect(() => theme?.fg(token as ThemeColor, "x"), token).not.toThrow();
+			}
+		}
+	});
+
+	it("leaves a name nobody retired alone", () => {
+		expect(successorThemeFor("dark")).toBeUndefined();
+		expect(successorThemeFor("a-theme-that-never-existed")).toBeUndefined();
+		expect(resolveThemeName("a-theme-that-never-existed")).toBe("a-theme-that-never-existed");
+		for (const shipped of SHIPPED_THEMES) expect(resolveThemeName(shipped)).toBe(shipped);
+	});
+});
+
+describe("accessible themes", () => {
 	it.each(ACCESSIBLE_THEMES)("%s defines every color token explicitly", (themeName) => {
 		const raw = JSON.parse(
 			readFileSync(new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url), "utf-8"),
@@ -436,28 +599,7 @@ describe("accessible themes", () => {
 		// agent identities in one task panel, added vs removed vs context in one
 		// diff — so a collision inside a group is a real misread.
 		const colors = getResolvedThemeColors(themeName);
-		const groups: Record<string, string[]> = {
-			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
-			"agent identity": [...AGENT_TOKENS, "mcp"],
-			syntax: [
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-			],
-			"thinking levels": [
-				"thinkingOff",
-				"thinkingMinimal",
-				"thinkingLow",
-				"thinkingMedium",
-				"thinkingHigh",
-				"thinkingXhigh",
-			],
-			diff: ["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
-		};
+		const groups = MEANING_GROUPS;
 		// colorsafe-dark's palette is full: six agent identities already spend the
 		// CVD-safe hues available at AAA on a dark ground, and every remaining
 		// candidate for `mcp` degenerates to near-white. Tracked as a known gap
@@ -667,28 +809,7 @@ describe.each(CUTOUT_THEMES)("%s", (themeName) => {
 
 	it("keeps tokens that mean different things apart", () => {
 		const colors = getResolvedThemeColors(themeName);
-		const groups: Record<string, string[]> = {
-			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
-			"agent identity": [...AGENT_TOKENS, "mcp"],
-			syntax: [
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-			],
-			"thinking levels": [
-				"thinkingOff",
-				"thinkingMinimal",
-				"thinkingLow",
-				"thinkingMedium",
-				"thinkingHigh",
-				"thinkingXhigh",
-			],
-			diff: ["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
-		};
+		const groups = MEANING_GROUPS;
 
 		const collisions: string[] = [];
 		for (const [label, tokens] of Object.entries(groups)) {
@@ -707,19 +828,7 @@ describe.each(CUTOUT_THEMES)("%s", (themeName) => {
 	});
 
 	it("keeps colors that mean different things apart after the 256-color downgrade", () => {
-		const groups = {
-			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
-			"agent identity": [...AGENT_TOKENS, "mcp"],
-			syntax: [
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-			],
-		};
+		const groups = QUANTIZED_GROUPS;
 		const quantized = loadThemeFromPath(
 			new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url).pathname,
 			"256color",
@@ -892,28 +1001,7 @@ describe.each(SOLARIZED_THEMES)("%s", (themeName) => {
 
 	it("keeps tokens that mean different things apart", () => {
 		const colors = getResolvedThemeColors(themeName);
-		const groups: Record<string, string[]> = {
-			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
-			"agent identity": [...AGENT_TOKENS, "mcp"],
-			syntax: [
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-			],
-			"thinking levels": [
-				"thinkingOff",
-				"thinkingMinimal",
-				"thinkingLow",
-				"thinkingMedium",
-				"thinkingHigh",
-				"thinkingXhigh",
-			],
-			diff: ["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
-		};
+		const groups = MEANING_GROUPS;
 
 		const collisions: string[] = [];
 		for (const [label, tokens] of Object.entries(groups)) {
@@ -932,19 +1020,7 @@ describe.each(SOLARIZED_THEMES)("%s", (themeName) => {
 	});
 
 	it("keeps colors that mean different things apart after the 256-color downgrade", () => {
-		const groups = {
-			"core UI": ["accent", "success", "error", "warning", "border", "customMessageLabel"],
-			"agent identity": [...AGENT_TOKENS, "mcp"],
-			syntax: [
-				"syntaxComment",
-				"syntaxKeyword",
-				"syntaxFunction",
-				"syntaxVariable",
-				"syntaxString",
-				"syntaxNumber",
-				"syntaxType",
-			],
-		};
+		const groups = QUANTIZED_GROUPS;
 		const quantized = loadThemeFromPath(
 			new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url).pathname,
 			"256color",
@@ -1224,12 +1300,129 @@ describe("session colour slots", () => {
 				failures.push(`slot ${slot} fill ${fill}: lightness ${lightness(fill).toFixed(2)}`);
 			}
 			// Whatever it ended up filled with, the name written on it has to read.
-			// Only asserted where the fill is ours to choose: a dark theme's palette
-			// is used as-is, so its ink contrast is whatever the palette gives.
-			if (isLight && contrast(fill, ink) < 4.5) {
+			// Held for every theme, not just the light ones: the fill is lifted
+			// wherever the palette entry cannot carry its ink, and a dark theme's
+			// mid-luminance hues are exactly where that bites.
+			if (contrast(fill, ink) < 4.5) {
 				failures.push(`slot ${slot} ink ${ink} on ${fill}: ${contrast(fill, ink).toFixed(2)}:1`);
 			}
 		}
+		expect(failures).toEqual([]);
+	});
+
+	/**
+	 * What a chip actually comes out as in `mode`: the fill the terminal is told
+	 * to paint, and the ink written on it. Both encodings are read, because a
+	 * 256-colour terminal is sent a cube index rather than an RGB triple.
+	 */
+	function chipsOf(themeName: string, mode: "truecolor" | "256color"): { fill: string; ink: string }[] {
+		const theme = loadThemeFromPath(
+			new URL(`../src/modes/interactive/theme/${themeName}.json`, import.meta.url).pathname,
+			mode,
+		);
+		const CUBE = [0, 95, 135, 175, 215, 255];
+		const hexOf = (params: string) => {
+			const parts = params.split(";").map(Number);
+			if (parts[1] === 2) {
+				return `#${parts
+					.slice(2, 5)
+					.map((c) => c.toString(16).padStart(2, "0"))
+					.join("")}`;
+			}
+			const index = parts[2];
+			const channels =
+				index >= 232
+					? [8 + (index - 232) * 10, 8 + (index - 232) * 10, 8 + (index - 232) * 10]
+					: [
+							CUBE[Math.floor((index - 16) / 36)],
+							CUBE[Math.floor(((index - 16) % 36) / 6)],
+							CUBE[(index - 16) % 6],
+						];
+			return `#${channels.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
+		};
+		return AGENT_TOKENS.map((token) => {
+			const styled = theme.fill(token as ThemeColor, " ");
+			const fill = /\x1b\[(48;[0-9;]+)m/.exec(styled);
+			const ink = /\x1b\[(38;[0-9;]+)m/.exec(styled);
+			expect(fill && ink, `${themeName} ${token} in ${mode}: not filled`).toBeTruthy();
+			return { fill: hexOf((fill as RegExpExecArray)[1]), ink: hexOf((ink as RegExpExecArray)[1]) };
+		});
+	}
+
+	/**
+	 * The floor a session's own name has to clear on its chip, per colour mode.
+	 *
+	 * A chip is the one place in the TUI where text is laid on a *palette* colour
+	 * rather than on a surface the theme designed to be written on, so nothing in
+	 * the sweeps above covers it — and it is the one piece of text that says which
+	 * of four open terminals you are typing into. Solarized Dark's violet and
+	 * magenta slots used to land at 4.5:1 and 4.3:1, under the floor for body text
+	 * in either ink, because the fill was taken from the palette untouched
+	 * whenever the theme was dark.
+	 *
+	 * The 256-colour floor is lower by design: see MIN_CHIP_INK_CONTRAST_QUANTIZED
+	 * in theme.ts — lifting a rounded fill any further moves it into a cube cell
+	 * one of its neighbours already occupies.
+	 */
+	const CHIP_INK_FLOOR = { truecolor: 5.5, "256color": 4.5 } as const;
+
+	it.each(getAvailableThemes())("%s writes a chip name that reads on every terminal", (themeName) => {
+		const failures: string[] = [];
+		for (const mode of ["truecolor", "256color"] as const) {
+			chipsOf(themeName, mode).forEach(({ fill, ink }, index) => {
+				const ratio = contrast(fill, ink);
+				if (ratio < CHIP_INK_FLOOR[mode]) {
+					failures.push(`${mode} slot ${index + 1}: ink ${ink} on ${fill} is ${ratio.toFixed(2)}:1`);
+				}
+			});
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it.each(getAvailableThemes())("%s keeps its six chips telling themselves apart", (themeName) => {
+		// A chip is recognised, not read — six sessions open at once is the case it
+		// exists for. Two slots that lift into the same swatch defeat that, and the
+		// 6×6×6 cube is where it happens: neighbouring hues round together.
+		const failures: string[] = [];
+		for (const mode of ["truecolor", "256color"] as const) {
+			const fills = chipsOf(themeName, mode).map((chip) => chip.fill);
+			for (let i = 0; i < fills.length; i++) {
+				for (let j = i + 1; j < fills.length; j++) {
+					if (fills[i] === fills[j]) {
+						failures.push(`${mode}: slot ${i + 1} and slot ${j + 1} are both ${fills[i]}`);
+					}
+				}
+			}
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it.each(getAvailableThemes())("%s fills each chip with the hue its own token carries", (themeName) => {
+		// The lift is allowed to move lightness and to pull saturation back off a
+		// highlighter; it is not allowed to change which colour the slot is. If it
+		// could, `/color green` would stop meaning the theme's green.
+		const colors = getResolvedThemeColors(themeName);
+		const failures: string[] = [];
+		chipsOf(themeName, "truecolor").forEach(({ fill }, index) => {
+			const token = colors[AGENT_TOKENS[index]];
+			// A gray token has no hue to preserve, and none of these palettes ship one.
+			if (saturation(token) < 0.05) return;
+			const drift = hueDistance(hue(fill), hue(token));
+			if (drift > 4) {
+				failures.push(`slot ${index + 1}: token ${token} filled with ${fill}, hue moved ${drift.toFixed(0)}°`);
+			}
+			// Lifting a deep ink at its own saturation is what turns `#035500` into
+			// `#09ff00`. A chip is a large field of flat colour, and a fluorescent
+			// one at that size is what people turn themes off over. A theme that
+			// picks such a colour *itself* keeps it — this is a bar on what the
+			// lift may invent, not on what a palette is allowed to contain.
+			const lifted = fill.toLowerCase() !== token.toLowerCase();
+			if (lifted && saturation(fill) > 0.9 && lightness(fill) > 0.45 && lightness(fill) < 0.62) {
+				failures.push(
+					`slot ${index + 1}: fill ${fill} is fluorescent (${(saturation(fill) * 100).toFixed(0)}% at L${lightness(fill).toFixed(2)})`,
+				);
+			}
+		});
 		expect(failures).toEqual([]);
 	});
 });
