@@ -7,6 +7,7 @@ import {
 	sessionChipFits,
 } from "../src/modes/interactive/components/session-chip.js";
 import {
+	getAvailableThemes,
 	getThemeByName,
 	initTheme,
 	sessionColorToken,
@@ -88,22 +89,11 @@ describe("session chip", () => {
 	});
 
 	it("can fill every slot in every shipped theme", () => {
-		for (const name of [
-			"dark",
-			"light",
-			"warm-dark",
-			"warm-light",
-			"vox-dark",
-			"vox-light",
-			"vox-cutout-dark",
-			"vox-cutout-light",
-			"solarized-dark",
-			"solarized-light",
-			"colorsafe-dark",
-			"colorsafe-light",
-			"high-contrast-dark",
-			"high-contrast-light",
-		]) {
+		// Read off the shipped set rather than listed by hand, so a theme added or
+		// retired is covered without this file having to hear about it.
+		const shipped = getAvailableThemes();
+		expect(shipped.length).toBeGreaterThanOrEqual(8);
+		for (const name of shipped) {
 			const themeInstance = getThemeByName(name);
 			expect(themeInstance, name).toBeDefined();
 			for (let slot = 1; slot <= 6; slot++) {

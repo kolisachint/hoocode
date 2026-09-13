@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **A session's own name is legible on its chip in every theme.** The chip is
+  filled with the session's palette colour and the name is written on top, and
+  the fill was taken from the palette untouched wherever the theme was dark.
+  Some palette entries sit in the luminance band where *neither* near-black nor
+  white reads on them: Solarized Dark's violet and magenta slots came out at
+  4.5:1 and 4.3:1 — under the floor for body text in either ink — so the one
+  piece of text that says which of four open terminals you are typing into was
+  the hardest thing on the input box to read. The fill is now measured rather
+  than guessed at, on every theme: it is moved only when the better of the two
+  inks cannot clear 5.5:1 on it, so a palette entry that already carries its ink
+  is used exactly as the theme wrote it. The ink itself is picked by measuring
+  both candidates against the fill instead of by a fixed luminance cutoff, and
+  it is measured against what the terminal will actually paint — on a
+  256-colour terminal the rounded fill, not the exact one it was asked for.
+- **A light theme's chip is its own colour again, not a highlighter.** Lifting a
+  deep ink at its own saturation turned `#00382d` into `#00ffcd` and `#035500`
+  into `#09ff00`. A lifted fill is now pulled back off full saturation, so the
+  hue survives and the fluorescence does not; a fill the theme is already happy
+  with is never touched.
+- **The default `dark` theme is held to the contrast floor `light` already
+  was.** It shipped without a sweep of its own, and 28 of its tokens were under
+  AA on at least one surface it paints — `borderMuted` at 1.38:1, `dim` at
+  1.94:1, `muted` at 2.82:1, `error` at 3.00:1. The selected row, the warning
+  notice and the export info band were also bright enough to eat the whole
+  contrast budget on their own. The three surfaces are pulled back, the gray
+  ramp and the blue, red, violet and comment inks are lifted, and every token
+  that is read now clears 4.5:1 on every surface with rules and inactive chrome
+  at 2.8:1. `syntaxNumber` and the thinking-level ramp were also collapsing into
+  their neighbours (ΔE under 11) and are re-cut to separate.
+
+### Changed
+
+- **Eight built-in themes instead of fourteen: four light, four dark.** `dark`,
+  `light`, `colorsafe-*`, `vox-cutout-*` and `solarized-*` stay. A picker is
+  read at a glance or not at all, and half the list was a second opinion on a
+  theme already in it. A settings file naming a retired theme keeps working —
+  `high-contrast-*` and `warm-*` load as `colorsafe-*`, `vox-*` as
+  `vox-cutout-*` — rather than dropping to the fallback theme and flipping a
+  light terminal to a dark one. A theme of your own under the retired name still
+  wins over the redirect.
+
 ## [0.5.63] - 2026-09-10
 
 ### Fixed

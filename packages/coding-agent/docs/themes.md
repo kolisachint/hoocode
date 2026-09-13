@@ -30,91 +30,73 @@ Disable discovery with `--no-themes`.
 
 ## Built-in Themes
 
+Eight themes ship: four light, four dark, one pair per job.
+
 | Theme | Background | Notes |
 |-------|------------|-------|
 | `dark` | dark | Default dark theme |
 | `light` | light | Default light theme |
-| `high-contrast-dark` | black | Maximum contrast, bright saturated hues |
-| `high-contrast-light` | white | Maximum contrast, deep saturated hues |
-| `warm-dark` | warm near-black | Low-glare amber/sand palette, no harsh blues |
-| `warm-light` | warm paper | Dark ink on cream, less glare than pure white |
-| `colorsafe-dark` | dark | Okabe-Ito hues, no red/green pairs |
-| `colorsafe-light` | white | Okabe-Ito hues, no red/green pairs |
-| `vox-dark` | newsprint black | Explanatory-journalism yellow; `warning` is orange |
-| `vox-light` | cream | Ink on paper; yellow survives as highlight and brand chip |
-| `vox-cutout-light` | cream / Solarized Light | Paper cut-outs: bold flat stocks, cut edges, AAA ink |
-| `vox-cutout-dark` | Solarized Dark | The same cut-outs on newsprint black; AAA ink |
-| `solarized-light` | Solarized Light | The canonical sixteen colors on `base3`; low, selective contrast |
-| `solarized-dark` | Solarized Dark | The same sixteen on `base03`; the accents do not change |
-
-The six accessible themes are `high-contrast-*`, `warm-*`, and `colorsafe-*`; the
-`vox-*` and `solarized-*` themes are style themes and are described separately
-below. The six are built
-for low vision. Every color they
-draw clears **WCAG AAA (7:1)** against every surface the TUI paints behind it —
-the page, selected rows, user messages, and all three tool-box states — and none
-of them defer to the terminal's default foreground, so contrast does not depend
-on your terminal's own palette. `test/theme-contrast.test.ts` enforces this, so
-a future edit cannot quietly wash one of them out.
+| `colorsafe-dark` | dark | Okabe-Ito hues, no red/green pairs; AAA |
+| `colorsafe-light` | white | Okabe-Ito hues, no red/green pairs; AAA |
+| `vox-cutout-dark` | Solarized Dark | Paper cut-outs on newsprint black: bold flat stocks, cut edges, AAA ink |
+| `vox-cutout-light` | cream / Solarized Light | The same cut-outs on paper; AAA ink |
+| `solarized-dark` | Solarized Dark | The canonical sixteen colors on `base03`; low, selective contrast |
+| `solarized-light` | Solarized Light | The same sixteen on `base3`; the accents do not change |
 
 Picking between them:
 
-- **Contrast above all** → `high-contrast-dark` / `high-contrast-light`.
-- **Bright screens hurt, or you read for long stretches** → `warm-dark` /
-  `warm-light`. Same 7:1 floor, warmer and less glaring.
-- **Red/green are hard to tell apart** → `colorsafe-dark` / `colorsafe-light`.
-  Success and error are teal and orange, and no pair of tokens relies on a
-  red-versus-green distinction.
+- **Just work** → `dark` / `light`. Every token that is read clears **WCAG AA
+  (4.5:1)** on every surface the TUI paints behind it; rules and inactive chrome
+  clear 2.8:1.
+- **Low vision** → `colorsafe-dark` / `colorsafe-light`. Everything they draw
+  clears **WCAG AAA (7:1)** on every surface, and nothing defers to the
+  terminal's default foreground, so contrast does not depend on your terminal's
+  own palette. Success and error are teal and orange, and no pair of tokens
+  relies on a red-versus-green distinction — so they double as the colour-blind
+  option.
+- **Bold flat colour, still AAA** → `vox-cutout-dark` / `vox-cutout-light`.
+- **Solarized, as designed** → `solarized-dark` / `solarized-light`.
+
+`test/theme-contrast.test.ts` enforces each of those floors, theme by theme, so
+a future edit cannot quietly wash one of them out.
 
 Set the matching terminal background for the theme you pick (black-ish for the
 dark themes, white-ish for the light ones) — hoocode colors the text, but the
 canvas behind it belongs to your terminal.
 
-### The `vox-*` pair
+### Retired themes
 
-Explanatory-journalism styling: one loud yellow used sparingly, everything else
-newsprint-quiet. The yellow is reserved for four roles — `accent`, `mdHeading`,
-`selectedBg`, and `borderAccent` — and it never carries a status. That forces one
-departure from the other themes: **`warning` is orange, not yellow**, because a
-yellow `◐` or a yellow context gauge stops reading as a signal when yellow is
-already the accent.
+`high-contrast-dark`, `high-contrast-light`, `warm-dark`, `warm-light`,
+`vox-dark` and `vox-light` no longer ship. A settings file that still names one
+keeps working — the name loads as its nearest surviving relative rather than
+dropping to the fallback theme, so a light terminal does not flip to a dark
+theme on the next launch:
 
-In `vox-light` the accent drops to a deep amber, since a yellow bright enough to
-read as a highlight is not legible as text on cream. The brand yellow survives in
-two places: the selected-row background, and the footer's brand chip (see
-`brandBg`/`brandText` below).
+| Retired | Loads as |
+|---------|----------|
+| `high-contrast-dark`, `warm-dark` | `colorsafe-dark` |
+| `high-contrast-light`, `warm-light` | `colorsafe-light` |
+| `vox-dark` | `vox-cutout-dark` |
+| `vox-light` | `vox-cutout-light` |
 
-These two are **AA, not AAA** — they are not covered by
-`test/theme-contrast.test.ts`. Every text token clears 4.5:1 on every surface it
-paints, rules and inactive chrome clear 2.8:1, no two tokens that mean different
-things are closer than ΔE 11 (CIEDE2000), and the selection tint separates from
-the page. If you need a guaranteed 7:1 floor, use one of the six accessible
-themes.
-
-Two deliberate departures from the standard the default `light` theme is held to:
-
-- **Rules are neutral, not saturated.** `border`, `mdHr`, and the code/quote
-  borders are warm grays rather than a saturated hue. A rule carries no meaning
-  through color, and newsprint separators are the point of the theme. They still
-  have to be *visible* — all of them clear the 2.8:1 decorative floor.
-- **`brandText` is exempt from the surface sweep.** It only ever renders on
-  `brandBg`, never on a page surface, so measuring it against the page is
-  meaningless. On its own chip it sits at 14.8:1.
+A theme of your own in `~/.hoocode/themes/` wins over the redirect, so keeping a
+copy of a retired file under its old name brings it back exactly as it was.
 
 ### The `vox-cutout-*` pair
 
-The same explanatory-journalism voice cut for paper rather than newsprint: flat
-stocks pasted onto the page, a scissor-cut rule around them, poster inks printed
-on top. Unlike the `vox-*` pair it **is** AAA, and
-`test/theme-contrast.test.ts` enforces it.
+Explanatory-journalism styling cut for paper rather than newsprint: flat stocks
+pasted onto the page, a scissor-cut rule around them, poster inks printed on top.
+One loud yellow, used sparingly and never for a status — which forces one
+departure from the other themes: **`warning` is orange, not yellow**, because a
+yellow `◐` or a yellow context gauge stops reading as a signal when yellow is
+already the accent. The pair is AAA, and `test/theme-contrast.test.ts` enforces
+it.
 
 `vox-cutout-light` is cut for a cream page (Solarized Light, or anything near
-`#fdf6e3`); `vox-cutout-dark` is cut for Solarized Dark. Two things separate
-them from `vox-light`:
+`#fdf6e3`); `vox-cutout-dark` is cut for Solarized Dark. Two things define them:
 
-- **The surfaces are stock, not washes.** `vox-light` tints its backgrounds a
-  degree or two off white — on a cream terminal such as Solarized Light its user
-  message sits ΔE 1.0 from the page, which is to say invisible. Every surface
+- **The surfaces are stock, not washes.** A background tinted a degree or two off
+  white disappears on a cream terminal such as Solarized Light. Every surface
   here is a flat colored sheet held at least ΔE 10 clear of both Solarized
   grounds (`base3` `#fdf6e3` and `base2` `#eee8d5`), so a message block or tool
   box reads as a piece of paper laid on the page rather than a faint tint of it.
@@ -125,14 +107,20 @@ them from `vox-light`:
   selected row is the brightest surface any text has to survive, and AAA on it
   puts a hard ceiling on every foreground in the palette — each ink sits within a
   hair of that ceiling at ~7.2:1, as dark as a printed ink and no darker. That
-  ceiling is why the accent is a deep gold rather than the amber `vox-light`
-  uses: an amber light enough to read as yellow cannot clear 7:1 on its own
-  highlight band. Bold flat color and AAA pull against each other, and this theme
-  spends the whole budget on flat color.
+  ceiling is why the accent is a deep gold rather than a bright amber: an amber
+  light enough to read as yellow cannot clear 7:1 on its own highlight band. Bold
+  flat color and AAA pull against each other, and this theme spends the whole
+  budget on flat color.
 
-It keeps `vox-light`'s two departures — rules are neutral rather than saturated,
-and `brandText` is measured only on its own chip — and adds the vox rule that
-`warning` is orange, never yellow.
+Two deliberate departures from the standard the default `light` theme is held to:
+
+- **Rules are neutral, not saturated.** `border`, `mdHr`, and the code/quote
+  borders are warm grays rather than a saturated hue. A rule carries no meaning
+  through color, and newsprint separators are the point of the theme. They still
+  have to be *visible* — all of them clear the 2.8:1 decorative floor.
+- **`brandText` is exempt from the surface sweep.** It only ever renders on
+  `brandBg`, never on a page surface, so measuring it against the page is
+  meaningless. On its own chip it sits at 14.8:1.
 
 On the dark side the same rules run in reverse: AAA on a dark ground is a
 *floor*, and Solarized's `base02` is the lighter of its two stops, so it is what
@@ -174,7 +162,7 @@ is not Solarized, so what the tests enforce is the contrast Solarized actually
 has, tier by tier:
 **content inks 3.2:1, accents 2.3:1, the comment tone 1.9:1**, on every surface
 either theme paints *and* on both Solarized terminal stops. If you want a
-guaranteed floor rather than the original, use one of the six accessible themes.
+guaranteed floor rather than the original, use `colorsafe-dark` / `colorsafe-light`.
 
 Two places where the TUI needs more than the palette ships:
 
@@ -428,9 +416,9 @@ themes keep working.
 
 `warningBg` is a surface, not text: `warning` renders the title on it and `muted`
 the body, so it wants a low-chroma tint of the theme's warning hue rather than the
-warning color itself. Every built-in sets it, and all six accessible themes keep
-every foreground at AAA against it (`test/theme-contrast.test.ts` sweeps it with
-the other surfaces).
+warning color itself. Every built-in sets it, and the AAA themes keep every
+foreground at AAA against it (`test/theme-contrast.test.ts` sweeps it with the
+other surfaces).
 
 `agent1`–`agent6` double as the session colour slots, which `/color` addresses by
 name: slot 1 is `cyan`, then `purple`, `yellow`, `magenta`, `green`, `blue`. What
@@ -531,7 +519,7 @@ its own fill instead.
 `brandBg` and `brandText` are honored **only as a pair** — set both, or neither.
 They exist for light themes, where a brand hue vivid enough to be recognizable is
 usually illegible as text on a light canvas but reads well inside a filled chip.
-`vox-light` is the only built-in that sets them.
+`solarized-light` and the `vox-cutout-*` pair set them.
 
 ```json
 {
@@ -607,15 +595,15 @@ built-in accessible themes are verified.
 See the built-in themes:
 - [dark.json](../src/modes/interactive/theme/dark.json)
 - [light.json](../src/modes/interactive/theme/light.json)
-- [high-contrast-dark.json](../src/modes/interactive/theme/high-contrast-dark.json)
-- [high-contrast-light.json](../src/modes/interactive/theme/high-contrast-light.json)
-- [warm-dark.json](../src/modes/interactive/theme/warm-dark.json)
-- [warm-light.json](../src/modes/interactive/theme/warm-light.json)
 - [colorsafe-dark.json](../src/modes/interactive/theme/colorsafe-dark.json)
 - [colorsafe-light.json](../src/modes/interactive/theme/colorsafe-light.json)
+- [vox-cutout-dark.json](../src/modes/interactive/theme/vox-cutout-dark.json)
+- [vox-cutout-light.json](../src/modes/interactive/theme/vox-cutout-light.json)
+- [solarized-dark.json](../src/modes/interactive/theme/solarized-dark.json)
+- [solarized-light.json](../src/modes/interactive/theme/solarized-light.json)
 
 Preview any of them, with per-token contrast ratios:
 
 ```bash
-npx tsx test/test-theme-colors.ts theme warm-dark
+npx tsx test/test-theme-colors.ts theme colorsafe-dark
 ```
