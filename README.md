@@ -9,9 +9,9 @@
 
 ---
 
-HooCode is a terminal coding agent that keeps you in control: every edit and
-shell command passes through a permission gate, and the agent is scoped by an
-explicit mode (Ask · Plan · Build · Debug) instead of one do-everything prompt.
+HooCode is a deterministic terminal coding agent — four scoped modes
+(Ask · Plan · Build · Debug), 25+ providers, hybrid search, and one-click
+plugins in a single binary. Nothing applies without your approval.
 
 ```bash
 npm install -g @kolisachint/hoocode-agent
