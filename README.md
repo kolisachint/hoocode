@@ -20,7 +20,7 @@ hoocode --help
 
 ## Demo
 
-https://github.com/user-attachments/assets/a6dcf3d5-ea4d-42ee-afdd-45d8df3938ea
+https://github.com/user-attachments/assets/3fd55892-c4be-4d78-86ce-d14cbe7be644
 
 ## Docs
 
