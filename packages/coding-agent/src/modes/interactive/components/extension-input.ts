@@ -2,10 +2,9 @@
  * Simple text input component for extensions.
  */
 
-import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@kolisachint/hoocode-tui";
-import { theme } from "../theme/theme.js";
+import { type Focusable, getKeybindings, Input, type TUI } from "@kolisachint/hoocode-tui";
 import { CountdownTimer } from "./countdown-timer.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { keyHint } from "./keybinding-hints.js";
 
 export interface ExtensionInputOptions {
@@ -13,11 +12,10 @@ export interface ExtensionInputOptions {
 	timeout?: number;
 }
 
-export class ExtensionInputComponent extends Container implements Focusable {
+export class ExtensionInputComponent extends InputFrame implements Focusable {
 	private input: Input;
 	private onSubmitCallback: (value: string) => void;
 	private onCancelCallback: () => void;
-	private titleText: Text;
 	private baseTitle: string;
 	private countdown: CountdownTimer | undefined;
 
@@ -38,33 +36,25 @@ export class ExtensionInputComponent extends Container implements Focusable {
 		onCancel: () => void,
 		opts?: ExtensionInputOptions,
 	) {
-		super();
+		super({ title });
 
 		this.onSubmitCallback = onSubmit;
 		this.onCancelCallback = onCancel;
 		this.baseTitle = title;
 
-		this.addChild(new DynamicBorder());
-
-		this.titleText = new Text(theme.fg("accent", title), 1, 0);
-		this.addChild(this.titleText);
-
 		if (opts?.timeout && opts.timeout > 0 && opts.tui) {
+			// The countdown rides the title in the border, where the title now is.
 			this.countdown = new CountdownTimer(
 				opts.timeout,
 				opts.tui,
-				(s) => this.titleText.setText(theme.fg("accent", `${this.baseTitle} (${s}s)`)),
+				(s) => this.setTitle(`${this.baseTitle} (${s}s)`),
 				() => this.onCancelCallback(),
 			);
 		}
 
 		this.input = new Input();
 		this.addChild(this.input);
-		this.addChild(new Spacer(1));
-		this.addChild(
-			new Text(`${keyHint("tui.select.confirm", "submit")}  ${keyHint("tui.select.cancel", "cancel")}`, 1, 0),
-		);
-		this.addChild(new DynamicBorder());
+		this.setHint(`${keyHint("tui.select.confirm", "submit")}  ${keyHint("tui.select.cancel", "cancel")}`);
 	}
 
 	handleInput(keyData: string): void {

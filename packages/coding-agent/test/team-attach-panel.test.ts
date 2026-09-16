@@ -153,6 +153,28 @@ describe("TeamAttachPanelComponent", () => {
 		panel.dispose();
 	});
 
+	test("an embedded gate is banded off, and the panel still closes itself", () => {
+		// The gate used to draw its own frame inside this panel and the panel
+		// leaned on it to close: drop the gate's rules without giving the panel
+		// its own and the whole panel is left hanging open at the bottom.
+		const { connection } = fakeConnection();
+		const panel = new TeamAttachPanelComponent("coder", connection, { onDetach: () => {}, onNudge: () => {} });
+		void panel.presentApproval(
+			{ taskId: "t1", question: "Deploy to production?", options: ["yes", "no"], role: "coder" },
+			new AbortController().signal,
+		);
+
+		const lines = panel.render(80).map(stripAnsi);
+		expect(lines.at(-1), "the panel closes itself").toBe("─".repeat(80));
+		// A rule above the gate too, so it reads as its own band in the stream.
+		const gateStart = lines.findIndex((line) => line.includes("INPUT NEEDED"));
+		expect(gateStart).toBeGreaterThan(0);
+		expect(lines[gateStart - 1]).toBe("─".repeat(80));
+		// And the gate draws no frame of its own inside this one.
+		expect(lines.some((line) => line.includes("┌") || line.includes("│"))).toBe(false);
+		panel.dispose();
+	});
+
 	test("presentApproval embeds the gate and resolves with the picked option", async () => {
 		const { connection } = fakeConnection();
 		let detached = 0;

@@ -125,7 +125,9 @@ export class LoginController {
 		const apiKeyLabel = "Use an API key";
 		this.deps.showSelector((done) => {
 			const selector = new ExtensionSelectorComponent(
-				"Select authentication method:",
+				// Names the pane in its top border, so it reads as a label rather
+				// than the instruction-with-a-colon it was as a row inside.
+				"authentication method",
 				[subscriptionLabel, apiKeyLabel],
 				(option) => {
 					done();

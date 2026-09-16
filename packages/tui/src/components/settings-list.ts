@@ -159,7 +159,10 @@ export class SettingsList implements Component {
 			// Calculate space for value
 			const separator = "  ";
 			const usedWidth = prefixWidth + maxLabelWidth + visibleWidth(separator);
-			const valueMaxWidth = width - usedWidth - 2;
+			// What the label column leaves, to the last cell: the row is truncated
+			// to `width` below and a selected row is padded out to it, so holding
+			// two columns back only shortened the value for nothing.
+			const valueMaxWidth = width - usedWidth;
 
 			const valueText = this.theme.value(truncateToWidth(item.currentValue, valueMaxWidth, ""), isSelected);
 			// The suffix takes what the value left behind, so a narrow terminal drops
@@ -190,7 +193,9 @@ export class SettingsList implements Component {
 		const selectedItem = displayItems[this.selectedIndex];
 		if (selectedItem?.description) {
 			lines.push("");
-			const wrappedDesc = wrapTextWithAnsi(selectedItem.description, width - 4);
+			// Two columns of indent, so two off the wrap — not four. The extra pair
+			// was a right margin nothing needed.
+			const wrappedDesc = wrapTextWithAnsi(selectedItem.description, width - 2);
 			for (const line of wrappedDesc) {
 				lines.push(this.theme.description(`  ${line}`));
 			}

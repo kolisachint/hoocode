@@ -1,3 +1,4 @@
+import { visibleWidth } from "@kolisachint/hoocode-tui";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
 import { VoicePanel } from "../src/modes/interactive/voice/voice-panel.js";
@@ -58,6 +59,22 @@ describe("VoicePanel", () => {
 		expect(visible.slice(1, 3)).toMatch(/[▂▃▄▅▆▇█]{2}/);
 		expect(visible).not.toMatch(/ {4,}/);
 		expect(visible).toContain("▁▁▁");
+	});
+
+	it("runs the track to the last cell, spending only the panel's own left gutter", () => {
+		// The track used to stop two columns short: one for the gutter `render`
+		// prints, and one more for nothing, leaving a notch of dead page at the
+		// right edge of every capture.
+		for (const width of [120, 80, 60, 40, 20, 8]) {
+			panel?.dispose();
+			panel = new VoicePanel(undefined, "ctrl+r cancel");
+			panel.startListening();
+			panel.pushLevel(0.5);
+			const lines = panel.render(width).map((line) => line.replace(/\x1b\[[0-9;]*m/g, ""));
+			const wave = lines.find((line) => /[▁▂▃▄▅▆▇█]/.test(line));
+			expect(wave, `@${width}: no waveform row`).toBeDefined();
+			expect(visibleWidth(wave ?? ""), `@${width}`).toBe(width);
+		}
 	});
 
 	it("shows a determinate download bar while the binary fetches", () => {

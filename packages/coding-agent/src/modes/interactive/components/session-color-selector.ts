@@ -1,7 +1,7 @@
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@kolisachint/hoocode-tui";
+import { type SelectItem, SelectList, type SelectListLayoutOptions } from "@kolisachint/hoocode-tui";
 import { SESSION_COLOR_SLOTS, sessionColorName } from "../../../core/session-identity.js";
 import { getSelectListTheme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { renderSessionChip } from "./session-chip.js";
 
 const COLOR_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -16,7 +16,7 @@ const COLOR_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
  * the slots have no useful names of their own: which of six hues reads best in
  * this theme on this terminal is a thing you look at, not a thing you can be told.
  */
-export class SessionColorSelectorComponent extends Container {
+export class SessionColorSelectorComponent extends InputFrame {
 	private selectList: SelectList;
 
 	constructor(
@@ -26,7 +26,7 @@ export class SessionColorSelectorComponent extends Container {
 		onCancel: () => void,
 		onPreview?: (slot: number) => void,
 	) {
-		super();
+		super({ title: "session colour" });
 
 		const items: SelectItem[] = [];
 		for (let slot = 1; slot <= SESSION_COLOR_SLOTS; slot++) {
@@ -40,8 +40,6 @@ export class SessionColorSelectorComponent extends Container {
 				description: slot === currentSlot ? `${name} · current` : name,
 			});
 		}
-
-		this.addChild(new DynamicBorder());
 
 		this.selectList = new SelectList(items, items.length, getSelectListTheme(), COLOR_SELECT_LIST_LAYOUT);
 
@@ -63,7 +61,6 @@ export class SessionColorSelectorComponent extends Container {
 		}
 
 		this.addChild(this.selectList);
-		this.addChild(new DynamicBorder());
 	}
 
 	getSelectList(): SelectList {

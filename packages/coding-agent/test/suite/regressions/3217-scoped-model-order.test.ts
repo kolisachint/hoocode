@@ -97,8 +97,10 @@ describe("issue #3217 scoped model ordering", () => {
 		const orderedIds = renderedLines.slice(0, 3).map((line) => {
 			// Derived from the shared cursor rather than spelled out: this stripped a
 			// hardcoded → for one commit after every picker moved to SELECT_CURSOR,
-			// which left the glyph riding along in the extracted id.
-			const trimmed = line.trim();
+			// which left the glyph riding along in the extracted id. The picker
+			// wears the prompt's frame, so the row's own text sits between its
+			// side borders.
+			const trimmed = line.replace(/^\s*│/, "").replace(/│\s*$/, "").trim();
 			const withoutCursor = trimmed.startsWith(SELECT_CURSOR) ? trimmed.slice(SELECT_CURSOR.length) : trimmed;
 			const [modelId] = withoutCursor.split(" [");
 			return modelId?.trim() ?? "";

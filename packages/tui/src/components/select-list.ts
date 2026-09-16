@@ -173,7 +173,11 @@ export class SelectList implements Component {
 			const truncatedValueWidth = visibleWidth(truncatedValue);
 			const spacing = " ".repeat(Math.max(1, effectivePrimaryColumnWidth - truncatedValueWidth));
 			const descriptionStart = prefixWidth + truncatedValueWidth + spacing.length;
-			const remainingWidth = width - descriptionStart - 2; // -2 for safety
+			// Everything to the right of the value column, to the last cell. The
+			// description is truncated to exactly this and a selected row is
+			// padded out to `width`, so there is nothing for a safety margin to
+			// save — it only threw two columns of every picker row away.
+			const remainingWidth = width - descriptionStart;
 
 			if (remainingWidth > MIN_DESCRIPTION_WIDTH) {
 				const truncatedDesc = truncateToWidth(descriptionSingleLine, remainingWidth, "");
@@ -186,7 +190,9 @@ export class SelectList implements Component {
 			}
 		}
 
-		const maxWidth = width - prefixWidth - 2;
+		// Same as above: the value is truncated to what is left after the cursor,
+		// and that reaches the last cell.
+		const maxWidth = width - prefixWidth;
 		const truncatedValue = this.truncatePrimary(item, isSelected, maxWidth, maxWidth);
 		if (isSelected) {
 			return this.renderSelected(`${prefix}${truncatedValue}`, width);

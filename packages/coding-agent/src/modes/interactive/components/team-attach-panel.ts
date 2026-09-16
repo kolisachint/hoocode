@@ -152,10 +152,13 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 				options: approval.options.map((label) => ({ label })),
 				allowCustom: true,
 			};
+			// This panel is already a framed surface with its own header and rule,
+			// so the gate inside it draws no frame of its own.
 			const component = new AskOptionsComponent(
 				[question],
 				(answers) => settle(answers[0]),
 				() => settle(undefined),
+				{ framed: false },
 			);
 			component.focused = this.focused;
 			this.approval = { component, settle };
@@ -350,14 +353,23 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 		if (this.partial.length > 0) {
 			wrapped.push(...wrapTextWithAnsi(this.styledPartial(), inner));
 		}
-		const keep = Math.max(0, bodyBudget - approvalLines.length);
+		// The gate is banded off from the stream by a rule above and below it, and
+		// both count against the budget the same way the gate's own rows do.
+		const gateBands = approvalLines.length > 0 ? 2 : 0;
+		const keep = Math.max(0, bodyBudget - approvalLines.length - gateBands);
 		const body = keep > 0 ? wrapped.slice(-keep) : [];
 		if (body.length === 0 && approvalLines.length === 0) {
 			body.push(theme.fg("dim", "waiting for events…"));
 		}
 
-		// The gate brings its own accent rules, so it closes the panel itself.
-		if (approvalLines.length > 0) return [header, rule, ...body, ...approvalLines];
+		// The gate's band is accented, not muted: it is the one part of this
+		// panel that is waiting on the reader. The rules are the panel's own —
+		// the gate used to draw them, and drew a second frame inside this one to
+		// do it.
+		if (approvalLines.length > 0) {
+			const gateRule = theme.fg("borderAccent", "─".repeat(inner));
+			return [header, rule, ...body, gateRule, ...approvalLines, gateRule];
+		}
 		return [header, rule, ...body, rule];
 	}
 }

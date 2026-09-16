@@ -210,7 +210,10 @@ export class VoicePanel implements Component {
 	 * history exceeds the width it scrolls, keeping the newest samples visible.
 	 */
 	private renderWaveform(width: number): string {
-		const cells = Math.max(1, width - 2);
+		// One column for the panel's own left gutter, which `render` prints; the
+		// track then runs from there to the last cell. Holding a second column
+		// back left a notch of dead page at the right edge of every capture.
+		const cells = Math.max(1, width - 1);
 		const recent = this.levels.slice(-cells);
 		const wave = recent.map(levelGlyph).join("");
 		const track = "▁".repeat(Math.max(0, cells - recent.length));

@@ -52,7 +52,9 @@ describe("AskOptionsComponent", () => {
 		);
 		const out = stripAnsi(c.render(80).join("\n"));
 
-		expect(out).toContain("INPUT NEEDED");
+		// Standing on its own the pane wears the prompt's frame, and its name
+		// rides the top border where the session chip rides the prompt's.
+		expect(out).toContain("input needed");
 		expect(out).toContain("1/2 where should retry logic live?");
 		expect(out).toContain("the http client is shared by every provider adapter");
 		expect(out).toContain("1 hoocode-ai");

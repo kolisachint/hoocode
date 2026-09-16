@@ -1659,8 +1659,17 @@ export function getPaperShadowFn(): ((text: string) => string) | undefined {
 	return theme.has("paperShadow") ? (text: string) => theme.fg("paperShadow", text) : undefined;
 }
 
-/** How far a sheet holds back from the right margin, leaving a gutter of page. */
-export const PAPER_INSET = 3;
+/**
+ * How far a sheet holds back from the right margin, leaving a gutter of page.
+ *
+ * One column, which is the whole of what the treatment needs and no more. The
+ * gutter exists so the sheet has a right edge to show and somewhere to put the
+ * shadow's column; the column is `▌`, a *left* half-block, so it paints the
+ * sheet's edge in the left half of that one cell and leaves the right half as
+ * page. Three columns bought nothing the first one does not already give and
+ * cost two columns of every message, on every line, forever.
+ */
+export const PAPER_INSET = 1;
 
 /**
  * Give a filled block the paper treatment: a gutter of page at its right, and a

@@ -7,22 +7,13 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import {
-	Container,
-	Editor,
-	type EditorOptions,
-	type Focusable,
-	getKeybindings,
-	Spacer,
-	Text,
-	type TUI,
-} from "@kolisachint/hoocode-tui";
+import { Editor, type EditorOptions, type Focusable, getKeybindings, type TUI } from "@kolisachint/hoocode-tui";
 import type { KeybindingsManager } from "../../../core/keybindings.js";
-import { getEditorTheme, theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { getEditorTheme } from "../theme/theme.js";
+import { InputFrame } from "./input-frame.js";
 import { keyHint } from "./keybinding-hints.js";
 
-export class ExtensionEditorComponent extends Container implements Focusable {
+export class ExtensionEditorComponent extends InputFrame implements Focusable {
 	private editor: Editor;
 	private onSubmitCallback: (value: string) => void;
 	private onCancelCallback: () => void;
@@ -47,21 +38,16 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		onCancel: () => void,
 		options?: EditorOptions,
 	) {
-		super();
+		super({ title });
 
 		this.tui = tui;
 		this.keybindings = keybindings;
 		this.onSubmitCallback = onSubmit;
 		this.onCancelCallback = onCancel;
 
-		// Add top border
-		this.addChild(new DynamicBorder());
-
-		// Add title
-		this.addChild(new Text(theme.fg("accent", title), 1, 0));
-
-		// Create editor
-		this.editor = new Editor(tui, getEditorTheme(), options);
+		// The frame already rules this pane, so the editor inside it draws no
+		// border of its own — two boxes one column apart is a picture frame.
+		this.editor = new Editor(tui, getEditorTheme(), { ...options, border: "none" });
 		if (prefill) {
 			this.editor.setText(prefill);
 		}
@@ -71,21 +57,15 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 		};
 		this.addChild(this.editor);
 
-		this.addChild(new Spacer(1));
-
-		// Add hint
 		const hasExternalEditor = !!(process.env.VISUAL || process.env.EDITOR);
-		const hint =
+		this.setHint(
 			keyHint("tui.select.confirm", "submit") +
-			"  " +
-			keyHint("tui.input.newLine", "newline") +
-			"  " +
-			keyHint("tui.select.cancel", "cancel") +
-			(hasExternalEditor ? `  ${keyHint("app.editor.external", "external editor")}` : "");
-		this.addChild(new Text(hint, 1, 0));
-
-		// Add bottom border
-		this.addChild(new DynamicBorder());
+				"  " +
+				keyHint("tui.input.newLine", "newline") +
+				"  " +
+				keyHint("tui.select.cancel", "cancel") +
+				(hasExternalEditor ? `  ${keyHint("app.editor.external", "external editor")}` : ""),
+		);
 	}
 
 	handleInput(keyData: string): void {

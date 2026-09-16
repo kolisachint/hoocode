@@ -1,6 +1,6 @@
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@kolisachint/hoocode-tui";
+import { type SelectItem, SelectList, type SelectListLayoutOptions } from "@kolisachint/hoocode-tui";
 import { getAvailableThemes, getSelectListTheme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 
 const THEME_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 12,
@@ -10,7 +10,7 @@ const THEME_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 /**
  * Component that renders a theme selector
  */
-export class ThemeSelectorComponent extends Container {
+export class ThemeSelectorComponent extends InputFrame {
 	private selectList: SelectList;
 	private onPreview: (themeName: string) => void;
 
@@ -20,7 +20,7 @@ export class ThemeSelectorComponent extends Container {
 		onCancel: () => void,
 		onPreview: (themeName: string) => void,
 	) {
-		super();
+		super({ title: "theme" });
 		this.onPreview = onPreview;
 
 		// Get available themes and create select items
@@ -30,9 +30,6 @@ export class ThemeSelectorComponent extends Container {
 			label: name,
 			description: name === currentTheme ? "(current)" : undefined,
 		}));
-
-		// Add top border
-		this.addChild(new DynamicBorder());
 
 		// Create selector
 		this.selectList = new SelectList(themeItems, 10, getSelectListTheme(), THEME_SELECT_LIST_LAYOUT);
@@ -56,9 +53,6 @@ export class ThemeSelectorComponent extends Container {
 		};
 
 		this.addChild(this.selectList);
-
-		// Add bottom border
-		this.addChild(new DynamicBorder());
 	}
 
 	getSelectList(): SelectList {
