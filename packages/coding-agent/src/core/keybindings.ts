@@ -161,8 +161,11 @@ declare module "@kolisachint/hoocode-tui" {
  *   page through and so did nothing on nearly every press.
  *
  * - **A slash command chooses a stop outright.** `/mode`, `/model`, `/color`,
- *   `/tree`. The key steps, the command picks; that is why `app.model.select`
- *   and `app.session.tree` ship unbound, having given their letters to dials.
+ *   `/chrome`, `/tree`. The key steps, the command picks; that is why
+ *   `app.model.select` and `app.session.tree` ship unbound, having given their
+ *   letters to dials. It is also the only way a dial stays reachable on a
+ *   terminal that composes characters instead of sending alt — macOS
+ *   Terminal.app — which is why any dial that can strand a setting has one.
  *
  * Two letters in the whole set name nothing, and both survive on the same
  * fallback — what they do is legible on screen, so the letter is read off rather

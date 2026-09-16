@@ -740,6 +740,11 @@ export class TUI extends Container {
 		return this.scrollSearch !== null;
 	}
 
+	/** The query being searched for, or "" when there is no search. */
+	get scrollSearchQuery(): string {
+		return this.scrollSearch?.query ?? "";
+	}
+
 	private scrollSearchStatus(): ScrollSearchStatus | undefined {
 		const search = this.scrollSearch;
 		if (!search) return undefined;

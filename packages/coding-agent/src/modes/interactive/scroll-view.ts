@@ -233,17 +233,32 @@ export function installScrollView(
 	});
 
 	return ui.addInputListener((data) => {
-		if (!ui.scrollPinned) return undefined;
+		if (!ui.scrollPinned) {
+			// The view can un-pin without passing through here at all — a wheel
+			// notch that reaches the bottom releases it. A half-typed query left
+			// behind would then swallow the next keystrokes into a query line that
+			// is not on screen, which is the exact failure this feature exists to
+			// remove.
+			typing = null;
+			return undefined;
+		}
 
 		// A key coming back up is not a decision to stop reading.
 		if (isKeyRelease(data)) return { consume: true };
+
+		// Likewise if something cleared the search out from under the query line.
+		if (typing !== null && !ui.scrollSearchActive) typing = null;
 
 		// The query line owns every printable character while it is open, so it
 		// is asked before any key that a letter could also mean.
 		if (typing !== null) {
 			if (keybindings.matches(data, "tui.select.confirm")) {
 				typing = null;
-				ui.commitScrollSearch();
+				// Committing nothing leaves a search that matches nothing and
+				// answers no keys — a dead state reachable by pressing enter twice.
+				// An empty query is a cancelled one.
+				if (ui.scrollSearchQuery.length === 0) ui.clearScrollSearch();
+				else ui.commitScrollSearch();
 				return { consume: true };
 			}
 			if (keybindings.matches(data, "app.scroll.exit")) {

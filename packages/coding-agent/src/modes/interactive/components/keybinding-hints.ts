@@ -18,12 +18,18 @@ function formatKeyPart(part: string, options: KeyTextFormatOptions): string {
 export function formatKeyText(key: string, options: KeyTextFormatOptions = {}): string {
 	return key
 		.split("/")
-		.map((k) =>
-			k
-				.split("+")
-				.map((part) => formatKeyPart(part, options))
-				.join("+"),
-		)
+		.map((k) => {
+			const parts = k.split("+");
+			// A modifier-less single character is printed exactly as it is typed.
+			// Capitalising it would name a different key: in this map an uppercase
+			// letter *is* shift+letter, and a bare `shift+<letter>` is banned
+			// outright because a legacy terminal cannot tell it from typing. So a
+			// hint reading "N" for a binding on `n` documents a chord that does not
+			// exist. Inside a chord the letter is unambiguous — nobody reads
+			// "Ctrl+C" as ctrl+shift+c — so that keeps its capital.
+			if (parts.length === 1 && parts[0].length === 1) return parts[0];
+			return parts.map((part) => formatKeyPart(part, options)).join("+");
+		})
 		.join("/");
 }
 

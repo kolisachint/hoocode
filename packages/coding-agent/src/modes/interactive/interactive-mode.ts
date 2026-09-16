@@ -90,7 +90,7 @@ import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { BashExecutionController } from "./bash-execution-controller.js";
-import { ChromeLayoutController, SMALL_TERMINAL_ROWS } from "./chrome-layout.js";
+import { CHROME_DENSITIES, ChromeLayoutController, isChromeDensity, SMALL_TERMINAL_ROWS } from "./chrome-layout.js";
 import { type CommandContext, CommandExecutor } from "./command-executor.js";
 import { BELL, CompletionChime } from "./completion-chime.js";
 import { AssistantMessageComponent, type ThinkingDisplay } from "./components/assistant-message.js";
@@ -2068,6 +2068,13 @@ export class InteractiveMode {
 						clearEditor();
 					},
 				},
+				"/chrome": {
+					withArgs: true,
+					run: (text: string) => {
+						this.handleChromeCommand(text);
+						clearEditor();
+					},
+				},
 				"/session": {
 					run: () => {
 						this.commandExecutor.handleSession();
@@ -3448,6 +3455,35 @@ export class InteractiveMode {
 		this.settingsManager.setChromeDensity(density);
 		this.ui.requestRender();
 		this.showDialStep("app.chrome.cycleBackward", `Chrome: ${density}`);
+	}
+
+	/**
+	 * `/chrome <stop>`, and the reason the dial is not reachable by key alone.
+	 *
+	 * macOS Terminal.app composes characters instead of sending alt, so a dial
+	 * whose only key is `alt+<letter>` is *unreachable* there. That is survivable
+	 * for a cosmetic dial and not for this one: the stop persists globally, so
+	 * someone who picked `bare` on one machine would open on that terminal with
+	 * no footer, no ledger and no way to ask for them back. Every dial that can
+	 * strand a setting has a slash command; this is that command.
+	 */
+	private handleChromeCommand(text: string): void {
+		const argument = text
+			.replace(/^\/chrome\s*/, "")
+			.trim()
+			.toLowerCase();
+		if (argument.length === 0) {
+			this.showStatus(`Chrome: ${this.chromeLayout.density} — ${CHROME_DENSITIES.join(" · ")}`);
+			return;
+		}
+		if (!isChromeDensity(argument)) {
+			this.showError(`Unknown chrome density "${argument}". Try: ${CHROME_DENSITIES.join(", ")}`);
+			return;
+		}
+		this.chromeLayout.setDensity(argument);
+		this.settingsManager.setChromeDensity(argument);
+		this.ui.requestRender();
+		this.showStatus(`Chrome: ${argument}`);
 	}
 
 	private toggleThinkingBlockVisibility(): void {

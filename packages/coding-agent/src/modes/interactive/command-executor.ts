@@ -648,7 +648,7 @@ which never hides.
 
 | Key | Steps | Through |
 |-----|-------|---------|
-| \`${chromeForward}\` / \`${chromeBackward}\` | Chrome | full → compact (one-row footer, no task list) → bare (neither) |
+| \`${chromeForward}\` / \`${chromeBackward}\` | Chrome | full → compact (one-row footer, no task list) → bare (neither) — \`/chrome\` picks one |
 
 It also gets out of the way on its own: the footer lends its rows to the
 completion list while that is open, and the task list keeps its counts but drops

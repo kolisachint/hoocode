@@ -271,3 +271,93 @@ describe("jumping by turn", () => {
 		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(false);
 	});
 });
+
+describe("searching from the pinned view", () => {
+	const CTRL_R = "\x12";
+	const SLASH = "/";
+	const ENTER = "\r";
+
+	function pinned(): Harness {
+		const harness = setup();
+		harness.send(PAGE_UP);
+		return harness;
+	}
+
+	it("opens on / once pinned, and takes typed characters", () => {
+		const harness = pinned();
+		harness.send(SLASH);
+		expect(harness.ui.scrollSearchActive).toBe(true);
+		harness.send("l");
+		harness.send("i");
+		expect(harness.ui.scrollSearchQuery).toBe("li");
+		// And none of it leaked into the prompt behind the query line.
+		expect(harness.editor.getText()).toBe("");
+	});
+
+	it("backspaces the query", () => {
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send("l");
+		harness.send("i");
+		harness.send("\x7f");
+		expect(harness.ui.scrollSearchQuery).toBe("l");
+	});
+
+	it("treats an empty query committed with enter as cancelled", () => {
+		// Otherwise enter-on-nothing leaves a search that matches nothing and
+		// answers no keys — a dead state two keystrokes from the prompt.
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send(ENTER);
+		expect(harness.ui.scrollSearchActive).toBe(false);
+		expect(harness.ui.scrollPinned).toBe(true);
+	});
+
+	it("drops the search on the first escape and the view on the second", () => {
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send("l");
+		harness.send(ENTER);
+		expect(harness.ui.scrollSearchActive).toBe(true);
+
+		harness.send(ESCAPE);
+		expect(harness.ui.scrollSearchActive).toBe(false);
+		expect(harness.ui.scrollPinned).toBe(true);
+
+		harness.send(ESCAPE);
+		expect(harness.ui.scrollPinned).toBe(false);
+	});
+
+	it("forgets a half-typed query when the view un-pins without it", () => {
+		// The view can be released without the listener seeing a key at all — a
+		// wheel notch that reaches the bottom does it. A query left behind would
+		// swallow the next keystrokes into a line that is not on screen.
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send("l");
+		expect(harness.ui.scrollSearchQuery).toBe("l");
+
+		harness.ui.scrollToLive();
+		expect(harness.ui.scrollPinned).toBe(false);
+
+		harness.send(PAGE_UP);
+		harness.send("x");
+		expect(harness.ui.scrollPinned, "x un-pinned instead of typing into a stale query").toBe(false);
+		expect(harness.editor.getText()).toBe("x");
+	});
+
+	it("opens from the prompt on ctrl+r, pinning first", () => {
+		const harness = setup();
+		expect(harness.ui.scrollPinned).toBe(false);
+		harness.send(CTRL_R);
+		expect(harness.ui.scrollPinned).toBe(true);
+		expect(harness.ui.scrollSearchActive).toBe(true);
+	});
+
+	it("leaves / alone at the prompt, where it starts a slash command", () => {
+		const harness = setup();
+		harness.send(SLASH);
+		expect(harness.ui.scrollSearchActive).toBe(false);
+		expect(harness.editor.getText()).toBe("/");
+	});
+});

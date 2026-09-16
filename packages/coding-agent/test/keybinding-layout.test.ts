@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KEYBINDINGS, KeybindingsManager } from "../src/core/keybindings.js";
+import { formatKeyText } from "../src/modes/interactive/components/keybinding-hints.js";
 
 /**
  * Guards the cockpit layout described in `core/keybindings.ts`.
@@ -465,6 +466,7 @@ describe("keybinding layout", () => {
 			backward: "app.session.color.cycleBackward",
 		},
 		{ name: "task ledger", forward: "app.tasks.cycleForward", backward: "app.tasks.cycleBackward" },
+		{ name: "chrome", forward: "app.chrome.cycleForward", backward: "app.chrome.cycleBackward" },
 	];
 
 	it("puts every dial on alt+<letter>, back on shift+alt+<letter>", () => {
@@ -496,7 +498,7 @@ describe("keybinding layout", () => {
 		// Each dial is either steppable without alt, or has a slash command that
 		// reaches the same setting. Losing both would strand the setting on
 		// Terminal.app, which composes characters instead of sending alt.
-		const withSlashCommand = new Set(["agent mode", "model", "session colour"]);
+		const withSlashCommand = new Set(["agent mode", "model", "session colour", "chrome"]);
 		const manager = new KeybindingsManager();
 		const stranded = DIALS.filter(({ name, forward }) => {
 			if (withSlashCommand.has(name)) return false;
@@ -596,6 +598,19 @@ describe("keybinding layout", () => {
 			})
 			.filter(([, size]) => size > 5);
 		expect(oversized).toEqual([]);
+	});
+
+	it("prints a bare letter key as it is typed, never capitalised", () => {
+		// An uppercase letter in this map *is* shift+letter, and a bare
+		// shift+<letter> is banned outright — so a hint reading "N" for a binding
+		// on `n` documents a chord that does not exist. Inside a chord the capital
+		// is unambiguous and stays.
+		expect(formatKeyText("n", { capitalize: true })).toBe("n");
+		expect(formatKeyText("p", { capitalize: true })).toBe("p");
+		expect(formatKeyText("/", { capitalize: true })).toBe("/");
+		expect(formatKeyText("ctrl+c", { capitalize: true })).toBe("Ctrl+C");
+		expect(formatKeyText("pageUp", { capitalize: true })).toBe("PageUp");
+		expect(formatKeyText("shift+alt+z", { capitalize: true })).toBe("Shift+Alt+Z");
 	});
 
 	it("gives every action a description for /hotkeys", () => {
