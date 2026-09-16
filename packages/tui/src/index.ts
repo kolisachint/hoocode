@@ -76,6 +76,16 @@ export {
 	setKittyProtocolActive,
 } from "./keys.js";
 // Input buffering for batch splitting
+// Mouse reporting
+export {
+	isMouseSequence,
+	MOUSE_DISABLE,
+	MOUSE_ENABLE,
+	type MouseEvent,
+	type MouseEventKind,
+	mouseSequenceLength,
+	parseMouseEvent,
+} from "./mouse.js";
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.js";
 // Terminal interface and implementations
 export { ProcessTerminal, type Terminal } from "./terminal.js";
@@ -118,6 +128,8 @@ export {
 	type OverlayHandle,
 	type OverlayMargin,
 	type OverlayOptions,
+	type ScrollStatus,
+	type ScrollStatusFormatter,
 	type SizeValue,
 	TUI,
 } from "./tui.js";

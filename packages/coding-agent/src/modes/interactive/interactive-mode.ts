@@ -124,6 +124,7 @@ import {
 	isExpandable,
 	showLoadedResources as renderLoadedResources,
 } from "./resource-display.js";
+import { installScrollView } from "./scroll-view.js";
 import { checkForPackageUpdates, checkTmuxKeyboardSetup, getChangelogForDisplay } from "./startup-checks.js";
 import { TeamFocusController } from "./team-focus.js";
 import {
@@ -258,6 +259,8 @@ export class InteractiveMode {
 	private pendingMessagesContainer: Container;
 	private statusContainer: Container;
 	private defaultEditor: CustomEditor;
+	/** Teardown for the pinned-view key capture; re-installed with the editor. */
+	private removeScrollView?: () => void;
 	private editor: EditorComponent;
 	private editorComponentFactory: EditorFactory | undefined;
 	private voice: VoiceController;
@@ -1895,6 +1898,11 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.hotkeys.open", () => this.commandExecutor.handleHotkeys());
 		this.defaultEditor.onAction("app.mode.cycleForward", () => void this.cycleAgentMode("forward"));
 		this.defaultEditor.onAction("app.mode.cycleBackward", () => void this.cycleAgentMode("backward"));
+
+		// Scrolling the transcript: the four prompt keys, plus the listener that
+		// captures the rest once the view is pinned. See `scroll-view.ts`.
+		this.removeScrollView?.();
+		this.removeScrollView = installScrollView(this.ui, this.defaultEditor, this.keybindings);
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;

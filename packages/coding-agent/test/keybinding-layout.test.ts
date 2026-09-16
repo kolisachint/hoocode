@@ -59,6 +59,10 @@ const GLOBAL_SCOPE = [
 	"app.view.cycleForward",
 	"app.view.cycleBackward",
 	"app.thinking.toggle",
+	"app.scroll.pageUp",
+	"app.scroll.pageDown",
+	"app.scroll.top",
+	"app.scroll.bottom",
 	"app.tasks.cycleForward",
 	"app.tasks.cycleBackward",
 	"app.team.focus",
@@ -151,6 +155,21 @@ const OPTIONS_SCOPE = [
 	"app.options.back",
 ] as const;
 
+/**
+ * The pinned transcript view. It captures keys while it is up, so the arrows
+ * and escape mean here what the prompt means by them elsewhere. The two ends
+ * keep their global chords so they are the same key wherever you press them.
+ */
+const SCROLL_SCOPE = [
+	"app.scroll.lineUp",
+	"app.scroll.lineDown",
+	"app.scroll.pageUp",
+	"app.scroll.pageDown",
+	"app.scroll.top",
+	"app.scroll.bottom",
+	"app.scroll.exit",
+] as const;
+
 const SCOPES: Array<[string, readonly string[]]> = [
 	["global", GLOBAL_SCOPE],
 	["session picker", SESSION_PICKER_SCOPE],
@@ -158,6 +177,7 @@ const SCOPES: Array<[string, readonly string[]]> = [
 	["session tree", TREE_SCOPE],
 	["team focus", TEAM_FOCUS_SCOPE],
 	["options pane", OPTIONS_SCOPE],
+	["pinned scroll view", SCROLL_SCOPE],
 ];
 
 /**
@@ -498,8 +518,12 @@ describe("keybinding layout", () => {
 		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.pasteImage|message\.)/],
 		["Steer", /^app\.(mode|model)\.|^app\.thinking\.cycle/],
 		["Read", /^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|team\.focus)/],
+		["Scroll", /^app\.scroll\.(pageUp|pageDown|top|bottom)$/],
 		["Go", /^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)/],
-		["Overlays", /^app\.(team\.(nudge|attach)|options\.|session\.(toggle|rename|delete)|models\.|tree\.)/],
+		[
+			"Overlays",
+			/^app\.(team\.(nudge|attach)|options\.|scroll\.(lineUp|lineDown|exit)|session\.(toggle|rename|delete)|models\.|tree\.)/,
+		],
 	];
 
 	it("puts every app binding in exactly one family", () => {
@@ -531,7 +555,11 @@ describe("keybinding layout", () => {
 		// one subject are one thing. Overlays are exempt entirely: they are read
 		// off each surface's own hint line, never recalled.
 		const manager = new KeybindingsManager();
-		const oversized = FAMILIES.filter(([name]) => name !== "Overlays")
+		// Scroll is exempt for the same reason Flow is: pageUp, pageDown, ctrl+home
+		// and ctrl+end are what every pager, editor and browser already bound, so
+		// they are recognised rather than recalled and cost no memory to carry.
+		const exempt = new Set(["Overlays", "Scroll"]);
+		const oversized = FAMILIES.filter(([name]) => !exempt.has(name))
 			.map(([name, pattern]) => {
 				const subjects = new Set(
 					Object.keys(KEYBINDINGS)

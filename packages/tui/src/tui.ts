@@ -7,9 +7,17 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.js";
+import { type MouseEvent, mouseSequenceLength, parseMouseEvent } from "./mouse.js";
 import type { Terminal } from "./terminal.js";
 import { deleteKittyImage, getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
-import { extractSegments, normalizeTerminalOutput, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
+import {
+	extractSegments,
+	normalizeTerminalOutput,
+	sliceByColumn,
+	sliceWithWidth,
+	truncateToWidth,
+	visibleWidth,
+} from "./utils.js";
 
 const KITTY_SEQUENCE_PREFIX = "\x1b_G";
 
@@ -96,6 +104,56 @@ export const CURSOR_MARKER = "\x1b_pi:c\x07";
  */
 const HIDE_CURSOR = "\x1b[?25l";
 const SHOW_CURSOR = "\x1b[?25h";
+
+/**
+ * How far one wheel notch moves the pinned view.
+ *
+ * Three lines is what terminals, pagers and browsers have settled on, and the
+ * agreement is the point: a wheel that moves a different distance here than in
+ * every other window is the kind of wrongness people feel without being able to
+ * name it.
+ */
+const WHEEL_LINES = 3;
+
+/** What the scroll indicator is told about the pinned view. */
+export interface ScrollStatus {
+	/** 1-based transcript row at the top of the view. */
+	top: number;
+	/** 1-based transcript row at the bottom of the view. */
+	bottom: number;
+	/** Rows in the whole transcript. */
+	total: number;
+	/** Rows the view shows at once. */
+	viewHeight: number;
+	atTop: boolean;
+	/** True only when the very last row is in view — the point where the pin lets go. */
+	atBottom: boolean;
+	/** Columns the indicator may fill. */
+	width: number;
+}
+
+export type ScrollStatusFormatter = (status: ScrollStatus) => string;
+
+/**
+ * The indicator the tui draws when the app has not supplied its own.
+ *
+ * Reverse video rather than a colour, because this package has no theme and a
+ * hard-coded colour is the one thing guaranteed to clash with whichever one the
+ * app is using. It leads with the position — the question a pinned reader
+ * actually has — and spends what is left on the keys, dropping them on a narrow
+ * terminal rather than truncating the numbers.
+ */
+function defaultScrollStatus(status: ScrollStatus): string {
+	const position = `${status.top}–${status.bottom}/${status.total}`;
+	const where = status.atTop ? " top" : "";
+	const keys = "↑↓ line · PgUp/PgDn page · esc live";
+	const left = ` ${position}${where} `;
+	// Measured in columns, not characters: the arrows and the separator are one
+	// cell each but a rebind could put anything in here, and a row that is one
+	// cell too wide wraps into the window above it.
+	const body = visibleWidth(left) + visibleWidth(keys) + 1 <= status.width ? `${left}${keys} ` : left;
+	return `\x1b[7m${truncateToWidth(body, status.width, "", true)}\x1b[0m`;
+}
 
 /**
  * Anchor position for overlays
@@ -310,6 +368,55 @@ export class TUI extends Container {
 	private fullRedrawCount = 0;
 	private stopped = false;
 
+	/**
+	 * The pinned viewport.
+	 *
+	 * ## What is wrong with letting the terminal do it
+	 *
+	 * This renderer keeps the entire transcript in its line buffer and writes it
+	 * to the normal screen, so "scrolling" has always meant the terminal's own
+	 * scrollback. That works exactly as long as the app does not repaint — and
+	 * this one repaints the whole buffer whenever a line *above* the viewport
+	 * changes, because a positional diff cannot address a row that has scrolled
+	 * out of reach. The repaint is `\x1b[2J\x1b[H\x1b[3J` followed by the
+	 * transcript again, and the `\x1b[3J` throws away the scrollback the reader
+	 * was sitting in. From the reader's side the screen simply jumps to the
+	 * bottom, for no reason they can see, at a moment they did not choose.
+	 *
+	 * ## What this does instead
+	 *
+	 * `scrollOffset` is the transcript row drawn at the top of the screen, and
+	 * `null` means "follow the tail", which is the normal live behaviour and the
+	 * path everything else in this file was written for. The moment it is a
+	 * number the TUI switches to the alternate screen and paints a window of the
+	 * buffer itself: a fixed grid, addressed row by row, with no scrollback for
+	 * anything to fight over. New output still arrives and still lands in the
+	 * buffer — it just does not move the window, which is the whole point. The
+	 * indicator on the last row says how far down the transcript the window is,
+	 * because a view that cannot move on its own needs to say where it stopped.
+	 *
+	 * Going back to live leaves the alternate screen, which restores the normal
+	 * screen *and its scrollback* exactly as they were, and the next frame is an
+	 * ordinary differential one that writes only what arrived while the reader
+	 * was away — see `scrollToLive` for what has to be true for that to be safe.
+	 * Not a clear-and-replay: on a long session that is a visible flash, a burst
+	 * of output, and the loss of the scrollback that had just been handed back.
+	 */
+	private scrollOffset: number | null = null;
+	/** Transcript length measured by the last pinned paint; what clamping uses. */
+	private scrollTotalLines = 0;
+	private scrollStatusFormatter: ScrollStatusFormatter = defaultScrollStatus;
+	/**
+	 * Whether the view may pin right now.
+	 *
+	 * The wheel is answered wherever it is turned, including with a picker on
+	 * screen — and a picker that lost its arrow keys to a pinned view it did not
+	 * know about would be far worse than a wheel that did nothing. The app sets
+	 * this because only the app knows which of its surfaces is asking a question.
+	 * Unset means always.
+	 */
+	public canPinScroll?: () => boolean;
+
 	// Overlay stack for modal components rendered on top of base content
 	private focusOrderCounter = 0;
 	private overlayStack: {
@@ -330,6 +437,130 @@ export class TUI extends Container {
 
 	get fullRedraws(): number {
 		return this.fullRedrawCount;
+	}
+
+	// ── The pinned viewport ─────────────────────────────────────────────────
+
+	/** True while the view is pinned rather than following the tail. */
+	get scrollPinned(): boolean {
+		return this.scrollOffset !== null;
+	}
+
+	/** Where the pinned window sits, or null while live. */
+	getScrollPosition(): { top: number; total: number; viewHeight: number } | null {
+		if (this.scrollOffset === null) return null;
+		return { top: this.scrollOffset, total: this.scrollTotalLines, viewHeight: this.scrollViewHeight() };
+	}
+
+	/** Let the app paint the indicator in its own theme. */
+	setScrollStatusFormatter(formatter: ScrollStatusFormatter): void {
+		this.scrollStatusFormatter = formatter;
+	}
+
+	/**
+	 * The screen rows a pinned window shows, the last one being the indicator.
+	 *
+	 * The indicator is not optional: a pinned view looks exactly like a live one
+	 * that has gone quiet, and a reader who cannot tell the two apart will wait
+	 * for output that is arriving perfectly well just out of sight.
+	 */
+	private scrollViewHeight(): number {
+		return Math.max(1, this.terminal.rows - 1);
+	}
+
+	/** Rows available to scroll through — the live buffer while live, the
+	 * measured one while pinned. */
+	private transcriptLength(): number {
+		return this.scrollOffset === null ? this.previousLines.length : this.scrollTotalLines;
+	}
+
+	/**
+	 * Move the view by `delta` rows; negative is towards the start.
+	 *
+	 * Returns whether anything moved, so a caller can let the key fall through
+	 * to whatever else wants it when there is nothing to scroll.
+	 */
+	scrollByLines(delta: number): boolean {
+		if (delta === 0) return false;
+		// Scrolling down while already live is not "scroll to somewhere", it is a
+		// request for content that does not exist yet. Doing nothing is right, and
+		// cheap: treating it as a move would drop out of scroll mode and force a
+		// full repaint on every wheel notch at the bottom of the transcript.
+		if (this.scrollOffset === null && delta > 0) return false;
+
+		const viewHeight = this.scrollViewHeight();
+		const maxOffset = Math.max(0, this.transcriptLength() - viewHeight);
+		if (maxOffset === 0) return false;
+
+		const next = (this.scrollOffset ?? maxOffset) + delta;
+		// Reaching the end is how the pin lets go: the reader has caught up, so
+		// give them the live screen back rather than a pinned view of the tail
+		// that silently stops following.
+		if (next >= maxOffset) return this.scrollToLive();
+		this.setScrollOffset(next);
+		return true;
+	}
+
+	/**
+	 * Move by pages, keeping two rows of overlap.
+	 *
+	 * A page that moves a full screen leaves nothing in common between before
+	 * and after, and the reader has to find their place again on every press.
+	 * The two kept rows are what makes the jump readable.
+	 */
+	scrollByPages(delta: number): boolean {
+		const page = Math.max(1, this.scrollViewHeight() - 2);
+		return this.scrollByLines(delta * page);
+	}
+
+	/** Pin the view to the very start of the transcript. */
+	scrollToTop(): boolean {
+		const maxOffset = Math.max(0, this.transcriptLength() - this.scrollViewHeight());
+		if (maxOffset === 0) return false;
+		if (this.scrollOffset === 0) return false;
+		this.setScrollOffset(0);
+		return true;
+	}
+
+	/** Release the pin and follow the tail again. */
+	scrollToLive(): boolean {
+		if (this.scrollOffset === null) return false;
+		this.scrollOffset = null;
+		this.terminal.setAlternateScreen(false);
+		// `?1049l` restores the normal screen, its scrollback and the cursor
+		// exactly as they were at `?1049h`, and the snapshot taken on the way in
+		// says what that screen holds — so the next frame can be an ordinary
+		// differential one that writes only what arrived while we were reading.
+		// Dropping the flat cache is what makes it honest: the cache has been
+		// patched on every pinned frame, and a patch report describing rows that
+		// were painted to the *alternate* screen would leave the diff addressing
+		// the wrong ones.
+		this.flatCache = undefined;
+		this.lastCursorPos = undefined;
+		this.requestRender();
+		return true;
+	}
+
+	private setScrollOffset(offset: number): void {
+		const entering = this.scrollOffset === null;
+		// Only entry is gated. A view that is already pinned keeps responding, so
+		// a surface opening underneath cannot strand the reader somewhere they
+		// have no key to leave.
+		if (entering && this.canPinScroll && !this.canPinScroll()) return;
+		this.scrollOffset = Math.max(0, offset);
+		if (entering) {
+			// What the normal screen is left showing, frozen. Without the copy this
+			// stays the same array the patching render() mutates in place, so on the
+			// way back out it would be diffed against itself and report that nothing
+			// arrived while the reader was away.
+			this.previousLines = this.previousLines.slice();
+			this.terminal.setAlternateScreen(true);
+			this.terminal.hideCursor();
+		}
+		this.requestRender();
+		// Scrolling is a direct manipulation: the view has to move under the
+		// gesture, not one animation frame behind it.
+		this.expediteRender();
 	}
 
 	getShowHardwareCursor(): boolean {
@@ -356,6 +587,11 @@ export class TUI extends Container {
 	 */
 	setClearOnShrink(enabled: boolean): void {
 		this.clearOnShrink = enabled;
+	}
+
+	/** The component keystrokes are currently going to. */
+	get focused(): Component | null {
+		return this.focusedComponent;
 	}
 
 	setFocus(component: Component | null): void {
@@ -521,6 +757,12 @@ export class TUI extends Container {
 	}
 
 	stop(): void {
+		// Off the alternate screen before the exit bookkeeping below, which moves
+		// the cursor relative to content that lives on the normal screen.
+		if (this.scrollOffset !== null) {
+			this.scrollOffset = null;
+			this.terminal.setAlternateScreen(false);
+		}
 		this.stopped = true;
 		if (this.renderTimer) {
 			clearTimeout(this.renderTimer);
@@ -592,6 +834,14 @@ export class TUI extends Container {
 	}
 
 	private handleInput(data: string): void {
+		// Ahead of the listeners: a mouse report that reaches a text field is
+		// typed into it, and a paste-detecting listener has no reason to see one.
+		if (this.terminal.mouseReporting) {
+			const remaining = this.consumeMouseReports(data);
+			if (remaining === null) return;
+			data = remaining;
+		}
+
 		if (this.inputListeners.size > 0) {
 			let current = data;
 			for (const listener of this.inputListeners) {
@@ -647,6 +897,57 @@ export class TUI extends Container {
 			// window: render the input's effect immediately instead of waiting out
 			// MIN_RENDER_INTERVAL_MS behind spinner/streaming frames.
 			this.expediteRender();
+		}
+	}
+
+	/**
+	 * Act on every mouse report in `data` and return what is left of it.
+	 *
+	 * Returns null when the chunk was nothing but reports. Reports arrive
+	 * coalesced — a flick of the wheel delivers a run of them in one read, and a
+	 * keystroke pressed during the flick rides along behind — so they are peeled
+	 * off one at a time instead of the chunk being classified as a whole.
+	 */
+	private consumeMouseReports(data: string): string | null {
+		// Neither introducer present is the overwhelmingly common case (every
+		// ordinary keystroke), and it costs one scan of a very short string.
+		if (!data.includes("\x1b[<") && !data.includes("\x1b[M")) return data;
+
+		let rest = data;
+		let out = "";
+		let sawReport = false;
+		while (rest.length > 0) {
+			const length = mouseSequenceLength(rest);
+			if (length === 0) {
+				out += rest[0];
+				rest = rest.slice(1);
+				continue;
+			}
+			const event = parseMouseEvent(rest.slice(0, length));
+			if (event) this.handleMouseEvent(event);
+			sawReport = true;
+			rest = rest.slice(length);
+		}
+
+		if (!sawReport) return data;
+		return out.length > 0 ? out : null;
+	}
+
+	/**
+	 * What the mouse does.
+	 *
+	 * Only the wheel is acted on. Clicks are swallowed rather than handled:
+	 * reporting is on for the wheel's sake, and a click that fell through to the
+	 * focused component would arrive as the raw report text in whatever field
+	 * has focus.
+	 */
+	private handleMouseEvent(event: MouseEvent): void {
+		if (event.kind === "wheelUp") {
+			this.scrollByLines(-WHEEL_LINES);
+			return;
+		}
+		if (event.kind === "wheelDown") {
+			this.scrollByLines(WHEEL_LINES);
 		}
 	}
 
@@ -1140,8 +1441,93 @@ export class TUI extends Container {
 		return flat;
 	}
 
+	/**
+	 * Paint the pinned window onto the alternate screen.
+	 *
+	 * Deliberately not differential. The alternate screen is `rows` tall and
+	 * nothing else writes to it, so a whole frame is at most a screenful of
+	 * cells inside one synchronized-output pair — cheaper to emit than the
+	 * bookkeeping a diff would need, and with nothing to get out of step with.
+	 * The differential renderer's state is left exactly as the last live frame
+	 * left it, because `scrollToLive` throws it away rather than resuming from it.
+	 */
+	private renderScrollView(): void {
+		const width = this.terminal.columns;
+		const height = this.terminal.rows;
+
+		let lines = this.render(width);
+		// A patch computed while pinned describes rows nothing painted to the
+		// normal screen, so the live path must never be handed it.
+		this.lastPatch = "full";
+		if (this.overlayStack.length > 0) {
+			lines = this.compositeOverlays(lines, width, height);
+		}
+
+		const viewHeight = this.scrollViewHeight();
+		this.scrollTotalLines = lines.length;
+		const maxOffset = Math.max(0, lines.length - viewHeight);
+		// The transcript can shrink under a pinned view — a pane closing, a tool
+		// block collapsing — so the offset is re-clamped every frame rather than
+		// only where it is set.
+		const top = Math.min(Math.max(0, this.scrollOffset ?? 0), maxOffset);
+		this.scrollOffset = top;
+
+		let buffer = "\x1b[?2026h"; // Begin synchronized output
+		buffer += HIDE_CURSOR;
+		// Autowrap off for the paint: a full-width row would otherwise wrap into
+		// the row below it and shift the rest of the window down by one.
+		buffer += "\x1b[?7l";
+
+		for (let row = 0; row < viewHeight; row++) {
+			buffer += `\x1b[${row + 1};1H\x1b[2K`;
+			const line = lines[top + row];
+			if (line !== undefined) buffer += this.emitScrollLine(line);
+		}
+
+		buffer += `\x1b[${height};1H\x1b[2K`;
+		buffer += this.scrollStatusFormatter({
+			top: top + 1,
+			bottom: Math.min(top + viewHeight, lines.length),
+			total: lines.length,
+			viewHeight,
+			atTop: top === 0,
+			atBottom: top >= maxOffset,
+			width,
+		});
+
+		buffer += "\x1b[?7h";
+		buffer += "\x1b[?2026l"; // End synchronized output
+		this.terminal.write(buffer);
+
+		// `previousWidth` / `previousHeight` are deliberately left describing the
+		// last *live* frame. If the terminal was resized while pinned they will
+		// disagree with the real size on the way out, and the live path will take
+		// its full-redraw branch — which is exactly right, because the normal
+		// screen `?1049l` restored was drawn at the old size.
+	}
+
+	/**
+	 * One transcript row, ready for the pinned window.
+	 *
+	 * Images are named rather than drawn. A kitty or iTerm image is placed by
+	 * the cursor and sized in pixels, so the same escape replayed at a different
+	 * screen row lands somewhere the window did not ask for and survives the
+	 * frame that was supposed to replace it — a smear across the view that no
+	 * later repaint can clear.
+	 */
+	private emitScrollLine(line: string): string {
+		if (isImageLine(line)) return "\x1b[2m[image]\x1b[0m";
+		const marker = line.indexOf(CURSOR_MARKER);
+		const text = marker === -1 ? line : line.slice(0, marker) + line.slice(marker + CURSOR_MARKER.length);
+		return normalizeTerminalOutput(text) + TUI.SEGMENT_RESET;
+	}
+
 	private doRender(): void {
 		if (this.stopped) return;
+		if (this.scrollOffset !== null) {
+			this.renderScrollView();
+			return;
+		}
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;

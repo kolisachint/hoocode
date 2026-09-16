@@ -536,8 +536,6 @@ export class CommandExecutor {
 		const cursorLineEnd = keyDisplayText("tui.editor.cursorLineEnd");
 		const jumpForward = keyDisplayText("tui.editor.jumpForward");
 		const jumpBackward = keyDisplayText("tui.editor.jumpBackward");
-		const pageUp = keyDisplayText("tui.editor.pageUp");
-		const pageDown = keyDisplayText("tui.editor.pageDown");
 
 		// Editing keybindings
 		const submit = keyDisplayText("tui.input.submit");
@@ -582,12 +580,20 @@ export class CommandExecutor {
 		const sessionResume = keyDisplayText("app.session.resume");
 		const cycleSessionColor = keyDisplayLabel("app.session.color.cycleForward");
 		const cycleSessionColorBackward = keyDisplayLabel("app.session.color.cycleBackward");
+		const scrollPageUp = keyDisplayText("app.scroll.pageUp");
+		const scrollPageDown = keyDisplayText("app.scroll.pageDown");
+		const scrollTop = keyDisplayText("app.scroll.top");
+		const scrollBottom = keyDisplayText("app.scroll.bottom");
+		const scrollLineUp = keyDisplayText("app.scroll.lineUp");
+		const scrollLineDown = keyDisplayText("app.scroll.lineDown");
+		const scrollExit = keyDisplayText("app.scroll.exit");
 
 		let hotkeys = `
-Grouped by what you are doing, not by what the key is. Five groups, none bigger
-than five — the size a person can actually hold. Two of them are free: **Flow**
-is what every terminal program already taught you, and every picker prints its
-own keys on its own hint line, so you read those instead of remembering them.
+Grouped by what you are doing, not by what the key is. Six groups, none of the
+learned ones bigger than five — the size a person can actually hold. Three are
+free: **Flow** is what every terminal program already taught you, **Scroll** is
+what every pager did, and every picker prints its own keys on its own hint line,
+so you read those instead of remembering them.
 
 **Compose** — the message in your hands
 | Key | Action |
@@ -624,6 +630,22 @@ onto it. Press again or add \`Shift\` and you are back where you were.
 | \`${expandTools}\` | Jump to the full view and back, without moving the dial |
 | \`${toggleThinking}\` | Show or hide thinking blocks |
 | \`${teamFocus}\` | Focus the team roster — \`${teamNudge}\` nudges, \`${teamAttach}\` attaches, \`q\`/\`${interrupt}\` leaves (\`--team\`) |
+
+**Scroll** — where in the session you are looking
+The wheel and these keys move the same view, and once it is scrolled back it
+**stays** there: output keeps arriving underneath without moving what you are
+reading. The bottom row tells you where you are and how to get back.
+
+| Key | Action |
+|-----|--------|
+| \`${scrollPageUp}\` / \`${scrollPageDown}\` | Scroll a page — \`${scrollPageUp}\` is also how you start |
+| \`${scrollTop}\` / \`${scrollBottom}\` | Jump to the start of the session / back to live |
+| \`${scrollLineUp}\` / \`${scrollLineDown}\` | A line at a time (while scrolled back) |
+| \`${scrollExit}\` | Back to live output |
+| Wheel | Three lines a notch, wherever you turn it |
+
+Scrolling to the bottom hands the live view back on its own, and so does typing:
+any key that is not one of these returns you to live and then does its usual job.
 
 **Go** — sessions and places
 Each takes the screen and hands it back on \`${interrupt}\`, and each has a slash
@@ -666,6 +688,8 @@ are on \`Alt\` and its hint line names them.
 
 ### The editor
 Standard readline/emacs bindings — reference, not something to memorise.
+\`${scrollPageUp}\` / \`${scrollPageDown}\` are **not** here: they scroll the session,
+not the prompt, which is one to three lines almost every time you look at it.
 
 | Key | Action |
 |-----|--------|
@@ -673,7 +697,6 @@ Standard readline/emacs bindings — reference, not something to memorise.
 | \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
 | \`${cursorLineStart}\` / \`${cursorLineEnd}\` | Start / end of line |
 | \`${jumpForward}\` / \`${jumpBackward}\` | Jump forward / backward to character |
-| \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
 | \`${deleteWordBackward}\` / \`${deleteWordForward}\` | Delete word backwards / forwards |
 | \`${deleteToLineStart}\` / \`${deleteToLineEnd}\` | Delete to start / end of line |
 | \`${yank}\` / \`${yankPop}\` | Paste the most-recently-deleted text / cycle older ones |

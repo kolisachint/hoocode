@@ -102,7 +102,30 @@ export class VirtualTerminal implements Terminal {
 
 	setProgress(_active: boolean): void {}
 
+	get mouseReporting(): boolean {
+		// Reported on so scroll-mode tests exercise the same path a real terminal
+		// takes; VirtualTerminal.sendInput is what actually delivers the events.
+		return true;
+	}
+
+	setAlternateScreen(active: boolean): void {
+		// xterm.js implements ?1049 properly, so the test terminal gets the real
+		// save/restore rather than a stub that would hide a teardown bug.
+		this.xterm.write(active ? "\x1b[?1049h" : "\x1b[?1049l");
+	}
+
 	// Test-specific methods not in Terminal interface
+
+	/**
+	 * Which buffer is on screen: "normal" or "alternate".
+	 *
+	 * The honest way to check that the pinned view really took the alternate
+	 * screen — asserting on the written bytes would also pass for a `?1049h` the
+	 * terminal rejected.
+	 */
+	get bufferType(): string {
+		return this.xterm.buffer.active.type;
+	}
 
 	/**
 	 * Simulate keyboard input

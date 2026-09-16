@@ -40,6 +40,10 @@ class FakeTerminal implements Terminal {
 	clearScreen(): void {}
 	setTitle(): void {}
 	setProgress(): void {}
+	get mouseReporting(): boolean {
+		return false;
+	}
+	setAlternateScreen(_active: boolean): void {}
 }
 
 const nextTick = () => new Promise((resolve) => setTimeout(resolve, 0));

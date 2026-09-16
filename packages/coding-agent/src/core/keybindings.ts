@@ -23,6 +23,13 @@ interface AppKeybindings {
 	"app.tools.expand": true;
 	"app.view.cycleForward": true;
 	"app.view.cycleBackward": true;
+	"app.scroll.pageUp": true;
+	"app.scroll.pageDown": true;
+	"app.scroll.top": true;
+	"app.scroll.bottom": true;
+	"app.scroll.lineUp": true;
+	"app.scroll.lineDown": true;
+	"app.scroll.exit": true;
 	"app.thinking.toggle": true;
 	"app.tasks.cycleForward": true;
 	"app.tasks.cycleBackward": true;
@@ -96,13 +103,15 @@ declare module "@kolisachint/hoocode-tui" {
  *   2. **Compose** — the message in your hands. alt+e, alt+r, alt+enter, alt+↑.
  *   3. **Steer** — what the agent is before it runs. alt+a, alt+m, alt+t.
  *   4. **Read** — what you see of what it did. alt+o, alt+l, ctrl+o, ctrl+t.
- *   5. **Go** — sessions and places. alt+h, alt+w, alt+s, alt+k, alt+c.
+ *   5. **Scroll** — where in it you are looking. pageUp/pageDown, ctrl+home/end.
+ *   6. **Go** — sessions and places. alt+h, alt+w, alt+s, alt+k, alt+c.
  *
- * Five groups, none larger than five, which is the size a person can actually
- * hold. Two of them cost nothing to learn: **Flow** is the set every terminal
- * program already taught you, and the **overlays** (pickers, the tree, the
- * options pane) print their own keys on their own hint lines — recognised, never
- * recalled. That leaves three groups to genuinely know.
+ * Six groups, none of the learned ones larger than five, which is the size a
+ * person can actually hold. Three cost nothing to learn: **Flow** and **Scroll**
+ * are the sets every terminal program and every pager already taught you, and
+ * the **overlays** (pickers, the tree, the options pane, the pinned scroll view)
+ * print their own keys on their own hint lines — recognised, never recalled.
+ * That leaves three groups to genuinely know.
  *
  * The declaration order below *is* the grouping, and it is not cosmetic:
  * `orderKeybindingsConfig` writes `keybindings.json` in this order, so the file
@@ -129,6 +138,12 @@ declare module "@kolisachint/hoocode-tui" {
  *   there ever is, `ctrl+o` jumps to all of it and back. `alt+t` sets how much
  *   thinking there ever is, `ctrl+t` shows or hides what you have. Two subjects,
  *   two letters, four keys — half of what four unrelated chords would cost.
+ *
+ * - **A bare navigation key moves the view.** pageUp, pageDown, ctrl+home and
+ *   ctrl+end scroll the transcript and nothing else, which is what they do
+ *   everywhere else too. They are the one family that took a key off another
+ *   binding — the prompt editor's page keys, which had one to three lines to
+ *   page through and so did nothing on nearly every press.
  *
  * - **A slash command chooses a stop outright.** `/mode`, `/model`, `/color`,
  *   `/tree`. The key steps, the command picks; that is why `app.model.select`
@@ -270,11 +285,6 @@ export const KEYBINDINGS = {
 		defaultKeys: "ctrl+t",
 		description: "Toggle thinking blocks",
 	},
-	// alt+l for the task *ledger* — the pane's own name for itself. It was
-	// ctrl+n, which named nothing and was the last dial off the alt ring; moving
-	// it also gives the lens the reverse it could never have on ctrl, where
-	// shift+ctrl+n is Windows Terminal's "new window". ctrl+n is free now, so an
-	// emacs config can take it for cursorDown without colliding.
 	"app.tasks.cycleForward": {
 		defaultKeys: "alt+l",
 		description: "Cycle task panel view (tasks → subagents → teams, skips empty lenses)",
@@ -291,6 +301,44 @@ export const KEYBINDINGS = {
 		defaultKeys: "alt+n",
 		description: "Focus the team roster (navigate roles, n nudge, a attach)",
 	},
+
+	// ── Scrolling the transcript ────────────────────────────────────────────
+	// These are the only keys in the set that need no mnemonic at all: pageUp,
+	// pageDown, ctrl+home and ctrl+end mean exactly here what they mean in every
+	// pager, editor and browser anyone has ever used. That is worth more than
+	// any letter, and it is why they took the page keys off the prompt editor.
+	//
+	// The prompt is one to three lines nine times out of ten, so
+	// `tui.editor.pageUp` had nothing to scroll and the most universally known
+	// "show me what scrolled past" gesture in computing did nothing at all. It
+	// is unbound by default rather than sharing the key, because a key that
+	// moves the transcript sometimes and a text cursor other times is precisely
+	// the unpredictability this whole family exists to remove.
+	//
+	// Only these four are live at the prompt. The rest — line steps, the ends,
+	// and escape — belong to the pinned view, which captures keys the way a
+	// picker does, so they may reuse keys the prompt owns.
+	"app.scroll.pageUp": {
+		defaultKeys: "pageUp",
+		description: "Scroll the transcript up a page (pins the view)",
+	},
+	"app.scroll.pageDown": {
+		defaultKeys: "pageDown",
+		description: "Scroll the transcript down a page",
+	},
+	"app.scroll.top": {
+		defaultKeys: "ctrl+home",
+		description: "Jump to the start of the transcript",
+	},
+	"app.scroll.bottom": {
+		defaultKeys: "ctrl+end",
+		description: "Jump back to live output",
+	},
+	// alt+l for the task *ledger* — the pane's own name for itself. It was
+	// ctrl+n, which named nothing and was the last dial off the alt ring; moving
+	// it also gives the lens the reverse it could never have on ctrl, where
+	// shift+ctrl+n is Windows Terminal's "new window". ctrl+n is free now, so an
+	// emacs config can take it for cursorDown without colliding.
 
 	// ── Go — sessions and places ────────────────────────────────────────────
 	// These take the screen and hand it back on escape. Each has a slash command
@@ -337,6 +385,29 @@ export const KEYBINDINGS = {
 	"app.team.attach": {
 		defaultKeys: "a",
 		description: "Attach to the selected team role (team focus mode)",
+	},
+	// The pinned transcript view. Live only while the view is pinned, which it
+	// captures keys during, so the arrows are free to mean here what the prompt
+	// means by them elsewhere — up and down move the view rather than walking
+	// prompt history, because there is no prompt in front of you to walk.
+	// `app.scroll.top` / `app.scroll.bottom` keep their global keys inside the
+	// view as well, so the ends are the same chord wherever you press them.
+	"app.scroll.lineUp": {
+		defaultKeys: "up",
+		description: "Scroll up a line (pinned view)",
+	},
+	"app.scroll.lineDown": {
+		defaultKeys: "down",
+		description: "Scroll down a line (pinned view)",
+	},
+	// escape is the Flow key, and it keeps its meaning — get out of the thing
+	// you are in. While pinned, the thing you are in is the scrolled-back view,
+	// so the first press returns you to live output and a second one reaches
+	// `app.interrupt` as it always did. That ordering is deliberate: it puts you
+	// back where you can see what the agent is doing *before* you stop it.
+	"app.scroll.exit": {
+		defaultKeys: "escape",
+		description: "Leave the pinned view and follow live output",
 	},
 	// The options pane reads as a horizontal wizard, so the arrows point the way
 	// the steps run: → commits the highlighted answer and moves on, ← goes back.

@@ -86,8 +86,13 @@ export const TUI_KEYBINDINGS = {
 		defaultKeys: "ctrl+alt+]",
 		description: "Jump backward to character",
 	},
-	"tui.editor.pageUp": { defaultKeys: "pageUp", description: "Page up" },
-	"tui.editor.pageDown": { defaultKeys: "pageDown", description: "Page down" },
+	// Unbound by default. These page the cursor through the *prompt*, which is
+	// one to three lines in almost every session, so the keys did nothing on
+	// nearly every press — while pageUp/pageDown are the gesture everyone
+	// already knows for "show me what scrolled past". The app gives them to the
+	// transcript; bind these by hand if you write prompts tall enough to page.
+	"tui.editor.pageUp": { defaultKeys: [], description: "Page up within the prompt" },
+	"tui.editor.pageDown": { defaultKeys: [], description: "Page down within the prompt" },
 	"tui.editor.deleteCharBackward": {
 		defaultKeys: "backspace",
 		description: "Delete character backward",

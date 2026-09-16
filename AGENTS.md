@@ -12,6 +12,21 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Transcript scrolling is the app's, not the terminal's**: scrolling back
+  used to mean scrolling the terminal's scrollback, and every full redraw
+  (`\x1b[3J`) threw that away — so the view jumped to the bottom whenever a row
+  above the viewport changed. `TUI.scrollOffset` now pins a window over the line
+  buffer and paints it on the **alternate screen**; live mode, the normal
+  screen and the terminal's own scrollback/selection/search are untouched, and
+  leaving is a differential frame, never a replay. The mouse wheel is captured
+  (`tui/src/mouse.ts`, `?1000h` + `?1006h`; `HOOCODE_MOUSE=0` opts out, and
+  shift still bypasses for native selection). Keys: `app.scroll.*` — pageUp /
+  pageDown / ctrl+home / ctrl+end at the prompt, arrows and escape once pinned;
+  `tui.editor.pageUp`/`pageDown` ship unbound, having had a one-to-three-line
+  prompt to page through. Rules: `docs/ui-map.md` -> "Scrolling the
+  transcript"; guarded by `tui/test/scroll-viewport.test.ts`,
+  `tui/test/mouse.test.ts` and `coding-agent/test/scroll-view-keys.test.ts`.
+
 - **One frame for every user input**: every surface that asks the user for
   something — the pickers, the `ask_options` pane, the extension selector /
   input / editor, the login dialog — replaces the prompt editor, so it draws the
