@@ -1,6 +1,7 @@
 import { homedir } from "os";
 import { join } from "path";
 import { getAgentDir } from "../config.js";
+import { type ChromeDensity, isChromeDensity } from "./chrome-density.js";
 import { DEFAULT_SETTINGS } from "./settings-defaults.js";
 import {
 	FileSettingsStorage,
@@ -721,6 +722,25 @@ export class SettingsManager {
 	setToolOutputView(view: ToolOutputView): void {
 		this.globalSettings.toolOutputView = view;
 		this.markModified("toolOutputView");
+		this.save();
+	}
+
+	/**
+	 * The chrome dial's stop, or undefined when the user has never set one.
+	 *
+	 * Deliberately not defaulted here. "Unset" is a real state: it is what lets
+	 * a short terminal open at `compact` without that guess ever overruling a
+	 * choice someone actually made. The caller resolves it (see
+	 * `SMALL_TERMINAL_ROWS`), because only the caller knows the terminal size.
+	 */
+	getChromeDensity(): ChromeDensity | undefined {
+		const density = this.settings.chromeDensity;
+		return isChromeDensity(density) ? density : undefined;
+	}
+
+	setChromeDensity(density: ChromeDensity): void {
+		this.globalSettings.chromeDensity = density;
+		this.markModified("chromeDensity");
 		this.save();
 	}
 

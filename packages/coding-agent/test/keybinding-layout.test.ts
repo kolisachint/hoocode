@@ -59,6 +59,8 @@ const GLOBAL_SCOPE = [
 	"app.view.cycleForward",
 	"app.view.cycleBackward",
 	"app.thinking.toggle",
+	"app.chrome.cycleForward",
+	"app.chrome.cycleBackward",
 	"app.scroll.pageUp",
 	"app.scroll.pageDown",
 	"app.scroll.top",
@@ -290,6 +292,7 @@ describe("keybinding layout", () => {
 			"app.thinking.cycleBackward",
 			"app.view.cycleBackward",
 			"app.tasks.cycleBackward",
+			"app.chrome.cycleBackward",
 			"app.session.color.cycleBackward",
 			"app.tree.filter.cycleBackward",
 		]);
@@ -326,6 +329,8 @@ describe("keybinding layout", () => {
 	 * non-alt key too or add it here and to that doc.
 	 */
 	const ALT_DEPENDENT = [
+		"app.chrome.cycleForward",
+		"app.chrome.cycleBackward",
 		"tui.editor.jumpBackward",
 		"tui.editor.deleteWordForward",
 		"tui.editor.yankPop",
@@ -518,6 +523,10 @@ describe("keybinding layout", () => {
 		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.pasteImage|message\.)/],
 		["Steer", /^app\.(mode|model)\.|^app\.thinking\.cycle/],
 		["Read", /^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|team\.focus)/],
+		// One subject, so trivially holdable, and genuinely its own intention:
+		// every other family changes what the screen says, this one changes how
+		// much screen there is to say it in.
+		["Screen", /^app\.chrome\./],
 		["Scroll", /^app\.scroll\.(pageUp|pageDown|top|bottom)$/],
 		["Go", /^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)/],
 		[

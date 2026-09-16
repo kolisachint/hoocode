@@ -677,10 +677,14 @@ function formatGroupHeader(meta: TaskAgent, items: readonly Task[], width: numbe
  *   teams and every role renders as a placeholder group, so idle roles are
  *   visible from startup.
  */
+/** Every row the ledger has, or its counts alone on one row. */
+export type TaskPanelDensity = "full" | "summary";
+
 export class TaskPanelComponent implements Component, Focusable {
 	private readonly ui: TUI | null;
 	private runClockTimer: ReturnType<typeof setInterval> | null = null;
 	private view: TaskPanelView = "flat";
+	private density: TaskPanelDensity = "full";
 	private disposed = false;
 
 	// Render memoization. Row strings and derived structures (agentById, the
@@ -823,6 +827,17 @@ export class TaskPanelComponent implements Component, Focusable {
 	}
 
 	/**
+	 * How many rows the ledger takes. Driven by `ChromeController`, not by the
+	 * pane itself — the pane knows what it has to say, the chrome knows how much
+	 * room there is to say it in.
+	 */
+	setDensity(density: TaskPanelDensity): void {
+		if (this.density === density) return;
+		this.density = density;
+		this.ui?.requestRender();
+	}
+
+	/**
 	 * Advance to the next view lens with content (flat → subagents → teams →
 	 * flat), skipping empty lenses. With nothing delegated this is a no-op on
 	 * flat; a stale view (its lens emptied since selection) snaps back to flat.
@@ -915,6 +930,16 @@ export class TaskPanelComponent implements Component, Focusable {
 		const railColor = PANEL_STATE_COLOR[panelState(lensTasks)];
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
+
+		// Mid-turn the ledger keeps its counts and gives up its rows. The tab strip
+		// already carries every lens's done/total and its rail already carries the
+		// panel's state, so one row says what is running and how far in it is —
+		// which is the part you watch while output is arriving. The rows are what
+		// you read once it has stopped, and they come back when it does.
+		if (this.density === "summary") {
+			const tabViews = available.includes(view) ? available : [...available, view];
+			return [gutter + formatLensTabs(tasks, allAgents, inner, view, tabViews, false, false)];
+		}
 
 		// The header IS the switcher, so a single-lens pane renders rows only. The
 		// teams roster is the exception: it is navigable (app.team.focus), so it keeps

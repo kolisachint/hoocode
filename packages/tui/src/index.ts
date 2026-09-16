@@ -131,6 +131,7 @@ export {
 	type ScrollStatus,
 	type ScrollStatusFormatter,
 	type SizeValue,
+	Slot,
 	TUI,
 } from "./tui.js";
 // Utilities

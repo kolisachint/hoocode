@@ -31,6 +31,8 @@ interface AppKeybindings {
 	"app.scroll.lineDown": true;
 	"app.scroll.exit": true;
 	"app.thinking.toggle": true;
+	"app.chrome.cycleForward": true;
+	"app.chrome.cycleBackward": true;
 	"app.tasks.cycleForward": true;
 	"app.tasks.cycleBackward": true;
 	"app.team.focus": true;
@@ -103,15 +105,21 @@ declare module "@kolisachint/hoocode-tui" {
  *   2. **Compose** — the message in your hands. alt+e, alt+r, alt+enter, alt+↑.
  *   3. **Steer** — what the agent is before it runs. alt+a, alt+m, alt+t.
  *   4. **Read** — what you see of what it did. alt+o, alt+l, ctrl+o, ctrl+t.
- *   5. **Scroll** — where in it you are looking. pageUp/pageDown, ctrl+home/end.
- *   6. **Go** — sessions and places. alt+h, alt+w, alt+s, alt+k, alt+c.
+ *   5. **Screen** — how much room there is to see it in. alt+z.
+ *   6. **Scroll** — where in it you are looking. pageUp/pageDown, ctrl+home/end.
+ *   7. **Go** — sessions and places. alt+h, alt+w, alt+s, alt+k, alt+c.
  *
- * Six groups, none of the learned ones larger than five, which is the size a
- * person can actually hold. Three cost nothing to learn: **Flow** and **Scroll**
- * are the sets every terminal program and every pager already taught you, and
- * the **overlays** (pickers, the tree, the options pane, the pinned scroll view)
+ * Seven groups, none of the learned ones larger than five, which is the size a
+ * person can actually hold. Three cost nothing: **Flow** and **Scroll** are the
+ * sets every terminal program and every pager already taught you, and the
+ * **overlays** (pickers, the tree, the options pane, the pinned scroll view)
  * print their own keys on their own hint lines — recognised, never recalled.
- * That leaves three groups to genuinely know.
+ * **Screen** is one key. That leaves three groups to genuinely know.
+ *
+ * Screen is its own group rather than part of Read on purpose: every other
+ * family changes what the screen *says*, and that one changes how much screen
+ * there is to say it in. Folding it into Read pushed that family to six
+ * subjects, which is the one thing this grouping exists to prevent.
  *
  * The declaration order below *is* the grouping, and it is not cosmetic:
  * `orderKeybindingsConfig` writes `keybindings.json` in this order, so the file
@@ -122,12 +130,12 @@ declare module "@kolisachint/hoocode-tui" {
  * The modifier says what kind of thing will happen; the letter says to what.
  *
  * - **alt+<letter> sets a value.** Nothing takes the screen, nothing loses
- *   focus, you keep typing. Six of these are dials — an ordered set of stops
+ *   focus, you keep typing. Seven of these are dials — an ordered set of stops
  *   with the current one painted where you can see it — and `shift+alt+<letter>`
  *   always steps back:
  *
  *       **a**gent mode · **m**odel · **t**hinking · tool **o**utput
- *       task **l**ist · session **c**olour
+ *       task **l**ist · session **c**olour · chrome (**z**)
  *
  *   Reversibility is the point. A control you can undo invites you to try it; a
  *   one-way control makes you stop and think first, which is the wrong tax on a
@@ -149,10 +157,12 @@ declare module "@kolisachint/hoocode-tui" {
  *   `/tree`. The key steps, the command picks; that is why `app.model.select`
  *   and `app.session.tree` ship unbound, having given their letters to dials.
  *
- * One letter in the whole set names nothing: `alt+n` for the team roster. It
- * survives because the task panel prints it in its own header, so it is read off
- * the screen rather than remembered — which is the fallback for anything that
- * cannot earn a mnemonic.
+ * Two letters in the whole set name nothing, and both survive on the same
+ * fallback — what they do is legible on screen, so the letter is read off rather
+ * than remembered. `alt+n` focuses the team roster, and the task panel prints it
+ * in its own header. `alt+z` steps the chrome dial, whose stop *is* the shape of
+ * the screen you are looking at. Every letter that could have named the second
+ * one is already taken by the thing it controls.
  *
  * ## The constraints that shaped it
  *
@@ -300,6 +310,21 @@ export const KEYBINDINGS = {
 	"app.team.focus": {
 		defaultKeys: "alt+n",
 		description: "Focus the team roster (navigate roles, n nudge, a attach)",
+	},
+
+	// alt+z for the amount of screen the chrome gets — the seventh dial, and the
+	// only one whose letter names nothing. It earns the slot the way alt+n does:
+	// its stop is not a label you have to recall, it is the shape of the screen
+	// in front of you, so pressing it once tells you everything the name would.
+	// Every other letter that could have named it is taken by what it controls
+	// (alt+o the view, alt+l the ledger) or by a dial that outranks it.
+	"app.chrome.cycleForward": {
+		defaultKeys: "alt+z",
+		description: "Cycle chrome density (full → compact → bare)",
+	},
+	"app.chrome.cycleBackward": {
+		defaultKeys: "shift+alt+z",
+		description: "Cycle chrome density backward",
 	},
 
 	// ── Scrolling the transcript ────────────────────────────────────────────

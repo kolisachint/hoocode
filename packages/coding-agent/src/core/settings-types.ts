@@ -150,6 +150,11 @@ export interface Settings {
 	// first few lines of the result), "full" (the same, nothing trimmed).
 	// Legacy values collapsed/glance/standard still load and map onto the dial.
 	toolOutputView?: "radar" | "peek" | "full";
+	// How much of the screen the chrome below the transcript is allowed, least
+	// to most transcript: "full" (every row it has), "compact" (a one-row footer,
+	// no task ledger), "bare" (neither). Unset on a terminal under 25 rows starts
+	// at "compact"; the prompt is never hidden at any stop.
+	chromeDensity?: "full" | "compact" | "bare";
 	flags?: Record<string, boolean | string>; // Persisted overrides for extension-registered flags, applied at startup for known flags (CLI --flag still wins). Unknown/stale entries are ignored.
 	branchSummary?: BranchSummarySettings;
 	retry?: RetrySettings;

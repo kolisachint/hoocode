@@ -580,6 +580,8 @@ export class CommandExecutor {
 		const sessionResume = keyDisplayText("app.session.resume");
 		const cycleSessionColor = keyDisplayLabel("app.session.color.cycleForward");
 		const cycleSessionColorBackward = keyDisplayLabel("app.session.color.cycleBackward");
+		const chromeForward = keyDisplayLabel("app.chrome.cycleForward");
+		const chromeBackward = keyDisplayLabel("app.chrome.cycleBackward");
 		const scrollPageUp = keyDisplayText("app.scroll.pageUp");
 		const scrollPageDown = keyDisplayText("app.scroll.pageDown");
 		const scrollTop = keyDisplayText("app.scroll.top");
@@ -589,11 +591,11 @@ export class CommandExecutor {
 		const scrollExit = keyDisplayText("app.scroll.exit");
 
 		let hotkeys = `
-Grouped by what you are doing, not by what the key is. Six groups, none of the
+Grouped by what you are doing, not by what the key is. Seven groups, none of the
 learned ones bigger than five — the size a person can actually hold. Three are
 free: **Flow** is what every terminal program already taught you, **Scroll** is
 what every pager did, and every picker prints its own keys on its own hint line,
-so you read those instead of remembering them.
+so you read those instead of remembering them. **Screen** is one key.
 
 **Compose** — the message in your hands
 | Key | Action |
@@ -630,6 +632,18 @@ onto it. Press again or add \`Shift\` and you are back where you were.
 | \`${expandTools}\` | Jump to the full view and back, without moving the dial |
 | \`${toggleThinking}\` | Show or hide thinking blocks |
 | \`${teamFocus}\` | Focus the team roster — \`${teamNudge}\` nudges, \`${teamAttach}\` attaches, \`q\`/\`${interrupt}\` leaves (\`--team\`) |
+
+**Screen** — how much room there is to see it in
+One dial for the furniture. Everything below the transcript except the prompt,
+which never hides.
+
+| Key | Steps | Through |
+|-----|-------|---------|
+| \`${chromeForward}\` / \`${chromeBackward}\` | Chrome | full → compact (one-row footer, no task list) → bare (neither) |
+
+It also gets out of the way on its own: the footer lends its rows to the
+completion list while that is open, and the task list keeps its counts but drops
+its rows while the agent is mid-turn. Both come back by themselves.
 
 **Scroll** — where in the session you are looking
 The wheel and these keys move the same view, and once it is scrolled back it
@@ -671,8 +685,10 @@ command that does the same thing.
 ### What the chord tells you
 
 \`Alt\`+letter **sets a value** and nothing takes the screen — you keep typing.
-Six of those are dials, and \`Shift\` always steps one back: **a**gent mode,
-**m**odel, **t**hinking, tool **o**utput, task **l**ist, session **c**olor.
+Seven of those are dials, and \`Shift\` always steps one back: **a**gent mode,
+**m**odel, **t**hinking, tool **o**utput, task **l**ist, session **c**olor, and
+chrome (**z**, the one letter that names nothing — its stop is the shape of the
+screen in front of you).
 
 \`Ctrl\`+letter **acts on what is drawn right now** and shares its letter with the
 \`Alt\` key for the same subject. \`${viewForward}\` sets how much tool output there

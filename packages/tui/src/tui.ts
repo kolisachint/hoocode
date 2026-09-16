@@ -321,6 +321,72 @@ export class Container implements Component {
 }
 
 /**
+ * A child that can be taken off screen without disturbing the diff.
+ *
+ * Hiding a component naively — returning `[]` from its render — is one of the
+ * more expensive things you can do to this renderer. `Container.render` and the
+ * root's flat cache both decide "did this subtree change" by **array identity**,
+ * so a fresh `[]` every frame reads as a change every frame: the memo is
+ * dropped, the buffer is re-flattened, and a dirty range is reported for a
+ * component that is not even drawn. One frozen array, returned every time,
+ * makes a hidden slot free instead.
+ *
+ * The child is not rendered at all while hidden, which is the other half of the
+ * saving — a hidden footer costs nothing to keep hidden. That means a child
+ * whose `render` advances an animation or maintains a cache will be paused, not
+ * merely invisible; it catches up when shown again. Chrome (footers, panels,
+ * status rows) is fine with that. A spinner is not, so do not wrap one.
+ */
+export class Slot implements Component {
+	/** Shared across every hidden slot: identity is all the caches compare. */
+	private static readonly EMPTY: string[] = Object.freeze([]) as unknown as string[];
+	private hidden = false;
+
+	constructor(private component: Component) {}
+
+	/** Whoever is in the slot right now. */
+	get child(): Component {
+		return this.component;
+	}
+
+	/**
+	 * Swap the occupant, keeping the slot itself in place.
+	 *
+	 * An extension replacing the footer used to remove one root child and append
+	 * another, which both moved the footer to the end of the tree — behind the
+	 * widgets meant to sit below it — and handed the root's per-child cache a
+	 * changed child list every time. The slot is the stable root child; only what
+	 * is inside it changes.
+	 */
+	setChild(component: Component): boolean {
+		if (this.component === component) return false;
+		this.component = component;
+		return true;
+	}
+
+	get visible(): boolean {
+		return !this.hidden;
+	}
+
+	/** Returns whether this changed anything, so callers can skip a render. */
+	setVisible(visible: boolean): boolean {
+		const hidden = !visible;
+		if (this.hidden === hidden) return false;
+		this.hidden = hidden;
+		return true;
+	}
+
+	invalidate(): void {
+		this.child.invalidate?.();
+	}
+
+	render(width: number): string[] {
+		if (this.hidden) return Slot.EMPTY;
+		return this.child.render(width);
+	}
+}
+
+/**
  * TUI - Main class for managing terminal UI with differential rendering
  */
 export class TUI extends Container {

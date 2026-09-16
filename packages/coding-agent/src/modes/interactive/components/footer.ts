@@ -91,6 +91,9 @@ function renderStartupLine(entry: StartupProgress): string {
  * Footer component that shows pwd, token stats, and context usage.
  * Computes token/context stats from session, gets git branch and extension statuses from provider.
  */
+/** How many rows the footer takes: everything it has, or the one-row strip. */
+export type FooterDensity = "full" | "line";
+
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
 	private toolOutputView: ToolOutputView = DEFAULT_TOOL_OUTPUT_VIEW;
@@ -105,6 +108,8 @@ export class FooterComponent implements Component {
 		this.session = session;
 	}
 
+	private density: FooterDensity = "full";
+
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
 	}
@@ -112,6 +117,20 @@ export class FooterComponent implements Component {
 	/** The view dial's current stop, shown so `alt+o` has somewhere to land. */
 	setToolOutputView(view: ToolOutputView): void {
 		this.toolOutputView = view;
+	}
+
+	/**
+	 * How many rows the footer is allowed.
+	 *
+	 * `line` keeps the mark, the mode, the context gauge and the model — what
+	 * you glance at — and gives up the path, the branch, the token arrows and
+	 * the cost, which are what you look at deliberately and can get back with
+	 * one press of the dial. It is a different line, not line 2 with line 1
+	 * deleted: dropping a row would lose the mode, which is the single most
+	 * consequential thing the footer says.
+	 */
+	setDensity(density: FooterDensity): void {
+		this.density = density;
 	}
 
 	/**
@@ -287,9 +306,36 @@ export class FooterComponent implements Component {
 		}
 		const line2 = assembleLine(width, l2Plain, l2Styled, r2Plain, r2Styled);
 
+		// One row: the mark and mode from line 1, the context gauge from line 2,
+		// and the model flush right. Everything dropped — path, branch, token
+		// arrows, cost — is a press of the dial away, and none of it is something
+		// you read at a glance.
+		if (this.density === "line") {
+			const gaugeSeg = segs[0];
+			const compactPlain = `${brand}  ${gaugeSeg.plain}`;
+			const compactStyled = `${brandStyled}  ${gaugeSeg.styled}`;
+			return [assembleLine(width, compactPlain, compactStyled, r2Plain, r2Styled), ...this.transientLines(width)];
+		}
+
 		const lines = [line1, line2];
 
-		// Add extension statuses on a single line, sorted by key alphabetically
+		return [...lines, ...this.transientLines(width)];
+	}
+
+	/**
+	 * Rows that are only there while something is happening, at either density.
+	 *
+	 * Extension statuses and startup progress are reports on work in flight, so
+	 * they survive the compact stop — a download bar that vanished because you
+	 * wanted more transcript would be the dial hiding something you cannot get
+	 * back by waiting. At `bare` the whole footer is gone and so are these, which
+	 * is the one place the dial does cost you something; that is what `bare`
+	 * means.
+	 */
+	private transientLines(width: number): string[] {
+		const lines: string[] = [];
+
+		// Extension statuses on a single line, sorted by key alphabetically.
 		const extensionStatuses = this.footerData.getExtensionStatuses();
 		if (extensionStatuses.size > 0) {
 			const sortedStatuses = Array.from(extensionStatuses.entries())

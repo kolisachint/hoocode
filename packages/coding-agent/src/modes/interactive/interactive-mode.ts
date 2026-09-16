@@ -33,6 +33,7 @@ import {
 	Markdown,
 	matchesKey,
 	ProcessTerminal,
+	Slot,
 	Spacer,
 	setKeybindings,
 	Text,
@@ -89,6 +90,7 @@ import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { BashExecutionController } from "./bash-execution-controller.js";
+import { ChromeLayoutController, SMALL_TERMINAL_ROWS } from "./chrome-layout.js";
 import { type CommandContext, CommandExecutor } from "./command-executor.js";
 import { BELL, CompletionChime } from "./completion-chime.js";
 import { AssistantMessageComponent, type ThinkingDisplay } from "./components/assistant-message.js";
@@ -390,6 +392,14 @@ export class InteractiveMode {
 
 	// Extension widgets (components rendered above/below the editor)
 	private chrome!: ExtensionChrome;
+	/**
+	 * The two pieces of chrome the density dial can take away, each in a slot so
+	 * hiding one costs nothing and never moves the tree. The prompt has no slot
+	 * on purpose — see `chrome-layout.ts`.
+	 */
+	private footerSlot!: Slot;
+	private tasksSlot!: Slot;
+	private chromeLayout!: ChromeLayoutController;
 	private widgetContainerAbove!: Container;
 	private widgetContainerBelow!: Container;
 
@@ -535,17 +545,35 @@ export class InteractiveMode {
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footer.setToolOutputView(this.toolOutputView);
 		this.footerDataProvider.setSubagentEnabled(this.session.getActiveToolNames().includes("Task"));
+		this.footerSlot = new Slot(this.footer);
 		this.chrome = new ExtensionChrome({
 			ui: this.ui,
 			widgetContainerAbove: this.widgetContainerAbove,
 			widgetContainerBelow: this.widgetContainerBelow,
 			headerContainer: this.headerContainer,
 			footer: this.footer,
+			footerSlot: this.footerSlot,
 			footerDataProvider: this.footerDataProvider,
 			getBuiltInHeader: () => this.builtInHeader,
 			isToolOutputExpanded: () => this.toolOutputExpanded,
 		});
 		this.taskPanel = new TaskPanelComponent(this.ui);
+		this.tasksSlot = new Slot(this.taskPanel);
+		// Unset means nobody has chosen, so a short terminal may open compact; a
+		// stored stop is obeyed at every size.
+		this.chromeLayout = new ChromeLayoutController(
+			{
+				footerSlot: this.footerSlot,
+				tasksSlot: this.tasksSlot,
+				// Density reaches the built-in footer only. An extension that has
+				// replaced it owns its own rows, and second-guessing their height
+				// from out here would be this controller overreaching.
+				setFooterDensity: (density) => this.footer.setDensity(density),
+				setTasksDensity: (density) => this.taskPanel.setDensity(density),
+			},
+			this.settingsManager.getChromeDensity() ?? (this.ui.terminal.rows < SMALL_TERMINAL_ROWS ? "compact" : "full"),
+		);
+		this.chromeLayout.apply();
 		this.dialogs = new ExtensionDialogs({
 			ui: this.ui,
 			editorContainer: this.editorContainer,
@@ -966,10 +994,10 @@ export class InteractiveMode {
 		this.ui.addChild(this.statusContainer);
 		this.chrome.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
-		this.ui.addChild(this.taskPanel);
+		this.ui.addChild(this.tasksSlot);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
-		this.ui.addChild(this.footer);
+		this.ui.addChild(this.footerSlot);
 		this.ui.setFocus(this.editor);
 
 		this.setupKeyHandlers();
@@ -1871,6 +1899,8 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.view.cycleForward", () => this.cycleToolOutputView("forward"));
 		this.defaultEditor.onAction("app.view.cycleBackward", () => this.cycleToolOutputView("backward"));
 		this.defaultEditor.onAction("app.thinking.toggle", () => this.toggleThinkingBlockVisibility());
+		this.defaultEditor.onAction("app.chrome.cycleForward", () => this.cycleChromeDensity("forward"));
+		this.defaultEditor.onAction("app.chrome.cycleBackward", () => this.cycleChromeDensity("backward"));
 		this.defaultEditor.onAction("app.tasks.cycleForward", () => {
 			this.taskPanel.cycleView("forward");
 		});
@@ -1911,6 +1941,12 @@ export class InteractiveMode {
 				this.updateEditorBorderColor();
 				this.updateEditorPromptPrefix();
 			}
+		};
+
+		// The completion list is why the prompt grew, so the footer lends it the
+		// rows — and takes them back the moment the list closes, however it closed.
+		this.defaultEditor.onAutocompleteVisibilityChange = (visible) => {
+			if (this.chromeLayout.setAutocompleteOpen(visible)) this.ui.requestRender();
 		};
 
 		// Handle clipboard image paste (triggered on Ctrl+V)
@@ -2324,6 +2360,8 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
+				// The ledger keeps its counts and gives up its rows for the turn.
+				if (this.chromeLayout.setAgentStreaming(true)) this.ui.requestRender();
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
@@ -2536,6 +2574,7 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
+				if (this.chromeLayout.setAgentStreaming(false)) this.ui.requestRender();
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 					this.loadingAnimation = undefined;
@@ -3389,6 +3428,22 @@ export class InteractiveMode {
 		this.session.setSessionColor(slot);
 		const name = sessionColorName(slot);
 		this.showDialStep("app.session.color.cycleBackward", `Session color: ${name ?? slot}`);
+	}
+
+	/**
+	 * Step the chrome dial and say where it landed.
+	 *
+	 * The step is announced like every other dial's, and it has to be: at `bare`
+	 * the footer that normally shows a dial's new stop is the very thing that
+	 * just went away, so the status line is the only place left to say what
+	 * happened. Without it the screen would simply lose two rows with no
+	 * explanation — which is how a feature gets reported as a glitch.
+	 */
+	private cycleChromeDensity(direction: "forward" | "backward"): void {
+		const density = this.chromeLayout.cycleDensity(direction);
+		this.settingsManager.setChromeDensity(density);
+		this.ui.requestRender();
+		this.showDialStep("app.chrome.cycleBackward", `Chrome: ${density}`);
 	}
 
 	private toggleThinkingBlockVisibility(): void {
