@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Every surface that asks you for something now wears the prompt's box.** The
+  pickers (`/model`, `/models`, `/settings`, `/theme`, `/thinking`, `/sessions`,
+  `/tree`, `/color`, `/login`, fork-from-message), the options pane the agent
+  asks with, the extension selector / input / editor and the login dialog all
+  take the prompt editor's place on screen — and they drew three different
+  things there. Most drew two bare rules; `/model` drew no chrome at all; the
+  options pane and the extension input drew two rules plus a title row and a
+  blank line. Their content started at column 0 where the prompt insets it, half
+  of them did not name themselves, and switching `editorBorder` moved the prompt
+  without moving anything that stands in for it. They now all draw one frame,
+  which is the prompt's own: the same border renderer, the same `box`/`rule`
+  setting, the name in the top border where the session chip rides, the key
+  hints on the last row inside, and content inset one column. The extension
+  editor and the `--team` approval gate lost the second border they were drawing
+  inside the first, which is three rows and two columns back on each.
+
+### Fixed
+
+- **A message sheet reaches the right edge of the terminal again.** Under the
+  cut-out themes a pasted sheet held three columns back from the right margin
+  and only ever used one of them: the shadow's column is `▌`, a left half-block,
+  which paints the sheet's edge in the left half of a single cell and leaves the
+  right half as page. The other two were empty, on every row of every message,
+  and the text wrapped early to pay for them. The gutter is one column now.
+- **The pickers and the settings pane stopped throwing two columns away.** Both
+  list widgets held two columns back from the right edge — one of them commented
+  `-2 for safety` — although every row is truncated to the width it is handed
+  and a selected row is painted out to it. Model names, descriptions and setting
+  values now run to the last cell, and the settings pane's help text wraps
+  against its own indent rather than against twice it.
+- **The voice panel's level meter runs to the right edge.** Its track stopped
+  two columns short: one for the panel's own left gutter, and one for nothing,
+  which left a notch of dead page at the end of every capture.
+
 ## [0.5.66] - 2026-09-15
 
 ## [0.5.65] - 2026-09-15

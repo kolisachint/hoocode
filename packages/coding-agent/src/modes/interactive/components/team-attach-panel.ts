@@ -152,10 +152,13 @@ export class TeamAttachPanelComponent implements Component, Focusable {
 				options: approval.options.map((label) => ({ label })),
 				allowCustom: true,
 			};
+			// This panel is already a framed surface with its own header and rule,
+			// so the gate inside it draws no frame of its own.
 			const component = new AskOptionsComponent(
 				[question],
 				(answers) => settle(answers[0]),
 				() => settle(undefined),
+				{ framed: false },
 			);
 			component.focused = this.focused;
 			this.approval = { component, settle };

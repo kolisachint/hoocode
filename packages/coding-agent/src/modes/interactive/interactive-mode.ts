@@ -100,6 +100,7 @@ import { CustomEditor } from "./components/custom-editor.js";
 import { CustomMessageComponent } from "./components/custom-message.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
+import { setInputFrameBorder } from "./components/input-frame.js";
 import { appKeyLabel, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
 import { renderSessionChip } from "./components/session-chip.js";
 import { SessionColorSelectorComponent } from "./components/session-color-selector.js";
@@ -1331,6 +1332,9 @@ export class InteractiveMode {
 		const editorBorder = this.settingsManager.getEditorBorder();
 		const editorPaddingX = this.settingsManager.getEditorPaddingX();
 		const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
+		// The prompt's border and the frame every surface that replaces the prompt
+		// draws are one decision, so they are set in one place.
+		setInputFrameBorder(editorBorder);
 		this.defaultEditor.setBorder(editorBorder);
 		this.defaultEditor.setPaddingX(editorPaddingX);
 		this.defaultEditor.setAutocompleteMaxVisible(autocompleteMaxVisible);
@@ -3881,6 +3885,7 @@ export class InteractiveMode {
 					},
 					onEditorBorderChange: (border) => {
 						this.settingsManager.setEditorBorder(border);
+						setInputFrameBorder(border);
 						this.defaultEditor.setBorder(border);
 						if (this.editor !== this.defaultEditor && this.editor.setBorder !== undefined) {
 							this.editor.setBorder(border);

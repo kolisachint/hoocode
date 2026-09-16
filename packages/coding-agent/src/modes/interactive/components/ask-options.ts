@@ -1,9 +1,11 @@
 /**
  * Options pane — the agent asking the USER for a decision before it acts.
  *
- * Rendered inline in the transcript (never a modal), in the same boxless
- * language as the other selectors: blue rules top & bottom, a cyan
- * "INPUT NEEDED" label, and the active row marked with the accent cursor.
+ * Standing on its own it takes the prompt editor's place, so it wears the
+ * prompt's frame (`InputFrame`), named "input needed" in the top border, with
+ * the step's key hints on the first row inside. Embedded in the `--team` attach
+ * panel it draws no frame of its own: that panel is already a framed surface,
+ * and a second frame inside it is two boxes one column apart.
  *
  * One decision per step:
  *   - tui.select.up / down    move between options (wraps)
@@ -30,6 +32,15 @@ import {
 } from "@kolisachint/hoocode-tui";
 import type { AskQuestion } from "../../../core/extensions/types.js";
 import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { InputFrame } from "./input-frame.js";
+
+export interface AskOptionsOptions {
+	/**
+	 * Draw the prompt's frame around the pane. False for a pane embedded in a
+	 * surface that already frames it (the team attach panel).
+	 */
+	framed?: boolean;
+}
 
 export class AskOptionsComponent implements Component, Focusable {
 	private questions: AskQuestion[];
@@ -49,13 +60,29 @@ export class AskOptionsComponent implements Component, Focusable {
 		this.customInput.focused = value;
 	}
 
-	constructor(questions: AskQuestion[], onSubmit: (answers: string[]) => void, onCancel: () => void) {
+	/** Undefined when the pane is embedded and its host draws the frame. */
+	private frame: InputFrame | undefined;
+
+	constructor(
+		questions: AskQuestion[],
+		onSubmit: (answers: string[]) => void,
+		onCancel: () => void,
+		options: AskOptionsOptions = {},
+	) {
 		this.questions = questions;
 		this.onSubmitCallback = onSubmit;
 		this.onCancelCallback = onCancel;
+		if (options.framed !== false) {
+			this.frame = new InputFrame({ title: "input needed" });
+			// The body is recomputed from live state on every frame, so it goes in
+			// as an adapter rather than as a component holding its own lines.
+			this.frame.addChild({ render: (width: number) => this.renderBody(width, false), invalidate: () => {} });
+		}
 	}
 
-	invalidate(): void {}
+	invalidate(): void {
+		this.frame?.invalidate();
+	}
 
 	private rowCount(q: AskQuestion): number {
 		return q.options.length + (q.allowCustom ? 1 : 0);
@@ -106,15 +133,22 @@ export class AskOptionsComponent implements Component, Focusable {
 	}
 
 	render(width: number): string[] {
+		if (this.frame) return this.frame.render(width);
+		return this.renderBody(width, true);
+	}
+
+	/**
+	 * The pane's rows. `labelled` prints the "INPUT NEEDED" name on the hint
+	 * row; a framed pane has that name in its border already.
+	 */
+	private renderBody(width: number, labelled: boolean): string[] {
 		const lines: string[] = [];
-		const rule = theme.fg("borderAccent", "─".repeat(Math.max(1, width)));
 		const cur = this.questions[this.step];
 		const last = this.step === this.questions.length - 1;
 
-		lines.push(rule);
-
-		// Header: "INPUT NEEDED" on the left, key hints on the right.
-		const title = theme.bold(theme.fg("borderAccent", "INPUT NEEDED"));
+		// Key hints for this step, flush right; the name on the left when the pane
+		// is not carrying it in a border.
+		const title = labelled ? theme.bold(theme.fg("borderAccent", "INPUT NEEDED")) : "";
 		lines.push(this.spread(title, this.renderHints(last), width));
 
 		// Answered-step breadcrumb.
@@ -170,7 +204,6 @@ export class AskOptionsComponent implements Component, Focusable {
 
 		// Count.
 		lines.push(theme.fg("dim", `(${this.index + 1}/${this.rowCount(cur)})`));
-		lines.push(rule);
 		return lines;
 	}
 

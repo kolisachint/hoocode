@@ -9,7 +9,7 @@ import {
 } from "@kolisachint/hoocode-tui";
 import type { AuthStatus, AuthStorage } from "../../../core/auth-storage.js";
 import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
 export type AuthSelectorProvider = {
@@ -21,7 +21,7 @@ export type AuthSelectorProvider = {
 /**
  * Component that renders an auth provider selector
  */
-export class OAuthSelectorComponent extends Container implements Focusable {
+export class OAuthSelectorComponent extends InputFrame implements Focusable {
 	private searchInput: Input;
 
 	// Focusable implementation - propagate to search input for IME cursor positioning
@@ -62,12 +62,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 
-		// Add top border
-		this.addChild(new DynamicBorder());
-
-		// Add title
-		const title = mode === "login" ? "Select provider to configure:" : "Select provider to logout:";
-		this.addChild(new TruncatedText(theme.fg("accent", theme.bold(title)), 1, 0));
+		this.setTitle(mode === "login" ? "login provider" : "logout provider");
 
 		this.searchInput = new Input();
 		this.searchInput.onSubmit = () => {
@@ -82,9 +77,6 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 		// Create list container
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
-
-		// Add bottom border
-		this.addChild(new DynamicBorder());
 
 		// Initial render
 		this.filterProviders("");
@@ -124,7 +116,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 
 		if (startIndex > 0 || endIndex < this.filteredProviders.length) {
 			const scrollInfo = theme.fg("muted", `  (${this.selectedIndex + 1}/${this.filteredProviders.length})`);
-			this.listContainer.addChild(new TruncatedText(scrollInfo, 1, 0));
+			this.listContainer.addChild(new TruncatedText(scrollInfo, 0, 0));
 		}
 
 		// Show "no providers" if empty
@@ -135,7 +127,7 @@ export class OAuthSelectorComponent extends Container implements Focusable {
 						? "No providers available"
 						: "No providers logged in. Use /login first."
 					: "No matching providers";
-			this.listContainer.addChild(new TruncatedText(theme.fg("muted", `  ${message}`), 1, 0));
+			this.listContainer.addChild(new TruncatedText(theme.fg("muted", `  ${message}`), 0, 0));
 		}
 	}
 

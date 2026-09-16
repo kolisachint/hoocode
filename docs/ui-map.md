@@ -28,9 +28,18 @@ Input / editing:
 - `autocomplete.ts`, `fuzzy.ts` - autocomplete and fuzzy matching.
 - `terminal-image.ts` - inline image rendering support.
 
-Reusable widgets (`src/components/`): `box`, `text`, `truncated-text`, `spacer`, `input`,
-`editor`, `loader`, `cancellable-loader`, `markdown`, `select-list`, `settings-list`,
-`image`.
+Reusable widgets (`src/components/`): `box`, `frame`, `text`, `truncated-text`, `spacer`,
+`input`, `editor`, `loader`, `cancellable-loader`, `markdown`, `select-list`,
+`settings-list`, `image`.
+
+- `components/frame.ts` - the border, and the only thing that draws one.
+  `renderFrameEdge` renders one horizontal edge: the rule, the `↑ N more` scroll
+  indicator that eats into it, the label that rides what is left, and the
+  corners in box mode. `Frame` is a `Container` that wraps its children in that
+  border at a chosen style (`box`, `rule`, `none`), insets them by a gutter, and
+  pads every row out to the width it was handed. `editor.ts` draws its own
+  border through the same function, and `EditorBorderStyle` / `EditorBorderChars`
+  / `EditorTopBorderLabel` are now aliases of the frame's types.
 
 A component generally exposes a `render(width)` method returning an array of styled lines;
 the renderer diffs successive frames.
@@ -133,6 +142,8 @@ Rendered in order as the conversation scrolls:
 
 - `custom-editor.ts` - the prompt editor wrapper around the tui editor.
 - `extension-input.ts`, `extension-editor.ts` - inputs for the extension system.
+- `input-frame.ts` (`InputFrame`) - **the chrome every surface that asks the user
+  for something wears.** See "One frame for every user input" below.
 
 ### Modal selectors / dialogs
 
@@ -151,6 +162,65 @@ Pickers presented over the main view:
 
 - `visual-truncate.ts` - app-level truncation helper.
 - `index.ts` - barrel exports for the components.
+
+## One frame for every user input
+
+Every surface that asks the user for something replaces the prompt editor in
+`editorContainer`: the pickers (`/model`, `/models`, `/settings`, `/theme`,
+`/thinking`, `/sessions`, `/tree`, `/color`, `/login`, the fork-from-message
+list), the `ask_options` pane, the extension selector / input / editor, and the
+login dialog. They all draw `InputFrame`, which is the *prompt's own* frame:
+
+- **One border renderer.** `InputFrame` extends the tui `Frame`, which draws its
+  edges with `renderFrameEdge` - the same function `Editor` draws its border
+  with. There is no second way to draw a border around an input.
+- **One border style.** `InputFrame` reads the `editorBorder` setting (`box` or
+  `rule`) on every frame, so `/settings` moves the prompt and everything that
+  stands in for it together, including a pane that is already open.
+  `interactive-mode.ts` pushes it with `setInputFrameBorder`, next to
+  `editor.setBorder`, in `applyRuntimeSettings` and in the settings callback.
+- **One place the name goes:** into the top border, flush right - the slot the
+  session chip rides on the prompt. `setTitle`. Never a title row inside.
+- **One place the hints go:** the last row inside, flush above the bottom edge.
+  `setHint`, which keeps that row last however the pane was built.
+- **One gutter.** The frame insets content one column, so a picker's rows line
+  up with the prompt's `❯` instead of starting at column 0. A child that
+  overruns is cut rather than allowed to wrap the frame.
+- **The border colour is the plain `border` token**, not the prompt's: the
+  prompt's border carries the thinking level and bash mode, and a picker has
+  neither to report.
+
+A pane embedded in a surface that already frames it draws no frame of its own -
+`AskOptionsComponent` takes `{ framed: false }` for the `--team` attach panel,
+and a nested `Editor` takes `border: "none"`. Two boxes one column apart is a
+picture frame.
+
+A frame with nothing in it draws nothing, so a pane that has not yet loaded its
+content needs a row to hold it open (`login-dialog.ts` draws "Starting…" until
+the flow speaks).
+
+Guarded by `coding-agent/test/input-surface-frame.test.ts`, which builds every
+input surface and asserts the corners, the gutter, the title's place, the
+`rule`-mode fallback, and that every row is exactly as wide as the terminal -
+at every width from 160 columns down to 2. `tui/test/frame.test.ts` holds the
+frame's own geometry and that `renderFrameEdge` still produces the editor's
+border byte for byte.
+
+## Screen columns
+
+Rows are scarce (see below) and so are columns: a margin held back "for safety"
+is a column of every row, forever. Two rules:
+
+- **A widget fills the width it was handed.** Truncate to it, pad to it, and
+  spend nothing on a margin the layout does not need. `SelectList` and
+  `SettingsList` each held two columns back with no reason recorded (one of them
+  commented `-2 for safety`); that was two columns off every picker row and
+  every settings row. `tui/test/list-right-margin.test.ts` holds the recovery.
+- **A sheet's gutter is one column.** `PAPER_INSET` is 1: the shadow's column is
+  `▌`, a *left* half-block, so it paints the sheet's edge in the left half of
+  that one cell and leaves the right half as page. A wider gutter shows nothing
+  a reader can use. `coding-agent/test/message-block-fill.test.ts` ("a sheet's
+  reach") asserts the sheet runs to the terminal's last cell.
 
 ## Vertical rhythm
 
@@ -187,6 +257,8 @@ as a sheet (`components/user-message.ts`, `showBlock` in `interactive-mode.ts`).
   follow (`ctrl` = view, `alt` = cockpit, pickers never take a `ctrl+<letter>`):
   `coding-agent/src/core/keybindings.ts`, guarded by
   `coding-agent/test/keybinding-layout.test.ts`.
-- A generic widget (box, list, markdown): `tui/src/components/`.
+- A generic widget (box, frame, list, markdown): `tui/src/components/`.
+- The border around anything: `tui/src/components/frame.ts`. The chrome around a
+  surface that takes user input: `interactive/components/input-frame.ts`.
 - The render/diff loop: `tui/src/tui.ts` + `tui/src/terminal.ts`.
 - Width/truncation math: `tui/src/utils.ts` (`visibleWidth`, `truncateToWidth`).

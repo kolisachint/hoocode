@@ -20,6 +20,16 @@ export {
 	type EditorTheme,
 	type EditorTopBorderLabel,
 } from "./components/editor.js";
+export {
+	DEFAULT_FRAME_BORDER_CHARS,
+	Frame,
+	type FrameBorderChars,
+	type FrameBorderStyle,
+	type FrameEdgeOptions,
+	type FrameLabel,
+	type FrameOptions,
+	renderFrameEdge,
+} from "./components/frame.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
 export { Input } from "./components/input.js";
 export { Loader, type LoaderIndicatorOptions } from "./components/loader.js";

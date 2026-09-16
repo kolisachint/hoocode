@@ -4,7 +4,14 @@ import { decodePrintableKey, matchesKey } from "../keys.js";
 import { KillRing } from "../kill-ring.js";
 import { type Component, CURSOR_MARKER, type Focusable, type TUI } from "../tui.js";
 import { UndoStack } from "../undo-stack.js";
-import { getSegmenter, isPunctuationChar, isWhitespaceChar, truncateToWidth, visibleWidth } from "../utils.js";
+import { getSegmenter, isPunctuationChar, isWhitespaceChar, visibleWidth } from "../utils.js";
+import {
+	DEFAULT_FRAME_BORDER_CHARS,
+	type FrameBorderChars,
+	type FrameBorderStyle,
+	type FrameLabel,
+	renderFrameEdge,
+} from "./frame.js";
 import { SelectList, type SelectListLayoutOptions, type SelectListTheme } from "./select-list.js";
 
 const baseSegmenter = getSegmenter();
@@ -216,46 +223,14 @@ interface LayoutLine {
 	cursorPos?: number;
 }
 
-export type EditorBorderStyle = "rule" | "box";
-
-export interface EditorBorderChars {
-	horizontal: string;
-	vertical: string;
-	topLeft: string;
-	topRight: string;
-	bottomLeft: string;
-	bottomRight: string;
-}
-
-export const DEFAULT_EDITOR_BORDER_CHARS: EditorBorderChars = {
-	horizontal: "─",
-	vertical: "│",
-	topLeft: "┌",
-	topRight: "┐",
-	bottomLeft: "└",
-	bottomRight: "┘",
-};
-
-/**
- * A label laid into the editor's top border, flush right. `plain` drives the
- * width math; `styled` is what is emitted and must occupy exactly
- * `visibleWidth(plain)` cells — the same plain/styled discipline the footer uses.
- */
-export interface EditorTopBorderLabel {
-	plain: string;
-	styled: string;
-}
-
-/** Border cells kept between the label and the top-right corner, so it reads as inset rather than jammed. */
-const LABEL_RIGHT_INSET = 2;
-
-/**
- * Border cells required to the *left* of the label. Below this the label is
- * dropped rather than drawn: a label butting straight up against the scroll
- * indicator reads as one run-on string, and a border with no run of border in it
- * has stopped looking like a border.
- */
-const MIN_LABEL_LEAD_IN = 4;
+// The editor's border is the frame every surface that replaces the editor
+// draws, so the style, the glyphs and the top-border label all live in
+// `frame.ts` now. These names stay as aliases: they are the public API the app
+// and its extensions already import.
+export type EditorBorderStyle = FrameBorderStyle;
+export type EditorBorderChars = FrameBorderChars;
+export const DEFAULT_EDITOR_BORDER_CHARS: EditorBorderChars = DEFAULT_FRAME_BORDER_CHARS;
+export type EditorTopBorderLabel = FrameLabel;
 
 export interface EditorTheme {
 	borderColor: (str: string) => string;
@@ -504,47 +479,24 @@ export class Editor implements Component, Focusable {
 	 * @param box - Whether to draw corners
 	 */
 	private renderBorder(edge: "top" | "bottom", hidden: number, barWidth: number, box: boolean): string {
-		const chars = this.borderChars;
-		let indicator = "";
-		if (hidden > 0) {
-			const arrow = edge === "top" ? "↑" : "↓";
-			indicator = `${chars.horizontal.repeat(3)} ${arrow} ${hidden} more `;
-		}
-		const indicatorWidth = visibleWidth(indicator);
-
-		// The label rides on the top border only, and yields to the scroll
-		// indicator: the indicator says the text is longer than the box, which the
-		// reader needs *now*, while the label says which session this is, which
-		// they can also read in the footer.
-		const label = edge === "top" ? this.topBorderLabel : undefined;
-		const leadIn = label ? barWidth - indicatorWidth - visibleWidth(label.plain) - LABEL_RIGHT_INSET : -1;
-
-		let bar: string;
-		if (label && leadIn >= MIN_LABEL_LEAD_IN) {
-			bar =
-				this.borderColor(indicator + chars.horizontal.repeat(leadIn)) +
-				label.styled +
-				this.borderColor(chars.horizontal.repeat(LABEL_RIGHT_INSET));
-		} else if (indicatorWidth > 0) {
-			const remaining = barWidth - indicatorWidth;
-			bar = this.borderColor(
-				remaining >= 0 ? indicator + chars.horizontal.repeat(remaining) : truncateToWidth(indicator, barWidth),
-			);
-		} else {
-			bar = this.borderColor(chars.horizontal.repeat(barWidth));
-		}
-		if (!box) return bar;
-		// Corners must stay aligned, so pad back any width lost to truncation.
-		bar += this.borderColor(chars.horizontal.repeat(Math.max(0, barWidth - visibleWidth(bar))));
-		const left = edge === "top" ? chars.topLeft : chars.bottomLeft;
-		const right = edge === "top" ? chars.topRight : chars.bottomRight;
-		return this.borderColor(left) + bar + this.borderColor(right);
+		return renderFrameEdge({
+			edge,
+			barWidth,
+			box,
+			chars: this.borderChars,
+			color: this.borderColor,
+			label: this.topBorderLabel,
+			hidden,
+		});
 	}
 
 	render(width: number): string[] {
 		// Box mode needs 2 columns for the side borders plus at least 1 content
 		// column; below that it degrades to rule mode rather than overflowing.
 		const box = this.border === "box" && width >= 4;
+		// `none` is for an editor nested in a frame that already rules it: the
+		// rows are the same, the two horizontals are simply not drawn.
+		const bare = this.border === "none";
 		const borderWidth = box ? 1 : 0;
 		const innerWidth = Math.max(1, width - borderWidth * 2);
 		const maxPadding = Math.max(0, Math.floor((innerWidth - 1) / 2));
@@ -597,7 +549,7 @@ export class Editor implements Component, Focusable {
 		const rightPadding = leftPadding;
 
 		// Render top border (with scroll indicator if scrolled down)
-		result.push(this.renderBorder("top", this.scrollOffset, barWidth, box));
+		if (!bare) result.push(this.renderBorder("top", this.scrollOffset, barWidth, box));
 
 		// Render each visible layout line
 		// Emit hardware cursor marker only when focused and not showing autocomplete
@@ -655,7 +607,7 @@ export class Editor implements Component, Focusable {
 
 		// Render bottom border (with scroll indicator if more content below)
 		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
-		result.push(this.renderBorder("bottom", linesBelow, barWidth, box));
+		if (!bare) result.push(this.renderBorder("bottom", linesBelow, barWidth, box));
 
 		// Add autocomplete list if active
 		if (this.autocompleteState && this.autocompleteList) {

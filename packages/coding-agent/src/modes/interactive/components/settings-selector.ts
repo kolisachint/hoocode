@@ -23,7 +23,7 @@ import {
 	type ToolOutputView,
 } from "../../../core/tool-output-view.js";
 import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { keyDisplayText } from "./keybinding-hints.js";
 
 const SETTINGS_SUBMENU_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -923,7 +923,7 @@ function formatSurfaceLine(surface: PromptSurface): string {
 /**
  * Main settings selector component.
  */
-export class SettingsSelectorComponent extends Container {
+export class SettingsSelectorComponent extends InputFrame {
 	private settingsList: SettingsList;
 	private surfaceLine?: Text;
 	private measureTokenSurface?: () => PromptSurface;
@@ -1365,8 +1365,7 @@ export class SettingsSelectorComponent extends Container {
 					),
 			});
 		}
-		// Add borders
-		this.addChild(new DynamicBorder());
+		this.setTitle("settings");
 
 		// Shared change handler for every leaf (cycle) setting; used by the
 		// top-level list and each category submenu.
@@ -1587,7 +1586,6 @@ export class SettingsSelectorComponent extends Container {
 			this.surfaceLine = new Text(formatSurfaceLine(initialSurface), 0, 0);
 			this.addChild(this.surfaceLine);
 		}
-		this.addChild(new DynamicBorder());
 	}
 
 	/** Re-price the pane after a change that may have altered what each turn sends. */

@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@kolisachint/hoocode-agent-core";
-import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@kolisachint/hoocode-tui";
+import { type SelectItem, SelectList, type SelectListLayoutOptions } from "@kolisachint/hoocode-tui";
 import { getSelectListTheme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 
 const THINKING_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 12,
@@ -20,7 +20,7 @@ const LEVEL_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 /**
  * Component that renders a thinking level selector with borders
  */
-export class ThinkingSelectorComponent extends Container {
+export class ThinkingSelectorComponent extends InputFrame {
 	private selectList: SelectList;
 
 	constructor(
@@ -29,16 +29,13 @@ export class ThinkingSelectorComponent extends Container {
 		onSelect: (level: ThinkingLevel) => void,
 		onCancel: () => void,
 	) {
-		super();
+		super({ title: "thinking" });
 
 		const thinkingLevels: SelectItem[] = availableLevels.map((level) => ({
 			value: level,
 			label: level,
 			description: LEVEL_DESCRIPTIONS[level],
 		}));
-
-		// Add top border
-		this.addChild(new DynamicBorder());
 
 		// Create selector
 		this.selectList = new SelectList(
@@ -63,9 +60,6 @@ export class ThinkingSelectorComponent extends Container {
 		};
 
 		this.addChild(this.selectList);
-
-		// Add bottom border
-		this.addChild(new DynamicBorder());
 	}
 
 	getSelectList(): SelectList {

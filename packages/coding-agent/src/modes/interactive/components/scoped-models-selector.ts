@@ -11,7 +11,7 @@ import {
 	Text,
 } from "@kolisachint/hoocode-tui";
 import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { keyText } from "./keybinding-hints.js";
 import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
@@ -88,7 +88,7 @@ export interface ModelsCallbacks {
  * Component for enabling/disabling models for the model-cycling keybinding.
  * Changes are session-only until explicitly persisted with the save keybinding.
  */
-export class ScopedModelsSelectorComponent extends Container implements Focusable {
+export class ScopedModelsSelectorComponent extends InputFrame implements Focusable {
 	private modelsById: Map<string, Model<any>> = new Map();
 	private allIds: string[] = [];
 	private enabledIds: EnabledIds = null;
@@ -124,9 +124,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		this.enabledIds = config.enabledModelIds === null ? null : [...config.enabledModelIds];
 		this.filteredItems = this.buildItems();
 
-		// Header
-		this.addChild(new DynamicBorder());
-		this.addChild(new Text(theme.fg("accent", theme.bold("Model Configuration")), 0, 0));
+		this.setTitle("models");
 		this.addChild(
 			new Text(theme.fg("muted", `Session-only. ${keyText("app.models.save")} to save to settings.`), 0, 0),
 		);
@@ -145,7 +143,6 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		this.footerText = new Text(this.getFooterText(), 0, 0);
 		this.addChild(this.footerText);
 
-		this.addChild(new DynamicBorder());
 		this.updateList();
 	}
 

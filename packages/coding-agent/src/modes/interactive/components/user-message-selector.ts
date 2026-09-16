@@ -1,6 +1,6 @@
-import { type Component, Container, getKeybindings, Spacer, Text, truncateToWidth } from "@kolisachint/hoocode-tui";
+import { type Component, getKeybindings, Text, truncateToWidth } from "@kolisachint/hoocode-tui";
 import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 
 interface UserMessageItem {
 	id: string; // Entry ID in the session
@@ -45,10 +45,13 @@ class UserMessageList implements Component {
 		);
 		const endIndex = Math.min(startIndex + this.maxVisible, this.messages.length);
 
-		// Render visible messages (2 lines per message + blank line)
+		// Render visible messages: two rows each, separated by a blank.
 		for (let i = startIndex; i < endIndex; i++) {
 			const message = this.messages[i];
 			const isSelected = i === this.selectedIndex;
+			// The separator goes *before* each entry but the first, so the list
+			// does not end on a blank row pressed against the frame's bottom rule.
+			if (i > startIndex) lines.push("");
 
 			// Normalize message to single line
 			const normalizedMessage = message.text.replace(/\n/g, " ").trim();
@@ -68,7 +71,6 @@ class UserMessageList implements Component {
 			const metadata = `  Message ${position} of ${this.messages.length}`;
 			const metadataLine = theme.fg("muted", metadata);
 			lines.push(metadataLine);
-			lines.push(""); // Blank line between messages
 		}
 
 		// Add scroll indicator if needed
@@ -109,7 +111,7 @@ class UserMessageList implements Component {
 /**
  * Component that renders a user message selector for branching
  */
-export class UserMessageSelectorComponent extends Container {
+export class UserMessageSelectorComponent extends InputFrame {
 	private messageList: UserMessageList;
 
 	constructor(
@@ -118,19 +120,15 @@ export class UserMessageSelectorComponent extends Container {
 		onCancel: () => void,
 		initialSelectedId?: string,
 	) {
-		super();
+		super({ title: "fork from message" });
 
-		// Add header
-		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.bold("Fork from Message"), 1, 0));
 		this.addChild(
 			new Text(
 				theme.fg("muted", "Select a user message to copy the active path up to that point into a new session"),
-				1,
+				0,
 				0,
 			),
 		);
-		this.addChild(new DynamicBorder());
 
 		// Create message list
 		this.messageList = new UserMessageList(messages, initialSelectedId);
@@ -138,9 +136,6 @@ export class UserMessageSelectorComponent extends Container {
 		this.messageList.onCancel = onCancel;
 
 		this.addChild(this.messageList);
-
-		// Add bottom border
-		this.addChild(new DynamicBorder());
 
 		// Auto-cancel if no messages
 		if (messages.length === 0) {

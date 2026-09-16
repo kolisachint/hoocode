@@ -12,6 +12,23 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **One frame for every user input**: every surface that asks the user for
+  something — the pickers, the `ask_options` pane, the extension selector /
+  input / editor, the login dialog — replaces the prompt editor, so it draws the
+  prompt's frame. `InputFrame`
+  (`interactive/components/input-frame.ts`) wraps the tui `Frame`, whose edges
+  come out of `renderFrameEdge` — the same function `Editor` draws its border
+  with. It follows the `editorBorder` setting, names itself in the top border
+  (never a title row inside), keeps the hints as the last row inside, and insets
+  content one column. Never add a second way to draw a border around an input.
+  Rules: `docs/ui-map.md` -> "One frame for every user input"; guarded by
+  `coding-agent/test/input-surface-frame.test.ts` and `tui/test/frame.test.ts`.
+- **TUI screen columns**: a widget fills the width it was handed — no margin
+  held back "for safety". `SelectList` and `SettingsList` each gave two columns
+  of every row away; `PAPER_INSET` is 1, not 3, because the shadow's `▌` is a
+  left half-block and so *is* the gutter. Rules and the tests that hold them:
+  `docs/ui-map.md` -> "Screen columns".
+
 - **Keybinding families**: the map is grouped by intention, not mechanism —
   Compose, Steer, Read, Go, Flow, plus overlays that print their own keys. Five
   learned groups, none over five subjects, because that is what a person holds.

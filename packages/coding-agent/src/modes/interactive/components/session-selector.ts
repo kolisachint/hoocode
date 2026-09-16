@@ -19,7 +19,7 @@ import { sessionColorSlotFor, sessionSlugFor } from "../../../core/session-ident
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
 import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, sessionColorToken, theme } from "../theme/theme.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.js";
 
@@ -697,7 +697,7 @@ async function deleteSessionFile(
 /**
  * Component that renders a session selector
  */
-export class SessionSelectorComponent extends Container implements Focusable {
+export class SessionSelectorComponent extends InputFrame implements Focusable {
 	handleInput(data: string): void {
 		if (this.mode === "rename") {
 			const kb = getKeybindings();
@@ -750,14 +750,11 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 	private buildBaseLayout(content: Component, options?: { showHeader?: boolean }): void {
 		this.clear();
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
 		if (options?.showHeader ?? true) {
 			this.addChild(this.header);
 			this.addChild(new Spacer(1));
 		}
 		this.addChild(content);
-		this.addChild(new DynamicBorder((s) => theme.fg("accent", s)));
 	}
 
 	constructor(
@@ -774,7 +771,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		},
 		currentSessionFilePath?: string,
 	) {
-		super();
+		super({ title: "sessions" });
 		this.keybindings = options?.keybindings ?? KeybindingsManager.create();
 		this.currentSessionsLoader = currentSessionsLoader;
 		this.allSessionsLoader = allSessionsLoader;

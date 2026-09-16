@@ -3,10 +3,10 @@
  * Displays a list of string options with keyboard navigation.
  */
 
-import { Container, getKeybindings, Spacer, Text, type TUI } from "@kolisachint/hoocode-tui";
+import { Container, getKeybindings, type TUI } from "@kolisachint/hoocode-tui";
 import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
-import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { keyHint, rawKeyHint } from "./keybinding-hints.js";
 import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
@@ -15,13 +15,12 @@ export interface ExtensionSelectorOptions {
 	timeout?: number;
 }
 
-export class ExtensionSelectorComponent extends Container {
+export class ExtensionSelectorComponent extends InputFrame {
 	private options: string[];
 	private selectedIndex = 0;
 	private listContainer: Container;
 	private onSelectCallback: (option: string) => void;
 	private onCancelCallback: () => void;
-	private titleText: Text;
 	private baseTitle: string;
 	private countdown: CountdownTimer | undefined;
 
@@ -32,43 +31,32 @@ export class ExtensionSelectorComponent extends Container {
 		onCancel: () => void,
 		opts?: ExtensionSelectorOptions,
 	) {
-		super();
+		super({ title });
 
 		this.options = options;
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
 		this.baseTitle = title;
 
-		this.addChild(new DynamicBorder());
-
-		this.titleText = new Text(theme.fg("accent", theme.bold(title)), 1, 0);
-		this.addChild(this.titleText);
-		this.addChild(new Spacer(1));
-
 		if (opts?.timeout && opts.timeout > 0 && opts.tui) {
+			// The countdown rides the title in the border, where the title now is.
 			this.countdown = new CountdownTimer(
 				opts.timeout,
 				opts.tui,
-				(s) => this.titleText.setText(theme.fg("accent", theme.bold(`${this.baseTitle} (${s}s)`))),
+				(s) => this.setTitle(`${this.baseTitle} (${s}s)`),
 				() => this.onCancelCallback(),
 			);
 		}
 
 		this.listContainer = new Container();
 		this.addChild(this.listContainer);
-		this.addChild(new Spacer(1));
-		this.addChild(
-			new Text(
-				rawKeyHint("↑↓", "navigate") +
-					"  " +
-					keyHint("tui.select.confirm", "select") +
-					"  " +
-					keyHint("tui.select.cancel", "cancel"),
-				1,
-				0,
-			),
+		this.setHint(
+			rawKeyHint("↑↓", "navigate") +
+				"  " +
+				keyHint("tui.select.confirm", "select") +
+				"  " +
+				keyHint("tui.select.cancel", "cancel"),
 		);
-		this.addChild(new DynamicBorder());
 
 		this.updateList();
 	}

@@ -12,6 +12,7 @@ import {
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
 import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { InputFrame } from "./input-frame.js";
 import { keyHint } from "./keybinding-hints.js";
 import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
@@ -31,7 +32,7 @@ type ModelScope = "all" | "scoped";
 /**
  * Component that renders a model selector with search
  */
-export class ModelSelectorComponent extends Container implements Focusable {
+export class ModelSelectorComponent extends InputFrame implements Focusable {
 	private searchInput: Input;
 
 	// Focusable implementation - propagate to searchInput for IME cursor positioning
@@ -71,7 +72,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		onCancel: () => void,
 		initialSearchInput?: string,
 	) {
-		super();
+		super({ title: "model" });
 
 		this.tui = tui;
 		this.currentModel = currentModel;
@@ -81,9 +82,6 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		this.scope = scopedModels.length > 0 ? "scoped" : "all";
 		this.onSelectCallback = onSelect;
 		this.onCancelCallback = onCancel;
-
-		// Minimal chrome — no filled border, just a clean overlay.
-		this.addChild(new Spacer(1));
 
 		// Add hint about model filtering
 		if (scopedModels.length > 0) {

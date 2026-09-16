@@ -4,14 +4,13 @@ import {
 	type Focusable,
 	getKeybindings,
 	Input,
-	Spacer,
-	Text,
 	TruncatedText,
 	truncateToWidth,
 } from "@kolisachint/hoocode-tui";
 import type { SessionTreeNode } from "../../../core/session-manager.js";
 import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
+import { InputFrame } from "./input-frame.js";
 import { appKeyLabel, formatKeyText, keyHint, rawKeyHint } from "./keybinding-hints.js";
 
 /** Gutter info: position (displayIndent where connector was) and whether to show │ */
@@ -1120,7 +1119,7 @@ class LabelInput implements Component, Focusable {
 /**
  * Component that renders a session tree selector for navigation
  */
-export class TreeSelectorComponent extends Container implements Focusable {
+export class TreeSelectorComponent extends InputFrame implements Focusable {
 	private treeList: TreeList;
 	private labelInput: LabelInput | null = null;
 	private labelInputContainer: Container;
@@ -1165,9 +1164,7 @@ export class TreeSelectorComponent extends Container implements Focusable {
 
 		this.labelInputContainer = new Container();
 
-		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder());
-		this.addChild(new Text(theme.bold("  Session Tree"), 1, 0));
+		this.setTitle("session tree");
 		// House hint style (see keybinding-hints): dim key + muted description,
 		// muted · separators. One key per verb — the tree binds ctrl+left and
 		// alt+left to the same fold, and printing every alias is what made this
@@ -1187,25 +1184,24 @@ export class TreeSelectorComponent extends Container implements Focusable {
 			.join("/");
 		this.addChild(
 			new TruncatedText(
-				"  " +
-					[
-						rawKeyHint("↑/↓", "move"),
-						rawKeyHint("←/→", "page"),
-						rawKeyHint(foldKeys, "fold"),
-						rawKeyHint(filterRange, "filter"),
-						rawKeyHint(appKeyLabel("app.tree.filter.cycleForward"), "cycle"),
-						rawKeyHint(appKeyLabel("app.tree.editLabel"), "label"),
-						rawKeyHint(appKeyLabel("app.tree.toggleLabelTimestamp"), "timestamps"),
-					].join(sep),
+				[
+					rawKeyHint("↑/↓", "move"),
+					rawKeyHint("←/→", "page"),
+					rawKeyHint(foldKeys, "fold"),
+					rawKeyHint(filterRange, "filter"),
+					rawKeyHint(appKeyLabel("app.tree.filter.cycleForward"), "cycle"),
+					rawKeyHint(appKeyLabel("app.tree.editLabel"), "label"),
+					rawKeyHint(appKeyLabel("app.tree.toggleLabelTimestamp"), "timestamps"),
+				].join(sep),
 				0,
 				0,
 			),
 		);
 		this.addChild(new SearchLine(this.treeList));
+		// A divider inside the frame, between the pane's keys and the tree itself.
 		this.addChild(new DynamicBorder());
 		this.addChild(this.treeContainer);
 		this.addChild(this.labelInputContainer);
-		this.addChild(new DynamicBorder());
 
 		if (tree.length === 0) {
 			setTimeout(() => onCancel(), 100);

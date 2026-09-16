@@ -161,6 +161,31 @@ const CONTENT: Array<[string, string]> = [
  */
 const WIDTHS = [120, 80, 60, 40, 34, 24, 20, 16, 12, 10, 8, 6, 5, 4, 3, 2];
 
+/**
+ * What a sheet costs in columns, pinned to a number rather than to itself.
+ *
+ * Every other assertion in this file derives the band from `PAPER_INSET`, so
+ * they all held while the gutter was three columns wide and two of them showed
+ * nothing at all — the sheet stopped short and the page beside it was empty.
+ * The treatment needs exactly one: the shadow's `▌` is a *left* half-block, so
+ * it paints the sheet's edge in the left half of that last cell and leaves the
+ * right half as page. This is the test that fails if the gutter grows back.
+ */
+describe.each(["vox-cutout-dark", "vox-cutout-light"])("a sheet's reach on %s", (themeName) => {
+	it.each([120, 100, 80, 60, 40])("runs to the terminal's last cell at width %i", (width) => {
+		initTheme(themeName, false);
+		const lines = new UserMessageComponent("a message").render(width).filter((line) => scan(line).length > 0);
+		expect(PAPER_INSET).toBe(1);
+		// The shadow is offset down *and* right, so the sheet's own top row is the
+		// one row with nothing in the last cell. Every row under it — and the
+		// bottom run — reaches it.
+		expect(scan(lines[0]).length, "the top row").toBe(width - 1);
+		for (const [i, line] of lines.slice(1).entries()) {
+			expect(scan(line).length, `row ${i + 1} stops short of the margin`).toBe(width);
+		}
+	});
+});
+
 describe.each(["vox-cutout-dark", "vox-cutout-light"])("a sheet's fill on %s", (themeName) => {
 	it.each(CONTENT)("holds its geometry at every width: %s", (label, text) => {
 		initTheme(themeName, false);
