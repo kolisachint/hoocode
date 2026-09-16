@@ -65,6 +65,17 @@ export class LoginDialogComponent extends InputFrame implements Focusable {
 		};
 	}
 
+	/**
+	 * A blank row between what is already shown and what is about to be — and
+	 * nothing at all when there is nothing above it. The flow's steps append to
+	 * each other, so each one asked for a leading `Spacer(1)`; with the title
+	 * moved into the border the first step's blank row sits flush under the top
+	 * rule, which is the wasted row the vertical rhythm rules name.
+	 */
+	private separate(): void {
+		if (this.contentContainer.children.length > 0) this.contentContainer.addChild(new Spacer(1));
+	}
+
 	/** Remove the "Starting…" row the first time the flow has something to say. */
 	private dropPlaceholder(): void {
 		if (!this.placeholder) return;
@@ -116,7 +127,7 @@ export class LoginDialogComponent extends InputFrame implements Focusable {
 	 */
 	showManualInput(prompt: string): Promise<string> {
 		this.dropPlaceholder();
-		this.contentContainer.addChild(new Spacer(1));
+		this.separate();
 		this.contentContainer.addChild(new Text(theme.fg("dim", prompt), 0, 0));
 		this.contentContainer.addChild(this.input);
 		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 0, 0));
@@ -134,7 +145,7 @@ export class LoginDialogComponent extends InputFrame implements Focusable {
 	 */
 	showPrompt(message: string, placeholder?: string): Promise<string> {
 		this.dropPlaceholder();
-		this.contentContainer.addChild(new Spacer(1));
+		this.separate();
 		this.contentContainer.addChild(new Text(theme.fg("text", message), 0, 0));
 		if (placeholder) {
 			this.contentContainer.addChild(new Text(theme.fg("dim", `e.g., ${placeholder}`), 0, 0));
@@ -176,7 +187,7 @@ export class LoginDialogComponent extends InputFrame implements Focusable {
 	 */
 	showWaiting(message: string): void {
 		this.dropPlaceholder();
-		this.contentContainer.addChild(new Spacer(1));
+		this.separate();
 		this.contentContainer.addChild(new Text(theme.fg("dim", message), 0, 0));
 		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 0, 0));
 		this.tui.requestRender();
