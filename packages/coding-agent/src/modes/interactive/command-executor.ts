@@ -589,6 +589,14 @@ export class CommandExecutor {
 		const scrollLineUp = keyDisplayText("app.scroll.lineUp");
 		const scrollLineDown = keyDisplayText("app.scroll.lineDown");
 		const scrollExit = keyDisplayText("app.scroll.exit");
+		const scrollSearch = keyDisplayText("app.scroll.search");
+		const scrollSearchInView = keyDisplayText("app.scroll.searchInView");
+		const scrollSearchNext = keyDisplayText("app.scroll.searchNext");
+		const scrollSearchPrevious = keyDisplayText("app.scroll.searchPrevious");
+		const scrollPreviousMessage = keyDisplayText("app.scroll.previousMessage");
+		const scrollNextMessage = keyDisplayText("app.scroll.nextMessage");
+		const copyMessage = keyDisplayText("app.clipboard.copyMessage");
+		const redo = keyDisplayText("tui.editor.redo");
 
 		let hotkeys = `
 Grouped by what you are doing, not by what the key is. Seven groups, none of the
@@ -606,6 +614,7 @@ so you read those instead of remembering them. **Screen** is one key.
 | \`${externalEditor}\` | Edit the message in \`$VISUAL\` / \`$EDITOR\` |
 | \`${voice}\` | Speak instead of type |
 | \`${pasteImage}\` | Paste image from clipboard |
+| \`${copyMessage}\` | Copy the agent's last message (\`/copy\`) |
 | \`${followUp}\` | Queue a follow-up while the agent works |
 | \`${dequeue}\` | Bring every queued message back to the editor |
 | \`/\` \`!\` \`!!\` | Slash commands · run bash · run bash off the record |
@@ -655,8 +664,14 @@ reading. The bottom row tells you where you are and how to get back.
 | \`${scrollPageUp}\` / \`${scrollPageDown}\` | Scroll a page — \`${scrollPageUp}\` is also how you start |
 | \`${scrollTop}\` / \`${scrollBottom}\` | Jump to the start of the session / back to live |
 | \`${scrollLineUp}\` / \`${scrollLineDown}\` | A line at a time (while scrolled back) |
+| \`${scrollPreviousMessage}\` / \`${scrollNextMessage}\` | Jump to your previous / next message |
+| \`${scrollSearch}\` | Search the transcript — \`${scrollSearchInView}\` once you are already scrolled back |
+| \`${scrollSearchNext}\` / \`${scrollSearchPrevious}\` | Step the matches, once the query is committed with \`${submit}\` |
 | \`${scrollExit}\` | Back to live output |
 | Wheel | Three lines a notch, wherever you turn it |
+
+Search runs backwards, like \`${scrollSearch}\` in a shell: the newest match first,
+because what you are looking for in a session is behind you.
 
 Scrolling to the bottom hands the live view back on its own, and so does typing:
 any key that is not one of these returns you to live and then does its usual job.
@@ -716,7 +731,7 @@ not the prompt, which is one to three lines almost every time you look at it.
 | \`${deleteWordBackward}\` / \`${deleteWordForward}\` | Delete word backwards / forwards |
 | \`${deleteToLineStart}\` / \`${deleteToLineEnd}\` | Delete to start / end of line |
 | \`${yank}\` / \`${yankPop}\` | Paste the most-recently-deleted text / cycle older ones |
-| \`${undo}\` | Undo |
+| \`${undo}\` / \`${redo}\` | Undo / redo |
 `;
 
 		// Add extension-registered shortcuts

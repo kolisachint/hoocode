@@ -30,6 +30,13 @@ interface AppKeybindings {
 	"app.scroll.lineUp": true;
 	"app.scroll.lineDown": true;
 	"app.scroll.exit": true;
+	"app.scroll.search": true;
+	"app.scroll.searchInView": true;
+	"app.scroll.searchNext": true;
+	"app.scroll.searchPrevious": true;
+	"app.scroll.previousMessage": true;
+	"app.scroll.nextMessage": true;
+	"app.clipboard.copyMessage": true;
 	"app.thinking.toggle": true;
 	"app.chrome.cycleForward": true;
 	"app.chrome.cycleBackward": true;
@@ -212,9 +219,21 @@ export const KEYBINDINGS = {
 		defaultKeys: "alt+r",
 		description: "Record voice and transcribe into the editor",
 	},
+	// The clipboard, both directions — one subject, the way a dial's two halves
+	// are one subject. In is the image paste; out is the agent's last message.
 	"app.clipboard.pasteImage": {
 		defaultKeys: process.platform === "win32" ? "alt+v" : "ctrl+v",
 		description: "Paste image from clipboard",
+	},
+	// The one key in the set with no mnemonic left to offer: copy's own letters
+	// are all spent (ctrl+c clears, ctrl+y yanks, alt+c is the colour dial) and
+	// the letters still free name nothing at all. It earns its slot on a
+	// fallback of its own — the action reports itself on the status line, so a
+	// wrong guess is legible and costs nothing — and `/copy` is there for anyone
+	// who would rather read it than remember it.
+	"app.clipboard.copyMessage": {
+		defaultKeys: "alt+q",
+		description: "Copy the agent's last message to the clipboard",
 	},
 	"app.message.followUp": {
 		defaultKeys: "alt+enter",
@@ -359,6 +378,28 @@ export const KEYBINDINGS = {
 		defaultKeys: "ctrl+end",
 		description: "Jump back to live output",
 	},
+	// ctrl+up / ctrl+down, which every editor already means "move by the bigger
+	// unit" with — and the bigger unit in a session is a turn. They stop only on
+	// your own messages: those are the landmarks anyone actually navigates by,
+	// and they are sparse enough that a few presses cross a long transcript.
+	// Both the legacy `\x1bOa` form and the CSI `\x1b[1;5A` form parse, so this
+	// needs no Kitty.
+	// ctrl+r, which is reverse-search in every shell — and this searches
+	// backwards for the same reason: what you are looking for in a session is
+	// behind you, and the most recent hit is nearly always the one you meant.
+	// It was kept free of the voice key for exactly this.
+	"app.scroll.search": {
+		defaultKeys: "ctrl+r",
+		description: "Search the transcript",
+	},
+	"app.scroll.previousMessage": {
+		defaultKeys: "ctrl+up",
+		description: "Jump to your previous message",
+	},
+	"app.scroll.nextMessage": {
+		defaultKeys: "ctrl+down",
+		description: "Jump to your next message",
+	},
 	// alt+l for the task *ledger* — the pane's own name for itself. It was
 	// ctrl+n, which named nothing and was the last dial off the alt ring; moving
 	// it also gives the lens the reverse it could never have on ctrl, where
@@ -433,6 +474,31 @@ export const KEYBINDINGS = {
 	"app.scroll.exit": {
 		defaultKeys: "escape",
 		description: "Leave the pinned view and follow live output",
+	},
+	// `/` opens the search once you are already reading, the way every pager
+	// does — and it is a separate id from `app.scroll.search` precisely because
+	// it cannot be global: at the prompt `/` starts a slash command, and that is
+	// not a key this feature gets to take. Inside the pinned view the prompt is
+	// not taking input, so the character is free.
+	"app.scroll.searchInView": {
+		defaultKeys: "/",
+		description: "Search the transcript (pinned view)",
+	},
+	// Plain letters step the matches, which is safe here and only here:
+	// stepping is live only after the query line is committed, so no letter is
+	// competing with typing.
+	//
+	// n/p rather than the pager's n/N — a bare `shift+<letter>` is banned
+	// outright, because a terminal without the Kitty protocol sends it as the
+	// plain uppercase letter. n/p is also the emacs next/previous pair this map
+	// already leans on elsewhere.
+	"app.scroll.searchNext": {
+		defaultKeys: "n",
+		description: "Next search match (pinned view)",
+	},
+	"app.scroll.searchPrevious": {
+		defaultKeys: "p",
+		description: "Previous search match (pinned view)",
 	},
 	// The options pane reads as a horizontal wizard, so the arrows point the way
 	// the steps run: → commits the highlighted answer and moves on, ← goes back.

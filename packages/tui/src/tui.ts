@@ -6,6 +6,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
+import { stripVTControlCharacters } from "node:util";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import { type MouseEvent, mouseSequenceLength, parseMouseEvent } from "./mouse.js";
 import type { Terminal } from "./terminal.js";
@@ -130,6 +131,18 @@ export interface ScrollStatus {
 	atBottom: boolean;
 	/** Columns the indicator may fill. */
 	width: number;
+	/** Present while a search is running; the indicator becomes its query line. */
+	search?: ScrollSearchStatus;
+}
+
+export interface ScrollSearchStatus {
+	query: string;
+	/** Rows containing a match. */
+	count: number;
+	/** 1-based position among the matches, or 0 when there are none. */
+	index: number;
+	/** True while the query is still being typed. */
+	typing: boolean;
 }
 
 export type ScrollStatusFormatter = (status: ScrollStatus) => string;
@@ -293,6 +306,30 @@ export class Container implements Component {
 		for (const child of this.children) {
 			child.invalidate?.();
 		}
+	}
+
+	/**
+	 * Where each direct child's output starts, in rows, from the last render.
+	 *
+	 * Read off the memo rather than recomputed, so asking is a walk over the
+	 * children's cached line arrays and never a re-render. Undefined before the
+	 * first render, or at a different width than the caller has in mind — both
+	 * cases mean "no answer", not "zero".
+	 *
+	 * This is what lets something outside the tree point at a row inside it: a
+	 * component's offset within its container, plus that container's offset at
+	 * the root, is its absolute row in the buffer the viewport windows over.
+	 */
+	childRowOffsets(width: number): number[] | undefined {
+		const memo = this.renderMemo;
+		if (!memo || memo.width !== width) return undefined;
+		const offsets: number[] = new Array(memo.refs.length);
+		let row = 0;
+		for (let i = 0; i < memo.refs.length; i++) {
+			offsets[i] = row;
+			row += memo.refs[i].length;
+		}
+		return offsets;
 	}
 
 	render(width: number): string[] {
@@ -472,6 +509,15 @@ export class TUI extends Container {
 	/** Transcript length measured by the last pinned paint; what clamping uses. */
 	private scrollTotalLines = 0;
 	private scrollStatusFormatter: ScrollStatusFormatter = defaultScrollStatus;
+	/** The running search: its query, the rows it matched, and where in them. */
+	private scrollSearch: {
+		query: string;
+		matches: number[];
+		index: number;
+		/** Buffer length the matches were measured at, so growth can re-run them. */
+		measuredAt: number;
+		typing: boolean;
+	} | null = null;
 	/**
 	 * Whether the view may pin right now.
 	 *
@@ -592,6 +638,7 @@ export class TUI extends Container {
 	scrollToLive(): boolean {
 		if (this.scrollOffset === null) return false;
 		this.scrollOffset = null;
+		this.scrollSearch = null;
 		this.terminal.setAlternateScreen(false);
 		// `?1049l` restores the normal screen, its scrollback and the cursor
 		// exactly as they were at `?1049h`, and the snapshot taken on the way in
@@ -605,6 +652,166 @@ export class TUI extends Container {
 		this.lastCursorPos = undefined;
 		this.requestRender();
 		return true;
+	}
+
+	// ── Searching the pinned view ───────────────────────────────────────────
+
+	/**
+	 * Find rows containing `query`, and pin the view to the nearest one above.
+	 *
+	 * Searching *backwards* first is the `ctrl+r` convention and it is the right
+	 * one here: what you are looking for in a session is nearly always behind
+	 * you, and the most recent occurrence is nearly always the one you meant.
+	 *
+	 * Matching is over the visible text, so it finds what the screen shows
+	 * rather than the escape sequences underneath it — a query containing a
+	 * colour code is not something anyone ever means.
+	 *
+	 * Returns how many rows matched.
+	 */
+	setScrollSearch(query: string, options: { typing?: boolean } = {}): number {
+		if (query.length === 0) {
+			this.scrollSearch = { query, matches: [], index: -1, measuredAt: -1, typing: options.typing ?? true };
+			this.requestRender();
+			this.expediteRender();
+			return 0;
+		}
+
+		const from = this.scrollOffset ?? Math.max(0, this.transcriptLength() - 1);
+		const matches = this.findScrollMatches(query);
+		// The nearest match at or above where the eye is, else wrap to the last.
+		let index = -1;
+		for (let i = matches.length - 1; i >= 0; i--) {
+			if (matches[i] <= from) {
+				index = i;
+				break;
+			}
+		}
+		if (index === -1 && matches.length > 0) index = matches.length - 1;
+
+		this.scrollSearch = {
+			query,
+			matches,
+			index,
+			measuredAt: this.flatLines?.length ?? this.previousLines.length,
+			typing: options.typing ?? true,
+		};
+		if (index >= 0) this.scrollToRow(matches[index]);
+		this.requestRender();
+		this.expediteRender();
+		return matches.length;
+	}
+
+	/**
+	 * Step to the next match, `-1` being further back through the session.
+	 *
+	 * Wraps, because a search that stops dead at the last match makes you
+	 * retype it to get back to the first.
+	 */
+	scrollSearchStep(direction: 1 | -1): boolean {
+		const search = this.scrollSearch;
+		if (!search || search.matches.length === 0) return false;
+		const next = (search.index + direction + search.matches.length) % search.matches.length;
+		search.index = next;
+		search.typing = false;
+		this.scrollToRow(search.matches[next]);
+		this.requestRender();
+		this.expediteRender();
+		return true;
+	}
+
+	/** Stop typing the query but keep the matches, so n/N can step them. */
+	commitScrollSearch(): void {
+		if (!this.scrollSearch) return;
+		this.scrollSearch.typing = false;
+		this.requestRender();
+		this.expediteRender();
+	}
+
+	/** Drop the search, leaving the view where it is. */
+	clearScrollSearch(): void {
+		if (!this.scrollSearch) return;
+		this.scrollSearch = null;
+		this.requestRender();
+		this.expediteRender();
+	}
+
+	get scrollSearchActive(): boolean {
+		return this.scrollSearch !== null;
+	}
+
+	private scrollSearchStatus(): ScrollSearchStatus | undefined {
+		const search = this.scrollSearch;
+		if (!search) return undefined;
+		return {
+			query: search.query,
+			count: search.matches.length,
+			index: search.index >= 0 ? search.index + 1 : 0,
+			typing: search.typing,
+		};
+	}
+
+	/**
+	 * Rows whose visible text contains `query`, case-insensitively.
+	 *
+	 * One pass over the buffer, run when the query changes rather than per
+	 * frame. The results are re-measured if the transcript has grown since —
+	 * rare while someone is reading, and wrong in a way people notice if skipped.
+	 */
+	private findScrollMatches(query: string): number[] {
+		const lines = this.flatLines ?? this.previousLines;
+		const needle = query.toLowerCase();
+		const matches: number[] = [];
+		for (let row = 0; row < lines.length; row++) {
+			const line = lines[row];
+			if (line.length === 0) continue;
+			if (stripVTControlCharacters(line).toLowerCase().includes(needle)) matches.push(row);
+		}
+		return matches;
+	}
+
+	/** Re-run the search if the buffer grew under it. */
+	private refreshScrollSearch(total: number): void {
+		const search = this.scrollSearch;
+		if (!search || search.query.length === 0 || search.measuredAt === total) return;
+		search.matches = this.findScrollMatches(search.query);
+		search.measuredAt = total;
+		if (search.index >= search.matches.length) search.index = search.matches.length - 1;
+	}
+
+	/**
+	 * Mark the query where it appears in a row about to be painted.
+	 *
+	 * Done at paint time, over the handful of rows on screen, rather than stored
+	 * per match — highlighting the whole buffer to show a screenful would be the
+	 * same work multiplied by the session's length.
+	 *
+	 * The row is sliced by display column so the styling already in it survives:
+	 * a match inside a coloured span keeps its colour and gains the marker.
+	 */
+	private highlightScrollMatches(line: string, query: string): string {
+		const plain = stripVTControlCharacters(line);
+		const needle = query.toLowerCase();
+		const haystack = plain.toLowerCase();
+		let at = haystack.indexOf(needle);
+		if (at === -1) return line;
+
+		let out = "";
+		let cursor = 0;
+		while (at !== -1) {
+			const startCol = visibleWidth(plain.slice(0, at));
+			const endCol = startCol + visibleWidth(plain.slice(at, at + query.length));
+			const fromCol = visibleWidth(plain.slice(0, cursor));
+			out += sliceByColumn(line, fromCol, startCol - fromCol);
+			// 27 turns reverse off on its own, so whatever colour the row was
+			// wearing underneath the match carries on afterwards.
+			out += `\x1b[7m${sliceByColumn(line, startCol, endCol - startCol)}\x1b[27m`;
+			cursor = at + query.length;
+			at = haystack.indexOf(needle, cursor);
+		}
+		const tailCol = visibleWidth(plain.slice(0, cursor));
+		out += sliceByColumn(line, tailCol, Number.MAX_SAFE_INTEGER - tailCol);
+		return out;
 	}
 
 	private setScrollOffset(offset: number): void {
@@ -658,6 +865,45 @@ export class TUI extends Container {
 	/** The component keystrokes are currently going to. */
 	get focused(): Component | null {
 		return this.focusedComponent;
+	}
+
+	/**
+	 * The root's own child offsets, which the flat cache already tracks.
+	 *
+	 * The base implementation reads `Container.renderMemo`, which the root does
+	 * not keep — it has `flatCache` instead, holding exactly this. Falling
+	 * through to the base would quietly return undefined forever.
+	 */
+	override childRowOffsets(width: number): number[] | undefined {
+		const cache = this.flatCache;
+		if (!cache || cache.width !== width) return undefined;
+		return cache.offsets;
+	}
+
+	/**
+	 * Pin the view so `row` is on screen, without demanding it be at the top.
+	 *
+	 * A jump that always parks its target on the first row throws away whatever
+	 * led up to it, and what led up to a message is most of what makes it
+	 * readable. A row already comfortably in view is left where it is, so
+	 * stepping through nearby landmarks does not make the screen lurch for each
+	 * one.
+	 */
+	scrollToRow(row: number, options: { context?: number } = {}): boolean {
+		const viewHeight = this.scrollViewHeight();
+		const maxOffset = Math.max(0, this.transcriptLength() - viewHeight);
+		if (maxOffset === 0) return false;
+
+		const context = options.context ?? Math.min(3, Math.max(0, viewHeight - 1));
+		const target = Math.max(0, Math.min(row - context, maxOffset));
+
+		if (this.scrollOffset !== null) {
+			const top = this.scrollOffset;
+			// Already visible with room to read above it: leave it alone.
+			if (row >= top + context && row < top + viewHeight) return false;
+		}
+		this.setScrollOffset(target);
+		return this.scrollOffset === target;
 	}
 
 	setFocus(component: Component | null): void {
@@ -1544,10 +1790,12 @@ export class TUI extends Container {
 		// the row below it and shift the rest of the window down by one.
 		buffer += "\x1b[?7l";
 
+		this.refreshScrollSearch(lines.length);
+		const query = this.scrollSearch?.query ?? "";
 		for (let row = 0; row < viewHeight; row++) {
 			buffer += `\x1b[${row + 1};1H\x1b[2K`;
 			const line = lines[top + row];
-			if (line !== undefined) buffer += this.emitScrollLine(line);
+			if (line !== undefined) buffer += this.emitScrollLine(line, query);
 		}
 
 		buffer += `\x1b[${height};1H\x1b[2K`;
@@ -1559,6 +1807,7 @@ export class TUI extends Container {
 			atTop: top === 0,
 			atBottom: top >= maxOffset,
 			width,
+			search: this.scrollSearchStatus(),
 		});
 
 		buffer += "\x1b[?7h";
@@ -1581,10 +1830,11 @@ export class TUI extends Container {
 	 * frame that was supposed to replace it — a smear across the view that no
 	 * later repaint can clear.
 	 */
-	private emitScrollLine(line: string): string {
+	private emitScrollLine(line: string, query = ""): string {
 		if (isImageLine(line)) return "\x1b[2m[image]\x1b[0m";
 		const marker = line.indexOf(CURSOR_MARKER);
-		const text = marker === -1 ? line : line.slice(0, marker) + line.slice(marker + CURSOR_MARKER.length);
+		let text = marker === -1 ? line : line.slice(0, marker) + line.slice(marker + CURSOR_MARKER.length);
+		if (query.length > 0) text = this.highlightScrollMatches(text, query);
 		return normalizeTerminalOutput(text) + TUI.SEGMENT_RESET;
 	}
 

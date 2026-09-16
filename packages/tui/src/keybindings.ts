@@ -27,6 +27,7 @@ export interface Keybindings {
 	"tui.editor.yank": true;
 	"tui.editor.yankPop": true;
 	"tui.editor.undo": true;
+	"tui.editor.redo": true;
 	// Generic input actions
 	"tui.input.newLine": true;
 	"tui.input.submit": true;
@@ -120,6 +121,13 @@ export const TUI_KEYBINDINGS = {
 	"tui.editor.yank": { defaultKeys: "ctrl+y", description: "Yank" },
 	"tui.editor.yankPop": { defaultKeys: "alt+y", description: "Yank pop" },
 	"tui.editor.undo": { defaultKeys: "ctrl+-", description: "Undo" },
+	// alt+u, not the shape-matching alt+- : `\x1b-` is not a key this parser
+	// reads, so alt+- would work only where the Kitty protocol does, and redo has
+	// no other key to fall back on. The letters differ from undo's because
+	// ctrl+- predates the pair and is in everyone's fingers already — the
+	// asymmetry costs less than moving it would. ctrl+r, which vim users would
+	// reach for, belongs to transcript search.
+	"tui.editor.redo": { defaultKeys: "alt+u", description: "Redo" },
 	"tui.input.newLine": { defaultKeys: "shift+enter", description: "Insert newline" },
 	"tui.input.submit": { defaultKeys: "enter", description: "Submit input" },
 	"tui.input.tab": { defaultKeys: "tab", description: "Tab / autocomplete" },

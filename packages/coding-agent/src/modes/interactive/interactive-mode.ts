@@ -1912,6 +1912,7 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.input.voiceTranscribe", () => this.voice.toggle());
 		this.defaultEditor.onAction("app.message.followUp", () => this.handleFollowUp());
 		this.defaultEditor.onAction("app.message.dequeue", () => this.handleDequeue());
+		this.defaultEditor.onAction("app.clipboard.copyMessage", () => void this.commandExecutor.handleCopy());
 		this.defaultEditor.onAction("app.session.new", () => this.commandExecutor.handleClear());
 		this.defaultEditor.onAction("app.session.tree", () => this.showTreeSelector());
 		this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
@@ -1932,7 +1933,10 @@ export class InteractiveMode {
 		// Scrolling the transcript: the four prompt keys, plus the listener that
 		// captures the rest once the view is pinned. See `scroll-view.ts`.
 		this.removeScrollView?.();
-		this.removeScrollView = installScrollView(this.ui, this.defaultEditor, this.keybindings);
+		this.removeScrollView = installScrollView(this.ui, this.defaultEditor, this.keybindings, {
+			chat: this.chatContainer,
+			isUserMessage: (child) => child instanceof UserMessageComponent,
+		});
 
 		this.defaultEditor.onChange = (text: string) => {
 			const wasBashMode = this.isBashMode;

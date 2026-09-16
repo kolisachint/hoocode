@@ -684,6 +684,10 @@ export class Editor implements Component, Focusable {
 			this.undo();
 			return;
 		}
+		if (kb.matches(data, "tui.editor.redo")) {
+			this.redo();
+			return;
+		}
 
 		// Handle autocomplete mode
 		if (this.autocompleteState && this.autocompleteList) {
@@ -2030,9 +2034,19 @@ export class Editor implements Component, Focusable {
 	}
 
 	private undo(): void {
-		this.historyIndex = -1; // Exit history browsing mode
-		const snapshot = this.undoStack.pop();
+		// `undo` rather than `pop`: the stack needs the state being left in order
+		// to have somewhere to bring you back to.
+		this.applySnapshot(this.undoStack.undo(this.state));
+	}
+
+	private redo(): void {
+		this.applySnapshot(this.undoStack.redo(this.state));
+	}
+
+	/** Shared by undo and redo: both replace the state and settle the editor. */
+	private applySnapshot(snapshot: EditorState | undefined): void {
 		if (!snapshot) return;
+		this.historyIndex = -1; // Exit history browsing mode
 		Object.assign(this.state, snapshot);
 		this.lastAction = null;
 		this.preferredVisualCol = null;

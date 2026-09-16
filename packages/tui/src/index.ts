@@ -128,6 +128,7 @@ export {
 	type OverlayHandle,
 	type OverlayMargin,
 	type OverlayOptions,
+	type ScrollSearchStatus,
 	type ScrollStatus,
 	type ScrollStatusFormatter,
 	type SizeValue,

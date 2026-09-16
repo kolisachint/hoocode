@@ -38,6 +38,7 @@ const GLOBAL_SCOPE = [
 	"tui.editor.yank",
 	"tui.editor.yankPop",
 	"tui.editor.undo",
+	"tui.editor.redo",
 	"tui.input.newLine",
 	"tui.input.submit",
 	"tui.input.tab",
@@ -65,6 +66,9 @@ const GLOBAL_SCOPE = [
 	"app.scroll.pageDown",
 	"app.scroll.top",
 	"app.scroll.bottom",
+	"app.scroll.previousMessage",
+	"app.scroll.nextMessage",
+	"app.scroll.search",
 	"app.tasks.cycleForward",
 	"app.tasks.cycleBackward",
 	"app.team.focus",
@@ -72,6 +76,7 @@ const GLOBAL_SCOPE = [
 	"app.input.voiceTranscribe",
 	"app.message.followUp",
 	"app.message.dequeue",
+	"app.clipboard.copyMessage",
 	"app.clipboard.pasteImage",
 	"app.session.new",
 	"app.session.tree",
@@ -165,11 +170,17 @@ const OPTIONS_SCOPE = [
 const SCROLL_SCOPE = [
 	"app.scroll.lineUp",
 	"app.scroll.lineDown",
+	"app.scroll.previousMessage",
+	"app.scroll.nextMessage",
 	"app.scroll.pageUp",
 	"app.scroll.pageDown",
 	"app.scroll.top",
 	"app.scroll.bottom",
 	"app.scroll.exit",
+	"app.scroll.search",
+	"app.scroll.searchInView",
+	"app.scroll.searchNext",
+	"app.scroll.searchPrevious",
 ] as const;
 
 const SCOPES: Array<[string, readonly string[]]> = [
@@ -329,6 +340,8 @@ describe("keybinding layout", () => {
 	 * non-alt key too or add it here and to that doc.
 	 */
 	const ALT_DEPENDENT = [
+		"tui.editor.redo",
+		"app.clipboard.copyMessage",
 		"app.chrome.cycleForward",
 		"app.chrome.cycleBackward",
 		"tui.editor.jumpBackward",
@@ -520,18 +533,18 @@ describe("keybinding layout", () => {
 	 */
 	const FAMILIES: Array<[string, RegExp]> = [
 		["Flow", /^app\.(interrupt|clear|exit|suspend)$/],
-		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.pasteImage|message\.)/],
+		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)/],
 		["Steer", /^app\.(mode|model)\.|^app\.thinking\.cycle/],
 		["Read", /^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|team\.focus)/],
 		// One subject, so trivially holdable, and genuinely its own intention:
 		// every other family changes what the screen says, this one changes how
 		// much screen there is to say it in.
 		["Screen", /^app\.chrome\./],
-		["Scroll", /^app\.scroll\.(pageUp|pageDown|top|bottom)$/],
+		["Scroll", /^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|search)$/],
 		["Go", /^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)/],
 		[
 			"Overlays",
-			/^app\.(team\.(nudge|attach)|options\.|scroll\.(lineUp|lineDown|exit)|session\.(toggle|rename|delete)|models\.|tree\.)/,
+			/^app\.(team\.(nudge|attach)|options\.|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)/,
 		],
 	];
 
@@ -573,7 +586,11 @@ describe("keybinding layout", () => {
 				const subjects = new Set(
 					Object.keys(KEYBINDINGS)
 						.filter((id) => pattern.test(id) && manager.getKeys(id as never).length > 0)
-						.map((id) => id.replace(/\.cycle(Forward|Backward)$/, "")),
+						// A dial's two directions are one subject, and so are the
+						// clipboard's: "paste in, copy out" is one thing you know, not two.
+						.map((id) =>
+							id.replace(/\.cycle(Forward|Backward)$/, "").replace(/^app\.clipboard\..*/, "app.clipboard"),
+						),
 				);
 				return [name, subjects.size] as const;
 			})

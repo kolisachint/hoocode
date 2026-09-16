@@ -12,6 +12,20 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Chrome density and transcript navigation**: one dial (`alt+z`, the seventh)
+  sets how much of the screen the chrome below the transcript gets — full /
+  compact / bare — and `interactive/chrome-layout.ts` holds the whole policy in
+  one pure function (`resolveChrome`). The footer lends its rows to an open
+  completion list; the task ledger keeps its counts and drops its rows mid-turn;
+  a terminal under 25 rows opens compact. `Slot` is the mechanism: a hidden slot
+  returns one *frozen* array and does not render its child, because the render
+  caches compare by array identity and a fresh `[]` reads as a change every
+  frame. The prompt has no slot on purpose. Transcript navigation gained search
+  (`ctrl+r`, `/` when pinned, `n`/`p` to step), turn jumps (`ctrl+up`/`ctrl+down`,
+  stopping on your own messages), `/copy` on a key, and a real editor redo.
+  Rules: `docs/ui-map.md` -> "Scrolling the transcript"; guarded by
+  `chrome-layout.test.ts`, `scroll-viewport.test.ts` and `scroll-view-keys.test.ts`.
+
 - **Transcript scrolling is the app's, not the terminal's**: scrolling back
   used to mean scrolling the terminal's scrollback, and every full redraw
   (`\x1b[3J`) threw that away — so the view jumped to the bottom whenever a row

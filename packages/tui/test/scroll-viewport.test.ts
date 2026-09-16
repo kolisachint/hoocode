@@ -364,3 +364,108 @@ describe("a component still gets its keys", () => {
 		assert.deepEqual(seen, []);
 	});
 });
+
+describe("searching the pinned view", () => {
+	/** A transcript where the rows carrying a term are known by construction. */
+	async function searchable(): Promise<{ tui: TUI; terminal: VirtualTerminal }> {
+		const terminal = new VirtualTerminal(WIDTH, HEIGHT);
+		const tui = new TUI(terminal);
+		const transcript = new Transcript(0);
+		// needle on rows 5, 25 and 45; everything else is filler.
+		transcript.lines = Array.from({ length: 60 }, (_, i) =>
+			i === 5 || i === 25 || i === 45 ? `has the Needle here` : `filler ${i}`,
+		);
+		tui.addChild(transcript);
+		tui.start();
+		await settle(terminal);
+		return { tui, terminal };
+	}
+
+	it("finds every row carrying the term, ignoring case", async () => {
+		const { tui } = await searchable();
+		assert.equal(tui.setScrollSearch("needle"), 3);
+	});
+
+	it("starts from the most recent match, as reverse-search should", async () => {
+		// What you are looking for in a session is behind you, and the newest hit
+		// is nearly always the one you meant.
+		const { tui } = await searchable();
+		tui.setScrollSearch("needle");
+		const { top, viewHeight } = tui.getScrollPosition()!;
+		assert.ok(top <= 45 && 45 < top + viewHeight, `row 45 not in view (top ${top})`);
+	});
+
+	it("steps back through older matches and wraps", async () => {
+		const { tui } = await searchable();
+		tui.setScrollSearch("needle");
+		assert.equal(tui.scrollSearchStep(-1), true);
+		let position = tui.getScrollPosition()!;
+		assert.ok(position.top <= 25 && 25 < position.top + position.viewHeight, "stepped to row 25");
+
+		tui.scrollSearchStep(-1);
+		position = tui.getScrollPosition()!;
+		assert.ok(position.top <= 5 && 5 < position.top + position.viewHeight, "stepped to row 5");
+
+		// Wrapping matters: a search that stops dead makes you retype it.
+		tui.scrollSearchStep(-1);
+		position = tui.getScrollPosition()!;
+		assert.ok(position.top <= 45 && 45 < position.top + position.viewHeight, "wrapped to row 45");
+	});
+
+	it("reports a query that matches nothing without moving the view", async () => {
+		const { tui } = await searchable();
+		tui.scrollToTop();
+		const before = tui.getScrollPosition()!.top;
+		assert.equal(tui.setScrollSearch("nothingmatchesthis"), 0);
+		assert.equal(tui.getScrollPosition()!.top, before);
+	});
+
+	it("marks the matches on screen", async () => {
+		const { tui, terminal } = await searchable();
+		tui.setScrollSearch("needle");
+		await terminal.flush();
+		// Reverse video is what the marker is; asserting on the bytes is the only
+		// way to know the highlight survived the slice-by-column reassembly.
+		assert.match(terminal.getLastWrite(), /\x1b\[7m/);
+	});
+
+	it("tells the indicator where in the matches it is", async () => {
+		const { tui, terminal } = await searchable();
+		tui.setScrollStatusFormatter((status) =>
+			status.search ? `q=${status.search.query} ${status.search.index}/${status.search.count}` : "no search",
+		);
+		tui.setScrollSearch("needle");
+		assert.match(await statusRow(terminal), /q=needle 3\/3/);
+		tui.scrollSearchStep(-1);
+		assert.match(await statusRow(terminal), /q=needle 2\/3/);
+	});
+
+	it("re-runs itself when the transcript grows underneath it", async () => {
+		// Matches are measured once per query, not per frame. Skipping the
+		// re-measure is cheap and wrong in a way people notice.
+		const terminal = new VirtualTerminal(WIDTH, HEIGHT);
+		const tui = new TUI(terminal);
+		const transcript = new Transcript(60, "filler");
+		tui.addChild(transcript);
+		tui.start();
+		await settle(terminal);
+
+		tui.setScrollSearch("arrived");
+		assert.equal(tui.getScrollPosition(), null, "nothing matched, so nothing pinned");
+
+		tui.scrollToTop();
+		transcript.append("arrived later");
+		tui.requestRender();
+		await settle(terminal);
+
+		assert.equal(tui.scrollSearchStep(1), true, "the new row is findable");
+	});
+
+	it("ends with the pinned view it belongs to", async () => {
+		const { tui } = await searchable();
+		tui.setScrollSearch("needle");
+		assert.equal(tui.scrollSearchActive, true);
+		tui.scrollToLive();
+		assert.equal(tui.scrollSearchActive, false);
+	});
+});

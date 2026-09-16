@@ -48,7 +48,20 @@ export class VirtualTerminal implements Terminal {
 	}
 
 	write(data: string): void {
+		this.lastWrite = data;
 		this.xterm.write(data);
+	}
+
+	private lastWrite = "";
+
+	/**
+	 * The most recent write, raw.
+	 *
+	 * xterm.js resolves escapes into cell attributes, so a styling assertion has
+	 * to look at what was sent rather than at what was parsed.
+	 */
+	getLastWrite(): string {
+		return this.lastWrite;
 	}
 
 	get columns(): number {

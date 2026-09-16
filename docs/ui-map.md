@@ -254,8 +254,17 @@ grid, addressed row by row, no scrollback for anything to fight over. Three rule
   exactly like a live one and silently stops following, which is the confusion
   this exists to remove.
 
-The app's half is `interactive/scroll-view.ts`: the key scopes (four keys at the
-prompt, the fuller set once pinned) and the themed indicator. Anything that is
+Search lives on the same window. `TUI.setScrollSearch` measures matching rows
+once per query (re-measured only when the buffer grows), the paint highlights
+them across the screenful actually on show, and the indicator becomes the query
+line. It runs backwards from where you are, like `ctrl+r` in a shell, because
+what you are looking for in a session is behind you. Jumping by turn reads the
+same render memos rather than re-rendering: a message's offset inside the chat
+container plus that container's offset at the root is its absolute row
+(`Container.childRowOffsets`).
+
+The app's half is `interactive/scroll-view.ts`: the key scopes (the prompt keys,
+the fuller set once pinned) and the themed indicator. Anything that is
 not a scroll key un-pins and then does its usual job, so the mode is left by
 doing something rather than by remembering to escape first. Keys and the reason
 each sits where it does: `core/keybindings.ts` -> "Scrolling the transcript".

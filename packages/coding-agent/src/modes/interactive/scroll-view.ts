@@ -34,6 +34,8 @@
  */
 
 import {
+	type Component,
+	type Container,
 	type EditorComponent,
 	isKeyRelease,
 	type Keybinding,
@@ -45,6 +47,56 @@ import {
 import type { KeybindingsManager } from "../../core/keybindings.js";
 import { keyText } from "./components/keybinding-hints.js";
 import { theme } from "./theme/theme.js";
+
+/**
+ * Pin the view to the previous or next thing the user said.
+ *
+ * The landmarks people navigate a session by are their own messages — "where
+ * did I ask about the renderer" — and they are sparse enough that a few presses
+ * cross a long transcript. Agent replies and tool blocks are deliberately not
+ * stops: in a tool-heavy session they are dense enough that the key degrades
+ * into paging with extra steps.
+ *
+ * The rows come from the render memo rather than from a re-render: a message's
+ * offset inside the chat container, plus that container's offset at the root,
+ * is its absolute row in the buffer the viewport windows over. Both are already
+ * cached from the last frame, so a jump is a walk over line-array lengths.
+ */
+export function jumpToUserMessage(
+	ui: TUI,
+	chat: Container,
+	direction: "previous" | "next",
+	isUserMessage: (child: Component) => boolean,
+): boolean {
+	const width = ui.terminal.columns;
+	const rootOffsets = ui.childRowOffsets(width);
+	const chatOffsets = chat.childRowOffsets(width);
+	// No memo yet (nothing rendered at this width): there is nothing to point at.
+	if (!rootOffsets || !chatOffsets) return false;
+
+	const chatIndex = ui.children.indexOf(chat);
+	if (chatIndex === -1) return false;
+	const base = rootOffsets[chatIndex];
+
+	const rows: number[] = [];
+	for (let i = 0; i < chat.children.length; i++) {
+		if (isUserMessage(chat.children[i])) rows.push(base + chatOffsets[i]);
+	}
+	if (rows.length === 0) return false;
+
+	// Where the eye is now: the top of the pinned window, or the bottom of the
+	// transcript when live. Live counts as "below the last message", so the
+	// first press of `previous` lands on the most recent one.
+	const position = ui.getScrollPosition();
+	const here = position ? position.top : Number.MAX_SAFE_INTEGER;
+
+	const target =
+		direction === "previous" ? [...rows].reverse().find((row) => row < here) : rows.find((row) => row > here);
+	if (target === undefined) return false;
+
+	ui.scrollToRow(target);
+	return true;
+}
 
 /** What the pinned view answers to, in the order the keys are tried. */
 const PINNED_BINDINGS: Array<[Keybinding, (ui: TUI) => void]> = [
@@ -60,6 +112,24 @@ const PINNED_BINDINGS: Array<[Keybinding, (ui: TUI) => void]> = [
 ];
 
 /**
+ * Whether `data` is ordinary typed text rather than a chord.
+ *
+ * The query line takes characters; everything else is a key. Control bytes and
+ * escape sequences are never text, which is the whole distinction.
+ */
+function isTypedText(data: string): boolean {
+	if (data.length === 0) return false;
+	for (let i = 0; i < data.length; i++) {
+		const code = data.charCodeAt(i);
+		if (code < 32 || code === 127) return false;
+	}
+	return true;
+}
+
+/** Pinned-view keys that need more than the TUI to answer them. */
+const PINNED_TURN_BINDINGS = ["app.scroll.previousMessage", "app.scroll.nextMessage"] as const;
+
+/**
  * The bottom row of a pinned view.
  *
  * It answers "where am I" first and "how do I get out" second, because the
@@ -72,6 +142,23 @@ const PINNED_BINDINGS: Array<[Keybinding, (ui: TUI) => void]> = [
  * view is by definition somewhere above it.
  */
 function formatStatus(status: ScrollStatus): string {
+	// While a search is running the indicator *is* the query line. Position is
+	// not what you are asking at that moment; "did it find anything" is.
+	if (status.search) {
+		const { query, count, index, typing } = status.search;
+		const hits = query.length === 0 ? "" : count === 0 ? "  no matches" : `  ${index}/${count}`;
+		// A block where the caret would be, so an empty query still looks like
+		// something you are expected to type into.
+		const caret = typing ? "\u2588" : "";
+		const left = ` search: ${query}${caret}${hits}`;
+		const keys = typing
+			? `${keyText("tui.select.confirm")} keep · ${keyText("app.scroll.exit")} cancel`
+			: `${keyText("app.scroll.searchNext")}/${keyText("app.scroll.searchPrevious")} step · ${keyText("app.scroll.exit")} done`;
+		const gap = status.width - visibleWidth(left) - visibleWidth(keys) - 2;
+		const body = gap >= 0 ? `${left}${" ".repeat(gap + 1)}${keys} ` : `${left} `;
+		return theme.inverse(truncateToWidth(body, status.width, "", true));
+	}
+
 	const position = `${status.top}–${status.bottom} of ${status.total}`;
 	const place = status.atTop ? "start of session" : `${Math.round((status.top / status.total) * 100)}%`;
 	const left = `${position}  ${place}`;
@@ -106,6 +193,7 @@ export function installScrollView(
 	ui: TUI,
 	editor: EditorComponent & { onAction(action: Keybinding, handler: () => void): void },
 	keybindings: KeybindingsManager,
+	turns: { chat: Container; isUserMessage: (child: Component) => boolean },
 ): () => void {
 	ui.setScrollStatusFormatter(formatStatus);
 
@@ -121,6 +209,28 @@ export function installScrollView(
 	editor.onAction("app.scroll.pageDown", () => void ui.scrollByPages(1));
 	editor.onAction("app.scroll.top", () => void ui.scrollToTop());
 	editor.onAction("app.scroll.bottom", () => void ui.scrollToLive());
+	editor.onAction("app.scroll.previousMessage", () => {
+		jumpToUserMessage(ui, turns.chat, "previous", turns.isUserMessage);
+	});
+	editor.onAction("app.scroll.nextMessage", () => {
+		jumpToUserMessage(ui, turns.chat, "next", turns.isUserMessage);
+	});
+
+	/** The query being typed, or null when no search is being composed. */
+	let typing: string | null = null;
+
+	const openSearch = (): void => {
+		typing = "";
+		ui.setScrollSearch("", { typing: true });
+	};
+
+	editor.onAction("app.scroll.search", () => {
+		// From the prompt this has to pin first, at the bottom, so the backwards
+		// search starts from the newest thing and works back.
+		if (!ui.scrollPinned) ui.scrollToRow(Number.MAX_SAFE_INTEGER);
+		if (!ui.scrollPinned) return;
+		openSearch();
+	});
 
 	return ui.addInputListener((data) => {
 		if (!ui.scrollPinned) return undefined;
@@ -128,9 +238,66 @@ export function installScrollView(
 		// A key coming back up is not a decision to stop reading.
 		if (isKeyRelease(data)) return { consume: true };
 
+		// The query line owns every printable character while it is open, so it
+		// is asked before any key that a letter could also mean.
+		if (typing !== null) {
+			if (keybindings.matches(data, "tui.select.confirm")) {
+				typing = null;
+				ui.commitScrollSearch();
+				return { consume: true };
+			}
+			if (keybindings.matches(data, "app.scroll.exit")) {
+				typing = null;
+				ui.clearScrollSearch();
+				return { consume: true };
+			}
+			if (keybindings.matches(data, "tui.editor.deleteCharBackward")) {
+				typing = typing.slice(0, -1);
+				ui.setScrollSearch(typing, { typing: true });
+				return { consume: true };
+			}
+			if (isTypedText(data)) {
+				typing += data;
+				ui.setScrollSearch(typing, { typing: true });
+				return { consume: true };
+			}
+			// A chord while composing: commit the query and let the chord through
+			// to its usual meaning below.
+			typing = null;
+			ui.commitScrollSearch();
+		}
+
+		if (keybindings.matches(data, "app.scroll.search") || keybindings.matches(data, "app.scroll.searchInView")) {
+			openSearch();
+			return { consume: true };
+		}
+		if (ui.scrollSearchActive) {
+			if (keybindings.matches(data, "app.scroll.searchNext")) {
+				ui.scrollSearchStep(-1);
+				return { consume: true };
+			}
+			if (keybindings.matches(data, "app.scroll.searchPrevious")) {
+				ui.scrollSearchStep(1);
+				return { consume: true };
+			}
+			// Escape with a committed search drops the search but keeps the view,
+			// so a second press is what leaves. One escape, one thing undone.
+			if (keybindings.matches(data, "app.scroll.exit")) {
+				ui.clearScrollSearch();
+				return { consume: true };
+			}
+		}
+
 		for (const [binding, act] of PINNED_BINDINGS) {
 			if (!keybindings.matches(data, binding)) continue;
 			act(ui);
+			return { consume: true };
+		}
+
+		for (const binding of PINNED_TURN_BINDINGS) {
+			if (!keybindings.matches(data, binding)) continue;
+			const direction = binding === "app.scroll.previousMessage" ? "previous" : "next";
+			jumpToUserMessage(ui, turns.chat, direction, turns.isUserMessage);
 			return { consume: true };
 		}
 

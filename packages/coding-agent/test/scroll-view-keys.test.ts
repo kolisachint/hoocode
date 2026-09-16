@@ -9,11 +9,11 @@
  * complaint in a new place.
  */
 
-import { type Component, type Terminal, TUI } from "@kolisachint/hoocode-tui";
+import { type Component, Container, type Terminal, TUI } from "@kolisachint/hoocode-tui";
 import { beforeEach, describe, expect, it } from "vitest";
 import { KeybindingsManager } from "../src/core/keybindings.js";
 import { CustomEditor } from "../src/modes/interactive/components/custom-editor.js";
-import { installScrollView } from "../src/modes/interactive/scroll-view.js";
+import { installScrollView, jumpToUserMessage } from "../src/modes/interactive/scroll-view.js";
 import { getEditorTheme, initTheme } from "../src/modes/interactive/theme/theme.js";
 
 const WIDTH = 60;
@@ -70,7 +70,7 @@ function setup(lines = 120): Harness {
 	const editor = new CustomEditor(ui, getEditorTheme(), keybindings);
 	ui.addChild(new Transcript(lines));
 	ui.addChild(editor);
-	installScrollView(ui, editor, keybindings);
+	installScrollView(ui, editor, keybindings, { chat: new Container(), isUserMessage: () => false });
 	ui.setFocus(editor);
 	// One frame, so there is a line buffer to scroll through.
 	(ui as unknown as { doRender(): void }).doRender();
@@ -172,5 +172,102 @@ describe("once pinned", () => {
 		expect(harness.terminal.alternate).toBe(true);
 		harness.send(ESCAPE);
 		expect(harness.terminal.alternate).toBe(false);
+	});
+});
+
+/**
+ * Jumping between the things you said.
+ *
+ * The row arithmetic is the whole risk here — a message's offset inside the
+ * chat container plus that container's offset at the root — so it is asserted
+ * against rows that are readable in the fixture rather than against "it moved".
+ */
+describe("jumping by turn", () => {
+	/** A block of `rows` lines, optionally standing for something the user said. */
+	class Block implements Component {
+		constructor(
+			readonly label: string,
+			private readonly rows: number,
+			readonly user = false,
+		) {}
+		invalidate(): void {}
+		render(): string[] {
+			return Array.from({ length: this.rows }, (_, i) => `${this.label}:${i}`);
+		}
+	}
+
+	const isUser = (child: Component) => child instanceof Block && child.user;
+
+	function transcript(): { ui: TUI; chat: Container; rows: Record<string, number> } {
+		initTheme("dark");
+		const ui = new TUI(new SilentTerminal());
+		const chat = new Container();
+		// A header above the chat so the root offset is non-zero and a bug that
+		// ignores it cannot pass.
+		ui.addChild(new Block("header", 4));
+		chat.addChild(new Block("intro", 6));
+		chat.addChild(new Block("ask-one", 2, true));
+		chat.addChild(new Block("reply-one", 30));
+		chat.addChild(new Block("ask-two", 2, true));
+		chat.addChild(new Block("reply-two", 30));
+		ui.addChild(chat);
+		(ui as unknown as { doRender(): void }).doRender();
+		// header 4 + intro 6 = 10; ask-one at 10, reply-one 12..41, ask-two at 42.
+		return { ui, chat, rows: { askOne: 10, askTwo: 42 } };
+	}
+
+	it("lands on the most recent message first, coming from live", () => {
+		const { ui, chat, rows } = transcript();
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(true);
+		expect(ui.scrollPinned).toBe(true);
+		const top = ui.getScrollPosition()!.top;
+		expect(top).toBeLessThanOrEqual(rows.askTwo);
+		expect(top + ui.getScrollPosition()!.viewHeight).toBeGreaterThan(rows.askTwo);
+	});
+
+	it("keeps stepping back through earlier messages", () => {
+		const { ui, chat, rows } = transcript();
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(true);
+		const top = ui.getScrollPosition()!.top;
+		expect(top).toBeLessThanOrEqual(rows.askOne);
+		expect(top + ui.getScrollPosition()!.viewHeight).toBeGreaterThan(rows.askOne);
+	});
+
+	it("stops rather than wrapping at the first message", () => {
+		// Wrapping would silently take you to the other end of the session, which
+		// is never what "further back" meant.
+		const { ui, chat } = transcript();
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(false);
+	});
+
+	it("comes forward again", () => {
+		const { ui, chat, rows } = transcript();
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		expect(jumpToUserMessage(ui, chat, "next", isUser)).toBe(true);
+		expect(ui.getScrollPosition()!.top).toBeLessThanOrEqual(rows.askTwo);
+	});
+
+	it("does nothing when nothing in the transcript is yours", () => {
+		initTheme("dark");
+		const ui = new TUI(new SilentTerminal());
+		const chat = new Container();
+		chat.addChild(new Block("reply", 60));
+		ui.addChild(chat);
+		(ui as unknown as { doRender(): void }).doRender();
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(false);
+	});
+
+	it("declines before anything has been rendered", () => {
+		// No memo means no offsets, which is "no answer" — not row zero.
+		initTheme("dark");
+		const ui = new TUI(new SilentTerminal());
+		const chat = new Container();
+		chat.addChild(new Block("ask", 2, true));
+		ui.addChild(chat);
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(false);
 	});
 });

@@ -4167,4 +4167,62 @@ describe("Editor component", () => {
 			assert.deepEqual(seen, [], "no edge, no notification");
 		});
 	});
+
+	describe("Redo", () => {
+		const UNDO = "\x1b[45;5u"; // ctrl+-
+		const REDO = "\x1bu"; // alt+u
+
+		function typed(text: string): Editor {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			for (const ch of text) editor.handleInput(ch);
+			return editor;
+		}
+
+		it("does nothing with nothing undone", () => {
+			const editor = typed("hello");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("puts back exactly what undo took", () => {
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			assert.strictEqual(editor.getText(), "hello");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("walks back and forward over several steps", () => {
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			editor.handleInput(UNDO);
+			assert.strictEqual(editor.getText(), "");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("abandons the undone future as soon as you type", () => {
+			// The invariant that makes redo correct: once you undo and then edit,
+			// the future you undid never happened. Offering it back would drop the
+			// character just typed.
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			assert.strictEqual(editor.getText(), "hello");
+
+			editor.handleInput("!");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello!", 'redo did not resurrect " world"');
+		});
+
+		it("restores the cursor, not only the text", () => {
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			editor.handleInput(REDO);
+			// Typing lands where the cursor was restored to, which is the end.
+			editor.handleInput("!");
+			assert.strictEqual(editor.getText(), "hello world!");
+		});
+	});
 });
