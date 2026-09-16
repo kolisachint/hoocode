@@ -136,10 +136,6 @@ export class Frame extends Container {
 	public borderColor: (str: string) => string;
 	/** Laid into the top border, flush right. Undefined draws a plain edge. */
 	public label?: FrameLabel;
-	/** Rows scrolled out of view above / below, for the edges' indicators. */
-	public hiddenAbove = 0;
-	public hiddenBelow = 0;
-
 	private border: FrameBorderStyle;
 	private paddingX: number;
 	private borderChars: FrameBorderChars;
@@ -169,7 +165,17 @@ export class Frame extends Container {
 		this.invalidate();
 	}
 
+	/**
+	 * Lay a label into the top border, or clear it.
+	 *
+	 * Compared before it is taken, not just assigned: an owner that resolves its
+	 * label per frame (as `InputFrame` does, so a theme switch repaints it) calls
+	 * this on every render, and dropping the memo each time would hand the TUI
+	 * root a fresh array every frame — which is exactly the reference stability
+	 * the renderer diffs whole regions by.
+	 */
 	setLabel(label: FrameLabel | undefined): void {
+		if (this.label?.plain === label?.plain && this.label?.styled === label?.styled) return;
 		this.label = label;
 		this.memo = undefined;
 	}
@@ -185,6 +191,18 @@ export class Frame extends Container {
 		const box = this.isBox(width);
 		const innerWidth = Math.max(1, width - (box ? 2 : 0));
 		return Math.max(1, innerWidth - this.resolvePaddingX(innerWidth) * 2);
+	}
+
+	/**
+	 * Whether a label of this plain text would actually ride the top border at
+	 * this width, rather than being dropped for want of a run of border beside
+	 * it. The owner asks so it can put the text somewhere else instead of
+	 * losing it — see `InputFrame`.
+	 */
+	labelFits(plain: string, width: number): boolean {
+		if (this.border === "none" || plain === "") return false;
+		const innerWidth = Math.max(1, width - (this.isBox(width) ? 2 : 0));
+		return innerWidth - visibleWidth(plain) - LABEL_RIGHT_INSET >= MIN_LABEL_LEAD_IN;
 	}
 
 	/** Box mode needs two columns for the sides plus one of content; below that it rules. */
@@ -216,7 +234,6 @@ export class Frame extends Container {
 				chars: this.borderChars,
 				color: this.borderColor,
 				label: this.label,
-				hidden: which === "top" ? this.hiddenAbove : this.hiddenBelow,
 			});
 		const top = edge("top");
 		const bottom = edge("bottom");

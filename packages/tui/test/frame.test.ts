@@ -112,18 +112,61 @@ describe("Frame", () => {
 		assert.equal(visibleWidth(lines[0]), 20);
 	});
 
-	it("announces hidden rows on the edge they are hidden past", () => {
+	it("answers whether a label would actually fit, so an owner can put it elsewhere", () => {
 		const frame = new Frame({ border: "box" });
-		frame.hiddenAbove = 3;
-		frame.hiddenBelow = 7;
 		frame.addChild(new WidthProbe());
-		const lines = frame.render(60);
-		assert.ok(lines[0].includes("↑ 3 more"));
-		assert.ok(lines.at(-1)!.includes("↓ 7 more"));
+		assert.equal(frame.labelFits(" models ", 60), true);
+		assert.equal(frame.labelFits(" a very long surface name ", 20), false);
+		assert.equal(frame.labelFits("", 60), false);
+		// A label it says fits is a label it actually draws, and vice versa.
+		for (const [plain, width] of [
+			[" models ", 60],
+			[" a very long surface name ", 20],
+			[" x ", 8],
+			[" x ", 7],
+		] as Array<[string, number]>) {
+			frame.setLabel({ plain, styled: plain });
+			const drawn = frame.render(width)[0].includes(plain.trim());
+			assert.equal(drawn, frame.labelFits(plain, width), `${JSON.stringify(plain)} @${width}`);
+		}
+	});
+
+	it("returns the same lines across frames when nothing changed", () => {
+		// The TUI root diffs whole regions by array identity. Re-setting an
+		// unchanged label must not drop the memo, or an owner that resolves its
+		// label per render hands the root a fresh array every frame.
+		const frame = new Frame({ border: "box" });
+		// A child that is itself reference-stable, which is the only case where
+		// the frame's own stability is observable.
+		const rows = ["row0"];
+		frame.addChild({ render: () => rows, invalidate: () => {} });
+		frame.setLabel({ plain: " demo ", styled: " demo " });
+		const first = frame.render(80);
+		assert.strictEqual(frame.render(80), first, "an unchanged frame");
+		frame.setLabel({ plain: " demo ", styled: " demo " });
+		assert.strictEqual(frame.render(80), first, "the same label set again");
+		frame.setLabel({ plain: " other ", styled: " other " });
+		assert.notStrictEqual(frame.render(80), first, "a label that actually changed");
 	});
 });
 
 describe("renderFrameEdge", () => {
+	it("announces hidden rows on the edge they are hidden past", () => {
+		const edge = (side: "top" | "bottom", hidden: number) =>
+			renderFrameEdge({
+				edge: side,
+				barWidth: 58,
+				box: true,
+				chars: DEFAULT_FRAME_BORDER_CHARS,
+				color: (s: string) => s,
+				hidden,
+			});
+		assert.ok(edge("top", 3).includes("↑ 3 more"));
+		assert.ok(edge("bottom", 7).includes("↓ 7 more"));
+		assert.equal(visibleWidth(edge("top", 3)), 60);
+		assert.equal(visibleWidth(edge("bottom", 7)), 60);
+	});
+
 	it("is what the editor draws its own border with", () => {
 		// One renderer: an editor's top border and a frame's top border at the
 		// same width are the same string. If these ever diverge, the prompt and

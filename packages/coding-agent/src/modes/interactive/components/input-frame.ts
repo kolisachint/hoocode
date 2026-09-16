@@ -31,6 +31,11 @@ import { theme } from "../theme/theme.js";
  */
 let inputBorderStyle: FrameBorderStyle = "box";
 
+/**
+ * Not exported from the package: this follows the user's `editorBorder`
+ * setting, and an extension does not get to overrule it. `interactive-mode` is
+ * the one caller.
+ */
 export function setInputFrameBorder(style: FrameBorderStyle): void {
 	inputBorderStyle = style;
 }
@@ -40,7 +45,7 @@ export function getInputFrameBorder(): FrameBorderStyle {
 }
 
 export interface InputFrameOptions {
-	/** Laid into the top border, flush right. */
+	/** The surface's name. Laid into the top border when it fits there. */
 	title?: string;
 	/** Columns of gutter inside the side borders. One, as the prompt's is. */
 	paddingX?: number;
@@ -51,10 +56,21 @@ export interface InputFrameOptions {
  *
  * The colour is the plain `border` token, not the prompt's: the prompt's border
  * carries the thinking level and bash mode, and a picker has neither to report.
- * Both are resolved per frame, so a theme switch under an open pane repaints it.
+ *
+ * The colour, the style and the title are all resolved per frame, so a theme
+ * switch or a `/settings` edit repaints a pane that is already open — a `Text`
+ * holds its string with the escapes already in it, so a title decided once
+ * would keep the colours of the theme it was built under. Re-resolving is
+ * cheap: `setBorder` and `setLabel` both compare before they take, so an
+ * unchanged frame still returns the same array and the renderer goes on
+ * diffing whole regions by identity.
  */
 export class InputFrame extends Frame {
 	private hintRow?: Text;
+	/** The title as one line, or "" for none. Where it is drawn is a render-time call. */
+	private titleText = "";
+	/** Holds the title when it will not fit in the border. */
+	private titleRow?: Text;
 
 	constructor(options: InputFrameOptions = {}) {
 		super({
@@ -65,16 +81,53 @@ export class InputFrame extends Frame {
 		if (options.title !== undefined) this.setTitle(options.title);
 	}
 
-	/** Name this surface in the top border. An empty title draws a plain edge. */
+	/**
+	 * Name this surface. An empty title draws a plain edge.
+	 *
+	 * Collapsed to one line first, because the border *is* one line: an
+	 * extension's `confirm` passes its question and its detail as one
+	 * newline-joined string, and a newline inside a rendered row splits the
+	 * border open and throws the renderer's row count out with it.
+	 *
+	 * Where it ends up is decided per frame in `layOutTitle`, not here — it
+	 * depends on the width, which a caller does not know.
+	 */
 	setTitle(title: string): void {
-		if (!title) {
-			this.setLabel(undefined);
-			return;
-		}
+		this.titleText = title.replace(/\s+/g, " ").trim();
+	}
+
+	/**
+	 * Put the title where it fits: in the top border, or — when the border has
+	 * no room for a run of rule beside it — on the frame's first row.
+	 *
+	 * The fallback is what stops a title being lost. `renderFrameEdge` drops a
+	 * label it cannot draw, which is right for the session chip (the footer also
+	 * names the session) and wrong for a question the user is about to answer
+	 * yes or no to.
+	 *
+	 * Rebuilt every frame rather than at `setTitle`, so a theme switch under an
+	 * open pane repaints the title along with everything else: a `Text` holds
+	 * its string with the escapes already in it.
+	 */
+	private layOutTitle(width: number): void {
+		const plain = this.titleText ? ` ${this.titleText} ` : "";
 		// The chip's own spacing, so a title sits off the rule the way the
 		// session name does on the prompt.
-		const plain = ` ${title} `;
-		this.setLabel({ plain, styled: theme.fg("accent", theme.bold(plain)) });
+		const inBorder = this.labelFits(plain, width);
+		this.setLabel(inBorder ? { plain, styled: theme.fg("accent", theme.bold(plain)) } : undefined);
+
+		if (inBorder || !this.titleText) {
+			if (this.titleRow) {
+				this.removeChild(this.titleRow);
+				this.titleRow = undefined;
+			}
+			return;
+		}
+		if (!this.titleRow) {
+			this.titleRow = new Text("", 0, 0);
+			this.unshiftTitleRow(this.titleRow);
+		}
+		this.titleRow.setText(theme.fg("accent", theme.bold(this.titleText)));
 	}
 
 	/**
@@ -113,10 +166,17 @@ export class InputFrame extends Frame {
 		super.addChild(hint);
 	}
 
+	/** The title row, when there is one, is the frame's first row. */
+	private unshiftTitleRow(row: Text): void {
+		this.children.unshift(row);
+		this.invalidate();
+	}
+
 	override render(width: number): string[] {
 		// The style is read per frame: a `/settings` edit has to reach a pane
 		// that is already open, and the pane is what the user is looking at.
 		this.setBorder(getInputFrameBorder());
+		this.layOutTitle(width);
 		return super.render(width);
 	}
 }

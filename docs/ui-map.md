@@ -37,9 +37,13 @@ Reusable widgets (`src/components/`): `box`, `frame`, `text`, `truncated-text`, 
   indicator that eats into it, the label that rides what is left, and the
   corners in box mode. `Frame` is a `Container` that wraps its children in that
   border at a chosen style (`box`, `rule`, `none`), insets them by a gutter, and
-  pads every row out to the width it was handed. `editor.ts` draws its own
-  border through the same function, and `EditorBorderStyle` / `EditorBorderChars`
-  / `EditorTopBorderLabel` are now aliases of the frame's types.
+  pads every row out to the width it was handed; it also answers `labelFits`, so
+  an owner can put a label somewhere else rather than have it dropped. The
+  scroll indicator is `renderFrameEdge`'s, used by the editor - a `Frame` pane
+  that scrolls prints its own `(3/12)` row, as the pickers already do.
+  `editor.ts` draws its own border through the same function, and
+  `EditorBorderStyle` / `EditorBorderChars` / `EditorTopBorderLabel` are now
+  aliases of the frame's types.
 
 A component generally exposes a `render(width)` method returning an array of styled lines;
 the renderer diffs successive frames.
@@ -180,7 +184,13 @@ login dialog. They all draw `InputFrame`, which is the *prompt's own* frame:
   `interactive-mode.ts` pushes it with `setInputFrameBorder`, next to
   `editor.setBorder`, in `applyRuntimeSettings` and in the settings callback.
 - **One place the name goes:** into the top border, flush right - the slot the
-  session chip rides on the prompt. `setTitle`. Never a title row inside.
+  session chip rides on the prompt. `setTitle`, which collapses the name to one
+  line (a newline in a rendered row splits the border open and throws the
+  renderer's row count out with it - `ExtensionDialogs.confirm` passes its
+  question and its detail newline-joined). A name with no room for a run of
+  border beside it drops to the frame's first row instead of being dropped
+  altogether: `renderFrameEdge` discarding a label is right for the session chip
+  and wrong for a question the user is about to answer yes or no to.
 - **One place the hints go:** the last row inside, flush above the bottom edge.
   `setHint`, which keeps that row last however the pane was built.
 - **One gutter.** The frame insets content one column, so a picker's rows line
@@ -193,7 +203,16 @@ login dialog. They all draw `InputFrame`, which is the *prompt's own* frame:
 A pane embedded in a surface that already frames it draws no frame of its own -
 `AskOptionsComponent` takes `{ framed: false }` for the `--team` attach panel,
 and a nested `Editor` takes `border: "none"`. Two boxes one column apart is a
-picture frame.
+picture frame. The *host* then owns the rules it is banded off by:
+`team-attach-panel.ts` draws an accent rule above and below the gate and closes
+itself. It used to lean on the gate's own bottom rule to close the panel, which
+is the kind of thing that breaks silently when the inner surface changes shape -
+`test/team-attach-panel.test.ts` holds it now.
+
+`DynamicBorder` is still the right thing for a *divider* inside a pane
+(`tree-selector.ts` uses one between its key hints and the tree) and for a rule
+around a transcript block (`bordered-loader.ts`, `/reload`, `/hotkeys`). It is
+not the thing to frame an input with.
 
 A frame with nothing in it draws nothing, so a pane that has not yet loaded its
 content needs a row to hold it open (`login-dialog.ts` draws "Starting…" until

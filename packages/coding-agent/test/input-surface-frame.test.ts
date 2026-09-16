@@ -340,6 +340,52 @@ describe("InputFrame", () => {
 		expect(lines[2]).toContain("enter submit");
 	});
 
+	it("collapses a multi-line title, which the border cannot hold", () => {
+		// `ExtensionDialogs.confirm` passes its question and its detail as one
+		// newline-joined string. A newline inside a rendered row splits the
+		// border open and throws the renderer's row count out with it.
+		const frame = new InputFrame({ title: "Overwrite file?\nThis cannot be undone." });
+		frame.addChild({ render: () => ["a body row"], invalidate: () => {} });
+		for (const line of frame.render(100)) {
+			expect(line).not.toContain("\n");
+		}
+		expect(strip(frame.render(100)[0])).toContain("Overwrite file? This cannot be undone.");
+	});
+
+	it("drops a title inside the frame rather than losing it when the border is too narrow", () => {
+		const long = "Overwrite file? This cannot be undone.";
+		const frame = new InputFrame({ title: long });
+		frame.addChild({ render: () => ["a body row"], invalidate: () => {} });
+
+		const wide = frame.render(100).map(strip);
+		expect(wide[0], "rides the border when it fits").toContain(long);
+		expect(wide.slice(1, -1).join("\n")).not.toContain(long);
+
+		const narrow = frame.render(30).map(strip);
+		expect(narrow[0], "no longer in the border").not.toContain("Overwrite");
+		// Inside, on the first row, wrapped — never dropped, because the user is
+		// about to answer it.
+		expect(narrow.slice(1, -1).join(" ")).toContain("Overwrite file?");
+		for (const [row, line] of narrow.entries()) {
+			expect(visibleWidth(line), `row ${row}`).toBe(30);
+		}
+
+		// And back out to the border when there is room again.
+		expect(frame.render(100).map(strip)[0]).toContain(long);
+	});
+
+	it("returns the same lines across frames when nothing changed", () => {
+		// The TUI root diffs whole regions by array identity, so a frame that
+		// resolves its border colour and label per render must still come back
+		// reference-stable when neither actually moved.
+		const frame = new InputFrame({ title: "demo" });
+		const stable = ["a body row"];
+		frame.addChild({ render: () => stable, invalidate: () => {} });
+		const first = frame.render(80);
+		expect(frame.render(80)).toBe(first);
+		expect(frame.render(80)).toBe(first);
+	});
+
 	it("replaces the hints rather than stacking them", () => {
 		const frame = new InputFrame({ title: "demo" });
 		frame.setHint("first");
