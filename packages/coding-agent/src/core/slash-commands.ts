@@ -25,6 +25,10 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "copy", description: "Copy last agent message to clipboard" },
 	{ name: "name", description: "Set session display name" },
 	{ name: "color", description: "Set the session chip color: /color <1-6|name> (bare = pick one)" },
+	{
+		name: "chrome",
+		description: "Set how much screen the chrome gets: /chrome <full|compact|bare> (bare = show stops)",
+	},
 	{ name: "session", description: "Show session info and stats" },
 	{ name: "changelog", description: "Show changelog entries" },
 	{ name: "hotkeys", description: "Show all keyboard shortcuts" },

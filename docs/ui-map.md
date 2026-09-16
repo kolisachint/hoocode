@@ -24,6 +24,9 @@ Input / editing:
 - `keybindings.ts`, `keys.ts` - configurable keybindings and key parsing. Never hardcode a
   key check; add defaults to the keybinding maps.
 - `kill-ring.ts`, `undo-stack.ts` - editor kill-ring and undo history.
+- `mouse.ts` - mouse reporting: the enable/disable sequences, and reading SGR
+  (`?1006`) and X10 reports back. Only the wheel is acted on; clicks are
+  swallowed so a report can never be typed into a field.
 - `stdin-buffer.ts` - raw stdin handling.
 - `autocomplete.ts`, `fuzzy.ts` - autocomplete and fuzzy matching.
 - `terminal-image.ts` - inline image rendering support.
@@ -224,6 +227,47 @@ input surface and asserts the corners, the gutter, the title's place, the
 at every width from 160 columns down to 2. `tui/test/frame.test.ts` holds the
 frame's own geometry and that `renderFrameEdge` still produces the editor's
 border byte for byte.
+
+## Scrolling the transcript
+
+The transcript is not scrolled by the terminal. It used to be, and that was the
+bug: the renderer keeps the whole session in one line buffer on the normal
+screen, and any change to a row *above* the viewport drops it to
+`\x1b[2J\x1b[H\x1b[3J` + a full reprint — which throws away the scrollback the
+reader was sitting in. Output arriving, a pane closing, `alt+o`, a resize: all of
+them took you back to the bottom for no visible reason.
+
+So the view is the app's. `TUI.scrollOffset` is the transcript row drawn at the
+top of the screen, and `null` means "follow the tail", which is the live path
+everything else in `tui.ts` is written for. The moment it is a number the TUI
+takes the **alternate screen** and paints a window of the buffer itself: a fixed
+grid, addressed row by row, no scrollback for anything to fight over. Three rules:
+
+- **A pinned view does not move.** New output lands in the buffer and the window
+  stays where it was put; only the indicator's total changes. This is the whole
+  feature and `tui/test/scroll-viewport.test.ts` asserts it frame for frame.
+- **Live mode is untouched.** Normal rendering, the normal screen and the
+  terminal's own scrollback, selection and search all work exactly as before.
+  `?1049l` restores them byte for byte, and the exit is an ordinary differential
+  frame against a snapshot taken on the way in — never a clear-and-replay.
+- **Reaching the bottom releases the pin.** A pinned view of the tail looks
+  exactly like a live one and silently stops following, which is the confusion
+  this exists to remove.
+
+Search lives on the same window. `TUI.setScrollSearch` measures matching rows
+once per query (re-measured only when the buffer grows), the paint highlights
+them across the screenful actually on show, and the indicator becomes the query
+line. It runs backwards from where you are, like `ctrl+r` in a shell, because
+what you are looking for in a session is behind you. Jumping by turn reads the
+same render memos rather than re-rendering: a message's offset inside the chat
+container plus that container's offset at the root is its absolute row
+(`Container.childRowOffsets`).
+
+The app's half is `interactive/scroll-view.ts`: the key scopes (the prompt keys,
+the fuller set once pinned) and the themed indicator. Anything that is
+not a scroll key un-pins and then does its usual job, so the mode is left by
+doing something rather than by remembering to escape first. Keys and the reason
+each sits where it does: `core/keybindings.ts` -> "Scrolling the transcript".
 
 ## Screen columns
 

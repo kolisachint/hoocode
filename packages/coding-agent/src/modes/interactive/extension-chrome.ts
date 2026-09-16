@@ -4,7 +4,7 @@
  * ExtensionUIContext. Extracted from interactive-mode.ts.
  */
 
-import { type Component, Container, Spacer, Text, type TUI } from "@kolisachint/hoocode-tui";
+import { type Component, Container, type Slot, Spacer, Text, type TUI } from "@kolisachint/hoocode-tui";
 import type { ExtensionWidgetOptions } from "../../core/extensions/index.js";
 import type { FooterDataProvider } from "../../core/footer-data-provider.js";
 import { isExpandable } from "./resource-display.js";
@@ -23,6 +23,8 @@ export interface ExtensionChromeDeps {
 	headerContainer: Container;
 	/** The built-in footer component (restored when the custom footer is removed). */
 	footer: Component;
+	/** The root child the footer lives in; its occupant is what swaps. */
+	footerSlot: Slot;
 	footerDataProvider: FooterDataProvider;
 	/** The built-in header, once init() created it (undefined before that). */
 	getBuiltInHeader(): Component | undefined;
@@ -142,21 +144,17 @@ export class ExtensionChrome {
 			this.footerOverride.dispose();
 		}
 
-		// Remove current footer from UI
-		if (this.footerOverride) {
-			this.deps.ui.removeChild(this.footerOverride);
-		} else {
-			this.deps.ui.removeChild(this.deps.footer);
-		}
-
+		// Swap the occupant of the footer slot rather than the root's children.
+		// Removing one root child and appending another moved the footer to the
+		// end of the tree, behind the widgets that are supposed to sit below it,
+		// and handed the root's per-child cache a changed child list every time.
+		// The slot is the stable root child; only what is inside it changes.
 		if (factory) {
-			// Create and add custom footer, passing the data provider
 			this.footerOverride = factory(this.deps.ui, theme, this.deps.footerDataProvider);
-			this.deps.ui.addChild(this.footerOverride);
+			this.deps.footerSlot.setChild(this.footerOverride);
 		} else {
-			// Restore built-in footer
 			this.footerOverride = undefined;
-			this.deps.ui.addChild(this.deps.footer);
+			this.deps.footerSlot.setChild(this.deps.footer);
 		}
 
 		this.deps.ui.requestRender();

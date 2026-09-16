@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { KEYBINDINGS, KeybindingsManager } from "../src/core/keybindings.js";
+import { formatKeyText } from "../src/modes/interactive/components/keybinding-hints.js";
 
 /**
  * Guards the cockpit layout described in `core/keybindings.ts`.
@@ -38,6 +39,7 @@ const GLOBAL_SCOPE = [
 	"tui.editor.yank",
 	"tui.editor.yankPop",
 	"tui.editor.undo",
+	"tui.editor.redo",
 	"tui.input.newLine",
 	"tui.input.submit",
 	"tui.input.tab",
@@ -59,6 +61,15 @@ const GLOBAL_SCOPE = [
 	"app.view.cycleForward",
 	"app.view.cycleBackward",
 	"app.thinking.toggle",
+	"app.chrome.cycleForward",
+	"app.chrome.cycleBackward",
+	"app.scroll.pageUp",
+	"app.scroll.pageDown",
+	"app.scroll.top",
+	"app.scroll.bottom",
+	"app.scroll.previousMessage",
+	"app.scroll.nextMessage",
+	"app.scroll.search",
 	"app.tasks.cycleForward",
 	"app.tasks.cycleBackward",
 	"app.team.focus",
@@ -66,6 +77,7 @@ const GLOBAL_SCOPE = [
 	"app.input.voiceTranscribe",
 	"app.message.followUp",
 	"app.message.dequeue",
+	"app.clipboard.copyMessage",
 	"app.clipboard.pasteImage",
 	"app.session.new",
 	"app.session.tree",
@@ -151,6 +163,27 @@ const OPTIONS_SCOPE = [
 	"app.options.back",
 ] as const;
 
+/**
+ * The pinned transcript view. It captures keys while it is up, so the arrows
+ * and escape mean here what the prompt means by them elsewhere. The two ends
+ * keep their global chords so they are the same key wherever you press them.
+ */
+const SCROLL_SCOPE = [
+	"app.scroll.lineUp",
+	"app.scroll.lineDown",
+	"app.scroll.previousMessage",
+	"app.scroll.nextMessage",
+	"app.scroll.pageUp",
+	"app.scroll.pageDown",
+	"app.scroll.top",
+	"app.scroll.bottom",
+	"app.scroll.exit",
+	"app.scroll.search",
+	"app.scroll.searchInView",
+	"app.scroll.searchNext",
+	"app.scroll.searchPrevious",
+] as const;
+
 const SCOPES: Array<[string, readonly string[]]> = [
 	["global", GLOBAL_SCOPE],
 	["session picker", SESSION_PICKER_SCOPE],
@@ -158,6 +191,7 @@ const SCOPES: Array<[string, readonly string[]]> = [
 	["session tree", TREE_SCOPE],
 	["team focus", TEAM_FOCUS_SCOPE],
 	["options pane", OPTIONS_SCOPE],
+	["pinned scroll view", SCROLL_SCOPE],
 ];
 
 /**
@@ -270,6 +304,7 @@ describe("keybinding layout", () => {
 			"app.thinking.cycleBackward",
 			"app.view.cycleBackward",
 			"app.tasks.cycleBackward",
+			"app.chrome.cycleBackward",
 			"app.session.color.cycleBackward",
 			"app.tree.filter.cycleBackward",
 		]);
@@ -306,6 +341,10 @@ describe("keybinding layout", () => {
 	 * non-alt key too or add it here and to that doc.
 	 */
 	const ALT_DEPENDENT = [
+		"tui.editor.redo",
+		"app.clipboard.copyMessage",
+		"app.chrome.cycleForward",
+		"app.chrome.cycleBackward",
 		"tui.editor.jumpBackward",
 		"tui.editor.deleteWordForward",
 		"tui.editor.yankPop",
@@ -427,6 +466,7 @@ describe("keybinding layout", () => {
 			backward: "app.session.color.cycleBackward",
 		},
 		{ name: "task ledger", forward: "app.tasks.cycleForward", backward: "app.tasks.cycleBackward" },
+		{ name: "chrome", forward: "app.chrome.cycleForward", backward: "app.chrome.cycleBackward" },
 	];
 
 	it("puts every dial on alt+<letter>, back on shift+alt+<letter>", () => {
@@ -458,7 +498,7 @@ describe("keybinding layout", () => {
 		// Each dial is either steppable without alt, or has a slash command that
 		// reaches the same setting. Losing both would strand the setting on
 		// Terminal.app, which composes characters instead of sending alt.
-		const withSlashCommand = new Set(["agent mode", "model", "session colour"]);
+		const withSlashCommand = new Set(["agent mode", "model", "session colour", "chrome"]);
 		const manager = new KeybindingsManager();
 		const stranded = DIALS.filter(({ name, forward }) => {
 			if (withSlashCommand.has(name)) return false;
@@ -495,11 +535,19 @@ describe("keybinding layout", () => {
 	 */
 	const FAMILIES: Array<[string, RegExp]> = [
 		["Flow", /^app\.(interrupt|clear|exit|suspend)$/],
-		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.pasteImage|message\.)/],
+		["Compose", /^app\.(editor\.external|input\.voiceTranscribe|clipboard\.|message\.)/],
 		["Steer", /^app\.(mode|model)\.|^app\.thinking\.cycle/],
 		["Read", /^app\.(view\.|tools\.expand|thinking\.toggle|tasks\.|team\.focus)/],
+		// One subject, so trivially holdable, and genuinely its own intention:
+		// every other family changes what the screen says, this one changes how
+		// much screen there is to say it in.
+		["Screen", /^app\.chrome\./],
+		["Scroll", /^app\.scroll\.(pageUp|pageDown|top|bottom|previousMessage|nextMessage|search)$/],
 		["Go", /^app\.(session\.(resume|tree|new|fork|changeDirectory|color)|settings|hotkeys)/],
-		["Overlays", /^app\.(team\.(nudge|attach)|options\.|session\.(toggle|rename|delete)|models\.|tree\.)/],
+		[
+			"Overlays",
+			/^app\.(team\.(nudge|attach)|options\.|scroll\.(lineUp|lineDown|exit|searchInView|searchNext|searchPrevious)|session\.(toggle|rename|delete)|models\.|tree\.)/,
+		],
 	];
 
 	it("puts every app binding in exactly one family", () => {
@@ -531,17 +579,38 @@ describe("keybinding layout", () => {
 		// one subject are one thing. Overlays are exempt entirely: they are read
 		// off each surface's own hint line, never recalled.
 		const manager = new KeybindingsManager();
-		const oversized = FAMILIES.filter(([name]) => name !== "Overlays")
+		// Scroll is exempt for the same reason Flow is: pageUp, pageDown, ctrl+home
+		// and ctrl+end are what every pager, editor and browser already bound, so
+		// they are recognised rather than recalled and cost no memory to carry.
+		const exempt = new Set(["Overlays", "Scroll"]);
+		const oversized = FAMILIES.filter(([name]) => !exempt.has(name))
 			.map(([name, pattern]) => {
 				const subjects = new Set(
 					Object.keys(KEYBINDINGS)
 						.filter((id) => pattern.test(id) && manager.getKeys(id as never).length > 0)
-						.map((id) => id.replace(/\.cycle(Forward|Backward)$/, "")),
+						// A dial's two directions are one subject, and so are the
+						// clipboard's: "paste in, copy out" is one thing you know, not two.
+						.map((id) =>
+							id.replace(/\.cycle(Forward|Backward)$/, "").replace(/^app\.clipboard\..*/, "app.clipboard"),
+						),
 				);
 				return [name, subjects.size] as const;
 			})
 			.filter(([, size]) => size > 5);
 		expect(oversized).toEqual([]);
+	});
+
+	it("prints a bare letter key as it is typed, never capitalised", () => {
+		// An uppercase letter in this map *is* shift+letter, and a bare
+		// shift+<letter> is banned outright — so a hint reading "N" for a binding
+		// on `n` documents a chord that does not exist. Inside a chord the capital
+		// is unambiguous and stays.
+		expect(formatKeyText("n", { capitalize: true })).toBe("n");
+		expect(formatKeyText("p", { capitalize: true })).toBe("p");
+		expect(formatKeyText("/", { capitalize: true })).toBe("/");
+		expect(formatKeyText("ctrl+c", { capitalize: true })).toBe("Ctrl+C");
+		expect(formatKeyText("pageUp", { capitalize: true })).toBe("PageUp");
+		expect(formatKeyText("shift+alt+z", { capitalize: true })).toBe("Shift+Alt+Z");
 	});
 
 	it("gives every action a description for /hotkeys", () => {

@@ -4105,4 +4105,124 @@ describe("Editor component", () => {
 			assert.strictEqual(stripVTControlCharacters(editor.render(12)[0]!), `┌${"─".repeat(10)}┐`);
 		});
 	});
+
+	describe("Autocomplete visibility notifications", () => {
+		/**
+		 * Anything that lends the completion list screen space needs to hear when
+		 * the list arrives and when it goes. Both edges are easy to get wrong in
+		 * the same way — by looking at the wrong moment — so both are pinned here.
+		 */
+		function listEditor(): { editor: Editor; seen: boolean[] } {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const seen: boolean[] = [];
+			editor.onAutocompleteVisibilityChange = (visible) => seen.push(visible);
+			editor.setAutocompleteProvider({
+				getSuggestions: async (lines, _cursorLine, cursorCol) => {
+					const prefix = (lines[0] || "").slice(0, cursorCol);
+					if (!prefix.startsWith("/")) return null;
+					return { prefix, items: [{ value: "/model", label: "/model" }] };
+				},
+				applyCompletion,
+			} as AutocompleteProvider);
+			return { editor, seen };
+		}
+
+		it("announces the list only once it actually exists", async () => {
+			// Suggestions come from an async provider, so on the keystroke that asks
+			// for them there is nothing showing yet. A caller polling after the
+			// keypress sees nothing and — if that was the last keypress — never
+			// looks again, which left the footer hidden with no list to show for it.
+			const { editor, seen } = listEditor();
+			editor.handleInput("/");
+			assert.deepEqual(seen, [], "nothing to announce before the provider answers");
+
+			await flushAutocomplete();
+			assert.deepEqual(seen, [true]);
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+		});
+
+		it("announces the list going away on escape, which changes no text", async () => {
+			const { editor, seen } = listEditor();
+			editor.handleInput("/");
+			await flushAutocomplete();
+			seen.length = 0;
+
+			editor.handleInput("\x1b");
+			assert.deepEqual(seen, [false]);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+		});
+
+		it("says nothing while the list merely stays open", async () => {
+			// The hot path: this fires on keystrokes, so a notification per
+			// keystroke would be a render per keystroke.
+			const { editor, seen } = listEditor();
+			editor.handleInput("/");
+			await flushAutocomplete();
+			seen.length = 0;
+
+			for (const ch of "mod") {
+				editor.handleInput(ch);
+				await flushAutocomplete();
+			}
+			assert.deepEqual(seen, [], "no edge, no notification");
+		});
+	});
+
+	describe("Redo", () => {
+		const UNDO = "\x1b[45;5u"; // ctrl+-
+		const REDO = "\x1bu"; // alt+u
+
+		function typed(text: string): Editor {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			for (const ch of text) editor.handleInput(ch);
+			return editor;
+		}
+
+		it("does nothing with nothing undone", () => {
+			const editor = typed("hello");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello");
+		});
+
+		it("puts back exactly what undo took", () => {
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			assert.strictEqual(editor.getText(), "hello");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("walks back and forward over several steps", () => {
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			editor.handleInput(UNDO);
+			assert.strictEqual(editor.getText(), "");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello world");
+		});
+
+		it("abandons the undone future as soon as you type", () => {
+			// The invariant that makes redo correct: once you undo and then edit,
+			// the future you undid never happened. Offering it back would drop the
+			// character just typed.
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			assert.strictEqual(editor.getText(), "hello");
+
+			editor.handleInput("!");
+			editor.handleInput(REDO);
+			assert.strictEqual(editor.getText(), "hello!", 'redo did not resurrect " world"');
+		});
+
+		it("restores the cursor, not only the text", () => {
+			const editor = typed("hello world");
+			editor.handleInput(UNDO);
+			editor.handleInput(REDO);
+			// Typing lands where the cursor was restored to, which is the end.
+			editor.handleInput("!");
+			assert.strictEqual(editor.getText(), "hello world!");
+		});
+	});
 });

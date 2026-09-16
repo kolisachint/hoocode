@@ -1,0 +1,363 @@
+/**
+ * The keys the pinned transcript view answers to, and the ones it must not eat.
+ *
+ * The mechanism is the tui's (`tui/test/scroll-viewport.test.ts`); what is
+ * asserted here is the app's half — which keys are live at the prompt, which
+ * only once the view is pinned, and that the pin lets go of everything else
+ * rather than swallowing it. The last part is the important one: a scrolled-back
+ * view that quietly ate keystrokes would be the same "where did that go"
+ * complaint in a new place.
+ */
+
+import { type Component, Container, type Terminal, TUI } from "@kolisachint/hoocode-tui";
+import { beforeEach, describe, expect, it } from "vitest";
+import { KeybindingsManager } from "../src/core/keybindings.js";
+import { CustomEditor } from "../src/modes/interactive/components/custom-editor.js";
+import { installScrollView, jumpToUserMessage } from "../src/modes/interactive/scroll-view.js";
+import { getEditorTheme, initTheme } from "../src/modes/interactive/theme/theme.js";
+
+const WIDTH = 60;
+const HEIGHT = 12;
+/** The view is one row shorter than the screen; the last row is the indicator. */
+const VIEW = HEIGHT - 1;
+
+class SilentTerminal implements Terminal {
+	columns = WIDTH;
+	rows = HEIGHT;
+	kittyProtocolActive = false;
+	alternate = false;
+	start(): void {}
+	stop(): void {}
+	async drainInput(): Promise<void> {}
+	write(): void {}
+	moveBy(): void {}
+	hideCursor(): void {}
+	showCursor(): void {}
+	clearLine(): void {}
+	clearFromCursor(): void {}
+	clearScreen(): void {}
+	setTitle(): void {}
+	setProgress(): void {}
+	get mouseReporting(): boolean {
+		return true;
+	}
+	setAlternateScreen(active: boolean): void {
+		this.alternate = active;
+	}
+}
+
+/** A transcript tall enough to have somewhere to scroll to. */
+class Transcript implements Component {
+	constructor(private readonly count: number) {}
+	invalidate(): void {}
+	render(): string[] {
+		return Array.from({ length: this.count }, (_, i) => `line ${i + 1}`);
+	}
+}
+
+interface Harness {
+	ui: TUI;
+	terminal: SilentTerminal;
+	editor: CustomEditor;
+	send(data: string): void;
+}
+
+function setup(lines = 120): Harness {
+	initTheme("dark");
+	const terminal = new SilentTerminal();
+	const ui = new TUI(terminal);
+	const keybindings = new KeybindingsManager();
+	const editor = new CustomEditor(ui, getEditorTheme(), keybindings);
+	ui.addChild(new Transcript(lines));
+	ui.addChild(editor);
+	installScrollView(ui, editor, keybindings, { chat: new Container(), isUserMessage: () => false });
+	ui.setFocus(editor);
+	// One frame, so there is a line buffer to scroll through.
+	(ui as unknown as { doRender(): void }).doRender();
+	return {
+		ui,
+		terminal,
+		editor,
+		send: (data: string) => (ui as unknown as { handleInput(d: string): void }).handleInput(data),
+	};
+}
+
+const PAGE_UP = "\x1b[5~";
+const PAGE_DOWN = "\x1b[6~";
+const UP = "\x1b[A";
+const DOWN = "\x1b[B";
+const ESCAPE = "\x1b";
+const WHEEL_UP = "\x1b[<64;1;1M";
+
+describe("at the prompt", () => {
+	let harness: Harness;
+	beforeEach(() => {
+		harness = setup();
+	});
+
+	it("pins the view on page up", () => {
+		harness.send(PAGE_UP);
+		expect(harness.ui.scrollPinned).toBe(true);
+	});
+
+	it("leaves the arrows to prompt history", () => {
+		// Losing history to scrolling would trade one surprise for another, and
+		// the arrows are the prompt's own keys.
+		harness.editor.addToHistory("an earlier message");
+		harness.send(UP);
+		expect(harness.ui.scrollPinned).toBe(false);
+		expect(harness.editor.getText()).toBe("an earlier message");
+	});
+
+	it("does nothing on page down, having nowhere below to go", () => {
+		harness.send(PAGE_DOWN);
+		expect(harness.ui.scrollPinned).toBe(false);
+	});
+
+	it("will not pin while another surface holds focus", () => {
+		const other: Component = { invalidate() {}, render: () => ["picker"] };
+		harness.ui.setFocus(other);
+		harness.send(WHEEL_UP);
+		expect(harness.ui.scrollPinned).toBe(false);
+	});
+});
+
+describe("once pinned", () => {
+	let harness: Harness;
+	beforeEach(() => {
+		harness = setup();
+		harness.send(PAGE_UP);
+	});
+
+	it("moves a line at a time on the arrows", () => {
+		const before = harness.ui.getScrollPosition()!.top;
+		harness.send(UP);
+		expect(harness.ui.getScrollPosition()!.top).toBe(before - 1);
+		harness.send(DOWN);
+		expect(harness.ui.getScrollPosition()!.top).toBe(before);
+	});
+
+	it("does not type the arrows into the prompt", () => {
+		harness.send(UP);
+		harness.send(DOWN);
+		expect(harness.editor.getText()).toBe("");
+	});
+
+	it("pages further back", () => {
+		const before = harness.ui.getScrollPosition()!.top;
+		harness.send(PAGE_UP);
+		expect(harness.ui.getScrollPosition()!.top).toBe(before - (VIEW - 2));
+	});
+
+	it("goes back to live on escape", () => {
+		harness.send(ESCAPE);
+		expect(harness.ui.scrollPinned).toBe(false);
+	});
+
+	it("goes back to live on paging past the bottom", () => {
+		for (let i = 0; i < 20; i++) harness.send(PAGE_DOWN);
+		expect(harness.ui.scrollPinned).toBe(false);
+	});
+
+	it("returns to live when you start typing, and types the character", () => {
+		// The rule that makes the mode invisible: you stop reading by doing
+		// something else, not by remembering to press escape first. Typing into a
+		// pinned view would echo into a prompt that is scrolled off screen.
+		harness.send("h");
+		expect(harness.ui.scrollPinned).toBe(false);
+		expect(harness.editor.getText()).toBe("h");
+	});
+
+	it("takes the alternate screen and gives it back", () => {
+		expect(harness.terminal.alternate).toBe(true);
+		harness.send(ESCAPE);
+		expect(harness.terminal.alternate).toBe(false);
+	});
+});
+
+/**
+ * Jumping between the things you said.
+ *
+ * The row arithmetic is the whole risk here — a message's offset inside the
+ * chat container plus that container's offset at the root — so it is asserted
+ * against rows that are readable in the fixture rather than against "it moved".
+ */
+describe("jumping by turn", () => {
+	/** A block of `rows` lines, optionally standing for something the user said. */
+	class Block implements Component {
+		constructor(
+			readonly label: string,
+			private readonly rows: number,
+			readonly user = false,
+		) {}
+		invalidate(): void {}
+		render(): string[] {
+			return Array.from({ length: this.rows }, (_, i) => `${this.label}:${i}`);
+		}
+	}
+
+	const isUser = (child: Component) => child instanceof Block && child.user;
+
+	function transcript(): { ui: TUI; chat: Container; rows: Record<string, number> } {
+		initTheme("dark");
+		const ui = new TUI(new SilentTerminal());
+		const chat = new Container();
+		// A header above the chat so the root offset is non-zero and a bug that
+		// ignores it cannot pass.
+		ui.addChild(new Block("header", 4));
+		chat.addChild(new Block("intro", 6));
+		chat.addChild(new Block("ask-one", 2, true));
+		chat.addChild(new Block("reply-one", 30));
+		chat.addChild(new Block("ask-two", 2, true));
+		chat.addChild(new Block("reply-two", 30));
+		ui.addChild(chat);
+		(ui as unknown as { doRender(): void }).doRender();
+		// header 4 + intro 6 = 10; ask-one at 10, reply-one 12..41, ask-two at 42.
+		return { ui, chat, rows: { askOne: 10, askTwo: 42 } };
+	}
+
+	it("lands on the most recent message first, coming from live", () => {
+		const { ui, chat, rows } = transcript();
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(true);
+		expect(ui.scrollPinned).toBe(true);
+		const top = ui.getScrollPosition()!.top;
+		expect(top).toBeLessThanOrEqual(rows.askTwo);
+		expect(top + ui.getScrollPosition()!.viewHeight).toBeGreaterThan(rows.askTwo);
+	});
+
+	it("keeps stepping back through earlier messages", () => {
+		const { ui, chat, rows } = transcript();
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(true);
+		const top = ui.getScrollPosition()!.top;
+		expect(top).toBeLessThanOrEqual(rows.askOne);
+		expect(top + ui.getScrollPosition()!.viewHeight).toBeGreaterThan(rows.askOne);
+	});
+
+	it("stops rather than wrapping at the first message", () => {
+		// Wrapping would silently take you to the other end of the session, which
+		// is never what "further back" meant.
+		const { ui, chat } = transcript();
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(false);
+	});
+
+	it("comes forward again", () => {
+		const { ui, chat, rows } = transcript();
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		jumpToUserMessage(ui, chat, "previous", isUser);
+		expect(jumpToUserMessage(ui, chat, "next", isUser)).toBe(true);
+		expect(ui.getScrollPosition()!.top).toBeLessThanOrEqual(rows.askTwo);
+	});
+
+	it("does nothing when nothing in the transcript is yours", () => {
+		initTheme("dark");
+		const ui = new TUI(new SilentTerminal());
+		const chat = new Container();
+		chat.addChild(new Block("reply", 60));
+		ui.addChild(chat);
+		(ui as unknown as { doRender(): void }).doRender();
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(false);
+	});
+
+	it("declines before anything has been rendered", () => {
+		// No memo means no offsets, which is "no answer" — not row zero.
+		initTheme("dark");
+		const ui = new TUI(new SilentTerminal());
+		const chat = new Container();
+		chat.addChild(new Block("ask", 2, true));
+		ui.addChild(chat);
+		expect(jumpToUserMessage(ui, chat, "previous", isUser)).toBe(false);
+	});
+});
+
+describe("searching from the pinned view", () => {
+	const CTRL_R = "\x12";
+	const SLASH = "/";
+	const ENTER = "\r";
+
+	function pinned(): Harness {
+		const harness = setup();
+		harness.send(PAGE_UP);
+		return harness;
+	}
+
+	it("opens on / once pinned, and takes typed characters", () => {
+		const harness = pinned();
+		harness.send(SLASH);
+		expect(harness.ui.scrollSearchActive).toBe(true);
+		harness.send("l");
+		harness.send("i");
+		expect(harness.ui.scrollSearchQuery).toBe("li");
+		// And none of it leaked into the prompt behind the query line.
+		expect(harness.editor.getText()).toBe("");
+	});
+
+	it("backspaces the query", () => {
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send("l");
+		harness.send("i");
+		harness.send("\x7f");
+		expect(harness.ui.scrollSearchQuery).toBe("l");
+	});
+
+	it("treats an empty query committed with enter as cancelled", () => {
+		// Otherwise enter-on-nothing leaves a search that matches nothing and
+		// answers no keys — a dead state two keystrokes from the prompt.
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send(ENTER);
+		expect(harness.ui.scrollSearchActive).toBe(false);
+		expect(harness.ui.scrollPinned).toBe(true);
+	});
+
+	it("drops the search on the first escape and the view on the second", () => {
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send("l");
+		harness.send(ENTER);
+		expect(harness.ui.scrollSearchActive).toBe(true);
+
+		harness.send(ESCAPE);
+		expect(harness.ui.scrollSearchActive).toBe(false);
+		expect(harness.ui.scrollPinned).toBe(true);
+
+		harness.send(ESCAPE);
+		expect(harness.ui.scrollPinned).toBe(false);
+	});
+
+	it("forgets a half-typed query when the view un-pins without it", () => {
+		// The view can be released without the listener seeing a key at all — a
+		// wheel notch that reaches the bottom does it. A query left behind would
+		// swallow the next keystrokes into a line that is not on screen.
+		const harness = pinned();
+		harness.send(SLASH);
+		harness.send("l");
+		expect(harness.ui.scrollSearchQuery).toBe("l");
+
+		harness.ui.scrollToLive();
+		expect(harness.ui.scrollPinned).toBe(false);
+
+		harness.send(PAGE_UP);
+		harness.send("x");
+		expect(harness.ui.scrollPinned, "x un-pinned instead of typing into a stale query").toBe(false);
+		expect(harness.editor.getText()).toBe("x");
+	});
+
+	it("opens from the prompt on ctrl+r, pinning first", () => {
+		const harness = setup();
+		expect(harness.ui.scrollPinned).toBe(false);
+		harness.send(CTRL_R);
+		expect(harness.ui.scrollPinned).toBe(true);
+		expect(harness.ui.scrollSearchActive).toBe(true);
+	});
+
+	it("leaves / alone at the prompt, where it starts a slash command", () => {
+		const harness = setup();
+		harness.send(SLASH);
+		expect(harness.ui.scrollSearchActive).toBe(false);
+		expect(harness.editor.getText()).toBe("/");
+	});
+});

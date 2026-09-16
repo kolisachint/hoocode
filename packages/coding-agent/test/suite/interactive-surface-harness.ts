@@ -47,6 +47,10 @@ class CapturingTerminal implements Terminal {
 	clearScreen(): void {}
 	setTitle(): void {}
 	setProgress(): void {}
+	get mouseReporting(): boolean {
+		return false;
+	}
+	setAlternateScreen(_active: boolean): void {}
 }
 
 export interface SurfaceHarness {

@@ -536,8 +536,6 @@ export class CommandExecutor {
 		const cursorLineEnd = keyDisplayText("tui.editor.cursorLineEnd");
 		const jumpForward = keyDisplayText("tui.editor.jumpForward");
 		const jumpBackward = keyDisplayText("tui.editor.jumpBackward");
-		const pageUp = keyDisplayText("tui.editor.pageUp");
-		const pageDown = keyDisplayText("tui.editor.pageDown");
 
 		// Editing keybindings
 		const submit = keyDisplayText("tui.input.submit");
@@ -582,12 +580,30 @@ export class CommandExecutor {
 		const sessionResume = keyDisplayText("app.session.resume");
 		const cycleSessionColor = keyDisplayLabel("app.session.color.cycleForward");
 		const cycleSessionColorBackward = keyDisplayLabel("app.session.color.cycleBackward");
+		const chromeForward = keyDisplayLabel("app.chrome.cycleForward");
+		const chromeBackward = keyDisplayLabel("app.chrome.cycleBackward");
+		const scrollPageUp = keyDisplayText("app.scroll.pageUp");
+		const scrollPageDown = keyDisplayText("app.scroll.pageDown");
+		const scrollTop = keyDisplayText("app.scroll.top");
+		const scrollBottom = keyDisplayText("app.scroll.bottom");
+		const scrollLineUp = keyDisplayText("app.scroll.lineUp");
+		const scrollLineDown = keyDisplayText("app.scroll.lineDown");
+		const scrollExit = keyDisplayText("app.scroll.exit");
+		const scrollSearch = keyDisplayText("app.scroll.search");
+		const scrollSearchInView = keyDisplayText("app.scroll.searchInView");
+		const scrollSearchNext = keyDisplayText("app.scroll.searchNext");
+		const scrollSearchPrevious = keyDisplayText("app.scroll.searchPrevious");
+		const scrollPreviousMessage = keyDisplayText("app.scroll.previousMessage");
+		const scrollNextMessage = keyDisplayText("app.scroll.nextMessage");
+		const copyMessage = keyDisplayText("app.clipboard.copyMessage");
+		const redo = keyDisplayText("tui.editor.redo");
 
 		let hotkeys = `
-Grouped by what you are doing, not by what the key is. Five groups, none bigger
-than five — the size a person can actually hold. Two of them are free: **Flow**
-is what every terminal program already taught you, and every picker prints its
-own keys on its own hint line, so you read those instead of remembering them.
+Grouped by what you are doing, not by what the key is. Seven groups, none of the
+learned ones bigger than five — the size a person can actually hold. Three are
+free: **Flow** is what every terminal program already taught you, **Scroll** is
+what every pager did, and every picker prints its own keys on its own hint line,
+so you read those instead of remembering them. **Screen** is one key.
 
 **Compose** — the message in your hands
 | Key | Action |
@@ -598,6 +614,7 @@ own keys on its own hint line, so you read those instead of remembering them.
 | \`${externalEditor}\` | Edit the message in \`$VISUAL\` / \`$EDITOR\` |
 | \`${voice}\` | Speak instead of type |
 | \`${pasteImage}\` | Paste image from clipboard |
+| \`${copyMessage}\` | Copy the agent's last message (\`/copy\`) |
 | \`${followUp}\` | Queue a follow-up while the agent works |
 | \`${dequeue}\` | Bring every queued message back to the editor |
 | \`/\` \`!\` \`!!\` | Slash commands · run bash · run bash off the record |
@@ -625,6 +642,40 @@ onto it. Press again or add \`Shift\` and you are back where you were.
 | \`${toggleThinking}\` | Show or hide thinking blocks |
 | \`${teamFocus}\` | Focus the team roster — \`${teamNudge}\` nudges, \`${teamAttach}\` attaches, \`q\`/\`${interrupt}\` leaves (\`--team\`) |
 
+**Screen** — how much room there is to see it in
+One dial for the furniture. Everything below the transcript except the prompt,
+which never hides.
+
+| Key | Steps | Through |
+|-----|-------|---------|
+| \`${chromeForward}\` / \`${chromeBackward}\` | Chrome | full → compact (one-row footer, no task list) → bare (neither) — \`/chrome\` picks one |
+
+It also gets out of the way on its own: the footer lends its rows to the
+completion list while that is open, and the task list keeps its counts but drops
+its rows while the agent is mid-turn. Both come back by themselves.
+
+**Scroll** — where in the session you are looking
+The wheel and these keys move the same view, and once it is scrolled back it
+**stays** there: output keeps arriving underneath without moving what you are
+reading. The bottom row tells you where you are and how to get back.
+
+| Key | Action |
+|-----|--------|
+| \`${scrollPageUp}\` / \`${scrollPageDown}\` | Scroll a page — \`${scrollPageUp}\` is also how you start |
+| \`${scrollTop}\` / \`${scrollBottom}\` | Jump to the start of the session / back to live |
+| \`${scrollLineUp}\` / \`${scrollLineDown}\` | A line at a time (while scrolled back) |
+| \`${scrollPreviousMessage}\` / \`${scrollNextMessage}\` | Jump to your previous / next message |
+| \`${scrollSearch}\` | Search the transcript — \`${scrollSearchInView}\` once you are already scrolled back |
+| \`${scrollSearchNext}\` / \`${scrollSearchPrevious}\` | Step the matches, once the query is committed with \`${submit}\` |
+| \`${scrollExit}\` | Back to live output |
+| Wheel | Three lines a notch, wherever you turn it |
+
+Search runs backwards, like \`${scrollSearch}\` in a shell: the newest match first,
+because what you are looking for in a session is behind you.
+
+Scrolling to the bottom hands the live view back on its own, and so does typing:
+any key that is not one of these returns you to live and then does its usual job.
+
 **Go** — sessions and places
 Each takes the screen and hands it back on \`${interrupt}\`, and each has a slash
 command that does the same thing.
@@ -649,8 +700,10 @@ command that does the same thing.
 ### What the chord tells you
 
 \`Alt\`+letter **sets a value** and nothing takes the screen — you keep typing.
-Six of those are dials, and \`Shift\` always steps one back: **a**gent mode,
-**m**odel, **t**hinking, tool **o**utput, task **l**ist, session **c**olor.
+Seven of those are dials, and \`Shift\` always steps one back: **a**gent mode,
+**m**odel, **t**hinking, tool **o**utput, task **l**ist, session **c**olor, and
+chrome (**z**, the one letter that names nothing — its stop is the shape of the
+screen in front of you).
 
 \`Ctrl\`+letter **acts on what is drawn right now** and shares its letter with the
 \`Alt\` key for the same subject. \`${viewForward}\` sets how much tool output there
@@ -666,6 +719,8 @@ are on \`Alt\` and its hint line names them.
 
 ### The editor
 Standard readline/emacs bindings — reference, not something to memorise.
+\`${scrollPageUp}\` / \`${scrollPageDown}\` are **not** here: they scroll the session,
+not the prompt, which is one to three lines almost every time you look at it.
 
 | Key | Action |
 |-----|--------|
@@ -673,11 +728,10 @@ Standard readline/emacs bindings — reference, not something to memorise.
 | \`${cursorWordLeft}\` / \`${cursorWordRight}\` | Move by word |
 | \`${cursorLineStart}\` / \`${cursorLineEnd}\` | Start / end of line |
 | \`${jumpForward}\` / \`${jumpBackward}\` | Jump forward / backward to character |
-| \`${pageUp}\` / \`${pageDown}\` | Scroll by page |
 | \`${deleteWordBackward}\` / \`${deleteWordForward}\` | Delete word backwards / forwards |
 | \`${deleteToLineStart}\` / \`${deleteToLineEnd}\` | Delete to start / end of line |
 | \`${yank}\` / \`${yankPop}\` | Paste the most-recently-deleted text / cycle older ones |
-| \`${undo}\` | Undo |
+| \`${undo}\` / \`${redo}\` | Undo / redo |
 `;
 
 		// Add extension-registered shortcuts

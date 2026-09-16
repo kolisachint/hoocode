@@ -2,6 +2,7 @@ import * as fs from "node:fs";
 import { createRequire } from "node:module";
 import * as path from "node:path";
 import { setKittyProtocolActive } from "./keys.js";
+import { MOUSE_DISABLE, MOUSE_ENABLE } from "./mouse.js";
 import { StdinBuffer } from "./stdin-buffer.js";
 
 const cjsRequire = createRequire(import.meta.url);
@@ -55,6 +56,23 @@ export interface Terminal {
 
 	// Progress indicator (OSC 9;4)
 	setProgress(active: boolean): void;
+
+	/**
+	 * Whether mouse reporting is on, so the wheel arrives as input rather than
+	 * scrolling the terminal's own scrollback. False when the terminal cannot
+	 * take it or `HOOCODE_MOUSE=0` turned it off.
+	 */
+	get mouseReporting(): boolean;
+
+	/**
+	 * Enter or leave the alternate screen.
+	 *
+	 * The alternate screen is a fixed grid with no scrollback of its own, which
+	 * is exactly what a pinned viewport needs: the app addresses rows directly
+	 * and nothing it writes can move the view. Leaving restores the normal
+	 * screen — and the scrollback behind it — byte for byte.
+	 */
+	setAlternateScreen(active: boolean): void;
 }
 
 /**
@@ -66,6 +84,8 @@ export class ProcessTerminal implements Terminal {
 	private resizeHandler?: () => void;
 	private _kittyProtocolActive = false;
 	private _modifyOtherKeysActive = false;
+	private _mouseReporting = false;
+	private _alternateScreen = false;
 	private stdinBuffer?: StdinBuffer;
 	private stdinDataHandler?: (data: string) => void;
 	private progressInterval?: ReturnType<typeof setInterval>;
@@ -102,6 +122,15 @@ export class ProcessTerminal implements Terminal {
 
 		// Enable bracketed paste mode - terminal will wrap pastes in \x1b[200~ ... \x1b[201~
 		process.stdout.write("\x1b[?2004h");
+
+		// Take the wheel. See mouse.ts for why, and for what this costs.
+		// A dumb terminal has nothing to report with, and HOOCODE_MOUSE=0 hands
+		// the wheel (and the un-modified drag-select) back to anyone who asks.
+		if (process.env.HOOCODE_MOUSE !== "0" && process.env.TERM !== "dumb" && process.stdout.isTTY) {
+			process.stdout.write(MOUSE_ENABLE);
+			this._mouseReporting = true;
+		}
+		process.once("exit", this.restoreOnExit);
 
 		// Set up resize handler immediately
 		process.stdout.on("resize", this.resizeHandler);
@@ -273,6 +302,13 @@ export class ProcessTerminal implements Terminal {
 			process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
 		}
 
+		// Back to the normal screen and off the wheel before anything else, so
+		// whatever the rest of this teardown prints lands where the user will
+		// actually see it. Leaving mouse reporting on would have the shell that
+		// outlives us printing `<35;10;4M` at every twitch.
+		process.off("exit", this.restoreOnExit);
+		this.restoreOnExit();
+
 		// Disable bracketed paste mode
 		process.stdout.write("\x1b[?2004l");
 
@@ -313,6 +349,40 @@ export class ProcessTerminal implements Terminal {
 		if (process.stdin.setRawMode) {
 			process.stdin.setRawMode(this.wasRaw);
 		}
+	}
+
+	/**
+	 * Last-resort restore, for an exit that never reached `stop()`.
+	 *
+	 * An uncaught throw leaves whatever modes were on, on. Bracketed paste and
+	 * the Kitty protocol degrade quietly if that happens; the alternate screen
+	 * does not — the user is left staring at a blank grid with their shell
+	 * invisible underneath it, and mouse reporting spits `<35;10;4M` at the
+	 * prompt on every twitch. `exit` handlers may only do synchronous work,
+	 * which writing a few bytes to stdout is.
+	 */
+	private readonly restoreOnExit = (): void => {
+		if (this._alternateScreen) {
+			process.stdout.write("\x1b[?1049l");
+			this._alternateScreen = false;
+		}
+		if (this._mouseReporting) {
+			process.stdout.write(MOUSE_DISABLE);
+			this._mouseReporting = false;
+		}
+	};
+
+	get mouseReporting(): boolean {
+		return this._mouseReporting;
+	}
+
+	setAlternateScreen(active: boolean): void {
+		if (this._alternateScreen === active) return;
+		this._alternateScreen = active;
+		// ?1049 saves and restores the cursor along with the screen, so the normal
+		// screen comes back with the cursor where the app left it — which is what
+		// the differential renderer's row bookkeeping assumes on the way out.
+		this.write(active ? "\x1b[?1049h" : "\x1b[?1049l");
 	}
 
 	write(data: string): void {

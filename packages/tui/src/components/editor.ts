@@ -684,6 +684,10 @@ export class Editor implements Component, Focusable {
 			this.undo();
 			return;
 		}
+		if (kb.matches(data, "tui.editor.redo")) {
+			this.redo();
+			return;
+		}
 
 		// Handle autocomplete mode
 		if (this.autocompleteState && this.autocompleteList) {
@@ -2030,9 +2034,19 @@ export class Editor implements Component, Focusable {
 	}
 
 	private undo(): void {
-		this.historyIndex = -1; // Exit history browsing mode
-		const snapshot = this.undoStack.pop();
+		// `undo` rather than `pop`: the stack needs the state being left in order
+		// to have somewhere to bring you back to.
+		this.applySnapshot(this.undoStack.undo(this.state));
+	}
+
+	private redo(): void {
+		this.applySnapshot(this.undoStack.redo(this.state));
+	}
+
+	/** Shared by undo and redo: both replace the state and settle the editor. */
+	private applySnapshot(snapshot: EditorState | undefined): void {
 		if (!snapshot) return;
+		this.historyIndex = -1; // Exit history browsing mode
 		Object.assign(this.state, snapshot);
 		this.lastAction = null;
 		this.preferredVisualCol = null;
@@ -2350,7 +2364,7 @@ export class Editor implements Component, Focusable {
 			this.autocompleteList.setSelectedIndex(bestMatchIndex);
 		}
 
-		this.autocompleteState = state;
+		this.setAutocompleteState(state);
 	}
 
 	private cancelAutocompleteRequest(): void {
@@ -2364,15 +2378,35 @@ export class Editor implements Component, Focusable {
 	}
 
 	private clearAutocompleteUi(): void {
-		this.autocompleteState = null;
+		this.setAutocompleteState(null);
 		this.autocompleteList = undefined;
 		this.autocompletePrefix = "";
+	}
+
+	/**
+	 * The one place the list's presence changes, so it is the one place that can
+	 * announce it.
+	 *
+	 * Suggestions arrive from an async provider, which is why a caller cannot
+	 * just look after handling a keystroke: on the keypress that opens the list
+	 * the state is still null, and if that keypress was the last one — `/mod`
+	 * then a pause — nothing ever looks again. Anyone lending the list screen
+	 * space has to hear about it when it actually happens.
+	 */
+	private setAutocompleteState(state: "regular" | "force" | null): void {
+		const was = this.autocompleteState !== null;
+		this.autocompleteState = state;
+		const now = state !== null;
+		if (was !== now) this.onAutocompleteVisibilityChange?.(now);
 	}
 
 	private cancelAutocomplete(): void {
 		this.cancelAutocompleteRequest();
 		this.clearAutocompleteUi();
 	}
+
+	/** Called when the completion list appears or disappears. */
+	public onAutocompleteVisibilityChange?: (visible: boolean) => void;
 
 	public isShowingAutocomplete(): boolean {
 		return this.autocompleteState !== null;

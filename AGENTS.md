@@ -12,6 +12,35 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Chrome density and transcript navigation**: one dial (`alt+z`, the seventh)
+  sets how much of the screen the chrome below the transcript gets — full /
+  compact / bare — and `interactive/chrome-layout.ts` holds the whole policy in
+  one pure function (`resolveChrome`). The footer lends its rows to an open
+  completion list; the task ledger keeps its counts and drops its rows mid-turn;
+  a terminal under 25 rows opens compact. `Slot` is the mechanism: a hidden slot
+  returns one *frozen* array and does not render its child, because the render
+  caches compare by array identity and a fresh `[]` reads as a change every
+  frame. The prompt has no slot on purpose. Transcript navigation gained search
+  (`ctrl+r`, `/` when pinned, `n`/`p` to step), turn jumps (`ctrl+up`/`ctrl+down`,
+  stopping on your own messages), `/copy` on a key, and a real editor redo.
+  Rules: `docs/ui-map.md` -> "Scrolling the transcript"; guarded by
+  `chrome-layout.test.ts`, `scroll-viewport.test.ts` and `scroll-view-keys.test.ts`.
+
+- **Transcript scrolling is the app's, not the terminal's**: scrolling back
+  used to mean scrolling the terminal's scrollback, and every full redraw
+  (`\x1b[3J`) threw that away — so the view jumped to the bottom whenever a row
+  above the viewport changed. `TUI.scrollOffset` now pins a window over the line
+  buffer and paints it on the **alternate screen**; live mode, the normal
+  screen and the terminal's own scrollback/selection/search are untouched, and
+  leaving is a differential frame, never a replay. The mouse wheel is captured
+  (`tui/src/mouse.ts`, `?1000h` + `?1006h`; `HOOCODE_MOUSE=0` opts out, and
+  shift still bypasses for native selection). Keys: `app.scroll.*` — pageUp /
+  pageDown / ctrl+home / ctrl+end at the prompt, arrows and escape once pinned;
+  `tui.editor.pageUp`/`pageDown` ship unbound, having had a one-to-three-line
+  prompt to page through. Rules: `docs/ui-map.md` -> "Scrolling the
+  transcript"; guarded by `tui/test/scroll-viewport.test.ts`,
+  `tui/test/mouse.test.ts` and `coding-agent/test/scroll-view-keys.test.ts`.
+
 - **One frame for every user input**: every surface that asks the user for
   something — the pickers, the `ask_options` pane, the extension selector /
   input / editor, the login dialog — replaces the prompt editor, so it draws the
