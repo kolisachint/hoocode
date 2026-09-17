@@ -2,6 +2,48 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The app fills the terminal, and the prompt sits on the floor of it.** The
+  renderer appends — a frame is the component tree flattened into a line buffer
+  and written from wherever the cursor is — so a frame was exactly as tall as
+  its content. On a fresh session that meant the banner a few rows down with the
+  prompt under it and your shell history above, and the prompt then walking down
+  the screen over the next few turns until the session was finally long enough
+  to scroll. It is one layout now at every session length: banner on the first
+  row, conversation in the middle, prompt and footer on the last. A picker gets
+  the same floor for free — they all take the prompt's place in the same
+  container, so they grow downward instead of pushing the prompt up and
+  stranding it mid-screen when they close. Scrolling back is unchanged, and
+  reaching the bottom puts the prompt back where it was. This is still the
+  normal screen: terminal scrollback, selection and search all keep working, and
+  the session is still there after you quit.
+- **What just changed says so above the prompt, then gets out of the way.**
+  Moving a dial used to write a line into the transcript — `Model: opus-5`,
+  `Chrome: compact`, `Tool output: peek` — each true for about a second and
+  litter for the rest of the session. Those now appear on a transient band
+  directly above the prompt and fade after three seconds, as do the settings
+  glimpses (`/model`, `/name`) and every warning, which used to leave a filled
+  block in the transcript for something like "No previous directory to return
+  to". Errors, the notices you pay for if you miss them, and anything carrying a
+  value the screen cannot reconstruct — a share URL, an export path, a login
+  confirmation — still go to the transcript. All six dials announce themselves
+  now: the three that stayed quiet did so because a permanent transcript row was
+  too much to pay for repeating what the footer already showed, and the band is
+  not permanent.
+- **`compact` keeps the task ledger's counts instead of hiding it.** The middle
+  stop of the chrome dial (`alt+z`) now makes the same trade for the ledger it
+  already made for the footer — keep the strip you glance at, give up the rows
+  you read — rather than being a cliff between `full` and `bare`. `bare` is
+  unchanged: no footer, no ledger.
+
+### Fixed
+
+- **A short session no longer leaves the tail of the last one under it.**
+  Clearing a long session used to leave whatever had been on screen below the
+  new, shorter frame, because clearing on shrink is off by default. A frame that
+  is never shorter than the screen has no rows below it to leave behind.
+
 ## [0.5.68] - 2026-09-16
 
 ## [0.5.67] - 2026-09-16

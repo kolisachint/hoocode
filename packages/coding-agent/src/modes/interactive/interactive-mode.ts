@@ -3464,7 +3464,15 @@ export class InteractiveMode {
 		const step = direction === "forward" ? 1 : -1;
 		const next = modes[(index + step + modes.length) % modes.length];
 		await this.session.prompt(`/mode ${next}`);
-		this.showDialStep(direction === "forward" ? "app.mode.cycleBackward" : "app.mode.cycleForward", `Mode: ${next}`);
+		// Read the mode back rather than announcing the one that was asked for:
+		// the command owns whether it took, and a glimpse naming a mode the
+		// session is not in is worse than no glimpse at all. A throw above never
+		// reaches here, which is the same rule.
+		const landed = this.footerDataProvider.getActiveMode();
+		this.showDialStep(
+			direction === "forward" ? "app.mode.cycleBackward" : "app.mode.cycleForward",
+			`Mode: ${landed || next}`,
+		);
 	}
 
 	/**

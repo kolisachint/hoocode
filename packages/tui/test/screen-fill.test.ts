@@ -153,6 +153,71 @@ describe("filling the screen", () => {
 		assert.equal(tui.scrollPinned, false);
 	});
 
+	it("keeps the screen the tail of the buffer as the session grows", async () => {
+		// The fill changes the buffer's length on frames that used to leave it
+		// alone, and this renderer's diff is positional — so the property worth
+		// asserting is not the fill's arithmetic but that what is on screen is
+		// still the tail of the buffer afterwards. Growth is the session's own
+		// path: a transcript only gets longer until something clears it.
+		const { terminal, tui, body } = await setup(2);
+		for (const count of [2, 6, HEIGHT - 4, HEIGHT, HEIGHT + 1, HEIGHT * 2, HEIGHT * 3]) {
+			body.setCount(count);
+			tui.requestRender();
+			await settle(terminal);
+			const expected = tui
+				.render(WIDTH)
+				.slice(-HEIGHT)
+				.map((line) => line.trimEnd());
+			assert.deepEqual(await screen(terminal), expected, `at ${count} body rows`);
+		}
+	});
+
+	it("leaves no stale rows behind when a long session is cleared", async () => {
+		// Without a fill this is the renderer's known weak spot: shrinking the
+		// buffer leaves whatever was under the old content on screen, because
+		// clearing on shrink is off by default. A buffer that never gets shorter
+		// than the screen cannot have rows below it to leave behind, so `/clear`
+		// on a long session lands on a clean screen rather than a short app with
+		// the tail of the last one still under it.
+		const { terminal, tui, body } = await setup(HEIGHT * 3);
+		body.setCount(1);
+		tui.requestRender();
+		await settle(terminal);
+		assert.deepEqual(await screen(terminal), ["header", "body 1", ...Array(HEIGHT - 3).fill(""), "prompt"]);
+	});
+
+	it("costs no more full redraws than the same tree without a fill", async () => {
+		// A full redraw is `\x1b[2J\x1b[H\x1b[3J` — it throws the reader's
+		// scrollback away. The fill must not be a new reason to reach for one.
+		const steps = [2, 6, HEIGHT, HEIGHT * 2, HEIGHT + 1, 4, 1];
+
+		const filled = await setup(2);
+		for (const count of steps) {
+			filled.body.setCount(count);
+			filled.tui.requestRender();
+			await settle(filled.terminal);
+		}
+
+		const plainTerminal = new VirtualTerminal(WIDTH, HEIGHT);
+		const plain = new TUI(plainTerminal);
+		const plainBody = new Body(2);
+		plain.addChild(new Text("header", 0, 0));
+		plain.addChild(plainBody);
+		plain.addChild(new Text("prompt", 0, 0));
+		plain.start();
+		await settle(plainTerminal);
+		for (const count of steps) {
+			plainBody.setCount(count);
+			plain.requestRender();
+			await settle(plainTerminal);
+		}
+
+		assert.ok(
+			filled.tui.fullRedraws <= plain.fullRedraws,
+			`filled=${filled.tui.fullRedraws} plain=${plain.fullRedraws}`,
+		);
+	});
+
 	it("has nothing to do for a tree with no fill in it", async () => {
 		// Embedders that predate this — and every test that renders the tree
 		// directly — get the old append-only frame back by simply not setting one.

@@ -473,6 +473,36 @@ export class TUI extends Container {
 	private stopped = false;
 
 	/**
+	 * The filler that keeps the app the size of the screen.
+	 *
+	 * ## Why the app is full-screen at all
+	 *
+	 * This renderer appends: a frame is the whole component tree flattened into
+	 * a line buffer, written from wherever the cursor happens to be. On a fresh
+	 * session that buffer is a dozen rows, so the banner sat halfway up a
+	 * terminal with the prompt under it and forty rows of the user's shell
+	 * history above — and the prompt walked down the screen as the conversation
+	 * grew, only reaching the bottom row once the session was long enough to
+	 * scroll. Two different layouts for the same app, and the one you meet first
+	 * is the one that does not look like an app.
+	 *
+	 * ## What this does
+	 *
+	 * Before the frame is diffed, the root measures it and gives the leftover
+	 * rows to one designated child. The buffer is therefore never shorter than
+	 * the terminal, so the terminal's last row is always the buffer's last row:
+	 * the header stays at the top, the prompt and the footer stay on the bottom,
+	 * and everything between them is conversation. Nothing else changes — this
+	 * is still the normal screen, so scrollback, selection and search all still
+	 * work, and the session is still on screen after you quit.
+	 *
+	 * Set to `undefined` (no flex child) and the old append-only behaviour is
+	 * exactly what you get back, which is what the tests that predate this and
+	 * any embedder outside the app rely on.
+	 */
+	private flexSpacer?: FlexSpacer;
+
+	/**
 	 * The pinned viewport.
 	 *
 	 * ## What is wrong with letting the terminal do it
@@ -506,36 +536,6 @@ export class TUI extends Container {
 	 * Not a clear-and-replay: on a long session that is a visible flash, a burst
 	 * of output, and the loss of the scrollback that had just been handed back.
 	 */
-	/**
-	 * The filler that keeps the app the size of the screen.
-	 *
-	 * ## Why the app is full-screen at all
-	 *
-	 * This renderer appends: a frame is the whole component tree flattened into
-	 * a line buffer, written from wherever the cursor happens to be. On a fresh
-	 * session that buffer is a dozen rows, so the banner sat halfway up a
-	 * terminal with the prompt under it and forty rows of the user's shell
-	 * history above — and the prompt walked down the screen as the conversation
-	 * grew, only reaching the bottom row once the session was long enough to
-	 * scroll. Two different layouts for the same app, and the one you meet first
-	 * is the one that does not look like an app.
-	 *
-	 * ## What this does
-	 *
-	 * Before the frame is diffed, the root measures it and gives the leftover
-	 * rows to one designated child. The buffer is therefore never shorter than
-	 * the terminal, so the terminal's last row is always the buffer's last row:
-	 * the header stays at the top, the prompt and the footer stay on the bottom,
-	 * and everything between them is conversation. Nothing else changes — this
-	 * is still the normal screen, so scrollback, selection and search all still
-	 * work, and the session is still on screen after you quit.
-	 *
-	 * Set to `undefined` (no flex child) and the old append-only behaviour is
-	 * exactly what you get back, which is what the tests that predate this and
-	 * any embedder outside the app rely on.
-	 */
-	private flexSpacer?: FlexSpacer;
-
 	private scrollOffset: number | null = null;
 	/** Transcript length measured by the last pinned paint; what clamping uses. */
 	private scrollTotalLines = 0;
