@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Two arrows on screen instead of three.** A picker showed an unstyled ASCII
+  `>` on its query line, two rows under an accent `›` on the selected row, for
+  the same role the main prompt spells `❯` — three glyphs for two signals, and
+  nobody had chosen the `>`: it was hardcoded inside the `Input` widget, which
+  never got the prefix knob the editor has had all along. Every place you can
+  type now wears the prompt's `❯`, muted so it does not out-shout the cursor
+  beside it: the `/model`, `/resume`, `/settings`, `/config`, `/login` and
+  session-tree query lines, the session rename, extension prompts, and the
+  `ask_options` custom-answer row. `›` is left to mean one thing — this is the
+  row you are on. (`→` in the `ask_options` breadcrumb stays; it means "maps
+  to", which is a different thing.) Rule and reasons: `docs/ui-map.md` → "Two
+  arrows, and what each one means".
+
 ## [0.5.71] - 2026-09-17
 
 ## [0.5.70] - 2026-09-17

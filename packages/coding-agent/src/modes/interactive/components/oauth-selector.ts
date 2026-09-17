@@ -8,7 +8,7 @@ import {
 	TruncatedText,
 } from "@kolisachint/hoocode-tui";
 import type { AuthStatus, AuthStorage } from "../../../core/auth-storage.js";
-import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, styleInput, theme } from "../theme/theme.js";
 import { InputFrame } from "./input-frame.js";
 import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
 
@@ -65,6 +65,7 @@ export class OAuthSelectorComponent extends InputFrame implements Focusable {
 		this.setTitle(mode === "login" ? "login provider" : "logout provider");
 
 		this.searchInput = new Input();
+		styleInput(this.searchInput);
 		this.searchInput.onSubmit = () => {
 			const selectedProvider = this.filteredProviders[this.selectedIndex];
 			if (selectedProvider) {

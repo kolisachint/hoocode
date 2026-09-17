@@ -3,6 +3,7 @@
  */
 
 import { type Focusable, getKeybindings, Input, type TUI } from "@kolisachint/hoocode-tui";
+import { styleInput } from "../theme/theme.js";
 import { CountdownTimer } from "./countdown-timer.js";
 import { InputFrame } from "./input-frame.js";
 import { keyHint } from "./keybinding-hints.js";
@@ -53,6 +54,7 @@ export class ExtensionInputComponent extends InputFrame implements Focusable {
 		}
 
 		this.input = new Input();
+		styleInput(this.input);
 		this.addChild(this.input);
 		this.setHint(`${keyHint("tui.select.confirm", "submit")}  ${keyHint("tui.select.cancel", "cancel")}`);
 	}

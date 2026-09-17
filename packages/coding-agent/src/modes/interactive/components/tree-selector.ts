@@ -8,7 +8,7 @@ import {
 	truncateToWidth,
 } from "@kolisachint/hoocode-tui";
 import type { SessionTreeNode } from "../../../core/session-manager.js";
-import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, styleInput, theme } from "../theme/theme.js";
 import { DynamicBorder } from "./dynamic-border.js";
 import { InputFrame } from "./input-frame.js";
 import { appKeyLabel, formatKeyText, keyHint, rawKeyHint } from "./keybinding-hints.js";
@@ -1081,6 +1081,7 @@ class LabelInput implements Component, Focusable {
 	constructor(entryId: string, currentLabel: string | undefined) {
 		this.entryId = entryId;
 		this.input = new Input();
+		styleInput(this.input);
 		if (currentLabel) {
 			this.input.setValue(currentLabel);
 		}

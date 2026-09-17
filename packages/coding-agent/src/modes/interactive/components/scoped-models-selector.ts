@@ -10,7 +10,7 @@ import {
 	Spacer,
 	Text,
 } from "@kolisachint/hoocode-tui";
-import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, styleInput, theme } from "../theme/theme.js";
 import { InputFrame } from "./input-frame.js";
 import { keyText } from "./keybinding-hints.js";
 import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
@@ -131,6 +131,7 @@ export class ScopedModelsSelectorComponent extends InputFrame implements Focusab
 
 		// Search input
 		this.searchInput = new Input();
+		styleInput(this.searchInput);
 		this.addChild(this.searchInput);
 		this.addChild(new Spacer(1));
 

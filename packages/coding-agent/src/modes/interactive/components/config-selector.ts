@@ -18,7 +18,7 @@ import {
 import { CONFIG_DIR_NAME } from "../../../config.js";
 import type { PathMetadata, ResolvedPaths, ResolvedResource } from "../../../core/package-manager.js";
 import type { PackageSource, SettingsManager } from "../../../core/settings-manager.js";
-import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, styleInput, theme } from "../theme/theme.js";
 import { rawKeyHint } from "./keybinding-hints.js";
 
 type ResourceType = "extensions" | "skills" | "prompts" | "themes";
@@ -224,6 +224,7 @@ class ResourceList implements Component, Focusable {
 		this.cwd = cwd;
 		this.agentDir = agentDir;
 		this.searchInput = new Input();
+		styleInput(this.searchInput);
 		this.buildFlatList();
 		this.filteredItems = [...this.flatItems];
 	}

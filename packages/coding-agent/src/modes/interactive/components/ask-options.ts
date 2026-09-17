@@ -24,6 +24,7 @@
 
 import {
 	type Component,
+	DEFAULT_INPUT_PROMPT,
 	type Focusable,
 	getKeybindings,
 	Input,
@@ -189,7 +190,7 @@ export class AskOptionsComponent implements Component, Focusable {
 			const plus = theme.fg(active ? "accent" : "dim", "+");
 			if (active) {
 				const value = this.customInput.getValue();
-				const prompt = theme.fg("accent", ">");
+				const prompt = theme.fg("muted", DEFAULT_INPUT_PROMPT);
 				const caret = this._focused ? theme.fg("accent", "▏") : "";
 				const body = value
 					? `${theme.fg("text", value)}${caret}`

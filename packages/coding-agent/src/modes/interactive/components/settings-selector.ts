@@ -22,7 +22,7 @@ import {
 	TOOL_OUTPUT_VIEWS,
 	type ToolOutputView,
 } from "../../../core/tool-output-view.js";
-import { getSelectListTheme, getSettingsListTheme, getThemeDescription, theme } from "../theme/theme.js";
+import { getSelectListTheme, getSettingsListTheme, getThemeDescription, styleInput, theme } from "../theme/theme.js";
 import { InputFrame } from "./input-frame.js";
 import { keyDisplayText } from "./keybinding-hints.js";
 
@@ -730,6 +730,7 @@ class FlagStringEditSubmenu extends Container {
 		this.addChild(new Spacer(1));
 
 		this.input = new Input();
+		styleInput(this.input);
 		this.input.setValue(currentValue);
 		this.input.onSubmit = (value: string) => done(value);
 		this.input.onEscape = () => done();

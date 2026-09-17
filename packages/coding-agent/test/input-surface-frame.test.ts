@@ -396,6 +396,79 @@ describe("InputFrame", () => {
 	});
 });
 
+describe("every place you can type wears the prompt's caret", () => {
+	beforeAll(() => initTheme("dark"));
+	beforeEach(() => {
+		setKeybindings(new KeybindingsManager());
+		setInputFrameBorder("box");
+	});
+
+	// `Input` used to hardcode an unstyleable `"> "`, so a picker showed an ASCII
+	// caret two rows under an accent `›` for a role the main prompt spells `❯`.
+	// Three glyphs for two signals. The rule now: `❯` is "a line is waiting for
+	// you", `›` is "this is the row you are on", and `>` is neither.
+	it("never draws the ASCII caret an unthemed Input used to", () => {
+		for (const [name, surface] of surfaces()) {
+			for (const [row, line] of surface.render(100).map(strip).entries()) {
+				expect(line, `${name}: row ${row}`).not.toMatch(/(?:^|[│\s])> /);
+			}
+		}
+	});
+
+	it("draws `❯` on a query line", () => {
+		const withQueryLine: Array<[string, { render(width: number): string[] }]> = [
+			[
+				"extension input",
+				new ExtensionInputComponent(
+					"name this session",
+					undefined,
+					() => {},
+					() => {},
+				),
+			],
+			[
+				"oauth selector",
+				new OAuthSelectorComponent(
+					"login",
+					AuthStorage.inMemory(),
+					[{ id: "anthropic", name: "Anthropic", authType: "oauth" }],
+					() => {},
+					() => {},
+				),
+			],
+		];
+		for (const [name, surface] of withQueryLine) {
+			const lines = surface.render(100).map(strip);
+			expect(
+				lines.some((line) => line.includes("❯ ")),
+				`${name} has a caret`,
+			).toBe(true);
+		}
+	});
+
+	it("draws the same caret on the ask_options custom-answer row", () => {
+		const pane = new AskOptionsComponent(
+			questions,
+			() => {},
+			() => {},
+		);
+		// Two options, then the custom row; only the active row shows its caret.
+		expect(
+			pane
+				.render(100)
+				.map(strip)
+				.some((line) => line.includes("❯ ")),
+		).toBe(false);
+		pane.handleInput("\x1b[B");
+		pane.handleInput("\x1b[B");
+		const lines = pane.render(100).map(strip);
+		const caret = lines.find((line) => line.includes("❯ "));
+		expect(caret, "custom row carries the caret").toBeDefined();
+		// And it is the row the list cursor is on, so both glyphs sit on it at once.
+		expect(caret).toContain("›");
+	});
+});
+
 describe("the session picker", () => {
 	beforeAll(() => initTheme("dark"));
 	beforeEach(() => {

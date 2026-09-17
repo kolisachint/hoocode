@@ -7,6 +7,17 @@ import { getSegmenter, isPunctuationChar, isWhitespaceChar, sliceByColumn, visib
 
 const segmenter = getSegmenter();
 
+/**
+ * The caret an input line marks itself with, the trailing space added at render
+ * (the same contract as `Editor.promptPrefix`, so the two read as one glyph
+ * vocabulary). `❯` because a caret means "a line is waiting for you" wherever it
+ * appears, and an input line means exactly what the main prompt means; `›` is
+ * the list cursor and says something else entirely. This used to be a hardcoded,
+ * unstyleable `"> "`, which made every query line in the app disagree with the
+ * prompt it sat under.
+ */
+export const DEFAULT_INPUT_PROMPT = "❯";
+
 interface InputState {
 	value: string;
 	cursor: number;
@@ -23,6 +34,11 @@ export class Input implements Component, Focusable {
 
 	/** Focusable interface - set by TUI when focus changes */
 	focused: boolean = false;
+
+	// Caret shown before the value; set to "" to draw none
+	public promptPrefix: string = DEFAULT_INPUT_PROMPT;
+	// Color function for the caret
+	public promptColor: (str: string) => string = (s) => s;
 
 	// Bracketed paste mode buffering
 	private pasteBuffer: string = "";
@@ -444,11 +460,11 @@ export class Input implements Component, Focusable {
 
 	render(width: number): string[] {
 		// Calculate visible window
-		const prompt = "> ";
-		const availableWidth = width - prompt.length;
+		const prompt = this.promptPrefix ? `${this.promptPrefix} ` : "";
+		const availableWidth = width - visibleWidth(prompt);
 
 		if (availableWidth <= 0) {
-			return [prompt];
+			return [this.promptColor(prompt)];
 		}
 
 		let visibleText = "";
@@ -507,7 +523,7 @@ export class Input implements Component, Focusable {
 		// Calculate visual width
 		const visualLength = visibleWidth(textWithCursor);
 		const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
-		const line = prompt + textWithCursor + padding;
+		const line = this.promptColor(prompt) + textWithCursor + padding;
 
 		return [line];
 	}

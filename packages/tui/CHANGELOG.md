@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **`Input` draws the prompt's caret, and lets you style it.** The prefix was a
+  hardcoded, uncolourable `"> "`, so every query line in an app sat in the
+  default foreground and disagreed with whatever glyph the app's own prompt
+  used. `Input` now has `promptPrefix` and `promptColor`, the same pair `Editor`
+  has always had and with the same contract (the glyph, without the trailing
+  space). The default is the exported `DEFAULT_INPUT_PROMPT` (`❯`); set
+  `promptPrefix = ""` for none. A coloured prefix is measured by its visible
+  width, so ANSI no longer eats a column of the value.
+- **`DEFAULT_SELECT_CURSOR` is `› `, not `→ `.** The unthemed fallback was the
+  one place a third arrow could still appear.
+
 ## [0.5.71] - 2026-09-17
 
 ## [0.5.70] - 2026-09-17
