@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **The startup banner is flush against the left edge.** The owl glyph carried a
+  three-space indent plus the header's one-column padding, and the resource
+  listing lined up under it with a four-space rail — the whole first page now
+  starts at column 0.
+- **The owl glyph is terminal-default ink.** It wore the theme's accent; now it
+  renders dark on light themes and light on dark ones, with no theme logic of
+  its own. The `hoo` accent is untouched.
+- **A fresh session opens with the logo on the first row and the prompt on the
+  floor.** The screen fill sat above the banner, so a short session packed the
+  logo just above the prompt at the bottom; it sits directly below the banner
+  now, with the leftover rows between it and the conversation. Past a screenful
+  the fill is 0 and the layout is exactly the old pack-against-the-floor.
+
 ## [0.5.75] - 2026-09-17
 
 ### Fixed

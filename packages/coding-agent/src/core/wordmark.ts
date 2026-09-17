@@ -5,7 +5,6 @@
 /** Compact three-line owl glyph rendered beside the brand text in the banner. */
 const WORDMARK_GLYPH = ["▟▀▀▀▀▀▙", "▌▟▙ ▟▙▐", "▜▄▄▄▄▄▛"];
 
-const GLYPH_INDENT = " ".repeat(3);
 const GLYPH_GAP = " ".repeat(2);
 
 export interface CompactWordmarkOptions {
@@ -14,8 +13,10 @@ export interface CompactWordmarkOptions {
 	cwd: string;
 	/** Tagline shown next to the version. */
 	tagline?: string;
-	/** Colorize the brand "hoo" portion / glyph. */
+	/** Colorize the brand "hoo" portion. */
 	accent: (text: string) => string;
+	/** Colorize the owl glyph. Defaults to `accent` when omitted. */
+	glyph?: (text: string) => string;
 	/** Colorize secondary text (tagline, version, cwd). */
 	dim: (text: string) => string;
 	/** Colorize separators and the glyph outline. */
@@ -28,7 +29,8 @@ export interface CompactWordmarkOptions {
 
 /**
  * Build the compact startup banner: a small owl glyph beside the brand name,
- * tagline + version, and the working directory.
+ * tagline + version, and the working directory. Flush against the left edge —
+ * no indent — so it starts at column 0.
  *
  *     ▟▀▀▀▀▀▙  hoocode
  *     ▌▟▙ ▟▙▐  coding agent · v0.1.0
@@ -36,6 +38,7 @@ export interface CompactWordmarkOptions {
  */
 export function buildCompactWordmark(options: CompactWordmarkOptions): string {
 	const { appName, version, cwd, accent, dim, muted } = options;
+	const glyphSty = options.glyph ?? accent;
 	const tagline = options.tagline ?? "coding agent";
 
 	// Highlight the "hoo" prefix when present, otherwise accent the whole name.
@@ -50,6 +53,6 @@ export function buildCompactWordmark(options: CompactWordmarkOptions): string {
 
 	return WORDMARK_GLYPH.map((glyphLine, index) => {
 		const text = right[index] ?? "";
-		return `${GLYPH_INDENT}${accent(glyphLine)}${GLYPH_GAP}${text}`;
+		return `${glyphSty(glyphLine)}${GLYPH_GAP}${text}`;
 	}).join("\n");
 }

@@ -275,10 +275,11 @@ export class InteractiveMode {
 	private editorContainer: Container;
 	/**
 	 * The rows nobody is using, handed to the renderer so the app is the size of
-	 * the screen. It is the *first* child, so the leftover rows are above the
-	 * banner and everything below it — conversation, ledger, prompt, footer — is
-	 * packed against the foot of the screen with nothing between the last thing
-	 * the agent said and the box you answer it in. See `TUI.setFlexSpacer`.
+	 * the screen. It sits directly below the banner, so on a fresh session the
+	 * logo holds the first row, the leftover rows sit between it and the
+	 * conversation, and the prompt and footer stay packed against the foot of
+	 * the screen. Past a screenful the fill is 0 and the layout is exactly the
+	 * old pack-against-the-floor. See `TUI.setFlexSpacer`.
 	 */
 	private readonly screenFill = new FlexSpacer();
 	/** The transient band above the prompt; see components/notification-panel.ts. */
@@ -915,14 +916,15 @@ export class InteractiveMode {
 				startupProgress.remove("rg");
 			});
 
-		// The rows nobody is using go here, above everything, so the app reads the
-		// way a terminal does: the newest row against the prompt and the session
-		// growing upward out of it. Below the fill nothing ever has room held back
-		// from it, which is what keeps the conversation and the prompt touching at
-		// every session length.
+		// The rows nobody is using go here, directly below the banner, so a fresh
+		// session opens with the logo on the first row and the prompt on the
+		// last. Below the fill nothing ever has room held back from it, which
+		// is what keeps the conversation and the prompt touching at every
+		// session length; past a screenful the fill is 0 and the terminal's
+		// own scroll holds the floor exactly as before.
+		this.ui.addChild(this.headerContainer);
 		this.ui.addChild(this.screenFill);
 		this.ui.setFlexSpacer(this.screenFill);
-		this.ui.addChild(this.headerContainer);
 
 		// Add header with keybindings from config (unless silenced)
 		if (this.options.verbose || !this.settingsManager.getQuietStartup()) {
@@ -936,6 +938,9 @@ export class InteractiveMode {
 							version: this.version,
 							cwd: formatDisplayPath(this.sessionManager.getCwd()),
 							accent: (text) => theme.fg("accent", text),
+							// The owl is terminal-default ink: dark on light themes,
+							// light on dark ones, with no theme logic of its own.
+							glyph: (text) => theme.fg("text", text),
 							dim: (text) => theme.fg("dim", text),
 							muted: (text) => theme.fg("muted", text),
 							cursor: (text) => theme.blink(theme.fg("accent", text)),
@@ -1007,7 +1012,7 @@ export class InteractiveMode {
 				() => logo(),
 				() => `${logo()}\n${expandedInstructions}\n\n${onboarding}`,
 				this.getStartupExpansionState(),
-				1,
+				0,
 				0,
 			);
 

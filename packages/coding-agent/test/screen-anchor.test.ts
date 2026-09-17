@@ -8,10 +8,11 @@
  * prompt then walked down the screen over the next few turns. Pinning the
  * bottom is what makes those two the same screen.
  *
- * The fill is the *first* child, so the rows nobody is using are above the
- * banner and everything below it is one run against the floor. A band of blank
- * between the last thing the agent said and the box you answer it in is the
- * thing this file exists to catch.
+ * The fill sits directly below the banner, so a fresh session opens with the
+ * logo on the first row, the leftover rows between it and the conversation,
+ * and the prompt hard against the floor. A band of blank between the last
+ * thing the agent said and the box you answer it in is the thing this file
+ * exists to catch.
  */
 
 import { describe, expect, it } from "vitest";
@@ -35,21 +36,22 @@ async function settle(): Promise<void> {
 }
 
 describe("the app fills the screen", () => {
-	it("opens with the banner packed against the floor and the leftover rows above it", async () => {
+	it("opens with the banner on the first row, the prompt on the floor, and the leftover rows between", async () => {
 		const harness = await createSurfaceHarness();
 		try {
 			await settle();
 			const rows = frameRows(harness);
 			expect(rows).toHaveLength(ROWS);
-			// The prompt and the footer are hard against the bottom edge, and so is
-			// the banner above them: every blank row is above the first thing drawn.
+			// The banner holds the first row and the prompt and footer the last
+			// ones; whatever nobody is using sits between the banner and the
+			// conversation below it.
 			const banner = rows.findIndex((row) => row.includes("hoo"));
-			expect(banner).toBeGreaterThan(0);
-			expect(rows.slice(0, banner).every((row) => row === "")).toBe(true);
+			expect(banner).toBe(0);
 			const prompt = rows.findIndex((row) => row.includes("❯"));
-			expect(prompt).toBeGreaterThan(banner);
+			expect(prompt).toBeGreaterThan(banner + 3);
 			expect(rows.slice(prompt).every((row) => row !== "")).toBe(true);
 			expect(rows.at(-1)).not.toBe("");
+			expect(rows.slice(banner + 3, prompt).some((row) => row === "")).toBe(true);
 		} finally {
 			harness.cleanup();
 		}

@@ -32,10 +32,10 @@ export interface Expandable {
 }
 
 /**
- * Left rail for the startup summary. Lines up under the banner's owl glyph so
- * the whole first page reads as one column instead of three stray indents.
+ * Left rail for the startup summary. Flush against the left edge with the
+ * banner, so the whole first page reads as one column.
  */
-const RAIL = "    ";
+const RAIL = "";
 
 export function isExpandable(obj: unknown): obj is Expandable {
 	return typeof obj === "object" && obj !== null && "setExpanded" in obj;
