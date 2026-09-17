@@ -599,6 +599,57 @@ function renderedColor(color: string | number, mode: ColorMode): string | number
 }
 
 /**
+ * The hue family a chip keeps white ink for.
+ *
+ * Slot 4 is magenta in every shipped theme (`/color magenta`, and the slot
+ * order is a contract — see `docs/themes.md`), and magenta with a dark name on
+ * it reads as pink with small print: the lift that makes dark ink legible is
+ * exactly what bleaches the hue out of it. A deep magenta with a white name is
+ * both more legible and more itself, so a magenta fill is deepened — never
+ * lifted — until white clears the same bars every other fill answers to. When
+ * no deep variant clears, the lift below still runs: legibility outranks ink.
+ *
+ * The window covers every shipped slot-4 token (325°–340°) with room on both
+ * sides, and stops short of purple (nearest 293°) and red. The saturation gate
+ * keeps out grays, whose hue is noise.
+ */
+export const MAGENTA_HUE_MIN = 305;
+export const MAGENTA_HUE_MAX = 355;
+export const MIN_MAGENTA_SATURATION = 0.25;
+
+/**
+ * Darkest a magenta fill is deepened to in search of white-clearing ink.
+ *
+ * A chip is a mark on the page in both polarities, so the walk stops well
+ * above the terminal's own ground — a fill here is still unmistakably lit on
+ * the darkest shipped background.
+ */
+const MIN_MAGENTA_FILL_LIGHTNESS = 0.3;
+
+/** HSL of a palette entry known to be a saturated magenta, or undefined. */
+function magentaHsl(color: string | number): { h: number; s: number; l: number } | undefined {
+	const hex = typeof color === "number" ? ansi256ToHex(color) : color;
+	if (!hex.startsWith("#")) return undefined;
+	let hsl: { h: number; s: number; l: number };
+	try {
+		hsl = hexToHsl(hex);
+	} catch {
+		return undefined;
+	}
+	if (hsl.s <= MIN_MAGENTA_SATURATION) return undefined;
+	const hue = ((hsl.h % 360) + 360) % 360;
+	if (hue < MAGENTA_HUE_MIN || hue > MAGENTA_HUE_MAX) return undefined;
+	return { h: hue, s: hsl.s, l: hsl.l };
+}
+
+/** Whether white ink on `candidate` clears both the exact and the rounded bar. */
+function clearsWithWhite(candidate: string | number, mode: ColorMode): boolean {
+	const exact = contrastRatio(candidate, CHIP_INK_LIGHT);
+	const rounded = contrastRatio(renderedColor(candidate, mode), CHIP_INK_LIGHT);
+	return (exact ?? 0) >= MIN_CHIP_INK_CONTRAST && (rounded ?? 0) >= MIN_CHIP_INK_CONTRAST_QUANTIZED;
+}
+
+/**
  * The colour a chip is actually filled with for a palette entry.
  *
  * Two things can be wrong with a palette entry used as a fill, and a theme's own
@@ -619,6 +670,28 @@ function renderedColor(color: string | number, mode: ColorMode): string | number
  * a lifted fill still reads as that theme's colour rather than a generic one.
  */
 function chipFill(color: string | number, lightBackdrop: boolean, mode: ColorMode): string | number {
+	// Magenta keeps white ink (see MAGENTA_HUE_MIN): an entry that already
+	// carries white is used exactly as the theme wrote it, on either polarity —
+	// no lightness floor, which is what bleached deep magentas into pink. One
+	// that does not is deepened at its own hue until white clears, so the chip
+	// stays magenta instead of becoming the pink the lift would make it.
+	const magenta = magentaHsl(color);
+	if (magenta) {
+		if (clearsWithWhite(color, mode)) return color;
+		for (
+			let lightness = magenta.l - CHIP_FILL_LIGHTNESS_STEP;
+			lightness >= MIN_MAGENTA_FILL_LIGHTNESS;
+			lightness -= CHIP_FILL_LIGHTNESS_STEP
+		) {
+			// Capped like a lifted fill: a moved fill is the theme's no longer,
+			// and full saturation at these lightnesses is neon either way.
+			const candidate = hslToHex(magenta.h, Math.min(magenta.s, MAX_CHIP_FILL_SATURATION), lightness);
+			if (clearsWithWhite(candidate, mode)) return candidate;
+		}
+		// No deep variant clears — fall through to the lift, which buys
+		// legibility with dark ink over an illegible magenta with white.
+	}
+
 	// Both the colour asked for and the colour the terminal will round it to have
 	// to carry the ink — the first to the full bar, the second to the one it can
 	// hold without being pushed out of its own cube cell.

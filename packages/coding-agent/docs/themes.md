@@ -435,7 +435,10 @@ directly: the fill keeps the token's hue and saturation and is lifted to a
 lightness where that hue reads as itself. Set the token for the text role, at
 whatever contrast the page needs, and pick its *hue* for the slot's name; the
 chip takes care of itself. Dark palettes are already bright and are used as the
-fill unchanged.
+fill unchanged. The exception is magenta (slot 4): a deep rose still reads as
+magenta where a dark yellow reads as brown, so a magenta fill is deepened —
+never lifted — until white ink clears the chip bar, and one that already
+carries white is used exactly as the theme wrote it.
 
 ### The cut-out tokens
 
