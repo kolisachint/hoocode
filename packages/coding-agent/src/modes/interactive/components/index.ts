@@ -15,6 +15,12 @@ export { getInputFrameBorder, InputFrame, type InputFrameOptions, setInputFrameB
 export { keyHint, keyText, rawKeyHint } from "./keybinding-hints.js";
 export { LoginDialogComponent } from "./login-dialog.js";
 export { ModelSelectorComponent } from "./model-selector.js";
+export {
+	NOTIFICATION_TTL_MS,
+	type Notification,
+	type NotificationKind,
+	NotificationPanel,
+} from "./notification-panel.js";
 export { OAuthSelectorComponent } from "./oauth-selector.js";
 export { SessionSelectorComponent } from "./session-selector.js";
 export { type SettingsCallbacks, type SettingsConfig, SettingsSelectorComponent } from "./settings-selector.js";

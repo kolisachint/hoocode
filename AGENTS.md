@@ -12,6 +12,26 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **The app fills the screen, and what just changed ghosts**: the renderer
+  appends, so a frame used to be exactly as tall as its content — banner a few
+  rows down, prompt walking down the terminal as the session grew. `FlexSpacer`
+  is one child of the root that takes whatever rows the frame did not use
+  (`TUI.setFlexSpacer`, fitted in `doRender`), so the banner is on the first row
+  and the prompt and footer on the last at every session length, pickers
+  included. Still the normal screen: scrollback, selection and search are
+  untouched, and the pinned view empties the fill before it paints. Alongside
+  it, `components/notification-panel.ts` is a transient band above the prompt:
+  every dial step, the settings glimpses and every `showWarning` go there and
+  are gone in a few seconds, while errors, `showNotice` and anything carrying a
+  value you cannot reconstruct from the screen stay in the transcript. Inside
+  the band a glimpse replaces and a warning queues, and neither overwrites what
+  is already on screen. The chrome dial's middle stop now keeps the ledger's
+  counts instead of hiding it outright — `compact` makes the same trade for the
+  ledger it already made for the footer. Rules: `docs/ui-map.md` -> "Filling the
+  screen" and "What ghosts and what stays"; guarded by
+  `tui/test/screen-fill.test.ts`, `coding-agent/test/screen-anchor.test.ts`,
+  `coding-agent/test/notification-panel.test.ts` and `chrome-layout.test.ts`.
+
 - **Chrome density and transcript navigation**: one dial (`alt+z`, the seventh)
   sets how much of the screen the chrome below the transcript gets — full /
   compact / bare — and `interactive/chrome-layout.ts` holds the whole policy in

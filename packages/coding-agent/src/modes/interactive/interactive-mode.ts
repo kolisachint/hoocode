@@ -25,6 +25,7 @@ import {
 	CombinedAutocompleteProvider,
 	type Component,
 	Container,
+	FlexSpacer,
 	fuzzyFilter,
 	getCapabilities,
 	hyperlink,
@@ -104,6 +105,7 @@ import { DynamicBorder } from "./components/dynamic-border.js";
 import { FooterComponent } from "./components/footer.js";
 import { setInputFrameBorder } from "./components/input-frame.js";
 import { appKeyLabel, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.js";
+import { NotificationPanel } from "./components/notification-panel.js";
 import { renderSessionChip } from "./components/session-chip.js";
 import { SessionColorSelectorComponent } from "./components/session-color-selector.js";
 import { SessionSelectorComponent } from "./components/session-selector.js";
@@ -270,6 +272,14 @@ export class InteractiveMode {
 	private autocompleteProviderWrappers: AutocompleteProviderFactory[] = [];
 	private fdPath: string | undefined;
 	private editorContainer: Container;
+	/**
+	 * The rows nobody is using, handed to the renderer so the app is the size of
+	 * the screen: header at the top, prompt and footer on the bottom row,
+	 * conversation in between, at every session length. See `TUI.setFlexSpacer`.
+	 */
+	private readonly screenFill = new FlexSpacer();
+	/** The transient band above the prompt; see components/notification-panel.ts. */
+	private notifications: NotificationPanel;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
 	// Stored so the same manager can be injected into custom editors, selectors, and extension UI.
@@ -472,6 +482,7 @@ export class InteractiveMode {
 					return self.keybindings;
 				},
 				showStatus: (message) => self.showStatus(message),
+				notify: (message, note) => self.notify(message, note),
 				showError: (message) => self.showError(message),
 				showWarning: (message) => self.showWarning(message),
 				updateEditorBorderColor: () => self.updateEditorBorderColor(),
@@ -559,6 +570,7 @@ export class InteractiveMode {
 		});
 		this.taskPanel = new TaskPanelComponent(this.ui);
 		this.tasksSlot = new Slot(this.taskPanel);
+		this.notifications = new NotificationPanel(() => this.ui.requestRender());
 		// Unset means nobody has chosen, so a short terminal may open compact; a
 		// stored stop is obeyed at every size.
 		this.chromeLayout = new ChromeLayoutController(
@@ -623,6 +635,7 @@ export class InteractiveMode {
 			},
 			showSelector: (create) => this.showSelector(create),
 			showStatus: (message) => this.showStatus(message),
+			notify: (message, note) => this.notify(message, note),
 			showDialStep: (backward, message) => this.showDialStep(backward, message),
 			showError: (message) => this.showError(message),
 			showWarning: (message) => this.showWarning(message),
@@ -990,11 +1003,19 @@ export class InteractiveMode {
 		}
 
 		this.ui.addChild(this.chatContainer);
+		// Everything from here down is the bottom chrome: the fill above it is
+		// what pins it to the foot of the screen on a session too short to reach
+		// there on its own. The loader and the queued-message list belong on this
+		// side of the line — they are what is happening *now*, which reads next to
+		// the prompt, not stranded halfway up an empty screen.
+		this.ui.addChild(this.screenFill);
+		this.ui.setFlexSpacer(this.screenFill);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.chrome.renderWidgets(); // Initialize with default spacer
 		this.ui.addChild(this.widgetContainerAbove);
 		this.ui.addChild(this.tasksSlot);
+		this.ui.addChild(this.notifications);
 		this.ui.addChild(this.editorContainer);
 		this.ui.addChild(this.widgetContainerBelow);
 		this.ui.addChild(this.footerSlot);
@@ -1133,7 +1154,12 @@ export class InteractiveMode {
 		}
 
 		if (modelFallbackMessage) {
-			this.showWarning(modelFallbackMessage);
+			// A notice, not a warning: with no model there is nothing the app can
+			// do, and this message is the only place the remedy is named. Ghosting
+			// it after a few seconds would leave a first run staring at a prompt
+			// that silently refuses every turn.
+			const { title, body } = this.splitBlockMessage(modelFallbackMessage);
+			this.showNotice(title, body);
 		}
 
 		void this.modelController.maybeWarnAboutAnthropicSubscriptionAuth();
@@ -1902,10 +1928,10 @@ export class InteractiveMode {
 		this.defaultEditor.onAction("app.chrome.cycleForward", () => this.cycleChromeDensity("forward"));
 		this.defaultEditor.onAction("app.chrome.cycleBackward", () => this.cycleChromeDensity("backward"));
 		this.defaultEditor.onAction("app.tasks.cycleForward", () => {
-			this.taskPanel.cycleView("forward");
+			this.showDialStep("app.tasks.cycleBackward", `Task panel: ${this.taskPanel.cycleView("forward")}`);
 		});
 		this.defaultEditor.onAction("app.tasks.cycleBackward", () => {
-			this.taskPanel.cycleView("backward");
+			this.showDialStep("app.tasks.cycleForward", `Task panel: ${this.taskPanel.cycleView("backward")}`);
 		});
 		this.defaultEditor.onAction("app.team.focus", () => this.teamFocus.enterFocus());
 		this.defaultEditor.onAction("app.editor.external", () => this.openExternalEditor());
@@ -2767,18 +2793,30 @@ export class InteractiveMode {
 	 * a session and never again. A hint that repeats forever stops being read,
 	 * and its cost falls entirely on the people who already know it.
 	 *
-	 * Only the three dials that announce their new value in the transcript come
-	 * through here. The other three announce themselves where they live — the
-	 * task panel prints its own key in its header, and the mode chip and view
-	 * glyph change in place in the footer.
+	 * All six dials come through here now. Three of them used not to, because
+	 * the answer was already visible somewhere — the mode chip and the view
+	 * glyph change in place in the footer, the task panel prints its own key in
+	 * its header — and a permanent transcript line was too much to pay for
+	 * repeating it. The band is not permanent, so that trade is gone: a dial
+	 * that says nothing when you step it is a dial you press twice to be sure.
 	 */
 	private showDialStep(backward: AppKeybinding, message: string): void {
-		if (this.dialReverseTaught.has(backward)) {
-			this.showStatus(message);
-			return;
-		}
+		const taught = this.dialReverseTaught.has(backward);
 		this.dialReverseTaught.add(backward);
-		this.showStatus(theme.fg("dim", message) + theme.fg("halftone", `   ${keyText(backward)} steps back`));
+		this.notify(message, taught ? undefined : `${keyText(backward)} steps back`);
+	}
+
+	/**
+	 * A glimpse of something that just changed, on the band above the prompt.
+	 *
+	 * The counterpart to `showStatus`, and the two differ only in how long the
+	 * user has to care: this is for a value they can read off the footer a second
+	 * later anyway, `showStatus` is for something they may want to come back to.
+	 * Nothing that cannot be reconstructed from the screen belongs here.
+	 */
+	notify(message: string, note?: string): void {
+		const { title, body } = this.splitBlockMessage(message);
+		this.notifications.notify("info", title, body, note);
 	}
 
 	private showStatus(message: string): void {
@@ -3318,6 +3356,10 @@ export class InteractiveMode {
 	private cycleToolOutputView(direction: "forward" | "backward"): void {
 		const next = cycleToolOutputView(this.toolOutputView, direction);
 		this.applyToolOutputView(next);
+		this.showDialStep(
+			direction === "forward" ? "app.view.cycleBackward" : "app.view.cycleForward",
+			`Tool output: ${next}`,
+		);
 	}
 
 	/**
@@ -3422,6 +3464,15 @@ export class InteractiveMode {
 		const step = direction === "forward" ? 1 : -1;
 		const next = modes[(index + step + modes.length) % modes.length];
 		await this.session.prompt(`/mode ${next}`);
+		// Read the mode back rather than announcing the one that was asked for:
+		// the command owns whether it took, and a glimpse naming a mode the
+		// session is not in is worse than no glimpse at all. A throw above never
+		// reaches here, which is the same rule.
+		const landed = this.footerDataProvider.getActiveMode();
+		this.showDialStep(
+			direction === "forward" ? "app.mode.cycleBackward" : "app.mode.cycleForward",
+			`Mode: ${landed || next}`,
+		);
 	}
 
 	/**
@@ -3612,14 +3663,30 @@ export class InteractiveMode {
 		this.showBlock("toolErrorBg", "error", `Error: ${title}`, body);
 	}
 
+	/**
+	 * A warning, on the band, for as long as a warning is worth.
+	 *
+	 * It used to be a filled block in the transcript, which outlived what it was
+	 * warning about by the whole session: "No previous directory to return to"
+	 * is worth a glance and then nothing, and a permanent block for it is a
+	 * permanent hole in the conversation. Warnings queue rather than replace, so
+	 * a run of them at startup is still shown one after another.
+	 *
+	 * `showNotice` is the exception that proves this rule — see below.
+	 */
 	showWarning(warningMessage: string): void {
 		const { title, body } = this.splitBlockMessage(warningMessage);
-		this.showBlock("warningBg", "warning", title, body);
+		this.notifications.notify("warning", title, body);
 	}
 
 	/**
-	 * A warning the user pays for if they miss it — same frame as `showWarning`,
-	 * with an explicit title over its body.
+	 * A warning the user pays for if they miss it.
+	 *
+	 * The one thing still drawn as a filled block in the transcript, and the
+	 * reason is in the name: these say money is being spent on the wrong
+	 * account, or a tool is running on a backend the user did not choose.
+	 * Someone who looked away for four seconds has to still be able to find it,
+	 * which is exactly what the band cannot promise.
 	 */
 	showNotice(title: string, body: string[]): void {
 		this.showBlock("warningBg", "warning", title, body);
@@ -4424,6 +4491,7 @@ export class InteractiveMode {
 			this.loadingAnimation = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
+		this.notifications.stop();
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
 		if (this.unsubscribe) {

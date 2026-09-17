@@ -7,6 +7,7 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { stripVTControlCharacters } from "node:util";
+import type { FlexSpacer } from "./components/spacer.js";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import { type MouseEvent, mouseSequenceLength, parseMouseEvent } from "./mouse.js";
 import type { Terminal } from "./terminal.js";
@@ -472,6 +473,36 @@ export class TUI extends Container {
 	private stopped = false;
 
 	/**
+	 * The filler that keeps the app the size of the screen.
+	 *
+	 * ## Why the app is full-screen at all
+	 *
+	 * This renderer appends: a frame is the whole component tree flattened into
+	 * a line buffer, written from wherever the cursor happens to be. On a fresh
+	 * session that buffer is a dozen rows, so the banner sat halfway up a
+	 * terminal with the prompt under it and forty rows of the user's shell
+	 * history above — and the prompt walked down the screen as the conversation
+	 * grew, only reaching the bottom row once the session was long enough to
+	 * scroll. Two different layouts for the same app, and the one you meet first
+	 * is the one that does not look like an app.
+	 *
+	 * ## What this does
+	 *
+	 * Before the frame is diffed, the root measures it and gives the leftover
+	 * rows to one designated child. The buffer is therefore never shorter than
+	 * the terminal, so the terminal's last row is always the buffer's last row:
+	 * the header stays at the top, the prompt and the footer stay on the bottom,
+	 * and everything between them is conversation. Nothing else changes — this
+	 * is still the normal screen, so scrollback, selection and search all still
+	 * work, and the session is still on screen after you quit.
+	 *
+	 * Set to `undefined` (no flex child) and the old append-only behaviour is
+	 * exactly what you get back, which is what the tests that predate this and
+	 * any embedder outside the app rely on.
+	 */
+	private flexSpacer?: FlexSpacer;
+
+	/**
 	 * The pinned viewport.
 	 *
 	 * ## What is wrong with letting the terminal do it
@@ -570,6 +601,31 @@ export class TUI extends Container {
 	}
 
 	/**
+	 * Nominate the child that absorbs the leftover rows (see `flexSpacer`).
+	 *
+	 * It must already be a child of the root, and it should sit between the part
+	 * of the tree that flows from the top and the chrome that hangs off the
+	 * bottom — everything after it is what gets pinned to the foot of the screen.
+	 */
+	setFlexSpacer(spacer: FlexSpacer | undefined): void {
+		this.flexSpacer = spacer;
+	}
+
+	/**
+	 * Give the flex child whatever the frame did not use, at `height` rows.
+	 *
+	 * Returns true when the height moved, meaning the caller has to flatten
+	 * again — the measurement can only be made from a finished frame, so the
+	 * frame that answers it is always the second one. Both passes are cheap
+	 * after the first: every other child returns its memoized array untouched.
+	 */
+	private fitFlexSpacer(lines: string[], height: number): boolean {
+		const spacer = this.flexSpacer;
+		if (!spacer) return false;
+		return spacer.setHeight(height - (lines.length - spacer.currentHeight));
+	}
+
+	/**
 	 * The screen rows a pinned window shows, the last one being the indicator.
 	 *
 	 * The indicator is not optional: a pinned view looks exactly like a live one
@@ -581,9 +637,12 @@ export class TUI extends Container {
 	}
 
 	/** Rows available to scroll through — the live buffer while live, the
-	 * measured one while pinned. */
+	 * measured one while pinned. The filler is not transcript: counting it would
+	 * let a session with nothing above the fold pin itself one row off the
+	 * bottom and paint a screen of blanks. */
 	private transcriptLength(): number {
-		return this.scrollOffset === null ? this.previousLines.length : this.scrollTotalLines;
+		if (this.scrollOffset !== null) return this.scrollTotalLines;
+		return this.previousLines.length - (this.flexSpacer?.currentHeight ?? 0);
 	}
 
 	/**
@@ -1772,6 +1831,10 @@ export class TUI extends Container {
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 
+		// No fill while pinned: the window is already the height of the screen,
+		// and blank rows in the buffer would be rows of the transcript the reader
+		// has to scroll past. The next live frame puts it back.
+		this.flexSpacer?.setHeight(0);
 		let lines = this.render(width);
 		// A patch computed while pinned describes rows nothing painted to the
 		// normal screen, so the live path must never be handed it.
@@ -1866,6 +1929,15 @@ export class TUI extends Container {
 		// Render all components to get new lines. The root render() reports what
 		// it changed via lastPatch; consume it here (it is per-frame state).
 		let newLines = this.render(width);
+		// The frame has to exist before its leftover rows can be counted, so the
+		// fill is settled by re-flattening rather than predicted. The second pass
+		// invalidates the first's patch — it describes the buffer from before the
+		// splice — so fall back to the full scan, which is always correct and only
+		// runs on frames where the content height actually changed.
+		if (this.fitFlexSpacer(newLines, height)) {
+			newLines = this.render(width);
+			this.lastPatch = "full";
+		}
 		const patch = this.lastPatch;
 		this.lastPatch = "full";
 

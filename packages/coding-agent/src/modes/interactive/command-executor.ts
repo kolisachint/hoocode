@@ -51,6 +51,8 @@ export interface CommandContext {
 
 	// UI callbacks
 	showStatus: (message: string) => void;
+	/** A glimpse on the band above the prompt; gone in a few seconds. */
+	notify: (message: string, note?: string) => void;
 	showError: (message: string) => void;
 	showWarning: (message: string) => void;
 	updateEditorBorderColor: () => void;
@@ -94,7 +96,7 @@ export class CommandExecutor {
 				await this.ctx.session.setModel(model);
 				this.ctx.footer.invalidate();
 				this.ctx.updateEditorBorderColor();
-				this.ctx.showStatus(`Model: ${model.id}`);
+				this.ctx.notify(`Model: ${model.id}`);
 				void this.ctx.maybeWarnAboutAnthropicSubscriptionAuth(model);
 			} catch (error) {
 				this.ctx.showError(error instanceof Error ? error.message : String(error));
@@ -418,8 +420,9 @@ export class CommandExecutor {
 		}
 
 		this.ctx.session.setSessionName(name);
-		this.ctx.chatContainer.addChild(new Spacer(1));
-		this.ctx.chatContainer.addChild(new Text(`${theme.fg("dim", "Session name set:")} ${this.currentChip()}`, 1, 0));
+		// The chip itself rides the prompt's top border, so the confirmation only
+		// has to bridge the moment between pressing enter and looking at it.
+		this.ctx.notify(`${theme.fg("dim", "Session name set:")} ${this.currentChip()}`);
 		this.ctx.ui.requestRender();
 	}
 
@@ -808,7 +811,7 @@ not the prompt, which is one to three lines almost every time you look at it.
 		}
 
 		if (path.resolve(target) === path.resolve(previousCwd)) {
-			this.ctx.showStatus(`Already in ${target}`);
+			this.ctx.notify(`Already in ${target}`);
 			return;
 		}
 

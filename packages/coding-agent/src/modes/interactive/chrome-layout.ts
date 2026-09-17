@@ -92,9 +92,13 @@ export function resolveChrome({ density, autocompleteOpen, agentStreaming }: Chr
 				? "line"
 				: "hidden";
 
-	// Below `full` the ledger is the first thing to go: it is the largest piece
-	// of chrome and the only one whose content is also in the transcript.
-	if (density !== "full") return { footer, tasks: "hidden" };
+	// `bare` is the stop that means nothing below the prompt, so the ledger goes
+	// with the footer. `compact` keeps the counts and gives up the rows, which is
+	// the same trade the dial is already making for the footer one line up — a
+	// stop where the footer shrinks and the ledger vanishes outright was the odd
+	// one out, and it made the middle stop feel like a cliff rather than a step.
+	if (density === "bare") return { footer, tasks: "hidden" };
+	if (density === "compact") return { footer, tasks: "summary" };
 
 	// Mid-turn the ledger keeps its counts and gives up its rows. The counts are
 	// the part you watch; the rows are the part you read afterwards.
