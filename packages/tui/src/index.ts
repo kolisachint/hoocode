@@ -31,7 +31,7 @@ export {
 	renderFrameEdge,
 } from "./components/frame.js";
 export { Image, type ImageOptions, type ImageTheme } from "./components/image.js";
-export { Input } from "./components/input.js";
+export { DEFAULT_INPUT_PROMPT, Input } from "./components/input.js";
 export { Loader, type LoaderIndicatorOptions } from "./components/loader.js";
 export { type DefaultTextStyle, Markdown, type MarkdownTheme } from "./components/markdown.js";
 export {

@@ -84,6 +84,9 @@ export class SettingsList implements Component {
 		this.searchEnabled = options.enableSearch ?? false;
 		if (this.searchEnabled) {
 			this.searchInput = new Input();
+			// The query line's caret follows the list's own theme, so it never sits
+			// on screen in the default foreground next to a themed cursor.
+			this.searchInput.promptColor = (text: string) => this.theme.hint(text);
 		}
 	}
 

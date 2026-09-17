@@ -18,7 +18,14 @@ import { KeybindingsManager } from "../../../core/keybindings.js";
 import { sessionColorSlotFor, sessionSlugFor } from "../../../core/session-identity.js";
 import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.js";
 import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.js";
-import { paintSelectedRow, SELECT_CURSOR, SELECT_GUTTER, sessionColorToken, theme } from "../theme/theme.js";
+import {
+	paintSelectedRow,
+	SELECT_CURSOR,
+	SELECT_GUTTER,
+	sessionColorToken,
+	styleInput,
+	theme,
+} from "../theme/theme.js";
 import { InputFrame } from "./input-frame.js";
 import { keyHint, keyText } from "./keybinding-hints.js";
 import { filterAndSortSessions, hasSessionName, type NameFilter, type SortMode } from "./session-selector-search.js";
@@ -323,7 +330,7 @@ class SessionList implements Component, Focusable {
 	) {
 		this.allSessions = sessions;
 		this.filteredSessions = [];
-		this.searchInput = new Input();
+		this.searchInput = styleInput(new Input());
 		this.showCwd = showCwd;
 		this.sortMode = sortMode;
 		this.nameFilter = nameFilter;
@@ -731,7 +738,7 @@ export class SessionSelectorComponent extends InputFrame implements Focusable {
 	private allLoadSeq = 0;
 
 	private mode: "list" | "rename" = "list";
-	private renameInput = new Input();
+	private renameInput = styleInput(new Input());
 	private renameTargetPath: string | null = null;
 
 	// Focusable implementation - propagate to sessionList for IME cursor positioning

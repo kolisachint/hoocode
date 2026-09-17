@@ -4,8 +4,10 @@ import {
 	applyBackgroundToLine,
 	type Box,
 	type EditorTheme,
+	type Input,
 	type MarkdownTheme,
 	type SelectListTheme,
+	type SettingsListTheme,
 	visibleWidth,
 } from "@kolisachint/hoocode-tui";
 import chalk from "chalk";
@@ -1787,6 +1789,23 @@ export function getMarkdownTheme(): MarkdownTheme {
 export const SELECT_CURSOR = "› ";
 
 /**
+ * Dress an input line's caret in the session theme. Every place you can type —
+ * a picker's query, the login dialog, an extension's prompt, a rename — is the
+ * same signal as the main prompt, so it wears the prompt's `❯` (the `Input`
+ * default) rather than a glyph of its own. Muted, because an input line usually
+ * sits a row or two under an accent `›` marking a selected row and must not
+ * out-shout it.
+ *
+ * Mutates rather than returning a theme object because `Input` takes no theme;
+ * the colour is resolved at render, so a theme swap follows. Returns the input
+ * so it can wrap a `new Input()` in a field initializer.
+ */
+export function styleInput(input: Input): Input {
+	input.promptColor = (text: string) => theme.fg("muted", text);
+	return input;
+}
+
+/**
  * The blank gutter an unselected row is indented by. Derived from the cursor
  * rather than hardcoded, so a cursor of a different width keeps the column it
  * marks in the same place instead of shifting every unselected row by one.
@@ -1827,7 +1846,7 @@ export function getEditorTheme(): EditorTheme {
 	};
 }
 
-export function getSettingsListTheme(): import("@kolisachint/hoocode-tui").SettingsListTheme {
+export function getSettingsListTheme(): SettingsListTheme {
 	return {
 		label: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : text),
 		value: (text: string, selected: boolean) => (selected ? theme.fg("accent", text) : theme.fg("muted", text)),

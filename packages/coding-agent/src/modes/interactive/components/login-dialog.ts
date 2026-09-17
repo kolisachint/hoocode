@@ -1,7 +1,7 @@
 import { getOAuthProviders } from "@kolisachint/hoocode-ai/oauth";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@kolisachint/hoocode-tui";
 import { exec } from "child_process";
-import { theme } from "../theme/theme.js";
+import { styleInput, theme } from "../theme/theme.js";
 import { InputFrame } from "./input-frame.js";
 import { keyHint } from "./keybinding-hints.js";
 
@@ -53,6 +53,7 @@ export class LoginDialogComponent extends InputFrame implements Focusable {
 
 		// Input (always present, used when needed)
 		this.input = new Input();
+		styleInput(this.input);
 		this.input.onSubmit = () => {
 			if (this.inputResolver) {
 				this.inputResolver(this.input.getValue());

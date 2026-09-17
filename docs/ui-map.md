@@ -235,6 +235,44 @@ at every width from 160 columns down to 2. `tui/test/frame.test.ts` holds the
 frame's own geometry and that `renderFrameEdge` still produces the editor's
 border byte for byte.
 
+## Two arrows, and what each one means
+
+There are exactly two arrow glyphs on screen, and they are told apart by role,
+not by location:
+
+- **`❯` is a caret: a line is waiting for you.** The prompt editor
+  (`interactive-mode.ts`, `Editor.promptPrefix`) and *every* other place you can
+  type - a picker's query line, the login dialog, an extension's prompt, a
+  session rename, the `ask_options` custom-answer row. `DEFAULT_INPUT_PROMPT`
+  in `tui/src/components/input.ts` is the glyph; `Input` appends the trailing
+  space itself, the same contract `Editor` has.
+- **`›` is a cursor: this is the row you are on.** `SELECT_CURSOR` in
+  `theme/theme.ts`, every picker's selected row, and the library's unthemed
+  `DEFAULT_SELECT_CURSOR` fallback.
+
+There was a third for a long time. `Input` hardcoded `"> "` - unstyleable, so it
+also sat in the default foreground next to a themed cursor - which meant a
+picker drew an ASCII caret two rows under an accent `›` for the role the prompt
+spells `❯`. Nobody chose that glyph; it was the one `Input` shipped with,
+because the widget never got the prefix knob `Editor` has had all along. Three
+glyphs for two signals.
+
+Rules that follow:
+
+- **A new input surface sets no prefix.** `Input` defaults to the caret. What it
+  *does* set is the colour: `styleInput(input)` in `theme/theme.ts`, which paints
+  the caret `muted` so it never out-shouts the accent `›` a row or two above.
+  A widget that owns its own `Input` wires `promptColor` to its own theme
+  instead (`SettingsList` uses its `hint`).
+- **`→` is not in this family.** It means "maps to" - the `ask_options`
+  breadcrumb's question → answer - and is left alone.
+
+Guarded by `coding-agent/test/input-surface-frame.test.ts` ("every place you can
+type wears the prompt's caret"), which renders every input surface and asserts
+no ASCII caret survives anywhere, and `tui/test/input.test.ts`, which holds the
+default, the colouring, and that a coloured prefix is still measured by its
+visible width.
+
 ## Scrolling the transcript
 
 The transcript is not scrolled by the terminal. It used to be, and that was the

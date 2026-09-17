@@ -2,8 +2,12 @@ import { getKeybindings } from "../keybindings.js";
 import type { Component } from "../tui.js";
 import { applyBackgroundToLine, truncateToWidth, visibleWidth } from "../utils.js";
 
-/** Used when a theme does not name its own cursor. */
-export const DEFAULT_SELECT_CURSOR = "→ ";
+/**
+ * Used when a theme does not name its own cursor. `›`, not `→`: the app's
+ * pickers all settled on `›` for "this is the row you are on", so the library's
+ * unthemed fallback should not be the one place a fourth arrow appears.
+ */
+export const DEFAULT_SELECT_CURSOR = "› ";
 
 const DEFAULT_PRIMARY_COLUMN_WIDTH = 32;
 const PRIMARY_COLUMN_GAP = 2;

@@ -11,7 +11,7 @@ import {
 } from "@kolisachint/hoocode-tui";
 import type { ModelRegistry } from "../../../core/model-registry.js";
 import type { SettingsManager } from "../../../core/settings-manager.js";
-import { SELECT_CURSOR, SELECT_GUTTER, theme } from "../theme/theme.js";
+import { SELECT_CURSOR, SELECT_GUTTER, styleInput, theme } from "../theme/theme.js";
 import { InputFrame } from "./input-frame.js";
 import { keyHint } from "./keybinding-hints.js";
 import { type SelectableRow, SelectedRowList } from "./selected-row-list.js";
@@ -96,6 +96,7 @@ export class ModelSelectorComponent extends InputFrame implements Focusable {
 
 		// Create search input
 		this.searchInput = new Input();
+		styleInput(this.searchInput);
 		if (initialSearchInput) {
 			this.searchInput.setValue(initialSearchInput);
 		}

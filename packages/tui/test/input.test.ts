@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { Input } from "../src/components/input.js";
+import { DEFAULT_INPUT_PROMPT, Input } from "../src/components/input.js";
 import { visibleWidth } from "../src/utils.js";
 
 describe("Input component", () => {
@@ -32,6 +32,40 @@ describe("Input component", () => {
 		input.handleInput("x");
 
 		assert.strictEqual(input.getValue(), "\\x");
+	});
+
+	describe("the caret", () => {
+		// The value carries a reverse-video block for the cursor; the caret is what
+		// comes before it.
+		const strip = (line: string): string => line.replace(/\x1b\[[0-9;]*m/g, "");
+
+		// An input line is the same signal as the main prompt - a line waiting for
+		// you - so it wears the prompt's glyph, not the `"> "` this used to hardcode.
+		it("is the prompt's, and follows the value", () => {
+			const input = new Input();
+			input.setValue("abc");
+			assert.strictEqual(DEFAULT_INPUT_PROMPT, "❯");
+			assert.ok(strip(input.render(20)[0]!).startsWith("❯ abc"));
+		});
+
+		it("is coloured without stealing a column from the value", () => {
+			// The prefix is measured before it is coloured; measuring the ANSI would
+			// eat the line's width and wrap the value early.
+			const plain = new Input();
+			const coloured = new Input();
+			coloured.promptColor = (text) => `\x1b[2m${text}\x1b[22m`;
+			for (const input of [plain, coloured]) input.setValue("x".repeat(40));
+			assert.strictEqual(visibleWidth(coloured.render(20)[0]!), visibleWidth(plain.render(20)[0]!));
+			assert.ok(coloured.render(20)[0]!.startsWith("\x1b[2m❯ \x1b[22m"));
+		});
+
+		it("can be turned off, and gives its column back when it is", () => {
+			const bare = new Input();
+			bare.promptPrefix = "";
+			bare.setValue("abc");
+			assert.ok(strip(bare.render(20)[0]!).startsWith("abc"));
+			assert.strictEqual(visibleWidth(bare.render(20)[0]!), 20);
+		});
 	});
 
 	describe("render", () => {
