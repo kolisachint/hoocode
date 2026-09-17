@@ -459,32 +459,37 @@ above the prompt their shadows, a plain one takes them away.
 **`paperShadow`** draws an offset band under a filled message block — a user
 message, an extension message, an error or warning notice — so the block reads
 as a sheet laid on the page rather than a colour printed into it. A terminal has
-no sub-pixel offsets and no blur, so the band is one extra row of `▀`: an upper
-half-block, which paints solid colour across the top half of its cells and so
-hugs the block's bottom edge, indented one column to give the offset. The
-block's right edge gets the matching column of `▌` — a left half-block, which
-paints the half of its cell nearest the sheet — and the bottom run reaches under
-that column, so the two close the corner instead of stopping a cell short of
-each other.
+no sub-pixel offsets and no blur, so the band is one extra row of `▔`: an upper
+*one-eighth* block, a hairline along the top of its cells that hugs the block's
+bottom edge, indented one column to give the offset. The block's right edge gets
+the matching column of `▏` — a left one-eighth block, a hairline at the edge of
+the cell nearest the sheet.
 
-Setting it also gives the block the rest of the paper treatment, because the
-three are one decision rather than three. A block that runs from margin to
-margin has no right edge to cut and nowhere to cast a shadow sideways — it is a
-band of colour between two screen edges, not a sheet on a page. So a theme that
-sets `paperShadow` also gets a three-column gutter of page at the block's right,
-a shadow along that edge as well as under it, and an edge that is cut rather
-than ruled: roughly one row in five gives up a single column, always out of
-padding and never out of content, from a hash that is stable for the block so
-the edge does not reshuffle between frames.
+Eighths, not halves. `▀` and `▌` are half a cell of solid ink, which at a
+terminal's resolution is not a shadow but a second band of colour wrapped around
+two sides of every message.
 
-The cut moves the sheet, never the shadow. Letting the shadow follow the nick
-was the first attempt and it cost the shadow its line: `▌` paints half a cell,
-so a one-column step leaves no overlap between one row's mark and the next, and
-a column that stepped in and out every fifth row read as a dashed staircase
-rather than an edge — the more so because the sheet's own edge is a quiet colour
-and the shadow is the loud one. A nicked row now shows its cut as a column of
-page between sheet and shadow, which is what a nick looks like, and the shadow
-stays one straight line down the sheet.
+The two legs meet as an L and neither one draws the corner. `▔` fills its cell
+edge to edge, so a run of `bandWidth - 1` starting in column 1 already ends at
+exactly the cell boundary the column paints its hairline on — the horizontal
+leg's right end abuts the vertical leg's left edge, and the gutter cell on that
+row stays empty. Putting a glyph in it can only overshoot: `▔` there runs seven
+eighths of a cell past the corner, and `▏` there — which fills the *full height*
+of its cell, against the run's top eighth — hangs a tick a whole row below the
+shadow's bottom edge.
+
+Setting it also gives the block the rest of the paper treatment, because the two
+are one decision rather than two. A block that runs from margin to margin has no
+right edge to show and nowhere to cast a shadow sideways — it is a band of colour
+between two screen edges, not a sheet on a page. So a theme that sets
+`paperShadow` also gets a one-column gutter of page at the block's right, which
+is where that column of `▏` goes.
+
+The edge is ruled, not cut. Nicking it a column on roughly every fifth row was
+an earlier attempt at a hand-cut look, and a terminal cell is far too coarse a
+step for it: the sheet read as damaged, and the shadow ink that backfilled the
+gap put a tooth of shadow inside the sheet's own outline. Every row of a sheet
+now ends in the same column.
 
 It is a shape, not text, so it answers to the 2.8:1 decorative floor rather than
 a text-contrast one — and it has to stay ΔE-clear of every `*Bg` token as well,

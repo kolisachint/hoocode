@@ -308,6 +308,22 @@ same render memos rather than re-rendering: a message's offset inside the chat
 container plus that container's offset at the root is its absolute row
 (`Container.childRowOffsets`).
 
+**A picture is drawn in the window, not named.** A kitty or iTerm image is
+placed by the cursor, so it can only be drawn where the cursor can go, and
+`Image` renders an n-row picture as n-1 blank lines and one line that moves back
+up and draws. Two things follow. (1) The window draws the image when *all* of it
+fits — the drawing line's row has to be at least `imageRowOffset` from the top,
+because a terminal asked to draw above row 1 clamps and paints over rows that
+are not the picture's. A block hanging off the top is named `[image]` until the
+whole of it is on screen. (2) The window transmits its **own copy** under its
+own kitty id. It has to delete last frame's placement before painting this one —
+`CSI 2 K` clears text and a placement is not text — and deleting a kitty image
+deletes *every* placement of it, so deleting the live id would wipe the picture
+from the normal screen too, which the differential frame on the way back out has
+no reason to repaint. `scrollImageIds` maps live id to window id and
+`releaseScrollImages` frees the copies on the way off the alternate screen.
+`tui/test/scroll-images.test.ts` holds both.
+
 The app's half is `interactive/scroll-view.ts`: the key scopes (the prompt keys,
 the fuller set once pinned) and the themed indicator. Anything that is
 not a scroll key un-pins and then does its usual job, so the mode is left by
@@ -458,9 +474,13 @@ is a column of every row, forever. Two rules:
   and the column is `▏` (`tui/src/components/box.ts`). `▀` and `▌` are half a
   cell of solid ink, which at a terminal's resolution is not a shadow but a
   second band of colour wrapped around two sides of every message — heavy
-  enough to pull the eye off the text it sits behind. The corner is the column's
-  own glyph carried down one row: a run ending on `▔` overshoots an eighth-wide
-  column by seven eighths and leaves a tip poking out past the corner.
+  enough to pull the eye off the text it sits behind.
+- **Nothing draws the corner; the two legs already meet.** `▔` fills its cell
+  edge to edge, so the bottom run ends at exactly the boundary the column paints
+  its hairline on, and the gutter cell on the run's row stays empty. A glyph
+  there can only overshoot — `▔` by seven eighths of a cell to the right, `▏`
+  (full cell height, against the run's top eighth) by a whole row downwards, a
+  tick hanging under the sheet. `tui/test/paper-sheet.test.ts` holds both sides.
 
 ## Vertical rhythm
 

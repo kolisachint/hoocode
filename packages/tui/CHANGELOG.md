@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The pinned window draws images instead of naming them.** Scrolling back past
+  a picture showed `[image]` where the picture had been a moment earlier: the
+  window painted every image line as a placeholder, because a graphics escape
+  replayed at the wrong screen row smears and no later repaint can clear it. It
+  now draws one whenever the whole block fits in the window — a picture reaches
+  `n-1` rows above the line that draws it, and a terminal clamps rather than
+  draws above its first row, so a block hanging off the top is still named. The
+  window transmits its own copy under its own kitty id and deletes only that:
+  deleting a kitty image deletes every placement of it, and the live screen's
+  placement is one the differential frame on the way back out will not repaint.
+- **A paper sheet's shadow no longer hangs a tick below its own bottom edge.**
+  The bottom run carried the column's `▏` in its last cell to "close" the
+  corner, but `▏` fills the full height of a cell while the run's `▔` fills only
+  the top eighth of one — so on every filled block a cut-out theme drew, a
+  hairline dropped a whole row below the shadow and the L came out as a cross.
+  Nothing draws the corner now: `▔` fills its cell edge to edge, so a run of
+  `bandWidth - 1` starting in column 1 already ends at exactly the boundary the
+  column paints its hairline on, and the gutter cell on that row is left empty.
+  The bottom run is one cell narrower as a result; every other row is unchanged.
+
 ## [0.5.73] - 2026-09-17
 
 ### Added

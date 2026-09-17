@@ -97,10 +97,12 @@ function faultsIn(label: string, lines: string[], width: number): string[] {
 		const last = i === body.length - 1;
 		if (cells.length > width) faults.push(`row ${i}: ${cells.length} cells overflows terminal width ${width}`);
 		if (last) {
-			// The bottom run: page at cell 0, shadow ink across 1..band.
+			// The bottom run: page at cell 0, shadow ink across 1..band-1. It stops
+			// one cell short of the column's, because `▔` fills its cell edge to
+			// edge and so already reaches the boundary the column paints on.
 			if (cells[0]?.glyph !== " ") faults.push(`bottom run: does not start on page`);
-			if (cells.length !== band + 1) faults.push(`bottom run: ${cells.length} cells, expected ${band + 1}`);
-			if (cells.at(-1)?.glyph !== "▏") faults.push(`bottom run: ends on ${cells.at(-1)?.glyph}, expected ▏`);
+			if (cells.length !== band) faults.push(`bottom run: ${cells.length} cells, expected ${band}`);
+			if (cells.at(-1)?.glyph !== "▔") faults.push(`bottom run: ends on ${cells.at(-1)?.glyph}, expected ▔`);
 			continue;
 		}
 		// Where the sheet's fill stops. Every row stops in the same cell: the
@@ -177,12 +179,15 @@ describe.each(["vox-cutout-dark", "vox-cutout-light"])("a sheet's reach on %s", 
 		const lines = new UserMessageComponent("a message").render(width).filter((line) => scan(line).length > 0);
 		expect(PAPER_INSET).toBe(1);
 		// The shadow is offset down *and* right, so the sheet's own top row is the
-		// one row with nothing in the last cell. Every row under it — and the
-		// bottom run — reaches it.
+		// one row with nothing in the last cell. Every row under it reaches it —
+		// all but the bottom run, whose last cell is the column's: `▔` fills a
+		// cell edge to edge, so the run already ends on the boundary the column
+		// draws its hairline at, and a glyph in that cell could only overshoot.
 		expect(scan(lines[0]).length, "the top row").toBe(width - 1);
-		for (const [i, line] of lines.slice(1).entries()) {
+		for (const [i, line] of lines.slice(1, -1).entries()) {
 			expect(scan(line).length, `row ${i + 1} stops short of the margin`).toBe(width);
 		}
+		expect(scan(lines[lines.length - 1]).length, "the bottom run").toBe(width - 1);
 	});
 });
 

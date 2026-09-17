@@ -11,7 +11,13 @@ import type { FlexSpacer } from "./components/spacer.js";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import { type MouseEvent, mouseSequenceLength, parseMouseEvent } from "./mouse.js";
 import type { Terminal } from "./terminal.js";
-import { deleteKittyImage, getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
+import {
+	allocateImageId,
+	deleteKittyImage,
+	getCapabilities,
+	isImageLine,
+	setCellDimensions,
+} from "./terminal-image.js";
 import {
 	extractSegments,
 	hyperlinkAt,
@@ -42,6 +48,38 @@ function extractKittyImageIds(line: string): number[] {
 		}
 	}
 	return [];
+}
+
+/**
+ * Transmit the same image under a different id.
+ *
+ * Only the first chunk of a chunked transmission carries the parameter list,
+ * and that is the one `extractKittyImageIds` reads, so rewriting it is enough
+ * to make the whole sequence a second, independently deletable copy.
+ */
+function retagKittyImageId(line: string, id: number): string | null {
+	const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);
+	if (sequenceStart === -1) return null;
+	const paramsStart = sequenceStart + KITTY_SEQUENCE_PREFIX.length;
+	const paramsEnd = line.indexOf(";", paramsStart);
+	if (paramsEnd === -1) return null;
+	const params = line.slice(paramsStart, paramsEnd);
+	const retagged = params.replace(/(^|,)i=\d+/, `$1i=${id}`);
+	if (retagged === params) return null;
+	return line.slice(0, paramsStart) + retagged + line.slice(paramsEnd);
+}
+
+/**
+ * How far above its own row an image line's picture reaches.
+ *
+ * `Image` renders an n-row picture as n-1 blank lines and one line that moves
+ * the cursor back up and draws, so the leading `CSI <n> A` is the whole block's
+ * height minus one — and the top edge of the picture is that many rows above
+ * wherever the line itself is painted.
+ */
+function imageRowOffset(line: string): number {
+	const match = /^\x1b\[(\d+)A/.exec(line);
+	return match ? Number(match[1]) : 0;
 }
 
 /**
@@ -452,6 +490,20 @@ export class TUI extends Container {
 	 * per-frame full-buffer scan (collectKittyImageIds) is skipped entirely —
 	 * the common case for a pure-text session. */
 	private sawImageLine = false;
+	/**
+	 * Live kitty image id -> the id the pinned window transmits its own copy
+	 * under, and the copies currently placed on the alternate screen.
+	 *
+	 * The pinned window repaints whole, so a placement from the previous scroll
+	 * position has to be deleted or it hangs over the new one. Deleting a kitty
+	 * image deletes *every* placement of it, though, including the one on the
+	 * normal screen — which the differential frame on the way back out has no
+	 * reason to repaint, so the picture would simply be gone. The window
+	 * therefore transmits a second copy under an id of its own and only ever
+	 * deletes that one.
+	 */
+	private scrollImageIds = new Map<number, number>();
+	private scrollPlacedImages = new Set<number>();
 	private static readonly EMPTY_KITTY_IDS: ReadonlySet<number> = new Set<number>();
 	private previousWidth = 0;
 	private previousHeight = 0;
@@ -727,6 +779,7 @@ export class TUI extends Container {
 		if (this.scrollOffset === null) return false;
 		this.scrollOffset = null;
 		this.scrollSearch = null;
+		this.releaseScrollImages();
 		this.terminal.setAlternateScreen(false);
 		// `?1049l` restores the normal screen, its scrollback and the cursor
 		// exactly as they were at `?1049h`, and the snapshot taken on the way in
@@ -1167,6 +1220,7 @@ export class TUI extends Container {
 		// the cursor relative to content that lives on the normal screen.
 		if (this.scrollOffset !== null) {
 			this.scrollOffset = null;
+			this.releaseScrollImages();
 			this.terminal.setAlternateScreen(false);
 		}
 		this.stopped = true;
@@ -1930,13 +1984,16 @@ export class TUI extends Container {
 		// Autowrap off for the paint: a full-width row would otherwise wrap into
 		// the row below it and shift the rest of the window down by one.
 		buffer += "\x1b[?7l";
+		// A kitty placement is not text and `CSI 2 K` does not touch it, so last
+		// frame's pictures come off before this frame's rows go down.
+		buffer += this.clearScrollImages();
 
 		this.refreshScrollSearch(lines.length);
 		const query = this.scrollSearch?.query ?? "";
 		for (let row = 0; row < viewHeight; row++) {
 			buffer += `\x1b[${row + 1};1H\x1b[2K`;
 			const line = lines[top + row];
-			if (line !== undefined) buffer += this.emitScrollLine(line, query);
+			if (line !== undefined) buffer += this.emitScrollLine(line, row, query);
 		}
 
 		buffer += `\x1b[${height};1H\x1b[2K`;
@@ -1962,21 +2019,65 @@ export class TUI extends Container {
 		// screen `?1049l` restored was drawn at the old size.
 	}
 
+	/** Take the pinned window's own copies of the images off the screen. */
+	private clearScrollImages(): string {
+		if (this.scrollPlacedImages.size === 0) return "";
+		const buffer = this.deleteKittyImages(this.scrollPlacedImages);
+		this.scrollPlacedImages.clear();
+		return buffer;
+	}
+
+	/**
+	 * On the way off the alternate screen: free the copies and the ids with
+	 * them, while there is still a screen to write to. The live ids are never
+	 * touched, so the normal screen comes back with its pictures intact.
+	 */
+	private releaseScrollImages(): void {
+		const buffer = this.clearScrollImages();
+		if (buffer) this.terminal.write(buffer);
+		this.scrollImageIds.clear();
+	}
+
 	/**
 	 * One transcript row, ready for the pinned window.
 	 *
-	 * Images are named rather than drawn. A kitty or iTerm image is placed by
-	 * the cursor and sized in pixels, so the same escape replayed at a different
-	 * screen row lands somewhere the window did not ask for and survives the
-	 * frame that was supposed to replace it — a smear across the view that no
-	 * later repaint can clear.
+	 * `row` is where in the window the line lands, which decides whether an image
+	 * on it can be drawn at all: a picture reaches `imageRowOffset` rows *above*
+	 * its line, and a terminal will not draw above the first row — it clamps,
+	 * putting the picture over rows that are not its own and leaving it there.
+	 * A block hanging off the top of the window is named instead of drawn, so
+	 * scrolling one into view shows a placeholder until all of it is on screen.
 	 */
-	private emitScrollLine(line: string, query = ""): string {
-		if (isImageLine(line)) return "\x1b[2m[image]\x1b[0m";
+	private emitScrollLine(line: string, row: number, query = ""): string {
+		if (isImageLine(line)) return this.emitScrollImage(line, row);
 		const marker = line.indexOf(CURSOR_MARKER);
 		let text = marker === -1 ? line : line.slice(0, marker) + line.slice(marker + CURSOR_MARKER.length);
 		if (query.length > 0) text = this.highlightScrollMatches(text, query);
 		return normalizeTerminalOutput(text) + TUI.SEGMENT_RESET;
+	}
+
+	private static readonly IMAGE_PLACEHOLDER = "\x1b[2m[image]\x1b[0m";
+
+	/** An image line in the pinned window: drawn if all of it fits, named if not. */
+	private emitScrollImage(line: string, row: number): string {
+		if (imageRowOffset(line) > row) return TUI.IMAGE_PLACEHOLDER;
+		// iTerm2 paints into the cells it covers, so the next frame's `CSI 2 K`
+		// clears it like any other row and there is nothing to track.
+		if (!line.includes(KITTY_SEQUENCE_PREFIX)) return line;
+		const [liveId] = extractKittyImageIds(line);
+		// A kitty placement with no id can never be deleted on its own, and the
+		// only alternative deletes the live screen's pictures with it.
+		if (liveId === undefined) return TUI.IMAGE_PLACEHOLDER;
+		let pinnedId = this.scrollImageIds.get(liveId);
+		if (pinnedId === undefined) {
+			pinnedId = allocateImageId();
+			this.scrollImageIds.set(liveId, pinnedId);
+		}
+		const retagged = retagKittyImageId(line, pinnedId);
+		if (retagged === null) return TUI.IMAGE_PLACEHOLDER;
+		this.scrollPlacedImages.add(pinnedId);
+		this.sawImageLine = true;
+		return retagged;
 	}
 
 	private doRender(): void {

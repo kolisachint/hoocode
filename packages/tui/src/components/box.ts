@@ -98,8 +98,8 @@ export class Box implements Component {
 	 * which paints a hairline across the top of its cells and so hugs the box's
 	 * bottom edge — indented one column to give the offset a terminal cannot
 	 * give in sub-pixels. An inset box gets a matching column of `▏` down its
-	 * right edge and the bottom run reaches under it, so the two close the
-	 * corner; with no inset the band already owns the last cell, so the bottom
+	 * right edge, and the run stops where that column starts, so the two meet as
+	 * an L; with no inset the band already owns the last cell, so the bottom
 	 * edge is all there is room for.
 	 *
 	 * Eighths, not halves. `▀` and `▌` are half a cell of solid ink, which at a
@@ -231,20 +231,20 @@ export class Box implements Component {
 			result.push(band + column);
 		});
 
-		// The shadow's bottom run, offset one column right of the band. It ends
-		// under the right-hand column so the two close the corner; with no
-		// gutter there is no such column, and the run stops one cell short of
-		// the margin instead of wrapping past it.
+		// The shadow's bottom run, offset one column right of the band, and
+		// nothing after it — the gutter cell the column occupies stays empty on
+		// this row.
 		//
-		// That last cell is the column's own glyph, not the run's. The run is a
-		// full-width glyph and the column above it is an eighth of one, so a run
-		// that ended on `▔` overshot the column by seven eighths of a cell and
-		// left a tip poking out past the corner — a stray line coming out of the
-		// shadow. `▏` under `▏` is the same eighth of a column carried down one
-		// more row, which is what closes the corner at the width it is drawn at.
+		// The corner closes on its own. `▔` paints its cell edge to edge, so a
+		// run of `bandWidth - 1` starting in column 1 ends at exactly the cell
+		// boundary the column's `▏` paints its hairline on: the horizontal leg's
+		// right end abuts the vertical leg's left edge. Carrying `▏` down into
+		// this row to "close" it instead overshot the other way — `▏` fills the
+		// full height of its cell while `▔` fills the top eighth of one, so the
+		// glyph hung a whole row below the shadow's bottom edge and the L came
+		// out as a cross with a tick poking under it.
 		if (shadowFn && bandWidth > 1) {
-			const run = "▔".repeat(bandWidth - 1);
-			result.push(` ${shadowFn(hasColumn ? `${run}▏` : run)}`);
+			result.push(` ${shadowFn("▔".repeat(bandWidth - 1))}`);
 		}
 
 		// Update cache
