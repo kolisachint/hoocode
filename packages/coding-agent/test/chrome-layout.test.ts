@@ -24,8 +24,11 @@ describe("resolveChrome", () => {
 		expect(resolveChrome({ density: "full", ...QUIET })).toEqual({ footer: "full", tasks: "full" });
 	});
 
-	it("drops the ledger and shortens the footer at compact", () => {
-		expect(resolveChrome({ density: "compact", ...QUIET })).toEqual({ footer: "line", tasks: "hidden" });
+	it("summarizes the ledger and shortens the footer at compact", () => {
+		// Both pieces of chrome make the same trade at this stop: keep the thing
+		// you glance at, give up the rows you read. A ledger that vanished here
+		// made compact a cliff rather than a step between full and bare.
+		expect(resolveChrome({ density: "compact", ...QUIET })).toEqual({ footer: "line", tasks: "summary" });
 	});
 
 	it("keeps neither at bare", () => {
@@ -44,12 +47,16 @@ describe("resolveChrome", () => {
 		expect(layout.tasks).toBe("summary");
 	});
 
-	it("does not resurrect the ledger mid-turn at a stop that hid it", () => {
+	it("does not resurrect the ledger mid-turn at a stop that shrank it", () => {
 		// The transient inputs may take rows away; they must never hand back rows
-		// the dial was asked to give up.
-		for (const density of ["compact", "bare"] as ChromeDensity[]) {
+		// the dial was asked to give up. Mid-turn `full` is itself `summary`, so
+		// neither lower stop may come back above what the dial already chose.
+		for (const [density, expected] of [
+			["compact", "summary"],
+			["bare", "hidden"],
+		] as [ChromeDensity, string][]) {
 			const layout = resolveChrome({ density, autocompleteOpen: false, agentStreaming: true });
-			expect(layout.tasks, density).toBe("hidden");
+			expect(layout.tasks, density).toBe(expected);
 		}
 	});
 
@@ -99,7 +106,7 @@ describe("ChromeLayoutController", () => {
 		expect([footerSlot.visible, tasksSlot.visible]).toEqual([true, true]);
 
 		controller.setDensity("compact");
-		expect([footerSlot.visible, tasksSlot.visible]).toEqual([true, false]);
+		expect([footerSlot.visible, tasksSlot.visible]).toEqual([true, true]);
 
 		controller.setDensity("bare");
 		expect([footerSlot.visible, tasksSlot.visible]).toEqual([false, false]);

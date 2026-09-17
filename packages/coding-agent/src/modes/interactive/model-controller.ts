@@ -33,6 +33,8 @@ export interface ModelControllerDeps {
 	get session(): AgentSession;
 	showSelector(create: (done: () => void) => { component: Component; focus: Component }): void;
 	showStatus(message: string): void;
+	/** A glimpse on the band above the prompt; gone in a few seconds. */
+	notify(message: string, note?: string): void;
 	/** Report a dial step, naming its reverse key the first time. */
 	showDialStep(backward: AppKeybinding, message: string): void;
 	showError(errorMessage: string): void;
@@ -122,7 +124,7 @@ export class ModelController {
 			const result = await this.session.cycleModel(direction);
 			if (result === undefined) {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
-				this.deps.showStatus(msg);
+				this.deps.notify(msg);
 			} else {
 				this.deps.invalidateFooter();
 				this.deps.updateEditorBorderColor();
@@ -153,7 +155,7 @@ export class ModelController {
 						this.deps.invalidateFooter();
 						this.deps.updateEditorBorderColor();
 						done();
-						this.deps.showStatus(`Model: ${model.id}`);
+						this.deps.notify(`Model: ${model.id}`);
 						void this.maybeWarnAboutAnthropicSubscriptionAuth(model);
 					} catch (error) {
 						done();
@@ -176,7 +178,7 @@ export class ModelController {
 		const allModels = this.session.modelRegistry.getAvailable();
 
 		if (allModels.length === 0) {
-			this.deps.showStatus("No models available");
+			this.deps.notify("No models available");
 			return;
 		}
 
@@ -235,7 +237,7 @@ export class ModelController {
 								? undefined // All enabled = clear filter
 								: enabledIds;
 						this.session.settingsManager.setEnabledModels(newPatterns ? [...newPatterns] : undefined);
-						this.deps.showStatus("Model selection saved to settings");
+						this.deps.notify("Model selection saved to settings");
 					},
 					onCancel: () => {
 						done();

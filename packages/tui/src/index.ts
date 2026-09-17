@@ -42,7 +42,7 @@ export {
 	type SelectListTruncatePrimaryContext,
 } from "./components/select-list.js";
 export { type SettingItem, SettingsList, type SettingsListTheme } from "./components/settings-list.js";
-export { Spacer } from "./components/spacer.js";
+export { FlexSpacer, Spacer } from "./components/spacer.js";
 export { Text } from "./components/text.js";
 export { TruncatedText } from "./components/truncated-text.js";
 // Editor component interface (for custom editors)

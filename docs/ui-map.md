@@ -35,6 +35,10 @@ Reusable widgets (`src/components/`): `box`, `frame`, `text`, `truncated-text`, 
 `input`, `editor`, `loader`, `cancellable-loader`, `markdown`, `select-list`,
 `settings-list`, `image`.
 
+- `components/spacer.ts` - `Spacer` is a fixed run of blank rows. `FlexSpacer`
+  is the one whose height the *renderer* sets, and it is what makes the app
+  full-screen; see "Filling the screen" below.
+
 - `components/frame.ts` - the border, and the only thing that draws one.
   `renderFrameEdge` renders one horizontal edge: the rule, the `↑ N more` scroll
   indicator that eats into it, the label that rides what is left, and the
@@ -141,6 +145,9 @@ Rendered in order as the conversation scrolls:
   `task.agent` + the `TaskAgent` roster in `core/task-store.ts`, which subagent
   dispatches populate and external orchestrators (hooteams) can feed.
 - `footer.ts` - the bottom status/footer line.
+- `notification-panel.ts` - the transient band directly above the prompt: dial
+  steps, settings glimpses and warnings, each gone in a few seconds. See
+  "What ghosts and what stays" below.
 - `keybinding-hints.ts` - the hint strip.
 - `countdown-timer.ts`, `bordered-loader.ts`, `dynamic-border.ts` - timers, loaders, and
   animated borders.
@@ -269,6 +276,76 @@ not a scroll key un-pins and then does its usual job, so the mode is left by
 doing something rather than by remembering to escape first. Keys and the reason
 each sits where it does: `core/keybindings.ts` -> "Scrolling the transcript".
 
+## Filling the screen
+
+The app is the height of the terminal, always: banner on the first row, prompt
+and footer on the last, conversation in between. It did not used to be. This
+renderer *appends* — a frame is the component tree flattened into a line buffer
+and written from wherever the cursor is — so a frame was exactly as tall as its
+content. On a fresh session that meant the banner a few rows down with the
+prompt under it and the user's shell history above, and the prompt then walking
+down the screen over the next few turns until the session was finally long
+enough to scroll. Two layouts for one app, and the one you meet first is the one
+that does not look like an app.
+
+`FlexSpacer` is the fix and it is one child of the root. `TUI.setFlexSpacer`
+nominates it; `doRender` measures the frame it just built, hands the leftover
+rows to it, and flattens once more. Three things follow:
+
+- **Everything after the flex child is the bottom chrome.** In
+  `interactive-mode.ts` that is the queued messages, the status rows, the widget
+  containers, the task ledger, the notification band, the prompt and the footer.
+  The loader is deliberately on that side of the line: it is what is happening
+  *now*, which reads next to the prompt rather than stranded halfway up an empty
+  screen.
+- **A picker is bottom-anchored for free.** Every input surface replaces the
+  prompt inside `editorContainer` (see "One frame for every user input"), so it
+  is below the fill, and the fill shrinks to make room for it and grows back
+  when it closes.
+- **This is still the normal screen.** No alternate screen, so the terminal's
+  own scrollback, selection and search keep working, and the session is still
+  there after you quit. Only the pinned view takes the alternate screen, and it
+  empties the fill first — blank rows in the buffer would be rows of transcript
+  the reader has to scroll past, and `transcriptLength` excludes the fill for
+  the same reason.
+
+Guarded by `tui/test/screen-fill.test.ts` (the mechanism) and
+`coding-agent/test/screen-anchor.test.ts` (the real mode, real chrome, prompt on
+the floor at every session length).
+
+## What ghosts and what stays
+
+Moving a dial used to write a line into the transcript: `Model: opus-5`,
+`Chrome: compact`, `Tool output: peek`. Each is true for about a second and
+litter forever after — a session where someone found their thinking level by
+stepping through it carried five rows of dead settings chatter, interleaved with
+the conversation the transcript is supposed to be a record of. Warnings had the
+same problem from the other end: a filled block, kept for the life of the
+session, for something ("No previous directory to return to") worth one glance.
+
+So there are two destinations now, and one rule for choosing:
+
+> **If missing it costs you nothing, it goes on the band. If missing it costs
+> you the information, it goes in the transcript.**
+
+The band is `components/notification-panel.ts`, directly above the prompt.
+Through it: every dial step (`showDialStep` — all six dials, now that saying
+where one landed no longer costs a permanent row), the settings glimpses
+(`InteractiveMode.notify` — model, session name, and the like), and every
+`showWarning`. Still in the transcript: errors, `showNotice` (the ones the user
+pays for if they miss them), `showStatus`, and anything carrying a value that
+cannot be reconstructed from the screen — a share URL, an export path, a login
+confirmation.
+
+One more rule, inside the band: **a glimpse replaces, a warning queues.** A
+glimpse reports state, so only the newest one is true and holding a dial key
+down should flash the value it ended on, not five stale ones in sequence. A
+warning reports an event, so every one is still true when the next arrives, and
+collapsing them would let the last of three startup warnings erase the two
+before it. Neither ever overwrites the notification already on screen: a message
+that can be erased before it is read is not one. Guarded by
+`coding-agent/test/notification-panel.test.ts`.
+
 ## Screen columns
 
 Rows are scarce (see below) and so are columns: a margin held back "for safety"
@@ -311,6 +388,10 @@ as a sheet (`components/user-message.ts`, `showBlock` in `interactive-mode.ts`).
 ## Common "where is X" answers
 
 - The task pane / subagent list, status icons, warning cue: `components/task-panel.ts`.
+- Why the prompt is on the bottom row: `tui/src/components/spacer.ts`
+  (`FlexSpacer`) and `TUI.setFlexSpacer` — see "Filling the screen".
+- Where a "Model: …" or a warning goes now:
+  `components/notification-panel.ts` — see "What ghosts and what stays".
 - How a tool call is shown: `components/tool-execution.ts` (and `bash-execution.ts`,
   `diff.ts`). How much of it is shown: the view dial in `core/tool-output-view.ts`
   (radar / peek / full); radar groups calls into `components/tool-chain.ts`.
