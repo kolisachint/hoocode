@@ -344,6 +344,44 @@ function parseOsc8Hyperlink(ansiCode: string): ActiveHyperlink | null | undefine
 	return { params, url, terminator };
 }
 
+/**
+ * The URL of the OSC 8 hyperlink covering `column`, if there is one.
+ *
+ * `column` is 0-based and counted in *display* cells, the way a mouse report
+ * counts them, so a link after a wide glyph is found where the pointer actually
+ * was rather than where its characters happen to fall in the string.
+ *
+ * This exists because the app captures the mouse for the wheel, and a terminal
+ * whose mouse is captured stops resolving clicks on links itself — the report
+ * comes here instead. So the click has to be answered here, from the same line
+ * buffer the terminal is showing.
+ */
+export function hyperlinkAt(line: string, column: number): string | undefined {
+	if (column < 0 || !line.includes("\x1b]8;")) return undefined;
+	let active: string | undefined;
+	let col = 0;
+	let i = 0;
+	while (i < line.length) {
+		const ansi = extractAnsiCode(line, i);
+		if (ansi) {
+			const hyperlink = parseOsc8Hyperlink(ansi.code);
+			if (hyperlink !== undefined) active = hyperlink?.url;
+			i += ansi.length;
+			continue;
+		}
+		// One grapheme at a time: a cell is what the terminal draws, not what the
+		// string stores, and the two part company at the first emoji.
+		const rest = line.slice(i);
+		const segment = segmenter.segment(rest)[Symbol.iterator]().next().value;
+		const text = segment ? segment.segment : rest[0];
+		const width = graphemeWidth(text);
+		if (column < col + width) return active;
+		col += width;
+		i += text.length;
+	}
+	return undefined;
+}
+
 function formatOsc8Hyperlink(hyperlink: ActiveHyperlink): string {
 	return `\x1b]8;${hyperlink.params};${hyperlink.url}${hyperlink.terminator}`;
 }

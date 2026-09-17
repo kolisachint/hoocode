@@ -93,30 +93,30 @@ describe("cut-out token fallbacks", () => {
 			}
 			// Rows below the first cast a shadow along the right edge; the first
 			// does not, because the offset is down as well as right.
-			expect(lines[0]).not.toContain("▌");
-			expect(lines[1] + lines[2]).toContain("▌");
+			expect(lines[0]).not.toContain("▏");
+			expect(lines[1] + lines[2]).toContain("▏");
 			// And the bottom run is offset one column right of the band, ending
 			// under the right-hand column so the two close the corner.
 			expect(lines[3].startsWith(" ")).toBe(true);
-			expect(lines[3].match(/▀/g)).toHaveLength(band - 1);
+			expect(lines[3].match(/▔/g)).toHaveLength(band - 1);
 			expect(visibleWidth(lines[3])).toBe(band + 1);
 		});
 
 		it("closes the bottom corner flush with the shadow's column", () => {
-			// `▀` fills a cell edge to edge and `▌` fills half of one, so a run
-			// that ended on `▀` under the column overshot it by half a cell and
-			// left a tip poking out past the corner. `▘` is that same top half
-			// cut back to the column's width, so the run stops where the column
-			// stops.
+			// `▔` fills a cell edge to edge and `▏` fills an eighth of one, so a
+			// run that ended on `▔` under the column overshot it by seven eighths
+			// of a cell and left a tip poking out past the corner. The corner is
+			// the column's own glyph carried down a row, so the run stops where
+			// the column stops.
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
 			applyPaperSheet(box);
 			box.addChild(new Text("hello", 0, 0));
 			const lines = box.render(40);
 			const run = stripAnsi(lines[3]);
-			expect(run.endsWith("▘")).toBe(true);
-			expect(run).not.toContain("▀▀▘▀");
+			expect(run.endsWith("▏")).toBe(true);
+			expect(run).not.toContain("▔▔▏▔");
 			// The corner glyph sits in the same cell as the column above it.
-			expect(run.indexOf("▘")).toBe(stripAnsi(lines[2]).indexOf("▌"));
+			expect(run.indexOf("▏")).toBe(stripAnsi(lines[2]).indexOf("▏"));
 		});
 
 		it("rules the sheet's right edge instead of nicking it", () => {
@@ -140,19 +140,19 @@ describe("cut-out token fallbacks", () => {
 			// The top row is the full band, with no shadow beside it, so its
 			// corner is whole.
 			expect(visibleWidth(rendered[0])).toBe(band);
-			expect(rendered[0]).not.toContain("▌");
+			expect(rendered[0]).not.toContain("▏");
 			// And every row below it is band plus exactly one column of shadow,
 			// in the same cell every time.
 			for (const line of rendered.slice(1, -1)) {
 				expect(visibleWidth(line)).toBe(band + 1);
-				expect(stripAnsi(line).indexOf("▌")).toBe(band);
+				expect(stripAnsi(line).indexOf("▏")).toBe(band);
 			}
 		});
 
 		it("holds every row of the sheet to one width", () => {
-			// A shadow that stepped in and out was not a shadow: the glyph is
-			// half a cell wide, so a one-column step leaves no overlap between
-			// one row's mark and the next, and the edge reads as a dashed
+			// A shadow that stepped in and out was not a shadow: the glyph is a
+			// fraction of a cell wide, so a one-column step leaves no overlap
+			// between one row's mark and the next, and the edge reads as a dashed
 			// staircase. Every shadowed row ends in the same cell.
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
 			applyPaperSheet(box);
@@ -164,7 +164,7 @@ describe("cut-out token fallbacks", () => {
 			for (const line of lines.slice(1)) {
 				expect(visibleWidth(line)).toBe(edge);
 			}
-			expect(lines.slice(1, -1).every((line) => line.includes("▌"))).toBe(true);
+			expect(lines.slice(1, -1).every((line) => line.includes("▏"))).toBe(true);
 		});
 
 		it("keeps the gutter off the content", () => {

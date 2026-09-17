@@ -1,6 +1,6 @@
 import { getOAuthProviders } from "@kolisachint/hoocode-ai/oauth";
 import { Container, type Focusable, getKeybindings, Input, Spacer, Text, type TUI } from "@kolisachint/hoocode-tui";
-import { exec } from "child_process";
+import { openUrl } from "../../../utils/open-url.js";
 import { styleInput, theme } from "../theme/theme.js";
 import { InputFrame } from "./input-frame.js";
 import { keyHint } from "./keybinding-hints.js";
@@ -107,8 +107,7 @@ export class LoginDialogComponent extends InputFrame implements Focusable {
 		const linkedUrl = `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 0, 0));
 
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
-		const hyperlink = `\x1b]8;;${url}\x07${clickHint}\x1b]8;;\x07`;
+		const hyperlink = `\x1b]8;;${url}\x07click to open\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 0, 0));
 
 		if (instructions) {
@@ -117,8 +116,7 @@ export class LoginDialogComponent extends InputFrame implements Focusable {
 		}
 
 		// Try to open browser
-		const openCmd = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
-		exec(`${openCmd} "${url}"`);
+		openUrl(url);
 
 		this.tui.requestRender();
 	}

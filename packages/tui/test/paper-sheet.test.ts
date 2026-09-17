@@ -7,11 +7,11 @@ import { visibleWidth } from "../src/utils.js";
 /**
  * The geometry of a paper sheet's shadow, checked at the cell.
  *
- * Both faults this file guards against were half-cell errors, which is why they
- * survived review of the code and only showed up on screen: `▌` paints the left
- * half of its cell, `▀` paints a full-width top half, and a run of one under a
- * column of the other does not line up. Markers stand in for the theme's ink so
- * every cell in the rendered row can be named.
+ * Both faults this file guards against were sub-cell errors, which is why they
+ * survived review of the code and only showed up on screen: `▏` paints the
+ * leftmost eighth of its cell, `▔` paints a full-width top eighth, and a run of
+ * one under a column of the other does not line up. Markers stand in for the
+ * theme's ink so every cell in the rendered row can be named.
  */
 const SHEET = (text: string) => `<b>${text}</b>`;
 const SHADOW = (text: string) => `<s>${text}</s>`;
@@ -39,20 +39,21 @@ function shadowSegment(line: string): string {
 
 describe("a sheet's shadow", () => {
 	it("closes the bottom corner flush with its right-hand column", () => {
-		// `▀` fills a cell edge to edge and `▌` fills the left half of one, so a
-		// bottom run that ended on `▀` under the column overshot it by half a
-		// cell — a tip poking out past the corner, on every filled block the
-		// theme drew. `▘` is that same top half cut back to the column's width.
+		// `▔` fills a cell edge to edge and `▏` fills an eighth of one, so a
+		// bottom run that ended on `▔` under the column overshot it by seven
+		// eighths of a cell — a tip poking out past the corner, on every filled
+		// block the theme drew. The corner is the column's own glyph instead,
+		// carried down one row, which is the width it has to close at.
 		const lines = sheet(3);
 		const run = lines[lines.length - 1];
-		assert.ok(run.endsWith("▘</s>"), `bottom run should end on ▘, got ${JSON.stringify(run)}`);
-		assert.equal(run.match(/▘/g)?.length, 1);
+		assert.ok(run.endsWith("▏</s>"), `bottom run should end on ▏, got ${JSON.stringify(run)}`);
+		assert.equal(run.match(/▏/g)?.length, 1);
 
 		// And it ends in the same cell the column above it occupies.
-		assert.equal(plain(run).indexOf("▘"), plain(lines[lines.length - 2]).indexOf("▌"));
+		assert.equal(plain(run).indexOf("▏"), plain(lines[lines.length - 2]).indexOf("▏"));
 	});
 
-	it("draws one half-cell of shadow beside the sheet and nothing more", () => {
+	it("draws one hairline of shadow beside the sheet and nothing more", () => {
 		// The edge used to step one column in on roughly every fifth row, to
 		// read as cut by hand rather than ruled. A terminal cell is far too
 		// coarse a step for that: it read as damage, and the block of shadow ink
@@ -61,7 +62,7 @@ describe("a sheet's shadow", () => {
 		// them; a ruled edge has neither.
 		const lines = sheet(24).slice(1, -1);
 		for (const segment of lines.map(shadowSegment)) {
-			assert.equal(segment, "<s>▌</s>", `shadow segment should be one column, got ${JSON.stringify(segment)}`);
+			assert.equal(segment, "<s>▏</s>", `shadow segment should be one column, got ${JSON.stringify(segment)}`);
 		}
 	});
 
@@ -76,8 +77,8 @@ describe("a sheet's shadow", () => {
 
 	it("holds every shadowed row to the same width", () => {
 		// The column stays in one cell: a one-column step leaves no overlap
-		// between one row's half-cell mark and the next, and the edge reads as a
-		// dashed staircase.
+		// between one row's mark and the next, and the edge reads as a dashed
+		// staircase.
 		const lines = sheet(24);
 		const edge = WIDTH - INSET + 1;
 		for (const line of lines.slice(1)) {
@@ -101,7 +102,7 @@ describe("a sheet's shadow", () => {
 					visibleWidth(plain(line)) <= width,
 					`@${width}: row is ${visibleWidth(plain(line))} cells wide and will wrap`,
 				);
-				assert.ok(!/[▌▀▘]/.test(line), `@${width}: drew shadow ink with no room for it`);
+				assert.ok(!/[▏▔]/.test(line), `@${width}: drew shadow ink with no room for it`);
 			}
 		}
 	});
@@ -122,13 +123,13 @@ describe("a sheet's shadow", () => {
 
 	it("stops one cell short of the margin when there is no gutter to close", () => {
 		// With no inset there is no right-hand column, so there is no corner to
-		// close and nothing for `▘` to line up with.
+		// close and nothing for the corner glyph to line up with.
 		const box = new Box(1, 1, SHEET);
 		box.setPaper(() => ({ shadow: SHADOW }));
 		box.addChild(new Text("hello", 0, 0));
 		const lines = box.render(WIDTH);
 		const run = lines[lines.length - 1];
-		assert.ok(!run.includes("▘"));
-		assert.equal(run.match(/▀/g)?.length, WIDTH - 1);
+		assert.ok(!run.includes("▏"));
+		assert.equal(run.match(/▔/g)?.length, WIDTH - 1);
 	});
 });

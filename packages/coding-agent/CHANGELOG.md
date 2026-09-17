@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **No more blank page between the conversation and the prompt.** On the `radar`
+  tool-output view — or any session short enough to fit the screen — the screen
+  fill sat between the transcript and the chrome and showed as a band of empty
+  rows above the prompt; folding a long session into `radar` could leave nearly a
+  screenful of it. The fill is now the first thing in the tree, so the leftover
+  rows are above the banner and the banner, conversation, ledger, prompt and
+  footer are one run against the bottom of the screen. Scrolling up and back
+  down, and the end of a turn, land on the floor the same way (see the tui
+  changelog for the renderer half).
+- **Stepping a dial twice shows the stop you are on.** The first press of
+  `alt+z` (or any dial) put its glimpse on the notification band; the second
+  went to the back of a queue behind it and the band went on showing the stop you
+  had already left for its full three seconds. A glimpse now names the dial it
+  came from, and a second reading of the same dial replaces the first on screen
+  and restarts its clock.
+- **Clicking a link in the transcript works again.** Capturing the mouse for the
+  wheel took the click away from the terminal; the app resolves the OSC 8 link
+  under the pointer itself and opens it — plain left click, no modifier. The
+  opener uses no shell and only http/https/mailto.
+
+### Changed
+
+- **`full` chrome shows the whole task list, mid-turn included.** The ledger used
+  to fall back to its one-row summary while the agent was streaming. That is
+  exactly when the rows are worth the most — they are the only thing on screen
+  that says which item the model is on — and the dial already has a stop for
+  wanting the transcript rows back instead: `compact`.
+- **The message-block shadow is thinner.** A hairline along the bottom and down
+  the right edge rather than half a cell of solid colour, so a filled block reads
+  as paper on a page instead of as a second band of colour around every message.
+
 ## [0.5.72] - 2026-09-17
 
 ### Changed

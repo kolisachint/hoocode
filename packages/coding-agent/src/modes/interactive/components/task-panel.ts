@@ -931,11 +931,11 @@ export class TaskPanelComponent implements Component, Focusable {
 		const gutter = `${theme.fg(railColor, RAIL)} `;
 		const inner = Math.max(0, width - visibleWidth(RAIL) - 1);
 
-		// Mid-turn the ledger keeps its counts and gives up its rows. The tab strip
-		// already carries every lens's done/total and its rail already carries the
-		// panel's state, so one row says what is running and how far in it is —
-		// which is the part you watch while output is arriving. The rows are what
-		// you read once it has stopped, and they come back when it does.
+		// `compact` chrome buys transcript rows with ledger rows: the tab strip
+		// already carries every lens's done/total and the rail already carries the
+		// panel's state, so one row still says what is running and how far in it is.
+		// This is a stop on the chrome dial, not something the pane decides for
+		// itself mid-turn — a turn is exactly when the rows are worth having.
 		if (this.density === "summary") {
 			const tabViews = available.includes(view) ? available : [...available, view];
 			return [gutter + formatLensTabs(tasks, allAgents, inner, view, tabViews, false, false)];

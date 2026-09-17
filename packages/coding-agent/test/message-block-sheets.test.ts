@@ -73,10 +73,10 @@ describe("every message block is a sheet under a cut-out theme", () => {
 			expect(visibleWidth(line)).toBeLessThanOrEqual(band + 1);
 		}
 		// Rows below the first carry the shadow's column, and it ends on the run.
-		expect(lines.slice(1, -1).every((line) => stripAnsi(line).includes("▌"))).toBe(true);
+		expect(lines.slice(1, -1).every((line) => stripAnsi(line).includes("▏"))).toBe(true);
 		const run = stripAnsi(lines[lines.length - 1]);
 		expect(run.startsWith(" ")).toBe(true);
-		expect(run.endsWith("▘")).toBe(true);
+		expect(run.endsWith("▏")).toBe(true);
 		expect(visibleWidth(run)).toBe(band + 1);
 	});
 
@@ -88,7 +88,7 @@ describe("every message block is a sheet under a cut-out theme", () => {
 				.render(WIDTH)
 				.filter((line) => visibleWidth(line) > 0);
 			expect(lines.every((line) => visibleWidth(line) === WIDTH)).toBe(true);
-			expect(lines.some((line) => /[▌▀▘█]/.test(stripAnsi(line)))).toBe(false);
+			expect(lines.some((line) => /[▏▔█]/.test(stripAnsi(line)))).toBe(false);
 		}
 	});
 });

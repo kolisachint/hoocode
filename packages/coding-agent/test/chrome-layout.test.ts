@@ -1,5 +1,5 @@
 /**
- * The chrome dial and the two things that move it on their own.
+ * The chrome dial and the one thing that moves it on its own.
  *
  * `resolveChrome` is the whole policy, so most of this is a truth table over
  * it — which is the point of having put the policy in one pure function. The
@@ -17,7 +17,7 @@ import {
 	resolveChrome,
 } from "../src/modes/interactive/chrome-layout.js";
 
-const QUIET = { autocompleteOpen: false, agentStreaming: false };
+const QUIET = { autocompleteOpen: false };
 
 describe("resolveChrome", () => {
 	it("gives everything its rows at full", () => {
@@ -37,26 +37,18 @@ describe("resolveChrome", () => {
 
 	it("lends the footer's rows to an open completion list, at every stop", () => {
 		for (const density of CHROME_DENSITIES) {
-			const layout = resolveChrome({ density, autocompleteOpen: true, agentStreaming: false });
+			const layout = resolveChrome({ density, autocompleteOpen: true });
 			expect(layout.footer, density).toBe("hidden");
 		}
 	});
 
-	it("trades the ledger's rows for its counts while a turn runs", () => {
-		const layout = resolveChrome({ density: "full", autocompleteOpen: false, agentStreaming: true });
-		expect(layout.tasks).toBe("summary");
-	});
-
-	it("does not resurrect the ledger mid-turn at a stop that shrank it", () => {
-		// The transient inputs may take rows away; they must never hand back rows
-		// the dial was asked to give up. Mid-turn `full` is itself `summary`, so
-		// neither lower stop may come back above what the dial already chose.
-		for (const [density, expected] of [
-			["compact", "summary"],
-			["bare", "hidden"],
-		] as [ChromeDensity, string][]) {
-			const layout = resolveChrome({ density, autocompleteOpen: false, agentStreaming: true });
-			expect(layout.tasks, density).toBe(expected);
+	it("keeps the whole ledger at full, whatever else is happening", () => {
+		// The ledger used to fall back to its counts while a turn ran. A turn is
+		// when the rows are worth the most: they are the only thing on screen that
+		// says which item the model is on. `compact` is the stop for wanting the
+		// transcript rows back instead.
+		for (const autocompleteOpen of [false, true]) {
+			expect(resolveChrome({ density: "full", autocompleteOpen }).tasks).toBe("full");
 		}
 	});
 
@@ -65,10 +57,8 @@ describe("resolveChrome", () => {
 		// combination of inputs can reach a screen you can type into and not see.
 		for (const density of CHROME_DENSITIES) {
 			for (const autocompleteOpen of [false, true]) {
-				for (const agentStreaming of [false, true]) {
-					const layout = resolveChrome({ density, autocompleteOpen, agentStreaming });
-					expect(Object.keys(layout).sort()).toEqual(["footer", "tasks"]);
-				}
+				const layout = resolveChrome({ density, autocompleteOpen });
+				expect(Object.keys(layout).sort()).toEqual(["footer", "tasks"]);
 			}
 		}
 	});
@@ -121,14 +111,13 @@ describe("ChromeLayoutController", () => {
 	});
 
 	it("reports nothing to do when nothing moved", () => {
-		// The callers push state in on keystrokes and stream events, and use this
-		// to decide whether a frame is owed. Answering "changed" for an unchanged
+		// The callers push state in on keystrokes and use this to decide whether a
+		// frame is owed. Answering "changed" for an unchanged
 		// layout would be a render per keystroke.
 		const { controller } = setup();
 		expect(controller.setAutocompleteOpen(true)).toBe(true);
 		expect(controller.setAutocompleteOpen(true)).toBe(false);
 		expect(controller.setDensity("full")).toBe(false);
-		expect(controller.setAgentStreaming(false)).toBe(false);
 	});
 
 	it("sets a slot's density before showing it", () => {

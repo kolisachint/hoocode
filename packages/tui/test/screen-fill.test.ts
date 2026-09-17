@@ -10,9 +10,9 @@
  * that does not look like an app at all.
  *
  * So the property under test throughout is *the last row*: whatever the session
- * has in it, the last row of the buffer is the last row of the screen, and the
- * first row of the tree is the first row of the screen until there is too much
- * to fit.
+ * has in it, the last row of the buffer is the last row of the screen. The fill
+ * is the first child, so a session too short to reach the top gets its leftover
+ * rows up there — the conversation and the prompt always touch.
  */
 
 import assert from "node:assert";
@@ -40,19 +40,19 @@ class Body implements Component {
 	}
 }
 
-/** Header at the top, fill, then the chrome that has to end up on the floor. */
+/** Fill, header, body, then the chrome that has to end up on the floor. */
 async function setup(bodyRows: number, rows = HEIGHT) {
 	const terminal = new VirtualTerminal(WIDTH, rows);
 	const tui = new TUI(terminal);
 	const body = new Body(bodyRows);
 	const fill = new FlexSpacer();
-	// `chrome` stands in for everything below the fill in the real tree — the
-	// ledger, the notification band, the prompt, the footer — and grows the way a
-	// picker taking the prompt's place does.
+	// `chrome` stands in for everything between the body and the prompt in the
+	// real tree — the ledger, the notification band — and grows the way a picker
+	// taking the prompt's place does.
 	const chrome = new Body(0);
+	tui.addChild(fill);
 	tui.addChild(new Text("header", 0, 0));
 	tui.addChild(body);
-	tui.addChild(fill);
 	tui.addChild(chrome);
 	tui.addChild(new Text("prompt", 0, 0));
 	tui.setFlexSpacer(fill);
@@ -72,14 +72,15 @@ async function screen(terminal: VirtualTerminal): Promise<string[]> {
 }
 
 describe("filling the screen", () => {
-	it("puts the header on the first row and the prompt on the last", async () => {
+	it("packs a short session against the floor, with the leftover rows above it", async () => {
 		const { terminal } = await setup(2);
 		const rows = await screen(terminal);
-		assert.equal(rows[0], "header");
 		assert.equal(rows[HEIGHT - 1], "prompt");
-		// The gap is blank, not a repeat of anything: the fill is empty rows.
-		assert.deepEqual(rows.slice(3, HEIGHT - 1), Array(HEIGHT - 4).fill(""));
-		assert.deepEqual(rows.slice(1, 3), ["body 1", "body 2"]);
+		// Header, body and prompt are one run against the bottom: nothing is held
+		// back between the last thing said and the box you answer it in.
+		assert.deepEqual(rows.slice(HEIGHT - 4), ["header", "body 1", "body 2", "prompt"]);
+		// What is left over is blank, and it is all above the header.
+		assert.deepEqual(rows.slice(0, HEIGHT - 4), Array(HEIGHT - 4).fill(""));
 	});
 
 	it("keeps the prompt on the last row as the session grows", async () => {
@@ -90,7 +91,7 @@ describe("filling the screen", () => {
 			await settle(terminal);
 			const rows = await screen(terminal);
 			assert.equal(rows[HEIGHT - 1], "prompt", `at ${count} body rows`);
-			assert.equal(rows[0], "header", `at ${count} body rows`);
+			assert.equal(rows[HEIGHT - 2], `body ${count}`, `at ${count} body rows`);
 		}
 	});
 
@@ -183,7 +184,7 @@ describe("filling the screen", () => {
 		body.setCount(1);
 		tui.requestRender();
 		await settle(terminal);
-		assert.deepEqual(await screen(terminal), ["header", "body 1", ...Array(HEIGHT - 3).fill(""), "prompt"]);
+		assert.deepEqual(await screen(terminal), [...Array(HEIGHT - 3).fill(""), "header", "body 1", "prompt"]);
 	});
 
 	it("costs no more full redraws than the same tree without a fill", async () => {
@@ -232,6 +233,25 @@ describe("filling the screen", () => {
 		assert.equal(rows[1], "prompt");
 		assert.equal(rows[HEIGHT - 1], "");
 	});
+
+	it("leaves no band between the transcript and the prompt when a view folds", async () => {
+		// The tool-output dial folds a run of calls to one line, which takes a
+		// long transcript down by most of its height in a single frame. The buffer
+		// is still taller than the screen afterwards, so the fill has nothing to
+		// give: what has to happen is that the window moves *back* over the buffer
+		// and the screen becomes its new tail.
+		const { terminal, tui, body } = await setup(HEIGHT * 4);
+		body.setCount(Math.floor(HEIGHT * 1.5));
+		tui.requestRender();
+		await settle(terminal);
+		const rows = await screen(terminal);
+		assert.equal(rows[HEIGHT - 1], "prompt");
+		assert.equal(rows[HEIGHT - 2], `body ${Math.floor(HEIGHT * 1.5)}`);
+		assert.ok(
+			!rows.slice(0, HEIGHT - 1).includes(""),
+			`no blank band on a buffer taller than the screen: ${JSON.stringify(rows)}`,
+		);
+	});
 });
 
 describe("the fill and the pinned view", () => {
@@ -273,16 +293,25 @@ describe("the floor holds when something above the prompt goes away", () => {
 	 * The bug: on a session long enough to have scrolled, the buffer is taller
 	 * than the screen and the *terminal's* scroll is what puts the prompt on the
 	 * bottom row. Shrink the buffer — a picker closing, a notification fading,
-	 * the ledger emptying — and the renderer clears the rows that came off the
-	 * end, leaving the prompt stranded mid-screen with a band of blanks under
-	 * it. Nothing can scroll the transcript back down into them: those rows
+	 * the ledger emptying — and the append-only frame clears the rows that came
+	 * off the end, leaving the prompt stranded mid-screen with a band of blanks
+	 * under it. Nothing can scroll the transcript back down into them: those rows
 	 * belong to the terminal's scrollback.
 	 *
-	 * So the fill takes what the chrome gave up and the buffer keeps its length.
-	 * The blank band lands above the prompt, where it reads as room, instead of
-	 * below it, where it reads as a layout that came apart.
+	 * The fill cannot answer this one — there is nothing to fill, the buffer is
+	 * already taller than the screen — and the version that tried, by banking the
+	 * rows the chrome gave up, paid for the floor with a blank band between the
+	 * conversation and the prompt. So the window is repainted instead: the screen
+	 * becomes the buffer's new tail, which is the same prompt on the same row
+	 * with more of the transcript above it and no band anywhere.
 	 */
 	const longSession = () => setup(HEIGHT * 2);
+
+	/** No blank row anywhere above the prompt. */
+	function assertNoBand(rows: string[]): void {
+		assert.equal(rows[HEIGHT - 1], "prompt", `prompt on the bottom row: ${JSON.stringify(rows)}`);
+		assert.ok(!rows.slice(0, HEIGHT - 1).includes(""), `no blank band: ${JSON.stringify(rows)}`);
+	}
 
 	it("keeps the prompt on the floor when a picker closes", async () => {
 		const { terminal, tui, chrome, fill } = await longSession();
@@ -296,10 +325,11 @@ describe("the floor holds when something above the prompt goes away", () => {
 		tui.requestRender();
 		await settle(terminal);
 		const rows = await screen(terminal);
-		assert.equal(rows[HEIGHT - 1], "prompt", "prompt is still on the bottom row");
-		// The six rows the pane gave back are above the prompt, not below it.
-		assert.equal(fill.currentHeight, 6);
-		assert.deepEqual(rows.slice(HEIGHT - 7, HEIGHT - 1), Array(6).fill(""));
+		// The six rows the pane gave back are spent on six more rows of transcript,
+		// not banked as blanks above the prompt.
+		assertNoBand(rows);
+		assert.equal(fill.currentHeight, 0);
+		assert.equal(rows[HEIGHT - 2], `body ${HEIGHT * 2}`);
 	});
 
 	it("keeps the prompt on the floor when a notification fades", async () => {
@@ -310,34 +340,31 @@ describe("the floor holds when something above the prompt goes away", () => {
 		chrome.setCount(0);
 		tui.requestRender();
 		await settle(terminal);
-		assert.equal((await screen(terminal))[HEIGHT - 1], "prompt");
+		assertNoBand(await screen(terminal));
 	});
 
-	it("spends the held rows on the next output rather than scrolling", async () => {
-		// The band is not a hole in the layout, it is room: what arrives next
-		// lands in it, so the screen settles back to a full one without the
-		// transcript jumping.
-		const { terminal, tui, body, chrome, fill } = await longSession();
+	it("appends normally again once the window has moved back", async () => {
+		// The repaint is one frame, not a mode: the next row of output is an
+		// append like any other, with the screen already sitting on the tail.
+		const { terminal, tui, body, chrome } = await longSession();
 		chrome.setCount(6);
 		tui.requestRender();
 		await settle(terminal);
 		chrome.setCount(0);
 		tui.requestRender();
 		await settle(terminal);
-		assert.equal(fill.currentHeight, 6);
 
 		body.setCount(HEIGHT * 2 + 4);
 		tui.requestRender();
 		await settle(terminal);
-		assert.equal(fill.currentHeight, 2);
 		const rows = await screen(terminal);
-		assert.equal(rows[HEIGHT - 1], "prompt");
-		assert.equal(rows[HEIGHT - 4], "body 28");
+		assertNoBand(rows);
+		assert.equal(rows[HEIGHT - 2], `body ${HEIGHT * 2 + 4}`);
 	});
 
-	it("never holds more than a screenful", async () => {
-		// A fill longer than the screen is rows nobody can see, and a buffer
-		// that keeps growing them is a buffer that never stops growing.
+	it("handles a fold bigger than the screen", async () => {
+		// A pane worth two screens closing moves the window back further than the
+		// screen is tall, which is the case a held fill could never have covered.
 		const { terminal, tui, chrome, fill } = await setup(HEIGHT * 4);
 		chrome.setCount(HEIGHT * 2);
 		tui.requestRender();
@@ -345,14 +372,11 @@ describe("the floor holds when something above the prompt goes away", () => {
 		chrome.setCount(0);
 		tui.requestRender();
 		await settle(terminal);
-		assert.ok(fill.currentHeight <= HEIGHT, `held ${fill.currentHeight} rows`);
-		assert.equal((await screen(terminal))[HEIGHT - 1], "prompt");
+		assert.equal(fill.currentHeight, 0);
+		assertNoBand(await screen(terminal));
 	});
 
-	it("gives the held rows up on a resize, which repaints anyway", async () => {
-		// A resize clears and reprints the screen, so there is no floor left to
-		// hold — banking the old buffer's length would only put a band of blanks
-		// into the middle of the screen it is about to draw.
+	it("lands on the floor after a resize too", async () => {
 		const { terminal, tui, chrome, fill } = await longSession();
 		chrome.setCount(6);
 		tui.requestRender();
@@ -360,7 +384,6 @@ describe("the floor holds when something above the prompt goes away", () => {
 		chrome.setCount(0);
 		tui.requestRender();
 		await settle(terminal);
-		assert.equal(fill.currentHeight, 6);
 
 		terminal.resize(WIDTH, HEIGHT - 2);
 		tui.requestRender();
@@ -368,13 +391,12 @@ describe("the floor holds when something above the prompt goes away", () => {
 		assert.equal(fill.currentHeight, 0);
 		const rows = await screen(terminal);
 		assert.equal(rows[HEIGHT - 3], "prompt");
-		assert.equal(rows[HEIGHT - 4], "body 24");
+		assert.equal(rows[HEIGHT - 4], `body ${HEIGHT * 2}`);
 	});
 
-	it("still starts a short session on the first row", async () => {
-		// The hold is for a buffer the terminal has already scrolled. A session
-		// that fits on the screen is fitted to it exactly, so the header stays
-		// where it belongs whatever the chrome does.
+	it("keeps a short session packed against the floor whatever the chrome does", async () => {
+		// A session that fits on the screen is fitted to it exactly, so the prompt
+		// is on the bottom row and the leftover rows are above the header.
 		const { terminal, tui, chrome } = await setup(2);
 		chrome.setCount(6);
 		tui.requestRender();
@@ -383,7 +405,7 @@ describe("the floor holds when something above the prompt goes away", () => {
 		tui.requestRender();
 		await settle(terminal);
 		const rows = await screen(terminal);
-		assert.equal(rows[0], "header");
-		assert.equal(rows[HEIGHT - 1], "prompt");
+		assert.equal(rows[0], "");
+		assert.deepEqual(rows.slice(HEIGHT - 4), ["header", "body 1", "body 2", "prompt"]);
 	});
 });

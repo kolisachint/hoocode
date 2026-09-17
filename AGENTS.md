@@ -12,6 +12,30 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **The app packs against the floor, the window repaints when it has to move
+  back, and a click opens a link again**: five complaints, one theme — the
+  chrome getting in the way of what it frames. (1) `FlexSpacer` is now the
+  *first* child of the root, so the leftover rows are above the banner and
+  everything below it is one run against the bottom of the screen; the band of
+  blank between the conversation and the prompt is gone at every session length.
+  (2) A buffer taller than the screen that *shrinks* — a picker closing, a fold
+  by the `radar` view dial — has its visible window repainted in place
+  (absolutely addressed, one screenful, no clear) instead of banking the given-up
+  rows as blank. (3) `full` chrome keeps the whole task ledger mid-turn; the
+  `agentStreaming` input is gone from `resolveChrome` with it, because a turn is
+  when the rows are worth the most and `compact` is the stop for wanting them
+  back. (4) A notification may name a `topic`; two glimpses of one topic replace
+  each other on screen and restart the clock, so a dial stepped twice shows the
+  stop it is on rather than lagging a press behind. (5) The paper shadow is
+  eighths, not halves — `▔` run, `▏` column. Plus: mouse capture took clicks
+  away from OSC 8 links, so the TUI resolves them itself (`hyperlinkAt` +
+  `TUI.onHyperlink` -> `utils/open-url.ts`, no shell, scheme allowlist). Rules:
+  `docs/ui-map.md` -> "Filling the screen", "What ghosts and what stays",
+  "Scrolling the transcript", "Screen columns"; guarded by
+  `tui/test/screen-fill.test.ts`, `tui/test/hyperlink-click.test.ts`,
+  `tui/test/paper-sheet.test.ts`, `coding-agent/test/screen-anchor.test.ts`,
+  `notification-panel.test.ts` and `chrome-layout.test.ts`.
+
 - **The prompt on the floor, the band that carries every receipt, and a copy
   that keeps its structure**: three fixes to the same complaint — the app coming
   apart around the prompt. (1) Once the session is taller than the screen the

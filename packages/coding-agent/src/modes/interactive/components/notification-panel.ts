@@ -27,6 +27,12 @@
  * itself — holding the dial key down flashes the value it ended on, not five
  * values in sequence three seconds apart, each of them already wrong.
  *
+ * A glimpse that names its `topic` goes further and replaces the one *on
+ * screen*, because the two are the same dial. Without that, the second press of
+ * `alt+z` had nowhere to go but the back of a queue of one, and the band went on
+ * showing the stop you had already left until its three seconds were up: a dial
+ * that lags a press behind is a dial you cannot step twice.
+ *
  * A warning reports an *event*: something happened that you did not ask about.
  * Every one of them is still true when the next arrives, so warnings queue and
  * are shown in turn. Collapsing them would mean the last of three startup
@@ -125,6 +131,15 @@ export interface Notification {
 	note?: string;
 	/** Overrides the per-kind default. */
 	ttlMs?: number;
+	/**
+	 * What this is a glimpse *of* — a dial's id, usually.
+	 *
+	 * Two notifications sharing a topic are two readings of one thing, so the
+	 * later one is simply the true one and takes the earlier one's place, on
+	 * screen or in the queue. Left unset, the queue rules below apply as they
+	 * always have.
+	 */
+	topic?: string;
 }
 
 export class NotificationPanel implements Component {
@@ -165,20 +180,41 @@ export class NotificationPanel implements Component {
 	/**
 	 * Put a notification up: a glimpse replaces, a warning queues (see above).
 	 */
-	notify(kind: NotificationKind, title: string, body: string[] = [], note?: string, ttlMs?: number): void {
-		const next: Notification = { kind, title, body: body.filter((line) => line.length > 0), note, ttlMs };
+	notify(
+		kind: NotificationKind,
+		title: string,
+		body: string[] = [],
+		note?: string,
+		options: { ttlMs?: number; topic?: string } = {},
+	): void {
+		const next: Notification = {
+			kind,
+			title,
+			body: body.filter((line) => line.length > 0),
+			note,
+			ttlMs: options.ttlMs,
+			topic: options.topic,
+		};
+		// Same topic, same subject: the new reading is the true one wherever the
+		// old one is sitting, and if that is the head it gets the clock restarted
+		// under it rather than waiting out a value the user has already changed.
+		const sameTopic = next.topic === undefined ? -1 : this.queue.findIndex((item) => item.topic === next.topic);
 		const tail = this.queue.length - 1;
-		// A glimpse only replaces another glimpse that has not been seen yet.
-		// Overwriting the *head* would cut short a message already on screen, and
-		// a notification that can be erased before it is read is not one.
-		if (kind === "info" && tail > 0 && this.queue[tail].kind === "info") {
+		if (sameTopic >= 0) {
+			this.queue[sameTopic] = next;
+			if (sameTopic === 0) this.arm(next);
+		} else if (kind === "info" && tail > 0 && this.queue[tail].kind === "info") {
+			// A topicless glimpse only replaces another glimpse that has not been
+			// seen yet. Overwriting the *head* would cut short a message already on
+			// screen, and a notification that can be erased before it is read is not
+			// one.
 			this.queue[tail] = next;
 		} else {
 			if (this.queue.length >= MAX_QUEUE) this.queue.splice(1, 1);
 			this.queue.push(next);
+			if (this.queue.length === 1) this.arm(next);
 		}
 		this.cache = undefined;
-		if (this.queue.length === 1) this.arm(next);
 		this.requestRender();
 	}
 

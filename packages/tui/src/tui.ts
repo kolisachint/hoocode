@@ -14,6 +14,7 @@ import type { Terminal } from "./terminal.js";
 import { deleteKittyImage, getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
 import {
 	extractSegments,
+	hyperlinkAt,
 	normalizeTerminalOutput,
 	sliceByColumn,
 	sliceWithWidth,
@@ -501,6 +502,18 @@ export class TUI extends Container {
 	 * any embedder outside the app rely on.
 	 */
 	private flexSpacer?: FlexSpacer;
+	/** Where the left button went down, for telling a click from a drag. */
+	private pressedCell?: { row: number; column: number };
+	/** What the pinned window painted last, so a click on it can be placed. */
+	private scrollViewLines?: string[];
+	/**
+	 * Open the URL behind a clicked hyperlink. Unset, clicks do nothing.
+	 *
+	 * The TUI resolves *which* link was clicked and deliberately stops there:
+	 * opening a URL is spawning a process, which is the embedder's policy to
+	 * make, not a rendering library's.
+	 */
+	public onHyperlink?: (url: string) => void;
 
 	/**
 	 * The pinned viewport.
@@ -603,9 +616,10 @@ export class TUI extends Container {
 	/**
 	 * Nominate the child that absorbs the leftover rows (see `flexSpacer`).
 	 *
-	 * It must already be a child of the root, and it should sit between the part
-	 * of the tree that flows from the top and the chrome that hangs off the
-	 * bottom — everything after it is what gets pinned to the foot of the screen.
+	 * It must already be a child of the root, and it belongs at the *top* of the
+	 * tree: everything after it is pushed to the foot of the screen, so the app
+	 * reads bottom-up the way a terminal does — the newest row next to the
+	 * prompt, and whatever room is left over above the first thing drawn.
 	 */
 	setFlexSpacer(spacer: FlexSpacer | undefined): void {
 		this.flexSpacer = spacer;
@@ -619,42 +633,25 @@ export class TUI extends Container {
 	 * frame that answers it is always the second one. Both passes are cheap
 	 * after the first: every other child returns its memoized array untouched.
 	 *
-	 * Two cases, and the second one is the one with a bug behind it.
+	 * The whole rule is one line, and it is the same one in both directions:
+	 * the buffer is never shorter than the screen. A session that fits gets the
+	 * difference as blank rows, which — with the spacer at the top of the tree —
+	 * land *above* the first thing drawn, so the transcript always ends against
+	 * the prompt. A session too long to fit gets nothing, because the terminal's
+	 * own scroll is already holding the last row on the last row.
 	 *
-	 * **The frame fits on the screen.** Fill it out to the screen's height and
-	 * the frame starts on the first row, which is the whole point of the fill.
-	 *
-	 * **The frame is taller than the screen.** Then the fill is not what puts
-	 * the prompt on the floor — the terminal's own scroll is, and the buffer's
-	 * last row *is* the screen's last row. So a buffer that gets *shorter*
-	 * takes the prompt up the screen with it: the renderer clears the rows that
-	 * came off the end and there is nothing it can do to scroll the transcript
-	 * back down into them, because those rows are in the terminal's scrollback
-	 * and only the terminal can move them. That is a picker closing, a
-	 * notification fading, a task ledger emptying — the prompt stranded
-	 * mid-screen with a band of blank rows under it, and it stays stranded
-	 * until enough output arrives to push it back down.
-	 *
-	 * So the fill takes what the shrinking content gave up, which keeps the
-	 * buffer the length it already was and the last row where it already is.
-	 * The blank band ends up *above* the chrome instead of below it, where it
-	 * reads as room rather than as a layout that came apart, and the next
-	 * output to arrive lands in it rather than scrolling the screen. Capped at
-	 * a screenful: a fill longer than the screen is rows nobody can see, and it
-	 * is given up altogether on the frames that repaint the whole screen anyway.
+	 * It deliberately does not bank rows a shrinking frame gave up. That kept
+	 * the prompt on the floor, but it paid for it with a band of blank rows
+	 * between the conversation and the prompt — a screenful of it when a view
+	 * dial folded the transcript — which is the thing the fill exists to avoid.
+	 * A buffer that has to move back over the screen is repainted instead; see
+	 * the window-repaint branch in `doRender`.
 	 */
-	private fitFlexSpacer(lines: string[], height: number, repaint = false): boolean {
+	private fitFlexSpacer(lines: string[], height: number): boolean {
 		const spacer = this.flexSpacer;
 		if (!spacer) return false;
 		const content = lines.length - spacer.currentHeight;
-		if (content < height) return spacer.setHeight(height - content);
-		// A frame that is about to be repainted from the top of a cleared screen
-		// has no floor to hold: the resize already threw the old screen away, and
-		// holding its length would only bank a band of blank rows into the middle
-		// of the new one.
-		if (repaint) return spacer.setHeight(0);
-		const held = Math.min(this.previousLines.length - content, height);
-		return spacer.setHeight(Math.max(0, held));
+		return spacer.setHeight(Math.max(0, height - content));
 	}
 
 	/**
@@ -741,6 +738,7 @@ export class TUI extends Container {
 		// the wrong ones.
 		this.flatCache = undefined;
 		this.lastCursorPos = undefined;
+		this.scrollViewLines = undefined;
 		this.requestRender();
 		return true;
 	}
@@ -1342,12 +1340,20 @@ export class TUI extends Container {
 	}
 
 	/**
-	 * What the mouse does.
+	 * What the mouse does: the wheel scrolls, and a click opens a link.
 	 *
-	 * Only the wheel is acted on. Clicks are swallowed rather than handled:
-	 * reporting is on for the wheel's sake, and a click that fell through to the
-	 * focused component would arrive as the raw report text in whatever field
-	 * has focus.
+	 * The click is here because capturing the mouse took it away. A terminal
+	 * resolves a click on an OSC 8 hyperlink itself right up until an app turns
+	 * reporting on, at which point the report comes to the app and the link stops
+	 * working — so the app owes the user an answer. It is the same answer the
+	 * terminal would have given: the URL under the pointer, handed to whoever set
+	 * `onHyperlink`. Anything else is still swallowed, because a click that fell
+	 * through to the focused component would arrive as raw report text typed into
+	 * whatever field has focus.
+	 *
+	 * Press and release both have to land on the same cell. A drag that happens
+	 * to end on a link is someone selecting text, not someone asking for a
+	 * browser.
 	 */
 	private handleMouseEvent(event: MouseEvent): void {
 		if (event.kind === "wheelUp") {
@@ -1356,7 +1362,39 @@ export class TUI extends Container {
 		}
 		if (event.kind === "wheelDown") {
 			this.scrollByLines(WHEEL_LINES);
+			return;
 		}
+		if (event.kind === "press") {
+			this.pressedCell = event.button === 0 ? { row: event.row, column: event.column } : undefined;
+			return;
+		}
+		if (event.kind !== "release") return;
+		const pressed = this.pressedCell;
+		this.pressedCell = undefined;
+		if (!this.onHyperlink || !pressed) return;
+		if (pressed.row !== event.row || pressed.column !== event.column) return;
+		const url = this.hyperlinkAtScreenCell(event.row, event.column);
+		if (url) this.onHyperlink(url);
+	}
+
+	/**
+	 * The link on the screen cell a mouse report names, if there is one.
+	 *
+	 * Screen rows are turned into line-buffer rows through the window the last
+	 * frame painted — `scrollOffset` while pinned, `previousViewportTop` live —
+	 * so this answers from exactly what the terminal is showing. A live buffer
+	 * shorter than the screen is declined rather than guessed at: nothing pins
+	 * where such a frame starts on screen, and a wrong row is a click on the
+	 * wrong link.
+	 */
+	private hyperlinkAtScreenCell(row: number, column: number): string | undefined {
+		const pinned = this.scrollOffset !== null;
+		const lines = pinned ? this.scrollViewLines : this.previousLines;
+		if (!lines || lines.length === 0) return undefined;
+		if (!pinned && lines.length < this.terminal.rows) return undefined;
+		const top = pinned ? (this.scrollOffset ?? 0) : this.previousViewportTop;
+		const line = lines[top + row - 1];
+		return line === undefined ? undefined : hyperlinkAt(line, column - 1);
 	}
 
 	/** Run a requested render now, bypassing the coalescing delay. Used for
@@ -1883,6 +1921,9 @@ export class TUI extends Container {
 		// only where it is set.
 		const top = Math.min(Math.max(0, this.scrollOffset ?? 0), maxOffset);
 		this.scrollOffset = top;
+		// Kept so a click on the pinned window can be placed against what it is
+		// showing. Same array the render returned, so it costs a reference.
+		this.scrollViewLines = lines;
 
 		let buffer = "\x1b[?2026h"; // Begin synchronized output
 		buffer += HIDE_CURSOR;
@@ -1966,7 +2007,7 @@ export class TUI extends Container {
 		// invalidates the first's patch — it describes the buffer from before the
 		// splice — so fall back to the full scan, which is always correct and only
 		// runs on frames where the content height actually changed.
-		if (this.fitFlexSpacer(newLines, height, widthChanged || heightChanged)) {
+		if (this.fitFlexSpacer(newLines, height)) {
 			newLines = this.render(width);
 			this.lastPatch = "full";
 		}
@@ -2117,6 +2158,58 @@ export class TUI extends Container {
 			lastChanged = this.expandLastChangedForKittyImages(firstChanged, lastChanged);
 		}
 		const appendStart = appendedLines && firstChanged === prevLineCount && firstChanged > 0;
+
+		// The window has to move *back* over the buffer.
+		//
+		// On a session long enough to have scrolled, the terminal's own scroll is
+		// what holds the buffer's last row on the screen's last row, and the screen
+		// is the buffer's last `height` rows. Shrink the buffer — a picker closing,
+		// a notification fading, a view dial folding a run of tool calls — and that
+		// window slides back: the same last row, and rows the reader has not seen
+		// since they scrolled past arriving at the top. Nothing can scroll a
+		// terminal's own content *down* to bring them in, so the append-only path
+		// cannot express this frame at all: it clears the rows that came off the end
+		// and strands the prompt mid-screen with blanks under it.
+		//
+		// So the visible window is painted in place — one screenful, absolutely
+		// addressed, which the app may do here precisely because a buffer taller
+		// than the screen owns every row of it. It costs a screen of writes and no
+		// clear, where the honest alternative is `\x1b[3J` and the whole transcript.
+		// Only trees with a flex spacer take this path; an embedder without one
+		// keeps the append-only frame it has always had.
+		const windowTop = Math.max(0, newLines.length - height);
+		if (this.flexSpacer && newLines.length < prevLineCount && windowTop < prevViewportTop) {
+			// Two frames this cannot draw: a buffer that no longer fills the screen
+			// (the rows below the window are not ours to leave stale) and a buffer
+			// carrying images, which are placed against the screen and smear when the
+			// rows under them move. Both are the case a full repaint is for.
+			if (newLines.length < height || this.sawImageLine) {
+				logRedraw(`window moved back (${prevViewportTop} -> ${windowTop})`);
+				fullRender(true);
+				return;
+			}
+			let buffer = "\x1b[?2026h";
+			// A row painted to the last column would wrap, and the bottom row would
+			// wrap into a scroll — the one thing this frame must not do.
+			buffer += "\x1b[?7l";
+			for (let row = 0; row < height; row++) {
+				buffer += `\x1b[${row + 1};1H\x1b[2K`;
+				buffer += this.emitLine(newLines[windowTop + row] ?? "");
+			}
+			buffer += "\x1b[?7h";
+			this.cursorRow = newLines.length - 1;
+			this.hardwareCursorRow = newLines.length - 1;
+			buffer += this.buildHardwareCursorMove(cursorPos, newLines.length);
+			buffer += "\x1b[?2026l";
+			this.terminal.write(buffer);
+			this.previousLines = newLines;
+			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+			this.previousWidth = width;
+			this.previousHeight = height;
+			this.previousViewportTop = windowTop;
+			this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
+			return;
+		}
 
 		// No changes - but still need to update hardware cursor position if it moved
 		if (firstChanged === -1) {

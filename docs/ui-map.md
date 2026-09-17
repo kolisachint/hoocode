@@ -314,54 +314,74 @@ not a scroll key un-pins and then does its usual job, so the mode is left by
 doing something rather than by remembering to escape first. Keys and the reason
 each sits where it does: `core/keybindings.ts` -> "Scrolling the transcript".
 
+**Clicking a link is the app's too, and for the same reason.** Capturing the
+mouse for the wheel (`tui/src/mouse.ts`, `?1000h` + `?1006h`) takes clicks away
+from the terminal, so every OSC 8 hyperlink in the transcript quietly stopped
+being clickable the day the wheel started working. The TUI now answers the
+click itself: `hyperlinkAt` walks the buffer row under the pointer counting
+*display cells*, and the URL it finds goes to `TUI.onHyperlink` — which the
+interactive mode points at `utils/open-url.ts`. Press and release must land on
+the same cell, or it is a drag and someone is selecting text. Opening a URL is
+spawning a process, so the TUI resolves which link and stops there; the opener
+is no-shell and scheme-allowlisted, because a transcript is full of text a model
+wrote. `tui/test/hyperlink-click.test.ts` holds it.
+
 ## Filling the screen
 
-The app is the height of the terminal, always: banner on the first row, prompt
-and footer on the last, conversation in between. It did not used to be. This
-renderer *appends* — a frame is the component tree flattened into a line buffer
-and written from wherever the cursor is — so a frame was exactly as tall as its
-content. On a fresh session that meant the banner a few rows down with the
-prompt under it and the user's shell history above, and the prompt then walking
-down the screen over the next few turns until the session was finally long
-enough to scroll. Two layouts for one app, and the one you meet first is the one
-that does not look like an app.
+The app is the height of the terminal, always, and it is packed against the
+*bottom* of it: prompt and footer on the last row, the conversation directly
+above them, and whatever room is left over above the first thing drawn. It did
+not used to be. This renderer *appends* — a frame is the component tree
+flattened into a line buffer and written from wherever the cursor is — so a
+frame was exactly as tall as its content. On a fresh session that meant the
+banner a few rows down with the prompt under it and the user's shell history
+above, and the prompt then walking down the screen over the next few turns until
+the session was finally long enough to scroll. Two layouts for one app, and the
+one you meet first is the one that does not look like an app.
 
-`FlexSpacer` is the fix and it is one child of the root. `TUI.setFlexSpacer`
-nominates it; `doRender` measures the frame it just built, hands the leftover
-rows to it, and flattens once more. Three things follow:
+`FlexSpacer` is the fix and it is the **first** child of the root.
+`TUI.setFlexSpacer` nominates it; `doRender` measures the frame it just built,
+hands the leftover rows to it, and flattens once more. Three things follow:
 
-- **Everything after the flex child is the bottom chrome.** In
-  `interactive-mode.ts` that is the queued messages, the status rows, the widget
-  containers, the task ledger, the notification band, the prompt and the footer.
-  The loader is deliberately on that side of the line: it is what is happening
-  *now*, which reads next to the prompt rather than stranded halfway up an empty
-  screen.
+- **Nothing below the fill ever has room held back from it.** In
+  `interactive-mode.ts` that is everything: the banner, the transcript, the
+  queued messages, the status rows, the widget containers, the task ledger, the
+  notification band, the prompt and the footer. They are one run against the
+  floor, which is what keeps the last thing the agent said touching the box you
+  answer it in. The fill sat between the transcript and the chrome once, and a
+  short session — a fresh one, or a long one folded by the `radar` view dial —
+  showed as a page of blank between the two.
 - **A picker is bottom-anchored for free.** Every input surface replaces the
-  prompt inside `editorContainer` (see "One frame for every user input"), so it
-  is below the fill, and the fill shrinks to make room for it and grows back
-  when it closes.
+  prompt inside `editorContainer` (see "One frame for every user input"), so the
+  fill shrinks to make room for it and grows back when it closes.
 - **This is still the normal screen.** No alternate screen, so the terminal's
   own scrollback, selection and search keep working, and the session is still
   there after you quit. Only the pinned view takes the alternate screen, and it
   empties the fill first — blank rows in the buffer would be rows of transcript
   the reader has to scroll past, and `transcriptLength` excludes the fill for
   the same reason.
-- **Once the session has scrolled, the fill holds the floor instead of making
-  it.** Past a screenful the fill is 0 and the *terminal's* scroll is what puts
-  the prompt on the bottom row — so anything that made the frame shorter took
-  the prompt up the screen with it. The renderer cleared the rows that came off
-  the end and left the prompt stranded mid-screen with blanks under it, and
-  nothing could scroll the transcript back down into them: those rows are the
-  terminal's scrollback and only the terminal can move them. That was a picker
-  closing, a notification fading, the ledger emptying. So `fitFlexSpacer` takes
-  what the shrinking content gave up (capped at a screenful), the buffer keeps
-  its length, and the blank band lands *above* the chrome, where it reads as
-  room and where the next output to arrive lands rather than scrolling the
-  screen.
 
-Guarded by `tui/test/screen-fill.test.ts` (the mechanism) and
-`coding-agent/test/screen-anchor.test.ts` (the real mode, real chrome, prompt on
-the floor at every session length).
+Past a screenful the fill is 0 and the *terminal's* scroll is what puts the
+prompt on the bottom row, which leaves one frame the append-only path cannot
+draw: the one where the buffer gets **shorter**. A picker closing, a
+notification fading, the ledger emptying, a view dial folding a run of tool
+calls — the window over the buffer has to move *back*, showing rows the reader
+scrolled past, and nothing can scroll a terminal's own content down to bring
+them in. Appending clears the rows that came off the end and strands the prompt
+mid-screen with blanks under it.
+
+So `doRender` repaints the visible window in place: one screenful, absolutely
+addressed, which the app may do precisely because a buffer taller than the
+screen owns every row of it. It costs a screen of writes and no clear, where the
+honest alternative is `\x1b[3J` and the whole transcript. The version before it
+banked the rows the chrome gave up into the fill — which held the floor, but
+paid for it with a band of blank between the conversation and the prompt, up to
+a screenful of it after a fold. A shadow of a layout is not better than the
+layout.
+
+Guarded by `tui/test/screen-fill.test.ts` (the mechanism, including the fold)
+and `coding-agent/test/screen-anchor.test.ts` (the real mode, real chrome,
+prompt on the floor at every session length).
 
 ## What ghosts and what stays
 
@@ -406,8 +426,17 @@ glimpse reports state, so only the newest one is true and holding a dial key
 down should flash the value it ended on, not five stale ones in sequence. A
 warning reports an event, so every one is still true when the next arrives, and
 collapsing them would let the last of three startup warnings erase the two
-before it. Neither ever overwrites the notification already on screen: a message
-that can be erased before it is read is not one. Guarded by
+before it. Neither overwrites the notification already on screen: a message that
+can be erased before it is read is not one.
+
+The exception is a glimpse that names a **topic**, which is how every dial comes
+through `showDialStep` (the keybinding id with its direction taken off, so
+forward and back are one knob). Two glimpses of one topic are two readings of
+one thing, so the later one replaces the earlier wherever it is sitting, the
+head included, and restarts the clock under it. Without that, the second press
+of `alt+z` had nowhere to go but the back of a queue of one and the band went on
+showing the stop you had already left for its full three seconds — a dial that
+lags a press behind is a dial you cannot step twice. Guarded by
 `coding-agent/test/notification-panel.test.ts`.
 
 ## Screen columns
@@ -421,10 +450,17 @@ is a column of every row, forever. Two rules:
   commented `-2 for safety`); that was two columns off every picker row and
   every settings row. `tui/test/list-right-margin.test.ts` holds the recovery.
 - **A sheet's gutter is one column.** `PAPER_INSET` is 1: the shadow's column is
-  `▌`, a *left* half-block, so it paints the sheet's edge in the left half of
-  that one cell and leaves the right half as page. A wider gutter shows nothing
-  a reader can use. `coding-agent/test/message-block-fill.test.ts` ("a sheet's
-  reach") asserts the sheet runs to the terminal's last cell.
+  `▏`, a *left one-eighth* block, so it paints the sheet's edge as a hairline
+  at the left of that one cell and leaves the rest as page. A wider gutter shows
+  nothing a reader can use. `coding-agent/test/message-block-fill.test.ts` ("a
+  sheet's reach") asserts the sheet runs to the terminal's last cell.
+- **A shadow is an eighth of a cell, not half of one.** The bottom run is `▔`
+  and the column is `▏` (`tui/src/components/box.ts`). `▀` and `▌` are half a
+  cell of solid ink, which at a terminal's resolution is not a shadow but a
+  second band of colour wrapped around two sides of every message — heavy
+  enough to pull the eye off the text it sits behind. The corner is the column's
+  own glyph carried down one row: a run ending on `▔` overshoots an eighth-wide
+  column by seven eighths and leaves a tip poking out past the corner.
 
 ## Vertical rhythm
 
