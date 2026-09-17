@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Added
+
+- **A click opens a hyperlink again.** Mouse reporting is on for the wheel's
+  sake, and a terminal whose mouse is captured stops resolving OSC 8 clicks
+  itself — so every link in a transcript quietly stopped being clickable the day
+  the wheel started working. The TUI now answers the click: `hyperlinkAt(line,
+  column)` (exported) finds the link under a *display cell*, and the URL goes to
+  `TUI.onHyperlink`. Press and release have to land on the same cell, so a drag
+  is still a selection and not a browser. Opening the URL is left to the
+  embedder, because spawning a process is not a rendering library's call.
+
+### Fixed
+
+- **The screen fill goes above the tree, not through the middle of it.** The
+  flex child is now expected as the *first* child of the root: it takes the
+  leftover rows above everything, so a frame shorter than the screen is packed
+  against the bottom of it and nothing is held back between one component and
+  the next. It used to sit between the transcript and the chrome, where a short
+  session showed as a page of blank between the two.
+- **A window that has to move back over the buffer is repainted, not padded.**
+  When a buffer taller than the screen gets shorter — a pane closing, a
+  notification fading, a view collapsing a run of rows — the visible window
+  slides back over it, and no terminal can scroll its own content down to bring
+  those rows in. The append-only frame cleared the rows that came off the end and
+  stranded the last row mid-screen; the previous fix banked the given-up rows in
+  the fill, which held the floor but left a blank band above the chrome, a
+  screenful of it after a large collapse. `doRender` now repaints the visible
+  window in place — one screenful, absolutely addressed, no clear and no
+  scrollback thrown away. Only trees with a flex spacer take this path.
+- **The paper shadow is a hairline.** The bottom run is `▔` and the right-hand
+  column is `▏`, one eighth of a cell each, where they were `▀` and `▌` — half
+  a cell of solid ink, which at a terminal's resolution reads as a second band of
+  colour wrapped around two sides of every message rather than as a shadow. The
+  corner is the column's glyph carried down a row, for the same reason `▘` was
+  there before: a full-width run overshoots an eighth-wide column.
+
 ## [0.5.72] - 2026-09-17
 
 ### Changed

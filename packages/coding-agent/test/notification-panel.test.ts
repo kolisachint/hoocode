@@ -115,6 +115,43 @@ describe("NotificationPanel", () => {
 		expect(panel.pending.map((n) => n.title)).toEqual(["Model: b"]);
 	});
 
+	it("steps a dial on the band as fast as the dial is stepped", () => {
+		// The exception to the rule above, and the reason it is an exception: the
+		// head and the new glimpse are the same dial, so the head is not something
+		// still worth reading, it is a stop the user has already left. Without
+		// this, the second press of a dial key sat in a queue of one and the band
+		// went on showing the previous stop for its full three seconds.
+		const { panel } = setup();
+		panel.notify("info", "Chrome: compact", [], undefined, { topic: "app.chrome" });
+		panel.notify("info", "Chrome: bare", [], undefined, { topic: "app.chrome" });
+		expect(panel.showing?.title).toBe("Chrome: bare");
+		expect(panel.pending).toEqual([]);
+
+		// And the clock restarts under it: the new value gets its own reading
+		// time rather than inheriting what was left of the old one's.
+		vi.advanceTimersByTime(NOTIFICATION_TTL_MS.info - 1);
+		expect(panel.showing?.title).toBe("Chrome: bare");
+		vi.advanceTimersByTime(1);
+		expect(panel.showing).toBeUndefined();
+	});
+
+	it("keeps two different dials apart", () => {
+		const { panel } = setup();
+		panel.notify("info", "Chrome: bare", [], undefined, { topic: "app.chrome" });
+		panel.notify("info", "Thinking level: high", [], undefined, { topic: "app.thinking" });
+		expect(panel.showing?.title).toBe("Chrome: bare");
+		expect(panel.pending.map((n) => n.title)).toEqual(["Thinking level: high"]);
+	});
+
+	it("replaces a queued glimpse of the same dial without jumping the queue", () => {
+		const { panel } = setup();
+		panel.notify("warning", "held");
+		panel.notify("info", "Chrome: compact", [], undefined, { topic: "app.chrome" });
+		panel.notify("info", "Chrome: bare", [], undefined, { topic: "app.chrome" });
+		expect(panel.showing?.title).toBe("held");
+		expect(panel.pending.map((n) => n.title)).toEqual(["Chrome: bare"]);
+	});
+
 	it("shows queued warnings one after another", () => {
 		const { panel } = setup();
 		panel.notify("warning", "first");
@@ -226,7 +263,7 @@ describe("NotificationPanel", () => {
 
 	it("lets a caller set the time itself", () => {
 		const { panel } = setup();
-		panel.notify("info", "quick", ["a", "b"], undefined, 500);
+		panel.notify("info", "quick", ["a", "b"], undefined, { ttlMs: 500 });
 		vi.advanceTimersByTime(500);
 		expect(panel.showing).toBeUndefined();
 	});

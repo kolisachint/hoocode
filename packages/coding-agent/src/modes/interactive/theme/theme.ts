@@ -117,8 +117,8 @@ const ThemeJsonSchema = Type.Object({
 		//
 		// paperShadow: the offset band drawn under a filled message block, so the
 		// block reads as a sheet laid on the page rather than printed into it. A
-		// terminal has no sub-pixel offsets, so this is one extra row of `▀` — a
-		// half-block, which is solid color in the half it covers. Unset: no
+		// terminal has no sub-pixel offsets, so this is one extra row of `▔` — an
+		// upper one-eighth block, a hairline along the top of its cells. Unset: no
 		// shadow row is drawn.
 		paperShadow: Type.Optional(ColorValueSchema),
 		// halftone: the *unfilled* remainder of a gauge or progress track. It has
@@ -1666,10 +1666,10 @@ export function getPaperShadowFn(): ((text: string) => string) | undefined {
  *
  * One column, which is the whole of what the treatment needs and no more. The
  * gutter exists so the sheet has a right edge to show and somewhere to put the
- * shadow's column; the column is `▌`, a *left* half-block, so it paints the
- * sheet's edge in the left half of that one cell and leaves the right half as
- * page. Three columns bought nothing the first one does not already give and
- * cost two columns of every message, on every line, forever.
+ * shadow's column; the column is `▏`, a *left one-eighth* block, so it paints
+ * the sheet's edge as a hairline at the left of that one cell and leaves the
+ * rest as page. Three columns bought nothing the first one does not already
+ * give and cost two columns of every message, on every line, forever.
  */
 export const PAPER_INSET = 1;
 

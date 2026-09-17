@@ -40,7 +40,7 @@ const BUILT_INS = readdirSync(THEME_DIR)
 	.map((file) => file.slice(0, -5))
 	.sort();
 
-const SHADOW_INK = /[▌▀▘█]/;
+const SHADOW_INK = /[▏▔█]/;
 const WIDTHS = [80, 46, 24, 12];
 
 /** Every component that paints a message block, built the way the mode builds it. */
@@ -94,11 +94,11 @@ function faults(label: string, lines: string[], width: number, sheet: boolean): 
 	const band = width - PAPER_INSET;
 	const run = stripAnsi(rows[rows.length - 1]);
 	if (!run.startsWith(" ")) found.push(`${label}: bottom run does not start on page`);
-	if (!run.endsWith("▘")) found.push(`${label}: bottom run ends on ${JSON.stringify(run.at(-1))}, expected ▘`);
+	if (!run.endsWith("▏")) found.push(`${label}: bottom run ends on ${JSON.stringify(run.at(-1))}, expected ▏`);
 	if (visibleWidth(run) !== band + 1)
 		found.push(`${label}: bottom run is ${visibleWidth(run)} cells, expected ${band + 1}`);
 	for (const [i, line] of rows.slice(1, -1).entries()) {
-		if (!stripAnsi(line).includes("▌")) found.push(`${label} row ${i + 1}: no shadow column`);
+		if (!stripAnsi(line).includes("▏")) found.push(`${label} row ${i + 1}: no shadow column`);
 	}
 	return found;
 }

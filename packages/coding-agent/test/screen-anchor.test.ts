@@ -7,6 +7,11 @@
  * with the prompt directly under it and the user's shell history above, and the
  * prompt then walked down the screen over the next few turns. Pinning the
  * bottom is what makes those two the same screen.
+ *
+ * The fill is the *first* child, so the rows nobody is using are above the
+ * banner and everything below it is one run against the floor. A band of blank
+ * between the last thing the agent said and the box you answer it in is the
+ * thing this file exists to catch.
  */
 
 import { describe, expect, it } from "vitest";
@@ -30,21 +35,21 @@ async function settle(): Promise<void> {
 }
 
 describe("the app fills the screen", () => {
-	it("opens with the banner on the first row and the footer on the last", async () => {
+	it("opens with the banner packed against the floor and the leftover rows above it", async () => {
 		const harness = await createSurfaceHarness();
 		try {
 			await settle();
 			const rows = frameRows(harness);
 			expect(rows).toHaveLength(ROWS);
-			expect(rows[0]).toContain("hoo");
-			// The prompt and the footer are hard against the bottom edge: the rows
-			// under the prompt are the footer's, and the blank ones are all above.
+			// The prompt and the footer are hard against the bottom edge, and so is
+			// the banner above them: every blank row is above the first thing drawn.
+			const banner = rows.findIndex((row) => row.includes("hoo"));
+			expect(banner).toBeGreaterThan(0);
+			expect(rows.slice(0, banner).every((row) => row === "")).toBe(true);
 			const prompt = rows.findIndex((row) => row.includes("❯"));
-			expect(prompt).toBeGreaterThan(0);
+			expect(prompt).toBeGreaterThan(banner);
 			expect(rows.slice(prompt).every((row) => row !== "")).toBe(true);
 			expect(rows.at(-1)).not.toBe("");
-			// And the blank band is the fill, in one run, above the chrome.
-			expect(rows.slice(6, prompt - 2).every((row) => row === "")).toBe(true);
 		} finally {
 			harness.cleanup();
 		}

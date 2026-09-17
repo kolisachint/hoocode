@@ -94,13 +94,20 @@ export class Box implements Component {
 	 * a shadow function captured at construction would still be painting the old
 	 * theme's ink (or reaching for a colour the new theme never defined).
 	 *
-	 * The shadow itself is one extra row of `▀` — an upper half-block, which
-	 * paints solid colour across the top half of its cells and so hugs the box's
+	 * The shadow itself is one extra row of `▔` — an upper *one-eighth* block,
+	 * which paints a hairline across the top of its cells and so hugs the box's
 	 * bottom edge — indented one column to give the offset a terminal cannot
-	 * give in sub-pixels. An inset box gets a matching column of `▌` down its
+	 * give in sub-pixels. An inset box gets a matching column of `▏` down its
 	 * right edge and the bottom run reaches under it, so the two close the
 	 * corner; with no inset the band already owns the last cell, so the bottom
 	 * edge is all there is room for.
+	 *
+	 * Eighths, not halves. `▀` and `▌` are half a cell of solid ink, which at a
+	 * terminal's resolution is not a shadow but a second band of colour wrapped
+	 * around two sides of every message — heavy enough to pull the eye off the
+	 * text it is supposed to sit behind. A shadow's whole job is to be noticed
+	 * without being looked at, and an eighth is as close to that as a cell grid
+	 * gets.
 	 *
 	 * Passing no provider, or one that returns nothing, draws the full-width
 	 * band the box has always drawn.
@@ -217,10 +224,10 @@ export class Box implements Component {
 			// seen from two sides: the fill was leaving holes and the shadow was
 			// covering for them. A ruled edge has neither.
 			const band = this.applyBg(line, bandWidth);
-			// `▌` paints the left half of its cell, so the column reads as a thin
-			// line hugging the sheet rather than a second band beside it. The
-			// first row has no column at all: the offset is down *and* right.
-			const column = hasColumn && index > 0 ? shadowFn("▌") : "";
+			// `▏` paints the leftmost eighth of its cell, so the column reads as a
+			// hairline hugging the sheet rather than a band beside it. The first row
+			// has no column at all: the offset is down *and* right.
+			const column = hasColumn && index > 0 ? shadowFn("▏") : "";
 			result.push(band + column);
 		});
 
@@ -229,14 +236,15 @@ export class Box implements Component {
 		// gutter there is no such column, and the run stops one cell short of
 		// the margin instead of wrapping past it.
 		//
-		// That last cell is `▘`, not `▀`. The run is a full-width glyph and the
-		// column above it is a half-width one, so a run that ended on `▀`
-		// overshot the column by half a cell and left a tip poking out past the
-		// corner — a stray line coming out of the shadow. `▘` is the same top
-		// half narrowed to the column's own width, so the two edges close flush.
+		// That last cell is the column's own glyph, not the run's. The run is a
+		// full-width glyph and the column above it is an eighth of one, so a run
+		// that ended on `▔` overshot the column by seven eighths of a cell and
+		// left a tip poking out past the corner — a stray line coming out of the
+		// shadow. `▏` under `▏` is the same eighth of a column carried down one
+		// more row, which is what closes the corner at the width it is drawn at.
 		if (shadowFn && bandWidth > 1) {
-			const run = "▀".repeat(bandWidth - 1);
-			result.push(` ${shadowFn(hasColumn ? `${run}▘` : run)}`);
+			const run = "▔".repeat(bandWidth - 1);
+			result.push(` ${shadowFn(hasColumn ? `${run}▏` : run)}`);
 		}
 
 		// Update cache

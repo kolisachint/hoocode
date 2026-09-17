@@ -72,7 +72,7 @@ function scan(line: string): Cell[] {
 	return out;
 }
 
-const SHADOW_GLYPHS = new Set(["▌", "▀", "▘"]);
+const SHADOW_GLYPHS = new Set(["▏", "▔"]);
 
 function faultsIn(label: string, lines: string[], width: number): string[] {
 	const faults: string[] = [];
@@ -100,7 +100,7 @@ function faultsIn(label: string, lines: string[], width: number): string[] {
 			// The bottom run: page at cell 0, shadow ink across 1..band.
 			if (cells[0]?.glyph !== " ") faults.push(`bottom run: does not start on page`);
 			if (cells.length !== band + 1) faults.push(`bottom run: ${cells.length} cells, expected ${band + 1}`);
-			if (cells.at(-1)?.glyph !== "▘") faults.push(`bottom run: ends on ${cells.at(-1)?.glyph}, expected ▘`);
+			if (cells.at(-1)?.glyph !== "▏") faults.push(`bottom run: ends on ${cells.at(-1)?.glyph}, expected ▏`);
 			continue;
 		}
 		// Where the sheet's fill stops. Every row stops in the same cell: the
@@ -121,8 +121,8 @@ function faultsIn(label: string, lines: string[], width: number): string[] {
 			.join("");
 		if (i === 0) {
 			if (rest !== "") faults.push(`row 0: casts a shadow (${JSON.stringify(rest)}) but should not`);
-		} else if (rest !== "▌") {
-			faults.push(`row ${i}: shadow segment is ${JSON.stringify(rest)}, expected "▌"`);
+		} else if (rest !== "▏") {
+			faults.push(`row ${i}: shadow segment is ${JSON.stringify(rest)}, expected "▏"`);
 		}
 	}
 	void shadowRun;
@@ -167,7 +167,7 @@ const WIDTHS = [120, 80, 60, 40, 34, 24, 20, 16, 12, 10, 8, 6, 5, 4, 3, 2];
  * Every other assertion in this file derives the band from `PAPER_INSET`, so
  * they all held while the gutter was three columns wide and two of them showed
  * nothing at all — the sheet stopped short and the page beside it was empty.
- * The treatment needs exactly one: the shadow's `▌` is a *left* half-block, so
+ * The treatment needs exactly one: the shadow's `▏` is a *left one-eighth* block, so
  * it paints the sheet's edge in the left half of that last cell and leaves the
  * right half as page. This is the test that fails if the gutter grows back.
  */

@@ -35,9 +35,8 @@
  *   free.
  * - `apply` compares the resolved layout against the last one and returns
  *   whether anything moved. The inputs change on events that fire *constantly* —
- *   an autocomplete opens on a keystroke, streaming flips many times a turn —
- *   so the callers push state in on every one of those and this decides whether
- *   a frame is owed. Recomputing a layout is a few comparisons; re-rendering
+ *   an autocomplete opens and closes on keystrokes — so the callers push state
+ *   in on every one of those and this decides whether a frame is owed. Recomputing a layout is a few comparisons; re-rendering
  *   because you did not check is a frame.
  */
 
@@ -61,8 +60,6 @@ export interface ChromeInputs {
 	density: ChromeDensity;
 	/** The prompt's completion list is open and wants the room. */
 	autocompleteOpen: boolean;
-	/** The agent is mid-turn, so transcript rows are worth more than ledger rows. */
-	agentStreaming: boolean;
 }
 
 export interface ChromeLayout {
@@ -75,12 +72,12 @@ export interface ChromeLayout {
 /**
  * The whole policy, in one place.
  *
- * Read it as: the dial says what you asked for, and the two transient inputs
- * say what is happening. Where they disagree the transient one wins, because it
- * is the one that ends on its own — an autocomplete closes, a turn settles, and
- * the dial's answer comes back without anyone pressing anything.
+ * Read it as: the dial says what you asked for, and the transient input says
+ * what is happening. Where they disagree the transient one wins, because it is
+ * the one that ends on its own — an autocomplete closes, and the dial's answer
+ * comes back without anyone pressing anything.
  */
-export function resolveChrome({ density, autocompleteOpen, agentStreaming }: ChromeInputs): ChromeLayout {
+export function resolveChrome({ density, autocompleteOpen }: ChromeInputs): ChromeLayout {
 	// The completion list is the reason the prompt grew; the footer is the
 	// nearest thing with rows to give. It comes straight back on dismissal, so
 	// this can never strand anyone somewhere they have to key their way out of.
@@ -100,9 +97,13 @@ export function resolveChrome({ density, autocompleteOpen, agentStreaming }: Chr
 	if (density === "bare") return { footer, tasks: "hidden" };
 	if (density === "compact") return { footer, tasks: "summary" };
 
-	// Mid-turn the ledger keeps its counts and gives up its rows. The counts are
-	// the part you watch; the rows are the part you read afterwards.
-	return { footer, tasks: agentStreaming ? "summary" : "full" };
+	// `full` means the whole ledger, mid-turn included. It used to fall back to
+	// the counts while the agent was streaming, on the theory that transcript rows
+	// are worth more than ledger rows during a turn. That has it backwards: a turn
+	// is exactly when you want to know which item the model is on, and a count
+	// cannot say. The dial already has a stop for people who would rather have the
+	// rows back — it is called `compact`.
+	return { footer, tasks: "full" };
 }
 
 /** What the controller needs of the footer and the ledger, and nothing more. */
@@ -128,7 +129,7 @@ export class ChromeLayoutController {
 		private readonly surfaces: ChromeSurfaces,
 		density: ChromeDensity,
 	) {
-		this.inputs = { density, autocompleteOpen: false, agentStreaming: false };
+		this.inputs = { density, autocompleteOpen: false };
 	}
 
 	get density(): ChromeDensity {
@@ -158,12 +159,6 @@ export class ChromeLayoutController {
 	setAutocompleteOpen(open: boolean): boolean {
 		if (this.inputs.autocompleteOpen === open) return false;
 		this.inputs = { ...this.inputs, autocompleteOpen: open };
-		return this.apply();
-	}
-
-	setAgentStreaming(streaming: boolean): boolean {
-		if (this.inputs.agentStreaming === streaming) return false;
-		this.inputs = { ...this.inputs, agentStreaming: streaming };
 		return this.apply();
 	}
 

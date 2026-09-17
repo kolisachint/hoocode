@@ -87,6 +87,7 @@ import type { TruncationResult } from "../../core/tools/truncate.js";
 import { buildCompactWordmark } from "../../core/wordmark.js";
 import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipboard-image.js";
 import { parseGitUrl } from "../../utils/git.js";
+import { openUrl } from "../../utils/open-url.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
@@ -274,8 +275,10 @@ export class InteractiveMode {
 	private editorContainer: Container;
 	/**
 	 * The rows nobody is using, handed to the renderer so the app is the size of
-	 * the screen: header at the top, prompt and footer on the bottom row,
-	 * conversation in between, at every session length. See `TUI.setFlexSpacer`.
+	 * the screen. It is the *first* child, so the leftover rows are above the
+	 * banner and everything below it — conversation, ledger, prompt, footer — is
+	 * packed against the foot of the screen with nothing between the last thing
+	 * the agent said and the box you answer it in. See `TUI.setFlexSpacer`.
 	 */
 	private readonly screenFill = new FlexSpacer();
 	/** The transient band above the prompt; see components/notification-panel.ts. */
@@ -912,7 +915,13 @@ export class InteractiveMode {
 				startupProgress.remove("rg");
 			});
 
-		// Add header container as first child
+		// The rows nobody is using go here, above everything, so the app reads the
+		// way a terminal does: the newest row against the prompt and the session
+		// growing upward out of it. Below the fill nothing ever has room held back
+		// from it, which is what keeps the conversation and the prompt touching at
+		// every session length.
+		this.ui.addChild(this.screenFill);
+		this.ui.setFlexSpacer(this.screenFill);
 		this.ui.addChild(this.headerContainer);
 
 		// Add header with keybindings from config (unless silenced)
@@ -1011,13 +1020,6 @@ export class InteractiveMode {
 		}
 
 		this.ui.addChild(this.chatContainer);
-		// Everything from here down is the bottom chrome: the fill above it is
-		// what pins it to the foot of the screen on a session too short to reach
-		// there on its own. The loader and the queued-message list belong on this
-		// side of the line — they are what is happening *now*, which reads next to
-		// the prompt, not stranded halfway up an empty screen.
-		this.ui.addChild(this.screenFill);
-		this.ui.setFlexSpacer(this.screenFill);
 		this.ui.addChild(this.pendingMessagesContainer);
 		this.ui.addChild(this.statusContainer);
 		this.chrome.renderWidgets(); // Initialize with default spacer
@@ -1031,6 +1033,10 @@ export class InteractiveMode {
 
 		this.setupKeyHandlers();
 		this.setupEditorSubmitHandler();
+		// Capturing the mouse for the wheel is what stopped the terminal resolving
+		// clicks on links, so the app answers them itself — with the same click, no
+		// modifier, which is what it cost the user in the first place.
+		this.ui.onHyperlink = (url) => openUrl(url);
 
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
@@ -2406,8 +2412,6 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
-				// The ledger keeps its counts and gives up its rows for the turn.
-				if (this.chromeLayout.setAgentStreaming(true)) this.ui.requestRender();
 				// Restore main escape handler if retry handler is still active
 				// (retry success event fires later, but we need main handler now)
 				if (this.retryEscapeHandler) {
@@ -2620,7 +2624,6 @@ export class InteractiveMode {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
-				if (this.chromeLayout.setAgentStreaming(false)) this.ui.requestRender();
 				if (this.loadingAnimation) {
 					this.loadingAnimation.stop();
 					this.loadingAnimation = undefined;
@@ -2812,15 +2815,23 @@ export class InteractiveMode {
 	private showDialStep(backward: AppKeybinding, message: string): void {
 		const taught = this.dialReverseTaught.has(backward);
 		this.dialReverseTaught.add(backward);
-		this.notify(message, taught ? undefined : `${keyText(backward)} steps back`);
+		// Every step of one dial is one subject, so the band shows the stop you are
+		// on rather than queueing the stops you went through. The id names the dial
+		// once its direction is taken off: stepping forward and stepping back are
+		// the same knob and must not read as two.
+		const topic = backward.replace(/\.cycle(Forward|Backward)$/, "");
+		this.notify(message, taught ? undefined : `${keyText(backward)} steps back`, topic);
 	}
 
 	/**
 	 * A glimpse of something that just changed, on the band above the prompt.
+	 *
+	 * `topic` names what the glimpse is *of*, for anything that can be stepped:
+	 * a second reading replaces the first wherever it is, on screen included.
 	 */
-	notify(message: string, note?: string): void {
+	notify(message: string, note?: string, topic?: string): void {
 		const { title, body } = this.splitBlockMessage(message);
-		this.notifications.notify("info", title, body, note);
+		this.notifications.notify("info", title, body, note, { topic });
 	}
 
 	/**
