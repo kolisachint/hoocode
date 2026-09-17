@@ -95,28 +95,29 @@ describe("cut-out token fallbacks", () => {
 			// does not, because the offset is down as well as right.
 			expect(lines[0]).not.toContain("▏");
 			expect(lines[1] + lines[2]).toContain("▏");
-			// And the bottom run is offset one column right of the band, ending
-			// under the right-hand column so the two close the corner.
+			// And the bottom run is offset one column right of the band, stopping
+			// where the right-hand column starts so the two meet as an L.
 			expect(lines[3].startsWith(" ")).toBe(true);
 			expect(lines[3].match(/▔/g)).toHaveLength(band - 1);
-			expect(visibleWidth(lines[3])).toBe(band + 1);
+			expect(visibleWidth(lines[3])).toBe(band);
 		});
 
 		it("closes the bottom corner flush with the shadow's column", () => {
-			// `▔` fills a cell edge to edge and `▏` fills an eighth of one, so a
-			// run that ended on `▔` under the column overshot it by seven eighths
-			// of a cell and left a tip poking out past the corner. The corner is
-			// the column's own glyph carried down a row, so the run stops where
-			// the column stops.
+			// Neither glyph can be asked to draw the corner. `▔` fills a cell edge
+			// to edge, so a run that took the column's cell overshot it by seven
+			// eighths — a tip poking out past the corner. `▏` fills the full height
+			// of a cell while `▔` fills the top eighth of one, so carrying `▏` down
+			// into the run's row overshot downwards instead: a tick hanging a whole
+			// row below the shadow's bottom edge. The run stops where the column
+			// starts, and that is the corner.
 			const box = new Box(1, 1, (t) => theme.bg("userMessageBg", t));
 			applyPaperSheet(box);
 			box.addChild(new Text("hello", 0, 0));
 			const lines = box.render(40);
 			const run = stripAnsi(lines[3]);
-			expect(run.endsWith("▏")).toBe(true);
-			expect(run).not.toContain("▔▔▏▔");
-			// The corner glyph sits in the same cell as the column above it.
-			expect(run.indexOf("▏")).toBe(stripAnsi(lines[2]).indexOf("▏"));
+			expect(run).not.toContain("▏");
+			// The run's right end is the cell the column above it occupies.
+			expect(visibleWidth(run)).toBe(stripAnsi(lines[2]).indexOf("▏"));
 		});
 
 		it("rules the sheet's right edge instead of nicking it", () => {
@@ -161,9 +162,11 @@ describe("cut-out token fallbacks", () => {
 			}
 			const lines = box.render(40);
 			const edge = 40 - PAPER_INSET + 1;
-			for (const line of lines.slice(1)) {
+			for (const line of lines.slice(1, -1)) {
 				expect(visibleWidth(line)).toBe(edge);
 			}
+			// All but the run, which stops one cell short — that cell is the column's.
+			expect(visibleWidth(lines[lines.length - 1])).toBe(edge - 1);
 			expect(lines.slice(1, -1).every((line) => line.includes("▏"))).toBe(true);
 		});
 
@@ -307,7 +310,7 @@ describe("switching theme under blocks already on screen", () => {
 		setTheme("vox-cutout-dark", false);
 		const lines = box.render(40);
 		expect(lines).toHaveLength(4);
-		expect(visibleWidth(lines[3])).toBe(40 - PAPER_INSET + 1);
+		expect(visibleWidth(lines[3])).toBe(40 - PAPER_INSET);
 	});
 
 	it("keeps a markdown theme rendering across the switch, both ways", () => {

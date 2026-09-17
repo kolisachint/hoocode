@@ -39,18 +39,20 @@ function shadowSegment(line: string): string {
 
 describe("a sheet's shadow", () => {
 	it("closes the bottom corner flush with its right-hand column", () => {
-		// `▔` fills a cell edge to edge and `▏` fills an eighth of one, so a
-		// bottom run that ended on `▔` under the column overshot it by seven
-		// eighths of a cell — a tip poking out past the corner, on every filled
-		// block the theme drew. The corner is the column's own glyph instead,
-		// carried down one row, which is the width it has to close at.
+		// The corner closes on its own, and neither glyph may be asked to do it.
+		// `▔` fills a cell edge to edge, so a run that took the gutter cell
+		// overshot the column by seven eighths of a cell — a tip poking out past
+		// the corner. `▏` fills the full height of a cell while `▔` fills the
+		// top eighth of one, so carrying `▏` down into the run's row overshot the
+		// other way: a tick hanging a whole row below the shadow's bottom edge,
+		// which read as a stray line rather than a corner. The run simply stops
+		// where the column starts.
 		const lines = sheet(3);
 		const run = lines[lines.length - 1];
-		assert.ok(run.endsWith("▏</s>"), `bottom run should end on ▏, got ${JSON.stringify(run)}`);
-		assert.equal(run.match(/▏/g)?.length, 1);
+		assert.ok(!run.includes("▏"), `bottom run should carry no column glyph, got ${JSON.stringify(run)}`);
 
-		// And it ends in the same cell the column above it occupies.
-		assert.equal(plain(run).indexOf("▏"), plain(lines[lines.length - 2]).indexOf("▏"));
+		// Its right end is the cell boundary the column paints its hairline on.
+		assert.equal(visibleWidth(plain(run)), plain(lines[lines.length - 2]).indexOf("▏"));
 	});
 
 	it("draws one hairline of shadow beside the sheet and nothing more", () => {
@@ -81,9 +83,11 @@ describe("a sheet's shadow", () => {
 		// staircase.
 		const lines = sheet(24);
 		const edge = WIDTH - INSET + 1;
-		for (const line of lines.slice(1)) {
+		for (const line of lines.slice(1, -1)) {
 			assert.equal(visibleWidth(plain(line)), edge);
 		}
+		// All but the run, which stops one cell short — that cell is the column's.
+		assert.equal(visibleWidth(plain(lines[lines.length - 1])), edge - 1);
 	});
 
 	it("gives the treatment up rather than degenerate when the band is too narrow", () => {

@@ -72,12 +72,14 @@ describe("every message block is a sheet under a cut-out theme", () => {
 		for (const line of lines.slice(0, -1)) {
 			expect(visibleWidth(line)).toBeLessThanOrEqual(band + 1);
 		}
-		// Rows below the first carry the shadow's column, and it ends on the run.
+		// Rows below the first carry the shadow's column, and the run stops where
+		// that column starts — `▔` fills its cell edge to edge, so the run already
+		// reaches the boundary the column paints its hairline on.
 		expect(lines.slice(1, -1).every((line) => stripAnsi(line).includes("▏"))).toBe(true);
 		const run = stripAnsi(lines[lines.length - 1]);
 		expect(run.startsWith(" ")).toBe(true);
-		expect(run.endsWith("▏")).toBe(true);
-		expect(visibleWidth(run)).toBe(band + 1);
+		expect(run.endsWith("▔")).toBe(true);
+		expect(visibleWidth(run)).toBe(band);
 	});
 
 	it("draws the plain full-width band on a theme with no paper", () => {

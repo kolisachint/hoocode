@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Scrolling back to an image shows the image.** A screenshot or a diagram a
+  tool returned was drawn while it streamed and then read `[image]` the moment
+  you scrolled up to look at it again. The pinned transcript window draws it now
+  (see the tui changelog for why it could not before). A picture whose top edge
+  is off the window is still named until the whole of it is on screen.
+- **The cut-out themes' shadow no longer trails a tick under the bottom-right
+  corner.** Under `vox-cutout-light` / `vox-cutout-dark`, every message block's
+  shadow ended with a hairline hanging a full row below the sheet's bottom edge —
+  the corner glyph was the right-hand column's `▏`, which fills the whole height
+  of its cell, sitting in a row whose run is `▔`, an eighth. The two legs meet on
+  their own and neither draws the corner now. Docs: `themes.md` → `paperShadow`.
+
 ## [0.5.73] - 2026-09-17
 
 ### Fixed
