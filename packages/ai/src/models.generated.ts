@@ -14212,13 +14212,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.5,
-				output: 2,
-				cacheRead: 0.09999999999999999,
+				input: 0.43,
+				output: 1.75,
+				cacheRead: 0.08,
 				cacheWrite: 0,
 			},
 			contextWindow: 204800,
-			maxTokens: 131072,
+			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
 		"z-ai/glm-4.6v": {
 			id: "z-ai/glm-4.6v",
