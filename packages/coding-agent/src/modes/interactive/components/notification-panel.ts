@@ -51,7 +51,7 @@
 
 import type { Component } from "@kolisachint/hoocode-tui";
 import { applyBackgroundToLine, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
-import { type BlockFill, theme } from "../theme/theme.js";
+import { type BlockFill, type ThemeColor, theme } from "../theme/theme.js";
 
 /**
  * How long each kind stays up.
@@ -103,6 +103,20 @@ const MAX_QUEUE = 8;
 /** Leads the headline; filled for a warning, hollow for a glimpse. */
 const GLYPH = { info: "◦", warning: "●" } as const;
 
+/**
+ * Colour a row, unless it coloured itself.
+ *
+ * A listing that paints its own columns arrives here already styled, and
+ * `theme.fg` closes with `\x1b[39m` — reset foreground, not *restore* — so
+ * wrapping it would drop this colour at the first inner span and leave the rest
+ * of the row unstyled. Passing a styled line through is the same rule
+ * `styleStatusMessage` follows in the transcript, and the reason a listing
+ * still reads in its own colours now that listings come through the band.
+ */
+function ink(color: ThemeColor, text: string): string {
+	return text.includes("\x1b[") ? text : theme.fg(color, text);
+}
+
 export interface Notification {
 	kind: NotificationKind;
 	title: string;
@@ -120,7 +134,10 @@ export class NotificationPanel implements Component {
 	/** Head is on screen; the rest are waiting their turn. */
 	private queue: Notification[] = [];
 	private timer: NodeJS.Timeout | undefined;
-	private cache?: { width: number; lines: string[] };
+	// Keyed on the row budget too: a terminal resized shorter changes what fits
+	// without changing the width, and a cache that only watches the width would
+	// go on drawing a band the screen no longer has room for.
+	private cache?: { width: number; rows: number; lines: string[] };
 
 	/**
 	 * @param requestRender - the band appears and disappears on its own clock,
@@ -201,8 +218,9 @@ export class NotificationPanel implements Component {
 	render(width: number): string[] {
 		const current = this.queue[0];
 		if (!current || width < 4) return NotificationPanel.EMPTY;
+		const rows = this.budget();
 		const cached = this.cache;
-		if (cached && cached.width === width) return cached.lines;
+		if (cached && cached.width === width && cached.rows === rows) return cached.lines;
 
 		const fill = FILL[current.kind];
 		const paint = (line: string): string => applyBackgroundToLine(line, width, (text) => theme.bg(fill, text));
@@ -216,15 +234,20 @@ export class NotificationPanel implements Component {
 		// last cell reads as text that ran out of room.
 		const lines = ["", paint(` ${glyph} ${this.headline(current, width - 4)}`)];
 		for (const line of this.bodyRows(current)) {
-			lines.push(paint(`   ${theme.fg("muted", truncateToWidth(line, Math.max(1, width - 4)))}`));
+			lines.push(paint(`   ${ink("muted", truncateToWidth(line, Math.max(1, width - 4)))}`));
 		}
-		this.cache = { width, lines };
+		this.cache = { width, rows, lines };
 		return lines;
 	}
 
 	/** The body rows that fit, at whatever the screen can spare this frame. */
 	private bodyRows(current: Notification): string[] {
-		return current.body.slice(0, Math.max(1, Math.floor(this.maxBodyRows())));
+		return current.body.slice(0, this.budget());
+	}
+
+	/** Rows of body this frame can spare — never none, so a body always shows. */
+	private budget(): number {
+		return Math.max(1, Math.floor(this.maxBodyRows()));
 	}
 
 	/**
@@ -240,10 +263,10 @@ export class NotificationPanel implements Component {
 		if (note) {
 			const gap = width - visibleWidth(current.title) - visibleWidth(note) - 3;
 			if (gap >= 0) {
-				return theme.fg(color, current.title) + " ".repeat(gap + 3) + theme.fg("halftone", note);
+				return ink(color, current.title) + " ".repeat(gap + 3) + theme.fg("halftone", note);
 			}
 		}
-		return theme.fg(color, truncateToWidth(current.title, Math.max(1, width)));
+		return ink(color, truncateToWidth(current.title, Math.max(1, width)));
 	}
 
 	/**

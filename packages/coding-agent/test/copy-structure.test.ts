@@ -12,8 +12,10 @@
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import { describe, expect, it } from "vitest";
 import { sessionToMarkdown } from "../src/core/agent-session-stats.js";
+import { type CommandContext, CommandExecutor } from "../src/modes/interactive/command-executor.js";
 import { markdownToHtml } from "../src/utils/markdown-to-html.js";
 import { wrapCfHtml } from "../src/utils/rich-clipboard.js";
+import { createSurfaceHarness, type SurfaceHarness } from "./suite/interactive-surface-harness.js";
 
 function user(text: string): AgentMessage {
 	return { role: "user", content: text, timestamp: 0 } as AgentMessage;
@@ -165,4 +167,52 @@ describe("the CF_HTML envelope Windows requires", () => {
 		const bytes = Buffer.from(wrapped, "utf8");
 		expect(bytes.subarray(offset("StartFragment"), offset("EndFragment")).toString("utf8")).toBe("<p>héllo — ✓</p>");
 	});
+});
+
+describe("/copy, through the handler and through the app", () => {
+	/** Let the render loop and the command's own await settle. */
+	const settle = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 120));
+
+	/** Frame rows, ANSI off, trailing space gone. */
+	function frameRows(harness: SurfaceHarness): string[] {
+		return harness
+			.rawFrame()
+			.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")
+			.split("\n")
+			.map((line) => line.replace(/\s+$/, ""));
+	}
+
+	it("reports what it copied, and which flavours landed", async () => {
+		// Through the real handler, with a real clipboard write behind it: the
+		// message is the only place the user finds out that this machine could
+		// carry one flavour and not two.
+		const reported: string[] = [];
+		const executor = new CommandExecutor({
+			session: { getLastAssistantText: () => "## Findings\n\n| a | b |\n| - | - |\n| 1 | 2 |" },
+			showStatus: (message: string) => reported.push(message),
+			showWarning: (message: string) => reported.push(message),
+			showError: (message: string) => reported.push(message),
+		} as unknown as CommandContext);
+
+		await executor.handleCopy("/copy");
+		expect(reported).toHaveLength(1);
+		expect(reported[0]).toMatch(/^Copied last agent message as (markdown|markdown \+ formatted text)$/);
+	});
+
+	it("puts its answer on the band, the whole way through the app", async () => {
+		// The handler tests above stop at the message; this one goes through the
+		// editor, the slash-command dispatcher and the render loop, and asserts
+		// the row it lands on — directly above the prompt, not in the transcript.
+		const harness = await createSurfaceHarness();
+		try {
+			await settle();
+			await harness.submit("/copy sideways");
+			await settle();
+			const rows = frameRows(harness);
+			const prompt = rows.findIndex((row) => row.includes("❯"));
+			expect(rows[prompt - 2]).toContain("Usage: /copy");
+		} finally {
+			harness.cleanup();
+		}
+	}, 60000);
 });

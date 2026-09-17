@@ -13,8 +13,8 @@
  *
  * ## What each platform can carry
  *
- * - **macOS** takes both in one AppleScript record, so a paste into Word is
- *   rich and a paste into a terminal is the markdown.
+ * - **macOS** takes both onto the general pasteboard in one clearing, so a
+ *   paste into Word is rich and a paste into a terminal is the markdown.
  * - **Windows** takes both through a `DataObject`, with the HTML wrapped in the
  *   CF_HTML envelope the format requires (and PowerShell run `-STA`, because
  *   the clipboard APIs are apartment-threaded).
@@ -103,25 +103,38 @@ export function wrapCfHtml(fragment: string): string {
 }
 
 /**
- * macOS: one AppleScript record with both flavours in it.
+ * macOS: both flavours onto the general pasteboard, in one clearing.
  *
- * The HTML travels as hex inside `«data HTML…»`, which is how AppleScript
- * spells a raw clipboard type, and the plain text is *read from a file* rather
- * than quoted into the script — a transcript is exactly the kind of text that
- * contains quotes, backslashes and newlines, and escaping it into a script
- * literal is a bug waiting for the first code block.
+ * Through JXA (`osascript -l JavaScript`) rather than AppleScript, and the
+ * reason is encoding. AppleScript's name for a raw pasteboard type is
+ * `«class HTML»`, so the script itself has to carry non-ASCII, and `osascript`
+ * decodes a plain-text script file by the current locale — on a machine whose
+ * locale is not UTF-8 the chevrons arrive mangled and the script fails to
+ * compile. This script is pure ASCII whatever the payload is, because both
+ * payloads are *read from files* rather than quoted into it: a transcript is
+ * exactly the kind of text that contains quotes, backslashes and newlines, and
+ * escaping it into a script literal is a bug waiting for the first code block.
+ *
+ * `clearContents` before the writes is what makes the two a single item on the
+ * pasteboard, which is what lets one paste choose between them.
  */
 async function copyRichDarwin(payload: RichPayload, dir: string): Promise<boolean> {
+	const htmlPath = join(dir, "clip.html");
 	const textPath = join(dir, "clip.txt");
-	const scriptPath = join(dir, "clip.applescript");
+	const scriptPath = join(dir, "clip.js");
+	writeFileSync(htmlPath, payload.html, "utf8");
 	writeFileSync(textPath, payload.text, "utf8");
-	const hex = Buffer.from(payload.html, "utf8").toString("hex");
+	const read = (path: string): string =>
+		`$.NSString.stringWithContentsOfFileEncodingError(${JSON.stringify(path)}, $.NSUTF8StringEncoding, null)`;
 	const script = [
-		`set plainText to (read POSIX file ${JSON.stringify(textPath)} as «class utf8»)`,
-		`set the clipboard to {«class HTML»:«data HTML${hex}», string:plainText}`,
+		"ObjC.import('AppKit');",
+		"var pb = $.NSPasteboard.generalPasteboard;",
+		"pb.clearContents;",
+		`pb.setStringForType(${read(htmlPath)}, $.NSPasteboardTypeHTML);`,
+		`pb.setStringForType(${read(textPath)}, $.NSPasteboardTypeString);`,
 	].join("\n");
 	writeFileSync(scriptPath, script, "utf8");
-	return await run("osascript", [scriptPath]);
+	return await run("osascript", ["-l", "JavaScript", scriptPath]);
 }
 
 /**

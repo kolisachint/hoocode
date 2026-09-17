@@ -199,6 +199,31 @@ describe("NotificationPanel", () => {
 		expect(panel.showing).toBeUndefined();
 	});
 
+	it("lets a listing keep the colours it painted itself", () => {
+		// A listing that colours its own columns arrives styled. Wrapping it
+		// would drop that colour at the first inner span, because `theme.fg`
+		// closes with a reset rather than a restore — the same rule the
+		// transcript's own status rows follow.
+		const { panel } = setup(() => 4);
+		const coloured = `${theme.getFgAnsi("accent")}plugin\u001b[39m  installed`;
+		panel.notify("info", "Marketplaces", [coloured]);
+		const body = panel.render(WIDTH)[2];
+		expect(body).toContain(theme.getFgAnsi("accent"));
+		expect(body).not.toContain(theme.getFgAnsi("muted"));
+	});
+
+	it("redraws when the screen gets shorter, not just narrower", () => {
+		// The row budget is the terminal's height, which changes without the
+		// width changing; a cache watching only the width would go on drawing a
+		// band the screen no longer has room for.
+		let budget = 6;
+		const { panel } = setup(() => budget);
+		panel.notify("info", "Marketplaces", ["one", "two", "three", "four", "five", "six"]);
+		expect(rows(panel)).toHaveLength(8);
+		budget = 2;
+		expect(rows(panel)).toHaveLength(4);
+	});
+
 	it("lets a caller set the time itself", () => {
 		const { panel } = setup();
 		panel.notify("info", "quick", ["a", "b"], undefined, 500);

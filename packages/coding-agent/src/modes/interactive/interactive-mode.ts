@@ -2852,7 +2852,7 @@ export class InteractiveMode {
 	 * with a URL on it is a notification that cost the user the thing they asked
 	 * for.
 	 */
-	showRecord(message: string): void {
+	private showRecord(message: string): void {
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
 		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;

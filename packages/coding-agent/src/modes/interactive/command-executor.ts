@@ -403,7 +403,9 @@ export class CommandExecutor {
 			.replace(/^\/copy\s*/, "")
 			.trim()
 			.toLowerCase();
-		const turns = /^\d+$/.test(argument) ? Number.parseInt(argument, 10) : undefined;
+		// `/copy 0` is a typo, not a request for nothing: taking it at face value
+		// would copy the whole session and report it as zero turns.
+		const turns = /^\d+$/.test(argument) ? Math.max(1, Number.parseInt(argument, 10)) : undefined;
 		const whole = argument === "all" || argument === "session";
 		if (argument && !whole && turns === undefined) {
 			this.ctx.showWarning("Usage: /copy [all|<number of turns>]");
@@ -434,7 +436,12 @@ export class CommandExecutor {
 			const as = flavour === "rich" ? "markdown + formatted text" : "markdown";
 			this.ctx.showStatus(`Copied ${subject} as ${as}`);
 		} catch (error) {
-			this.ctx.showError(error instanceof Error ? error.message : String(error));
+			// The usual reason is a machine with no clipboard to write to (a bare
+			// SSH session, no xclip) or a transcript past what OSC 52 can carry.
+			// Both have the same answer, and it is worth naming here rather than
+			// leaving "Failed to copy to clipboard" as the whole reply.
+			const reason = error instanceof Error ? error.message : String(error);
+			this.ctx.showError(`Could not copy the ${subject}: ${reason}. /export writes it to a file instead.`);
 		}
 	}
 
