@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.70] - 2026-09-17
+
 ### Fixed
 
 - **The prompt goes back to the bottom of the screen when a pane or a

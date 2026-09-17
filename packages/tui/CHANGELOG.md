@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.5.70] - 2026-09-17
+
 ### Fixed
 
 - **The prompt stays on the floor when something above it goes away.** On a
