@@ -52,6 +52,8 @@ export interface LoginControllerDeps {
 	editorContainer: Container;
 	showSelector(create: (done: () => void) => { component: Component; focus: Component }): void;
 	showStatus(message: string): void;
+	/** A status the transcript keeps — see `InteractiveMode.showRecord`. */
+	showRecord(message: string): void;
 	showError(errorMessage: string): void;
 	/** Recompute the footer's available provider count. */
 	updateAvailableProviderCount(): Promise<void>;
@@ -270,10 +272,10 @@ export class LoginController {
 		this.deps.invalidateFooter();
 		this.deps.updateEditorBorderColor();
 		if (selectedModel) {
-			this.deps.showStatus(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
+			this.deps.showRecord(`${actionLabel}. Selected ${selectedModel.id}. Credentials saved to ${getAuthPath()}`);
 			void this.deps.maybeWarnAboutAnthropicSubscriptionAuth(selectedModel);
 		} else {
-			this.deps.showStatus(`${actionLabel}. Credentials saved to ${getAuthPath()}`);
+			this.deps.showRecord(`${actionLabel}. Credentials saved to ${getAuthPath()}`);
 			if (selectionError) {
 				this.deps.showError(selectionError);
 			} else {

@@ -22,7 +22,10 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "export", description: "Export session (HTML default, or specify path: .html/.jsonl)" },
 	{ name: "import", description: "Import and resume a session from a JSONL file" },
 	{ name: "share", description: "Share session as a secret GitHub gist" },
-	{ name: "copy", description: "Copy last agent message to clipboard" },
+	{
+		name: "copy",
+		description: "Copy as markdown + formatted text: /copy (last reply), /copy all, /copy <turns>",
+	},
 	{ name: "name", description: "Set session display name" },
 	{ name: "color", description: "Set the session chip color: /color <1-6|name> (bare = pick one)" },
 	{

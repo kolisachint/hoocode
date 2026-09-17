@@ -482,6 +482,7 @@ export class InteractiveMode {
 					return self.keybindings;
 				},
 				showStatus: (message) => self.showStatus(message),
+				showRecord: (message) => self.showRecord(message),
 				notify: (message, note) => self.notify(message, note),
 				showError: (message) => self.showError(message),
 				showWarning: (message) => self.showWarning(message),
@@ -570,7 +571,13 @@ export class InteractiveMode {
 		});
 		this.taskPanel = new TaskPanelComponent(this.ui);
 		this.tasksSlot = new Slot(this.taskPanel);
-		this.notifications = new NotificationPanel(() => this.ui.requestRender());
+		// A third of the screen is the band's share of it: enough for a listing to
+		// arrive whole on a tall terminal, never so much that a notification is
+		// what the session looks like.
+		this.notifications = new NotificationPanel(
+			() => this.ui.requestRender(),
+			() => Math.floor(this.ui.terminal.rows / 3),
+		);
 		// Unset means nobody has chosen, so a short terminal may open compact; a
 		// stored stop is obeyed at every size.
 		this.chromeLayout = new ChromeLayoutController(
@@ -653,6 +660,7 @@ export class InteractiveMode {
 			editorContainer: this.editorContainer,
 			showSelector: (create) => this.showSelector(create),
 			showStatus: (message) => this.showStatus(message),
+			showRecord: (message) => this.showRecord(message),
 			showError: (message) => this.showError(message),
 			updateAvailableProviderCount: () => this.modelController.updateAvailableProviderCount(),
 			updateEditorBorderColor: () => this.updateEditorBorderColor(),
@@ -2070,8 +2078,9 @@ export class InteractiveMode {
 					},
 				},
 				"/copy": {
-					run: async () => {
-						await this.commandExecutor.handleCopy();
+					withArgs: true,
+					run: async (text: string) => {
+						await this.commandExecutor.handleCopy(text);
 						clearEditor();
 					},
 				},
@@ -2808,18 +2817,42 @@ export class InteractiveMode {
 
 	/**
 	 * A glimpse of something that just changed, on the band above the prompt.
-	 *
-	 * The counterpart to `showStatus`, and the two differ only in how long the
-	 * user has to care: this is for a value they can read off the footer a second
-	 * later anyway, `showStatus` is for something they may want to come back to.
-	 * Nothing that cannot be reconstructed from the screen belongs here.
 	 */
 	notify(message: string, note?: string): void {
 		const { title, body } = this.splitBlockMessage(message);
 		this.notifications.notify("info", title, body, note);
 	}
 
+	/**
+	 * What a command has to say for itself — on the band, not in the transcript.
+	 *
+	 * This used to write a dimmed row into the conversation, and every command
+	 * that reported anything wrote one: `Mode set to "build"`, `Cloned to new
+	 * session`, `Copied last agent message`, the plugin catalogue, what `/learn`
+	 * read. All of them true for a moment and litter for the rest of the
+	 * session, sitting between the messages the transcript exists to keep.
+	 *
+	 * The band is where they belong: it is directly above the prompt, where the
+	 * user's eye already is after typing a command, and it clears itself. What
+	 * cannot be reconstructed once it fades does not come through here at all —
+	 * it goes to `showRecord`, which still writes the row.
+	 */
 	private showStatus(message: string): void {
+		const { title, body } = this.splitBlockMessage(message);
+		this.notifications.notify("info", title, body);
+	}
+
+	/**
+	 * The status rows that stay: a share URL, an export path, a saved-to path.
+	 *
+	 * The one exception to the band, and the test for it is not importance but
+	 * whether the screen can still answer the question in a minute's time. A
+	 * mode, a model, a session name are all on the footer or the prompt border
+	 * afterwards; a gist URL is nowhere but here, and a notification that fades
+	 * with a URL on it is a notification that cost the user the thing they asked
+	 * for.
+	 */
+	private showRecord(message: string): void {
 		const children = this.chatContainer.children;
 		const last = children.length > 0 ? children[children.length - 1] : undefined;
 		const secondLast = children.length > 1 ? children[children.length - 2] : undefined;

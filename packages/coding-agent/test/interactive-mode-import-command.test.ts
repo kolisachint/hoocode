@@ -10,6 +10,7 @@ type ImportCommandContext = {
 	runtimeHost: { importFromJsonl: (inputPath: string, cwdOverride?: string) => Promise<{ cancelled: boolean }> };
 	showError: (message: string) => void;
 	showStatus: (message: string) => void;
+	showRecord: (message: string) => void;
 	showExtensionConfirm: (title: string, message: string) => Promise<boolean>;
 	renderCurrentSessionState: () => void;
 	handleFatalRuntimeError: (prefix: string, error: unknown) => Promise<never>;
@@ -35,6 +36,7 @@ function createImportContext(overrides: Partial<ImportCommandContext> = {}): Imp
 		runtimeHost: { importFromJsonl: vi.fn(async () => ({ cancelled: false })) },
 		showError: vi.fn(),
 		showStatus: vi.fn(),
+		showRecord: vi.fn(),
 		showExtensionConfirm: vi.fn(async () => true),
 		renderCurrentSessionState: vi.fn(),
 		handleFatalRuntimeError: vi.fn(async () => {
@@ -66,13 +68,13 @@ describe("CommandExecutor /import parsing", () => {
 	it("passes unquoted path to runtimeHost.importFromJsonl", async () => {
 		const importFromJsonl = vi.fn(async () => ({ cancelled: false }));
 		const showExtensionConfirm = vi.fn(async () => true);
-		const showStatus = vi.fn();
+		const showRecord = vi.fn();
 		const showError = vi.fn();
 
 		const context = createImportContext({
 			runtimeHost: { importFromJsonl },
 			showError,
-			showStatus,
+			showRecord,
 			showExtensionConfirm,
 		});
 
@@ -84,32 +86,32 @@ describe("CommandExecutor /import parsing", () => {
 		);
 		expect(importFromJsonl).toHaveBeenCalledWith("path/to/session.jsonl");
 		expect(showError).not.toHaveBeenCalled();
-		expect(showStatus).toHaveBeenCalledWith("Session imported from: path/to/session.jsonl");
+		expect(showRecord).toHaveBeenCalledWith("Session imported from: path/to/session.jsonl");
 	});
 
 	it("passes unquoted apostrophe path to runtimeHost.importFromJsonl unchanged", async () => {
 		const importFromJsonl = vi.fn(async () => ({ cancelled: false }));
-		const showStatus = vi.fn();
+		const showRecord = vi.fn();
 		const showError = vi.fn();
 
 		const context = createImportContext({
 			runtimeHost: { importFromJsonl },
 			showError,
-			showStatus,
+			showRecord,
 		});
 
 		await makeExecutor(context).handleImport("/import john's/session.jsonl");
 
 		expect(importFromJsonl).toHaveBeenCalledWith("john's/session.jsonl");
 		expect(showError).not.toHaveBeenCalled();
-		expect(showStatus).toHaveBeenCalledWith("Session imported from: john's/session.jsonl");
+		expect(showRecord).toHaveBeenCalledWith("Session imported from: john's/session.jsonl");
 	});
 
 	it("shows a non-fatal error when /import path does not exist", async () => {
 		const importFromJsonl = vi.fn(async () => {
 			throw new SessionImportFileNotFoundError("/tmp/missing-session.jsonl");
 		});
-		const showStatus = vi.fn();
+		const showRecord = vi.fn();
 		const showError = vi.fn();
 		const handleFatalRuntimeError = vi.fn(async () => {
 			throw new Error("unexpected fatal error");
@@ -118,14 +120,14 @@ describe("CommandExecutor /import parsing", () => {
 		const context = createImportContext({
 			runtimeHost: { importFromJsonl },
 			showError,
-			showStatus,
+			showRecord,
 			handleFatalRuntimeError,
 		});
 
 		await makeExecutor(context).handleImport("/import /tmp/missing-session.jsonl");
 
 		expect(showError).toHaveBeenCalledWith("Failed to import session: File not found: /tmp/missing-session.jsonl");
-		expect(showStatus).not.toHaveBeenCalled();
+		expect(showRecord).not.toHaveBeenCalled();
 		expect(handleFatalRuntimeError).not.toHaveBeenCalled();
 	});
 });

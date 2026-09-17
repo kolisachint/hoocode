@@ -2,6 +2,50 @@
 
 ## [Unreleased]
 
+## [0.5.70] - 2026-09-17
+
+### Fixed
+
+- **The prompt goes back to the bottom of the screen when a pane or a
+  notification closes.** Open `/settings` on a session with some history, press
+  Esc, and the prompt stayed where the pane had pushed it with a band of blank
+  rows underneath — same after a notification faded. The fix is in the renderer
+  (see the tui changelog): the screen fill takes back exactly what the chrome
+  gave up, so the prompt is on the floor at every session length, whatever
+  opened and closed above it.
+
+### Changed
+
+- **What a command has to say now appears above the prompt, not in the
+  conversation.** `Mode set to "build"`, `Cloned to new session`, `Copied last
+  agent message`, the plugin catalogue, what `/learn` read — every one of them
+  used to write a dimmed row into the transcript, true for a moment and litter
+  for the rest of the session. They ride the notification band now, which sits
+  directly above the prompt, where your eye already is after typing a command,
+  and clears itself. Listings get the rows and the reading time they need (a
+  third of the screen, and longer the more there is to read). The exceptions are
+  the ones you cannot reconstruct once they fade — a share URL, an export or
+  import path, where credentials were saved — which still write a row you can
+  scroll back to.
+- **The band is filled, so it reads at a glance.** It takes the same background
+  a message block does — the warning fill for a warning, the block fill for
+  everything else — rather than being one more line of text against a transcript
+  already full of them.
+- **`/copy` copies the structure, not the picture of it.** What is on screen is
+  markdown already rendered: a table is box drawing, a code block is a bordered
+  panel, every line is wrapped to whatever width the window happened to be — so
+  selecting it with the mouse and pasting it into Word or Confluence pasted the
+  drawing, dotted rules and all. `/copy` now goes back to the markdown the model
+  wrote and puts it on the clipboard twice: as text, and as HTML for anything
+  that takes a rich paste. Word and Confluence paste real headings, lists and
+  tables; a terminal or a commit message still gets the markdown. On macOS and
+  Windows both flavours travel together; Linux clipboards can only advertise one
+  type, so it gets the markdown, and the status line says which you got.
+- **`/copy` takes the session, not just the last reply.** `/copy` is still the
+  last agent message, `/copy all` is the whole conversation and `/copy 3` the
+  last three exchanges — each as markdown and rich text, tool calls left out
+  (`/export` is still there for the whole record).
+
 ## [0.5.69] - 2026-09-17
 
 ### Changed

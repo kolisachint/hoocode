@@ -70,6 +70,30 @@ describe("the app fills the screen", () => {
 		}
 	}, 60000);
 
+	it("puts a command's receipt on the band too, and paints it", async () => {
+		// Every command used to leave a dimmed row in the conversation — `Chrome:
+		// compact`, `Mode set to "build"`, `Copied last agent message` — true for
+		// a moment and litter for the rest of the session. They report on the
+		// band now, where the eye already is after typing a command, and the fill
+		// is what makes one readable against a transcript full of text.
+		const harness = await createSurfaceHarness();
+		try {
+			await settle();
+			await harness.submit("/chrome");
+			await settle();
+			const rows = frameRows(harness);
+			const prompt = rows.findIndex((row) => row.includes("❯"));
+			expect(rows[prompt - 2]).toContain("Chrome:");
+			expect(rows.slice(0, prompt - 2).join("\n")).not.toContain("Chrome:");
+			// The band's row is filled, and the fill runs the whole width.
+			const painted = harness.rawFrame().split("\n")[prompt - 2];
+			expect(painted).toContain("\x1b[48;");
+			expect(painted.replace(/\x1b\[[0-9;?]*[a-zA-Z]/g, "")).toHaveLength(100);
+		} finally {
+			harness.cleanup();
+		}
+	}, 60000);
+
 	it("keeps the prompt on the floor once there is a conversation above it", async () => {
 		const harness = await createSurfaceHarness();
 		try {

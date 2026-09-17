@@ -308,6 +308,18 @@ rows to it, and flattens once more. Three things follow:
   empties the fill first — blank rows in the buffer would be rows of transcript
   the reader has to scroll past, and `transcriptLength` excludes the fill for
   the same reason.
+- **Once the session has scrolled, the fill holds the floor instead of making
+  it.** Past a screenful the fill is 0 and the *terminal's* scroll is what puts
+  the prompt on the bottom row — so anything that made the frame shorter took
+  the prompt up the screen with it. The renderer cleared the rows that came off
+  the end and left the prompt stranded mid-screen with blanks under it, and
+  nothing could scroll the transcript back down into them: those rows are the
+  terminal's scrollback and only the terminal can move them. That was a picker
+  closing, a notification fading, the ledger emptying. So `fitFlexSpacer` takes
+  what the shrinking content gave up (capped at a screenful), the buffer keeps
+  its length, and the blank band lands *above* the chrome, where it reads as
+  room and where the next output to arrive lands rather than scrolling the
+  screen.
 
 Guarded by `tui/test/screen-fill.test.ts` (the mechanism) and
 `coding-agent/test/screen-anchor.test.ts` (the real mode, real chrome, prompt on
@@ -331,11 +343,25 @@ So there are two destinations now, and one rule for choosing:
 The band is `components/notification-panel.ts`, directly above the prompt.
 Through it: every dial step (`showDialStep` — all six dials, now that saying
 where one landed no longer costs a permanent row), the settings glimpses
-(`InteractiveMode.notify` — model, session name, and the like), and every
-`showWarning`. Still in the transcript: errors, `showNotice` (the ones the user
-pays for if they miss them), `showStatus`, and anything carrying a value that
-cannot be reconstructed from the screen — a share URL, an export path, a login
-confirmation.
+(`InteractiveMode.notify` — model, session name, and the like), every
+`showWarning`, and `showStatus` — which is *everything a command has to say for
+itself*, extensions' `ctx.ui.notify(…, "info")` included, listings and all. The
+band takes a third of the screen for a body and earns reading time by the row
+(`BODY_ROW_MS`), so a listing arrives whole and stays long enough to be read.
+
+Still in the transcript: errors, `showNotice` (the ones the user pays for if
+they miss them), and `showRecord` — the handful of statuses carrying a value the
+screen cannot answer for a minute later: a share URL, an export or import path,
+where credentials were saved. `showRecord` is the old `showStatus` body,
+coalescing row and all; `showStatus` now goes to the band. The test for which
+one to call is not importance, it is whether the screen can still answer the
+question once the band clears.
+
+The band is **filled**: the block fill a message sheet takes (`warningBg` for a
+warning, `customMessageBg` for the rest), painted to the full width. A line of
+text above the prompt is one more line of text on a screen already full of them;
+a filled band has edges, and the eye finds it without anything being drawn
+around it.
 
 One more rule, inside the band: **a glimpse replaces, a warning queues.** A
 glimpse reports state, so only the newest one is true and holding a dial key
@@ -396,6 +422,13 @@ as a sheet (`components/user-message.ts`, `showBlock` in `interactive-mode.ts`).
   `diff.ts`). How much of it is shown: the view dial in `core/tool-output-view.ts`
   (radar / peek / full); radar groups calls into `components/tool-chain.ts`.
 - Colors / styling: `theme/` and `theme.fg(...)`.
+- Copying a conversation out of the session: `utils/markdown-to-html.ts` and
+  `utils/rich-clipboard.ts`, driven by `CommandExecutor.handleCopy` (`/copy`,
+  `/copy all`, `/copy <turns>`). What is on screen is markdown *rendered* —
+  box-drawing tables, bordered code panels, wrapping frozen at the window's
+  width — so a copy goes back to the source (`sessionToMarkdown`) and offers it
+  as text and as HTML at once. macOS and Windows carry both flavours; a Linux
+  clipboard advertises one type, so it gets the markdown.
 - The prompt editor and keybindings: `tui/src/editor-component.ts`,
   `tui/src/keybindings.ts`. The app's own bindings and the three-ring layout they
   follow (`ctrl` = view, `alt` = cockpit, pickers never take a `ctrl+<letter>`):
