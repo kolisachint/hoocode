@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The magenta session chip is magenta with a white name on it.** Slot 4 went
+  through the same lift as every other chip, which made dark ink legible by
+  bleaching the fill into pink — on light themes a deep rose the theme wrote
+  came out as a pastel with dark text. Magenta is deepened, never lifted, until
+  white clears the chip bar, and a token that already carries white is used
+  exactly as the theme wrote it; the other five slots are untouched.
+
 ## [0.5.74] - 2026-09-17
 
 ### Fixed

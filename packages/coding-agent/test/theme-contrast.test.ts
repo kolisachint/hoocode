@@ -7,6 +7,9 @@ import {
 	getThemeByName,
 	getThemeExportColors,
 	loadThemeFromPath,
+	MAGENTA_HUE_MAX,
+	MAGENTA_HUE_MIN,
+	MIN_MAGENTA_SATURATION,
 	resolveThemeName,
 	successorThemeFor,
 	type ThemeColor,
@@ -1296,7 +1299,21 @@ describe("session colour slots", () => {
 			const ink = rgb(inkMatch[1]);
 			// Lightness, not contrast against the page: a chip is a block of colour,
 			// and what makes a hue nameable is how much of it there is.
-			if (isLight && lightness(fill) < 0.5) {
+			//
+			// Magenta is the exception: a deep rose still reads as magenta, where a
+			// dark yellow reads as brown and a dark cyan as navy — so a magenta fill
+			// that carries white ink past the chip bar is left at the lightness the
+			// theme wrote instead of being lifted into pink (see MAGENTA_HUE_MIN in
+			// theme.ts). The exemption is gated on the hue family as well as the
+			// ink, so a future brown smudge still fails here.
+			const magentaBelowFloor =
+				isLight &&
+				hue(fill) >= MAGENTA_HUE_MIN &&
+				hue(fill) <= MAGENTA_HUE_MAX &&
+				saturation(fill) > MIN_MAGENTA_SATURATION &&
+				ink === "#ffffff" &&
+				contrast(fill, ink) >= 5.5;
+			if (isLight && lightness(fill) < 0.5 && !magentaBelowFloor) {
 				failures.push(`slot ${slot} fill ${fill}: lightness ${lightness(fill).toFixed(2)}`);
 			}
 			// Whatever it ended up filled with, the name written on it has to read.
@@ -1375,6 +1392,22 @@ describe("session colour slots", () => {
 					failures.push(`${mode} slot ${index + 1}: ink ${ink} on ${fill} is ${ratio.toFixed(2)}:1`);
 				}
 			});
+		}
+		expect(failures).toEqual([]);
+	});
+
+	it.each(getAvailableThemes())("%s fills its magenta chip with white ink", (themeName) => {
+		// Slot 4 is magenta in every shipped theme, and magenta with a dark name
+		// on it reads as pink with small print — the lift that makes dark ink
+		// legible bleaches the hue out of it. The fill is deepened instead until
+		// white clears the chip bar, on either polarity (see MAGENTA_HUE_MIN in
+		// theme.ts), so `/color magenta` reads as magenta with a white name.
+		const failures: string[] = [];
+		for (const mode of ["truecolor", "256color"] as const) {
+			const { fill, ink } = chipsOf(themeName, mode)[3];
+			if (ink !== "#ffffff") {
+				failures.push(`${mode}: slot 4 ink is ${ink} on ${fill}, want white`);
+			}
 		}
 		expect(failures).toEqual([]);
 	});
