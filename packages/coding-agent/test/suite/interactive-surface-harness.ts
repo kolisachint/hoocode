@@ -88,15 +88,17 @@ export interface SurfaceHarness {
  *
  * - the session chip, a random name per session, drawn into the editor's top
  *   border;
- * - the transient status line each command leaves behind ("New session
- *   started", "Reloaded ...") — that line is the command's receipt, not its
- *   surface.
+ * - the transient status each command leaves behind ("New session started",
+ *   "Reloaded ...") — a command's receipt is not its surface. It rides the
+ *   notification band above the prompt now rather than the transcript, which
+ *   is why the glyph that leads a band row is allowed for here: same line,
+ *   same reason to ignore it, one column further in.
  *
  * The harness's own throwaway directory is masked too, so two harnesses can be
  * compared against each other.
  */
 function maskVolatile(frame: string, root: string): string {
-	const transient = /^\s*(✓ New session started|Reloaded keybindings|Resumed session|Session compacted)/;
+	const transient = /^\s*[◦●]?\s*(✓ New session started|Reloaded keybindings|Resumed session|Session compacted)/;
 	return frame
 		.split("\n")
 		.map((line) => (line.startsWith("┌") ? "┌<editor>┐" : line))
@@ -221,7 +223,13 @@ export async function createSurfaceHarness(options: SurfaceHarnessOptions = {}):
 				.split("\n")
 				.filter((line) => !line.replace(ANSI, "").startsWith("┌"))
 				.join("\n");
-			return [...new Set(withoutChip.match(ANSI) ?? [])].filter((code) => !code.includes("[48;")).sort();
+			// Foreground only, which means *both* halves of a fill have to go: the
+			// opener and the `[49m` that closes it. A band that paints itself —
+			// the notification strip does — otherwise shows up here as a palette
+			// difference, which says nothing about whether the theme reached a
+			// surface.
+			const background = (code: string): boolean => code.includes("[48;") || code === `${ESC}[49m`;
+			return [...new Set(withoutChip.match(ANSI) ?? [])].filter((code) => !background(code)).sort();
 		},
 		cleanup: () => {
 			mode.stop();

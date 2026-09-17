@@ -13,16 +13,21 @@
 import { stripVTControlCharacters } from "node:util";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NOTIFICATION_TTL_MS, NotificationPanel } from "../src/modes/interactive/components/notification-panel.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 
 const WIDTH = 60;
 
-function setup() {
+function setup(maxBodyRows?: () => number) {
 	let renders = 0;
 	const panel = new NotificationPanel(() => {
 		renders += 1;
-	});
+	}, maxBodyRows);
 	return { panel, renderCount: () => renders };
+}
+
+/** Visible width of a row, styling excluded. */
+function width(line: string): number {
+	return stripVTControlCharacters(line).length;
 }
 
 /** The band's rows with the styling taken off, so a test reads as text. */
@@ -145,6 +150,60 @@ describe("NotificationPanel", () => {
 		expect(renderCount()).toBe(1);
 		vi.advanceTimersByTime(NOTIFICATION_TTL_MS.info);
 		expect(renderCount()).toBe(2);
+	});
+
+	it("paints every row it draws, edge to edge", () => {
+		// The band carries what a command had to say now, against a transcript
+		// already full of text. The fill is what makes it findable at a glance —
+		// and a fill that stops short of the margin is a band with a bite out of
+		// it, so the painted rows are exactly as wide as the screen.
+		const { panel } = setup();
+		panel.notify("info", "Mode: build", ["described in .hoo/modes/build.md"]);
+		const [separator, headline, body] = panel.render(WIDTH);
+		expect(separator).toBe("");
+		expect(headline).toContain(theme.getBgAnsi("customMessageBg"));
+		expect(body).toContain(theme.getBgAnsi("customMessageBg"));
+		expect(width(headline)).toBe(WIDTH);
+		expect(width(body)).toBe(WIDTH);
+	});
+
+	it("paints a warning in the warning fill", () => {
+		const { panel } = setup();
+		panel.notify("warning", "No previous directory to return to");
+		expect(panel.render(WIDTH)[1]).toContain(theme.getBgAnsi("warningBg"));
+	});
+
+	it("takes the rows the screen can spare for a listing", () => {
+		// Commands report on the band now, listings included, so the bound is
+		// the owner's to set from the terminal's height rather than a constant
+		// that makes every listing three rows long on every screen.
+		const { panel } = setup(() => 6);
+		panel.notify("info", "Marketplaces", ["one", "two", "three", "four", "five", "six", "seven"]);
+		expect(rows(panel)).toHaveLength(8); // blank + headline + 6 body rows
+	});
+
+	it("never takes less than one row of body, whatever it is told", () => {
+		const { panel } = setup(() => 0);
+		panel.notify("info", "Marketplaces", ["one", "two"]);
+		expect(rows(panel)).toHaveLength(3);
+	});
+
+	it("gives a listing the time to be read", () => {
+		// A five-row listing timed like a one-line glimpse is a listing nobody
+		// finished. The body earns reading time; the headline alone does not.
+		const { panel } = setup(() => 6);
+		panel.notify("info", "Marketplaces", ["one", "two", "three"]);
+		vi.advanceTimersByTime(NOTIFICATION_TTL_MS.info);
+		expect(panel.showing?.title).toBe("Marketplaces");
+		vi.advanceTimersByTime(NOTIFICATION_TTL_MS.info * 3);
+		expect(panel.showing).toBeUndefined();
+	});
+
+	it("lets a caller set the time itself", () => {
+		const { panel } = setup();
+		panel.notify("info", "quick", ["a", "b"], undefined, 500);
+		vi.advanceTimersByTime(500);
+		expect(panel.showing).toBeUndefined();
 	});
 
 	it("takes the whole queue down on dismiss", () => {

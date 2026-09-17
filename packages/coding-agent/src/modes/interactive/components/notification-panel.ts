@@ -32,17 +32,26 @@
  * are shown in turn. Collapsing them would mean the last of three startup
  * warnings silently erasing the two before it.
  *
- * ## What does not belong here
+ * ## What comes through here
  *
- * Anything you might want to read later. A share URL, an export path, a login
- * confirmation and every error still go to the transcript, which is the thing
- * that scrolls back. The rule is: if missing it costs you nothing, it belongs
- * here; if missing it costs you the information, it does not.
+ * Every dial step, every warning, and everything a command has to say for
+ * itself — `Mode set to "build"`, `Cloned to new session`, the plugin
+ * catalogue, what `/learn` read. All of those used to write a dimmed row into
+ * the conversation, and a session where someone ran five commands carried five
+ * rows of dead receipts between the messages the transcript exists to keep.
+ *
+ * ## What does not
+ *
+ * Anything you might want to read later. A share URL, an export path, where
+ * credentials were saved and every error still go to the transcript
+ * (`InteractiveMode.showRecord`), which is the thing that scrolls back. The
+ * rule is: if missing it costs you nothing, it belongs here; if missing it
+ * costs you the information, it does not.
  */
 
 import type { Component } from "@kolisachint/hoocode-tui";
-import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
-import { theme } from "../theme/theme.js";
+import { applyBackgroundToLine, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
+import { type BlockFill, theme } from "../theme/theme.js";
 
 /**
  * How long each kind stays up.
@@ -56,13 +65,29 @@ export const NOTIFICATION_TTL_MS = { info: 3000, warning: 8000 } as const;
 export type NotificationKind = keyof typeof NOTIFICATION_TTL_MS;
 
 /**
- * Rows of body the band will show under the headline.
+ * Reading time a row of body earns on top of the headline's.
  *
- * Bounded because this is chrome: a six-line warning that grows the band pushes
- * the conversation up off the screen to say something it is about to erase
+ * The band carries listings now — the plugin catalogue, what `/learn` read,
+ * where a canvas went — and a five-row listing timed like a one-line glimpse is
+ * a listing nobody finished. The ceiling is there because the band is still
+ * chrome: past half a minute it is not a notification, it is a pane that forgot
+ * to close.
+ */
+const BODY_ROW_MS = 1200;
+const MAX_TTL_MS = 30_000;
+
+/** The fill behind each kind. Both are block fills, so the band reads as paper. */
+const FILL: Record<NotificationKind, BlockFill> = { info: "customMessageBg", warning: "warningBg" };
+
+/**
+ * Rows of body the band will show under the headline, when nobody says.
+ *
+ * Bounded because this is chrome: a forty-line listing that grows the band
+ * pushes the conversation off the screen to say something it is about to erase
  * anyway. What does not fit is dropped rather than scrolled — the band has no
  * way to be scrolled, and a message whose remainder cannot be reached reads as
- * a bug.
+ * a bug. An owner that knows the screen's height passes `maxBodyRows` and gets
+ * a share of it instead of this floor.
  */
 const MAX_BODY_ROWS = 3;
 
@@ -101,8 +126,14 @@ export class NotificationPanel implements Component {
 	 * @param requestRender - the band appears and disappears on its own clock,
 	 *   so it is the one piece of chrome that has to ask for frames rather than
 	 *   being drawn into one somebody else asked for.
+	 * @param maxBodyRows - how many rows of body the screen can spare right now.
+	 *   Asked per frame rather than held: the terminal is resized under a
+	 *   notification as readily as under anything else.
 	 */
-	constructor(private readonly requestRender: () => void) {}
+	constructor(
+		private readonly requestRender: () => void,
+		private readonly maxBodyRows: () => number = () => MAX_BODY_ROWS,
+	) {}
 
 	/** What is on the band right now, for tests and for the chrome checks. */
 	get showing(): Notification | undefined {
@@ -153,23 +184,47 @@ export class NotificationPanel implements Component {
 		this.cache = undefined;
 	}
 
+	/**
+	 * The band, painted.
+	 *
+	 * It carries everything a command has to say now — a mode landing, a plugin
+	 * installed, a listing — so it has to read at a glance against a transcript
+	 * that is already full of text. A fill is what does that: the same block
+	 * fill a message sheet takes, so the band is recognisably the app's own
+	 * paper rather than one more line of output, and the eye finds its edges
+	 * without anything having to be drawn around it.
+	 *
+	 * Every painted row runs the full width — a fill that stops short of the
+	 * margin is a band with a bite out of it — and the one column of lead-in is
+	 * what keeps the glyph off the screen's edge.
+	 */
 	render(width: number): string[] {
 		const current = this.queue[0];
 		if (!current || width < 4) return NotificationPanel.EMPTY;
 		const cached = this.cache;
 		if (cached && cached.width === width) return cached.lines;
 
+		const fill = FILL[current.kind];
+		const paint = (line: string): string => applyBackgroundToLine(line, width, (text) => theme.bg(fill, text));
 		const glyph = theme.fg(current.kind === "warning" ? "warning" : "muted", GLYPH[current.kind]);
 		// The leading blank is this block's separator from whatever is above it.
 		// The band never pads its own bottom edge: the next row is the prompt's
 		// own border, and a blank line next to a rule is a blank line wasted (see
 		// "Vertical rhythm" in docs/ui-map.md).
-		const lines = ["", `${glyph} ${this.headline(current, width - 2)}`];
-		for (const line of current.body.slice(0, MAX_BODY_ROWS)) {
-			lines.push(`  ${theme.fg("dim", truncateToWidth(line, Math.max(1, width - 2)))}`);
+		// One column of page either side of the text: the fill runs edge to edge,
+		// what is written on it does not, and a note flush against the screen's
+		// last cell reads as text that ran out of room.
+		const lines = ["", paint(` ${glyph} ${this.headline(current, width - 4)}`)];
+		for (const line of this.bodyRows(current)) {
+			lines.push(paint(`   ${theme.fg("muted", truncateToWidth(line, Math.max(1, width - 4)))}`));
 		}
 		this.cache = { width, lines };
 		return lines;
+	}
+
+	/** The body rows that fit, at whatever the screen can spare this frame. */
+	private bodyRows(current: Notification): string[] {
+		return current.body.slice(0, Math.max(1, Math.floor(this.maxBodyRows())));
 	}
 
 	/**
@@ -191,6 +246,18 @@ export class NotificationPanel implements Component {
 		return theme.fg(color, truncateToWidth(current.title, Math.max(1, width)));
 	}
 
+	/**
+	 * How long this one stays up: the headline's time plus the body's.
+	 *
+	 * An explicit `ttlMs` still wins — a caller that knows its message is read
+	 * at a glance, or not at all, is a better judge than this arithmetic.
+	 */
+	private ttl(current: Notification): number {
+		if (current.ttlMs !== undefined) return current.ttlMs;
+		const base = NOTIFICATION_TTL_MS[current.kind];
+		return Math.min(MAX_TTL_MS, base + this.bodyRows(current).length * BODY_ROW_MS);
+	}
+
 	private arm(current: Notification): void {
 		this.clearTimer();
 		const timer = setTimeout(() => {
@@ -200,7 +267,7 @@ export class NotificationPanel implements Component {
 			const next = this.queue[0];
 			if (next) this.arm(next);
 			this.requestRender();
-		}, current.ttlMs ?? NOTIFICATION_TTL_MS[current.kind]);
+		}, this.ttl(current));
 		// A band waiting to fade must never be the reason the process is still up.
 		timer.unref?.();
 		this.timer = timer;

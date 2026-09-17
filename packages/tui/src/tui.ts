@@ -618,11 +618,43 @@ export class TUI extends Container {
 	 * again — the measurement can only be made from a finished frame, so the
 	 * frame that answers it is always the second one. Both passes are cheap
 	 * after the first: every other child returns its memoized array untouched.
+	 *
+	 * Two cases, and the second one is the one with a bug behind it.
+	 *
+	 * **The frame fits on the screen.** Fill it out to the screen's height and
+	 * the frame starts on the first row, which is the whole point of the fill.
+	 *
+	 * **The frame is taller than the screen.** Then the fill is not what puts
+	 * the prompt on the floor — the terminal's own scroll is, and the buffer's
+	 * last row *is* the screen's last row. So a buffer that gets *shorter*
+	 * takes the prompt up the screen with it: the renderer clears the rows that
+	 * came off the end and there is nothing it can do to scroll the transcript
+	 * back down into them, because those rows are in the terminal's scrollback
+	 * and only the terminal can move them. That is a picker closing, a
+	 * notification fading, a task ledger emptying — the prompt stranded
+	 * mid-screen with a band of blank rows under it, and it stays stranded
+	 * until enough output arrives to push it back down.
+	 *
+	 * So the fill takes what the shrinking content gave up, which keeps the
+	 * buffer the length it already was and the last row where it already is.
+	 * The blank band ends up *above* the chrome instead of below it, where it
+	 * reads as room rather than as a layout that came apart, and the next
+	 * output to arrive lands in it rather than scrolling the screen. Capped at
+	 * a screenful: a fill longer than the screen is rows nobody can see, and it
+	 * is given up altogether on the frames that repaint the whole screen anyway.
 	 */
-	private fitFlexSpacer(lines: string[], height: number): boolean {
+	private fitFlexSpacer(lines: string[], height: number, repaint = false): boolean {
 		const spacer = this.flexSpacer;
 		if (!spacer) return false;
-		return spacer.setHeight(height - (lines.length - spacer.currentHeight));
+		const content = lines.length - spacer.currentHeight;
+		if (content < height) return spacer.setHeight(height - content);
+		// A frame that is about to be repainted from the top of a cleared screen
+		// has no floor to hold: the resize already threw the old screen away, and
+		// holding its length would only bank a band of blank rows into the middle
+		// of the new one.
+		if (repaint) return spacer.setHeight(0);
+		const held = Math.min(this.previousLines.length - content, height);
+		return spacer.setHeight(Math.max(0, held));
 	}
 
 	/**
@@ -1934,7 +1966,7 @@ export class TUI extends Container {
 		// invalidates the first's patch — it describes the buffer from before the
 		// splice — so fall back to the full scan, which is always correct and only
 		// runs on frames where the content height actually changed.
-		if (this.fitFlexSpacer(newLines, height)) {
+		if (this.fitFlexSpacer(newLines, height, widthChanged || heightChanged)) {
 			newLines = this.render(width);
 			this.lastPatch = "full";
 		}

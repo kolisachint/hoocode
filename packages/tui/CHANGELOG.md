@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The prompt stays on the floor when something above it goes away.** On a
+  session long enough to have scrolled, the buffer is taller than the screen and
+  the terminal's own scroll is what puts the prompt on the bottom row — so
+  anything that made the frame *shorter* took the prompt up the screen with it:
+  a picker closing, a notification fading, the task ledger emptying. The
+  renderer cleared the rows that came off the end and left the prompt stranded
+  mid-screen with a band of blanks under it, and nothing could scroll the
+  transcript back down into them, because those rows belong to the terminal's
+  scrollback. The fill now takes what the chrome gave up, so the buffer keeps
+  its length and its last row stays the screen's last row; the blank band lands
+  above the prompt, where it reads as room, and the next output to arrive lands
+  in it rather than scrolling the screen.
+
 ## [0.5.69] - 2026-09-17
 
 ## [0.5.68] - 2026-09-16

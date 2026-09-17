@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import type { AgentMessage } from "@kolisachint/hoocode-agent-core";
 import { calculateContextTokens, estimateContextTokens } from "@kolisachint/hoocode-agent-core";
-import type { AssistantMessage, Model } from "@kolisachint/hoocode-ai";
+import type { AssistantMessage, Model, UserMessage } from "@kolisachint/hoocode-ai";
 import type { ContextUsage } from "./extensions/index.js";
 import type { SessionEntry, SessionManager } from "./session-manager.js";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.js";
@@ -229,6 +229,68 @@ export function getLastAssistantText(messages: AgentMessage[]): string | undefin
 	}
 
 	return text.trim() || undefined;
+}
+
+/** How much of a session a copy takes. */
+export interface TranscriptSelection {
+	/**
+	 * Exchanges to take, counting back from the newest. Undefined takes the lot.
+	 * An "exchange" starts at a user message and runs to the next one.
+	 */
+	turns?: number;
+	/** Label for the user's messages; the agent's is the app's name. */
+	userLabel?: string;
+	/** Label for the agent's messages. */
+	agentLabel?: string;
+}
+
+/**
+ * The conversation as markdown, for the clipboard and for a file.
+ *
+ * ## Why not what is on screen
+ *
+ * What the terminal shows is markdown already *rendered*: a table is box
+ * drawing, a code block is a bordered panel, every line is hard-wrapped to the
+ * width the window happened to be. Selecting that with the mouse and pasting it
+ * somewhere gives you a picture of a conversation — dotted rules and broken
+ * table edges — because a terminal's clipboard carries glyphs and nothing else.
+ * The structure the user wanted is in the source the model wrote, which is what
+ * this returns.
+ *
+ * ## What is in it
+ *
+ * The conversation: what was asked and what was answered, each under a heading
+ * so a reader can find the turn they came for. Tool calls are left out. They
+ * are the agent's working, they are the bulk of a long session by a wide
+ * margin, and nobody has ever pasted a file-read into a document on purpose —
+ * `/export` is there for the whole record, including the parts this drops.
+ */
+export function sessionToMarkdown(messages: AgentMessage[], selection: TranscriptSelection = {}): string {
+	const userLabel = selection.userLabel ?? "You";
+	const agentLabel = selection.agentLabel ?? "Agent";
+
+	const blocks: { label: string; text: string; startsTurn: boolean }[] = [];
+	for (const message of messages) {
+		if (message.role === "user") {
+			const text = extractUserMessageText((message as UserMessage).content).trim();
+			if (text) blocks.push({ label: userLabel, text, startsTurn: true });
+		} else if (message.role === "assistant") {
+			const text = (message as AssistantMessage).content
+				.filter((part): part is { type: "text"; text: string } => part.type === "text")
+				.map((part) => part.text)
+				.join("")
+				.trim();
+			if (text) blocks.push({ label: agentLabel, text, startsTurn: false });
+		}
+	}
+
+	if (selection.turns !== undefined && selection.turns > 0) {
+		const starts = blocks.map((block, index) => (block.startsTurn ? index : -1)).filter((index) => index >= 0);
+		const from = starts[Math.max(0, starts.length - selection.turns)];
+		if (from !== undefined) blocks.splice(0, from);
+	}
+
+	return blocks.map((block) => `## ${block.label}\n\n${block.text}`).join("\n\n");
 }
 
 /**

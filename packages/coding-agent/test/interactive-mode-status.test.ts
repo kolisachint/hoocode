@@ -36,9 +36,13 @@ type ExtensionFixture = {
 	sourceInfo?: SourceInfo;
 };
 
-describe("InteractiveMode.showStatus", () => {
+describe("InteractiveMode.showRecord", () => {
+	// The status rows that stay in the transcript: the ones carrying something
+	// the screen cannot answer for later — a share URL, a path written to.
+	// Everything else a command has to say goes to the band above the prompt
+	// (`showStatus`), which clears itself and keeps no row at all.
 	beforeAll(() => {
-		// showStatus uses the global theme instance
+		// showRecord uses the global theme instance
 		initTheme("dark");
 	});
 
@@ -50,11 +54,11 @@ describe("InteractiveMode.showStatus", () => {
 			lastStatusText: undefined,
 		};
 
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
+		(InteractiveMode as any).prototype.showRecord.call(fakeThis, "STATUS_ONE");
 		expect(fakeThis.chatContainer.children).toHaveLength(2);
 		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_ONE");
 
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_TWO");
+		(InteractiveMode as any).prototype.showRecord.call(fakeThis, "STATUS_TWO");
 		// second status updates the previous line instead of appending
 		expect(fakeThis.chatContainer.children).toHaveLength(2);
 		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");
@@ -69,14 +73,14 @@ describe("InteractiveMode.showStatus", () => {
 			lastStatusText: undefined,
 		};
 
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_ONE");
+		(InteractiveMode as any).prototype.showRecord.call(fakeThis, "STATUS_ONE");
 		expect(fakeThis.chatContainer.children).toHaveLength(2);
 
 		// Something else gets added to the chat in between status updates
 		fakeThis.chatContainer.addChild({ render: () => ["OTHER"], invalidate: () => {} });
 		expect(fakeThis.chatContainer.children).toHaveLength(3);
 
-		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_TWO");
+		(InteractiveMode as any).prototype.showRecord.call(fakeThis, "STATUS_TWO");
 		// adds spacer + text
 		expect(fakeThis.chatContainer.children).toHaveLength(5);
 		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");

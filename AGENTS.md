@@ -12,6 +12,30 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **The prompt on the floor, the band that carries every receipt, and a copy
+  that keeps its structure**: three fixes to the same complaint — the app coming
+  apart around the prompt. (1) Once the session is taller than the screen the
+  fill is 0 and the *terminal's* scroll holds the prompt down, so anything that
+  made the frame shorter — a picker closing, a notification fading — stranded
+  the prompt mid-screen with blanks under it. `fitFlexSpacer` now takes what the
+  chrome gave up (capped at a screenful) so the buffer keeps its length and the
+  blank band lands above the prompt, where the next output lands in it. (2)
+  `showStatus` goes to the notification band, not the transcript: every command
+  receipt, extensions' `ctx.ui.notify(…, "info")` included, listings and all,
+  with a third of the screen for a body and reading time by the row. The
+  exceptions are `showRecord` — a share URL, an export path, where credentials
+  were saved — which still write a transcript row. The band is filled now
+  (`warningBg` / `customMessageBg`, full width), so it reads at a glance. (3)
+  `/copy`, `/copy all` and `/copy <turns>` copy the *markdown the model wrote*
+  plus an HTML flavour (`utils/markdown-to-html.ts`, `utils/rich-clipboard.ts`),
+  so a paste into Word or Confluence keeps its headings, lists and tables
+  instead of arriving as box-drawing and dotted rules; Linux clipboards
+  advertise one type, so they get the markdown and the status line says so.
+  Rules: `docs/ui-map.md` -> "Filling the screen" and "What ghosts and what
+  stays"; guarded by `tui/test/screen-fill.test.ts`,
+  `coding-agent/test/screen-anchor.test.ts`, `notification-panel.test.ts` and
+  `copy-structure.test.ts`.
+
 - **The app fills the screen, and what just changed ghosts**: the renderer
   appends, so a frame used to be exactly as tall as its content — banner a few
   rows down, prompt walking down the terminal as the session grew. `FlexSpacer`

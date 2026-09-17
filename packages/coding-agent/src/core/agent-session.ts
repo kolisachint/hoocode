@@ -45,6 +45,8 @@ import {
 	exportSessionBranchToJsonl,
 	getLastAssistantText,
 	type SessionStats,
+	sessionToMarkdown,
+	type TranscriptSelection,
 } from "./agent-session-stats.js";
 import {
 	type NavigateTreeOptions,
@@ -213,7 +215,7 @@ export interface ModelCycleResult {
 	isScoped: boolean;
 }
 
-export type { SessionStats } from "./agent-session-stats.js";
+export type { SessionStats, TranscriptSelection } from "./agent-session-stats.js";
 
 interface ToolDefinitionEntry {
 	definition: ToolDefinition;
@@ -2475,6 +2477,15 @@ export class AgentSession {
 	 */
 	getLastAssistantText(): string | undefined {
 		return getLastAssistantText(this.messages);
+	}
+
+	/**
+	 * The conversation as markdown — what was asked and what was answered.
+	 * Used by `/copy`, which offers it as text and as HTML so a paste into a
+	 * document keeps its headings, lists and tables. See `sessionToMarkdown`.
+	 */
+	getTranscriptMarkdown(selection?: TranscriptSelection): string {
+		return sessionToMarkdown(this.messages, selection);
 	}
 
 	// =========================================================================

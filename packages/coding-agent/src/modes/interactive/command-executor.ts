@@ -11,7 +11,7 @@ import type { Model } from "@kolisachint/hoocode-ai";
 import type { EditorComponent, MarkdownTheme, TUI } from "@kolisachint/hoocode-tui";
 import { type Container, Markdown, Spacer, Text, visibleWidth } from "@kolisachint/hoocode-tui";
 import { spawn, spawnSync } from "child_process";
-import { getDebugLogPath, getShareViewerUrl } from "../../config.js";
+import { APP_TITLE, getDebugLogPath, getShareViewerUrl } from "../../config.js";
 import { loadAgentRegistry } from "../../core/agent-registry.js";
 import type { AgentSession } from "../../core/agent-session.js";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
@@ -28,7 +28,8 @@ import type { SessionManager } from "../../core/session-manager.js";
 import { getSubagentPool } from "../../core/subagent-pool-instance.js";
 import type { SubagentResultFile } from "../../core/subagent-result.js";
 import { getChangelogPath, parseChangelog } from "../../utils/changelog.js";
-import { copyToClipboard } from "../../utils/clipboard.js";
+import { markdownToHtml } from "../../utils/markdown-to-html.js";
+import { copyRichToClipboard } from "../../utils/rich-clipboard.js";
 import { BorderedLoader } from "./components/bordered-loader.js";
 import { DynamicBorder } from "./components/dynamic-border.js";
 import type { FooterComponent } from "./components/footer.js";
@@ -50,7 +51,13 @@ export interface CommandContext {
 	keybindings: KeybindingsManager;
 
 	// UI callbacks
+	/** What a command has to say, on the band above the prompt; gone in seconds. */
 	showStatus: (message: string) => void;
+	/**
+	 * A status the transcript keeps, for the handful that carry something the
+	 * screen cannot answer for later: a share URL, a path written to.
+	 */
+	showRecord: (message: string) => void;
 	/** A glimpse on the band above the prompt; gone in a few seconds. */
 	notify: (message: string, note?: string) => void;
 	showError: (message: string) => void;
@@ -192,10 +199,10 @@ export class CommandExecutor {
 		try {
 			if (outputPath?.endsWith(".jsonl")) {
 				const filePath = this.ctx.session.exportToJsonl(outputPath);
-				this.ctx.showStatus(`Session exported to: ${filePath}`);
+				this.ctx.showRecord(`Session exported to: ${filePath}`);
 			} else {
 				const filePath = await this.ctx.session.exportToHtml(outputPath);
-				this.ctx.showStatus(`Session exported to: ${filePath}`);
+				this.ctx.showRecord(`Session exported to: ${filePath}`);
 			}
 		} catch (error: unknown) {
 			this.ctx.showError(`Failed to export session: ${error instanceof Error ? error.message : "Unknown error"}`);
@@ -256,7 +263,7 @@ export class CommandExecutor {
 				return;
 			}
 			this.ctx.renderCurrentSessionState();
-			this.ctx.showStatus(`Session imported from: ${inputPath}`);
+			this.ctx.showRecord(`Session imported from: ${inputPath}`);
 		} catch (error: unknown) {
 			if (error instanceof MissingSessionCwdError) {
 				const selectedCwd = await this.ctx.promptForMissingSessionCwd(error);
@@ -270,7 +277,7 @@ export class CommandExecutor {
 					return;
 				}
 				this.ctx.renderCurrentSessionState();
-				this.ctx.showStatus(`Session imported from: ${inputPath}`);
+				this.ctx.showRecord(`Session imported from: ${inputPath}`);
 				return;
 			}
 			if (error instanceof SessionImportFileNotFoundError) {
@@ -366,7 +373,7 @@ export class CommandExecutor {
 
 			// Create the preview URL
 			const previewUrl = getShareViewerUrl(gistId);
-			this.ctx.showStatus(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
+			this.ctx.showRecord(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
 		} catch (error: unknown) {
 			if (!loader.signal.aborted) {
 				restoreEditor();
@@ -375,16 +382,57 @@ export class CommandExecutor {
 		}
 	}
 
-	async handleCopy(): Promise<void> {
-		const text = this.ctx.session.getLastAssistantText();
-		if (!text) {
-			this.ctx.showError("No agent messages to copy yet.");
+	/**
+	 * `/copy`, `/copy all`, `/copy <n>` — the conversation, not a picture of it.
+	 *
+	 * What is on screen is markdown already rendered: a table is box drawing, a
+	 * code block is a bordered panel, every line is wrapped to whatever width
+	 * the window happened to be. Dragging over that and pasting it into a
+	 * document pastes the drawing — dotted rules, broken table edges, and
+	 * wrapping frozen at eighty columns — because a terminal's clipboard carries
+	 * glyphs and nothing else.
+	 *
+	 * So the copy goes back to the source and puts it on the clipboard twice:
+	 * the markdown as text, and HTML for anything that takes a rich paste. Word
+	 * and Confluence then paste real headings, lists and tables; a terminal or a
+	 * commit message still gets the markdown. Which flavours landed depends on
+	 * the platform (see `copyRichToClipboard`), so the status line says.
+	 */
+	async handleCopy(text = ""): Promise<void> {
+		const argument = text
+			.replace(/^\/copy\s*/, "")
+			.trim()
+			.toLowerCase();
+		const turns = /^\d+$/.test(argument) ? Number.parseInt(argument, 10) : undefined;
+		const whole = argument === "all" || argument === "session";
+		if (argument && !whole && turns === undefined) {
+			this.ctx.showWarning("Usage: /copy [all|<number of turns>]");
 			return;
 		}
 
+		const markdown =
+			whole || turns !== undefined
+				? this.ctx.session.getTranscriptMarkdown({ turns, agentLabel: APP_TITLE })
+				: this.ctx.session.getLastAssistantText();
+		if (!markdown) {
+			this.ctx.showError(
+				whole || turns !== undefined ? "Nothing in this session to copy yet." : "No agent messages to copy yet.",
+			);
+			return;
+		}
+
+		const subject = whole
+			? "session transcript"
+			: turns !== undefined
+				? `last ${turns} turn${turns > 1 ? "s" : ""}`
+				: "last agent message";
 		try {
-			await copyToClipboard(text);
-			this.ctx.showStatus("Copied last agent message to clipboard");
+			const flavour = await copyRichToClipboard({ text: markdown, html: markdownToHtml(markdown) });
+			// Naming the flavour is not chatter: "copied" meaning markdown on one
+			// machine and a formatted paste on another is how this gets reported
+			// as broken. The user finds out here rather than in the document.
+			const as = flavour === "rich" ? "markdown + formatted text" : "markdown";
+			this.ctx.showStatus(`Copied ${subject} as ${as}`);
 		} catch (error) {
 			this.ctx.showError(error instanceof Error ? error.message : String(error));
 		}
@@ -617,7 +665,7 @@ so you read those instead of remembering them. **Screen** is one key.
 | \`${externalEditor}\` | Edit the message in \`$VISUAL\` / \`$EDITOR\` |
 | \`${voice}\` | Speak instead of type |
 | \`${pasteImage}\` | Paste image from clipboard |
-| \`${copyMessage}\` | Copy the agent's last message (\`/copy\`) |
+| \`${copyMessage}\` | Copy the agent's last message (\`/copy\`; \`/copy all\` for the session) |
 | \`${followUp}\` | Queue a follow-up while the agent works |
 | \`${dequeue}\` | Bring every queued message back to the editor |
 | \`/\` \`!\` \`!!\` | Slash commands · run bash · run bash off the record |
