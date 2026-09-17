@@ -92,9 +92,9 @@ describe("session surface stays in sync across /new and /reload", () => {
 
 	test("a theme edit repaints the banner through either path", async () => {
 		const running = await harness();
-		// Found by its glyph rather than taken off the top of the frame: the screen
-		// fill is the first child, so a session shorter than the terminal starts
-		// with blank rows and the banner sits wherever the content begins.
+		// Found by its glyph rather than taken off the top of the frame: the
+		// screen fill sits below the banner, so on a short session the banner
+		// is on the first row and the blanks sit between it and the content.
 		const banner = () => {
 			const rows = running.rawFrame().split("\n");
 			const start = rows.findIndex((row) => row.includes("▟▀▀▀▀▀▙"));

@@ -344,9 +344,9 @@ wrote. `tui/test/hyperlink-click.test.ts` holds it.
 
 ## Filling the screen
 
-The app is the height of the terminal, always, and it is packed against the
-*bottom* of it: prompt and footer on the last row, the conversation directly
-above them, and whatever room is left over above the first thing drawn. It did
+The app is the height of the terminal, always: banner on the first row, prompt
+and footer on the last, the conversation directly above them, and whatever
+room is left over between the banner and the conversation. It did
 not used to be. This renderer *appends* — a frame is the component tree
 flattened into a line buffer and written from wherever the cursor is — so a
 frame was exactly as tall as its content. On a fresh session that meant the
@@ -355,12 +355,13 @@ above, and the prompt then walking down the screen over the next few turns until
 the session was finally long enough to scroll. Two layouts for one app, and the
 one you meet first is the one that does not look like an app.
 
-`FlexSpacer` is the fix and it is the **first** child of the root.
+`FlexSpacer` is the fix and it sits directly below the banner: header, then
+fill, then everything else.
 `TUI.setFlexSpacer` nominates it; `doRender` measures the frame it just built,
 hands the leftover rows to it, and flattens once more. Three things follow:
 
 - **Nothing below the fill ever has room held back from it.** In
-  `interactive-mode.ts` that is everything: the banner, the transcript, the
+  `interactive-mode.ts` that is everything below the banner: the transcript, the
   queued messages, the status rows, the widget containers, the task ledger, the
   notification band, the prompt and the footer. They are one run against the
   floor, which is what keeps the last thing the agent said touching the box you
@@ -397,7 +398,7 @@ layout.
 
 Guarded by `tui/test/screen-fill.test.ts` (the mechanism, including the fold)
 and `coding-agent/test/screen-anchor.test.ts` (the real mode, real chrome,
-prompt on the floor at every session length).
+banner on the first row and prompt on the floor at every session length).
 
 ## What ghosts and what stays
 
