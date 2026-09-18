@@ -15129,13 +15129,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.8987999999999999,
-				output: 2.8248,
-				cacheRead: 0.16691999999999999,
+				input: 0.8925000000000001,
+				output: 2.8049999999999997,
+				cacheRead: 0.146625,
 				cacheWrite: 0,
 			},
 			contextWindow: 1310720,
-			maxTokens: 131072,
+			maxTokens: 943718,
 		} satisfies Model<"openai-completions">,
 	},
 	"together": {
