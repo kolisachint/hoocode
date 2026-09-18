@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- GPT-5.6 family (`gpt-5.6`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) and
+  `gpt-6-astra` for the `openai-codex` provider, so a ChatGPT/Codex subscription
+  login lists the models Codex actually serves. The catalog stopped at GPT-5.5,
+  which retires from Codex on 2026-10-14.
+- `xhigh` thinking level for GPT-5.6 and GPT-6 models (and `minimal` -> `low` on
+  `openai-codex`), matching the reasoning efforts Codex exposes.
+
+### Fixed
+
+- The `kimi-coding` provider no longer disappears from the generated catalog:
+  models.dev renamed its entry from `kimi-for-coding` to `kimi-code-plan-global`
+  and the generator only looked for the old key.
+
 ## [0.5.76] - 2026-09-17
 
 ## [0.5.75] - 2026-09-17

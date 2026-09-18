@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The default model for a ChatGPT/Codex subscription login is `gpt-5.6-terra`,
+  not `gpt-5.5` (which retires from Codex on 2026-10-14).
+
 ## [0.5.76] - 2026-09-17
 
 ### Changed
