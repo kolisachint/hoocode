@@ -24,5 +24,5 @@
 		"packages/coding-agent/scripts/**/*.ts",
 		"packages/coding-agent/examples/**/*"
 	],
-	"exclude": ["**/dist/**"]
+	"exclude": ["**/dist/**", "packages/coding-agent/scripts/generate-wordmark-symbol.ts"]
 }
