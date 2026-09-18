@@ -481,6 +481,11 @@ ${chalk.bold("Environment Variables:")}
   AZURE_OPENAI_DEPLOYMENT_NAME_MAP - Azure OpenAI model=deployment map (comma-separated)
   DEEPSEEK_API_KEY                 - DeepSeek API key
   GEMINI_API_KEY                   - Google Gemini API key
+  GOOGLE_CLOUD_PROJECT             - Cloud project for Code Assist logins (paid/Workspace accounts)
+  HOOCODE_ANTIGRAVITY_CLIENT_ID    - OAuth client id for the Google Antigravity login
+  HOOCODE_ANTIGRAVITY_CLIENT_SECRET - OAuth client secret for the Google Antigravity login
+  HOOCODE_GEMINI_CLI_CLIENT_ID     - OAuth client id for the Gemini CLI login
+  HOOCODE_GEMINI_CLI_CLIENT_SECRET - OAuth client secret for the Gemini CLI login
   GROQ_API_KEY                     - Groq API key
   CEREBRAS_API_KEY                 - Cerebras API key
   XAI_API_KEY                      - xAI Grok API key

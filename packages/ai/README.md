@@ -1154,8 +1154,12 @@ Several providers require OAuth authentication instead of static API keys:
 - **Anthropic** (Claude Pro/Max subscription)
 - **OpenAI Codex** (ChatGPT Plus/Pro subscription, access to GPT-5.x Codex models)
 - **GitHub Copilot** (Copilot subscription)
+- **Google Cloud Code Assist** (`google-gemini-cli`, a Google account's Gemini CLI quota)
+- **Google Antigravity** (`google-antigravity`, adds Claude and GPT-OSS on the same Cloud Code Assist wire format)
 
-For paid Cloud Code Assist subscriptions, set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` to your project ID.
+Both Google providers use the `google-gemini-cli` API. Their `getApiKey()` returns a JSON string carrying the access token and the Cloud project, so pass it through as `apiKey` unchanged.
+
+For paid Cloud Code Assist subscriptions, set `GOOGLE_CLOUD_PROJECT` or `GOOGLE_CLOUD_PROJECT_ID` to your project ID before logging in; free-tier accounts have one provisioned during login.
 
 ### Vertex AI
 

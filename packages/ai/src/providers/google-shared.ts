@@ -1,5 +1,5 @@
 /**
- * Shared utilities for Google Generative AI and Google Vertex providers.
+ * Shared utilities for Google Generative AI, Google Cloud Code Assist, and Google Vertex providers.
  */
 
 import { type Content, FinishReason, FunctionCallingConfigMode, type Part } from "@google/genai";
@@ -7,7 +7,7 @@ import type { Context, ImageContent, Model, StopReason, TextContent, Tool } from
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
 import { transformMessages } from "./transform-messages.js";
 
-type GoogleApiType = "google-generative-ai" | "google-vertex";
+type GoogleApiType = "google-generative-ai" | "google-gemini-cli" | "google-vertex";
 
 /**
  * Thinking level for Gemini 3 models.

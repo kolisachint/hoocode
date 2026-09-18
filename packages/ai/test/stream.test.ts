@@ -22,8 +22,10 @@ const oauthTokens = await Promise.all([
 	resolveApiKey("anthropic"),
 	resolveApiKey("github-copilot"),
 	resolveApiKey("openai-codex"),
+	resolveApiKey("google-gemini-cli"),
+	resolveApiKey("google-antigravity"),
 ]);
-const [anthropicOAuthToken, githubCopilotToken, openaiCodexToken] = oauthTokens;
+const [anthropicOAuthToken, githubCopilotToken, openaiCodexToken, geminiCliToken, antigravityToken] = oauthTokens;
 
 // Calculator tool definition (same as examples)
 // Note: Using StringEnum helper because Google's API doesn't support anyOf/const patterns
@@ -1169,6 +1171,54 @@ describe("Generate E2E Tests", () => {
 
 		it.skipIf(!openaiCodexToken)("should handle image input", { retry: 3 }, async () => {
 			await handleImage(llm, { apiKey: openaiCodexToken });
+		});
+	});
+
+	describe("Google Cloud Code Assist Provider (gemini-3.1-pro-preview)", () => {
+		const llm = getModel("google-gemini-cli", "gemini-3.1-pro-preview");
+
+		it.skipIf(!geminiCliToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: geminiCliToken });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: geminiCliToken });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: geminiCliToken });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle thinking", { retry: 3 }, async () => {
+			await handleThinking(llm, { apiKey: geminiCliToken, reasoningEffort: "high" });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: geminiCliToken });
+		});
+
+		it.skipIf(!geminiCliToken)("should handle image input", { retry: 3 }, async () => {
+			await handleImage(llm, { apiKey: geminiCliToken });
+		});
+	});
+
+	describe("Google Antigravity Provider (gemini-3.8-flash-tiered)", () => {
+		const llm = getModel("google-antigravity", "gemini-3.8-flash-tiered");
+
+		it.skipIf(!antigravityToken)("should complete basic text generation", { retry: 3 }, async () => {
+			await basicTextGeneration(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle tool calling", { retry: 3 }, async () => {
+			await handleToolCall(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle streaming", { retry: 3 }, async () => {
+			await handleStreaming(llm, { apiKey: antigravityToken });
+		});
+
+		it.skipIf(!antigravityToken)("should handle multi-turn with thinking and tools", { retry: 3 }, async () => {
+			await multiTurn(llm, { apiKey: antigravityToken });
 		});
 	});
 
