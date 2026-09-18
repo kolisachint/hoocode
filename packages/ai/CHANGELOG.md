@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Added
+
+- Google subscription auth: `google-gemini-cli` (Cloud Code Assist, the Gemini
+  CLI's OAuth client) and `google-antigravity` (Antigravity's client, adding
+  Claude and GPT-OSS to the catalog). Both are OAuth providers registered in
+  `@kolisachint/hoocode-ai/oauth` (`geminiCliOAuthProvider`,
+  `antigravityOAuthProvider`, `loginGeminiCli`, `loginAntigravity`,
+  `refreshGoogleCloudToken`, `refreshAntigravityToken`). Neither ships a
+  credential: the OAuth client id and secret are read from the environment
+  (`HOOCODE_ANTIGRAVITY_CLIENT_ID`/`_SECRET`,
+  `HOOCODE_GEMINI_CLI_CLIENT_ID`/`_SECRET`) and login fails with a message
+  naming the missing variable. Google's token endpoint rejects these clients
+  without a `client_secret`, so unlike the Anthropic and OpenAI logins this one
+  cannot run as a bare public PKCE client. Both stream over
+  the new `google-gemini-cli` API, which wraps the Gemini request in the Cloud
+  Code Assist envelope (`{ project, model, request }`) and unwraps the
+  `{ response }` SSE frames. `getApiKey()` returns a JSON string carrying the
+  access token and the discovered Cloud project.
+- Models for both providers. `google-gemini-cli`: `gemini-3.8-flash`,
+  `gemini-3.7-flash`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite-preview`,
+  `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`,
+  `gemini-2.5-flash`. `google-antigravity`: `gemini-3.8-flash-tiered`,
+  `gemini-3.7-flash-tiered`, `gemini-3.6-flash-tiered`, `gemini-pro-agent`
+  (3.1 Pro High), `gemini-3.1-pro-low`, `gemini-3.1-flash-lite`,
+  `claude-opus-4-6-thinking`, `claude-sonnet-4-6` and `gpt-oss-120b-medium` —
+  every id verified against `v1internal:fetchAvailableModels` and a live
+  request. Antigravity's ids are its own, not the public Gemini API's: plain
+  `gemini-3.8-flash` and `claude-sonnet-4-6-thinking` answer 404, and
+  `gemini-3.1-pro-high` answers 400 where `gemini-pro-agent` works.
+- Thinking levels on the Cloud Code Assist API follow the 3.x Flash line:
+  `gemini-3.6-flash` and newer are routed by `thinkingLevel` rather than a token
+  budget, and the lowest effort maps to `LOW` because Google answers
+  `400 Thinking level MINIMAL is not supported for this model` on those.
+- Antigravity keeps its host fallbacks even when the model names a `baseUrl`: a
+  consumer account is served by the sandbox host and answers
+  `429 RESOURCE_EXHAUSTED` on production.
+
 ## [0.5.78] - 2026-09-18
 
 ## [0.5.77] - 2026-09-18

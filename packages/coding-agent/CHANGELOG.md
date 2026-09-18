@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added
+
+- `/login` lists two Google subscriptions: **Google Antigravity** and **Google
+  Cloud Code Assist (Gemini CLI)**. Antigravity is the one a personal Google
+  account wants — Gemini 3.8 / 3.7 / 3.6 Flash and 3.1 Pro on every plan, plus
+  Claude 4.6 and GPT-OSS-120b — and it defaults to `gemini-3.8-flash-tiered`
+  after login (Antigravity's ids are its own, see `docs/providers.md` for the
+  table). Both logins need an OAuth client supplied through the environment —
+  hoocode ships no Google credentials — and `--help` lists the four variables. The Gemini CLI client is now refused the free tier by Google
+  (`UNSUPPORTED_CLIENT`), so it is for paid Code Assist tiers with a
+  `GOOGLE_CLOUD_PROJECT` set; it defaults to `gemini-3.1-pro-preview`. See
+  `docs/providers.md` -> "Subscriptions".
+
 ## [0.5.78] - 2026-09-18
 
 ## [0.5.77] - 2026-09-18

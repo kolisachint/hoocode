@@ -19,6 +19,8 @@ Use `/login` in interactive mode, then select a provider:
 - ChatGPT Plus/Pro (Codex)
 - Claude Pro/Max
 - GitHub Copilot
+- Google Antigravity
+- Google Cloud Code Assist (Gemini CLI) — paid Code Assist tiers only, see below
 
 Use `/logout` to clear credentials. Tokens are stored in `~/.hoocode/auth.json` and auto-refresh when expired.
 
@@ -35,6 +37,55 @@ Anthropic subscription auth is active for Claude Pro/Max accounts. Third-party h
 
 - Press Enter for github.com, or enter your GitHub Enterprise Server domain
 - If you get "model not supported", enable it in VS Code: Copilot Chat → model selector → select model → "Enable"
+
+### Google Antigravity
+
+> **You must supply the OAuth client.** hoocode ships no Google credentials, so
+> before `/login` set both:
+>
+> ```bash
+> export HOOCODE_ANTIGRAVITY_CLIENT_ID="...apps.googleusercontent.com"
+> export HOOCODE_ANTIGRAVITY_CLIENT_SECRET="..."
+> ```
+>
+> Unlike the Anthropic and OpenAI logins, this cannot run as a public PKCE
+> client: Google's token endpoint rejects the exchange with `client_secret is
+> missing`. Which client signs in also decides which tiers Google serves, so a
+> client you register yourself in Cloud Console reaches the public Gemini API
+> but not Antigravity's tiers — those answer a foreign client with `403`. The
+> working pair is the one the Antigravity editor uses.
+
+The way to code on a personal Google account, free tier included. The model ids are Antigravity's own, verified against `v1internal:fetchAvailableModels`, and they are not the public Gemini API ids:
+
+| hoocode model | Antigravity calls it |
+| --- | --- |
+| `gemini-3.8-flash-tiered` | Gemini 3.8 Flash (default after login) |
+| `gemini-3.7-flash-tiered` | Gemini 3.7 Flash |
+| `gemini-3.6-flash-tiered` | Gemini 3.6 Flash |
+| `gemini-pro-agent` | Gemini 3.1 Pro (High) |
+| `gemini-3.1-pro-low` | Gemini 3.1 Pro (Low) |
+| `gemini-3.1-flash-lite` | Gemini 3.1 Flash Lite |
+| `claude-opus-4-6-thinking` | Claude Opus 4.6 (Thinking) |
+| `claude-sonnet-4-6` | Claude Sonnet 4.6 (Thinking) |
+| `gpt-oss-120b-medium` | GPT-OSS 120B (Medium) |
+
+- The login completes on `http://localhost:51121/oauth-callback`, then discovers or provisions the Cloud project the requests are billed to (Google's managed consumer project for a free-tier account).
+- Requests go to the sandbox host (`daily-cloudcode-pa.sandbox.googleapis.com`); the production Code Assist host answers a consumer account with `429 RESOURCE_EXHAUSTED`, and hoocode falls through the hosts in order.
+- Claude and GPT-OSS are not served to Enterprise plans; Gemini is served to every plan including the free one.
+- Google rotates this catalog often. An id your account is not served fails with `404 Requested entity was not found` — pick another with `alt+m`.
+- Usage draws on Antigravity credits; the per-token costs hoocode shows are list prices for comparison, not what the account is charged.
+- A 429 naming a reset delay means that model's quota is spent — switch models with `alt+m` or wait it out.
+- `HOOCODE_ANTIGRAVITY_VERSION` overrides the client version hoocode reports if Google starts rejecting the default.
+
+### Google Cloud Code Assist (Gemini CLI)
+
+The Gemini CLI's OAuth client against Cloud Code Assist: `gemini-3.8-flash`, `gemini-3.7-flash`, `gemini-3.1-pro-preview`, `gemini-3.1-flash-lite-preview`, `gemini-3-pro-preview`, `gemini-3-flash-preview`, `gemini-2.5-pro`, `gemini-2.5-flash`.
+
+- **You must supply the OAuth client**, as with Antigravity above: set `HOOCODE_GEMINI_CLI_CLIENT_ID` and `HOOCODE_GEMINI_CLI_CLIENT_SECRET` before `/login`.
+- **Individual accounts are no longer eligible.** `loadCodeAssist` now answers this client with `UNSUPPORTED_CLIENT` for the free tier: "This client is no longer supported for Gemini Code Assist for individuals. To continue using Gemini, please migrate to the Antigravity suite of products." Use Antigravity above for a personal Google account.
+- What remains is the paid **Gemini Code Assist Standard/Enterprise** tier, which requires your own Cloud project: set `GOOGLE_CLOUD_PROJECT` (or `GOOGLE_CLOUD_PROJECT_ID`) before `/login`.
+- The login opens a browser and completes on `http://localhost:8085/oauth2callback`; paste the redirect URL instead if the browser is on another machine.
+- Quota is the account's, not per-token billing, so these models report zero cost.
 
 ## API Keys
 

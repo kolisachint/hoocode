@@ -1027,7 +1027,8 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 }
 
 // Providers whose entries come exclusively from loadModelsDevData(). Providers
-// built from hardcoded lists (openai-codex, deepseek, google-vertex) or derived
+// built from hardcoded lists (openai-codex, deepseek, google-vertex,
+// google-gemini-cli, google-antigravity) or derived
 // from other entries (azure-openai-responses) are intentionally absent.
 const MODELS_DEV_PROVIDERS = [
 	"anthropic",
@@ -1943,6 +1944,228 @@ async function generateModels() {
 		},
 	];
 	allModels.push(...vertexModels);
+
+	// Google Cloud Code Assist (Gemini CLI OAuth) models.
+	// Not in models.dev: the Code Assist endpoint serves a fixed set against the
+	// signed-in Google account's free or paid tier, so cost is 0 per token.
+	const CODE_ASSIST_BASE_URL = "https://cloudcode-pa.googleapis.com";
+	const GEMINI_CLI_CONTEXT = 1048576;
+	const geminiCliModels: Model<"google-gemini-cli">[] = [
+		{
+			id: "gemini-3.8-flash",
+			name: "Gemini 3.8 Flash (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.7-flash",
+			name: "Gemini 3.7 Flash (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.1-flash-lite-preview",
+			name: "Gemini 3.1 Flash Lite Preview (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.1-pro-preview",
+			name: "Gemini 3.1 Pro Preview (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3-pro-preview",
+			name: "Gemini 3 Pro Preview (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3-flash-preview",
+			name: "Gemini 3 Flash Preview (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-2.5-pro",
+			name: "Gemini 2.5 Pro (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-2.5-flash",
+			name: "Gemini 2.5 Flash (Cloud Code Assist)",
+			api: "google-gemini-cli",
+			provider: "google-gemini-cli",
+			baseUrl: CODE_ASSIST_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: GEMINI_CLI_CONTEXT,
+			maxTokens: 65535,
+		},
+	];
+	allModels.push(...geminiCliModels);
+
+	// Google Antigravity models. Same Cloud Code Assist wire format as the Gemini
+	// CLI provider, different OAuth client and endpoint, and a catalog that
+	// includes Claude and GPT-OSS. Costs mirror each model's list price; usage is
+	// metered as Antigravity credits rather than billed per token.
+	const ANTIGRAVITY_BASE_URL = "https://daily-cloudcode-pa.sandbox.googleapis.com";
+	const antigravityModels: Model<"google-gemini-cli">[] = [
+		{
+			id: "gemini-3.8-flash-tiered",
+			name: "Gemini 3.8 Flash (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.7-flash-tiered",
+			name: "Gemini 3.7 Flash (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.6-flash-tiered",
+			name: "Gemini 3.6 Flash (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-pro-agent",
+			name: "Gemini 3.1 Pro High (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.375 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.1-pro-low",
+			name: "Gemini 3.1 Pro Low (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 2.375 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "gemini-3.1-flash-lite",
+			name: "Gemini 3.1 Flash Lite (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 0.25, output: 1.5, cacheRead: 0.025, cacheWrite: 0 },
+			contextWindow: 1048576,
+			maxTokens: 65535,
+		},
+		{
+			id: "claude-opus-4-6-thinking",
+			name: "Claude Opus 4.6 Thinking (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 },
+			contextWindow: 200000,
+			maxTokens: 128000,
+		},
+		{
+			id: "claude-sonnet-4-6",
+			name: "Claude Sonnet 4.6 Thinking (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: true,
+			input: ["text", "image"],
+			cost: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+			contextWindow: 200000,
+			maxTokens: 64000,
+		},
+		{
+			id: "gpt-oss-120b-medium",
+			name: "GPT-OSS 120B Medium (Antigravity)",
+			api: "google-gemini-cli",
+			provider: "google-antigravity",
+			baseUrl: ANTIGRAVITY_BASE_URL,
+			reasoning: false,
+			input: ["text"],
+			cost: { input: 0.09, output: 0.36, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 131072,
+			maxTokens: 32768,
+		},
+	];
+	allModels.push(...antigravityModels);
 
 	const azureOpenAiModels: Model<Api>[] = allModels
 		.filter((model) => model.provider === "openai" && model.api === "openai-responses")

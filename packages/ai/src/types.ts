@@ -10,6 +10,7 @@ export type KnownApi =
 	| "openai-codex-responses"
 	| "anthropic-messages"
 	| "google-generative-ai"
+	| "google-gemini-cli"
 	| "google-vertex";
 
 export type Api = KnownApi | (string & {});
@@ -21,6 +22,8 @@ export type ImagesApi = KnownImagesApi | (string & {});
 export type KnownProvider =
 	| "anthropic"
 	| "google"
+	| "google-gemini-cli"
+	| "google-antigravity"
 	| "google-vertex"
 	| "openai"
 	| "azure-openai-responses"

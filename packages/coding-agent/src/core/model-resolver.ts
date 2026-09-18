@@ -19,6 +19,8 @@ export const defaultModelPerProvider: Record<KnownProvider, string> = {
 	deepseek: "deepseek-v4-pro",
 	google: "gemini-3.1-pro-preview",
 	"google-vertex": "gemini-3.1-pro-preview",
+	"google-gemini-cli": "gemini-3.1-pro-preview",
+	"google-antigravity": "gemini-3.8-flash-tiered",
 	"github-copilot": "gpt-5.4",
 	openrouter: "moonshotai/kimi-k2.6",
 	"vercel-ai-gateway": "zai/glm-5.1",
