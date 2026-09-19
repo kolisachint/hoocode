@@ -37,6 +37,11 @@
 .PARAMETER NoModifyPath
     Do not touch the user PATH.
 
+.NOTES
+    Environment only: HOOCODE_RELEASE_BASE_URL fetches release archives from
+    somewhere other than GitHub, expecting <base>/<tag>/hoocode-<target>.zip and
+    <base>/<tag>/checksums.txt. For mirrors, air-gapped installs, and tests.
+
 .EXAMPLE
     irm https://kolisachint.github.io/hoocode/install.ps1 | iex
 
@@ -116,7 +121,14 @@ if ($Version -eq 'latest') {
 Write-Note "version $Tag"
 
 $Asset = "hoocode-$Target.zip"
-$Base  = "https://github.com/$Repo/releases/download/$Tag"
+# A mirror serves the same layout under its own root; unset, this is GitHub.
+# Matches HOOCODE_RELEASE_BASE_URL in install.sh — for mirrors, air-gapped
+# installs, and the installers' own tests.
+$Base = if ($env:HOOCODE_RELEASE_BASE_URL) {
+    "$($env:HOOCODE_RELEASE_BASE_URL.TrimEnd('/'))/$Tag"
+} else {
+    "https://github.com/$Repo/releases/download/$Tag"
+}
 
 # ------------------------------------------------------------------ paths ---
 $LibDir = Join-Path $InstallDir 'lib\hoocode'

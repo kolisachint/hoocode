@@ -44,6 +44,12 @@ Both installers take the same options, as flags or as environment variables.
 | `--no-tools` | `HOOCODE_SKIP_TOOLS=1` | Skip the external tools |
 | `--tools fd,rg` | `HOOCODE_TOOLS` | Pre-seed only these tools |
 | `--no-modify-path` | `HOOCODE_NO_MODIFY_PATH=1` | Leave shell rc files / `PATH` alone |
+| — | `HOOCODE_RELEASE_BASE_URL` | Fetch archives from a mirror instead of GitHub |
+
+`HOOCODE_RELEASE_BASE_URL` expects the same layout a release has —
+`<base>/<tag>/hoocode-<target>.tar.gz` and `<base>/<tag>/checksums.txt` — so an
+air-gapped or bandwidth-limited network can mirror a release once and point every
+machine at it.
 
 A piped script cannot take arguments, so to pass options either set the
 environment variable:

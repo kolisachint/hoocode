@@ -85,7 +85,7 @@ See **[CONTRIBUTING.md](CONTRIBUTING.md)**. Questions are welcome as
 collaboration or anything that does not fit one, tag
 [@kolisachint on X](https://x.com/kolisachint).
 
-> ⭐ **If HooCode is useful to you, [star the
+> ★ **If HooCode is useful to you, [star the
 > repo](https://github.com/kolisachint/hoocode).** One click, and it is the
 > single cheapest way to help other people find it.
 

@@ -2,6 +2,59 @@
 
 ## [Unreleased]
 
+### Added
+
+- **One-click installers, and a build for every platform.** Releases carried a
+  single archive (`hoocode-windows-x64.zip`); everyone on macOS or Linux had npm
+  as their only route. `scripts/build-binaries.sh` now takes `--targets` and
+  `--list` and produces seven archives — `linux-x64`, `linux-arm64`,
+  `linux-x64-musl`, `linux-arm64-musl`, `darwin-x64`, `darwin-arm64`,
+  `windows-x64` — plus a `checksums.txt` covering all of them, cross-compiled
+  from one runner. The musl builds mean Alpine and `static` distroless have a
+  working binary for the first time.
+
+  ```bash
+  curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh   # macOS, Linux
+  irm https://kolisachint.github.io/hoocode/install.ps1 | iex        # Windows
+  ```
+
+  Both installers detect the platform (including musl vs glibc), verify the
+  archive's sha256 against the release checksums, install under `~/.hoocode`
+  with no root, link `hoocode` and `hoo`, and pre-seed the optional Rust helpers
+  (`fd`, `rg`, `embsearch`, `webtools`, `voicetools`) into `~/.hoocode/bin` — the
+  directory hoocode already resolves them from — so a first run is fast and works
+  offline. `HOOCODE_RELEASE_BASE_URL` points them at a mirror for air-gapped
+  installs. See `docs/install.md`.
+
+- **Tips on the notification band.** An occasional one-line tip above the
+  prompt while the session is idle or a turn has been running a while, teaching
+  the modes, dials, commands and extension surfaces that using the product does
+  not reveal. Tips live in one file
+  (`src/modes/interactive/tips.ts`); keybindings in them are resolved at display
+  time, so a rebound key is taught as the user's own. A tip is posted only when
+  the band is empty and is dropped rather than retried, so it can never delay or
+  replace a notification the user caused. Off via `/settings` → Advanced → Tips,
+  or `tips.enabled: false`. New settings: `tips.enabled`, `tips.seen`,
+  `tips.starNudges`.
+
+### Changed
+
+- The extension API parameter is `hoo`, not `pi`, across the core extensions,
+  every example and the docs. It is positional, so existing extensions are
+  unaffected whatever they call it. A `pi` key in a package manifest is still
+  read as a deprecated alias for `hoocode`; `hoocode` wins when a package
+  declares both.
+- The OAuth callback page shows the HooCode mark instead of the upstream
+  project's.
+- `/share` prints the gist URL alone unless `HOOCODE_SHARE_VIEWER_URL` names a
+  viewer. The previous default pointed at a host that does not exist.
+- `enableInstallTelemetry` documented as inert — hoocode sends no install or
+  update telemetry. Update checks read the npm registry and are separate.
+
+### Removed
+
+- The `hoocode update pi` alias. `self`, `hoocode` and `hoo` all still work.
+
 ## [0.5.79] - 2026-09-18
 
 ### Added

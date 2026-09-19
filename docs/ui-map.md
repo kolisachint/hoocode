@@ -456,6 +456,35 @@ showing the stop you had already left for its full three seconds — a dial that
 lags a press behind is a dial you cannot step twice. Guarded by
 `coding-agent/test/notification-panel.test.ts`.
 
+### Tips are the band's one uninvited guest
+
+Everything above arrives because the user did something. A tip
+(`interactive/tips.ts`, scheduled by `interactive/tips-controller.ts`) does not,
+which is why it obeys one extra rule on top of all of the above:
+
+> **A tip is posted only when the band is empty, and a refused tip is dropped,
+> never retried.**
+
+Both halves matter. Posting into an occupied band would let a tip queue behind —
+and therefore delay — something the user caused, and the whole justification for
+a tip is that it costs nothing. Retrying a refused one would be worse: it turns
+"the band is busy" into a tip that lands the instant the user's own notification
+fades, which is the interruption the first half exists to prevent. The next
+moment arms its own timer; there is always another one.
+
+Tips carry `topic: "tip"`, so a second tip replaces a first rather than stacking,
+and take a longer TTL than a glimpse — a glimpse confirms something the user just
+did and only has to be recognised, while a tip says something new and has to be
+read. They stay inside `MAX_BODY_ROWS`: the band drops what does not fit, so a
+four-row tip is a tip with an invisible last line, and `tips.test.ts` asserts the
+content never grows past it.
+
+The scheduler is otherwise all reasons to stay quiet: a startup grace period
+(the banner and changelog are still being read), a cooldown between tips, and the
+`tips.enabled` setting, read fresh on every offer so switching it off silences
+the tip already scheduled. Every timer is `unref`'d — a pending tip must never be
+why the process is still alive.
+
 ## Screen columns
 
 Rows are scarce (see below) and so are columns: a margin held back "for safety"

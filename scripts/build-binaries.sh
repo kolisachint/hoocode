@@ -163,7 +163,13 @@ assemble_payload() {
     cp -r docs "$out/"
     # Exclude examples' node_modules: they contain bun workspace symlinks that do
     # not resolve once copied, and the runtime only needs the example sources.
-    rsync -a --exclude 'node_modules' examples/ "$out/examples/"
+    #
+    # Copy-then-prune rather than `rsync --exclude`: rsync is not in coreutils and
+    # is absent from plenty of containers, so depending on it meant the build ran
+    # for several minutes and then died on its last step with "command not found".
+    mkdir -p "$out/examples"
+    cp -R examples/. "$out/examples/"
+    find "$out/examples" -name node_modules -type d -prune -exec rm -rf {} +
     # templates/ intentionally not copied — seed content is embedded into the
     # compiled binary by scripts/embed-templates.mjs (see
     # src/init-templates.generated.ts).

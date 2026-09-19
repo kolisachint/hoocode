@@ -12,6 +12,33 @@ Before searching, check these maps:
 
 ## Recent Changes
 
+- **Release prep: every platform gets a binary, the band teaches the product,
+  and the fork's name is gone.** Four threads. (1) Releases shipped one archive
+  (`hoocode-windows-x64.zip`), so everyone on macOS or Linux had npm as their
+  only route. `scripts/build-binaries.sh` now takes `--targets`/`--list` and
+  builds seven — linux and darwin on x64/arm64, linux also on musl (which closes
+  the Alpine/distroless dead end `docs/install.md` used to merely describe) —
+  plus `checksums.txt`, all cross-compiled from one runner. `install/install.sh`
+  (POSIX sh, because it is piped to `sh` on machines with no bash) and
+  `install/install.ps1` detect the platform including musl-vs-glibc, verify the
+  sha256, install under `~/.hoocode` with no root, and pre-seed the optional Rust
+  helpers into `~/.hoocode/bin` — the directory `tools-manager.ts` already looks
+  in. `HOOCODE_RELEASE_BASE_URL` points either at a mirror. (2)
+  `interactive/tips.ts` is the single file every tip lives in, with
+  `tips-controller.ts` deciding when: the band's one uninvited guest, and the
+  rules that keeps honest are in `docs/ui-map.md` → "Tips are the band's one
+  uninvited guest". The star nudge is deliberately not one of the tips — never
+  first, once per session, three times in a lifetime. (3) The extension API
+  parameter is `hoo`, not `pi`, across core extensions, examples, docs and
+  tests; the OAuth callback page shows the Hoo mark. Two `pi` spellings stay on
+  purpose and say why in the code: `pkg.pi` as a deprecated manifest alias
+  (third-party packages still use it; `hoocode` wins when both are present), and
+  the Codex `originator` header, which is a protocol value the ChatGPT backend
+  validates, not branding. (4) `CONTRIBUTING.md` no longer describes a
+  contribution gate that was never implemented — see "Contributions" below.
+  Guarded by `coding-agent/test/tips.test.ts` and the two manifest-alias cases in
+  `extensions-discovery.test.ts`.
+
 - **The app packs against the floor, the window repaints when it has to move
   back, and a click opens a link again**: five complaints, one theme — the
   chrome getting in the way of what it frames. (1) `FlexSpacer` is now the
@@ -314,15 +341,25 @@ Two corollaries:
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` and name them `<issue-number>-<short-slug>.test.ts`.
 - NEVER commit unless user asks
 
-## Contribution Gate
+## Contributions
 
-- New issues from new contributors are auto-closed by `.github/workflows/issue-gate.yml`
-- New PRs from new contributors without PR rights are auto-closed by `.github/workflows/pr-gate.yml`
-- Maintainer approval comments are handled by `.github/workflows/approve-contributor.yml`
-- Maintainers review auto-closed issues daily
-- Issues that do not meet the quality bar in `CONTRIBUTING.md` are not reopened and do not receive a reply
-- `lgtmi` approves future issues
-- `lgtm` approves future issues and rights to submit PRs
+There is no contribution gate. This section previously described one —
+`issue-gate.yml`, `pr-gate.yml`, `approve-contributor.yml`, `lgtm`/`lgtmi`
+approval comments — inherited from upstream along with `CONTRIBUTING.md`. None
+of those workflows have ever existed in this repository, so the policy was
+documentation of a thing that did not run, and `CONTRIBUTING.md` now says the
+opposite. Do not reintroduce any of it without being asked.
+
+What actually happens:
+
+- Anyone may open an issue or a PR. Nothing is auto-closed.
+- Questions are welcome as issues; `.github/ISSUE_TEMPLATE/question.yml` exists
+  for them.
+- `.github/workflows/welcome.yml` replies to someone's first issue or PR. It is
+  the only automation touching contributions.
+- The contributor-facing rules live in `CONTRIBUTING.md`. If you change what is
+  expected of a contributor, change it there, and check this section still
+  agrees.
 
 When creating issues:
 

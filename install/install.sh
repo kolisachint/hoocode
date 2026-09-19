@@ -23,6 +23,12 @@
 #   --tools a,b          HOOCODE_TOOLS        subset of fd,rg,embsearch,webtools,voicetools
 #   --no-modify-path     HOOCODE_NO_MODIFY_PATH=1  do not touch shell rc files
 #   --help
+#
+# Environment only:
+#   HOOCODE_RELEASE_BASE_URL   Where to fetch release archives from, in place of
+#                              GitHub. Expects <base>/<tag>/hoocode-<target>.tar.gz
+#                              and <base>/<tag>/checksums.txt. For mirrors, air-
+#                              gapped installs, and this script's own tests.
 
 set -eu
 
@@ -169,7 +175,12 @@ fi
 say "    version ${C_B}$TAG${C_0}"
 
 ASSET="hoocode-$TARGET.tar.gz"
-BASE="https://github.com/$REPO/releases/download/$TAG"
+# A mirror serves the same layout under its own root; unset, this is GitHub.
+if [ -n "${HOOCODE_RELEASE_BASE_URL:-}" ]; then
+    BASE="${HOOCODE_RELEASE_BASE_URL%/}/$TAG"
+else
+    BASE="https://github.com/$REPO/releases/download/$TAG"
+fi
 
 # ------------------------------------------------------------------ paths ---
 LIB_DIR="$INSTALL_DIR/lib/hoocode"

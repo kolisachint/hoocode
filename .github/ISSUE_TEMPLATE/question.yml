@@ -1,4 +1,4 @@
-name: ❓ Question
+name: Question
 description: How do I…? Is this supposed to…?
 labels: ["question"]
 body:

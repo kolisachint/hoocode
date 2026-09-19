@@ -55,10 +55,15 @@ Never use `__dirname` directly for package assets.
 ## Testing
 
 ```bash
-./test.sh                         # Run non-LLM tests (no API keys needed)
-npm test                          # Run all tests
-npm test -- test/specific.test.ts # Run specific test
+./test.sh                          # every package (LLM tests skip without API keys)
+./test.sh coding-agent             # one package
+./test.sh coding-agent -- test/tips.test.ts   # one file
 ```
+
+Run `./test.sh` from the repository root, not `bun run test` — the root `test`
+script shells out to `npm run test --workspaces`, which under bun re-invokes
+itself until it runs out of memory. `./test.sh` builds `ai`, `agent` and `tui`
+first, because the other packages resolve them by package name through `dist/`.
 
 ## Project Structure
 
