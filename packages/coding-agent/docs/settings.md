@@ -63,6 +63,26 @@ text. `"summarized"` returns visible thinking. When unset, Opus 4.8 defaults to
 | `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
 | `showHardwareCursor` | boolean | `false` | Show terminal cursor |
 
+### Tips
+
+An occasional one-line tip on the band above the prompt, shown when the session has been idle for a
+while or when a turn has been running long enough that you are watching a spinner. A tip never
+interrupts: it is only ever posted when the band is empty, so it cannot delay or replace a
+notification you caused. It never repeats until it has run out of things to say, and it remembers
+across sessions.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `tips.enabled` | boolean | `true` | Show tips. Also in `/settings` → Advanced → Tips |
+| `tips.seen` | string[] | `[]` | Ids of tips already shown. Bookkeeping; clear it to see them all again |
+| `tips.starNudges` | number | `0` | How many times the "star the repo" nudge has been shown (lifetime cap: 3) |
+
+The tips themselves live in one file,
+[`src/modes/interactive/tips.ts`](https://github.com/kolisachint/hoocode/blob/main/packages/coding-agent/src/modes/interactive/tips.ts).
+Know a trick that is not in there? [Send a
+PR](https://github.com/kolisachint/hoocode/blob/main/CONTRIBUTING.md) — it is one row in an array,
+and it is genuinely one of the easiest useful first contributions to the project.
+
 ### Telemetry and update checks
 
 `enableInstallTelemetry` is inert: HooCode sends no install or update telemetry anywhere, and the

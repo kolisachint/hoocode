@@ -1202,6 +1202,59 @@ export class SettingsManager {
 		this.save();
 	}
 
+	// --- Tips ---------------------------------------------------------------
+	// `seen` and `starNudges` are written by the tip rotation as a side effect of
+	// showing something, so these setters are called from a timer rather than
+	// from a user action. They stay cheap: a bounded array and an integer.
+
+	getTipsEnabled(): boolean {
+		return this.settings.tips?.enabled ?? DEFAULT_SETTINGS.tips!.enabled!;
+	}
+
+	setTipsEnabled(enabled: boolean): void {
+		if (!this.globalSettings.tips) {
+			this.globalSettings.tips = {};
+		}
+		this.globalSettings.tips.enabled = enabled;
+		this.markModified("tips", "enabled");
+		this.save();
+	}
+
+	getSeenTips(): string[] {
+		return this.settings.tips?.seen ?? [];
+	}
+
+	/**
+	 * Remember that a tip has been shown.
+	 *
+	 * Idempotent, so a tip repeated in a long session does not grow the list. The
+	 * list is bounded by the number of tips that exist, and an id that is no
+	 * longer in `TIPS` is harmless -- it is only ever tested for membership.
+	 */
+	markTipSeen(id: string): void {
+		if (!this.globalSettings.tips) {
+			this.globalSettings.tips = {};
+		}
+		const seen = this.globalSettings.tips.seen ?? [];
+		if (seen.includes(id)) return;
+		this.globalSettings.tips.seen = [...seen, id];
+		this.markModified("tips", "seen");
+		this.save();
+	}
+
+	getStarNudgeCount(): number {
+		return this.settings.tips?.starNudges ?? 0;
+	}
+
+	recordStarNudge(): void {
+		if (!this.globalSettings.tips) {
+			this.globalSettings.tips = {};
+		}
+		this.globalSettings.tips.starNudges = (this.globalSettings.tips.starNudges ?? 0) + 1;
+		this.markModified("tips", "starNudges");
+		this.save();
+	}
+
 	getImageAutoResize(): boolean {
 		return this.settings.images?.autoResize ?? DEFAULT_SETTINGS.images!.autoResize;
 	}

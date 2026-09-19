@@ -148,6 +148,8 @@ import {
 	Theme,
 	theme,
 } from "./theme/theme.js";
+import { renderTip, type Tip, TipRotation } from "./tips.js";
+import { TipsController } from "./tips-controller.js";
 import { VoiceController } from "./voice/voice-controller.js";
 import { websearchApiKeyNotice } from "./websearch-warning.js";
 
@@ -381,6 +383,12 @@ export class InteractiveMode {
 
 	// Completion chime state
 	private chime?: CompletionChime;
+	// Tips on the notification band (see tips.ts / tips-controller.ts). Optional
+	// for the same reason the chime is: a mode constructed in a test has no
+	// terminal to teach anybody anything on.
+	private tips?: TipsController;
+	/** Drops the keystroke observer that feeds the tip controller's idle clock. */
+	private tipActivityUnsubscribe?: () => void;
 	// True between auto_retry_start and the next agent_start: the turn is not done,
 	// it is about to re-run, so the deferred completion check must not fire the chime.
 	private chimePendingRetry = false;
@@ -687,6 +695,22 @@ export class InteractiveMode {
 		this.chime = new CompletionChime({
 			isEnabled: () => this.settingsManager.getChimeOnTurnComplete(),
 			ring: () => this.ui.terminal.write(BELL),
+		});
+
+		// Tips: one small thing about HooCode, on the band, at a moment that was
+		// being spent anyway. `bandIsFree` is what keeps it the lowest-priority
+		// thing on screen -- a tip is dropped rather than queued behind anything
+		// the user actually caused.
+		this.tips = new TipsController({
+			isEnabled: () => this.settingsManager.getTipsEnabled(),
+			bandIsFree: () => this.notifications.showing === undefined,
+			show: (tip) => this.showTip(tip),
+			rotation: new TipRotation({
+				seen: () => this.settingsManager.getSeenTips(),
+				markSeen: (id) => this.settingsManager.markTipSeen(id),
+				starNudgeCount: () => this.settingsManager.getStarNudgeCount(),
+				markStarNudge: () => this.settingsManager.recordStarNudge(),
+			}),
 		});
 
 		// Register themes from resource loader and initialize
@@ -1050,6 +1074,16 @@ export class InteractiveMode {
 		// renderer did not make desyncs its cursor bookkeeping and duplicates rows.
 		setTerminalOwnedByTui(true);
 		this.isInitialized = true;
+
+		// The tip controller's idle clock is "no keystroke for a while", so it needs
+		// to see keystrokes. A pure observer: it returns undefined, so it neither
+		// consumes input nor rewrites it, and it runs before any component has
+		// decided what the key means -- which is right, because a key that turns out
+		// to do nothing is still the user being present.
+		this.tipActivityUnsubscribe = this.ui.addInputListener(() => {
+			this.tips?.onActivity();
+			return undefined;
+		});
 
 		// Initialize extensions first so resources are shown before messages
 		await this.rebindCurrentSession({ renderResources: true });
@@ -2324,6 +2358,7 @@ export class InteractiveMode {
 			this.showTurnCost();
 			this.settleDanglingPlanItems();
 			this.chime?.onTurnComplete({ aborted: this.turnStopReason === "aborted" });
+			this.tips?.onTurnEnd();
 		}, 0);
 	}
 
@@ -2409,6 +2444,7 @@ export class InteractiveMode {
 				// A (possibly retried) turn is (re)starting: anchor its duration on the
 				// first start and clear the pending-retry gate now that it has resumed.
 				this.chime?.onTurnStart();
+				this.tips?.onTurnStart();
 				this.chimePendingRetry = false;
 				this.turnCostAnchor ??= {
 					totals: sumAssistantUsage(this.session.sessionManager.getEntries()),
@@ -2837,6 +2873,26 @@ export class InteractiveMode {
 	notify(message: string, note?: string, topic?: string): void {
 		const { title, body } = this.splitBlockMessage(message);
 		this.notifications.notify("info", title, body, note, { topic });
+	}
+
+	/**
+	 * A tip, on the band.
+	 *
+	 * Deliberately a `notify` like any other rather than a fourth kind of
+	 * message: a tip earns no special treatment on screen, and the one thing it
+	 * does get -- a `topic` -- exists so that a second tip can never stack behind
+	 * the first. It replaces it, or it does not appear.
+	 *
+	 * The TTL is longer than a glimpse's because a glimpse confirms something the
+	 * user just did, which they only have to recognise, while a tip is telling
+	 * them something new, which they have to read.
+	 */
+	private showTip(tip: Tip): void {
+		const { title, body, note } = renderTip(tip);
+		this.notifications.notify("info", title, body, note, {
+			ttlMs: Math.min(12_000, 6_000 + body.length * 1_500),
+			topic: "tip",
+		});
 	}
 
 	/**
@@ -3908,6 +3964,7 @@ export class InteractiveMode {
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
+					tipsEnabled: this.settingsManager.getTipsEnabled(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
 					warnings: this.settingsManager.getWarnings(),
@@ -4091,6 +4148,12 @@ export class InteractiveMode {
 					},
 					onQuietStartupChange: (enabled) => {
 						this.settingsManager.setQuietStartup(enabled);
+					},
+					onTipsEnabledChange: (enabled) => {
+						// The controller reads this fresh on every offer, so switching it
+						// off silences the tip that was already scheduled, not just the
+						// next one.
+						this.settingsManager.setTipsEnabled(enabled);
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);
@@ -4540,6 +4603,9 @@ export class InteractiveMode {
 			this.loadingAnimation = undefined;
 		}
 		this.clearExtensionTerminalInputListeners();
+		this.tipActivityUnsubscribe?.();
+		this.tipActivityUnsubscribe = undefined;
+		this.tips?.stop();
 		this.notifications.stop();
 		this.footer.dispose();
 		this.footerDataProvider.dispose();
