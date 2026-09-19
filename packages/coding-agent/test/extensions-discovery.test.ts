@@ -22,15 +22,15 @@ describe("extensions discovery", () => {
 	});
 
 	const extensionCode = `
-		export default function(pi) {
-			pi.registerCommand("test", { handler: async () => {} });
+		export default function(hoo) {
+			hoo.registerCommand("test", { handler: async () => {} });
 		}
 	`;
 
 	const extensionCodeWithTool = (toolName: string) => `
 		import { Type } from "typebox";
-		export default function(pi) {
-			pi.registerTool({
+		export default function(hoo) {
+			hoo.registerTool({
 				name: "${toolName}",
 				label: "${toolName}",
 				description: "Test tool",
@@ -99,7 +99,7 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].path).toContain("index.ts");
 	});
 
-	it("discovers subdirectory with package.json pi field", async () => {
+	it("discovers subdirectory with package.json hoocode field", async () => {
 		const subdir = path.join(extensionsDir, "my-package");
 		const srcDir = path.join(subdir, "src");
 		fs.mkdirSync(subdir);
@@ -109,7 +109,7 @@ describe("extensions discovery", () => {
 			path.join(subdir, "package.json"),
 			JSON.stringify({
 				name: "my-package",
-				pi: {
+				hoocode: {
 					extensions: ["./src/main.ts"],
 				},
 			}),
@@ -123,6 +123,47 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].path).toContain("main.ts");
 	});
 
+	it("still reads the deprecated `pi` manifest key", async () => {
+		// Packages authored against the upstream project are still published and
+		// still work. The alias is what keeps that true; this test is what stops
+		// it being deleted by accident.
+		const subdir = path.join(extensionsDir, "legacy-package");
+		fs.mkdirSync(subdir);
+		fs.writeFileSync(path.join(subdir, "legacy.ts"), extensionCode);
+		fs.writeFileSync(
+			path.join(subdir, "package.json"),
+			JSON.stringify({ name: "legacy-package", pi: { extensions: ["./legacy.ts"] } }),
+		);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].path).toContain("legacy.ts");
+	});
+
+	it("prefers `hoocode` over the deprecated `pi` key when a package declares both", async () => {
+		const subdir = path.join(extensionsDir, "both-package");
+		fs.mkdirSync(subdir);
+		fs.writeFileSync(path.join(subdir, "current.ts"), extensionCodeWithTool("from-hoocode"));
+		fs.writeFileSync(path.join(subdir, "legacy.ts"), extensionCodeWithTool("from-pi"));
+		fs.writeFileSync(
+			path.join(subdir, "package.json"),
+			JSON.stringify({
+				name: "both-package",
+				hoocode: { extensions: ["./current.ts"] },
+				pi: { extensions: ["./legacy.ts"] },
+			}),
+		);
+
+		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].tools.has("from-hoocode")).toBe(true);
+		expect(result.extensions[0].tools.has("from-pi")).toBe(false);
+	});
+
 	it("package.json can declare multiple extensions", async () => {
 		const subdir = path.join(extensionsDir, "my-package");
 		fs.mkdirSync(subdir);
@@ -132,7 +173,7 @@ describe("extensions discovery", () => {
 			path.join(subdir, "package.json"),
 			JSON.stringify({
 				name: "my-package",
-				pi: {
+				hoocode: {
 					extensions: ["./ext1.ts", "./ext2.ts"],
 				},
 			}),
@@ -144,7 +185,7 @@ describe("extensions discovery", () => {
 		expect(result.extensions).toHaveLength(2);
 	});
 
-	it("package.json with pi field takes precedence over index.ts", async () => {
+	it("package.json with hoocode field takes precedence over index.ts", async () => {
 		const subdir = path.join(extensionsDir, "my-package");
 		fs.mkdirSync(subdir);
 		fs.writeFileSync(path.join(subdir, "index.ts"), extensionCodeWithTool("from-index"));
@@ -153,7 +194,7 @@ describe("extensions discovery", () => {
 			path.join(subdir, "package.json"),
 			JSON.stringify({
 				name: "my-package",
-				pi: {
+				hoocode: {
 					extensions: ["./custom.ts"],
 				},
 			}),
@@ -169,7 +210,7 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].tools.has("from-index")).toBe(false);
 	});
 
-	it("ignores package.json without pi field, falls back to index.ts", async () => {
+	it("ignores package.json without a hoocode field, falls back to index.ts", async () => {
 		const subdir = path.join(extensionsDir, "my-package");
 		fs.mkdirSync(subdir);
 		fs.writeFileSync(path.join(subdir, "index.ts"), extensionCode);
@@ -227,7 +268,7 @@ describe("extensions discovery", () => {
 		const subdir2 = path.join(extensionsDir, "with-manifest");
 		fs.mkdirSync(subdir2);
 		fs.writeFileSync(path.join(subdir2, "entry.ts"), extensionCode);
-		fs.writeFileSync(path.join(subdir2, "package.json"), JSON.stringify({ pi: { extensions: ["./entry.ts"] } }));
+		fs.writeFileSync(path.join(subdir2, "package.json"), JSON.stringify({ hoocode: { extensions: ["./entry.ts"] } }));
 
 		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 
@@ -242,7 +283,7 @@ describe("extensions discovery", () => {
 		fs.writeFileSync(
 			path.join(subdir, "package.json"),
 			JSON.stringify({
-				pi: {
+				hoocode: {
 					extensions: ["./exists.ts", "./missing.ts"],
 				},
 			}),
@@ -312,8 +353,8 @@ describe("extensions discovery", () => {
 
 	it("registers message renderers", async () => {
 		const extCode = `
-			export default function(pi) {
-				pi.registerMessageRenderer("my-custom-type", (message, options, theme) => {
+			export default function(hoo) {
+				hoo.registerMessageRenderer("my-custom-type", (message, options, theme) => {
 					return null; // Use default rendering
 				});
 			}
@@ -329,7 +370,7 @@ describe("extensions discovery", () => {
 
 	it("reports error when extension throws during initialization", async () => {
 		const extCode = `
-			export default function(pi) {
+			export default function(hoo) {
 				throw new Error("Initialization failed!");
 			}
 		`;
@@ -344,8 +385,8 @@ describe("extensions discovery", () => {
 
 	it("reports error when extension has no default export", async () => {
 		const extCode = `
-			export function notDefault(pi) {
-				pi.registerCommand("test", { handler: async () => {} });
+			export function notDefault(hoo) {
+				hoo.registerCommand("test", { handler: async () => {} });
 			}
 		`;
 		fs.writeFileSync(path.join(extensionsDir, "no-default.ts"), extCode);
@@ -378,10 +419,10 @@ describe("extensions discovery", () => {
 
 	it("loads extension with event handlers", async () => {
 		const extCode = `
-			export default function(pi) {
-				pi.on("agent_start", async () => {});
-				pi.on("tool_call", async (event) => undefined);
-				pi.on("agent_end", async () => {});
+			export default function(hoo) {
+				hoo.on("agent_start", async () => {});
+				hoo.on("tool_call", async (event) => undefined);
+				hoo.on("agent_end", async () => {});
 			}
 		`;
 		fs.writeFileSync(path.join(extensionsDir, "with-handlers.ts"), extCode);
@@ -397,8 +438,8 @@ describe("extensions discovery", () => {
 
 	it("loads extension with shortcuts", async () => {
 		const extCode = `
-			export default function(pi) {
-				pi.registerShortcut("ctrl+t", {
+			export default function(hoo) {
+				hoo.registerShortcut("ctrl+t", {
 					description: "Test shortcut",
 					handler: async (ctx) => {},
 				});
@@ -415,8 +456,8 @@ describe("extensions discovery", () => {
 
 	it("loads extension with flags", async () => {
 		const extCode = `
-			export default function(pi) {
-				pi.registerFlag("my-flag", {
+			export default function(hoo) {
+				hoo.registerFlag("my-flag", {
 					description: "My custom flag",
 					handler: async (value) => {},
 				});

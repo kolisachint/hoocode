@@ -21,6 +21,6 @@ const helloTool = defineTool({
 	},
 });
 
-export default function (pi: ExtensionAPI) {
-	pi.registerTool(helloTool);
+export default function (hoo: ExtensionAPI) {
+	hoo.registerTool(helloTool);
 }

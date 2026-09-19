@@ -270,8 +270,8 @@ and event handlers.
 // .hoocode/my-extension.ts
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 
-export default function (pi: ExtensionAPI) {
-  pi.registerTool({
+export default function (hoo: ExtensionAPI) {
+  hoo.registerTool({
     name: "my_tool",
     description: "Does something useful",
     parameters: Type.Object({ input: Type.String() }),

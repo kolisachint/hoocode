@@ -9,8 +9,8 @@
 
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 
-export function setupCost(pi: ExtensionAPI): void {
-	pi.registerCommand("cost", {
+export function setupCost(hoo: ExtensionAPI): void {
+	hoo.registerCommand("cost", {
 		description: "Show session token and cost totals, broken down by model.",
 		getArgumentCompletions: () => [],
 		handler: async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {

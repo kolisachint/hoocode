@@ -114,7 +114,7 @@ function allCommands(groups: PluginHookMatcherGroup[]): PluginHookCommand[] {
  * `onError` reports non-blocking failures (kept off the model's path).
  */
 export function installPluginHooks(
-	pi: ExtensionAPI,
+	hoo: ExtensionAPI,
 	hooks: PluginHooksConfig,
 	root: string,
 	vars: Record<string, string>,
@@ -123,7 +123,7 @@ export function installPluginHooks(
 	// ── PreToolUse → tool_call (blocking) ────────────────────────────────────
 	const preGroups = hooks.PreToolUse;
 	if (preGroups?.length) {
-		pi.on("tool_call", async (event: ToolCallEvent) => {
+		hoo.on("tool_call", async (event: ToolCallEvent) => {
 			const cmds = groupsForTool(preGroups, event.toolName);
 			for (const cmd of cmds) {
 				const res = await runHookCommand(
@@ -144,7 +144,7 @@ export function installPluginHooks(
 	// ── PostToolUse → tool_result (best-effort) ──────────────────────────────
 	const postGroups = hooks.PostToolUse;
 	if (postGroups?.length) {
-		pi.on("tool_result", async (event: ToolResultEvent) => {
+		hoo.on("tool_result", async (event: ToolResultEvent) => {
 			const cmds = groupsForTool(postGroups, event.toolName);
 			for (const cmd of cmds) {
 				const res = await runHookCommand(
@@ -173,7 +173,7 @@ export function installPluginHooks(
 	// ── UserPromptSubmit → before_agent_start (adds context) ─────────────────
 	const promptGroups = hooks.UserPromptSubmit;
 	if (promptGroups?.length) {
-		pi.on("before_agent_start", async (event) => {
+		hoo.on("before_agent_start", async (event) => {
 			let systemPrompt = event.systemPrompt;
 			for (const cmd of allCommands(promptGroups)) {
 				const res = await runHookCommand(
@@ -196,7 +196,7 @@ export function installPluginHooks(
 	// ── SessionStart → session_start (side effects) ──────────────────────────
 	const sessionGroups = hooks.SessionStart;
 	if (sessionGroups?.length) {
-		pi.on("session_start", async (event) => {
+		hoo.on("session_start", async (event) => {
 			for (const cmd of allCommands(sessionGroups)) {
 				const res = await runHookCommand(
 					cmd,
@@ -212,7 +212,7 @@ export function installPluginHooks(
 	// ── Stop → agent_end (side effects) ──────────────────────────────────────
 	const stopGroups = hooks.Stop;
 	if (stopGroups?.length) {
-		pi.on("agent_end", async () => {
+		hoo.on("agent_end", async () => {
 			for (const cmd of allCommands(stopGroups)) {
 				const res = await runHookCommand(cmd, { hook_event_name: "Stop" }, root, vars);
 				if (res.exitCode !== 0) onError(`Stop hook failed (${res.exitCode}): ${res.stderr.trim()}`);

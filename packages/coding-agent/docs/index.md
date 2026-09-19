@@ -4,17 +4,28 @@ HooCode is a minimal terminal coding harness. It is designed to stay small at th
 
 ## Quick start
 
-On linux or mac you can install HooCode with curl:
+One command, no runtime to install first.
+
+**macOS and Linux**
 
 ```bash
-curl -fsSL https://hoocode.dev/install.sh | sh
+curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh
 ```
 
-Or alternatively with npm:
+**Windows**
+
+```powershell
+irm https://kolisachint.github.io/hoocode/install.ps1 | iex
+```
+
+Or, if you already have Node 20+:
 
 ```bash
 npm install -g @kolisachint/hoocode-agent
 ```
+
+See [Install](install.md) for the standalone archives, offline and container
+setups, and building from source.
 
 Then run it in a project directory:
 
@@ -28,7 +39,8 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 
 ## Start here
 
-- [Quickstart](quickstart.md) - install, authenticate, and run a first session.
+- [Install](install.md) - one-click installers, npm, standalone archives, offline setups.
+- [Quickstart](quickstart.md) - authenticate and run a first session.
 - [Using HooCode](usage.md) - interactive mode, slash commands, context files, and CLI reference.
 - [Providers](providers.md) - subscription and API-key setup for built-in providers.
 - [Settings](settings.md) - global and project settings.

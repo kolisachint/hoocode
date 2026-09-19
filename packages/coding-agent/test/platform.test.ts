@@ -271,11 +271,11 @@ describe("scaffold commands (/new-skill //new-agent //new-command)", () => {
 		cwd = fs.mkdtempSync(path.join(os.tmpdir(), "hoo-scaffold-"));
 		commands = new Map();
 		notifications = [];
-		const pi = {
+		const hoo = {
 			registerCommand: (name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) =>
 				commands.set(name, def),
 		} as never;
-		setupScaffold(pi);
+		setupScaffold(hoo);
 		ctx = { cwd, ui: { notify: (msg: string) => notifications.push(msg) } } as never;
 	});
 

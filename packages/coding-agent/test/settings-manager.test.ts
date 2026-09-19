@@ -36,7 +36,7 @@ describe("SettingsManager", () => {
 				}),
 			);
 
-			// Create SettingsManager (simulates pi starting up)
+			// Create SettingsManager (simulates hoo starting up)
 			const manager = SettingsManager.create(projectDir, agentDir);
 
 			// Simulate user editing settings.json externally to add enabledModels
@@ -487,42 +487,42 @@ describe("SettingsManager", () => {
 	});
 
 	describe("project settings directory creation", () => {
-		it("should not create .pi folder when only reading project settings", () => {
-			// Create agent dir with global settings, but NO .pi folder in project
+		it("should not create .hoo folder when only reading project settings", () => {
+			// Create agent dir with global settings, but NO .hoo folder in project
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
 
-			// Delete the .pi folder that beforeEach created
+			// Delete the .hoo folder that beforeEach created
 			rmSync(join(projectDir, ".hoocode"), { recursive: true });
 
 			// Create SettingsManager (reads both global and project settings)
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			// .pi folder should NOT have been created just from reading
+			// .hoo folder should NOT have been created just from reading
 			expect(existsSync(join(projectDir, ".hoocode"))).toBe(false);
 
 			// Settings should still be loaded from global
 			expect(manager.getTheme()).toBe("dark");
 		});
 
-		it("should create .pi folder when writing project settings", async () => {
-			// Create agent dir with global settings, but NO .pi folder in project
+		it("should create .hoo folder when writing project settings", async () => {
+			// Create agent dir with global settings, but NO .hoo folder in project
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
 
-			// Delete the .pi folder that beforeEach created
+			// Delete the .hoo folder that beforeEach created
 			rmSync(join(projectDir, ".hoocode"), { recursive: true });
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			// .pi folder should NOT exist yet
+			// .hoo folder should NOT exist yet
 			expect(existsSync(join(projectDir, ".hoocode"))).toBe(false);
 
 			// Write a project-specific setting
 			manager.setProjectPackages([{ source: "npm:test-pkg" }]);
 			await manager.flush();
 
-			// Now .pi folder should exist
+			// Now .hoo folder should exist
 			expect(existsSync(join(projectDir, ".hoocode"))).toBe(true);
 
 			// And settings file should be created

@@ -18,7 +18,7 @@ function makeHarness() {
 	const commands = new Map<string, (args: string, ctx: any) => Promise<void>>();
 	const sentMessages: string[] = [];
 
-	const pi: any = {
+	const hoo: any = {
 		events,
 		on: (event: string, handler: (e: unknown, ctx: unknown) => unknown) => {
 			const arr = handlers.get(event) ?? [];
@@ -38,7 +38,7 @@ function makeHarness() {
 		for (const h of handlers.get(event) ?? []) h(e, ctx);
 	};
 
-	return { pi, events, fire, sentMessages, getCommand: (n: string) => commands.get(n) };
+	return { hoo, events, fire, sentMessages, getCommand: (n: string) => commands.get(n) };
 }
 
 function makeCtx(cwd: string) {
@@ -68,7 +68,7 @@ describe("LOOP_AUTO_START", () => {
 
 	it("starts a run and announces it as active on the bus", () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx, notifications } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -87,7 +87,7 @@ describe("LOOP_AUTO_START", () => {
 
 	it("ignores a payload with no usable task rather than arming an empty loop", () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -102,7 +102,7 @@ describe("LOOP_AUTO_START", () => {
 
 	it("re-sends the caller's continuePrompt on each continuation", () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -119,7 +119,7 @@ describe("LOOP_AUTO_START", () => {
 
 	it("falls back to the generic nudge when no continuePrompt is given", () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -133,7 +133,7 @@ describe("LOOP_AUTO_START", () => {
 
 	it("stops when the agent reports the done token", () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx, notifications } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -152,7 +152,7 @@ describe("LOOP_AUTO_START", () => {
 
 	it("honours an explicit zero budget instead of substituting the default", () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx, notifications } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -167,7 +167,7 @@ describe("LOOP_AUTO_START", () => {
 
 	it("substitutes the default budget when the payload's is nonsensical", () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx, notifications } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -189,7 +189,7 @@ describe("/loop auto after sharing the starter", () => {
 
 	it("still delivers the task, applies --max-turns, and uses the generic continuation", async () => {
 		const h = makeHarness();
-		setupLoop(h.pi);
+		setupLoop(h.hoo);
 		const { ctx, notifications } = makeCtx(tempDir);
 		h.fire("session_start", { type: "session_start" }, ctx);
 

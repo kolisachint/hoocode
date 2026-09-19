@@ -1,0 +1,62 @@
+name: Feature or idea
+description: Something HooCode should be able to do.
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ideas are welcome, including half-formed ones. The most useful thing you
+        can do is describe **the problem** before the solution — sometimes the
+        answer is a flag that already exists, and sometimes your framing leads
+        somewhere better than the feature you had in mind.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation, not the feature. What is awkward today?
+      placeholder: >
+        I work across three repos in one tmux session and I keep losing track of
+        which hoocode window is on which project.
+    validations:
+      required: true
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: Your idea, if you have one. "I don't know, but this hurts" is a valid answer.
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried?
+      description: Workarounds, other tools, settings you went looking for and could not find.
+    validations:
+      required: false
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: Where do you think this belongs?
+      description: >
+        HooCode's core stays small on purpose — most features are better as an
+        extension, skill or plugin. Guessing wrong here costs nothing.
+      options:
+        - In the core
+        - As an extension or plugin
+        - Not sure
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched [existing issues](https://github.com/kolisachint/hoocode/issues?q=is%3Aissue) for this.
+          required: false
+        - label: I would be interested in implementing this myself.
+          required: false

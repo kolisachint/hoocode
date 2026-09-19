@@ -119,6 +119,7 @@ export interface SettingsConfig {
 	editorPaddingX: number;
 	autocompleteMaxVisible: number;
 	quietStartup: boolean;
+	tipsEnabled: boolean;
 	clearOnShrink: boolean;
 	showTerminalProgress: boolean;
 	warnings: WarningSettings;
@@ -167,6 +168,7 @@ export interface SettingsCallbacks {
 	onEditorPaddingXChange: (padding: number) => void;
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
+	onTipsEnabledChange: (enabled: boolean) => void;
 	onClearOnShrinkChange: (enabled: boolean) => void;
 	onShowTerminalProgressChange: (enabled: boolean) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
@@ -1008,6 +1010,14 @@ export class SettingsSelectorComponent extends InputFrame {
 				values: ["true", "false"],
 			},
 			{
+				id: "tips",
+				label: "Tips",
+				description:
+					"Show an occasional tip on the band above the prompt while idle or streaming. Never interrupts, never repeats until it has run out of things to say.",
+				currentValue: config.tipsEnabled ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
 				id: "install-telemetry",
 				label: "Install telemetry",
 				description: "Send an anonymous version/update ping after changelog-detected updates",
@@ -1421,6 +1431,9 @@ export class SettingsSelectorComponent extends InputFrame {
 				case "quiet-startup":
 					callbacks.onQuietStartupChange(newValue === "true");
 					break;
+				case "tips":
+					callbacks.onTipsEnabledChange(newValue === "true");
+					break;
 				case "install-telemetry":
 					callbacks.onEnableInstallTelemetryChange(newValue === "true");
 					break;
@@ -1560,8 +1573,9 @@ export class SettingsSelectorComponent extends InputFrame {
 					.join(" "),
 				submenu: (_currentValue, done) => new ExternalToolsSubmenu(config.externalTools, () => done()),
 			},
-			categoryRow("cat-advanced", "Advanced", "Startup, telemetry, skills, warnings, voice, and web tools.", [
+			categoryRow("cat-advanced", "Advanced", "Startup, tips, telemetry, skills, warnings, voice, and web tools.", [
 				"quiet-startup",
+				"tips",
 				"collapse-changelog",
 				"install-telemetry",
 				"skill-commands",

@@ -41,8 +41,8 @@ describe("issue #2753 reload stale resource settings", () => {
 				authStorage,
 				resourceLoaderOptions: {
 					extensionFactories: [
-						(pi) => {
-							pi.registerProvider(faux.getModel().provider, {
+						(hoo) => {
+							hoo.registerProvider(faux.getModel().provider, {
 								baseUrl: faux.getModel().baseUrl,
 								apiKey: "faux-key",
 								api: faux.api,

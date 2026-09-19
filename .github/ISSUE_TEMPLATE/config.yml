@@ -1,0 +1,21 @@
+# Keep the "blank issue" escape hatch open. A template that does not fit is a
+# reason to file badly or not at all, and a badly-filed real bug still beats a
+# missing one.
+blank_issues_enabled: true
+
+contact_links:
+  - name: Documentation
+    url: https://kolisachint.github.io/hoocode/
+    about: Install, providers, settings, keybindings, extensions, plugins — start here.
+
+  - name: Ask a question
+    url: https://github.com/kolisachint/hoocode/issues/new?labels=question&template=question.yml
+    about: Questions are welcome as issues. There is no separate forum to get lost in.
+
+  - name: Collaboration and everything else
+    url: https://x.com/kolisachint
+    about: Tag @kolisachint on X for anything that does not fit an issue.
+
+  - name: Star HooCode
+    url: https://github.com/kolisachint/hoocode
+    about: One click, and it is the cheapest way to help other people find the project.

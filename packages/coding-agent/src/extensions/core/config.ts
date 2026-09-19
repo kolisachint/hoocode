@@ -58,7 +58,7 @@ interface ThinkingEscalationConfig {
 
 /** LLM defaults seeded in hoo-config.json and honoured during model selection. */
 interface HooLlmConfig {
-	/** Preferred provider when the pi-layer settings.json has no saved default. */
+	/** Preferred provider when the hoocode-layer settings.json has no saved default. */
 	default_provider?: string;
 	/** Preferred model id for `default_provider` (otherwise the provider's built-in default). */
 	default_model?: string;

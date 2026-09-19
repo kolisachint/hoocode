@@ -160,8 +160,8 @@ export async function createSurfaceHarness(options: SurfaceHarnessOptions = {}):
 			authStorage,
 			resourceLoaderOptions: {
 				extensionFactories: [
-					(pi) => {
-						pi.registerProvider(model.provider, {
+					(hoo) => {
+						hoo.registerProvider(model.provider, {
 							baseUrl: model.baseUrl,
 							apiKey: "faux-key",
 							api: faux.api,

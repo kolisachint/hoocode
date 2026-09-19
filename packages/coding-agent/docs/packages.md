@@ -2,7 +2,7 @@
 
 # HooCode Packages
 
-HooCode packages bundle extensions, skills, prompt templates, and themes so you can share them through npm or git. A package can declare resources in `package.json` under the `pi` key, or use conventional directories.
+HooCode packages bundle extensions, skills, prompt templates, and themes so you can share them through npm or git. A package can declare resources in `package.json` under the `hoocode` key, or use conventional directories.
 
 ## Table of Contents
 
@@ -110,13 +110,16 @@ Local paths point to files or directories on disk and are added to settings with
 
 ## Creating a HooCode Package
 
-Add a `pi` manifest to `package.json` or use conventional directories. Include the `pi-package` keyword for discoverability.
+Add a `hoocode` manifest to `package.json` or use conventional directories. Include the `hoocode-package` keyword for discoverability.
+
+> A `pi` manifest key is still read, for packages written against the upstream project HooCode grew
+> out of. It is a deprecated alias: write `hoocode`. A package declaring both gets `hoocode`.
 
 ```json
 {
   "name": "my-package",
-  "keywords": ["pi-package"],
-  "pi": {
+  "keywords": ["hoocode-package"],
+  "hoocode": {
     "extensions": ["./extensions"],
     "skills": ["./skills"],
     "prompts": ["./prompts"],
@@ -129,13 +132,14 @@ Paths are relative to the package root. Arrays support glob patterns and `!exclu
 
 ### Gallery Metadata
 
-The [package gallery](https://hoocode.dev/packages) displays packages tagged with `pi-package`. Add `video` or `image` fields to show a preview:
+Packages are discovered on npm by their `hoocode-package` keyword. Add `video` or `image` fields so
+front-ends that list packages can show a preview:
 
 ```json
 {
   "name": "my-package",
-  "keywords": ["pi-package"],
-  "pi": {
+  "keywords": ["hoocode-package"],
+  "hoocode": {
     "extensions": ["./extensions"],
     "video": "https://example.com/demo.mp4",
     "image": "https://example.com/screenshot.png"
@@ -152,7 +156,7 @@ If both are set, video takes precedence.
 
 ### Convention Directories
 
-If no `pi` manifest is present, hoocode auto-discovers resources from these directories:
+If no `hoocode` manifest is present, hoocode auto-discovers resources from these directories:
 
 - `extensions/` loads `.ts` and `.js` files
 - `skills/` recursively finds `SKILL.md` folders and loads top-level `.md` files as skills
@@ -175,7 +179,7 @@ Example:
     "shitty-extensions": "^1.0.1"
   },
   "bundledDependencies": ["shitty-extensions"],
-  "pi": {
+  "hoocode": {
     "extensions": ["extensions", "node_modules/shitty-extensions/extensions"],
     "skills": ["skills", "node_modules/shitty-extensions/skills"]
   }

@@ -40,21 +40,21 @@ const askOptionsSchema = Type.Object({
 	),
 });
 
-export function setupAskOptions(pi: ExtensionAPI): void {
+export function setupAskOptions(hoo: ExtensionAPI): void {
 	// Capture the latest context so the tool can reach the interactive UI.
 	let activeCtx: ExtensionContext | undefined;
-	pi.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
+	hoo.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		activeCtx = ctx;
 	});
 
 	// Track whether an autonomous /loop is running so we never block on a human
 	// who isn't there. The loop extension broadcasts this on the shared bus.
 	let autoLoopActive = false;
-	pi.events.on(LOOP_AUTO_CHANGED, (data) => {
+	hoo.events.on(LOOP_AUTO_CHANGED, (data) => {
 		autoLoopActive = !!(data as { active?: boolean })?.active;
 	});
 
-	pi.registerTool({
+	hoo.registerTool({
 		name: "ask_options",
 		label: "Ask the user",
 		description:
@@ -97,7 +97,7 @@ export function setupAskOptions(pi: ExtensionAPI): void {
 				const blockers = params.questions.filter((q) => !q.options.some((o) => o.recommended));
 				if (blockers.length) {
 					const list = blockers.map((q) => `  • ${q.question}`).join("\n");
-					pi.events.emit(LOOP_HALT, {
+					hoo.events.emit(LOOP_HALT, {
 						reason: `ask_options had ${blockers.length} question(s) with no recommended default.`,
 					});
 					return {

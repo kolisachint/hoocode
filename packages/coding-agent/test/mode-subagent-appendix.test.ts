@@ -29,7 +29,7 @@ describe("mode appendix in spawned subagents", () => {
 
 		harness = await createHarnessWithExtensions({
 			responses: ["ok"],
-			extensionFactories: [(pi) => setupMode(pi)],
+			extensionFactories: [(hoo) => setupMode(hoo)],
 		});
 		await harness.session.bindExtensions({});
 		await harness.session.prompt("hi");
@@ -42,7 +42,7 @@ describe("mode appendix in spawned subagents", () => {
 
 		harness = await createHarnessWithExtensions({
 			responses: ["ok"],
-			extensionFactories: [(pi) => setupMode(pi)],
+			extensionFactories: [(hoo) => setupMode(hoo)],
 		});
 		await harness.session.bindExtensions({});
 		await harness.session.prompt("hi");

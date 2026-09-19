@@ -22,7 +22,7 @@ HooCode loads themes from:
 - Built-in: every `*.json` in the shipped theme directory (see [Built-in Themes](#built-in-themes))
 - Global: `~/.hoocode/themes/*.json`
 - Project: `.hoocode/themes/*.json`
-- Packages: `themes/` directories or `pi.themes` entries in `package.json`
+- Packages: `themes/` directories or `hoo.themes` entries in `package.json`
 - Settings: `themes` array with files or directories
 - CLI: `--theme <path>` (repeatable)
 

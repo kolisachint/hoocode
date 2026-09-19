@@ -371,9 +371,10 @@ export class CommandExecutor {
 				return;
 			}
 
-			// Create the preview URL
+			// The gist is the artifact. A viewer URL is an extra only when one is
+			// actually configured (see getShareViewerUrl).
 			const previewUrl = getShareViewerUrl(gistId);
-			this.ctx.showRecord(`Share URL: ${previewUrl}\nGist: ${gistUrl}`);
+			this.ctx.showRecord(previewUrl ? `Share URL: ${previewUrl}\nGist: ${gistUrl}` : `Gist: ${gistUrl}`);
 		} catch (error: unknown) {
 			if (!loader.signal.aborted) {
 				restoreEditor();

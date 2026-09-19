@@ -55,7 +55,7 @@ describe("/new-canvas", () => {
 		commands = new Map();
 		notifications = [];
 		sentToModel = [];
-		const pi = {
+		const hoo = {
 			registerCommand: (name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) =>
 				commands.set(name, def),
 			registerTool: () => {},
@@ -66,7 +66,7 @@ describe("/new-canvas", () => {
 				sentToModel.push(content);
 			},
 		} as never;
-		setupCanvas(pi, {
+		setupCanvas(hoo, {
 			homeDir: home,
 			resolveRuntime: async () => ({ available: true, runtime: canvasTestRuntime() }),
 		});

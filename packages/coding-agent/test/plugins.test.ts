@@ -397,7 +397,7 @@ describe("plugin factory wiring", () => {
 		const events: string[] = [];
 		const providers: string[] = [];
 		const discovered: Record<string, unknown>[] = [];
-		const pi = {
+		const hoo = {
 			on: (event: string, handler: () => Record<string, unknown>) => {
 				events.push(event);
 				if (event === "resources_discover") discovered.push(handler());
@@ -406,7 +406,7 @@ describe("plugin factory wiring", () => {
 		} as unknown as Parameters<ReturnType<typeof buildPluginFactory>>[0];
 
 		const factory = buildPluginFactory(plugin);
-		factory(pi);
+		factory(hoo);
 
 		expect(factory.displayName).toBe("plugin:p");
 		expect(events).toContain("resources_discover");

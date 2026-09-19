@@ -1,0 +1,158 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # bun is the toolchain. bunfig.toml pins the npm-compatible hoisted linker.
+  # See docs/bun-migration.md.
+  bun-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check code quality
+        run: bun run check
+
+  bun-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [ai, agent, coding-agent, tui]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dependencies
+        run: |
+          cd packages/ai && bun run build
+          cd ../agent && bun run build
+          cd ../tui && bun run build
+
+      - name: Test ${{ matrix.package }}
+        run: cd packages/${{ matrix.package }} && bun run test
+
+  # Tier 2 of the canvas drift check (docs/canvas-extensions-design.md §2.3).
+  # The typecheck catches shape changes in the SDK's types; only running someone
+  # else's canvas catches behavioural drift, which is the half that reaches users
+  # as "the catalog stopped working". Two extensions by different authors, chosen
+  # because they stress the host differently (§12.1).
+  #
+  # Pinned to a SHA, not a branch, for two reasons: a canary aimed at a moving
+  # target reports upstream edits as our regressions, and this job executes third
+  # party code, so the revision it runs should change only when someone bumps it
+  # here on purpose.
+  canvas-canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only the two extension directories; the full repository is ~180MB and
+      # nothing else in it is read.
+      - name: Check out the pinned catalog canvases
+        uses: actions/checkout@v4
+        with:
+          repository: github/awesome-copilot
+          ref: 318066d2213b510e89b500ed0d53506c54093ddc
+          path: .canvas-catalog
+          sparse-checkout: |
+            extensions/pr-artifact-explorer
+            extensions/arcade-canvas
+          sparse-checkout-cone-mode: false
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dependencies
+        run: |
+          cd packages/ai && bun run build
+          cd ../agent && bun run build
+          cd ../tui && bun run build
+
+      # The extensions are run unmodified, with no node_modules anywhere: the SDK
+      # import is resolved by the host (§4.1). If that stops being true, this is
+      # where it shows up.
+      - name: Open the catalog canvases
+        env:
+          HOOCODE_CANVAS_ACCEPTANCE_ROOT: ${{ github.workspace }}/.canvas-catalog/extensions
+        run: cd packages/coding-agent && bun run test test/canvas-acceptance-catalog.test.ts
+
+  bun-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build all packages
+        run: bun run build
+
+  # The installers are the first thing a new user runs, and nothing else in the
+  # repository executes them — so without this job a typo in either ships to the
+  # front door and is discovered by a stranger. Syntax only: actually installing
+  # would need a published release to install from.
+  installers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse install.sh with a POSIX shell
+        # dash, not bash: the script is piped to `sh`, which on Debian/Ubuntu
+        # (and on Alpine) is not bash. A bashism here would only ever fail on a
+        # user's machine. dash is /bin/sh on the Ubuntu runners, so no install
+        # step is needed.
+        run: |
+          dash -n install/install.sh
+          sh -n install/install.sh
+
+      - name: Parse install.ps1 with PowerShell
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "install/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Extent.StartLineNumber): $($_.Message)" }
+            exit 1
+          }
+          Write-Host "install.ps1 parses clean"
+
+      - name: Parse the release build script and the test runner
+        run: |
+          bash -n scripts/build-binaries.sh
+          bash scripts/build-binaries.sh --list
+          bash -n test.sh
+          ./test.sh --help >/dev/null

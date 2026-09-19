@@ -35,20 +35,20 @@ import { setupScaffold } from "./scaffold.js";
 import { setupSelfKnowledge } from "./self-knowledge.js";
 import { setupThinkingEscalation } from "./thinking-escalation.js";
 
-function hooCore(pi: ExtensionAPI): void {
-	setupPermissionGate(pi);
-	setupMcpLoader(pi);
-	setupMode(pi);
-	setupCost(pi);
-	setupScaffold(pi);
-	setupAskOptions(pi);
-	setupThinkingEscalation(pi);
-	setupLoop(pi);
-	setupMarketplace(pi);
-	setupCanvas(pi);
-	setupPromptReactiveNudges(pi);
-	setupLearn(pi);
-	setupSelfKnowledge(pi);
+function hooCore(hoo: ExtensionAPI): void {
+	setupPermissionGate(hoo);
+	setupMcpLoader(hoo);
+	setupMode(hoo);
+	setupCost(hoo);
+	setupScaffold(hoo);
+	setupAskOptions(hoo);
+	setupThinkingEscalation(hoo);
+	setupLoop(hoo);
+	setupMarketplace(hoo);
+	setupCanvas(hoo);
+	setupPromptReactiveNudges(hoo);
+	setupLearn(hoo);
+	setupSelfKnowledge(hoo);
 }
 
 hooCore.displayName = "hoo-core";

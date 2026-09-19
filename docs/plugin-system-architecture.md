@@ -892,7 +892,7 @@ Those two are locked together: because the matcher is exact-only, the catalog
 dump becomes optional.
 
 A third cost went unnoticed until after step 10: resolving a tool **invalidates
-the entire prompt cache**, because `pi.registerTool()` changes `tools`, which
+the entire prompt cache**, because `hoo.registerTool()` changes `tools`, which
 renders at position 0. Deferral therefore trades schema tokens up front for a
 full prefix re-process on first resolve. See §8.6 item 6.
 
@@ -1214,7 +1214,7 @@ where authored plugins are half-live.
    after step 10 shipped, and it undercuts the feature step 10 improved. Tools
    render at position 0 of the prompt, so adding one mid-conversation
    invalidates *all three* cache tiers — tools, system, and messages. Our
-   resolver adds tools via `pi.registerTool()`, so each resolve forces a full
+   resolver adds tools via `hoo.registerTool()`, so each resolve forces a full
    prefix re-process at full input price.
 
    That inverts deferral's economics: it saves schema tokens on every request

@@ -70,6 +70,11 @@ export const DEFAULT_SETTINGS = {
 		autoResize: true,
 		blockImages: false,
 	},
+	tips: {
+		enabled: true,
+		seen: [],
+		starNudges: 0,
+	},
 	doubleEscapeAction: "tree",
 	treeFilterMode: "default",
 	editorBorder: "box",

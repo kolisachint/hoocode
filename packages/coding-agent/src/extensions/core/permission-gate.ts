@@ -115,126 +115,129 @@ function describeTool(event: ToolCallEvent): string {
 	return event.toolName;
 }
 
-export function setupPermissionGate(pi: ExtensionAPI): void {
-	pi.on("tool_call", async (event: ToolCallEvent, ctx: ExtensionContext): Promise<ToolCallEventResult | undefined> => {
-		// Use the merged config so project-local entries are respected
-		const config = readMergedConfig(ctx.cwd);
-		const mode = config.active_mode ?? "build";
-		const modeCfg = config.modes?.[mode];
+export function setupPermissionGate(hoo: ExtensionAPI): void {
+	hoo.on(
+		"tool_call",
+		async (event: ToolCallEvent, ctx: ExtensionContext): Promise<ToolCallEventResult | undefined> => {
+			// Use the merged config so project-local entries are respected
+			const config = readMergedConfig(ctx.cwd);
+			const mode = config.active_mode ?? "build";
+			const modeCfg = config.modes?.[mode];
 
-		// ── Hard enforcement (always applies, regardless of UI) ───────────────────
+			// ── Hard enforcement (always applies, regardless of UI) ───────────────────
 
-		// Explicitly denied tools are blocked unconditionally
-		if (modeCfg?.denied_tools?.includes(event.toolName)) {
-			return {
-				block: true,
-				reason: `Tool "${event.toolName}" is denied in mode "${mode}".`,
-			};
-		}
+			// Explicitly denied tools are blocked unconditionally
+			if (modeCfg?.denied_tools?.includes(event.toolName)) {
+				return {
+					block: true,
+					reason: `Tool "${event.toolName}" is denied in mode "${mode}".`,
+				};
+			}
 
-		// enabled_tools acts as a strict allowlist: only listed tools may execute
-		if (
-			modeCfg?.enabled_tools &&
-			modeCfg.enabled_tools.length > 0 &&
-			!modeCfg.enabled_tools.includes(event.toolName)
-		) {
-			return {
-				block: true,
-				reason:
-					`Tool "${event.toolName}" is not enabled in mode "${mode}" ` +
-					`(enabled: ${modeCfg.enabled_tools.join(", ")}).`,
-			};
-		}
+			// enabled_tools acts as a strict allowlist: only listed tools may execute
+			if (
+				modeCfg?.enabled_tools &&
+				modeCfg.enabled_tools.length > 0 &&
+				!modeCfg.enabled_tools.includes(event.toolName)
+			) {
+				return {
+					block: true,
+					reason:
+						`Tool "${event.toolName}" is not enabled in mode "${mode}" ` +
+						`(enabled: ${modeCfg.enabled_tools.join(", ")}).`,
+				};
+			}
 
-		// Bash command-level filtering
-		if (isToolCallEventType("bash", event)) {
-			const command = (event.input as { command?: string }).command ?? "";
+			// Bash command-level filtering
+			if (isToolCallEventType("bash", event)) {
+				const command = (event.input as { command?: string }).command ?? "";
 
-			// denied_bash_commands: block if any pattern matches
-			if (modeCfg?.denied_bash_commands?.length) {
-				for (const pattern of modeCfg.denied_bash_commands) {
-					if (matchesBashPattern(pattern, command)) {
+				// denied_bash_commands: block if any pattern matches
+				if (modeCfg?.denied_bash_commands?.length) {
+					for (const pattern of modeCfg.denied_bash_commands) {
+						if (matchesBashPattern(pattern, command)) {
+							return {
+								block: true,
+								reason: `Bash command matches a denied pattern in mode "${mode}": ${pattern}`,
+							};
+						}
+					}
+				}
+
+				// allowed_bash_commands: block unless at least one pattern matches
+				if (modeCfg?.allowed_bash_commands?.length) {
+					const permitted = modeCfg.allowed_bash_commands.some((p) => matchesBashPattern(p, command));
+					if (!permitted) {
 						return {
 							block: true,
-							reason: `Bash command matches a denied pattern in mode "${mode}": ${pattern}`,
+							reason:
+								`Bash command is not permitted in mode "${mode}". ` +
+								`Allowed patterns: ${modeCfg.allowed_bash_commands.join(", ")}`,
 						};
 					}
 				}
 			}
 
-			// allowed_bash_commands: block unless at least one pattern matches
-			if (modeCfg?.allowed_bash_commands?.length) {
-				const permitted = modeCfg.allowed_bash_commands.some((p) => matchesBashPattern(p, command));
-				if (!permitted) {
+			// webfetch host policy (.webtoolsignore). Hard enforcement, always applies:
+			// a blocked host is denied even in headless runs. SSRF/private-address
+			// blocking lives in the webtools binary; this is host allow/deny policy only.
+			if (event.toolName === "webfetch") {
+				const url = (event.input as { url?: string }).url ?? "";
+				const blockedHost = url ? blockedHostForUrl(ctx.cwd, url) : undefined;
+				if (blockedHost) {
 					return {
 						block: true,
-						reason:
-							`Bash command is not permitted in mode "${mode}". ` +
-							`Allowed patterns: ${modeCfg.allowed_bash_commands.join(", ")}`,
+						reason: `Host "${blockedHost}" is blocked by .webtoolsignore policy.`,
 					};
 				}
 			}
-		}
 
-		// webfetch host policy (.webtoolsignore). Hard enforcement, always applies:
-		// a blocked host is denied even in headless runs. SSRF/private-address
-		// blocking lives in the webtools binary; this is host allow/deny policy only.
-		if (event.toolName === "webfetch") {
-			const url = (event.input as { url?: string }).url ?? "";
-			const blockedHost = url ? blockedHostForUrl(ctx.cwd, url) : undefined;
-			if (blockedHost) {
-				return {
-					block: true,
-					reason: `Host "${blockedHost}" is blocked by .webtoolsignore policy.`,
-				};
+			// ── UI-based permission prompting (interactive sessions only) ─────────────
+
+			if (!GATED_TOOLS.has(event.toolName) || !ctx.hasUI) return;
+
+			const autoAllow = modeCfg?.auto_allow ?? [];
+
+			// Check allowed_write_paths for write/edit operations
+			if ((event.toolName === "write" || event.toolName === "edit") && modeCfg?.allowed_write_paths) {
+				// Absent path stays blocked: an unidentifiable write cannot be checked
+				// against an allowlist, and refusing is the safe direction.
+				const filePath = mutationPath(event.input) ?? "";
+				if (!matchesAllowedPath(filePath, modeCfg.allowed_write_paths, ctx.cwd)) {
+					return {
+						block: true,
+						reason:
+							`Mode "${mode}" only allows writes to: ${modeCfg.allowed_write_paths.join(", ")}. ` +
+							`Attempted to ${event.toolName}: ${filePath}. ` +
+							`Switch to "/mode build" to modify source files.`,
+					};
+				}
 			}
-		}
 
-		// ── UI-based permission prompting (interactive sessions only) ─────────────
+			if (autoAllow.includes(event.toolName)) return;
 
-		if (!GATED_TOOLS.has(event.toolName) || !ctx.hasUI) return;
+			const choice = await ctx.ui.select(`Allow: ${describeTool(event)}`, [
+				"Yes (once)",
+				"No (block)",
+				"Always (add to auto-allow for this mode)",
+			]);
 
-		const autoAllow = modeCfg?.auto_allow ?? [];
-
-		// Check allowed_write_paths for write/edit operations
-		if ((event.toolName === "write" || event.toolName === "edit") && modeCfg?.allowed_write_paths) {
-			// Absent path stays blocked: an unidentifiable write cannot be checked
-			// against an allowlist, and refusing is the safe direction.
-			const filePath = mutationPath(event.input) ?? "";
-			if (!matchesAllowedPath(filePath, modeCfg.allowed_write_paths, ctx.cwd)) {
-				return {
-					block: true,
-					reason:
-						`Mode "${mode}" only allows writes to: ${modeCfg.allowed_write_paths.join(", ")}. ` +
-						`Attempted to ${event.toolName}: ${filePath}. ` +
-						`Switch to "/mode build" to modify source files.`,
-				};
+			if (!choice || choice.startsWith("No")) {
+				return { block: true, reason: "Denied by permission gate" };
 			}
-		}
 
-		if (autoAllow.includes(event.toolName)) return;
-
-		const choice = await ctx.ui.select(`Allow: ${describeTool(event)}`, [
-			"Yes (once)",
-			"No (block)",
-			"Always (add to auto-allow for this mode)",
-		]);
-
-		if (!choice || choice.startsWith("No")) {
-			return { block: true, reason: "Denied by permission gate" };
-		}
-
-		if (choice.startsWith("Always")) {
-			// Write "always" choices to the global config only
-			const latest = readConfig();
-			const currentMode = latest.active_mode ?? "build";
-			latest.modes ??= {};
-			latest.modes[currentMode] ??= {};
-			latest.modes[currentMode].auto_allow = Array.from(
-				new Set([...(latest.modes[currentMode].auto_allow ?? []), event.toolName]),
-			);
-			writeConfig(latest);
-			ctx.ui.notify(`"${event.toolName}" added to auto-allow for mode "${currentMode}"`, "info");
-		}
-	});
+			if (choice.startsWith("Always")) {
+				// Write "always" choices to the global config only
+				const latest = readConfig();
+				const currentMode = latest.active_mode ?? "build";
+				latest.modes ??= {};
+				latest.modes[currentMode] ??= {};
+				latest.modes[currentMode].auto_allow = Array.from(
+					new Set([...(latest.modes[currentMode].auto_allow ?? []), event.toolName]),
+				);
+				writeConfig(latest);
+				ctx.ui.notify(`"${event.toolName}" added to auto-allow for mode "${currentMode}"`, "info");
+			}
+		},
+	);
 }

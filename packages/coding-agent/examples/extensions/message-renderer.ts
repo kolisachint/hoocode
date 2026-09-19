@@ -10,9 +10,9 @@
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { Box, Text } from "@kolisachint/hoocode-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (hoo: ExtensionAPI) {
 	// Register custom renderer for "status-update" messages
-	pi.registerMessageRenderer("status-update", (message, { expanded }, theme) => {
+	hoo.registerMessageRenderer("status-update", (message, { expanded }, theme) => {
 		const details = message.details as { level: string; timestamp: number } | undefined;
 		const level = details?.level ?? "info";
 
@@ -35,7 +35,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// Command to send status messages
-	pi.registerCommand("status", {
+	hoo.registerCommand("status", {
 		description: "Send a status message (usage: /status [warn|error] message)",
 		handler: async (args, _ctx) => {
 			const parts = args.trim().split(/\s+/);
@@ -48,7 +48,7 @@ export default function (pi: ExtensionAPI) {
 				content = parts.slice(1).join(" ") || "Status update";
 			}
 
-			pi.sendMessage({
+			hoo.sendMessage({
 				customType: "status-update",
 				content,
 				display: true,

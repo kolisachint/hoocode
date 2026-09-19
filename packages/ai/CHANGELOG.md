@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- The OAuth callback page (`utils/oauth/oauth-page.ts`) shows the HooCode mark
+  rather than the upstream project's. It is the only surface in this package
+  that renders in a browser, and it is shown at the moment someone decides
+  whether to trust what is asking for their account.
+- The Codex `originator` header and its User-Agent are now named constants
+  (`CODEX_ORIGINATOR`, `DEFAULT_ORIGINATOR`) documented as protocol values
+  rather than branding: the ChatGPT backend identifies the OAuth client by
+  client id plus originator and rejects an unrecognised pair, so the value is
+  the one the registered client was enrolled with. No behaviour change.
+
 ## [0.5.79] - 2026-09-18
 
 ### Added

@@ -63,9 +63,33 @@ text. `"summarized"` returns visible thinking. When unset, Opus 4.8 defaults to
 | `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
 | `showHardwareCursor` | boolean | `false` | Show terminal cursor |
 
+### Tips
+
+An occasional one-line tip on the band above the prompt, shown when the session has been idle for a
+while or when a turn has been running long enough that you are watching a spinner. A tip never
+interrupts: it is only ever posted when the band is empty, so it cannot delay or replace a
+notification you caused. It never repeats until it has run out of things to say, and it remembers
+across sessions.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `tips.enabled` | boolean | `true` | Show tips. Also in `/settings` → Advanced → Tips |
+| `tips.seen` | string[] | `[]` | Ids of tips already shown. Bookkeeping; clear it to see them all again |
+| `tips.starNudges` | number | `0` | How many times the "star the repo" nudge has been shown (lifetime cap: 3) |
+
+The tips themselves live in one file,
+[`src/modes/interactive/tips.ts`](https://github.com/kolisachint/hoocode/blob/main/packages/coding-agent/src/modes/interactive/tips.ts).
+Know a trick that is not in there? [Send a
+PR](https://github.com/kolisachint/hoocode/blob/main/CONTRIBUTING.md) — it is one row in an array,
+and it is genuinely one of the easiest useful first contributions to the project.
+
 ### Telemetry and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://hoocode.dev/api/report-install`. Opting out of telemetry does not disable update checks; HooCode can still fetch `https://hoocode.dev/api/latest-version` to look for the latest version.
+`enableInstallTelemetry` is inert: HooCode sends no install or update telemetry anywhere, and the
+setting is kept only so an existing `settings.json` does not fail to parse. Update checks are
+separate and do still run -- they read the published version straight from the npm registry
+(`https://registry.npmjs.org/@kolisachint/hoocode-agent/latest`) and send nothing but a User-Agent.
+Set `HOOCODE_OFFLINE=1` or `HOOCODE_SKIP_VERSION_CHECK=1` to turn that off too.
 
 Set `HOOCODE_SKIP_VERSION_CHECK=1` to disable the HooCode version update check. Use `--offline` or `HOOCODE_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 

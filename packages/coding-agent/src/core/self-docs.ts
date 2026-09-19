@@ -303,7 +303,7 @@ export function sectionLabel(section: SelfDocSection): string {
  * Fenced code is tracked so a `#` comment inside a bash block cannot be
  * mistaken for a heading — which would otherwise split docs at every shell
  * comment. Code *content* still lands in the excerpt: the exact identifiers
- * someone searches for (`pi.registerTool`) usually live in the examples, and
+ * someone searches for (`hoo.registerTool`) usually live in the examples, and
  * dropping them would blind the lexical leg to the best terms in the file.
  */
 export function splitIntoSections(markdown: string, file: string, path: string): SelfDocSection[] {

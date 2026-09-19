@@ -454,11 +454,20 @@ export function expandTildePath(path: string): string {
 	return path;
 }
 
-const DEFAULT_SHARE_VIEWER_URL = "https://hoocode.dev/session/";
-
-/** Get the share viewer URL for a gist ID */
-export function getShareViewerUrl(gistId: string): string {
-	const baseUrl = process.env.HOOCODE_SHARE_VIEWER_URL || DEFAULT_SHARE_VIEWER_URL;
+/**
+ * The URL of a session viewer, if one is configured.
+ *
+ * HooCode does not host a session viewer, so there is no default. `/share`
+ * uploads the session to a gist and the gist URL is the shareable artifact --
+ * printing a second "Share URL" on a host nobody runs was a dead link dressed
+ * up as a feature, inherited from upstream.
+ *
+ * Anyone running their own viewer points `HOOCODE_SHARE_VIEWER_URL` at it and
+ * gets the extra line back.
+ */
+export function getShareViewerUrl(gistId: string): string | undefined {
+	const baseUrl = process.env.HOOCODE_SHARE_VIEWER_URL?.trim();
+	if (!baseUrl) return undefined;
 	return `${baseUrl}#${gistId}`;
 }
 

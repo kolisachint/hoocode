@@ -1500,6 +1500,8 @@ export class DefaultPackageManager implements PackageManager {
 
 		try {
 			const content = readFileSync(packageJsonPath, "utf-8");
+			// `pi` is a deprecated alias for packages authored against the upstream
+			// project (see core/extensions/loader.ts readHooCodeManifest).
 			const pkg = JSON.parse(content) as { hoocode?: HooCodeManifest; pi?: HooCodeManifest };
 			return pkg.hoocode ?? pkg.pi ?? null;
 		} catch {
@@ -1643,7 +1645,7 @@ export class DefaultPackageManager implements PackageManager {
 		// Project skills from .hoocode/
 		addResources(
 			"skills",
-			collectAutoSkillEntries(projectDirs.skills, "pi"),
+			collectAutoSkillEntries(projectDirs.skills, "hoocode"),
 			projectMetadata,
 			projectOverrides.skills,
 			projectBaseDir,
@@ -1660,7 +1662,7 @@ export class DefaultPackageManager implements PackageManager {
 		};
 		addResources(
 			"skills",
-			collectAutoSkillEntries(claudeProjectSkillsDir, "pi"),
+			collectAutoSkillEntries(claudeProjectSkillsDir, "hoocode"),
 			claudeProjectMetadata,
 			projectOverrides.skills,
 			claudeProjectBaseDir,
@@ -1709,7 +1711,7 @@ export class DefaultPackageManager implements PackageManager {
 		// User skills from ~/.hoocode/agent/
 		addResources(
 			"skills",
-			collectAutoSkillEntries(userDirs.skills, "pi"),
+			collectAutoSkillEntries(userDirs.skills, "hoocode"),
 			userMetadata,
 			userOverrides.skills,
 			globalBaseDir,
@@ -1726,7 +1728,7 @@ export class DefaultPackageManager implements PackageManager {
 		};
 		addResources(
 			"skills",
-			collectAutoSkillEntries(claudeUserSkillsDir, "pi"),
+			collectAutoSkillEntries(claudeUserSkillsDir, "hoocode"),
 			claudeUserMetadata,
 			userOverrides.skills,
 			claudeUserBaseDir,

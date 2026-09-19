@@ -1,0 +1,104 @@
+name: Bug report
+description: Something does not work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time — a bug someone bothered to write down is worth
+        a lot more than one they worked around silently.
+
+        Fill in what you can. **A partial report is better than no report**: if you
+        cannot reproduce it reliably, say so and file it anyway.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, and what you got instead.
+      placeholder: |
+        I ran `/compact` on a long session and the transcript came back empty.
+        I expected a summary and the conversation to continue.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: How can we reproduce it?
+      description: >
+        Steps, as precisely as you can manage. If it is intermittent, say what
+        seems to make it more likely.
+      placeholder: |
+        1. Start `hoocode` in any repo
+        2. Send ~20 messages
+        3. Run /compact
+        4. The transcript clears instead of summarising
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: HooCode version
+      description: Output of `hoocode --version`.
+      placeholder: "0.5.79"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How did you install it?
+      options:
+        - One-click installer (install.sh / install.ps1)
+        - npm
+        - pnpm / yarn / bun
+        - Standalone archive from the releases page
+        - Built from source
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS and terminal
+      description: >
+        The terminal matters more than you would think — a lot of rendering bugs
+        are one emulator only.
+      placeholder: "macOS 15.2, Ghostty 1.1 / Ubuntu 24.04, tmux 3.5 inside Alacritty"
+    validations:
+      required: true
+
+  - type: input
+    id: provider
+    attributes:
+      label: Provider and model
+      description: If the bug involves the model at all.
+      placeholder: "anthropic / claude-opus-5"
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: >
+        Anything from `~/.hoocode/hoocode-debug.log`, or the error as printed.
+        This is rendered as a code block, so no backticks needed.
+      render: shell
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you file
+      options:
+        - label: I searched [existing issues](https://github.com/kolisachint/hoocode/issues?q=is%3Aissue) for this.
+          required: false
+        - label: I am on the latest version, or I checked the changelog and it is not fixed there.
+          required: false
+        - label: I would be up for fixing this myself, with a pointer to where to start.
+          required: false

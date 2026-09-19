@@ -13,7 +13,7 @@
  * `/new-canvas` is registered here rather than beside `/new-skill` and friends
  * because it is not a file-writing command any more: it opens what it scaffolds
  * and hands the agent a brief to build it, which needs this file's session and
- * `pi.sendUserMessage`. Its decisions live in `core/canvas/scaffold.ts`.
+ * `hoo.sendUserMessage`. Its decisions live in `core/canvas/scaffold.ts`.
  *
  * The agent tools register on the first successful open and stay for the session:
  * `registerTool` has no counterpart to remove a tool. So a session that never opens a
@@ -109,7 +109,7 @@ export interface CanvasSetupOverrides {
 	resolveRuntime?: CanvasSessionOptions["resolveRuntime"];
 }
 
-export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides): void {
+export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides): void {
 	let session: CanvasSession | undefined;
 	let toolsRegistered = false;
 	/**
@@ -142,7 +142,7 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 		const registry = canvas.registryOrUndefined();
 		if (!registry) return;
 		toolsRegistered = true;
-		for (const definition of createCanvasToolDefinitions(registry)) pi.registerTool(definition);
+		for (const definition of createCanvasToolDefinitions(registry)) hoo.registerTool(definition);
 	};
 
 	/**
@@ -190,7 +190,7 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 						}),
 					);
 
-	pi.registerCommand("canvas", {
+	hoo.registerCommand("canvas", {
 		description:
 			"Work with canvas extensions. /canvas list | open <extension>[:<canvas>] | reload [extension] | close <instanceId> | rename <extension> <new-name> | remove <extension>",
 		getArgumentCompletions: (prefix: string) =>
@@ -407,7 +407,7 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 	// Unlike the other `/new-*` scaffolds this one needs no /reload: canvases are
 	// discovered when /canvas runs, not loaded at session start.
 
-	pi.registerCommand("new-canvas", {
+	hoo.registerCommand("new-canvas", {
 		description:
 			"Create a canvas extension. Usage: /new-canvas <what it should do> | /new-canvas <name> | /new-canvas <name>: <what it should do>",
 		getArgumentCompletions: () => [],
@@ -510,7 +510,7 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 			// still means "give me the template", and starting a build nobody asked for
 			// would burn a turn and overwrite the file they meant to edit.
 			if (request.description) {
-				await pi.sendUserMessage(
+				await hoo.sendUserMessage(
 					canvasBuildBrief(
 						request.name,
 						request.description,
@@ -528,7 +528,7 @@ export function setupCanvas(pi: ExtensionAPI, overrides?: CanvasSetupOverrides):
 	// every child and loopback port outlives the session. `session_shutdown` is where
 	// loop.ts stops its scheduler, and it is synchronous, so the dispose is fired and
 	// not awaited.
-	pi.on("session_shutdown", () => {
+	hoo.on("session_shutdown", () => {
 		const closing = session;
 		session = undefined;
 		void closing?.dispose();

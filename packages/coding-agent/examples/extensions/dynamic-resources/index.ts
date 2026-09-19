@@ -4,8 +4,8 @@ import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 
 const baseDir = dirname(fileURLToPath(import.meta.url));
 
-export default function (pi: ExtensionAPI) {
-	pi.on("resources_discover", () => {
+export default function (hoo: ExtensionAPI) {
+	hoo.on("resources_discover", () => {
 		return {
 			skillPaths: [join(baseDir, "SKILL.md")],
 			promptPaths: [join(baseDir, "dynamic.md")],

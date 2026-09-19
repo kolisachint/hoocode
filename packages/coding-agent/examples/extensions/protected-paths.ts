@@ -7,10 +7,10 @@
 
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 
-export default function (pi: ExtensionAPI) {
+export default function (hoo: ExtensionAPI) {
 	const protectedPaths = [".env", ".git/", "node_modules/"];
 
-	pi.on("tool_call", async (event, ctx) => {
+	hoo.on("tool_call", async (event, ctx) => {
 		if (event.toolName !== "write" && event.toolName !== "edit") {
 			return undefined;
 		}

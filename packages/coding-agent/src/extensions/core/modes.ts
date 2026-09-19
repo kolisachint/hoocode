@@ -333,7 +333,7 @@ export function buildGoalMessages(objective: string, verification?: string): Goa
 // setupMode
 // ============================================================================
 
-export function setupMode(pi: ExtensionAPI): void {
+export function setupMode(hoo: ExtensionAPI): void {
 	let cachedMode = DEFAULT_MODE;
 	let cachedSystemPrompt: string | undefined;
 	let cachedPlanPath: string | undefined;
@@ -342,7 +342,7 @@ export function setupMode(pi: ExtensionAPI): void {
 	// `/loop auto` run has nobody to answer. Track the loop's broadcast state so
 	// the command can drop its interrogation phase instead of stalling the run.
 	let autoLoopActive = false;
-	pi.events.on(LOOP_AUTO_CHANGED, (data) => {
+	hoo.events.on(LOOP_AUTO_CHANGED, (data) => {
 		autoLoopActive = (data as { active?: boolean } | undefined)?.active === true;
 	});
 
@@ -353,7 +353,7 @@ export function setupMode(pi: ExtensionAPI): void {
 	//   3. Merge — project scalars win; arrays are unioned
 	//   4. Re-resolve active_mode from the merged result
 
-	pi.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
+	hoo.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		// Light mode strips every fixed prompt appendix. Leaving
 		// cachedSystemPrompt unset makes before_agent_start a no-op, so no
 		// `<!-- hoo-core: mode= -->` block is appended.
@@ -377,8 +377,8 @@ export function setupMode(pi: ExtensionAPI): void {
 		cachedMode = config.active_mode ?? DEFAULT_MODE;
 		// External search dirs come from two channels:
 		//  - HooConfig.mode_paths (config-declared)
-		//  - pi.addModeSearchPath (CLI flags + extension contributions)
-		const modePaths = mergeSearchPaths(config.mode_paths, pi.getModeSearchPaths());
+		//  - hoo.addModeSearchPath (CLI flags + extension contributions)
+		const modePaths = mergeSearchPaths(config.mode_paths, hoo.getModeSearchPaths());
 		const rawSystemPrompt = buildSystemPrompt(cachedMode, ctx.cwd, { modePaths });
 
 		// Per-session plan path so concurrent sessions don't overwrite each other.
@@ -395,13 +395,13 @@ export function setupMode(pi: ExtensionAPI): void {
 		// Apply tool filter from mode enabled_tools
 		const modeCfg = config.modes?.[cachedMode];
 		if (modeCfg?.enabled_tools && modeCfg.enabled_tools.length > 0) {
-			pi.setActiveTools(modeCfg.enabled_tools);
+			hoo.setActiveTools(modeCfg.enabled_tools);
 		}
 	});
 
 	// ── before_agent_start ────────────────────────────────────────────────────
 
-	pi.on("before_agent_start", (event: BeforeAgentStartEvent): BeforeAgentStartEventResult | undefined => {
+	hoo.on("before_agent_start", (event: BeforeAgentStartEvent): BeforeAgentStartEventResult | undefined => {
 		if (!cachedSystemPrompt) return;
 		return {
 			systemPrompt: `${event.systemPrompt}\n\n<!-- hoo-core: mode=${cachedMode} -->\n${cachedSystemPrompt}`,
@@ -412,7 +412,7 @@ export function setupMode(pi: ExtensionAPI): void {
 
 	const KNOWN_MODES = ["ask", "plan", "build", "debug"];
 
-	pi.registerCommand("mode", {
+	hoo.registerCommand("mode", {
 		description: "Switch active mode. Usage: /mode <ask|plan|build|debug>",
 		getArgumentCompletions: (prefix: string) =>
 			KNOWN_MODES.filter((m) => m.startsWith(prefix)).map((m) => ({ value: m, label: m })),
@@ -432,7 +432,7 @@ export function setupMode(pi: ExtensionAPI): void {
 
 	// ── /plan command (shorthand for /mode plan) ──────────────────────────────
 
-	pi.registerCommand("plan", {
+	hoo.registerCommand("plan", {
 		description: "Switch to plan mode. Shorthand for /mode plan.",
 		getArgumentCompletions: () => [],
 		handler: async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -450,7 +450,7 @@ export function setupMode(pi: ExtensionAPI): void {
 	// file itself. Unlike /approve this only injects a follow-up message — no
 	// session switch, no mode change, no config write.
 
-	pi.registerCommand("grill", {
+	hoo.registerCommand("grill", {
 		description: "Stress-test the current plan. Usage: /grill [me|plan]",
 		getArgumentCompletions: (prefix: string) =>
 			["me", "plan"].filter((s) => s.startsWith(prefix)).map((s) => ({ value: s, label: s })),
@@ -482,7 +482,7 @@ export function setupMode(pi: ExtensionAPI): void {
 				ctx.ui.notify("Autonomous loop active — grilling the plan only, skipping questions.", "info");
 			}
 
-			pi.sendUserMessage(buildGrillMessage(loaded.sections, target), { deliverAs: "followUp" });
+			hoo.sendUserMessage(buildGrillMessage(loaded.sections, target), { deliverAs: "followUp" });
 		},
 	});
 
@@ -496,7 +496,7 @@ export function setupMode(pi: ExtensionAPI): void {
 	// allowed_bash_commands, allowed_write_paths, auto_allow), so how much rope
 	// an unattended goal gets is a mode-config decision, not one made here.
 
-	pi.registerCommand("goal", {
+	hoo.registerCommand("goal", {
 		description: "Work autonomously toward a goal. Usage: /goal [--max-turns N] [objective]",
 		getArgumentCompletions: () => [],
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -528,7 +528,7 @@ export function setupMode(pi: ExtensionAPI): void {
 
 			const { task, continuePrompt } = buildGoalMessages(objective, sections?.verification);
 			// The loop announces itself on start, so nothing to notify here.
-			pi.events.emit(LOOP_AUTO_START, {
+			hoo.events.emit(LOOP_AUTO_START, {
 				task,
 				maxTurns: parsed.maxTurns,
 				continuePrompt,
@@ -541,7 +541,7 @@ export function setupMode(pi: ExtensionAPI): void {
 	// modify, New files, Tests, Verification), switches to build mode, then
 	// injects a step-by-step execution message into the new session.
 
-	pi.registerCommand("approve", {
+	hoo.registerCommand("approve", {
 		description: "Approve the current plan and switch to build mode to execute it.",
 		getArgumentCompletions: () => [],
 		handler: async (_args: string, ctx: ExtensionCommandContext): Promise<void> => {

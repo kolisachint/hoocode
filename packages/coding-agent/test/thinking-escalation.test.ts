@@ -16,7 +16,7 @@ function makeHarness(initialLevel: ThinkingLevel, cwd: string) {
 	let level = initialLevel;
 	const setCalls: ThinkingLevel[] = [];
 
-	const pi = {
+	const hoo = {
 		on: (event: string, handler: (event: unknown, ctx: ExtensionContext) => unknown) => {
 			handlers.set(event, handler);
 		},
@@ -27,7 +27,7 @@ function makeHarness(initialLevel: ThinkingLevel, cwd: string) {
 		},
 	} as unknown as ExtensionAPI;
 
-	setupThinkingEscalation(pi);
+	setupThinkingEscalation(hoo);
 
 	const ctx = { cwd } as ExtensionContext;
 	const fire = (event: string, payload: Record<string, unknown> = {}) => handlers.get(event)?.(payload, ctx);

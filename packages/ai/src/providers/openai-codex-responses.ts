@@ -1266,6 +1266,12 @@ function createCodexRequestId(): string {
 	return `codex_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 }
 
+/**
+ * The originator the Codex OAuth client is registered under. See
+ * buildBaseCodexHeaders for why this is not the product's name.
+ */
+const CODEX_ORIGINATOR = "pi";
+
 function buildBaseCodexHeaders(
 	initHeaders: Record<string, string> | undefined,
 	additionalHeaders: Record<string, string> | undefined,
@@ -1278,8 +1284,20 @@ function buildBaseCodexHeaders(
 	}
 	headers.set("Authorization", `Bearer ${token}`);
 	headers.set("chatgpt-account-id", accountId);
-	headers.set("originator", "pi");
-	const userAgent = _os ? `pi (${_os.platform()} ${_os.release()}; ${_os.arch()})` : "pi (browser)";
+	// `originator` is a protocol value, not branding.
+	//
+	// The ChatGPT backend recognises the OAuth client by the pair of client id
+	// and originator, and it is not a field a client is free to choose: an
+	// unrecognised originator is rejected, and the failure mode is every Codex
+	// subscription login in the wild breaking at once. It is deliberately left
+	// as the value the registered client was enrolled with. Changing it belongs
+	// with registering a HooCode client of its own, not with a rename.
+	//
+	// The User-Agent follows it for the same reason: the two are cross-checked.
+	headers.set("originator", CODEX_ORIGINATOR);
+	const userAgent = _os
+		? `${CODEX_ORIGINATOR} (${_os.platform()} ${_os.release()}; ${_os.arch()})`
+		: `${CODEX_ORIGINATOR} (browser)`;
 	headers.set("User-Agent", userAgent);
 	return headers;
 }

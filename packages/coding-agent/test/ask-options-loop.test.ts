@@ -21,7 +21,7 @@ function makeHarness() {
 	const commands = new Map<string, (args: string, ctx: any) => Promise<void>>();
 	const sentMessages: string[] = [];
 
-	const pi: any = {
+	const hoo: any = {
 		events,
 		on: (event: string, handler: (e: unknown, ctx: unknown) => unknown) => {
 			const arr = handlers.get(event) ?? [];
@@ -43,7 +43,7 @@ function makeHarness() {
 		for (const h of handlers.get(event) ?? []) h(e, ctx);
 	};
 
-	return { pi, events, fire, sentMessages, getAskTool: () => askTool, getCommand: (n: string) => commands.get(n) };
+	return { hoo, events, fire, sentMessages, getAskTool: () => askTool, getCommand: (n: string) => commands.get(n) };
 }
 
 function makeCtx(overrides: Partial<any> = {}) {
@@ -68,7 +68,7 @@ function makeCtx(overrides: Partial<any> = {}) {
 describe("ask_options under autonomous loop", () => {
 	it("blocks on the pane normally when no loop is active", async () => {
 		const h = makeHarness();
-		setupAskOptions(h.pi);
+		setupAskOptions(h.hoo);
 		const { ctx, askCalls } = makeCtx();
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -87,7 +87,7 @@ describe("ask_options under autonomous loop", () => {
 
 	it("auto-selects the recommended default without showing the pane", async () => {
 		const h = makeHarness();
-		setupAskOptions(h.pi);
+		setupAskOptions(h.hoo);
 		const { ctx, askCalls } = makeCtx();
 		h.fire("session_start", { type: "session_start" }, ctx);
 		h.events.emit(LOOP_AUTO_CHANGED, { active: true });
@@ -108,7 +108,7 @@ describe("ask_options under autonomous loop", () => {
 
 	it("halts the loop and reports when a question has no recommended default", async () => {
 		const h = makeHarness();
-		setupAskOptions(h.pi);
+		setupAskOptions(h.hoo);
 		const { ctx, askCalls } = makeCtx();
 		h.fire("session_start", { type: "session_start" }, ctx);
 		h.events.emit(LOOP_AUTO_CHANGED, { active: true });
@@ -138,7 +138,7 @@ describe("ask_options under autonomous loop", () => {
 
 	it("resumes blocking once the loop ends", async () => {
 		const h = makeHarness();
-		setupAskOptions(h.pi);
+		setupAskOptions(h.hoo);
 		const { ctx, askCalls } = makeCtx();
 		h.fire("session_start", { type: "session_start" }, ctx);
 
@@ -168,8 +168,8 @@ describe("loop ↔ ask_options integration", () => {
 
 	it("/loop auto flips ask_options into non-blocking mode, and a blocker halts it", async () => {
 		const h = makeHarness();
-		setupAskOptions(h.pi);
-		setupLoop(h.pi);
+		setupAskOptions(h.hoo);
+		setupLoop(h.hoo);
 		const { ctx, notifications, askCalls } = makeCtx({ cwd: tempDir });
 		h.fire("session_start", { type: "session_start" }, ctx);
 

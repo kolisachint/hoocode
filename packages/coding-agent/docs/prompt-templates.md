@@ -10,7 +10,7 @@ HooCode loads prompt templates from:
 
 - Global: `~/.hoocode/prompts/*.md`
 - Project: `.hoocode/prompts/*.md`
-- Packages: `prompts/` directories or `pi.prompts` entries in `package.json`
+- Packages: `prompts/` directories or `hoo.prompts` entries in `package.json`
 - Settings: `prompts` array with files or directories
 - CLI: `--prompt-template <path>` (repeatable)
 

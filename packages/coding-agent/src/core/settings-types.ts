@@ -64,6 +64,20 @@ interface TerminalSettings {
 	chimeOnTurnComplete?: boolean; // default: false (ring the terminal bell when a long turn finishes or the agent asks for input)
 }
 
+/**
+ * Tips shown on the notification band when the session is idle or streaming.
+ *
+ * `seen` and `starNudges` are bookkeeping, not preferences: they are what stops
+ * a returning user being taught the same thing twice, and what caps the star
+ * nudge over a lifetime rather than a session. They live in settings because
+ * that is the only per-user store that outlives a session.
+ */
+export interface TipsSettings {
+	enabled?: boolean; // default: true
+	seen?: string[]; // ids of tips already shown (see modes/interactive/tips.ts)
+	starNudges?: number; // how many times the star nudge has been shown, ever
+}
+
 export interface ImageSettings {
 	autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
 	blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
@@ -193,6 +207,7 @@ export interface Settings {
 	light?: boolean; // default: false - minimal low-token preset for small/local models: read/write/edit/bash only (short schemas), terse prompt, no subagents/TodoWrite/skills/context files/mode appendix. Same as the --light CLI flag.
 	terminal?: TerminalSettings;
 	images?: ImageSettings;
+	tips?: TipsSettings;
 	enabledModels?: string[]; // Model patterns for cycling (same format as --models CLI flag)
 	doubleEscapeAction?: "fork" | "tree" | "none"; // Action for double-escape with empty editor (default: "tree")
 	treeFilterMode?: "default" | "no-tools" | "user-only" | "labeled-only" | "all"; // Default filter when opening /tree

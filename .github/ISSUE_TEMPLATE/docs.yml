@@ -1,0 +1,38 @@
+name: Docs problem
+description: Something in the documentation is wrong, missing, or confusing.
+labels: ["documentation", "good first issue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Confusing docs are a real bug and this is the quickest kind of issue to
+        resolve.
+
+        If you already know what it should say, a PR against
+        [`packages/coding-agent/docs/`](https://github.com/kolisachint/hoocode/tree/main/packages/coding-agent/docs)
+        is even more welcome than an issue — it is one of the easiest useful
+        first contributions to the project.
+
+  - type: input
+    id: page
+    attributes:
+      label: Which page?
+      placeholder: "https://kolisachint.github.io/hoocode/settings or packages/coding-agent/docs/settings.md"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is wrong with it?
+      description: Wrong, missing, out of date, or just hard to follow — all count.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: What should it say?
+      description: Optional. Even a rough sentence helps.
+    validations:
+      required: false

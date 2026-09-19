@@ -143,7 +143,7 @@ describe("light mode", () => {
 		process.env[LIGHT_MODE_ENV] = "1";
 		harness = await createHarnessWithExtensions({
 			responses: ["ok"],
-			extensionFactories: [(pi) => setupMode(pi)],
+			extensionFactories: [(hoo) => setupMode(hoo)],
 		});
 		await harness.session.bindExtensions({});
 		await harness.session.prompt("hi");
@@ -154,7 +154,7 @@ describe("light mode", () => {
 	it("keeps the hoo-core mode appendix without the light env flag", async () => {
 		harness = await createHarnessWithExtensions({
 			responses: ["ok"],
-			extensionFactories: [(pi) => setupMode(pi)],
+			extensionFactories: [(hoo) => setupMode(hoo)],
 		});
 		await harness.session.bindExtensions({});
 		await harness.session.prompt("hi");

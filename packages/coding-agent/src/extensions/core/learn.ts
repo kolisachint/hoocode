@@ -268,9 +268,9 @@ function resolveMinerModel(ctx: ExtensionCommandContext, settings: SettingsManag
  * them is a precedence list that lives in one place and would drift the moment
  * it lived in two.
  */
-function loadReplayFingerprints(pi: ExtensionAPI): string[] {
+function loadReplayFingerprints(hoo: ExtensionAPI): string[] {
 	const bodies: Array<{ content: string }> = [];
-	for (const command of pi.getCommands()) {
+	for (const command of hoo.getCommands()) {
 		const path = command.sourceInfo?.path;
 		// A built-in has no file behind it, and nothing to replay.
 		if (!path || !existsSync(path)) continue;
@@ -403,7 +403,7 @@ function reportStats(ctx: ExtensionCommandContext): void {
  * and costs nothing, which is what makes it the half worth running often; the
  * findings go to the model only when there are some, so a clean audit is free.
  */
-function reportAudit(pi: ExtensionAPI, ctx: ExtensionCommandContext): void {
+function reportAudit(hoo: ExtensionAPI, ctx: ExtensionCommandContext): void {
 	const agentDir = getHooCodeDir();
 	const { agentsFiles } = loadProjectContextFiles({ cwd: ctx.cwd, agentDir });
 
@@ -437,7 +437,7 @@ function reportAudit(pi: ExtensionAPI, ctx: ExtensionCommandContext): void {
 			`(~${staleTokens(report)} of ~${totalTokens} always-loaded tokens).`,
 		"info",
 	);
-	pi.sendUserMessage(renderAuditReport(report), { deliverAs: "followUp" });
+	hoo.sendUserMessage(renderAuditReport(report), { deliverAs: "followUp" });
 }
 
 /** `/learn settings` — the knobs, their current values, and the files to set them in. */
@@ -483,7 +483,7 @@ function reportSettings(ctx: ExtensionCommandContext): void {
  * confirmation prompt, and the mining pass itself. Every one of them is an
  * `await` long enough for a `/new` or a `/mode` to land in the middle of it.
  */
-async function runMining(pi: ExtensionAPI, ctx: ExtensionCommandContext, ignoreState: boolean): Promise<void> {
+async function runMining(hoo: ExtensionAPI, ctx: ExtensionCommandContext, ignoreState: boolean): Promise<void> {
 	// Read per-invocation so a settings edit takes effect without a reload,
 	// and so a project settings.json can narrow the window for one repo.
 	const agentDir = getHooCodeDir();
@@ -496,7 +496,7 @@ async function runMining(pi: ExtensionAPI, ctx: ExtensionCommandContext, ignoreS
 	const run: LearnRun = { controller: new AbortController(), stale: false };
 	IN_FLIGHT.add(run);
 	try {
-		const pipeline = await buildPipeline(ctx, settings, loadReplayFingerprints(pi));
+		const pipeline = await buildPipeline(ctx, settings, loadReplayFingerprints(hoo));
 		if (run.stale) return;
 		if ("error" in pipeline) {
 			ctx.ui.notify(pipeline.error, "error");
@@ -650,7 +650,7 @@ async function runMining(pi: ExtensionAPI, ctx: ExtensionCommandContext, ignoreS
 			writeLearnState(statePath, recordSurfaced(readLearnState(statePath), digest.surfaced));
 		}
 
-		pi.sendUserMessage(
+		hoo.sendUserMessage(
 			renderLearnDigest(digest, {
 				userScopePath: displayPath(USER_SCOPE_PATH),
 				mode: ignoreState ? "all" : "incremental",
@@ -662,12 +662,12 @@ async function runMining(pi: ExtensionAPI, ctx: ExtensionCommandContext, ignoreS
 	}
 }
 
-export function setupLearn(pi: ExtensionAPI): void {
-	const guarded = pi as unknown as Record<symbol, boolean>;
+export function setupLearn(hoo: ExtensionAPI): void {
+	const guarded = hoo as unknown as Record<symbol, boolean>;
 	if (guarded[REGISTERED]) return;
 	guarded[REGISTERED] = true;
 
-	pi.registerCommand("learn", {
+	hoo.registerCommand("learn", {
 		description: "Mine recent sessions for durable rules and skills. Usage: /learn [all|stale|stats|settings]",
 		getArgumentCompletions: (prefix: string) =>
 			(
@@ -687,7 +687,7 @@ export function setupLearn(pi: ExtensionAPI): void {
 				return;
 			}
 			if (argument === "stale") {
-				reportAudit(pi, ctx);
+				reportAudit(hoo, ctx);
 				return;
 			}
 			if (argument === "stats") {
@@ -698,7 +698,7 @@ export function setupLearn(pi: ExtensionAPI): void {
 				reportSettings(ctx);
 				return;
 			}
-			await runMining(pi, ctx, argument === "all");
+			await runMining(hoo, ctx, argument === "all");
 		},
 	});
 
@@ -706,7 +706,7 @@ export function setupLearn(pi: ExtensionAPI): void {
 	// Emitted before the session is disposed, which is what makes it usable: a
 	// run told here still has a live ctx to stop cleanly with, where one told
 	// afterwards has none.
-	pi.on("session_shutdown", () => {
+	hoo.on("session_shutdown", () => {
 		abortInFlightRuns();
 	});
 }

@@ -24,7 +24,7 @@ import type {
 } from "../../core/extensions/types.js";
 import { readMergedConfig } from "./config.js";
 
-export function setupThinkingEscalation(pi: ExtensionAPI): void {
+export function setupThinkingEscalation(hoo: ExtensionAPI): void {
 	// Captured user level to restore to; null means "not currently escalated".
 	let baseline: ThinkingLevel | null = null;
 	let remaining = 0;
@@ -32,7 +32,7 @@ export function setupThinkingEscalation(pi: ExtensionAPI): void {
 
 	const restore = (): void => {
 		if (baseline !== null) {
-			pi.setThinkingLevel(baseline);
+			hoo.setThinkingLevel(baseline);
 		}
 		baseline = null;
 		remaining = 0;
@@ -40,11 +40,11 @@ export function setupThinkingEscalation(pi: ExtensionAPI): void {
 	};
 
 	// A fresh user prompt starts clean — restore any lingering escalation.
-	pi.on("agent_start", (_event: AgentStartEvent) => {
+	hoo.on("agent_start", (_event: AgentStartEvent) => {
 		restore();
 	});
 
-	pi.on("tool_execution_end", (event: ToolExecutionEndEvent, ctx: ExtensionContext) => {
+	hoo.on("tool_execution_end", (event: ToolExecutionEndEvent, ctx: ExtensionContext) => {
 		if (!event.isError) return;
 
 		const cfg = readMergedConfig(ctx.cwd).thinking_escalation;
@@ -59,14 +59,14 @@ export function setupThinkingEscalation(pi: ExtensionAPI): void {
 		// Capture the user's level only on the first escalation so repeated errors
 		// extend the window without overwriting the restore point with "high".
 		if (baseline === null) {
-			baseline = pi.getThinkingLevel();
+			baseline = hoo.getThinkingLevel();
 		}
-		pi.setThinkingLevel(target);
+		hoo.setThinkingLevel(target);
 		remaining = cooldown;
 		escalatedThisTurn = true;
 	});
 
-	pi.on("turn_end", (_event: TurnEndEvent) => {
+	hoo.on("turn_end", (_event: TurnEndEvent) => {
 		if (baseline === null) return; // not escalated
 		if (escalatedThisTurn) {
 			// This is the turn_end of the turn that failed; the cooldown applies to
