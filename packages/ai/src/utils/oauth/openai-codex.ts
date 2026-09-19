@@ -184,8 +184,19 @@ async function refreshAccessToken(refreshToken: string): Promise<TokenResult> {
 	}
 }
 
+/**
+ * The originator this OAuth client is registered under.
+ *
+ * Not branding: the ChatGPT backend identifies the client by client id plus
+ * originator and rejects an unrecognised pair, so this is the value the
+ * registered client was enrolled with, not the product's name. See
+ * providers/openai-codex-responses.ts, which sends the same value on every
+ * request.
+ */
+const DEFAULT_ORIGINATOR = "pi";
+
 async function createAuthorizationFlow(
-	originator: string = "pi",
+	originator: string = DEFAULT_ORIGINATOR,
 ): Promise<{ verifier: string; state: string; url: string }> {
 	const { verifier, challenge } = await generatePKCE();
 	const state = createState();
@@ -303,7 +314,8 @@ function getAccountId(accessToken: string): string | null {
  * @param options.onManualCodeInput - Optional promise that resolves with user-pasted code.
  *                                    Races with browser callback - whichever completes first wins.
  *                                    Useful for showing paste input immediately alongside browser flow.
- * @param options.originator - OAuth originator parameter (defaults to "pi")
+ * @param options.originator - OAuth originator parameter. Defaults to the value this client is
+ *                               registered under; see DEFAULT_ORIGINATOR.
  */
 export async function loginOpenAICodex(options: {
 	onAuth: (info: { url: string; instructions?: string }) => void;

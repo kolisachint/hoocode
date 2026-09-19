@@ -12,10 +12,10 @@ import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import type { AssistantMessage } from "@kolisachint/hoocode-ai";
 import { truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (hoo: ExtensionAPI) {
 	let enabled = false;
 
-	pi.registerCommand("footer", {
+	hoo.registerCommand("footer", {
 		description: "Toggle custom footer",
 		handler: async (_args, ctx) => {
 			enabled = !enabled;

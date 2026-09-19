@@ -94,7 +94,7 @@ function assistantText(message: { content: unknown }): string {
 		.join("\n");
 }
 
-export function setupLoop(pi: ExtensionAPI): void {
+export function setupLoop(hoo: ExtensionAPI): void {
 	let scheduler: TaskScheduler | undefined;
 	let auto: { remaining: number; continuePrompt?: string } | null = null;
 	let activeCtx: ExtensionContext | undefined;
@@ -103,7 +103,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 	function setAuto(next: { remaining: number; continuePrompt?: string } | null): void {
 		const was = auto !== null;
 		auto = next;
-		if (was !== (next !== null)) pi.events.emit(LOOP_AUTO_CHANGED, { active: next !== null });
+		if (was !== (next !== null)) hoo.events.emit(LOOP_AUTO_CHANGED, { active: next !== null });
 	}
 
 	/**
@@ -118,7 +118,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 		const budget =
 			typeof maxTurns === "number" && Number.isFinite(maxTurns) && maxTurns >= 0 ? maxTurns : DEFAULT_AUTO_MAX_TURNS;
 		setAuto({ remaining: budget, continuePrompt });
-		pi.sendUserMessage(
+		hoo.sendUserMessage(
 			`${task}\n\n(Autonomous loop: keep working until the task is fully complete, then reply with ${AUTO_LOOP_DONE_TOKEN}.)`,
 			{ deliverAs: "followUp" },
 		);
@@ -127,7 +127,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 
 	// Another extension asked for an autonomous run. Ignore payloads without a
 	// task rather than arming a loop with nothing to work on.
-	pi.events.on(LOOP_AUTO_START, (data) => {
+	hoo.events.on(LOOP_AUTO_START, (data) => {
 		const payload = (data ?? {}) as Partial<LoopAutoStartPayload>;
 		const task = payload.task?.trim();
 		if (!task) return;
@@ -137,14 +137,14 @@ export function setupLoop(pi: ExtensionAPI): void {
 
 	// Another extension (e.g. ask_options) hit a decision it cannot safely make
 	// while unattended. Stop iterating and let the model report the blocker.
-	pi.events.on(LOOP_HALT, (data) => {
+	hoo.events.on(LOOP_HALT, (data) => {
 		if (!auto) return;
 		const reason = (data as { reason?: string })?.reason?.trim() || "a decision that needs the user.";
 		setAuto(null);
 		activeCtx?.ui.notify(`Autonomous loop halted: ${reason}`, "warning");
 	});
 
-	pi.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
+	hoo.on("session_start", (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		activeCtx = ctx;
 		if (scheduler) return;
 		const isIdle = () => {
@@ -159,19 +159,19 @@ export function setupLoop(pi: ExtensionAPI): void {
 			// store is read once and migrates forward on the next persist.
 			storePath: join(ctx.cwd, ".agents", "scheduled_tasks.json"),
 			legacyStorePath: join(ctx.cwd, ".hoocode", "scheduled_tasks.json"),
-			fire: (prompt) => pi.sendUserMessage(prompt, { deliverAs: "followUp" }),
+			fire: (prompt) => hoo.sendUserMessage(prompt, { deliverAs: "followUp" }),
 			isIdle,
 		});
 		scheduler.start();
 	});
 
-	pi.on("session_shutdown", () => {
+	hoo.on("session_shutdown", () => {
 		scheduler?.stop();
 		setAuto(null);
 	});
 
 	// Autonomous continuation: re-prompt on each agent_end until LOOP_DONE or budget.
-	pi.on("agent_end", (event, ctx) => {
+	hoo.on("agent_end", (event, ctx) => {
 		if (!auto) return;
 		if (ctx.hasPendingMessages()) return; // user is steering — yield
 		const last = [...event.messages].reverse().find((m) => m.role === "assistant");
@@ -187,7 +187,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 			return;
 		}
 		auto.remaining -= 1;
-		pi.sendUserMessage(
+		hoo.sendUserMessage(
 			auto.continuePrompt ??
 				`Continue working toward the goal. Reply with ${AUTO_LOOP_DONE_TOKEN} when fully complete.`,
 			{ deliverAs: "followUp" },
@@ -197,7 +197,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 	// ── Cron* tools (agent-callable) ──────────────────────────────────────────
 	const toolText = (s: string) => ({ content: [{ type: "text" as const, text: s }], details: undefined });
 
-	pi.registerTool(
+	hoo.registerTool(
 		defineTool({
 			name: "CronCreate",
 			label: "Schedule Task",
@@ -221,7 +221,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 		}),
 	);
 
-	pi.registerTool(
+	hoo.registerTool(
 		defineTool({
 			name: "CronList",
 			label: "List Scheduled Tasks",
@@ -239,7 +239,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 		}),
 	);
 
-	pi.registerTool(
+	hoo.registerTool(
 		defineTool({
 			name: "CronDelete",
 			label: "Delete Scheduled Task",
@@ -253,7 +253,7 @@ export function setupLoop(pi: ExtensionAPI): void {
 	);
 
 	// ── /loop command ─────────────────────────────────────────────────────────
-	pi.registerCommand("loop", {
+	hoo.registerCommand("loop", {
 		description:
 			'Schedule prompts via cron or run an autonomous loop. /loop "<cron>" <prompt> | /loop <5m|2h> <prompt> | /loop once "<cron>" <prompt> | /loop list | /loop delete <id> | /loop stop | /loop auto [--max-turns N] <task>',
 		getArgumentCompletions: (prefix: string) =>

@@ -159,8 +159,8 @@ async function refreshIndices(ctx: ExtensionCommandContext): Promise<void> {
 	if (errors.length > 0) ctx.ui.notify(`Marketplace indices: ${errors.join("; ")}`, "warning");
 }
 
-export function setupMarketplace(pi: ExtensionAPI): void {
-	pi.registerCommand("plugin", {
+export function setupMarketplace(hoo: ExtensionAPI): void {
+	hoo.registerCommand("plugin", {
 		description:
 			"Manage plugin marketplaces. /plugin marketplace add <git-url|path> | /plugin marketplace list | /plugin marketplace refresh | /plugin list | /plugin install <name> [--scope user|project] | /plugin remove <name> | /plugin trust [list] | /plugin untrust | /plugin publish <name> [--to <dir>]",
 		getArgumentCompletions: (prefix: string) =>
@@ -217,7 +217,7 @@ export function setupMarketplace(pi: ExtensionAPI): void {
 						dir = marketplaceCacheDir(loc);
 						rmSync(dir, { recursive: true, force: true });
 						mkdirSync(marketplaceCacheRoot(), { recursive: true });
-						const res = await pi.exec("git", ["clone", "--depth", "1", loc, dir]);
+						const res = await hoo.exec("git", ["clone", "--depth", "1", loc, dir]);
 						if (res.code !== 0) {
 							ctx.ui.notify(`Clone failed: ${res.stderr || res.stdout}`, "error");
 							return;

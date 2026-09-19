@@ -28,12 +28,12 @@ function writeJson(file: string, data: unknown): void {
 /** Minimal ExtensionAPI stub: records handlers per event so tests can fire them. */
 function makePi() {
 	const handlers = new Map<string, (event: unknown) => Promise<unknown> | unknown>();
-	const pi = {
+	const hoo = {
 		on(event: string, handler: (event: unknown) => Promise<unknown> | unknown) {
 			handlers.set(event, handler);
 		},
 	} as never;
-	return { pi, handlers };
+	return { hoo, handlers };
 }
 
 describe("plugin hooks + bundled scripts (install → parse → bridge → run)", () => {
@@ -97,10 +97,10 @@ describe("plugin hooks + bundled scripts (install → parse → bridge → run)"
 		expect(parsed?.hooks?.Stop).toHaveLength(1);
 		expect(parsed?.hooks?.PreToolUse).toHaveLength(1);
 
-		const { pi, handlers } = makePi();
+		const { hoo, handlers } = makePi();
 		const errors: string[] = [];
 		const dataDir = ensurePluginDataDir(parsed!.id);
-		installPluginHooks(pi, parsed!.hooks!, parsed!.root, pluginVariables(parsed!.root, dataDir), (m: string) =>
+		installPluginHooks(hoo, parsed!.hooks!, parsed!.root, pluginVariables(parsed!.root, dataDir), (m: string) =>
 			errors.push(m),
 		);
 
@@ -121,10 +121,10 @@ describe("plugin hooks + bundled scripts (install → parse → bridge → run)"
 	});
 
 	it("survives a hook that exits without draining stdin (async EPIPE on the payload write)", async () => {
-		const { pi, handlers } = makePi();
+		const { hoo, handlers } = makePi();
 		const errors: string[] = [];
 		installPluginHooks(
-			pi,
+			hoo,
 			{ PreToolUse: [{ matcher: "*", hooks: [{ type: "command", command: "exit 0" }] }] },
 			cwd,
 			{},

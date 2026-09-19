@@ -26,7 +26,7 @@ const STALE = "This extension ctx is stale after session replacement or reload."
 
 /** A registered command and the events the extension subscribed to. */
 type Harness = {
-	pi: ExtensionAPI;
+	hoo: ExtensionAPI;
 	run: (args: string) => Promise<void>;
 	shutdown: () => Promise<void>;
 	sent: string[];
@@ -81,7 +81,7 @@ function makeHarness(cwd: string, auth: Promise<{ ok: false; error: string }>): 
 	const commands = new Map<string, { handler: (args: string, ctx: ExtensionCommandContext) => Promise<void> }>();
 	const handlers = new Map<string, Array<(event: unknown, ctx: unknown) => unknown>>();
 	const sent: string[] = [];
-	const pi = {
+	const hoo = {
 		registerCommand: (name: string, command: never) => commands.set(name, command),
 		on: (event: string, handler: never) => {
 			const list = handlers.get(event) ?? [];
@@ -92,10 +92,10 @@ function makeHarness(cwd: string, auth: Promise<{ ok: false; error: string }>): 
 		sendUserMessage: (content: string) => sent.push(content),
 	} as unknown as ExtensionAPI;
 
-	setupLearn(pi);
+	setupLearn(hoo);
 	const { ctx, notified, invalidate } = makeCtx(cwd, auth);
 	return {
-		pi,
+		hoo,
 		sent,
 		notified,
 		invalidate,

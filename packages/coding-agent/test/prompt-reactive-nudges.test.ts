@@ -22,7 +22,7 @@ type Handler = (event: any, ctx: ExtensionContext) => any;
 
 function createFakePi() {
 	const handlers = new Map<string, Handler[]>();
-	const pi = {
+	const hoo = {
 		on(event: string, handler: Handler) {
 			const list = handlers.get(event) ?? [];
 			list.push(handler);
@@ -38,7 +38,7 @@ function createFakePi() {
 		}
 		return result;
 	};
-	return { pi: pi as any, emit };
+	return { hoo: hoo as any, emit };
 }
 
 /** A single user turn, the shape transformContext hands the `context` hook. */
@@ -78,8 +78,8 @@ describe("reuse policy matcher", () => {
 
 describe("setupPromptReactiveNudges", () => {
 	it("attaches a nudge after a relevant tool result and arms it for the plugin layer", () => {
-		const { pi, emit } = createFakePi();
-		setupPromptReactiveNudges(pi, { isEnabled: () => true });
+		const { hoo, emit } = createFakePi();
+		setupPromptReactiveNudges(hoo, { isEnabled: () => true });
 		emit("session_start");
 
 		// A Read whose content carries a style directive — the live-repro shape.
@@ -98,8 +98,8 @@ describe("setupPromptReactiveNudges", () => {
 	});
 
 	it("injects from turn text via before_agent_start", () => {
-		const { pi, emit } = createFakePi();
-		setupPromptReactiveNudges(pi, { isEnabled: () => true });
+		const { hoo, emit } = createFakePi();
+		setupPromptReactiveNudges(hoo, { isEnabled: () => true });
 		emit("session_start");
 		emit("before_agent_start", { prompt: "rewrite the docs in active voice" });
 		const result = emit("context", { messages: userMessages("working on it") }) as ContextEventResult;
@@ -107,8 +107,8 @@ describe("setupPromptReactiveNudges", () => {
 	});
 
 	it("does NOT inject for non-triggering activity", () => {
-		const { pi, emit } = createFakePi();
-		setupPromptReactiveNudges(pi, { isEnabled: () => true });
+		const { hoo, emit } = createFakePi();
+		setupPromptReactiveNudges(hoo, { isEnabled: () => true });
 		emit("session_start");
 		emit("tool_execution_end", {
 			toolName: "Read",
@@ -120,8 +120,8 @@ describe("setupPromptReactiveNudges", () => {
 	});
 
 	it("fires at most once per category per session", () => {
-		const { pi, emit } = createFakePi();
-		setupPromptReactiveNudges(pi, { isEnabled: () => true });
+		const { hoo, emit } = createFakePi();
+		setupPromptReactiveNudges(hoo, { isEnabled: () => true });
 		emit("session_start");
 
 		emit("tool_execution_end", {
@@ -144,8 +144,8 @@ describe("setupPromptReactiveNudges", () => {
 	});
 
 	it("injects at most one note per turn", () => {
-		const { pi, emit } = createFakePi();
-		setupPromptReactiveNudges(pi, { isEnabled: () => true });
+		const { hoo, emit } = createFakePi();
+		setupPromptReactiveNudges(hoo, { isEnabled: () => true });
 		emit("session_start");
 
 		// Two different categories armed in the same turn.
@@ -164,8 +164,8 @@ describe("setupPromptReactiveNudges", () => {
 	});
 
 	it("stays fully silent when the autonomous plugin system is disabled", () => {
-		const { pi, emit } = createFakePi();
-		setupPromptReactiveNudges(pi, { isEnabled: () => false });
+		const { hoo, emit } = createFakePi();
+		setupPromptReactiveNudges(hoo, { isEnabled: () => false });
 		emit("session_start");
 		emit("tool_execution_end", {
 			toolName: "Read",
@@ -177,10 +177,10 @@ describe("setupPromptReactiveNudges", () => {
 		expect(getArmedReuseNudges()).toEqual([]);
 	});
 
-	it("is idempotent — a second setup on the same pi does not double-register", () => {
-		const { pi, emit } = createFakePi();
-		setupPromptReactiveNudges(pi, { isEnabled: () => true });
-		setupPromptReactiveNudges(pi, { isEnabled: () => true });
+	it("is idempotent — a second setup on the same hoo does not double-register", () => {
+		const { hoo, emit } = createFakePi();
+		setupPromptReactiveNudges(hoo, { isEnabled: () => true });
+		setupPromptReactiveNudges(hoo, { isEnabled: () => true });
 		emit("session_start");
 		emit("before_agent_start", { prompt: "prefer JSON" });
 		const result = emit("context", { messages: userMessages("a") }) as ContextEventResult;

@@ -712,7 +712,7 @@ export async function main(args: string[], options?: MainOptions) {
 	setAgentCliPaths(resolvedAgentPaths ?? []);
 
 	// Synthetic factory: feed CLI --mode-path values into the extension runtime
-	// so hoo-core (and any other extension that reads pi.getModeSearchPaths)
+	// so hoo-core (and any other extension that reads hoo.getModeSearchPaths)
 	// sees them alongside extension-registered dirs.
 	const cliModePaths = parsed.modePaths ?? [];
 	const cliResourcePathFactories: ExtensionFactory[] =
@@ -720,8 +720,8 @@ export async function main(args: string[], options?: MainOptions) {
 			? []
 			: [
 					Object.assign(
-						(pi: ExtensionAPI) => {
-							for (const p of cliModePaths) pi.addModeSearchPath(p);
+						(hoo: ExtensionAPI) => {
+							for (const p of cliModePaths) hoo.addModeSearchPath(p);
 						},
 						{ internal: true },
 					),

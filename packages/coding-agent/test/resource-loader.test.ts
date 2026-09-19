@@ -281,8 +281,8 @@ Project skill`,
 			mkdirSync(sharedExtDir, { recursive: true });
 			writeFileSync(
 				join(sharedExtDir, "shared.ts"),
-				`export default function(pi) {
-	pi.registerCommand("shared", {
+				`export default function(hoo) {
+	hoo.registerCommand("shared", {
 		description: "shared command",
 		handler: async () => {},
 	});
@@ -314,12 +314,12 @@ Project skill`,
 
 			writeFileSync(
 				join(projectExtDir, "project.ts"),
-				`export default function(pi) {
-	pi.registerCommand("deploy", {
+				`export default function(hoo) {
+	hoo.registerCommand("deploy", {
 		description: "project deploy",
 		handler: async () => {},
 	});
-	pi.registerCommand("project-only", {
+	hoo.registerCommand("project-only", {
 		description: "project only",
 		handler: async () => {},
 	});
@@ -328,12 +328,12 @@ Project skill`,
 
 			writeFileSync(
 				join(userExtDir, "user.ts"),
-				`export default function(pi) {
-	pi.registerCommand("deploy", {
+				`export default function(hoo) {
+	hoo.registerCommand("deploy", {
 		description: "user deploy",
 		handler: async () => {},
 	});
-	pi.registerCommand("user-only", {
+	hoo.registerCommand("user-only", {
 		description: "user only",
 		handler: async () => {},
 	});
@@ -629,8 +629,8 @@ Content`,
 				`
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(hoo: ExtensionAPI) {
+  hoo.registerTool({
     name: "duplicate-tool",
     description: "First",
     parameters: Type.Object({}),
@@ -644,8 +644,8 @@ export default function(pi: ExtensionAPI) {
 				`
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(hoo: ExtensionAPI) {
+  hoo.registerTool({
     name: "duplicate-tool",
     description: "Second",
     parameters: Type.Object({}),
@@ -671,14 +671,14 @@ export default function(pi: ExtensionAPI) {
 				`
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(hoo: ExtensionAPI) {
+  hoo.registerTool({
     name: "duplicate-tool",
     description: "global tool",
     parameters: Type.Object({}),
     execute: async () => ({ result: "global" }),
   });
-  pi.registerCommand("deploy", {
+  hoo.registerCommand("deploy", {
     description: "global command",
     handler: async () => {},
   });
@@ -690,14 +690,14 @@ export default function(pi: ExtensionAPI) {
 				`
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { Type } from "typebox";
-export default function(pi: ExtensionAPI) {
-  pi.registerTool({
+export default function(hoo: ExtensionAPI) {
+  hoo.registerTool({
     name: "duplicate-tool",
     description: "explicit tool",
     parameters: Type.Object({}),
     execute: async () => ({ result: "explicit" }),
   });
-  pi.registerCommand("deploy", {
+  hoo.registerCommand("deploy", {
     description: "explicit command",
     handler: async () => {},
   });
@@ -733,8 +733,8 @@ export default function(pi: ExtensionAPI) {
 
 	describe("extension factory displayName", () => {
 		it("should surface factory displayName on loaded extensions", async () => {
-			const factory: ExtensionFactory = (pi) => {
-				pi.registerCommand("inline-cmd", {
+			const factory: ExtensionFactory = (hoo) => {
+				hoo.registerCommand("inline-cmd", {
 					description: "inline command",
 					handler: async () => {},
 				});
@@ -783,8 +783,8 @@ export default function(pi: ExtensionAPI) {
 		});
 
 		it("should use synthetic inline path for loaded extensions without displayName", async () => {
-			const factory: ExtensionFactory = (pi) => {
-				pi.registerCommand("inline-cmd", {
+			const factory: ExtensionFactory = (hoo) => {
+				hoo.registerCommand("inline-cmd", {
 					description: "inline command",
 					handler: async () => {},
 				});

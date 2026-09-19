@@ -505,8 +505,8 @@ function buildMcpToolDefinition(serverConfig: McpServerConfig, tool: McpToolDef)
 
 const RESOLVE_MCP_TOOLS_NAME = "ResolveMcpTools";
 
-export function setupMcpLoader(pi: ExtensionAPI): void {
-	pi.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
+export function setupMcpLoader(hoo: ExtensionAPI): void {
+	hoo.on("session_start", async (_event: SessionStartEvent, ctx: ExtensionContext) => {
 		// A spawned subagent whose tool allowlist has no MCP tools is told by its
 		// parent to skip server connection entirely (see SUBAGENT_SKIP_MCP_ENV).
 		// Each connect is a ~15s-timeout handshake; doing it for a subagent that can
@@ -625,7 +625,7 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 						mcpAuthPending.delete(serverConfig.name);
 						try {
 							const { tools } = await connectMcpServer(serverConfig);
-							for (const tool of tools) pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
+							for (const tool of tools) hoo.registerTool(buildMcpToolDefinition(serverConfig, tool));
 							setMcpServerStatus({
 								name: serverConfig.name,
 								toolCount: tools.length,
@@ -665,7 +665,7 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 						deferredCatalog.push({ toolName, server: serverConfig.name, description: tool.description });
 						deferredByName.set(toolName, { serverConfig, tool });
 					} else {
-						pi.registerTool(buildMcpToolDefinition(serverConfig, tool));
+						hoo.registerTool(buildMcpToolDefinition(serverConfig, tool));
 					}
 				}
 
@@ -733,7 +733,7 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 				},
 				{ additionalProperties: false },
 			);
-			pi.registerTool({
+			hoo.registerTool({
 				name: RESOLVE_MCP_TOOLS_NAME,
 				label: RESOLVE_MCP_TOOLS_NAME,
 				description:
@@ -776,7 +776,7 @@ export function setupMcpLoader(pi: ExtensionAPI): void {
 						if (resolvedNames.has(entry.toolName)) continue;
 						const raw = deferredByName.get(entry.toolName);
 						if (!raw) continue;
-						pi.registerTool(buildMcpToolDefinition(raw.serverConfig, raw.tool));
+						hoo.registerTool(buildMcpToolDefinition(raw.serverConfig, raw.tool));
 						resolvedNames.add(entry.toolName);
 						newlyResolved.push(entry.toolName);
 					}

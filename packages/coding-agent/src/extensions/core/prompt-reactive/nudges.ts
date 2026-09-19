@@ -122,10 +122,10 @@ function formatNote(nudge: ReuseNudge): string {
 
 /**
  * Install the runtime reuse-nudge extension. Idempotent — a second call on the
- * same `pi` is a no-op, so composing default extensions twice is harmless.
+ * same `hoo` is a no-op, so composing default extensions twice is harmless.
  */
-export function setupPromptReactiveNudges(pi: ExtensionAPI, options: PromptReactiveNudgesOptions = {}): void {
-	const guarded = pi as unknown as Record<symbol, boolean>;
+export function setupPromptReactiveNudges(hoo: ExtensionAPI, options: PromptReactiveNudgesOptions = {}): void {
+	const guarded = hoo as unknown as Record<symbol, boolean>;
 	if (guarded[REGISTERED]) return;
 	guarded[REGISTERED] = true;
 
@@ -153,7 +153,7 @@ export function setupPromptReactiveNudges(pi: ExtensionAPI, options: PromptReact
 		}
 	};
 
-	pi.on("session_start", (_event: SessionStartEvent) => {
+	hoo.on("session_start", (_event: SessionStartEvent) => {
 		deliveredCategories.clear();
 		pending.length = 0;
 		injectedThisTurn = false;
@@ -161,19 +161,19 @@ export function setupPromptReactiveNudges(pi: ExtensionAPI, options: PromptReact
 		clearArmedReuseNudges();
 	});
 
-	pi.on("turn_start", (_event: TurnStartEvent) => {
+	hoo.on("turn_start", (_event: TurnStartEvent) => {
 		injectedThisTurn = false;
 	});
 
-	pi.on("before_agent_start", (event: BeforeAgentStartEvent, ctx: ExtensionContext) => {
+	hoo.on("before_agent_start", (event: BeforeAgentStartEvent, ctx: ExtensionContext) => {
 		enqueue(event.prompt, ctx.cwd);
 	});
 
-	pi.on("tool_execution_start", (event: ToolExecutionStartEvent, ctx: ExtensionContext) => {
+	hoo.on("tool_execution_start", (event: ToolExecutionStartEvent, ctx: ExtensionContext) => {
 		enqueue(extractText(event.args), ctx.cwd);
 	});
 
-	pi.on("tool_execution_end", (event: ToolExecutionEndEvent, ctx: ExtensionContext) => {
+	hoo.on("tool_execution_end", (event: ToolExecutionEndEvent, ctx: ExtensionContext) => {
 		if (event.isError) return;
 		enqueue(extractText(event.result), ctx.cwd);
 	});
@@ -181,7 +181,7 @@ export function setupPromptReactiveNudges(pi: ExtensionAPI, options: PromptReact
 	// The injection point: fires before each provider request. transformContext
 	// output is request-scoped (never written back to agent state), so the note
 	// is ephemeral by construction.
-	pi.on("context", (event: ContextEvent, ctx: ExtensionContext) => {
+	hoo.on("context", (event: ContextEvent, ctx: ExtensionContext) => {
 		if (!enabled(ctx.cwd) || injectedThisTurn) return undefined;
 		// Drop any that raced to "delivered" via another path, then take the oldest.
 		while (pending.length > 0 && deliveredCategories.has(pending[0]!.category)) pending.shift();

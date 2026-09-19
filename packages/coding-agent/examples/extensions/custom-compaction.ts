@@ -10,15 +10,15 @@
  * which can be cheaper/faster than the main conversation model.
  *
  * Usage:
- *   pi --extension examples/extensions/custom-compaction.ts
+ *   hoocode --extension examples/extensions/custom-compaction.ts
  */
 
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { convertToLlm, serializeConversation } from "@kolisachint/hoocode-agent";
 import { complete } from "@kolisachint/hoocode-ai";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("session_before_compact", async (event, ctx) => {
+export default function (hoo: ExtensionAPI) {
+	hoo.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction extension triggered", "info");
 
 		const { preparation, branchEntries: _, signal } = event;

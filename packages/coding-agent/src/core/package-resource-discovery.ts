@@ -171,7 +171,14 @@ function collectFiles(
 	return files;
 }
 
-export type SkillDiscoveryMode = "pi" | "agents";
+/**
+ * How a skills directory is laid out.
+ *
+ * `hoocode`: a bare `*.md` at the root of the directory is itself a skill, as
+ * well as the `<name>/SKILL.md` form. `agents`: only the directory form, which
+ * is what the cross-vendor `~/.agents` layout specifies.
+ */
+export type SkillDiscoveryMode = "hoocode" | "agents";
 
 function collectSkillEntries(
 	dir: string,
@@ -230,7 +237,7 @@ function collectSkillEntries(
 			}
 
 			const relPath = toPosixPath(relative(root, fullPath));
-			if (mode === "pi" && dir === root && isFile && entry.name.endsWith(".md") && !ig.ignores(relPath)) {
+			if (mode === "hoocode" && dir === root && isFile && entry.name.endsWith(".md") && !ig.ignores(relPath)) {
 				entries.push(fullPath);
 				continue;
 			}
@@ -364,6 +371,8 @@ function readHooCodeManifestFile(packageJsonPath: string): HooCodeManifest | nul
 	try {
 		const content = readFileSync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content) as { hoocode?: HooCodeManifest; pi?: HooCodeManifest };
+		// `pi` is a deprecated alias for packages authored against the upstream
+		// project (see core/extensions/loader.ts readHooCodeManifest).
 		return pkg.hoocode ?? pkg.pi ?? null;
 	} catch {
 		return null;
@@ -460,7 +469,7 @@ export function collectAutoExtensionEntries(dir: string): string[] {
  */
 export function collectResourceFiles(dir: string, resourceType: ResourceType): string[] {
 	if (resourceType === "skills") {
-		return collectSkillEntries(dir, "pi");
+		return collectSkillEntries(dir, "hoocode");
 	}
 	if (resourceType === "extensions") {
 		return collectAutoExtensionEntries(dir);

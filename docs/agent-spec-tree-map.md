@@ -186,7 +186,7 @@ ancestor chain root-first — so the native home wins over the cross-vendor one
 and the repo wins over both. The two user scopes are additive: neither shadows
 the other (`core/context-files.ts:127-136`).
 
-Declared via package.json "hoocode" (or legacy "pi") manifest:
+Declared via package.json "hoocode" (or legacy "hoo") manifest:
   agents[], skills[], extensions[], prompts[], themes[]
 ```
 
@@ -285,7 +285,7 @@ differs; **None** = not scanned.
 | `.backups/` | [P1] | **None (equivalent)** | `~/.hoocode/sessions/<id>/session.jsonl` | Sessions auto-saved (not a `.backups` spec) | `config.ts:385-390` |
 | Extensions | — (hoocode) | **Full** | `./.hoocode/extensions`, `~/.hoocode/extensions`, `--extensions`, manifest | `index.ts/js` or `*.ts/js`, default `ExtensionFactory` export | `core/extensions/loader.ts:420-500` |
 | Canvas extensions | [A] (GitHub Copilot) | **Full** | `./.agents/extensions`, `./.github/extensions`, `~/.copilot/extensions` | `extension.mjs` speaking the canvas provider protocol; forked, never imported | `core/canvas/discovery.ts`, `core/canvas/runner.ts` |
-| package.json manifest | — (hoocode) | **Full** | `hoocode` (or legacy `pi`) key | `agents[]`, `skills[]`, `extensions[]`, `prompts[]`, `themes[]` | `core/package-manager.ts:534-550` |
+| package.json manifest | — (hoocode) | **Full** | `hoocode` (or legacy `hoo`) key | `agents[]`, `skills[]`, `extensions[]`, `prompts[]`, `themes[]` | `core/package-manager.ts:534-550` |
 
 ### Precedence (project beats global, last write wins on name)
 

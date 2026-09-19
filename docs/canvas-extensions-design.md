@@ -1039,7 +1039,7 @@ nobody asked for would burn a turn and overwrite the file they were about to edi
 `/new-canvas` left `extensions/core/scaffold.ts`, where it sat beside
 `/new-skill`, `/new-agent` and `/new-command`. It is not a file-writing command
 any more: it opens what it writes and drives the agent loop, so it needs the
-canvas session and `pi.sendUserMessage`, neither of which belongs in a scaffold.
+canvas session and `hoo.sendUserMessage`, neither of which belongs in a scaffold.
 The command lives in `extensions/core/canvas.ts`; every decision it makes — the
 parse, the name derivation, the homes, the template, the brief — is in
 `core/canvas/scaffold.ts`, testable without a terminal, a fork or a model.

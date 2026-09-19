@@ -34,9 +34,9 @@ describe("splitIntoSections", () => {
 	});
 
 	test("keeps code content in the excerpt, since identifiers are what people search for", () => {
-		const sections = splitIntoSections("# API\n\n```ts\npi.registerTool(definition);\n```\n", "x.md", "/x.md");
+		const sections = splitIntoSections("# API\n\n```ts\nhoo.registerTool(definition);\n```\n", "x.md", "/x.md");
 
-		expect(sections[0]?.excerpt).toContain("pi.registerTool");
+		expect(sections[0]?.excerpt).toContain("hoo.registerTool");
 	});
 
 	test("disambiguates repeated headings so ids stay unique", () => {

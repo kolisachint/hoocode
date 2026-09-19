@@ -89,18 +89,18 @@ Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) w
 **In extensions** via `ctx.ui.custom()`:
 
 ```typescript
-pi.on("session_start", async (_event, ctx) => {
+hoo.on("session_start", async (_event, ctx) => {
   const handle = ctx.ui.custom(myComponent);
   // handle.requestRender() - trigger re-render
   // handle.close() - restore normal UI
 });
 ```
 
-**In custom tools** via `pi.ui.custom()`:
+**In custom tools** via `hoo.ui.custom()`:
 
 ```typescript
 async execute(toolCallId, params, onUpdate, ctx, signal) {
-  const handle = pi.ui.custom(myComponent);
+  const handle = hoo.ui.custom(myComponent);
   // ...
   handle.close();
 }
@@ -363,7 +363,7 @@ class MySelector {
 Usage in an extension:
 
 ```typescript
-pi.registerCommand("pick", {
+hoo.registerCommand("pick", {
   description: "Pick an item",
   handler: async (args, ctx) => {
     const items = ["Option A", "Option B", "Option C"];
@@ -594,7 +594,7 @@ import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { DynamicBorder } from "@kolisachint/hoocode-agent";
 import { Container, type SelectItem, SelectList, Text } from "@kolisachint/hoocode-tui";
 
-pi.registerCommand("pick", {
+hoo.registerCommand("pick", {
   handler: async (_args, ctx) => {
     const items: SelectItem[] = [
       { value: "opt1", label: "Option 1", description: "First option" },
@@ -652,7 +652,7 @@ For operations that take time and should be cancellable. `BorderedLoader` shows 
 ```typescript
 import { BorderedLoader } from "@kolisachint/hoocode-agent";
 
-pi.registerCommand("fetch", {
+hoo.registerCommand("fetch", {
   handler: async (_args, ctx) => {
     const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
       const loader = new BorderedLoader(tui, theme, "Fetching data...");
@@ -685,7 +685,7 @@ For toggling multiple settings. Use `SettingsList` from `@kolisachint/hoocode-tu
 import { getSettingsListTheme } from "@kolisachint/hoocode-agent";
 import { Container, type SettingItem, SettingsList, Text } from "@kolisachint/hoocode-tui";
 
-pi.registerCommand("settings", {
+hoo.registerCommand("settings", {
   handler: async (_args, ctx) => {
     const items: SettingItem[] = [
       { id: "verbose", label: "Verbose mode", currentValue: "off", values: ["on", "off"] },
@@ -874,8 +874,8 @@ class VimEditor extends CustomEditor {
   }
 }
 
-export default function (pi: ExtensionAPI) {
-  pi.on("session_start", (_event, ctx) => {
+export default function (hoo: ExtensionAPI) {
+  hoo.on("session_start", (_event, ctx) => {
     // Factory receives theme and keybindings from the app
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
       new VimEditor(theme, keybindings)

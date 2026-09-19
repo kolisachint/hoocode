@@ -174,12 +174,12 @@ export function buildPluginFactory(plugin: NormalizedPlugin, options?: PluginFac
 		plugin.root,
 		wiresExecutables ? ensurePluginDataDir(plugin.id) : pluginDataDir(plugin.id),
 	);
-	const factory: ExtensionFactory = (pi: ExtensionAPI) => {
+	const factory: ExtensionFactory = (hoo: ExtensionAPI) => {
 		// Resources: contribute the plugin's capability directories. Commands map to
 		// the slash-command surface (`.agents/commands`) and agents to subagent
 		// definitions (`.agents/agents`), matching hoocode's native conventions.
 		if (plugin.skillsDir || plugin.commandsDir || plugin.themesDir || plugin.agentsDir) {
-			pi.on("resources_discover", () => ({
+			hoo.on("resources_discover", () => ({
 				skillPaths: plugin.skillsDir ? [plugin.skillsDir] : undefined,
 				themePaths: plugin.themesDir ? [plugin.themesDir] : undefined,
 				slashCommandPaths: plugin.commandsDir ? [plugin.commandsDir] : undefined,
@@ -189,13 +189,13 @@ export function buildPluginFactory(plugin: NormalizedPlugin, options?: PluginFac
 
 		// Providers (native plugins only).
 		for (const provider of plugin.providers ?? []) {
-			pi.registerProvider(provider.name, provider.config);
+			hoo.registerProvider(provider.name, provider.config);
 		}
 
 		// Hooks: true-parity shell bridge. Executable, so withheld from a
 		// project-scoped plugin (see PluginFactoryOptions.passiveOnly).
 		if (plugin.hooks && !passiveOnly) {
-			installPluginHooks(pi, plugin.hooks, plugin.root, vars, () => {
+			installPluginHooks(hoo, plugin.hooks, plugin.root, vars, () => {
 				// Non-blocking hook failures are intentionally quiet (Claude Code parity).
 			});
 		}

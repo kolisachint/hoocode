@@ -93,12 +93,12 @@ function sectionIndex(): Map<string, { path: string; line: number }> {
  */
 let lastSignature = "";
 
-function registerSessionCapabilities(event: BeforeAgentStartEvent, pi: ExtensionAPI): void {
+function registerSessionCapabilities(event: BeforeAgentStartEvent, hoo: ExtensionAPI): void {
 	const skills = event.systemPromptOptions.skills ?? [];
 	const agents = event.systemPromptOptions.agents ?? [];
 	let commands: Array<{ name: string; description?: string }> = [];
 	try {
-		commands = pi.getCommands();
+		commands = hoo.getCommands();
 	} catch {
 		// Commands are an interactive-mode concern; a headless session may not
 		// have them. Missing commands is not a reason to skip skills and agents.
@@ -164,9 +164,9 @@ function describeHit(doc: CapabilityDoc, sections: Map<string, { path: string; l
 	return `- [${doc.kind}] ${doc.name}${summary}`;
 }
 
-export function setupSelfKnowledge(pi: ExtensionAPI): void {
-	pi.on("before_agent_start", (event: BeforeAgentStartEvent) => {
-		registerSessionCapabilities(event, pi);
+export function setupSelfKnowledge(hoo: ExtensionAPI): void {
+	hoo.on("before_agent_start", (event: BeforeAgentStartEvent) => {
+		registerSessionCapabilities(event, hoo);
 	});
 
 	const params = Type.Object(
@@ -181,7 +181,7 @@ export function setupSelfKnowledge(pi: ExtensionAPI): void {
 		{ additionalProperties: false },
 	);
 
-	pi.registerTool({
+	hoo.registerTool({
 		name: SEARCH_HOOCODE_TOOL_NAME,
 		label: SEARCH_HOOCODE_TOOL_NAME,
 		description:

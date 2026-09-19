@@ -165,7 +165,7 @@ describe("edit tool preserves untouched lines", () => {
 			"# Doc",
 			"",
 			"```ts",
-			"pi.on('event', async () => {",
+			"hoo.on('event', async () => {",
 			"  const { preparation } = event;",
 			"  ",
 			"  return preparation;",
@@ -186,7 +186,7 @@ describe("edit tool preserves untouched lines", () => {
 
 		// The model copies four lines verbatim out of what it was shown.
 		const shownLines = shown.split("\n");
-		const start = shownLines.findIndex((line) => line.includes("pi.on('event'"));
+		const start = shownLines.findIndex((line) => line.includes("hoo.on('event'"));
 		expect(start).toBeGreaterThanOrEqual(0);
 		const oldText = shownLines.slice(start, start + 4).join("\n");
 		const newText = oldText.replace("const { preparation } = event;", "const { preparation } = event; // noted");

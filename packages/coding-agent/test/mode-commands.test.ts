@@ -21,7 +21,7 @@ function makeHarness() {
 	const commands = new Map<string, (args: string, ctx: any) => Promise<void>>();
 	const sentMessages: string[] = [];
 
-	const pi: any = {
+	const hoo: any = {
 		events,
 		on: () => {},
 		registerTool: () => {},
@@ -38,10 +38,10 @@ function makeHarness() {
 	const autoStarts: Partial<LoopAutoStartPayload>[] = [];
 	events.on(LOOP_AUTO_START, (d) => autoStarts.push((d ?? {}) as Partial<LoopAutoStartPayload>));
 
-	setupMode(pi);
+	setupMode(hoo);
 
 	return {
-		pi,
+		hoo,
 		events,
 		sentMessages,
 		autoStarts,

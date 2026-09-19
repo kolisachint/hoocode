@@ -42,9 +42,9 @@ describe("persisted flag overrides", () => {
 			extensionFlagValues: opts.cliFlags,
 			resourceLoaderOptions: {
 				extensionFactories: [
-					(pi) => {
-						pi.registerFlag("bool-flag", { type: "boolean", default: false, description: "b" });
-						pi.registerFlag("str-flag", { type: "string", description: "s" });
+					(hoo) => {
+						hoo.registerFlag("bool-flag", { type: "boolean", default: false, description: "b" });
+						hoo.registerFlag("str-flag", { type: "string", description: "s" });
 					},
 				],
 			},

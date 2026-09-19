@@ -177,12 +177,12 @@ describe("detectInstallMethod", () => {
 	test("self-updates renamed packages from the current install prefix", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/pi");
+		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/hoo");
 
 		expect(command).toEqual({
 			command: "npm",
-			args: ["--prefix", prefix, "install", "-g", "@new-scope/pi"],
-			display: `npm --prefix ${prefix} uninstall -g @kolisachint/hoocode-agent && npm --prefix ${prefix} install -g @new-scope/pi`,
+			args: ["--prefix", prefix, "install", "-g", "@new-scope/hoo"],
+			display: `npm --prefix ${prefix} uninstall -g @kolisachint/hoocode-agent && npm --prefix ${prefix} install -g @new-scope/hoo`,
 			steps: [
 				{
 					command: "npm",
@@ -191,8 +191,8 @@ describe("detectInstallMethod", () => {
 				},
 				{
 					command: "npm",
-					args: ["--prefix", prefix, "install", "-g", "@new-scope/pi"],
-					display: `npm --prefix ${prefix} install -g @new-scope/pi`,
+					args: ["--prefix", prefix, "install", "-g", "@new-scope/hoo"],
+					display: `npm --prefix ${prefix} install -g @new-scope/hoo`,
 				},
 			],
 		});
@@ -219,7 +219,7 @@ describe("detectInstallMethod", () => {
 	});
 
 	test("quotes npm self-update display paths", () => {
-		const { prefix } = createNpmPrefixInstall("pi prefix ");
+		const { prefix } = createNpmPrefixInstall("hoo prefix ");
 
 		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent");
 
@@ -251,13 +251,13 @@ describe("detectInstallMethod", () => {
 	test("self-updates renamed pnpm global installs by removing the old package first", () => {
 		createPnpmGlobalInstall();
 
-		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/pi");
+		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/hoo");
 
 		expect(detectInstallMethod()).toBe("pnpm");
 		expect(command).toEqual({
 			command: "pnpm",
-			args: ["install", "-g", "@new-scope/pi"],
-			display: "pnpm remove -g @kolisachint/hoocode-agent && pnpm install -g @new-scope/pi",
+			args: ["install", "-g", "@new-scope/hoo"],
+			display: "pnpm remove -g @kolisachint/hoocode-agent && pnpm install -g @new-scope/hoo",
 			steps: [
 				{
 					command: "pnpm",
@@ -266,8 +266,8 @@ describe("detectInstallMethod", () => {
 				},
 				{
 					command: "pnpm",
-					args: ["install", "-g", "@new-scope/pi"],
-					display: "pnpm install -g @new-scope/pi",
+					args: ["install", "-g", "@new-scope/hoo"],
+					display: "pnpm install -g @new-scope/hoo",
 				},
 			],
 		});
@@ -276,13 +276,13 @@ describe("detectInstallMethod", () => {
 	test("self-updates renamed yarn global installs by removing the old package first", () => {
 		createYarnGlobalInstall();
 
-		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/pi");
+		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/hoo");
 
 		expect(detectInstallMethod()).toBe("yarn");
 		expect(command).toEqual({
 			command: "yarn",
-			args: ["global", "add", "@new-scope/pi"],
-			display: "yarn global remove @kolisachint/hoocode-agent && yarn global add @new-scope/pi",
+			args: ["global", "add", "@new-scope/hoo"],
+			display: "yarn global remove @kolisachint/hoocode-agent && yarn global add @new-scope/hoo",
 			steps: [
 				{
 					command: "yarn",
@@ -291,8 +291,8 @@ describe("detectInstallMethod", () => {
 				},
 				{
 					command: "yarn",
-					args: ["global", "add", "@new-scope/pi"],
-					display: "yarn global add @new-scope/pi",
+					args: ["global", "add", "@new-scope/hoo"],
+					display: "yarn global add @new-scope/hoo",
 				},
 			],
 		});
@@ -301,13 +301,13 @@ describe("detectInstallMethod", () => {
 	test("self-updates renamed bun global installs by removing the old package first", () => {
 		createBunGlobalInstall();
 
-		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/pi");
+		const command = getSelfUpdateCommand("@kolisachint/hoocode-agent", undefined, "@new-scope/hoo");
 
 		expect(detectInstallMethod()).toBe("bun");
 		expect(command).toEqual({
 			command: "bun",
-			args: ["install", "-g", "@new-scope/pi"],
-			display: "bun uninstall -g @kolisachint/hoocode-agent && bun install -g @new-scope/pi",
+			args: ["install", "-g", "@new-scope/hoo"],
+			display: "bun uninstall -g @kolisachint/hoocode-agent && bun install -g @new-scope/hoo",
 			steps: [
 				{
 					command: "bun",
@@ -316,8 +316,8 @@ describe("detectInstallMethod", () => {
 				},
 				{
 					command: "bun",
-					args: ["install", "-g", "@new-scope/pi"],
-					display: "bun install -g @new-scope/pi",
+					args: ["install", "-g", "@new-scope/hoo"],
+					display: "bun install -g @new-scope/hoo",
 				},
 			],
 		});

@@ -1,4 +1,20 @@
-const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"/><path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z"/></svg>`;
+/**
+ * The Hoo mark, inlined.
+ *
+ * This is the only HooCode surface that renders in a browser, and it is the one
+ * a user sees at the exact moment they are deciding whether to trust the thing
+ * asking for their account. It showed the upstream project's mark until this
+ * release, which on that page read as a different product than the one they
+ * launched.
+ *
+ * Kept as a string rather than read from assets/symbol.svg because this module
+ * is bundled into a standalone binary with no filesystem to read from, and a
+ * missing logo on the auth page is not a failure anyone would debug.
+ *
+ * Mirrors assets/symbol.svg. Colours are literal rather than `currentColor`:
+ * the page sets its own dark background, so the mark never has to adapt.
+ */
+const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="16 60 168 80" aria-hidden="true"><path d="M40,72 A34,34 0 0 0 40,128" fill="none" stroke="#00F0FF" stroke-width="6" stroke-linecap="round"/><path d="M160,72 A34,34 0 0 1 160,128" fill="none" stroke="#00F0FF" stroke-width="6" stroke-linecap="round"/><circle cx="70" cy="100" r="30" fill="none" stroke="#FAFAFA" stroke-width="9"/><circle cx="130" cy="100" r="30" fill="none" stroke="#FAFAFA" stroke-width="9"/><polygon points="100,89 111,100 100,111 89,100" fill="#00F0FF"/></svg>`;
 
 function escapeHtml(value: string): string {
 	return value
@@ -52,11 +68,13 @@ function renderPage(options: { title: string; heading: string; message: string; 
       justify-content: center;
     }
     .logo {
-      width: 72px;
-      height: 72px;
+      /* The mark is 168x80, so a square box would letterbox it. */
+      width: 168px;
+      height: 80px;
       display: block;
-      margin-bottom: 24px;
+      margin-bottom: 20px;
     }
+    .logo svg { width: 100%; height: 100%; }
     h1 {
       margin: 0 0 10px;
       font-size: 28px;

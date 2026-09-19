@@ -22,8 +22,8 @@ describe("AgentSession model and extension characterization", () => {
 				{ id: "faux-2", name: "Two", reasoning: true },
 			],
 			extensionFactories: [
-				(pi) => {
-					pi.on("model_select", async (event) => {
+				(hoo) => {
+					hoo.on("model_select", async (event) => {
 						modelEvents.push(`${event.previousModel?.id ?? "none"}->${event.model.id}:${event.source}`);
 					});
 				},
@@ -106,8 +106,8 @@ describe("AgentSession model and extension characterization", () => {
 		const harness = await createHarness({
 			tools: [echoTool],
 			extensionFactories: [
-				(pi) => {
-					pi.on("tool_call", async () => ({ block: true, reason: "Blocked by test" }));
+				(hoo) => {
+					hoo.on("tool_call", async () => ({ block: true, reason: "Blocked by test" }));
 				},
 			],
 		});
@@ -149,8 +149,8 @@ describe("AgentSession model and extension characterization", () => {
 		const harness = await createHarness({
 			tools: [echoTool],
 			extensionFactories: [
-				(pi) => {
-					pi.on("tool_result", async () => ({
+				(hoo) => {
+					hoo.on("tool_result", async () => ({
 						content: [{ type: "text", text: "patched result" }],
 						details: { patched: true },
 					}));
@@ -184,8 +184,8 @@ describe("AgentSession model and extension characterization", () => {
 	it("allows extension context handlers to modify messages before the LLM call", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.on("context", async (event) => ({
+				(hoo) => {
+					hoo.on("context", async (event) => ({
 						messages: event.messages.map((message) =>
 							message.role === "user"
 								? { ...message, content: [{ type: "text", text: "rewritten" }], timestamp: message.timestamp }
@@ -225,9 +225,9 @@ describe("AgentSession model and extension characterization", () => {
 		let extensionApi: ExtensionAPI | undefined;
 		const transformedHarness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					extensionApi = pi;
-					pi.on("input", async (event) => {
+				(hoo) => {
+					extensionApi = hoo;
+					hoo.on("input", async (event) => {
 						if (event.text === "ping") {
 							return { action: "handled" };
 						}
@@ -263,8 +263,8 @@ describe("AgentSession model and extension characterization", () => {
 	it("allows before_agent_start handlers to inject custom messages and modify the system prompt", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.on("before_agent_start", async (event) => ({
+				(hoo) => {
+					hoo.on("before_agent_start", async (event) => ({
 						message: {
 							customType: "before-start",
 							content: "injected",
@@ -305,11 +305,11 @@ describe("AgentSession model and extension characterization", () => {
 		const lifecycleEvents: string[] = [];
 		const harness = await createHarness({
 			extensionFactories: [
-				(pi) => {
-					pi.on("session_start", async (event) => {
+				(hoo) => {
+					hoo.on("session_start", async (event) => {
 						lifecycleEvents.push(`start:${event.reason}`);
 					});
-					pi.on("session_shutdown", async (event) => {
+					hoo.on("session_shutdown", async (event) => {
 						lifecycleEvents.push(`shutdown:${event.reason}`);
 					});
 				},

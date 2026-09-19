@@ -131,12 +131,12 @@ const COMMAND_BODY_TEMPLATE = (name: string) =>
 
 const COMMAND_DESCRIPTION_TEMPLATE = (name: string) => `TODO: describe what /${name} does and when to use it.`;
 
-export function setupScaffold(pi: ExtensionAPI): void {
+export function setupScaffold(hoo: ExtensionAPI): void {
 	// ── /new-skill <name> ─────────────────────────────────────────────────────
 	// Creates a SKILL.md with valid Agent Skills frontmatter — under .hoocode/ by
 	// default, or under each --platform target's skills directory.
 
-	pi.registerCommand("new-skill", {
+	hoo.registerCommand("new-skill", {
 		description: "Scaffold a new skill. Usage: /new-skill <name>",
 		getArgumentCompletions: () => [],
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -194,7 +194,7 @@ export function setupScaffold(pi: ExtensionAPI): void {
 	// each platform's convention (.claude/agents/<name>.md,
 	// .github/agents/<name>.agent.md with a YAML-list tools grant, ...).
 
-	pi.registerCommand("new-agent", {
+	hoo.registerCommand("new-agent", {
 		description: "Scaffold a new subagent. Usage: /new-agent <name>",
 		getArgumentCompletions: () => [],
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {
@@ -258,7 +258,7 @@ export function setupScaffold(pi: ExtensionAPI): void {
 	// default, or each platform's convention (.claude/commands/<name>.md,
 	// .github/prompts/<name>.prompt.md, ...).
 
-	pi.registerCommand("new-command", {
+	hoo.registerCommand("new-command", {
 		description: "Scaffold a new slash command. Usage: /new-command <name>",
 		getArgumentCompletions: () => [],
 		handler: async (args: string, ctx: ExtensionCommandContext): Promise<void> => {

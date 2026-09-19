@@ -26,12 +26,12 @@ let cwd = "";
 /** Collect the commands setupScaffold registers, keyed by name. */
 function registerCommands() {
 	const handlers = new Map<string, (args: string, ctx: any) => Promise<void>>();
-	const pi = {
+	const hoo = {
 		registerCommand: (name: string, def: { handler: (args: string, ctx: any) => Promise<void> }) => {
 			handlers.set(name, def.handler);
 		},
 	} as never;
-	setupScaffold(pi);
+	setupScaffold(hoo);
 	return handlers;
 }
 

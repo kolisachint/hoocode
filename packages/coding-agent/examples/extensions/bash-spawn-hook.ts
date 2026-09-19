@@ -4,13 +4,13 @@
  * Adjusts command, cwd, and env before execution.
  *
  * Usage:
- *   pi -e ./bash-spawn-hook.ts
+ *   hoocode -e ./bash-spawn-hook.ts
  */
 
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 import { createBashTool } from "@kolisachint/hoocode-agent";
 
-export default function (pi: ExtensionAPI) {
+export default function (hoo: ExtensionAPI) {
 	const cwd = process.cwd();
 
 	const bashTool = createBashTool(cwd, {
@@ -21,7 +21,7 @@ export default function (pi: ExtensionAPI) {
 		}),
 	});
 
-	pi.registerTool({
+	hoo.registerTool({
 		...bashTool,
 		execute: async (id, params, signal, onUpdate, _ctx) => {
 			return bashTool.execute(id, params, signal, onUpdate);

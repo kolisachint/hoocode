@@ -7,8 +7,8 @@
 
 import type { ExtensionAPI, SessionBeforeSwitchEvent, SessionMessageEntry } from "@kolisachint/hoocode-agent";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("session_before_switch", async (event: SessionBeforeSwitchEvent, ctx) => {
+export default function (hoo: ExtensionAPI) {
+	hoo.on("session_before_switch", async (event: SessionBeforeSwitchEvent, ctx) => {
 		if (!ctx.hasUI) return;
 
 		if (event.reason === "new") {
@@ -43,7 +43,7 @@ export default function (pi: ExtensionAPI) {
 		}
 	});
 
-	pi.on("session_before_fork", async (event, ctx) => {
+	hoo.on("session_before_fork", async (event, ctx) => {
 		if (!ctx.hasUI) return;
 
 		const choice = await ctx.ui.select(`Fork from entry ${event.entryId.slice(0, 8)}?`, [

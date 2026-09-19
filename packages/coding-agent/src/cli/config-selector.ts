@@ -1,5 +1,5 @@
 /**
- * TUI config selector for `pi config` command
+ * TUI config selector for the `hoocode config` command
  */
 
 import { ProcessTerminal, TUI } from "@kolisachint/hoocode-tui";

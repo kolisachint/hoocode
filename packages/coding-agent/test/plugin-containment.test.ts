@@ -143,18 +143,18 @@ describe("plugin content containment (step 3)", () => {
 
 		expect(withheldCapabilities(plugin).sort()).toEqual(["hooks", "mcp servers"]);
 
-		// The hooks bridge wires itself through pi.on(...), and MCP servers go to
+		// The hooks bridge wires itself through hoo.on(...), and MCP servers go to
 		// the module-level extension registry — so record both, and compare the
 		// gated run against the ungated one. Asserting only "nothing registered"
 		// would pass even if the gate did nothing.
 		const run = (passiveOnly: boolean) => {
 			clearExtensionMcpServers();
 			const events: string[] = [];
-			const pi = {
+			const hoo = {
 				on: (event: string) => events.push(event),
 				registerProvider: () => {},
 			} as never;
-			buildPluginFactory(plugin, { passiveOnly })(pi);
+			buildPluginFactory(plugin, { passiveOnly })(hoo);
 			return { events, mcp: getExtensionMcpServers().map((e) => e.source) };
 		};
 

@@ -11,15 +11,15 @@
 import * as fs from "node:fs";
 import type { ExtensionAPI } from "@kolisachint/hoocode-agent";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("session_start", async (_event, ctx) => {
+export default function (hoo: ExtensionAPI) {
+	hoo.on("session_start", async (_event, ctx) => {
 		const triggerFile = "/tmp/agent-trigger.txt";
 
 		fs.watch(triggerFile, () => {
 			try {
 				const content = fs.readFileSync(triggerFile, "utf-8").trim();
 				if (content) {
-					pi.sendMessage(
+					hoo.sendMessage(
 						{
 							customType: "file-trigger",
 							content: `External trigger: ${content}`,
