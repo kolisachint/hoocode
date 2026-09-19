@@ -119,3 +119,40 @@ jobs:
 
       - name: Build all packages
         run: bun run build
+
+  # The installers are the first thing a new user runs, and nothing else in the
+  # repository executes them — so without this job a typo in either ships to the
+  # front door and is discovered by a stranger. Syntax only: actually installing
+  # would need a published release to install from.
+  installers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse install.sh with a POSIX shell
+        # dash, not bash: the script is piped to `sh`, which on Debian/Ubuntu
+        # (and on Alpine) is not bash. A bashism here would only ever fail on a
+        # user's machine. dash is /bin/sh on the Ubuntu runners, so no install
+        # step is needed.
+        run: |
+          dash -n install/install.sh
+          sh -n install/install.sh
+
+      - name: Parse install.ps1 with PowerShell
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "install/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Extent.StartLineNumber): $($_.Message)" }
+            exit 1
+          }
+          Write-Host "install.ps1 parses clean"
+
+      - name: Parse the release build script and the test runner
+        run: |
+          bash -n scripts/build-binaries.sh
+          bash scripts/build-binaries.sh --list
+          bash -n test.sh
+          ./test.sh --help >/dev/null

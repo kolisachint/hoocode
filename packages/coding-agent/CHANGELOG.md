@@ -51,6 +51,26 @@
 - `enableInstallTelemetry` documented as inert — hoocode sends no install or
   update telemetry. Update checks read the npm registry and are separate.
 
+### Fixed
+
+- **The macOS builds are signed, so macOS will run them.** `bun build
+  --compile` appends its payload to a copy of the bun executable, which leaves
+  the Mach-O carrying a signature that no longer matches what it covers — and
+  Apple Silicon does not warn about that, it kills the process on launch:
+  `Killed: 9`, no dialog, no reason given. Every `darwin-*` binary is now ad-hoc
+  signed before it is packed (`rcodesign` on the Linux runner the release
+  cross-compiles from, `codesign` for a local build on a Mac), and
+  `build-binaries.sh` refuses to pack an unsigned one rather than shipping an
+  archive that dies on first run. `install.sh` repairs an invalid signature on
+  the way in as well, so an older archive, or a mirror that rewrote the file,
+  still installs something that starts.
+- **`scripts/build-binaries.sh` runs on a Mac.** Building every target died
+  before the first compile on `mapfile`, which is bash 4 and macOS ships 3.2;
+  and the checksums step used `sha256sum`, which is coreutils. That step also
+  failed a `--targets` subset build outright — one of its two globs matches
+  nothing, and under `set -o pipefail` that took down the script after every
+  binary had already been compiled.
+
 ### Removed
 
 - The `hoocode update pi` alias. `self`, `hoocode` and `hoo` all still work.
