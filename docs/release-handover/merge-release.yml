@@ -1,0 +1,136 @@
+name: Release on PR Merge
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  release:
+    if: >
+      github.event.pull_request.merged == true && (
+        contains(github.event.pull_request.labels.*.name, 'npm:patch') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:minor') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:major')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Pin npm to 10.x (used only for publishing)
+        run: sudo npm install -g npm@10
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Configure Git
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "github-actions@github.com"
+
+      - name: Determine release type from label
+        id: release-type
+        run: |
+          if ${{ contains(github.event.pull_request.labels.*.name, 'npm:major') }}; then
+            echo "type=major" >> "$GITHUB_OUTPUT"
+          elif ${{ contains(github.event.pull_request.labels.*.name, 'npm:minor') }}; then
+            echo "type=minor" >> "$GITHUB_OUTPUT"
+          else
+            echo "type=patch" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Configure npm auth
+        run: npm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
+
+      - name: Run release script
+        run: npm run release:${{ steps.release-type.outputs.type }}
+
+      - name: Push version bump and tag
+        run: git push --follow-tags origin main
+
+  github-release:
+    needs: [release]
+    if: >
+      github.event.pull_request.merged == true && (
+        contains(github.event.pull_request.labels.*.name, 'npm:patch') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:minor') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:major')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        run: |
+          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          gh release create "v$VERSION" --title "v$VERSION" --generate-notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  binaries:
+    needs: [github-release]
+    if: >
+      github.event.pull_request.merged == true && (
+        contains(github.event.pull_request.labels.*.name, 'npm:patch') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:minor') ||
+        contains(github.event.pull_request.labels.*.name, 'npm:major')
+      )
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build standalone binaries (all targets)
+        # One job, every target: `bun build --compile` cross-compiles, so a
+        # matrix of runners would only cost time. See scripts/build-binaries.sh.
+        run: bash scripts/build-binaries.sh
+
+      - name: Upload binaries and checksums to release
+        # checksums.txt is part of the release contract: install.sh and
+        # install.ps1 both verify the archive against it before unpacking.
+        run: |
+          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          gh release upload "v$VERSION" \
+            packages/coding-agent/binaries/hoocode-*.tar.gz \
+            packages/coding-agent/binaries/hoocode-*.zip \
+            packages/coding-agent/binaries/checksums.txt \
+            --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload the installers to release
+        # Pinning the installers to the release as well means `--version vX.Y.Z`
+        # can be paired with the installer that shipped with it.
+        run: |
+          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          gh release upload "v$VERSION" install/install.sh install/install.ps1 --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}

@@ -1,0 +1,61 @@
+name: Welcome
+
+# A first issue or PR is the moment someone decides whether this project is
+# worth their time. An immediate, concrete reply -- what happens next, where the
+# guide is -- costs nothing and is the difference between a contributor and a
+# tab that gets closed. It fires only on someone's *first* interaction, so
+# regulars never see it.
+on:
+  issues:
+    types: [opened]
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  welcome:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/first-interaction@v1
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          issue-message: >
+            Thanks for opening your first issue here — welcome.
+
+
+            A maintainer will read this. If it is a bug, the fastest way to help
+            it along is to make sure your `hoocode --version`, OS and terminal
+            are in there; if it is an idea, say what you were trying to do when
+            you wanted it.
+
+
+            If you would like to take a swing at it yourself, say so and we will
+            point you at the right files —
+            [CONTRIBUTING.md](https://github.com/kolisachint/hoocode/blob/main/CONTRIBUTING.md)
+            lists a few places that are genuinely easy to start from.
+
+
+            And if HooCode is useful to you, [a
+            star](https://github.com/kolisachint/hoocode) is the cheapest way to
+            help other people find it.
+          pr-message: >
+            Thanks for your first pull request — this is the good stuff.
+
+
+            CI will run `bun run check` and the test suite in a moment. If
+            something goes red, it is almost always lint or formatting and
+            `bun run check` fixes it in place.
+
+
+            A reviewer will be along. If they ask why something is the way it
+            is, it is curiosity rather than an objection — the
+            [guide](https://github.com/kolisachint/hoocode/blob/main/CONTRIBUTING.md)
+            explains what makes a PR quick to merge.
+
+
+            If you have not already, [a
+            star](https://github.com/kolisachint/hoocode) helps more people find
+            the project.
