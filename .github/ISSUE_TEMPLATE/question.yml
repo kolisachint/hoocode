@@ -1,0 +1,36 @@
+name: ❓ Question
+description: How do I…? Is this supposed to…?
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome here — there is no separate forum. If the answer
+        turns out to be in the docs, that usually means the docs were hard to
+        find, which is its own bug worth fixing.
+
+        The [documentation](https://kolisachint.github.io/hoocode/) is a good
+        first stop, but do not feel you have to exhaust it first.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: What would you like to know?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What have you tried?
+      description: Commands, settings, docs pages that did not answer it.
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: HooCode version
+      placeholder: "0.5.79"
+    validations:
+      required: false

@@ -64,6 +64,31 @@ Full documentation: **[kolisachint.github.io/hoocode](https://kolisachint.github
 | **[@kolisachint/hoocode-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, …) |
 | **[@kolisachint/hoocode-tui](packages/tui)** | Terminal UI library with differential rendering |
 
+## Contributing
+
+Contributions are welcome — bug reports, ideas, docs fixes, a new tip, a whole
+provider. No approval needed before opening a PR.
+
+Genuinely easy places to start:
+
+- **[Add a tip](packages/coding-agent/src/modes/interactive/tips.ts)** — one row
+  in an array. If you learned a trick the hard way, nobody else should have to.
+- **[Fix a doc](packages/coding-agent/docs)** — if something confused you, it
+  will confuse the next person.
+- **[Write an example extension](packages/coding-agent/examples/extensions)** —
+  self-contained, no core changes.
+- **[good first issue](https://github.com/kolisachint/hoocode/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)**
+  — say "I'll take this" and it is yours.
+
+See **[CONTRIBUTING.md](CONTRIBUTING.md)**. Questions are welcome as
+[issues](https://github.com/kolisachint/hoocode/issues/new/choose); for
+collaboration or anything that does not fit one, tag
+[@kolisachint on X](https://x.com/kolisachint).
+
+> ⭐ **If HooCode is useful to you, [star the
+> repo](https://github.com/kolisachint/hoocode).** One click, and it is the
+> single cheapest way to help other people find it.
+
 ## Credits
 
 HooCode is developed independently, but it began from the [`pi-mono`](https://github.com/earendil-works/pi-mono) project (originally [`badlogic/pi-mono`](https://github.com/badlogic/pi-mono)) by **Mario Zechner** ([@badlogicgames](https://github.com/badlogic)) and still contains work derived from it. The upstream project is MIT-licensed and all original copyright is preserved in [LICENSE](LICENSE). Huge thanks to Mario and the upstream contributors — without their work, HooCode would not exist.
