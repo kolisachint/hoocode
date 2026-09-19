@@ -13,10 +13,34 @@ HooCode is a deterministic terminal coding agent — four scoped modes
 (Ask · Plan · Build · Debug), 25+ providers, hybrid search, and one-click
 plugins in a single binary. Nothing applies without your approval.
 
+**macOS / Linux**
+
+```bash
+curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh
+```
+
+**Windows**
+
+```powershell
+irm https://kolisachint.github.io/hoocode/install.ps1 | iex
+```
+
+**npm** (needs Node ≥ 20)
+
 ```bash
 npm install -g @kolisachint/hoocode-agent
+```
+
+Then:
+
+```bash
 hoocode --help
 ```
+
+The one-click installers need no root, install into `~/.hoocode`, and pre-seed
+the optional Rust helpers (`fd`, `rg`, `embsearch`, `webtools`, `voicetools`) so
+your first session is fast even offline. Full details, including the standalone
+archives and container setups, are in **[Install](docs/install.md)**.
 
 ## Demo
 
@@ -24,9 +48,11 @@ https://github.com/user-attachments/assets/3fd55892-c4be-4d78-86ce-d14cbe7be644
 
 ## Docs
 
+Full documentation: **[kolisachint.github.io/hoocode](https://kolisachint.github.io/hoocode/)**
+
 - **[Product](docs/product.md)** — features, modes, tools, and extensibility
 - **[Install](docs/install.md)** — installation and building from source
-- **[Contributing](CONTRIBUTING.md)** — contribution guidelines
+- **[Contributing](CONTRIBUTING.md)** — how to get a change in (newcomers welcome)
 - **[AGENTS.md](AGENTS.md)** — project-specific rules for humans and agents
 
 ## Packages

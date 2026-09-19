@@ -75,7 +75,9 @@ export async function checkTmuxKeyboardSetup(): Promise<string | undefined> {
 }
 
 function reportInstallTelemetry(_version: string): void {
-	// Disabled in HooCode fork: this is forked from pi (upstream pi.dev install-telemetry endpoint is not run by this fork).
+	// HooCode reports no install telemetry. The hook is kept because the caller
+	// below marks a fresh install, which is a useful seam -- but nothing leaves
+	// the machine, and `enableInstallTelemetry` in settings.json is inert.
 }
 
 /**

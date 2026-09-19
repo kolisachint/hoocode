@@ -9,29 +9,40 @@
 
 # Install
 
-## Requirements
+The full, user-facing install guide lives at
+**[kolisachint.github.io/hoocode/install](https://kolisachint.github.io/hoocode/install)**
+(source: [`packages/coding-agent/docs/install.md`](../packages/coding-agent/docs/install.md)).
+It covers the one-click installers, npm, the standalone archives, offline and
+container setups, and uninstalling.
 
-- **Node.js** ≥ 20 (for the npm install; the prebuilt binary needs no runtime)
+This page is the short version, plus the bits that only matter if you are
+working *on* HooCode rather than *with* it.
 
-## Install from npm
+## One-click
+
+```bash
+# macOS and Linux
+curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh
+```
+
+```powershell
+# Windows
+irm https://kolisachint.github.io/hoocode/install.ps1 | iex
+```
+
+The installer sources are in [`install/`](../install). They install into
+`~/.hoocode`, need no root, and pre-seed the external Rust tools (`fd`, `rg`,
+`embsearch`, `webtools`, `voicetools`) into `~/.hoocode/bin` — the same
+directory HooCode downloads them to itself.
+
+## From npm
+
+Needs Node.js ≥ 20.
 
 ```bash
 npm install -g @kolisachint/hoocode-agent
 hoocode --help
 ```
-
-This installs the `hoocode` (and `hoo`) command globally.
-
-## First run
-
-```bash
-hoocode               # start in build mode
-hoocode /mode plan    # or draft a plan first
-hoocode --help        # see all flags
-```
-
-Pick a provider and model with `--provider` / `--model`; HooCode supports 25+
-providers. See [docs/product.md](product.md) for the mode and tool model.
 
 ## Build from source
 
@@ -52,54 +63,31 @@ bun run check        # Lint, format, and type check
 See [docs/bun-migration.md](bun-migration.md) for the completed npm → bun
 migration history and rules.
 
-## Restricted / offline environments
+## Build the release archives
 
-HooCode runs without network access. Two capabilities normally reach out to
-GitHub to download helper binaries (`fd` for file autocomplete, `rg` for the
-lexical half of `SearchCodebase`); everything else is self-contained.
+```bash
+./scripts/build-binaries.sh                          # every target
+./scripts/build-binaries.sh --targets linux-x64      # just one
+./scripts/build-binaries.sh --list                   # what targets exist
+```
 
-- **`HOOCODE_OFFLINE=1`** (or `--offline`) disables all startup network
-  operations — no binary downloads, no version checks. `SearchCodebase` and file
-  autocomplete fall back to a built-in pure-JS implementation, so both keep
-  working.
-- **`HOOCODE_NATIVE_SEARCH=1`** forces the pure-JS path even when
-  `fd`/`rg` could be downloaded. It also engages automatically whenever those
-  binaries are unavailable.
-- **Pre-seed the binaries** to get native `fd`/`rg` speed offline: install them
-  from your OS package manager (they are used straight from `PATH`), or drop the
-  executables into `~/.hoocode/bin/{fd,rg}`.
+`bun build --compile` cross-compiles, so one host produces every platform's
+archive. That is why the `binaries` job in
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) is a single
+job rather than a runner matrix.
 
-The interactive UI no longer blocks on these downloads — it starts immediately
-and wires `fd` in once resolved, so a slow or blocked network never delays
-launch.
+Targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`,
+`darwin-x64`, `darwin-arm64`, `windows-x64`. Each produces
+`hoocode-<target>.tar.gz` (or `.zip` on Windows) plus a shared `checksums.txt`
+that both installers verify against.
 
-### Containers & Kubernetes (Docker, GKE)
-
-HooCode runs in containers, including as `root` and with a read-only root
-filesystem (config-directory writes fail silently rather than crashing). Three
-deployment prerequisites are inherent to running an LLM agent and are not
-things HooCode can work around:
-
-1. **A provider credential.** Set an API key (`ANTHROPIC_API_KEY`,
-   `OPENAI_API_KEY`, …) or, for Copilot, the explicit `COPILOT_GITHUB_TOKEN`.
-   A bare `GH_TOKEN`/`GITHUB_TOKEN` is *not* treated as an LLM credential.
-2. **Network egress to the model.** The container's egress policy must allow the
-   provider host (e.g. `api.anthropic.com`), or point HooCode at an in-cluster
-   OpenAI-compatible endpoint. A fully air-gapped pod cannot reach a hosted LLM.
-3. **A writable path for config/sessions.** With `readOnlyRootFilesystem: true`,
-   mount a writable volume (e.g. an `emptyDir`) for `~/.hoocode` — or set
-   `HOOCODE_CODING_AGENT_DIR` to one — and either run with `--no-session` or
-   point `--session-dir` at a writable location. Combine with `HOOCODE_OFFLINE=1`
-   to skip all startup network operations.
-
-Base image note: the prebuilt standalone binary is dynamically linked against
-**glibc**, so it does not run on musl-based images (Alpine) or `static`
-distroless. Use a glibc base (`debian:*-slim`, `gcr.io/distroless/nodejs*`), or
-install via npm (`npm i -g @kolisachint/hoocode-agent`) on any image with
-Node ≥ 20.
+Adding a target means one row in `ALL_TARGETS` in
+[`scripts/build-binaries.sh`](../scripts/build-binaries.sh) and, if it is a new
+OS/arch pair, a matching branch in the platform detection in
+[`install/install.sh`](../install/install.sh).
 
 ## Contributing
 
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for contribution guidelines and
-[AGENTS.md](../AGENTS.md) for project-specific rules (for both humans and
-agents).
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for how to get a change in, and
+[AGENTS.md](../AGENTS.md) for the project rules that apply to humans and agents
+alike.

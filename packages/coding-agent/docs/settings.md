@@ -65,7 +65,11 @@ text. `"summarized"` returns visible thinking. When unset, Opus 4.8 defaults to
 
 ### Telemetry and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://hoocode.dev/api/report-install`. Opting out of telemetry does not disable update checks; HooCode can still fetch `https://hoocode.dev/api/latest-version` to look for the latest version.
+`enableInstallTelemetry` is inert: HooCode sends no install or update telemetry anywhere, and the
+setting is kept only so an existing `settings.json` does not fail to parse. Update checks are
+separate and do still run -- they read the published version straight from the npm registry
+(`https://registry.npmjs.org/@kolisachint/hoocode-agent/latest`) and send nothing but a User-Agent.
+Set `HOOCODE_OFFLINE=1` or `HOOCODE_SKIP_VERSION_CHECK=1` to turn that off too.
 
 Set `HOOCODE_SKIP_VERSION_CHECK=1` to disable the HooCode version update check. Use `--offline` or `HOOCODE_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 

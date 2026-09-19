@@ -41,7 +41,7 @@ describe("version checks", () => {
 		await expect(checkForNewHooCodeVersion("1.2.2")).resolves.toBe("1.2.3");
 	});
 
-	it("uses the pi.dev version check api with a pi user agent", async () => {
+	it("checks the npm registry with the hoocode user agent", async () => {
 		const fetchMock = vi.fn(async () => Response.json({ version: "1.2.4" }));
 		vi.stubGlobal("fetch", fetchMock);
 

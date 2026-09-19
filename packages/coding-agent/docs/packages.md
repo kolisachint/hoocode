@@ -129,7 +129,9 @@ Paths are relative to the package root. Arrays support glob patterns and `!exclu
 
 ### Gallery Metadata
 
-The [package gallery](https://hoocode.dev/packages) displays packages tagged with `pi-package`. Add `video` or `image` fields to show a preview:
+Packages are discovered on npm by their `hoocode-package` keyword (`pi-package` is still
+honoured for packages written before the rename). Add `video` or `image` fields so
+front-ends that list packages can show a preview:
 
 ```json
 {

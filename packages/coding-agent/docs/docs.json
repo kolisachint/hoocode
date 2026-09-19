@@ -8,6 +8,10 @@
           "path": "index.md"
         },
         {
+          "title": "Install",
+          "path": "install.md"
+        },
+        {
           "title": "Quickstart",
           "path": "quickstart.md"
         },

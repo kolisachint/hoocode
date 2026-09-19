@@ -4,11 +4,22 @@ This page gets you from install to a useful first hoocode session.
 
 ## Install
 
-HooCode is distributed as an npm package:
+One command, on any platform:
 
 ```bash
-npm install -g @kolisachint/hoocode-agent
+# macOS and Linux
+curl -fsSL https://kolisachint.github.io/hoocode/install.sh | sh
 ```
+
+```powershell
+# Windows
+irm https://kolisachint.github.io/hoocode/install.ps1 | iex
+```
+
+Already have Node 20+? `npm install -g @kolisachint/hoocode-agent` works too.
+Either way you get the `hoocode` (and `hoo`) command. Every other route --
+standalone archives, offline machines, containers, source -- is on the
+[Install](install.md) page.
 
 Then start hoocode in the project directory you want it to work on:
 
