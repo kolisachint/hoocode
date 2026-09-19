@@ -246,6 +246,21 @@ if [ "$OS" = "darwin" ] && have xattr; then
     xattr -d com.apple.quarantine "$LIB_DIR/hoocode" 2>/dev/null || true
 fi
 
+# A macOS binary whose signature does not match its contents is not warned about,
+# it is killed -- "Killed: 9", no dialog, no reason given. Release archives are
+# ad-hoc signed when they are built (scripts/build-binaries.sh), but an older
+# release predates that, and a mirror that rewrites the file invalidates it. If
+# this machine can repair the signature, repair it here rather than hand over a
+# binary that dies on launch.
+if [ "$OS" = "darwin" ] && have codesign && ! codesign -v "$LIB_DIR/hoocode" 2>/dev/null; then
+    if codesign --sign - --force "$LIB_DIR/hoocode" >/dev/null 2>&1; then
+        say "    ${C_DIM}re-signed for macOS${C_0}"
+    else
+        warn "this build's signature is invalid and could not be repaired; macOS will refuse to run it.
+    Try:  codesign --sign - --force \"$LIB_DIR/hoocode\""
+    fi
+fi
+
 say "    ${C_OK}installed${C_0} $("$LIB_DIR/hoocode" --version 2>/dev/null || echo "$TAG")"
 
 # -------------------------------------------------- external Rust tools -----

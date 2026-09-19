@@ -23,7 +23,11 @@ Before searching, check these maps:
   `install/install.ps1` detect the platform including musl-vs-glibc, verify the
   sha256, install under `~/.hoocode` with no root, and pre-seed the optional Rust
   helpers into `~/.hoocode/bin` — the directory `tools-manager.ts` already looks
-  in. `HOOCODE_RELEASE_BASE_URL` points either at a mirror. (2)
+  in. `HOOCODE_RELEASE_BASE_URL` points either at a mirror. Every `darwin-*`
+  binary is ad-hoc signed before it is packed (`rcodesign` on the Linux release
+  runner, `codesign` locally) because `bun build --compile` invalidates the
+  Mach-O signature it inherits and macOS kills such a binary on sight rather
+  than warning — never ship an unsigned one. (2)
   `interactive/tips.ts` is the single file every tip lives in, with
   `tips-controller.ts` deciding when: the band's one uninvited guest, and the
   rules that keeps honest are in `docs/ui-map.md` → "Tips are the band's one

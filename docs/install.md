@@ -81,6 +81,15 @@ Targets: `linux-x64`, `linux-arm64`, `linux-x64-musl`, `linux-arm64-musl`,
 `hoocode-<target>.tar.gz` (or `.zip` on Windows) plus a shared `checksums.txt`
 that both installers verify against.
 
+The `darwin-*` binaries are ad-hoc signed before they are packed. `bun build
+--compile` appends its payload to a copy of the bun executable, leaving a
+signature that no longer matches what it covers, and macOS kills such a binary
+on launch — `Killed: 9`, with nothing else said. The build uses `rcodesign` when
+it is on `PATH` (that is what the Linux release runner installs) and `codesign`
+otherwise, and refuses to pack an unsigned darwin binary;
+`HOOCODE_ALLOW_UNSIGNED_DARWIN=1` overrides that for a build you know will never
+run on a Mac.
+
 Adding a target means one row in `ALL_TARGETS` in
 [`scripts/build-binaries.sh`](../scripts/build-binaries.sh) and, if it is a new
 OS/arch pair, a matching branch in the platform detection in

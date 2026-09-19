@@ -84,12 +84,49 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build Windows standalone binary (zip)
+      - name: Install rcodesign (ad-hoc signer for the macOS binaries)
+        # `bun build --compile` leaves the Mach-O carrying a signature that no
+        # longer matches its contents, and macOS kills such a binary on launch
+        # rather than warning about it. codesign exists only on a Mac, so the
+        # Linux runner that cross-compiles the darwin archives signs with
+        # rcodesign. build-binaries.sh refuses to pack an unsigned darwin binary,
+        # so if this step is removed the release fails loudly instead of shipping
+        # an archive that dies on first run.
+        run: |
+          VER=0.29.0
+          BASE="https://github.com/indygreg/apple-platform-rs/releases/download/apple-codesign/$VER"
+          ASSET="apple-codesign-$VER-x86_64-unknown-linux-musl"
+          curl -fsSL -o "$ASSET.tar.gz" "$BASE/$ASSET.tar.gz"
+          curl -fsSL -o "$ASSET.tar.gz.sha256" "$BASE/$ASSET.tar.gz.sha256"
+          echo "$(cat "$ASSET.tar.gz.sha256")  $ASSET.tar.gz" | sha256sum -c -
+          tar -xzf "$ASSET.tar.gz"
+          sudo install -m 0755 "$ASSET/rcodesign" /usr/local/bin/rcodesign
+          rm -rf "$ASSET" "$ASSET.tar.gz" "$ASSET.tar.gz.sha256"
+          rcodesign --version
+
+      - name: Build standalone binaries (all targets)
+        # One job, every target: `bun build --compile` cross-compiles, so a
+        # matrix of runners would only cost time. See scripts/build-binaries.sh.
         run: bash scripts/build-binaries.sh
 
-      - name: Upload Windows binary to release
+      - name: Upload binaries and checksums to release
+        # checksums.txt is part of the release contract: install.sh and
+        # install.ps1 both verify the archive against it before unpacking.
         run: |
           VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
-          gh release upload "v$VERSION" packages/coding-agent/binaries/hoocode-windows-x64.zip --clobber
+          gh release upload "v$VERSION" \
+            packages/coding-agent/binaries/hoocode-*.tar.gz \
+            packages/coding-agent/binaries/hoocode-*.zip \
+            packages/coding-agent/binaries/checksums.txt \
+            --clobber
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+      - name: Upload the installers to release
+        # Pinning the installers to the release as well means `--version vX.Y.Z`
+        # can be paired with the installer that shipped with it.
+        run: |
+          VERSION=$(node -p "require('./packages/coding-agent/package.json').version")
+          gh release upload "v$VERSION" install/install.sh install/install.ps1 --clobber
         env:
           GH_TOKEN: ${{ github.token }}

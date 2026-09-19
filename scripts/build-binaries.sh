@@ -78,7 +78,9 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ ${#SELECTED[@]} -eq 0 ]]; then
-    mapfile -t SELECTED < <(target_names)
+    # Not `mapfile`: that is bash 4+, and macOS still ships bash 3.2, so building
+    # every target on a Mac died here before the first compile.
+    while IFS= read -r name; do SELECTED+=("$name"); done < <(target_names)
 fi
 
 # Fail on an unknown target before spending a build on the valid ones.
@@ -89,6 +91,42 @@ for want in "${SELECTED[@]}"; do
         exit 1
     fi
 done
+
+# `bun build --compile` appends its payload to a copy of the bun executable,
+# which leaves the Mach-O carrying the linker's ad-hoc signature over content
+# that no longer matches it. macOS on Apple Silicon does not warn about an
+# invalid signature, it SIGKILLs the process -- `Killed: 9` on the first run,
+# with nothing else to go on. So every darwin binary is re-signed ad hoc here,
+# before it is packed, or the archive is dead on arrival on the machines most
+# likely to download it.
+#
+# rcodesign first because it is the only one of the two that exists on the Linux
+# runner the release cross-compiles from; codesign is for a local build on a Mac.
+sign_darwin() {
+    local exe="$1"
+
+    if command -v rcodesign >/dev/null 2>&1; then
+        rcodesign sign "$exe" >/dev/null
+    elif command -v codesign >/dev/null 2>&1 && codesign --sign - --force "$exe" >/dev/null 2>&1; then
+        :
+    elif [[ "${HOOCODE_ALLOW_UNSIGNED_DARWIN:-0}" == "1" ]]; then
+        echo "    WARNING: $exe is unsigned and macOS will kill it on launch" >&2
+        return 0
+    else
+        echo "No ad-hoc signer available for $exe." >&2
+        echo "Install rcodesign (https://github.com/indygreg/apple-platform-rs), or build on a Mac." >&2
+        echo "To build anyway, knowing the binary cannot run: HOOCODE_ALLOW_UNSIGNED_DARWIN=1" >&2
+        exit 1
+    fi
+
+    # codesign is authoritative, so use it when it is here. On Linux there is
+    # nothing to check with -- `rcodesign verify` says of itself that it is buggy
+    # and reports a failure for a valid ad-hoc signature -- so the signer's own
+    # exit status is the check.
+    if command -v codesign >/dev/null 2>&1; then
+        codesign -v "$exe" || { echo "ad-hoc signature did not take for $exe" >&2; exit 1; }
+    fi
+}
 
 row_for() {
     local want="$1" row
@@ -198,6 +236,11 @@ for want in "${SELECTED[@]}"; do
     # it needs copied in below.
     bun build --compile --external koffi --target="$bun_target" ./dist/bun/cli.js --outfile "$exe"
 
+    if [[ "$want" == darwin-* ]]; then
+        echo "==> Signing $want (ad-hoc)..."
+        sign_darwin "$exe"
+    fi
+
     assemble_payload "$out"
 
     if [[ "$want" == windows-* ]]; then
@@ -224,7 +267,22 @@ done
 
 echo ""
 echo "==> Writing checksums..."
-(cd binaries && sha256sum ./*.tar.gz ./*.zip 2>/dev/null | sed 's#\./##' > checksums.txt)
+# sha256sum is coreutils; macOS ships shasum instead, with the same output shape.
+if command -v sha256sum >/dev/null 2>&1; then
+    SHA256_CMD=(sha256sum)
+else
+    SHA256_CMD=(shasum -a 256)
+fi
+(
+    cd binaries
+    # The list is built explicitly because a partial build (--targets) leaves
+    # one of the two globs unmatched, and under `set -o pipefail` that failed
+    # the whole script after every binary had already been compiled.
+    archives=()
+    for f in *.tar.gz *.zip; do [[ -f "$f" ]] && archives+=("$f"); done
+    [[ ${#archives[@]} -gt 0 ]] || { echo "no archives were produced" >&2; exit 1; }
+    "${SHA256_CMD[@]}" "${archives[@]}" > checksums.txt
+)
 
 echo ""
 echo "==> Build complete!"
