@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **The Windows one-click installer could not finish.** `irm
+  https://kolisachint.github.io/hoocode/install.ps1 | iex` failed three
+  different ways, all of them in the last mile, and CI only ever *parsed*
+  `install.ps1` — it never ran it.
+
+  - The PATH check called `.Count` on a raw pipeline result. Under the script's
+    own `Set-StrictMode -Version Latest` that is an error both when nothing
+    matched (`$null`) and when exactly one entry did (a bare string), so it threw
+    `The property 'Count' cannot be found on this object` on every run — first
+    install and re-install alike. The download, checksum, unpack and shims had
+    all succeeded by then, so the install looked like it worked but `hoocode`
+    was never added to PATH, which is why re-running never healed it.
+  - Resolving the latest release had no fallback. One call to `api.github.com`,
+    and on failure the install stopped — but the unauthenticated limit is 60
+    calls an hour *per IP*, so anyone behind a corporate NAT can be rate-limited
+    having never run the installer before, and plenty of networks block the API
+    host outright while allowing `github.com`. `install.sh` has fallen back to
+    the `/releases/latest` redirect since day one; `install.ps1` now does too.
+    The failure message also reports what actually went wrong instead of
+    blaming reachability, and points at `$env:HOOCODE_VERSION` — `-Version` is
+    not advice a piped script can take.
+  - `Fail` called `exit`, which under `irm | iex` runs in the caller's scope: it
+    did not end the install, it ended the terminal the install was typed into.
+
 ## [0.5.80] - 2026-09-19
 
 ### Added
