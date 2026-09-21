@@ -1,0 +1,262 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # bun is the toolchain. bunfig.toml pins the npm-compatible hoisted linker.
+  # See docs/bun-migration.md.
+  bun-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Check code quality
+        run: bun run check
+
+  bun-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package: [ai, agent, coding-agent, tui]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dependencies
+        run: |
+          cd packages/ai && bun run build
+          cd ../agent && bun run build
+          cd ../tui && bun run build
+
+      - name: Test ${{ matrix.package }}
+        run: cd packages/${{ matrix.package }} && bun run test
+
+  # Tier 2 of the canvas drift check (docs/canvas-extensions-design.md §2.3).
+  # The typecheck catches shape changes in the SDK's types; only running someone
+  # else's canvas catches behavioural drift, which is the half that reaches users
+  # as "the catalog stopped working". Two extensions by different authors, chosen
+  # because they stress the host differently (§12.1).
+  #
+  # Pinned to a SHA, not a branch, for two reasons: a canary aimed at a moving
+  # target reports upstream edits as our regressions, and this job executes third
+  # party code, so the revision it runs should change only when someone bumps it
+  # here on purpose.
+  canvas-canary:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only the two extension directories; the full repository is ~180MB and
+      # nothing else in it is read.
+      - name: Check out the pinned catalog canvases
+        uses: actions/checkout@v4
+        with:
+          repository: github/awesome-copilot
+          ref: 318066d2213b510e89b500ed0d53506c54093ddc
+          path: .canvas-catalog
+          sparse-checkout: |
+            extensions/pr-artifact-explorer
+            extensions/arcade-canvas
+          sparse-checkout-cone-mode: false
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build dependencies
+        run: |
+          cd packages/ai && bun run build
+          cd ../agent && bun run build
+          cd ../tui && bun run build
+
+      # The extensions are run unmodified, with no node_modules anywhere: the SDK
+      # import is resolved by the host (§4.1). If that stops being true, this is
+      # where it shows up.
+      - name: Open the catalog canvases
+        env:
+          HOOCODE_CANVAS_ACCEPTANCE_ROOT: ${{ github.workspace }}/.canvas-catalog/extensions
+        run: cd packages/coding-agent && bun run test test/canvas-acceptance-catalog.test.ts
+
+  bun-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.3.13'
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build all packages
+        run: bun run build
+
+  # The installers are the first thing a new user runs, and nothing else in the
+  # repository executes them — so without this job a typo in either ships to the
+  # front door and is discovered by a stranger. Syntax only; installer-windows
+  # below runs install.ps1 for real.
+  installers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Parse install.sh with a POSIX shell
+        # dash, not bash: the script is piped to `sh`, which on Debian/Ubuntu
+        # (and on Alpine) is not bash. A bashism here would only ever fail on a
+        # user's machine. dash is /bin/sh on the Ubuntu runners, so no install
+        # step is needed.
+        run: |
+          dash -n install/install.sh
+          sh -n install/install.sh
+
+      - name: Parse install.ps1 with PowerShell
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "install/install.ps1", [ref]$null, [ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host "::error::$($_.Extent.StartLineNumber): $($_.Message)" }
+            exit 1
+          }
+          Write-Host "install.ps1 parses clean"
+
+      - name: Parse the release build script and the test runner
+        run: |
+          bash -n scripts/build-binaries.sh
+          bash scripts/build-binaries.sh --list
+          bash -n test.sh
+          ./test.sh --help >/dev/null
+
+  # A parse cannot see a runtime error, and install.ps1 kept shipping them: a
+  # strict-mode `.Count` that threw on every run, a release lookup with no
+  # fallback, an `exit` that closed the user's terminal — all of them in the last
+  # thirty lines, all of them under a green parse job. HOOCODE_RELEASE_BASE_URL
+  # was built for this (install.sh calls it "the installers' own tests"), so
+  # serve a release off disk and install from it.
+  installer-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install from a local release, twice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+
+          $tag     = 'v0.0.0-ci'
+          $srvRoot = Join-Path $env:RUNNER_TEMP 'release'
+          $tagDir  = Join-Path $srvRoot $tag
+          $stage   = Join-Path $env:RUNNER_TEMP 'stage'
+          $target  = Join-Path $env:RUNNER_TEMP 'hoocode'
+          New-Item -ItemType Directory -Path $tagDir, $stage -Force | Out-Null
+
+          # The installer only checks that hoocode.exe exists, so what is inside
+          # it does not matter - only that the archive is shaped like a release.
+          Set-Content -Path (Join-Path $stage 'hoocode.exe') -Value 'stub' -Encoding ASCII
+          $zip = Join-Path $tagDir 'hoocode-windows-x64.zip'
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
+          $hash = (Get-FileHash -Path $zip -Algorithm SHA256).Hash.ToLower()
+          Set-Content -Path (Join-Path $tagDir 'checksums.txt') `
+            -Value "$hash  hoocode-windows-x64.zip" -Encoding ASCII
+
+          # Redirect the server's streams. A background process that inherits
+          # the step's stdout keeps the pipe open and hangs the job after the
+          # work is done.
+          $srv = Start-Process -FilePath 'python' -WorkingDirectory $srvRoot -PassThru `
+            -RedirectStandardOutput (Join-Path $env:RUNNER_TEMP 'srv.out') `
+            -RedirectStandardError  (Join-Path $env:RUNNER_TEMP 'srv.err') `
+            -ArgumentList '-m', 'http.server', '8099', '--bind', '127.0.0.1'
+          $up = $false
+          foreach ($i in 1..40) {
+            try {
+              Invoke-WebRequest -Uri "http://127.0.0.1:8099/$tag/checksums.txt" `
+                -UseBasicParsing -TimeoutSec 2 | Out-Null
+              $up = $true; break
+            } catch { Start-Sleep -Milliseconds 500 }
+          }
+          if (-not $up) { throw 'the local release server never came up' }
+
+          try {
+          $env:HOOCODE_VERSION          = $tag
+          $env:HOOCODE_INSTALL_DIR      = $target
+          $env:HOOCODE_RELEASE_BASE_URL = 'http://127.0.0.1:8099'
+
+          # -NoTools keeps this offline and deterministic: pre-seeding reaches
+          # out to five GitHub repos, and a rate-limited runner would make the
+          # job flaky for a step the install does not depend on. A child process
+          # so $LASTEXITCODE is readable.
+          $script = (Resolve-Path 'install/install.ps1').Path
+          foreach ($run in 'first install', 're-install over it') {
+            Write-Host "--- $run ---"
+            & pwsh -NoLogo -NoProfile -File $script -NoTools
+            if ($LASTEXITCODE -ne 0) { throw "$run exited $LASTEXITCODE" }
+
+            foreach ($p in @(
+              (Join-Path $target 'lib\hoocode\hoocode.exe'),
+              (Join-Path $target 'bin\hoocode.cmd'),
+              (Join-Path $target 'bin\hoo.cmd')
+            )) {
+              if (-not (Test-Path $p)) { throw "$run did not produce $p" }
+            }
+
+            # The one the .Count bug broke: everything above it succeeded and
+            # PATH was still never written.
+            $bin  = Join-Path $target 'bin'
+            $user = [Environment]::GetEnvironmentVariable('Path', 'User')
+            if (-not $user -or ($user -split ';' -notcontains $bin)) {
+              throw "$run left $bin off the user PATH"
+            }
+          }
+
+          # The documented path is `irm ... | iex`, where the script runs in the
+          # caller's scope - so a failing install that calls `exit` does not end
+          # the install, it ends the user's terminal. Fail on a version that is
+          # not there and check the shell is still standing afterwards.
+          $probe = Join-Path $env:RUNNER_TEMP 'probe.ps1'
+          @(
+            "`$env:HOOCODE_VERSION = 'v0.0.0-absent'"
+            "try { Get-Content -Raw '$script' | Invoke-Expression } catch { }"
+            "'SHELL SURVIVED'"
+          ) | Set-Content -Path $probe -Encoding ASCII
+
+          Write-Host '--- failed install under iex ---'
+          $out = & pwsh -NoLogo -NoProfile -File $probe
+          if ($out -notcontains 'SHELL SURVIVED') {
+            throw 'a failed `irm | iex` install took the shell down with it'
+          }
+
+          Write-Host 'install.ps1 installs, re-installs, sets PATH, and fails safely'
+          } finally {
+            if (-not $srv.HasExited) { Stop-Process -Id $srv.Id -Force -ErrorAction SilentlyContinue }
+          }
