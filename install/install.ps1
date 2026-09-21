@@ -71,7 +71,10 @@ function Write-Step { param([string] $Message) Write-Host "==> " -ForegroundColo
 function Write-Note { param([string] $Message) Write-Host "    $Message" -ForegroundColor DarkGray }
 function Write-Ok   { param([string] $Message) Write-Host "    $Message" -ForegroundColor Green }
 function Write-Warn { param([string] $Message) Write-Host "warning: " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
-function Fail       { param([string] $Message) Write-Host "error: " -ForegroundColor Red -NoNewline; Write-Host $Message; exit 1 }
+# `exit` runs in the caller's scope under `irm | iex`, so it does not end the
+# install - it ends the window the install was typed into. A terminating error
+# stops the script and leaves the shell standing.
+function Fail       { param([string] $Message) Write-Host "error: " -ForegroundColor Red -NoNewline; Write-Host $Message; throw 'hoocode: install aborted' }
 
 # TLS 1.2 is not the default on Windows PowerShell 5.1, and GitHub serves
 # nothing older. Without this the very first download fails with an unhelpful
@@ -109,11 +112,50 @@ if ($Arch -eq 'arm64') {
 # --------------------------------------------------------------- version ----
 if ($Version -eq 'latest') {
     Write-Step 'Resolving the latest release...'
+    $Tag = $null
+    # Ask the API, but do not require it: the unauthenticated limit is 60 calls an
+    # hour per IP, which a shared office address can exhaust without the person at
+    # the keyboard ever having run this before. A blocked api.github.com does the
+    # same. install.sh has fallen back for this reason since day one; this is the
+    # same fallback.
     try {
         $Release = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest" -Headers @{ 'User-Agent' = 'hoocode-installer' }
         $Tag = $Release.tag_name
     } catch {
-        Fail "could not reach the GitHub API to resolve the latest release.`n    Pass one explicitly: -Version v1.2.3"
+        $ApiError = $_.Exception.Message
+    }
+
+    # /releases/latest is a plain redirect to /releases/tag/<tag>. It costs no API
+    # quota and lives on github.com, which a network that allows the download of
+    # the release archive already has to allow.
+    if (-not $Tag) {
+        try {
+            $Probe = Invoke-WebRequest -Uri "https://github.com/$Repo/releases/latest" -UseBasicParsing -Headers @{ 'User-Agent' = 'hoocode-installer' }
+            $Final = $null
+            # PowerShell 7 hangs the resolved URL off the request message, 5.1 off
+            # the response. Ask for both rather than branch on the version.
+            try { $Final = $Probe.BaseResponse.RequestMessage.RequestUri.AbsoluteUri } catch { }
+            if (-not $Final) { try { $Final = $Probe.BaseResponse.ResponseUri.AbsoluteUri } catch { } }
+            if ($Final -and ($Final -match '/releases/tag/(.+)$')) { $Tag = $Matches[1] }
+        } catch { }
+    }
+
+    if (-not $Tag) {
+        # Say what actually went wrong - "could not reach the GitHub API" covers a
+        # rate limit, a proxy, and a DNS failure alike, and sends people hunting
+        # the wrong one. And -Version is not advice a piped install can take: you
+        # cannot pass arguments through `iex`, so name the variable that works.
+        if (-not $ApiError) { $ApiError = 'no error reported' }
+        Fail @"
+could not resolve the latest release.
+    GitHub API: $ApiError
+    Fell back to https://github.com/$Repo/releases/latest, which also failed.
+
+    Install a known version instead - set it in the environment, because a
+    piped script cannot take arguments:
+      `$env:HOOCODE_VERSION = 'v0.5.80'
+      irm $Website`install.ps1 | iex
+"@
     }
 } else {
     $Tag = if ($Version.StartsWith('v')) { $Version } else { "v$Version" }
@@ -303,7 +345,11 @@ checksum mismatch for $Asset.
     # ------------------------------------------------------------- PATH -----
     $UserPath = [Environment]::GetEnvironmentVariable('Path', 'User')
     if (-not $UserPath) { $UserPath = '' }
-    $OnPath = ($UserPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $BinDir.TrimEnd('\')) }).Count -gt 0
+    # The @() is load-bearing. Where-Object hands back $null when nothing
+    # matched and a bare string when one entry did, and under Set-StrictMode
+    # neither of those has a .Count - so the unwrapped form threw on every run,
+    # first install and re-install alike, right before the PATH was written.
+    $OnPath = @($UserPath -split ';' | Where-Object { $_ -and ($_.TrimEnd('\') -ieq $BinDir.TrimEnd('\')) }).Count -gt 0
 
     if ($OnPath) {
         # Already there from a previous install.
