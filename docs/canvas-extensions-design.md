@@ -799,6 +799,36 @@ stdout is the protocol channel, as §1.1 assumed.
   distinguishable and lose an extension's existing cache — and a canvas being
   unable to tell the hosts apart is the whole portability thesis (§2).
 
+### 11.2.1 The session context a callback carries
+
+`protocol.ts` has declared `host` (`CanvasHostContext`) and `session`
+(`CanvasSessionContext`) since it was written, because the SDK's payloads carry
+them. For a long time nothing populated either, so every `canvas.open`,
+`canvas.close` and `canvas.action.invoke` reached an extension with both
+undefined.
+
+That is not cosmetic. The child is forked with `path.dirname(extension.dir)` as
+its `cwd` (§4.1 — the extension's own home, so relative reads inside the
+extension work), which means `process.cwd()` tells a canvas about itself and
+nothing about the person's project. A canvas that touches a project file — a
+diagram, a checklist, a spec — had only absolute paths to work with, and no way
+to check one was even inside the workspace.
+
+The registry now sends both on all three callbacks:
+
+- **`session.workingDirectory`** is `CanvasRegistryOptions.cwd` — the same
+  directory the trust gate is evaluated against (§5). That is the right one on
+  purpose: it is the workspace the person vouched for, not wherever the
+  extension happens to live.
+- **`host.capabilities.canvases`** is `true`. Canvases are what the registry
+  exists to run, so it cannot be anything else where this code is reached.
+
+Sent on every callback rather than on `open` alone: the working directory is a
+property of the session, not of one instance, and an extension that had to
+remember what `open` was told would be a trap. `runner.ts` still invents
+nothing — it passes the caller's params through, so the context comes from the
+one place that knows it.
+
 ### 11.3 `tools` and `hooks`: closed by measurement
 
 **Zero of the 23 catalog extensions declare `tools` or `hooks` alongside a canvas.**

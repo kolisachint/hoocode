@@ -32,8 +32,10 @@ import type { DiscoveredCanvasExtension } from "./discovery.js";
 import type {
 	CanvasActionDeclaration,
 	CanvasDeclaration,
+	CanvasHostContext,
 	CanvasProviderOpenResult,
 	CanvasReadyMessage,
+	CanvasSessionContext,
 	JsonValue,
 } from "./protocol.js";
 import {
@@ -241,6 +243,37 @@ export class CanvasRegistry {
 		this.newInstanceId = options.newInstanceId ?? randomUUID;
 	}
 
+	/**
+	 * The `host` and `session` context every provider callback carries.
+	 *
+	 * The protocol has declared both since it was written (`CanvasHostContext`,
+	 * `CanvasSessionContext`) because GitHub's SDK sends them, but nothing filled
+	 * them in — so every `canvas.open`, `canvas.close` and `canvas.action.invoke`
+	 * went out with the two fields undefined and a canvas had no way to learn where
+	 * the session is running. That is not a small gap: the child is forked with its
+	 * own directory as `cwd` (see {@link spawn}), so `process.cwd()` tells it about
+	 * itself and nothing about the person's project. A canvas that reads or writes a
+	 * project file — a diagram, a checklist, a spec — could only take absolute paths
+	 * and hope the agent got them right.
+	 *
+	 * `cwd` is the directory the trust gate is already evaluated against, which is
+	 * the right one to hand over for exactly that reason: it is the workspace the
+	 * person vouched for, not wherever the extension happens to live.
+	 *
+	 * Sent on all three callbacks rather than on `open` alone. An extension that
+	 * only reads it at open would work either way, but the working directory is a
+	 * property of the session and not of one instance, and an action handler that
+	 * has to remember what open was told is a trap we would be setting.
+	 */
+	private requestContext(): { host: CanvasHostContext; session: CanvasSessionContext } {
+		return {
+			// Canvases are what this registry exists to run, so the capability is true
+			// wherever this code is reached at all.
+			host: { capabilities: { canvases: true } },
+			session: { workingDirectory: this.options.cwd },
+		};
+	}
+
 	/** Canvases an extension declares, forking it if it is not already running. */
 	async declarations(extension: DiscoveredCanvasExtension): Promise<CanvasDeclaration[]> {
 		const child = await this.child(extension);
@@ -272,7 +305,14 @@ export class CanvasRegistry {
 		let result: CanvasProviderOpenResult | null;
 		try {
 			result = (await child.process.open(
-				{ sessionId: extension.id, extensionId: extension.id, canvasId, instanceId, input },
+				{
+					...this.requestContext(),
+					sessionId: extension.id,
+					extensionId: extension.id,
+					canvasId,
+					instanceId,
+					input,
+				},
 				options,
 			)) as CanvasProviderOpenResult | null;
 		} catch (cause) {
@@ -309,6 +349,7 @@ export class CanvasRegistry {
 
 		const result = await child.process.invokeAction(
 			{
+				...this.requestContext(),
 				sessionId: key.extensionId,
 				extensionId: key.extensionId,
 				canvasId: key.canvasId,
@@ -330,6 +371,7 @@ export class CanvasRegistry {
 		if (!child) return;
 		try {
 			await child.process.close({
+				...this.requestContext(),
 				sessionId: key.extensionId,
 				extensionId: key.extensionId,
 				canvasId: key.canvasId,
@@ -397,6 +439,7 @@ export class CanvasRegistry {
 		for (const instance of carried) {
 			try {
 				await previous.process.close({
+					...this.requestContext(),
 					sessionId: extensionId,
 					extensionId,
 					canvasId: instance.canvasId,
@@ -561,7 +604,13 @@ export class CanvasRegistry {
 		const child = this.children.get(extensionId);
 		if (!child) return;
 		try {
-			await child.process.close({ sessionId: extensionId, extensionId, canvasId, instanceId });
+			await child.process.close({
+				...this.requestContext(),
+				sessionId: extensionId,
+				extensionId,
+				canvasId,
+				instanceId,
+			});
 			return;
 		} catch (cause) {
 			const detail = cause instanceof Error ? cause.message : String(cause);

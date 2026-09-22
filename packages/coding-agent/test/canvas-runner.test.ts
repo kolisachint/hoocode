@@ -60,6 +60,7 @@ describe("canvas runner", () => {
 		const ready = await start().ready;
 		expect(ready.canvases[0]?.actions?.map((action) => action.name)).toEqual([
 			"add_step",
+			"echo_context",
 			"needs_auth",
 			"crash",
 			"flood",
@@ -121,7 +122,10 @@ describe("canvas runner", () => {
 		const canvas = start();
 		await canvas.ready;
 		await canvas.open(providerParams());
-		expect(logs).toContain("opened i1");
+		// `cwd=none`: the runner passes the caller's params through untouched and invents
+		// no session context of its own. Filling it in is the registry's job, because the
+		// registry is what knows which workspace the session is running in.
+		expect(logs).toContain("opened i1 cwd=none");
 	});
 
 	it("closes an instance and lets the extension release its port", async () => {
