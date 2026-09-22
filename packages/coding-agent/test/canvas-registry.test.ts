@@ -79,6 +79,34 @@ describe("canvas registry", () => {
 		await expect(build().open(EXTENSION, "ghost")).rejects.toThrow(/declares no canvas "ghost".*plan-board/s);
 	});
 
+	it("carries the host and session context on open and on every action", async () => {
+		// The protocol declared both from the start; nothing populated them, so a canvas
+		// could not learn where the session was running and a canvas that touches project
+		// files had only absolute paths to work with.
+		const reg = build();
+		const instance = await reg.open(EXTENSION, "plan-board");
+		const echoed = (await reg.invokeAction(instance, "echo_context")) as {
+			host: { capabilities: { canvases: boolean } };
+			session: { workingDirectory: string };
+			atOpen: { host: { capabilities: { canvases: boolean } }; session: { workingDirectory: string } };
+		};
+		expect(echoed.session).toEqual({ workingDirectory: cwdForGate });
+		expect(echoed.host).toEqual({ capabilities: { canvases: true } });
+		// Same context at open, so an extension that reads it once still gets it.
+		expect(echoed.atOpen).toEqual({
+			host: { capabilities: { canvases: true } },
+			session: { workingDirectory: cwdForGate },
+		});
+	});
+
+	it("carries the session context on close too", async () => {
+		const logs: string[] = [];
+		const reg = build({ onLog: (_id, message) => logs.push(message) });
+		const instance = await reg.open(EXTENSION, "plan-board");
+		await reg.close(instance);
+		expect(logs).toContain(`closed ${instance.instanceId} (known=true) cwd=${cwdForGate}`);
+	});
+
 	it("enforces the per-canvas instance cap", async () => {
 		const reg = build({ maxInstancesPerCanvas: 2 });
 		await reg.open(EXTENSION, "plan-board");
@@ -116,6 +144,7 @@ describe("canvas registry", () => {
 		const instance = await reg.open(EXTENSION, "plan-board");
 		expect(reg.activeActions().map((binding) => binding.action.name)).toEqual([
 			"add_step",
+			"echo_context",
 			"needs_auth",
 			"crash",
 			"flood",
@@ -129,7 +158,7 @@ describe("canvas registry", () => {
 		const reg = build();
 		await reg.open(EXTENSION, "plan-board");
 		await reg.open(EXTENSION, "plan-board");
-		expect(reg.activeActions()).toHaveLength(10);
+		expect(reg.activeActions()).toHaveLength(12);
 		expect(new Set(reg.activeActions().map((binding) => binding.instanceId))).toEqual(new Set(["i1", "i2"]));
 	});
 

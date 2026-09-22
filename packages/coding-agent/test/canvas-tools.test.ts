@@ -150,6 +150,7 @@ describe("canvas tools", () => {
 			expect(report[0].title).toBe("Plan Board");
 			expect(report[0].actions.map((action: { name: string }) => action.name)).toEqual([
 				"add_step",
+				"echo_context",
 				"needs_auth",
 				"crash",
 				"flood",

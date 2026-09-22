@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Canvases are told where the session is running.** `canvas.open`,
+  `canvas.close` and `canvas.action.invoke` now carry the `host` and `session`
+  context the protocol has always declared: `session.workingDirectory` is the
+  workspace the trust gate was evaluated against, and
+  `host.capabilities.canvases` is `true`. Both were previously left undefined,
+  and because a canvas child is forked with its own directory as `cwd`, an
+  extension had no way at all to learn the project's path — a canvas that reads
+  or writes a project file could only take absolute paths and could not check
+  one was inside the workspace.
+
 ## [0.5.80] - 2026-09-19
 
 ### Added

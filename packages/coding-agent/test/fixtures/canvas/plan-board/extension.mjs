@@ -38,6 +38,15 @@ const session = await joinSession({
 					},
 				},
 				{
+					name: "echo_context",
+					description: "Returns the host and session context the callback carried, and the one open was given.",
+					handler: (ctx) => {
+						const entry = instances.get(ctx.instanceId);
+						if (!entry) throw new CanvasError("no_instance", `Instance "${ctx.instanceId}" is not open.`);
+						return { host: ctx.host ?? null, session: ctx.session ?? null, atOpen: entry.openContext };
+					},
+				},
+				{
 					name: "needs_auth",
 					description: "Always fails, to exercise CanvasError propagation.",
 					handler: () => {
@@ -84,8 +93,13 @@ const session = await joinSession({
 				});
 				await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 				const { port } = server.address();
-				instances.set(ctx.instanceId, { server, token, steps });
-				await session.log(`opened ${ctx.instanceId}`);
+				instances.set(ctx.instanceId, {
+					server,
+					token,
+					steps,
+					openContext: { host: ctx.host ?? null, session: ctx.session ?? null },
+				});
+				await session.log(`opened ${ctx.instanceId} cwd=${ctx.session?.workingDirectory ?? "none"}`);
 				return {
 					url: `http://127.0.0.1:${port}/?token=${token}`,
 					title: "Plan Board",
@@ -97,7 +111,9 @@ const session = await joinSession({
 				// Reported either way: a close for an instance the extension never finished
 				// opening is exactly the abandon path, and a test needs to see it arrive.
 				// stdout is the protocol channel, so session.log is the observable route.
-				await session.log(`closed ${ctx.instanceId} (known=${entry !== undefined})`);
+				await session.log(
+					`closed ${ctx.instanceId} (known=${entry !== undefined}) cwd=${ctx.session?.workingDirectory ?? "none"}`,
+				);
 				if (!entry) return;
 				instances.delete(ctx.instanceId);
 				await new Promise((resolve) => entry.server.close(resolve));
