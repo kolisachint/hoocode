@@ -61,16 +61,47 @@ const reloadParams = Type.Object(
 
 type ReloadParams = Static<typeof reloadParams>;
 
+/**
+ * `input` is typed as "any JSON value" rather than `Type.Unknown()`. Unknown
+ * serializes to a schema with no `type` keyword, and some models (Qwen through
+ * OpenAI-compatible gateways) read an untyped parameter as a string and
+ * JSON-encode the object into it. Naming `object` first steers them to send one;
+ * the other members keep extensions whose actions declare non-object inputs valid.
+ */
 const invokeParams = Type.Object(
 	{
 		instanceId: Type.String({ description: "From list_canvas_capabilities." }),
 		action: Type.String({ description: "Action name declared by that instance's canvas." }),
-		input: Type.Optional(Type.Unknown({ description: "Action input, matching the action's declared schema." })),
+		input: Type.Optional(
+			Type.Union(
+				[Type.Object({}), Type.Array(Type.Unknown()), Type.String(), Type.Number(), Type.Boolean(), Type.Null()],
+				{ description: "Action input matching the action's inputSchema from list_canvas_capabilities." },
+			),
+		),
 	},
 	{ additionalProperties: false },
 );
 
 type InvokeParams = Static<typeof invokeParams>;
+
+/**
+ * Undo a JSON-encoded `input`: a string that parses to an object or array is
+ * what the model meant to send. Runs before validation (agent-loop
+ * `prepareToolCallArguments`). A string that does not parse is left as is — it
+ * may be a genuine string input, and the extension judges it.
+ */
+export function prepareInvokeArguments(args: unknown): InvokeParams {
+	if (!args || typeof args !== "object") return args as InvokeParams;
+	const params = args as Record<string, unknown>;
+	if (typeof params.input !== "string") return params as InvokeParams;
+	const text = params.input.trim();
+	if (!text.startsWith("{") && !text.startsWith("[")) return params as InvokeParams;
+	try {
+		return { ...params, input: JSON.parse(text) } as InvokeParams;
+	} catch {
+		return params as InvokeParams;
+	}
+}
 
 /** What `list_canvas_capabilities` reports. */
 export interface CanvasCapabilitiesDetails {
@@ -169,6 +200,7 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
 			"Invoke an action on an open canvas. Actions are implemented by the canvas extension itself: an action may change what the person is looking at and can have side effects of its own, so read the action's description before calling it.",
 		promptSnippet: "Act on an open canvas the user is looking at",
 		parameters: invokeParams,
+		prepareArguments: prepareInvokeArguments,
 		async execute(_toolCallId, params: InvokeParams, signal) {
 			// instanceId is a UUID and unique across every canvas, so the model does not
 			// have to carry the extension and canvas ids too — the registry already knows
