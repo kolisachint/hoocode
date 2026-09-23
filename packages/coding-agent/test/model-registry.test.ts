@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AnthropicMessagesCompat, Api, Context, Model, OpenAICompletionsCompat } from "@kolisachint/hoocode-ai";
-import { getApiProvider } from "@kolisachint/hoocode-ai";
+import { getApiProvider, getModels } from "@kolisachint/hoocode-ai";
 import { getOAuthProvider } from "@kolisachint/hoocode-ai/oauth";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.js";
@@ -599,6 +599,21 @@ describe("ModelRegistry", () => {
 	});
 
 	describe("modelOverrides (per-model customization)", () => {
+		/**
+		 * A second built-in OpenRouter Anthropic model, whichever the generated
+		 * catalog lists today. Hard-coding one broke these tests when the catalog
+		 * refresh dropped `anthropic/claude-opus-4`: the lookup quietly returned
+		 * undefined, failing two tests and letting a third pass without checking
+		 * anything.
+		 */
+		const otherModelId = (() => {
+			const id = getModels("openrouter")
+				.map((model) => model.id)
+				.find((candidate) => candidate.startsWith("anthropic/") && candidate !== "anthropic/claude-sonnet-4");
+			if (!id) throw new Error("The OpenRouter catalog has no second Anthropic model to test overrides against.");
+			return id;
+		})();
+
 		test("model override applies to a single built-in model", () => {
 			writeRawModelsJson({
 				openrouter: {
@@ -617,8 +632,9 @@ describe("ModelRegistry", () => {
 			expect(sonnet?.name).toBe("Custom Sonnet Name");
 
 			// Other models should be unchanged
-			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
-			expect(opus?.name).not.toBe("Custom Sonnet Name");
+			const other = models.find((m) => m.id === otherModelId);
+			expect(other).toBeDefined();
+			expect(other?.name).not.toBe("Custom Sonnet Name");
 		});
 
 		test("model override with compat.openRouterRouting", () => {
@@ -671,7 +687,7 @@ describe("ModelRegistry", () => {
 						"anthropic/claude-sonnet-4": {
 							compat: { openRouterRouting: { only: ["amazon-bedrock"] } },
 						},
-						"anthropic/claude-opus-4": {
+						[otherModelId]: {
 							compat: { openRouterRouting: { only: ["anthropic"] } },
 						},
 					},
@@ -682,12 +698,12 @@ describe("ModelRegistry", () => {
 			const models = getModelsForProvider(registry, "openrouter");
 
 			const sonnet = models.find((m) => m.id === "anthropic/claude-sonnet-4");
-			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
+			const other = models.find((m) => m.id === otherModelId);
 
 			const sonnetCompat = sonnet?.compat as OpenAICompletionsCompat | undefined;
-			const opusCompat = opus?.compat as OpenAICompletionsCompat | undefined;
+			const otherCompat = other?.compat as OpenAICompletionsCompat | undefined;
 			expect(sonnetCompat?.openRouterRouting).toEqual({ only: ["amazon-bedrock"] });
-			expect(opusCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
+			expect(otherCompat?.openRouterRouting).toEqual({ only: ["anthropic"] });
 		});
 
 		test("model override combined with baseUrl override", () => {
@@ -711,9 +727,10 @@ describe("ModelRegistry", () => {
 			expect(sonnet?.name).toBe("Proxied Sonnet");
 
 			// Other models should have the baseUrl but not the name override
-			const opus = models.find((m) => m.id === "anthropic/claude-opus-4");
-			expect(opus?.baseUrl).toBe("https://my-proxy.example.com/v1");
-			expect(opus?.name).not.toBe("Proxied Sonnet");
+			const other = models.find((m) => m.id === otherModelId);
+			expect(other).toBeDefined();
+			expect(other?.baseUrl).toBe("https://my-proxy.example.com/v1");
+			expect(other?.name).not.toBe("Proxied Sonnet");
 		});
 
 		test("model override for non-existent model ID is ignored", () => {
