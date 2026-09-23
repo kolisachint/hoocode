@@ -84,12 +84,27 @@ These register on the **first successful open** and stay for the session:
 
 | Tool | Purpose |
 |------|---------|
-| `list_canvas_capabilities` | What is open and which actions each instance declares |
+| `list_canvas_capabilities` | What is open: each canvas's own description, and the actions it declares with their schemas |
 | `invoke_canvas_action` | Call an action on an instance, with input matching its declared schema |
 | `reload_canvas` | Re-fork an extension after its code changed, keeping instance ids |
 
 A session that never opens a canvas pays nothing for them, and they answer
 honestly when nothing is open.
+
+**The canvas's `description` is how the model learns to work with it.** It is
+shown verbatim in `list_canvas_capabilities`, so a canvas author can use it for
+the working loop and what is fast or slow, not just a one-line summary.
+
+**Each action reports how fast it really is.** Once an action has run in the
+session, the listing carries `observed_ms`, the median of its last 20 calls
+measured by hoocode. A read that takes 2 ms and a round trip through the
+person's browser look alike in a schema, and a model plans differently around
+them.
+
+**Inputs sent as JSON strings are decoded.** Some models (Qwen through
+OpenAI-compatible gateways) send `input` as a JSON-encoded string. A string
+that starts with `{` or `[` and parses is passed to the canvas as the value it
+encodes; any other string is passed through as is.
 
 ## Authoring
 

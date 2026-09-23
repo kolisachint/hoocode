@@ -122,6 +122,24 @@ describe("opening a canvas from a terminal", () => {
 		expect(notifications.join("\n")).toContain("Opened in your browser");
 	});
 
+	/**
+	 * RPC mode reports `hasUI: true` but cannot draw a component: its `custom()`
+	 * settles at once with undefined, never calling the factory. That used to read
+	 * as a cancel, so no RPC host (IDE, desktop wrapper) could open a canvas at all.
+	 */
+	it("opens from a host whose custom UI draws nothing, as RPC's does", async () => {
+		await run("new-canvas", "board");
+		notifications.length = 0;
+		const rpcLike = {
+			...(makeCtx(true) as { ui: Record<string, unknown> }),
+			ui: { ...(makeCtx(true) as { ui: Record<string, unknown> }).ui, custom: async () => undefined },
+		};
+		await commands.get("canvas")?.handler("open board", rpcLike);
+		const said = stripAnsi(notifications.join("\n"));
+		expect(said).not.toContain("cancelled");
+		expect(said).toMatch(/Opened board \(/);
+	});
+
 	it("does the same for /canvas open, and takes the pin down on close", async () => {
 		await run("new-canvas", "board");
 		const listed = notifications.join("\n");

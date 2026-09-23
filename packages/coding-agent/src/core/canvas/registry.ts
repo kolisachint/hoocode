@@ -534,6 +534,11 @@ export class CanvasRegistry {
 	 * Empty when nothing is open — which is the point: a canvas that is not open
 	 * costs the prompt nothing (§7).
 	 */
+	/** The declaration an open instance was opened from: what the canvas says it is. */
+	declarationOf(instance: CanvasInstanceKey): CanvasDeclaration | undefined {
+		return this.children.get(instance.extensionId)?.declarations.get(instance.canvasId);
+	}
+
 	activeActions(): CanvasActionBinding[] {
 		const bindings: CanvasActionBinding[] = [];
 		for (const instance of this.instances.values()) {

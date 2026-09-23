@@ -170,6 +170,39 @@ describe("canvas tools", () => {
 			expect(addStep.inputSchema).toMatchObject({ type: "object", required: ["text"] });
 		});
 
+		it("says what each canvas is, from its own declaration", async () => {
+			const reg = build();
+			await reg.open(EXTENSION, "plan-board");
+			const report = JSON.parse(
+				textOf((await tools(reg).list?.execute?.("call-1", {}, undefined, undefined, NO_CTX)) as never),
+			);
+			expect(report[0].description).toBe("A fixture plan board.");
+		});
+
+		/**
+		 * The same action is 2 ms on one machine and a browser round trip on another,
+		 * so no declaration can state it honestly; the host measures and reports.
+		 */
+		it("reports observed timings once an action has run, and none before", async () => {
+			const reg = build();
+			const instance = await reg.open(EXTENSION, "plan-board");
+			const { list, invoke } = tools(reg);
+			const listed = async () =>
+				JSON.parse(textOf((await list?.execute?.("call-1", {}, undefined, undefined, NO_CTX)) as never))[0].actions;
+			expect((await listed()).some((action: { observed_ms?: number }) => "observed_ms" in action)).toBe(false);
+			const result = await invoke?.execute?.(
+				"call-2",
+				{ instanceId: instance.instanceId, action: "add_step", input: { text: "a" } },
+				undefined,
+				undefined,
+				NO_CTX,
+			);
+			expect((result?.details as { elapsedMs: number }).elapsedMs).toBeGreaterThanOrEqual(0);
+			const addStep = (await listed()).find((action: { name: string }) => action.name === "add_step");
+			expect(addStep.observed_ms).toBeGreaterThanOrEqual(0);
+			expect(addStep.observed_ms).toBeLessThan(5_000);
+		});
+
 		it("says a person opens canvases when none is open", async () => {
 			const reg = build();
 			const instance = await reg.open(EXTENSION, "plan-board");
