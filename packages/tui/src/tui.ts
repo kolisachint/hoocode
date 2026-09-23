@@ -19,6 +19,7 @@ import {
 	setCellDimensions,
 } from "./terminal-image.js";
 import {
+	bareUrlAt,
 	extractSegments,
 	hyperlinkAt,
 	normalizeTerminalOutput,
@@ -1448,7 +1449,10 @@ export class TUI extends Container {
 		if (!pinned && lines.length < this.terminal.rows) return undefined;
 		const top = pinned ? (this.scrollOffset ?? 0) : this.previousViewportTop;
 		const line = lines[top + row - 1];
-		return line === undefined ? undefined : hyperlinkAt(line, column - 1);
+		if (line === undefined) return undefined;
+		// A marked-up link wins; failing that, a URL written as plain text, which
+		// is what the terminal's own matcher would have found had it the mouse.
+		return hyperlinkAt(line, column - 1) ?? bareUrlAt(line, column - 1);
 	}
 
 	/** Run a requested render now, bypassing the coalescing delay. Used for

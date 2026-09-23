@@ -141,4 +141,11 @@ export {
 	TUI,
 } from "./tui.js";
 // Utilities
-export { applyBackgroundToLine, hyperlinkAt, truncateToWidth, visibleWidth, wrapTextWithAnsi } from "./utils.js";
+export {
+	applyBackgroundToLine,
+	bareUrlAt,
+	hyperlinkAt,
+	truncateToWidth,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "./utils.js";

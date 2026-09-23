@@ -382,6 +382,81 @@ export function hyperlinkAt(line: string, column: number): string | undefined {
 	return undefined;
 }
 
+/**
+ * Where a bare URL may start. Only the schemes a click is allowed to hand to
+ * the desktop are worth finding; anything else would be declined anyway.
+ */
+const BARE_URL = /\b(?:https?:\/\/|mailto:)[^\s<>"'`\x00-\x1f]+/g;
+
+/** Trailing characters that end a sentence rather than the URL it contains. */
+const URL_TRAILING_PUNCTUATION = /[.,;:!?'"]+$/;
+
+/**
+ * Trim what prose wraps around a URL: a full stop after it, or the closing
+ * bracket of a parenthetical — but only a bracket the URL itself did not open,
+ * so `https://en.wikipedia.org/wiki/Foo_(bar)` keeps its own.
+ */
+function trimUrlTail(url: string): string {
+	let trimmed = url;
+	for (;;) {
+		const before = trimmed;
+		trimmed = trimmed.replace(URL_TRAILING_PUNCTUATION, "");
+		for (const [open, close] of [
+			["(", ")"],
+			["[", "]"],
+			["{", "}"],
+		] as const) {
+			if (trimmed.endsWith(close) && trimmed.split(open).length < trimmed.split(close).length) {
+				trimmed = trimmed.slice(0, -1);
+			}
+		}
+		if (trimmed === before) return trimmed;
+	}
+}
+
+/**
+ * The plain-text URL covering `column`, if there is one.
+ *
+ * The companion to {@link hyperlinkAt} for text nobody wrapped in OSC 8: a
+ * bash result, a notification, a path an extension printed. A terminal whose
+ * mouse is free finds those itself with its own URL matcher; ours is captured,
+ * so without this only the links the app happened to mark up could be clicked,
+ * and the rest were text that looked like a link and did nothing.
+ *
+ * Styling is stepped over, so a URL coloured halfway through is still one URL.
+ * `column` is 0-based display cells, as for `hyperlinkAt`.
+ */
+export function bareUrlAt(line: string, column: number): string | undefined {
+	if (column < 0 || !/https?:\/\/|mailto:/.test(line)) return undefined;
+	// The visible text, and for each of its UTF-16 units the cell it starts on.
+	let text = "";
+	const cellOf: number[] = [];
+	let col = 0;
+	let i = 0;
+	while (i < line.length) {
+		const ansi = extractAnsiCode(line, i);
+		if (ansi) {
+			i += ansi.length;
+			continue;
+		}
+		const rest = line.slice(i);
+		const segment = segmenter.segment(rest)[Symbol.iterator]().next().value;
+		const grapheme = segment ? segment.segment : rest[0];
+		for (let k = 0; k < grapheme.length; k++) cellOf.push(col);
+		text += grapheme;
+		col += graphemeWidth(grapheme);
+		i += grapheme.length;
+	}
+	for (const match of text.matchAll(BARE_URL)) {
+		const url = trimUrlTail(match[0]);
+		const start = cellOf[match.index];
+		const endIndex = match.index + url.length;
+		const end = endIndex < cellOf.length ? cellOf[endIndex] : col;
+		if (column >= start && column < end) return url;
+	}
+	return undefined;
+}
+
 function formatOsc8Hyperlink(hyperlink: ActiveHyperlink): string {
 	return `\x1b]8;${hyperlink.params};${hyperlink.url}${hyperlink.terminator}`;
 }

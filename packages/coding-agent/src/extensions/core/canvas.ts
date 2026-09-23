@@ -22,6 +22,7 @@
  */
 
 import { homedir } from "node:os";
+import { type Component, hyperlink, truncateToWidth, visibleWidth } from "@kolisachint/hoocode-tui";
 import { getAgentDir } from "../../config.js";
 import { CATEGORY_GLYPH } from "../../core/brand.js";
 import { canvasDesignGuidePath } from "../../core/builtin-skills.js";
@@ -43,6 +44,8 @@ import { isWorkspaceTrusted, trustWorkspace } from "../../core/extensions/plugin
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
 import { createCanvasToolDefinitions } from "../../core/tools/canvas.js";
 import { BorderedLoader } from "../../modes/interactive/components/bordered-loader.js";
+import type { Theme } from "../../modes/interactive/theme/theme.js";
+import { openUrl } from "../../utils/open-url.js";
 
 const SUBCOMMANDS = ["list", "open", "close", "reload", "rename", "remove"] as const;
 
@@ -52,12 +55,93 @@ type OpenOutcome =
 	| { kind: "failed"; message: string }
 	| { kind: "cancelled" };
 
-function describeInstance(instance: CanvasInstance): string {
-	const title = instance.title ?? instance.canvasId;
-	return `${instance.instanceId}  ${title}${instance.url ? `  ${instance.url}` : ""}`;
+/**
+ * A canvas url as something a click opens.
+ *
+ * The label is the url itself, so it reads the same as before and can still be
+ * selected and copied; the OSC 8 wrapper is what makes the whole of it one
+ * click even when the band truncates the row it sits on. Only on a terminal:
+ * `--print` and RPC get the plain url, not escape codes in their text.
+ */
+function linkUrl(url: string, linked: boolean): string {
+	return linked ? hyperlink(url, url) : url;
 }
 
-function renderOverview(overview: CanvasOverview): string {
+function describeInstance(instance: CanvasInstance, linked = false): string {
+	const title = instance.title ?? instance.canvasId;
+	return `${instance.instanceId}  ${title}${instance.url ? `  ${linkUrl(instance.url, linked)}` : ""}`;
+}
+
+/** Widget key for the pinned canvas links above the prompt. */
+export const CANVAS_LINKS_WIDGET = "canvas-links";
+
+/** Rows the pinned band will spend before it summarises the rest. */
+const MAX_PINNED_ROWS = 4;
+
+/**
+ * The open canvases' urls, pinned directly above the prompt.
+ *
+ * The open itself sends the url to the browser, and says so on the
+ * notification band — but the band fades, and a tab closed by accident a
+ * minute later left nothing on screen to get it back but `/canvas list`. So
+ * every open instance keeps one row here for as long as it is open: one click
+ * reopens it.
+ *
+ * It reads the session live rather than holding a snapshot, because the url is
+ * not stable: a reload (the agent's `reload_canvas` as much as `/canvas
+ * reload`) binds a new port and mints a new token, and a pinned link to the
+ * old one would be a link to a closed port.
+ */
+export class CanvasLinksBand implements Component {
+	constructor(
+		private readonly instances: () => readonly CanvasInstance[],
+		private readonly theme: Theme,
+	) {}
+
+	invalidate(): void {}
+
+	render(width: number): string[] {
+		const pinned = this.instances().filter((instance) => instance.url);
+		if (pinned.length === 0 || width < 8) return [];
+		const t = this.theme;
+		const hint = "click to reopen";
+		const rows = pinned.slice(0, MAX_PINNED_ROWS).map((instance) => {
+			const url = instance.url as string;
+			const title = instance.title ?? instance.canvasId;
+			const lead = ` ${t.fg("accent", GLYPH)} ${t.fg("text", title)}  `;
+			const leadWidth = visibleWidth(lead);
+			// The hint goes first when room runs out; the url is the row's point.
+			const fitsHint = leadWidth + url.length + 2 + hint.length + 1 <= width;
+			const tail = fitsHint ? `  ${t.fg("dim", hint)}` : "";
+			const urlRoom = Math.max(8, width - leadWidth - 1);
+			const label = t.fg("accent", t.underline(truncateToWidth(url, urlRoom)));
+			return truncateToWidth(`${lead}${hyperlink(label, url)}${tail}`, width);
+		});
+		if (pinned.length > MAX_PINNED_ROWS) {
+			rows.push(t.fg("dim", `   +${pinned.length - MAX_PINNED_ROWS} more open — /canvas list`));
+		}
+		return rows;
+	}
+}
+
+/**
+ * What an open says about its url.
+ *
+ * In a terminal the browser has already been sent there and the link is pinned
+ * above the prompt, so this says both — and the link here is clickable too, for
+ * the seconds the band is up. Elsewhere it is the plain url, because that is the
+ * only way in.
+ */
+function openedUrlLines(url: string | undefined, interactive: boolean): string[] {
+	if (!url) return [];
+	if (!interactive) return [`Open in a browser: ${url}`];
+	return [
+		`Opened in your browser: ${linkUrl(url, true)}`,
+		"Pinned above the prompt — click it to reopen a closed tab.",
+	];
+}
+
+function renderOverview(overview: CanvasOverview, linked = false): string {
 	const lines: string[] = [];
 	if (!overview.availability.available) {
 		lines.push(`Canvases are unavailable: ${overview.availability.reason}`, "");
@@ -78,7 +162,7 @@ function renderOverview(overview: CanvasOverview): string {
 		}
 		lines.push(`${GLYPH} ${name}${label}  (${listing.scope})`);
 		for (const instance of listing.open) {
-			lines.push(`    open  ${describeInstance(instance)}`);
+			lines.push(`    open  ${describeInstance(instance, linked)}`);
 			// What a canvas can do is otherwise visible only to the model, through
 			// `list_canvas_capabilities` — so the person driving the session could not
 			// see the surface they were being asked about. Only for open instances,
@@ -107,6 +191,8 @@ function renderOverview(overview: CanvasOverview): string {
 export interface CanvasSetupOverrides {
 	homeDir?: string;
 	resolveRuntime?: CanvasSessionOptions["resolveRuntime"];
+	/** Stands in for the desktop browser, so a test can see what would open. */
+	openUrl?: (url: string) => void;
 }
 
 export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides): void {
@@ -120,9 +206,13 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 	 * invocation's `ctx`.
 	 */
 	let notify: (message: string, type?: "info" | "warning" | "error") => void = () => {};
+	/** The UI the pinned links live on; only a terminal has one worth pinning to. */
+	let pinUi: ExtensionCommandContext["ui"] | undefined;
+	const browse = overrides?.openUrl ?? openUrl;
 
 	const ensureSession = (ctx: ExtensionCommandContext): CanvasSession => {
 		notify = (message, type) => ctx.ui.notify(message, type);
+		if (ctx.hasUI) pinUi = ctx.ui;
 		session ??= new CanvasSession({
 			cwd: ctx.cwd,
 			homeDir: overrides?.homeDir ?? homedir(),
@@ -135,6 +225,35 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 			onDiagnostic: (id, message) => notify(`[canvas ${id}] ${message}`, "warning"),
 		});
 		return session;
+	};
+
+	/**
+	 * Put the pinned links up, or take them down when nothing is open.
+	 *
+	 * Called after everything that can change what is open. The band reads the
+	 * session live, so this only has to get the widget's presence right — a
+	 * reload that moves a url repaints on its own.
+	 */
+	const refreshPins = (): void => {
+		const ui = pinUi;
+		if (!ui) return;
+		const open = session?.instances().some((instance) => instance.url) ?? false;
+		ui.setWidget(
+			CANVAS_LINKS_WIDGET,
+			open ? (_tui, theme) => new CanvasLinksBand(() => session?.instances() ?? [], theme) : undefined,
+		);
+	};
+
+	/**
+	 * Send a freshly opened canvas to the browser.
+	 *
+	 * The url is the whole reason to open a canvas, and copying a tokenised
+	 * localhost address out of a notification was a chore every single time. Only
+	 * from a terminal: `--print` and RPC have no person at a desktop to show it to,
+	 * and a browser appearing on a CI runner is nobody's intent.
+	 */
+	const reveal = (ctx: ExtensionCommandContext, url: string | undefined): void => {
+		if (ctx.hasUI && url) browse(url);
 	};
 
 	const registerToolsOnce = (canvas: CanvasSession): void => {
@@ -200,7 +319,7 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 			const canvas = ensureSession(ctx);
 
 			if (trimmed.length === 0 || trimmed === "list") {
-				ctx.ui.notify(renderOverview(await canvas.list()), "info");
+				ctx.ui.notify(renderOverview(await canvas.list(), ctx.hasUI), "info");
 				return;
 			}
 
@@ -211,6 +330,7 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 					return;
 				}
 				const closed = await canvas.close(instanceId);
+				refreshPins();
 				if (!closed) ctx.ui.notify(`No open canvas instance "${instanceId}".`, "warning");
 				else ctx.ui.notify(`Closed ${closed.canvasId} (${closed.instanceId}).`, "info");
 				return;
@@ -247,12 +367,21 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 						// The url is the point of saying anything: the extension binds a new
 						// port and mints a new token on every open, so the tab the person has
 						// in front of them is now pointing at a closed port.
-						lines.push(`  ${describeInstance(instance)}`);
+						lines.push(`  ${describeInstance(instance, ctx.hasUI)}`);
+						reveal(ctx, instance.url);
 					}
-					if (result.reopened.length > 0) lines.push("", "Open the new url(s) — the previous tab is dead.");
+					if (result.reopened.length > 0) {
+						lines.push(
+							"",
+							ctx.hasUI
+								? "Opened the new url(s) in your browser — the previous tab is dead."
+								: "Open the new url(s) — the previous tab is dead.",
+						);
+					}
 					for (const drop of result.dropped) {
 						lines.push(`  ${drop.canvasId} (${drop.instanceId}) did not come back: ${drop.reason}`);
 					}
+					refreshPins();
 					ctx.ui.notify(lines.join("\n"), result.dropped.length > 0 ? "warning" : "info");
 				} catch (error) {
 					// The registry only swaps children once the new one is ready, so the
@@ -277,6 +406,7 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 				// is about to move out from under it. Say so before doing it, not after.
 				const wasOpen = canvas.instances().filter((instance) => instance.extensionId === from);
 				const result = await canvas.rename(from, to);
+				refreshPins();
 				if (isCanvasRefusal(result)) {
 					ctx.ui.notify(`/canvas rename: ${result.detail}`, "warning");
 					return;
@@ -333,6 +463,7 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 				}
 				const openCount = canvas.instances().filter((instance) => instance.extensionId === target).length;
 				const result = await canvas.remove(target);
+				refreshPins();
 				if (isCanvasRefusal(result)) {
 					ctx.ui.notify(`/canvas remove: ${result.detail}`, "warning");
 					return;
@@ -386,10 +517,12 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 			}
 
 			registerToolsOnce(canvas);
+			reveal(ctx, outcome.instance.url);
+			refreshPins();
 			ctx.ui.notify(
 				[
 					`Opened ${outcome.instance.canvasId} (${outcome.instance.instanceId}).`,
-					outcome.instance.url ? `Open in a browser: ${outcome.instance.url}` : "",
+					...openedUrlLines(outcome.instance.url, ctx.hasUI),
 					"The agent can now read and drive it; close it with /canvas close <instanceId>.",
 				]
 					.filter((line) => line.length > 0)
@@ -473,14 +606,18 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 			const canvas = ensureSession(ctx);
 			const outcome = await openWithLoader(canvas, { extensionId: request.name }, ctx);
 			const opened = outcome?.kind === "opened" ? outcome.instance : undefined;
-			if (opened) registerToolsOnce(canvas);
+			if (opened) {
+				registerToolsOnce(canvas);
+				reveal(ctx, opened.url);
+				refreshPins();
+			}
 
 			const lines = ["Canvas created:", ...created.map((file) => `  ${file}`)];
 			if (skipped.length > 0) lines.push("Skipped (already exist):", ...skipped.map((file) => `  ${file}`));
 			lines.push("");
 			if (opened) {
 				lines.push(`Opened ${opened.canvasId} (${opened.instanceId}).`);
-				if (opened.url) lines.push(`Open in a browser: ${opened.url}`);
+				lines.push(...openedUrlLines(opened.url, ctx.hasUI));
 			} else if (outcome?.kind === "failed") {
 				// Not fatal: the file is written and discoverable, so say what broke and
 				// leave them a way in rather than making it look like nothing happened.
@@ -531,6 +668,11 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 	hoo.on("session_shutdown", () => {
 		const closing = session;
 		session = undefined;
+		// Nothing is left to click through to, so nothing stays pinned. The UI may
+		// already be coming down around us, and a stale band is not worth a throw.
+		try {
+			refreshPins();
+		} catch {}
 		void closing?.dispose();
 	});
 }
