@@ -13,7 +13,7 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import { Text } from "../src/components/text.js";
 import { type Component, TUI } from "../src/tui.js";
-import { hyperlinkAt } from "../src/utils.js";
+import { bareUrlAt, hyperlinkAt } from "../src/utils.js";
 import { VirtualTerminal } from "./virtual-terminal.js";
 
 const link = (url: string, label: string) => `\x1b]8;;${url}\x07${label}\x1b]8;;\x07`;
@@ -48,6 +48,34 @@ describe("hyperlinkAt", () => {
 	it("declines a line with no link at all without scanning it", () => {
 		assert.equal(hyperlinkAt("plain text", 2), undefined);
 		assert.equal(hyperlinkAt(`\x1b[31mred\x1b[0m`, 1), undefined);
+	});
+});
+
+describe("bareUrlAt", () => {
+	it("finds a URL written as plain text, and only under it", () => {
+		const line = "open http://127.0.0.1:4321/?t=abc now";
+		assert.equal(bareUrlAt(line, 4), undefined);
+		assert.equal(bareUrlAt(line, 5), "http://127.0.0.1:4321/?t=abc");
+		assert.equal(bareUrlAt(line, 32), "http://127.0.0.1:4321/?t=abc");
+		assert.equal(bareUrlAt(line, 33), undefined);
+	});
+
+	it("steps over styling and counts cells", () => {
+		const line = `🙂 \x1b[36mhttps://\x1b[1mexample.com\x1b[0m/x`;
+		assert.equal(bareUrlAt(line, 2), undefined);
+		assert.equal(bareUrlAt(line, 3), "https://example.com/x");
+		assert.equal(bareUrlAt(line, 23), "https://example.com/x");
+	});
+
+	it("leaves the sentence's punctuation out of the URL", () => {
+		assert.equal(bareUrlAt("see https://example.com/a.", 6), "https://example.com/a");
+		assert.equal(bareUrlAt("(see https://example.com/a)", 6), "https://example.com/a");
+		assert.equal(bareUrlAt("https://en.wikipedia.org/wiki/Foo_(bar)", 0), "https://en.wikipedia.org/wiki/Foo_(bar)");
+	});
+
+	it("does not treat other schemes or plain text as links", () => {
+		assert.equal(bareUrlAt("file:///etc/passwd", 3), undefined);
+		assert.equal(bareUrlAt("plain text", 2), undefined);
 	});
 });
 
@@ -95,6 +123,22 @@ describe("clicking a link", () => {
 		// Row 5 on screen is buffer row 4; the label starts at column 4.
 		click(terminal, 5, 5);
 		assert.deepEqual(opened, ["https://example.com"]);
+	});
+
+	it("opens a URL that was printed as plain text", async () => {
+		// Tool output and notifications print URLs bare. With the mouse free the
+		// terminal would have found them; captured, it is the app's job.
+		const terminal = new VirtualTerminal(40, HEIGHT);
+		const tui = new TUI(terminal);
+		const opened: string[] = [];
+		tui.onHyperlink = (url) => opened.push(url);
+		const rows = Array.from({ length: HEIGHT }, (_, i) => (i === 3 ? "at http://localhost:8080/x." : `row ${i}`));
+		tui.addChild({ invalidate() {}, render: () => rows });
+		tui.start();
+		await settle(terminal);
+		click(terminal, 4, 2);
+		click(terminal, 4, 10);
+		assert.deepEqual(opened, ["http://localhost:8080/x"]);
 	});
 
 	it("does nothing for a click beside the link", async () => {
