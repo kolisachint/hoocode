@@ -352,9 +352,10 @@ export class InteractiveMode {
 	private latestToolBlock?: ToolExecutionComponent;
 	/** The run that block belongs to; radar marks its folded line too. */
 	private latestChain?: ToolChainComponent;
-	// Whether the assistant message being streamed has said anything yet. The
-	// first words it speaks close the chain the previous message's calls built.
-	private sawTextInCurrentMessage = false;
+	// Whether the assistant message being streamed has already closed the chain
+	// the previous message's calls built. The first thing it puts on screen —
+	// words, or a thinking trace this view draws — is what closes it.
+	private chainClosedForCurrentMessage = false;
 
 	// Thinking block visibility state
 	private hideThinkingBlock = false;
@@ -2524,7 +2525,7 @@ export class InteractiveMode {
 						this.hiddenThinkingLabel,
 					);
 					this.streamingMessage = event.message;
-					this.sawTextInCurrentMessage = false;
+					this.chainClosedForCurrentMessage = false;
 					this.chatContainer.addChild(this.streamingComponent);
 					this.streamingComponent.updateContent(this.streamingMessage);
 					this.ui.requestRender();
@@ -2536,16 +2537,12 @@ export class InteractiveMode {
 					this.streamingMessage = event.message;
 					this.scheduleStreamingRender();
 
-					// The agent speaking ends the run its previous calls formed. Tool
-					// calls later in this same message open a fresh chain.
-					if (!this.sawTextInCurrentMessage) {
-						const spoke = this.streamingMessage.content.some(
-							(content) => content.type === "text" && content.text.trim() !== "",
-						);
-						if (spoke) {
-							this.sawTextInCurrentMessage = true;
-							this.closeOpenChain("done");
-						}
+					// Whatever this message first puts on screen ends the run its previous
+					// calls formed. Tool calls later in this same message open a fresh
+					// chain, below it.
+					if (!this.chainClosedForCurrentMessage && this.opensNewChain(this.streamingMessage)) {
+						this.chainClosedForCurrentMessage = true;
+						this.closeOpenChain("done");
 					}
 
 					for (const content of this.streamingMessage.content) {
@@ -3063,12 +3060,11 @@ export class InteractiveMode {
 		for (const message of sessionContext.messages) {
 			// Assistant messages need special handling for tool calls
 			if (message.role === "assistant") {
-				// Same boundary the live path uses: the agent speaking ends the run
-				// its previous calls formed. Rebuilding history has to reproduce it,
-				// or a resumed session would show one chain where it lived through
-				// several.
-				const spoke = message.content.some((content) => content.type === "text" && content.text.trim() !== "");
-				if (spoke) this.closeOpenChain("done");
+				// Same boundary the live path uses. Rebuilding history has to
+				// reproduce it, or a resumed session would show one chain where it
+				// lived through several — and would render a trace below the calls it
+				// led to.
+				if (this.opensNewChain(message)) this.closeOpenChain("done");
 				lastAssistantStopReason = message.stopReason;
 				this.addMessageToChat(message);
 				// Render tool call components
@@ -3422,6 +3418,27 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	/**
+	 * Does this assistant message end the run the open chain is collecting?
+	 *
+	 * Speaking does: whatever the agent does after saying something is a new run.
+	 * A thinking trace *this view draws* does too, and that one is not cosmetic.
+	 * The message's component is appended when the message opens, which puts it
+	 * below a chain the previous message's calls are still collecting into; leave
+	 * that chain open and this message's own calls join the block above its
+	 * trace, so the transcript reads tool calls first, then the thinking that led
+	 * to them. Radar omits traces (`thinkingDisplayForView`), so there is nothing
+	 * out of order there and a run stays folded into one line across messages.
+	 */
+	private opensNewChain(message: AssistantMessage): boolean {
+		const drawsThinking = this.thinkingDisplayForView() !== "omit";
+		return message.content.some(
+			(content) =>
+				(content.type === "text" && content.text.trim() !== "") ||
+				(drawsThinking && content.type === "thinking" && content.thinking.trim() !== ""),
+		);
+	}
+
 	/** Every tool block in the transcript, in order, across all chains. */
 	private transcriptToolBlocks(): ToolExecutionComponent[] {
 		const blocks: ToolExecutionComponent[] = [];
@@ -3484,11 +3501,13 @@ export class InteractiveMode {
 	 * alone under the summary and one row per chain would become one row plus a
 	 * label per call.
 	 *
-	 * It is also what keeps a running chain on screen. A chain stays open across
-	 * a thinking block (thinking is not text, so it is not a chain boundary), and
-	 * a trace rendering below pushes the chain's own summary line off the top —
-	 * where every subsequent call rewrites a line above the viewport and forces
-	 * the full redraw that clears terminal scrollback.
+	 * It is also what keeps a running chain on screen. Omitting the trace is what
+	 * lets a chain stay open across a thinking block: a trace that *is* drawn is a
+	 * chain boundary (`opensNewChain`), so were radar to draw one, every message
+	 * that thought would start a new run — or, left open, would push the chain's
+	 * own summary line off the top, where every subsequent call rewrites a line
+	 * above the viewport and forces the full redraw that clears terminal
+	 * scrollback.
 	 */
 	private thinkingDisplayForView(): ThinkingDisplay {
 		if (this.toolOutputView === "radar") return "omit";

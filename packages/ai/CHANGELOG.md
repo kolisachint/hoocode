@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Anthropic OAuth (Claude Pro/Max) requests now identify as `claude-cli/2.1.280`.
+  The pinned `2.1.75` was below the floor newer models enforce, so
+  `claude-opus-5-5` failed with `claude_code_version_too_old` (400) while older
+  models kept working.
+
+### Added
+
+- `openai-codex` (ChatGPT subscription) exposes `gpt-6-luna` and `gpt-6-sol`
+  alongside `gpt-6-astra`.
+
 ## [0.5.86] - 2026-09-23
 
 ## [0.5.85] - 2026-09-23
