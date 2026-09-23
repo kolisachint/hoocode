@@ -14792,6 +14792,23 @@ export const MODELS = {
 			contextWindow: 262144,
 			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
+		"upstage/solar-mini4": {
+			id: "upstage/solar-mini4",
+			name: "Upstage: Solar Mini 4",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.049999999999999996,
+				output: 0.19999999999999998,
+				cacheRead: 0.005,
+				cacheWrite: 0,
+			},
+			contextWindow: 524288,
+			maxTokens: 131072,
+		} satisfies Model<"openai-completions">,
 		"upstage/solar-pro-3": {
 			id: "upstage/solar-pro-3",
 			name: "Upstage: Solar Pro 3",
