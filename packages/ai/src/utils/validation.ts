@@ -191,6 +191,11 @@ function applySchemaArrayCoercion(value: unknown[], schema: JsonSchemaObject): v
 }
 
 function coerceWithUnionSchema(value: unknown, schemas: JsonSchemaObject[]): unknown {
+	// A value some branch already accepts is left alone, as TypeBox's own Convert
+	// does: otherwise an earlier `string` branch would turn a valid 5 into "5".
+	if (schemas.some((schema) => getSubSchemaValidator(schema)?.Check(value))) {
+		return value;
+	}
 	for (const schema of schemas) {
 		const candidate = structuredClone(value);
 		const coerced = coerceWithJsonSchema(candidate, schema);

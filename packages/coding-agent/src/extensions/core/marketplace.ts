@@ -35,7 +35,6 @@
  */
 
 import { existsSync, mkdirSync, rmSync } from "node:fs";
-import { join } from "node:path";
 import { getAgentDir } from "../../config.js";
 import { CATEGORY_GLYPH, SEGMENT_SEP } from "../../core/brand.js";
 import { getPlugin } from "../../core/extensions/plugins/authoring.js";
@@ -223,7 +222,10 @@ export function setupMarketplace(hoo: ExtensionAPI): void {
 							return;
 						}
 					} else {
-						dir = resolvePluginSource(loc, cwd).kind === "local" ? join(cwd, loc) : loc;
+						// Resolved, not joined: `join(cwd, "/abs/path")` glues an absolute path
+						// onto the workspace, so `/plugin marketplace add /abs/path` never found it.
+						const resolved = resolvePluginSource(loc, cwd);
+						dir = resolved.kind === "local" ? resolved.path : loc;
 						if (!existsSync(dir)) {
 							ctx.ui.notify(`Path not found: ${dir}`, "error");
 							return;

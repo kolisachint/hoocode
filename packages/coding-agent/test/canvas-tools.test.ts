@@ -14,6 +14,7 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
+import { validateToolArguments } from "@kolisachint/hoocode-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import type { DiscoveredCanvasExtension } from "../src/core/canvas/discovery.js";
 import { CanvasRegistry } from "../src/core/canvas/registry.js";
@@ -23,6 +24,7 @@ import {
 	createCanvasToolDefinitions,
 	INVOKE_CANVAS_ACTION_TOOL_NAME,
 	LIST_CANVAS_CAPABILITIES_TOOL_NAME,
+	prepareInvokeArguments,
 	RELOAD_CANVAS_TOOL_NAME,
 } from "../src/core/tools/canvas.js";
 import { canvasTestRuntime } from "./canvas-test-runtime.js";
@@ -168,6 +170,39 @@ describe("canvas tools", () => {
 			expect(addStep.inputSchema).toMatchObject({ type: "object", required: ["text"] });
 		});
 
+		it("says what each canvas is, from its own declaration", async () => {
+			const reg = build();
+			await reg.open(EXTENSION, "plan-board");
+			const report = JSON.parse(
+				textOf((await tools(reg).list?.execute?.("call-1", {}, undefined, undefined, NO_CTX)) as never),
+			);
+			expect(report[0].description).toBe("A fixture plan board.");
+		});
+
+		/**
+		 * The same action is 2 ms on one machine and a browser round trip on another,
+		 * so no declaration can state it honestly; the host measures and reports.
+		 */
+		it("reports observed timings once an action has run, and none before", async () => {
+			const reg = build();
+			const instance = await reg.open(EXTENSION, "plan-board");
+			const { list, invoke } = tools(reg);
+			const listed = async () =>
+				JSON.parse(textOf((await list?.execute?.("call-1", {}, undefined, undefined, NO_CTX)) as never))[0].actions;
+			expect((await listed()).some((action: { observed_ms?: number }) => "observed_ms" in action)).toBe(false);
+			const result = await invoke?.execute?.(
+				"call-2",
+				{ instanceId: instance.instanceId, action: "add_step", input: { text: "a" } },
+				undefined,
+				undefined,
+				NO_CTX,
+			);
+			expect((result?.details as { elapsedMs: number }).elapsedMs).toBeGreaterThanOrEqual(0);
+			const addStep = (await listed()).find((action: { name: string }) => action.name === "add_step");
+			expect(addStep.observed_ms).toBeGreaterThanOrEqual(0);
+			expect(addStep.observed_ms).toBeLessThan(5_000);
+		});
+
 		it("says a person opens canvases when none is open", async () => {
 			const reg = build();
 			const instance = await reg.open(EXTENSION, "plan-board");
@@ -272,6 +307,55 @@ describe("canvas tools", () => {
 					NO_CTX,
 				),
 			).rejects.toThrow(/unknown_target/);
+		});
+
+		/**
+		 * Some models (Qwen through OpenAI-compatible gateways) read an untyped
+		 * `input` as a string and JSON-encode the object into it. The schema now
+		 * names its types, and prepareArguments decodes what still arrives encoded
+		 * before validation, so the canvas receives the object it declared.
+		 */
+		it("gives input a typed schema, object first", async () => {
+			const reg = build();
+			await reg.open(EXTENSION, "plan-board");
+			const input = (tools(reg).invoke?.parameters as { properties: Record<string, { anyOf?: { type: string }[] }> })
+				.properties.input;
+			expect(input.anyOf?.map((branch) => branch.type)).toEqual([
+				"object",
+				"array",
+				"string",
+				"number",
+				"boolean",
+				"null",
+			]);
+		});
+
+		it("delivers a string-encoded input to the canvas as an object", async () => {
+			const reg = build();
+			const instance = await reg.open(EXTENSION, "plan-board");
+			const invoke = tools(reg).invoke;
+			if (!invoke) throw new Error("no invoke tool");
+			// The path the agent loop takes: prepareArguments, then validation, then execute.
+			const raw = { instanceId: instance.instanceId, action: "add_step", input: '{"text": "ship it"}' };
+			const prepared = invoke.prepareArguments?.(structuredClone(raw));
+			const args = validateToolArguments(invoke as never, {
+				type: "toolCall",
+				id: "c1",
+				name: invoke.name,
+				arguments: prepared as never,
+			});
+			expect(args.input).toEqual({ text: "ship it" });
+			const result = await invoke.execute("c1", args, undefined, undefined, NO_CTX);
+			expect(JSON.parse(textOf(result as never))).toEqual({ steps: 1 });
+		});
+
+		it("leaves inputs that are not JSON-encoded objects as they were sent", () => {
+			const base = { instanceId: "i", action: "a" };
+			for (const input of ["plain text", "{not json", "42", 42, true, null, ["x"], { text: "x" }]) {
+				expect(prepareInvokeArguments({ ...base, input }).input).toEqual(input);
+			}
+			expect(prepareInvokeArguments({ ...base, input: ' ["a", 1] ' }).input).toEqual(["a", 1]);
+			expect(prepareInvokeArguments(base)).toEqual(base);
 		});
 
 		it("caps a chatty result so one action cannot flood the context window", async () => {

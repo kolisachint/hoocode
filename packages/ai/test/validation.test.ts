@@ -97,6 +97,16 @@ describe("validateToolArguments", () => {
 		}
 	});
 
+	it("leaves a value an anyOf branch already accepts uncoerced", () => {
+		const schema = {
+			anyOf: [{ type: "object" }, { type: "array" }, { type: "string" }, { type: "number" }, { type: "null" }],
+		} as Tool["parameters"];
+		for (const input of [5, null, "5", { a: 1 }, [1]]) {
+			const { tool, toolCall } = createToolCallWithPlainSchema(schema, input);
+			expect(validateToolArguments(tool, toolCall)).toEqual({ value: input });
+		}
+	});
+
 	it("rejects invalid coercions for serialized plain JSON schemas", () => {
 		const failingCases: Array<{
 			schema: Tool["parameters"];

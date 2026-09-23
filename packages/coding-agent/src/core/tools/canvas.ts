@@ -61,16 +61,47 @@ const reloadParams = Type.Object(
 
 type ReloadParams = Static<typeof reloadParams>;
 
+/**
+ * `input` is typed as "any JSON value" rather than `Type.Unknown()`. Unknown
+ * serializes to a schema with no `type` keyword, and some models (Qwen through
+ * OpenAI-compatible gateways) read an untyped parameter as a string and
+ * JSON-encode the object into it. Naming `object` first steers them to send one;
+ * the other members keep extensions whose actions declare non-object inputs valid.
+ */
 const invokeParams = Type.Object(
 	{
 		instanceId: Type.String({ description: "From list_canvas_capabilities." }),
 		action: Type.String({ description: "Action name declared by that instance's canvas." }),
-		input: Type.Optional(Type.Unknown({ description: "Action input, matching the action's declared schema." })),
+		input: Type.Optional(
+			Type.Union(
+				[Type.Object({}), Type.Array(Type.Unknown()), Type.String(), Type.Number(), Type.Boolean(), Type.Null()],
+				{ description: "Action input matching the action's inputSchema from list_canvas_capabilities." },
+			),
+		),
 	},
 	{ additionalProperties: false },
 );
 
 type InvokeParams = Static<typeof invokeParams>;
+
+/**
+ * Undo a JSON-encoded `input`: a string that parses to an object or array is
+ * what the model meant to send. Runs before validation (agent-loop
+ * `prepareToolCallArguments`). A string that does not parse is left as is — it
+ * may be a genuine string input, and the extension judges it.
+ */
+export function prepareInvokeArguments(args: unknown): InvokeParams {
+	if (!args || typeof args !== "object") return args as InvokeParams;
+	const params = args as Record<string, unknown>;
+	if (typeof params.input !== "string") return params as InvokeParams;
+	const text = params.input.trim();
+	if (!text.startsWith("{") && !text.startsWith("[")) return params as InvokeParams;
+	try {
+		return { ...params, input: JSON.parse(text) } as InvokeParams;
+	} catch {
+		return params as InvokeParams;
+	}
+}
 
 /** What `list_canvas_capabilities` reports. */
 export interface CanvasCapabilitiesDetails {
@@ -93,6 +124,41 @@ export interface CanvasInvokeDetails {
 	instanceId: string;
 	action: string;
 	truncated: boolean;
+	/** Wall time of the action, host side, including the round trip to the extension. */
+	elapsedMs: number;
+}
+
+/**
+ * Observed action latency, per registry, keyed by extension and action.
+ *
+ * A model plans differently around an action that takes 2 ms than one that waits
+ * on a person's browser tab, and no declaration can say which is which honestly:
+ * the same action is fast on one machine and slow on another. So the host
+ * measures, and `list_canvas_capabilities` reports what it saw. Kept per registry
+ * (one per session) so a test's numbers never leak into another's.
+ */
+const TIMING_SAMPLES = 20;
+const timings = new WeakMap<CanvasRegistry, Map<string, number[]>>();
+
+function recordTiming(registry: CanvasRegistry, extensionId: string, action: string, ms: number): void {
+	let byAction = timings.get(registry);
+	if (!byAction) {
+		byAction = new Map();
+		timings.set(registry, byAction);
+	}
+	const key = `${extensionId}\u0000${action}`;
+	const samples = byAction.get(key) ?? [];
+	samples.push(ms);
+	if (samples.length > TIMING_SAMPLES) samples.shift();
+	byAction.set(key, samples);
+}
+
+/** Median of what this session has seen, or undefined before the first call. */
+export function observedMs(registry: CanvasRegistry, extensionId: string, action: string): number | undefined {
+	const samples = timings.get(registry)?.get(`${extensionId}\u0000${action}`);
+	if (!samples?.length) return undefined;
+	const sorted = [...samples].sort((a, b) => a - b);
+	return sorted[Math.floor(sorted.length / 2)];
 }
 
 function textResult(text: string) {
@@ -121,7 +187,7 @@ function createListCapabilitiesTool(registry: CanvasRegistry): ToolDefinition {
 		name: LIST_CANVAS_CAPABILITIES_TOOL_NAME,
 		label: LIST_CANVAS_CAPABILITIES_TOOL_NAME,
 		description:
-			"List the open canvases and the actions each one accepts, with their input schemas. Call this before invoke_canvas_action to learn the instanceId and the action's schema.",
+			"List the open canvases: what each one is and how to work with it, and the actions it accepts with their input schemas (plus observed_ms once called). Call this before invoke_canvas_action to learn the instanceId and the action's schema.",
 		promptSnippet: "Discover open canvases and the actions they accept",
 		parameters: listParams,
 		async execute() {
@@ -133,18 +199,28 @@ function createListCapabilitiesTool(registry: CanvasRegistry): ToolDefinition {
 					details: { instances: 0, actions: 0 },
 				};
 			}
+			// The canvas's own description is its catalog entry — what it is and how to
+			// work with it — and was the one thing this listing left out. Actions carry
+			// `observed_ms` once this session has called them, so the model can tell a
+			// 2 ms read from a round trip through the person's browser.
 			const report = instances.map((instance) => ({
 				instanceId: instance.instanceId,
 				canvas: instance.canvasId,
 				extension: instance.extensionId,
 				title: instance.title,
+				description: registry.declarationOf(instance)?.description,
 				status: instance.status,
 				actions: bindings
 					.filter((binding) => binding.instanceId === instance.instanceId)
-					.map((binding) => binding.action),
+					.map((binding) => {
+						const ms = observedMs(registry, instance.extensionId, binding.action.name);
+						return ms === undefined ? binding.action : { ...binding.action, observed_ms: ms };
+					}),
 			}));
+			// Compact: this is read by a model, not a person, and the schemas are most of
+			// it — indentation alone was a fifth of a ~15K-character listing.
 			return {
-				...textResult(JSON.stringify(report, null, 1)),
+				...textResult(JSON.stringify(report)),
 				details: { instances: instances.length, actions: bindings.length },
 			};
 		},
@@ -169,6 +245,7 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
 			"Invoke an action on an open canvas. Actions are implemented by the canvas extension itself: an action may change what the person is looking at and can have side effects of its own, so read the action's description before calling it.",
 		promptSnippet: "Act on an open canvas the user is looking at",
 		parameters: invokeParams,
+		prepareArguments: prepareInvokeArguments,
 		async execute(_toolCallId, params: InvokeParams, signal) {
 			// instanceId is a UUID and unique across every canvas, so the model does not
 			// have to carry the extension and canvas ids too — the registry already knows
@@ -188,11 +265,14 @@ function createInvokeActionTool(registry: CanvasRegistry): ToolDefinition {
 			try {
 				// Honour the turn's abort signal: without this, aborting a turn leaves the
 				// request running and its answer arriving for a turn nobody awaits.
+				const started = performance.now();
 				const result = await registry.invokeAction(instance, params.action, params.input as never, { signal });
+				const elapsedMs = Math.round(performance.now() - started);
+				recordTiming(registry, instance.extensionId, params.action, elapsedMs);
 				const { text, truncated } = renderResult(result);
 				return {
 					...textResult(text),
-					details: { instanceId: params.instanceId, action: params.action, truncated },
+					details: { instanceId: params.instanceId, action: params.action, truncated, elapsedMs },
 				};
 			} catch (cause) {
 				// Canvas handlers throw CanvasError with a machine-readable code, which the

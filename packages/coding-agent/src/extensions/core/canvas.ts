@@ -278,36 +278,44 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 		canvas: CanvasSession,
 		ref: { extensionId: string; canvasId?: string },
 		ctx: ExtensionCommandContext,
-	): Promise<OpenOutcome | undefined> =>
-		ctx.hasUI
-			? await ctx.ui.custom<OpenOutcome | undefined>((tui, theme, _keybindings, done) => {
-					const loader = new BorderedLoader(tui, theme, `Opening ${ref.extensionId}…`);
-					loader.onAbort = () => done({ kind: "cancelled" });
-					void canvas
-						.open(ref, { signal: loader.signal })
-						.then((instance) => done({ kind: "opened", instance }))
-						// Cancelling races: the signal rejects the pending call at the same moment
-						// onAbort fires, and whichever lands first resolves `custom`. Deciding from
-						// the signal rather than from who won means a cancel always reads as a
-						// cancel instead of surfacing as an error.
-						.catch((error: unknown) =>
-							done(
-								loader.signal.aborted
-									? { kind: "cancelled" }
-									: { kind: "failed", message: error instanceof Error ? error.message : String(error) },
-							),
-						);
-					return loader;
-				})
-			: await canvas
-					.open(ref)
-					.then((instance): OpenOutcome => ({ kind: "opened", instance }))
-					.catch(
-						(error: unknown): OpenOutcome => ({
-							kind: "failed",
-							message: error instanceof Error ? error.message : String(error),
-						}),
-					);
+	): Promise<OpenOutcome | undefined> => {
+		const openPlain = (): Promise<OpenOutcome> =>
+			canvas
+				.open(ref)
+				.then((instance): OpenOutcome => ({ kind: "opened", instance }))
+				.catch(
+					(error: unknown): OpenOutcome => ({
+						kind: "failed",
+						message: error instanceof Error ? error.message : String(error),
+					}),
+				);
+		if (!ctx.hasUI) return openPlain();
+		// RPC reports a UI but cannot draw a custom component: its `custom()` settles
+		// at once without calling the factory. Read that as "nothing to draw" and open
+		// directly — reading it as a cancel made every RPC host's open a no-op.
+		let drawn = false;
+		const outcome = await ctx.ui.custom<OpenOutcome | undefined>((tui, theme, _keybindings, done) => {
+			drawn = true;
+			const loader = new BorderedLoader(tui, theme, `Opening ${ref.extensionId}…`);
+			loader.onAbort = () => done({ kind: "cancelled" });
+			void canvas
+				.open(ref, { signal: loader.signal })
+				.then((instance) => done({ kind: "opened", instance }))
+				// Cancelling races: the signal rejects the pending call at the same moment
+				// onAbort fires, and whichever lands first resolves `custom`. Deciding from
+				// the signal rather than from who won means a cancel always reads as a
+				// cancel instead of surfacing as an error.
+				.catch((error: unknown) =>
+					done(
+						loader.signal.aborted
+							? { kind: "cancelled" }
+							: { kind: "failed", message: error instanceof Error ? error.message : String(error) },
+					),
+				);
+			return loader;
+		});
+		return drawn ? outcome : openPlain();
+	};
 
 	hoo.registerCommand("canvas", {
 		description:

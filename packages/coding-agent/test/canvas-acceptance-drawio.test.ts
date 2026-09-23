@@ -24,6 +24,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync }
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 import { pathToFileURL } from "node:url";
+import { validateToolArguments } from "@kolisachint/hoocode-ai";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { CanvasAvailability } from "../src/core/canvas/launch.js";
 import { CanvasSession } from "../src/core/canvas/session.js";
@@ -131,6 +132,34 @@ describe.skipIf(!present)("acceptance: drawio-canvas through hoocode", () => {
 		const diagram = await act("get_diagram", {});
 		expect(diagram.page.shapes).toBe(2);
 		expect(diagram.cells_xml).toContain("resIcon=mxgraph.aws4.lambda");
+	}, 30_000);
+
+	it("accepts edit_diagram input a model sent JSON-encoded as a string", async () => {
+		// Qwen through OpenAI-compatible gateways sent `"input": "{\"operations\": …}"`,
+		// which drawio-canvas used to see as a string: "operations is not iterable".
+		const invoke = tools.get(INVOKE_CANVAS_ACTION_TOOL_NAME);
+		if (!invoke) throw new Error("no invoke tool");
+		const encoded = JSON.stringify({
+			operations: [
+				{
+					operation: "add",
+					cell_id: "queue",
+					new_xml:
+						'<mxCell value="Queue" style="rounded=1;" vertex="1" parent="1"><mxGeometry x="480" y="40" width="120" height="60" as="geometry"/></mxCell>',
+				},
+			],
+		});
+		const args = validateToolArguments(invoke as never, {
+			type: "toolCall",
+			id: "encoded",
+			name: invoke.name,
+			arguments: invoke.prepareArguments?.({ instanceId, action: "edit_diagram", input: encoded }) as never,
+		});
+		const edited = JSON.parse(text(await invoke.execute("encoded", args, undefined, undefined, NO_CTX)));
+		expect(edited.applied).toBe(1);
+		const diagram = await act("get_diagram", {});
+		expect(diagram.cells_xml).toContain('id="queue"');
+		await act("edit_diagram", { operations: [{ operation: "delete", cell_id: "queue" }] });
 	}, 30_000);
 
 	describe.skipIf(!PLAYWRIGHT)("with the person in draw.io", () => {
