@@ -248,7 +248,7 @@ md.setText("Updated markdown");
 
 ### Image
 
-Renders images in supported terminals (Kitty, iTerm2, Ghostty, WezTerm).
+Renders images in supported terminals (Kitty, iTerm2, Ghostty, WezTerm, and Windows Terminal via Sixel). Sixel sends pixels, so it needs a decoder registered with `setImageRasterizer()`; hoocode registers one backed by photon.
 
 ```typescript
 const image = new Image(

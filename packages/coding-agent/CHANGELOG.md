@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Images now show in Windows Terminal.** Screenshots, images read from disk
+  and other image tool results used to show as `[Image: … image/png 800x600]` in
+  Windows Terminal (PowerShell, cmd, WSL), while the same session on macOS showed
+  them inline. Windows Terminal supports neither of the two image protocols
+  hoocode spoke (kitty, iTerm2); it supports Sixel, from 1.22 on. hoocode now
+  detects Windows Terminal from `WT_SESSION`, decodes the image with the bundled
+  photon (already shipped next to `hoocode.exe` in the Windows zip), and draws it
+  as Sixel. On a Windows Terminal older than 1.22 nothing is drawn; update the
+  terminal or set `HOOCODE_IMAGE_PROTOCOL=none` to get the text placeholder back.
+  `HOOCODE_IMAGE_PROTOCOL=kitty|iterm2|sixel|none` also picks the protocol
+  outright, e.g. `sixel` for foot or mlterm, or for Windows Terminal over SSH,
+  where `WT_SESSION` is not passed on.
+
 ## [0.5.83] - 2026-09-23
 
 ## [0.5.82] - 2026-09-23

@@ -1,4 +1,4 @@
-export type ImageProtocol = "kitty" | "iterm2" | null;
+export type ImageProtocol = "kitty" | "iterm2" | "sixel" | null;
 
 export interface TerminalCapabilities {
 	images: ImageProtocol;
@@ -24,6 +24,41 @@ export interface ImageRenderOptions {
 	imageId?: number;
 	/** Whether Kitty should apply its default cursor movement after placement. */
 	moveCursor?: boolean;
+	/** MIME type of `base64Data`. Sixel needs it to decode the image into pixels. */
+	mimeType?: string;
+}
+
+/** Decoded pixels, 4 bytes (RGBA) per pixel, row-major. */
+export interface RgbaImage {
+	data: Uint8Array;
+	width: number;
+	height: number;
+}
+
+/**
+ * Decodes an encoded image and scales it to exactly `widthPx` x `heightPx`.
+ *
+ * Sixel carries pixels, not a PNG, so the terminal cannot decode the image for
+ * us the way kitty and iTerm2 do. Decoding needs an image library, which this
+ * package deliberately does not depend on: the host registers one with
+ * {@link setImageRasterizer}. Until it does, a sixel terminal gets the text
+ * fallback. Must be synchronous, since it runs inside `render()`.
+ */
+export type ImageRasterizer = (
+	base64Data: string,
+	mimeType: string,
+	widthPx: number,
+	heightPx: number,
+) => RgbaImage | null;
+
+let imageRasterizer: ImageRasterizer | null = null;
+
+export function setImageRasterizer(rasterizer: ImageRasterizer | null): void {
+	imageRasterizer = rasterizer;
+}
+
+export function getImageRasterizer(): ImageRasterizer | null {
+	return imageRasterizer;
 }
 
 let cachedCapabilities: TerminalCapabilities | null = null;
@@ -39,7 +74,25 @@ export function setCellDimensions(dims: CellDimensions): void {
 	cellDimensions = dims;
 }
 
+/**
+ * `HOOCODE_IMAGE_PROTOCOL=kitty|iterm2|sixel|none` names the protocol outright,
+ * for terminals detection cannot identify (foot, mlterm, xterm -ti vt340, a
+ * Windows Terminal reached over SSH) or gets wrong. Anything else is ignored.
+ */
+function imageProtocolOverride(): ImageProtocol | undefined {
+	const value = process.env.HOOCODE_IMAGE_PROTOCOL?.trim().toLowerCase();
+	if (value === "kitty" || value === "iterm2" || value === "sixel") return value;
+	if (value === "none" || value === "off" || value === "0") return null;
+	return undefined;
+}
+
 export function detectCapabilities(): TerminalCapabilities {
+	const detected = detectTerminalCapabilities();
+	const override = imageProtocolOverride();
+	return override === undefined ? detected : { ...detected, images: override };
+}
+
+function detectTerminalCapabilities(): TerminalCapabilities {
 	const termProgram = process.env.TERM_PROGRAM?.toLowerCase() || "";
 	const term = process.env.TERM?.toLowerCase() || "";
 	const colorTerm = process.env.COLORTERM?.toLowerCase() || "";
@@ -68,6 +121,14 @@ export function detectCapabilities(): TerminalCapabilities {
 
 	if (process.env.ITERM_SESSION_ID || termProgram === "iterm.app") {
 		return { images: "iterm2", trueColor: true, hyperlinks: true };
+	}
+
+	// Windows Terminal speaks neither kitty nor iTerm2 graphics, only Sixel
+	// (1.22 and later; older builds ignore the sequence and show nothing, which
+	// is what they showed before). It is the default terminal on Windows 11, and
+	// it announces itself only through WT_SESSION — TERM_PROGRAM is unset.
+	if (process.env.WT_SESSION) {
+		return { images: "sixel", trueColor: true, hyperlinks: false };
 	}
 
 	if (termProgram === "vscode") {
@@ -104,14 +165,16 @@ export function setCapabilities(caps: TerminalCapabilities): void {
 
 const KITTY_PREFIX = "\x1b_G";
 const ITERM2_PREFIX = "\x1b]1337;File=";
+/** DCS with the parameters {@link encodeSixel} always writes: square pixels, transparent background. */
+const SIXEL_PREFIX = "\x1bP0;1;0q";
 
 export function isImageLine(line: string): boolean {
 	// Fast path: sequence at line start (single-row images)
-	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
+	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX) || line.startsWith(SIXEL_PREFIX)) {
 		return true;
 	}
 	// Slow path: sequence elsewhere (multi-row images have cursor-up prefix)
-	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX);
+	return line.includes(KITTY_PREFIX) || line.includes(ITERM2_PREFIX) || line.includes(SIXEL_PREFIX);
 }
 
 /**
@@ -209,6 +272,152 @@ export function encodeITerm2(
 	}
 
 	return `\x1b]1337;File=${params.join(";")}:${base64Data}\x07`;
+}
+
+/**
+ * Build a palette of at most `maxColors` for the opaque pixels of `data`, by
+ * median cut over a 15-bit (5 bits per channel) histogram.
+ *
+ * Returns the palette as 8-bit RGB triples and a lookup from 15-bit colour key
+ * to palette index. An image with no more distinct keys than `maxColors` — a
+ * screenshot of text, a diagram — keeps every one of them.
+ */
+function buildSixelPalette(data: Uint8Array, maxColors: number): { palette: number[]; lookup: Uint16Array } {
+	const counts = new Uint32Array(32768);
+	for (let i = 0; i < data.length; i += 4) {
+		if (data[i + 3] < 128) continue;
+		counts[((data[i] >> 3) << 10) | ((data[i + 1] >> 3) << 5) | (data[i + 2] >> 3)]++;
+	}
+	const keys: number[] = [];
+	for (let key = 0; key < counts.length; key++) if (counts[key] > 0) keys.push(key);
+
+	const channel = (key: number, c: number): number => (key >> (10 - c * 5)) & 31;
+	type Box = { keys: number[]; channel: number; range: number };
+	const measure = (boxKeys: number[]): Box => {
+		let best = 0;
+		let bestRange = -1;
+		for (let c = 0; c < 3; c++) {
+			let lo = 31;
+			let hi = 0;
+			for (const key of boxKeys) {
+				const v = channel(key, c);
+				if (v < lo) lo = v;
+				if (v > hi) hi = v;
+			}
+			if (hi - lo > bestRange) {
+				bestRange = hi - lo;
+				best = c;
+			}
+		}
+		return { keys: boxKeys, channel: best, range: bestRange };
+	};
+
+	const boxes: Box[] = keys.length > 0 ? [measure(keys)] : [];
+	while (boxes.length < maxColors) {
+		// Split the box spanning the widest range; boxes of one key cannot split.
+		let target = -1;
+		for (let i = 0; i < boxes.length; i++) {
+			if (boxes[i].keys.length > 1 && (target === -1 || boxes[i].range > boxes[target].range)) target = i;
+		}
+		if (target === -1) break;
+		const box = boxes[target];
+		const c = box.channel;
+		box.keys.sort((a, b) => channel(a, c) - channel(b, c));
+		let total = 0;
+		for (const key of box.keys) total += counts[key];
+		// Weighted median, kept strictly inside so both halves are non-empty.
+		let seen = 0;
+		let split = 1;
+		for (let i = 0; i < box.keys.length - 1; i++) {
+			seen += counts[box.keys[i]];
+			split = i + 1;
+			if (seen * 2 >= total) break;
+		}
+		boxes.splice(target, 1, measure(box.keys.slice(0, split)), measure(box.keys.slice(split)));
+	}
+
+	const palette: number[] = [];
+	const lookup = new Uint16Array(32768);
+	const expand = (v: number): number => (v << 3) | (v >> 2);
+	boxes.forEach((box, index) => {
+		let r = 0;
+		let g = 0;
+		let b = 0;
+		let n = 0;
+		for (const key of box.keys) {
+			const w = counts[key];
+			r += expand(channel(key, 0)) * w;
+			g += expand(channel(key, 1)) * w;
+			b += expand(channel(key, 2)) * w;
+			n += w;
+			lookup[key] = index;
+		}
+		palette.push(Math.round(r / n), Math.round(g / n), Math.round(b / n));
+	});
+	return { palette, lookup };
+}
+
+/** One sixel row of one colour: 6-bit column masks, run-length encoded. */
+function encodeSixelRow(masks: Uint8Array): string {
+	let end = masks.length;
+	while (end > 0 && masks[end - 1] === 0) end--;
+	let out = "";
+	let i = 0;
+	while (i < end) {
+		const value = masks[i];
+		let run = 1;
+		while (i + run < end && masks[i + run] === value) run++;
+		const char = String.fromCharCode(63 + value);
+		out += run > 3 ? `!${run}${char}` : char.repeat(run);
+		i += run;
+	}
+	return out;
+}
+
+/**
+ * Encode RGBA pixels as a Sixel image (DEC VT340 graphics; Windows Terminal,
+ * foot, mlterm, xterm, WezTerm, Konsole).
+ *
+ * Pixels with alpha below 128 are left undrawn, so the terminal background
+ * shows through. At most `maxColors` palette registers are used; 256 is what
+ * Windows Terminal and xterm provide.
+ */
+export function encodeSixel(image: RgbaImage, maxColors = 256): string {
+	const { data, width, height } = image;
+	const { palette, lookup } = buildSixelPalette(data, maxColors);
+
+	const parts: string[] = [`${SIXEL_PREFIX}"1;1;${width};${height}`];
+	for (let i = 0; i < palette.length; i += 3) {
+		const pct = (v: number): number => Math.round((v * 100) / 255);
+		parts.push(`#${i / 3};2;${pct(palette[i])};${pct(palette[i + 1])};${pct(palette[i + 2])}`);
+	}
+
+	for (let top = 0; top < height; top += 6) {
+		const bandHeight = Math.min(6, height - top);
+		const bands = new Map<number, Uint8Array>();
+		for (let dy = 0; dy < bandHeight; dy++) {
+			const bit = 1 << dy;
+			let offset = (top + dy) * width * 4;
+			for (let x = 0; x < width; x++, offset += 4) {
+				if (data[offset + 3] < 128) continue;
+				const index =
+					lookup[((data[offset] >> 3) << 10) | ((data[offset + 1] >> 3) << 5) | (data[offset + 2] >> 3)];
+				let masks = bands.get(index);
+				if (!masks) {
+					masks = new Uint8Array(width);
+					bands.set(index, masks);
+				}
+				masks[x] |= bit;
+			}
+		}
+		const rows: string[] = [];
+		for (const [index, masks] of bands) rows.push(`#${index}${encodeSixelRow(masks)}`);
+		// `$` returns to the start of the band for the next colour; `-` moves to the next band.
+		parts.push(`${rows.join("$")}-`);
+	}
+
+	parts.push("\x1b\\");
+	return parts.join("");
 }
 
 export function calculateImageRows(
@@ -397,7 +606,48 @@ export function renderImage(
 		return { sequence, rows };
 	}
 
+	if (caps.images === "sixel") {
+		return renderSixel(base64Data, imageDimensions, maxWidth, options);
+	}
+
 	return null;
+}
+
+/**
+ * Sixel draws pixels, so the size in cells follows from the size in pixels
+ * rather than the other way round. The image is scaled to fit `maxWidthCells`
+ * (and `maxHeightCells`) but never enlarged — an enlarged sixel is only blurrier —
+ * and `rows` is how many cells tall the result is.
+ */
+function renderSixel(
+	base64Data: string,
+	imageDimensions: ImageDimensions,
+	maxWidthCells: number,
+	options: ImageRenderOptions,
+): { sequence: string; rows: number } | null {
+	const rasterize = imageRasterizer;
+	if (!rasterize || !options.mimeType) return null;
+	if (imageDimensions.widthPx <= 0 || imageDimensions.heightPx <= 0) return null;
+
+	const cell = getCellDimensions();
+	let scale = Math.min(1, (maxWidthCells * cell.widthPx) / imageDimensions.widthPx);
+	if (options.maxHeightCells) {
+		scale = Math.min(scale, (options.maxHeightCells * cell.heightPx) / imageDimensions.heightPx);
+	}
+	const widthPx = Math.max(1, Math.floor(imageDimensions.widthPx * scale));
+	const heightPx = Math.max(1, Math.floor(imageDimensions.heightPx * scale));
+
+	let pixels: RgbaImage | null;
+	try {
+		pixels = rasterize(base64Data, options.mimeType, widthPx, heightPx);
+	} catch {
+		return null;
+	}
+	if (!pixels || pixels.width <= 0 || pixels.height <= 0) return null;
+	if (pixels.data.length < pixels.width * pixels.height * 4) return null;
+
+	const rows = Math.max(1, Math.ceil(pixels.height / cell.heightPx));
+	return { sequence: encodeSixel(pixels), rows };
 }
 
 /**

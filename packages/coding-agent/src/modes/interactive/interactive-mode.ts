@@ -89,6 +89,7 @@ import { extensionForImageMimeType, readClipboardImage } from "../../utils/clipb
 import { parseGitUrl } from "../../utils/git.js";
 import { openUrl } from "../../utils/open-url.js";
 import { killTrackedDetachedChildren } from "../../utils/shell.js";
+import { installSixelRasterizer } from "../../utils/terminal-image-rasterizer.js";
 import { ensureTool } from "../../utils/tools-manager.js";
 import { checkForNewHooCodeVersion } from "../../utils/version-check.js";
 import { BashExecutionController } from "./bash-execution-controller.js";
@@ -1066,6 +1067,10 @@ export class InteractiveMode {
 		// clicks on links, so the app answers them itself — with the same click, no
 		// modifier, which is what it cost the user in the first place.
 		this.ui.onHyperlink = (url) => openUrl(url);
+
+		// Sixel terminals (Windows Terminal) need pixels decoded before the first
+		// image renders; on every other terminal this returns at once.
+		await installSixelRasterizer();
 
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();

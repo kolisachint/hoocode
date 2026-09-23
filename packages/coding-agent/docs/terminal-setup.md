@@ -142,6 +142,22 @@ Add to `settings.json` (Ctrl+Shift+, or Settings → Open JSON file) to forward 
 
 If you already have an `actions` array, add the objects to it. If the old fullscreen behavior persists, fully close and reopen Windows Terminal.
 
+### Images
+
+Windows Terminal draws images with Sixel, which needs **Windows Terminal 1.22 or
+newer** (`winget upgrade Microsoft.WindowsTerminal`, or the Microsoft Store).
+hoocode detects it from `WT_SESSION` and shows screenshots and other image tool
+results inline, in PowerShell, cmd and WSL alike.
+
+- On an older Windows Terminal nothing is drawn. Update it, or set
+  `$env:HOOCODE_IMAGE_PROTOCOL = "none"` to get the `[Image: …]` placeholder.
+- Over SSH `WT_SESSION` is not passed on, so set `HOOCODE_IMAGE_PROTOCOL=sixel`
+  on the remote side.
+- Inside tmux images are off, as in every terminal.
+
+`HOOCODE_IMAGE_PROTOCOL` accepts `kitty`, `iterm2`, `sixel` or `none` and works
+in any terminal, e.g. `sixel` for foot or mlterm.
+
 ## xfce4-terminal, terminator
 
 These terminals have limited escape sequence support. Modified Enter keys like `Ctrl+Enter` and `Shift+Enter` cannot be distinguished from plain `Enter`, preventing custom keybindings such as `submit: ["ctrl+enter"]` from working.
