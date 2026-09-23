@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- A thinking trace no longer renders below the tool calls it led to in the
+  `peek` and `full` views. A run of consecutive calls stayed open until the
+  agent spoke, and a message that only thinks and calls tools never speaks — so
+  its trace was stranded below the previous run while its own calls joined that
+  run above it. A trace the view draws is now a chain boundary too. Radar omits
+  traces and keeps folding a run into one line across messages.
+
 ## [0.5.86] - 2026-09-23
 
 ## [0.5.85] - 2026-09-23

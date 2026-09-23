@@ -545,6 +545,12 @@ as a sheet (`components/user-message.ts`, `showBlock` in `interactive-mode.ts`).
 - How a tool call is shown: `components/tool-execution.ts` (and `bash-execution.ts`,
   `diff.ts`). How much of it is shown: the view dial in `core/tool-output-view.ts`
   (radar / peek / full); radar groups calls into `components/tool-chain.ts`.
+  What ends a run: `opensNewChain` in `interactive-mode.ts` — the agent
+  speaking, or a thinking trace the view actually draws. The second is what
+  keeps a trace above the calls it led to, since a message's component is
+  appended below the chain its predecessor's calls are still collecting into.
+  Radar omits traces, so its run stays folded across messages
+  (`test/transcript-thinking-order.test.ts`).
 - Colors / styling: `theme/` and `theme.fg(...)`.
 - Copying a conversation out of the session: `utils/markdown-to-html.ts` and
   `utils/rich-clipboard.ts`, driven by `CommandExecutor.handleCopy` (`/copy`,

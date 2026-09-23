@@ -42,8 +42,11 @@ type RenderSessionContextThis = {
 	toolOutputExpanded: boolean;
 	toolOutputView: ToolOutputView;
 	openChain: undefined;
+	hideThinkingBlock: boolean;
 	attachToolBlock: (block: ToolExecutionComponent) => void;
 	closeOpenChain: (outcome: "done" | "interrupted") => void;
+	opensNewChain: (message: AssistantMessage) => boolean;
+	thinkingDisplayForView: () => "full" | "label" | "omit";
 	isInitialized: boolean;
 	updateEditorBorderColor(): void;
 	getRegisteredToolDefinition(toolName: string): undefined;
@@ -81,6 +84,17 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
 		// prototype rather than stubbed, so the grouping this test renders through
 		// is the same grouping the real transcript builds.
 		openChain: undefined,
+		// What a chain closes on — the agent speaking, or a thinking trace this
+		// view draws — is decided by these two together.
+		hideThinkingBlock: false,
+		opensNewChain: (
+			InteractiveMode.prototype as unknown as { opensNewChain: RenderSessionContextThis["opensNewChain"] }
+		).opensNewChain,
+		thinkingDisplayForView: (
+			InteractiveMode.prototype as unknown as {
+				thinkingDisplayForView: RenderSessionContextThis["thinkingDisplayForView"];
+			}
+		).thinkingDisplayForView,
 		attachToolBlock: (
 			InteractiveMode.prototype as unknown as { attachToolBlock: RenderSessionContextThis["attachToolBlock"] }
 		).attachToolBlock,
