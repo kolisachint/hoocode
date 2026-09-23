@@ -11846,13 +11846,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.07,
+				input: 0.08,
 				output: 0.19999999999999998,
 				cacheRead: 0.04,
 				cacheWrite: 0,
 			},
 			contextWindow: 262144,
-			maxTokens: 235929,
+			maxTokens: 131072,
 		} satisfies Model<"openai-completions">,
 		"nvidia/nemotron-3.5-lightning:free": {
 			id: "nvidia/nemotron-3.5-lightning:free",
