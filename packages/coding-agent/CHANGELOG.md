@@ -2,24 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- **`/canvas open` opens the browser for you.** Opening a canvas from a terminal
-  (`/canvas open`, `/new-canvas`, and the new urls after `/canvas reload`) now
-  sends the browser straight to it instead of asking you to copy a tokenised
-  localhost address out of a notification. `--print` and RPC still just print
-  the url.
-- **Open canvases stay pinned above the prompt.** Each open canvas keeps a row
-  with its url directly above the notification band until it is closed, so a
-  tab closed by accident is one click away. The row follows reloads to the new
-  url and disappears on `/canvas close`, rename, remove and shutdown.
-
-### Fixed
-
-- **Every link in hoocode opens with a click.** Plain-text URLs — in bash and
-  tool output, notifications, `/canvas list` — now open on click like the
-  markdown links already did, rather than only the ones hoocode had marked up.
-
 ## [0.5.84] - 2026-09-23
 
 ### Fixed

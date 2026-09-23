@@ -2,13 +2,6 @@
 
 ## [Unreleased]
 
-### Added
-
-- `bareUrlAt(line, column)`: the plain-text `http(s)`/`mailto` URL under a
-  display column, with surrounding punctuation trimmed. A click that lands on
-  no OSC 8 link now falls back to it, so URLs printed as plain text open on
-  click too.
-
 ## [0.5.84] - 2026-09-23
 
 ### Added
