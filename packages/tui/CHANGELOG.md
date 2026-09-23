@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- Sixel image output (`ImageProtocol` `"sixel"`), chosen for Windows Terminal
+  (`WT_SESSION`), plus `encodeSixel()` (RGBA → Sixel, median-cut palette of up
+  to 256 colours, transparent pixels left undrawn). Sixel sends pixels, so the
+  host registers a decoder with `setImageRasterizer()`; until it does, images
+  keep the text fallback. `HOOCODE_IMAGE_PROTOCOL=kitty|iterm2|sixel|none`
+  overrides detection.
+
 ## [0.5.83] - 2026-09-23
 
 ## [0.5.82] - 2026-09-23

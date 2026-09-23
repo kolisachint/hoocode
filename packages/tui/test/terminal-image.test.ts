@@ -28,6 +28,8 @@ const ENV_KEYS = [
 	"WEZTERM_PANE",
 	"ITERM_SESSION_ID",
 	"CMUX_WORKSPACE_ID",
+	"WT_SESSION",
+	"HOOCODE_IMAGE_PROTOCOL",
 ] as const;
 
 function withEnv(overrides: Record<string, string | undefined>, fn: () => void): void {

@@ -74,6 +74,7 @@ export class Image implements Component {
 				maxWidthCells: maxWidth,
 				imageId: this.imageId,
 				moveCursor: false,
+				mimeType: this.mimeType,
 			});
 
 			if (result) {
@@ -87,14 +88,18 @@ export class Image implements Component {
 				// Last line: move cursor back up, draw the image, then move back down
 				// for Kitty (this component disables Kitty's terminal-side cursor movement)
 				// so TUI cursor accounting stays inside the scroll area.
+				// Where a Sixel leaves the cursor differs between terminals (VT340,
+				// xterm and Windows Terminal each pick a different row), so the
+				// cursor is saved and restored around it rather than predicted.
 				lines = [];
 				for (let i = 0; i < result.rows - 1; i++) {
 					lines.push("");
 				}
 				const rowOffset = result.rows - 1;
 				const moveUp = rowOffset > 0 ? `\x1b[${rowOffset}A` : "";
-				const moveDown = caps.images === "kitty" && rowOffset > 0 ? `\x1b[${rowOffset}B` : "";
-				lines.push(moveUp + result.sequence + moveDown);
+				const moveDown = caps.images !== "iterm2" && rowOffset > 0 ? `\x1b[${rowOffset}B` : "";
+				const sequence = caps.images === "sixel" ? `\x1b7${result.sequence}\x1b8` : result.sequence;
+				lines.push(moveUp + sequence + moveDown);
 			} else {
 				const fallback = imageFallback(this.mimeType, this.dimensions, this.options.filename);
 				lines = [this.theme.fallbackColor(fallback)];
