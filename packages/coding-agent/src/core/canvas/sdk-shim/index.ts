@@ -167,6 +167,15 @@ export interface CanvasShimMessageOptions {
 	mode?: CanvasSendMode;
 }
 
+/**
+ * The SDK's `SendAttachmentsToMessageParams`. Only `extension_context` entries are
+ * a canvas's to push; other attachment kinds are accepted and ignored.
+ */
+export interface CanvasShimPushParams {
+	instanceId?: string;
+	attachments: Array<{ type: string; title?: string; payload?: JsonValue }>;
+}
+
 /** Handler for one session event. */
 export type CanvasShimEventHandler = (event: CanvasSessionEvent) => void;
 
@@ -187,6 +196,16 @@ export interface CanvasShimSession {
 	on(eventType: string, handler: CanvasShimEventHandler): () => void;
 	/** Listen for every event the host emits. Returns a function that stops listening. */
 	on(handler: CanvasShimEventHandler): () => void;
+	/** The SDK's RPC surface, as far as a canvas uses it. */
+	rpc: {
+		extensions: {
+			/**
+			 * Context for the person's next message, shown as a pill in the host's
+			 * prompt. Replaces what this extension pushed before; `[]` withdraws it.
+			 */
+			sendAttachmentsToMessage(params: CanvasShimPushParams): Promise<void>;
+		};
+	};
 }
 
 /** Streams the shim reads from and writes to. Injectable so tests need no child process. */
@@ -297,6 +316,19 @@ export async function joinSession(
 			nextMessage += 1;
 			send({ envelope: CANVAS_ENVELOPE_VERSION, type: "send", messageId, prompt, mode });
 			return messageId;
+		},
+		rpc: {
+			extensions: {
+				sendAttachmentsToMessage: async (params: CanvasShimPushParams) => {
+					if (!params || !Array.isArray(params.attachments)) {
+						throw new CanvasError("invalid_input", "sendAttachmentsToMessage needs an attachments array.");
+					}
+					const attachments = params.attachments
+						.filter((item) => item?.type === "extension_context" && typeof item.title === "string")
+						.map((item) => ({ title: item.title as string, payload: toJsonValue(item.payload) }));
+					send({ envelope: CANVAS_ENVELOPE_VERSION, type: "attach", instanceId: params.instanceId, attachments });
+				},
+			},
 		},
 		on: (typeOrHandler: string | CanvasShimEventHandler, maybeHandler?: CanvasShimEventHandler) => {
 			const key = typeof typeOrHandler === "string" ? typeOrHandler : CANVAS_EVENT_WILDCARD;

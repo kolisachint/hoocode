@@ -30,6 +30,7 @@ import { canvasDesignGuidePath } from "../../core/builtin-skills.js";
 /** Canvas extensions are extensions, so they wear the extension glyph. */
 const GLYPH = CATEGORY_GLYPH.extensions;
 
+import { CanvasAttachments, type PendingCanvasAttachment } from "../../core/canvas/attachments.js";
 import { CanvasEventSource } from "../../core/canvas/events.js";
 import { CanvasInbox } from "../../core/canvas/inbox.js";
 import { isCanvasRefusal } from "../../core/canvas/lifecycle.js";
@@ -124,6 +125,35 @@ export class CanvasLinksBand implements Component {
 			rows.push(t.fg("dim", `   +${pinned.length - MAX_PINNED_ROWS} more open — /canvas list`));
 		}
 		return rows;
+	}
+}
+
+/** Widget key for the context canvases attached to the next message. */
+export const CANVAS_ATTACHMENTS_WIDGET = "canvas-attachments";
+
+/**
+ * The pills: context a canvas attached to the person's next message, shown
+ * above the prompt so it never reaches the model unseen. One row per pill.
+ */
+export class CanvasAttachmentsBand implements Component {
+	constructor(
+		private readonly items: () => readonly PendingCanvasAttachment[],
+		private readonly theme: Theme,
+	) {}
+
+	invalidate(): void {}
+
+	render(width: number): string[] {
+		const items = this.items();
+		if (items.length === 0 || width < 8) return [];
+		const t = this.theme;
+		const hint = "goes with your next message";
+		return items.slice(0, MAX_PINNED_ROWS).map((item) => {
+			const lead = ` ${t.fg("accent", "⧉")} ${t.fg("dim", `${item.extensionId}:`)} `;
+			const room = Math.max(8, width - visibleWidth(lead) - hint.length - 3);
+			const title = truncateToWidth(item.title, room);
+			return truncateToWidth(`${lead}${t.fg("text", title)}  ${t.fg("dim", hint)}`, width);
+		});
 	}
 }
 
@@ -244,6 +274,20 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 		notify: (message) => notify(message, "info"),
 	});
 
+	// Context a canvas attached to the person's next message (the selection they
+	// mean by "this"), shown as pills above the prompt until it is sent.
+	const attachments = new CanvasAttachments();
+	const refreshAttachments = (): void => {
+		const ui = pinUi;
+		if (!ui) return;
+		ui.setWidget(
+			CANVAS_ATTACHMENTS_WIDGET,
+			attachments.list().length > 0
+				? (_tui, theme) => new CanvasAttachmentsBand(() => attachments.list(), theme)
+				: undefined,
+		);
+	};
+
 	// What the agent is doing, for canvases that listen (`session.on`). Emitting
 	// costs nothing until a canvas is open and has subscribed.
 	const events = new CanvasEventSource((event) => session?.emit(event));
@@ -262,6 +306,10 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 				notify(`[canvas ${id}] ${message}`, level === "warning" || level === "error" ? level : "info"),
 			onSend: (id, message) => {
 				inbox.submit(id, message.prompt, message.mode);
+			},
+			onAttach: (id, items, instanceId) => {
+				attachments.set(id, items, instanceId);
+				refreshAttachments();
 			},
 			onStray: (id, line) => notify(`[canvas ${id}] non-protocol stdout (use session.log): ${line}`, "warning"),
 			onDiagnostic: (id, message) => notify(`[canvas ${id}] ${message}`, "warning"),
@@ -733,8 +781,13 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 	// as "extension", like the canvases' own.
 	hoo.on("input", (event, ctx) => {
 		track(ctx);
-		if (event.source !== "extension") inbox.personSpoke();
-		return { action: "continue" };
+		if (event.source === "extension") return { action: "continue" };
+		inbox.personSpoke();
+		// The person's message carries what their canvases attached to it, once.
+		const context = attachments.take();
+		if (context === undefined) return { action: "continue" };
+		refreshAttachments();
+		return { action: "transform", text: `${event.text}\n\n${context}`, images: event.images };
 	});
 	// The main agent's todos (no source: not a subagent's or an MCP call's).
 	// Skipped while nothing is open, since the store changes on every subagent step.
@@ -754,6 +807,7 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 	// not awaited.
 	hoo.on("session_shutdown", () => {
 		stopTodos();
+		attachments.clear();
 		const closing = session;
 		session = undefined;
 		// Nothing is left to click through to, so nothing stays pinned. The UI may

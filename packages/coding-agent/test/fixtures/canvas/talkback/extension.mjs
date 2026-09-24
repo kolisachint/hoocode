@@ -18,6 +18,16 @@ const canvas = createCanvas({
 			handler: async (ctx) => ({ messageId: await session.send({ prompt: ctx.input.prompt, mode: ctx.input.mode }) }),
 		},
 		{ name: "heard", handler: () => heard },
+		{
+			name: "attach",
+			handler: async (ctx) => {
+				await session.rpc.extensions.sendAttachmentsToMessage({
+					instanceId: ctx.input.instanceId ?? ctx.instanceId,
+					attachments: [{ type: "extension_context", title: ctx.input.title, payload: ctx.input.payload ?? null }],
+				});
+				return { attached: true };
+			},
+		},
 	],
 	open: () => ({ title: "Talkback" }),
 });

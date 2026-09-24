@@ -44,9 +44,11 @@ for its declarations **before** stopping the old process, so an edit that does
 not run leaves the canvas you are looking at exactly as it was and reports the
 error instead.
 
-Instances keep their ids and the input they were opened with, but each gets a
-**new url** — the extension binds a new port and mints a new token on every
-open — so the previous browser tab is dead and the replacement url is printed.
+Instances keep their ids and the input they were opened with. Whether the url
+survives is up to the extension: most bind a new port and mint a new token on
+every open, so the previous browser tab is dead and the replacement url is
+printed. A canvas that keeps its port and token across a reload (parking them
+on close and rebinding on open) keeps the person's tab working.
 
 ## Discovery
 
@@ -200,6 +202,25 @@ Events cost nothing unless a canvas subscribes to them. Other event types are
 never sent. A canvas that also runs in a host without `send` or `on` should
 check they exist before calling them.
 
+**Context for the person's next message.** A person often types in the
+terminal about something they just selected on the canvas ("make this blue").
+The SDK's `session.rpc.extensions.sendAttachmentsToMessage` lets a canvas offer
+that selection:
+
+```js
+await session.rpc.extensions.sendAttachmentsToMessage({
+	instanceId: ctx.instanceId,
+	attachments: [{ type: "extension_context", title: '2 selected on "Flow"', payload: { cell_ids: ["a", "b"] } }],
+});
+```
+
+hoocode shows it as a pill above the prompt ("goes with your next message") and
+appends it to the person's next message as an `<extension_context>` block, then
+drops it. It never reaches the model on its own. Each push replaces the
+extension's previous one, and `attachments: []` withdraws it. Only
+`extension_context` entries are used, and payloads are cut at 4,000 characters.
+An `instanceId` the extension does not own is dropped.
+
 ## Making a canvas agents can use well
 
 For canvas authors. The agent learns everything from the declaration, so
@@ -246,7 +267,7 @@ Unit tests of the handlers catch most bugs; these catch the rest:
 | `[withheld: untrusted workspace]` | The canvas comes from repository content. `/plugin trust` if you trust this checkout. |
 | `/canvas open` says "cancelled" from an IDE or RPC host | Fixed. Upgrade hoocode; older builds read RPC's non-drawing UI as a cancel. |
 | `/plugin marketplace add /abs/path` says "Path not found" | Fixed. Upgrade hoocode; older builds joined an absolute path onto the workspace. |
-| The browser tab stopped updating after `reload_canvas` | Every reload binds a new port. Open the new url it printed. |
+| The browser tab stopped updating after `reload_canvas` | The canvas binds a new port on every open. Open the new url it printed. |
 | An action that runs in the person's browser fails at once | No tab is open on the canvas. Ask them to open the url pinned above the prompt. A good canvas waits while a tab is still loading, and says which of the two it is. |
 | A `[canvas <id>]` message appeared that you did not type | The canvas sent it with `session.send`, usually because you asked for help from the canvas itself. See [Talking back](#talking-back). |
 | The model sends `input` as a string | Handled: hoocode decodes JSON strings before validation. |

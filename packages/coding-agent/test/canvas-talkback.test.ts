@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { CANVAS_ATTACHMENT_MAX_CHARS, CanvasAttachments } from "../src/core/canvas/attachments.js";
 import { CanvasEventSource, toolTitle } from "../src/core/canvas/events.js";
 import {
 	CANVAS_FLUSH_RETRIES,
@@ -163,5 +164,28 @@ describe("canvas event source", () => {
 		expect(toolTitle("SearchCodebase", { query: "canvas inbox" })).toBe("SearchCodebase canvas inbox");
 		expect(toolTitle("mystery", {})).toBe("mystery");
 		expect(toolTitle("bash", { command: "x".repeat(200) }).length).toBeLessThanOrEqual(80);
+	});
+});
+
+describe("canvas attachments", () => {
+	it("renders pending context as extension_context blocks, once", () => {
+		const pending = new CanvasAttachments();
+		pending.set("drawio-canvas", [{ title: '2 shapes on "Flow"', payload: { cell_ids: ["a", "b"] } }], "i1");
+		expect(pending.list()).toHaveLength(1);
+		expect(pending.take()).toBe(
+			'<extension_context source="drawio-canvas" instance="i1" title="2 shapes on &quot;Flow&quot;">\n{"cell_ids":["a","b"]}\n</extension_context>',
+		);
+		expect(pending.take()).toBeUndefined();
+	});
+
+	it("replaces an extension's context, withdraws it when empty, and caps its size", () => {
+		const pending = new CanvasAttachments();
+		pending.set("a", [{ title: "old", payload: 1 }]);
+		pending.set("a", [{ title: "new", payload: "x".repeat(CANVAS_ATTACHMENT_MAX_CHARS + 10) }]);
+		expect(pending.list().map((item) => item.title)).toEqual(["new"]);
+		expect(pending.take()).toContain("[cut at");
+		pending.set("a", [{ title: "gone soon", payload: null }]);
+		pending.set("a", []);
+		expect(pending.take()).toBeUndefined();
 	});
 });

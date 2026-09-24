@@ -103,4 +103,41 @@ describe("canvas talking back through /canvas", () => {
 		// The canvas subscribed to session.idle and heard the agent_end above.
 		expect(await invoke(instanceId, "heard")).toContain("session.idle");
 	});
+
+	it(
+		"shows a canvas's attached context and sends it with the person's next message, once",
+		{ timeout: 30_000 },
+		async () => {
+			await command?.("open talkback", ctx);
+			const listing = await tools.get("list_canvas_capabilities")?.execute("call", {});
+			const instanceId = /"instanceId":\s*"([^"]+)"/.exec(listing?.content[0]?.text ?? "")?.[1] as string;
+			await invoke(instanceId, "attach", { title: '1 shape on "Flow": Start', payload: { cell_ids: ["start"] } });
+
+			const input = (text: string, source = "interactive") => {
+				let result: unknown;
+				for (const handler of handlers.get("input") ?? []) result = handler({ type: "input", text, source }, ctx);
+				return result as { action: string; text?: string };
+			};
+			// Another extension's message does not spend it.
+			expect(input("from a loop", "extension")).toEqual({ action: "continue" });
+			const sent = input("make this blue");
+			expect(sent.action).toBe("transform");
+			expect(sent.text).toContain("make this blue");
+			expect(sent.text).toContain(
+				`<extension_context source="talkback" instance="${instanceId}" title="1 shape on &quot;Flow&quot;: Start">`,
+			);
+			expect(input("and again")).toEqual({ action: "continue" });
+		},
+	);
+
+	it("drops an instance id the extension does not own", { timeout: 30_000 }, async () => {
+		await command?.("open talkback", ctx);
+		const listing = await tools.get("list_canvas_capabilities")?.execute("call", {});
+		const instanceId = /"instanceId":\s*"([^"]+)"/.exec(listing?.content[0]?.text ?? "")?.[1] as string;
+		await invoke(instanceId, "attach", { title: "spoofed", instanceId: "someone-elses" });
+		let result: { text?: string } | undefined;
+		for (const handler of handlers.get("input") ?? [])
+			result = handler({ type: "input", text: "hi", source: "interactive" }, ctx) as { text?: string };
+		expect(result?.text).toContain('<extension_context source="talkback" title="spoofed">');
+	});
 });

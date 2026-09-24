@@ -156,7 +156,7 @@ export type CanvasLogLevel = "info" | "warning" | "error";
  *
  * `send`, `subscribe` and `event` were added without a bump: they are new
  * message types, not a change to existing ones, and the shim and the runner
- * ship together. They are the part of the SDK's `CopilotSession` that lets a
+ * ship together (`attach` likewise). They are the part of the SDK's `CopilotSession` that lets a
  * canvas talk to the agent and watch what it is doing; before them a canvas
  * could answer the agent but never start a conversation.
  */
@@ -294,6 +294,29 @@ export interface CanvasSubscribeMessage {
 	events: string[];
 }
 
+/**
+ * One `extension_context` attachment: a titled piece of context the host shows
+ * as a pill in its prompt and sends with the person's next message. The SDK's
+ * `ExtensionContextPushInput`, minus the `type` discriminator.
+ */
+export interface CanvasAttachment {
+	title: string;
+	payload: JsonValue;
+}
+
+/**
+ * Child forwards `session.rpc.extensions.sendAttachmentsToMessage`: context for
+ * the person's next message. The set replaces what this extension pushed before;
+ * an empty set withdraws it.
+ */
+export interface CanvasAttachMessage {
+	envelope: typeof CANVAS_ENVELOPE_VERSION;
+	type: "attach";
+	/** The canvas instance the context came from, when the extension named one. */
+	instanceId?: string;
+	attachments: CanvasAttachment[];
+}
+
 /** Host delivers a session event the child subscribed to. */
 export interface CanvasEventMessage {
 	envelope: typeof CANVAS_ENVELOPE_VERSION;
@@ -311,7 +334,8 @@ export type CanvasChildToHostMessage =
 	| CanvasResponseMessage
 	| CanvasErrorMessage
 	| CanvasSendMessage
-	| CanvasSubscribeMessage;
+	| CanvasSubscribeMessage
+	| CanvasAttachMessage;
 
 /** Error code used when a handler throws something that is not a `CanvasError`. */
 export const CANVAS_ERROR_CODE_INTERNAL = "internal_error";
@@ -358,6 +382,12 @@ export function isCanvasChildToHostMessage(value: unknown): value is CanvasChild
 			);
 		case "subscribe":
 			return Array.isArray(value.events) && value.events.every((event) => typeof event === "string");
+		case "attach":
+			return (
+				(value.instanceId === undefined || typeof value.instanceId === "string") &&
+				Array.isArray(value.attachments) &&
+				value.attachments.every((item) => isRecord(item) && typeof item.title === "string")
+			);
 		default:
 			return false;
 	}

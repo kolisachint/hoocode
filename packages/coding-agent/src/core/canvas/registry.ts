@@ -31,6 +31,7 @@ import * as path from "node:path";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 import type {
 	CanvasActionDeclaration,
+	CanvasAttachment,
 	CanvasDeclaration,
 	CanvasHostContext,
 	CanvasProviderOpenResult,
@@ -176,6 +177,11 @@ export interface CanvasRegistryEvents {
 	onLog?: (extensionId: string, message: string, level: string | undefined, ephemeral?: boolean) => void;
 	/** A `session.send` call from an extension: a message it wants the agent to see. */
 	onSend?: (extensionId: string, message: CanvasSendMessage) => void;
+	/**
+	 * Context an extension wants to go with the person's next message. `instanceId`
+	 * is set only when it names one of that extension's own open instances.
+	 */
+	onAttach?: (extensionId: string, attachments: CanvasAttachment[], instanceId: string | undefined) => void;
 	/** A non-protocol stdout line — almost always a stray `console.log`. */
 	onStray?: (extensionId: string, line: string) => void;
 	/** The child's stderr. */
@@ -474,6 +480,9 @@ export class CanvasRegistry {
 			try {
 				const result = (await next.process.open(
 					{
+						// Without the context a reloaded canvas lost its working directory,
+						// and every file action after a reload failed where it had worked.
+						...this.requestContext(),
 						sessionId: extensionId,
 						extensionId,
 						canvasId: instance.canvasId,
@@ -696,6 +705,15 @@ export class CanvasRegistry {
 			// a second voice for one canvas.
 			onSend: (message) => {
 				if (this.children.get(extension.id)?.process === spawned) this.options.onSend?.(extension.id, message);
+			},
+			onAttach: (message) => {
+				if (this.children.get(extension.id)?.process !== spawned) return;
+				// Provenance is checked, as upstream does: an instance id the extension
+				// does not own is dropped rather than trusted.
+				const owned =
+					message.instanceId !== undefined &&
+					this.instancesOf(extension.id).some((instance) => instance.instanceId === message.instanceId);
+				this.options.onAttach?.(extension.id, message.attachments, owned ? message.instanceId : undefined);
 			},
 			onStray: (line) => this.options.onStray?.(extension.id, line),
 			onStderr: (chunk) => this.options.onStderr?.(extension.id, chunk),

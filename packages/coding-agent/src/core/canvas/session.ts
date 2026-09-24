@@ -353,6 +353,7 @@ export class CanvasSession {
 				agentDir: this.options.agentDir,
 				onLog: this.options.onLog,
 				onSend: this.options.onSend,
+				onAttach: this.options.onAttach,
 				onStray: this.options.onStray,
 				onStderr: this.options.onStderr,
 				onDiagnostic: this.options.onDiagnostic,

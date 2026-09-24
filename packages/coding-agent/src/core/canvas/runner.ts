@@ -23,6 +23,7 @@ import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import {
 	CANVAS_ENVELOPE_VERSION,
 	CANVAS_EVENT_WILDCARD,
+	type CanvasAttachMessage,
 	type CanvasChildToHostMessage,
 	CanvasMessageDecoder,
 	type CanvasProviderCloseRequest,
@@ -101,6 +102,8 @@ export interface CanvasRunnerOptions {
 	onLog?: (message: string, level: string | undefined, ephemeral: boolean | undefined) => void;
 	/** A `session.send` call from the extension: a message for the agent. */
 	onSend?: (message: CanvasSendMessage) => void;
+	/** Context the extension wants to go with the person's next message. */
+	onAttach?: (message: CanvasAttachMessage) => void;
 	/** A stdout line that was not protocol. Almost always a stray `console.log`. */
 	onStray?: (line: string) => void;
 	/** The child's stderr, which extensions use normally. */
@@ -202,6 +205,9 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 				return;
 			case "subscribe":
 				subscribed = new Set(message.events);
+				return;
+			case "attach":
+				options.onAttach?.(message);
 				return;
 			default: {
 				// A response for an id no longer pending is one whose caller stopped

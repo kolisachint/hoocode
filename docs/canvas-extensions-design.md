@@ -540,7 +540,10 @@ changed. The host decides when a message reaches the model (`core/canvas/inbox.t
 labelled in the transcript, latest-wins while the agent is busy, rate-limited
 steering, and at most three canvas-started turns before the person speaks.
 `core/canvas/events.ts` maps hoocode's agent lifecycle onto the upstream events and
-never forwards tool arguments. The user-facing contract is in
+never forwards tool arguments. `session.rpc.extensions.sendAttachmentsToMessage`
+is the fourth message type (`attach`): `extension_context` pills held in
+`core/canvas/attachments.ts`, shown above the prompt, and appended to the
+person's next message. The user-facing contract is in
 `packages/coding-agent/docs/canvas.md` → "Talking back".
 
 ---

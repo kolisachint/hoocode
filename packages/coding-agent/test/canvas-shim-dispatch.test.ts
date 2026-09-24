@@ -227,6 +227,23 @@ describe("canvas shim dispatch", () => {
 		expect(seen).toEqual(["typed:session.idle", "all:session.idle"]);
 	});
 
+	it("forwards extension_context attachments and ignores other kinds", async () => {
+		const session = await joinSession({ canvases: [board().canvas] }, streams);
+		await session.rpc.extensions.sendAttachmentsToMessage({
+			instanceId: "i1",
+			attachments: [
+				{ type: "extension_context", title: "2 shapes", payload: { ids: ["a"] } },
+				{ type: "file", title: "ignored" },
+			],
+		});
+		expect(streams.written[1]).toEqual({
+			envelope: CANVAS_ENVELOPE_VERSION,
+			type: "attach",
+			instanceId: "i1",
+			attachments: [{ title: "2 shapes", payload: { ids: ["a"] } }],
+		});
+	});
+
 	it("rejects two canvases declaring the same id", async () => {
 		await expect(joinSession({ canvases: [board().canvas, board().canvas] }, streams)).rejects.toThrow(
 			/declared more than once/,

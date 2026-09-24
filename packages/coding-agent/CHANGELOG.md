@@ -12,6 +12,11 @@
   a newer message from the same canvas replaces it. `immediate` steers at most
   once every 10 s. A canvas can start at most three turns before the person
   speaks. See `docs/canvas.md` → "Talking back".
+- **A canvas can attach context to the person's next message.** The SDK's
+  `session.rpc.extensions.sendAttachmentsToMessage` shows a pill above the prompt
+  (for example, what is selected on the canvas). The pill is appended to the next
+  message the person sends as an `<extension_context>` block, then dropped, so
+  "this" typed in the terminal can mean the canvas selection.
 
 ### Fixed
 
