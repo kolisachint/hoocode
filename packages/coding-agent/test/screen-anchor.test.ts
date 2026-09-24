@@ -30,16 +30,25 @@ function frameRows(harness: SurfaceHarness): string[] {
 		.map((line) => line.replace(/\s+$/, ""));
 }
 
-/** Let the render loop run, so the frame has been fitted to the screen. */
-async function settle(): Promise<void> {
+/**
+ * Let the render loop run, so the frame has been fitted to the screen. A fixed
+ * sleep alone raced on slow CI runners (a 39-row frame caught mid-refit), so
+ * after the minimum wait this polls until the frame is full height, and gives
+ * up after a deadline — the assertions that follow still decide pass or fail.
+ */
+async function settle(harness: SurfaceHarness): Promise<void> {
 	await new Promise((resolve) => setTimeout(resolve, 120));
+	const deadline = Date.now() + 3000;
+	while (frameRows(harness).length !== ROWS && Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 20));
+	}
 }
 
 describe("the app fills the screen", () => {
 	it("opens with the banner on the first row, the prompt on the floor, and the leftover rows between", async () => {
 		const harness = await createSurfaceHarness();
 		try {
-			await settle();
+			await settle(harness);
 			const rows = frameRows(harness);
 			expect(rows).toHaveLength(ROWS);
 			// The banner holds the first row and the prompt and footer the last
@@ -60,9 +69,9 @@ describe("the app fills the screen", () => {
 	it("puts a glimpse on the band directly above the prompt, not in the transcript", async () => {
 		const harness = await createSurfaceHarness();
 		try {
-			await settle();
+			await settle(harness);
 			await harness.submit("/name probe-name");
-			await settle();
+			await settle(harness);
 			const rows = frameRows(harness);
 			const prompt = rows.findIndex((row) => row.includes("❯"));
 			// The band is the row above the prompt's top border, and the only place
@@ -85,9 +94,9 @@ describe("the app fills the screen", () => {
 		// is what makes one readable against a transcript full of text.
 		const harness = await createSurfaceHarness();
 		try {
-			await settle();
+			await settle(harness);
 			await harness.submit("/chrome");
-			await settle();
+			await settle(harness);
 			const rows = frameRows(harness);
 			const prompt = rows.findIndex((row) => row.includes("❯"));
 			expect(rows[prompt - 2]).toContain("Chrome:");
@@ -104,9 +113,9 @@ describe("the app fills the screen", () => {
 	it("keeps the prompt on the floor once there is a conversation above it", async () => {
 		const harness = await createSurfaceHarness();
 		try {
-			await settle();
+			await settle(harness);
 			await harness.submit("hello");
-			await settle();
+			await settle(harness);
 			const rows = frameRows(harness);
 			// Never shorter than the screen: the fill gives back exactly what the
 			// conversation took, so the prompt does not walk down the terminal as

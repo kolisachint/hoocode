@@ -687,6 +687,21 @@ function supportsAdaptiveThinking(modelId: string): boolean {
 }
 
 /**
+ * Check if a model's thinking cannot be turned off (Fable 5/5.1, Opus 5.5).
+ * The API rejects `thinking: { type: "disabled" }` on these at every effort
+ * level; the only way to "turn thinking off" is to omit the parameter (which
+ * runs adaptive) and ask for the lowest effort.
+ */
+function isThinkingAlwaysOn(modelId: string): boolean {
+	return (
+		modelId.includes("fable-5") ||
+		modelId.includes("mythos-5") ||
+		modelId.includes("opus-5-5") ||
+		modelId.includes("opus-5.5")
+	);
+}
+
+/**
  * Default thinking display for adaptive-thinking models when the caller does
  * not specify one. Opus 4.8 and Opus 5 default to "omitted" (matching
  * Anthropic's own API default for Opus 4.7+): the model still reasons at full
@@ -897,7 +912,7 @@ function buildParams(
 	}
 
 	// Temperature is incompatible with extended thinking (adaptive or budget-based).
-	if (options?.temperature !== undefined && !options?.thinkingEnabled) {
+	if (options?.temperature !== undefined && !options?.thinkingEnabled && !isThinkingAlwaysOn(model.id)) {
 		params.temperature = options.temperature;
 	}
 
@@ -940,7 +955,12 @@ function buildParams(
 				};
 			}
 		} else if (options?.thinkingEnabled === false) {
-			params.thinking = { type: "disabled" };
+			if (isThinkingAlwaysOn(model.id)) {
+				// "disabled" is a 400 here: omit `thinking` and think as little as allowed.
+				params.output_config = { effort: "low" };
+			} else {
+				params.thinking = { type: "disabled" };
+			}
 		}
 	}
 
