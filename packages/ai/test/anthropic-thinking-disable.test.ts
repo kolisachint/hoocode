@@ -125,6 +125,35 @@ describe("Anthropic thinking disable payload", () => {
 		expect(payload.output_config).toBeUndefined();
 	});
 
+	it("omits thinking and asks for low effort on Claude Opus 5.5 when thinking is off", async () => {
+		// Regression: Opus 5.5 rejects thinking.type=disabled with a 400.
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-5-5"));
+
+		expect(payload.thinking).toBeUndefined();
+		expect(payload.output_config).toEqual({ effort: "low" });
+	});
+
+	it("omits thinking for github-copilot Claude Opus 5.5 when thinking is off", async () => {
+		const payload = await capturePayload(getModel("github-copilot", "claude-opus-5.5"));
+
+		expect(payload.thinking).toBeUndefined();
+		expect(payload.output_config).toEqual({ effort: "low" });
+	});
+
+	it("still sends thinking.type=disabled for Claude Opus 5 when thinking is off", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-5"));
+
+		expect(payload.thinking).toEqual({ type: "disabled" });
+		expect(payload.output_config).toBeUndefined();
+	});
+
+	it("uses adaptive thinking with the requested effort on Claude Opus 5.5", async () => {
+		const payload = await capturePayload(getModel("anthropic", "claude-opus-5-5"), { reasoning: "high" });
+
+		expect(payload.thinking).toEqual({ type: "adaptive", display: "omitted" });
+		expect(payload.output_config).toEqual({ effort: "high" });
+	});
+
 	it("uses adaptive thinking for Claude Opus 4.7 when reasoning is enabled", async () => {
 		const payload = await capturePayload(getModel("anthropic", "claude-opus-4-7"), { reasoning: "high" });
 

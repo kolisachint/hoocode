@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Thinking off no longer sends `thinking: {type: "disabled"}` to models that
+  cannot disable it (Claude Opus 5.5, Fable 5/5.1, Mythos 5/5.1), which the API
+  rejects with a 400. The parameter is omitted and effort is set to `low`, and
+  `temperature` is not sent to those models. Claude Opus 5 and older still get
+  `disabled`.
+
 ## [0.5.88] - 2026-09-24
 
 ## [0.5.87] - 2026-09-23
