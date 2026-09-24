@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Canvases can talk back.** A canvas extension can now call `session.send`
+  to ask the agent for something, and `session.on` to watch what the agent is
+  doing (turn start, a one-line intent, tool start and end, idle, the todo
+  list). Both follow the GitHub canvas SDK's names. A canvas's message shows in
+  the transcript labelled `[canvas <id>]`. While the agent is busy it waits, and
+  a newer message from the same canvas replaces it. `immediate` steers at most
+  once every 10 s. A canvas can start at most three turns before the person
+  speaks. See `docs/canvas.md` → "Talking back".
+- **A canvas can attach context to the person's next message.** The SDK's
+  `session.rpc.extensions.sendAttachmentsToMessage` shows a pill above the prompt
+  (for example, what is selected on the canvas). The pill is appended to the next
+  message the person sends as an `<extension_context>` block, then dropped, so
+  "this" typed in the terminal can mean the canvas selection.
+
+### Fixed
+
+- A reloaded canvas keeps its working directory. `reload_canvas` re-opened
+  instances without the session context, so file actions failed after a reload
+  that had worked before it.
+- A canvas's `session.log` warnings and errors are shown as warnings and errors,
+  not as info.
+
+### Removed
+
+- The draw.io canvas's own documentation and acceptance test. They belong to that
+  canvas's repository; hoocode's canvas docs describe the generic contract.
+
 ## [0.5.87] - 2026-09-23
 
 ### Fixed

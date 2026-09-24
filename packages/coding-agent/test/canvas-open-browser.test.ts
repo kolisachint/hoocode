@@ -16,7 +16,12 @@ import { hyperlinkAt } from "@kolisachint/hoocode-tui";
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.js";
 import { untrustWorkspace } from "../src/core/extensions/plugins/trust.js";
-import { CANVAS_LINKS_WIDGET, CanvasLinksBand, setupCanvas } from "../src/extensions/core/canvas.js";
+import {
+	CANVAS_LINKS_WIDGET,
+	CanvasAttachmentsBand,
+	CanvasLinksBand,
+	setupCanvas,
+} from "../src/extensions/core/canvas.js";
 import { initTheme, theme } from "../src/modes/interactive/theme/theme.js";
 import { canvasTestRuntime } from "./canvas-test-runtime.js";
 
@@ -213,5 +218,25 @@ describe("CanvasLinksBand", () => {
 		const rows = new CanvasLinksBand(() => many, theme).render(80);
 		expect(rows).toHaveLength(5);
 		expect(stripAnsi(rows[4] as string)).toContain("+2 more open");
+	});
+});
+
+describe("CanvasAttachmentsBand", () => {
+	beforeAll(() => initTheme("dark"));
+
+	it("shows each pill with its source and where it goes, within the width", () => {
+		const item = {
+			extensionId: "drawio-canvas",
+			instanceId: "i1",
+			title: `2 shapes on "Flow": ${"Start ".repeat(20)}`,
+			payload: null,
+		};
+		const rows = new CanvasAttachmentsBand(() => [item], theme).render(70);
+		expect(rows).toHaveLength(1);
+		const text = stripAnsi(rows[0] as string);
+		expect(text).toContain("drawio-canvas:");
+		expect(text).toContain("goes with your next message");
+		expect(text.length).toBeLessThanOrEqual(70);
+		expect(new CanvasAttachmentsBand(() => [], theme).render(70)).toEqual([]);
 	});
 });

@@ -529,6 +529,23 @@ visibly rather than half-working. Supporting them is a separate decision: hoocod
 already has its own tool and hook systems, so this is a mapping question, not a
 missing-feature question.
 
+**Messaging and events are now in.** A canvas in front of a person needs to
+start a conversation, not only answer one, and to show whether the agent is
+busy. The shim implements `session.send` and `session.on` from the SDK's
+`CopilotSession`, with upstream's names: `send({ prompt, mode })` and a subset of
+session events (`CANVAS_SESSION_EVENT_TYPES` in `protocol.ts`). On the wire they
+are three new envelope message types, `send` and `subscribe` from the child and
+`event` from the host. The envelope version stays 1 because nothing that existed
+changed. The host decides when a message reaches the model (`core/canvas/inbox.ts`):
+labelled in the transcript, latest-wins while the agent is busy, rate-limited
+steering, and at most three canvas-started turns before the person speaks.
+`core/canvas/events.ts` maps hoocode's agent lifecycle onto the upstream events and
+never forwards tool arguments. `session.rpc.extensions.sendAttachmentsToMessage`
+is the fourth message type (`attach`): `extension_context` pills held in
+`core/canvas/attachments.ts`, shown above the prompt, and appended to the
+person's next message. The user-facing contract is in
+`packages/coding-agent/docs/canvas.md` → "Talking back".
+
 ---
 
 ## 7. Actions are tool schemas, so they cost tokens

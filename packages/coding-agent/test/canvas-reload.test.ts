@@ -54,7 +54,7 @@ const session = await joinSession({
 					name: "read_state",
 					description: "Read the canvas state.",
 					inputSchema: { type: "object", properties: {} },
-					handler: (ctx) => ({ opened: instances.get(ctx.instanceId)?.input ?? null }),
+					handler: (ctx) => ({ opened: instances.get(ctx.instanceId)?.input ?? null, openedIn: instances.get(ctx.instanceId)?.cwd ?? null }),
 				},
 ${
 	options.extraAction
@@ -72,7 +72,7 @@ ${
 }			],
 			open: async (ctx) => {
 				const token = randomBytes(16).toString("base64url");
-				const entry = { input: ctx.input ?? null, title: null };
+				const entry = { input: ctx.input ?? null, title: null, cwd: ctx.session?.workingDirectory ?? null };
 				const server = createServer((req, res) => {
 					const url = new URL(req.url ?? "/", "http://127.0.0.1");
 					if (url.searchParams.get("token") !== token) {
@@ -188,14 +188,26 @@ describe("reloading a canvas", () => {
 
 	it("replays the input the instance was opened with, so a reload restores rather than resets", async () => {
 		const before = await registry.open(extension, "board", { seed: "kept" });
-		expect(await registry.invokeAction(before, "read_state")).toEqual({ opened: { seed: "kept" } });
+		expect(await registry.invokeAction(before, "read_state")).toMatchObject({ opened: { seed: "kept" } });
 
 		write(extensionSource({ body: "<p>version two" }));
 		const result = await registry.reload("board");
 
-		expect(await registry.invokeAction(result.reopened[0] as never, "read_state")).toEqual({
+		expect(await registry.invokeAction(result.reopened[0] as never, "read_state")).toMatchObject({
 			opened: { seed: "kept" },
 		});
+	});
+
+	/**
+	 * A reloaded instance used to be re-opened without the session context, so a
+	 * canvas that resolves files against the working directory lost it: every file
+	 * action after a reload failed where it had worked before.
+	 */
+	it("re-opens with the working directory, as the first open had", async () => {
+		const before = await registry.open(extension, "board");
+		expect(await registry.invokeAction(before, "read_state")).toMatchObject({ openedIn: cwd });
+		const result = await registry.reload("board");
+		expect(await registry.invokeAction(result.reopened[0] as never, "read_state")).toMatchObject({ openedIn: cwd });
 	});
 
 	/**

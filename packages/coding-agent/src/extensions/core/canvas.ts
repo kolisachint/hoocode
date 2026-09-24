@@ -30,6 +30,9 @@ import { canvasDesignGuidePath } from "../../core/builtin-skills.js";
 /** Canvas extensions are extensions, so they wear the extension glyph. */
 const GLYPH = CATEGORY_GLYPH.extensions;
 
+import { CanvasAttachments, type PendingCanvasAttachment } from "../../core/canvas/attachments.js";
+import { CanvasEventSource } from "../../core/canvas/events.js";
+import { CanvasInbox } from "../../core/canvas/inbox.js";
 import { isCanvasRefusal } from "../../core/canvas/lifecycle.js";
 import type { CanvasInstance } from "../../core/canvas/registry.js";
 import { CANVAS_HOMES, canvasBuildBrief, parseCanvasRequest, scaffoldCanvas } from "../../core/canvas/scaffold.js";
@@ -41,7 +44,8 @@ import {
 } from "../../core/canvas/session.js";
 import { getWorkspacePlatforms } from "../../core/extensions/plugins/formats/platform-targets.js";
 import { isWorkspaceTrusted, trustWorkspace } from "../../core/extensions/plugins/trust.js";
-import type { ExtensionAPI, ExtensionCommandContext } from "../../core/extensions/types.js";
+import type { ExtensionAPI, ExtensionCommandContext, ExtensionContext } from "../../core/extensions/types.js";
+import { taskStore } from "../../core/task-store.js";
 import { createCanvasToolDefinitions } from "../../core/tools/canvas.js";
 import { BorderedLoader } from "../../modes/interactive/components/bordered-loader.js";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
@@ -121,6 +125,35 @@ export class CanvasLinksBand implements Component {
 			rows.push(t.fg("dim", `   +${pinned.length - MAX_PINNED_ROWS} more open — /canvas list`));
 		}
 		return rows;
+	}
+}
+
+/** Widget key for the context canvases attached to the next message. */
+export const CANVAS_ATTACHMENTS_WIDGET = "canvas-attachments";
+
+/**
+ * The pills: context a canvas attached to the person's next message, shown
+ * above the prompt so it never reaches the model unseen. One row per pill.
+ */
+export class CanvasAttachmentsBand implements Component {
+	constructor(
+		private readonly items: () => readonly PendingCanvasAttachment[],
+		private readonly theme: Theme,
+	) {}
+
+	invalidate(): void {}
+
+	render(width: number): string[] {
+		const items = this.items();
+		if (items.length === 0 || width < 8) return [];
+		const t = this.theme;
+		const hint = "goes with your next message";
+		return items.slice(0, MAX_PINNED_ROWS).map((item) => {
+			const lead = ` ${t.fg("accent", "⧉")} ${t.fg("dim", `${item.extensionId}:`)} `;
+			const room = Math.max(8, width - visibleWidth(lead) - hint.length - 3);
+			const title = truncateToWidth(item.title, room);
+			return truncateToWidth(`${lead}${t.fg("text", title)}  ${t.fg("dim", hint)}`, width);
+		});
 	}
 }
 
@@ -210,6 +243,55 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 	let pinUi: ExtensionCommandContext["ui"] | undefined;
 	const browse = overrides?.openUrl ?? openUrl;
 
+	/**
+	 * Whether the agent is idle, read through the most recent context any handler
+	 * or command was given — the extension API has no session-wide handle for it.
+	 */
+	let isIdle: () => boolean = () => true;
+	const track = (ctx: ExtensionContext): void => {
+		isIdle = () => ctx.isIdle();
+	};
+
+	// A canvas talking back: `session.send` lands here, and the inbox decides when
+	// the agent sees it (see core/canvas/inbox.ts for why it is not simply "now").
+	const inbox = new CanvasInbox({
+		isIdle: () => isIdle(),
+		deliver: (text, deliverAs) => {
+			try {
+				void Promise.resolve(hoo.sendUserMessage(text, { deliverAs })).catch((error: unknown) =>
+					notify(
+						`A canvas message could not be delivered: ${error instanceof Error ? error.message : String(error)}`,
+						"warning",
+					),
+				);
+			} catch (error) {
+				notify(
+					`A canvas message could not be delivered: ${error instanceof Error ? error.message : String(error)}`,
+					"warning",
+				);
+			}
+		},
+		notify: (message) => notify(message, "info"),
+	});
+
+	// Context a canvas attached to the person's next message (the selection they
+	// mean by "this"), shown as pills above the prompt until it is sent.
+	const attachments = new CanvasAttachments();
+	const refreshAttachments = (): void => {
+		const ui = pinUi;
+		if (!ui) return;
+		ui.setWidget(
+			CANVAS_ATTACHMENTS_WIDGET,
+			attachments.list().length > 0
+				? (_tui, theme) => new CanvasAttachmentsBand(() => attachments.list(), theme)
+				: undefined,
+		);
+	};
+
+	// What the agent is doing, for canvases that listen (`session.on`). Emitting
+	// costs nothing until a canvas is open and has subscribed.
+	const events = new CanvasEventSource((event) => session?.emit(event));
+
 	const ensureSession = (ctx: ExtensionCommandContext): CanvasSession => {
 		notify = (message, type) => ctx.ui.notify(message, type);
 		if (ctx.hasUI) pinUi = ctx.ui;
@@ -220,7 +302,15 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 			resolveRuntime: overrides?.resolveRuntime,
 			// A canvas's own diagnostics are the user's business: a stray stdout line means
 			// its author reached for console.log, and a possible leaked port is worth saying.
-			onLog: (id, message) => notify(`[canvas ${id}] ${message}`, "info"),
+			onLog: (id, message, level) =>
+				notify(`[canvas ${id}] ${message}`, level === "warning" || level === "error" ? level : "info"),
+			onSend: (id, message) => {
+				inbox.submit(id, message.prompt, message.mode);
+			},
+			onAttach: (id, items, instanceId) => {
+				attachments.set(id, items, instanceId);
+				refreshAttachments();
+			},
 			onStray: (id, line) => notify(`[canvas ${id}] non-protocol stdout (use session.log): ${line}`, "warning"),
 			onDiagnostic: (id, message) => notify(`[canvas ${id}] ${message}`, "warning"),
 		});
@@ -669,11 +759,55 @@ export function setupCanvas(hoo: ExtensionAPI, overrides?: CanvasSetupOverrides)
 		},
 	});
 
+	// The agent's lifecycle, for canvases that listen, and for the inbox, which
+	// holds a canvas's message until the agent is free.
+	hoo.on("agent_start", (_event, ctx) => {
+		track(ctx);
+		events.turnStart();
+	});
+	hoo.on("agent_end", (_event, ctx) => {
+		track(ctx);
+		events.idle();
+		inbox.agentEnded();
+	});
+	hoo.on("tool_execution_start", (event, ctx) => {
+		track(ctx);
+		events.toolStart(event.toolCallId, event.toolName, event.args);
+	});
+	hoo.on("tool_execution_end", (event) => {
+		events.toolEnd(event.toolCallId, event.isError);
+	});
+	// Only the person resets the loop guard; other extensions' messages come in
+	// as "extension", like the canvases' own.
+	hoo.on("input", (event, ctx) => {
+		track(ctx);
+		if (event.source === "extension") return { action: "continue" };
+		inbox.personSpoke();
+		// The person's message carries what their canvases attached to it, once.
+		const context = attachments.take();
+		if (context === undefined) return { action: "continue" };
+		refreshAttachments();
+		return { action: "transform", text: `${event.text}\n\n${context}`, images: event.images };
+	});
+	// The main agent's todos (no source: not a subagent's or an MCP call's).
+	// Skipped while nothing is open, since the store changes on every subagent step.
+	const stopTodos = taskStore.subscribe(() => {
+		if (!session || session.instances().length === 0) return;
+		events.todos(
+			taskStore
+				.list()
+				.filter((task) => task.source === undefined)
+				.map((task) => ({ id: task.id, title: task.title, status: task.status })),
+		);
+	});
+
 	// Teardown on shutdown (§6): a browser tab gives no close signal, so without this
 	// every child and loopback port outlives the session. `session_shutdown` is where
 	// loop.ts stops its scheduler, and it is synchronous, so the dispose is fired and
 	// not awaited.
 	hoo.on("session_shutdown", () => {
+		stopTodos();
+		attachments.clear();
 		const closing = session;
 		session = undefined;
 		// Nothing is left to click through to, so nothing stays pinned. The UI may

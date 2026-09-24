@@ -31,11 +31,14 @@ import * as path from "node:path";
 import type { DiscoveredCanvasExtension } from "./discovery.js";
 import type {
 	CanvasActionDeclaration,
+	CanvasAttachment,
 	CanvasDeclaration,
 	CanvasHostContext,
 	CanvasProviderOpenResult,
 	CanvasReadyMessage,
+	CanvasSendMessage,
 	CanvasSessionContext,
+	CanvasSessionEvent,
 	JsonValue,
 } from "./protocol.js";
 import {
@@ -171,7 +174,14 @@ function diffActions(before: Map<string, string>, after: Map<string, string>): C
 /** Diagnostics the registry emits. The host decides how to surface them. */
 export interface CanvasRegistryEvents {
 	/** A `session.log` call from an extension. */
-	onLog?: (extensionId: string, message: string, level: string | undefined) => void;
+	onLog?: (extensionId: string, message: string, level: string | undefined, ephemeral?: boolean) => void;
+	/** A `session.send` call from an extension: a message it wants the agent to see. */
+	onSend?: (extensionId: string, message: CanvasSendMessage) => void;
+	/**
+	 * Context an extension wants to go with the person's next message. `instanceId`
+	 * is set only when it names one of that extension's own open instances.
+	 */
+	onAttach?: (extensionId: string, attachments: CanvasAttachment[], instanceId: string | undefined) => void;
 	/** A non-protocol stdout line — almost always a stray `console.log`. */
 	onStray?: (extensionId: string, line: string) => void;
 	/** The child's stderr. */
@@ -470,6 +480,9 @@ export class CanvasRegistry {
 			try {
 				const result = (await next.process.open(
 					{
+						// Without the context a reloaded canvas lost its working directory,
+						// and every file action after a reload failed where it had worked.
+						...this.requestContext(),
 						sessionId: extensionId,
 						extensionId,
 						canvasId: instance.canvasId,
@@ -522,6 +535,17 @@ export class CanvasRegistry {
 		this.children.delete(extensionId);
 		await child.process.terminate();
 		return true;
+	}
+
+	/**
+	 * Deliver a session event to every running extension that listens for it.
+	 *
+	 * Per extension, not per instance: `session.on` belongs to the extension's one
+	 * session, as in the SDK, and a child with several open instances hears each
+	 * event once. The runner drops it for a child that has not subscribed.
+	 */
+	emit(event: CanvasSessionEvent): void {
+		for (const child of this.children.values()) child.process.emit(event);
 	}
 
 	/** Every open instance. */
@@ -675,7 +699,22 @@ export class CanvasRegistry {
 			runtime: this.options.runtime,
 			requestTimeoutMs: this.options.requestTimeoutMs,
 			cwd: path.dirname(extension.dir),
-			onLog: (message, level) => this.options.onLog?.(extension.id, message, level),
+			onLog: (message, level, ephemeral) => this.options.onLog?.(extension.id, message, level, ephemeral),
+			// Only the registered child speaks for the extension: a reload's probe that
+			// sends before it is adopted, or the old child in its last moments, would be
+			// a second voice for one canvas.
+			onSend: (message) => {
+				if (this.children.get(extension.id)?.process === spawned) this.options.onSend?.(extension.id, message);
+			},
+			onAttach: (message) => {
+				if (this.children.get(extension.id)?.process !== spawned) return;
+				// Provenance is checked, as upstream does: an instance id the extension
+				// does not own is dropped rather than trusted.
+				const owned =
+					message.instanceId !== undefined &&
+					this.instancesOf(extension.id).some((instance) => instance.instanceId === message.instanceId);
+				this.options.onAttach?.(extension.id, message.attachments, owned ? message.instanceId : undefined);
+			},
 			onStray: (line) => this.options.onStray?.(extension.id, line),
 			onStderr: (chunk) => this.options.onStderr?.(extension.id, chunk),
 			// Only the child that is *currently registered* may clear the table. A

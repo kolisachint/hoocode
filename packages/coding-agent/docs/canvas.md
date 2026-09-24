@@ -44,9 +44,11 @@ for its declarations **before** stopping the old process, so an edit that does
 not run leaves the canvas you are looking at exactly as it was and reports the
 error instead.
 
-Instances keep their ids and the input they were opened with, but each gets a
-**new url** — the extension binds a new port and mints a new token on every
-open — so the previous browser tab is dead and the replacement url is printed.
+Instances keep their ids and the input they were opened with. Whether the url
+survives is up to the extension: most bind a new port and mint a new token on
+every open, so the previous browser tab is dead and the replacement url is
+printed. A canvas that keeps its port and token across a reload (parking them
+on close and rebinding on open) keeps the person's tab working.
 
 ## Discovery
 
@@ -117,14 +119,14 @@ looking at the same surface in their browser while you work.
    `inputSchema`s. Take `instanceId` from here; it stays the same across a
    reload.
 2. **Read, then act.** Call the canvas's read action before changing anything
-   the person may have touched. A canvas that tracks the person (drawio-canvas
-   does) refuses edits over work you have not seen.
+   the person may have touched. A canvas that tracks the person may refuse
+   edits over work you have not seen.
 3. **Batch.** Put many changes into one call when the action takes a list.
    The action itself is usually milliseconds; each extra call costs a whole
    model turn.
 4. **Read the refusal.** A failing action comes back as `code: message`, where
-   `code` is the canvas's own error code (`stale_cells`, `invalid_input`,
-   `no_editor`, …). The message says what to do next. A good canvas puts
+   `code` is the canvas's own error code (for example `invalid_input`). The
+   message says what to do next. A good canvas puts
    everything you need to retry into it, so resend straight away instead of
    re-reading.
 5. **Point the person at your work.** If the canvas has a `focus`-style action,
@@ -149,6 +151,75 @@ host overhead is a millisecond or two. What remains is the action itself:
 for each action in this session. Results over 8,000 characters are cut at that
 point and say so. Prefer the canvas's filtered reads (by id, by page) over
 reading everything.
+
+## Talking back
+
+A canvas can also start the conversation. The canvas SDK's session object has
+`send` and `on`, and hoocode implements the part of them a canvas needs:
+
+```js
+const session = await joinSession({ canvases: [canvas] });
+
+// Ask the agent for something. Resolves with a message id.
+await session.send({ prompt: "The person asked: tidy the selected shapes", mode: "enqueue" });
+
+// Watch what the agent is doing. Returns a function that stops listening.
+session.on("assistant.intent", (event) => showHint(event.data.intent));
+session.on("session.idle", () => showIdle());
+```
+
+**What the agent sees.** A sent message arrives as a user message labelled
+`[canvas <id>]`, so it shows in the transcript like anything the person types.
+When it reaches the agent is hoocode's decision, not the canvas's:
+
+- **Agent idle:** a turn starts.
+- **Agent busy:** the message waits for the turn to end. A later message from the
+  same canvas *replaces* the waiting one, so send your current state each time
+  ("3 open requests"), not a delta.
+- **`mode: "immediate"`** steers the running turn, at most once per canvas every
+  10 seconds; otherwise it waits like `enqueue`.
+- **No loops without a person.** A canvas can start at most 3 turns in a row
+  without the person saying anything. After that its message waits for the
+  person's next message, and the person is told once.
+
+Send only when the person asked for something, or when something they did
+clearly needs the agent. Sending on every edit costs the person a model turn
+each time.
+
+**What a canvas can hear.** `on(type, handler)` for one type, `on(handler)` for
+all of them. Names and fields are GitHub's session events. hoocode sends:
+
+| Event | `data` |
+|---|---|
+| `assistant.turn_start` | `turnId` |
+| `assistant.intent` | `intent`: one line on what the agent is doing, derived from the tool it is running; sent when it changes |
+| `tool.execution_start` | `toolCallId`, `toolName`, `toolTitle` (one line, never the arguments) |
+| `tool.execution_complete` | `toolCallId`, `success`, `toolTitle` |
+| `session.idle` | nothing |
+| `session.todos_changed` | `todos`: the agent's todo list as `{id, title, status}`; upstream sends this event empty |
+
+Events cost nothing unless a canvas subscribes to them. Other event types are
+never sent. A canvas that also runs in a host without `send` or `on` should
+check they exist before calling them.
+
+**Context for the person's next message.** A person often types in the
+terminal about something they just selected on the canvas ("make this blue").
+The SDK's `session.rpc.extensions.sendAttachmentsToMessage` lets a canvas offer
+that selection:
+
+```js
+await session.rpc.extensions.sendAttachmentsToMessage({
+	instanceId: ctx.instanceId,
+	attachments: [{ type: "extension_context", title: '2 selected on "Flow"', payload: { cell_ids: ["a", "b"] } }],
+});
+```
+
+hoocode shows it as a pill above the prompt ("goes with your next message") and
+appends it to the person's next message as an `<extension_context>` block, then
+drops it. It never reaches the model on its own. Each push replaces the
+extension's previous one, and `attachments: []` withdraws it. Only
+`extension_context` entries are used, and payloads are cut at 4,000 characters.
+An `instanceId` the extension does not own is dropped.
 
 ## Making a canvas agents can use well
 
@@ -180,14 +251,13 @@ Unit tests of the handlers catch most bugs; these catch the rest:
 - **A sweep.** Send every action right, wrong and strange input (wrong types,
   `null`, unknown fields, missing pages or ids, broken markup, path escapes,
   large batches), and fail on anything but a success or a coded refusal with a
-  usable message. drawio-canvas's `test/actions-sweep.mjs` is a template.
+  usable message.
 - **Through real hoocode.** Run `hoocode --mode rpc` with a scripted model: a
   small HTTP server speaking OpenAI chat completions, registered as a custom
   provider in `~/.hoocode/models.json` (see [Custom models](models.md)).
   Install the canvas with `/plugin marketplace add <path>` and
   `/plugin install`, open it with `/canvas open`, and drive a browser with
-  Playwright as the person. drawio-canvas's `scripts/e2e-hoocode.mjs` does
-  exactly this.
+  Playwright as the person.
 
 ## Troubleshooting canvases
 
@@ -197,12 +267,10 @@ Unit tests of the handlers catch most bugs; these catch the rest:
 | `[withheld: untrusted workspace]` | The canvas comes from repository content. `/plugin trust` if you trust this checkout. |
 | `/canvas open` says "cancelled" from an IDE or RPC host | Fixed. Upgrade hoocode; older builds read RPC's non-drawing UI as a cancel. |
 | `/plugin marketplace add /abs/path` says "Path not found" | Fixed. Upgrade hoocode; older builds joined an absolute path onto the workspace. |
-| The browser tab stopped updating after `reload_canvas` | Every reload binds a new port. Open the new url it printed. |
-| An action fails with `no_editor` | The action runs in the person's browser and no tab is open. Ask them to open the canvas url. A good canvas waits while a tab is still loading. |
+| The browser tab stopped updating after `reload_canvas` | The canvas binds a new port on every open. Open the new url it printed. |
+| An action that runs in the person's browser fails at once | No tab is open on the canvas. Ask them to open the url pinned above the prompt. A good canvas waits while a tab is still loading, and says which of the two it is. |
+| A `[canvas <id>]` message appeared that you did not type | The canvas sent it with `session.send`, usually because you asked for help from the canvas itself. See [Talking back](#talking-back). |
 | The model sends `input` as a string | Handled: hoocode decodes JSON strings before validation. |
-
-See [drawio-canvas](drawio-canvas.md) for a canvas built around all of the
-above.
 
 ## Authoring
 
@@ -228,4 +296,3 @@ hoocode ships one canvas of its own at `.agents/extensions/arrow-key-games/`
 
 - [Extensions](extensions.md) — in-process TypeScript extensions, which canvases are not
 - [Plugins](plugins.md) — distribution and the shared trust model
-- [drawio-canvas](drawio-canvas.md) — the reference collaborative canvas: draw.io that a person and the agent edit together

@@ -53,8 +53,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 
 - [MCP](mcp.md) - connect Model Context Protocol servers and their tools.
 - [Plugins](plugins.md) - install capabilities from marketplaces, and the trust model.
-- [Canvas](canvas.md) - interactive surfaces the agent drives: tools, working one, speeds, authoring, troubleshooting.
-- [drawio-canvas](drawio-canvas.md) - draw.io that a person and the agent edit together: install, actions, rules, speeds, and error codes.
+- [Canvas](canvas.md) - interactive surfaces the agent drives: tools, working one, talking back, speeds, authoring, troubleshooting.
 - [Subagent delegation](routing.md) - hand focused work to a separate agent.
 
 ## Customization
