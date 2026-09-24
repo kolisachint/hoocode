@@ -173,6 +173,60 @@ describe("canvas shim dispatch", () => {
 		]);
 	});
 
+	it("forwards session.send to the host with a message id and mode", async () => {
+		const session = await joinSession({ canvases: [board().canvas] }, streams);
+		const id = await session.send({ prompt: "tidy the selection", mode: "immediate" });
+		expect(streams.written[1]).toEqual({
+			envelope: CANVAS_ENVELOPE_VERSION,
+			type: "send",
+			messageId: id,
+			prompt: "tidy the selection",
+			mode: "immediate",
+		});
+		await session.send("plain string");
+		expect(streams.written[2]).toMatchObject({ type: "send", prompt: "plain string" });
+	});
+
+	it("refuses an empty session.send", async () => {
+		const session = await joinSession({ canvases: [board().canvas] }, streams);
+		await expect(session.send({ prompt: "  " })).rejects.toThrow(/non-empty prompt/);
+		expect(streams.written).toHaveLength(1);
+	});
+
+	it("tells the host the full set of subscribed event types as handlers come and go", async () => {
+		const session = await joinSession({ canvases: [board().canvas] }, streams);
+		const offIdle = session.on("session.idle", () => {});
+		const offIdleAgain = session.on("session.idle", () => {});
+		session.on("tool.execution_start", () => {});
+		expect(streams.written.slice(1)).toEqual([
+			{ envelope: CANVAS_ENVELOPE_VERSION, type: "subscribe", events: ["session.idle"] },
+			{ envelope: CANVAS_ENVELOPE_VERSION, type: "subscribe", events: ["session.idle", "tool.execution_start"] },
+		]);
+		offIdle();
+		expect(streams.written).toHaveLength(3);
+		offIdleAgain();
+		expect(streams.written[3]).toMatchObject({ type: "subscribe", events: ["tool.execution_start"] });
+	});
+
+	it("delivers events to typed and catch-all handlers, and survives a throwing one", async () => {
+		const session = await joinSession({ canvases: [board().canvas] }, streams);
+		const seen: string[] = [];
+		session.on("session.idle", () => {
+			throw new Error("canvas bug");
+		});
+		session.on("session.idle", (event) => seen.push(`typed:${event.type}`));
+		session.on((event) => seen.push(`all:${event.type}`));
+		streams.input.feed(
+			encodeCanvasMessage({
+				envelope: CANVAS_ENVELOPE_VERSION,
+				type: "event",
+				event: { id: "e1", timestamp: "t", parentId: null, ephemeral: true, type: "session.idle", data: {} },
+			}),
+		);
+		await settle();
+		expect(seen).toEqual(["typed:session.idle", "all:session.idle"]);
+	});
+
 	it("rejects two canvases declaring the same id", async () => {
 		await expect(joinSession({ canvases: [board().canvas, board().canvas] }, streams)).rejects.toThrow(
 			/declared more than once/,

@@ -12,7 +12,9 @@
  *
  * What this is not: the SDK's `joinSession` resolves to a full `CopilotSession`
  * (messaging, events, RPC passthrough, factories). This shim implements the
- * canvas surface and `log` only. `tools`, `hooks`, and `factories` are accepted
+ * canvas surface, `log`, and the part of messaging and events a canvas needs to
+ * talk back: `send` (a message for the agent) and `on` (a subset of session
+ * events, see `CANVAS_SESSION_EVENT_TYPES`). `tools`, `hooks`, and `factories` are accepted
  * and reported as unsupported so an extension that uses them fails visibly rather
  * than half-working (design doc §6.2). The canvas types themselves are held
  * structurally identical to the SDK's by
@@ -23,6 +25,7 @@ import {
 	CANVAS_ENVELOPE_VERSION,
 	CANVAS_ERROR_CODE_INTERNAL,
 	CANVAS_ERROR_CODE_UNKNOWN_TARGET,
+	CANVAS_EVENT_WILDCARD,
 	CANVAS_METHOD_CLOSE,
 	CANVAS_METHOD_INVOKE_ACTION,
 	CANVAS_METHOD_OPEN,
@@ -39,6 +42,8 @@ import {
 	type CanvasProviderInvokeActionRequest,
 	type CanvasProviderOpenRequest,
 	type CanvasProviderOpenResult,
+	type CanvasSendMode,
+	type CanvasSessionEvent,
 	encodeCanvasMessage,
 	isCanvasHostToChildMessage,
 	type JsonValue,
@@ -155,6 +160,16 @@ export interface JoinSessionConfig {
 	onPermissionRequest?: unknown;
 }
 
+/** The subset of the SDK's `MessageOptions` a canvas can use. */
+export interface CanvasShimMessageOptions {
+	prompt: string;
+	/** `enqueue` (default) waits for the agent's current work; `immediate` steers it. */
+	mode?: CanvasSendMode;
+}
+
+/** Handler for one session event. */
+export type CanvasShimEventHandler = (event: CanvasSessionEvent) => void;
+
 /**
  * The subset of the SDK's `CopilotSession` this shim provides. Deliberately small:
  * see the module header.
@@ -162,6 +177,16 @@ export interface JoinSessionConfig {
 export interface CanvasShimSession {
 	/** Log a message to the session timeline. */
 	log(message: string, options?: { level?: CanvasLogLevel; ephemeral?: boolean }): Promise<void>;
+	/**
+	 * Send a message to the agent. Resolves with a message id once the host has
+	 * it; the host decides when, and whether, it reaches the model.
+	 */
+	send(prompt: string): Promise<string>;
+	send(options: CanvasShimMessageOptions): Promise<string>;
+	/** Listen for one event type. Returns a function that stops listening. */
+	on(eventType: string, handler: CanvasShimEventHandler): () => void;
+	/** Listen for every event the host emits. Returns a function that stops listening. */
+	on(handler: CanvasShimEventHandler): () => void;
 }
 
 /** Streams the shim reads from and writes to. Injectable so tests need no child process. */
@@ -224,16 +249,36 @@ export async function joinSession(
 		unsupported: UNSUPPORTED_KEYS.filter((key) => config[key] !== undefined),
 	});
 
+	// Handlers by event type, `*` for all. The host is told the set of types with
+	// at least one handler, so it only serialises what somebody will read.
+	const handlers = new Map<string, Set<CanvasShimEventHandler>>();
+	const announce = (): void => {
+		send({ envelope: CANVAS_ENVELOPE_VERSION, type: "subscribe", events: [...handlers.keys()].sort() });
+	};
+	const deliver = (event: CanvasSessionEvent): void => {
+		for (const key of [event.type, CANVAS_EVENT_WILDCARD]) {
+			for (const handler of handlers.get(key) ?? []) {
+				// A throwing handler is the canvas's bug; it must not stop the others or
+				// take the dispatch loop down with it.
+				try {
+					handler(event);
+				} catch {}
+			}
+		}
+	};
+
 	const decoder = new CanvasMessageDecoder();
 	streams.input.setEncoding("utf8");
 	streams.input.on("data", (chunk: string) => {
 		for (const value of decoder.push(chunk).values) {
 			if (!isCanvasHostToChildMessage(value)) continue;
-			void dispatch(canvases, value.id, value.method, value.params, send);
+			if (value.type === "event") deliver(value.event);
+			else void dispatch(canvases, value.id, value.method, value.params, send);
 		}
 	});
 
-	return {
+	let nextMessage = 1;
+	const session: CanvasShimSession = {
 		log: async (message, options) => {
 			send({
 				envelope: CANVAS_ENVELOPE_VERSION,
@@ -243,7 +288,37 @@ export async function joinSession(
 				ephemeral: options?.ephemeral,
 			});
 		},
+		send: async (options: string | CanvasShimMessageOptions) => {
+			const { prompt, mode } = typeof options === "string" ? { prompt: options, mode: undefined } : options;
+			if (typeof prompt !== "string" || prompt.trim().length === 0) {
+				throw new CanvasError("invalid_input", "session.send needs a non-empty prompt.");
+			}
+			const messageId = `${streams.extensionId}-${nextMessage}`;
+			nextMessage += 1;
+			send({ envelope: CANVAS_ENVELOPE_VERSION, type: "send", messageId, prompt, mode });
+			return messageId;
+		},
+		on: (typeOrHandler: string | CanvasShimEventHandler, maybeHandler?: CanvasShimEventHandler) => {
+			const key = typeof typeOrHandler === "string" ? typeOrHandler : CANVAS_EVENT_WILDCARD;
+			const handler = typeof typeOrHandler === "string" ? maybeHandler : typeOrHandler;
+			if (!handler) throw new CanvasError("invalid_input", "session.on needs a handler.");
+			let set = handlers.get(key);
+			const first = !set;
+			if (!set) {
+				set = new Set();
+				handlers.set(key, set);
+			}
+			set.add(handler);
+			if (first) announce();
+			return () => {
+				const current = handlers.get(key);
+				if (!current?.delete(handler) || current.size > 0) return;
+				handlers.delete(key);
+				announce();
+			};
+		},
 	};
+	return session;
 }
 
 async function dispatch(

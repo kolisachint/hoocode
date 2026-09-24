@@ -168,3 +168,45 @@ describe("canvas runner", () => {
 		await expect(inFlight).rejects.toThrow(/exited|not running/);
 	});
 });
+
+describe("canvas runner: a canvas talking back", () => {
+	const TALKBACK = path.join(import.meta.dirname, "fixtures", "canvas", "talkback", "extension.mjs");
+	let running: CanvasExtensionProcess | undefined;
+
+	afterEach(async () => {
+		await running?.terminate();
+		running = undefined;
+	});
+
+	const params = { sessionId: "s1", extensionId: "talkback", canvasId: "talkback", instanceId: "i1" };
+	const idle = { id: "e1", timestamp: "t", parentId: null, ephemeral: true, data: {} } as const;
+
+	it("hands session.send to the host and delivers only the events the child subscribed to", async () => {
+		const sent: Array<{ prompt: string; mode?: string }> = [];
+		running = spawnCanvasExtension({
+			extensionId: "talkback",
+			entry: TALKBACK,
+			runtime: canvasTestRuntime(),
+			requestTimeoutMs: { "canvas.open": 20_000, "canvas.action.invoke": 20_000 },
+			onSend: (message) => sent.push({ prompt: message.prompt, mode: message.mode }),
+		});
+		await running.ready;
+		await running.open(params);
+
+		const asked = (await running.invokeAction({
+			...params,
+			actionName: "ask",
+			input: { prompt: "look at this", mode: "immediate" },
+		})) as {
+			messageId: string;
+		};
+		expect(asked.messageId).toMatch(/^talkback-\d+$/);
+		expect(sent).toEqual([{ prompt: "look at this", mode: "immediate" }]);
+
+		// The subscribe was written after ready; one action round trip later it has
+		// certainly been read, so emit order below is deterministic.
+		expect(running.emit({ ...idle, type: "tool.execution_start" })).toBe(false);
+		expect(running.emit({ ...idle, type: "session.idle" })).toBe(true);
+		expect(await running.invokeAction({ ...params, actionName: "heard" })).toEqual(["session.idle"]);
+	});
+});

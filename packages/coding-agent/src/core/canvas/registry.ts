@@ -35,7 +35,9 @@ import type {
 	CanvasHostContext,
 	CanvasProviderOpenResult,
 	CanvasReadyMessage,
+	CanvasSendMessage,
 	CanvasSessionContext,
+	CanvasSessionEvent,
 	JsonValue,
 } from "./protocol.js";
 import {
@@ -171,7 +173,9 @@ function diffActions(before: Map<string, string>, after: Map<string, string>): C
 /** Diagnostics the registry emits. The host decides how to surface them. */
 export interface CanvasRegistryEvents {
 	/** A `session.log` call from an extension. */
-	onLog?: (extensionId: string, message: string, level: string | undefined) => void;
+	onLog?: (extensionId: string, message: string, level: string | undefined, ephemeral?: boolean) => void;
+	/** A `session.send` call from an extension: a message it wants the agent to see. */
+	onSend?: (extensionId: string, message: CanvasSendMessage) => void;
 	/** A non-protocol stdout line — almost always a stray `console.log`. */
 	onStray?: (extensionId: string, line: string) => void;
 	/** The child's stderr. */
@@ -524,6 +528,17 @@ export class CanvasRegistry {
 		return true;
 	}
 
+	/**
+	 * Deliver a session event to every running extension that listens for it.
+	 *
+	 * Per extension, not per instance: `session.on` belongs to the extension's one
+	 * session, as in the SDK, and a child with several open instances hears each
+	 * event once. The runner drops it for a child that has not subscribed.
+	 */
+	emit(event: CanvasSessionEvent): void {
+		for (const child of this.children.values()) child.process.emit(event);
+	}
+
 	/** Every open instance. */
 	listInstances(): CanvasInstance[] {
 		return [...this.instances.values()];
@@ -675,7 +690,13 @@ export class CanvasRegistry {
 			runtime: this.options.runtime,
 			requestTimeoutMs: this.options.requestTimeoutMs,
 			cwd: path.dirname(extension.dir),
-			onLog: (message, level) => this.options.onLog?.(extension.id, message, level),
+			onLog: (message, level, ephemeral) => this.options.onLog?.(extension.id, message, level, ephemeral),
+			// Only the registered child speaks for the extension: a reload's probe that
+			// sends before it is adopted, or the old child in its last moments, would be
+			// a second voice for one canvas.
+			onSend: (message) => {
+				if (this.children.get(extension.id)?.process === spawned) this.options.onSend?.(extension.id, message);
+			},
 			onStray: (line) => this.options.onStray?.(extension.id, line),
 			onStderr: (chunk) => this.options.onStderr?.(extension.id, chunk),
 			// Only the child that is *currently registered* may clear the table. A

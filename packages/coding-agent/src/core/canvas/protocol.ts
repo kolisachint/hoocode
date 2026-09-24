@@ -6,7 +6,9 @@
  * `createCanvas`/`joinSession` API is one of five language wrappers over the same
  * JSON-RPC wire protocol, and that "the divergence is API ergonomics only". So
  * hoocode binds to the wire protocol, not to the Node sugar, and the drift
- * surface is the three provider methods below plus one version integer.
+ * surface is the three provider methods below plus one version integer — and,
+ * since envelope 2, the slice of `CopilotSession` a canvas uses to talk back:
+ * `send` and `on` (see {@link CanvasSendMessage}, {@link CanvasSessionEvent}).
  *
  * Everything a third-party canvas can observe lives in this file. If GitHub
  * moves the protocol, this file and `sdk-shim/` move; nothing else does.
@@ -151,8 +153,61 @@ export type CanvasLogLevel = "info" | "warning" | "error";
 /**
  * Host envelope version. Ours, not GitHub's — bumped only when the
  * runner↔shim framing changes.
+ *
+ * `send`, `subscribe` and `event` were added without a bump: they are new
+ * message types, not a change to existing ones, and the shim and the runner
+ * ship together. They are the part of the SDK's `CopilotSession` that lets a
+ * canvas talk to the agent and watch what it is doing; before them a canvas
+ * could answer the agent but never start a conversation.
  */
 export const CANVAS_ENVELOPE_VERSION = 1;
+
+/**
+ * Delivery mode for {@link CanvasSendMessage}, mirroring the SDK's
+ * `MessageOptions.mode`: `enqueue` waits for the agent to finish what it is
+ * doing, `immediate` steers the turn in progress.
+ */
+export type CanvasSendMode = "enqueue" | "immediate";
+
+/**
+ * Session event types a canvas may subscribe to, a subset of the SDK's
+ * `SessionEventType`. Names and payload fields are GitHub's; hoocode emits only
+ * these because they are the ones it can fill honestly, and a canvas that
+ * subscribes to another type simply never hears it — as it would from a host
+ * that never emits it.
+ */
+export const CANVAS_SESSION_EVENT_TYPES = [
+	"assistant.turn_start",
+	"assistant.intent",
+	"tool.execution_start",
+	"tool.execution_complete",
+	"session.idle",
+	"session.todos_changed",
+] as const;
+
+/** One of {@link CANVAS_SESSION_EVENT_TYPES}. */
+export type CanvasSessionEventType = (typeof CANVAS_SESSION_EVENT_TYPES)[number];
+
+/** Subscribe to every event type the host emits. */
+export const CANVAS_EVENT_WILDCARD = "*";
+
+/**
+ * A session event as it reaches a canvas: the SDK's `SessionEvent` envelope
+ * (`id`, `timestamp`, `parentId`, `ephemeral`, `type`, `data`).
+ *
+ * `data` carries GitHub's field names. Where hoocode adds a field upstream does
+ * not have, it is additive and documented at the emit site — for example
+ * `session.todos_changed`, which upstream sends empty and follows with an RPC
+ * read hoocode does not have, carries the list itself.
+ */
+export interface CanvasSessionEvent {
+	id: string;
+	timestamp: string;
+	parentId: string | null;
+	ephemeral: boolean;
+	type: CanvasSessionEventType;
+	data: { [key: string]: JsonValue };
+}
 
 /** Child announces itself and its canvases. Always the first message. */
 export interface CanvasReadyMessage {
@@ -209,15 +264,54 @@ export interface CanvasErrorMessage {
 	message: string;
 }
 
+/**
+ * Child forwards a `session.send` call: a message for the agent.
+ *
+ * Whether and when it reaches the model is the host's decision, not the
+ * canvas's — see `core/canvas/inbox.ts` for the policy that keeps a canvas
+ * from flooding a session.
+ */
+export interface CanvasSendMessage {
+	envelope: typeof CANVAS_ENVELOPE_VERSION;
+	type: "send";
+	/** Id the shim returned to the caller, so the two can be matched in logs. */
+	messageId: string;
+	prompt: string;
+	mode?: CanvasSendMode;
+}
+
+/**
+ * Child states the full set of event types it listens for.
+ *
+ * The whole set rather than a delta, so a lost or reordered message cannot
+ * leave the host forwarding events nobody wants. Sent whenever `session.on`
+ * adds the first handler for a type or removes the last one.
+ */
+export interface CanvasSubscribeMessage {
+	envelope: typeof CANVAS_ENVELOPE_VERSION;
+	type: "subscribe";
+	/** Event types, or {@link CANVAS_EVENT_WILDCARD}. */
+	events: string[];
+}
+
+/** Host delivers a session event the child subscribed to. */
+export interface CanvasEventMessage {
+	envelope: typeof CANVAS_ENVELOPE_VERSION;
+	type: "event";
+	event: CanvasSessionEvent;
+}
+
 /** Anything the host may send to a child. */
-export type CanvasHostToChildMessage = CanvasRequestMessage;
+export type CanvasHostToChildMessage = CanvasRequestMessage | CanvasEventMessage;
 
 /** Anything a child may send to the host. */
 export type CanvasChildToHostMessage =
 	| CanvasReadyMessage
 	| CanvasLogMessage
 	| CanvasResponseMessage
-	| CanvasErrorMessage;
+	| CanvasErrorMessage
+	| CanvasSendMessage
+	| CanvasSubscribeMessage;
 
 /** Error code used when a handler throws something that is not a `CanvasError`. */
 export const CANVAS_ERROR_CODE_INTERNAL = "internal_error";
@@ -240,6 +334,7 @@ export function isCanvasProviderMethod(value: unknown): value is CanvasProviderM
 /** Narrow a decoded value to a host→child message. */
 export function isCanvasHostToChildMessage(value: unknown): value is CanvasHostToChildMessage {
 	if (!isRecord(value) || !hasCurrentEnvelope(value)) return false;
+	if (value.type === "event") return isRecord(value.event) && typeof value.event.type === "string";
 	return value.type === "request" && typeof value.id === "number" && isCanvasProviderMethod(value.method);
 }
 
@@ -255,6 +350,14 @@ export function isCanvasChildToHostMessage(value: unknown): value is CanvasChild
 			return typeof value.id === "number";
 		case "error":
 			return typeof value.id === "number" && typeof value.code === "string" && typeof value.message === "string";
+		case "send":
+			return (
+				typeof value.messageId === "string" &&
+				typeof value.prompt === "string" &&
+				(value.mode === undefined || value.mode === "enqueue" || value.mode === "immediate")
+			);
+		case "subscribe":
+			return Array.isArray(value.events) && value.events.every((event) => typeof event === "string");
 		default:
 			return false;
 	}

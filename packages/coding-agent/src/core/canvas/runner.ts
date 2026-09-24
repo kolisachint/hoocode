@@ -22,6 +22,7 @@
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process";
 import {
 	CANVAS_ENVELOPE_VERSION,
+	CANVAS_EVENT_WILDCARD,
 	type CanvasChildToHostMessage,
 	CanvasMessageDecoder,
 	type CanvasProviderCloseRequest,
@@ -29,6 +30,8 @@ import {
 	type CanvasProviderMethod,
 	type CanvasProviderOpenRequest,
 	type CanvasReadyMessage,
+	type CanvasSendMessage,
+	type CanvasSessionEvent,
 	encodeCanvasMessage,
 	isCanvasChildToHostMessage,
 	type JsonValue,
@@ -96,6 +99,8 @@ export interface CanvasRunnerOptions {
 	requestTimeoutMs?: Partial<Record<CanvasProviderMethod, number>>;
 	/** A `session.log` call from the extension. */
 	onLog?: (message: string, level: string | undefined, ephemeral: boolean | undefined) => void;
+	/** A `session.send` call from the extension: a message for the agent. */
+	onSend?: (message: CanvasSendMessage) => void;
 	/** A stdout line that was not protocol. Almost always a stray `console.log`. */
 	onStray?: (line: string) => void;
 	/** The child's stderr, which extensions use normally. */
@@ -114,6 +119,12 @@ export interface CanvasExtensionProcess {
 	open(params: CanvasProviderOpenRequest, options?: CanvasCallOptions): Promise<JsonValue>;
 	close(params: CanvasProviderCloseRequest, options?: CanvasCallOptions): Promise<JsonValue>;
 	invokeAction(params: CanvasProviderInvokeActionRequest, options?: CanvasCallOptions): Promise<JsonValue>;
+	/**
+	 * Deliver a session event, if the child has subscribed to its type. Returns
+	 * whether it was written. Unsubscribed events are dropped here, so a canvas that
+	 * listens for nothing costs the session nothing.
+	 */
+	emit(event: CanvasSessionEvent): boolean;
 	/** SIGTERM, then SIGKILL after {@link CANVAS_SHUTDOWN_GRACE_MS}. Resolves on exit. */
 	terminate(): Promise<void>;
 }
@@ -161,6 +172,8 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 	const decoder = new CanvasMessageDecoder();
 	let nextId = 1;
 	let exited = false;
+	/** Event types the child listens for, as its latest `subscribe` stated them. */
+	let subscribed = new Set<string>();
 	let readyResolve: ((value: CanvasReadyMessage) => void) | undefined;
 	let readyReject: ((reason: Error) => void) | undefined;
 	const ready = new Promise<CanvasReadyMessage>((resolve, reject) => {
@@ -183,6 +196,12 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 				return;
 			case "log":
 				options.onLog?.(message.message, message.level, message.ephemeral);
+				return;
+			case "send":
+				options.onSend?.(message);
+				return;
+			case "subscribe":
+				subscribed = new Set(message.events);
 				return;
 			default: {
 				// A response for an id no longer pending is one whose caller stopped
@@ -291,6 +310,11 @@ export function spawnCanvasExtension(options: CanvasRunnerOptions): CanvasExtens
 		open: (params, callOptions) => call("canvas.open", params as unknown as JsonValue, callOptions),
 		close: (params, callOptions) => call("canvas.close", params as unknown as JsonValue, callOptions),
 		invokeAction: (params, callOptions) => call("canvas.action.invoke", params as unknown as JsonValue, callOptions),
+		emit: (event) => {
+			if (exited || !(subscribed.has(event.type) || subscribed.has(CANVAS_EVENT_WILDCARD))) return false;
+			child.stdin.write(encodeCanvasMessage({ envelope: CANVAS_ENVELOPE_VERSION, type: "event", event }));
+			return true;
+		},
 		terminate: () =>
 			new Promise<void>((resolve) => {
 				if (exited) {

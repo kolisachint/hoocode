@@ -26,6 +26,7 @@ import {
 	renameCanvasExtension,
 } from "./lifecycle.js";
 import { pluginCanvasExtensions } from "./plugin-canvases.js";
+import type { CanvasSessionEvent } from "./protocol.js";
 import { type CanvasInstance, CanvasRegistry, type CanvasRegistryEvents, type CanvasReloadResult } from "./registry.js";
 import type { CanvasCallOptions } from "./runner.js";
 import { gateCanvasExtensions } from "./trust.js";
@@ -328,6 +329,11 @@ export class CanvasSession {
 		return this.registry;
 	}
 
+	/** Deliver a session event to the canvases listening for it. Free when none are open. */
+	emit(event: CanvasSessionEvent): void {
+		this.registry?.emit(event);
+	}
+
 	/** Advisory cleanup, driven by whoever owns the session clock. */
 	async reapIdle(): Promise<string[]> {
 		return (await this.registryOrUndefined()?.reapIdle()) ?? [];
@@ -346,6 +352,7 @@ export class CanvasSession {
 				cwd: this.options.cwd,
 				agentDir: this.options.agentDir,
 				onLog: this.options.onLog,
+				onSend: this.options.onSend,
 				onStray: this.options.onStray,
 				onStderr: this.options.onStderr,
 				onDiagnostic: this.options.onDiagnostic,

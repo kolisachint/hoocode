@@ -19,6 +19,7 @@
 
 import { readFileSync } from "node:fs";
 import * as path from "node:path";
+import type { MessageOptions as SdkMessageOptions, SessionEventType as SdkSessionEventType } from "@github/copilot-sdk";
 import type {
 	Canvas as SdkCanvas,
 	CanvasAction as SdkCanvasAction,
@@ -32,8 +33,11 @@ import {
 	CANVAS_METHOD_OPEN,
 	CANVAS_PROVIDER_METHODS,
 	CANVAS_SDK_PROTOCOL_VERSION,
+	CANVAS_SESSION_EVENT_TYPES,
 	type CanvasDeclaration,
 	CanvasMessageDecoder,
+	type CanvasSendMode,
+	type CanvasSessionEventType,
 	encodeCanvasMessage,
 	isCanvasChildToHostMessage,
 	isCanvasHostToChildMessage,
@@ -43,6 +47,7 @@ import {
 	type CanvasAction,
 	CanvasError,
 	type CanvasOptions,
+	type CanvasShimMessageOptions,
 	createCanvas,
 } from "../src/core/canvas/sdk-shim/index.js";
 
@@ -61,7 +66,19 @@ const _ourDeclarationSatisfiesSdk: SdkCanvasDeclaration = {} as CanvasDeclaratio
 const _canvasFromSdkOptions: Canvas = createCanvas({} as SdkCanvasOptions);
 /** Our `Canvas` must remain usable where the SDK's `Canvas` is expected. */
 const _shimCanvasSatisfiesSdk: SdkCanvas = {} as Canvas;
+/**
+ * `session.send` and `session.on`: the SDK's message options must be accepted by
+ * the shim, the delivery modes must be the SDK's, and every event type hoocode
+ * emits must be one the SDK defines — so a canvas written against upstream hears
+ * the same names here.
+ */
+const _sdkMessageOptionsSatisfyShim: CanvasShimMessageOptions = {} as SdkMessageOptions;
+const _sendModeIsSdks: NonNullable<SdkMessageOptions["mode"]> = "enqueue" as CanvasSendMode;
+const _eventTypesAreSdks: SdkSessionEventType = "session.idle" as CanvasSessionEventType;
 void [
+	_sdkMessageOptionsSatisfyShim,
+	_sendModeIsSdks,
+	_eventTypesAreSdks,
 	_sdkOptionsSatisfyShim,
 	_shimOptionsSatisfySdk,
 	_sdkActionSatisfiesShim,
@@ -99,6 +116,13 @@ describe("canvas protocol conformance with @github/copilot-sdk", () => {
 		const source = readFileSync(sdkFile("dist/generated/rpc.js"), "utf8");
 		for (const method of CANVAS_PROVIDER_METHODS) {
 			expect(source, `SDK no longer references the "${method}" provider method`).toContain(`"${method}"`);
+		}
+	});
+
+	it("emits only session event types the SDK defines", () => {
+		const source = readFileSync(sdkFile("dist/generated/session-events.d.ts"), "utf8");
+		for (const type of CANVAS_SESSION_EVENT_TYPES) {
+			expect(source, `SDK no longer defines the "${type}" session event`).toContain(`type: "${type}"`);
 		}
 	});
 
