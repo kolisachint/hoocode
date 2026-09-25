@@ -10,12 +10,16 @@ interface CapturedRequest {
 	body: Record<string, unknown>;
 }
 
-function createModel(baseUrl: string, compat?: Model<"anthropic-messages">["compat"]): Model<"anthropic-messages"> {
+function createModel(
+	baseUrl: string,
+	compat?: Model<"anthropic-messages">["compat"],
+	provider = "test-anthropic",
+): Model<"anthropic-messages"> {
 	return {
 		id: "claude-opus-4-7",
 		name: "Claude Opus 4.7",
 		api: "anthropic-messages",
-		provider: "test-anthropic",
+		provider,
 		baseUrl,
 		reasoning: true,
 		input: ["text"],
@@ -55,6 +59,7 @@ function writeEmptySseResponse(response: ServerResponse): void {
 async function captureAnthropicRequest(
 	compat: Model<"anthropic-messages">["compat"],
 	context: Context,
+	options: { provider?: string; sessionId?: string } = {},
 ): Promise<CapturedRequest> {
 	let capturedRequest: CapturedRequest | undefined;
 
@@ -70,10 +75,15 @@ async function captureAnthropicRequest(
 	const address = server.address() as AddressInfo;
 
 	try {
-		const stream = streamAnthropic(createModel(`http://127.0.0.1:${address.port}`, compat), context, {
-			apiKey: "test-key",
-			cacheRetention: "none",
-		});
+		const stream = streamAnthropic(
+			createModel(`http://127.0.0.1:${address.port}`, compat, options.provider),
+			context,
+			{
+				apiKey: "test-key",
+				cacheRetention: "none",
+				sessionId: options.sessionId,
+			},
+		);
 
 		for await (const event of stream) {
 			if (event.type === "done" || event.type === "error") break;
@@ -99,6 +109,16 @@ function getFirstTool(body: Record<string, unknown>): Record<string, unknown> {
 }
 
 describe("Anthropic eager tool input streaming compatibility", () => {
+	it("sends OpenCode Go's session header on the Anthropic Messages API", async () => {
+		const request = await captureAnthropicRequest(undefined, createContext(), {
+			provider: "opencode-go",
+			sessionId: "go-session-123",
+		});
+
+		expect(request.headers["x-opencode-session"]).toBe("go-session-123");
+		expect(request.headers["user-agent"]).toBe("hoocode");
+	});
+
 	it("sends per-tool eager_input_streaming by default", async () => {
 		const request = await captureAnthropicRequest(undefined, createContext());
 

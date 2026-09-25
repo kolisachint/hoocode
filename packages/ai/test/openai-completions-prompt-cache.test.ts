@@ -111,6 +111,18 @@ describe("openai-completions prompt caching", () => {
 		};
 	}
 
+	it("sends OpenCode Go's required session header even when cache retention is disabled", async () => {
+		const model = createModel({
+			provider: "opencode-go",
+			baseUrl: "https://opencode.ai/zen/go/v1",
+		});
+		const { headers, payload } = await captureRequest({ cacheRetention: "none", sessionId: "go-session-123" }, model);
+
+		expect(headers["x-opencode-session"]).toBe("go-session-123");
+		expect(headers["user-agent"]).toBe("hoocode");
+		expect(payload?.prompt_cache_key).toBeUndefined();
+	});
+
 	it("sets prompt_cache_key and 24h retention for direct OpenAI requests by default", async () => {
 		const { payload } = await captureRequest({ sessionId: "session-123" });
 

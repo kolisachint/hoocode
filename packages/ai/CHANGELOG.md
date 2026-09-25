@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- OpenCode Go requests now send the stable `x-opencode-session` header on all
+  supported API protocols, including when prompt caching is disabled. Go uses
+  this header for routing and session-level prompt caching.
+
 ## [0.5.89] - 2026-09-24
 
 ### Fixed

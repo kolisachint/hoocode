@@ -460,6 +460,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 					options?.headers,
 					copilotDynamicHeaders,
 					options?.maxRetryDelayMs,
+					model.provider === "opencode-go" ? options?.sessionId : undefined,
 				);
 				client = created.client;
 				isOAuth = created.isOAuthToken;
@@ -791,6 +792,7 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 	dynamicHeaders?: Record<string, string>,
 	maxRetryDelayMs?: number,
+	opencodeSessionId?: string,
 ): { client: Anthropic; isOAuthToken: boolean } {
 	// Adaptive thinking models (Opus 4.6, Sonnet 4.6) have interleaved thinking built-in.
 	// The beta header is deprecated on Opus 4.6 and redundant on Sonnet 4.6, so skip it.
@@ -815,6 +817,7 @@ function createClient(
 				{
 					accept: "application/json",
 					"anthropic-dangerous-direct-browser-access": "true",
+					...(opencodeSessionId ? { "x-opencode-session": opencodeSessionId, "user-agent": "hoocode" } : {}),
 					...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
 				},
 				model.headers,
@@ -841,6 +844,7 @@ function createClient(
 					"anthropic-beta": ["claude-code-20250219", "oauth-2025-04-20", ...betaFeatures].join(","),
 					"user-agent": `claude-cli/${claudeCodeVersion}`,
 					"x-app": "cli",
+					...(opencodeSessionId ? { "x-opencode-session": opencodeSessionId, "user-agent": "hoocode" } : {}),
 				},
 				model.headers,
 				optionsHeaders,
@@ -860,6 +864,7 @@ function createClient(
 			{
 				accept: "application/json",
 				"anthropic-dangerous-direct-browser-access": "true",
+				...(opencodeSessionId ? { "x-opencode-session": opencodeSessionId, "user-agent": "hoocode" } : {}),
 				...(betaFeatures.length > 0 ? { "anthropic-beta": betaFeatures.join(",") } : {}),
 			},
 			model.headers,

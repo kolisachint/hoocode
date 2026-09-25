@@ -88,6 +88,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
 				options?.headers,
 				cacheSessionId,
 				options?.maxRetryDelayMs,
+				model.provider === "opencode-go" ? options?.sessionId : undefined,
 			);
 			let params = buildParams(model, context, options);
 			const nextParams = await options?.onPayload?.(params, model);
@@ -161,6 +162,7 @@ function createClient(
 	optionsHeaders?: Record<string, string>,
 	sessionId?: string,
 	maxRetryDelayMs?: number,
+	opencodeSessionId?: string,
 ) {
 	if (!apiKey) {
 		if (!process.env.OPENAI_API_KEY) {
@@ -180,6 +182,11 @@ function createClient(
 			hasImages,
 		});
 		Object.assign(headers, copilotHeaders);
+	}
+
+	if (model.provider === "opencode-go") {
+		headers["user-agent"] = "hoocode";
+		if (opencodeSessionId) headers["x-opencode-session"] = opencodeSessionId;
 	}
 
 	if (sessionId) {
