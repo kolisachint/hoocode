@@ -33,6 +33,7 @@ Commands:
 cargo nextest run --workspace                      # or cargo test --workspace
 scripts/ci/fetch_hoocode_fixtures.sh               # fixtures some tests need (no build)
 cargo clippy --workspace --all-targets -- -D warnings
+scripts/eval/subagent_evals.py --include-slow # subagent reliability evals (real binary + mock LLM)
 python3 migration/check_dep_firewall.py
 migration/tui-parity/setup_hoocode.sh              # build pinned hoocode into target/hoocode-pin
 python3 migration/tui-parity/harness.py run all     # L2 parity; reports in target/tui-parity/

@@ -816,6 +816,7 @@ async fn execute_task(
         provider: provider.clone(),
         session_file: fork_session_file.clone(),
         task_id: Some(pool_task_id.clone()),
+        background: Some(is_background),
     };
     let use_warm = warm_subagents_enabled(&ProcessEnv) && fork_session_file.is_none();
 

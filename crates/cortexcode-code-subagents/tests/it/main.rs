@@ -3,6 +3,7 @@ mod depth;
 mod dispatch_evaluator;
 mod events;
 mod inbox;
+mod ledger;
 mod lifeguard;
 mod model_categories;
 mod output_verifier;

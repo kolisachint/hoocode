@@ -35,6 +35,7 @@ use crate::depth::{
 };
 use crate::dispatch::DispatchEvaluator;
 use crate::events::{classify_subagent_line, SubagentStdoutLine};
+use crate::ledger;
 use crate::lifeguard::{kill_process_tree, LifeguardEvent, SubagentLifeguard};
 use crate::model_categories::{resolve_model_reference, CategorySettings};
 use crate::output_verifier::OutputVerifier;
@@ -110,6 +111,9 @@ pub struct SubagentPoolTask {
     pub session_file: Option<PathBuf>,
     /// Internal: retry with the caller's model after the preferred one failed.
     pub use_inherited_model_fallback: bool,
+    /// The caller asked for a notification instead of an inline answer. Only
+    /// telemetry reads this: `mode` in the ledger.
+    pub background: Option<bool>,
 }
 
 /// Terminal status of a result.
@@ -182,6 +186,8 @@ pub struct DispatchOptions {
     pub session_file: Option<PathBuf>,
     /// Caller-supplied task id (default: a generated `dispatch-…` id).
     pub task_id: Option<String>,
+    /// Whether the caller wanted a background run (telemetry only).
+    pub background: Option<bool>,
 }
 
 /// `SubagentPoolOptions`.
@@ -533,7 +539,9 @@ impl SubagentPool {
     pub fn cancel(&self, task_id: &str) -> bool {
         let mut state = self.inner.state();
         if let Some(idx) = state.queue.iter().position(|t| t.task_id == task_id) {
-            state.queue.remove(idx);
+            let Some(task) = state.queue.remove(idx) else {
+                return false;
+            };
             drop(state);
             let result = SubagentResult {
                 task_id: task_id.to_string(),
@@ -543,6 +551,8 @@ impl SubagentPool {
             };
             self.inner
                 .emit("task_cancelled", json!({"task_id": task_id}));
+            self.inner
+                .record_attempt(&task, &result, 0, 0, 0, None, false);
             self.inner.resolve_waiter(task_id, result);
             return true;
         }
@@ -691,6 +701,7 @@ impl SubagentPool {
             inherited_model: options.inherited_model,
             session_file: options.session_file,
             cwd: Some(self.inner.cwd.clone()),
+            background: options.background,
             ..Default::default()
         })?;
         Ok(Begin {
@@ -1005,29 +1016,7 @@ impl PoolInner {
 
         // A definition's explicit model wins (unless `inherit`), else the
         // caller's; a category resolves to a concrete model or to nothing.
-        let explicit = def
-            .as_ref()
-            .and_then(|d| d.model.clone())
-            .filter(|m| !task.use_inherited_model_fallback && !m.is_empty() && m != MODEL_INHERIT);
-        // On the fallback attempt the pinned model is dropped and the
-        // dispatching session's own model is used. `task.model` is only that
-        // when the caller passed a concrete model; when it passed a
-        // `complexity` tier it is a category that resolves to the model that
-        // just failed, so prefer `inherited_model` whenever we have it.
-        let raw = if task.use_inherited_model_fallback {
-            task.inherited_model.clone().filter(|m| !m.is_empty())
-        } else {
-            None
-        }
-        .or(explicit)
-        .or_else(|| task.model.clone().filter(|m| !m.is_empty()));
-        let model = raw.and_then(|m| {
-            resolve_model_reference(
-                &m,
-                self.settings.as_ref(),
-                Some(self.available_models.as_slice()),
-            )
-        });
+        let model = self.resolve_task_model(task);
         if let Some(model) = &model {
             args.extend(["--model".into(), model.clone()]);
         }
@@ -1148,19 +1137,18 @@ impl PoolInner {
             Ok(child) => child,
             Err(_) if !is_retry => return self.start_task(task, true),
             Err(_) => {
+                let result = SubagentResult {
+                    task_id: task.task_id.clone(),
+                    error: Some("Spawn failed synchronously".into()),
+                    status: Some(ResultStatus::Failed),
+                    ..Default::default()
+                };
+                self.record_attempt(&task, &result, 0, 0, 0, None, false);
                 self.emit(
                     "task_failed",
                     json!({"task_id": task.task_id, "error": "Spawn failed synchronously"}),
                 );
-                self.resolve_waiter(
-                    &task.task_id,
-                    SubagentResult {
-                        task_id: task.task_id.clone(),
-                        error: Some("Spawn failed synchronously".into()),
-                        status: Some(ResultStatus::Failed),
-                        ..Default::default()
-                    },
-                );
+                self.resolve_waiter(&task.task_id, result);
                 self.state().budgets.remove(&task.task_id);
                 self.pull();
                 return;
@@ -1292,10 +1280,10 @@ impl PoolInner {
     ) -> bool {
         let task_id = task.task_id.as_str();
         let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
-        let (tokens_generated, budget_exceeded) = {
+        let (tokens_generated, budget_exceeded, peak_context) = {
             let mut budget = budget.lock().unwrap_or_else(|e| e.into_inner());
             budget.flush();
-            (budget.used(), budget.is_exceeded())
+            (budget.used(), budget.is_exceeded(), budget.peak_context())
         };
         let kill_reason = {
             let mut state = self.state();
@@ -1341,6 +1329,15 @@ impl PoolInner {
                     "[DISPATCH] agent={} task_id={task_id} {:?} after the preferred model failed; retrying with inherited model",
                     task.agent_type, reason
                 ));
+                self.record_attempt(
+                    task,
+                    &result,
+                    duration,
+                    tokens_generated,
+                    peak_context,
+                    code,
+                    false,
+                );
                 self.cleanup_retry_artifacts(task);
                 self.state().queue.push_front(SubagentPoolTask {
                     use_inherited_model_fallback: true,
@@ -1349,6 +1346,15 @@ impl PoolInner {
                 return true;
             }
 
+            self.record_attempt(
+                task,
+                &result,
+                duration,
+                tokens_generated,
+                peak_context,
+                code,
+                false,
+            );
             self.write_output_json(task_id, &result);
             let name = match reason {
                 KillReason::Stalled => "task_stalled",
@@ -1384,6 +1390,15 @@ impl PoolInner {
                 result.ok = false;
                 result.error = verification.reason.clone();
                 result.status = Some(ResultStatus::Failed);
+                self.record_attempt(
+                    task,
+                    &result,
+                    duration,
+                    tokens_generated,
+                    peak_context,
+                    code,
+                    false,
+                );
                 self.write_output_json(task_id, &result);
                 self.emit(
                     "task_failed",
@@ -1397,6 +1412,15 @@ impl PoolInner {
             // dispatch dir goes (resume only works for unsuccessful tasks).
             let _ =
                 std::fs::remove_dir_all(cortexcode_code_paths::dispatch_task_dir(&cwd, task_id));
+            self.record_attempt(
+                task,
+                &result,
+                duration,
+                tokens_generated,
+                peak_context,
+                code,
+                verification.valid,
+            );
             self.emit(
                 "task_done",
                 json!({"task_id": task_id, "agent_type": task.agent_type, "duration": duration, "tokens_generated": tokens_generated, "status": "complete"}),
@@ -1415,6 +1439,15 @@ impl PoolInner {
                 "[DISPATCH] agent={} task_id={task_id} preferred model failed; retrying with inherited model",
                 task.agent_type
             ));
+            self.record_attempt(
+                task,
+                &result,
+                duration,
+                tokens_generated,
+                peak_context,
+                code,
+                false,
+            );
             self.cleanup_retry_artifacts(task);
             self.state().queue.push_front(SubagentPoolTask {
                 use_inherited_model_fallback: true,
@@ -1422,6 +1455,15 @@ impl PoolInner {
             });
             return true;
         }
+        self.record_attempt(
+            task,
+            &result,
+            duration,
+            tokens_generated,
+            peak_context,
+            code,
+            false,
+        );
         self.write_output_json(task_id, &result);
         let error = result
             .error
@@ -1448,10 +1490,10 @@ impl PoolInner {
         stderr: String,
     ) -> bool {
         self.state().slots.remove(&task.task_id);
-        let tokens_generated = {
+        let (tokens_generated, peak_context) = {
             let mut budget = budget.lock().unwrap_or_else(|e| e.into_inner());
             budget.flush();
-            budget.used()
+            (budget.used(), budget.peak_context())
         };
         if !is_retry {
             self.start_task(task.clone(), true);
@@ -1467,6 +1509,15 @@ impl PoolInner {
             used_inherited_model_fallback: Some(task.use_inherited_model_fallback),
             ..Default::default()
         };
+        self.record_attempt(
+            task,
+            &result,
+            now_ms().saturating_sub(spawned_at),
+            tokens_generated,
+            peak_context,
+            None,
+            false,
+        );
         self.write_output_json(&task.task_id, &result);
         self.emit(
             "task_failed",
@@ -1516,6 +1567,83 @@ impl PoolInner {
         let _ = std::fs::remove_file(session);
         let _ = std::fs::remove_file(dir.join("result.json"));
         let _ = std::fs::remove_file(dir.join("output.json"));
+    }
+
+    /// The concrete model this task's `--model` resolves to, or `None` when the
+    /// child should resolve its own default. One implementation, shared by
+    /// `build_args` and the ledger, so a recorded model can never disagree with
+    /// the model the child actually ran on.
+    fn resolve_task_model(&self, task: &SubagentPoolTask) -> Option<String> {
+        let def = self.definition(&task.agent_type);
+        let explicit = def
+            .as_ref()
+            .and_then(|d| d.model.clone())
+            .filter(|m| !task.use_inherited_model_fallback && !m.is_empty() && m != MODEL_INHERIT);
+        // On the fallback attempt the pinned model is dropped and the
+        // dispatching session's own model is used. `task.model` is only that
+        // when the caller passed a concrete model; when it passed a
+        // `complexity` tier it is a category that resolves to the model that
+        // just failed, so prefer `inherited_model` whenever we have it.
+        let raw = if task.use_inherited_model_fallback {
+            task.inherited_model.clone().filter(|m| !m.is_empty())
+        } else {
+            None
+        }
+        .or(explicit)
+        .or_else(|| task.model.clone().filter(|m| !m.is_empty()));
+        raw.and_then(|m| {
+            resolve_model_reference(
+                &m,
+                self.settings.as_ref(),
+                Some(self.available_models.as_slice()),
+            )
+        })
+    }
+
+    /// One [`ledger`] line per attempt, from every terminal path, so the ledger
+    /// cannot miss a settle or count one twice. `verified` is the output
+    /// verifier's verdict, which is not the same as `result.ok`: a run cut
+    /// short by its deadline settles `partial` and is both ok and verified.
+    #[allow(clippy::too_many_arguments)]
+    fn record_attempt(
+        &self,
+        task: &SubagentPoolTask,
+        result: &SubagentResult,
+        duration_ms: u64,
+        tokens_generated: u64,
+        peak_context: u64,
+        exit_code: Option<i32>,
+        verified: bool,
+    ) {
+        let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
+        let resolved = self.resolve_task_model(task);
+        let attempt = ledger::attempt_from_result(
+            &task.task_id,
+            &task.agent_type,
+            task.background.unwrap_or(false),
+            crate::depth::current_subagent_depth(&crate::depth::ProcessEnv) as u8 + 1,
+            task.model.as_deref(),
+            resolved.as_deref(),
+            task.provider.as_deref(),
+            task.use_inherited_model_fallback,
+            result.status.map(|s| s.as_str()).unwrap_or("failed"),
+            result.ok,
+            verified,
+            duration_ms,
+            tokens_generated,
+            peak_context,
+            exit_code,
+            result.budget_exceeded,
+            result.error.as_deref(),
+        );
+        let confidence_source = result
+            .result_data
+            .as_ref()
+            .map(|m| Value::Object(m.clone()));
+        ledger::append(
+            &cwd,
+            &ledger::with_confidence(attempt, confidence_source.as_ref()),
+        );
     }
 
     fn resolve_waiter(&self, task_id: &str, result: SubagentResult) {

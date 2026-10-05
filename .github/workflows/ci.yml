@@ -90,6 +90,30 @@ jobs:
             exit 1
           fi
 
+  subagent-evals:
+    # Subagent reliability, measured end to end against a scripted mock
+    # provider (docs/design/subagent-evals.md). Non-blocking until it has run
+    # green on this runner a few times: a wall-clock-sensitive measurement
+    # should not be able to block an unrelated PR on its first day.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: evals
+      - run: cargo build --locked -p cortexcode-code-main
+      - name: Subagent evals (fast suite)
+        run: scripts/eval/subagent_evals.py --min-success 0.8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: subagent-evals-report
+          path: target/subagent-evals/
+          retention-days: 14
+
   firewall:
     runs-on: ubuntu-latest
     steps:

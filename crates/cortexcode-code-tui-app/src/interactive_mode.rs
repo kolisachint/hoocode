@@ -52,6 +52,7 @@ use cortexcode_code_settings::platform_targets::{get_workspace_platforms, set_pl
 use cortexcode_code_settings::{ChromeDensity, DoubleEscapeAction, EditorBorder, ToolOutputView};
 use cortexcode_code_subagents::agent_log::set_terminal_owned_by_tui;
 use cortexcode_code_subagents::instance::get_subagent_pool;
+use cortexcode_code_subagents::ledger;
 use cortexcode_code_subagents::pool::DispatchOptions;
 use cortexcode_code_task_store::{task_store, TaskStatus};
 use cortexcode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
@@ -3552,6 +3553,7 @@ impl Mode {
             BuiltinCommand::Export => self.handle_export_command(text),
             BuiltinCommand::Import => self.handle_import_command(text),
             BuiltinCommand::Subagent => self.handle_subagent_command(text),
+            BuiltinCommand::SubagentStats => self.handle_subagent_stats_command(text),
             BuiltinCommand::Pending(name) => {
                 // Wired by its own ledger task (see 11.4e).
                 self.show_status(&format!("/{name} is not available yet"));
@@ -4415,6 +4417,134 @@ impl Mode {
             };
             let _ = tx.send(AppEvent::SubagentDone(mode, outcome));
         });
+    }
+
+    /// `/subagent-stats [24h|7d|all]`: what the dispatch ledger says about
+    /// reliability. Read from `<cwd>/.cortexcode/dispatch/ledger.jsonl` — one
+    /// line per attempt — instead of from whatever dispatch dirs survived on
+    /// disk, which is the only evidence there was before the ledger.
+    fn handle_subagent_stats_command(&mut self, text: &str) {
+        let arg = text
+            .strip_prefix("/subagent-stats")
+            .map_or("", str::trim)
+            .split_whitespace()
+            .next()
+            .unwrap_or("24h")
+            .to_string();
+        let window_ms = match arg.as_str() {
+            "24h" | "day" => 24 * 60 * 60 * 1000,
+            "7d" | "week" => 7 * 24 * 60 * 60 * 1000,
+            "all" | "*" => 0,
+            other => {
+                self.show_status(&format!(
+                    "Unknown window \"{other}\". Usage: /subagent-stats [24h|7d|all]"
+                ));
+                return;
+            }
+        };
+        let label = match window_ms {
+            0 => "all retained attempts",
+            _ => "last recorded attempts",
+        };
+        let now = cortexcode_ai_types::now_ms().max(0) as u64;
+        let since = (window_ms > 0).then(|| now.saturating_sub(window_ms));
+        let cwd = self.session.cwd().to_path_buf();
+        let stats = ledger::stats(&cwd, since);
+        if stats.attempts == 0 {
+            self.show_status(&format!(
+                "No subagent attempts in {label}. Ledger: {}",
+                ledger::ledger_path(&cwd).display()
+            ));
+            return;
+        }
+        let t = theme();
+        let dim = |s: &str| t.fg("dim", s);
+        let secs = |ms: u64| {
+            if ms < 60_000 {
+                format!("{}s", ms / 1000)
+            } else if ms < 3_600_000 {
+                format!("{}m{:02}s", ms / 60_000, (ms % 60_000) / 1000)
+            } else {
+                format!("{}h{:02}m", ms / 3_600_000, (ms % 3_600_000) / 60_000)
+            }
+        };
+        let mut info = format!("{}\n\n", t.bold("Subagent reliability"));
+        info += &format!(
+            "{} {} attempts, {} usable ({:.0}%)\n",
+            dim("Window:"),
+            label,
+            stats.usable,
+            ledger::success_rate(&stats)
+        );
+        info += &format!(
+            "{} complete {} · partial {} · failed {} · timeout {} · stalled {} · cancelled {}\n",
+            dim("Status:"),
+            stats.complete,
+            stats.partial,
+            stats.failed,
+            stats.timeout,
+            stats.stalled,
+            stats.cancelled,
+        );
+        if stats.other > 0 {
+            info += &format!("{} {} unknown\n", dim("Status:"), stats.other);
+        }
+        info += &format!(
+            "{} median {} · p90 {} · max {}\n",
+            dim("Wall clock:"),
+            secs(stats.median_ms),
+            secs(stats.p90_ms),
+            secs(stats.max_ms),
+        );
+        info += &format!(
+            "{} {} generated\n",
+            dim("Tokens:"),
+            group_digits(stats.tokens_generated)
+        );
+        info += &format!(
+            "{} {} attempt(s) on the inherited model\n",
+            dim("Fallbacks:"),
+            stats.fallback_attempts
+        );
+        if !stats.by_agent.is_empty() {
+            info += &format!("\n{}\n", t.bold("By agent"));
+            for (agent, agent_stats) in &stats.by_agent {
+                // The mean, not a median: per-agent percentiles would need
+                // their own pass and the average is enough to spot an outlier.
+                let mean_ms = agent_stats.wall_ms / agent_stats.attempts.max(1) as u64;
+                info += &format!(
+                    "  {:<16} {} attempt(s) - {} usable - {} avg\n",
+                    agent,
+                    agent_stats.attempts,
+                    agent_stats.usable,
+                    secs(mean_ms),
+                );
+            }
+        }
+        let failures: Vec<String> = ledger::recent(&cwd, 500)
+            .into_iter()
+            .filter(|a| since.is_none_or(|s| a.ts >= s) && !a.ok)
+            .rev()
+            .take(5)
+            .map(|a| {
+                format!(
+                    "  {} · {} · {} · {}{}",
+                    a.agent_type,
+                    if a.status.is_empty() { "?" } else { &a.status },
+                    secs(a.duration_ms),
+                    a.task_id,
+                    a.error.map(|e| format!(" — {e}")).unwrap_or_default()
+                )
+            })
+            .collect();
+        if !failures.is_empty() {
+            info += &format!("\n{}\n", t.bold("Recent failures"));
+            for line in failures {
+                info += &format!("{line}\n");
+            }
+        }
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        self.add_to_chat(as_component(&handle(Text::new(info.trim_end(), 1, 0))));
     }
 
     /// A `/subagent` run ended. Its answer joins the session as a displayed
@@ -5937,6 +6067,7 @@ enum BuiltinCommand {
     Export,
     Import,
     Subagent,
+    SubagentStats,
     /// A built-in whose handler lands with a later task.
     Pending(&'static str),
 }
@@ -5970,6 +6101,7 @@ impl BuiltinCommand {
             "export" => Self::Export,
             "import" => Self::Import,
             "subagent" => Self::Subagent,
+            "subagent-stats" => Self::SubagentStats,
             _ => {
                 let builtin = BUILTIN_SLASH_COMMANDS.iter().find(|c| c.name == name)?;
                 Self::Pending(builtin.name)
@@ -5989,7 +6121,8 @@ impl BuiltinCommand {
             | Self::Cd
             | Self::Export
             | Self::Import
-            | Self::Subagent => true,
+            | Self::Subagent
+            | Self::SubagentStats => true,
             Self::Pending(_) => false,
             _ => false,
         }

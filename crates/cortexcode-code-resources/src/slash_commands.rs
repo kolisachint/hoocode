@@ -128,4 +128,9 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         name: "subagent",
         description: "Spawn a subagent directly: /subagent <mode> <task>",
     },
+    // Not in hoocode: the dispatch ledger and this command are ours.
+    BuiltinSlashCommand {
+        name: "subagent-stats",
+        description: "Subagent reliability from the dispatch ledger: /subagent-stats [24h|7d|all]",
+    },
 ];
