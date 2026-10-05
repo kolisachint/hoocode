@@ -176,6 +176,27 @@ recorded runs.**
   against a task corpus. Owner, 2026-10-03.
 - **Track 2 (in-process) not started.** Owner, 2026-10-03.
 
+## 5b. P1 hardening (2026-10-05)
+
+The eval suite (`subagent-evals.md`) made the remaining holes measurable, and
+this is what closed them. Every item is a Rust test in `tests/it/hardening.rs`
+or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
+
+| | Fix | Where |
+|---|---|---|
+| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 150s, load-scaled. A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore`, measured alive at 95s | `lifeguard.rs` |
+| H2 | **A reap is SIGTERM, grace, SIGKILL.** The child catches SIGTERM, writes its partial `result.json` and exits, and the pool already accepts a valid result from a reaped task, so a stall kill returns work instead of discarding it. The grace escalates for a child too wedged to catch a signal | `lifeguard.rs`, `runtime.rs` |
+| H3 | **`pid` is written.** `sweep_old_agents` has always read `dispatch/<task>/pid` to ask whether a run is alive; nothing ever wrote it, so reaping was age-only and a real orphan was never detected | `pool.rs` |
+| H4 | **Admission control.** The queue was unbounded: a confused parent could enqueue hundreds of runs that never finish. It is refused at four per slot, with a message that says so | `pool.rs` |
+| H5 | **Ageing instead of starvation.** Priority gained a step per minute waited, so a `code-review` cannot sit behind a stream of `explore` runs forever | `pool.rs` |
+| H6 | **Finished results are bounded** (64, oldest dropped). Each carries its captured stdout and stderr and nothing released them: unbounded growth over a long session | `pool.rs` |
+| H7 | **Inbox reconciliation.** A `running` record the pool has forgotten (a lost settle event) used to report `running` forever, in the roster and the panel. `TaskOutput` now settles them, with an age guard so a dispatch that has not started yet is never mistaken for a lost one | `inbox.rs`, `tools.rs` |
+| H8 | **The warm pool shares the caps.** It booted one worker per dispatch with no ceiling and told the lifeguard nothing. It now has the cold pool's in-flight and admission limits | `warm.rs` |
+| H9 | **Writes are not swallowed.** `write_file_atomic(result.json)` was `let _ =`: a full disk gave a clean child exit with no result and a parent told only that it failed. It returns, logs, and exits non-zero | `result.rs`, `runtime.rs` |
+| H10 | **Settings deep-merge.** `instance.rs` used `global.extend(project)`, which replaced the whole `modelCategories` object — a project setting one tier silently lost the other two | `instance.rs` |
+| H11 | **`complexity` is validated at the tool.** An unrecognised tier used to pass through as a model id and kill the child at startup; it now falls back to the parent's model with one log line | `tools.rs` |
+| H12 | **The ledger reports what the child reported.** A run SIGTERMed and wrapped up settles `complete` in the pool (the file is valid) while `result.json` says `partial`. The ledger now keeps `partial` visible | `pool.rs` |
+
 ## 6. Open: the in-process migration
 
 The original design here proposed replacing child processes with tokio tasks. It was not

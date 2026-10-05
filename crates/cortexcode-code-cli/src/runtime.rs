@@ -740,6 +740,9 @@ pub fn run_print_mode(
         })
     });
     let is_subagent = task_id.is_some();
+    // One writer per result.json: the normal path and the SIGTERM path race
+    // for it, and whichever gets there first is the one that counts.
+    let result_written = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let _sub = (mode == PrintMode::Json).then(|| {
         let header =
             cortexcode_code_session::FileEntry::Session(session.session_manager().header().clone());
@@ -773,6 +776,16 @@ pub fn run_print_mode(
         .deadline_ms
         .filter(|ms| is_subagent && *ms > 0)
         .map(|ms| deadline_wrap_up(&session, ms, reached_deadline.clone()));
+    // The lifeguard SIGTERMs before it kills. Both paths write the result file
+    // through `result_written`, so exactly one of them wins.
+    let _terminator = task_id.as_ref().map(|id| {
+        termination_handler(
+            session.clone(),
+            id.clone(),
+            reached_deadline.clone(),
+            result_written.clone(),
+        )
+    });
 
     // `session.prompt(initialMessage)` then each remaining message in turn.
     let mut initial_images = Some(initial_images);
@@ -837,8 +850,19 @@ pub fn run_print_mode(
         if !tree.is_empty() {
             result.task_tree = Some(tree);
         }
-        let cwd = std::path::PathBuf::from(session.session_manager().cwd());
-        cortexcode_code_subagents::result::write_subagent_result(&cwd, task_id, &result);
+        if result_written.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            // A SIGTERM arrived while this run was finishing; its partial result
+            // is already on disk and is the same run seen from the end.
+            exit_code = 0;
+        } else {
+            let cwd = std::path::PathBuf::from(session.session_manager().cwd());
+            if !cortexcode_code_subagents::result::write_subagent_result(&cwd, task_id, &result) {
+                // The result file is the whole contract with the parent.
+                // Losing it is a failure, not a silent success.
+                writeln!(err, "could not write result.json for task {task_id}")?;
+                exit_code = 1;
+            }
+        }
         if result.status == cortexcode_code_subagents::result::ResultStatus::Failed {
             exit_code = 1;
         }
@@ -1119,6 +1143,72 @@ const DEADLINE_WRAP_UP_LEAD: std::time::Duration = std::time::Duration::from_sec
 /// Unlike the turn cap, this is wall-clock and does not wait for a turn
 /// boundary: the steer lands wherever the run happens to be, and the model sees
 /// it at the start of its next turn.
+/// SIGTERM means "wrap up now": the pool's lifeguard sends it before it
+/// escalates to SIGKILL, and a subagent killed outright loses everything it had
+/// finished — the October 2026 incident in a new disguise.
+///
+/// A child parked inside a provider call will not read a steer, so this does
+/// not ask: it writes the partial result from whatever the session already
+/// holds and exits. `build_subagent_result` gives that a real summary and
+/// confidence 0.6, which clears the verifier's 0.5 floor, and the pool already
+/// accepts a valid result from a reaped task.
+///
+/// Returns `None` off unix (no SIGTERM to catch), or when another path already
+/// owns the result file.
+#[cfg(unix)]
+fn termination_handler(
+    session: AgentSession,
+    task_id: String,
+    reached_deadline: Arc<std::sync::atomic::AtomicBool>,
+    result_written: Arc<std::sync::atomic::AtomicBool>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    use tokio::signal::unix::{signal, SignalKind};
+    let handle = async_runtime().spawn(async move {
+        // Registered inside the task: installing a signal handler needs a
+        // reactor, and this function is called from synchronous code.
+        let Ok(mut stream) = signal(SignalKind::terminate()) else {
+            return;
+        };
+        stream.recv().await;
+        if result_written.swap(true, std::sync::atomic::Ordering::SeqCst) {
+            return;
+        }
+        // Claim it as cut short so the result settles `partial` with the
+        // deadline's wording rather than reading as a finished run.
+        reached_deadline.store(true, std::sync::atomic::Ordering::SeqCst);
+        let stats = session.get_session_stats();
+        let result = cortexcode_code_subagents::result::build_subagent_result(
+            &session.messages(),
+            Some(cortexcode_code_subagents::result::SubagentUsage {
+                input: stats.tokens.input as f64,
+                output: stats.tokens.output as f64,
+                cache_read: stats.tokens.cache_read as f64,
+                cache_write: stats.tokens.cache_write as f64,
+                cost: stats.cost,
+            }),
+            cortexcode_code_subagents::result::BuildSubagentResultOptions {
+                reached_max_turns: false,
+                reached_deadline: true,
+            },
+        );
+        let cwd = std::path::PathBuf::from(session.session_manager().cwd());
+        cortexcode_code_subagents::result::write_subagent_result(&cwd, &task_id, &result);
+        // The pool is watching for this exit; it already knows why.
+        std::process::exit(0);
+    });
+    Some(handle)
+}
+
+#[cfg(not(unix))]
+fn termination_handler(
+    _session: AgentSession,
+    _task_id: String,
+    _reached_deadline: Arc<std::sync::atomic::AtomicBool>,
+    _result_written: Arc<std::sync::atomic::AtomicBool>,
+) -> Option<tokio::task::JoinHandle<()>> {
+    None
+}
+
 fn deadline_wrap_up(
     session: &AgentSession,
     deadline_ms: u64,

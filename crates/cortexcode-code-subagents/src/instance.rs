@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use cortexcode_ai_types::Model;
-use cortexcode_code_settings::SettingsManager;
+use cortexcode_code_settings::{deep_merge_settings, SettingsManager};
 use cortexcode_code_task_store::{task_store, TaskAgentPatch};
 use serde_json::Value;
 
@@ -47,9 +47,11 @@ pub fn get_subagent_pool(cwd: &Path, available_models: &[Model]) -> SubagentPool
         return pool.clone();
     }
     let manager = SettingsManager::create(cwd, cortexcode_code_paths::agent_dir());
-    // Project settings shallow-override global ones.
-    let mut settings = manager.global_settings();
-    settings.extend(manager.project_settings());
+    // One-level deep merge, the same rule the rest of the codebase uses. A
+    // plain `extend` replaced the whole `modelCategories` object, so a project
+    // that set only `capable` silently lost the global `fast` and `standard`
+    // tiers and every `complexity` fell back to a derived default.
+    let settings = deep_merge_settings(&manager.global_settings(), &manager.project_settings());
     let pool = SubagentPool::new(SubagentPoolOptions {
         executable: spawn_command(),
         cwd: Some(cwd.to_path_buf()),

@@ -114,6 +114,9 @@ pub struct SubagentPoolTask {
     /// The caller asked for a notification instead of an inline answer. Only
     /// telemetry reads this: `mode` in the ledger.
     pub background: Option<bool>,
+    /// When this task entered the queue (epoch ms). Ageing uses it so a long
+    /// wait eventually outranks the priority tiers above it.
+    pub queued_at: Option<u64>,
 }
 
 /// Terminal status of a result.
@@ -202,6 +205,12 @@ pub struct SubagentPoolOptions {
     pub cwd: Option<PathBuf>,
     /// Default: the process environment.
     pub env: Option<HashMap<String, String>>,
+    /// Default: four times `max_concurrency`. A dispatch beyond it is refused
+    /// with a message the caller can act on, rather than queued into a session
+    /// that will never finish them.
+    pub max_queued: Option<usize>,
+    /// Finished results kept in memory for late pulls. Default [`MAX_COMPLETED`].
+    pub max_completed: Option<usize>,
     pub default_token_budget: Option<u64>,
     /// Non-default skill paths forwarded to every child via `--skill`.
     pub skill_paths: Vec<String>,
@@ -304,6 +313,10 @@ struct PoolState {
     slots: HashMap<String, SubagentSlot>,
     queue: VecDeque<SubagentPoolTask>,
     completed: HashMap<String, SubagentResult>,
+    /// Insertion order of `completed`, so the oldest can be dropped: a finished
+    /// result carries its captured stdout and stderr, and nothing used to
+    /// release them, so a long session grew without bound.
+    completed_order: VecDeque<String>,
     waiters: HashMap<String, Waiter>,
     budgets: HashMap<String, Arc<Mutex<TokenBudget>>>,
     kill_reasons: HashMap<String, KillReason>,
@@ -317,6 +330,8 @@ struct PoolState {
 struct PoolInner {
     id: u64,
     max_concurrency: usize,
+    max_queued: usize,
+    max_completed: usize,
     executable: PathBuf,
     prefix_args: Vec<String>,
     cwd: PathBuf,
@@ -335,6 +350,22 @@ struct PoolInner {
 pub struct SubagentPool {
     inner: Arc<PoolInner>,
 }
+
+/// The cold pool's default concurrency. The warm pool shares it: one ceiling
+/// for the process, not one per execution path.
+pub const DEFAULT_MAX_CONCURRENCY: usize = 5;
+
+/// Finished results held in memory. Beyond this the oldest is dropped; its
+/// dispatch dir and ledger line are the durable record.
+const MAX_COMPLETED: usize = 64;
+
+/// Queue slots per running slot before a dispatch is refused outright.
+pub const QUEUE_PER_SLOT: usize = 4;
+
+/// A queued task's effective priority improves by one step per this long spent
+/// waiting, so the two-tier priority cannot starve `code-review` behind a
+/// stream of `explore` runs (the finding from Q9 in the design review).
+const AGEING_STEP_MS: u64 = 60_000;
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -377,6 +408,15 @@ fn priority_of(agent_type: &str) -> u8 {
 }
 
 /// `Math.random().toString(36).slice(2, 8)`: six base-36 characters.
+/// Priority with ageing: higher wins, and a task gains one step per
+/// [`AGEING_STEP_MS`] spent waiting, so nothing in the queue can be starved
+/// indefinitely by a stream of higher-priority work.
+fn effective_priority(agent_type: &str, queued_at: u64, now: u64) -> i64 {
+    let base = priority_of(agent_type) as i64;
+    let waited = now.saturating_sub(queued_at) as i64;
+    base.saturating_add(waited / AGEING_STEP_MS as i64)
+}
+
 fn random_suffix() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -409,7 +449,11 @@ impl SubagentPool {
         static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let inner = Arc::new(PoolInner {
             id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            max_concurrency: options.max_concurrency.unwrap_or(5),
+            max_concurrency: options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY),
+            max_queued: options.max_queued.unwrap_or_else(|| {
+                options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * QUEUE_PER_SLOT
+            }),
+            max_completed: options.max_completed.unwrap_or(MAX_COMPLETED),
             executable: options.executable,
             prefix_args: options.prefix_args,
             env: options.env.unwrap_or_else(|| std::env::vars().collect()),
@@ -495,12 +539,23 @@ impl SubagentPool {
             {
                 return Err(PoolError(format!("Duplicate task_id: {}", task.task_id)));
             }
-            let p = priority_of(&task.agent_type);
-            match state
-                .queue
-                .iter()
-                .position(|t| priority_of(&t.agent_type) < p)
-            {
+            // Admission control: an unbounded queue is unbounded memory and a
+            // parent that will never see those results. Refusing loudly is
+            // something the caller can act on; a queue that grows is not.
+            if state.queue.len() >= self.inner.max_queued {
+                return Err(PoolError(format!(
+                    "Dispatch queue is full ({} waiting, {} running). Try again once one finishes.",
+                    state.queue.len(),
+                    state.slots.len()
+                )));
+            }
+            let mut task = task;
+            let now = now_ms();
+            task.queued_at.get_or_insert(now);
+            let p = effective_priority(&task.agent_type, task.queued_at.unwrap_or(now), now);
+            match state.queue.iter().position(|t| {
+                effective_priority(&t.agent_type, t.queued_at.unwrap_or(now), now) < p
+            }) {
                 Some(idx) => state.queue.insert(idx, task),
                 None => state.queue.push_back(task),
             }
@@ -766,6 +821,7 @@ impl SubagentPool {
             state.queue.clear();
             let waiters: Vec<Waiter> = state.waiters.drain().map(|(_, w)| w).collect();
             state.completed.clear();
+            state.completed_order.clear();
             state.budgets.clear();
             state.kill_reasons.clear();
             state.task_status.clear();
@@ -1156,6 +1212,11 @@ impl PoolInner {
         };
         let pid = child.id().unwrap_or(0);
         let spawned_at = now_ms();
+        // The sweep decides a dispatch dir is dead by reading this file. It has
+        // always read it; nothing ever wrote it, so reaping was age-only and a
+        // genuinely orphaned child was never detected by liveness.
+        let task_cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
+        write_pid_file(&task_cwd, &task.task_id, pid);
         self.state().slots.insert(
             task.task_id.clone(),
             SubagentSlot {
@@ -1260,10 +1321,16 @@ impl PoolInner {
             .process_line(line);
         match classify_subagent_line(line) {
             SubagentStdoutLine::Heartbeat => self.lifeguard.record_heartbeat(task_id),
-            SubagentStdoutLine::Progress(event) => self.emit(
-                "task_progress",
-                json!({"task_id": task_id, "agent_type": agent_type, "event": event}),
-            ),
+            SubagentStdoutLine::Progress(event) => {
+                // Forward progress, not liveness: a child whose heartbeats come
+                // from a timer can be parked inside a provider call forever, and
+                // this is the signal that tells the difference.
+                self.lifeguard.record_progress(task_id);
+                self.emit(
+                    "task_progress",
+                    json!({"task_id": task_id, "agent_type": agent_type, "event": event}),
+                );
+            }
             SubagentStdoutLine::Ignore => {}
         }
     }
@@ -1617,6 +1684,17 @@ impl PoolInner {
     ) {
         let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
         let resolved = self.resolve_task_model(task);
+        // The child's own verdict wins over the pool's: a run that was SIGTERMed
+        // and wrapped up on the way out settles `complete` here (the file is
+        // valid) while `result.json` says `partial`. Reporting `partial` keeps
+        // "cut short" visible in the stats instead of quietly counting as a
+        // finished run.
+        let reported = result
+            .result_data
+            .as_ref()
+            .and_then(|data| data.get("status"))
+            .and_then(Value::as_str)
+            .filter(|status| !status.is_empty());
         let attempt = ledger::attempt_from_result(
             &task.task_id,
             &task.agent_type,
@@ -1626,7 +1704,7 @@ impl PoolInner {
             resolved.as_deref(),
             task.provider.as_deref(),
             task.use_inherited_model_fallback,
-            result.status.map(|s| s.as_str()).unwrap_or("failed"),
+            reported.unwrap_or_else(|| result.status.map(|s| s.as_str()).unwrap_or("failed")),
             result.ok,
             verified,
             duration_ms,
@@ -1662,6 +1740,16 @@ impl PoolInner {
             return;
         }
         state.completed.insert(task_id.to_string(), result);
+        // Bounded: a finished result carries its captured streams, and nothing
+        // used to release them, so a long session grew until it hurt.
+        state.completed_order.push_back(task_id.to_string());
+        while state.completed_order.len() > self.max_completed {
+            let Some(oldest) = state.completed_order.pop_front() else {
+                break;
+            };
+            state.completed.remove(&oldest);
+            state.task_status.remove(&oldest);
+        }
     }
 }
 
@@ -1671,6 +1759,18 @@ fn js_code(code: Option<i32>) -> String {
 }
 
 /// The child's result.json summary, else the stderr tail, else the exit code.
+fn write_pid_file(cwd: &Path, task_id: &str, pid: u32) {
+    let dir = cortexcode_code_paths::dispatch_task_dir(cwd, task_id);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    if let Err(error) = std::fs::write(dir.join("pid"), pid.to_string()) {
+        agent_log(&format!(
+            "[DISPATCH] cannot write pid for {task_id}: {error}"
+        ));
+    }
+}
+
 fn derive_failure_reason(result: &SubagentResult) -> String {
     let summary = result
         .result_data

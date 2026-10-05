@@ -28,6 +28,15 @@ impl ModelCategory {
             _ => None,
         }
     }
+
+    /// The tier's name, as it appears in settings and in the tool schema.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fast => "fast",
+            Self::Standard => "standard",
+            Self::Capable => "capable",
+        }
+    }
 }
 
 /// `isModelCategory`.

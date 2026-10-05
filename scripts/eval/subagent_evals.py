@@ -198,11 +198,12 @@ SCENARIOS: list[Scenario] = [
         name="parent_stall_reaped",
         kind="parent",
         doc=(
-            "A child that never answers should be reaped by the lifeguard's stall watchdog in "
-            "about a minute. Measured 2026-10-05: it is not. The child keeps writing its "
-            "heartbeat while it is blocked inside a provider call, every byte counts as "
-            "liveness, so the only thing that can end this run is the hard per-agent deadline "
-            "- ten minutes for `explore`. A hang therefore costs ten minutes, not one."
+            "A child that never answers. Before 2026-10-05 this was the worst case in the "
+            "system: the child kept writing its heartbeat while blocked inside a provider call, "
+            "so the stall watchdog could not see it and only the ten-minute hard deadline ended "
+            "the run — measured alive at 95s with an empty ledger. Liveness is two-tier now "
+            "(silence, or no forward progress) and a reap is SIGTERM-then-grace-then-SIGKILL, so "
+            "the child gets to write its partial result on the way out."
         ),
         routes={
             "child": child_route([{"hang": True}]),
@@ -211,13 +212,13 @@ SCENARIOS: list[Scenario] = [
             ),
         },
         prompt="Describe the repository layout using a subagent.",
-        timeout_s=100,
+        # Reaped at ~150s (the no-progress threshold) plus the 30s SIGTERM grace.
+        timeout_s=260,
         slow=True,
-        known_issue=(
-            "the stall watchdog cannot see a child that is hung in a provider call, because "
-            "that child's heartbeats keep arriving"
-        ),
-        expect=Expect(ledger_statuses=["stalled"], ledger_ok=[False]),
+        # Reaped, and the child wrote its partial result on the way out: the
+        # ledger says `partial` because the child's own result.json says so,
+        # even though the pool's verdict on the file is `complete`.
+        expect=Expect(ledger_statuses=["partial"], ledger_ok=[True]),
     ),
     Scenario(
         name="child_deadline_wrapup_partial",

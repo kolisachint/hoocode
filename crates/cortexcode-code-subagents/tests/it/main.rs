@@ -2,6 +2,7 @@ mod agent_log_ts;
 mod depth;
 mod dispatch_evaluator;
 mod events;
+mod hardening;
 mod inbox;
 mod ledger;
 mod lifeguard;

@@ -17,7 +17,9 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use cortexcode_agent_types::{AgentToolCall, AgentToolResult};
 use cortexcode_ai_types::{AbortSignal, Content, Model};
 use cortexcode_code_agent_session::provider_health::get_provider_exhaustion;
-use cortexcode_code_resources::{load_agent_registry, LoadAgentRegistryOptions, TASK_TOOL_NAME};
+use cortexcode_code_resources::{
+    load_agent_registry, LoadAgentRegistryOptions, MODEL_INHERIT, TASK_TOOL_NAME,
+};
 use cortexcode_code_session::SessionManager;
 use cortexcode_code_task_store::{
     task_store, AgentStats, CreateTaskOptions, TaskAgentKind, TaskAgentPatch, TaskAgentState,
@@ -30,6 +32,8 @@ use crate::agent_log::agent_log;
 use crate::depth::{delegate_allow_list, is_delegate_allowed, ProcessEnv};
 use crate::inbox::{subagent_inbox, InboxRecord, TaskLifecycle};
 use crate::instance::get_subagent_pool;
+use crate::model_categories::ModelCategory;
+use crate::pool::TaskStatus as PoolTaskStatus;
 use crate::pool::{DispatchOptions, ResultStatus, SubagentPool, SubagentResult, TaskResult};
 use crate::warm::{
     get_warm_subagent_pool, warm_subagents_enabled, WarmDispatchOptions, WarmProgressCallback,
@@ -43,6 +47,11 @@ const TASK_BACKGROUND_AGENTS_PROMPT: &str =
     include_str!("../templates/prompts/task-background-agents.md");
 const TASK_BACKGROUND_NONE_PROMPT: &str =
     include_str!("../templates/prompts/task-background-none.md");
+
+/// How long a `running` record may sit with the pool saying nothing about it
+/// before `TaskOutput` stops believing it. Past the longest agent deadline
+/// (20 min) and the lifeguard's 4x load ceiling, plus a minute of slack.
+const RECONCILE_AGE_MS: u64 = 81 * 60 * 1000;
 
 /// Default wait for `TaskOutput(wait: true)`.
 const TASK_OUTPUT_DEFAULT_TIMEOUT_MS: u64 = 120_000;
@@ -780,9 +789,27 @@ async fn execute_task(
     };
     // `complexity` goes in as the model: a pinned agent model still wins, and
     // the pool resolves a category.
-    let dispatch_model = str_param(&params, "complexity")
-        .map(String::from)
-        .or_else(|| model_id.clone());
+    //
+    // Validated here, not left to the child. The tool schema rejects an
+    // unknown tier in the parent, but every path that skips the schema (a
+    // plugin, an extension, `/subagent`) used to pass the string straight
+    // through as a model id, and the child then died at startup on "Model not
+    // found" — a whole dispatch lost to a typo. An unrecognised tier now falls
+    // back to the parent's model with one warning, which is what the caller
+    // meant anyway.
+    let dispatch_model = match str_param(&params, "complexity").map(str::trim) {
+        Some(raw) if !raw.is_empty() => match ModelCategory::parse(raw) {
+            Some(tier) => Some(tier.as_str().to_string()),
+            None if raw == MODEL_INHERIT => None,
+            None => {
+                crate::agent_log::agent_log(&format!(
+                    "[TASK] unknown complexity tier {raw:?} for agent={subagent_type}; using the parent's model"
+                ));
+                model_id.clone()
+            }
+        },
+        _ => model_id.clone(),
+    };
     let is_background = params
         .get("background")
         .and_then(Value::as_bool)
@@ -1083,6 +1110,25 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
         subagent_inbox().observe(&get_subagent_pool(&cwd, &models));
     }
     let inbox = subagent_inbox();
+    // Before answering anything about a handle: a record the pool has already
+    // forgotten is reconciled here, so a lost settle event cannot leave the
+    // model (or the task panel) looking at a run that finished or died long ago.
+    if let Some(cwd) = ctx.as_ref().and_then(|c| c.cwd.clone()) {
+        let models = ctx
+            .as_ref()
+            .map(|c| c.available_models.clone())
+            .unwrap_or_default();
+        let pool = get_subagent_pool(&cwd, &models);
+        inbox.reconcile(
+            |task_id| {
+                matches!(
+                    pool.get_status(task_id),
+                    PoolTaskStatus::Running | PoolTaskStatus::Queued
+                )
+            },
+            RECONCILE_AGE_MS,
+        );
+    }
     let handle = str_param(&params, "task_id")
         .map(str::trim)
         .filter(|s| !s.is_empty())

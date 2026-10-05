@@ -2,11 +2,26 @@
 //! hard timeouts, and sweeps stale dispatch directories.
 //!
 //! A child must print `{"ping":true}` periodically (any stdout counts, see the
-//! pool). A child silent past the load-scaled threshold is killed with its
-//! whole process group and reported `stalled`; one past its hard timeout is
-//! reported `timeout`. Under load (several subagents, background MCP tools)
-//! both budgets widen, up to a ceiling, so a starved parent does not reap
-//! healthy children.
+//! pool). A child silent past the load-scaled threshold is reaped and reported
+//! `stalled`; one past its hard timeout is reported `timeout`. Under load
+//! (several subagents, background MCP tools) both budgets widen, up to a
+//! ceiling, so a starved parent does not reap healthy children.
+//!
+//! **Liveness is two-tier, because a ping is not evidence of progress.** A
+//! child blocked inside a provider call keeps its heartbeat timer running, so
+//! it looks alive forever: measured on 2026-10-05, a child waiting on a
+//! provider that never answered was still running at 95s with an empty ledger,
+//! and the only thing that would have ended it was the ten-minute hard
+//! deadline. Silence past [`HEARTBEAT_MISS_THRESHOLD_MS`] is therefore one
+//! signal, and *no forward progress* past [`PROGRESS_STALL_THRESHOLD_MS`] is
+//! the other; both reap the same way. The progress bar is generous because a
+//! recorded subagent turn took up to 65s.
+//!
+//! **Reaping is SIGTERM, grace, then SIGKILL.** A child that gets SIGTERM
+//! writes its partial `result.json` and exits (see `runtime.rs`), and the
+//! pool already accepts a valid result from a killed task, so a reap can now
+//! return real work. Before this, a SIGKILL on the spot discarded everything
+//! the child had done — the October incident, in a different disguise.
 //!
 //! Deviation: hoocode also hooks the parent's SIGINT/SIGTERM to shut children
 //! down gracefully; here the host calls [`SubagentLifeguard::graceful_shutdown`]
@@ -56,6 +71,14 @@ pub fn base_timeout_ms(agent_type: &str) -> u64 {
 }
 
 const HEARTBEAT_MISS_THRESHOLD_MS: u64 = 60_000;
+/// No `turn_end` / tool event for this long is a stall even if the child is
+/// still writing heartbeats. Recorded subagent turns ran up to 65s, so this
+/// sits well clear of a slow-but-working turn; it exists to catch a child
+/// parked inside a provider call, which no heartbeat ever will.
+pub const PROGRESS_STALL_THRESHOLD_MS: u64 = 150_000;
+/// How long a SIGTERM'd child may take to write its result and exit before the
+/// group is killed outright.
+pub const STALL_TERM_GRACE_MS: u64 = 30_000;
 const HEARTBEAT_CHECK_INTERVAL_MS: u64 = 5_000;
 const PARENT_SHUTDOWN_GRACE_MS: u64 = 5_000;
 /// Each additional concurrent task adds this fraction to both budgets.
@@ -128,8 +151,13 @@ struct State {
     base_timeout_ms: HashMap<String, u64>,
     last_check_at: u64,
     external_load: u64,
-    /// Reaped (kill sent) but not yet exited: not re-reported each tick.
+    /// Last forward progress (a turn or tool event), per task. Unlike
+    /// `last_heartbeat` this does not move on a ping.
+    last_progress: HashMap<String, u64>,
+    /// Reaped (SIGTERM sent) but not yet exited: not re-reported each tick,
+    /// and the grace timer that escalates to SIGKILL is held here.
     reaping: HashSet<String>,
+    grace_timers: HashMap<String, JoinHandle<()>>,
     disposed: bool,
 }
 
@@ -144,6 +172,8 @@ impl State {
 /// `SubagentLifeguard`.
 pub struct SubagentLifeguard {
     state: Mutex<State>,
+    /// SIGTERM-to-SIGKILL grace, overridable so tests need not wait 30s.
+    term_grace_ms: std::sync::atomic::AtomicU64,
     listeners: Mutex<Vec<Listener>>,
     check_task: Mutex<Option<JoinHandle<()>>>,
 }
@@ -158,6 +188,7 @@ impl SubagentLifeguard {
                 last_check_at: now_ms(),
                 ..Default::default()
             }),
+            term_grace_ms: std::sync::atomic::AtomicU64::new(STALL_TERM_GRACE_MS),
             listeners: Mutex::new(Vec::new()),
             check_task: Mutex::new(None),
         });
@@ -221,6 +252,7 @@ impl SubagentLifeguard {
             },
         );
         state.last_heartbeat.insert(task_id.to_string(), now);
+        state.last_progress.insert(task_id.to_string(), now);
         let base = base_timeout_ms(agent_type);
         state.started_at.insert(task_id.to_string(), now);
         state.base_timeout_ms.insert(task_id.to_string(), base);
@@ -250,6 +282,16 @@ impl SubagentLifeguard {
         }
     }
 
+    /// Record forward progress: a turn ended or a tool started or finished.
+    /// Unlike a heartbeat this cannot be produced by a timer alone, so it is
+    /// what the progress stall threshold watches.
+    pub fn record_progress(&self, task_id: &str) {
+        let mut state = self.state();
+        if state.processes.contains_key(task_id) {
+            state.last_progress.insert(task_id.to_string(), now_ms());
+        }
+    }
+
     /// The last heartbeat (epoch ms), if monitored.
     pub fn last_heartbeat_at(&self, task_id: &str) -> Option<u64> {
         self.state().last_heartbeat.get(task_id).copied()
@@ -265,6 +307,21 @@ impl SubagentLifeguard {
         self.state()
             .last_heartbeat
             .insert(task_id.to_string(), at_ms);
+    }
+
+    /// Test hook: backdate a task's last forward progress.
+    #[doc(hidden)]
+    pub fn set_last_progress_for_testing(&self, task_id: &str, at_ms: u64) {
+        self.state()
+            .last_progress
+            .insert(task_id.to_string(), at_ms);
+    }
+
+    /// Test hook: shorten the SIGTERM grace so the escalation path is testable.
+    #[doc(hidden)]
+    pub fn set_term_grace_for_testing(&self, ms: u64) {
+        self.term_grace_ms
+            .store(ms, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Test hook: backdate the last heartbeat check (event-loop lag).
@@ -288,8 +345,9 @@ impl SubagentLifeguard {
         self.emit(event);
     }
 
-    /// Reap every task silent past the load-scaled threshold (run every 5s).
-    pub fn check_heartbeats(&self) {
+    /// Reap every task that is silent past the load-scaled threshold, or that
+    /// has made no forward progress past its own (run every 5s).
+    pub fn check_heartbeats(self: &Arc<Self>) {
         let now = now_ms();
         let stalled: Vec<String> = {
             let mut state = self.state();
@@ -300,15 +358,24 @@ impl SubagentLifeguard {
             state.last_check_at = now;
             let threshold =
                 HEARTBEAT_MISS_THRESHOLD_MS as f64 * state.load_multiplier() + loop_lag as f64;
+            let progress_threshold =
+                PROGRESS_STALL_THRESHOLD_MS as f64 * state.load_multiplier() + loop_lag as f64;
             state
                 .processes
                 .keys()
                 .filter(|id| !state.reaping.contains(*id))
                 .filter(|id| {
-                    state
+                    let silent = state
                         .last_heartbeat
                         .get(*id)
-                        .is_some_and(|last| now.saturating_sub(*last) as f64 > threshold)
+                        .is_some_and(|last| now.saturating_sub(*last) as f64 > threshold);
+                    // A pinging child that has not finished a turn or run a
+                    // tool in minutes is parked, not busy.
+                    let idle = state
+                        .last_progress
+                        .get(*id)
+                        .is_some_and(|last| now.saturating_sub(*last) as f64 > progress_threshold);
+                    silent || idle
                 })
                 .cloned()
                 .collect()
@@ -318,7 +385,7 @@ impl SubagentLifeguard {
         }
     }
 
-    fn handle_stalled(&self, task_id: &str) {
+    fn handle_stalled(self: &Arc<Self>, task_id: &str) {
         let (monitored, line) = {
             let mut state = self.state();
             let Some(monitored) = state.processes.get(task_id).cloned() else {
@@ -331,8 +398,12 @@ impl SubagentLifeguard {
                 .last_heartbeat
                 .get(task_id)
                 .map_or(-1, |last| now_ms().saturating_sub(*last) as i64);
+            let idle = state
+                .last_progress
+                .get(task_id)
+                .map_or(-1, |last| now_ms().saturating_sub(*last) as i64);
             let line = format!(
-                "[LIFEGUARD] stalled task_id={task_id} agent={} silent_ms={silent} concurrent={} load_mult={:.2} base_threshold_ms={HEARTBEAT_MISS_THRESHOLD_MS}",
+                "[LIFEGUARD] stalled task_id={task_id} agent={} silent_ms={silent} no_progress_ms={idle} concurrent={} load_mult={:.2} base_threshold_ms={HEARTBEAT_MISS_THRESHOLD_MS} progress_threshold_ms={PROGRESS_STALL_THRESHOLD_MS}",
                 monitored.agent_type,
                 state.processes.len(),
                 state.load_multiplier(),
@@ -340,11 +411,50 @@ impl SubagentLifeguard {
             (monitored, line)
         };
         agent_log(&line);
-        kill_tree(monitored.pid);
+        // SIGTERM first: the child writes its partial result and exits, and the
+        // pool accepts a valid result from a reaped task, so the work survives.
+        // The grace timer is the backstop for a child too wedged to catch a
+        // signal at all.
+        self.terminate_then_kill(task_id, monitored.pid);
         self.emit(LifeguardEvent::Stalled {
             task_id: task_id.to_string(),
             pid: monitored.pid,
         });
+    }
+
+    /// SIGTERM the child's process group, then SIGKILL it if it has not left
+    /// within [`STALL_TERM_GRACE_MS`]. The child's exit cancels the timer via
+    /// [`untrack`](Self::untrack).
+    fn terminate_then_kill(self: &Arc<Self>, task_id: &str, pid: u32) {
+        terminate_group(pid);
+        let weak = Arc::downgrade(self);
+        let owned = task_id.to_string();
+        let grace_ms = self
+            .term_grace_ms
+            .load(std::sync::atomic::Ordering::Relaxed);
+        let handle = tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(grace_ms)).await;
+            let Some(guard) = weak.upgrade() else { return };
+            let still_running = guard
+                .state()
+                .processes
+                .get(&owned)
+                .is_some_and(|monitored| monitored.pid == pid);
+            if !still_running {
+                return;
+            }
+            agent_log(&format!(
+                "[LIFEGUARD] task_id={owned} did not exit within {grace_ms}ms of SIGTERM; killing"
+            ));
+            kill_tree(pid);
+        });
+        if let Some(old) = self
+            .state()
+            .grace_timers
+            .insert(task_id.to_string(), handle)
+        {
+            old.abort();
+        }
     }
 
     fn handle_timeout(self: &Arc<Self>, task_id: &str) {
@@ -393,8 +503,13 @@ impl SubagentLifeguard {
         if let Some(timeout) = state.timeouts.remove(task_id) {
             timeout.abort();
         }
+        // The child left: nothing left to escalate against.
+        if let Some(grace) = state.grace_timers.remove(task_id) {
+            grace.abort();
+        }
         state.processes.remove(task_id);
         state.last_heartbeat.remove(task_id);
+        state.last_progress.remove(task_id);
         state.started_at.remove(task_id);
         state.base_timeout_ms.remove(task_id);
         state.reaping.remove(task_id);
@@ -430,9 +545,13 @@ impl SubagentLifeguard {
             for (_, timeout) in state.timeouts.drain() {
                 timeout.abort();
             }
+            for (_, grace) in state.grace_timers.drain() {
+                grace.abort();
+            }
             let pids = state.processes.values().map(|m| m.pid).collect();
             state.processes.clear();
             state.last_heartbeat.clear();
+            state.last_progress.clear();
             state.started_at.clear();
             state.base_timeout_ms.clear();
             state.reaping.clear();

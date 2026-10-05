@@ -331,11 +331,25 @@ pub(crate) fn write_file_atomic(path: &Path, data: &str) -> std::io::Result<()> 
     Ok(())
 }
 
-/// `writeSubagentResult`: write `result.json` for a task. Best-effort.
-pub fn write_subagent_result(cwd: &Path, task_id: &str, result: &SubagentResultFile) {
+/// `writeSubagentResult`: write `result.json` for a task.
+///
+/// Returns whether it landed. It used to be `let _ = write_file_atomic(...)`,
+/// which meant a full disk or a read-only dispatch dir produced a child that
+/// exited cleanly with no result — and the parent reported a failure with no
+/// cause. The caller now turns a failed write into a non-zero exit and a log
+/// line.
+pub fn write_subagent_result(cwd: &Path, task_id: &str, result: &SubagentResultFile) -> bool {
     let path = cortexcode_code_paths::dispatch_task_dir(cwd, task_id).join("result.json");
     // Atomic: the parent may read the file the moment it appears, or kill the
     // child mid-write; a torn file would turn a success into a failure.
     let text = serde_json::to_string_pretty(&result.to_json()).unwrap_or_default();
-    let _ = write_file_atomic(&path, &text);
+    match write_file_atomic(&path, &text) {
+        Ok(()) => true,
+        Err(error) => {
+            crate::agent_log::agent_log(&format!(
+                "[DISPATCH] result.json for {task_id} could not be written: {error}"
+            ));
+            false
+        }
+    }
 }
