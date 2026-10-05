@@ -197,6 +197,52 @@ or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
 | H11 | **`complexity` is validated at the tool.** An unrecognised tier used to pass through as a model id and kill the child at startup; it now falls back to the parent's model with one log line | `tools.rs` |
 | H12 | **The ledger reports what the child reported.** A run SIGTERMed and wrapped up settles `complete` in the pool (the file is valid) while `result.json` says `partial`. The ledger now keeps `partial` visible | `pool.rs` |
 
+## 5c. P2: the runner seam (2026-10-05)
+
+`crates/cortexcode-code-subagents/src/runner.rs`. Until this existed, "run a
+subagent" and "spawn this executable with these argv" were the same statement:
+the pool built a `std::process::Command` and read its pipes. That made three
+things untestable — anything needing a *model* in it, anything where two runs
+must interleave deterministically, and the in-process model.
+
+A `Runner` takes a `RunSpec` (argv, env, prompt, tools, model, deadline — the
+same facts both as a command line and as fields) and returns a `RunnerHandle`
+with the same shape as a child process: two byte streams, a wait, a kill, a pid.
+Everything above the seam — queueing, priority, ageing, admission control, the
+lifeguard, heartbeats, token accounting, verification, the ledger — is unchanged
+and now runs against either implementation.
+
+The seam kept *streaming* deliberately: liveness is a per-byte signal, so a
+handle that returned its output at the end would quietly disable the stall
+watchdog.
+
+Two implementations ship:
+
+- `ProcessRunner` re-execs the binary. This is what the product uses.
+- `ScriptedRunner` answers from a script with no process at all. `tests/it/runner.rs`
+  drives the whole pool through it: settle paths, ledger lines, priority, queue
+  order, stderr capture, the watchdog. If any of those needed a `/bin/sh` mock
+  again, the seam would have leaked.
+
+**The seam found a latent kill bug on its first run.** `terminate_group(0)` is
+`kill(-0, SIGTERM)`, which signals *every process in the caller's group* — the
+parent agent included. Nothing could reach it before, because a dispatched run
+always had a pid; a processless runner can. `kill_tree` already guarded `pid > 0`;
+`terminate_group` now does too.
+
+Alongside it:
+
+- **Fault catalogue** in the eval harness: 429 with `retry-after`, a stream that
+  dies mid-line, a torn JSONL line, a context overflow, a provider error.
+- **`--matrix`**: every scenario against every fault. Current baseline: 65/65
+  cells settle, 95% usable.
+- **`--soak N`**: rounds of randomised faults asserting nothing leaks and
+  nothing stays unsettled. A 60s run is 26 rounds, 0 leaks.
+- **Flake fixes and retries**: `.config/nextest.toml` retries the subagent suite
+  three times (and has a `ci` profile that does not); the two inbox `wait:true`
+  tests wait on the finish instead of a 5ms sleep, and the warm-pool TTL test
+  polls instead of sleeping four times the TTL.
+
 ## 6. Open: the in-process migration
 
 The original design here proposed replacing child processes with tokio tasks. It was not

@@ -21,7 +21,12 @@ Turn keys (all optional):
     delay_s          sleep before the first byte of the stream
     hang             never answer: the caller's own timeout/lifeguard must fire
     abort_after      send this many bytes of SSE, then close the connection
-    error            {"status": n, "message": "…"} instead of a stream
+    corrupt_after    send this many bytes of SSE, then a half-written line
+    error            {"status": n, "message": "…"} instead of a stream, with an
+                     optional "retry_after" header
+    context_overflow answer 400 with the shape providers use when the context no
+                     longer fits, which is the one error a subagent cannot
+                     recover from by trying again
 
 An exhausted route answers `500 mock: script exhausted` rather than looping, so
 a runaway run fails loudly instead of hanging.
@@ -190,13 +195,50 @@ class MockProvider:
 
         if "error" in turn:
             spec = turn["error"] or {}
+            status = int(spec.get("status", 500))
+            if spec.get("retry_after"):
+                handler.send_response(status)
+                handler.send_header("Content-Type", "application/json")
+                handler.send_header("retry-after", str(spec["retry_after"]))
+                body = json.dumps(
+                    {"error": {"message": spec.get("message", "mock: injected error")}}
+                ).encode("utf-8")
+                handler.send_header("Content-Length", str(len(body)))
+                handler.end_headers()
+                handler.wfile.write(body)
+                return
             handler._json(
-                int(spec.get("status", 500)),
-                {"error": {"message": spec.get("message", "mock: injected error")}},
+                status,
+                {
+                    "error": {
+                        "type": spec.get("type", "invalid_request_error"),
+                        "message": spec.get("message", "mock: injected error"),
+                        "code": spec.get("code"),
+                    }
+                },
             )
             return
 
         chunks = self.sse(turn)
+        corrupt_after = turn.get("corrupt_after")
+        if corrupt_after:
+            chunks = chunks[: max(1, int(corrupt_after) // 20)]
+            handler.send_response(200)
+            handler.send_header("Content-Type", "text/event-stream")
+            handler.end_headers()
+            try:
+                for chunk in chunks:
+                    handler.wfile.write(chunk.encode("utf-8"))
+                    handler.wfile.flush()
+                # A line that stops mid-JSON, the way a dropped connection
+                # looks to a JSONL reader.
+                handler.wfile.write(b'data: {"choices":[{"delta":{"content":"half')
+                handler.wfile.flush()
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+            handler.close_connection = True
+            return
+
         abort_after = turn.get("abort_after")
         if abort_after:
             chunks = chunks[: max(1, int(abort_after) // 20)]

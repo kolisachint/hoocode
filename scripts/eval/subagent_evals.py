@@ -340,6 +340,61 @@ SCENARIOS: list[Scenario] = [
         expect=Expect(ledger_count=0, parent_output_contains="complexity"),
     ),
     Scenario(
+        name="child_rate_limited_then_answers",
+        kind="child",
+        doc=(
+            "The provider answers 429 with a retry-after. The runtime retries the call; the run "
+            "must still settle on the retry, with the retry visible in the transcript."
+        ),
+        routes={
+            "child": child_route(
+                [
+                    {"error": {"status": 429, "message": "429 rate limited", "retry_after": 1}},
+                    {"text": CHILD_SUMMARY},
+                ]
+            )
+        },
+        argv=["--max-turns", "6"],
+        expect=Expect(result_status="complete", child_requests=2),
+    ),
+    Scenario(
+        name="child_corrupt_jsonl_line",
+        kind="child",
+        doc=(
+            "The stream dies mid-line. A JSONL reader must skip the torn line rather than treat it "
+            "as a turn boundary and lose the run."
+        ),
+        routes={
+            "child": child_route([{"text": CHILD_SUMMARY * 6, "corrupt_after": 160}])
+        },
+        argv=["--max-turns", "6"],
+        expect=Expect(result_status="complete"),
+    ),
+    Scenario(
+        name="child_context_overflow",
+        kind="child",
+        doc=(
+            "The context no longer fits. Nothing can recover this, and the point is that it fails "
+            "cleanly with a cause the parent can read, rather than hanging or claiming success."
+        ),
+        routes={
+            "child": child_route(
+                [
+                    {
+                        "error": {
+                            "status": 400,
+                            "type": "invalid_request_error",
+                            "code": "context_length_exceeded",
+                            "message": "This model's maximum context length is 200000 tokens",
+                        }
+                    }
+                ]
+            )
+        },
+        argv=["--max-turns", "6"],
+        expect=Expect(result_status="failed"),
+    ),
+    Scenario(
         name="parent_queue_saturation",
         kind="parent",
         doc=(
@@ -461,6 +516,48 @@ def build_argv(binary: Path, scenario: Scenario) -> list[str]:
     elif scenario.kind == "child":
         argv.append("Task: List the top-level directories and what is in them.")
     return argv
+
+
+# Faults the matrix injects into whichever route the scenario is not asserting on.
+# `--matrix` runs every scenario once per entry; only `none` has a declared
+# expectation, the rest are observational ("does this break the run cleanly?").
+MATRIX_FAULTS: list[tuple[str, dict[str, Any]]] = [
+    ("none", {}),
+    ("rate-limited", {"error": {"status": 429, "message": "429 slow down", "retry_after": 1}}),
+    ("mid-stream-abort", {"abort_after": 120}),
+    ("corrupt-line", {"corrupt_after": 120}),
+    ("provider-error", {"error": {"status": 500, "message": "500 upstream exploded"}}),
+]
+
+
+def with_fault(scenario: Scenario, fault: dict[str, Any]) -> Scenario:
+    """A copy of `scenario` with `fault` prepended to the script under test.
+
+    The fault goes to the *child* when there is one: what matters is what a
+    provider does to a subagent, not what it does to the session that dispatched
+    it (a parent that never dispatches exercises nothing).
+    """
+    target = "child" if "child" in scenario.routes else next(iter(scenario.routes))
+    routes = {}
+    for name, route in scenario.routes.items():
+        turns = [dict(turn) for turn in route.turns]
+        if name == target:
+            turns.insert(0, dict(fault))
+        routes[name] = Route(name, turns, marker=route.marker)
+    return Scenario(
+        name=scenario.name,
+        kind=scenario.kind,
+        doc=scenario.doc,
+        routes=routes,
+        expect=scenario.expect,
+        argv=list(scenario.argv),
+        prompt=scenario.prompt,
+        settings=dict(scenario.settings),
+        models=scenario.models,
+        timeout_s=scenario.timeout_s,
+        slow=scenario.slow,
+        known_issue=scenario.known_issue,
+    )
 
 
 def run_scenario(binary: Path, scenario: Scenario, run_dir: Path) -> Outcome:
@@ -641,6 +738,17 @@ def check(
     return failures
 
 
+def count_leaked_children(run_dir: Path) -> int:
+    """Child processes from these runs still alive after they settled."""
+    try:
+        listing = subprocess.run(
+            ["pgrep", "-f", "task-id dispatch-"], capture_output=True, text=True, timeout=5
+        )
+    except (OSError, subprocess.SubprocessError):
+        return 0
+    return len([line for line in listing.stdout.splitlines() if line.strip()])
+
+
 def summarize(outcomes: list[Outcome]) -> dict[str, Any]:
     attempts = [entry for outcome in outcomes for entry in outcome.ledger]
     usable = sum(1 for entry in attempts if entry.get("ok"))
@@ -658,6 +766,12 @@ def summarize(outcomes: list[Outcome]) -> dict[str, Any]:
         "usable_rate": round(usable / len(attempts), 3) if attempts else 0.0,
         "statuses": statuses,
         "total_duration_s": round(sum(o.duration_s for o in outcomes), 1),
+        "leaked_children": sum(
+            1 for o in outcomes for f in o.failures if f.startswith("leaked child")
+        ),
+        "unsettled": sum(
+            1 for o in outcomes for f in o.failures if f.startswith("the run produced")
+        ),
     }
 
 
@@ -687,6 +801,19 @@ def markdown_report(summary: dict[str, Any], outcomes: list[Outcome], meta: dict
             f"| {statuses} | {note} |"
         )
     lines.append("")
+    if meta.get("matrix"):
+        lines += [
+            "",
+            "## Fault matrix",
+            "",
+            "| scenario | " + " | ".join(meta["matrix"]["faults"]) + " |",
+            "| --- | " + " | ".join("---" for _ in meta["matrix"]["faults"]) + " |",
+        ]
+        for name, row in meta["matrix"]["rows"].items():
+            lines.append(
+                f"| {name} | " + " | ".join(row.get(f, "-") for f in meta["matrix"]["faults"]) + " |"
+            )
+        lines.append("")
     for outcome in outcomes:
         if outcome.failures:
             lines.append(f"## {outcome.scenario}")
@@ -704,6 +831,21 @@ def main() -> int:
     parser.add_argument("--only", action="append", default=[], help="run only these scenarios")
     parser.add_argument("--repeat", type=int, default=1, help="run each scenario N times")
     parser.add_argument("--include-slow", action="store_true", help="include scenarios marked slow")
+    parser.add_argument(
+        "--matrix",
+        action="store_true",
+        help="run every scenario once per fault (none, 429, mid-stream abort, corrupt line) "
+        "and report the combination table; the declared expectation still applies to the "
+        "no-fault column",
+    )
+    parser.add_argument(
+        "--soak",
+        type=int,
+        default=0,
+        metavar="SECONDS",
+        help="run the suite in a loop for this long with randomised faults, asserting that "
+        "nothing leaks and nothing stays stuck",
+    )
     parser.add_argument("--min-success", type=float, default=0.0, help="fail below this usable rate")
     parser.add_argument("--keep", action="store_true", help="keep the per-run directories")
     parser.add_argument("--out", default=str(OUT_DIR), help="report directory")
@@ -729,25 +871,92 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     run_dir = Path(tempfile.mkdtemp(prefix="run-", dir=out_dir))
 
+    def run(scenario: Scenario, label: str) -> Outcome:
+        outcome = run_scenario(binary, scenario, run_dir)
+        outcome.scenario = label
+        return outcome
+
+    def report_one(outcome: Outcome) -> None:
+        verdict = "pass" if outcome.passed else ("KNOWN" if outcome.known_issue_hit else "FAIL")
+        statuses = ",".join(str(entry.get("status")) for entry in outcome.ledger) or "-"
+        print(
+            f"{verdict:>5}  {outcome.scenario:<38} {outcome.duration_s:>6}s  "
+            f"child={outcome.child_requests}  {statuses}"
+        )
+        for failure in outcome.failures:
+            print(f"         - {failure}")
+
     outcomes: list[Outcome] = []
-    for scenario in selected:
-        for iteration in range(args.repeat):
-            outcome = run_scenario(binary, scenario, run_dir)
-            if args.repeat > 1:
-                outcome.scenario = f"{scenario.name}#{iteration + 1}"
+    matrix: dict[str, dict[str, str]] = {}
+    if args.soak:
+        # Long-running and unstructured on purpose: the assertions are about the
+        # process, not about any one scenario's expectation.
+        deadline = time.time() + args.soak
+        rounds = 0
+        while time.time() < deadline:
+            rounds += 1
+            scenario = selected[rounds % len(selected)]
+            fault = MATRIX_FAULTS[rounds % len(MATRIX_FAULTS)][1]
+            outcome = run(with_fault(scenario, fault), f"soak-{rounds} {scenario.name}")
+            # A soak asserts about the *process*, not about one scenario's
+            # request counts: every run must settle, nothing may leak, and the
+            # ledger must have a line for it. Scenario-specific expectations do
+            # not apply once the script has been perturbed.
+            leaked = count_leaked_children(run_dir)
+            findings = []
+            if leaked:
+                findings.append(f"leaked child processes: {leaked}")
+            if not outcome.ledger and outcome.result is None and outcome.exit_code is None:
+                findings.append("the run produced neither a ledger line nor a result")
+            outcome.failures = findings
+            outcome.passed = not findings
             outcomes.append(outcome)
-            verdict = "pass" if outcome.passed else ("KNOWN" if outcome.known_issue_hit else "FAIL")
-            statuses = ",".join(str(entry.get("status")) for entry in outcome.ledger) or "-"
-            print(f"{verdict:>5}  {outcome.scenario:<34} {outcome.duration_s:>6}s  child={outcome.child_requests}  {statuses}")
-            for failure in outcome.failures:
-                print(f"         - {failure}")
+            if findings:
+                report_one(outcome)
+        print(f"soak: {rounds} rounds over {args.soak}s, {len(outcomes)} attempts recorded")
+    elif args.matrix:
+        for scenario in selected:
+            row: dict[str, str] = {}
+            for label, fault in MATRIX_FAULTS:
+                variant = with_fault(scenario, fault) if fault else scenario
+                outcome = run(variant, f"{scenario.name} [{label}]")
+                # Only the no-fault column carries a declared expectation; the
+                # rest are recorded, not judged, except that a run which neither
+                # settles nor leaves a usable result is a finding.
+                if label == "none":
+                    outcome.passed = outcome.passed and not outcome.known_issue_hit
+                else:
+                    # Either the run settled with something to show, or it
+                    # behaved exactly as the scenario already declares (a
+                    # dispatch that never happens is not a broken fault cell).
+                    settled = bool(outcome.ledger) or outcome.result is not None
+                    outcome.passed = (settled or not outcome.failures) and not outcome.known_issue_hit
+                row[label] = (
+                    "ok"
+                    if outcome.passed
+                    else ("known" if outcome.known_issue_hit else "BROKEN")
+                ) + f" {outcome.duration_s:.0f}s"
+                outcomes.append(outcome)
+            matrix[scenario.name] = row
+            print(f"{scenario.name:<34} " + "  ".join(f"{k}={v}" for k, v in row.items()))
+    else:
+        for scenario in selected:
+            for iteration in range(args.repeat):
+                label = (
+                    f"{scenario.name}#{iteration + 1}" if args.repeat > 1 else scenario.name
+                )
+                outcome = run(scenario, label)
+                outcomes.append(outcome)
+                report_one(outcome)
 
     summary = summarize(outcomes)
-    meta = {
+    meta: dict[str, Any] = {
         "generated": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "binary": str(binary),
         "repeat": args.repeat,
     }
+    if matrix:
+        meta["matrix"] = {"faults": [label for label, _ in MATRIX_FAULTS], "rows": matrix}
     (out_dir / "report.json").write_text(
         json.dumps(
             {
@@ -788,6 +997,12 @@ def main() -> int:
     )
     print(f"report: {out_dir / 'report.md'}")
 
+    if summary["leaked_children"]:
+        print(
+            f"FAIL: {summary['leaked_children']} run(s) left a child process behind",
+            file=sys.stderr,
+        )
+        return 1
     if summary["failed"]:
         print("FAIL: a scenario did not match its declared expectation", file=sys.stderr)
         return 1

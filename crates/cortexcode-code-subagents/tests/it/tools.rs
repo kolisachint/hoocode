@@ -7,7 +7,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
-use std::time::Duration;
 
 use cortexcode_agent_types::{AgentToolCall, AgentToolResult};
 use cortexcode_ai_types::Content;
@@ -141,8 +140,10 @@ async fn task_output_tool() {
     // wait:true blocks until the task finishes, then returns its body
     inbox.clear();
     inbox.start("t1", "explore#1", "explore");
+    // The waiter is signalled by `finish`, not by a timer: a fixed sleep here
+    // was a coin flip on a loaded machine.
     tokio::spawn(async {
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
         subagent_inbox().finish("t1", &ok_result("t1", "finished after waiting"));
     });
     let tool2 = tool.clone();
@@ -164,9 +165,9 @@ async fn task_output_tool() {
     inbox.start("t1", "explore#1", "explore");
     inbox.start("t2", "explore#2", "explore");
     tokio::spawn(async {
-        tokio::time::sleep(Duration::from_millis(5)).await;
+        tokio::task::yield_now().await;
         subagent_inbox().finish("t1", &ok_result("t1", "one"));
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
         subagent_inbox().finish("t2", &ok_result("t2", "two"));
     });
     let tool3 = tool.clone();

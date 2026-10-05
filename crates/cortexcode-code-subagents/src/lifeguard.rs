@@ -116,6 +116,13 @@ pub fn kill_process_tree(pid: u32) {
 
 #[cfg(unix)]
 fn terminate_group(pid: u32) {
+    // A pid of 0 means there is no process — an in-process runner, or a spawn
+    // that never produced one. `kill(-0, …)` would signal *every* process in
+    // the caller's own group, which is the parent agent in the worst case, so
+    // the guard `kill_tree` has belongs here too.
+    if pid == 0 {
+        return;
+    }
     // SAFETY: plain kill(2) call.
     unsafe {
         libc::kill(-(pid as libc::pid_t), libc::SIGTERM);
@@ -124,7 +131,9 @@ fn terminate_group(pid: u32) {
 
 #[cfg(not(unix))]
 fn terminate_group(pid: u32) {
-    kill_process_tree(pid);
+    if pid > 0 {
+        kill_process_tree(pid);
+    }
 }
 
 /// What the lifeguard reports.

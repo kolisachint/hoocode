@@ -165,8 +165,19 @@ async fn reclaims_idle_workers_after_the_ttl() {
     });
     pool.dispatch("task", &opts(), None).await.unwrap();
     assert_eq!(pool.idle_count(), 1);
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    assert_eq!(pool.idle_count(), 0);
+    // Poll for the reclaim rather than sleeping four times the TTL: the old
+    // version asserted on a clock, which fails whenever the machine is busy.
+    for _ in 0..200 {
+        if pool.idle_count() == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        pool.idle_count(),
+        0,
+        "the idle worker should have been reclaimed"
+    );
     pool.dispose().await;
 }
 

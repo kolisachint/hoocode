@@ -24,6 +24,7 @@ pub mod model_categories;
 pub mod output_verifier;
 pub mod pool;
 pub mod result;
+pub mod runner;
 pub mod token_budget;
 pub mod tools;
 pub mod warm;

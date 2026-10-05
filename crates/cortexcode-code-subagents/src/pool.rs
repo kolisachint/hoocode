@@ -13,7 +13,6 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,7 +24,6 @@ use cortexcode_code_resources::{
 use cortexcode_code_rpc::JsonlLineReader;
 use regex::Regex;
 use serde_json::{json, Map, Value};
-use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 
 use crate::agent_log::agent_log;
@@ -40,6 +38,7 @@ use crate::lifeguard::{kill_process_tree, LifeguardEvent, SubagentLifeguard};
 use crate::model_categories::{resolve_model_reference, CategorySettings};
 use crate::output_verifier::OutputVerifier;
 use crate::result::write_file_atomic;
+use crate::runner::{ProcessRunner, RunSpec, Runner};
 use crate::token_budget::{TokenBudget, TokenBudgetOptions};
 
 /// Provider/model failures where retrying with the parent's model can recover.
@@ -194,7 +193,7 @@ pub struct DispatchOptions {
 }
 
 /// `SubagentPoolOptions`.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct SubagentPoolOptions {
     /// The cortex executable (or a runtime when `prefix_args` names a script).
     pub executable: PathBuf,
@@ -205,6 +204,8 @@ pub struct SubagentPoolOptions {
     pub cwd: Option<PathBuf>,
     /// Default: the process environment.
     pub env: Option<HashMap<String, String>>,
+    /// Replace how dispatches run. Default: a child process per dispatch.
+    pub runner: Option<Arc<dyn Runner>>,
     /// Default: four times `max_concurrency`. A dispatch beyond it is refused
     /// with a message the caller can act on, rather than queued into a session
     /// that will never finish them.
@@ -329,11 +330,14 @@ struct PoolState {
 
 struct PoolInner {
     id: u64,
+    skill_paths: Vec<String>,
+    /// How a dispatch runs. The product ships [`crate::runner::ProcessRunner`];
+    /// the seam is what makes an in-process runner (and a process-free test
+    /// suite) possible at all.
+    runner: Arc<dyn Runner>,
     max_concurrency: usize,
     max_queued: usize,
     max_completed: usize,
-    executable: PathBuf,
-    prefix_args: Vec<String>,
     cwd: PathBuf,
     env: HashMap<String, String>,
     default_token_budget: u64,
@@ -366,6 +370,15 @@ pub const QUEUE_PER_SLOT: usize = 4;
 /// waiting, so the two-tier priority cannot starve `code-review` behind a
 /// stream of `explore` runs (the finding from Q9 in the design review).
 const AGEING_STEP_MS: u64 = 60_000;
+
+/// `"read,bash"` → `["read", "bash"]`.
+fn split_csv(value: String) -> Vec<String> {
+    value
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
+}
 
 fn now_ms() -> u64 {
     SystemTime::now()
@@ -447,15 +460,20 @@ impl SubagentPool {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()));
         let lifeguard = SubagentLifeguard::new(&cwd);
         static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let skill_paths = options.skill_paths.clone();
         let inner = Arc::new(PoolInner {
             id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            runner: options.runner.clone().unwrap_or_else(|| {
+                Arc::new(ProcessRunner::new(
+                    options.executable.clone(),
+                    options.prefix_args.clone(),
+                ))
+            }),
             max_concurrency: options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY),
             max_queued: options.max_queued.unwrap_or_else(|| {
                 options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * QUEUE_PER_SLOT
             }),
             max_completed: options.max_completed.unwrap_or(MAX_COMPLETED),
-            executable: options.executable,
-            prefix_args: options.prefix_args,
             env: options.env.unwrap_or_else(|| std::env::vars().collect()),
             default_token_budget: options.default_token_budget.unwrap_or(0),
             settings: options.settings,
@@ -463,10 +481,8 @@ impl SubagentPool {
             verifier: OutputVerifier::new(cwd.clone()),
             lifeguard: lifeguard.clone(),
             cwd,
-            state: Mutex::new(PoolState {
-                skill_paths: options.skill_paths,
-                ..Default::default()
-            }),
+            skill_paths,
+            state: Mutex::new(PoolState::default()),
             listeners: Mutex::new(Vec::new()),
         });
         let weak: Weak<PoolInner> = Arc::downgrade(&inner);
@@ -1011,6 +1027,61 @@ impl PoolInner {
         }
     }
 
+    /// Everything one dispatch needs, resolved: the command line for the
+    /// process runner, and the same facts as fields so a runner that builds a
+    /// session instead of a command line does not have to parse argv back out.
+    fn run_spec(&self, task: &SubagentPoolTask) -> RunSpec {
+        let argv = self.build_args(task);
+        let mut system_prompt = None;
+        let mut tools = None;
+        let mut disallowed_tools = None;
+        let mut model = None;
+        let mut provider = task.provider.clone();
+        let mut prompt = task.task.clone();
+        let mut max_turns = DEFAULT_SUBAGENT_MAX_TURNS;
+        let mut deadline_ms = None;
+        let mut rest = argv.iter();
+        while let Some(arg) = rest.next() {
+            let flag = arg.as_str();
+            let mut value = || rest.next().cloned();
+            match flag {
+                "--system-prompt" => system_prompt = value(),
+                "--model" => model = value(),
+                "--provider" => provider = value(),
+                "--max-turns" => {
+                    if let Some(raw) = value() {
+                        max_turns = raw.parse().unwrap_or(max_turns);
+                    }
+                }
+                "--deadline-ms" => deadline_ms = value().and_then(|raw| raw.parse().ok()),
+                "--tools" => tools = value().map(split_csv),
+                "--disallowed-tools" => disallowed_tools = value().map(split_csv),
+                _ => {}
+            }
+        }
+        // The prompt is the trailing positional argument the pool appends; a
+        // runner that builds a session gets the same text the child would.
+        if let Some(context) = task.context.as_deref() {
+            prompt = format!("Context from the calling agent:\n\n{context}\n\nTask: {prompt}");
+        }
+        RunSpec {
+            task_id: task.task_id.clone(),
+            agent_type: task.agent_type.clone(),
+            cwd: task.cwd.clone().unwrap_or_else(|| self.cwd.clone()),
+            argv,
+            env: self.child_env(task),
+            prompt,
+            max_turns,
+            deadline_ms,
+            system_prompt,
+            tools,
+            disallowed_tools,
+            model,
+            provider,
+            skill_paths: self.skill_paths.clone(),
+        }
+    }
+
     /// The child's command line.
     fn build_args(&self, task: &SubagentPoolTask) -> Vec<String> {
         let cwd = task.cwd.as_deref().unwrap_or(&self.cwd);
@@ -1018,7 +1089,9 @@ impl PoolInner {
             .session_file
             .clone()
             .unwrap_or_else(|| self.session_file(&task.task_id, Some(cwd)));
-        let mut args = self.prefix_args.clone();
+        // `prefix_args` belongs to the runner now: it prepends them, so a
+        // runner that never builds a command line does not carry them.
+        let mut args: Vec<String> = Vec::new();
         args.extend([
             "--mode".into(),
             "json".into(),
@@ -1175,22 +1248,9 @@ impl PoolInner {
     /// Start a task in a child process (one retry on a spawn failure).
     fn start_task(self: &Arc<Self>, task: SubagentPoolTask, is_retry: bool) {
         let budget = self.budget_for(&task);
-        let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
-        let mut command = tokio::process::Command::new(&self.executable);
-        command
-            .args(self.build_args(&task))
-            .current_dir(&cwd)
-            .env_clear()
-            .envs(self.child_env(&task))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        // POSIX: the child leads its own process group so a kill reaches the
-        // whole tree (its bash commands, nested subagents).
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = match command.spawn() {
-            Ok(child) => child,
+        let spec = self.run_spec(&task);
+        let mut handle = match self.runner.spawn(spec) {
+            Ok(handle) => handle,
             Err(_) if !is_retry => return self.start_task(task, true),
             Err(_) => {
                 let result = SubagentResult {
@@ -1210,7 +1270,7 @@ impl PoolInner {
                 return;
             }
         };
-        let pid = child.id().unwrap_or(0);
+        let pid = handle.pid();
         let spawned_at = now_ms();
         // The sweep decides a dispatch dir is dead by reading this file. It has
         // always read it; nothing ever wrote it, so reaping was age-only and a
@@ -1229,8 +1289,7 @@ impl PoolInner {
         );
         self.lifeguard.monitor(&task.task_id, &task.agent_type, pid);
 
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        let (mut stdout_rx, mut stderr_rx) = handle.take_streams();
         let captured = Arc::new(Mutex::new((String::new(), String::new())));
 
         let out_task = {
@@ -1240,22 +1299,18 @@ impl PoolInner {
             let task_id = task.task_id.clone();
             let agent_type = task.agent_type.clone();
             tokio::spawn(async move {
-                let Some(mut stdout) = stdout else { return };
+                let stdout = &mut stdout_rx;
                 let mut reader = JsonlLineReader::with_max_buffer(MAX_SUBAGENT_EVENT_LINE_CHARS);
-                let mut buf = vec![0u8; 64 * 1024];
-                loop {
-                    let n = match stdout.read(&mut buf).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
-                    };
+                while let Some(chunk) = stdout.recv().await {
+                    let n = chunk.len();
                     // Any output is a heartbeat: a busy child is alive even
                     // before its ping line is parsed.
                     append_tail(
                         &mut captured.lock().unwrap_or_else(|e| e.into_inner()).0,
-                        &String::from_utf8_lossy(&buf[..n]),
+                        &String::from_utf8_lossy(&chunk[..n]),
                     );
                     inner.lifeguard.record_heartbeat(&task_id);
-                    for line in reader.push(&buf[..n]) {
+                    for line in reader.push(&chunk[..n]) {
                         inner.handle_stdout_line(&task_id, &agent_type, &budget, &line);
                     }
                 }
@@ -1267,16 +1322,12 @@ impl PoolInner {
         let err_task = {
             let captured = captured.clone();
             tokio::spawn(async move {
-                let Some(mut stderr) = stderr else { return };
-                let mut buf = vec![0u8; 16 * 1024];
-                loop {
-                    let n = match stderr.read(&mut buf).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
-                    };
+                let stderr = &mut stderr_rx;
+                while let Some(chunk) = stderr.recv().await {
+                    let n = chunk.len();
                     append_tail(
                         &mut captured.lock().unwrap_or_else(|e| e.into_inner()).1,
-                        &String::from_utf8_lossy(&buf[..n]),
+                        &String::from_utf8_lossy(&chunk[..n]),
                     );
                 }
             })
@@ -1284,7 +1335,7 @@ impl PoolInner {
 
         let inner = self.clone();
         tokio::spawn(async move {
-            let status = child.wait().await;
+            let status = handle.wait().await;
             // Stdio may stay open in grandchildren: wait briefly for it.
             let _ = tokio::time::timeout(EXIT_STDIO_GRACE, async {
                 let _ = out_task.await;
@@ -1294,9 +1345,7 @@ impl PoolInner {
             inner.lifeguard.untrack(&task.task_id);
             let (stdout, stderr) = captured.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let retry_scheduled = match status {
-                Ok(status) => {
-                    inner.settle(&task, &budget, spawned_at, status.code(), stdout, stderr)
-                }
+                Ok(status) => inner.settle(&task, &budget, spawned_at, status, stdout, stderr),
                 Err(err) => {
                     inner.settle_error(&task, &budget, spawned_at, is_retry, err, stdout, stderr)
                 }
