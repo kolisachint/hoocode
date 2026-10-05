@@ -1236,7 +1236,7 @@ impl AgentSession {
             (valid, snippets, guidelines)
         };
         // The agents are listed only while the Task tool is active.
-        let agents = if valid.iter().any(|n| n == "Task") {
+        let agents = if valid.iter().any(|n| n == "Dispatch" || n == "Task") {
             cortexcode_code_resources::load_agent_registry(
                 &cortexcode_code_resources::LoadAgentRegistryOptions::new(
                     self.inner.cwd.to_string_lossy(),

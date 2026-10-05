@@ -18,7 +18,8 @@ use cortexcode_agent_types::{AgentToolCall, AgentToolResult};
 use cortexcode_ai_types::{AbortSignal, Content, Model};
 use cortexcode_code_agent_session::provider_health::get_provider_exhaustion;
 use cortexcode_code_resources::{
-    load_agent_registry, LoadAgentRegistryOptions, MODEL_INHERIT, TASK_TOOL_NAME,
+    load_agent_registry, LoadAgentRegistryOptions, MODEL_INHERIT, TASK_OUTPUT_TOOL_LEGACY_NAME,
+    TASK_OUTPUT_TOOL_NAME, TASK_TOOL_LEGACY_NAME, TASK_TOOL_NAME,
 };
 use cortexcode_code_session::SessionManager;
 use cortexcode_code_task_store::{
@@ -1072,10 +1073,47 @@ fn task_output_parameters() -> Value {
 }
 
 /// `createTaskOutputToolDefinition`.
+/// The pre-rename names, registered as aliases for one release.
+///
+/// A model that has seen `Task` in a thousand transcripts will keep calling it,
+/// and a resumed session carries tool calls by name; both must keep working.
+/// The alias points at the same executor, so an alias is a spelling, not a
+/// second code path — and the description says which name is canonical.
+pub fn create_task_tool_alias_definition(cwd: &Path) -> ToolDefinition {
+    let mut definition = create_task_tool_definition(cwd);
+    definition.name = TASK_TOOL_LEGACY_NAME.to_string();
+    definition.label = TASK_TOOL_LEGACY_NAME.to_string();
+    definition.description = format!(
+        "Deprecated alias for `{TASK_TOOL_NAME}`. {}",
+        definition.description
+    );
+    // The prompt's tool list shows the snippet, so this is where a model learns
+    // the alias is legacy: two identical entries would be worse than one.
+    definition.prompt_snippet = Some(format!(
+        "deprecated alias for {TASK_TOOL_NAME}; prefer {TASK_TOOL_NAME}"
+    ));
+    definition
+}
+
+/// The deprecated alias for [`create_task_output_tool_definition`].
+pub fn create_task_output_tool_alias_definition() -> ToolDefinition {
+    let mut definition = create_task_output_tool_definition();
+    definition.name = TASK_OUTPUT_TOOL_LEGACY_NAME.to_string();
+    definition.label = TASK_OUTPUT_TOOL_LEGACY_NAME.to_string();
+    definition.description = format!(
+        "Deprecated alias for `{TASK_OUTPUT_TOOL_NAME}`. {}",
+        definition.description
+    );
+    definition.prompt_snippet = Some(format!(
+        "deprecated alias for {TASK_OUTPUT_TOOL_NAME}; prefer {TASK_OUTPUT_TOOL_NAME}"
+    ));
+    definition
+}
+
 pub fn create_task_output_tool_definition() -> ToolDefinition {
     ToolDefinition { ordered_start: false,
-        name: "TaskOutput".into(),
-        label: "TaskOutput".into(),
+        name: TASK_OUTPUT_TOOL_NAME.into(),
+        label: TASK_OUTPUT_TOOL_NAME.into(),
         description: [
             "Check on background subagents dispatched via Task, and pull their results.",
             "Pass a task_id/label (e.g. \"explore#1\") to read a finished subagent's full result, or to see its status while it runs.",

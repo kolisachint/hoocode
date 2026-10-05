@@ -33,8 +33,33 @@ pub const HOOCODE_TOOL_NAMES: &[&str] = &[
     "write",
 ];
 
-/// `TASK_TOOL_NAME`.
-pub const TASK_TOOL_NAME: &str = "Task";
+/// `TASK_TOOL_NAME`: the subagent tool's canonical name.
+///
+/// Renamed from `Task` on 2026-10-05. `Task` read as a to-do item — the task
+/// store really does have a `Task` type for TodoWrite entries and MCP calls —
+/// while the tool starts a background run. `TASK_TOOL_LEGACY_NAME` stays
+/// registered as an alias for a release so a pinned prompt, an agent file or a
+/// muscle-memory call from an older transcript keeps working.
+pub const TASK_TOOL_NAME: &str = "Dispatch";
+/// The pre-rename name, accepted as an alias and shown in deprecation notices.
+pub const TASK_TOOL_LEGACY_NAME: &str = "Task";
+/// The companion tool: read the status of, wait for, or collect a background run.
+pub const TASK_OUTPUT_TOOL_NAME: &str = "DispatchStatus";
+/// The pre-rename companion name, accepted as an alias.
+pub const TASK_OUTPUT_TOOL_LEGACY_NAME: &str = "TaskOutput";
+
+/// Map a tool name a caller used onto the canonical name.
+///
+/// Only the two subagent tools have ever been renamed, so this is a pair of
+/// entries rather than a general mechanism — and it is where the next rename
+/// goes. Returns `None` for a name that is already canonical or unknown.
+pub fn canonical_tool_name(name: &str) -> Option<&'static str> {
+    match name {
+        TASK_TOOL_LEGACY_NAME => Some(TASK_TOOL_NAME),
+        TASK_OUTPUT_TOOL_LEGACY_NAME => Some(TASK_OUTPUT_TOOL_NAME),
+        _ => None,
+    }
+}
 /// `TODO_WRITE_TOOL_NAME`.
 pub const TODO_WRITE_TOOL_NAME: &str = "TodoWrite";
 

@@ -59,15 +59,19 @@ PARENT_SUMMARY = "The repo has crates/, scripts/ and docs/."
 CHILD_SUMMARY = "crates/ holds one directory per Rust crate; scripts/ holds tooling; docs/ holds design notes."
 
 
-def task_call(**arguments: Any) -> dict[str, Any]:
-    """A parent turn that delegates to a subagent."""
+def task_call(tool: str = "Dispatch", **arguments: Any) -> dict[str, Any]:
+    """A parent turn that delegates to a subagent.
+
+    `tool` is the canonical `Dispatch` unless a scenario is specifically about
+    the deprecated `Task` alias.
+    """
     base = {
         "subagent_type": "explore",
         "description": "map the repository layout",
         "prompt": "List the top-level directories and what is in them.",
     }
     base.update(arguments)
-    return {"text": "", "tool_calls": [{"name": "Task", "arguments": base}]}
+    return {"text": "", "tool_calls": [{"name": tool, "arguments": base}]}
 
 
 def child_route(turns: list[dict[str, Any]]) -> Route:
@@ -395,6 +399,22 @@ SCENARIOS: list[Scenario] = [
         expect=Expect(result_status="failed"),
     ),
     Scenario(
+        name="parent_dispatch_via_legacy_alias",
+        kind="parent",
+        doc=(
+            "The pre-rename name still works. A model that learned `Task` from a thousand "
+            "transcripts keeps delegating, and a resumed session carries tool calls by name."
+        ),
+        routes={
+            "child": child_route([{"text": CHILD_SUMMARY}]),
+            "parent": parent_route(
+                [task_call(background=False, tool="Task"), {"text": PARENT_SUMMARY}]
+            ),
+        },
+        prompt="Describe the repository layout using a subagent.",
+        expect=Expect(ledger_statuses=["complete"], ledger_ok=[True]),
+    ),
+    Scenario(
         name="parent_queue_saturation",
         kind="parent",
         doc=(
@@ -408,7 +428,7 @@ SCENARIOS: list[Scenario] = [
                     {
                         "text": "",
                         "tool_calls": [
-                            {"name": "Task", "arguments": {
+                            {"name": "Dispatch", "arguments": {
                                 "subagent_type": "explore",
                                 "description": f"map area {i}",
                                 "prompt": f"List the top-level directories ({i}).",

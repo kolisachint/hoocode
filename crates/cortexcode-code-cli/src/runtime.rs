@@ -352,6 +352,11 @@ fn subagent_tools(
     vec![
         cortexcode_code_subagents::tools::create_task_tool_definition(cwd),
         cortexcode_code_subagents::tools::create_task_output_tool_definition(),
+        // Deprecated spellings, one release. They resolve to the same
+        // executors, so a model or a resumed transcript that still says `Task`
+        // keeps working while the prompt teaches the new names.
+        cortexcode_code_subagents::tools::create_task_tool_alias_definition(cwd),
+        cortexcode_code_subagents::tools::create_task_output_tool_alias_definition(),
     ]
 }
 
@@ -1621,9 +1626,38 @@ mod tests {
     fn default_prompt_lists_tools_with_snippets() {
         let (prompt, tools) = prompt_for(&[]);
         assert!(prompt.starts_with("You are an expert coding assistant operating inside cortex"));
-        assert!(prompt.contains(
-            "Available tools:\n- read: Read file contents\n- bash: Run builds, tests, linters, git, and package managers\n- edit: Make precise file edits with exact text replacement, including multiple disjoint edits in one call\n- write: Create or overwrite files\n- SearchCodebase: Ranked code search (keyword + semantic, rank-fused)\n- ask_options: Put a decision to the user as selectable options\n- Task: delegate a self-contained task to a specialized subagent (choose via subagent_type)\n- TaskOutput: check status / list / collect the results of background subagents\n- TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)\n\nGuidelines:"
-        ));
+        // The aliases are listed too, and say what they point at: a model that
+        // sees `Task` in the tool list and `Dispatch` in the prompt should be
+        // able to work out which is which.
+        for line in [
+            "Dispatch: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
+            "DispatchStatus: check status / list / collect the results of background subagents",
+            "TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
+        ] {
+            assert!(
+                prompt.lines().any(|l| l.trim_start().starts_with(&format!("- {line}"))),
+                "missing {line:?} in the tool list"
+            );
+        }
+        assert!(
+            prompt.contains("Available tools:"),
+            "the tool list should still be there: {prompt}"
+        );
+        for alias in [
+            "Task: deprecated alias for Dispatch; prefer Dispatch",
+            "TaskOutput: deprecated alias for DispatchStatus; prefer DispatchStatus",
+        ] {
+            assert!(
+                prompt
+                    .lines()
+                    .any(|l| l.trim_start().starts_with(&format!("- {alias}"))),
+                "the alias should announce itself: {alias}"
+            );
+        }
+        assert!(
+            prompt.lines().any(|l| l.trim() == "Guidelines:"),
+            "the list must run into the guidelines"
+        );
         assert_eq!(
             tools,
             [
@@ -1633,6 +1667,8 @@ mod tests {
                 "write",
                 "SearchCodebase",
                 "ask_options",
+                "Dispatch",
+                "DispatchStatus",
                 "Task",
                 "TaskOutput",
                 "TodoWrite"

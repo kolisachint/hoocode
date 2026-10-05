@@ -1056,8 +1056,12 @@ impl Mode {
         });
 
         let footer_data = FooterDataProvider::new(session.cwd());
-        footer_data
-            .set_subagent_enabled(session.get_active_tool_names().iter().any(|t| t == "Task"));
+        footer_data.set_subagent_enabled(
+            session
+                .get_active_tool_names()
+                .iter()
+                .any(|t| t == "Dispatch" || t == "Task"),
+        );
         let is_oauth: Rc<dyn Fn(&str) -> bool> = Rc::from(options.is_oauth);
         let mut footer = FooterComponent::new(
             Box::new(SessionFooter {

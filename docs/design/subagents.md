@@ -243,6 +243,41 @@ Alongside it:
   tests wait on the finish instead of a 5ms sleep, and the warm-pool TTL test
   polls instead of sleeping four times the TTL.
 
+## 5d. P3: one word for the thing (2026-10-05)
+
+`Task` read as a to-do item — the task store really does have a `Task` type for
+TodoWrite entries and MCP calls — while the tool starts a background run, and
+the transcript said a third thing entirely (`Agent [explore]`).
+
+| before | after | still accepted |
+|---|---|---|
+| `Task` | **`Dispatch`** | `Task`, registered as an alias for a release |
+| `TaskOutput` | **`DispatchStatus`** | `TaskOutput`, same |
+| `Agent [explore]` | **`Subagent dispatch explore`** (plus `resume`, plus `· background`) | both names render through one renderer |
+| `call Task with resume_task_id` | `call Dispatch with …` | — |
+
+An alias is a spelling, not a second code path: both definitions execute the
+same function, and the prompt's tool list says which one is canonical
+(`deprecated alias for Dispatch; prefer Dispatch`) so a model is never offered
+two identical tools.
+
+The rename touched the tool definitions, the nested-agent allowlist (which never
+contained `Task` at all, so an agent that listed `tools:` silently lost it), the
+allowlist normalisation, the render dispatch, the pool's and warm pool's
+`--tools` grant, the availability prompt, the transcript renderer and the
+prompt templates.
+
+**Divergence is now declared, not silent.** Two pin checks compared our bytes to
+hoocode's and would have failed on the rename:
+
+- `shipped_prose_ts.rs` normalises our template back to the pinned wording using
+  an explicit `DECLARED_DIVERGENCES` list, so an undeclared difference still
+  fails and a declared one that rots (the pinned text changes under us) fails
+  too.
+- `tool_renderers_gold.rs` skips the renamed tools' pinned renderings and
+  asserts ours instead, with the count asserted so the skip cannot silently
+  become "compare nothing".
+
 ## 6. Open: the in-process migration
 
 The original design here proposed replacing child processes with tokio tasks. It was not

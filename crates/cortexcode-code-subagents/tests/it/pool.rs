@@ -624,7 +624,12 @@ async fn a_delegate_agent_gets_task_tools_when_nesting_is_permitted() {
     let argv = run_with_cap(dir.path(), "orchestrator", "2").await;
     assert!(argv.contains(&"--enable-subagents".to_string()));
     let tools = arg_after(&argv, "--tools").unwrap();
-    assert_eq!(tools, "read,SearchCodebase,Task,TaskOutput");
+    // Canonical names first, then the deprecated spellings: both are granted,
+    // so a nested child that says `Task` still works.
+    assert_eq!(
+        tools,
+        "read,SearchCodebase,Dispatch,DispatchStatus,Task,TaskOutput"
+    );
 }
 
 #[tokio::test]

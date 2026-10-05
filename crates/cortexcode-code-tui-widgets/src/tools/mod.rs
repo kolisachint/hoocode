@@ -39,8 +39,10 @@ pub fn builtin_tool_definition(name: &str, _cwd: &str) -> Option<ToolRenderDefin
 /// none, which still makes the block draw its dot and fallbacks.
 pub fn registered_tool_definition(name: &str) -> ToolRenderDefinition {
     match name {
-        "Task" => subagent::task_definition(),
-        "TaskOutput" => subagent::task_output_definition(),
+        // Both spellings resolve: the canonical names and the deprecated
+        // aliases a resumed transcript can still carry.
+        "Dispatch" | "Task" => subagent::task_definition(),
+        "DispatchStatus" | "TaskOutput" => subagent::task_output_definition(),
         n if plugins::RENDERED_PLUGIN_TOOLS.contains(&n) => plugins::definition(),
         _ => ToolRenderDefinition::default(),
     }

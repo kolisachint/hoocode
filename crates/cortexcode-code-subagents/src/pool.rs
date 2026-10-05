@@ -1114,7 +1114,7 @@ impl PoolInner {
             let mut tools = def.as_ref().and_then(|d| d.tools.clone());
             if can_child_delegate {
                 if let Some(tools) = &mut tools {
-                    for t in ["Task", "TaskOutput"] {
+                    for t in ["Dispatch", "DispatchStatus", "Task", "TaskOutput"] {
                         if !tools.iter().any(|x| x == t) {
                             tools.push(t.into());
                         }

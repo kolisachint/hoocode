@@ -59,6 +59,9 @@ pub enum TaskPanelView {
 impl TaskPanelView {
     fn label(self) -> &'static str {
         match self {
+            // The flat lens is the task ledger (TodoWrite items plus dispatched
+            // runs); `Subagents` below is the delegation forest. Renaming the
+            // flat lens to "subagents" collided with the other one.
             Self::Flat => "tasks",
             Self::Subagents => "subagents",
             Self::Teams => "teams",

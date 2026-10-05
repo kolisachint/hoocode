@@ -225,7 +225,7 @@ const FAMILIES: [ToolFamily; 6] = [
         verb: "Delegated",
         noun: "task",
         tail: "task",
-        tools: &["Task", "TaskOutput"],
+        tools: &["Dispatch", "DispatchStatus", "Task", "TaskOutput"],
         subject_is_path: false,
         act: None,
     },

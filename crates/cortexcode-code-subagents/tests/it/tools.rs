@@ -397,7 +397,7 @@ fn build_task_main_prompt_contents() {
     assert!(prompt.contains("mark the item in_progress BEFORE dispatching"));
     // Built-in explore/plan are background agents: the background block is in.
     assert!(prompt.contains("don't idle"));
-    assert!(prompt.contains("TaskOutput(wait: true)"));
+    assert!(prompt.contains("DispatchStatus(wait: true)"));
     assert!(!prompt.contains("DO NOT stop and wait"));
     assert!(prompt.contains("Delegate when you need only the final result"));
     assert!(!prompt.contains("WHEN TO USE:"));
@@ -854,8 +854,15 @@ fn active_tool_names(with_task: bool) -> Vec<String> {
         cortexcode_code_session::SessionManager::in_memory(dir.path().to_string_lossy()),
         CreateAgentSessionOptions {
             model: Some(model),
+            // What the CLI registers: both canonical tools and both
+            // deprecated aliases.
             custom_tools: if with_task {
-                vec![create_task_tool_definition(dir.path())]
+                vec![
+                    create_task_tool_definition(dir.path()),
+                    create_task_output_tool_definition(),
+                    create_task_tool_alias_definition(dir.path()),
+                    create_task_output_tool_alias_definition(),
+                ]
             } else {
                 vec![]
             },
@@ -871,9 +878,14 @@ fn active_tool_names(with_task: bool) -> Vec<String> {
 fn the_task_tool_is_active_only_when_registered() {
     isolate_agent_dir();
     let on = active_tool_names(true);
+    assert!(on.contains(&"Dispatch".to_string()));
+    assert!(on.contains(&"DispatchStatus".to_string()));
+    // Both spellings stay registered while the old one is deprecated.
     assert!(on.contains(&"Task".to_string()));
+    assert!(on.contains(&"TaskOutput".to_string()));
     assert!(on.contains(&"read".to_string()));
     let off = active_tool_names(false);
+    assert!(!off.contains(&"Dispatch".to_string()));
     assert!(!off.contains(&"Task".to_string()));
     assert!(off.contains(&"read".to_string()));
 }

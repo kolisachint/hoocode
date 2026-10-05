@@ -11,8 +11,13 @@ use std::path::{Path, PathBuf};
 /// The app name the prompt introduces itself with (hoocode's `APP_NAME`).
 pub const APP_NAME: &str = "cortex";
 
-/// Tool name of the subagent tool (`TASK_TOOL_NAME`).
-pub const TASK_TOOL_NAME: &str = "Task";
+/// Tool name of the subagent tool. Kept in step with
+/// `cortexcode_code_resources::TASK_TOOL_NAME`; the prompts crate must not
+/// depend on the resources crate for one string.
+pub const TASK_TOOL_NAME: &str = "Dispatch";
+/// The pre-2026-10-05 name, still recognised so a session resumed from an old
+/// transcript keeps its delegation guidance.
+pub const TASK_TOOL_LEGACY_NAME: &str = "Task";
 
 /// Name of the tool that searches the app's own docs (hoocode `SearchHooCode`).
 /// Kept verbatim until the self-knowledge extension is ported.
@@ -356,7 +361,7 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
         if has_read {
             prompt.push_str(&format_skills_for_prompt(&options.skills));
         }
-        if has(TASK_TOOL_NAME) {
+        if has(TASK_TOOL_NAME) || has(TASK_TOOL_LEGACY_NAME) {
             prompt.push_str(&format_agents_for_prompt(&options.agents));
         }
         if want_self_docs && has_read {
@@ -439,7 +444,7 @@ pub fn build_system_prompt(options: &BuildSystemPromptOptions) -> String {
     if has_read {
         prompt.push_str(&format_skills_for_prompt(&options.skills));
     }
-    if has(TASK_TOOL_NAME) {
+    if has(TASK_TOOL_NAME) || has(TASK_TOOL_LEGACY_NAME) {
         prompt.push_str(&format_agents_for_prompt(&options.agents));
     }
     if want_self_docs && has_read {

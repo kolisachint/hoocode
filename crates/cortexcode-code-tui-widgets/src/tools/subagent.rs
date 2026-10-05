@@ -48,10 +48,22 @@ pub fn format_task_call(args: &Value) -> String {
         None | Some(Value::Null) => "agent".to_string(),
         Some(v) => js_string(Some(v)),
     };
+    // "Subagent explore", not "Agent [explore]": the transcript said `Agent`
+    // while the tool said `Task`, and neither said subagent. `dispatched` and
+    // `resumed` are stated because the same line covers both.
+    let verb = if truthy(args.get("resume_task_id")) {
+        "resume"
+    } else {
+        "dispatch"
+    };
     format!(
-        "{}{}",
-        t.fg("toolTitle", &t.bold("Agent ")),
-        t.fg(agent_color_for(&agent_type), &format!("[{agent_type}]"))
+        "{}{} {}",
+        t.fg("toolTitle", &t.bold(&format!("Subagent {verb} "))),
+        t.fg(agent_color_for(&agent_type), &agent_type),
+        match args.get("background").and_then(Value::as_bool) {
+            Some(true) => t.fg("dim", "· background"),
+            _ => String::new(),
+        }
     )
 }
 
@@ -68,7 +80,14 @@ pub fn format_task_output_call(args: &Value) -> String {
     };
     format!(
         "{}{styled}{}",
-        t.fg("toolTitle", &t.bold("TaskOutput ")),
+        t.fg(
+            "toolTitle",
+            &t.bold(if truthy(args.get("list")) {
+                "Subagents "
+            } else {
+                "Subagent status "
+            }),
+        ),
         if truthy(args.get("wait")) {
             t.fg("dim", " (wait)")
         } else {
