@@ -13,7 +13,15 @@ REPO="${HOOCODE_REPO:-https://github.com/kolisachint/hoocode-ts}"
 # A cache restore (rust-cache keeps target/) can leave a partial .git that git
 # no longer recognises; it then walks up to this repo and sparse-checkout fails
 # ("run from the toplevel directory"). Start over unless DEST is its own repo.
-if [[ "$(git -C "$DEST" rev-parse --show-toplevel 2>/dev/null)" != "$(cd "$DEST" 2>/dev/null && pwd -P)" ]]; then
+# A missing DEST (a fresh runner, no cache) must start over too: both sides of
+# the comparison are then empty, so it has to be checked on its own.
+own_repo() {
+  [[ -d "$DEST" ]] || return 1
+  local top
+  top="$(git -C "$DEST" rev-parse --show-toplevel 2>/dev/null)" || return 1
+  [[ -n "$top" && "$top" == "$(cd "$DEST" && pwd -P)" ]]
+}
+if ! own_repo; then
   rm -rf "$DEST"
   git init -q "$DEST"
   git -C "$DEST" remote add origin "$REPO"
