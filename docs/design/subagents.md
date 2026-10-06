@@ -278,45 +278,60 @@ hoocode's and would have failed on the rename:
   asserts ours instead, with the count asserted so the skip cannot silently
   become "compare nothing".
 
-## 6. Open: the in-process migration
+## 6. The in-process migration: built, measured, not shipped (2026-10-05)
 
-The original design here proposed replacing child processes with tokio tasks. It was not
-adopted, for these reasons:
+§6 of this file used to be an open question. It is now an answer, and the
+answer is "the mechanism works, the product does not use it yet".
 
-**In favour.** The pattern is precedented twice in-repo — `run_rpc_mode`
-(`code-rpc/src/mode.rs`) and `RpcClient::attach` over `tokio::io::duplex`, with tests wiring
-them against the faux provider. `warm.rs` is the near-exact template: same shape, RPC child
-instead of a task. `AgentSession` is `Send + Sync + 'static` (proven at `session.rs:746`,
-where it moves itself into a detached task). It would remove a whole class of transport bugs:
-stdout framing, ping-as-liveness, kill data loss, the capture cap.
+**What shipped.** `runner.rs` has three implementations of one seam:
 
-**Against, and not yet resolved:**
+| | what it is | used by |
+|---|---|---|
+| `ProcessRunner` | re-execs the binary per dispatch | the product, unchanged |
+| `ScriptedRunner` | answers from a script, no process | the whole test suite |
+| `InProcessRunner` | runs the agent loop in this process | off; wired but not enabled |
 
-1. **Re-entrant nesting.** The hard part is not depth bookkeeping, it is that an in-process
-   child holding `Task` needs a *pool reference* at depth+1, from inside a session the pool
-   owns. Unproven.
-2. **Depth is propagated through process-global env vars.** `depth.rs` states the premise
-   outright. In-process, `SUBAGENT_DEPTH` and `DELEGATE_ALLOW` must become per-run fields —
-   `runtime.rs:subagent_tools` does `set_var`/`remove_var` at startup. **This is smaller than
-   it looks:** MCP server discovery is `deferred` in the ledger (10.11) and never wired in the
-   Rust port, so `SKIP_MCP` and `DEFER_MCP_SCHEMAS` are already dead env vars. The work is
-   depth plus delegate-allow.
-3. **The tool allowlist is nearly free.** `CreateAgentSessionOptions` already carries `tools`,
-   `disallowed_tools` and `permission_gate` per session — what `--tools` does today.
-4. **Panic containment has no precedent.** The only `catch_unwind` in the workspace wraps a
-   synchronous count callback. Nothing wraps a `tokio::spawn` body, and the pool's state is a
-   `Mutex`, so a panic mid-run poisons it for the parent.
-5. **Depth caps are budgeted in processes** (`depth.rs`: *"worst case 5 x (2^3-1) = 35
-   processes"*). 35 concurrent sessions in one address space is a different blast radius.
-6. **The test seam is the real cost.** Every pool test substitutes a child via
-   `executable`/`prefix_args` — a *path* seam — using `/bin/sh` mocks; 31 usages across 5 test
-   files. There is no injectable runner, and `cortexcode-ai-provider-faux` is used by no
-   subagent test. "Feature-flagged so both paths run against the same tests" is not achievable
-   without building that seam first.
+**The gate, which was the whole question, passes.** `an_in_process_child_can_dispatch_its_own_child`
+runs a child in process which dispatches its own child through the *same* pool
+while the first run is still going: no deadlock, no double settle, two ledger
+lines, nothing stuck. The reason it works is small and worth writing down: the
+pool never holds its state lock across an await, so a run the pool owns can ask
+the same pool for another run. Object 4 of the old objection list — "panic
+containment has no precedent" — is also answered by construction for the seam,
+though a panicking *agent* still unwinds the whole process, which is the one
+argument for keeping children.
 
-If it is taken up, build the seam against the faux provider **first**, and treat (1) as the
-gate: if re-entrant nesting does not work cleanly, keep the process model permanently and
-spend the effort on liveness instead. Child-process isolation is worth real money.
+**The measurement** (`in_process_and_child_process_runs_are_comparable`, 12
+identical runs through the same pool, same settle path, same ledger):
+
+```
+in-process 8.9ms      child process 459.9ms
+```
+
+~0.7ms of dispatch overhead against ~38ms, for runs that do nothing. On a real
+subagent the model dominates and the ratio shrinks — but the per-dispatch floor
+is gone, and the floor is what makes many small subagents viable.
+
+**Why it is not the default anyway.**
+
+1. The session wiring lives in the CLI (`runtime.rs`), not in this crate. The
+   `InProcessFactory` deliberately takes the wiring from the caller; nobody has
+   written the production factory, and a second way to build a session would be
+   a second way to get auth, the registry and the system prompt wrong.
+2. Depth is still a process-global env var (`SUBAGENT_DEPTH`). With children,
+   depth is per process and therefore trivially correct. In process it is a
+   shared mutable global that a nested run has to mutate and restore — and the
+   gate test only proves the *pool* nests cleanly, not that depth accounting
+   does.
+3. A child's crash today costs one dispatch. In process it costs the session.
+
+**Verdict.** Keep child processes as the shipped model. The seam is the part
+that was worth building: it removed the 31 `/bin/sh` path seams, it is what the
+fault matrix and the soak run against, and it means the question above can be
+revisited with a factory and a per-run depth field rather than a rewrite. If
+someone picks it up: item 2 first, and re-run
+`an_in_process_child_can_dispatch_its_own_child` with real depth assertions
+rather than a pool-liveness one.
 
 ## 7. Footnote: the evidence is not permanent
 

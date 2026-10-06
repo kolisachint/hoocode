@@ -364,3 +364,139 @@ impl RunnerHandle for ScriptedHandle {
         0
     }
 }
+
+// ---------------------------------------------------------------------------
+// In-process execution
+// ---------------------------------------------------------------------------
+
+/// One subagent run that happens inside this process instead of in a child.
+///
+/// This is the seam's other half, and the one `docs/design/subagents.md` §6 has
+/// kept open since the port: "run the subagent here, not in a re-exec". The
+/// interface is deliberately tiny — *run this prompt and write what a child
+/// would have written* — because everything interesting (queueing, liveness,
+/// verification, the ledger) is above it, and the only thing an implementation
+/// has to get right is producing the same bytes on stdout and the same
+/// `result.json` on disk.
+pub trait InProcessAgent: Send + Sync {
+    /// Run one prompt to completion. `out` receives the same JSONL lines a
+    /// child process would have printed: heartbeats, progress events, `done`.
+    /// Writing `result.json` is the agent's job, exactly as it is the child's.
+    ///
+    /// The future borrows the agent and the sender: an implementation may hold
+    /// either for as long as the run lasts, which is what lets a run dispatch
+    /// its own child and hand the result back through the same sender.
+    fn run<'a>(
+        &'a self,
+        prompt: &'a str,
+        out: &'a mpsc::Sender<Vec<u8>>,
+    ) -> BoxFuture<'a, Result<(), String>>;
+}
+
+/// Builds an agent for a dispatch. The caller owns the wiring — the CLI has the
+/// session services, the registry and the auth, and this crate deliberately
+/// does not grow a second way to build them.
+pub type InProcessFactory =
+    Arc<dyn Fn(&RunSpec) -> Result<Box<dyn InProcessAgent>, String> + Send + Sync>;
+
+/// Runs dispatches in this process.
+///
+/// Off by default: the product still ships [`ProcessRunner`]. This exists so the
+/// question "should it?" has an answer with measurements instead of opinions.
+pub struct InProcessRunner {
+    factory: InProcessFactory,
+}
+
+impl InProcessRunner {
+    pub fn new(factory: InProcessFactory) -> Self {
+        Self { factory }
+    }
+}
+
+impl Runner for InProcessRunner {
+    fn spawn(&self, spec: RunSpec) -> std::io::Result<Box<dyn RunnerHandle>> {
+        let agent = (self.factory)(&spec).map_err(std::io::Error::other)?;
+        let (stdout_tx, stdout_rx) = mpsc::channel(64);
+        let (stderr_tx, stderr_rx) = mpsc::channel(64);
+        let prompt = spec.prompt.clone();
+        let task_id = spec.task_id.clone();
+        let cwd = spec.cwd.clone();
+        let handle = tokio::runtime::Handle::try_current()
+            .map_err(|_| std::io::Error::other("the in-process runner needs a tokio runtime"))?;
+        let runner_task = handle.spawn(async move {
+            // The agent and the sender live as long as the run: the future
+            // borrows both, which is what allows a nested dispatch to send its
+            // own lines into this run's stream.
+            let result = agent.run(&prompt, &stdout_tx).await;
+            drop(stdout_tx);
+            match result {
+                Ok(()) => Ok(()),
+                Err(error) => {
+                    let line = format!("in-process subagent failed: {error}\n");
+                    let _ = stderr_tx.send(line.into_bytes()).await;
+                    Err(error)
+                }
+            }
+        });
+        // The exit code follows the same contract as a child: zero when a valid
+        // `result.json` was written, one otherwise.
+        let exit = handle.spawn(async move {
+            let outcome = runner_task.await;
+            let ok = match &outcome {
+                Ok(Ok(_)) => result_exists(&cwd, &task_id),
+                _ => false,
+            };
+            outcome.is_ok() && ok
+        });
+        Ok(Box::new(InProcessHandle {
+            stdout: Some(stdout_rx),
+            stderr: Some(stderr_rx),
+            exit: Some(exit),
+        }) as Box<dyn RunnerHandle>)
+    }
+}
+
+fn result_exists(cwd: &std::path::Path, task_id: &str) -> bool {
+    cortexcode_code_paths::dispatch_task_dir(cwd, task_id)
+        .join("result.json")
+        .exists()
+}
+
+struct InProcessHandle {
+    stdout: Option<mpsc::Receiver<Vec<u8>>>,
+    stderr: Option<mpsc::Receiver<Vec<u8>>>,
+    exit: Option<tokio::task::JoinHandle<bool>>,
+}
+
+impl RunnerHandle for InProcessHandle {
+    fn take_streams(&mut self) -> (mpsc::Receiver<Vec<u8>>, mpsc::Receiver<Vec<u8>>) {
+        (
+            self.stdout.take().unwrap_or_else(empty_stream),
+            self.stderr.take().unwrap_or_else(empty_stream),
+        )
+    }
+
+    fn wait(&mut self) -> BoxFuture<'static, std::io::Result<Option<i32>>> {
+        let exit = self.exit.take();
+        Box::pin(async move {
+            let ok = match exit {
+                Some(handle) => handle.await.unwrap_or(false),
+                // Nothing left to wait for: the handle was already awaited.
+                None => true,
+            };
+            Ok(Some(if ok { 0 } else { 1 }))
+        })
+    }
+
+    fn kill(&mut self) {
+        // There is no process tree to signal. Dropping the streams is what
+        // actually stops the run: the agent's `out` sender fails and it stops
+        // writing, and the settle path sees the exit.
+        self.stdout = None;
+        self.stderr = None;
+    }
+
+    fn pid(&self) -> u32 {
+        0
+    }
+}
