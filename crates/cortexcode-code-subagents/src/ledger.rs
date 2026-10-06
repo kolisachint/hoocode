@@ -202,7 +202,14 @@ fn prune_if_needed(path: &Path) -> std::io::Result<()> {
         buffer.push_str(line);
         buffer.push('\n');
     }
-    std::fs::write(path, buffer)
+    // Write beside it and rename over it. `fs::write` truncates first, so a
+    // reader in another process (`/subagent-stats`, a bot's `/healthz`) could
+    // see an empty or half-written ledger for the length of the rewrite.
+    let tmp = path.with_extension(format!("jsonl.{}.tmp", std::process::id()));
+    std::fs::write(&tmp, buffer)?;
+    std::fs::rename(&tmp, path).inspect_err(|_| {
+        let _ = std::fs::remove_file(&tmp);
+    })
 }
 
 /// Every attempt in the ledger, oldest first. Unparseable lines are skipped.
