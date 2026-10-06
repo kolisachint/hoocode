@@ -9,9 +9,9 @@ use std::time::Duration;
 
 use cortexcode_code_subagents::warm::*;
 
-const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0
+const FAKE_CHILD: &str = r#"fail=0; exit_on_prompt=0; slow_prompt=0
 for a in "$@"; do
-  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; esac
+  case "$a" in --fail-prompt) fail=1;; --exit-on-prompt) exit_on_prompt=1;; --slow-prompt) slow_prompt=1;; esac
 done
 gen=0; n=0; last=
 field() { printf '%s' "$line" | sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
@@ -22,6 +22,7 @@ while IFS= read -r line; do
   case "$type" in
     prompt)
       [ "$exit_on_prompt" = 1 ] && exit 1
+      [ "$slow_prompt" = 1 ] && sleep 1
       n=$((n + 1)); last=$(field message)
       respond prompt ""
       echo '{"type":"agent_start"}'
@@ -164,8 +165,19 @@ async fn reclaims_idle_workers_after_the_ttl() {
     });
     pool.dispatch("task", &opts(), None).await.unwrap();
     assert_eq!(pool.idle_count(), 1);
-    tokio::time::sleep(Duration::from_millis(400)).await;
-    assert_eq!(pool.idle_count(), 0);
+    // Poll for the reclaim rather than sleeping four times the TTL: the old
+    // version asserted on a clock, which fails whenever the machine is busy.
+    for _ in 0..200 {
+        if pool.idle_count() == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    assert_eq!(
+        pool.idle_count(),
+        0,
+        "the idle worker should have been reclaimed"
+    );
     pool.dispose().await;
 }
 
@@ -195,4 +207,70 @@ fn warm_subagents_are_enabled_by_the_env_flag() {
         "HOOCODE_WARM_SUBAGENTS",
         "0"
     )])));
+}
+
+/// The warm pool is a second execution path, and it had no ceiling at all: one
+/// worker booted per dispatch, nothing counted them, and nothing told the
+/// lifeguard. It now shares the cold pool's admission rules.
+#[tokio::test(flavor = "multi_thread")]
+async fn refuses_a_dispatch_when_the_warm_pool_is_saturated() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
+        spawn: Some(fake_spawn(dir.path(), &["--slow-prompt"])),
+        // One worker, nobody waiting: the second dispatch has nowhere to go.
+        max_in_flight: 1,
+        max_waiting: 0,
+        ..WarmSubagentPoolOptions::new(dir.path())
+    });
+    let options = WarmDispatchOptions {
+        agent_type: "explore".into(),
+        cwd: dir.path().to_path_buf(),
+        model: None,
+        provider: None,
+    };
+    let first = tokio::spawn({
+        let pool = pool.clone();
+        let options = options.clone();
+        async move { pool.dispatch("first", &options, None).await }
+    });
+    // Let the first take the only slot.
+    for _ in 0..50 {
+        if pool.load().0 == 1 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let refused = pool.dispatch("second", &options, None).await.unwrap_err();
+    assert!(
+        refused.to_string().contains("saturated"),
+        "expected a saturation refusal, got {refused:?}"
+    );
+    let _ = first.await;
+    assert_eq!(pool.load(), (0, 0), "the slot must be released");
+    pool.dispose().await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_waiting_dispatch_is_admitted_while_a_slot_is_free_later() {
+    let dir = tempfile::tempdir().unwrap();
+    let pool = WarmSubagentPool::new(WarmSubagentPoolOptions {
+        spawn: Some(fake_spawn(dir.path(), &[])),
+        max_in_flight: 1,
+        max_waiting: 4,
+        ..WarmSubagentPoolOptions::new(dir.path())
+    });
+    let options = WarmDispatchOptions {
+        agent_type: "explore".into(),
+        cwd: dir.path().to_path_buf(),
+        model: None,
+        provider: None,
+    };
+    // Sequential: the cap must not stop the pool from being used, only from
+    // being used all at once.
+    for n in 0..3 {
+        let result = pool.dispatch(&format!("run {n}"), &options, None).await;
+        assert!(result.is_ok(), "run {n} should be admitted");
+    }
+    assert_eq!(pool.load(), (0, 0));
+    pool.dispose().await;
 }

@@ -13,7 +13,6 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use std::sync::{Arc, LazyLock, Mutex, MutexGuard, Weak};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -25,7 +24,6 @@ use cortexcode_code_resources::{
 use cortexcode_code_rpc::JsonlLineReader;
 use regex::Regex;
 use serde_json::{json, Map, Value};
-use tokio::io::AsyncReadExt;
 use tokio::sync::oneshot;
 
 use crate::agent_log::agent_log;
@@ -35,10 +33,12 @@ use crate::depth::{
 };
 use crate::dispatch::DispatchEvaluator;
 use crate::events::{classify_subagent_line, SubagentStdoutLine};
+use crate::ledger;
 use crate::lifeguard::{kill_process_tree, LifeguardEvent, SubagentLifeguard};
 use crate::model_categories::{resolve_model_reference, CategorySettings};
 use crate::output_verifier::OutputVerifier;
 use crate::result::write_file_atomic;
+use crate::runner::{ProcessRunner, RunSpec, Runner};
 use crate::token_budget::{TokenBudget, TokenBudgetOptions};
 
 /// Provider/model failures where retrying with the parent's model can recover.
@@ -89,6 +89,27 @@ const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
 /// The env prefix cortex stamps on children (read back via any prefix).
 const CHILD_ENV_PREFIX: &str = "CORTEXCODE_";
 
+/// What [`SubagentPool::statuses`] reports per task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunningSince {
+    Running(u64),
+    Queued,
+}
+
+impl RunningSince {
+    /// Epoch ms, or 0 for a queued task (it has no start yet).
+    pub fn since(self) -> u64 {
+        match self {
+            Self::Running(at) => at,
+            Self::Queued => 0,
+        }
+    }
+
+    pub fn is_running(self) -> bool {
+        matches!(self, Self::Running(_))
+    }
+}
+
 /// `SubagentPoolTask`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SubagentPoolTask {
@@ -110,6 +131,12 @@ pub struct SubagentPoolTask {
     pub session_file: Option<PathBuf>,
     /// Internal: retry with the caller's model after the preferred one failed.
     pub use_inherited_model_fallback: bool,
+    /// The caller asked for a notification instead of an inline answer. Only
+    /// telemetry reads this: `mode` in the ledger.
+    pub background: Option<bool>,
+    /// When this task entered the queue (epoch ms). Ageing uses it so a long
+    /// wait eventually outranks the priority tiers above it.
+    pub queued_at: Option<u64>,
 }
 
 /// Terminal status of a result.
@@ -182,10 +209,12 @@ pub struct DispatchOptions {
     pub session_file: Option<PathBuf>,
     /// Caller-supplied task id (default: a generated `dispatch-…` id).
     pub task_id: Option<String>,
+    /// Whether the caller wanted a background run (telemetry only).
+    pub background: Option<bool>,
 }
 
 /// `SubagentPoolOptions`.
-#[derive(Debug, Clone, Default)]
+#[derive(Clone, Default)]
 pub struct SubagentPoolOptions {
     /// The cortex executable (or a runtime when `prefix_args` names a script).
     pub executable: PathBuf,
@@ -196,6 +225,14 @@ pub struct SubagentPoolOptions {
     pub cwd: Option<PathBuf>,
     /// Default: the process environment.
     pub env: Option<HashMap<String, String>>,
+    /// Replace how dispatches run. Default: a child process per dispatch.
+    pub runner: Option<Arc<dyn Runner>>,
+    /// Default: four times `max_concurrency`. A dispatch beyond it is refused
+    /// with a message the caller can act on, rather than queued into a session
+    /// that will never finish them.
+    pub max_queued: Option<usize>,
+    /// Finished results kept in memory for late pulls. Default [`MAX_COMPLETED`].
+    pub max_completed: Option<usize>,
     pub default_token_budget: Option<u64>,
     /// Non-default skill paths forwarded to every child via `--skill`.
     pub skill_paths: Vec<String>,
@@ -298,6 +335,10 @@ struct PoolState {
     slots: HashMap<String, SubagentSlot>,
     queue: VecDeque<SubagentPoolTask>,
     completed: HashMap<String, SubagentResult>,
+    /// Insertion order of `completed`, so the oldest can be dropped: a finished
+    /// result carries its captured stdout and stderr, and nothing used to
+    /// release them, so a long session grew without bound.
+    completed_order: VecDeque<String>,
     waiters: HashMap<String, Waiter>,
     budgets: HashMap<String, Arc<Mutex<TokenBudget>>>,
     kill_reasons: HashMap<String, KillReason>,
@@ -310,9 +351,14 @@ struct PoolState {
 
 struct PoolInner {
     id: u64,
+    skill_paths: Vec<String>,
+    /// How a dispatch runs. The product ships [`crate::runner::ProcessRunner`];
+    /// the seam is what makes an in-process runner (and a process-free test
+    /// suite) possible at all.
+    runner: Arc<dyn Runner>,
     max_concurrency: usize,
-    executable: PathBuf,
-    prefix_args: Vec<String>,
+    max_queued: usize,
+    max_completed: usize,
     cwd: PathBuf,
     env: HashMap<String, String>,
     default_token_budget: u64,
@@ -328,6 +374,31 @@ struct PoolInner {
 #[derive(Clone)]
 pub struct SubagentPool {
     inner: Arc<PoolInner>,
+}
+
+/// The cold pool's default concurrency. The warm pool shares it: one ceiling
+/// for the process, not one per execution path.
+pub const DEFAULT_MAX_CONCURRENCY: usize = 5;
+
+/// Finished results held in memory. Beyond this the oldest is dropped; its
+/// dispatch dir and ledger line are the durable record.
+const MAX_COMPLETED: usize = 64;
+
+/// Queue slots per running slot before a dispatch is refused outright.
+pub const QUEUE_PER_SLOT: usize = 4;
+
+/// A queued task's effective priority improves by one step per this long spent
+/// waiting, so the two-tier priority cannot starve `code-review` behind a
+/// stream of `explore` runs (the finding from Q9 in the design review).
+const AGEING_STEP_MS: u64 = 60_000;
+
+/// `"read,bash"` → `["read", "bash"]`.
+fn split_csv(value: String) -> Vec<String> {
+    value
+        .split(',')
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn now_ms() -> u64 {
@@ -371,6 +442,15 @@ fn priority_of(agent_type: &str) -> u8 {
 }
 
 /// `Math.random().toString(36).slice(2, 8)`: six base-36 characters.
+/// Priority with ageing: higher wins, and a task gains one step per
+/// [`AGEING_STEP_MS`] spent waiting, so nothing in the queue can be starved
+/// indefinitely by a stream of higher-priority work.
+fn effective_priority(agent_type: &str, queued_at: u64, now: u64) -> i64 {
+    let base = priority_of(agent_type) as i64;
+    let waited = now.saturating_sub(queued_at) as i64;
+    base.saturating_add(waited / AGEING_STEP_MS as i64)
+}
+
 fn random_suffix() -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     static COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -401,11 +481,20 @@ impl SubagentPool {
             .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| ".".into()));
         let lifeguard = SubagentLifeguard::new(&cwd);
         static NEXT_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let skill_paths = options.skill_paths.clone();
         let inner = Arc::new(PoolInner {
             id: NEXT_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
-            max_concurrency: options.max_concurrency.unwrap_or(5),
-            executable: options.executable,
-            prefix_args: options.prefix_args,
+            runner: options.runner.clone().unwrap_or_else(|| {
+                Arc::new(ProcessRunner::new(
+                    options.executable.clone(),
+                    options.prefix_args.clone(),
+                ))
+            }),
+            max_concurrency: options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY),
+            max_queued: options.max_queued.unwrap_or_else(|| {
+                options.max_concurrency.unwrap_or(DEFAULT_MAX_CONCURRENCY) * QUEUE_PER_SLOT
+            }),
+            max_completed: options.max_completed.unwrap_or(MAX_COMPLETED),
             env: options.env.unwrap_or_else(|| std::env::vars().collect()),
             default_token_budget: options.default_token_budget.unwrap_or(0),
             settings: options.settings,
@@ -413,10 +502,8 @@ impl SubagentPool {
             verifier: OutputVerifier::new(cwd.clone()),
             lifeguard: lifeguard.clone(),
             cwd,
-            state: Mutex::new(PoolState {
-                skill_paths: options.skill_paths,
-                ..Default::default()
-            }),
+            skill_paths,
+            state: Mutex::new(PoolState::default()),
             listeners: Mutex::new(Vec::new()),
         });
         let weak: Weak<PoolInner> = Arc::downgrade(&inner);
@@ -489,18 +576,47 @@ impl SubagentPool {
             {
                 return Err(PoolError(format!("Duplicate task_id: {}", task.task_id)));
             }
-            let p = priority_of(&task.agent_type);
-            match state
-                .queue
-                .iter()
-                .position(|t| priority_of(&t.agent_type) < p)
-            {
+            // Admission control: an unbounded queue is unbounded memory and a
+            // parent that will never see those results. Refusing loudly is
+            // something the caller can act on; a queue that grows is not.
+            if state.queue.len() >= self.inner.max_queued {
+                return Err(PoolError(format!(
+                    "Dispatch queue is full ({} waiting, {} running). Try again once one finishes.",
+                    state.queue.len(),
+                    state.slots.len()
+                )));
+            }
+            let mut task = task;
+            let now = now_ms();
+            task.queued_at.get_or_insert(now);
+            let p = effective_priority(&task.agent_type, task.queued_at.unwrap_or(now), now);
+            match state.queue.iter().position(|t| {
+                effective_priority(&t.agent_type, t.queued_at.unwrap_or(now), now) < p
+            }) {
                 Some(idx) => state.queue.insert(idx, task),
                 None => state.queue.push_back(task),
             }
         }
         self.inner.pull();
         Ok(())
+    }
+
+    /// Every tracked task with its status and when it started: what a panel
+    /// needs to offer "cancel the newest one" without a focus ring.
+    pub fn statuses(&self) -> Vec<(String, RunningSince)> {
+        let state = self.inner.state();
+        let mut out: Vec<(String, RunningSince)> = state
+            .slots
+            .values()
+            .map(|slot| (slot.task_id.clone(), RunningSince::Running(slot.spawned_at)))
+            .collect();
+        out.extend(
+            state
+                .queue
+                .iter()
+                .map(|task| (task.task_id.clone(), RunningSince::Queued)),
+        );
+        out
     }
 
     /// Current status of a task.
@@ -533,7 +649,9 @@ impl SubagentPool {
     pub fn cancel(&self, task_id: &str) -> bool {
         let mut state = self.inner.state();
         if let Some(idx) = state.queue.iter().position(|t| t.task_id == task_id) {
-            state.queue.remove(idx);
+            let Some(task) = state.queue.remove(idx) else {
+                return false;
+            };
             drop(state);
             let result = SubagentResult {
                 task_id: task_id.to_string(),
@@ -543,6 +661,8 @@ impl SubagentPool {
             };
             self.inner
                 .emit("task_cancelled", json!({"task_id": task_id}));
+            self.inner
+                .record_attempt(&task, &result, 0, 0, 0, None, false);
             self.inner.resolve_waiter(task_id, result);
             return true;
         }
@@ -691,6 +811,7 @@ impl SubagentPool {
             inherited_model: options.inherited_model,
             session_file: options.session_file,
             cwd: Some(self.inner.cwd.clone()),
+            background: options.background,
             ..Default::default()
         })?;
         Ok(Begin {
@@ -755,6 +876,7 @@ impl SubagentPool {
             state.queue.clear();
             let waiters: Vec<Waiter> = state.waiters.drain().map(|(_, w)| w).collect();
             state.completed.clear();
+            state.completed_order.clear();
             state.budgets.clear();
             state.kill_reasons.clear();
             state.task_status.clear();
@@ -944,6 +1066,61 @@ impl PoolInner {
         }
     }
 
+    /// Everything one dispatch needs, resolved: the command line for the
+    /// process runner, and the same facts as fields so a runner that builds a
+    /// session instead of a command line does not have to parse argv back out.
+    fn run_spec(&self, task: &SubagentPoolTask) -> RunSpec {
+        let argv = self.build_args(task);
+        let mut system_prompt = None;
+        let mut tools = None;
+        let mut disallowed_tools = None;
+        let mut model = None;
+        let mut provider = task.provider.clone();
+        let mut prompt = task.task.clone();
+        let mut max_turns = DEFAULT_SUBAGENT_MAX_TURNS;
+        let mut deadline_ms = None;
+        let mut rest = argv.iter();
+        while let Some(arg) = rest.next() {
+            let flag = arg.as_str();
+            let mut value = || rest.next().cloned();
+            match flag {
+                "--system-prompt" => system_prompt = value(),
+                "--model" => model = value(),
+                "--provider" => provider = value(),
+                "--max-turns" => {
+                    if let Some(raw) = value() {
+                        max_turns = raw.parse().unwrap_or(max_turns);
+                    }
+                }
+                "--deadline-ms" => deadline_ms = value().and_then(|raw| raw.parse().ok()),
+                "--tools" => tools = value().map(split_csv),
+                "--disallowed-tools" => disallowed_tools = value().map(split_csv),
+                _ => {}
+            }
+        }
+        // The prompt is the trailing positional argument the pool appends; a
+        // runner that builds a session gets the same text the child would.
+        if let Some(context) = task.context.as_deref() {
+            prompt = format!("Context from the calling agent:\n\n{context}\n\nTask: {prompt}");
+        }
+        RunSpec {
+            task_id: task.task_id.clone(),
+            agent_type: task.agent_type.clone(),
+            cwd: task.cwd.clone().unwrap_or_else(|| self.cwd.clone()),
+            argv,
+            env: self.child_env(task),
+            prompt,
+            max_turns,
+            deadline_ms,
+            system_prompt,
+            tools,
+            disallowed_tools,
+            model,
+            provider,
+            skill_paths: self.skill_paths.clone(),
+        }
+    }
+
     /// The child's command line.
     fn build_args(&self, task: &SubagentPoolTask) -> Vec<String> {
         let cwd = task.cwd.as_deref().unwrap_or(&self.cwd);
@@ -951,7 +1128,9 @@ impl PoolInner {
             .session_file
             .clone()
             .unwrap_or_else(|| self.session_file(&task.task_id, Some(cwd)));
-        let mut args = self.prefix_args.clone();
+        // `prefix_args` belongs to the runner now: it prepends them, so a
+        // runner that never builds a command line does not carry them.
+        let mut args: Vec<String> = Vec::new();
         args.extend([
             "--mode".into(),
             "json".into(),
@@ -974,7 +1153,7 @@ impl PoolInner {
             let mut tools = def.as_ref().and_then(|d| d.tools.clone());
             if can_child_delegate {
                 if let Some(tools) = &mut tools {
-                    for t in ["Task", "TaskOutput"] {
+                    for t in ["Agent", "AgentOut", "Task", "TaskOutput"] {
                         if !tools.iter().any(|x| x == t) {
                             tools.push(t.into());
                         }
@@ -1005,29 +1184,7 @@ impl PoolInner {
 
         // A definition's explicit model wins (unless `inherit`), else the
         // caller's; a category resolves to a concrete model or to nothing.
-        let explicit = def
-            .as_ref()
-            .and_then(|d| d.model.clone())
-            .filter(|m| !task.use_inherited_model_fallback && !m.is_empty() && m != MODEL_INHERIT);
-        // On the fallback attempt the pinned model is dropped and the
-        // dispatching session's own model is used. `task.model` is only that
-        // when the caller passed a concrete model; when it passed a
-        // `complexity` tier it is a category that resolves to the model that
-        // just failed, so prefer `inherited_model` whenever we have it.
-        let raw = if task.use_inherited_model_fallback {
-            task.inherited_model.clone().filter(|m| !m.is_empty())
-        } else {
-            None
-        }
-        .or(explicit)
-        .or_else(|| task.model.clone().filter(|m| !m.is_empty()));
-        let model = raw.and_then(|m| {
-            resolve_model_reference(
-                &m,
-                self.settings.as_ref(),
-                Some(self.available_models.as_slice()),
-            )
-        });
+        let model = self.resolve_task_model(task);
         if let Some(model) = &model {
             args.extend(["--model".into(), model.clone()]);
         }
@@ -1130,44 +1287,35 @@ impl PoolInner {
     /// Start a task in a child process (one retry on a spawn failure).
     fn start_task(self: &Arc<Self>, task: SubagentPoolTask, is_retry: bool) {
         let budget = self.budget_for(&task);
-        let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
-        let mut command = tokio::process::Command::new(&self.executable);
-        command
-            .args(self.build_args(&task))
-            .current_dir(&cwd)
-            .env_clear()
-            .envs(self.child_env(&task))
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        // POSIX: the child leads its own process group so a kill reaches the
-        // whole tree (its bash commands, nested subagents).
-        #[cfg(unix)]
-        command.process_group(0);
-        let mut child = match command.spawn() {
-            Ok(child) => child,
+        let spec = self.run_spec(&task);
+        let mut handle = match self.runner.spawn(spec) {
+            Ok(handle) => handle,
             Err(_) if !is_retry => return self.start_task(task, true),
             Err(_) => {
+                let result = SubagentResult {
+                    task_id: task.task_id.clone(),
+                    error: Some("Spawn failed synchronously".into()),
+                    status: Some(ResultStatus::Failed),
+                    ..Default::default()
+                };
+                self.record_attempt(&task, &result, 0, 0, 0, None, false);
                 self.emit(
                     "task_failed",
                     json!({"task_id": task.task_id, "error": "Spawn failed synchronously"}),
                 );
-                self.resolve_waiter(
-                    &task.task_id,
-                    SubagentResult {
-                        task_id: task.task_id.clone(),
-                        error: Some("Spawn failed synchronously".into()),
-                        status: Some(ResultStatus::Failed),
-                        ..Default::default()
-                    },
-                );
+                self.resolve_waiter(&task.task_id, result);
                 self.state().budgets.remove(&task.task_id);
                 self.pull();
                 return;
             }
         };
-        let pid = child.id().unwrap_or(0);
+        let pid = handle.pid();
         let spawned_at = now_ms();
+        // The sweep decides a dispatch dir is dead by reading this file. It has
+        // always read it; nothing ever wrote it, so reaping was age-only and a
+        // genuinely orphaned child was never detected by liveness.
+        let task_cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
+        write_pid_file(&task_cwd, &task.task_id, pid);
         self.state().slots.insert(
             task.task_id.clone(),
             SubagentSlot {
@@ -1179,9 +1327,23 @@ impl PoolInner {
             },
         );
         self.lifeguard.monitor(&task.task_id, &task.agent_type, pid);
+        // What a live row needs and nothing else could tell it: which attempt
+        // this is, the model the child *actually* resolved to (the caller asked
+        // for a tier, not a model), and when the run's own deadline is.
+        self.emit(
+            "task_started",
+            json!({
+                "task_id": task.task_id,
+                "agent_type": task.agent_type,
+                "model": self.resolve_task_model(&task),
+                "provider": task.provider,
+                "attempt": if task.use_inherited_model_fallback { 2 } else { 1 },
+                "deadline_at": now_ms() + crate::lifeguard::base_timeout_ms(&task.agent_type),
+                "spawned_at": spawned_at,
+            }),
+        );
 
-        let stdout = child.stdout.take();
-        let stderr = child.stderr.take();
+        let (mut stdout_rx, mut stderr_rx) = handle.take_streams();
         let captured = Arc::new(Mutex::new((String::new(), String::new())));
 
         let out_task = {
@@ -1191,22 +1353,18 @@ impl PoolInner {
             let task_id = task.task_id.clone();
             let agent_type = task.agent_type.clone();
             tokio::spawn(async move {
-                let Some(mut stdout) = stdout else { return };
+                let stdout = &mut stdout_rx;
                 let mut reader = JsonlLineReader::with_max_buffer(MAX_SUBAGENT_EVENT_LINE_CHARS);
-                let mut buf = vec![0u8; 64 * 1024];
-                loop {
-                    let n = match stdout.read(&mut buf).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
-                    };
+                while let Some(chunk) = stdout.recv().await {
+                    let n = chunk.len();
                     // Any output is a heartbeat: a busy child is alive even
                     // before its ping line is parsed.
                     append_tail(
                         &mut captured.lock().unwrap_or_else(|e| e.into_inner()).0,
-                        &String::from_utf8_lossy(&buf[..n]),
+                        &String::from_utf8_lossy(&chunk[..n]),
                     );
                     inner.lifeguard.record_heartbeat(&task_id);
-                    for line in reader.push(&buf[..n]) {
+                    for line in reader.push(&chunk[..n]) {
                         inner.handle_stdout_line(&task_id, &agent_type, &budget, &line);
                     }
                 }
@@ -1218,16 +1376,12 @@ impl PoolInner {
         let err_task = {
             let captured = captured.clone();
             tokio::spawn(async move {
-                let Some(mut stderr) = stderr else { return };
-                let mut buf = vec![0u8; 16 * 1024];
-                loop {
-                    let n = match stderr.read(&mut buf).await {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
-                    };
+                let stderr = &mut stderr_rx;
+                while let Some(chunk) = stderr.recv().await {
+                    let n = chunk.len();
                     append_tail(
                         &mut captured.lock().unwrap_or_else(|e| e.into_inner()).1,
-                        &String::from_utf8_lossy(&buf[..n]),
+                        &String::from_utf8_lossy(&chunk[..n]),
                     );
                 }
             })
@@ -1235,7 +1389,7 @@ impl PoolInner {
 
         let inner = self.clone();
         tokio::spawn(async move {
-            let status = child.wait().await;
+            let status = handle.wait().await;
             // Stdio may stay open in grandchildren: wait briefly for it.
             let _ = tokio::time::timeout(EXIT_STDIO_GRACE, async {
                 let _ = out_task.await;
@@ -1245,9 +1399,7 @@ impl PoolInner {
             inner.lifeguard.untrack(&task.task_id);
             let (stdout, stderr) = captured.lock().unwrap_or_else(|e| e.into_inner()).clone();
             let retry_scheduled = match status {
-                Ok(status) => {
-                    inner.settle(&task, &budget, spawned_at, status.code(), stdout, stderr)
-                }
+                Ok(status) => inner.settle(&task, &budget, spawned_at, status, stdout, stderr),
                 Err(err) => {
                     inner.settle_error(&task, &budget, spawned_at, is_retry, err, stdout, stderr)
                 }
@@ -1272,10 +1424,16 @@ impl PoolInner {
             .process_line(line);
         match classify_subagent_line(line) {
             SubagentStdoutLine::Heartbeat => self.lifeguard.record_heartbeat(task_id),
-            SubagentStdoutLine::Progress(event) => self.emit(
-                "task_progress",
-                json!({"task_id": task_id, "agent_type": agent_type, "event": event}),
-            ),
+            SubagentStdoutLine::Progress(event) => {
+                // Forward progress, not liveness: a child whose heartbeats come
+                // from a timer can be parked inside a provider call forever, and
+                // this is the signal that tells the difference.
+                self.lifeguard.record_progress(task_id);
+                self.emit(
+                    "task_progress",
+                    json!({"task_id": task_id, "agent_type": agent_type, "event": event}),
+                );
+            }
             SubagentStdoutLine::Ignore => {}
         }
     }
@@ -1292,10 +1450,10 @@ impl PoolInner {
     ) -> bool {
         let task_id = task.task_id.as_str();
         let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
-        let (tokens_generated, budget_exceeded) = {
+        let (tokens_generated, budget_exceeded, peak_context) = {
             let mut budget = budget.lock().unwrap_or_else(|e| e.into_inner());
             budget.flush();
-            (budget.used(), budget.is_exceeded())
+            (budget.used(), budget.is_exceeded(), budget.peak_context())
         };
         let kill_reason = {
             let mut state = self.state();
@@ -1341,6 +1499,15 @@ impl PoolInner {
                     "[DISPATCH] agent={} task_id={task_id} {:?} after the preferred model failed; retrying with inherited model",
                     task.agent_type, reason
                 ));
+                self.record_attempt(
+                    task,
+                    &result,
+                    duration,
+                    tokens_generated,
+                    peak_context,
+                    code,
+                    false,
+                );
                 self.cleanup_retry_artifacts(task);
                 self.state().queue.push_front(SubagentPoolTask {
                     use_inherited_model_fallback: true,
@@ -1349,6 +1516,15 @@ impl PoolInner {
                 return true;
             }
 
+            self.record_attempt(
+                task,
+                &result,
+                duration,
+                tokens_generated,
+                peak_context,
+                code,
+                false,
+            );
             self.write_output_json(task_id, &result);
             let name = match reason {
                 KillReason::Stalled => "task_stalled",
@@ -1357,7 +1533,14 @@ impl PoolInner {
             };
             self.emit(
                 name,
-                json!({"task_id": task_id, "agent_type": task.agent_type, "duration": duration, "tokens_generated": tokens_generated}),
+                json!({
+                    "task_id": task_id,
+                    "agent_type": task.agent_type,
+                    "duration": duration,
+                    "tokens_generated": tokens_generated,
+                    "status": reason.status().as_str(),
+                    "cause": kill_reason_cause(result.error.as_deref()),
+                }),
             );
             self.resolve_waiter(task_id, result);
             return false;
@@ -1384,6 +1567,15 @@ impl PoolInner {
                 result.ok = false;
                 result.error = verification.reason.clone();
                 result.status = Some(ResultStatus::Failed);
+                self.record_attempt(
+                    task,
+                    &result,
+                    duration,
+                    tokens_generated,
+                    peak_context,
+                    code,
+                    false,
+                );
                 self.write_output_json(task_id, &result);
                 self.emit(
                     "task_failed",
@@ -1397,9 +1589,26 @@ impl PoolInner {
             // dispatch dir goes (resume only works for unsuccessful tasks).
             let _ =
                 std::fs::remove_dir_all(cortexcode_code_paths::dispatch_task_dir(&cwd, task_id));
+            self.record_attempt(
+                task,
+                &result,
+                duration,
+                tokens_generated,
+                peak_context,
+                code,
+                verification.valid,
+            );
             self.emit(
                 "task_done",
-                json!({"task_id": task_id, "agent_type": task.agent_type, "duration": duration, "tokens_generated": tokens_generated, "status": "complete"}),
+                json!({
+                    "task_id": task_id,
+                    "agent_type": task.agent_type,
+                    "duration": duration,
+                    "tokens_generated": tokens_generated,
+                    "status": "complete",
+                    "confidence": result.result_data.as_ref().and_then(|d| d.get("confidence")).cloned().unwrap_or(Value::Null),
+                    "files_changed": result.result_data.as_ref().and_then(|d| d.get("files_changed")).cloned().unwrap_or(Value::Null),
+                }),
             );
             self.resolve_waiter(task_id, result);
             return false;
@@ -1415,6 +1624,15 @@ impl PoolInner {
                 "[DISPATCH] agent={} task_id={task_id} preferred model failed; retrying with inherited model",
                 task.agent_type
             ));
+            self.record_attempt(
+                task,
+                &result,
+                duration,
+                tokens_generated,
+                peak_context,
+                code,
+                false,
+            );
             self.cleanup_retry_artifacts(task);
             self.state().queue.push_front(SubagentPoolTask {
                 use_inherited_model_fallback: true,
@@ -1422,6 +1640,15 @@ impl PoolInner {
             });
             return true;
         }
+        self.record_attempt(
+            task,
+            &result,
+            duration,
+            tokens_generated,
+            peak_context,
+            code,
+            false,
+        );
         self.write_output_json(task_id, &result);
         let error = result
             .error
@@ -1448,10 +1675,10 @@ impl PoolInner {
         stderr: String,
     ) -> bool {
         self.state().slots.remove(&task.task_id);
-        let tokens_generated = {
+        let (tokens_generated, peak_context) = {
             let mut budget = budget.lock().unwrap_or_else(|e| e.into_inner());
             budget.flush();
-            budget.used()
+            (budget.used(), budget.peak_context())
         };
         if !is_retry {
             self.start_task(task.clone(), true);
@@ -1467,6 +1694,15 @@ impl PoolInner {
             used_inherited_model_fallback: Some(task.use_inherited_model_fallback),
             ..Default::default()
         };
+        self.record_attempt(
+            task,
+            &result,
+            now_ms().saturating_sub(spawned_at),
+            tokens_generated,
+            peak_context,
+            None,
+            false,
+        );
         self.write_output_json(&task.task_id, &result);
         self.emit(
             "task_failed",
@@ -1518,6 +1754,94 @@ impl PoolInner {
         let _ = std::fs::remove_file(dir.join("output.json"));
     }
 
+    /// The concrete model this task's `--model` resolves to, or `None` when the
+    /// child should resolve its own default. One implementation, shared by
+    /// `build_args` and the ledger, so a recorded model can never disagree with
+    /// the model the child actually ran on.
+    fn resolve_task_model(&self, task: &SubagentPoolTask) -> Option<String> {
+        let def = self.definition(&task.agent_type);
+        let explicit = def
+            .as_ref()
+            .and_then(|d| d.model.clone())
+            .filter(|m| !task.use_inherited_model_fallback && !m.is_empty() && m != MODEL_INHERIT);
+        // On the fallback attempt the pinned model is dropped and the
+        // dispatching session's own model is used. `task.model` is only that
+        // when the caller passed a concrete model; when it passed a
+        // `complexity` tier it is a category that resolves to the model that
+        // just failed, so prefer `inherited_model` whenever we have it.
+        let raw = if task.use_inherited_model_fallback {
+            task.inherited_model.clone().filter(|m| !m.is_empty())
+        } else {
+            None
+        }
+        .or(explicit)
+        .or_else(|| task.model.clone().filter(|m| !m.is_empty()));
+        raw.and_then(|m| {
+            resolve_model_reference(
+                &m,
+                self.settings.as_ref(),
+                Some(self.available_models.as_slice()),
+            )
+        })
+    }
+
+    /// One [`ledger`] line per attempt, from every terminal path, so the ledger
+    /// cannot miss a settle or count one twice. `verified` is the output
+    /// verifier's verdict, which is not the same as `result.ok`: a run cut
+    /// short by its deadline settles `partial` and is both ok and verified.
+    #[allow(clippy::too_many_arguments)]
+    fn record_attempt(
+        &self,
+        task: &SubagentPoolTask,
+        result: &SubagentResult,
+        duration_ms: u64,
+        tokens_generated: u64,
+        peak_context: u64,
+        exit_code: Option<i32>,
+        verified: bool,
+    ) {
+        let cwd = task.cwd.clone().unwrap_or_else(|| self.cwd.clone());
+        let resolved = self.resolve_task_model(task);
+        // The child's own verdict wins over the pool's: a run that was SIGTERMed
+        // and wrapped up on the way out settles `complete` here (the file is
+        // valid) while `result.json` says `partial`. Reporting `partial` keeps
+        // "cut short" visible in the stats instead of quietly counting as a
+        // finished run.
+        let reported = result
+            .result_data
+            .as_ref()
+            .and_then(|data| data.get("status"))
+            .and_then(Value::as_str)
+            .filter(|status| !status.is_empty());
+        let attempt = ledger::attempt_from_result(
+            &task.task_id,
+            &task.agent_type,
+            task.background.unwrap_or(false),
+            crate::depth::current_subagent_depth(&crate::depth::ProcessEnv) as u8 + 1,
+            task.model.as_deref(),
+            resolved.as_deref(),
+            task.provider.as_deref(),
+            task.use_inherited_model_fallback,
+            reported.unwrap_or_else(|| result.status.map(|s| s.as_str()).unwrap_or("failed")),
+            result.ok,
+            verified,
+            duration_ms,
+            tokens_generated,
+            peak_context,
+            exit_code,
+            result.budget_exceeded,
+            result.error.as_deref(),
+        );
+        let confidence_source = result
+            .result_data
+            .as_ref()
+            .map(|m| Value::Object(m.clone()));
+        ledger::append(
+            &cwd,
+            &ledger::with_confidence(attempt, confidence_source.as_ref()),
+        );
+    }
+
     fn resolve_waiter(&self, task_id: &str, result: SubagentResult) {
         let mut state = self.state();
         let status = match result.status {
@@ -1534,6 +1858,24 @@ impl PoolInner {
             return;
         }
         state.completed.insert(task_id.to_string(), result);
+        // Bounded: a finished result carries its captured streams, and nothing
+        // used to release them, so a long session grew until it hurt.
+        state.completed_order.push_back(task_id.to_string());
+        while state.completed_order.len() > self.max_completed {
+            let Some(oldest) = state.completed_order.pop_front() else {
+                break;
+            };
+            state.completed.remove(&oldest);
+            state.task_status.remove(&oldest);
+        }
+    }
+}
+
+/// One line, for the panel: the cause if there is one, else the status.
+fn kill_reason_cause(error: Option<&str>) -> String {
+    match error {
+        Some(text) if !text.is_empty() => text.split_whitespace().collect::<Vec<_>>().join(" "),
+        _ => "killed before it reported".into(),
     }
 }
 
@@ -1543,6 +1885,18 @@ fn js_code(code: Option<i32>) -> String {
 }
 
 /// The child's result.json summary, else the stderr tail, else the exit code.
+fn write_pid_file(cwd: &Path, task_id: &str, pid: u32) {
+    let dir = cortexcode_code_paths::dispatch_task_dir(cwd, task_id);
+    if std::fs::create_dir_all(&dir).is_err() {
+        return;
+    }
+    if let Err(error) = std::fs::write(dir.join("pid"), pid.to_string()) {
+        agent_log(&format!(
+            "[DISPATCH] cannot write pid for {task_id}: {error}"
+        ));
+    }
+}
+
 fn derive_failure_reason(result: &SubagentResult) -> String {
     let summary = result
         .result_data

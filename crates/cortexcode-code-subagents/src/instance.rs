@@ -8,7 +8,7 @@ use std::path::Path;
 use std::sync::{LazyLock, Mutex, MutexGuard};
 
 use cortexcode_ai_types::Model;
-use cortexcode_code_settings::SettingsManager;
+use cortexcode_code_settings::{deep_merge_settings, SettingsManager};
 use cortexcode_code_task_store::{task_store, TaskAgentPatch};
 use serde_json::Value;
 
@@ -47,9 +47,11 @@ pub fn get_subagent_pool(cwd: &Path, available_models: &[Model]) -> SubagentPool
         return pool.clone();
     }
     let manager = SettingsManager::create(cwd, cortexcode_code_paths::agent_dir());
-    // Project settings shallow-override global ones.
-    let mut settings = manager.global_settings();
-    settings.extend(manager.project_settings());
+    // One-level deep merge, the same rule the rest of the codebase uses. A
+    // plain `extend` replaced the whole `modelCategories` object, so a project
+    // that set only `capable` silently lost the global `fast` and `standard`
+    // tiers and every `complexity` fell back to a derived default.
+    let settings = deep_merge_settings(&manager.global_settings(), &manager.project_settings());
     let pool = SubagentPool::new(SubagentPoolOptions {
         executable: spawn_command(),
         cwd: Some(cwd.to_path_buf()),
@@ -65,40 +67,84 @@ pub fn get_subagent_pool(cwd: &Path, available_models: &[Model]) -> SubagentPool
     pool
 }
 
-/// Live subagent progress on the task panel's roster row (keyed by the pool
-/// task id): the running tool, "thinking" between turns, cleared at the end.
+/// Live subagent detail on the task panel's roster row (keyed by the pool task
+/// id): which attempt is running, on which model, how long is left, and — when
+/// it ends — how it ended.
+///
+/// The panel used to show only the running tool and a stopwatch, so a retry on
+/// a different model, a run that was cut short and a run that failed looked
+/// identical from the outside. Everything here comes from pool events, so the
+/// row never guesses.
 fn wire_progress_to_task_store(pool: &SubagentPool) {
     pool.on(|event| {
         let Some(task_id) = event.data.get("task_id").and_then(Value::as_str) else {
             return;
         };
-        let activity = match event.name {
-            "task_progress" => match event.data["event"].get("type").and_then(Value::as_str) {
-                Some("tool_execution_start") => Some(
-                    event.data["event"]
+        let patch = match event.name {
+            "task_started" => TaskAgentPatch {
+                activity: Some("starting".into()),
+                attempt: event
+                    .data
+                    .get("attempt")
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32),
+                model: event
+                    .data
+                    .get("model")
+                    .and_then(Value::as_str)
+                    .map(String::from),
+                deadline_at: event.data.get("deadline_at").and_then(Value::as_u64),
+                outcome: None,
+                cause: None,
+                ..Default::default()
+            },
+            "task_progress" => {
+                let activity = match event.data["event"].get("type").and_then(Value::as_str) {
+                    Some("tool_execution_start") => event.data["event"]
                         .get("toolName")
                         .and_then(Value::as_str)
                         .unwrap_or("")
                         .to_string(),
-                ),
-                Some("turn_end") => Some("thinking".to_string()),
-                Some("tool_execution_end") => Some(String::new()),
-                _ => None,
-            },
-            "task_done" | "task_failed" | "task_stalled" | "task_timeout" | "task_cancelled" => {
-                Some(String::new())
-            }
-            _ => None,
-        };
-        if let Some(activity) = activity {
-            task_store().patch_agent(
-                task_id,
+                    Some("turn_end") => "thinking".to_string(),
+                    Some("tool_execution_end") => String::new(),
+                    _ => return,
+                };
                 TaskAgentPatch {
                     activity: Some(activity),
                     ..Default::default()
-                },
-            );
-        }
+                }
+            }
+            name if name.starts_with("task_") && name != "task_progress" => {
+                // Every terminal event: record how it ended so the row keeps
+                // saying something useful after the run is gone.
+                let status = event
+                    .data
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or(match name {
+                        "task_done" => "complete",
+                        "task_failed" => "failed",
+                        "task_stalled" => "stalled",
+                        "task_timeout" => "timeout",
+                        _ => "cancelled",
+                    })
+                    .to_string();
+                TaskAgentPatch {
+                    activity: Some(String::new()),
+                    outcome: Some(status),
+                    confidence: event.data.get("confidence").and_then(Value::as_f64),
+                    cause: event
+                        .data
+                        .get("cause")
+                        .and_then(Value::as_str)
+                        .or_else(|| event.data.get("error").and_then(Value::as_str))
+                        .map(str::to_string),
+                    ..Default::default()
+                }
+            }
+            _ => return,
+        };
+        task_store().patch_agent(task_id, patch);
     });
 }
 

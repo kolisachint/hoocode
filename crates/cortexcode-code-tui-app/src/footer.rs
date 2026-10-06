@@ -107,12 +107,28 @@ fn context_gauge(percent: f64, error_level: f64, warn_level: f64) -> (String, St
     )
 }
 
-fn active_subagent_count() -> usize {
-    task_store()
+/// Running and queued subagent rows. Queued used to be invisible: with five
+/// slots and twelve dispatches the footer said "5 running" and gave no hint
+/// that seven more were waiting behind them.
+fn subagent_counts() -> (usize, usize) {
+    let store = task_store();
+    let running = store
         .list()
         .iter()
         .filter(|t| t.source == Some(TaskSource::Subagent) && t.status == TaskStatus::InProgress)
-        .count()
+        .count();
+    let queued = store
+        .list()
+        .iter()
+        .filter(|t| t.source == Some(TaskSource::Subagent) && t.status == TaskStatus::Pending)
+        .count();
+    (running, queued)
+}
+
+/// Running subagents only, for callers that want just the badge number.
+#[allow(dead_code)]
+fn active_subagent_count() -> usize {
+    subagent_counts().0
 }
 
 /// Newlines, tabs and carriage returns become spaces; runs of spaces collapse.
@@ -313,13 +329,23 @@ impl FooterComponent {
             l1_plain += &format!(" • {name}");
             l1_styled += &t.fg("dim", &format!(" • {name}"));
         }
-        let n_sub = active_subagent_count();
+        let (n_sub, n_queued) = subagent_counts();
         let mut right: Vec<(String, String)> = Vec::new();
-        if n_sub > 0 {
-            right.push((
-                format!("◇{n_sub} running"),
-                t.fg("accent", &format!("◇{n_sub}")) + &t.fg("dim", " running"),
-            ));
+        if n_sub > 0 || n_queued > 0 {
+            // Queued included: a pool with five slots and twelve dispatches is
+            // not "five running", it is five running and seven waiting.
+            let label = if n_queued > 0 {
+                format!("◇{n_sub} running · {n_queued} queued")
+            } else {
+                format!("◇{n_sub} running")
+            };
+            let styled = if n_queued > 0 {
+                t.fg("accent", &format!("◇{n_sub}"))
+                    + &t.fg("dim", &format!(" running · {n_queued} queued"))
+            } else {
+                t.fg("accent", &format!("◇{n_sub}")) + &t.fg("dim", " running")
+            };
+            right.push((label, styled));
         }
         let view = self.tool_output_view;
         let view_text = format!("{} {}", tool_output_view_glyph(view), view.as_str());

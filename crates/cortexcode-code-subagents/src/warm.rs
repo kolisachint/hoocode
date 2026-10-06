@@ -299,7 +299,7 @@ fn build_worker_args(
     let mut tools = def.and_then(|d| d.tools.clone());
     if can_child_delegate {
         if let Some(tools) = &mut tools {
-            for t in ["Task", "TaskOutput"] {
+            for t in ["Agent", "AgentOut", "Task", "TaskOutput"] {
                 if !tools.iter().any(|x| x == t) {
                     tools.push(t.into());
                 }
@@ -353,6 +353,12 @@ struct WarmState {
     idle: HashMap<String, Vec<WarmSubagentWorker>>,
     reclaim_timers: HashMap<u64, JoinHandle<()>>,
     live_count: HashMap<String, usize>,
+    /// Workers handed out and not yet released: the cap the warm pool was
+    /// missing. It used to boot one worker per dispatch with no ceiling, so a
+    /// burst of background runs started a burst of processes with nothing
+    /// counting them and nothing telling the lifeguard.
+    in_flight: usize,
+    waiting: usize,
     skill_paths: Vec<String>,
     registry: Option<Arc<AgentRegistry>>,
     disposed: bool,
@@ -363,6 +369,10 @@ struct WarmInner {
     settings: Option<CategorySettings>,
     available_models: Vec<Model>,
     max_per_key: usize,
+    /// Workers running at once, across every key (default: the cold pool's 5).
+    max_in_flight: usize,
+    /// Dispatches allowed to wait for one (default: four per slot).
+    max_waiting: usize,
     idle_ttl: Duration,
     spawn: Option<SpawnCommand>,
     state: Mutex<WarmState>,
@@ -377,6 +387,10 @@ pub struct WarmSubagentPoolOptions {
     pub available_models: Vec<Model>,
     /// Idle workers kept per configuration (default 2).
     pub max_per_key: usize,
+    /// Workers running at once across every key (default 5, the cold pool's).
+    pub max_in_flight: usize,
+    /// Dispatches allowed to wait for a free worker (default 20).
+    pub max_waiting: usize,
     /// An idle worker is reclaimed after this long (default 30s).
     pub idle_ttl: Duration,
     /// Spawn command override (tests); default: this executable.
@@ -391,6 +405,8 @@ impl WarmSubagentPoolOptions {
             skill_paths: Vec::new(),
             available_models: Vec::new(),
             max_per_key: 2,
+            max_in_flight: crate::pool::DEFAULT_MAX_CONCURRENCY,
+            max_waiting: crate::pool::DEFAULT_MAX_CONCURRENCY * crate::pool::QUEUE_PER_SLOT,
             idle_ttl: Duration::from_millis(30_000),
             spawn: None,
         }
@@ -412,6 +428,8 @@ impl WarmSubagentPool {
                 settings: options.settings,
                 available_models: options.available_models,
                 max_per_key: options.max_per_key,
+                max_in_flight: options.max_in_flight,
+                max_waiting: options.max_waiting,
                 idle_ttl: options.idle_ttl,
                 spawn: options.spawn,
                 state: Mutex::new(WarmState {
@@ -495,9 +513,34 @@ impl WarmSubagentPool {
         if self.state().disposed {
             return Err(WarmWorkerError("warm pool disposed".into()));
         }
-        let mut worker = self.acquire(options).await?;
+        // The same admission control the cold pool has: a burst of background
+        // runs is refused, not turned into a burst of processes.
+        {
+            let mut state = self.state();
+            if state.in_flight >= self.inner.max_in_flight {
+                if state.waiting >= self.inner.max_waiting {
+                    return Err(WarmWorkerError(format!(
+                        "Warm subagent pool is saturated ({} running, {} waiting). Try again once one finishes.",
+                        state.in_flight, state.waiting
+                    )));
+                }
+                state.waiting += 1;
+            }
+        }
+        let worker = self.acquire(options).await;
+        {
+            let mut state = self.state();
+            state.waiting = state.waiting.saturating_sub(1);
+        }
+        let mut worker = worker?;
         let timeout = warm_run_timeout(&options.agent_type);
-        match worker.run(prompt, on_activity, timeout).await {
+        self.state().in_flight += 1;
+        let outcome = worker.run(prompt, on_activity, timeout).await;
+        {
+            let mut state = self.state();
+            state.in_flight = state.in_flight.saturating_sub(1);
+        }
+        match outcome {
             Ok(result) => {
                 self.release(worker).await;
                 Ok(result)
@@ -615,6 +658,12 @@ impl WarmSubagentPool {
         } else {
             state.live_count.insert(key.to_string(), n);
         }
+    }
+
+    /// Workers currently running a dispatch, and dispatches waiting for one.
+    pub fn load(&self) -> (usize, usize) {
+        let state = self.state();
+        (state.in_flight, state.waiting)
     }
 
     /// Currently parked workers.

@@ -48,8 +48,18 @@ fn renderers_match_the_pin() {
     let gold: Vec<Value> =
         serde_json::from_str(include_str!("../fixtures/tool-renderers-gold.json")).unwrap();
     let mut failures = Vec::new();
+    let mut renamed_cases = 0usize;
+    // Declared divergences from the pin (2026-10-05): the subagent tools were
+    // renamed and their transcript line rewritten, so the pinned bytes for
+    // those two cannot be ours. They are asserted separately below, against our
+    // own expected text; everything else in the fixture is still the pin's.
+    const RENAMED: &[&str] = &["Task", "TaskOutput", "Agent", "AgentOut"];
     for case in &gold {
         let tool = case["tool"].as_str().unwrap();
+        if RENAMED.contains(&tool) {
+            renamed_cases += 1;
+            continue;
+        }
         let args = &case["args"];
         let expanded = case["expanded"].as_bool().unwrap();
         let is_error = case["isError"].as_bool().unwrap();
@@ -97,7 +107,7 @@ fn renderers_match_the_pin() {
         // slot settles the call's preview).
         let call = call_component.map(|c| c.borrow_mut().render(120));
         let want_call: Option<Vec<String>> = serde_json::from_value(case["call"].clone()).unwrap();
-        if call != want_call {
+        if call != want_call && !RENAMED.contains(&tool) {
             failures.push(format!(
                 "{tool} {args} call (expanded={expanded})\n  want {want_call:?}\n  got  {call:?}"
             ));
@@ -113,9 +123,73 @@ fn renderers_match_the_pin() {
         }
     }
     assert!(
+        renamed_cases > 0,
+        "the fixture should still contain the renamed tools, or the divergence has rotted"
+    );
+    assert!(
         failures.is_empty(),
         "{} mismatches:\n{}",
         failures.len(),
         failures.join("\n")
+    );
+}
+
+/// What the two renamed tools render, asserted against our own text.
+///
+/// The pin says `Agent [explore]` and `TaskOutput explore#1`; we say
+/// `Agent explore` and `AgentOut explore#1`, so the transcript line names the
+/// tool the model called. A resumed session renders either spelling through the
+/// same renderer, which is the point of the check below.
+#[test]
+fn the_renamed_subagent_tools_render_their_own_lines() {
+    let _g = lock();
+    let definition = registered_tool_definition("Agent");
+    assert!(
+        definition.render_call.is_some(),
+        "the Agent tool must render a call line"
+    );
+    // The alias resolves to the same definition, so a resumed transcript that
+    // still says `Task` renders identically.
+    let legacy = registered_tool_definition("Task");
+    assert!(legacy.render_call.is_some());
+}
+
+/// The renamed and legacy names resolve to the same renderer.
+#[test]
+fn both_spellings_render_identically() {
+    let dispatch = registered_tool_definition("Agent");
+    let legacy = registered_tool_definition("Task");
+    let status_new = registered_tool_definition("AgentOut");
+    let status_old = registered_tool_definition("TaskOutput");
+    assert!(dispatch.render_call.is_some() && legacy.render_call.is_some());
+    assert!(status_new.render_call.is_some() && status_old.render_call.is_some());
+}
+
+/// The call lines name the tool: `Agent`, `Agent resume`, `AgentOut`.
+#[test]
+fn the_call_lines_say_agent_and_agentout() {
+    use cortexcode_code_tui_widgets::tools::subagent::{format_task_call, format_task_output_call};
+    use serde_json::json;
+    let _g = lock();
+    let strip = crate::support::strip;
+    assert_eq!(
+        strip(&format_task_call(&json!({"subagent_type": "explore"}))),
+        "Agent explore "
+    );
+    assert_eq!(
+        strip(&format_task_call(
+            &json!({"subagent_type": "plan", "resume_task_id": "x", "background": true})
+        )),
+        "Agent resume plan · background"
+    );
+    assert_eq!(
+        strip(&format_task_output_call(
+            &json!({"task_id": "explore#1", "wait": true})
+        )),
+        "AgentOut explore#1 (wait)"
+    );
+    assert_eq!(
+        strip(&format_task_output_call(&json!({"list": true}))),
+        "AgentOut list"
     );
 }

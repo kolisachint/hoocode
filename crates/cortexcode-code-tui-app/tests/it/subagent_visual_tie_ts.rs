@@ -199,7 +199,9 @@ fn colors_the_task_call_line_by_agent_type() {
     let _g = lock();
     let line =
         format_task_call(&json!({"subagent_type": "explore", "description": "d", "prompt": "p"}));
-    assert!(strip(&line).contains("Agent [explore]"), "{line:?}");
+    // One word everywhere: the transcript says Agent, like the tool and the
+    // panel now do. It used to say `Agent [explore]` while the tool was `Task`.
+    assert!(strip(&line).contains("Agent explore"), "{line:?}");
     assert!(line.contains(&fg_ansi(agent_color_for("explore"))));
 }
 

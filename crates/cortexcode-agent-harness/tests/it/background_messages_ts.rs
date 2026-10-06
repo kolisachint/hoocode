@@ -94,7 +94,7 @@ fn subagent_placeholder_is_one_line_and_finish_passes_the_notification_through()
     let label = describe_background_tool(&call("Task", args)).label;
     assert!(placeholder.contains(&label));
     assert_eq!(placeholder.split('\n').count(), 1);
-    assert!(placeholder.contains("TaskOutput"));
+    assert!(placeholder.contains("AgentOut"));
     assert_eq!(texts(&finish), ["review#1 finished ✓ — looks good"]);
     assert_eq!(finish.custom_type, BACKGROUND_TASK_CUSTOM_TYPE);
     details_match(

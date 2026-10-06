@@ -1106,3 +1106,60 @@ fn an_emptied_roster_exits_focus_instead_of_trapping_the_keyboard() {
     panel.handle_input(DOWN);
     assert_eq!(panel.take_events(), vec![TaskPanelEvent::ExitFocus]);
 }
+
+/// The live row explains the run: which attempt, which model, how long left.
+/// Before this, a slow run said `⋯ read · 4:12` and nothing about why it was
+/// slow or which model it had actually landed on.
+#[test]
+fn a_running_row_shows_attempt_model_and_the_deadline_counting_down() {
+    let _g = lock();
+    let now = cortexcode_code_task_store::now_ms();
+    let run = create_with("map the repo", sub("explore"));
+    set(run, TaskStatus::InProgress);
+    task_store().upsert_agent(
+        "subagent",
+        "subagent",
+        TaskAgentKind::Subagent,
+        TaskAgentPatch {
+            activity: Some("read".into()),
+            attempt: Some(2),
+            model: Some("mock/pinned".into()),
+            deadline_at: Some(now + 192_000),
+            ..Default::default()
+        },
+    );
+    let lines = render(&mut TaskPanelComponent::new(), 160);
+    let row = find(&lines, "map the repo");
+    assert!(row.contains("attempt 2"), "{row:?}");
+    assert!(row.contains("mock/pinned"), "{row:?}");
+    assert!(
+        row.contains("left"),
+        "the deadline should count down: {row:?}"
+    );
+}
+
+/// A finished row says how it ended and why, which a stopwatch cannot: a run
+/// cut short and a run that failed used to look the same.
+#[test]
+fn a_finished_row_shows_the_outcome_and_its_cause() {
+    let _g = lock();
+    let run = create_with("review the diff", sub("code-review"));
+    set(run, TaskStatus::InProgress);
+    task_store().upsert_agent(
+        "subagent",
+        "subagent",
+        TaskAgentKind::Subagent,
+        TaskAgentPatch {
+            activity: Some(String::new()),
+            outcome: Some("partial".into()),
+            confidence: Some(0.6),
+            cause: Some("Ran out of time before completing.".into()),
+            ..Default::default()
+        },
+    );
+    let lines = render(&mut TaskPanelComponent::new(), 160);
+    let row = find(&lines, "review the diff");
+    assert!(row.contains("partial"), "{row:?}");
+    assert!(row.contains("0.6"), "the child's confidence: {row:?}");
+    assert!(row.contains("Ran out of time"), "{row:?}");
+}

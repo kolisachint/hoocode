@@ -240,3 +240,151 @@ async fn dispose_kills_all_monitored_processes() {
     assert!(!guard.is_monitoring("t1"));
     assert!(child.wait().unwrap().code().is_none());
 }
+
+/// A pinging child that finishes no turn and runs no tool is parked, not busy.
+///
+/// Measured 2026-10-05: a child blocked inside a provider call keeps writing
+/// `{"ping":true}` from its heartbeat timer, so the silence threshold never
+/// fired and the run could only end at the ten-minute hard deadline — 95s in,
+/// the child was still alive and the ledger still empty. A second liveness
+/// signal, "no forward progress", closes that hole.
+#[tokio::test]
+async fn stalls_a_child_that_pings_but_makes_no_progress() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "explore", child.id());
+    // Heartbeats are current — the child is demonstrably alive — but it has
+    // finished nothing for longer than the progress threshold.
+    guard.record_heartbeat("t1");
+    guard.set_last_progress_for_testing("t1", now_ms() - 200_000);
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    assert!(child.wait().unwrap().code().is_none());
+    guard.dispose();
+}
+
+/// Progress refreshes the second signal, so a slow-but-working child is left
+/// alone: recorded subagent turns ran up to 65s.
+#[tokio::test]
+async fn progress_keeps_a_slow_child_alive() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    let mut child = sleeper();
+    guard.monitor("t1", "code-review", child.id());
+    guard.set_last_progress_for_testing("t1", now_ms() - 100_000);
+    guard.record_progress("t1");
+    guard.record_heartbeat("t1");
+    guard.check_heartbeats();
+    assert!(stalled.lock().unwrap().is_empty());
+    guard.dispose();
+    let _ = child.wait();
+}
+
+/// A reap is SIGTERM, grace, SIGKILL — so a child that can still write its
+/// result gets the chance. `sleep` dies on SIGTERM, which is the point: the
+/// pool then sees the exit and settles the task from whatever it wrote.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_stalled_child_is_terminated_before_it_is_killed() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    guard.set_term_grace_for_testing(500);
+    let mut child = sleeper();
+    guard.monitor("t1", "explore", child.id());
+    guard.set_last_heartbeat_for_testing("t1", now_ms() - 70_000);
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    // SIGTERM reached it rather than SIGKILL: `sleep` dies of the signal, and
+    // the status says which one.
+    use std::os::unix::process::ExitStatusExt;
+    let status = tokio::task::spawn_blocking(move || child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGTERM),
+        "expected death by SIGTERM, got {status:?}"
+    );
+    guard.untrack("t1");
+    guard.dispose();
+}
+
+/// The backstop still holds: a child that ignores SIGTERM is killed after the
+/// grace period, because a wedged process can also be deaf to a signal.
+///
+/// `/bin/sh`'s `trap ''` is not used for this: under a test harness the shell
+/// does not reliably end up with SIG_IGN, and a test that passes for the wrong
+/// reason is worse than no test. Python sets the disposition itself, so the
+/// only thing that can end this child is the escalation.
+#[cfg(unix)]
+fn term_deaf_sleeper() -> Child {
+    let mut command = Command::new("python3");
+    command
+        .arg("-c")
+        .arg("import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)");
+    #[cfg(unix)]
+    std::os::unix::process::CommandExt::process_group(&mut command, 0);
+    command.spawn().unwrap()
+}
+
+/// The child needs a moment to install its SIGTERM handler; a SIGTERM that
+/// arrives first is simply fatal, which is not what these two tests are about.
+async fn deaf_sleeper_ready(_child: &Child) {
+    tokio::time::sleep(Duration::from_millis(500)).await;
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_child_that_ignores_sigterm_is_killed_after_the_grace() {
+    use std::os::unix::process::ExitStatusExt;
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    let stalled = stalled_ids(&guard);
+    guard.set_term_grace_for_testing(300);
+    let mut child = term_deaf_sleeper();
+    deaf_sleeper_ready(&child).await;
+    guard.monitor("t1", "explore", child.id());
+    guard.set_last_heartbeat_for_testing("t1", now_ms() - 70_000);
+    guard.check_heartbeats();
+    assert_eq!(*stalled.lock().unwrap(), vec!["t1"]);
+    let status = tokio::task::spawn_blocking(move || child.wait())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        status.signal(),
+        Some(libc::SIGKILL),
+        "a SIGTERM-deaf child should have been escalated to SIGKILL, got {status:?}"
+    );
+    guard.untrack("t1");
+    guard.dispose();
+}
+
+/// Untracking (the child exited) cancels the escalation, so a healthy late exit
+/// is never killed after the fact.
+#[cfg(unix)]
+#[tokio::test]
+async fn exiting_cancels_the_escalation_timer() {
+    let dir = tempfile::tempdir().unwrap();
+    let guard = SubagentLifeguard::new(dir.path());
+    guard.set_term_grace_for_testing(400);
+    let mut child = term_deaf_sleeper();
+    deaf_sleeper_ready(&child).await;
+    guard.monitor("t1", "explore", child.id());
+    guard.set_last_heartbeat_for_testing("t1", now_ms() - 70_000);
+    guard.check_heartbeats();
+    guard.untrack("t1");
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+    assert!(
+        child.try_wait().unwrap().is_none(),
+        "the escalation should have been cancelled when the child was untracked"
+    );
+    let _ = child.kill();
+    let _ = child.wait();
+    guard.dispose();
+}

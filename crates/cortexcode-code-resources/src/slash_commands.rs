@@ -128,4 +128,17 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         name: "subagent",
         description: "Spawn a subagent directly: /subagent <mode> <task>",
     },
+    // Not in hoocode: orchestration of the dispatch ledger, ours.
+    BuiltinSlashCommand {
+        name: "subagent-cancel",
+        description: "Cancel the newest running subagent: /subagent-cancel [task_id]",
+    },
+    BuiltinSlashCommand {
+        name: "subagent-retry",
+        description: "Re-dispatch the newest failed subagent: /subagent-retry [agent] [task]",
+    },
+    BuiltinSlashCommand {
+        name: "subagent-stats",
+        description: "Subagent reliability from the dispatch ledger: /subagent-stats [24h|7d|all]",
+    },
 ];

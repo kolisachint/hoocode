@@ -176,45 +176,168 @@ recorded runs.**
   against a task corpus. Owner, 2026-10-03.
 - **Track 2 (in-process) not started.** Owner, 2026-10-03.
 
-## 6. Open: the in-process migration
+## 5b. P1 hardening (2026-10-05)
 
-The original design here proposed replacing child processes with tokio tasks. It was not
-adopted, for these reasons:
+The eval suite (`subagent-evals.md`) made the remaining holes measurable, and
+this is what closed them. Every item is a Rust test in `tests/it/hardening.rs`
+or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
 
-**In favour.** The pattern is precedented twice in-repo — `run_rpc_mode`
-(`code-rpc/src/mode.rs`) and `RpcClient::attach` over `tokio::io::duplex`, with tests wiring
-them against the faux provider. `warm.rs` is the near-exact template: same shape, RPC child
-instead of a task. `AgentSession` is `Send + Sync + 'static` (proven at `session.rs:746`,
-where it moves itself into a detached task). It would remove a whole class of transport bugs:
-stdout framing, ping-as-liveness, kill data loss, the capture cap.
+| | Fix | Where |
+|---|---|---|
+| H1 | **Liveness is two-tier.** Silence past 60s reaps; so does no *forward progress* (a `turn_end` or a tool event) past 150s, load-scaled. A child parked in a provider call keeps pinging and used to be invisible until its hard deadline — ten minutes for `explore`, measured alive at 95s | `lifeguard.rs` |
+| H2 | **A reap is SIGTERM, grace, SIGKILL.** The child catches SIGTERM, writes its partial `result.json` and exits, and the pool already accepts a valid result from a reaped task, so a stall kill returns work instead of discarding it. The grace escalates for a child too wedged to catch a signal | `lifeguard.rs`, `runtime.rs` |
+| H3 | **`pid` is written.** `sweep_old_agents` has always read `dispatch/<task>/pid` to ask whether a run is alive; nothing ever wrote it, so reaping was age-only and a real orphan was never detected | `pool.rs` |
+| H4 | **Admission control.** The queue was unbounded: a confused parent could enqueue hundreds of runs that never finish. It is refused at four per slot, with a message that says so | `pool.rs` |
+| H5 | **Ageing instead of starvation.** Priority gained a step per minute waited, so a `code-review` cannot sit behind a stream of `explore` runs forever | `pool.rs` |
+| H6 | **Finished results are bounded** (64, oldest dropped). Each carries its captured stdout and stderr and nothing released them: unbounded growth over a long session | `pool.rs` |
+| H7 | **Inbox reconciliation.** A `running` record the pool has forgotten (a lost settle event) used to report `running` forever, in the roster and the panel. `TaskOutput` now settles them, with an age guard so a dispatch that has not started yet is never mistaken for a lost one | `inbox.rs`, `tools.rs` |
+| H8 | **The warm pool shares the caps.** It booted one worker per dispatch with no ceiling and told the lifeguard nothing. It now has the cold pool's in-flight and admission limits | `warm.rs` |
+| H9 | **Writes are not swallowed.** `write_file_atomic(result.json)` was `let _ =`: a full disk gave a clean child exit with no result and a parent told only that it failed. It returns, logs, and exits non-zero | `result.rs`, `runtime.rs` |
+| H10 | **Settings deep-merge.** `instance.rs` used `global.extend(project)`, which replaced the whole `modelCategories` object — a project setting one tier silently lost the other two | `instance.rs` |
+| H11 | **`complexity` is validated at the tool.** An unrecognised tier used to pass through as a model id and kill the child at startup; it now falls back to the parent's model with one log line | `tools.rs` |
+| H12 | **The ledger reports what the child reported.** A run SIGTERMed and wrapped up settles `complete` in the pool (the file is valid) while `result.json` says `partial`. The ledger now keeps `partial` visible | `pool.rs` |
 
-**Against, and not yet resolved:**
+## 5c. P2: the runner seam (2026-10-05)
 
-1. **Re-entrant nesting.** The hard part is not depth bookkeeping, it is that an in-process
-   child holding `Task` needs a *pool reference* at depth+1, from inside a session the pool
-   owns. Unproven.
-2. **Depth is propagated through process-global env vars.** `depth.rs` states the premise
-   outright. In-process, `SUBAGENT_DEPTH` and `DELEGATE_ALLOW` must become per-run fields —
-   `runtime.rs:subagent_tools` does `set_var`/`remove_var` at startup. **This is smaller than
-   it looks:** MCP server discovery is `deferred` in the ledger (10.11) and never wired in the
-   Rust port, so `SKIP_MCP` and `DEFER_MCP_SCHEMAS` are already dead env vars. The work is
-   depth plus delegate-allow.
-3. **The tool allowlist is nearly free.** `CreateAgentSessionOptions` already carries `tools`,
-   `disallowed_tools` and `permission_gate` per session — what `--tools` does today.
-4. **Panic containment has no precedent.** The only `catch_unwind` in the workspace wraps a
-   synchronous count callback. Nothing wraps a `tokio::spawn` body, and the pool's state is a
-   `Mutex`, so a panic mid-run poisons it for the parent.
-5. **Depth caps are budgeted in processes** (`depth.rs`: *"worst case 5 x (2^3-1) = 35
-   processes"*). 35 concurrent sessions in one address space is a different blast radius.
-6. **The test seam is the real cost.** Every pool test substitutes a child via
-   `executable`/`prefix_args` — a *path* seam — using `/bin/sh` mocks; 31 usages across 5 test
-   files. There is no injectable runner, and `cortexcode-ai-provider-faux` is used by no
-   subagent test. "Feature-flagged so both paths run against the same tests" is not achievable
-   without building that seam first.
+`crates/cortexcode-code-subagents/src/runner.rs`. Until this existed, "run a
+subagent" and "spawn this executable with these argv" were the same statement:
+the pool built a `std::process::Command` and read its pipes. That made three
+things untestable — anything needing a *model* in it, anything where two runs
+must interleave deterministically, and the in-process model.
 
-If it is taken up, build the seam against the faux provider **first**, and treat (1) as the
-gate: if re-entrant nesting does not work cleanly, keep the process model permanently and
-spend the effort on liveness instead. Child-process isolation is worth real money.
+A `Runner` takes a `RunSpec` (argv, env, prompt, tools, model, deadline — the
+same facts both as a command line and as fields) and returns a `RunnerHandle`
+with the same shape as a child process: two byte streams, a wait, a kill, a pid.
+Everything above the seam — queueing, priority, ageing, admission control, the
+lifeguard, heartbeats, token accounting, verification, the ledger — is unchanged
+and now runs against either implementation.
+
+The seam kept *streaming* deliberately: liveness is a per-byte signal, so a
+handle that returned its output at the end would quietly disable the stall
+watchdog.
+
+Two implementations ship:
+
+- `ProcessRunner` re-execs the binary. This is what the product uses.
+- `ScriptedRunner` answers from a script with no process at all. `tests/it/runner.rs`
+  drives the whole pool through it: settle paths, ledger lines, priority, queue
+  order, stderr capture, the watchdog. If any of those needed a `/bin/sh` mock
+  again, the seam would have leaked.
+
+**The seam found a latent kill bug on its first run.** `terminate_group(0)` is
+`kill(-0, SIGTERM)`, which signals *every process in the caller's group* — the
+parent agent included. Nothing could reach it before, because a dispatched run
+always had a pid; a processless runner can. `kill_tree` already guarded `pid > 0`;
+`terminate_group` now does too.
+
+Alongside it:
+
+- **Fault catalogue** in the eval harness: 429 with `retry-after`, a stream that
+  dies mid-line, a torn JSONL line, a context overflow, a provider error.
+- **`--matrix`**: every scenario against every fault. Current baseline: 65/65
+  cells settle, 95% usable.
+- **`--soak N`**: rounds of randomised faults asserting nothing leaks and
+  nothing stays unsettled. A 60s run is 26 rounds, 0 leaks.
+- **Flake fixes and retries**: `.config/nextest.toml` retries the subagent suite
+  three times (and has a `ci` profile that does not); the two inbox `wait:true`
+  tests wait on the finish instead of a 5ms sleep, and the warm-pool TTL test
+  polls instead of sleeping four times the TTL.
+
+## 5d. P3: one word for the thing (2026-10-05)
+
+`Task` read as a to-do item — the task store really does have a `Task` type for
+TodoWrite entries and MCP calls — while the tool starts a background run, and
+the transcript said a third thing entirely (`Agent [explore]`).
+
+| before | after | still accepted |
+|---|---|---|
+| `Task` | **`Agent`** | `Task`, registered as an alias for a release |
+| `TaskOutput` | **`AgentOut`** | `TaskOutput`, same |
+| `Agent [explore]`, `TaskOutput explore#1` | **`Agent explore`**, **`AgentOut explore#1`** (plus `resume`, plus `· background`) | both names render through one renderer |
+| `call Task with resume_task_id` | `call Agent with …` | — |
+
+First shipped on this branch as `Dispatch` / `DispatchStatus`; renamed to
+`Agent` / `AgentOut` before release (2026-10-06) because they are shorter, read
+the same in every surface (TUI, transcript, a hoobot chat line), and the
+transcript already said `Agent`. `Dispatch` never shipped, so it is not an
+alias.
+
+An alias is a spelling, not a second code path: both definitions execute the
+same function, and the prompt's tool list says which one is canonical
+(`deprecated alias for Agent; prefer Agent`) so a model is never offered
+two identical tools.
+
+The rename touched the tool definitions, the nested-agent allowlist (which never
+contained `Task` at all, so an agent that listed `tools:` silently lost it), the
+allowlist normalisation, the render dispatch, the pool's and warm pool's
+`--tools` grant, the availability prompt, the transcript renderer and the
+prompt templates.
+
+**Divergence is now declared, not silent.** Two pin checks compared our bytes to
+hoocode's and would have failed on the rename:
+
+- `shipped_prose_ts.rs` normalises our template back to the pinned wording using
+  an explicit `DECLARED_DIVERGENCES` list, so an undeclared difference still
+  fails and a declared one that rots (the pinned text changes under us) fails
+  too.
+- `tool_renderers_gold.rs` skips the renamed tools' pinned renderings and
+  asserts ours instead, with the count asserted so the skip cannot silently
+  become "compare nothing".
+
+## 6. The in-process migration: built, measured, not shipped (2026-10-05)
+
+§6 of this file used to be an open question. It is now an answer, and the
+answer is "the mechanism works, the product does not use it yet".
+
+**What shipped.** `runner.rs` has three implementations of one seam:
+
+| | what it is | used by |
+|---|---|---|
+| `ProcessRunner` | re-execs the binary per dispatch | the product, unchanged |
+| `ScriptedRunner` | answers from a script, no process | the whole test suite |
+| `InProcessRunner` | runs the agent loop in this process | off; wired but not enabled |
+
+**The gate, which was the whole question, passes.** `an_in_process_child_can_dispatch_its_own_child`
+runs a child in process which dispatches its own child through the *same* pool
+while the first run is still going: no deadlock, no double settle, two ledger
+lines, nothing stuck. The reason it works is small and worth writing down: the
+pool never holds its state lock across an await, so a run the pool owns can ask
+the same pool for another run. Object 4 of the old objection list — "panic
+containment has no precedent" — is also answered by construction for the seam,
+though a panicking *agent* still unwinds the whole process, which is the one
+argument for keeping children.
+
+**The measurement** (`in_process_and_child_process_runs_are_comparable`, 12
+identical runs through the same pool, same settle path, same ledger):
+
+```
+in-process 8.9ms      child process 459.9ms
+```
+
+~0.7ms of dispatch overhead against ~38ms, for runs that do nothing. On a real
+subagent the model dominates and the ratio shrinks — but the per-dispatch floor
+is gone, and the floor is what makes many small subagents viable.
+
+**Why it is not the default anyway.**
+
+1. The session wiring lives in the CLI (`runtime.rs`), not in this crate. The
+   `InProcessFactory` deliberately takes the wiring from the caller; nobody has
+   written the production factory, and a second way to build a session would be
+   a second way to get auth, the registry and the system prompt wrong.
+2. Depth is still a process-global env var (`SUBAGENT_DEPTH`). With children,
+   depth is per process and therefore trivially correct. In process it is a
+   shared mutable global that a nested run has to mutate and restore — and the
+   gate test only proves the *pool* nests cleanly, not that depth accounting
+   does.
+3. A child's crash today costs one dispatch. In process it costs the session.
+
+**Verdict.** Keep child processes as the shipped model. The seam is the part
+that was worth building: it removed the 31 `/bin/sh` path seams, it is what the
+fault matrix and the soak run against, and it means the question above can be
+revisited with a factory and a per-run depth field rather than a rewrite. If
+someone picks it up: item 2 first, and re-run
+`an_in_process_child_can_dispatch_its_own_child` with real depth assertions
+rather than a pool-liveness one.
 
 ## 7. Footnote: the evidence is not permanent
 

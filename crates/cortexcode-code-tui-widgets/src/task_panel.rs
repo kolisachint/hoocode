@@ -59,6 +59,9 @@ pub enum TaskPanelView {
 impl TaskPanelView {
     fn label(self) -> &'static str {
         match self {
+            // The flat lens is the task ledger (TodoWrite items plus dispatched
+            // runs); `Subagents` below is the delegation forest. Renaming the
+            // flat lens to "subagents" collided with the other one.
             Self::Flat => "tasks",
             Self::Subagents => "subagents",
             Self::Teams => "teams",
@@ -377,24 +380,44 @@ fn format_task_line(task: &Task, width: usize, options: LineOptions<'_>, now: u6
                 .filter(|a| !a.is_empty())
                 .map(|a| format!("⋯ {a}"))
                 .unwrap_or_default();
+            // Attempt, model, deadline: the three things that explain a slow or
+            // surprising run. Rendered at draw time, so the countdown ticks.
+            let run_detail = options
+                .owner
+                .map(|owner| describe_run(owner, now))
+                .unwrap_or_default();
             let run_for = if is_delegated(task) {
                 format_duration_secs(task_elapsed_secs(task, now))
             } else {
                 String::new()
             };
+            let join = |plain: String, styled: String| -> (String, String) {
+                if run_detail.is_empty() {
+                    return (plain, styled);
+                }
+                (
+                    format!("{plain} · {run_detail}"),
+                    format!("{styled}{}", t.fg("dim", &format!(" · {run_detail}"))),
+                )
+            };
             match (activity.is_empty(), run_for.is_empty()) {
                 (false, false) => {
-                    right_plain = format!("{activity} · {run_for}");
-                    right_styled =
-                        t.fg("warning", &activity) + &t.fg("dim", &format!(" · {run_for}"));
+                    let (plain, styled) = join(
+                        format!("{activity} · {run_for}"),
+                        t.fg("warning", &activity) + &t.fg("dim", &format!(" · {run_for}")),
+                    );
+                    right_plain = plain;
+                    right_styled = styled;
                 }
                 (false, true) => {
-                    right_styled = t.fg("warning", &activity);
-                    right_plain = activity;
+                    let (plain, styled) = join(activity.clone(), t.fg("warning", &activity));
+                    right_plain = plain;
+                    right_styled = styled;
                 }
                 (true, false) => {
-                    right_styled = t.fg("dim", &run_for);
-                    right_plain = run_for;
+                    let (plain, styled) = join(run_for.clone(), t.fg("dim", &run_for));
+                    right_plain = plain;
+                    right_styled = styled;
                 }
                 (true, true) => {}
             }
@@ -572,6 +595,12 @@ fn default_agent_meta(id: &str) -> TaskAgent {
         id: id.to_string(),
         name: id.to_string(),
         role: Some(if main { "orchestrator" } else { "subagent" }.to_string()),
+        attempt: None,
+        model: None,
+        deadline_at: None,
+        outcome: None,
+        confidence: None,
+        cause: None,
         kind: if main {
             TaskAgentKind::Main
         } else {
@@ -1030,4 +1059,43 @@ impl Component for TaskPanelComponent {
     fn set_focused(&mut self, focused: bool) {
         self.focused = focused;
     }
+}
+
+/// `attempt 2 · anthropic/claude-opus-5 · 3:12 left` — the three facts that
+/// explain a run, and the outcome once it has one.
+fn describe_run(owner: &TaskAgent, now: u64) -> String {
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(attempt) = owner.attempt.filter(|n| *n > 1) {
+        parts.push(format!("attempt {attempt}"));
+    }
+    if let Some(model) = owner.model.as_deref().filter(|m| !m.is_empty()) {
+        parts.push(model.to_string());
+    }
+    if let Some(deadline) = owner.deadline_at.filter(|d| *d > now) {
+        parts.push(format!(
+            "{} left",
+            format_duration_secs(((deadline - now) / 1000) as f64)
+        ));
+    }
+    if let Some(outcome) = owner.outcome.as_deref().filter(|o| !o.is_empty()) {
+        parts.clear();
+        let mut line = outcome.to_string();
+        if let Some(confidence) = owner.confidence {
+            line.push_str(&format!(" · {confidence:.1}"));
+        }
+        if let Some(cause) = owner.cause.as_deref().filter(|c| !c.is_empty()) {
+            let one_line: String = cause.split_whitespace().collect::<Vec<_>>().join(" ");
+            line.push_str(&format!(" · {}", truncate_to(&one_line, 48)));
+        }
+        parts.push(line);
+    }
+    parts.join(" · ")
+}
+
+fn truncate_to(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_string();
+    }
+    let head: String = text.chars().take(max.saturating_sub(1)).collect();
+    format!("{head}…")
 }

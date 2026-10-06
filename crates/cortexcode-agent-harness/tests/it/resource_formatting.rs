@@ -197,7 +197,7 @@ fn background_placeholders_and_finish_messages() {
     );
     assert_eq!(
         create_background_placeholder_text(&call("Task", json!({"subagent_type": "a"}))),
-        "Delegated to subagent `a` in the background. I'll be notified when it finishes; use TaskOutput to check progress or read the result."
+        "Delegated to subagent `a` in the background. I'll be notified when it finishes; use AgentOut to check progress or read the result."
     );
 
     let result = |name: &str, is_error: bool| BackgroundToolResult {

@@ -384,6 +384,41 @@ impl SubagentInbox {
             .collect()
     }
 
+    /// Settle records the pool has forgotten about.
+    ///
+    /// `prune` deliberately never touches a running record, which is right
+    /// while the run really is running — and wrong when the settle event was
+    /// lost (a dropped notification, a crash between the two). Such a handle
+    /// then reports `running` forever, in the roster the model reads and in the
+    /// task panel a human watches. A record is reconciled when the pool says it
+    /// is neither running nor queued *and* it is older than `max_age_ms`, so a
+    /// dispatch that has not reached `pull` yet is never mistaken for a lost
+    /// one.
+    ///
+    /// `is_live` is the pool's answer for that task id.
+    pub fn reconcile(&self, is_live: impl Fn(&str) -> bool, max_age_ms: u64) -> Vec<InboxRecord> {
+        let mut state = self.state();
+        let now = now_ms();
+        let mut reconciled = Vec::new();
+        for id in state.order.clone() {
+            let Some(record) = state.records.get_mut(&id) else {
+                continue;
+            };
+            if record.lifecycle != TaskLifecycle::Running || is_live(&id) {
+                continue;
+            }
+            if now.saturating_sub(record.started_at) < max_age_ms {
+                continue;
+            }
+            record.lifecycle = TaskLifecycle::Failed;
+            record.ended_at = Some(now);
+            record.error = Some("the dispatch is no longer running and never reported back".into());
+            record.summary_line = Some("reconciled: no result".into());
+            reconciled.push(record.clone());
+        }
+        reconciled
+    }
+
     /// Test/teardown helper.
     pub fn clear(&self) {
         let mut state = self.state();

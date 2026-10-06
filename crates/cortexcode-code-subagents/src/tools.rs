@@ -17,7 +17,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use cortexcode_agent_types::{AgentToolCall, AgentToolResult};
 use cortexcode_ai_types::{AbortSignal, Content, Model};
 use cortexcode_code_agent_session::provider_health::get_provider_exhaustion;
-use cortexcode_code_resources::{load_agent_registry, LoadAgentRegistryOptions, TASK_TOOL_NAME};
+use cortexcode_code_resources::{
+    load_agent_registry, LoadAgentRegistryOptions, MODEL_INHERIT, TASK_OUTPUT_TOOL_LEGACY_NAME,
+    TASK_OUTPUT_TOOL_NAME, TASK_TOOL_LEGACY_NAME, TASK_TOOL_NAME,
+};
 use cortexcode_code_session::SessionManager;
 use cortexcode_code_task_store::{
     task_store, AgentStats, CreateTaskOptions, TaskAgentKind, TaskAgentPatch, TaskAgentState,
@@ -30,6 +33,8 @@ use crate::agent_log::agent_log;
 use crate::depth::{delegate_allow_list, is_delegate_allowed, ProcessEnv};
 use crate::inbox::{subagent_inbox, InboxRecord, TaskLifecycle};
 use crate::instance::get_subagent_pool;
+use crate::model_categories::ModelCategory;
+use crate::pool::TaskStatus as PoolTaskStatus;
 use crate::pool::{DispatchOptions, ResultStatus, SubagentPool, SubagentResult, TaskResult};
 use crate::warm::{
     get_warm_subagent_pool, warm_subagents_enabled, WarmDispatchOptions, WarmProgressCallback,
@@ -43,6 +48,11 @@ const TASK_BACKGROUND_AGENTS_PROMPT: &str =
     include_str!("../templates/prompts/task-background-agents.md");
 const TASK_BACKGROUND_NONE_PROMPT: &str =
     include_str!("../templates/prompts/task-background-none.md");
+
+/// How long a `running` record may sit with the pool saying nothing about it
+/// before `TaskOutput` stops believing it. Past the longest agent deadline
+/// (20 min) and the lifeguard's 4x load ceiling, plus a minute of slack.
+const RECONCILE_AGE_MS: u64 = 81 * 60 * 1000;
 
 /// Default wait for `TaskOutput(wait: true)`.
 const TASK_OUTPUT_DEFAULT_TIMEOUT_MS: u64 = 120_000;
@@ -477,7 +487,7 @@ fn finalize_dispatch_result(
     if partial {
         if let Some(handle) = resume_handle {
             answer.push_str(&format!(
-                "\n\n[Partial result. To continue this subagent, call Task again with resume_task_id=\"{handle}\".]"
+                "\n\n[Partial result. To continue this subagent, call Agent again with resume_task_id=\"{handle}\".]"
             ));
         }
     }
@@ -495,7 +505,7 @@ fn finalize_dispatch_result(
             String::new()
         };
         let text = format!(
-            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with TaskOutput(\"{}\").",
+            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOut(\"{}\").",
             background.label,
             summarize(&answer),
             background.label
@@ -576,8 +586,8 @@ fn task_parameters() -> Value {
                 ],
                 "description": "Model tier for this dispatch: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Maps to settings.modelCategories. Ignored if the chosen agent pins its own model; omit to use the agent's default."
             },
-            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with TaskOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
-            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Task or TaskOutput call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
+            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOut; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
+            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Agent or AgentOut call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
         }
     })
 }
@@ -780,9 +790,27 @@ async fn execute_task(
     };
     // `complexity` goes in as the model: a pinned agent model still wins, and
     // the pool resolves a category.
-    let dispatch_model = str_param(&params, "complexity")
-        .map(String::from)
-        .or_else(|| model_id.clone());
+    //
+    // Validated here, not left to the child. The tool schema rejects an
+    // unknown tier in the parent, but every path that skips the schema (a
+    // plugin, an extension, `/subagent`) used to pass the string straight
+    // through as a model id, and the child then died at startup on "Model not
+    // found" — a whole dispatch lost to a typo. An unrecognised tier now falls
+    // back to the parent's model with one warning, which is what the caller
+    // meant anyway.
+    let dispatch_model = match str_param(&params, "complexity").map(str::trim) {
+        Some(raw) if !raw.is_empty() => match ModelCategory::parse(raw) {
+            Some(tier) => Some(tier.as_str().to_string()),
+            None if raw == MODEL_INHERIT => None,
+            None => {
+                crate::agent_log::agent_log(&format!(
+                    "[TASK] unknown complexity tier {raw:?} for agent={subagent_type}; using the parent's model"
+                ));
+                model_id.clone()
+            }
+        },
+        _ => model_id.clone(),
+    };
     let is_background = params
         .get("background")
         .and_then(Value::as_bool)
@@ -816,6 +844,7 @@ async fn execute_task(
         provider: provider.clone(),
         session_file: fork_session_file.clone(),
         task_id: Some(pool_task_id.clone()),
+        background: Some(is_background),
     };
     let use_warm = warm_subagents_enabled(&ProcessEnv) && fork_session_file.is_none();
 
@@ -1021,7 +1050,7 @@ fn format_task_roster() -> AgentToolResult {
         if all.len() == 1 { "" } else { "s" }
     );
     let hint = if all.iter().any(|r| r.lifecycle == TaskLifecycle::Done) {
-        "\nRead a finished one with TaskOutput(\"<label>\")."
+        "\nRead a finished one with AgentOut(\"<label>\")."
     } else {
         ""
     };
@@ -1035,7 +1064,7 @@ fn task_output_parameters() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "task_id": {"type": "string", "description": "Handle of a background subagent — its task_id or friendly label (e.g. \"explore#1\") from a Task notification. Omit (or set list:true) to see every background task."},
+            "task_id": {"type": "string", "description": "Handle of a background subagent — its task_id or friendly label (e.g. \"explore#1\") from an Agent notification. Omit (or set list:true) to see every background task."},
             "list": {"type": "boolean", "description": "List all background subagents with their status (running/done/failed/cancelled) and current activity. No result bodies are returned."},
             "wait": {"type": "boolean", "description": "Block until the named task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier) — before returning. Bounded by timeout_ms."},
             "timeout_ms": {"type": "number", "description": "Maximum time to block in wait mode, in milliseconds (default 120000)."}
@@ -1044,12 +1073,49 @@ fn task_output_parameters() -> Value {
 }
 
 /// `createTaskOutputToolDefinition`.
+/// The pre-rename names, registered as aliases for one release.
+///
+/// A model that has seen `Task` in a thousand transcripts will keep calling it,
+/// and a resumed session carries tool calls by name; both must keep working.
+/// The alias points at the same executor, so an alias is a spelling, not a
+/// second code path — and the description says which name is canonical.
+pub fn create_task_tool_alias_definition(cwd: &Path) -> ToolDefinition {
+    let mut definition = create_task_tool_definition(cwd);
+    definition.name = TASK_TOOL_LEGACY_NAME.to_string();
+    definition.label = TASK_TOOL_LEGACY_NAME.to_string();
+    definition.description = format!(
+        "Deprecated alias for `{TASK_TOOL_NAME}`. {}",
+        definition.description
+    );
+    // The prompt's tool list shows the snippet, so this is where a model learns
+    // the alias is legacy: two identical entries would be worse than one.
+    definition.prompt_snippet = Some(format!(
+        "deprecated alias for {TASK_TOOL_NAME}; prefer {TASK_TOOL_NAME}"
+    ));
+    definition
+}
+
+/// The deprecated alias for [`create_task_output_tool_definition`].
+pub fn create_task_output_tool_alias_definition() -> ToolDefinition {
+    let mut definition = create_task_output_tool_definition();
+    definition.name = TASK_OUTPUT_TOOL_LEGACY_NAME.to_string();
+    definition.label = TASK_OUTPUT_TOOL_LEGACY_NAME.to_string();
+    definition.description = format!(
+        "Deprecated alias for `{TASK_OUTPUT_TOOL_NAME}`. {}",
+        definition.description
+    );
+    definition.prompt_snippet = Some(format!(
+        "deprecated alias for {TASK_OUTPUT_TOOL_NAME}; prefer {TASK_OUTPUT_TOOL_NAME}"
+    ));
+    definition
+}
+
 pub fn create_task_output_tool_definition() -> ToolDefinition {
     ToolDefinition { ordered_start: false,
-        name: "TaskOutput".into(),
-        label: "TaskOutput".into(),
+        name: TASK_OUTPUT_TOOL_NAME.into(),
+        label: TASK_OUTPUT_TOOL_NAME.into(),
         description: [
-            "Check on background subagents dispatched via Task, and pull their results.",
+            "Check on background subagents dispatched via Agent, and pull their results.",
             "Pass a task_id/label (e.g. \"explore#1\") to read a finished subagent's full result, or to see its status while it runs.",
             "Set list:true (or omit task_id) to list every background subagent with its status and current activity.",
             "Set wait:true to block until that task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier).",
@@ -1082,6 +1148,25 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
         subagent_inbox().observe(&get_subagent_pool(&cwd, &models));
     }
     let inbox = subagent_inbox();
+    // Before answering anything about a handle: a record the pool has already
+    // forgotten is reconciled here, so a lost settle event cannot leave the
+    // model (or the task panel) looking at a run that finished or died long ago.
+    if let Some(cwd) = ctx.as_ref().and_then(|c| c.cwd.clone()) {
+        let models = ctx
+            .as_ref()
+            .map(|c| c.available_models.clone())
+            .unwrap_or_default();
+        let pool = get_subagent_pool(&cwd, &models);
+        inbox.reconcile(
+            |task_id| {
+                matches!(
+                    pool.get_status(task_id),
+                    PoolTaskStatus::Running | PoolTaskStatus::Queued
+                )
+            },
+            RECONCILE_AGE_MS,
+        );
+    }
     let handle = str_param(&params, "task_id")
         .map(str::trim)
         .filter(|s| !s.is_empty())
@@ -1110,7 +1195,7 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
 
     let Some(rec) = inbox.get(&handle) else {
         return text_result(
-            format!("No background task \"{handle}\". Call TaskOutput with list:true to see active tasks."),
+            format!("No background task \"{handle}\". Call AgentOut with list:true to see active tasks."),
             output_details(Some(&handle), "unknown", false, None),
         );
     };
@@ -1124,7 +1209,7 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
                 .unwrap_or_default();
             text_result(
                 format!(
-                    "{} is still running — {} elapsed{activity}. Call TaskOutput again, or with wait:true to block until it finishes.",
+                    "{} is still running — {} elapsed{activity}. Call AgentOut again, or with wait:true to block until it finishes.",
                     rec.label,
                     record_elapsed(&rec)
                 ),

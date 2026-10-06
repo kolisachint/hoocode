@@ -7,6 +7,10 @@
 //! `{"ping":true}` heartbeats on its stdout, a verified `result.json` in the
 //! task's dispatch dir settles it. [`lifeguard`] reaps silent or overdue
 //! children. The Task/TaskOutput tools and the warm (RPC) pool build on this.
+//!
+//! [`ledger`] is the measurement layer: one append-only line per dispatch
+//! attempt, so "how reliable are subagents?" has an answer that is not
+//! reconstructed from whatever dispatch dirs happened to survive on disk.
 
 pub mod agent_log;
 pub mod depth;
@@ -14,11 +18,13 @@ pub mod dispatch;
 pub mod events;
 pub mod inbox;
 pub mod instance;
+pub mod ledger;
 pub mod lifeguard;
 pub mod model_categories;
 pub mod output_verifier;
 pub mod pool;
 pub mod result;
+pub mod runner;
 pub mod token_budget;
 pub mod tools;
 pub mod warm;

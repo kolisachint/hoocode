@@ -8,6 +8,9 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  schedule:
+    # 04:17 UTC: nightly evals, the matrix and the soak.
+    - cron: "17 4 * * *"
   workflow_call:
 
 concurrency:
@@ -89,6 +92,55 @@ jobs:
             echo "$stray"
             exit 1
           fi
+
+  subagent-evals:
+    # Subagent reliability, measured end to end against a scripted mock
+    # provider (docs/design/subagent-evals.md). Non-blocking until it has run
+    # green on this runner a few times: a wall-clock-sensitive measurement
+    # should not be able to block an unrelated PR on its first day.
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: evals
+      - run: cargo build --locked -p cortexcode-code-main
+      - name: Subagent evals (fast suite)
+        run: scripts/eval/subagent_evals.py --min-success 0.8
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: subagent-evals-report
+          path: target/subagent-evals/
+          retention-days: 14
+
+  subagent-evals-nightly:
+    # The long form: every scenario against every fault, then a soak. Too slow
+    # for a pull request, cheap enough to run every night.
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain (rust-toolchain.toml)
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: evals
+      - run: cargo build --locked -p cortexcode-code-main
+      - name: Fault matrix
+        run: scripts/eval/subagent_evals.py --matrix
+      - name: Soak (10 minutes, randomised faults, leak check)
+        run: scripts/eval/subagent_evals.py --soak 600
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: subagent-evals-nightly
+          path: target/subagent-evals/
+          retention-days: 14
 
   firewall:
     runs-on: ubuntu-latest

@@ -7,7 +7,6 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Once};
-use std::time::Duration;
 
 use cortexcode_agent_types::{AgentToolCall, AgentToolResult};
 use cortexcode_ai_types::Content;
@@ -141,8 +140,10 @@ async fn task_output_tool() {
     // wait:true blocks until the task finishes, then returns its body
     inbox.clear();
     inbox.start("t1", "explore#1", "explore");
+    // The waiter is signalled by `finish`, not by a timer: a fixed sleep here
+    // was a coin flip on a loaded machine.
     tokio::spawn(async {
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
         subagent_inbox().finish("t1", &ok_result("t1", "finished after waiting"));
     });
     let tool2 = tool.clone();
@@ -164,9 +165,9 @@ async fn task_output_tool() {
     inbox.start("t1", "explore#1", "explore");
     inbox.start("t2", "explore#2", "explore");
     tokio::spawn(async {
-        tokio::time::sleep(Duration::from_millis(5)).await;
+        tokio::task::yield_now().await;
         subagent_inbox().finish("t1", &ok_result("t1", "one"));
-        tokio::time::sleep(Duration::from_millis(10)).await;
+        tokio::task::yield_now().await;
         subagent_inbox().finish("t2", &ok_result("t2", "two"));
     });
     let tool3 = tool.clone();
@@ -396,7 +397,7 @@ fn build_task_main_prompt_contents() {
     assert!(prompt.contains("mark the item in_progress BEFORE dispatching"));
     // Built-in explore/plan are background agents: the background block is in.
     assert!(prompt.contains("don't idle"));
-    assert!(prompt.contains("TaskOutput(wait: true)"));
+    assert!(prompt.contains("AgentOut(wait: true)"));
     assert!(!prompt.contains("DO NOT stop and wait"));
     assert!(prompt.contains("Delegate when you need only the final result"));
     assert!(!prompt.contains("WHEN TO USE:"));
@@ -545,7 +546,7 @@ async fn task_tool_execute_paths() {
     .unwrap();
     assert_eq!(
         text(&r),
-        "explore#1 finished ✓ — Mapped the module.\nRead the full result with TaskOutput(\"explore#1\")."
+        "explore#1 finished ✓ — Mapped the module.\nRead the full result with AgentOut(\"explore#1\")."
     );
     assert_subset(&r.details, json!({"ok": true, "background": true}));
     let (_, body) = subagent_inbox().collect("explore#1").unwrap();
@@ -853,8 +854,15 @@ fn active_tool_names(with_task: bool) -> Vec<String> {
         cortexcode_code_session::SessionManager::in_memory(dir.path().to_string_lossy()),
         CreateAgentSessionOptions {
             model: Some(model),
+            // What the CLI registers: both canonical tools and both
+            // deprecated aliases.
             custom_tools: if with_task {
-                vec![create_task_tool_definition(dir.path())]
+                vec![
+                    create_task_tool_definition(dir.path()),
+                    create_task_output_tool_definition(),
+                    create_task_tool_alias_definition(dir.path()),
+                    create_task_output_tool_alias_definition(),
+                ]
             } else {
                 vec![]
             },
@@ -870,9 +878,14 @@ fn active_tool_names(with_task: bool) -> Vec<String> {
 fn the_task_tool_is_active_only_when_registered() {
     isolate_agent_dir();
     let on = active_tool_names(true);
+    assert!(on.contains(&"Agent".to_string()));
+    assert!(on.contains(&"AgentOut".to_string()));
+    // Both spellings stay registered while the old one is deprecated.
     assert!(on.contains(&"Task".to_string()));
+    assert!(on.contains(&"TaskOutput".to_string()));
     assert!(on.contains(&"read".to_string()));
     let off = active_tool_names(false);
+    assert!(!off.contains(&"Agent".to_string()));
     assert!(!off.contains(&"Task".to_string()));
     assert!(off.contains(&"read".to_string()));
 }

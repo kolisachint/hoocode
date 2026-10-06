@@ -1,0 +1,18 @@
+# Retries for the tests that assert on wall-clock.
+#
+# Two shapes of flake live in this workspace and neither is a product bug: a
+# test that waits a fixed few milliseconds for a spawn to land, and a test that
+# races a TTL. Both pass on a loaded machine far less often than on an idle one,
+# and a red build teaches people to ignore red. `cargo nextest run --retries 0`
+# is the way to insist on a clean first run.
+[profile.default]
+retries = 2
+
+[profile.ci]
+retries = 0
+
+# The subagent suite spawns real child processes; under a full-workspace run it
+# is the one that feels the scheduler.
+[[profile.default.overrides]]
+filter = 'test(/subagents::/)'
+retries = 3

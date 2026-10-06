@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: the subagent tools are `Agent` and `AgentOut` (2026-10-06)
+- **`Task` → `Agent`, `TaskOutput` → `AgentOut`.** `Task` read as a to-do item while the tool starts
+  a subagent run. The old names stay registered for one release as deprecated aliases that run the
+  same executor, and the prompt's tool list marks them `deprecated alias for Agent; prefer Agent`.
+- The transcript line names the tool: `Agent explore` (`Agent resume plan · background`) and
+  `AgentOut explore#1 (wait)`. Tool results, notifications and error hints say `Agent`/`AgentOut`.
+- Every place that checked for the subagent tool by name accepts both spellings: the agent list in
+  the prompt, the footer indicator, the startup listing, the nested-agent `--tools` grant (pool and
+  warm pool) and the tool-chain summary.
+
+### Added: subagent evals and a dispatch ledger (2026-10-05)
+- **Subagent reliability is now measured, not remembered.** `<cwd>/.cortexcode/dispatch/ledger.jsonl`
+  is an append-only line per dispatch **attempt** - agent, requested and resolved model, mode, depth,
+  status, verifier verdict, confidence, wall clock, generated tokens, peak context, exit code and cause.
+  Every terminal path in the pool writes one, including the ones that used to vanish: the inherited-model
+  retry, a kill at the deadline, a cancelled task, a spawn failure. The file is bounded (rewritten past
+  20k lines, newest 10k kept) and strictly best-effort - an unwritable ledger logs and drops, and never
+  fails a dispatch. `result.json` still decides correctness; the ledger only records what happened.
+- **`/subagent-stats [24h|7d|all]`** renders it in the TUI: attempts, usable rate, statuses,
+  median/p90/max wall clock, tokens, fallback count, per-agent breakdown and the last five failures
+  with their causes.
+- **`scripts/eval/subagent_evals.py`** drives the real binary end to end - real parent session, real
+  `Agent` tool (then `Task`), real pool, real child process - against a routable scripted mock provider
+  (`scripts/eval/mock_provider.py`). Twelve scenarios cover the happy paths, the turn limit, an invalid
+  tool call, a stream that dies mid-answer, the deadline wrap-up, the stall reaper, a region rejection
+  that must fall back, a bad complexity tier and eight concurrent dispatches against five slots.
+  Exits non-zero when a scenario deviates from its declared expectation; `--min-success` gates a build,
+  `--repeat` measures flakiness, `--include-slow` adds the two minute-long probes. Reports land in
+  `target/subagent-evals/`.
+- **Fixed: concurrent ledger appends interleaved.** The record and its newline were two `write_all`
+  calls, so eight simultaneous settles produced seven lines and one unparseable one. One write per
+  record now, with a 400-line concurrency test. Found by the eval suite on the code the suite needed.
+- **Fixed: a background dispatch was recorded as `blocking`.** The Task tool's background flag never
+  reached the pool task, so `mode` in the ledger was wrong for every background run.
+
+
 ### Fixed: subagents stopped failing on almost every dispatch (2026-10-03)
 - Subagents ran to completion in none of ten recorded dispatches. Seven fixes, detailed in
   `docs/design/subagents.md`.
