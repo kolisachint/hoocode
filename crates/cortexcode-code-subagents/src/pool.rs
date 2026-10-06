@@ -89,6 +89,27 @@ const EXIT_STDIO_GRACE: Duration = Duration::from_millis(100);
 /// The env prefix cortex stamps on children (read back via any prefix).
 const CHILD_ENV_PREFIX: &str = "CORTEXCODE_";
 
+/// What [`SubagentPool::statuses`] reports per task.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunningSince {
+    Running(u64),
+    Queued,
+}
+
+impl RunningSince {
+    /// Epoch ms, or 0 for a queued task (it has no start yet).
+    pub fn since(self) -> u64 {
+        match self {
+            Self::Running(at) => at,
+            Self::Queued => 0,
+        }
+    }
+
+    pub fn is_running(self) -> bool {
+        matches!(self, Self::Running(_))
+    }
+}
+
 /// `SubagentPoolTask`.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct SubagentPoolTask {
@@ -578,6 +599,24 @@ impl SubagentPool {
         }
         self.inner.pull();
         Ok(())
+    }
+
+    /// Every tracked task with its status and when it started: what a panel
+    /// needs to offer "cancel the newest one" without a focus ring.
+    pub fn statuses(&self) -> Vec<(String, RunningSince)> {
+        let state = self.inner.state();
+        let mut out: Vec<(String, RunningSince)> = state
+            .slots
+            .values()
+            .map(|slot| (slot.task_id.clone(), RunningSince::Running(slot.spawned_at)))
+            .collect();
+        out.extend(
+            state
+                .queue
+                .iter()
+                .map(|task| (task.task_id.clone(), RunningSince::Queued)),
+        );
+        out
     }
 
     /// Current status of a task.
@@ -1288,6 +1327,21 @@ impl PoolInner {
             },
         );
         self.lifeguard.monitor(&task.task_id, &task.agent_type, pid);
+        // What a live row needs and nothing else could tell it: which attempt
+        // this is, the model the child *actually* resolved to (the caller asked
+        // for a tier, not a model), and when the run's own deadline is.
+        self.emit(
+            "task_started",
+            json!({
+                "task_id": task.task_id,
+                "agent_type": task.agent_type,
+                "model": self.resolve_task_model(&task),
+                "provider": task.provider,
+                "attempt": if task.use_inherited_model_fallback { 2 } else { 1 },
+                "deadline_at": now_ms() + crate::lifeguard::base_timeout_ms(&task.agent_type),
+                "spawned_at": spawned_at,
+            }),
+        );
 
         let (mut stdout_rx, mut stderr_rx) = handle.take_streams();
         let captured = Arc::new(Mutex::new((String::new(), String::new())));
@@ -1479,7 +1533,14 @@ impl PoolInner {
             };
             self.emit(
                 name,
-                json!({"task_id": task_id, "agent_type": task.agent_type, "duration": duration, "tokens_generated": tokens_generated}),
+                json!({
+                    "task_id": task_id,
+                    "agent_type": task.agent_type,
+                    "duration": duration,
+                    "tokens_generated": tokens_generated,
+                    "status": reason.status().as_str(),
+                    "cause": kill_reason_cause(result.error.as_deref()),
+                }),
             );
             self.resolve_waiter(task_id, result);
             return false;
@@ -1539,7 +1600,15 @@ impl PoolInner {
             );
             self.emit(
                 "task_done",
-                json!({"task_id": task_id, "agent_type": task.agent_type, "duration": duration, "tokens_generated": tokens_generated, "status": "complete"}),
+                json!({
+                    "task_id": task_id,
+                    "agent_type": task.agent_type,
+                    "duration": duration,
+                    "tokens_generated": tokens_generated,
+                    "status": "complete",
+                    "confidence": result.result_data.as_ref().and_then(|d| d.get("confidence")).cloned().unwrap_or(Value::Null),
+                    "files_changed": result.result_data.as_ref().and_then(|d| d.get("files_changed")).cloned().unwrap_or(Value::Null),
+                }),
             );
             self.resolve_waiter(task_id, result);
             return false;
@@ -1799,6 +1868,14 @@ impl PoolInner {
             state.completed.remove(&oldest);
             state.task_status.remove(&oldest);
         }
+    }
+}
+
+/// One line, for the panel: the cause if there is one, else the status.
+fn kill_reason_cause(error: Option<&str>) -> String {
+    match error {
+        Some(text) if !text.is_empty() => text.split_whitespace().collect::<Vec<_>>().join(" "),
+        _ => "killed before it reported".into(),
     }
 }
 

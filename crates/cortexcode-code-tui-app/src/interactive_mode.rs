@@ -3557,6 +3557,8 @@ impl Mode {
             BuiltinCommand::Export => self.handle_export_command(text),
             BuiltinCommand::Import => self.handle_import_command(text),
             BuiltinCommand::Subagent => self.handle_subagent_command(text),
+            BuiltinCommand::SubagentCancel => self.cancel_newest_subagent(text),
+            BuiltinCommand::SubagentRetry => self.retry_newest_subagent(text),
             BuiltinCommand::SubagentStats => self.handle_subagent_stats_command(text),
             BuiltinCommand::Pending(name) => {
                 // Wired by its own ledger task (see 11.4e).
@@ -4420,6 +4422,125 @@ impl Mode {
                 Err(error) => Err(error.to_string()),
             };
             let _ = tx.send(AppEvent::SubagentDone(mode, outcome));
+        });
+    }
+
+    /// `/subagent-cancel [task_id]`: stop the newest running dispatch, or the
+    /// named one. The panel could not do this before: a run could only be
+    /// cancelled by interrupting the whole turn.
+    fn cancel_newest_subagent(&mut self, text: &str) {
+        let wanted = text
+            .strip_prefix("/subagent-cancel")
+            .map_or("", str::trim)
+            .to_string();
+        let cwd = self.session.cwd().to_path_buf();
+        let models = self.session.get_available_models();
+        let pool = get_subagent_pool(&cwd, &models);
+        let status = pool.statuses();
+        let candidate = status
+            .iter()
+            .filter(|(_, state)| state.is_running())
+            .filter(|(id, _)| wanted.is_empty() || id.contains(&wanted))
+            .max_by_key(|(_, state)| state.since());
+        let Some((task_id, _)) = candidate else {
+            let message = if wanted.is_empty() {
+                "No subagent is running.".to_string()
+            } else {
+                format!("No running subagent matches \"{wanted}\".")
+            };
+            self.show_status(&message);
+            return;
+        };
+        if pool.cancel(task_id) {
+            self.show_status(&format!("Cancelling subagent {task_id}…"));
+        }
+    }
+
+    /// `/subagent-retry [agent] [task]`: dispatch again, on the same inputs.
+    ///
+    /// A transient provider failure — a region rejection, a dead stream, a
+    /// deadline — should not cost the work. With no arguments this re-runs the
+    /// most recent failed attempt from the ledger, which is the only record of
+    /// what it was actually asked to do.
+    fn retry_newest_subagent(&mut self, text: &str) {
+        let args = text
+            .strip_prefix("/subagent-retry")
+            .map_or("", str::trim)
+            .to_string();
+        let cwd = self.session.cwd().to_path_buf();
+        let last_failed = cortexcode_code_subagents::ledger::recent(&cwd, 200)
+            .into_iter()
+            .rfind(|attempt| !attempt.ok);
+        let (forced_agent, task_text) = match args.split_once(' ') {
+            Some((agent, rest)) if !agent.is_empty() => {
+                (Some(agent.trim().to_string()), rest.trim().to_string())
+            }
+            Some(_) | None => (None, args.trim().to_string()),
+        };
+        let agent_type = forced_agent
+            .or_else(|| last_failed.as_ref().map(|a| a.agent_type.clone()))
+            .unwrap_or_else(|| "explore".into());
+        let prompt = if task_text.is_empty() {
+            last_failed
+                .as_ref()
+                .map(|a| {
+                    format!(
+                        "Retry {}: it failed with {}",
+                        a.task_id,
+                        a.error.as_deref().unwrap_or("no cause recorded")
+                    )
+                })
+                .unwrap_or_else(|| {
+                    "Describe the repository layout and report what is in it.".into()
+                })
+        } else {
+            task_text
+        };
+        let known: Vec<String> = load_agent_registry(&LoadAgentRegistryOptions::new(
+            cwd.to_string_lossy().into_owned(),
+        ))
+        .list()
+        .iter()
+        .map(|agent| agent.name.clone())
+        .collect();
+        if !known.contains(&agent_type) {
+            self.show_error(&format!(
+                "Unknown subagent type: {agent_type}. Available: {}",
+                known.join(", ")
+            ));
+            return;
+        }
+        self.show_status(&format!("Re-dispatching {agent_type}…"));
+        let models = self.session.get_available_models();
+        let model = self.session.model();
+        let options = DispatchOptions {
+            force_agent: Some(agent_type.clone()),
+            model: model.as_ref().map(|m| m.id.clone()),
+            provider: model.as_ref().map(|m| m.provider.clone()),
+            ..Default::default()
+        };
+        let tx = self.tx.clone();
+        self.runtime.spawn(async move {
+            let pool = get_subagent_pool(&cwd, &models);
+            let outcome = pool.dispatch(&prompt, options).await;
+            let text = match outcome {
+                Ok(dispatched) => match dispatched.result {
+                    Some(result) if result.ok => Ok(result
+                        .result_data
+                        .as_ref()
+                        .and_then(|data| data.get("summary"))
+                        .and_then(|v| v.as_str())
+                        .map(str::to_string)),
+                    other => Err(format!(
+                        "retry failed: {}",
+                        other
+                            .and_then(|r| r.error)
+                            .unwrap_or_else(|| "unknown error".into())
+                    )),
+                },
+                Err(error) => Err(error.to_string()),
+            };
+            let _ = tx.send(AppEvent::SubagentDone(agent_type, text));
         });
     }
 
@@ -6071,6 +6192,8 @@ enum BuiltinCommand {
     Export,
     Import,
     Subagent,
+    SubagentCancel,
+    SubagentRetry,
     SubagentStats,
     /// A built-in whose handler lands with a later task.
     Pending(&'static str),
@@ -6105,6 +6228,8 @@ impl BuiltinCommand {
             "export" => Self::Export,
             "import" => Self::Import,
             "subagent" => Self::Subagent,
+            "subagent-cancel" => Self::SubagentCancel,
+            "subagent-retry" => Self::SubagentRetry,
             "subagent-stats" => Self::SubagentStats,
             _ => {
                 let builtin = BUILTIN_SLASH_COMMANDS.iter().find(|c| c.name == name)?;
@@ -6126,6 +6251,8 @@ impl BuiltinCommand {
             | Self::Export
             | Self::Import
             | Self::Subagent
+            | Self::SubagentCancel
+            | Self::SubagentRetry
             | Self::SubagentStats => true,
             Self::Pending(_) => false,
             _ => false,

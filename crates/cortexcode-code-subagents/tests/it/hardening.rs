@@ -12,6 +12,7 @@ use cortexcode_code_subagents::inbox::{subagent_inbox, TaskLifecycle};
 use cortexcode_code_subagents::ledger;
 use cortexcode_code_subagents::model_categories::CategorySettings;
 use cortexcode_code_subagents::pool::*;
+use cortexcode_code_subagents::runner::{ScriptedRunner, ScriptedStep};
 use serde_json::{json, Value};
 
 const DIR: &str = cortexcode_code_paths::CONFIG_DIR_NAME;
@@ -339,4 +340,98 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// The panel's live row is fed by pool events, not by guesswork: attempt,
+/// resolved model and deadline arrive when the run starts.
+#[tokio::test]
+async fn a_start_announces_attempt_model_and_deadline() {
+    let dir = setup();
+    let runner = ScriptedRunner::new(vec![ScriptedStep {
+        stdout: vec![r#"{"ping":true}"#.into()],
+        hang: true,
+        ..Default::default()
+    }]);
+    let p = SubagentPool::new(SubagentPoolOptions {
+        runner: Some(Arc::new(runner)),
+        cwd: Some(dir.path().to_path_buf()),
+        // The model must be in the available set to resolve; that is the point
+        // of the field: it is what the child will actually run on.
+        available_models: vec![serde_json::from_value(json!({
+            "id": "pinned", "name": "Pinned", "api": "openai-completions",
+            "provider": "mock", "baseUrl": "http://x", "contextWindow": 1000, "maxTokens": 100,
+        }))
+        .unwrap()],
+        ..Default::default()
+    });
+    let seen: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    p.on(move |event| {
+        if event.name == "task_started" {
+            sink.lock().unwrap().push(event.data.clone());
+        }
+    });
+    p.spawn(SubagentPoolTask {
+        model: Some("mock/pinned".into()),
+        provider: Some("mock".into()),
+        ..task("t1", "explore")
+    })
+    .unwrap();
+    for _ in 0..100 {
+        if !seen.lock().unwrap().is_empty() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+    }
+    let started = seen.lock().unwrap().first().cloned().unwrap();
+    p.cancel("t1");
+    let _ = p.wait_for("t1").await;
+    p.dispose();
+    assert_eq!(started["task_id"], "t1");
+    assert_eq!(started["agent_type"], "explore");
+    assert_eq!(started["attempt"], 1);
+    assert_eq!(
+        started["model"], "mock/pinned",
+        "the resolved model, not the request"
+    );
+    assert!(
+        started["deadline_at"].as_u64().unwrap_or(0) > now_ms(),
+        "the row needs a deadline in the future to count down to"
+    );
+}
+
+/// A finished run says how it ended, with the child's own confidence when it
+/// reported one — the three things that used to be indistinguishable.
+#[tokio::test]
+async fn a_done_announces_the_outcome_the_child_reported() {
+    let dir = setup();
+    let runner = ScriptedRunner::new(vec![ScriptedStep {
+        stdout: vec![r#"{"ping":true}"#.into()],
+        result_json: Some(
+            json!({"summary": "found it", "files_changed": ["a.rs"], "confidence": 0.8, "status": "partial"})
+                .to_string(),
+        ),
+        exit_code: Some(0),
+        ..Default::default()
+    }]);
+    let p = SubagentPool::new(SubagentPoolOptions {
+        runner: Some(Arc::new(runner)),
+        cwd: Some(dir.path().to_path_buf()),
+        ..Default::default()
+    });
+    let seen: Arc<Mutex<Vec<Value>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = seen.clone();
+    p.on(move |event| {
+        if event.name == "task_done" {
+            sink.lock().unwrap().push(event.data.clone());
+        }
+    });
+    p.spawn(task("t1", "explore")).unwrap();
+    let result = p.wait_for("t1").await.unwrap();
+    p.dispose();
+    assert!(result.ok);
+    let done = seen.lock().unwrap().first().cloned().unwrap();
+    assert_eq!(done["status"], "complete");
+    assert_eq!(done["confidence"], 0.8);
+    assert_eq!(done["files_changed"], json!(["a.rs"]));
 }

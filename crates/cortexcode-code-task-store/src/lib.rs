@@ -85,6 +85,19 @@ pub struct TaskAgent {
     /// Live activity of a running subagent; `""` clears it.
     pub activity: Option<String>,
     pub stats: Option<AgentStats>,
+    /// Which attempt this is (1 for the first try, 2 for a fallback retry).
+    pub attempt: Option<u32>,
+    /// The model the child actually resolved to, not the one that was asked for.
+    pub model: Option<String>,
+    /// When the run's own deadline is (epoch ms). The panel renders the
+    /// countdown from this rather than from a string that would go stale.
+    pub deadline_at: Option<u64>,
+    /// How the run ended, when it did: `complete`, `partial`, `timeout`, ...
+    pub outcome: Option<String>,
+    /// The child's self-reported confidence, when it wrote one.
+    pub confidence: Option<f64>,
+    /// Why it ended like that, in one line.
+    pub cause: Option<String>,
 }
 
 /// Token and cost usage attributed to a task.
@@ -157,6 +170,12 @@ pub struct TaskAgentPatch {
     pub handoff: Option<String>,
     pub activity: Option<String>,
     pub stats: Option<AgentStats>,
+    pub attempt: Option<u32>,
+    pub model: Option<String>,
+    pub deadline_at: Option<u64>,
+    pub outcome: Option<String>,
+    pub confidence: Option<f64>,
+    pub cause: Option<String>,
 }
 
 /// `taskOwnerId`: the explicit agent, else `subagent` for subagent-sourced
@@ -225,6 +244,24 @@ fn apply_agent_patch(agent: &mut TaskAgent, patch: TaskAgentPatch) {
     }
     if let Some(kind) = patch.kind {
         agent.kind = kind;
+    }
+    if patch.attempt.is_some() {
+        agent.attempt = patch.attempt;
+    }
+    if patch.model.is_some() {
+        agent.model = patch.model;
+    }
+    if patch.deadline_at.is_some() {
+        agent.deadline_at = patch.deadline_at;
+    }
+    if patch.outcome.is_some() {
+        agent.outcome = patch.outcome;
+    }
+    if patch.confidence.is_some() {
+        agent.confidence = patch.confidence;
+    }
+    if patch.cause.is_some() {
+        agent.cause = patch.cause;
     }
     if patch.state.is_some() {
         agent.state = patch.state;
@@ -408,6 +445,12 @@ impl TaskStore {
                     handoff: patch.handoff,
                     activity: patch.activity,
                     stats: patch.stats,
+                    attempt: patch.attempt,
+                    model: patch.model,
+                    deadline_at: patch.deadline_at,
+                    outcome: patch.outcome,
+                    confidence: patch.confidence,
+                    cause: patch.cause,
                 };
                 state.agents.push(created.clone());
                 created
