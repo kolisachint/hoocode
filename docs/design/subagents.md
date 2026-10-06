@@ -251,14 +251,20 @@ the transcript said a third thing entirely (`Agent [explore]`).
 
 | before | after | still accepted |
 |---|---|---|
-| `Task` | **`Dispatch`** | `Task`, registered as an alias for a release |
-| `TaskOutput` | **`DispatchStatus`** | `TaskOutput`, same |
-| `Agent [explore]` | **`Subagent dispatch explore`** (plus `resume`, plus `· background`) | both names render through one renderer |
-| `call Task with resume_task_id` | `call Dispatch with …` | — |
+| `Task` | **`Agent`** | `Task`, registered as an alias for a release |
+| `TaskOutput` | **`AgentOut`** | `TaskOutput`, same |
+| `Agent [explore]`, `TaskOutput explore#1` | **`Agent explore`**, **`AgentOut explore#1`** (plus `resume`, plus `· background`) | both names render through one renderer |
+| `call Task with resume_task_id` | `call Agent with …` | — |
+
+First shipped on this branch as `Dispatch` / `DispatchStatus`; renamed to
+`Agent` / `AgentOut` before release (2026-10-06) because they are shorter, read
+the same in every surface (TUI, transcript, a hoobot chat line), and the
+transcript already said `Agent`. `Dispatch` never shipped, so it is not an
+alias.
 
 An alias is a spelling, not a second code path: both definitions execute the
 same function, and the prompt's tool list says which one is canonical
-(`deprecated alias for Dispatch; prefer Dispatch`) so a model is never offered
+(`deprecated alias for Agent; prefer Agent`) so a model is never offered
 two identical tools.
 
 The rename touched the tool definitions, the nested-agent allowlist (which never

@@ -1060,7 +1060,7 @@ impl Mode {
             session
                 .get_active_tool_names()
                 .iter()
-                .any(|t| t == "Dispatch" || t == "Task"),
+                .any(|t| t == "Agent" || t == "Task"),
         );
         let is_oauth: Rc<dyn Fn(&str) -> bool> = Rc::from(options.is_oauth);
         let mut footer = FooterComponent::new(
@@ -3070,7 +3070,7 @@ impl Mode {
                     self.session
                         .get_active_tool_names()
                         .iter()
-                        .any(|t| t == "Task"),
+                        .any(|t| t == "Agent" || t == "Task"),
                 );
             }
             SettingsChange::ToolGroup { id, enabled } => {
@@ -5015,7 +5015,7 @@ impl Mode {
             self.session
                 .get_active_tool_names()
                 .iter()
-                .any(|t| t == "Task"),
+                .any(|t| t == "Agent" || t == "Task"),
         );
         // `ctx.ui.setMode` from the mode system's `session_start`.
         if let Some(mode) = self.session.extensions().active_mode() {

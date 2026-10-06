@@ -1366,8 +1366,12 @@ fn resource_listing(
         listing.context_files = context.agents_files;
         listing.context_warnings = context.warnings;
     }
-    // Dispatchable agents only when the Task tool is on.
-    if session.get_active_tool_names().iter().any(|t| t == "Task") {
+    // Dispatchable agents only when the Agent tool (or its `Task` alias) is on.
+    if session
+        .get_active_tool_names()
+        .iter()
+        .any(|t| t == "Agent" || t == "Task")
+    {
         let registry = cortexcode_code_resources::agent_registry::load_agent_registry(
             &cortexcode_code_resources::agent_registry::LoadAgentRegistryOptions::new(cwd),
         );
@@ -1627,11 +1631,11 @@ mod tests {
         let (prompt, tools) = prompt_for(&[]);
         assert!(prompt.starts_with("You are an expert coding assistant operating inside cortex"));
         // The aliases are listed too, and say what they point at: a model that
-        // sees `Task` in the tool list and `Dispatch` in the prompt should be
+        // sees `Task` in the tool list and `Agent` in the prompt should be
         // able to work out which is which.
         for line in [
-            "Dispatch: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
-            "DispatchStatus: check status / list / collect the results of background subagents",
+            "Agent: delegate a self-contained task to a specialized subagent (choose via subagent_type)",
+            "AgentOut: check status / list / collect the results of background subagents",
             "TodoWrite: Plan and track multi-step work as a live todo list (use proactively; replaces the whole list each call)",
         ] {
             assert!(
@@ -1644,8 +1648,8 @@ mod tests {
             "the tool list should still be there: {prompt}"
         );
         for alias in [
-            "Task: deprecated alias for Dispatch; prefer Dispatch",
-            "TaskOutput: deprecated alias for DispatchStatus; prefer DispatchStatus",
+            "Task: deprecated alias for Agent; prefer Agent",
+            "TaskOutput: deprecated alias for AgentOut; prefer AgentOut",
         ] {
             assert!(
                 prompt
@@ -1667,8 +1671,8 @@ mod tests {
                 "write",
                 "SearchCodebase",
                 "ask_options",
-                "Dispatch",
-                "DispatchStatus",
+                "Agent",
+                "AgentOut",
                 "Task",
                 "TaskOutput",
                 "TodoWrite"

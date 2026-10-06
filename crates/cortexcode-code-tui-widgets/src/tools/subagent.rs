@@ -1,5 +1,6 @@
-//! `core/tools/subagent.ts` renderers: the `Task` dispatch line and
-//! `TaskOutput` (its call, and the result card or roster).
+//! `core/tools/subagent.ts` renderers: the `Agent` call line and `AgentOut`
+//! (its call, and the result card or roster). The legacy `Task`/`TaskOutput`
+//! names render through the same functions.
 
 use std::rc::Rc;
 
@@ -48,17 +49,17 @@ pub fn format_task_call(args: &Value) -> String {
         None | Some(Value::Null) => "agent".to_string(),
         Some(v) => js_string(Some(v)),
     };
-    // "Subagent explore", not "Agent [explore]": the transcript said `Agent`
-    // while the tool said `Task`, and neither said subagent. `dispatched` and
-    // `resumed` are stated because the same line covers both.
-    let verb = if truthy(args.get("resume_task_id")) {
-        "resume"
+    // The line says the tool's own name: `Agent explore`, `Agent resume
+    // explore`. The pin's `Agent [explore]` was right about the word while the
+    // tool was still called `Task`; now the two agree.
+    let title = if truthy(args.get("resume_task_id")) {
+        "Agent resume "
     } else {
-        "dispatch"
+        "Agent "
     };
     format!(
         "{}{} {}",
-        t.fg("toolTitle", &t.bold(&format!("Subagent {verb} "))),
+        t.fg("toolTitle", &t.bold(title)),
         t.fg(agent_color_for(&agent_type), &agent_type),
         match args.get("background").and_then(Value::as_bool) {
             Some(true) => t.fg("dim", "· background"),
@@ -80,14 +81,7 @@ pub fn format_task_output_call(args: &Value) -> String {
     };
     format!(
         "{}{styled}{}",
-        t.fg(
-            "toolTitle",
-            &t.bold(if truthy(args.get("list")) {
-                "Subagents "
-            } else {
-                "Subagent status "
-            }),
-        ),
+        t.fg("toolTitle", &t.bold("AgentOut ")),
         if truthy(args.get("wait")) {
             t.fg("dim", " (wait)")
         } else {

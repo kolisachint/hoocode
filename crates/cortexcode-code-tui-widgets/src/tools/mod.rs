@@ -41,8 +41,8 @@ pub fn registered_tool_definition(name: &str) -> ToolRenderDefinition {
     match name {
         // Both spellings resolve: the canonical names and the deprecated
         // aliases a resumed transcript can still carry.
-        "Dispatch" | "Task" => subagent::task_definition(),
-        "DispatchStatus" | "TaskOutput" => subagent::task_output_definition(),
+        "Agent" | "Task" => subagent::task_definition(),
+        "AgentOut" | "TaskOutput" => subagent::task_output_definition(),
         n if plugins::RENDERED_PLUGIN_TOOLS.contains(&n) => plugins::definition(),
         _ => ToolRenderDefinition::default(),
     }

@@ -6,9 +6,9 @@
 use cortexcode_code_tui_app::footer_data::FooterDataProvider;
 
 #[test]
-fn the_task_tool_definition_is_named_dispatch() {
+fn the_task_tool_definition_is_named_agent() {
     let def = cortexcode_code_subagents::tools::create_task_tool_definition(&std::env::temp_dir());
-    assert_eq!(def.name, "Dispatch");
+    assert_eq!(def.name, "Agent");
 }
 
 /// The pre-rename name stays callable for a release: a model that learned
@@ -19,7 +19,7 @@ fn the_legacy_task_name_is_registered_as_an_alias() {
         cortexcode_code_subagents::tools::create_task_tool_alias_definition(&std::env::temp_dir());
     assert_eq!(alias.name, "Task");
     assert!(
-        alias.description.contains("Dispatch"),
+        alias.description.contains("Agent"),
         "the alias should say what it points at: {}",
         alias.description
     );
@@ -28,7 +28,7 @@ fn the_legacy_task_name_is_registered_as_an_alias() {
 fn footer_for(active_tools: &[&str]) -> FooterDataProvider {
     let provider = FooterDataProvider::new(std::env::temp_dir());
     provider
-        .set_subagent_enabled(active_tools.contains(&"Dispatch") || active_tools.contains(&"Task"));
+        .set_subagent_enabled(active_tools.contains(&"Agent") || active_tools.contains(&"Task"));
     provider
 }
 

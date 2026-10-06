@@ -487,7 +487,7 @@ fn finalize_dispatch_result(
     if partial {
         if let Some(handle) = resume_handle {
             answer.push_str(&format!(
-                "\n\n[Partial result. To continue this subagent, call Task again with resume_task_id=\"{handle}\".]"
+                "\n\n[Partial result. To continue this subagent, call Agent again with resume_task_id=\"{handle}\".]"
             ));
         }
     }
@@ -505,7 +505,7 @@ fn finalize_dispatch_result(
             String::new()
         };
         let text = format!(
-            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with TaskOutput(\"{}\").",
+            "{} finished ✓{partial_note} — {}.{tail}\nRead the full result with AgentOut(\"{}\").",
             background.label,
             summarize(&answer),
             background.label
@@ -586,8 +586,8 @@ fn task_parameters() -> Value {
                 ],
                 "description": "Model tier for this dispatch: fast (quick reads/lookups), standard (multi-file edits), capable (deep architecture). Maps to settings.modelCategories. Ignored if the chosen agent pins its own model; omit to use the agent's default."
             },
-            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with TaskOutput; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
-            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Task or TaskOutput call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
+            "background": {"type": "boolean", "description": "Set true to run non-blocking: you get a short notification when it finishes and pull the full result with AgentOut; set false to wait and get the answer inline. Defaults to the agent's own background setting."},
+            "resume_task_id": {"type": "string", "description": "Optional. To continue a previous subagent run, pass its task_id (returned by an earlier Agent or AgentOut call). The subagent resumes with its full prior transcript and `prompt` is your follow-up instruction."}
         }
     })
 }
@@ -1050,7 +1050,7 @@ fn format_task_roster() -> AgentToolResult {
         if all.len() == 1 { "" } else { "s" }
     );
     let hint = if all.iter().any(|r| r.lifecycle == TaskLifecycle::Done) {
-        "\nRead a finished one with TaskOutput(\"<label>\")."
+        "\nRead a finished one with AgentOut(\"<label>\")."
     } else {
         ""
     };
@@ -1064,7 +1064,7 @@ fn task_output_parameters() -> Value {
     json!({
         "type": "object",
         "properties": {
-            "task_id": {"type": "string", "description": "Handle of a background subagent — its task_id or friendly label (e.g. \"explore#1\") from a Task notification. Omit (or set list:true) to see every background task."},
+            "task_id": {"type": "string", "description": "Handle of a background subagent — its task_id or friendly label (e.g. \"explore#1\") from an Agent notification. Omit (or set list:true) to see every background task."},
             "list": {"type": "boolean", "description": "List all background subagents with their status (running/done/failed/cancelled) and current activity. No result bodies are returned."},
             "wait": {"type": "boolean", "description": "Block until the named task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier) — before returning. Bounded by timeout_ms."},
             "timeout_ms": {"type": "number", "description": "Maximum time to block in wait mode, in milliseconds (default 120000)."}
@@ -1115,7 +1115,7 @@ pub fn create_task_output_tool_definition() -> ToolDefinition {
         name: TASK_OUTPUT_TOOL_NAME.into(),
         label: TASK_OUTPUT_TOOL_NAME.into(),
         description: [
-            "Check on background subagents dispatched via Task, and pull their results.",
+            "Check on background subagents dispatched via Agent, and pull their results.",
             "Pass a task_id/label (e.g. \"explore#1\") to read a finished subagent's full result, or to see its status while it runs.",
             "Set list:true (or omit task_id) to list every background subagent with its status and current activity.",
             "Set wait:true to block until that task finishes — or, with no task_id, until all outstanding subagents finish (a swarm barrier).",
@@ -1195,7 +1195,7 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
 
     let Some(rec) = inbox.get(&handle) else {
         return text_result(
-            format!("No background task \"{handle}\". Call TaskOutput with list:true to see active tasks."),
+            format!("No background task \"{handle}\". Call AgentOut with list:true to see active tasks."),
             output_details(Some(&handle), "unknown", false, None),
         );
     };
@@ -1209,7 +1209,7 @@ async fn execute_task_output(params: Value, ctx: Option<ToolContext>) -> AgentTo
                 .unwrap_or_default();
             text_result(
                 format!(
-                    "{} is still running — {} elapsed{activity}. Call TaskOutput again, or with wait:true to block until it finishes.",
+                    "{} is still running — {} elapsed{activity}. Call AgentOut again, or with wait:true to block until it finishes.",
                     rec.label,
                     record_elapsed(&rec)
                 ),

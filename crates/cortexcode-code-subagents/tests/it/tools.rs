@@ -397,7 +397,7 @@ fn build_task_main_prompt_contents() {
     assert!(prompt.contains("mark the item in_progress BEFORE dispatching"));
     // Built-in explore/plan are background agents: the background block is in.
     assert!(prompt.contains("don't idle"));
-    assert!(prompt.contains("DispatchStatus(wait: true)"));
+    assert!(prompt.contains("AgentOut(wait: true)"));
     assert!(!prompt.contains("DO NOT stop and wait"));
     assert!(prompt.contains("Delegate when you need only the final result"));
     assert!(!prompt.contains("WHEN TO USE:"));
@@ -546,7 +546,7 @@ async fn task_tool_execute_paths() {
     .unwrap();
     assert_eq!(
         text(&r),
-        "explore#1 finished ✓ — Mapped the module.\nRead the full result with TaskOutput(\"explore#1\")."
+        "explore#1 finished ✓ — Mapped the module.\nRead the full result with AgentOut(\"explore#1\")."
     );
     assert_subset(&r.details, json!({"ok": true, "background": true}));
     let (_, body) = subagent_inbox().collect("explore#1").unwrap();
@@ -878,14 +878,14 @@ fn active_tool_names(with_task: bool) -> Vec<String> {
 fn the_task_tool_is_active_only_when_registered() {
     isolate_agent_dir();
     let on = active_tool_names(true);
-    assert!(on.contains(&"Dispatch".to_string()));
-    assert!(on.contains(&"DispatchStatus".to_string()));
+    assert!(on.contains(&"Agent".to_string()));
+    assert!(on.contains(&"AgentOut".to_string()));
     // Both spellings stay registered while the old one is deprecated.
     assert!(on.contains(&"Task".to_string()));
     assert!(on.contains(&"TaskOutput".to_string()));
     assert!(on.contains(&"read".to_string()));
     let off = active_tool_names(false);
-    assert!(!off.contains(&"Dispatch".to_string()));
+    assert!(!off.contains(&"Agent".to_string()));
     assert!(!off.contains(&"Task".to_string()));
     assert!(off.contains(&"read".to_string()));
 }

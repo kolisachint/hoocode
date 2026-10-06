@@ -35,16 +35,17 @@ pub const HOOCODE_TOOL_NAMES: &[&str] = &[
 
 /// `TASK_TOOL_NAME`: the subagent tool's canonical name.
 ///
-/// Renamed from `Task` on 2026-10-05. `Task` read as a to-do item — the task
+/// Renamed from `Task` on 2026-10-05 (`Agent`/`AgentOut`: short, and the
+/// same word in the TUI, the transcript and a bot's chat line). `Task` read as a to-do item — the task
 /// store really does have a `Task` type for TodoWrite entries and MCP calls —
 /// while the tool starts a background run. `TASK_TOOL_LEGACY_NAME` stays
 /// registered as an alias for a release so a pinned prompt, an agent file or a
 /// muscle-memory call from an older transcript keeps working.
-pub const TASK_TOOL_NAME: &str = "Dispatch";
+pub const TASK_TOOL_NAME: &str = "Agent";
 /// The pre-rename name, accepted as an alias and shown in deprecation notices.
 pub const TASK_TOOL_LEGACY_NAME: &str = "Task";
 /// The companion tool: read the status of, wait for, or collect a background run.
-pub const TASK_OUTPUT_TOOL_NAME: &str = "DispatchStatus";
+pub const TASK_OUTPUT_TOOL_NAME: &str = "AgentOut";
 /// The pre-rename companion name, accepted as an alias.
 pub const TASK_OUTPUT_TOOL_LEGACY_NAME: &str = "TaskOutput";
 

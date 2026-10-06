@@ -626,10 +626,7 @@ async fn a_delegate_agent_gets_task_tools_when_nesting_is_permitted() {
     let tools = arg_after(&argv, "--tools").unwrap();
     // Canonical names first, then the deprecated spellings: both are granted,
     // so a nested child that says `Task` still works.
-    assert_eq!(
-        tools,
-        "read,SearchCodebase,Dispatch,DispatchStatus,Task,TaskOutput"
-    );
+    assert_eq!(tools, "read,SearchCodebase,Agent,AgentOut,Task,TaskOutput");
 }
 
 #[tokio::test]

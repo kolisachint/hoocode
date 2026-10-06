@@ -14,7 +14,7 @@ pub const APP_NAME: &str = "cortex";
 /// Tool name of the subagent tool. Kept in step with
 /// `cortexcode_code_resources::TASK_TOOL_NAME`; the prompts crate must not
 /// depend on the resources crate for one string.
-pub const TASK_TOOL_NAME: &str = "Dispatch";
+pub const TASK_TOOL_NAME: &str = "Agent";
 /// The pre-2026-10-05 name, still recognised so a session resumed from an old
 /// transcript keeps its delegation guidance.
 pub const TASK_TOOL_LEGACY_NAME: &str = "Task";

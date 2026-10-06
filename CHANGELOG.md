@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed: the subagent tools are `Agent` and `AgentOut` (2026-10-06)
+- **`Task` → `Agent`, `TaskOutput` → `AgentOut`.** `Task` read as a to-do item while the tool starts
+  a subagent run. The old names stay registered for one release as deprecated aliases that run the
+  same executor, and the prompt's tool list marks them `deprecated alias for Agent; prefer Agent`.
+- The transcript line names the tool: `Agent explore` (`Agent resume plan · background`) and
+  `AgentOut explore#1 (wait)`. Tool results, notifications and error hints say `Agent`/`AgentOut`.
+- Every place that checked for the subagent tool by name accepts both spellings: the agent list in
+  the prompt, the footer indicator, the startup listing, the nested-agent `--tools` grant (pool and
+  warm pool) and the tool-chain summary.
+
 ### Added: subagent evals and a dispatch ledger (2026-10-05)
 - **Subagent reliability is now measured, not remembered.** `<cwd>/.cortexcode/dispatch/ledger.jsonl`
   is an append-only line per dispatch **attempt** - agent, requested and resolved model, mode, depth,
@@ -19,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   median/p90/max wall clock, tokens, fallback count, per-agent breakdown and the last five failures
   with their causes.
 - **`scripts/eval/subagent_evals.py`** drives the real binary end to end - real parent session, real
-  `Task` tool, real pool, real child process - against a routable scripted mock provider
+  `Agent` tool (then `Task`), real pool, real child process - against a routable scripted mock provider
   (`scripts/eval/mock_provider.py`). Twelve scenarios cover the happy paths, the turn limit, an invalid
   tool call, a stream that dies mid-answer, the deadline wrap-up, the stall reaper, a region rejection
   that must fall back, a bad complexity tier and eight concurrent dispatches against five slots.

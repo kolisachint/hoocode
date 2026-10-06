@@ -8,7 +8,7 @@ swept after 24h (`docs/design/subagents.md` §1, §7). The dispatch ledger fixed
 the *recording*; this measures the thing being recorded.
 
 Every scenario runs the **real binary** end to end: a parent session that calls
-the `Task` tool, the pool, a real child process, and a mock provider that
+the `Agent` tool, the pool, a real child process, and a mock provider that
 scripts what the model says. Nothing is stubbed inside the product. Faults are
 injected from the provider side — a region error, a stream that dies mid-sentence,
 a tool call with the wrong argument types, silence until the deadline — because
@@ -59,10 +59,10 @@ PARENT_SUMMARY = "The repo has crates/, scripts/ and docs/."
 CHILD_SUMMARY = "crates/ holds one directory per Rust crate; scripts/ holds tooling; docs/ holds design notes."
 
 
-def task_call(tool: str = "Dispatch", **arguments: Any) -> dict[str, Any]:
+def task_call(tool: str = "Agent", **arguments: Any) -> dict[str, Any]:
     """A parent turn that delegates to a subagent.
 
-    `tool` is the canonical `Dispatch` unless a scenario is specifically about
+    `tool` is the canonical `Agent` unless a scenario is specifically about
     the deprecated `Task` alias.
     """
     base = {
@@ -428,7 +428,7 @@ SCENARIOS: list[Scenario] = [
                     {
                         "text": "",
                         "tool_calls": [
-                            {"name": "Dispatch", "arguments": {
+                            {"name": "Agent", "arguments": {
                                 "subagent_type": "explore",
                                 "description": f"map area {i}",
                                 "prompt": f"List the top-level directories ({i}).",
