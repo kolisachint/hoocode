@@ -1,8 +1,8 @@
 # Decisions, 2026-10-07
 
-Made with the user in a review of the post-migration design docs. Where a design doc
-disagrees with this page, this page wins. The docs will be rewritten as one-page
-decision cards to match it.
+Made with the user in a review of the post-migration design docs. Where a design card
+disagrees with this page, this page wins. The cards are indexed in
+[README.md](README.md).
 
 ## Order of work
 
