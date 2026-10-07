@@ -19,6 +19,24 @@ Copilot `.github/plugin/` and its other probe locations). It installs plugins fr
 git-hosted marketplaces, lets the model search, install and remove them in a single
 turn, and can author and publish plugins behind four validation gates.
 
+Since the pin, a fourth format has become the cross-vendor standard: **Agent Plugins
+1.0.0** (agent-plugins.org, published 2026-08-06). Its Technical Steering Committee
+has maintainers from Amazon, Cursor, Google, Microsoft, OpenAI and Vercel. It is
+supported at launch by ChatGPT/Codex, Cursor, GitHub Copilot, Kiro and VS Code. It
+is not an AAIF project, and neither Anthropic nor Claude Code appears in it. It is
+deliberately small:
+
+- a root `plugin.json` with a required `$schema` and `name`;
+- exactly two component types, `skills/` (Agent Skills) and a root `mcp.json`;
+- reverse-DNS namespace directories and an `extensions` map for client-specific
+  content;
+- `PLUGIN_ROOT`/`PLUGIN_DATA`.
+
+It defines no marketplace, install, hooks, agents or commands. hoocode-ts at the pin
+reads its root `plugin.json` only as a Copilot probe location. It doesn't read a root
+`mcp.json`, check `$schema`, or apply the spec's MCP rules. §1.1 makes `cortex` a
+conformant client.
+
 `cortex` loads none of it. The Rust resource loader already does the local half of
 discovery: skills, prompts, themes and agents from `.agents/`, `.claude/` and the
 agent dir, with `PathMetadata.namespace` ready for `plugin:skill` names. What is
@@ -34,7 +52,7 @@ missing:
 ## Goals
 
 1. A plugin that works in hoocode-ts or Claude Code works in `cortex`, from the same
-   directories. The two hoocodes share `~/.agents/plugins/`,
+   directories, and `cortex` is a conformant Agent Plugins 1.0 client (§1.1). The two hoocodes share `~/.agents/plugins/`,
    `~/.agents/marketplaces.json`, `~/.agents/marketplace-cache/`,
    `~/.agents/plugin-data/` and `~/.agents/trusted-workspaces.json`, and keep their
    file formats byte-compatible.
@@ -49,15 +67,20 @@ code is [extension-runtime.md](extension-runtime.md).
 ## 1. Model
 
 ```
-PluginManifest (native | claude | copilot)      ── parse ──▶  NormalizedPlugin
+PluginManifest (agent-plugins | native | claude | copilot)  ── parse ──▶  NormalizedPlugin
 NormalizedPlugin { id, version, root, scope, format,
                    skills_dir, commands_dir, agents_dir, themes_dir,
                    hooks: HookTable, mcp_servers: Map, providers: [..],
                    canvases: [..], unknown_fields, unsupported_surfaces }
 ```
 
-- **Precedence when a directory has several manifests:** native, then Claude, then
-  Copilot. There is no merging (TS rule).
+- **Precedence when a directory has several manifests:** native `.agents-plugin/`,
+  then Agent Plugins, then Claude, then Copilot. There is no merging (TS rule, with
+  Agent Plugins added; Decision P7). Conventional component directories (`commands/`,
+  `agents/`, `hooks/hooks.json`) are still discovered whichever manifest wins.
+- **Agent Plugins detection:** a root `plugin.json` whose `$schema` is an
+  `https://agent-plugins.org/schemas/<version>/plugin.schema.json` identifier. A root
+  `plugin.json` without it stays Copilot probe #2, as in TS.
 - **Copilot probe order:** `.github/plugin/plugin.json`, then root `plugin.json`,
   then `.plugin/plugin.json`, then legacy `.github/copilot-plugin.json`. Copilot
   agents are read from `agents/<name>.agent.md` (YAML-list `tools`) and from bare
@@ -65,6 +88,47 @@ NormalizedPlugin { id, version, root, scope, format,
   namespace dir `com.github.copilot/agents/` is read.
 - `unknown_fields` and `unsupported_surfaces` are kept so drift is visible in
   `/plugin list` and not silently dropped (TS step 6).
+
+### 1.1 Agent Plugins 1.0 conformance
+
+For packages detected as Agent Plugins, `cortex` follows the spec exactly, which is
+stricter than the vendor-format path:
+
+- **Manifest:** closed schema (`$schema`, `name`, `version`, `description`, `author`,
+  `homepage`, `repository`, `license`, `keywords`, `extensions`).
+  - Unknown top-level fields are reported, not fatal.
+  - Any other violation rejects the plugin: wrong type; `name` not 1–64 chars of
+    `[a-z0-9.-]`, alphanumeric at both ends, with no `--` or `..`.
+  - The 1.0.0 schemas are bundled in the binary and never fetched (spec MUST NOT).
+- **Skills:** each immediate subdirectory of `skills/` that holds a regular
+  `SKILL.md` file, not recursive. An invalid skill is skipped with a warning.
+- **`mcp.json`** (root, closed schema): `$schema` must name the same version as
+  `plugin.json`, otherwise MCP is disabled for that plugin and its skills still load.
+  Server types:
+  - `stdio`: `command` is a single token, a bare name resolved on PATH or `./path`
+    against the plugin root, with **no placeholder expansion in `command`**.
+    `args`/`env`/`cwd` expand `${PLUGIN_ROOT}`/`${PLUGIN_DATA}` only, once, with no
+    other variables. `cwd` defaults to the plugin root and must stay inside the
+    plugin root or the data dir. An `env` that sets `PLUGIN_ROOT` or `PLUGIN_DATA`
+    invalidates the server.
+  - `streamable-http`: an absolute URL, HTTPS unless loopback; `headers` are fixed,
+    and client-generated headers win on a name clash.
+  - `sse`: optional in the spec; supported through [mcp.md](mcp.md)'s legacy path.
+
+  An invalid, unsupported or failing server is skipped and reported, and the other
+  servers load.
+- **Subprocess environment:** `PLUGIN_ROOT` and `PLUGIN_DATA`, the latter created
+  before launch, writable, and kept across updates (`~/.agents/plugin-data/<id>/`).
+- **Path containment:** every declared path is resolved, symlinks included, and must
+  stay inside the plugin root (TS `plugin-containment` already enforces this for
+  every format).
+- **`extensions` and namespace directories:** unknown namespaces are ignored without
+  validation. The ones we implement are `com.github.copilot` (agents, canvases; TS
+  parity) and our own (Decision P8).
+
+The vendor formats keep TS's lenient behaviour, including placeholder expansion in
+`command`, which Copilot and Claude plugins rely on. That difference is per format,
+not per client, and `/plugin list` shows which rules a plugin was loaded under.
 
 Parsing lives in a new crate, `cortexcode-code-plugins` (pure: no IO beyond reading
 the plugin dir, no process spawning), which is easy to fuzz and snapshot.
@@ -94,7 +158,7 @@ Plugin directories, highest precedence first, first-wins by id. This is TS
 | `agents/` | Agent registry manifest paths. Catalog eager, body on dispatch (unchanged). |
 | `themes/` | Theme paths |
 | `providers` (native only) | Model registry `register_provider` (the same path `models.json` uses) |
-| `mcpServers`, `.mcp.json` | Plugin MCP registry, which [mcp.md](mcp.md) §3 consumes. `${AGENTS_PLUGIN_ROOT}`/`${CLAUDE_PLUGIN_ROOT}` and `${AGENTS_PLUGIN_DATA}`/`${CLAUDE_PLUGIN_DATA}` are substituted. |
+| `mcpServers`, `.mcp.json`, `.github/plugin/mcp.json`; Agent Plugins root `mcp.json` (§1.1) | Plugin MCP registry, which [mcp.md](mcp.md) §3 consumes. Vendor formats substitute every TS spelling (`PLUGIN_ROOT`, `CLAUDE_`/`AGENTS_`/`COPILOT_PLUGIN_ROOT`, and the matching `*_PLUGIN_DATA`). TS has no bare `PLUGIN_DATA`; Rust adds it, and the spec requires it. |
 | `hooks`, `hooks/hooks.json`, Copilot root `hooks.json` | Hooks bridge (§4) |
 | canvas `extensions/<id>/extension.mjs` | Canvas discovery only ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)). Listed, never loaded. |
 
@@ -197,13 +261,19 @@ users.
 
 | Phase | Scope |
 |---|---|
-| **1. Load** | Crate `code-plugins` (parse, normalize), discovery (§2), capability mapping (§3) except MCP, hooks bridge (§4), trust (§6), skills validation (§5), `/plugin list`, `/plugin trust`. MCP servers flow in once [mcp.md](mcp.md) phase 1 lands. |
+| **1. Load** | Crate `code-plugins` (parse, normalize), Agent Plugins 1.0 conformance (§1.1), discovery (§2), capability mapping (§3) except MCP, hooks bridge (§4), trust (§6), skills validation (§5), `/plugin list`, `/plugin trust`. MCP servers flow in once [mcp.md](mcp.md) phase 1 lands. |
 | **2. Install** | Marketplace parsing (native, Claude and Copilot indexes; `{ source: "github", repo, path }` shorthand; `metadata.pluginRoot`; precedence with `supportPlatform` recorded), registry `~/.agents/marketplaces.json`, cache with TTL and `.fetched.json`, ref pinning, `/plugin marketplace add|list|refresh`, `/plugin install|remove [--scope user|project]`, synthesized manifest for manifest-less installs. Reload: passive capabilities live at the next turn via `prepare_next_turn`; executable ones after the turn (reload when idle). Packages: git sources (§7). |
 | **3. Model tools** | `SearchPlugins` (substring match plus capability-index hits appended, per [semantic-search.md](semantic-search.md) §2), `InstallPlugin`, `UninstallPlugin`, `ListPlugins`. Trust rules from `plugin-system-spec.md`: adding a marketplace is human-only; installing from a trusted marketplace is the model's call, announced and reversible; an install prompted by untrusted content (fetched web text, a PR comment) asks first; plugin tools are never given to subagents. Tool schemas cost tokens on every request, so they're registered only when at least one marketplace is configured. Packages: npm sources. |
-| **4. Produce** (decision P2) | `/new-skill`, `/new-agent`, `/new-command` scaffolds (cheap and useful). `ProposePlugin`/`UpdatePlugin`/`RemovePluginCapability`, gates G1–G4, packaging and publish only if wanted. |
+| **4. Produce** (decision P2) | `/new-skill`, `/new-agent`, `/new-command` scaffolds (cheap and useful). If authoring is built, the default output format is Agent Plugins (P8). `ProposePlugin`/`UpdatePlugin`/`RemovePluginCapability`, gates G1–G4, packaging and publish only if wanted. |
 
 ## 9. Tests
 
+- **Agent Plugins conformance:** the spec's normative cases. Closed-schema
+  rejection versus unknown-field warning, name rules, `$schema` version mismatch
+  disabling only MCP, `command` single-token resolution with no expansion,
+  `cwd`/containment, the HTTPS rule, the forbidden `env` keys, `PLUGIN_DATA`
+  creation and persistence. Validate against the published 1.0.0 JSON Schemas
+  (bundled).
 - **Parsing snapshots** (insta) for every manifest location and format, copied from
   the TS test fixtures (MIT). Fuzz the manifest parsers.
 - **Hooks bridge:** exit codes, JSON decisions, matcher semantics, timeout kill,
@@ -231,3 +301,5 @@ users.
 | P4 | npm package sources without Node (tarball fetch, no scripts)? | Yes, in phase 3 |
 | P5 | Map `PreCompact`, `SubagentStop` and `Notification` hooks, which TS doesn't? | Yes. They're cheap, and Claude plugins use them. |
 | P6 | Copilot plugins' MCP servers win over user config (Copilot's last-wins) or stay first-wins like everything else (TS open item §8.6.1)? | First-wins |
+| P7 | Where Agent Plugins sits in manifest precedence | After native `.agents-plugin/`, before Claude and Copilot |
+| P8 | Our own namespace and default authoring format. hoocode extras (`providers`, hook tables) would go in an `extensions` entry plus a namespace dir such as `io.github.kolisachint.hoocode/`, so authored plugins are Agent Plugins packages that other clients can load. This revisits TS D1, which rejected a vendor-neutral production format because none had an ecosystem; Agent Plugins now has one. | Yes; keep reading `.agents-plugin/` |

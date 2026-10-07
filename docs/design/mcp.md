@@ -103,7 +103,9 @@ Sources, merged first-wins by server name in this order. This is hoocode-ts
 
 Server entry (standard `{ "mcpServers": { name: … } }` shape): `command`, `args`,
 `env`; or `type: "http" | "sse"`, `url`, `headers` (the TS
-`StandardMcpServerEntry` fields). Unknown fields are kept and ignored. TS runs MCP
+`StandardMcpServerEntry` fields). `type: "streamable-http"` (the Agent Plugins
+spelling) is accepted as an alias of `http`, and an Agent Plugins `mcp.json` follows
+that spec's stricter rules ([plugins.md](plugins.md) §1.1). Unknown fields are kept and ignored. TS runs MCP
 tools in background mode by default (`background`, default true).
 
 **Decision M4: project-scope servers need workspace trust.** `./.agents/mcp.json`

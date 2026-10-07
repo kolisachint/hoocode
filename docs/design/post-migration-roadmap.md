@@ -57,7 +57,8 @@ them now and accept the one-block difference.
 ## 2. Principles for all eight docs
 
 1. **Standards before vendor formats before hoocode formats.** Read every format we
-   can. Write the standard one by default.
+   can. Write the standard one by default: Agent Plugins for plugin packages, Agent
+   Skills for skills, MCP for tools.
 2. **Consume before produce.** Loading other people's MCP servers, skills, plugins
    and canvases comes first. Authoring and publishing come later, or not at all.
 3. **Third-party code runs out of process.** MCP servers, hook commands, extension
@@ -94,6 +95,12 @@ What each means for us:
 | **A2A** | v1.0.0: Agent Card at `/.well-known/agent-card.json`, JSON-RPC/gRPC/REST bindings, task states. No stdio/local guidance. | [extras.md](extras.md) §7 (teams). Not adopted now. |
 | **goose** | Agent framework (Block). Extensions are MCP servers. | Reference only: confirms "extension = MCP server" ([extension-runtime.md](extension-runtime.md), "What the standards say") |
 | agentgateway, Agent Router | Gateways between agents, models and MCP tools | No work. They work with us unchanged if we speak standard MCP over HTTP. |
+
+Outside AAIF, one more cross-vendor standard matters:
+
+| Standard | Version / state | Where it lands |
+|---|---|---|
+| **Agent Plugins** (agent-plugins.org; TSC from Amazon, Cursor, Google, Microsoft, OpenAI, Vercel; not AAIF, no Anthropic) | 1.0.0, published 2026-08-06; supported by ChatGPT/Codex, Cursor, GitHub Copilot, Kiro, VS Code. A root `plugin.json` (`$schema`, `name`, closed schema), `skills/` and a root `mcp.json` only; reverse-DNS namespace dirs; `PLUGIN_ROOT`/`PLUGIN_DATA`; no marketplace or install spec | [plugins.md](plugins.md) §1.1: conformant client; Decision P8 makes it our authoring format |
 
 ## 4. Order (proposal)
 

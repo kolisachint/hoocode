@@ -44,7 +44,9 @@ The AAIF answer to "extend an agent" is **MCP servers for capabilities, plus hoo
 for lifecycle**. goose's extensions *are* MCP servers. Claude Code and Copilot
 plugins are skills, agents, commands, hooks and MCP servers, with no code API. Those
 are exactly the surfaces [plugins.md](plugins.md) and [mcp.md](mcp.md) already
-deliver:
+deliver. The cross-vendor Agent Plugins 1.0 package format (agent-plugins.org) makes
+the same choice: its only portable components are skills and MCP servers, and hooks
+and agents stay client-specific.
 
 | Extension need | Standard surface |
 |---|---|
