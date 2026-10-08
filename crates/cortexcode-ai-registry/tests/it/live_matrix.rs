@@ -53,12 +53,6 @@ const fn completions(provider: &'static str, model: &'static str, key: &'static 
     }
 }
 
-/// `hasAzureOpenAICredentials`.
-fn azure_configured() -> bool {
-    env("AZURE_OPENAI_API_KEY").is_some()
-        && (env("AZURE_OPENAI_BASE_URL").is_some() || env("AZURE_OPENAI_RESOURCE_NAME").is_some())
-}
-
 fn env(var: &str) -> Option<String> {
     std::env::var(var).ok().filter(|v| !v.is_empty())
 }
@@ -66,9 +60,6 @@ fn env(var: &str) -> Option<String> {
 impl Case {
     /// The model and API key, or `None` to skip.
     fn resolve(&self) -> Option<(Model, String)> {
-        if self.provider == "azure-openai-responses" && !azure_configured() {
-            return None;
-        }
         let key = env(self.key)?;
         let mut model = cortexcode_ai_models::get_model(self.provider, self.model)
             .unwrap_or_else(|| panic!("{}/{} in catalog", self.provider, self.model))
@@ -82,7 +73,7 @@ impl Case {
     }
 }
 
-/// The API-key providers most suites share (after openai/azure/anthropic).
+/// The API-key providers most suites share (after openai/anthropic).
 const SHARED: &[Case] = &[
     case("xai", "grok-code-fast-1", "XAI_API_KEY"),
     case("groq", "openai/gpt-oss-20b", "GROQ_API_KEY"),
@@ -247,14 +238,6 @@ async fn context_overflow_is_detected() {
         (
             case("openai", "gpt-4o", "OPENAI_API_KEY"),
             Error(Some("(?i)exceeds the context window")),
-        ),
-        (
-            case(
-                "azure-openai-responses",
-                "gpt-4o-mini",
-                "AZURE_OPENAI_API_KEY",
-            ),
-            Error(Some("(?i)context|maximum")),
         ),
         (
             case("google", "gemini-2.5-flash", "GEMINI_API_KEY"),
@@ -426,11 +409,6 @@ fn empty_cases() -> Vec<Case> {
             case("google", "gemini-2.5-flash", "GEMINI_API_KEY"),
             case("openai", "gpt-4o-mini", "OPENAI_API_KEY"),
             case("openai", "gpt-5-mini", "OPENAI_API_KEY"),
-            case(
-                "azure-openai-responses",
-                "gpt-4o-mini",
-                "AZURE_OPENAI_API_KEY",
-            ),
             case("anthropic", "claude-haiku-4-5", "ANTHROPIC_API_KEY"),
             case("anthropic", "claude-haiku-4-5", "ANTHROPIC_OAUTH_TOKEN"),
         ],
@@ -577,11 +555,6 @@ async fn tool_results_with_images_reach_the_model() {
         case("google", "gemini-2.5-flash", "GEMINI_API_KEY"),
         completions("openai", "gpt-4o-mini", "OPENAI_API_KEY"),
         case("openai", "gpt-5-mini", "OPENAI_API_KEY"),
-        case(
-            "azure-openai-responses",
-            "gpt-4o-mini",
-            "AZURE_OPENAI_API_KEY",
-        ),
         case("anthropic", "claude-haiku-4-5", "ANTHROPIC_API_KEY"),
         case("openrouter", "z-ai/glm-4.5v", "OPENROUTER_API_KEY"),
         case("together", "moonshotai/Kimi-K3", "TOGETHER_API_KEY"),
@@ -635,11 +608,6 @@ async fn responses_expose_a_response_id() {
         completions("openai", "gpt-4o-mini", "OPENAI_API_KEY"),
         case("openai", "gpt-5-mini", "OPENAI_API_KEY"),
         case("anthropic", "claude-sonnet-4-5", "ANTHROPIC_API_KEY"),
-        case(
-            "azure-openai-responses",
-            "gpt-4o-mini",
-            "AZURE_OPENAI_API_KEY",
-        ),
     ];
     for case in table {
         let Some((model, key)) = case.resolve() else {
@@ -678,11 +646,6 @@ async fn token_usage_on_abort() {
             case("google", "gemini-2.5-flash", "GEMINI_API_KEY"),
             completions("openai", "gpt-4o-mini", "OPENAI_API_KEY"),
             case("openai", "gpt-5.4-mini", "OPENAI_API_KEY"),
-            case(
-                "azure-openai-responses",
-                "gpt-4o-mini",
-                "AZURE_OPENAI_API_KEY",
-            ),
             case("anthropic", "claude-sonnet-4-6", "ANTHROPIC_API_KEY"),
             case("anthropic", "claude-sonnet-4-6", "ANTHROPIC_OAUTH_TOKEN"),
         ],
@@ -726,10 +689,7 @@ async fn token_usage_on_abort() {
         assert_eq!(msg.stop_reason, StopReason::Aborted, "{}", label(&model));
         let final_usage_only = matches!(
             model.api.as_str(),
-            "openai-completions"
-                | "openai-responses"
-                | "azure-openai-responses"
-                | "openai-codex-responses"
+            "openai-completions" | "openai-responses" | "openai-codex-responses"
         ) || matches!(
             model.provider.as_str(),
             "zai" | "vercel-ai-gateway" | "minimax"
@@ -777,11 +737,6 @@ async fn total_tokens_equal_the_sum_of_components() {
             case("anthropic", "claude-sonnet-4-6", "ANTHROPIC_OAUTH_TOKEN"),
             completions("openai", "gpt-4o-mini", "OPENAI_API_KEY"),
             case("openai", "gpt-4o", "OPENAI_API_KEY"),
-            case(
-                "azure-openai-responses",
-                "gpt-4o-mini",
-                "AZURE_OPENAI_API_KEY",
-            ),
             case("google", "gemini-2.5-flash", "GEMINI_API_KEY"),
             case("groq", "openai/gpt-oss-120b", "GROQ_API_KEY"),
             case(
@@ -872,11 +827,6 @@ async fn orphaned_tool_calls_are_filtered() {
             case("google", "gemini-2.5-flash", "GEMINI_API_KEY"),
             completions("openai", "gpt-4o-mini", "OPENAI_API_KEY"),
             case("openai", "gpt-5-mini", "OPENAI_API_KEY"),
-            case(
-                "azure-openai-responses",
-                "gpt-4o-mini",
-                "AZURE_OPENAI_API_KEY",
-            ),
             case("anthropic", "claude-haiku-4-5", "ANTHROPIC_API_KEY"),
             case("anthropic", "claude-haiku-4-5", "ANTHROPIC_OAUTH_TOKEN"),
         ],
@@ -972,11 +922,6 @@ async fn unicode_in_tool_results_is_sent_safely() {
             case("google", "gemini-2.5-flash", "GEMINI_API_KEY"),
             case("openai", "gpt-4o-mini", "OPENAI_API_KEY"),
             case("openai", "gpt-5-mini", "OPENAI_API_KEY"),
-            case(
-                "azure-openai-responses",
-                "gpt-4o-mini",
-                "AZURE_OPENAI_API_KEY",
-            ),
             case("anthropic", "claude-haiku-4-5", "ANTHROPIC_API_KEY"),
             case("anthropic", "claude-haiku-4-5", "ANTHROPIC_OAUTH_TOKEN"),
         ],

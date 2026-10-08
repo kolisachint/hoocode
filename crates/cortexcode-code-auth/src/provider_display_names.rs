@@ -4,7 +4,6 @@
 /// `BUILT_IN_PROVIDER_DISPLAY_NAMES`.
 pub const BUILT_IN_PROVIDER_DISPLAY_NAMES: &[(&str, &str)] = &[
     ("anthropic", "Anthropic"),
-    ("azure-openai-responses", "Azure OpenAI Responses"),
     ("cerebras", "Cerebras"),
     ("deepseek", "DeepSeek"),
     ("fireworks", "Fireworks"),

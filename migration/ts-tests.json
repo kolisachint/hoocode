@@ -5,9 +5,9 @@
   "hoocode_commit": "2223437c99cc4279ad40a39d8ff9268a5c8ee0fd"
  },
  "summary": {
-  "ported": 299,
+  "ported": 298,
   "equivalent": 2,
-  "n.a.": 6,
+  "n.a.": 7,
   "pending": 94,
   "review": 0
  },
@@ -253,10 +253,8 @@
    ]
   },
   "packages/ai/test/azure-openai-base-url.test.ts": {
-   "status": "ported",
-   "rust": [
-    "crates/cortexcode-ai-provider-azure/src/tests.rs"
-   ]
+   "status": "n.a.",
+   "note": "Azure OpenAI dropped 2026-10-08 (decisions-2026-10-08.md)"
   },
   "packages/ai/test/cache-retention.test.ts": {
    "status": "ported",

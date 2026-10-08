@@ -29,13 +29,11 @@ fn supports_xhigh(m: &Model) -> bool {
 fn catalog_matches_the_pin() {
     let providers = get_providers();
     let total: usize = providers.iter().map(|p| get_models(p).len()).sum();
-    // hoocode v0.6.0: Object.values(MODELS) flattened (scripts/convert_models_to_json.py).
-    assert_eq!(total, 1228);
+    // hoocode v0.6.0: Object.values(MODELS) flattened (scripts/convert_models_to_json.py),
+    // minus the 47 azure-openai-responses entries (Azure dropped; the converter filters them).
+    assert_eq!(total, 1181);
     // hoocode's provider order (Object.entries(MODELS)).
-    assert_eq!(
-        &providers[..3],
-        ["anthropic", "azure-openai-responses", "cerebras"]
-    );
+    assert_eq!(&providers[..3], ["anthropic", "cerebras", "deepseek"]);
     assert_eq!(providers.last(), Some(&"zai"));
 }
 

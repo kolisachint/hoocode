@@ -7,5 +7,5 @@ Port of hoocode `packages/ai/src/api-registry.ts`, `stream.ts` and
 changes. Extensions can register or replace an API (`register_api_provider`).
 
 Built-in APIs registered today: `anthropic-messages`, `openai-completions`,
-`azure-openai-responses`, `google-generative-ai`, `google-vertex`. Not yet ported:
+`google-generative-ai`, `google-vertex`. Not yet ported:
 `openai-responses` (ledger 8.3), `openai-codex-responses` (8.4a), `google-gemini-cli` (8.4c).

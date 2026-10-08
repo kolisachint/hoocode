@@ -51,7 +51,7 @@ fn hi() -> Context {
 #[test]
 fn all_known_providers_are_in_the_catalog() {
     let providers = cortexcode_ai_models::get_providers();
-    assert_eq!(providers.len(), 31, "{providers:?}");
+    assert_eq!(providers.len(), 30, "{providers:?}");
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn every_registered_provider_streams_through_its_api() {
             "openai-completions" => "/chat/completions",
             "anthropic-messages" => "/messages",
             "google-generative-ai" | "google-vertex" => ":streamGenerateContent",
-            "openai-responses" | "azure-openai-responses" => "/responses",
+            "openai-responses" => "/responses",
             "openai-codex-responses" => "/codex/responses",
             "google-gemini-cli" => "/v1internal:streamGenerateContent?alt=sse",
             other => panic!("{label}: no expected path for {other}"),

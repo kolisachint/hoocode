@@ -186,7 +186,6 @@ fn on_response_gets_the_status_and_headers_before_the_body() {
     for api in [
         "openai-completions",
         "openai-responses",
-        "azure-openai-responses",
         "anthropic-messages",
     ] {
         let mut model = first_model(api);

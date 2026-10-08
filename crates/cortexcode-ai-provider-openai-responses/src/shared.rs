@@ -1,6 +1,6 @@
 //! Shared OpenAI Responses API plumbing: message and tool conversion, the
 //! stream-event processor and the HTTP driver used by the `openai-responses`
-//! and `azure-openai-responses` providers.
+//! provider.
 //!
 //! Port of hoocode `providers/openai-responses-shared.ts` (v0.5.89).
 

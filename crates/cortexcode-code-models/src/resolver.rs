@@ -12,7 +12,6 @@ use std::cmp::Ordering;
 pub const DEFAULT_MODEL_PER_PROVIDER: &[(&str, &str)] = &[
     ("anthropic", "claude-opus-4-7"),
     ("openai", "gpt-5.4"),
-    ("azure-openai-responses", "gpt-5.4"),
     ("openai-codex", "gpt-5.6-terra"),
     ("deepseek", "deepseek-v4-pro"),
     ("google", "gemini-3.1-pro-preview"),

@@ -22,6 +22,10 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+
+# Providers cortexcode drops (docs/design/decisions-2026-10-08.md, "Dropped: Azure").
+# Keep them out of the regenerated catalog so the drop survives a pin bump.
+DROPPED_PROVIDERS = {"azure-openai-responses"}
 DEFAULT_AI_PACKAGE = ROOT / "target" / "hoocode-pin" / "packages" / "ai"
 OUT_DIR = ROOT / "crates" / "cortexcode-ai-models-catalog" / "data"
 
@@ -59,6 +63,7 @@ def main() -> int:
     (OUT_DIR / "pin.json").write_text(
         json.dumps({"hoocodeVersion": version, "hoocodeCommit": commit}, indent=1) + "\n"
     )
+    data["models"] = [m for m in data["models"] if m.get("provider") not in DROPPED_PROVIDERS]
     for name, key in (("models.json", "models"), ("image-models.json", "images")):
         path = OUT_DIR / name
         path.write_text(json.dumps(data[key], indent=1, ensure_ascii=False) + "\n")

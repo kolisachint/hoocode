@@ -450,18 +450,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cortexcode-ai-provider-azure"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-models",
- "cortexcode-ai-provider-openai-responses",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "reqwest",
- "serde_json",
-]
-
-[[package]]
 name = "cortexcode-ai-provider-faux"
 version = "0.1.8"
 dependencies = [
@@ -568,7 +556,6 @@ dependencies = [
  "cortexcode-ai-env",
  "cortexcode-ai-models",
  "cortexcode-ai-provider-anthropic",
- "cortexcode-ai-provider-azure",
  "cortexcode-ai-provider-google",
  "cortexcode-ai-provider-google-gemini-cli",
  "cortexcode-ai-provider-openai",

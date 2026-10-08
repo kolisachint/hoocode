@@ -25,7 +25,6 @@ fn get_api_key_env_vars(provider: &str) -> Option<&'static [&'static str]> {
         "anthropic" => Some(&["ANTHROPIC_OAUTH_TOKEN", "ANTHROPIC_API_KEY"]),
 
         "openai" => Some(&["OPENAI_API_KEY"]),
-        "azure-openai-responses" => Some(&["AZURE_OPENAI_API_KEY"]),
         "deepseek" => Some(&["DEEPSEEK_API_KEY"]),
         "google" => Some(&["GEMINI_API_KEY"]),
         "google-vertex" => Some(&["GOOGLE_CLOUD_API_KEY"]),
@@ -245,7 +244,6 @@ mod tests {
             ("google-antigravity", &[]),
             ("google-vertex", &["GOOGLE_CLOUD_API_KEY"]),
             ("openai", &["OPENAI_API_KEY"]),
-            ("azure-openai-responses", &["AZURE_OPENAI_API_KEY"]),
             ("openai-codex", &[]),
             ("deepseek", &["DEEPSEEK_API_KEY"]),
             ("github-copilot", &["COPILOT_GITHUB_TOKEN"]),
@@ -271,7 +269,7 @@ mod tests {
             ("xiaomi-token-plan-sgp", &["XIAOMI_TOKEN_PLAN_SGP_API_KEY"]),
             ("nvidia", &["NVIDIA_API_KEY"]),
         ];
-        assert_eq!(table.len(), 31);
+        assert_eq!(table.len(), 30);
         for (provider, vars) in table {
             let expected = (!vars.is_empty()).then_some(*vars);
             assert_eq!(get_api_key_env_vars(provider), expected, "{provider}");

@@ -1,7 +1,7 @@
 # Package map
 
 What each crate does, who uses it, and where to make a change. Snapshot of 2026-10-08, after the deletions in
-[decisions-2026-10-08.md](../design/decisions-2026-10-08.md): 66 crates (76 before; see
+[decisions-2026-10-08.md](../design/decisions-2026-10-08.md): 65 crates (76 before; see
 [Deleted](#deleted-2026-10-08)). In step 0 the crates
 become `hoocode-*` and the binary `hoocode`
 ([naming-and-paths.md](../design/naming-and-paths.md)); this page is regenerated
@@ -77,17 +77,16 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for cortex AI | 1 | 1456 / 0 | keep |
 | `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for cortex AI | 1 | 602 / 0 | keep |
 | `ai-provider-anthropic` | Anthropic provider for cortex AI | 1 | 2678 / 516 | keep |
-| `ai-provider-azure` | Azure OpenAI provider for cortex AI | 1 | 648 / 0 | keep: `ai-registry` registers its `stream` for `azure-openai-responses` |
 | `ai-provider-faux` | Faux / test provider for cortex AI | 0 | 930 / 759 | test provider (dev-dep only) |
 | `ai-provider-google` | Google Gemini provider for cortex AI | 2 | 3157 / 111 | keep |
 | `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for cortex AI | 1 | 1724 / 0 | keep |
 | `ai-provider-openai` | OpenAI provider for cortex AI | 1 | 3415 / 826 | keep |
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for cortex AI: SSE and WebSocket transports | 1 | 2555 / 0 | keep |
-| `ai-provider-openai-responses` | OpenAI Responses API provider for cortex AI, and the Responses plumbing shared with Azure | 3 | 2260 / 0 | keep |
+| `ai-provider-openai-responses` | OpenAI Responses API provider for cortex AI, and the Responses plumbing it shares internally | 2 | 2260 / 0 | keep |
 | `ai-registry` | API provider registry for cortex AI: dispatches streams on model.api | 4 | 314 / 3068 | keep |
 | `ai-sse` | Server-Sent Events decoder shared by the cortex AI providers | 2 | 218 / 0 | keep |
-| `ai-stream` | Streaming response utilities for cortex AI | 13 | 611 / 0 | keep |
-| `ai-types` | Shared types for cortex AI | 40 | 1090 / 0 | keep |
+| `ai-stream` | Streaming response utilities for cortex AI | 12 | 611 / 0 | keep |
+| `ai-types` | Shared types for cortex AI | 39 | 1090 / 0 | keep |
 | `ai-util` | Shared utilities for cortex AI: JSON repair, hash, headers, sanitization, overflow detection | 12 | 3866 / 163 | keep |
 
 ### Agent runtime (`agent-*`)
@@ -158,7 +157,8 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 ## Deleted 2026-10-08
 
 Ten crates were removed, as agreed in
-[decisions-2026-10-08.md](../design/decisions-2026-10-08.md).
+[decisions-2026-10-08.md](../design/decisions-2026-10-08.md). Azure was dropped
+later the same day (65 crates), so `ai-provider-azure` is listed below too.
 
 | Crate | Why | What moved or is left |
 |---|---|---|
@@ -172,9 +172,13 @@ Ten crates were removed, as agreed in
 `cross_provider_handoff`, `github_copilot`, `live_matrix`, `routing`, `stream_hooks`, with
 their `tests/data/red-circle.png`. Imports now name the leaf crates directly.
 
-**Kept: `ai-provider-azure`.** The decision said "Not used", but `ai-registry` depends on
-it and registers it for `azure-openai-responses`, so it stays. The Azure cleanup listed in
-the decision is not done.
+**Azure removed (`ai-provider-azure`, 65 crates).** The decision said "Not used", and the
+provider was wired into `ai-registry` only, so it was deleted with its `azure-openai-responses`
+API, the `AZURE_OPENAI_*` env vars, the `/login` display name, the help text and the 47
+`azure-openai-responses` entries in `ai-models-catalog`. `ai-provider-openai-responses` keeps
+the shared Responses plumbing; only its doc comments mentioned Azure. The catalog now has
+1181 entries (the pin has 1228), and `scripts/convert_models_to_json.py` filters the
+Azure provider out so a regeneration does not bring it back.
 
 ## Upkeep
 

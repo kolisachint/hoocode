@@ -16,7 +16,6 @@ declare -a CRATES=(
     "cortexcode-ai-models|LLM model registry and discovery for cortex AI|ai|leaf"
     "cortexcode-ai-oauth|OAuth flows for cortex AI providers|ai|leaf"
     "cortexcode-ai-provider-anthropic|Anthropic provider for cortex AI|ai|leaf"
-    "cortexcode-ai-provider-azure|Azure OpenAI provider for cortex AI|ai|leaf"
     "cortexcode-ai-provider-faux|Faux / test provider for cortex AI|ai|leaf"
     "cortexcode-ai-provider-google|Google Gemini provider for cortex AI|ai|leaf"
     "cortexcode-ai-provider-openai|OpenAI provider for cortex AI|ai|leaf"

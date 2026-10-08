@@ -36,12 +36,6 @@ const PROVIDER_MODEL_PAIRS: &[(&str, &str, &str, Option<&str>)] = &[
     ),
     ("openai", "gpt-5-mini", "openai-responses-gpt-5-mini", None),
     (
-        "azure-openai-responses",
-        "gpt-4o-mini",
-        "azure-openai-responses-gpt-4o-mini",
-        None,
-    ),
-    (
         "openai-codex",
         "gpt-5.3-codex",
         "openai-codex-gpt-5.3-codex",
