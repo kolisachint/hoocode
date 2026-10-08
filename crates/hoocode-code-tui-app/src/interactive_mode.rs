@@ -50,7 +50,7 @@ use hoocode_code_session::identity::{
 use hoocode_code_session::SessionManager;
 use hoocode_code_settings::platform_targets::{get_workspace_platforms, set_platforms};
 use hoocode_code_settings::{ChromeDensity, DoubleEscapeAction, EditorBorder, ToolOutputView};
-use hoocode_code_subagents::agent_log::set_terminal_owned_by_tui;
+use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::instance::get_subagent_pool;
 use hoocode_code_subagents::ledger;
 use hoocode_code_subagents::pool::DispatchOptions;
@@ -908,6 +908,10 @@ struct Mode {
     /// Tips on the notification band (`tips.rs`).
     tips: TipsController,
     footer: Rc<RefCell<FooterComponent>>,
+    /// The warning on the footer now (shedding or UI stall), if any.
+    runtime_notice: Option<String>,
+    /// Shedding as the last loop turn drew it; a change clears the render caches.
+    shedding_shown: bool,
     footer_data: FooterDataProvider,
     chrome: ChromeLayoutController,
     expanded: bool,
@@ -1286,6 +1290,8 @@ impl Mode {
             notifications,
             tips,
             footer,
+            runtime_notice: None,
+            shedding_shown: false,
             footer_data,
             chrome,
             expanded,
@@ -5889,6 +5895,48 @@ impl Mode {
         self.tui.accept_event(event);
     }
 
+    /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn
+    /// and flushes the session. Shedding changes clear the render caches. The
+    /// footer warning follows the stall flag and shedding. The stall flag can only
+    /// show once the loop turns again, since a stuck loop cannot draw it.
+    fn sync_runtime_health(&mut self) {
+        for event in hoocode_runtime::take_memory_events() {
+            if let hoocode_runtime::MemoryEvent::HardLimit { rss, limit } = event {
+                self.session.agent().abort();
+                let flushed = hoocode_runtime::session_io()
+                    .flush_blocking(Duration::from_secs(1))
+                    .is_ok();
+                self.show_error(&format!(
+                    "Memory limit reached: {} MB resident, hard limit {} MB. The turn was aborted{}. Raise performance.memoryHardLimitMb or end the session.",
+                    rss / hoocode_runtime::MIB,
+                    limit / hoocode_runtime::MIB,
+                    if flushed { " and the session saved" } else { "" },
+                ));
+            }
+        }
+        let shedding = hoocode_runtime::shedding();
+        if shedding != self.shedding_shown {
+            self.shedding_shown = shedding;
+            self.tui.invalidate();
+            self.dirty.set(true);
+        }
+        let notice = if hoocode_runtime::watchdog::ui_stalled() {
+            Some("UI stalled: no response for 2 s; keys are queued".to_string())
+        } else if shedding {
+            Some(
+                "Memory above the soft limit: no new subagents; tool calls run one at a time"
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        if notice != self.runtime_notice {
+            self.footer.borrow_mut().set_notice(notice.clone());
+            self.runtime_notice = notice;
+            self.dirty.set(true);
+        }
+    }
+
     fn next_wakeup(&self) -> Duration {
         let now = Instant::now();
         let mut wait = Duration::from_millis(250);
@@ -6024,9 +6072,23 @@ impl Mode {
             self.prompt_with_images(first, images);
         }
 
+        // Watchdog: limits from settings, the heartbeat and the stall log (to the debug log, not the terminal).
+        if let Err(error) = hoocode_runtime::watchdog::start() {
+            self.show_error(&format!("watchdog did not start: {error}"));
+        }
+        hoocode_runtime::watchdog::set_log_sink(Box::new(|line: &str| agent_log(line)));
+        {
+            let settings = self.session.settings();
+            hoocode_runtime::configure_memory_limits(
+                settings.performance_memory_soft_limit_mb() * hoocode_runtime::MIB,
+                settings.performance_memory_hard_limit_mb() * hoocode_runtime::MIB,
+            );
+        }
+
         self.tui.request_render(false);
         self.dirty.set(false);
         loop {
+            hoocode_runtime::watchdog::ui_beat("ui-loop:wait");
             let received = input.recv_timeout(self.next_wakeup());
             // Phase 0 timing: an iteration starts when its input has arrived,
             // not while the loop sleeps.
@@ -6055,8 +6117,10 @@ impl Mode {
                     self.handle_action(action);
                 }
             }
+            hoocode_runtime::watchdog::ui_beat("ui-loop:input-done");
             self.drain_extension_ui_requests();
             self.tick_scheduler();
+            self.sync_runtime_health();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
             }
@@ -6204,6 +6268,7 @@ impl Mode {
             self.perf.end_iteration(iteration_started);
         }
 
+        hoocode_runtime::watchdog::ui_stopped();
         set_dialog_sink(None);
         if let Some((_, reply)) = self.selector.take() {
             let _ = reply.send(None);

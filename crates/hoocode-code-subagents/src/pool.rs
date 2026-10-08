@@ -767,6 +767,13 @@ impl SubagentPool {
     }
 
     fn begin_dispatch(&self, task: &str, options: DispatchOptions) -> Result<Begin, PoolError> {
+        // Shedding (process memory above its soft limit): no new children until it lifts.
+        if hoocode_runtime::shedding() {
+            return Err(PoolError(
+                "Subagents are paused: memory is above the soft limit. Try again once it recovers."
+                    .into(),
+            ));
+        }
         let analysis = DispatchEvaluator.evaluate_with_env(task, &self.inner.env);
         if options.force_agent.is_none() && !analysis.should_delegate {
             return Ok(Begin {

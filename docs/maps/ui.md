@@ -30,7 +30,7 @@ update this page in the same commit.
 | Prompt editor | `CustomEditor` around `Editor` | `interactive_mode.rs` (`CustomEditor`); `tui-components/src/editor/` |
 | Prompt frame | frame, input frame | `tui-components/src/frame.rs`; `code-tui-widgets/src/input_frame.rs` |
 | Autocomplete (`/`, `@file`) | autocomplete | `tui-components/src/autocomplete/`; commands fed by `interactive_mode.rs` `setup_autocomplete_provider`. `@file` uses the in-process finder `hoocode-code-tools::file_finder`, injected by `interactive_mode.rs` `at_file_finder` (no `fd`) and run on a worker thread (`autocomplete/file_search.rs`): typing never waits, and the editor re-asks when a walk finishes (`take_ready`). |
-| Footer | footer, footer data | `code-tui-app/src/footer.rs`, `footer_data.rs` |
+| Footer | footer, footer data. A warning line (memory shedding, UI stall) sits above the transient lines; set by `interactive_mode.rs` `sync_runtime_health` | `code-tui-app/src/footer.rs`, `footer_data.rs` |
 | Session chip | session chip | `code-tui-widgets/src/session_chip.rs` |
 | How much room chrome gets | chrome layout | `code-tui-app/src/chrome_layout.rs` |
 

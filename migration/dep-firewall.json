@@ -81,6 +81,9 @@
     ],
     "rmcp": [
       "hoocode-agent-mcp"
+    ],
+    "memory-stats": [
+      "hoocode-runtime"
     ]
   },
   "pending": {}

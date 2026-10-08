@@ -14,16 +14,28 @@
 //! - [`session_io`]: the `hoocode-session-io` thread, the only writer of session
 //!   files, with a bounded queue and flush barriers.
 //! - [`watch_sigwinch`] (Unix): terminal resize signal, on its own named thread.
+//! - [`watchdog`]: the `hoocode-watchdog` thread: UI heartbeat, stall reports,
+//!   io starvation probe and memory sampling.
+//! - [`memory`] (re-exported here): soft and hard process memory limits, and
+//!   shedding while the soft limit is exceeded.
 
 mod limits;
+mod memory;
 mod runtime;
 mod session_io;
 #[cfg(unix)]
 mod signals;
 mod threads;
+pub mod watchdog;
 
 pub use limits::{
-    total_memory_bytes, ParallelToolLimit, MAX_BASH_NICE, MAX_PARALLEL_TOOLS, MIN_PARALLEL_TOOLS,
+    total_memory_bytes, ParallelSlot, ParallelToolLimit, MAX_BASH_NICE, MAX_PARALLEL_TOOLS,
+    MIN_PARALLEL_TOOLS,
+};
+pub use memory::{
+    child_rss_bytes, configure_memory_limits, configured_memory_limits, default_memory_limits_mb,
+    last_rss_bytes, process_rss_bytes, shedding, take_memory_events, MemoryEvent, MemoryGuard,
+    MemoryMonitor, RssSource, Tick, CHILD_RSS_LIMIT_BYTES, MIB,
 };
 pub use runtime::{
     block_on_current_thread, block_on_entry, block_on_isolated, io_handle, io_worker_count,

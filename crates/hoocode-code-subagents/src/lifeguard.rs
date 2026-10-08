@@ -389,9 +389,43 @@ impl SubagentLifeguard {
                 .cloned()
                 .collect()
         };
-        for task_id in stalled {
+        // A child over its memory budget is reaped through the stall path:
+        // SIGTERM, grace, then SIGKILL, and its partial result is kept.
+        for task_id in stalled.into_iter().chain(self.children_over_memory_limit()) {
             self.handle_stalled(&task_id);
         }
+    }
+
+    /// Children whose resident memory is above
+    /// [`hoocode_runtime::CHILD_RSS_LIMIT_BYTES`] (2 GiB each).
+    fn children_over_memory_limit(&self) -> Vec<String> {
+        let candidates: Vec<(String, u32)> = {
+            let state = self.state();
+            state
+                .processes
+                .iter()
+                .filter(|(id, _)| !state.reaping.contains(*id))
+                .map(|(id, monitored)| (id.clone(), monitored.pid))
+                .collect()
+        };
+        candidates
+            .into_iter()
+            .filter(|(task_id, pid)| {
+                let Some(rss) = hoocode_runtime::child_rss_bytes(*pid) else {
+                    return false;
+                };
+                if rss <= hoocode_runtime::CHILD_RSS_LIMIT_BYTES {
+                    return false;
+                }
+                agent_log(&format!(
+                    "[LIFEGUARD] task_id={task_id} rss_mb={} above the {} MiB child limit; reaping",
+                    rss / hoocode_runtime::MIB,
+                    hoocode_runtime::CHILD_RSS_LIMIT_BYTES / hoocode_runtime::MIB,
+                ));
+                true
+            })
+            .map(|(task_id, _)| task_id)
+            .collect()
     }
 
     fn handle_stalled(self: &Arc<Self>, task_id: &str) {

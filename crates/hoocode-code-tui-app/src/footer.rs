@@ -213,6 +213,8 @@ pub struct FooterComponent {
     tool_output_view: ToolOutputView,
     session_chip_shown: bool,
     density: FooterDensity,
+    /// A warning shown above the transient lines (memory shedding, UI stall).
+    notice: Option<String>,
 }
 
 impl FooterComponent {
@@ -224,7 +226,13 @@ impl FooterComponent {
             tool_output_view: ToolOutputView::Peek,
             session_chip_shown: false,
             density: FooterDensity::Full,
+            notice: None,
         }
+    }
+
+    /// Sets or clears the warning line. `None` removes it.
+    pub fn set_notice(&mut self, notice: Option<String>) {
+        self.notice = notice;
     }
 
     pub fn set_source(&mut self, source: Box<dyn FooterSource>) {
@@ -253,6 +261,14 @@ impl FooterComponent {
 
     fn transient_lines(&self, width: usize) -> Vec<String> {
         let mut lines = Vec::new();
+        if let Some(notice) = &self.notice {
+            lines.push(truncate_to_width(
+                &theme().fg("warning", notice),
+                width,
+                &theme().fg("dim", "..."),
+                false,
+            ));
+        }
         let statuses = self.data.get_extension_statuses();
         if !statuses.is_empty() {
             let line = statuses
