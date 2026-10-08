@@ -30,15 +30,16 @@ pub fn style(open: &str, close: &str, text: &str) -> String {
         let mut out = String::with_capacity(body.len());
         let mut rest = body.as_str();
         while let Some(i) = rest.find('\n') {
-            let (line, cr) = match rest[..i].strip_suffix('\r') {
+            let (line, cr) = match hoocode_tui_util::text_slice::prefix(rest, i).strip_suffix('\r')
+            {
                 Some(line) => (line, "\r\n"),
-                None => (&rest[..i], "\n"),
+                None => (hoocode_tui_util::text_slice::prefix(rest, i), "\n"),
             };
             out.push_str(line);
             out.push_str(close);
             out.push_str(cr);
             out.push_str(open);
-            rest = &rest[i + 1..];
+            rest = hoocode_tui_util::text_slice::suffix_from(rest, i + 1);
         }
         out.push_str(rest);
         body = out;

@@ -38,7 +38,7 @@ fn truthy(value: Option<&Value>) -> bool {
 /// The color of a `type#n` label's agent, or `fallback` for a raw id.
 fn label_color(label: &str, fallback: &'static str) -> &'static str {
     match label.find('#') {
-        Some(i) if i > 0 => agent_color_for(&label[..i]),
+        Some(i) if i > 0 => agent_color_for(hoocode_tui_util::text_slice::prefix(label, i)),
         _ => fallback,
     }
 }
@@ -76,7 +76,10 @@ pub fn format_task_output_call(args: &Value) -> String {
         js_string(args.get("task_id"))
     };
     let styled = match target.find('#') {
-        Some(i) if i > 0 => t.fg(agent_color_for(&target[..i]), &target),
+        Some(i) if i > 0 => t.fg(
+            agent_color_for(hoocode_tui_util::text_slice::prefix(&target, i)),
+            &target,
+        ),
         _ => t.fg("dim", &target),
     };
     format!(

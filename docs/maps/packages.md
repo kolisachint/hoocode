@@ -123,40 +123,40 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 780 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 5 | 4453 / 2992 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1021 | keep |
-| `code-session` | Session handling for the hoocode coding agent | 6 | 1797 / 274 | keep |
+| `code-session` | Session handling for the hoocode coding agent | 6 | 1821 / 274 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 1995 / 1108 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7833 / 6668 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |
-| `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 10 | 1070 / 125 | keep |
-| `code-tool-bash` | The bash tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1355 / 508 | keep |
+| `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 10 | 1142 / 125 | keep |
+| `code-tool-bash` | The bash tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1356 / 511 | keep |
 | `code-tool-search` | SearchCodebase for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1960 / 1185 | keep |
-| `code-tools` | Coding tools for the hoocode coding agent | 4 | 1200 / 0 | keep |
-| `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3285 / 2384 | keep |
+| `code-tools` | Coding tools for the hoocode coding agent | 4 | 1240 / 0 | keep |
+| `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3268 / 2387 | keep |
 | `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite and ask_options | 3 | 545 / 540 | keep |
 
 ### Coding agent UI (`code-tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 11376 / 4949 | keep |
-| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 836 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7790 / 3041 | keep |
-| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2406 / 2502 | keep |
-| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 6699 / 4228 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 11390 / 4952 | keep |
+| `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7793 / 3044 | keep |
+| `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2407 / 2505 | keep |
+| `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 6721 / 4231 | keep |
 
 ### TUI library (`tui-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 9880 / 7239 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 9937 / 7242 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 307 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 374 / 0 | keep |
-| `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1963 / 72 | keep |
-| `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1237 / 376 | keep |
+| `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1985 / 72 | keep |
+| `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1237 / 379 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 6 | 1968 / 582 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2766 / 2613 | keep |
-| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 1592 / 100 | keep |
-| `tui-util` | Shared utilities for the hoocode TUI | 8 | 2078 / 580 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2789 / 2616 | keep |
+| `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 1610 / 103 | keep |
+| `tui-util` | Shared utilities for the hoocode TUI | 10 | 2159 / 583 | keep |
 
 <!-- END generated -->
 

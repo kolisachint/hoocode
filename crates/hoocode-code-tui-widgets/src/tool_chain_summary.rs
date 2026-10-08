@@ -301,7 +301,7 @@ fn usable_as_target(subject: &str) -> bool {
     }
     match subject.rfind('.') {
         Some(dot) => {
-            let ext = &subject[dot + 1..];
+            let ext = hoocode_tui_util::text_slice::suffix_from(subject, dot + 1);
             !ext.is_empty() && ext.chars().all(|c| c.is_ascii_alphanumeric())
         }
         None => false,

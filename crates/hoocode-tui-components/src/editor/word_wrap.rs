@@ -37,18 +37,18 @@ pub fn slice16(s: &str, a: usize, b: usize) -> &str {
     if end <= start {
         ""
     } else {
-        &s[start..end]
+        hoocode_tui_util::text_slice::range(s, start, end)
     }
 }
 
 /// JS `s.slice(a)`.
 pub fn slice16_from(s: &str, a: usize) -> &str {
-    &s[byte_at16(s, a)..]
+    hoocode_tui_util::text_slice::suffix_from(s, byte_at16(s, a))
 }
 
 /// UTF-16 index of byte offset `b`.
 pub fn index16(s: &str, b: usize) -> usize {
-    len16(&s[..b])
+    len16(hoocode_tui_util::text_slice::prefix(s, b))
 }
 
 /// One segment of text: a grapheme, or a whole paste marker.
@@ -62,30 +62,35 @@ pub struct Segment {
 /// A paste marker `[paste #N]`, `[paste #N +L lines]` or `[paste #N C chars]`
 /// starting at byte `at`: its byte length and id.
 fn match_paste_marker(text: &str, at: usize) -> Option<(usize, u64)> {
-    let rest = text[at..].strip_prefix("[paste #")?;
+    let rest = hoocode_tui_util::text_slice::suffix_from(text, at).strip_prefix("[paste #")?;
     let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
     if digits == 0 {
         return None;
     }
-    let id: u64 = rest[..digits].parse().ok()?;
+    let id: u64 = hoocode_tui_util::text_slice::prefix(rest, digits)
+        .parse()
+        .ok()?;
     let mut pos = digits;
-    let tail = &rest[pos..];
+    let tail = hoocode_tui_util::text_slice::suffix_from(rest, pos);
     if let Some(after_space) = tail.strip_prefix(' ') {
         // ( (\+\d+ lines|\d+ chars))?
         let optional = if let Some(plus) = after_space.strip_prefix('+') {
             let n = plus.bytes().take_while(u8::is_ascii_digit).count();
-            (n > 0 && plus[n..].starts_with(" lines")).then(|| 1 + 1 + n + " lines".len())
+            (n > 0 && hoocode_tui_util::text_slice::suffix_from(plus, n).starts_with(" lines"))
+                .then(|| 1 + 1 + n + " lines".len())
         } else {
             let n = after_space.bytes().take_while(u8::is_ascii_digit).count();
-            (n > 0 && after_space[n..].starts_with(" chars")).then(|| 1 + n + " chars".len())
+            (n > 0
+                && hoocode_tui_util::text_slice::suffix_from(after_space, n).starts_with(" chars"))
+            .then(|| 1 + n + " chars".len())
         };
         if let Some(len) = optional {
-            if rest[pos + len..].starts_with(']') {
+            if hoocode_tui_util::text_slice::suffix_from(rest, pos + len).starts_with(']') {
                 pos += len;
             }
         }
     }
-    if !rest[pos..].starts_with(']') {
+    if !hoocode_tui_util::text_slice::suffix_from(rest, pos).starts_with(']') {
         return None;
     }
     Some(("[paste #".len() + pos + 1, id))
@@ -96,7 +101,7 @@ fn match_paste_marker(text: &str, at: usize) -> Option<(usize, u64)> {
 pub fn find_paste_markers(text: &str) -> Vec<(usize, usize, u64)> {
     let mut out = Vec::new();
     let mut i = 0;
-    while let Some(rel) = text[i..].find("[paste #") {
+    while let Some(rel) = hoocode_tui_util::text_slice::suffix_from(text, i).find("[paste #") {
         let at = i + rel;
         match match_paste_marker(text, at) {
             Some((len, id)) => {

@@ -127,10 +127,10 @@ fn is_symbol_autocomplete_context(text: &str) -> bool {
         if c != '@' && c != '#' {
             return false;
         }
-        if i > 0 && !text[..i].ends_with([' ', '\t']) {
+        if i > 0 && !hoocode_tui_util::text_slice::prefix(text, i).ends_with([' ', '\t']) {
             return false;
         }
-        let rest = &text[i + 1..];
+        let rest = hoocode_tui_util::text_slice::suffix_from(text, i + 1);
         if c == '@' {
             if let Some(quoted) = rest.strip_prefix('"') {
                 if !quoted.contains('"') {
@@ -160,8 +160,12 @@ fn is_js_space(c: char) -> bool {
 fn in_symbol_context(text_before_cursor: &str) -> bool {
     let token = match text_before_cursor.rfind(is_js_space) {
         Some(i) => {
-            let ws_len = text_before_cursor[i..].chars().next().unwrap().len_utf8();
-            &text_before_cursor[i + ws_len..]
+            let ws_len = hoocode_tui_util::text_slice::suffix_from(text_before_cursor, i)
+                .chars()
+                .next()
+                .unwrap()
+                .len_utf8();
+            hoocode_tui_util::text_slice::suffix_from(text_before_cursor, i + ws_len)
         }
         None => text_before_cursor,
     };
@@ -674,21 +678,26 @@ impl Editor {
         let mut decoded = String::with_capacity(pasted_text.len());
         let mut rest = pasted_text;
         while let Some(pos) = rest.find("\x1b[") {
-            decoded.push_str(&rest[..pos]);
-            let after = &rest[pos + 2..];
+            decoded.push_str(hoocode_tui_util::text_slice::prefix(rest, pos));
+            let after = hoocode_tui_util::text_slice::suffix_from(rest, pos + 2);
             let digits = after.bytes().take_while(u8::is_ascii_digit).count();
-            let replacement = (digits > 0 && after[digits..].starts_with(";5u"))
-                .then(|| after[..digits].parse::<u32>().ok())
-                .flatten()
-                .and_then(|cp| match cp {
-                    97..=122 => char::from_u32(cp - 96),
-                    65..=90 => char::from_u32(cp - 64),
-                    _ => None,
-                });
+            let replacement = (digits > 0
+                && hoocode_tui_util::text_slice::suffix_from(after, digits).starts_with(";5u"))
+            .then(|| {
+                hoocode_tui_util::text_slice::prefix(after, digits)
+                    .parse::<u32>()
+                    .ok()
+            })
+            .flatten()
+            .and_then(|cp| match cp {
+                97..=122 => char::from_u32(cp - 96),
+                65..=90 => char::from_u32(cp - 64),
+                _ => None,
+            });
             match replacement {
                 Some(c) => {
                     decoded.push(c);
-                    rest = &after[digits + 3..];
+                    rest = hoocode_tui_util::text_slice::suffix_from(after, digits + 3);
                 }
                 None => {
                     decoded.push_str("\x1b[");
@@ -1742,12 +1751,15 @@ impl Editor {
         if self.is_in_paste {
             self.paste_buffer.push_str(&data);
             if let Some(end) = self.paste_buffer.find("\x1b[201~") {
-                let content = self.paste_buffer[..end].to_string();
+                let content =
+                    hoocode_tui_util::text_slice::prefix(&self.paste_buffer, end).to_string();
                 if !content.is_empty() {
                     self.handle_paste(&content);
                 }
                 self.is_in_paste = false;
-                let remaining = self.paste_buffer[end + 6..].to_string();
+                let remaining =
+                    hoocode_tui_util::text_slice::suffix_from(&self.paste_buffer, end + 6)
+                        .to_string();
                 self.paste_buffer.clear();
                 if !remaining.is_empty() {
                     self.handle_input_with(&remaining, kb);
@@ -2049,7 +2061,7 @@ impl Component for Editor {
                         .first()
                         .map(|s| s.segment.clone())
                         .unwrap_or_default();
-                    let rest_after = &after[first.len()..];
+                    let rest_after = hoocode_tui_util::text_slice::suffix_from(&after, first.len());
                     display_text = format!("{before}{marker}\x1b[7m{first}\x1b[0m{rest_after}");
                 } else {
                     display_text = format!("{before}{marker}\x1b[7m \x1b[0m");
@@ -2068,7 +2080,7 @@ impl Component for Editor {
 
             let padding = " ".repeat(content_width.saturating_sub(line_visible_width));
             let line_right_padding = if cursor_in_padding {
-                &right_padding[1..]
+                hoocode_tui_util::text_slice::suffix_from(&right_padding, 1)
             } else {
                 right_padding.as_str()
             };

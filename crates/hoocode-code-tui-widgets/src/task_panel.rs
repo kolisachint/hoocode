@@ -177,7 +177,7 @@ fn task_elapsed_secs(task: &Task, now: u64) -> f64 {
 /// `"explore#2"` → `"explore"`.
 fn agent_type_of_name(name: &str) -> &str {
     match name.find('#') {
-        Some(idx) if idx > 0 => &name[..idx],
+        Some(idx) if idx > 0 => hoocode_tui_util::text_slice::prefix(name, idx),
         _ => name,
     }
 }
@@ -1021,7 +1021,8 @@ impl Component for TaskPanelComponent {
             }
             if let Some(handoff) = &group.meta.handoff {
                 if let Some(idx) = handoff.find("→ ") {
-                    let next = handoff[idx + "→ ".len()..].trim();
+                    let next =
+                        hoocode_tui_util::text_slice::suffix_from(handoff, idx + "→ ".len()).trim();
                     if role_agents.iter().any(|a| a.name == next) {
                         let connector = format!("{GROUP_INDENT_PLAIN}  └──→ ");
                         let gap =

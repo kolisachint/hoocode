@@ -58,7 +58,7 @@ pub fn strip_vt_control_characters(s: &str) -> String {
             i += len;
             continue;
         }
-        let ch = s[i..].chars().next().unwrap();
+        let ch = crate::text_slice::suffix_from(s, i).chars().next().unwrap();
         out.push(ch);
         i += ch.len_utf8();
     }
@@ -108,19 +108,23 @@ fn repair_nested_bg_resets(line: &str, bg_fn: &impl Fn(&str) -> String) -> Strin
     let mut out = String::with_capacity(line.len());
     let mut rest = line;
     while let Some(pos) = rest.find("\x1b[") {
-        out.push_str(&rest[..pos]);
-        let after = &rest[pos + 2..];
+        out.push_str(crate::text_slice::prefix(rest, pos));
+        let after = crate::text_slice::suffix_from(rest, pos + 2);
         let params_len = after
             .bytes()
             .take_while(|b| b.is_ascii_digit() || *b == b';')
             .count();
-        if after[params_len..].starts_with('m') {
-            let params = &after[..params_len];
-            out.push_str(&rest[pos..pos + 2 + params_len + 1]);
+        if crate::text_slice::suffix_from(after, params_len).starts_with('m') {
+            let params = crate::text_slice::prefix(after, params_len);
+            out.push_str(crate::text_slice::range(
+                rest,
+                pos,
+                pos + 2 + params_len + 1,
+            ));
             if clears_background(params) {
                 out.push_str(opener);
             }
-            rest = &after[params_len + 1..];
+            rest = crate::text_slice::suffix_from(after, params_len + 1);
         } else {
             out.push_str("\x1b[");
             rest = after;
@@ -148,8 +152,12 @@ fn split_into_tokens_with_ansi(text: &str) -> Vec<String> {
             continue;
         }
 
-        let ch_len = text[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
-        let ch = &text[i..i + ch_len];
+        let ch_len = crate::text_slice::suffix_from(text, i)
+            .chars()
+            .next()
+            .map(|c| c.len_utf8())
+            .unwrap_or(1);
+        let ch = crate::text_slice::range(text, i, i + ch_len);
         let char_is_space = ch == " ";
 
         if char_is_space != in_whitespace && !current.is_empty() {
@@ -193,7 +201,7 @@ fn break_long_word(word: &str, width: usize, tracker: &mut AnsiCodeTracker) -> V
             while end < word.len() && extract_ansi_code(word, end).is_none() {
                 end += 1;
             }
-            for g in word[i..end].graphemes(true) {
+            for g in crate::text_slice::range(word, i, end).graphemes(true) {
                 segments.push(Seg::Grapheme(g));
             }
             i = end;
@@ -369,9 +377,12 @@ fn pieces(text: &str) -> Vec<Piece<'_>> {
             && text.as_bytes()[end] != b'\t'
             && crate::ansi::extract_ansi_code(text, end).is_none()
         {
-            end += text[end..].chars().next().map_or(1, char::len_utf8);
+            end += crate::text_slice::suffix_from(text, end)
+                .chars()
+                .next()
+                .map_or(1, char::len_utf8);
         }
-        out.push(Piece::Run(&text[i..end]));
+        out.push(Piece::Run(crate::text_slice::range(text, i, end)));
         i = end;
     }
     out
@@ -576,7 +587,7 @@ pub fn slice_with_width(
             text_end += 1;
         }
 
-        for g in line[i..text_end].graphemes(true) {
+        for g in crate::text_slice::range(line, i, text_end).graphemes(true) {
             let w = grapheme_width(g);
             let in_range = current_col >= start_col && current_col < end_col;
             let fits = !strict || current_col + w <= end_col;
@@ -647,7 +658,7 @@ pub fn extract_segments(
             text_end += 1;
         }
 
-        for g in line[i..text_end].graphemes(true) {
+        for g in crate::text_slice::range(line, i, text_end).graphemes(true) {
             let w = grapheme_width(g);
 
             if current_col < before_end {

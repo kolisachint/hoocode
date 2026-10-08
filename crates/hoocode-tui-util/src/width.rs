@@ -126,8 +126,12 @@ pub fn visible_width(s: &str) -> usize {
             if let Some((_, len)) = extract_ansi_code(&clean, i) {
                 i += len;
             } else {
-                let ch_len = clean[i..].chars().next().map(|c| c.len_utf8()).unwrap_or(1);
-                stripped.push_str(&clean[i..i + ch_len]);
+                let ch_len = crate::text_slice::suffix_from(&clean, i)
+                    .chars()
+                    .next()
+                    .map(|c| c.len_utf8())
+                    .unwrap_or(1);
+                stripped.push_str(crate::text_slice::range(&clean, i, i + ch_len));
                 i += ch_len;
             }
         }

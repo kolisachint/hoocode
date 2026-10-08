@@ -5,6 +5,7 @@ use std::io::Write;
 use std::path::PathBuf;
 
 use hoocode_agent_harness::utils::output_compression::compress_bash_output;
+use hoocode_code_tool_api::text_slice;
 use hoocode_code_tool_api::{
     truncate_tail, TruncatedBy, TruncationOptions, TruncationResult, DEFAULT_MAX_BYTES,
     DEFAULT_MAX_LINES,
@@ -283,7 +284,7 @@ impl OutputAccumulator {
         if start > 0 {
             self.tail_starts_at_line_boundary = self.tail_text.as_bytes()[start - 1] == b'\n';
         }
-        self.tail_text = self.tail_text[start..].to_owned();
+        self.tail_text = text_slice::suffix_from(&self.tail_text, start).to_owned();
     }
 
     fn snapshot_text(&self) -> String {
@@ -292,7 +293,7 @@ impl OutputAccumulator {
         }
         match self.tail_text.find('\n') {
             None => self.tail_text.clone(),
-            Some(i) => self.tail_text[i + 1..].to_owned(),
+            Some(i) => text_slice::suffix_from(&self.tail_text, i + 1).to_owned(),
         }
     }
 

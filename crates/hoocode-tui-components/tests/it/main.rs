@@ -1,3 +1,6 @@
+// Test code slices literal fixtures; the string_slice lint guards production code.
+#![allow(clippy::string_slice)]
+
 mod autocomplete_ts;
 mod common;
 mod editor;

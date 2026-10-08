@@ -49,11 +49,14 @@ fn match_sgr(data: &str) -> Option<(&str, &str, &str, char, usize)> {
     let mut fields = [""; 3];
     let mut pos = 0;
     for (i, field) in fields.iter_mut().enumerate() {
-        let digits = rest[pos..].bytes().take_while(u8::is_ascii_digit).count();
+        let digits = hoocode_tui_util::text_slice::suffix_from(rest, pos)
+            .bytes()
+            .take_while(u8::is_ascii_digit)
+            .count();
         if digits == 0 {
             return None;
         }
-        *field = &rest[pos..pos + digits];
+        *field = hoocode_tui_util::text_slice::range(rest, pos, pos + digits);
         pos += digits;
         let sep = if i < 2 { b';' } else { 0 };
         if i < 2 {

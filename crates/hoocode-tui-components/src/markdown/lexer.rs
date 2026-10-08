@@ -306,7 +306,7 @@ fn rtrim(s: &str, c: char, invert: bool) -> &str {
             break;
         }
     }
-    &s[..end]
+    hoocode_tui_util::text_slice::prefix(s, end)
 }
 
 /// `splitCells(tableRow, count)` from `helpers.ts`.
@@ -420,7 +420,7 @@ fn cut_end(s: &str, n: usize) -> &str {
     while !s.is_char_boundary(end) {
         end -= 1;
     }
-    &s[..end]
+    hoocode_tui_util::text_slice::prefix(s, end)
 }
 
 /// `src.substring(n)`: clamped, and (for byte offsets that `marked` counts
@@ -433,7 +433,7 @@ fn advance(src: &str, n: usize) -> &str {
     while !src.is_char_boundary(n) {
         n += 1;
     }
-    &src[n..]
+    hoocode_tui_util::text_slice::suffix_from(src, n)
 }
 
 fn first_line(s: &str) -> &str {
@@ -578,10 +578,11 @@ impl Lexer {
                     let new_token = self.list(&new_text).unwrap();
                     raw = format!("{}{}", cut_end(&raw, old_raw.len()), new_token.raw);
                     text = format!("{}{}", cut_end(&text, old_raw.len()), new_token.raw);
-                    lines = new_text[new_token.raw.len()..]
-                        .split('\n')
-                        .map(str::to_string)
-                        .collect();
+                    lines =
+                        hoocode_tui_util::text_slice::suffix_from(&new_text, new_token.raw.len())
+                            .split('\n')
+                            .map(str::to_string)
+                            .collect();
                     *tokens.last_mut().unwrap() = new_token;
                     continue;
                 }
@@ -603,7 +604,9 @@ impl Lexer {
         let mut list = ListData {
             ordered,
             start: if ordered {
-                bull[..bull.len() - 1].parse().ok()
+                hoocode_tui_util::text_slice::prefix(&bull, bull.len() - 1)
+                    .parse()
+                    .ok()
             } else {
                 None
             },
@@ -612,7 +615,10 @@ impl Lexer {
         };
         let mut list_raw = String::new();
         let bull = if ordered {
-            format!(r"\d{{1,9}}\{}", &bull[bull.len() - 1..])
+            format!(
+                r"\d{{1,9}}\{}",
+                hoocode_tui_util::text_slice::suffix_from(&bull, bull.len() - 1)
+            )
         } else {
             format!(r"\{bull}")
         };
@@ -629,7 +635,7 @@ impl Lexer {
             let mut raw = cap.whole().to_string();
             let cap1 = cap.get(1).unwrap().to_string();
             let cap2 = cap.get(2).unwrap().to_string();
-            src = src[raw.len()..].to_string();
+            src = hoocode_tui_util::text_slice::suffix_from(&src, raw.len()).to_string();
             let mut line =
                 RULES
                     .other
@@ -1092,7 +1098,11 @@ impl Lexer {
             if !RULES.other.end_angle_bracket.test(&trimmed_url) {
                 return None;
             }
-            let rtrim_slash = rtrim(&trimmed_url[..trimmed_url.len() - 1], '\\', false);
+            let rtrim_slash = rtrim(
+                hoocode_tui_util::text_slice::prefix(&trimmed_url, trimmed_url.len() - 1),
+                '\\',
+                false,
+            );
             if (trimmed_url.len() - rtrim_slash.len()).is_multiple_of(2) {
                 return None;
             }
@@ -1123,7 +1133,7 @@ impl Lexer {
         href = js_trim(&href).to_string();
         if RULES.other.start_angle_bracket.test(&href) {
             href = if href.len() >= 2 {
-                href[1..href.len() - 1].to_string()
+                hoocode_tui_util::text_slice::range(&href, 1, href.len() - 1).to_string()
             } else {
                 String::new()
             };
@@ -1185,7 +1195,7 @@ impl Lexer {
             &RULES.inline.em_strong_r_delim_und
         };
         let offset = masked_src.len() - src.len() + l_length;
-        let masked = &masked_src[offset..];
+        let masked = hoocode_tui_util::text_slice::suffix_from(masked_src, offset);
         let mut pos = 0;
         while let Some(m) = end_reg.exec_at(masked, pos) {
             pos = if m.end() > m.index() {
@@ -1213,9 +1223,9 @@ impl Lexer {
             r_length = r_length.min(r_length + delim_total + mid_delim_total);
             let last_char_length = m.whole().chars().next().map_or(0, char::len_utf8);
             let end = l_length + m.index() + last_char_length + r_length as usize;
-            let raw = &src[..end.min(src.len())];
+            let raw = hoocode_tui_util::text_slice::prefix(src, end.min(src.len()));
             if (l_length as isize).min(r_length) % 2 == 1 {
-                let text = &raw[1..raw.len() - 1];
+                let text = hoocode_tui_util::text_slice::range(raw, 1, raw.len() - 1);
                 let tokens = self.inline_tokens(text);
                 return Some(
                     Token::new(TokenType::Em, raw)
@@ -1223,7 +1233,7 @@ impl Lexer {
                         .with_tokens(tokens),
                 );
             }
-            let text = &raw[2..raw.len() - 2];
+            let text = hoocode_tui_util::text_slice::range(raw, 2, raw.len() - 2);
             let tokens = self.inline_tokens(text);
             return Some(
                 Token::new(TokenType::Strong, raw)
@@ -1240,7 +1250,7 @@ impl Lexer {
         let has_non_space = RULES.other.non_space_char.test(&text);
         let both_ends = text.starts_with(' ') && text.ends_with(' ');
         if has_non_space && both_ends {
-            text = text[1..text.len() - 1].to_string();
+            text = hoocode_tui_util::text_slice::range(&text, 1, text.len() - 1).to_string();
         }
         Some(Token::new(TokenType::Codespan, cap.whole()).with_text(text))
     }
@@ -1325,7 +1335,10 @@ impl Lexer {
             while let Some(m) = re.exec_at(&masked, pos) {
                 let (start, end) = (m.index(), m.end());
                 let whole = m.whole();
-                let label = &whole[whole.rfind('[').unwrap() + 1..whole.len() - 1];
+                // The reflink match always holds `[label]`; fall back to the whole text otherwise.
+                let open = whole.rfind('[').map_or(0, |i| i + 1);
+                let label =
+                    hoocode_tui_util::text_slice::range(whole, open, whole.len().saturating_sub(1));
                 let hit = self.has_link(label);
                 pos = end;
                 if hit {

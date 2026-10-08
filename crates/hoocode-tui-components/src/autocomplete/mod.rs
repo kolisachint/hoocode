@@ -146,7 +146,7 @@ pub struct CombinedAutocompleteProvider {
 fn cursor_line_text(lines: &[String], cursor_line: usize, cursor_col: usize) -> String {
     let line = lines.get(cursor_line).map(String::as_str).unwrap_or("");
     let byte_end = char_index_to_byte(line, cursor_col);
-    line[..byte_end].to_string()
+    hoocode_tui_util::text_slice::prefix(line, byte_end).to_string()
 }
 
 fn char_index_to_byte(s: &str, char_index: usize) -> usize {
@@ -378,8 +378,10 @@ impl CombinedAutocompleteProvider {
     fn resolve_scoped_fuzzy_query(&self, raw_query: &str) -> Option<(PathBuf, String, String)> {
         let normalized_query = to_display_path(raw_query);
         let slash_index = normalized_query.rfind('/')?;
-        let display_base = normalized_query[..slash_index + 1].to_string();
-        let query = normalized_query[slash_index + 1..].to_string();
+        let display_base =
+            hoocode_tui_util::text_slice::prefix(&normalized_query, slash_index + 1).to_string();
+        let query = hoocode_tui_util::text_slice::suffix_from(&normalized_query, slash_index + 1)
+            .to_string();
 
         let base_dir = if display_base.starts_with("~/") {
             PathBuf::from(expand_home_path(&display_base))
@@ -529,7 +531,7 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
             let space_index = text_before_cursor.find(' ');
 
             if space_index.is_none() {
-                let prefix = &text_before_cursor[1..];
+                let prefix = hoocode_tui_util::text_slice::suffix_from(&text_before_cursor, 1);
                 #[derive(Clone)]
                 struct CmdView {
                     name: String,
@@ -576,8 +578,10 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
             }
 
             let space_index = space_index.unwrap();
-            let command_name = &text_before_cursor[1..space_index];
-            let argument_text = &text_before_cursor[space_index + 1..];
+            let command_name =
+                hoocode_tui_util::text_slice::range(&text_before_cursor, 1, space_index);
+            let argument_text =
+                hoocode_tui_util::text_slice::suffix_from(&text_before_cursor, space_index + 1);
 
             let command = self
                 .commands
@@ -640,7 +644,7 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
 
         let is_slash_command = prefix.starts_with('/')
             && before_prefix.trim().is_empty()
-            && !prefix[1..].contains('/');
+            && !hoocode_tui_util::text_slice::suffix_from(prefix, 1).contains('/');
         if is_slash_command {
             let final_line = format!("{before_prefix}/{} {adjusted_after_cursor}", item.value);
             let mut new_lines = lines.to_vec();

@@ -198,7 +198,10 @@ fn tilde(path: &str) -> String {
         .filter(|h| !h.is_empty())
         .or_else(|| std::env::var("USERPROFILE").ok().filter(|h| !h.is_empty()));
     match home {
-        Some(home) if path.starts_with(&home) => format!("~{}", &path[home.len()..]),
+        Some(home) if path.starts_with(&home) => format!(
+            "~{}",
+            hoocode_tui_util::text_slice::suffix_from(path, home.len())
+        ),
         _ => path.to_string(),
     }
 }

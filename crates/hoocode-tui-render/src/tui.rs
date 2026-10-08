@@ -54,10 +54,13 @@ fn extract_kitty_image_ids(line: &str) -> Vec<u32> {
         return Vec::new();
     };
     let params_start = sequence_start + KITTY_SEQUENCE_PREFIX.len();
-    let Some(params_end_rel) = line[params_start..].find(';') else {
+    let Some(params_end_rel) =
+        hoocode_tui_util::text_slice::suffix_from(line, params_start).find(';')
+    else {
         return Vec::new();
     };
-    let params = &line[params_start..params_start + params_end_rel];
+    let params =
+        hoocode_tui_util::text_slice::range(line, params_start, params_start + params_end_rel);
     for param in params.split(',') {
         let mut parts = param.splitn(2, '=');
         let key = parts.next().unwrap_or("");
@@ -79,22 +82,28 @@ fn extract_kitty_image_ids(line: &str) -> Vec<u32> {
 fn retag_kitty_image_id(line: &str, id: u32) -> Option<String> {
     let sequence_start = line.find(KITTY_SEQUENCE_PREFIX)?;
     let params_start = sequence_start + KITTY_SEQUENCE_PREFIX.len();
-    let params_end = params_start + line[params_start..].find(';')?;
-    let params = &line[params_start..params_end];
+    let params_end =
+        params_start + hoocode_tui_util::text_slice::suffix_from(line, params_start).find(';')?;
+    let params = hoocode_tui_util::text_slice::range(line, params_start, params_end);
     // `/(^|,)i=\d+/`
     let mut search_from = 0;
-    while let Some(rel) = params[search_from..].find("i=") {
+    while let Some(rel) = hoocode_tui_util::text_slice::suffix_from(params, search_from).find("i=")
+    {
         let at = search_from + rel;
-        let digits = params[at + 2..]
+        let digits = hoocode_tui_util::text_slice::suffix_from(params, at + 2)
             .bytes()
             .take_while(u8::is_ascii_digit)
             .count();
         if (at == 0 || params.as_bytes()[at - 1] == b',') && digits > 0 {
-            let retagged = format!("{}i={id}{}", &params[..at], &params[at + 2 + digits..]);
+            let retagged = format!(
+                "{}i={id}{}",
+                hoocode_tui_util::text_slice::prefix(params, at),
+                hoocode_tui_util::text_slice::suffix_from(params, at + 2 + digits)
+            );
             return Some(format!(
                 "{}{retagged}{}",
-                &line[..params_start],
-                &line[params_end..]
+                hoocode_tui_util::text_slice::prefix(line, params_start),
+                hoocode_tui_util::text_slice::suffix_from(line, params_end)
             ));
         }
         search_from = at + 2;
@@ -109,8 +118,10 @@ fn image_row_offset(line: &str) -> i64 {
         return 0;
     };
     let digits = rest.bytes().take_while(u8::is_ascii_digit).count();
-    if digits > 0 && rest[digits..].starts_with('A') {
-        rest[..digits].parse().unwrap_or(0)
+    if digits > 0 && hoocode_tui_util::text_slice::suffix_from(rest, digits).starts_with('A') {
+        hoocode_tui_util::text_slice::prefix(rest, digits)
+            .parse()
+            .unwrap_or(0)
     } else {
         0
     }
@@ -651,9 +662,14 @@ impl Tui {
         let mut out = String::new();
         let mut cursor = 0;
         loop {
-            let start_col = visible_width(&plain[..at]);
-            let end_col = start_col + visible_width(&plain[at..at + needle.len()]);
-            let from_col = visible_width(&plain[..cursor]);
+            let start_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, at));
+            let end_col = start_col
+                + visible_width(hoocode_tui_util::text_slice::range(
+                    &plain,
+                    at,
+                    at + needle.len(),
+                ));
+            let from_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, cursor));
             out.push_str(&slice_by_column(
                 line,
                 from_col,
@@ -665,12 +681,12 @@ impl Tui {
                 slice_by_column(line, start_col, end_col - start_col, false)
             ));
             cursor = at + needle.len();
-            match haystack[cursor..].find(&needle) {
+            match hoocode_tui_util::text_slice::suffix_from(&haystack, cursor).find(&needle) {
                 Some(rel) => at = cursor + rel,
                 None => break,
             }
         }
-        let tail_col = visible_width(&plain[..cursor]);
+        let tail_col = visible_width(hoocode_tui_util::text_slice::prefix(&plain, cursor));
         out.push_str(&slice_by_column(line, tail_col, usize::MAX / 2, false));
         out
     }
@@ -1114,14 +1130,16 @@ impl Tui {
             if length == 0 {
                 let ch = rest.chars().next().unwrap();
                 out.push(ch);
-                rest = &rest[ch.len_utf8()..];
+                rest = hoocode_tui_util::text_slice::suffix_from(rest, ch.len_utf8());
                 continue;
             }
-            if let Some(event) = parse_mouse_event(&rest[..length]) {
+            if let Some(event) =
+                parse_mouse_event(hoocode_tui_util::text_slice::prefix(rest, length))
+            {
                 self.handle_mouse_event(event);
             }
             saw_report = true;
-            rest = &rest[length..];
+            rest = hoocode_tui_util::text_slice::suffix_from(rest, length);
         }
         if !saw_report {
             return Some(data.to_string());
@@ -1417,10 +1435,15 @@ impl Tui {
         for row in (viewport_top..lines.len() as i64).rev() {
             let line = &lines[row as usize];
             if let Some(marker_index) = line.find(CURSOR_MARKER) {
-                let before_marker = &line[..marker_index];
+                let before_marker = hoocode_tui_util::text_slice::prefix(line, marker_index);
                 let col = visible_width(before_marker) as i64;
-                let after = line[marker_index + CURSOR_MARKER.len()..].to_string();
-                let mut new_line = line[..marker_index].to_string();
+                let after = hoocode_tui_util::text_slice::suffix_from(
+                    line,
+                    marker_index + CURSOR_MARKER.len(),
+                )
+                .to_string();
+                let mut new_line =
+                    hoocode_tui_util::text_slice::prefix(line, marker_index).to_string();
                 new_line.push_str(&after);
                 lines[row as usize] = new_line;
                 return Some(CursorPos { row, col });

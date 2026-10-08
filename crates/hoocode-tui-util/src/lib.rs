@@ -6,6 +6,7 @@
 mod ansi;
 pub mod js_regex;
 mod text;
+pub mod text_slice;
 mod width;
 
 pub use ansi::{bare_url_at, extract_ansi_code, hyperlink_at, AnsiCodeTracker};

@@ -590,8 +590,10 @@ pub fn command_path_argument(text: &str, command: &str) -> Option<String> {
     let args = text.strip_prefix(command)?.strip_prefix(' ')?.trim_start();
     let first = args.chars().next()?;
     if first == '"' || first == '\'' {
-        let rest = &args[1..];
-        return rest.find(first).map(|end| rest[..end].to_string());
+        let rest = hoocode_tui_util::text_slice::suffix_from(args, 1);
+        return rest
+            .find(first)
+            .map(|end| hoocode_tui_util::text_slice::prefix(rest, end).to_string());
     }
     Some(
         args.split(char::is_whitespace)
@@ -1525,7 +1527,7 @@ impl Mode {
         }
         // Built-in slash commands; `with_args` ones also take "/name <args>".
         let (name, has_args) = match text.find(' ') {
-            Some(i) => (&text[..i], true),
+            Some(i) => (hoocode_tui_util::text_slice::prefix(&text, i), true),
             None => (text.as_str(), false),
         };
         if let Some(command) = BuiltinCommand::lookup(name) {
@@ -1538,7 +1540,7 @@ impl Mode {
         if let Some(rest) = text.strip_prefix('!') {
             let exclude_from_context = rest.starts_with('!');
             let command = if exclude_from_context {
-                &rest[1..]
+                hoocode_tui_util::text_slice::suffix_from(rest, 1)
             } else {
                 rest
             }

@@ -62,6 +62,14 @@ stop the same bug classes coming back.
      network is fixed (char-boundary-safe helpers, `?`, or a logged fallback).
    - Add `clippy::string_slice` as a warning in the TUI and tool crates so new
      slices get a second look.
+   - Status (2026-10-08, branch `claude/1.5-panic-audit`): **built.** Every string
+     slice in the 23 TUI and tool crates goes through `text_slice` (`prefix`,
+     `suffix_from`, `range`; a copy in `hoocode-tui-util` and one in
+     `hoocode-code-tool-api`) and `clippy::string_slice` is on there. Input panics
+     fixed: the webfetch page cut, the websearch title and snippet range, and the
+     session timestamp in `get_last_activity_time`. The other `unwrap`/`expect` sites
+     were triaged by reading. Most are mutex locks, static regexes or guarded pops;
+     a few are not individually re-checked.
 5. **Fuzzing.** Property tests with `proptest` (runs in the normal test suite, stable
    Rust) for: session JSONL parse, settings and `models.json` parse, SSE parser,
    terminal key parser, markdown renderer, and list-item detection. An optional

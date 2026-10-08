@@ -20,7 +20,7 @@ pub fn extract_ansi_code(s: &str, pos: usize) -> Option<(&str, usize)> {
                 j += 1;
             }
             if j < bytes.len() {
-                Some((&s[pos..=j], j + 1 - pos))
+                Some((crate::text_slice::range(s, pos, j + 1), j + 1 - pos))
             } else {
                 None
             }
@@ -29,10 +29,10 @@ pub fn extract_ansi_code(s: &str, pos: usize) -> Option<(&str, usize)> {
             let mut j = pos + 2;
             while j < bytes.len() {
                 if bytes[j] == 0x07 {
-                    return Some((&s[pos..=j], j + 1 - pos));
+                    return Some((crate::text_slice::range(s, pos, j + 1), j + 1 - pos));
                 }
                 if bytes[j] == 0x1b && bytes.get(j + 1) == Some(&b'\\') {
-                    return Some((&s[pos..=j + 1], j + 2 - pos));
+                    return Some((crate::text_slice::range(s, pos, j + 2), j + 2 - pos));
                 }
                 j += 1;
             }
@@ -81,10 +81,10 @@ fn parse_osc8_hyperlink(ansi_code: &str) -> Option<Option<(String, String, Osc8T
     } else {
         2
     };
-    let body = &ansi_code[4..ansi_code.len() - trim_len];
+    let body = crate::text_slice::range(ansi_code, 4, ansi_code.len() - trim_len);
     let sep = body.find(';')?;
-    let params = &body[..sep];
-    let url = &body[sep + 1..];
+    let params = crate::text_slice::prefix(body, sep);
+    let url = crate::text_slice::suffix_from(body, sep + 1);
     if url.is_empty() {
         Some(None)
     } else {
@@ -325,7 +325,7 @@ pub fn update_tracker_from_text(text: &str, tracker: &mut AnsiCodeTracker) {
 }
 
 fn char_len_at(s: &str, byte_idx: usize) -> usize {
-    s[byte_idx..]
+    crate::text_slice::suffix_from(s, byte_idx)
         .chars()
         .next()
         .map(|c| c.len_utf8())
@@ -341,7 +341,7 @@ fn first_grapheme(rest: &str) -> &str {
     use unicode_segmentation::UnicodeSegmentation;
     rest.graphemes(true)
         .next()
-        .unwrap_or(&rest[..char_len_at(rest, 0)])
+        .unwrap_or(crate::text_slice::prefix(rest, char_len_at(rest, 0)))
 }
 
 /// The URL of the OSC 8 hyperlink covering `column` (0-based display cells,
@@ -366,7 +366,7 @@ pub fn hyperlink_at(line: &str, column: i64) -> Option<String> {
             i += len;
             continue;
         }
-        let text = first_grapheme(&line[i..]);
+        let text = first_grapheme(crate::text_slice::suffix_from(line, i));
         let width = crate::width::grapheme_width(text);
         if column < col + width {
             return active;
@@ -395,22 +395,22 @@ fn bare_url_matches(text: &str) -> Vec<(usize, &str)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i < text.len() {
-        let boundary = text[..i]
+        let boundary = crate::text_slice::prefix(text, i)
             .chars()
             .next_back()
             .is_none_or(|c| !is_ascii_word(c));
         let prefix = ["https://", "http://", "mailto:"]
             .into_iter()
-            .find(|p| text[i..].starts_with(p));
+            .find(|p| crate::text_slice::suffix_from(text, i).starts_with(p));
         if let (true, Some(prefix)) = (boundary, prefix) {
             let body_start = i + prefix.len();
-            let body_len: usize = text[body_start..]
+            let body_len: usize = crate::text_slice::suffix_from(text, body_start)
                 .chars()
                 .take_while(|c| !is_url_stop(*c))
                 .map(char::len_utf8)
                 .sum();
             if body_len > 0 {
-                out.push((i, &text[i..body_start + body_len]));
+                out.push((i, crate::text_slice::range(text, i, body_start + body_len)));
                 i = body_start + body_len;
                 continue;
             }
@@ -431,7 +431,7 @@ fn trim_url_tail(url: &str) -> &str {
             if trimmed.ends_with(close)
                 && trimmed.matches(open).count() < trimmed.matches(close).count()
             {
-                trimmed = &trimmed[..trimmed.len() - 1];
+                trimmed = crate::text_slice::prefix(trimmed, trimmed.len() - 1);
             }
         }
         if trimmed == before {
@@ -460,7 +460,7 @@ pub fn bare_url_at(line: &str, column: i64) -> Option<String> {
             i += len;
             continue;
         }
-        let grapheme = first_grapheme(&line[i..]);
+        let grapheme = first_grapheme(crate::text_slice::suffix_from(line, i));
         cell_of.extend(std::iter::repeat_n(col, grapheme.len()));
         text.push_str(grapheme);
         col += crate::width::grapheme_width(grapheme);

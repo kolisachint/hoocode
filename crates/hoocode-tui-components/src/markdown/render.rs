@@ -67,7 +67,7 @@ const SENTINEL: &str = "\u{0}";
 fn prefix_of(styled: &str) -> String {
     styled
         .find(SENTINEL)
-        .map(|i| styled[..i].to_string())
+        .map(|i| hoocode_tui_util::text_slice::prefix(styled, i).to_string())
         .unwrap_or_default()
 }
 

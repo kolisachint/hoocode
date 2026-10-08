@@ -120,7 +120,7 @@ pub fn basename(path: &str) -> String {
         return String::new();
     }
     match trimmed.rfind('/') {
-        Some(idx) => trimmed[idx + 1..].to_string(),
+        Some(idx) => hoocode_tui_util::text_slice::suffix_from(trimmed, idx + 1).to_string(),
         None => trimmed.to_string(),
     }
 }
@@ -133,7 +133,7 @@ pub fn dirname(path: &str) -> String {
     }
     match trimmed.rfind('/') {
         Some(0) => "/".to_string(),
-        Some(idx) => trimmed[..idx].to_string(),
+        Some(idx) => hoocode_tui_util::text_slice::prefix(trimmed, idx).to_string(),
         None => ".".to_string(),
     }
 }
