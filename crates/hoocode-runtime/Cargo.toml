@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them"
+description = "Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them"
 readme = "README.md"
 
 [package.metadata.hoocode]
@@ -18,3 +18,5 @@ doctest = false
 
 [dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+libc = "0.2"
+memory-stats = "1"
