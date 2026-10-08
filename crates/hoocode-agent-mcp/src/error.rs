@@ -23,6 +23,16 @@ pub enum McpError {
     Protocol(String),
     /// A list response is over the size cap.
     TooLarge { limit: usize },
+    /// The server answered 401 and no usable token is stored. Log in with
+    /// [`oauth::begin_login`](crate::oauth::begin_login), then reconnect.
+    /// `www_authenticate` is the server's challenge header, as sent.
+    AuthRequired {
+        server: String,
+        www_authenticate: String,
+    },
+    /// Login or token handling failed (discovery, the callback, the token
+    /// exchange, or the token store).
+    Auth(String),
 }
 
 impl fmt::Display for McpError {
@@ -36,6 +46,14 @@ impl fmt::Display for McpError {
             Self::Rpc(m) => write!(f, "MCP server error: {m}"),
             Self::Protocol(m) => write!(f, "MCP protocol error: {m}"),
             Self::TooLarge { limit } => write!(f, "MCP response exceeds {limit} bytes"),
+            Self::AuthRequired {
+                server,
+                www_authenticate,
+            } => write!(
+                f,
+                "MCP server {server} requires login ({www_authenticate}); run the OAuth login first"
+            ),
+            Self::Auth(m) => write!(f, "MCP OAuth error: {m}"),
         }
     }
 }
