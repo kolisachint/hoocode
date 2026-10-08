@@ -9,7 +9,9 @@
 //!   inside the keystroke that made it, except the 20ms debounce in `@`/`#`
 //!   contexts, which is kept: such a request waits until
 //!   [`Editor::poll_autocomplete`] runs it after its deadline. There is no
-//!   in-flight request to abort.
+//!   in-flight request to abort. An `@file` walk runs in the background, so a
+//!   request that needs it resolves empty, and [`Editor::poll_autocomplete`]
+//!   asks again once the walk has finished.
 //! - The select-list theme is a factory, since the list is rebuilt per popup
 //!   and its colour closures are not `Clone`.
 
@@ -1555,9 +1557,18 @@ impl Editor {
         self.pending_autocomplete.map(|(deadline, ..)| deadline)
     }
 
-    /// Run a debounced autocomplete request whose deadline has passed.
+    /// Run a debounced autocomplete request whose deadline has passed, or ask
+    /// again when a background `@file` walk has finished.
     /// Returns whether one ran (and a render is owed).
     pub fn poll_autocomplete(&mut self) -> bool {
+        if self
+            .autocomplete_provider
+            .as_ref()
+            .is_some_and(|provider| provider.take_ready())
+        {
+            self.run_autocomplete_request(false, false);
+            return true;
+        }
         match self.pending_autocomplete {
             Some((deadline, force, explicit_tab)) if Instant::now() >= deadline => {
                 self.pending_autocomplete = None;

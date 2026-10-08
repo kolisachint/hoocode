@@ -95,31 +95,9 @@ pub fn get_shell_config(custom_shell_path: Option<&str>) -> Result<ShellConfig, 
     Ok(ShellConfig::with_c("sh"))
 }
 
-/// `getShellEnv`: the process environment with the managed bin dir first on
-/// `PATH` (unless already there).
+/// `getShellEnv`: the process environment, unchanged.
 pub fn get_shell_env() -> ShellEnv {
-    let mut env: ShellEnv = std::env::vars_os().collect();
-    let bin_dir = hoocode_code_paths::bin_dir().into_os_string();
-    let path_key = env
-        .keys()
-        .find(|k| k.to_string_lossy().eq_ignore_ascii_case("path"))
-        .cloned()
-        .unwrap_or_else(|| OsString::from("PATH"));
-    let current = env.get(&path_key).cloned().unwrap_or_default();
-    let has_bin_dir = std::env::split_paths(&current).any(|p| p.as_os_str() == bin_dir);
-    if !has_bin_dir {
-        let updated = if current.is_empty() {
-            bin_dir
-        } else {
-            let separator = if cfg!(windows) { ";" } else { ":" };
-            let mut joined = bin_dir;
-            joined.push(separator);
-            joined.push(&current);
-            joined
-        };
-        env.insert(path_key, updated);
-    }
-    env
+    std::env::vars_os().collect()
 }
 
 /// `sanitizeBinaryOutput`: drop control characters (except tab, newline,
@@ -239,17 +217,5 @@ mod tests {
         if Path::new("/bin/bash").exists() {
             assert_eq!(config.shell, "/bin/bash");
         }
-    }
-
-    #[test]
-    fn shell_env_puts_the_bin_dir_first_once() {
-        let env = get_shell_env();
-        let path = env
-            .iter()
-            .find(|(k, _)| k.to_string_lossy().eq_ignore_ascii_case("path"))
-            .map(|(_, v)| v.clone())
-            .unwrap();
-        let first = std::env::split_paths(&path).next().unwrap();
-        assert_eq!(first, hoocode_code_paths::bin_dir());
     }
 }

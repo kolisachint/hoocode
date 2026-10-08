@@ -115,11 +115,6 @@ pub fn auth_path() -> PathBuf {
     agent_dir().join("auth.json")
 }
 
-/// `getBinDir`: managed binaries (fd, rg).
-pub fn bin_dir() -> PathBuf {
-    agent_dir().join("bin")
-}
-
 /// `getPackageDir`: the `*_PACKAGE_DIR` override (tilde-expanded), else the
 /// directory holding the executable (hoocode's Bun-binary layout).
 pub fn package_dir() -> PathBuf {

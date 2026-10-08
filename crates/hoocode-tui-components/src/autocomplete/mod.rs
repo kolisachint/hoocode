@@ -3,17 +3,21 @@
 //! Adaptation: the TypeScript original is async (`Promise`-returning
 //! `getSuggestions`, `AbortSignal`-cancellable `fd` subprocess spawning).
 //! No async runtime is wired into this crate, so [`AutocompleteProvider`]
-//! is synchronous: suggestion generation (a directory read or a file walk)
-//! blocks the calling thread. Mid-flight cancellation is not ported.
+//! is synchronous: suggestion generation (a directory read) blocks the
+//! calling thread. Mid-flight cancellation is not ported.
 //!
 //! `@file` suggestions come from a [`FileFinder`] that the app injects, so
-//! this crate does not depend on the walker. No `fd` binary is used.
+//! this crate does not depend on the walker. The finder runs on a worker
+//! thread ([`file_search`]): `get_suggestions` never waits for a walk, and
+//! [`AutocompleteProvider::take_ready`] tells the caller when one finished.
 
+mod file_search;
 mod path_utils;
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use file_search::FileSearch;
 use hoocode_tui_fuzzy::fuzzy_filter;
 
 use path_utils::{
@@ -81,6 +85,13 @@ pub struct ApplyCompletionResult {
 }
 
 pub trait AutocompleteProvider {
+    /// Whether suggestions computed in the background have finished since the
+    /// last call. The editor then asks [`get_suggestions`](Self::get_suggestions)
+    /// again. Providers with nothing in the background say `false`.
+    fn take_ready(&self) -> bool {
+        false
+    }
+
     /// Get autocomplete suggestions for the current text/cursor position.
     fn get_suggestions(
         &self,
@@ -122,13 +133,14 @@ pub struct FileMatch {
 
 /// Finds `@file` candidates: `(base, query, max_results)`. The app injects one
 /// (an in-process walk that honours `.gitignore`), so this crate has no walker of its own.
-pub type FileFinder = Box<dyn Fn(&Path, &str, usize) -> Vec<FileMatch>>;
+/// It runs on a worker thread, hence `Send`.
+pub type FileFinder = Box<dyn Fn(&Path, &str, usize) -> Vec<FileMatch> + Send>;
 
 /// Combined provider that handles both slash commands and file paths.
 pub struct CombinedAutocompleteProvider {
     commands: Vec<CommandEntry>,
     base_path: PathBuf,
-    file_finder: Option<FileFinder>,
+    file_search: Option<FileSearch>,
 }
 
 fn cursor_line_text(lines: &[String], cursor_line: usize, cursor_col: usize) -> String {
@@ -154,8 +166,15 @@ impl CombinedAutocompleteProvider {
         Self {
             commands,
             base_path: base_path.into(),
-            file_finder,
+            file_search: file_finder.and_then(FileSearch::new),
         }
+    }
+
+    /// Whether an `@file` walk for the current query is still running.
+    pub fn file_walk_pending(&self) -> bool {
+        self.file_search
+            .as_ref()
+            .is_some_and(FileSearch::walk_pending)
     }
 
     fn extract_at_prefix(&self, text: &str) -> Option<String> {
@@ -386,33 +405,36 @@ impl CombinedAutocompleteProvider {
         }
     }
 
-    /// Fuzzy file search through the injected [`FileFinder`]. Blocking: see the
-    /// module-level docs on the async→sync adaptation.
+    /// Fuzzy file search through the injected [`FileFinder`], on its worker
+    /// thread. Returns nothing while the walk for this query is still running;
+    /// the caller asks again once [`AutocompleteProvider::take_ready`] says so.
     fn get_fuzzy_file_suggestions(
         &self,
         query: &str,
         is_quoted_prefix: bool,
     ) -> Vec<AutocompleteItem> {
-        let Some(finder) = &self.file_finder else {
+        let Some(search) = &self.file_search else {
             return Vec::new();
         };
 
         let scoped = self.resolve_scoped_fuzzy_query(query);
-        let fd_base_dir = scoped
+        let walk_base = scoped
             .as_ref()
             .map(|(dir, _, _)| dir.clone())
             .unwrap_or_else(|| self.base_path.clone());
-        let fd_query = scoped
+        let walk_query = scoped
             .as_ref()
             .map(|(_, q, _)| q.clone())
             .unwrap_or_else(|| query.to_string());
 
-        let entries = finder(&fd_base_dir, &fd_query, 100);
+        let Some(entries) = search.results(&walk_base, &walk_query) else {
+            return Vec::new();
+        };
 
         let mut scored: Vec<(FileMatch, i32)> = entries
             .into_iter()
             .map(|entry| {
-                let score = if fd_query.is_empty() {
+                let score = if walk_query.is_empty() {
                     1
                 } else {
                     // Directories score with their trailing slash, as before.
@@ -421,7 +443,7 @@ impl CombinedAutocompleteProvider {
                     } else {
                         entry.path.clone()
                     };
-                    Self::score_entry(&scored_path, &fd_query, entry.is_directory)
+                    Self::score_entry(&scored_path, &walk_query, entry.is_directory)
                 };
                 (entry, score)
             })
@@ -470,6 +492,12 @@ impl CombinedAutocompleteProvider {
 }
 
 impl AutocompleteProvider for CombinedAutocompleteProvider {
+    fn take_ready(&self) -> bool {
+        self.file_search
+            .as_ref()
+            .is_some_and(FileSearch::take_completed)
+    }
+
     fn get_suggestions(
         &self,
         lines: &[String],

@@ -134,8 +134,8 @@ pub fn main(argv: &[String]) -> i32 {
     hoocode_ai_util::tls::configure_global_tls(
         &hoocode_ai_util::tls::TlsSources::from_args_and_env(argv, |k| std::env::var(k).ok()),
     );
-    // main.ts: offline mode is process-wide, so what reads it later (the
-    // external-tools status) sees it too.
+    // main.ts: offline mode is process-wide, so what reads it later sees it
+    // too.
     if argv.iter().any(|a| a == "--offline") || hoocode_code_paths::is_offline_mode() {
         std::env::set_var("HOOCODE_OFFLINE", "1");
         std::env::set_var("HOOCODE_SKIP_VERSION_CHECK", "1");
