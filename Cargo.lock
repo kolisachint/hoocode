@@ -1519,6 +1519,7 @@ dependencies = [
  "hoocode-code-tool-bash",
  "hoocode-code-tool-search",
  "hoocode-code-tools-fs",
+ "ignore",
  "regex-lite",
  "reqwest",
  "serde",

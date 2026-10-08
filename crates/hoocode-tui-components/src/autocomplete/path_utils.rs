@@ -12,48 +12,6 @@ pub fn to_display_path(value: &str) -> String {
     value.replace('\\', "/")
 }
 
-pub fn escape_regex(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for c in value.chars() {
-        if ".*+?^${}()|[]\\".contains(c) {
-            out.push('\\');
-        }
-        out.push(c);
-    }
-    out
-}
-
-/// Build an fd `--regex`-style path pattern from a user query (segments
-/// joined by a separator-class regex so `a/b` matches `a/b` or `a\b`).
-pub fn build_fd_path_query(query: &str) -> String {
-    let normalized = to_display_path(query);
-    if !normalized.contains('/') {
-        return normalized;
-    }
-
-    let has_trailing_separator = normalized.ends_with('/');
-    let trimmed = normalized.trim_matches('/');
-    if trimmed.is_empty() {
-        return normalized;
-    }
-
-    const SEPARATOR_PATTERN: &str = "[\\\\/]";
-    let segments: Vec<String> = trimmed
-        .split('/')
-        .filter(|s| !s.is_empty())
-        .map(escape_regex)
-        .collect();
-    if segments.is_empty() {
-        return normalized;
-    }
-
-    let mut pattern = segments.join(SEPARATOR_PATTERN);
-    if has_trailing_separator {
-        pattern.push_str(SEPARATOR_PATTERN);
-    }
-    pattern
-}
-
 pub fn find_last_delimiter(text: &str) -> Option<usize> {
     let chars: Vec<char> = text.chars().collect();
     (0..chars.len())
@@ -248,21 +206,6 @@ pub fn is_dir(path: &Path) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn build_fd_path_query_returns_bare_query_without_slash() {
-        assert_eq!(build_fd_path_query("foo"), "foo");
-    }
-
-    #[test]
-    fn build_fd_path_query_builds_separator_pattern() {
-        assert_eq!(build_fd_path_query("src/main"), "src[\\\\/]main");
-    }
-
-    #[test]
-    fn build_fd_path_query_keeps_trailing_separator() {
-        assert_eq!(build_fd_path_query("src/"), "src[\\\\/]");
-    }
 
     #[test]
     fn find_last_delimiter_finds_space() {
