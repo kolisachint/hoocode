@@ -1,59 +1,51 @@
 {
-  "_comment": "Regex rules applied to BOTH apps' captured screens before comparison. {HOME}, {WORK}, {TMP} expand to the run's escaped temp paths. Keep rules minimal: every rule hides a potential difference.",
+  "_comment": "Regex rules applied to BOTH apps' captured screens before comparison. {HOME}, {WORK}, {TMP} expand to the run's escaped temp paths. Keep rules minimal: every rule hides a potential difference. Tool-name rules (hoocode-ts -> hoocode, 2026-10-08) are generated from TOOL_NAMES in harness.py; harness.py refuses to run if they drift. The stderr note rule blanks the hoocode-only --print/--mode json note (also dropped on the hoocode side by harness.py).",
   "rules": [
-    {
-      "pattern": "^┌─+ [a-z]+-[a-z]+ ──┐$",
-      "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐",
-      "style": "<masked>"
-    },
-    {
-      "pattern": "{WORK}",
-      "replace": "<WORK>"
-    },
-    {
-      "pattern": "{HOME}",
-      "replace": "<HOME>"
-    },
-    {
-      "pattern": "{TMP}",
-      "replace": "<TMP>"
-    },
-    {
-      "pattern": "/tmp/parity-[A-Za-z0-9_]+",
-      "replace": "<TMP>"
-    },
-    {
-      "pattern": "\\bhoo│code_",
-      "replace": "<WORDMARK>"
-    },
-    {
-      "pattern": "\\bhoocode_",
-      "replace": "<WORDMARK>"
-    },
-    {
-      "pattern": "\\bHooCode\\b",
-      "replace": "<APP>"
-    },
-    {
-      "pattern": "\\bhoocode\\b",
-      "replace": "<app>"
-    },
-    {
-      "pattern": "\\bv\\d+\\.\\d+\\.\\d+\\b",
-      "replace": "v<VERSION>"
-    },
-    {
-      "pattern": "\\b\\d+(\\.\\d+)?(ms|s)\\b",
-      "replace": "<DUR>"
-    },
-    {
-      "pattern": "^Pane is dead \\(status (\\d+), .*\\)$",
-      "replace": "<exited status=\\1>"
-    },
-    {
-      "pattern": "^ [○●] (Working\\.\\.\\.)$",
-      "replace": " <working-blink> \\1",
-      "style": "<masked: blinking indicator>"
-    }
+    {"pattern": "^┌─+ [a-z]+-[a-z]+ ──┐$", "replace": "┌<editor-top-border: session-name badge, color derived from random session id>┐", "style": "<masked>"},
+    {"pattern": "{WORK}", "replace": "<WORK>"},
+    {"pattern": "{HOME}", "replace": "<HOME>"},
+    {"pattern": "{TMP}", "replace": "<TMP>"},
+    {"pattern": "/tmp/parity-[A-Za-z0-9_]+", "replace": "<TMP>"},
+    {"pattern": "\\bhoo│code_", "replace": "<WORDMARK>"},
+    {"pattern": "\\bhoocode_", "replace": "<WORDMARK>"},
+    {"pattern": "\\bHooCode\\b", "replace": "<APP>"},
+    {"pattern": "\\bhoocode\\b", "replace": "<app>"},
+    {"pattern": "\\bv\\d+\\.\\d+\\.\\d+\\b", "replace": "v<VERSION>"},
+    {"pattern": "\\b\\d+(\\.\\d+)?(ms|s)\\b", "replace": "<DUR>"},
+    {"pattern": "^Pane is dead \\(status (\\d+), .*\\)$", "replace": "<exited status=\\1>"},
+    {"pattern": "^ [○●] (Working\\.\\.\\.)$", "replace": " <working-blink> \\1", "style": "<masked: blinking indicator>"},
+    {"pattern": "\"(name|toolName)\":( ?)\"read\"", "replace": "\"\\1\":\\2\"Read\""},
+    {"pattern": "`read`", "replace": "`Read`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"bash\"", "replace": "\"\\1\":\\2\"Shell\""},
+    {"pattern": "`bash`", "replace": "`Shell`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"edit\"", "replace": "\"\\1\":\\2\"Edit\""},
+    {"pattern": "`edit`", "replace": "`Edit`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"write\"", "replace": "\"\\1\":\\2\"Write\""},
+    {"pattern": "`write`", "replace": "`Write`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"SearchCodebase\"", "replace": "\"\\1\":\\2\"CodeSearch\""},
+    {"pattern": "`SearchCodebase`", "replace": "`CodeSearch`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"SearchHooCode\"", "replace": "\"\\1\":\\2\"DocSearch\""},
+    {"pattern": "`SearchHooCode`", "replace": "`DocSearch`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"ask_options\"", "replace": "\"\\1\":\\2\"AskUserQuestion\""},
+    {"pattern": "`ask_options`", "replace": "`AskUserQuestion`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"webfetch\"", "replace": "\"\\1\":\\2\"WebFetch\""},
+    {"pattern": "`webfetch`", "replace": "`WebFetch`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"websearch\"", "replace": "\"\\1\":\\2\"WebSearch\""},
+    {"pattern": "`websearch`", "replace": "`WebSearch`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"Task\"", "replace": "\"\\1\":\\2\"Agent\""},
+    {"pattern": "`Task`", "replace": "`Agent`"},
+    {"pattern": "\"(name|toolName)\":( ?)\"TaskOutput\"", "replace": "\"\\1\":\\2\"AgentOutput\""},
+    {"pattern": "`TaskOutput`", "replace": "`AgentOutput`"},
+    {"pattern": "\\bSearchCodebase\\b", "replace": "CodeSearch"},
+    {"pattern": "\\bSearchHooCode\\b", "replace": "DocSearch"},
+    {"pattern": "\\bask_options\\b", "replace": "AskUserQuestion"},
+    {"pattern": "\\bwebfetch\\b", "replace": "WebFetch"},
+    {"pattern": "\\bwebsearch\\b", "replace": "WebSearch"},
+    {"pattern": "\\bTaskOutput\\b", "replace": "AgentOutput"},
+    {"pattern": "\\bTask( tool\\b)", "replace": "Agent\\1"},
+    {"pattern": "^(\\s*)read( )", "replace": "\\1Read\\2"},
+    {"pattern": "^(\\s*)edit( )", "replace": "\\1Edit\\2"},
+    {"pattern": "^(\\s*)write( )", "replace": "\\1Write\\2"},
+    {"pattern": "^Note: --(print|mode json) does not ask for tool approval;.*$", "replace": ""}
   ]
 }

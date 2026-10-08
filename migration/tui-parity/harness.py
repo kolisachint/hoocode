@@ -29,6 +29,33 @@ Usage::
     harness.py png <scenario>            # render report.html to report.png (needs playwright)
     harness.py record <scenario|all>     # Level-1 replay fixtures from ts (replay.json)
 
+Tool names (2026-10-08 rename, user decision). hoocode-ts still calls its tools
+``read``, ``bash``, ``edit``, ``write``, ``SearchCodebase``, ``SearchHooCode``,
+``ask_options``, ``webfetch``, ``websearch``, ``Task`` and ``TaskOutput``; hoocode
+calls them ``Read``, ``Shell``, ``Edit``, ``Write``, ``CodeSearch``, ``DocSearch``,
+``AskUserQuestion``, ``WebFetch``, ``WebSearch``, ``Agent`` and ``AgentOutput``.
+The table is ``TOOL_NAMES`` below. The harness handles the difference in exactly
+two places, and nowhere else:
+
+* Scenarios and the mock use the **hoocode** names: a scenario's ``llm`` script
+  names ``Read``, ``Shell``, ... ``llm_for_app`` turns them back into the
+  hoocode-ts names for the ts run. The hoocode run gets the script unchanged, so
+  the Rust replay test (``crates/hoocode-code-main/tests/it/replay.rs``) can read
+  scenarios directly.
+* The comparison maps ts output to the hoocode names. The rules are the
+  ``tool_rules()`` entries in ``normalize.json``, generated from ``TOOL_NAMES``
+  (``"name"`` / ``"toolName"`` values, backtick code spans, the unambiguous
+  identifiers, ``Task tool``, and a tool title at the start of a line for read,
+  edit and write). ``normalize.json`` is shared with the Rust replay test, so both
+  sides see the same mapping. Being applied to both apps, the rules also hide a
+  stale old name printed by hoocode; the Rust tests are what catch that.
+
+Documented exception: hoocode prints a stderr note in ``--print`` and
+``--mode json`` (``crates/hoocode-code-cli/src/runtime.rs``, required by
+``docs/design/reliability.md``) that hoocode-ts does not print. ``RUST_ONLY_NOTE``
+drops that line from the hoocode side of every capture (screen or text). The same
+line is also blanked by a ``normalize.json`` rule for the Rust replay test.
+
 Scenario format: see ``scenarios/README.md``.
 """
 
@@ -60,6 +87,56 @@ APPS = ("ts", "rust")
 # Each app's project config dir (`{config}` in `work_files` paths). Both apps use
 # `.hoocode` (naming-and-paths.md); isolation comes from each run's own temp HOME.
 CONFIG_DIRS = {"ts": ".hoocode", "rust": ".hoocode"}
+
+# Tool names, hoocode-ts (key) -> hoocode (value). See the module docstring.
+TOOL_NAMES = {
+    "read": "Read",
+    "bash": "Shell",
+    "edit": "Edit",
+    "write": "Write",
+    "SearchCodebase": "CodeSearch",
+    "SearchHooCode": "DocSearch",
+    "ask_options": "AskUserQuestion",
+    "webfetch": "WebFetch",
+    "websearch": "WebSearch",
+    "Task": "Agent",
+    "TaskOutput": "AgentOutput",
+}
+# Identifiers that are never ordinary words: mapped anywhere in text.
+UNAMBIGUOUS_TOOL_NAMES = ["SearchCodebase", "SearchHooCode", "ask_options", "webfetch", "websearch", "TaskOutput"]
+# Tool titles that start a line (formatReadCall, edit and write render "<name> <path>").
+# bash is not listed: its title is "$ <command>", which has no name.
+HEADER_TOOL_NAMES = ["read", "edit", "write"]
+# hoocode's --print / --mode json stderr note (runtime.rs). hoocode-ts prints nothing.
+RUST_ONLY_NOTE = re.compile(r"^Note: --(print|mode json) does not ask for tool approval;.*$")
+
+
+def tool_rules() -> list[dict]:
+    """The normalize.json rules that map hoocode-ts tool names to hoocode's."""
+    rules = []
+    for ts, rs in TOOL_NAMES.items():
+        rules.append({"pattern": rf'"(name|toolName)":( ?)"{ts}"', "replace": rf'"\1":\2"{rs}"'})
+        rules.append({"pattern": f"`{ts}`", "replace": f"`{rs}`"})
+    for ts in UNAMBIGUOUS_TOOL_NAMES:
+        rules.append({"pattern": rf"\b{ts}\b", "replace": TOOL_NAMES[ts]})
+    rules.append({"pattern": r"\bTask( tool\b)", "replace": r"Agent\1"})
+    for ts in HEADER_TOOL_NAMES:
+        rules.append({"pattern": rf"^(\s*){ts}( )", "replace": rf"\1{TOOL_NAMES[ts]}\2"})
+    return rules
+
+
+def llm_for_app(app: str, turns: list) -> list:
+    """A scenario's script names tools as hoocode does. The ts run gets hoocode-ts names."""
+    if app == "rust":
+        return turns
+    back = {rs: ts for ts, rs in TOOL_NAMES.items()}
+    out = []
+    for turn in turns:
+        if turn.get("tool_calls"):
+            calls = [{**c, "name": back.get(c["name"], c["name"])} for c in turn["tool_calls"]]
+            turn = {**turn, "tool_calls": calls}
+        out.append(turn)
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -257,20 +334,26 @@ class Normalizer:
 
     A rule's replacement cells inherit the style of the first matched cell, or the
     rule's explicit ``style`` (use it to mask a style that is itself random, such as
-    a session-color badge)."""
+    a session-color badge). ``drop`` lines are removed entirely (hoocode side only,
+    see RUST_ONLY_NOTE)."""
 
     rules: list[tuple[re.Pattern, str, str | None]] = field(default_factory=list)
+    drop: list[re.Pattern] = field(default_factory=list)
 
     @classmethod
-    def load(cls, extra: list[dict] | None, subs: dict[str, str]) -> "Normalizer":
+    def load(cls, extra: list[dict] | None, subs: dict[str, str], app: str = "ts") -> "Normalizer":
         spec = json.loads(NORMALIZE.read_text())["rules"] + (extra or [])
+        missing = [r["pattern"] for r in tool_rules() if r not in spec]
+        if missing:
+            sys.exit(f"normalize.json lacks the tool-name rule {missing[0]!r}; it must mirror TOOL_NAMES in harness.py")
         rules = []
         for r in spec:
             pattern = r["pattern"]
             for key, value in subs.items():
                 pattern = pattern.replace("{" + key + "}", re.escape(value))
             rules.append((re.compile(pattern), r["replace"], r.get("style")))
-        return cls(rules)
+        drop = [RUST_ONLY_NOTE] if app == "rust" else []
+        return cls(rules, drop)
 
     def apply_text(self, text: str) -> str:
         return grid_text(self.apply([[(ch, "") for ch in line] for line in text.split("\n")]))
@@ -278,6 +361,8 @@ class Normalizer:
     def apply(self, grid: list[list[Cell]]) -> list[list[Cell]]:
         out = []
         for cells in grid:
+            if any(p.search("".join(ch for ch, _ in cells)) for p in self.drop):
+                continue
             for pattern, repl, forced in self.rules:
                 text = "".join(ch for ch, _ in cells)
                 new: list[Cell] = []
@@ -419,7 +504,7 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
     if sc.get("git"):
         subprocess.run(["git", "init", "-q", "-b", "main"], cwd=work, check=True)
 
-    mock, port, log = start_mock(sc.get("llm", []), tmp)
+    mock, port, log = start_mock(llm_for_app(app, sc.get("llm", [])), tmp)
     write_models_json(home, port, sc)
 
     term = sc.get("terminal", {})
@@ -439,7 +524,7 @@ def run_app(app: str, sc: dict, out: Path, keep: bool) -> dict:
         },
     }
     argv = app_cmd(app) + list(sc.get("args", ["--offline", "--provider", "mock", "--model", "mock-model"]))
-    normalizer = Normalizer.load(sc.get("normalize"), {"HOME": str(home), "WORK": str(work), "TMP": str(tmp)})
+    normalizer = Normalizer.load(sc.get("normalize"), {"HOME": str(home), "WORK": str(work), "TMP": str(tmp)}, app)
     result: dict = {"ok": True, "error": None, "snapshots": {}}
     stdout_file = tmp / "stdout.jsonl" if sc.get("stdout_jsonl") is not None else None
     try:
@@ -678,7 +763,7 @@ def run_headless(app: str, sc: dict, keep: bool = False) -> dict:
     write_files(sc, work)
     if sc.get("symlinks") or sc.get("git"):
         raise StepError("symlinks/git scenarios are not replayable")
-    mock, port, log = start_mock(sc.get("llm", []), tmp)
+    mock, port, log = start_mock(llm_for_app(app, sc.get("llm", [])), tmp)
     write_models_json(home, port, sc)
     env = {
         "HOME": str(home),

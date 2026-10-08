@@ -53,14 +53,14 @@ update this page in the same commit.
 
 | Tool | File |
 |---|---|
-| `bash` | `bash.rs` |
-| `read` (and skills) | `read.rs` |
-| `edit` | `edit.rs` |
-| `write` | `write.rs` |
-| `SearchCodebase` | `search.rs` |
-| `Agent`, `AgentOut` (subagents) | `subagent.rs` |
+| `Shell` | `bash.rs` |
+| `Read` (and skills) | `read.rs` |
+| `Edit` | `edit.rs` |
+| `Write` | `write.rs` |
+| `CodeSearch` | `search.rs` |
+| `Agent`, `AgentOutput` (subagents) | `subagent.rs` |
 | Plugin tools | `plugins.rs` |
-| `webfetch`, `websearch` | `web.rs` (web tools are deferred) |
+| `WebFetch`, `WebSearch` | `web.rs` (web tools are deferred) |
 | Registry: tool name → renderer | `mod.rs` |
 | Shared helpers | `../render_utils.rs` |
 
@@ -79,7 +79,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `/tree` | session tree | `tree_selector.rs` |
 | `/fork` | pick a user message | `user_message_selector.rs` |
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `code-tui-app/src/login_controller.rs` |
-| `ask_options` tool | options pane | `ask_options.rs` |
+| `AskUserQuestion` tool | options pane | `ask_options.rs` |
 | `hoocode config` | resource list | `config_selector.rs` |
 | `/hotkeys` | shortcuts page | `code-tui-app/src/hotkeys.rs` |
 | `/changelog` | changelog | `code-tui-app/src/changelog.rs` |

@@ -15,8 +15,10 @@ Each `*.json` file is one scenario, run against the real hoocode (pinned build i
   "git": false,                                   // git init the workspace
   "settings": {},                                 // written to ~/.hoocode and ~/.hoocode settings.json
   "env": {},                                      // extra env (API keys are never inherited); {WORK}/{HOME}/{TMP} expand to the run's dirs
-  "llm": [ {"text": "...", "thinking": "...", "tool_calls": [{"id": "...", "name": "read", "arguments": {}}]},
+  "llm": [ {"text": "...", "thinking": "...", "tool_calls": [{"id": "...", "name": "Read", "arguments": {}}]},
            {"error": "boom", "status": 500},       // one entry per model request, see mockllm.py
+           // tool_calls use hoocode's tool names (Read, Shell, ...); the ts run gets the hoocode-ts names
+           // from harness.py TOOL_NAMES (llm_for_app)
            {"text": "...", "delay_s": 5} ],         // delay_s: wait before answering
   "compare": "style",                             // "style" (default: text + colors/attrs) or "text"
   "mask_snapshots": ["pane"],                     // snapshots not compared (a known, intended difference); their contains asserts still run

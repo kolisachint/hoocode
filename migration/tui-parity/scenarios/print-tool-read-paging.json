@@ -33,14 +33,14 @@
       "tool_calls": [
         {
           "id": "call_big",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "big.txt"
           }
         },
         {
           "id": "call_page",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "notes.txt",
             "offset": 2,
@@ -49,21 +49,21 @@
         },
         {
           "id": "call_missing",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "missing.txt"
           }
         },
         {
           "id": "call_dir",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "sub"
           }
         },
         {
           "id": "call_pdf",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "doc.pdf"
           }
@@ -75,7 +75,7 @@
       "tool_calls": [
         {
           "id": "call_next",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "big.txt",
             "offset": 801
@@ -83,7 +83,7 @@
         },
         {
           "id": "call_whole",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "notes.txt"
           }
@@ -95,7 +95,7 @@
       "tool_calls": [
         {
           "id": "call_again",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "notes.txt",
             "offset": 1,

@@ -12,6 +12,13 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `SearchHooCode` sits after `ask_options` in ts but before it in rust. Decide before re-running.
   Interactive `tool-bash` and `todo-write` pass. None of the 8 tasks is marked done.
 
+
+- **2026-10-08: tool rename (user).** Read, Shell, Edit, Write, CodeSearch, DocSearch,
+  AskUserQuestion, WebFetch, WebSearch, Agent, AgentOutput. Old names (incl. `AgentOut`, `Task`,
+  `TaskOutput`) are no longer accepted. The parity harness maps TS names (`TOOL_NAMES` in
+  `tui-parity/harness.py`). Scenario scripts use the new names. Still to do: re-record the
+  replay fixtures and snapshots (`harness.py record all`, needs the pinned build), and run L2.
+  See `docs/design/decisions-2026-10-08.md` ("Tool names").
 - **2026-10-08: reliability 1.1 (rpc fails closed) built on `claude/1.1-rpc-fails-closed`.**
   Not a ledger task. Gate: `ApprovalChannel` in `code-permissions`. rpc denies gated calls
   that need approval; warm workers and print/json are unchanged apart from a print/json stderr

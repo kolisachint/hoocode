@@ -32,7 +32,7 @@ made in either hoocode is visible to the other.
    - re-prompts after each turn until the reply contains `LOOP_DONE` or 10 turns
      pass;
    - yields while you type;
-   - makes `ask_options` pick recommended answers, or stop the loop when there is
+   - makes `AskUserQuestion` pick recommended answers, or stop the loop when there is
      none (the hooks already exist in Rust).
 5. Scheduled prompts go through the normal input path, so modes and permissions
    apply.

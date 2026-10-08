@@ -1,5 +1,9 @@
 # HooCode (TypeScript) → HooCode (Rust) Migration Design Document
 
+> Tool names: this plan keeps hoocode-ts's names (`read`, `bash`, `SearchHooCode`, `Task`, ...)
+> because it describes the port. The Rust names are in the rename table in
+> [decisions-2026-10-08.md](decisions-2026-10-08.md#tool-names-user-2026-10-08).
+
 > **Status:** RE-BASELINED 2026-09-24 — audited against the pinned source; Phases 7–13 added (see §0 and §9)  
 > **Author:** Sachin Koli  
 > **Source Repo:** https://github.com/kolisachint/hoocode-ts (TypeScript monorepo)  

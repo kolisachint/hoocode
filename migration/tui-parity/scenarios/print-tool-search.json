@@ -34,14 +34,14 @@
       "tool_calls": [
         {
           "id": "call_search_1",
-          "name": "SearchCodebase",
+          "name": "CodeSearch",
           "arguments": {
             "query": "tokenBudget"
           }
         },
         {
           "id": "call_search_2",
-          "name": "SearchCodebase",
+          "name": "CodeSearch",
           "arguments": {
             "query": "spendTokenBudget",
             "glob": "*.ts",
@@ -50,7 +50,7 @@
         },
         {
           "id": "call_search_3",
-          "name": "SearchCodebase",
+          "name": "CodeSearch",
           "arguments": {
             "query": "where is the budget doubled",
             "mode": "hybrid"

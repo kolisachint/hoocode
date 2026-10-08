@@ -4,7 +4,7 @@
   "terminal": {"cols": 100, "rows": 34},
   "settings": {"enableSemanticIndex": false},
   "llm": [
-    {"text": "One decision first.", "tool_calls": [{"id": "call_ask_1", "name": "ask_options", "arguments": {"questions": [
+    {"text": "One decision first.", "tool_calls": [{"id": "call_ask_1", "name": "AskUserQuestion", "arguments": {"questions": [
       {"question": "where should retry logic live?", "detail": "the http client is shared by every provider adapter", "allow_custom": true,
        "options": [{"label": "ai client", "description": "unified provider client", "recommended": true}, {"label": "agent core", "description": "wrap each tool call"}]},
       {"question": "backoff strategy?", "allow_custom": true,

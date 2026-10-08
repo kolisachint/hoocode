@@ -83,7 +83,7 @@ hoocode
 # JSON-RPC server mode
 hoocode --mode rpc
 
-# Subagent mode (used internally by the Task tool)
+# Subagent mode (used internally by the Agent tool)
 hoocode --mode subagent --task-id <id>
 ```
 
@@ -123,10 +123,10 @@ What works (the pinned hoocode behavior, checked against hoocode itself):
 - **Providers:** every catalog provider, plus OAuth logins (`/login`) and `models.json`.
 - **Sessions:** AgentSession with compaction, `/new`, `/resume`, `/fork`, `/tree`,
   `--continue`, `--session`, and `/export <file>.jsonl`.
-- **Tools:** read, bash, edit, write, lexical SearchCodebase, TodoWrite, ask_options, and the
+- **Tools:** Read, Shell, Edit, Write, lexical CodeSearch, TodoWrite, AskUserQuestion, and the
   Yes/No/Always permission prompt.
 - **Agent modes:** ask/plan/build/debug (`/mode`, `/plan`, `/grill`, `/approve`, alt+a).
-- **Subagents:** the Task/TaskOutput tools, the task panel, and the subagent roster.
+- **Subagents:** the Agent/AgentOutput tools, the task panel, and the subagent roster.
 - **Resources:** skills, prompt templates and slash commands, AGENTS.md/CLAUDE.md context
   files, themes, settings (`/settings`) and keybindings.
 
@@ -135,7 +135,7 @@ Deferred (not available yet, even though `--help` still lists some of them):
 | Area | Ledger task |
 |---|---|
 | MCP servers (`mcp.json`, stdio/HTTP/SSE, OAuth) | 9.1, 10.11 |
-| `webfetch` / `websearch` (`--enable-webtools`) | 10.2e |
+| `WebFetch` / `WebSearch` (`--enable-webtools`) | 10.2e |
 | Plugins and marketplace (`--enable-plugintools`) | 12.1 |
 | `hoocode install/remove/update/list` package manager | 12.2 |
 | Code extensions (`-e`, extension flags) | 12.3 |
@@ -145,7 +145,7 @@ Deferred (not available yet, even though `--help` still lists some of them):
 | HTML export and `/share`, `/learn`, canvas, `--team`, voice, telemetry, version check | 12.7 |
 
 Known parity gaps: tasks 10.2a/b/c/d/f/g, 10.4c and 10.5 pass Level 1 but not Level 2. The
-default-bundle system prompt in hoocode also advertises the SearchHooCode self-knowledge tool
+default-bundle system prompt in hoocode also advertises the DocSearch self-knowledge tool
 from 12.4, so model requests differ in that one block.
 
 The plan and its rationale are in

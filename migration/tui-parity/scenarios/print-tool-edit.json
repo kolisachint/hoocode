@@ -30,7 +30,7 @@
       "tool_calls": [
         {
           "id": "call_edit_1",
-          "name": "edit",
+          "name": "Edit",
           "arguments": {
             "path": "notes.txt",
             "edits": [
@@ -43,7 +43,7 @@
         },
         {
           "id": "call_edit_2",
-          "name": "edit",
+          "name": "Edit",
           "arguments": {
             "path": "notes.txt",
             "edits": [
@@ -56,7 +56,7 @@
         },
         {
           "id": "call_edit_3",
-          "name": "edit",
+          "name": "Edit",
           "arguments": {
             "path": "notes.txt",
             "edits": [
@@ -69,7 +69,7 @@
         },
         {
           "id": "call_write_1",
-          "name": "write",
+          "name": "Write",
           "arguments": {
             "path": "out/new.txt",
             "content": "fresh\n"
@@ -82,7 +82,7 @@
       "tool_calls": [
         {
           "id": "call_read_1",
-          "name": "read",
+          "name": "Read",
           "arguments": {
             "path": "notes.txt"
           }

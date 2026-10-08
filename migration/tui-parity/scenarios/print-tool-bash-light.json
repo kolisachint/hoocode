@@ -29,21 +29,21 @@
       "tool_calls": [
         {
           "id": "call_bash_1",
-          "name": "bash",
+          "name": "Shell",
           "arguments": {
             "command": "printf 'alpha\\nbeta\\ngamma\\n' | sort -r"
           }
         },
         {
           "id": "call_bash_2",
-          "name": "bash",
+          "name": "Shell",
           "arguments": {
             "command": "echo boom; exit 3"
           }
         },
         {
           "id": "call_bash_3",
-          "name": "bash",
+          "name": "Shell",
           "arguments": {
             "command": "echo waiting; sleep 5",
             "timeout": 1

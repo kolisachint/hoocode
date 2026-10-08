@@ -3,7 +3,7 @@
   "phase": "10.6",
   "terminal": {"cols": 100, "rows": 30},
   "llm": [
-    {"text": "Listing files.", "tool_calls": [{"id": "call_bash_1", "name": "bash", "arguments": {"command": "ls"}}]},
+    {"text": "Listing files.", "tool_calls": [{"id": "call_bash_1", "name": "Shell", "arguments": {"command": "ls"}}]},
     {"text": "The command was denied."}
   ],
   "steps": [
