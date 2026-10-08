@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Live cross-provider suites ported from hoocode (v0.5.89) `packages/ai/test/`:
 //! `context-overflow`, `empty`, `image-tool-result`, `responseid`, `tokens`,
 //! `total-tokens`, `tool-call-id-normalization`, `tool-call-without-result`,

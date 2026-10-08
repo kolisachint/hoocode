@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! subagent-inbox.test.ts. The inbox is process-wide, so the cases share one
 //! test (serialized) like the TS file's afterEach(clear).
 

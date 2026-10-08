@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports `test/suite/agent-session-bash-persistence.test.ts`.
 
 use std::path::Path;

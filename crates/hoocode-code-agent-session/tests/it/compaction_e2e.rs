@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports `test/agent-session-compaction.test.ts`. The TS file runs against a
 //! live Anthropic model; here the faux provider answers (prompts and the
 //! summary request alike), so the cases run offline.

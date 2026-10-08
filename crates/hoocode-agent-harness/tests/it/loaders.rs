@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports of hoocode `packages/agent/test/harness/skills.test.ts` and
 //! `prompt-templates.test.ts` (v0.5.89) over [`LocalExecutionEnv`], plus
 //! ignore files and `executeShellWithCapture`. Unix only (symlinks, `sh`).

@@ -2,9 +2,11 @@
 //! and the `hoocode-tools` blocking pool (sync tool bodies).
 
 use std::future::Future;
+use std::io;
 use std::num::NonZeroUsize;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::OnceLock;
+use std::thread::JoinHandle;
 
 use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::task::JoinError;
@@ -110,4 +112,48 @@ where
     T: Send + 'static,
 {
     tools_runtime().handle().spawn_blocking(f)
+}
+
+/// A private current-thread runtime for one sync bridge call. Not a pool: each
+/// bridge builds its own, as the code it replaces did.
+#[allow(clippy::disallowed_methods)] // the one place a private runtime is built
+fn private_runtime() -> Runtime {
+    Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .unwrap_or_else(|e| panic!("failed to start a private tokio runtime: {e}"))
+}
+
+/// Sync bridge: runs `fut` to completion on the calling thread, on a private
+/// current-thread runtime. Only for sync code with no runtime on this thread.
+/// Do not call it from a runtime's worker thread (tokio refuses to nest).
+pub fn block_on_current_thread<F: Future>(fut: F) -> F::Output {
+    private_runtime().block_on(fut)
+}
+
+/// Sync bridge: runs `fut` on a new thread with a private runtime and waits for
+/// it. Safe to call from inside any runtime, because the caller blocks on a
+/// thread that is not an io worker. A panic in `fut` comes back as `Err`.
+pub fn block_on_isolated<F>(fut: F) -> std::thread::Result<F::Output>
+where
+    F: Future + Send,
+    F::Output: Send,
+{
+    std::thread::scope(|scope| {
+        let handle = std::thread::Builder::new()
+            .name("hoocode-block-on".to_owned())
+            .spawn_scoped(scope, move || private_runtime().block_on(fut))
+            .unwrap_or_else(|e| panic!("failed to start a thread: {e}"));
+        handle.join()
+    })
+}
+
+/// Runs `fut` to completion on a new named thread with a private runtime. The
+/// caller may join the handle or drop it (the thread then runs detached).
+pub fn spawn_isolated<F>(name: &str, fut: F) -> io::Result<JoinHandle<F::Output>>
+where
+    F: Future + Send + 'static,
+    F::Output: Send + 'static,
+{
+    crate::threads::spawn_named_thread(name, move || private_runtime().block_on(fut))
 }

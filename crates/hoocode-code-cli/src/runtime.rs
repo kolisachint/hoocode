@@ -692,16 +692,11 @@ fn assemble_session(
     (session, services)
 }
 
-/// The tokio runtime the CLI drives async work on (agent runs, OAuth). Provider
-/// streams spawn onto it (`spawn_producer` uses the current runtime).
-pub(crate) fn async_runtime() -> &'static tokio::runtime::Runtime {
-    static RUNTIME: std::sync::OnceLock<tokio::runtime::Runtime> = std::sync::OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-            .expect("failed to start the tokio runtime")
-    })
+/// The tokio runtime the CLI drives async work on (agent runs, OAuth): the
+/// process's `hoocode-io` runtime. Provider streams spawn onto it
+/// (`spawn_producer` uses the current runtime).
+pub(crate) fn async_runtime() -> tokio::runtime::Handle {
+    hoocode_runtime::io_handle()
 }
 
 /// `runPrintMode` (print-mode.ts) plus the `prepareInitialMessage` step of
@@ -1519,7 +1514,7 @@ pub fn run_interactive_mode(
         hoocode_code_tui_app::interactive_mode::InteractiveOptions {
             session,
             session_runtime: Some(session_runtime),
-            runtime: async_runtime().handle().clone(),
+            runtime: async_runtime(),
             listing: Box::new(resource_listing),
             is_oauth: {
                 let auth = auth.clone();
@@ -1641,7 +1636,7 @@ mod tests {
             hoocode_code_tui_app::interactive_mode::InteractiveOptions {
                 session,
                 session_runtime: None,
-                runtime: async_runtime().handle().clone(),
+                runtime: async_runtime(),
                 listing: Box::new(resource_listing),
                 is_oauth: Box::new(|_| false),
                 auth_storage: Arc::new(AuthStorage::in_memory([])),
@@ -1894,7 +1889,7 @@ mod tests {
                 hoocode_code_tui_app::interactive_mode::InteractiveOptions {
                     session,
                     session_runtime: None,
-                    runtime: async_runtime().handle().clone(),
+                    runtime: async_runtime(),
                     listing: Box::new(resource_listing),
                     is_oauth: Box::new(|_| false),
                     auth_storage: Arc::new(AuthStorage::in_memory([])),
@@ -2032,7 +2027,7 @@ mod tests {
                 hoocode_code_tui_app::interactive_mode::InteractiveOptions {
                     session: session.clone(),
                     session_runtime: None,
-                    runtime: async_runtime().handle().clone(),
+                    runtime: async_runtime(),
                     listing: Box::new(resource_listing),
                     is_oauth: Box::new(|_| false),
                     auth_storage: Arc::new(AuthStorage::in_memory([])),

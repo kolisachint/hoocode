@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/agent/test/harness/compaction.test.ts`
 //! (v0.5.89), plus branch summarization and split-turn cases.
 

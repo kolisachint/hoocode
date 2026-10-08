@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! rpc-client-clone.test.ts and rpc.test.ts: the client against RPC mode.
 //!
 //! rpc.test.ts runs against a live Anthropic model; here the client drives

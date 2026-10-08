@@ -6,10 +6,23 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hoocode_runtime::{
-    block_on_entry, bounded_channel, io_handle, io_worker_count, run_blocking, spawn_named_thread,
-    sync_bounded_channel, ParallelToolLimit, IO_CHILD_WORKERS, IO_MAX_WORKERS, IO_THREAD_PREFIX,
-    MAX_PARALLEL_TOOLS, MIN_PARALLEL_TOOLS, TOOLS_MAX_THREADS, TOOLS_THREAD_PREFIX,
+    block_on_current_thread, block_on_entry, block_on_isolated, bounded_channel, io_handle,
+    io_worker_count, run_blocking, spawn_isolated, spawn_named_thread, sync_bounded_channel,
+    ParallelToolLimit, IO_CHILD_WORKERS, IO_MAX_WORKERS, IO_THREAD_PREFIX, MAX_PARALLEL_TOOLS,
+    MIN_PARALLEL_TOOLS, TOOLS_MAX_THREADS, TOOLS_THREAD_PREFIX,
 };
+
+#[test]
+fn sync_bridges_run_futures_and_report_panics() {
+    assert_eq!(block_on_current_thread(async { 4 }), 4);
+    // Callable from inside the io runtime: the bridge uses its own thread.
+    let inner = block_on_entry(async { block_on_isolated(async { 6 }) });
+    assert_eq!(inner.expect("no panic"), 6);
+    let panicked = block_on_isolated(async { panic!("inside") });
+    assert!(panicked.is_err());
+    let handle = spawn_isolated("hoocode-test-bridge", async { 9 }).expect("thread starts");
+    assert_eq!(handle.join().expect("no panic"), 9);
+}
 
 #[test]
 fn io_worker_count_is_min_four_cores_and_two_in_children() {

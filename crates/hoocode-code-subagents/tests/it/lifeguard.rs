@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! lifeguard.test.ts. Children are `sleep` processes in their own process
 //! group (as the pool spawns them).
 

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/agent/test/harness/nodejs-env.test.ts`
 //! (v0.5.89) against [`LocalExecutionEnv`]. Unix only (symlinks, `sh`).
 #![cfg(unix)]

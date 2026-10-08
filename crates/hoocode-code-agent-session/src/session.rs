@@ -617,14 +617,11 @@ impl AgentSession {
                 handle.spawn(future);
             }
             Err(_) => {
-                // No runtime (a synchronous caller): run it to completion here.
-                let _ = std::thread::spawn(move || {
-                    tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                        .map(|rt| rt.block_on(future))
-                })
-                .join();
+                // No runtime (a synchronous caller): run it to completion on its
+                // own thread, and wait for it.
+                let thread = hoocode_runtime::spawn_isolated("hoocode-session-task", future)
+                    .expect("failed to start a thread");
+                let _ = thread.join();
             }
         }
     }

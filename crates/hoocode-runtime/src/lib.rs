@@ -20,8 +20,9 @@ pub use limits::{
     total_memory_bytes, ParallelToolLimit, MAX_BASH_NICE, MAX_PARALLEL_TOOLS, MIN_PARALLEL_TOOLS,
 };
 pub use runtime::{
-    block_on_entry, io_handle, io_worker_count, is_subagent_child, run_blocking, IO_CHILD_WORKERS,
-    IO_MAX_WORKERS, IO_THREAD_PREFIX, TOOLS_MAX_THREADS, TOOLS_THREAD_PREFIX,
+    block_on_current_thread, block_on_entry, block_on_isolated, io_handle, io_worker_count,
+    is_subagent_child, run_blocking, spawn_isolated, IO_CHILD_WORKERS, IO_MAX_WORKERS,
+    IO_THREAD_PREFIX, TOOLS_MAX_THREADS, TOOLS_THREAD_PREFIX,
 };
 pub use threads::{bounded_channel, spawn_named_thread, sync_bounded_channel};
 pub use tokio::task::JoinError;

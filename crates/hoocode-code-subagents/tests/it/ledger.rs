@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! The dispatch ledger: one line per attempt, written from the pool's settle
 //! paths.
 //!

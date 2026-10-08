@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/ai/test/faux-provider.test.ts` (v0.5.89).
 //!
 //! `complete`/`stream` are the API-registry entry points

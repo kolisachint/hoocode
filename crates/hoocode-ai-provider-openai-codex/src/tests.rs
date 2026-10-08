@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/ai/test/openai-codex-stream.test.ts` (v0.5.89)
 //! against a local HTTP / WebSocket server instead of stubbed `fetch` and
 //! `WebSocket` globals, plus unit tests of the request/error helpers and the

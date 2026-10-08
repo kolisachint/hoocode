@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports `test/suite/agent-session-retry-events.test.ts` and
 //! `test/agent-session-retry.test.ts` (the extension-ordering cases wait for
 //! the extension runtime, 12.3).

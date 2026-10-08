@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports `test/suite/agent-session-runtime.test.ts`,
 //! `test/agent-session-runtime-events.test.ts` and
 //! `test/agent-session-branching.test.ts` (live-model in TS; faux here).

@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Ports `test/suite/agent-session-compaction.test.ts`, whose auto-compaction
 //! cases are also the six of `test/agent-session-auto-compaction-queue.test.ts`. The TS cases spy on
 //! `_runAutoCompaction`; here they assert [`AgentSession::plan_compaction`],

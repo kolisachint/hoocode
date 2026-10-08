@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! warm-subagent-pool.test.ts: the real worker/pool against a fake RPC child
 //! (hoocode's `fixtures/fake-rpc-child.mjs`, as a shell script). The fake
 //! echoes its pid, generation (bumped by new_session) and prompt count, so

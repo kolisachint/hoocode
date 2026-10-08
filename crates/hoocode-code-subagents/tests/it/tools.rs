@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! task-output.test.ts, subagent-progress-roster.test.ts and subagent.test.ts,
 //! plus the Task tool's execute paths against a pool of shell-mock children
 //! (the TS suite's fake pool is 10.9f's subagent-execution test).

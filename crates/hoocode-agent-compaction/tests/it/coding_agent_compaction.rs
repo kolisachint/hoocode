@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: #[tokio::test] expands to a runtime builder
 //! Port of hoocode `packages/coding-agent/test/compaction.test.ts` (v0.5.89):
 //! the harness compaction functions over coding-agent sessions, including the
 //! v1 `large-session.jsonl` fixture (read from the pinned hoocode checkout,

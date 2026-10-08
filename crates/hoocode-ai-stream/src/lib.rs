@@ -12,7 +12,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll, Waker};
 
 use futures_util::{FutureExt, Stream, StreamExt};
@@ -245,24 +245,13 @@ pub fn spawn_producer<T, R>(
             handle.spawn(task);
         }
         Err(_) => {
-            shared_runtime().spawn(task);
+            hoocode_runtime::io_handle().spawn(task);
         }
     }
 }
 
-fn shared_runtime() -> &'static tokio::runtime::Runtime {
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-    RUNTIME.get_or_init(|| {
-        tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(2)
-            .thread_name("hoocode-ai-stream")
-            .enable_all()
-            .build()
-            .expect("failed to start the provider runtime")
-    })
-}
-
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)] // test module: #[tokio::test] expands to a runtime builder
 mod tests {
     use super::*;
     use futures_executor::block_on;

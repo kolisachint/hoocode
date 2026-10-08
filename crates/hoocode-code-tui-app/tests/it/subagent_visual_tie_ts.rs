@@ -126,6 +126,7 @@ fn instant_pool(cwd: &Path) -> SubagentPool {
     pool
 }
 
+#[allow(clippy::disallowed_methods)] // test helper: a runtime of its own
 fn runtime() -> tokio::runtime::Runtime {
     tokio::runtime::Builder::new_multi_thread()
         .enable_all()
