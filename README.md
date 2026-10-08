@@ -8,17 +8,12 @@ This is a multi-crate workspace that mirrors the structure of the [pycortex](htt
 
 ```
 crates/
-  cortexcode/              # Top-level umbrella crate
-  cortexcode-ai/           # AI namespace umbrella
   cortexcode-ai-types/
   cortexcode-ai-models/
   ...
-  cortexcode-agent/        # Agent namespace umbrella
   cortexcode-agent-core/
   ...
-  cortexcode-code/         # Code namespace umbrella
   ...
-  cortexcode-tui/          # TUI namespace umbrella
   ...
 ```
 

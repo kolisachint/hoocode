@@ -29,6 +29,8 @@ def main() -> None:
     # Branding hoocode -> cortex. "hooteams" is a separate product and stays.
     t = t.replace(".hoocode", ".cortexcode").replace("HOOCODE_", "CORTEX_")
     t = t.replace("HooCode", "Cortex").replace("hoocode", "cortex")
+    # Azure is dropped (decisions-2026-10-08.md): leave its env var lines out of the help.
+    t = "\n".join(line for line in t.split("\n") if "AZURE_OPENAI_" not in line)
     parts = re.split(r'\$\{chalk\.bold\("([^"]*)"\)\}', t)
     leftover = [m for p in parts for m in re.findall(r"\$\{[^}]*\}", p)]
     assert not leftover, leftover

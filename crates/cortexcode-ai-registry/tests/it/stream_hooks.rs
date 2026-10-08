@@ -7,19 +7,19 @@
 use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
-use cortexcode_ai::registry::{complete_simple, get_api_provider, stream_simple};
-use cortexcode_ai::types::{
+use cortexcode_ai_registry::{complete_simple, get_api_provider, stream_simple};
+use cortexcode_ai_stream::testing::serve_script;
+use cortexcode_ai_types::{
     Content, Context, Message, Model, OnPayload, OnResponse, ProviderResponse, SimpleStreamOptions,
     StopReason, TextContent, Transport, UserMessage,
 };
-use cortexcode_ai_stream::testing::serve_script;
 use serde_json::{json, Value};
 
 /// One catalog model per (provider, api) pair.
 fn one_model_per_provider_api() -> Vec<Model> {
     let mut seen = BTreeMap::new();
-    for provider in cortexcode_ai::models::get_providers() {
-        for model in cortexcode_ai::models::get_models(provider) {
+    for provider in cortexcode_ai_models::get_providers() {
+        for model in cortexcode_ai_models::get_models(provider) {
             seen.entry((model.provider.clone(), model.api.clone()))
                 .or_insert_with(|| model.clone());
         }
@@ -136,9 +136,9 @@ fn on_payload_sees_and_replaces_the_request_body_for_every_api() {
 
 #[test]
 fn on_payload_returning_none_keeps_the_payload() {
-    let mut model = cortexcode_ai::models::get_model("openai", "gpt-4o-mini")
+    let mut model = cortexcode_ai_models::get_model("openai", "gpt-4o-mini")
         .or_else(|| {
-            cortexcode_ai::models::get_models("openai")
+            cortexcode_ai_models::get_models("openai")
                 .into_iter()
                 .find(|m| m.api == "openai-completions")
         })
@@ -186,7 +186,6 @@ fn on_response_gets_the_status_and_headers_before_the_body() {
     for api in [
         "openai-completions",
         "openai-responses",
-        "azure-openai-responses",
         "anthropic-messages",
     ] {
         let mut model = first_model(api);
@@ -274,7 +273,7 @@ fn provider_response_joins_repeated_headers_and_lowercases_names() {
 // --- openrouter-cache-write-repro.test.ts ---
 
 fn long_system_prompt() -> String {
-    let nonce = format!("{}-{}", cortexcode_ai::types::now_ms(), std::process::id());
+    let nonce = format!("{}-{}", cortexcode_ai_types::now_ms(), std::process::id());
     let block = "Prompt-caching probe content. Keep this exact text stable across requests so the provider can reuse prefix tokens and report cache read and cache write usage.";
     format!(
         "You are a concise assistant.\nCache nonce: {nonce}\n\n{}",
@@ -304,14 +303,14 @@ async fn openrouter_preserves_cache_write_tokens_on_the_completions_stream() {
     let Ok(api_key) = std::env::var("OPENROUTER_API_KEY") else {
         return;
     };
-    let model = cortexcode_ai::models::get_model("openrouter", "google/gemini-2.5-flash")
+    let model = cortexcode_ai_models::get_model("openrouter", "google/gemini-2.5-flash")
         .expect("openrouter google/gemini-2.5-flash")
         .clone();
     let mut context = hi();
     context.system_prompt = long_system_prompt();
     context.messages = vec![Message::User(UserMessage {
         content: "Reply with exactly: OK".into(),
-        timestamp: cortexcode_ai::types::now_ms(),
+        timestamp: cortexcode_ai_types::now_ms(),
     })];
     let options = SimpleStreamOptions {
         api_key: Some(api_key),

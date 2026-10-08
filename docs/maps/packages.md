@@ -1,8 +1,8 @@
 # Package map
 
-What each crate does, who uses it, and where to make a change. Snapshot of
-2026-10-08: 76 crates, 65 after the deletions agreed in
-[decisions-2026-10-08.md](../design/decisions-2026-10-08.md). In step 0 the crates
+What each crate does, who uses it, and where to make a change. Snapshot of 2026-10-08, after the deletions in
+[decisions-2026-10-08.md](../design/decisions-2026-10-08.md): 65 crates (76 before; see
+[Deleted](#deleted-2026-10-08)). In step 0 the crates
 become `hoocode-*` and the binary `hoocode`
 ([naming-and-paths.md](../design/naming-and-paths.md)); this page is regenerated
 then. The UI side is mapped in [ui.md](ui.md).
@@ -67,56 +67,41 @@ which rewrites only the part between the markers. The Status column is hand-edit
 in those tables; the generator keeps each crate's Status by name.
 
 <!-- BEGIN generated: packages -->
-### Umbrella (all to delete)
-
-| Crate | Does | Used by | src / tests lines | Status |
-|---|---|---|---|---|
-| `cortexcode` | Umbrella crate for the cortexcode Rust SDK | 0 | 8 / 0 | **delete** |
-| `agent` | Umbrella crate for the cortex agent namespace | 1 | 14 / 0 | **delete** |
-| `ai` | Umbrella crate for the cortex AI namespace | 1 | 44 / 2865 | **delete; move its tests to ai-registry** |
-| `code` | Umbrella crate for the cortex code namespace | 1 | 15 / 0 | **delete** |
-| `tui` | Umbrella crate for the cortex TUI namespace | 1 | 13 / 0 | **delete** |
-
 ### AI: models, providers, logins (`ai-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `ai-env` | Environment and API key handling for cortex AI | 9 | 347 / 0 | keep |
-| `ai-images` | Image generation and model registry for cortex AI | 1 | 649 / 99 | **delete** |
-| `ai-models` | LLM model registry and discovery for cortex AI | 11 | 348 / 234 | keep |
-| `ai-models-catalog` | Model catalog data (LLM and image models) for cortex AI, generated from the pinned hoocode | 2 | 43 / 0 | keep |
-| `ai-oauth` | OAuth core for cortex AI: types, PKCE, callback server, provider registry | 8 | 1084 / 0 | keep |
-| `ai-oauth-anthropic` | Anthropic (Claude Pro/Max) OAuth flow for cortex AI | 2 | 517 / 0 | keep |
-| `ai-oauth-github-copilot` | GitHub Copilot OAuth device flow for cortex AI | 2 | 675 / 0 | keep |
-| `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for cortex AI | 2 | 1456 / 0 | keep |
-| `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for cortex AI | 2 | 602 / 0 | keep |
-| `ai-provider-anthropic` | Anthropic provider for cortex AI | 2 | 2678 / 516 | keep |
-| `ai-provider-azure` | Azure OpenAI provider for cortex AI | 2 | 648 / 0 | **delete** |
-| `ai-provider-faux` | Faux / test provider for cortex AI | 1 | 930 / 759 | test provider (dev-dep only) |
-| `ai-provider-google` | Google Gemini provider for cortex AI | 3 | 3157 / 111 | keep |
-| `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for cortex AI | 2 | 1724 / 0 | keep |
-| `ai-provider-openai` | OpenAI provider for cortex AI | 2 | 3415 / 826 | keep |
-| `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for cortex AI: SSE and WebSocket transports | 2 | 2555 / 0 | keep |
-| `ai-provider-openai-responses` | OpenAI Responses API provider for cortex AI, and the Responses plumbing shared with Azure | 4 | 2260 / 0 | keep |
-| `ai-registry` | API provider registry for cortex AI: dispatches streams on model.api | 6 | 314 / 256 | keep |
+| `ai-env` | Environment and API key handling for cortex AI | 7 | 347 / 0 | keep |
+| `ai-models` | LLM model registry and discovery for cortex AI | 10 | 348 / 234 | keep |
+| `ai-models-catalog` | Model catalog data (LLM and image models) for cortex AI, generated from the pinned hoocode | 1 | 43 / 0 | keep |
+| `ai-oauth` | OAuth core for cortex AI: types, PKCE, callback server, provider registry | 7 | 1084 / 0 | keep |
+| `ai-oauth-anthropic` | Anthropic (Claude Pro/Max) OAuth flow for cortex AI | 1 | 517 / 0 | keep |
+| `ai-oauth-github-copilot` | GitHub Copilot OAuth device flow for cortex AI | 1 | 675 / 0 | keep |
+| `ai-oauth-google` | Google Cloud Code Assist OAuth flows (Gemini CLI, Antigravity) for cortex AI | 1 | 1456 / 0 | keep |
+| `ai-oauth-openai-codex` | OpenAI Codex (ChatGPT Plus/Pro) OAuth flow for cortex AI | 1 | 602 / 0 | keep |
+| `ai-provider-anthropic` | Anthropic provider for cortex AI | 1 | 2678 / 516 | keep |
+| `ai-provider-faux` | Faux / test provider for cortex AI | 0 | 930 / 759 | test provider (dev-dep only) |
+| `ai-provider-google` | Google Gemini provider for cortex AI | 2 | 3157 / 111 | keep |
+| `ai-provider-google-gemini-cli` | Google Cloud Code Assist (Gemini CLI / Antigravity) provider for cortex AI | 1 | 1724 / 0 | keep |
+| `ai-provider-openai` | OpenAI provider for cortex AI | 1 | 3415 / 826 | keep |
+| `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for cortex AI: SSE and WebSocket transports | 1 | 2555 / 0 | keep |
+| `ai-provider-openai-responses` | OpenAI Responses API provider for cortex AI, and the Responses plumbing it shares internally | 2 | 2260 / 0 | keep |
+| `ai-registry` | API provider registry for cortex AI: dispatches streams on model.api | 4 | 314 / 3068 | keep |
 | `ai-sse` | Server-Sent Events decoder shared by the cortex AI providers | 2 | 218 / 0 | keep |
-| `ai-stream` | Streaming response utilities for cortex AI | 14 | 611 / 0 | keep |
-| `ai-types` | Shared types for cortex AI | 45 | 1090 / 0 | keep |
-| `ai-util` | Shared utilities for cortex AI: JSON repair, hash, headers, sanitization, overflow detection | 15 | 3866 / 163 | keep |
+| `ai-stream` | Streaming response utilities for cortex AI | 12 | 611 / 0 | keep |
+| `ai-types` | Shared types for cortex AI | 39 | 1090 / 0 | keep |
+| `ai-util` | Shared utilities for cortex AI: JSON repair, hash, headers, sanitization, overflow detection | 12 | 3866 / 163 | keep |
 
 ### Agent runtime (`agent-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `agent-compaction` | Session compaction for cortex agents | 5 | 1451 / 1227 | keep |
-| `agent-core` | Core agent runtime for cortex agents | 4 | 1972 / 0 | keep |
-| `agent-harness` | Agent harness for cortex agents | 8 | 3325 / 1040 | keep |
-| `agent-loop` | Agent loop for cortex agents | 2 | 2379 / 0 | keep |
-| `agent-mcp` | MCP tool integration for cortex agents | 1 | 1185 / 575 | **delete; rebuilt on rmcp by mcp.md** |
-| `agent-orchestrator` | AgentHarness: the headless agent orchestrator (agent + session + compaction) for cortex | 1 | 1979 / 0 | **delete** |
-| `agent-session` | Session trees for cortex agents: entry format, storage, repositories | 4 | 2355 / 0 | keep |
-| `agent-tools` | Built-in tools for cortex agents | 2 | 268 / 0 | **delete** |
-| `agent-types` | Shared types for cortex agents | 24 | 892 / 0 | keep |
+| `agent-compaction` | Session compaction for cortex agents | 3 | 1451 / 1227 | keep |
+| `agent-core` | Core agent runtime for cortex agents | 2 | 1972 / 0 | keep |
+| `agent-harness` | Agent harness for cortex agents | 6 | 3325 / 1040 | keep |
+| `agent-loop` | Agent loop for cortex agents | 1 | 2379 / 0 | keep |
+| `agent-session` | Session trees for cortex agents: entry format, storage, repositories | 2 | 2355 / 0 | keep |
+| `agent-types` | Shared types for cortex agents | 20 | 892 / 0 | keep |
 
 ### Coding agent (`code-*`, `app-server*`)
 
@@ -126,26 +111,25 @@ in those tables; the generator keeps each crate's Status by name.
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the cortex run modes | 7 | 5868 / 5436 | keep |
 | `code-auth` | Credential storage for the cortex coding agent: auth.json API keys and OAuth tokens with locked refresh | 4 | 890 / 706 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the cortex coding agent (port of hoocode cli/args.ts + main.ts) | 2 | 4985 / 0 | keep |
-| `code-extensions` | WASM extension system for the cortex coding agent | 1 | 412 / 0 | **delete (WASM)** |
+| `code-cli` | CLI argument parsing and mode dispatch for the cortex coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 4985 / 0 | keep |
 | `code-main` | Main entry point for the cortex coding agent | 0 | 6 / 1102 | the `cortex` binary |
 | `code-media` | Image handling for the cortex coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 610 | keep |
 | `code-models` | Model registry for the cortex coding agent: built-in catalog plus models.json custom providers and overrides | 4 | 1996 / 670 | keep |
 | `code-modes` | Modes for the cortex coding agent: ask/plan/build/debug prompts, hoo-config.json, /mode /plan /grill /goal /approve | 3 | 1057 / 1050 | keep |
-| `code-paths` | App identity, config directories and path helpers for the cortex coding agent | 17 | 1029 / 415 | keep |
+| `code-paths` | App identity, config directories and path helpers for the cortex coding agent | 16 | 1029 / 415 | keep |
 | `code-permissions` | Permission gate for the cortex coding agent: per-mode tool policy from hoo-config.json and approval prompts | 3 | 290 / 210 | keep |
-| `code-print` | Output formatting for the cortex coding agent | 2 | 298 / 280 | keep |
-| `code-prompts` | Prompt templates for the cortex coding agent | 3 | 780 / 0 | keep |
-| `code-resources` | Resources for the cortex coding agent: skills, prompt templates, slash commands, agent definitions, context files | 6 | 4454 / 2995 | keep |
-| `code-rpc` | RPC mode for the cortex coding agent | 3 | 1547 / 763 | keep |
-| `code-session` | Session handling for the cortex coding agent | 7 | 1797 / 262 | keep |
-| `code-settings` | Global and project settings.json for the cortex coding agent | 9 | 2043 / 1043 | keep |
-| `code-subagents` | Subagent orchestration for the cortex coding agent | 4 | 7829 / 6683 | keep |
+| `code-print` | Output formatting for the cortex coding agent | 1 | 298 / 280 | keep |
+| `code-prompts` | Prompt templates for the cortex coding agent | 2 | 780 / 0 | keep |
+| `code-resources` | Resources for the cortex coding agent: skills, prompt templates, slash commands, agent definitions, context files | 5 | 4454 / 2995 | keep |
+| `code-rpc` | RPC mode for the cortex coding agent | 2 | 1547 / 763 | keep |
+| `code-session` | Session handling for the cortex coding agent | 6 | 1797 / 262 | keep |
+| `code-settings` | Global and project settings.json for the cortex coding agent | 8 | 2043 / 1043 | keep |
+| `code-subagents` | Subagent orchestration for the cortex coding agent | 3 | 7829 / 6683 | keep |
 | `code-task-store` | In-process task store for the cortex coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the cortex coding agent: tool definitions, output truncation, path resolution | 10 | 1058 / 120 | keep |
 | `code-tool-bash` | The bash tool for the cortex coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1389 / 508 | keep |
 | `code-tool-search` | SearchCodebase for the cortex coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1962 / 1185 | keep |
-| `code-tools` | Coding tools for the cortex coding agent | 5 | 1279 / 0 | keep |
+| `code-tools` | Coding tools for the cortex coding agent | 4 | 1279 / 0 | keep |
 | `code-tools-fs` | File tools for the cortex coding agent: read (with read-dedup) | 4 | 3286 / 2384 | keep |
 | `code-tools-optin` | Opt-in tools for the cortex coding agent: TodoWrite and ask_options | 3 | 545 / 540 | keep |
 
@@ -163,28 +147,43 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the cortex TUI | 5 | 9805 / 7265 | keep |
-| `tui-editing` | Text editing primitives for the cortex TUI | 2 | 307 / 0 | keep |
-| `tui-fuzzy` | Fuzzy matching for the cortex TUI | 5 | 374 / 0 | keep |
+| `tui-components` | UI components for the cortex TUI | 4 | 9805 / 7265 | keep |
+| `tui-editing` | Text editing primitives for the cortex TUI | 1 | 307 / 0 | keep |
+| `tui-fuzzy` | Fuzzy matching for the cortex TUI | 4 | 374 / 0 | keep |
 | `tui-highlight` | Syntax highlighting for the cortex TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1963 / 72 | keep |
-| `tui-images` | Terminal image rendering for the cortex TUI | 5 | 1237 / 376 | keep |
-| `tui-keys` | Keyboard handling for the cortex TUI | 7 | 1968 / 570 | keep |
-| `tui-render` | Differential rendering for the cortex TUI | 5 | 2766 / 2615 | keep |
-| `tui-terminal` | Terminal abstraction for the cortex TUI | 3 | 1592 / 100 | keep |
-| `tui-util` | Shared utilities for the cortex TUI | 9 | 2062 / 561 | keep |
+| `tui-images` | Terminal image rendering for the cortex TUI | 4 | 1237 / 376 | keep |
+| `tui-keys` | Keyboard handling for the cortex TUI | 6 | 1968 / 570 | keep |
+| `tui-render` | Differential rendering for the cortex TUI | 4 | 2766 / 2615 | keep |
+| `tui-terminal` | Terminal abstraction for the cortex TUI | 2 | 1592 / 100 | keep |
+| `tui-util` | Shared utilities for the cortex TUI | 8 | 2062 / 561 | keep |
 
 <!-- END generated -->
 
-## Deleting (agreed 2026-10-08)
+## Deleted 2026-10-08
 
-| Crate | Why | What moves |
+Ten crates were removed, as agreed in
+[decisions-2026-10-08.md](../design/decisions-2026-10-08.md). Azure was dropped
+later the same day (65 crates), so `ai-provider-azure` is listed below too.
+
+| Crate | Why | What moved or is left |
 |---|---|---|
-| 5 umbrellas | Only for crates.io, which is dropped | `ai`'s cross-provider tests (`tests/it/`) move to `ai-registry` |
+| 5 umbrellas: `cortexcode`, `agent`, `ai`, `code`, `tui` | Only for crates.io, which is dropped | `ai`'s tests moved to `ai-registry` (below); `ai`'s `oauth_providers` test was dropped, as it only tested the umbrella's own install wrapper |
 | `agent-mcp` | Not wired into the binary; [mcp.md](../design/mcp.md) rebuilds MCP on rmcp | Nothing; its stub server idea returns as rmcp test servers |
 | `agent-orchestrator`, `agent-tools` | hoocode SDK ports the product never calls; `code-agent-session` does the job | Nothing |
-| `ai-images` | No tool or command generates images | `ai-models-catalog`'s `IMAGE_MODELS_JSON` and `data/image-models.json` go; `scripts/convert_models_to_json.py` stops writing them |
+| `ai-images` | No tool or command generates images | Not done: `ai-models-catalog`'s `IMAGE_MODELS_JSON` and `data/image-models.json` still exist, and `scripts/convert_models_to_json.py` still writes them. A follow-up. |
 | `code-extensions` | Unused WASM host; costs ~55 s per clean build | `build-speed.md` D5 no longer applies |
-| `ai-provider-azure` | Not used | Azure branches in `ai-env`, `ai-models`, `ai-registry`, `ai-provider-openai-responses` (`shared.rs`), `code-auth` display names, `code-models` resolver and `code-session` identity go. The generated catalog stays as-is; Azure models are filtered out when it loads. |
+
+**Moved to `ai-registry`** (`crates/cortexcode-ai-registry/tests/it/`): `cache_retention`,
+`cross_provider_handoff`, `github_copilot`, `live_matrix`, `routing`, `stream_hooks`, with
+their `tests/data/red-circle.png`. Imports now name the leaf crates directly.
+
+**Azure removed (`ai-provider-azure`, 65 crates).** The decision said "Not used", and the
+provider was wired into `ai-registry` only, so it was deleted with its `azure-openai-responses`
+API, the `AZURE_OPENAI_*` env vars, the `/login` display name, the help text and the 47
+`azure-openai-responses` entries in `ai-models-catalog`. `ai-provider-openai-responses` keeps
+the shared Responses plumbing; only its doc comments mentioned Azure. The catalog now has
+1181 entries (the pin has 1228), and `scripts/convert_models_to_json.py` filters the
+Azure provider out so a regeneration does not bring it back.
 
 ## Upkeep
 

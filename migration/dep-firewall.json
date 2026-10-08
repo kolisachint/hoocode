@@ -1,12 +1,6 @@
 {
   "_comment": "Volatile third-party crates may be depended on ONLY by their adapter crate(s), which expose cortexcode-owned types. Upgrading or swapping one of these deps must touch exactly the listed crates. Checked by migration/check_dep_firewall.py (CI). 'pending' lists current violations tolerated until the named ledger task fixes them; never add to it without a task id.",
   "owners": {
-    "rmcp": [
-      "cortexcode-agent-mcp"
-    ],
-    "wasmtime": [
-      "cortexcode-code-extensions"
-    ],
     "jsonwebtoken": [
       "cortexcode-ai-provider-google"
     ],

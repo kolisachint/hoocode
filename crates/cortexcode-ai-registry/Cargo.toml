@@ -25,10 +25,14 @@ cortexcode-ai-provider-openai-responses = { workspace = true }
 cortexcode-ai-provider-openai-codex = { workspace = true }
 cortexcode-ai-provider-google = { workspace = true }
 cortexcode-ai-provider-google-gemini-cli = { workspace = true }
-cortexcode-ai-provider-azure = { workspace = true }
 
 [dev-dependencies]
+cortexcode-ai-env = { workspace = true }
 cortexcode-ai-models = { workspace = true }
+cortexcode-ai-stream = { workspace = true, features = ["testing"] }
+cortexcode-ai-util = { workspace = true }
+base64 = "0.22"
 futures-util = { version = "0.3", default-features = false }
+regex = "1"
 serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

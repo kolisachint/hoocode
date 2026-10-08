@@ -13,15 +13,15 @@
 
 use std::collections::HashMap;
 
-use cortexcode_ai::provider_anthropic::{build_headers, build_params, AnthropicOptions};
-use cortexcode_ai::registry::stream_simple;
-use cortexcode_ai::types::{
+use cortexcode_ai_provider_anthropic::{build_headers, build_params, AnthropicOptions};
+use cortexcode_ai_registry::stream_simple;
+use cortexcode_ai_stream::testing::serve_script;
+use cortexcode_ai_types::{
     AssistantMessage, Content, Context, ImageContent, Message, Model, ModelCost,
     SimpleStreamOptions, StopReason, TextContent, ThinkingContent, ToolCallContent,
     ToolResultMessage, UserMessage,
 };
-use cortexcode_ai::util::transform_messages;
-use cortexcode_ai_stream::testing::serve_script;
+use cortexcode_ai_util::transform_messages;
 use serde_json::{json, Value};
 
 fn copilot_headers() -> HashMap<String, String> {
@@ -357,7 +357,7 @@ fn adds_synthetic_results_only_for_trailing_calls_still_missing_results() {
 
 /// The first catalog Copilot model on `api`.
 fn copilot_model(api: &str) -> Model {
-    cortexcode_ai::models::get_models("github-copilot")
+    cortexcode_ai_models::get_models("github-copilot")
         .into_iter()
         .find(|m| m.api == api)
         .unwrap_or_else(|| panic!("github-copilot has an {api} model"))
