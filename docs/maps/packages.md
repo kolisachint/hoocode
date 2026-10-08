@@ -107,24 +107,24 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2522 / 1012 | keep |
+| `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2528 / 1012 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5854 / 5433 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 4 | 889 / 706 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 4977 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5076 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1102 | the `hoocode` binary |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 608 | keep |
 | `code-models` | Model registry for the hoocode coding agent: built-in catalog plus models.json custom providers and overrides | 4 | 1995 / 670 | keep |
 | `code-modes` | Modes for the hoocode coding agent: ask/plan/build/debug prompts, hoo-config.json, /mode /plan /grill /goal /approve | 3 | 1057 / 1050 | keep |
 | `code-paths` | App identity, config directories and path helpers for the hoocode coding agent | 16 | 1030 / 415 | keep |
-| `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 3 | 290 / 210 | keep |
+| `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 4 | 329 / 279 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 298 / 280 | keep |
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 780 / 0 | keep |
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 5 | 4453 / 2992 | keep |
-| `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 760 | keep |
+| `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1009 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 1797 / 262 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 2043 / 1043 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7828 / 6676 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7833 / 6676 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 10 | 1058 / 120 | keep |
 | `code-tool-bash` | The bash tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1389 / 508 | keep |

@@ -17,6 +17,28 @@ pub const CHOICES: [&str; 3] = [
     "Always (add to auto-allow for this mode)",
 ];
 
+/// Internal (not in `--help`): `run_rpc_mode` sets this to `1` in its own
+/// environment, so every child it spawns (json subagents, print runs) fails
+/// closed too. Warm workers opt out of their own gate with
+/// [`WARM_WORKER_ENV`]; they still inherit this variable for their children.
+pub const FAIL_CLOSED_ENV: &str = "HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED";
+
+/// Internal (not in `--help`): set only by the warm subagent pool on the
+/// `--mode rpc` workers it drives. Such a worker's own gate fails open, because
+/// no client on its stdio can answer a prompt. Never set it anywhere else.
+pub const WARM_WORKER_ENV: &str = "HOOCODE_INTERNAL_WARM_WORKER";
+
+/// Who can answer for a gated call that needs approval (a `PermissionGate`'s
+/// channel). Decides what [`evaluate`] returns for such a call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApprovalChannel {
+    /// A UI or client answers prompts (interactive mode, the app-server).
+    Ui,
+    /// Nobody can answer. A gated call that needs approval is denied when
+    /// `fail_closed` (rpc mode), and runs otherwise (print, json).
+    Headless { fail_closed: bool },
+}
+
 /// The UI the gate prompts through (`ctx.ui.select` / `ctx.ui.notify`).
 pub trait PermissionUi: Send + Sync {
     /// Show `title` with `options`; `None` = cancelled.
@@ -160,7 +182,7 @@ pub fn evaluate(
     cwd: &Path,
     tool_name: &str,
     input: &Value,
-    has_ui: bool,
+    channel: ApprovalChannel,
 ) -> Verdict {
     let mode = config::active_mode(config).unwrap_or_else(|| "build".into());
     let list = |key: &str| config::mode_list(config, &mode, key);
@@ -197,7 +219,15 @@ pub fn evaluate(
         }
     }
 
-    if !GATED_TOOLS.contains(&tool_name) || !has_ui {
+    // TODO(reliability 1.1, decision c): MCP and plugin tools are not in
+    // GATED_TOOLS, so they run ungated in every mode. See docs/design/reliability.md.
+    let fail_closed = match channel {
+        ApprovalChannel::Ui => false,
+        // print/json: nobody is asked, and the CLI prints one notice per run.
+        ApprovalChannel::Headless { fail_closed: false } => return Verdict::Allow,
+        ApprovalChannel::Headless { fail_closed: true } => true,
+    };
+    if !GATED_TOOLS.contains(&tool_name) {
         return Verdict::Allow;
     }
     if tool_name == "write" || tool_name == "edit" {
@@ -214,29 +244,38 @@ pub fn evaluate(
     if list("auto_allow").is_some_and(|a| a.iter().any(|t| t == tool_name)) {
         return Verdict::Allow;
     }
+    if fail_closed {
+        return Verdict::Block(format!(
+            "Tool \"{tool_name}\" needs approval, but no client can answer in this session (rpc mode denies it). Add it to auto_allow for mode \"{mode}\" in hoo-config.json to allow it."
+        ));
+    }
     Verdict::Prompt
 }
 
 /// hoocode's permission gate for one working directory.
 pub struct HooPermissionGate {
     cwd: PathBuf,
+    channel: ApprovalChannel,
+    /// The prompt for [`ApprovalChannel::Ui`]. A `Ui` gate without one denies
+    /// what would have been prompted (never a silent allow).
     ui: Option<Arc<dyn PermissionUi>>,
 }
 
 impl HooPermissionGate {
-    /// `ui: None` is a headless session: only hard enforcement applies.
-    pub fn new(cwd: PathBuf, ui: Option<Arc<dyn PermissionUi>>) -> Self {
-        Self { cwd, ui }
+    pub fn new(cwd: PathBuf, channel: ApprovalChannel, ui: Option<Arc<dyn PermissionUi>>) -> Self {
+        Self { cwd, channel, ui }
     }
 
     /// The handler: `None` lets the call run, `Some(reason)` blocks it.
     pub fn check(&self, tool_name: &str, input: &Value) -> Option<String> {
         let merged = config::read_merged_config(&self.cwd);
-        match evaluate(&merged, &self.cwd, tool_name, input, self.ui.is_some()) {
+        match evaluate(&merged, &self.cwd, tool_name, input, self.channel) {
             Verdict::Allow => None,
             Verdict::Block(reason) => Some(reason),
             Verdict::Prompt => {
-                let ui = self.ui.as_ref()?;
+                let Some(ui) = self.ui.as_ref() else {
+                    return Some("Denied by permission gate".into());
+                };
                 let title = format!("Allow: {}", describe_tool(tool_name, input));
                 let choice = ui.select(&title, &CHOICES);
                 match choice {

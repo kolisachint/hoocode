@@ -19,10 +19,15 @@ stop the same bug classes coming back.
 
 ## What we build
 
-1. **rpc fail-closed.**
-   - `evaluate` takes a third case, "no UI and not allowed to auto-approve", and
-     returns `Block` with a clear message ("needs approval; no client attached").
-   - rpc mode uses it; print and json keep `Allow` and print the notice.
+1. **rpc fail-closed.** Built 2026-10-08 (`claude/1.1-rpc-fails-closed`).
+   - `evaluate` takes an `ApprovalChannel` (`Ui`, or `Headless { fail_closed }`).
+     A gated call that needs approval is `Block`ed when `fail_closed`, with a
+     message that names `auto_allow` in hoo-config.json.
+   - rpc mode is fail-closed. Its children inherit the policy through the internal
+     env `HOOCODE_INTERNAL_APPROVALS_FAIL_CLOSED`, so json subagents are closed too.
+     Warm workers opt out of their own gate with the internal `HOOCODE_INTERNAL_WARM_WORKER`.
+   - print and json keep `Allow` and print a one-line stderr note.
+   - MCP and plugin tools stay ungated (TODO in `code-permissions`).
    - Tests: a gated tool in rpc is blocked, in print is allowed with the notice,
      and in interactive mode still prompts.
    - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
