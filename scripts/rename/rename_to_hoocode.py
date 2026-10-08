@@ -58,6 +58,9 @@ HOLD = [
      re.compile(r"cortex-debug")),
 ]
 
+# A word start: not after a letter or digit, or right after a regex \b (normalize.json).
+WORD_START = r"(?:(?<![A-Za-z0-9])|(?<=\\b))"
+
 # Applied in order to paths and text. Each is (label, regex, replacement).
 RULES = [
     ("hoocode-to-cortexcode-migration -> ts-to-rust-migration",
@@ -66,10 +69,10 @@ RULES = [
      re.compile(r"CortexCode"), "HooCode"),
     ("cortexcode -> hoocode (crates, Rust paths, URLs, names)",
      re.compile(r"cortexcode"), "hoocode"),
-    ("Cortex -> HooCode (brand, APP_TITLE)",
-     re.compile(r"(?<![A-Za-z0-9])Cortex(?![A-Za-z0-9])"), "HooCode"),
-    ("cortex -> hoocode (bin, APP_NAME, metadata, thread names, identifiers)",
-     re.compile(r"(?<![A-Za-z0-9])cortex(?![A-Za-z0-9])"), "hoocode"),
+    ("Cortex -> HooCode (brand, APP_TITLE, regex \\bCortex)",
+     re.compile(WORD_START + r"Cortex(?![A-Za-z0-9])"), "HooCode"),
+    ("cortex -> hoocode (bin, APP_NAME, metadata, thread names, identifiers, regex \\bcortex)",
+     re.compile(WORD_START + r"cortex(?![A-Za-z0-9])"), "hoocode"),
 ]
 
 # Files that need more than a text rename. Printed when the file changes.
