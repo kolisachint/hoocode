@@ -1723,6 +1723,7 @@ name = "hoocode-tui-images"
 version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
+ "hoocode-tui-util",
  "once_cell",
  "rand 0.8.8",
 ]
@@ -1751,6 +1752,7 @@ name = "hoocode-tui-terminal"
 version = "0.1.8"
 dependencies = [
  "crossterm",
+ "hoocode-tui-util",
  "windows-sys 0.59.0",
 ]
 

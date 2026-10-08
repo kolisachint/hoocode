@@ -37,3 +37,7 @@ urlencoding = "2"
 
 [dev-dependencies]
 hoocode-code-prompts = { workspace = true }
+
+# Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
+[lints.clippy]
+string_slice = "warn"

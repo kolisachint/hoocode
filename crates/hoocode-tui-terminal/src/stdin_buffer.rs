@@ -264,9 +264,13 @@ impl StdinBuffer {
             self.buffer.clear();
 
             if let Some(end_idx) = self.paste_buffer.find(BRACKETED_PASTE_END) {
-                let pasted = self.paste_buffer[..end_idx].to_string();
-                let remaining =
-                    self.paste_buffer[end_idx + BRACKETED_PASTE_END.len()..].to_string();
+                let pasted =
+                    hoocode_tui_util::text_slice::prefix(&self.paste_buffer, end_idx).to_string();
+                let remaining = hoocode_tui_util::text_slice::suffix_from(
+                    &self.paste_buffer,
+                    end_idx + BRACKETED_PASTE_END.len(),
+                )
+                .to_string();
 
                 self.paste_mode = false;
                 self.paste_buffer.clear();
@@ -284,7 +288,10 @@ impl StdinBuffer {
         let buffer_str: String = self.buffer.iter().collect();
         if let Some(start_idx) = buffer_str.find(BRACKETED_PASTE_START) {
             if start_idx > 0 {
-                let before_paste: Vec<char> = buffer_str[..start_idx].chars().collect();
+                let before_paste: Vec<char> =
+                    hoocode_tui_util::text_slice::prefix(&buffer_str, start_idx)
+                        .chars()
+                        .collect();
                 let (sequences, _) = extract_complete_sequences(&before_paste);
                 for sequence in sequences {
                     self.emit_data_sequence(sequence, out);
@@ -292,15 +299,23 @@ impl StdinBuffer {
             }
 
             self.pending_kitty_printable_codepoint = None;
-            let after_start = buffer_str[start_idx + BRACKETED_PASTE_START.len()..].to_string();
+            let after_start = hoocode_tui_util::text_slice::suffix_from(
+                &buffer_str,
+                start_idx + BRACKETED_PASTE_START.len(),
+            )
+            .to_string();
             self.buffer.clear();
             self.paste_mode = true;
             self.paste_buffer = after_start;
 
             if let Some(end_idx) = self.paste_buffer.find(BRACKETED_PASTE_END) {
-                let pasted = self.paste_buffer[..end_idx].to_string();
-                let remaining =
-                    self.paste_buffer[end_idx + BRACKETED_PASTE_END.len()..].to_string();
+                let pasted =
+                    hoocode_tui_util::text_slice::prefix(&self.paste_buffer, end_idx).to_string();
+                let remaining = hoocode_tui_util::text_slice::suffix_from(
+                    &self.paste_buffer,
+                    end_idx + BRACKETED_PASTE_END.len(),
+                )
+                .to_string();
 
                 self.paste_mode = false;
                 self.paste_buffer.clear();

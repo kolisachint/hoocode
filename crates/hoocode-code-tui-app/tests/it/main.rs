@@ -1,3 +1,6 @@
+// Test code slices literal fixtures; the string_slice lint guards production code.
+#![allow(clippy::string_slice)]
+
 mod anthropic_warning_ts;
 mod at_file_completion;
 mod chrome_layout;

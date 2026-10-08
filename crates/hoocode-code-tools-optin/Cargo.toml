@@ -22,3 +22,7 @@ hoocode-ai-types = { workspace = true }
 hoocode-code-task-store = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
 serde_json = { version = "1", features = ["preserve_order"] }
+
+# Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
+[lints.clippy]
+string_slice = "warn"

@@ -129,7 +129,7 @@ impl Default for ReadToolOptions {
 /// short-circuits with a note.
 fn doc_format_hint(absolute_path: &str) -> Option<&'static str> {
     let dot = absolute_path.rfind('.')?;
-    match absolute_path[dot..].to_lowercase().as_str() {
+    match absolute_path.get(dot..)?.to_lowercase().as_str() {
         ".docx" => Some("Word (OOXML)"),
         ".xlsx" => Some("Excel (OOXML)"),
         ".pptx" => Some("PowerPoint (OOXML)"),

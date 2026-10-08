@@ -895,25 +895,8 @@ enum PartKind {
 
 /// jsdiff's line tokenizer: each line with its `\n` / `\r\n` attached.
 fn tokenize_lines(value: &str) -> Vec<&str> {
-    let mut tokens = Vec::new();
-    let mut start = 0;
-    let bytes = value.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\n' {
-            tokens.push(&value[start..=i]);
-            start = i + 1;
-        } else if bytes[i] == b'\r' && bytes.get(i + 1) == Some(&b'\n') {
-            tokens.push(&value[start..i + 2]);
-            i += 1;
-            start = i + 1;
-        }
-        i += 1;
-    }
-    if start < value.len() {
-        tokens.push(&value[start..]);
-    }
-    tokens
+    // A `\r\n` ends in its `\n`, so splitting after each `\n` is the same split.
+    value.split_inclusive('\n').collect()
 }
 
 /// One run in jsdiff's linked list of components.

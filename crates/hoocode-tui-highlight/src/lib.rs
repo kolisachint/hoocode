@@ -142,15 +142,16 @@ impl Chalk {
             let mut out = String::with_capacity(s.len());
             let mut rest = s.as_str();
             while let Some(i) = rest.find('\n') {
-                let (line, nl) = match rest[..i].strip_suffix('\r') {
-                    Some(line) => (line, "\r\n"),
-                    None => (&rest[..i], "\n"),
-                };
+                let (line, nl) =
+                    match hoocode_tui_util::text_slice::prefix(rest, i).strip_suffix('\r') {
+                        Some(line) => (line, "\r\n"),
+                        None => (hoocode_tui_util::text_slice::prefix(rest, i), "\n"),
+                    };
                 out.push_str(line);
                 out.push_str(&close_all);
                 out.push_str(nl);
                 out.push_str(&open_all);
-                rest = &rest[i + 1..];
+                rest = hoocode_tui_util::text_slice::suffix_from(rest, i + 1);
             }
             out.push_str(rest);
             s = out;

@@ -279,7 +279,7 @@ fn diff_tokens(old: &[String], new: &[String]) -> Vec<Change> {
 
 fn leading_ws(s: &str) -> &str {
     let end = s.find(|c: char| !is_ws(c)).unwrap_or(s.len());
-    &s[..end]
+    hoocode_tui_util::text_slice::prefix(s, end)
 }
 
 fn trailing_ws(s: &str) -> &str {
@@ -289,18 +289,18 @@ fn trailing_ws(s: &str) -> &str {
         .find(|(_, c)| !is_ws(*c))
         .map(|(i, c)| i + c.len_utf8())
         .unwrap_or(0);
-    &s[start..]
+    hoocode_tui_util::text_slice::suffix_from(s, start)
 }
 
 fn longest_common_prefix<'a>(a: &'a str, b: &str) -> &'a str {
     let mut end = 0;
     for ((i, ca), cb) in a.char_indices().zip(b.chars()) {
         if ca != cb {
-            return &a[..i];
+            return hoocode_tui_util::text_slice::prefix(a, i);
         }
         end = i + ca.len_utf8();
     }
-    &a[..end]
+    hoocode_tui_util::text_slice::prefix(a, end)
 }
 
 fn longest_common_suffix<'a>(a: &'a str, b: &str) -> &'a str {
@@ -311,7 +311,7 @@ fn longest_common_suffix<'a>(a: &'a str, b: &str) -> &'a str {
         }
         start = i;
     }
-    &a[start..]
+    hoocode_tui_util::text_slice::suffix_from(a, start)
 }
 
 fn replace_prefix(s: &str, old: &str, new: &str) -> String {
@@ -324,7 +324,10 @@ fn replace_suffix(s: &str, old: &str, new: &str) -> String {
         return format!("{s}{new}");
     }
     debug_assert!(s.ends_with(old), "{s:?} doesn't end with {old:?}");
-    format!("{}{new}", &s[..s.len().saturating_sub(old.len())])
+    format!(
+        "{}{new}",
+        hoocode_tui_util::text_slice::prefix(s, s.len().saturating_sub(old.len()))
+    )
 }
 
 /// `maximumOverlap`: the longest prefix of `b` that is a suffix of `a`.
@@ -357,7 +360,7 @@ fn maximum_overlap<'a>(a: &str, b: &'a str) -> &'a str {
         }
     }
     let byte_end: usize = bc[..k].iter().map(|c| c.len_utf8()).sum();
-    &b[..byte_end]
+    hoocode_tui_util::text_slice::prefix(b, byte_end)
 }
 
 fn dedupe_whitespace(
@@ -389,11 +392,13 @@ fn dedupe_whitespace(
         (None, Some(i)) => {
             if start.is_some() {
                 let ws = leading_ws(&changes[i].value).len();
-                changes[i].value = changes[i].value[ws..].to_string();
+                changes[i].value =
+                    hoocode_tui_util::text_slice::suffix_from(&changes[i].value, ws).to_string();
             }
             if let Some(e) = end {
                 let ws = leading_ws(&changes[e].value).len();
-                changes[e].value = changes[e].value[ws..].to_string();
+                changes[e].value =
+                    hoocode_tui_util::text_slice::suffix_from(&changes[e].value, ws).to_string();
             }
         }
         (Some(d), None) => match (start, end) {
@@ -407,7 +412,10 @@ fn dedupe_whitespace(
                 let new_ws_end = longest_common_suffix(&rest, &del_ws_end).to_string();
                 changes[d].value = replace_suffix(&changes[d].value, &new_ws_end, "");
                 changes[e].value = replace_prefix(&changes[e].value, &new_ws_full, &new_ws_end);
-                let keep = &new_ws_full[..new_ws_full.len() - new_ws_end.len()];
+                let keep = hoocode_tui_util::text_slice::prefix(
+                    &new_ws_full,
+                    new_ws_full.len() - new_ws_end.len(),
+                );
                 changes[s].value = replace_suffix(&changes[s].value, &new_ws_full, keep);
             }
             (None, Some(e)) => {

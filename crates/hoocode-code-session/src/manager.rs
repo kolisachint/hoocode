@@ -1211,9 +1211,12 @@ fn get_last_activity_time(entries: &[FileEntry]) -> Option<chrono::DateTime<Utc>
                 })
                 .filter(|ts| *ts > 0)
             {
-                let dt = Utc.timestamp_millis_opt(msg_ts).unwrap();
-                last = Some(last.map_or(dt, |l| l.max(dt)));
-                continue;
+                // A timestamp outside chrono's range comes from a hand-edited or corrupt
+                // session file; ignore it rather than panic, and use the entry time.
+                if let Some(dt) = Utc.timestamp_millis_opt(msg_ts).single() {
+                    last = Some(last.map_or(dt, |l| l.max(dt)));
+                    continue;
+                }
             }
             if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(timestamp) {
                 let dt = dt.with_timezone(&Utc);
@@ -1380,6 +1383,27 @@ mod tests {
     use super::*;
     use hoocode_agent_types::AgentMessage;
     use hoocode_ai_types::{Content, Message, TextContent, UserMessage};
+
+    #[test]
+    fn last_activity_survives_a_message_timestamp_chrono_cannot_represent() {
+        // Session files are user-editable: an out-of-range epoch must not panic.
+        let message = AgentMessage::from_message(Message::User(UserMessage {
+            content: vec![Content::Text(TextContent {
+                text_signature: None,
+                text: "hi".into(),
+            })]
+            .into(),
+            timestamp: i64::MAX,
+        }));
+        let entries = vec![FileEntry::Message {
+            id: "m1".into(),
+            parent_id: None,
+            timestamp: "2026-10-01T00:00:00Z".into(),
+            message,
+        }];
+        let got = get_last_activity_time(&entries).expect("falls back to the entry time");
+        assert_eq!(got.to_rfc3339(), "2026-10-01T00:00:00+00:00");
+    }
 
     fn user(text: &str) -> AgentMessage {
         AgentMessage::from_message(Message::User(UserMessage {

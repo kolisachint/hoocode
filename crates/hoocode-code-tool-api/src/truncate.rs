@@ -249,7 +249,7 @@ fn truncate_str_to_bytes_from_end(s: &str, max_bytes: usize) -> &str {
     while !s.is_char_boundary(start) {
         start += 1;
     }
-    &s[start..]
+    s.get(start..).unwrap_or_default()
 }
 
 /// Truncate a single line to `max_chars` UTF-16 code units, adding a

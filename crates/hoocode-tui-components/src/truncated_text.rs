@@ -37,7 +37,7 @@ impl Component for TruncatedText {
         let available_width = (width.saturating_sub(self.padding_x * 2)).max(1);
 
         let single_line_text = match self.text.find('\n') {
-            Some(idx) => &self.text[..idx],
+            Some(idx) => hoocode_tui_util::text_slice::prefix(&self.text, idx),
             None => self.text.as_str(),
         };
 

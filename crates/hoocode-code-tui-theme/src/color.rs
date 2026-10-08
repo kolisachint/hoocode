@@ -87,8 +87,8 @@ pub fn detect_color_mode() -> ColorMode {
 fn parse_int16(s: &str) -> Option<i64> {
     let s = s.trim_start();
     let (neg, s) = match s.as_bytes().first() {
-        Some(b'-') => (true, &s[1..]),
-        Some(b'+') => (false, &s[1..]),
+        Some(b'-') => (true, hoocode_tui_util::text_slice::suffix_from(s, 1)),
+        Some(b'+') => (false, hoocode_tui_util::text_slice::suffix_from(s, 1)),
         _ => (false, s),
     };
     let s = s

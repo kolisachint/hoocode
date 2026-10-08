@@ -116,7 +116,9 @@ fn update_incremental(
     if content.len() == cache.raw_content.len() {
         return Some(cache);
     }
-    let delta = replace_tabs(&normalize_display_text(&content[cache.raw_content.len()..]));
+    let delta = replace_tabs(&normalize_display_text(
+        hoocode_tui_util::text_slice::suffix_from(content, cache.raw_content.len()),
+    ));
     cache.raw_content = content.to_string();
     if cache.normalized_lines.is_empty() {
         cache.normalized_lines.push(String::new());

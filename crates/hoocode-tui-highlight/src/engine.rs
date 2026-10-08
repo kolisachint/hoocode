@@ -286,7 +286,7 @@ impl ResumableMultiRegex {
             let at_same = result.as_ref().is_some_and(|r| r.index == last_index);
             if !at_same {
                 // Step one character on, as JavaScript steps one code unit.
-                let next = s[last_index.min(s.len())..]
+                let next = hoocode_tui_util::text_slice::suffix_from(s, last_index.min(s.len()))
                     .chars()
                     .next()
                     .map_or(last_index + 1, |c| last_index + c.len_utf8());
@@ -896,7 +896,11 @@ impl Highlighter<'_> {
         let mut buf = String::new();
         let mut pos = 0;
         while let Some(m) = pattern.re.exec_at(&buffer, pos) {
-            buf.push_str(&buffer[last_index..m.index()]);
+            buf.push_str(hoocode_tui_util::text_slice::range(
+                &buffer,
+                last_index,
+                m.index(),
+            ));
             let word = m.whole();
             let key = if self.case_insensitive {
                 word.to_lowercase()
@@ -921,7 +925,10 @@ impl Highlighter<'_> {
             // A global regex's lastIndex after an empty match does not move
             // (`exec` would loop), but the keyword patterns never match empty.
             pos = if m.end() == m.index() {
-                match buffer[m.end()..].chars().next() {
+                match hoocode_tui_util::text_slice::suffix_from(&buffer, m.end())
+                    .chars()
+                    .next()
+                {
                     Some(c) => m.end() + c.len_utf8(),
                     None => break,
                 }
@@ -929,7 +936,10 @@ impl Highlighter<'_> {
                 m.end()
             };
         }
-        buf.push_str(&buffer[last_index.min(buffer.len())..]);
+        buf.push_str(hoocode_tui_util::text_slice::suffix_from(
+            &buffer,
+            last_index.min(buffer.len()),
+        ));
         self.emitter.add_text(&buf);
     }
 
@@ -1043,7 +1053,7 @@ impl Highlighter<'_> {
                 }
             }
             Callback::SkipIfHasPrecedingDot => {
-                if self.code[..m.index].ends_with('.') {
+                if hoocode_tui_util::text_slice::prefix(self.code, m.index).ends_with('.') {
                     resp.ignored = true;
                 }
             }
@@ -1054,13 +1064,21 @@ impl Highlighter<'_> {
             }
             Callback::JsxIsTrulyOpeningTag => {
                 let after = m.index + m.lexeme().len();
-                let next = self.code[after.min(self.code.len())..].chars().next();
+                let next = hoocode_tui_util::text_slice::suffix_from(
+                    self.code,
+                    after.min(self.code.len()),
+                )
+                .chars()
+                .next();
                 if next == Some('<') {
                     resp.ignored = true;
                 } else if next == Some('>') {
                     // hasClosingTag: `</` + the tag name after `<`.
-                    let tag = format!("</{}", &m.lexeme()[1.min(m.lexeme().len())..]);
-                    if !self.code[after..].contains(&tag) {
+                    let tag = format!(
+                        "</{}",
+                        hoocode_tui_util::text_slice::suffix_from(m.lexeme(), 1)
+                    );
+                    if !hoocode_tui_util::text_slice::suffix_from(self.code, after).contains(&tag) {
                         resp.ignored = true;
                     }
                 }
@@ -1152,7 +1170,7 @@ impl Highlighter<'_> {
     /// `doEndMatch`; `None` is `NO_MATCH`.
     fn do_end_match(&mut self, m: &ScanMatch) -> Option<usize> {
         let lexeme = m.lexeme().to_string();
-        let remainder = &self.code[m.index..];
+        let remainder = hoocode_tui_util::text_slice::suffix_from(self.code, m.index);
         let end_mode = self.end_of_mode(&self.top.clone(), m, remainder)?;
         let origin = self.top.clone();
         if top_get(&origin, "skip").truthy() {
@@ -1238,7 +1256,9 @@ impl Highlighter<'_> {
         if let Some((last_begin, last_index)) = self.last_match {
             if last_begin && is_end && last_index == m.index && lexeme.is_empty() {
                 // A zero-width end right after a zero-width begin: step a char.
-                let c = self.code[m.index..].chars().next();
+                let c = hoocode_tui_util::text_slice::suffix_from(self.code, m.index)
+                    .chars()
+                    .next();
                 if let Some(c) = c {
                     self.mode_buffer.push(c);
                     return Ok(c.len_utf8());
@@ -1280,7 +1300,8 @@ impl Highlighter<'_> {
             matcher.borrow_mut().last_index = index;
             let m = matcher.borrow_mut().exec(self.code);
             let Some(m) = m else { break };
-            let before = &self.code[index.min(m.index)..m.index];
+            let before =
+                hoocode_tui_util::text_slice::range(self.code, index.min(m.index), m.index);
             let processed = self.process_lexeme(before, Some(&m), index)?;
             index = m.index + processed;
             // A step that lands inside a character (one-unit steps over
@@ -1292,7 +1313,7 @@ impl Highlighter<'_> {
                 return Err(Stop::Error);
             }
         }
-        let rest = &self.code[index.min(self.code.len())..];
+        let rest = hoocode_tui_util::text_slice::suffix_from(self.code, index.min(self.code.len()));
         self.process_lexeme(rest, None, index)?;
         Ok(())
     }

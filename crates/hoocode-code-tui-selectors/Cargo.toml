@@ -39,3 +39,7 @@ serde_json = "1"
 
 [dev-dependencies]
 tempfile = "3"
+
+# Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
+[lints.clippy]
+string_slice = "warn"

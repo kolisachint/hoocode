@@ -104,18 +104,26 @@ impl Input {
             self.is_in_paste = true;
             self.paste_buffer.clear();
             let mut owned = String::with_capacity(data.len());
-            owned.push_str(&data[..start_idx]);
-            owned.push_str(&data[start_idx + "\x1b[200~".len()..]);
+            owned.push_str(hoocode_tui_util::text_slice::prefix(data, start_idx));
+            owned.push_str(hoocode_tui_util::text_slice::suffix_from(
+                data,
+                start_idx + "\x1b[200~".len(),
+            ));
             return self.handle_input_owned(owned, kb);
         }
 
         if self.is_in_paste {
             self.paste_buffer.push_str(data);
             if let Some(end_idx) = self.paste_buffer.find("\x1b[201~") {
-                let paste_content = self.paste_buffer[..end_idx].to_string();
+                let paste_content =
+                    hoocode_tui_util::text_slice::prefix(&self.paste_buffer, end_idx).to_string();
                 self.handle_paste(&paste_content);
                 self.is_in_paste = false;
-                let remaining = self.paste_buffer[end_idx + "\x1b[201~".len()..].to_string();
+                let remaining = hoocode_tui_util::text_slice::suffix_from(
+                    &self.paste_buffer,
+                    end_idx + "\x1b[201~".len(),
+                )
+                .to_string();
                 self.paste_buffer.clear();
                 if !remaining.is_empty() {
                     self.handle_input_with(&remaining, kb);
@@ -180,7 +188,7 @@ impl Input {
         if kb.matches(data, "tui.editor.cursorLeft") {
             self.last_action = None;
             if self.cursor > 0 {
-                let before_cursor = &self.value[..self.cursor];
+                let before_cursor = hoocode_tui_util::text_slice::prefix(&self.value, self.cursor);
                 let len = before_cursor
                     .graphemes(true)
                     .next_back()
@@ -193,7 +201,8 @@ impl Input {
         if kb.matches(data, "tui.editor.cursorRight") {
             self.last_action = None;
             if self.cursor < self.value.len() {
-                let after_cursor = &self.value[self.cursor..];
+                let after_cursor =
+                    hoocode_tui_util::text_slice::suffix_from(&self.value, self.cursor);
                 let len = after_cursor
                     .graphemes(true)
                     .next()
@@ -256,7 +265,7 @@ impl Input {
         self.last_action = None;
         if self.cursor > 0 {
             self.push_undo();
-            let before_cursor = &self.value[..self.cursor];
+            let before_cursor = hoocode_tui_util::text_slice::prefix(&self.value, self.cursor);
             let len = before_cursor
                 .graphemes(true)
                 .next_back()
@@ -271,7 +280,7 @@ impl Input {
         self.last_action = None;
         if self.cursor < self.value.len() {
             self.push_undo();
-            let after_cursor = &self.value[self.cursor..];
+            let after_cursor = hoocode_tui_util::text_slice::suffix_from(&self.value, self.cursor);
             let len = after_cursor
                 .graphemes(true)
                 .next()
@@ -286,7 +295,7 @@ impl Input {
             return;
         }
         self.push_undo();
-        let deleted = self.value[..self.cursor].to_string();
+        let deleted = hoocode_tui_util::text_slice::prefix(&self.value, self.cursor).to_string();
         let accumulate = self.last_action == Some(LastAction::Kill);
         self.kill_ring.push(
             &deleted,
@@ -305,7 +314,8 @@ impl Input {
             return;
         }
         self.push_undo();
-        let deleted = self.value[self.cursor..].to_string();
+        let deleted =
+            hoocode_tui_util::text_slice::suffix_from(&self.value, self.cursor).to_string();
         let accumulate = self.last_action == Some(LastAction::Kill);
         self.kill_ring.push(
             &deleted,
@@ -330,7 +340,8 @@ impl Input {
         let delete_from = self.cursor;
         self.cursor = old_cursor;
 
-        let deleted = self.value[delete_from..self.cursor].to_string();
+        let deleted =
+            hoocode_tui_util::text_slice::range(&self.value, delete_from, self.cursor).to_string();
         self.kill_ring.push(
             &deleted,
             KillPushOptions {
@@ -356,7 +367,8 @@ impl Input {
         let delete_to = self.cursor;
         self.cursor = old_cursor;
 
-        let deleted = self.value[self.cursor..delete_to].to_string();
+        let deleted =
+            hoocode_tui_util::text_slice::range(&self.value, self.cursor, delete_to).to_string();
         self.kill_ring.push(
             &deleted,
             KillPushOptions {
@@ -418,7 +430,7 @@ impl Input {
             return;
         }
         self.last_action = None;
-        let text_before_cursor = &self.value[..self.cursor];
+        let text_before_cursor = hoocode_tui_util::text_slice::prefix(&self.value, self.cursor);
         let mut graphemes: Vec<&str> = text_before_cursor.graphemes(true).collect();
 
         while matches!(graphemes.last(), Some(g) if is_whitespace_char(g)) {
@@ -444,7 +456,7 @@ impl Input {
             return;
         }
         self.last_action = None;
-        let text_after_cursor = &self.value[self.cursor..];
+        let text_after_cursor = hoocode_tui_util::text_slice::suffix_from(&self.value, self.cursor);
         let mut it = text_after_cursor.graphemes(true).peekable();
 
         while matches!(it.peek(), Some(g) if is_whitespace_char(g)) {
@@ -513,7 +525,10 @@ impl Component for Input {
             } else {
                 available_width
             };
-            let cursor_col = visible_width(&self.value[..self.cursor]);
+            let cursor_col = visible_width(hoocode_tui_util::text_slice::prefix(
+                &self.value,
+                self.cursor,
+            ));
 
             if scroll_width > 0 {
                 let half_width = scroll_width / 2;
@@ -540,11 +555,19 @@ impl Component for Input {
         }
         cursor_display = cursor_display.min(visible_text.len());
 
-        let cursor_grapheme = visible_text[cursor_display..].graphemes(true).next();
-        let before_cursor = visible_text[..cursor_display].to_string();
+        let cursor_grapheme =
+            hoocode_tui_util::text_slice::suffix_from(&visible_text, cursor_display)
+                .graphemes(true)
+                .next();
+        let before_cursor =
+            hoocode_tui_util::text_slice::prefix(&visible_text, cursor_display).to_string();
         let at_cursor = cursor_grapheme.unwrap_or(" ").to_string();
         let after_cursor = if cursor_display + at_cursor.len() <= visible_text.len() {
-            visible_text[cursor_display + at_cursor.len()..].to_string()
+            hoocode_tui_util::text_slice::suffix_from(
+                &visible_text,
+                cursor_display + at_cursor.len(),
+            )
+            .to_string()
         } else {
             String::new()
         };

@@ -1,3 +1,6 @@
+// Test code slices literal fixtures; the string_slice lint guards production code.
+#![allow(clippy::string_slice)]
+
 mod assistant_message;
 mod bash_execution_width;
 mod diff_gold;

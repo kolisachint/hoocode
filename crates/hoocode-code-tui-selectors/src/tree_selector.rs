@@ -143,7 +143,10 @@ fn format_tool_call(name: &str, args: &Value) -> String {
     let shorten = |p: String| -> String {
         let home = home();
         if !home.is_empty() && p.starts_with(&home) {
-            format!("~{}", &p[home.len()..])
+            format!(
+                "~{}",
+                hoocode_tui_util::text_slice::suffix_from(&p, home.len())
+            )
         } else {
             p
         }
@@ -223,7 +226,7 @@ fn format_label_timestamp(timestamp: &str) -> String {
         return format!("{}/{} {time}", date.month(), date.day());
     }
     let year = date.year().to_string();
-    let short = &year[year.len().saturating_sub(2)..];
+    let short = hoocode_tui_util::text_slice::suffix_from(&year, year.len().saturating_sub(2));
     format!("{short}/{}/{} {time}", date.month(), date.day())
 }
 

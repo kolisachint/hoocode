@@ -97,7 +97,10 @@ fn home_dir() -> Option<String> {
 /// `formatDisplayPath`: the home directory as `~`.
 pub fn format_display_path(p: &str) -> String {
     match home_dir() {
-        Some(home) if p.starts_with(&home) => format!("~{}", &p[home.len()..]),
+        Some(home) if p.starts_with(&home) => format!(
+            "~{}",
+            hoocode_tui_util::text_slice::suffix_from(p, home.len())
+        ),
         _ => p.to_string(),
     }
 }
@@ -165,7 +168,8 @@ fn get_short_path(full_path: &str, info: Option<&SourceInfo>) -> String {
         }
         if info.source.starts_with("npm:") {
             if let Some(i) = full_path.find("node_modules/") {
-                let rest = &full_path[i + "node_modules/".len()..];
+                let rest =
+                    hoocode_tui_util::text_slice::suffix_from(full_path, i + "node_modules/".len());
                 let skip = if rest.starts_with('@') { 2 } else { 1 };
                 let parts: Vec<&str> = rest.splitn(skip + 1, '/').collect();
                 if parts.len() == skip + 1 {
@@ -175,7 +179,9 @@ fn get_short_path(full_path: &str, info: Option<&SourceInfo>) -> String {
         }
         if info.source.starts_with("git:") {
             if let Some(i) = full_path.find("git/") {
-                let parts: Vec<&str> = full_path[i + 4..].splitn(3, '/').collect();
+                let parts: Vec<&str> = hoocode_tui_util::text_slice::suffix_from(full_path, i + 4)
+                    .splitn(3, '/')
+                    .collect();
                 if parts.len() == 3 {
                     return parts[2].to_string();
                 }
@@ -222,7 +228,10 @@ fn compact_extension_label(path: &str, info: Option<&SourceInfo>) -> String {
         .unwrap_or(&short)
         .to_string();
     let (dir, file) = match package_path.rfind('/') {
-        Some(i) => (&package_path[..i], &package_path[i + 1..]),
+        Some(i) => (
+            hoocode_tui_util::text_slice::prefix(&package_path, i),
+            hoocode_tui_util::text_slice::suffix_from(&package_path, i + 1),
+        ),
         None => ("", package_path.as_str()),
     };
     let stem = file.rsplit_once('.').map_or(file, |(s, _)| s);
@@ -425,7 +434,7 @@ fn find_source_info<'a>(p: &str, infos: &'a [(String, SourceInfo)]) -> Option<&'
     }
     let mut current = p;
     while let Some(i) = current.rfind('/') {
-        current = &current[..i];
+        current = hoocode_tui_util::text_slice::prefix(current, i);
         if let Some(parent) = get(current) {
             return Some(parent);
         }

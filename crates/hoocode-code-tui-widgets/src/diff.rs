@@ -19,27 +19,27 @@ fn parse_diff_line(line: &str) -> Option<DiffLine<'_>> {
     if !(prefix == '+' || prefix == '-' || crate::is_js_space(prefix)) {
         return None;
     }
-    let rest = &line[prefix.len_utf8()..];
+    let rest = hoocode_tui_util::text_slice::suffix_from(line, prefix.len_utf8());
     // `(\s*\d*)\s(.*)`: the greedy groups backtrack until a whitespace follows.
     let spaces = rest.len() - rest.trim_start_matches(crate::is_js_space).len();
-    let digits = rest[spaces..]
+    let digits = hoocode_tui_util::text_slice::suffix_from(rest, spaces)
         .bytes()
         .take_while(u8::is_ascii_digit)
         .count();
     let mut num_end = spaces + digits;
     loop {
-        let after = &rest[num_end..];
+        let after = hoocode_tui_util::text_slice::suffix_from(rest, num_end);
         if let Some(c) = after
             .chars()
             .next()
             .filter(|c| crate::is_js_space(*c) && *c != '\n')
         {
             // `.` excludes line terminators; content must not contain them.
-            let content = &after[c.len_utf8()..];
+            let content = hoocode_tui_util::text_slice::suffix_from(after, c.len_utf8());
             if !content.contains(['\n', '\r', '\u{2028}', '\u{2029}']) {
                 return Some(DiffLine {
                     prefix,
-                    line_num: &rest[..num_end],
+                    line_num: hoocode_tui_util::text_slice::prefix(rest, num_end),
                     content,
                 });
             }
@@ -48,7 +48,11 @@ fn parse_diff_line(line: &str) -> Option<DiffLine<'_>> {
             return None;
         }
         // Give back one character of the number group and retry.
-        let back = rest[..num_end].chars().next_back().unwrap().len_utf8();
+        let back = hoocode_tui_util::text_slice::prefix(rest, num_end)
+            .chars()
+            .next_back()
+            .unwrap()
+            .len_utf8();
         num_end -= back;
     }
 }
@@ -64,8 +68,8 @@ fn render_intra_line_diff(old: &str, new: &str) -> (String, String) {
             let mut value = part.value.as_str();
             if first_removed {
                 let ws = value.len() - value.trim_start_matches(crate::is_js_space).len();
-                removed.push_str(&value[..ws]);
-                value = &value[ws..];
+                removed.push_str(hoocode_tui_util::text_slice::prefix(value, ws));
+                value = hoocode_tui_util::text_slice::suffix_from(value, ws);
                 first_removed = false;
             }
             if !value.is_empty() {
@@ -75,8 +79,8 @@ fn render_intra_line_diff(old: &str, new: &str) -> (String, String) {
             let mut value = part.value.as_str();
             if first_added {
                 let ws = value.len() - value.trim_start_matches(crate::is_js_space).len();
-                added.push_str(&value[..ws]);
-                value = &value[ws..];
+                added.push_str(hoocode_tui_util::text_slice::prefix(value, ws));
+                value = hoocode_tui_util::text_slice::suffix_from(value, ws);
                 first_added = false;
             }
             if !value.is_empty() {

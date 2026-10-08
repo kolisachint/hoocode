@@ -25,3 +25,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 [dev-dependencies]
 regex = "1"
 tempfile = "3"
+
+# Byte-index slices of text are a panic risk on multi-byte input (see docs/design/reliability.md, 1.5).
+[lints.clippy]
+string_slice = "warn"

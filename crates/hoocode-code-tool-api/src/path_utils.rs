@@ -1,5 +1,6 @@
 //! Path resolution for tool arguments (`core/tools/path-utils.ts`).
 
+use crate::text_slice;
 use std::path::{Component, Path, PathBuf};
 use unicode_normalization::UnicodeNormalization;
 
@@ -19,7 +20,7 @@ fn normalize_file_url(file_path: &str) -> String {
     if !file_path.starts_with("file:///") {
         return file_path.to_string();
     }
-    let stripped = &file_path["file://".len()..];
+    let stripped = file_path.strip_prefix("file://").unwrap_or(file_path);
     // fileURLToPath refuses an encoded "/" in a path segment.
     let lower = file_path.to_ascii_lowercase();
     if lower.contains("%2f") {
@@ -107,16 +108,17 @@ fn try_macos_screenshot_path(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut rest = s;
     while let Some(i) = rest.find(' ') {
-        let after = &rest[i + 1..];
+        let after = text_slice::suffix_from(rest, i + 1);
+        let head = text_slice::prefix(after, 2);
         let matched = after.len() >= 3
             && after.is_char_boundary(2)
-            && (after[..2].eq_ignore_ascii_case("am") || after[..2].eq_ignore_ascii_case("pm"))
+            && (head.eq_ignore_ascii_case("am") || head.eq_ignore_ascii_case("pm"))
             && after.as_bytes()[2] == b'.';
-        out.push_str(&rest[..i]);
+        out.push_str(text_slice::prefix(rest, i));
         if matched {
             out.push(NARROW_NO_BREAK_SPACE);
-            out.push_str(&after[..3]);
-            rest = &after[3..];
+            out.push_str(text_slice::prefix(after, 3));
+            rest = text_slice::suffix_from(after, 3);
         } else {
             out.push(' ');
             rest = after;
@@ -227,6 +229,13 @@ mod tests {
             "A\u{202F}AM. B\u{202F}PM."
         );
         assert_eq!(try_macos_screenshot_path("no match here"), "no match here");
+    }
+
+    #[test]
+    fn am_pm_scan_survives_multibyte_text_after_a_space() {
+        // Index 2 after the space falls inside "日" (3 bytes); "é" is 2 bytes.
+        assert_eq!(try_macos_screenshot_path("x 日本語.png"), "x 日本語.png");
+        assert_eq!(try_macos_screenshot_path("é é am. ü"), "é é\u{202F}am. ü");
     }
 
     #[test]

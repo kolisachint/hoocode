@@ -62,12 +62,15 @@ pub fn utf16_to_byte(s: &str, idx: usize) -> usize {
 
 /// The UTF-16 index of byte offset `byte` in `s`.
 pub fn byte_to_utf16(s: &str, byte: usize) -> usize {
-    s[..byte].chars().map(char::len_utf16).sum()
+    crate::text_slice::prefix(s, byte)
+        .chars()
+        .map(char::len_utf16)
+        .sum()
 }
 
 /// `s.slice(start)` with a UTF-16 start index.
 pub fn js_slice_from(s: &str, start: usize) -> &str {
-    &s[utf16_to_byte(s, start)..]
+    crate::text_slice::suffix_from(s, utf16_to_byte(s, start))
 }
 
 /// Translate a JavaScript regex source (with its flags) to the Rust dialect.
@@ -223,8 +226,8 @@ pub fn translate(source: &str, flags: &str) -> String {
                 // A `}` closing a quantifier follows digits opened by `{`.
                 let before: String = out.chars().rev().take_while(|&c| c != '{').collect();
                 let opened = out.len() > before.len()
-                    && out[..out.len() - before.len()].ends_with('{')
-                    && !out[..out.len() - before.len()].ends_with(r"\{")
+                    && crate::text_slice::prefix(&out, out.len() - before.len()).ends_with('{')
+                    && !crate::text_slice::prefix(&out, out.len() - before.len()).ends_with(r"\{")
                     && before.chars().all(|c| c.is_ascii_digit() || c == ',');
                 if opened {
                     out.push('}');
@@ -312,7 +315,7 @@ impl<'h> Match<'h> {
             .get(i)
             .copied()
             .flatten()
-            .map(|(a, b)| &self.hay[a..b])
+            .map(|(a, b)| crate::text_slice::range(self.hay, a, b))
     }
 
     /// Group `i` with JavaScript truthiness: `Some` only for a non-empty capture.
@@ -405,12 +408,12 @@ impl JsRegex {
             let Some(m) = self.exec_at(hay, pos) else {
                 break;
             };
-            out.push_str(&hay[last..m.index()]);
+            out.push_str(crate::text_slice::range(hay, last, m.index()));
             out.push_str(&f(&m));
             last = m.end();
             pos = if m.end() == m.index() {
                 // Step over an empty match by one character.
-                match hay[m.end()..].chars().next() {
+                match crate::text_slice::suffix_from(hay, m.end()).chars().next() {
                     Some(c) => m.end() + c.len_utf8(),
                     None => hay.len() + 1,
                 }
@@ -422,7 +425,7 @@ impl JsRegex {
             }
         }
         if last <= hay.len() {
-            out.push_str(&hay[last..]);
+            out.push_str(crate::text_slice::suffix_from(hay, last));
         }
         out
     }

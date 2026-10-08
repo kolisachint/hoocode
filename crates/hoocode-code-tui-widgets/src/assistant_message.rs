@@ -40,7 +40,7 @@ fn after_indent(line: &str) -> &str {
     if spaces > 3 {
         return "\u{0}";
     }
-    &line[spaces..]
+    hoocode_tui_util::text_slice::suffix_from(line, spaces)
 }
 
 /// `/^ {0,3}(?:[-*+] |\d{1,9}[.)] )/`
@@ -65,12 +65,14 @@ fn is_fence(line: &str) -> bool {
 fn has_link_def(text: &str) -> bool {
     let starts = std::iter::once(0).chain(text.match_indices('\n').map(|(i, _)| i + 1));
     for start in starts {
-        let rest = after_indent(&text[start..]);
+        let rest = after_indent(hoocode_tui_util::text_slice::suffix_from(text, start));
         let Some(label) = rest.strip_prefix('[') else {
             continue;
         };
         if let Some(close) = label.find(']') {
-            if close > 0 && label[close + 1..].starts_with(": ") {
+            if close > 0
+                && hoocode_tui_util::text_slice::suffix_from(label, close + 1).starts_with(": ")
+            {
                 return true;
             }
         }
@@ -85,7 +87,9 @@ fn is_setext_underline(line: &str) -> bool {
         return false;
     };
     let run = rest.chars().take_while(|&c| c == first).count();
-    rest[run..].chars().all(is_js_space)
+    hoocode_tui_util::text_slice::suffix_from(rest, run)
+        .chars()
+        .all(is_js_space)
 }
 
 fn is_blank(line: &str) -> bool {

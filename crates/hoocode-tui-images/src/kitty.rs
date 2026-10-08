@@ -38,7 +38,7 @@ pub fn encode_kitty(base64_data: &str, options: &KittyEncodeOptions) -> String {
 
     while offset < bytes.len() {
         let end = (offset + CHUNK_SIZE).min(bytes.len());
-        let chunk = &base64_data[offset..end];
+        let chunk = hoocode_tui_util::text_slice::range(base64_data, offset, end);
         let is_last = end >= bytes.len();
 
         if is_first {
