@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Tests for the process runtime: worker count, thread names, the tools pool
 //! cap, the parallel tool limit, the channel helpers and the session writer.
 

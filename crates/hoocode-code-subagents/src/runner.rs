@@ -148,18 +148,21 @@ fn pump<R: std::io::Read + Send + 'static>(
     tx: mpsc::Sender<Vec<u8>>,
 ) -> Option<std::thread::JoinHandle<()>> {
     let mut pipe = pipe?;
-    Some(std::thread::spawn(move || {
-        let mut buf = vec![0u8; 16 * 1024];
-        loop {
-            let n = match pipe.read(&mut buf) {
-                Ok(0) | Err(_) => break,
-                Ok(n) => n,
-            };
-            if tx.blocking_send(buf[..n].to_vec()).is_err() {
-                break;
+    Some(hoocode_runtime::spawn_thread(
+        "hoocode-subagent",
+        move || {
+            let mut buf = vec![0u8; 16 * 1024];
+            loop {
+                let n = match pipe.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => n,
+                };
+                if tx.blocking_send(buf[..n].to_vec()).is_err() {
+                    break;
+                }
             }
-        }
-    }))
+        },
+    ))
 }
 
 impl ProcessHandle {

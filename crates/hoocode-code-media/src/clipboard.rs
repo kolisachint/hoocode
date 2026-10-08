@@ -238,7 +238,7 @@ impl ClipboardHost for SystemClipboardHost {
             let _ = stdin.write_all(input.as_bytes());
         }
         // Reap it off-thread; wl-copy daemonizes and keeps ownership.
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-clipboard-copy", move || {
             let _ = child.wait();
         });
         Ok(())

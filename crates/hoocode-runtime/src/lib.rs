@@ -36,5 +36,5 @@ pub use session_io::{
 };
 #[cfg(unix)]
 pub use signals::{watch_sigwinch, SignalWatch};
-pub use threads::{bounded_channel, spawn_named_thread, sync_bounded_channel};
+pub use threads::{bounded_channel, spawn_named_thread, spawn_thread, sync_bounded_channel};
 pub use tokio::task::JoinError;

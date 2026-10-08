@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Stream tests against a recording mock server.
 //!
 //! Ported from the streaming cases of `openai-completions-tool-choice.test.ts`,

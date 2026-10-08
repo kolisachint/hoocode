@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! The proper-lockfile-compatible lock: a `<file>.lock` directory, fresh holders
 //! are respected, stale ones (mtime older than the stale window) are taken over.
 

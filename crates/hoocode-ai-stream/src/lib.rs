@@ -320,7 +320,7 @@ mod tests {
     fn waiting_consumer_is_woken_by_a_producer_thread() {
         let s = numbers();
         let producer = s.clone();
-        let t = std::thread::spawn(move || {
+        let t = hoocode_runtime::spawn_thread("hoocode-ai-stream-test", move || {
             std::thread::sleep(std::time::Duration::from_millis(20));
             producer.push(4);
             producer.push(-1);
@@ -422,7 +422,7 @@ pub mod testing {
         let addr = listener.local_addr().unwrap();
         let head =
             format!("{status_line}\r\ncontent-type: {content_type}\r\nconnection: close\r\n\r\n");
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ai-stream-test", move || {
             if let Ok((mut stream, _)) = listener.accept() {
                 // Drain the request (headers + body) without parsing it.
                 let mut buf = [0u8; 65536];
@@ -568,7 +568,7 @@ pub mod testing {
             .into_iter()
             .map(|(a, b, c)| (a.to_string(), b.to_string(), c.to_string()))
             .collect();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ai-stream-test", move || {
             let mut script = responses.into_iter();
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else { return };

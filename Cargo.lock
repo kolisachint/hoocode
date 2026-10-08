@@ -1359,6 +1359,7 @@ version = "0.1.8"
 dependencies = [
  "base64 0.22.1",
  "fancy-regex",
+ "hoocode-runtime",
  "image",
  "serde_json",
 ]
@@ -1566,11 +1567,13 @@ dependencies = [
  "hoocode-agent-types",
  "hoocode-ai-types",
  "hoocode-code-tool-api",
+ "hoocode-runtime",
  "libc",
  "process-wrap",
  "regex-lite",
  "serde_json",
  "tempfile",
+ "tokio",
 ]
 
 [[package]]
@@ -1677,6 +1680,7 @@ dependencies = [
  "hoocode-code-tui-selectors",
  "hoocode-code-tui-theme",
  "hoocode-code-tui-widgets",
+ "hoocode-runtime",
  "hoocode-tui-components",
  "hoocode-tui-fuzzy",
  "hoocode-tui-images",
@@ -1736,6 +1740,7 @@ version = "0.1.8"
 dependencies = [
  "hoocode-code-paths",
  "hoocode-code-session",
+ "hoocode-runtime",
  "hoocode-tui-components",
  "hoocode-tui-highlight",
  "hoocode-tui-render",
@@ -1784,6 +1789,7 @@ dependencies = [
 name = "hoocode-tui-components"
 version = "0.1.8"
 dependencies = [
+ "hoocode-runtime",
  "hoocode-tui-editing",
  "hoocode-tui-fuzzy",
  "hoocode-tui-images",
@@ -1850,6 +1856,7 @@ dependencies = [
  "crossterm",
  "hoocode-runtime",
  "hoocode-tui-util",
+ "libc",
  "windows-sys 0.59.0",
 ]
 

@@ -28,7 +28,7 @@ where
 {
     Box::new(move |sink: LoadSink| {
         let list = list.clone();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-session-picker", move || {
             let progress_sink = sink.clone();
             let progress: Box<SessionListProgress> =
                 Box::new(move |loaded, total| progress_sink.progress(loaded, total));

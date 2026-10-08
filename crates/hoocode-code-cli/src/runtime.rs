@@ -1576,7 +1576,7 @@ mod tests {
             _on_resize: Box<dyn FnMut() + Send>,
         ) {
             let script = std::mem::take(&mut self.script);
-            std::thread::spawn(move || {
+            hoocode_runtime::spawn_thread("hoocode-cli-worker", move || {
                 for (delay, keys) in script {
                     std::thread::sleep(std::time::Duration::from_millis(delay));
                     on_input(keys);

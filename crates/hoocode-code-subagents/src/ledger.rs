@@ -604,21 +604,24 @@ mod tests {
         let mut handles = Vec::new();
         for worker in 0..8 {
             let root = dir.path().to_path_buf();
-            handles.push(std::thread::spawn(move || {
-                for i in 0..50 {
-                    append(
-                        &root,
-                        &DispatchAttempt {
-                            ts: i,
-                            task_id: format!("w{worker}-{i}"),
-                            agent_type: "explore".into(),
-                            status: "complete".into(),
-                            ok: true,
-                            ..Default::default()
-                        },
-                    );
-                }
-            }));
+            handles.push(hoocode_runtime::spawn_thread(
+                "hoocode-ledger-test",
+                move || {
+                    for i in 0..50 {
+                        append(
+                            &root,
+                            &DispatchAttempt {
+                                ts: i,
+                                task_id: format!("w{worker}-{i}"),
+                                agent_type: "explore".into(),
+                                status: "complete".into(),
+                                ok: true,
+                                ..Default::default()
+                            },
+                        );
+                    }
+                },
+            ));
         }
         for handle in handles {
             handle.join().unwrap();

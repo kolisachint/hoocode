@@ -17,6 +17,7 @@ publish = true
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 hoocode-tui-editing = { workspace = true }
 hoocode-tui-fuzzy = { workspace = true }
 hoocode-tui-images = { workspace = true }

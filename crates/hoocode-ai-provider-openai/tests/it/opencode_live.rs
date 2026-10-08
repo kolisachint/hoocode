@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Live end-to-end tests for OpenCode API (ignored by default; run with
 //! `OPENCODE_API_KEY=... cargo test -p hoocode-ai-provider-openai --test opencode_live -- --ignored`).
 //!

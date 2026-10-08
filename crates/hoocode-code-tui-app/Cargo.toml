@@ -17,6 +17,7 @@ publish = false
 doctest = false
 
 [dependencies]
+hoocode-runtime = { workspace = true }
 libc = "0.2"
 hoocode-agent-types = { workspace = true }
 hoocode-agent-compaction = { workspace = true }

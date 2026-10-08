@@ -125,6 +125,7 @@ pub fn execute_bash_with_operations(
         cwd,
         BashExecOptions {
             on_data: &mut |data| collector.on_data(data),
+            on_idle: None,
             signal: signal.clone(),
             timeout: None,
             env: None,

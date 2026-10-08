@@ -203,7 +203,7 @@ impl FooterDataProvider {
             return;
         };
         let weak = Arc::downgrade(&self.inner);
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-footer", move || {
             let reftable = paths.common_git_dir.join("reftable");
             let watched = [
                 paths.head_path.clone(),

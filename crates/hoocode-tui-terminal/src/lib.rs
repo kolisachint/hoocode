@@ -6,9 +6,11 @@
 //! for (bracketed paste, Kitty keyboard protocol negotiation, OSC progress /
 //! title) are written directly, matching the byte sequences hoocode used.
 
+pub mod interrupt;
 pub mod mouse;
 mod output;
 mod stdin_buffer;
+mod stdin_hub;
 
 pub use mouse::{
     is_mouse_sequence, mouse_sequence_length, parse_mouse_event, MouseEvent, MouseEventKind,
@@ -290,11 +292,7 @@ impl ProcessTerminal {
 }
 
 impl Terminal for ProcessTerminal {
-    fn start(
-        &mut self,
-        mut on_input: Box<dyn FnMut(&str) + Send>,
-        on_resize: Box<dyn FnMut() + Send>,
-    ) {
+    fn start(&mut self, on_input: Box<dyn FnMut(&str) + Send>, on_resize: Box<dyn FnMut() + Send>) {
         if self.started {
             return;
         }
@@ -366,71 +364,18 @@ impl Terminal for ProcessTerminal {
             });
         }
 
-        // Input: the process-wide stdin reader hands raw chunks to this
-        // terminal while it is started; StdinBuffer parses them into complete
-        // sequences for `on_input`, intercepting the Kitty protocol query
-        // response before it reaches the caller.
-        let forwarding = self.forwarding.clone();
-        let kitty_active = self.kitty_protocol_active.clone();
-        let last_input_at = self.last_input_at.clone();
-        let buf = Arc::new(Mutex::new(StdinBuffer::new(StdinBufferOptions::default())));
-        let writer = self.writer();
-        type Deliver = Arc<Mutex<Box<dyn FnMut(Vec<StdinEvent>) + Send>>>;
-        let deliver: Deliver = Arc::new(Mutex::new(Box::new(move |events: Vec<StdinEvent>| {
-            for event in events {
-                if !forwarding.load(Ordering::SeqCst) {
-                    continue;
-                }
-                match event {
-                    StdinEvent::Data(seq) => {
-                        if !kitty_active.load(Ordering::SeqCst) && parse_kitty_query_response(&seq)
-                        {
-                            kitty_active.store(true, Ordering::SeqCst);
-                            writer.write("\x1b[>7u");
-                            continue;
-                        }
-                        on_input(&seq);
-                    }
-                    StdinEvent::Paste(content) => {
-                        on_input(&format!("\x1b[200~{content}\x1b[201~"));
-                    }
-                }
-            }
-        })));
-        stdin_hub::subscribe(Box::new(move |chunk: &[u8]| {
-            *last_input_at.lock().unwrap() = Instant::now();
-
-            let text = if chunk.len() == 1 && chunk[0] > 127 {
-                format!("\x1b{}", (chunk[0] - 128) as char)
-            } else {
-                String::from_utf8_lossy(chunk).into_owned()
-            };
-
-            let (events, flush_after) = {
-                let mut b = buf.lock().unwrap_or_else(|e| e.into_inner());
-                let events = b.process(&text);
-                (events, b.has_pending().then(|| b.timeout()))
-            };
-            (deliver.lock().unwrap_or_else(|e| e.into_inner()))(events);
-
-            // An incomplete sequence (a lone ESC above all) is flushed once
-            // no more input arrives within the timeout (the original's
-            // setTimeout); input that completes it first resets the clock.
-            if let Some(timeout) = flush_after {
-                let buf = buf.clone();
-                let deliver = deliver.clone();
-                let _ = spawn_named_thread("hoocode-input-timer", move || {
-                    thread::sleep(timeout);
-                    let events = buf
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .poll_timeout(Instant::now());
-                    if !events.is_empty() {
-                        (deliver.lock().unwrap_or_else(|e| e.into_inner()))(events);
-                    }
-                });
-            }
-        }));
+        // Input: the process-wide stdin reader feeds this terminal while it is
+        // started (see `stdin_hub`): Ctrl+C is seen first, then StdinBuffer
+        // parses the chunks into sequences for `on_input`, and the ESC timer
+        // runs on the reader's own deadline.
+        let feed = stdin_hub::Feed::new(
+            self.forwarding.clone(),
+            self.kitty_protocol_active.clone(),
+            self.last_input_at.clone(),
+            self.writer(),
+            on_input,
+        );
+        stdin_hub::subscribe(Arc::new(Mutex::new(feed)));
 
         // Resize: SIGWINCH on Unix (no polling); size polling on Windows.
         let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
@@ -668,61 +613,5 @@ mod tests {
     fn new_terminal_is_not_kitty_active_by_default() {
         let term = ProcessTerminal::new();
         assert!(!term.kitty_protocol_active());
-    }
-}
-
-/// The one stdin reader for the process. A blocking read cannot be
-/// interrupted, so a reader per terminal would outlive a stopped terminal and
-/// swallow the next terminal's first keys (`--resume`'s picker, then the
-/// interactive mode). Chunks go to the started terminal, or wait for the next.
-mod stdin_hub {
-    use std::io::Read;
-    use std::sync::{Mutex, Once};
-
-    type Sink = Box<dyn FnMut(&[u8]) + Send>;
-
-    struct Hub {
-        sink: Option<Sink>,
-        pending: Vec<Vec<u8>>,
-    }
-
-    static HUB: Mutex<Hub> = Mutex::new(Hub {
-        sink: None,
-        pending: Vec::new(),
-    });
-    static READER: Once = Once::new();
-
-    fn lock_hub() -> std::sync::MutexGuard<'static, Hub> {
-        HUB.lock().unwrap_or_else(|e| e.into_inner())
-    }
-
-    pub(crate) fn subscribe(mut sink: Sink) {
-        let mut hub = lock_hub();
-        for chunk in std::mem::take(&mut hub.pending) {
-            sink(&chunk);
-        }
-        hub.sink = Some(sink);
-        drop(hub);
-        READER.call_once(|| {
-            let _ = hoocode_runtime::spawn_named_thread("hoocode-input", || {
-                let mut chunk = [0u8; 4096];
-                let mut stdin = std::io::stdin();
-                loop {
-                    let n = match stdin.read(&mut chunk) {
-                        Ok(0) | Err(_) => break,
-                        Ok(n) => n,
-                    };
-                    let mut hub = lock_hub();
-                    match hub.sink.as_mut() {
-                        Some(sink) => sink(&chunk[..n]),
-                        None => hub.pending.push(chunk[..n].to_vec()),
-                    }
-                }
-            });
-        });
-    }
-
-    pub(crate) fn unsubscribe() {
-        lock_hub().sink = None;
     }
 }

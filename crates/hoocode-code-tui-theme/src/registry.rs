@@ -516,7 +516,7 @@ fn start_theme_watcher() {
     }
     let stop = Arc::new(AtomicBool::new(false));
     state().watcher = Some(stop.clone());
-    std::thread::spawn(move || {
+    hoocode_runtime::spawn_thread("hoocode-theme-watch", move || {
         let mut last = file_signature(&theme_file);
         let mut pending: Option<Instant> = None;
         while !stop.load(Ordering::Relaxed) {
