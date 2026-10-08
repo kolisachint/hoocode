@@ -1,0 +1,120 @@
+name: Reserve hoocode on npm and PyPI
+
+# One-off: publish 0.0.1 placeholder packages named `hoocode` (unscoped) to npm
+# and PyPI so nobody else takes the name. Each placeholder points at the repo and
+# the current install command, so it is not an empty squat (npm and PyPI reclaim
+# those). Safe to re-run: a registry that already has `hoocode` is skipped.
+# Manual only: run it from the Actions tab once this file is on main.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  npm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - name: Build placeholder
+        run: |
+          mkdir -p pkg/bin && cd pkg
+          cat > package.json <<'EOF'
+          {
+            "name": "hoocode",
+            "version": "0.0.1",
+            "description": "hoocode coding agent (name reserved; see README)",
+            "homepage": "https://github.com/kolisachint/hoocode",
+            "repository": { "type": "git", "url": "git+https://github.com/kolisachint/hoocode.git" },
+            "license": "MIT",
+            "bin": { "hoocode": "bin/hoocode.js" },
+            "files": ["bin", "README.md"]
+          }
+          EOF
+          cat > bin/hoocode.js <<'EOF'
+          #!/usr/bin/env node
+          console.log("This is a placeholder for hoocode. Install the current build with:\n  npm install -g @kolisachint/hoocode-agent");
+          EOF
+          chmod +x bin/hoocode.js
+          cat > README.md <<'EOF'
+          # hoocode
+
+          Reserved name for the hoocode coding agent (https://github.com/kolisachint/hoocode).
+          Until a release ships under this name, install the current build:
+
+              npm install -g @kolisachint/hoocode-agent
+          EOF
+      - name: Publish
+        working-directory: pkg
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -z "$NODE_AUTH_TOKEN" ]; then echo "::error::NPM_TOKEN secret is not set"; exit 1; fi
+          if npm view hoocode name >/dev/null 2>&1; then
+            echo "hoocode already on npm:"; npm view hoocode name version maintainers; exit 0
+          fi
+          npm publish --access public
+      - name: Verify
+        run: |
+          for i in 1 2 3 4 5 6; do npm view hoocode name version maintainers && exit 0; sleep 20; done
+          echo "::error::hoocode not readable on npm after publish"; exit 1
+
+  pypi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build placeholder
+        run: |
+          mkdir -p pkg/src/hoocode && cd pkg
+          cat > pyproject.toml <<'EOF'
+          [build-system]
+          requires = ["hatchling"]
+          build-backend = "hatchling.build"
+
+          [project]
+          name = "hoocode"
+          version = "0.0.1"
+          description = "hoocode coding agent (name reserved; see README)"
+          readme = "README.md"
+          license = "MIT"
+          requires-python = ">=3.8"
+
+          [project.urls]
+          Homepage = "https://github.com/kolisachint/hoocode"
+          EOF
+          echo '"""hoocode: name reserved, see https://github.com/kolisachint/hoocode."""' > src/hoocode/__init__.py
+          cat > README.md <<'EOF'
+          # hoocode
+
+          Reserved name for the hoocode coding agent (https://github.com/kolisachint/hoocode).
+          Until a release ships under this name, install the current build:
+
+              npm install -g @kolisachint/hoocode-agent
+          EOF
+          pip install -q build twine
+          python -m build
+          twine check dist/*
+      - name: Publish
+        working-directory: pkg
+        env:
+          TWINE_USERNAME: __token__
+          TWINE_PASSWORD: ${{ secrets.PYPI_TOKEN || secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$TWINE_PASSWORD" ]; then echo "::error::PYPI_TOKEN (or PYPI_API_TOKEN) secret is not set"; exit 1; fi
+          if curl -sf https://pypi.org/pypi/hoocode/json >/dev/null; then
+            echo "hoocode already on PyPI"; exit 0
+          fi
+          twine upload dist/*
+      - name: Verify
+        run: |
+          for i in 1 2 3 4 5 6; do
+            curl -sf https://pypi.org/pypi/hoocode/json | python3 -c 'import sys,json;i=json.load(sys.stdin)["info"];print(i["name"],i["version"])' && exit 0
+            sleep 20
+          done
+          echo "::error::hoocode not readable on PyPI after publish"; exit 1
