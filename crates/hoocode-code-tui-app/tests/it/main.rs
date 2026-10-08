@@ -1,4 +1,5 @@
 mod anthropic_warning_ts;
+mod at_file_completion;
 mod chrome_layout;
 mod extension_selector;
 mod footer;

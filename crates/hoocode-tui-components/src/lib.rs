@@ -22,7 +22,8 @@ mod truncated_text;
 
 pub use autocomplete::{
     ApplyCompletionResult, ArgumentCompletionsFn, AutocompleteItem, AutocompleteProvider,
-    AutocompleteSuggestions, CombinedAutocompleteProvider, CommandEntry, SlashCommand,
+    AutocompleteSuggestions, CombinedAutocompleteProvider, CommandEntry, FileFinder, FileMatch,
+    SlashCommand,
 };
 pub use box_component::{BoxComponent, PaperFn, PaperSheet};
 pub use cancellable_loader::{AbortSignal, CancellableLoader};

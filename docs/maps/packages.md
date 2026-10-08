@@ -129,7 +129,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 10 | 1058 / 120 | keep |
 | `code-tool-bash` | The bash tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1389 / 508 | keep |
 | `code-tool-search` | SearchCodebase for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1960 / 1185 | keep |
-| `code-tools` | Coding tools for the hoocode coding agent | 4 | 1277 / 0 | keep |
+| `code-tools` | Coding tools for the hoocode coding agent | 4 | 1522 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3285 / 2384 | keep |
 | `code-tools-optin` | Opt-in tools for the hoocode coding agent: TodoWrite and ask_options | 3 | 545 / 540 | keep |
 
@@ -137,7 +137,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 11367 / 4567 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 11381 / 4930 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 836 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7998 / 3305 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2406 / 2502 | keep |
@@ -147,7 +147,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `tui-components` | UI components for the hoocode TUI | 4 | 9800 / 7277 | keep |
+| `tui-components` | UI components for the hoocode TUI | 4 | 9682 / 6994 | keep |
 | `tui-editing` | Text editing primitives for the hoocode TUI | 1 | 307 / 0 | keep |
 | `tui-fuzzy` | Fuzzy matching for the hoocode TUI | 4 | 374 / 0 | keep |
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1963 / 72 | keep |
