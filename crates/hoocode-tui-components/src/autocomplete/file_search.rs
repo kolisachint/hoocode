@@ -1,13 +1,15 @@
 //! Runs the `@file` finder off the UI thread.
 //!
 //! A [`FileFinder`] can take a long time on a big tree, so it runs on one
-//! worker thread. [`FileSearch::results`] never waits: it returns the matches
-//! for the query asked for once their walk has finished, and otherwise starts
-//! the walk and returns `None`. Each new query bumps a generation counter, and
-//! a walk whose generation is no longer current drops its matches, so a query
-//! the user has typed past never shows results. When the walk for the current
-//! query finishes, [`FileSearch::take_completed`] reports it once, and the
-//! editor asks the provider again.
+//! worker thread. [`FileSearch::results`] never waits. It returns the matches
+//! for the query asked for once their walk has finished. While a newer walk
+//! runs, it returns the matches of the last finished walk for the same base,
+//! so the list does not flicker as the user types; the caller narrows them by
+//! the new query. Each new query bumps a generation counter, and a walk whose
+//! generation is no longer current drops its matches, so a query the user has
+//! typed past never shows its results. When the walk for the current query
+//! finishes, [`FileSearch::take_completed`] reports it once, and the editor
+//! asks the provider again.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -32,6 +34,9 @@ struct State {
     walking: bool,
     /// Matches for `wanted`, once its walk has finished.
     ready: Option<Vec<FileMatch>>,
+    /// Matches of the last finished walk, with its base. Shown while a newer
+    /// walk runs; cleared by [`FileSearch::forget`].
+    last: Option<(PathBuf, Vec<FileMatch>)>,
     /// Set when `ready` is stored, cleared by [`FileSearch::take_completed`].
     completed: bool,
 }
@@ -65,28 +70,40 @@ impl FileSearch {
         Some(Self { state, requests })
     }
 
-    /// The matches for `query` under `base` if their walk has finished.
-    /// Otherwise starts that walk (unless it is already the wanted query) and
-    /// returns `None` at once.
-    pub fn results(&self, base: &Path, query: &str) -> Option<Vec<FileMatch>> {
+    /// The matches for `query` under `base`. Once that query's walk has
+    /// finished, these are its matches. Until then, they are the last finished
+    /// walk's matches for `base`, or nothing. A query that is not the wanted
+    /// one starts its walk at once; this never waits.
+    pub fn results(&self, base: &Path, query: &str) -> Vec<FileMatch> {
         let key = (base.to_path_buf(), query.to_string());
         let mut state = lock(&self.state);
         if state.wanted.as_ref() == Some(&key) {
-            return state.ready.clone();
+            if let Some(ready) = &state.ready {
+                return ready.clone();
+            }
+        } else {
+            state.generation += 1;
+            state.wanted = Some(key.clone());
+            state.ready = None;
+            state.walking = true;
+            let request = Request {
+                generation: state.generation,
+                key,
+            };
+            // The worker outlives the provider's requests; a send error only
+            // means the worker is gone, and then there is nothing to wait for.
+            let _ = self.requests.send(request);
         }
-        state.generation += 1;
-        state.wanted = Some(key.clone());
-        state.ready = None;
-        state.walking = true;
-        let request = Request {
-            generation: state.generation,
-            key,
-        };
-        drop(state);
-        // The worker outlives the provider's requests; a send error only
-        // means the worker is gone, and then there is nothing to wait for.
-        let _ = self.requests.send(request);
-        None
+        match &state.last {
+            Some((last_base, matches)) if last_base == base => matches.clone(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Drops the last finished walk's matches. Called when `@` completion ends,
+    /// so a later `@` does not show matches from an earlier one.
+    pub fn forget(&self) {
+        lock(&self.state).last = None;
     }
 
     /// Whether a walk for the current query is still running.
@@ -110,6 +127,7 @@ fn run_worker(finder: &FileFinder, inbox: &Receiver<Request>, state: &Mutex<Stat
         let found = finder(base, query, MAX_RESULTS);
         let mut state = lock(state);
         if request.generation == state.generation {
+            state.last = Some((base.clone(), found.clone()));
             state.ready = Some(found);
             state.walking = false;
             state.completed = true;

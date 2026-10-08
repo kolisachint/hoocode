@@ -406,8 +406,9 @@ impl CombinedAutocompleteProvider {
     }
 
     /// Fuzzy file search through the injected [`FileFinder`], on its worker
-    /// thread. Returns nothing while the walk for this query is still running;
-    /// the caller asks again once [`AutocompleteProvider::take_ready`] says so.
+    /// thread. While the walk for this query runs, shows the last finished
+    /// walk's matches, narrowed by this query; the caller asks again once
+    /// [`AutocompleteProvider::take_ready`] says the walk has finished.
     fn get_fuzzy_file_suggestions(
         &self,
         query: &str,
@@ -427,9 +428,7 @@ impl CombinedAutocompleteProvider {
             .map(|(_, q, _)| q.clone())
             .unwrap_or_else(|| query.to_string());
 
-        let Some(entries) = search.results(&walk_base, &walk_query) else {
-            return Vec::new();
-        };
+        let entries = search.results(&walk_base, &walk_query);
 
         let mut scored: Vec<(FileMatch, i32)> = entries
             .into_iter()
@@ -507,7 +506,13 @@ impl AutocompleteProvider for CombinedAutocompleteProvider {
     ) -> Option<AutocompleteSuggestions> {
         let text_before_cursor = cursor_line_text(lines, cursor_line, cursor_col);
 
-        if let Some(at_prefix) = self.extract_at_prefix(&text_before_cursor) {
+        let at_prefix = self.extract_at_prefix(&text_before_cursor);
+        if at_prefix.is_none() {
+            if let Some(search) = &self.file_search {
+                search.forget();
+            }
+        }
+        if let Some(at_prefix) = at_prefix {
             let parsed = parse_path_prefix(&at_prefix);
             let suggestions =
                 self.get_fuzzy_file_suggestions(&parsed.raw_prefix, parsed.is_quoted_prefix);

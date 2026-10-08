@@ -227,6 +227,10 @@ pub struct Editor {
     autocomplete_max_visible: usize,
     /// A debounced request: `(deadline, force, explicit_tab)`.
     pending_autocomplete: Option<(Instant, bool, bool)>,
+    /// Whether a finished background walk may reopen the list. Set by a
+    /// request (typing, Tab), cleared by a dismissal, so a walk that finishes
+    /// after Escape does not reopen a list the user closed.
+    reopen_on_walk: bool,
 
     pastes: BTreeMap<u64, String>,
     paste_counter: u64,
@@ -295,6 +299,7 @@ impl Editor {
                 options.autocomplete_max_visible.unwrap_or(5),
             ),
             pending_autocomplete: None,
+            reopen_on_walk: false,
             pastes: BTreeMap::new(),
             paste_counter: 0,
             paste_buffer: String::new(),
@@ -1561,11 +1566,11 @@ impl Editor {
     /// again when a background `@file` walk has finished.
     /// Returns whether one ran (and a render is owed).
     pub fn poll_autocomplete(&mut self) -> bool {
-        if self
+        let ready = self
             .autocomplete_provider
             .as_ref()
-            .is_some_and(|provider| provider.take_ready())
-        {
+            .is_some_and(|provider| provider.take_ready());
+        if ready && self.reopen_on_walk {
             self.run_autocomplete_request(false, false);
             return true;
         }
@@ -1583,11 +1588,12 @@ impl Editor {
         let Some(provider) = &self.autocomplete_provider else {
             return;
         };
+        self.reopen_on_walk = true;
         let col = self.provider_col();
         let suggestions =
             provider.get_suggestions(&self.state.lines, self.state.cursor_line, col, force);
         let Some(suggestions) = suggestions.filter(|s| !s.items.is_empty()) else {
-            self.cancel_autocomplete();
+            self.hide_autocomplete();
             self.request_render();
             return;
         };
@@ -1659,7 +1665,14 @@ impl Editor {
         }
     }
 
+    /// A dismissal: hides the list and stops a finished walk from reopening it.
     fn cancel_autocomplete(&mut self) {
+        self.reopen_on_walk = false;
+        self.hide_autocomplete();
+    }
+
+    /// Hides the list without dismissing it (no suggestions for this request).
+    fn hide_autocomplete(&mut self) {
         self.pending_autocomplete = None;
         self.clear_autocomplete_ui();
     }
@@ -1754,6 +1767,11 @@ impl Editor {
         if kb.matches(&data, "tui.editor.redo") {
             self.redo();
             return;
+        }
+
+        // Escape with the list closed (a walk may be running) still dismisses.
+        if kb.matches(&data, "tui.select.cancel") {
+            self.reopen_on_walk = false;
         }
 
         // Autocomplete mode.

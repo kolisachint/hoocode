@@ -140,3 +140,105 @@ fn the_list_opens_when_the_walk_finishes_without_a_keystroke() {
         editor.is_showing_autocomplete()
     });
 }
+
+/// Like `gated_provider`, but the finder always lists the same two files.
+fn listed_provider() -> (CombinedAutocompleteProvider, Gate) {
+    let (release, inbox): (Sender<()>, Receiver<()>) = mpsc::channel();
+    let inbox = Mutex::new(inbox);
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let recorded = Arc::clone(&asked);
+    let finder = Box::new(move |_base: &Path, query: &str, _max: usize| {
+        recorded.lock().unwrap().push(query.to_string());
+        inbox.lock().unwrap().recv().unwrap();
+        ["apple.txt", "banana.txt"]
+            .into_iter()
+            .map(|path| FileMatch {
+                path: path.to_string(),
+                is_directory: false,
+            })
+            .collect()
+    });
+    let provider = CombinedAutocompleteProvider::new(vec![], std::env::temp_dir(), Some(finder));
+    (provider, Gate { release, asked })
+}
+
+fn sorted(r: &Option<AutocompleteSuggestions>) -> Vec<String> {
+    let mut v = values(r);
+    v.sort();
+    v
+}
+
+#[test]
+fn typing_past_a_query_keeps_the_previous_list_until_the_walk_finishes() {
+    let (provider, gate) = listed_provider();
+    assert!(
+        at(&provider, "@a").is_none(),
+        "nothing to show before the first walk"
+    );
+    wait_until("the walk for a", || gate.asked.lock().unwrap().len() == 1);
+    gate.release.send(()).unwrap();
+    wait_until("the walk for a to finish", || !provider.file_walk_pending());
+    assert_eq!(sorted(&at(&provider, "@a")), ["@apple.txt", "@banana.txt"]);
+
+    // "ap" starts a walk that blocks. The previous list stays, narrowed by "ap".
+    assert_eq!(sorted(&at(&provider, "@ap")), ["@apple.txt"]);
+    assert!(provider.file_walk_pending());
+    wait_until("the walk for ap", || gate.asked.lock().unwrap().len() == 2);
+    assert_eq!(sorted(&at(&provider, "@ap")), ["@apple.txt"]);
+
+    gate.release.send(()).unwrap();
+    wait_until("the walk for ap to finish", || {
+        !provider.file_walk_pending()
+    });
+    assert_eq!(sorted(&at(&provider, "@ap")), ["@apple.txt"]);
+}
+
+/// An editor with an `@sr` walk blocked, dismissed with Escape, and then the
+/// walk released. Returns the editor and the gate.
+fn dismissed_during_walk() -> (hoocode_tui_components::Editor, Gate) {
+    use crate::editor::{ed, flush_debounce, type_str};
+    use hoocode_tui_render::Component;
+
+    let (provider, gate) = gated_provider();
+    let mut editor = ed();
+    editor.set_autocomplete_provider(Box::new(provider));
+    type_str(&mut editor, "@sr");
+    flush_debounce(&mut editor);
+    wait_until("the walk to start", || {
+        gate.asked.lock().unwrap().len() == 1
+    });
+
+    editor.handle_input("\x1b"); // Escape, while the list is closed
+    gate.release.send(()).unwrap();
+    // Give the finished walk time to report; the list must stay closed.
+    let until = Instant::now() + Duration::from_millis(300);
+    while Instant::now() < until {
+        editor.poll_autocomplete();
+        assert!(
+            !editor.is_showing_autocomplete(),
+            "a dismissed list reopened"
+        );
+        thread::sleep(Duration::from_millis(5));
+    }
+    (editor, gate)
+}
+
+#[test]
+fn escape_during_a_walk_keeps_the_list_closed_when_the_walk_finishes() {
+    let _ = dismissed_during_walk();
+}
+
+#[test]
+fn typing_a_new_query_after_a_dismissal_opens_the_list_again() {
+    use crate::editor::{flush_debounce, type_str};
+
+    let (mut editor, gate) = dismissed_during_walk();
+    type_str(&mut editor, "c"); // "@src": a new query re-arms the list
+    flush_debounce(&mut editor);
+    wait_until("the walk for src", || gate.asked.lock().unwrap().len() == 2);
+    gate.release.send(()).unwrap();
+    wait_until("the list to open", || {
+        editor.poll_autocomplete();
+        editor.is_showing_autocomplete()
+    });
+}
