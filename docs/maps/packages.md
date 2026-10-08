@@ -118,10 +118,10 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2529 / 1013 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5874 / 5445 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5874 / 5459 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 822 / 707 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 537 / 0 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5096 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5126 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1165 | the `hoocode` binary |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 608 | keep |
 | `code-migrate` | One-time merge of the pre-1.2 coding-agent folders into ~/.hoocode | 1 | 758 / 334 | keep |
@@ -151,7 +151,7 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12074 / 4940 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7793 / 3044 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7822 / 3124 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2407 / 2505 | keep |
 | `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 6719 / 4261 | keep |
 

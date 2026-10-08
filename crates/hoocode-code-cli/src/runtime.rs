@@ -1670,6 +1670,13 @@ mod tests {
         let (_, default) = prompt_for(&[]);
         let (_, tools) = prompt_for(&["-nbt"]);
         assert!(tools.contains(&"AskUserQuestion".to_string()), "{tools:?}");
+        // The Cron tools are extension tools in hoocode-ts too (`loop`), so they stay on.
+        for cron in ["CronCreate", "CronList", "CronDelete"] {
+            assert!(
+                tools.contains(&cron.to_string()),
+                "{cron} missing: {tools:?}"
+            );
+        }
         assert!(!tools.is_empty());
         for name in BUILTIN {
             assert!(

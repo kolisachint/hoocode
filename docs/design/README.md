@@ -56,6 +56,10 @@ pass Level 1 and Level 2 (CLAUDE.md). Sizes: **S** about a session, **M** a few,
 | 7 | Scheduler and `/loop` | [scheduler-and-loop.md](scheduler-and-loop.md) | M | 1 | Independent; after the core |
 | 8 | Version check and completion chime | [extras.md](extras.md) | S | 0c | Small polish |
 
+**Status (2026-10-08):** milestone 2 (concurrency phases 0-1) is done. Milestone 3 (DocSearch;
+the 8 `l1_done` tasks) is done. The ledger rows are not yet moved. See the 2026-10-08 entry in
+[../../migration/PROGRESS.md](../../migration/PROGRESS.md).
+
 **Only if the numbers or a need say so:** concurrency phase 6 (highlighting off the UI
 thread), MCP Apps ([canvas-and-mcp-apps.md](canvas-and-mcp-apps.md)), the MCP Tasks
 extension, background compaction (its own card first), thinking escalation.

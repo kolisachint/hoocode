@@ -5,12 +5,48 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
-- **2026-10-08: l1_done close-out (10.2a/b/c/d/f/g, 10.4c, 10.5) NOT done.** Harness now masks the
-  install-specific `# About <app> itself` block (`normalize_requests`). Still failing on two deliberate
-  rust divergences: subagent tools are `Agent`/`AgentOut` (docs/design/subagents.md 5d; ts pin has
-  `Task`/`TaskOutput`) and print/json print a stderr approval note (docs/design/reliability.md). Also
-  `SearchHooCode` sits after `ask_options` in ts but before it in rust. Decide before re-running.
-  Interactive `tool-bash` and `todo-write` pass. None of the 8 tasks is marked done.
+- **2026-10-08 session: concurrency 0-1, DocSearch, tool rename, Cron tools, close-out. Read this first.**
+  - **Concurrency phases 0-1 done.** New crate `hoocode-runtime` (one runtime, the caps).
+    `performance.*` settings (`maxParallelTools` 8, 1-32; `bashNice`; `memorySoftLimitMb`).
+    Clippy disallowed builders. `/perf` and `--perf-log <file>`, plus a baseline.
+    Design: `docs/design/concurrency.md`.
+  - **`maxParallelTools` cap is option A:** applied at launch in `agent-loop`; the rest of the
+    calls in a batch wait, in call order (`docs/design/decisions-2026-10-08.md`).
+  - **Tool rename (user), no aliases.** Old names are refused, not mapped. The table (TS -> Rust):
+    `bash` -> `Shell`, `read` -> `Read`, `edit` -> `Edit`, `write` -> `Write`, `SearchCodebase` ->
+    `CodeSearch`, `SearchHooCode` -> `DocSearch`, `ask_options` -> `AskUserQuestion`, `webfetch` ->
+    `WebFetch`, `websearch` -> `WebSearch`, `Task` -> `Agent`, `TaskOutput` -> `AgentOutput`
+    (`AgentOut` was an intermediate name and is gone too). `SearchHooCode` is now `DocSearch`; its
+    real doc search is later. Settings tool rows sort by hoocode-ts name (`tool_row_sort_key`).
+  - **L2 harness:** TS->Rust name mapping (`TOOL_NAMES` in `tui-parity/harness.py`) and masks,
+    including the install-specific `# About <app> itself` block.
+  - **Cron tools ported** (`hoocode-code-scheduler`): `CronCreate`, `CronList`, `CronDelete`.
+    They stay on under `--no-builtin-tools` (extension tools in hoocode-ts too, regression #3592).
+    Not built: the `/loop` command (its `list`/`delete`/`stop`/`once` forms, and `/loop auto`), the
+    10-minute late-fire rule, and firing outside the interactive loop (print, rpc, subagents do not tick).
+  - **Settings order:** the Tools pane rows follow hoocode-ts's tool names. A disabled Cron row sorts by
+    its plain name.
+  - **Done now:** 10.2a, 10.2b, 10.2c, 10.2d, 10.2f, 10.2g, 10.4c, 10.5. The ledger rows still
+    read `l1_done`; they were not changed in this session. Set them with `ledger.py` if that is the call.
+  - **Final L2 tally (`harness.py run all`, 70 scenarios): 68 pass, 2 fail, both expected.**
+    `slash-commands`: Rust-only `/subagent-stats` row. `login-api-key`: provider list, TS has
+    Azure OpenAI Responses, Rust has Hugging Face. First run had `scroll-view` (fail) and
+    `print-tool-invalid-light` (invalid); both passed on a single rerun (timing flakes).
+  - **Gotchas found:** `scripts/ci/fetch_hoocode_fixtures.sh` leaves the pin as a sparse checkout, and
+    that strips the pin's sources (`packages/*/src`, `package.json`). L2 then reports every TS scenario as
+    `invalid` ("Cannot find package .../hoocode-ai/index.js"). Fix: `rm target/hoocode-pin/.built-*` and
+    rerun `migration/tui-parity/setup_hoocode.sh`. Run it before L2, not after the fixtures script. A
+    harness run also crashed once with FileNotFoundError when its output dir was removed mid-run. Start
+    L2 only when no other run is using `target/tui-parity/`.
+  - **Open items:**
+    - the `slash-commands` and `login-api-key` diffs (above; both deliberate for now)
+    - macOS perf baseline
+    - load-scenario TODOs: subagents, hung MCP, paused pty
+    - move the hoocode-perf sampler thread onto `hoocode-runtime`
+    - DocSearch real doc search (later)
+    - keystroke p99 is about 200 ms under load: each key calls `request_render` synchronously
+  - **Next step:** `docs/design/README.md`. Milestones 2 and 3 are done (status note there). Milestones
+    0a-1 come first in the table; check their state before starting milestone 4 (MCP on rmcp).
 
 
 - **2026-10-08: tool rename (user).** Read, Shell, Edit, Write, CodeSearch, DocSearch,

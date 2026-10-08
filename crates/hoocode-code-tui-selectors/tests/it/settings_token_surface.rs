@@ -183,6 +183,54 @@ fn orders_the_tool_rows_the_way_hoocode_ts_names_them() {
     assert_eq!(rows, ["CodeSearch", "Shell", "Edit", "Read", "Write"]);
 }
 
+/// A disabled Cron tool is listed (its name is its hoocode-ts name, so it sorts
+/// by plain name: CronCreate, CronDelete, CronList come before the renamed core
+/// tools, whose hoocode-ts names start with lowercase or `Search`).
+#[test]
+fn a_disabled_cron_tool_sorts_by_its_hoocode_ts_name() {
+    let _g = lock();
+    let tool = |name: &str, enabled: bool| ToolToggleInfo {
+        name: name.into(),
+        enabled,
+        tokens: None,
+    };
+    let pane = SettingsSelectorComponent::new(
+        SettingsConfig {
+            tools: vec![
+                tool("Read", true),
+                tool("CronList", true),
+                tool("Shell", true),
+                tool("CronDelete", false),
+                tool("CodeSearch", true),
+                tool("CronCreate", true),
+            ],
+            tips_enabled: false,
+            ..SettingsConfig::default()
+        },
+        ignore,
+    );
+    let list = pane.settings_list();
+    let tools = open(&list, "tools");
+    let rows: Vec<String> = tools
+        .borrow()
+        .items()
+        .iter()
+        .map(|i| i.id.clone())
+        .filter(|id| !id.starts_with("group:"))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            "CronCreate",
+            "CronDelete",
+            "CronList",
+            "CodeSearch",
+            "Shell",
+            "Read"
+        ]
+    );
+}
+
 #[test]
 fn prices_a_tool_the_way_the_session_does() {
     // Same helper, same number as --print-token-surface reports.
