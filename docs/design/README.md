@@ -40,6 +40,7 @@ card disagrees).
 | 4 | [plugins.md](plugins.md) | Agreed | 12.1, 12.2 |
 | 5 | [canvas-and-mcp-apps.md](canvas-and-mcp-apps.md) | Agreed (MCP Apps) | 12.7 canvas |
 | 5 | [scheduler-and-loop.md](scheduler-and-loop.md) | Agreed | 12.5 |
+| 1b? | [concurrency.md](concurrency.md) (threads, lanes, limits) | **Proposed 2026-10-08**; not agreed. Recommends phases 0–1 after card 1 | — |
 | — | [extras.md](extras.md) | Version check and chime yes; rest no | 12.6, 12.7 rest |
 | — | [web-tools.md](web-tools.md) | Deferred | 10.2e |
 | — | [extension-runtime.md](extension-runtime.md) | Standards only; no runtime | 12.3 |
