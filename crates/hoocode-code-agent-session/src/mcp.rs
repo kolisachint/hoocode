@@ -7,14 +7,22 @@
 //!
 //! The hub never prompts. The interactive mode asks about [`McpHub::pending_prompts`] and calls
 //! [`McpHub::grant`]; print and rpc skip untrusted servers (fail closed).
+//!
+//! OAuth: a Streamable HTTP server that needs a login ends up `AuthNeeded`. The interactive mode
+//! starts the login with [`McpHub::login`]; the hub opens the browser, waits for the redirect and
+//! reconnects the server, so its tools appear at the next turn. Nothing here logs in by itself.
+//! Elicitation: a server's questions go to the [`ElicitationHandler`] the mode installs
+//! ([`McpHub::set_elicitation`]); without one they are declined.
 
+use std::future::Future;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use hoocode_agent_mcp::{
-    tool_name, CallOptions, ClientOptions, McpClient, McpError, McpServerConfig, McpTool,
-    ToolContent, ToolOutput, ToolProgress,
+    begin_login, oauth, tool_name, CallOptions, ClientOptions, DeclineAll, McpClient, McpError,
+    McpServerConfig, McpTool, ToolContent, ToolOutput, ToolProgress,
 };
 use hoocode_agent_types::{AgentToolResult, AgentToolUpdateCallback};
 use hoocode_ai_types::{AbortSignal, Content, ImageContent};
@@ -27,10 +35,16 @@ use hoocode_runtime::io_handle;
 use tokio::runtime::Handle;
 use tokio_util::sync::CancellationToken;
 
+pub use hoocode_agent_mcp::{ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use hoocode_code_mcp::TrustPrompt;
 
 /// How long [`McpHub::shutdown`] waits for the servers to close.
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
+/// How long a login waits for the browser to reach the redirect URI.
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+
+/// Receives a line of text for the user (a login link, a notice). Called off the UI thread.
+pub type Notifier = Arc<dyn Fn(String) + Send + Sync>;
 
 /// A server's state as `/mcp` shows it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -75,11 +89,20 @@ struct HubState {
     generation: u64,
     started: bool,
     shut_down: bool,
+    /// Answers elicitation requests; `None` declines them all.
+    elicitation: Option<Arc<dyn ElicitationHandler>>,
+    /// Told when a server needs a login.
+    notifier: Option<Notifier>,
+    /// Servers with a login in progress.
+    logins: Vec<String>,
 }
 
-/// The MCP servers of one session. Cheap to share through `Arc`.
+/// The MCP servers of one session. Clones share the same servers.
+#[derive(Clone)]
 pub struct McpHub {
     trust_path: PathBuf,
+    /// The hoocode data directory (the trust file's folder), where OAuth tokens are kept too.
+    data_dir: PathBuf,
     state: Arc<Mutex<HubState>>,
 }
 
@@ -125,10 +148,116 @@ impl McpHub {
             prompts: discovery.prompts,
             ..Default::default()
         };
+        let data_dir = trust_path
+            .parent()
+            .map_or_else(PathBuf::new, Path::to_path_buf);
         Self {
             trust_path,
+            data_dir,
             state: Arc::new(Mutex::new(state)),
         }
+    }
+
+    /// Answers the servers' elicitation requests with `handler`. Set it before
+    /// [`start`](Self::start): a server that connects earlier keeps the handler it had.
+    pub fn set_elicitation(&self, handler: Arc<dyn ElicitationHandler>) {
+        lock(&self.state).elicitation = Some(handler);
+    }
+
+    /// Tells the user, through `notify`, when a server needs a login.
+    pub fn set_notifier(&self, notify: impl Fn(String) + Send + Sync + 'static) {
+        lock(&self.state).notifier = Some(Arc::new(notify));
+    }
+
+    /// Starts the login for the `AuthNeeded` HTTP server `name` and returns at once. In the
+    /// background: the browser opens, `on_event` gets the login link (so it can be shown when the
+    /// browser does not open), the redirect is awaited, and the server reconnects. `on_event` gets
+    /// a final line with the outcome.
+    ///
+    /// Errors when the server is unknown, does not need a login, or already has one running.
+    pub fn login(
+        &self,
+        name: &str,
+        on_event: impl Fn(String) + Send + Sync + 'static,
+    ) -> Result<(), String> {
+        let url = {
+            let mut state = lock(&self.state);
+            if state.shut_down {
+                return Err("MCP servers are shut down".to_owned());
+            }
+            let entry = state
+                .entries
+                .iter()
+                .find(|e| e.name == name)
+                .ok_or_else(|| format!("No MCP server named {name}."))?;
+            if entry.status != McpStatus::AuthNeeded {
+                return Err(format!("MCP server {name} does not need a login."));
+            }
+            let McpServerConfig::Http { url, .. } = &entry.config else {
+                return Err(format!(
+                    "MCP server {name} is not a Streamable HTTP server."
+                ));
+            };
+            let url = url.clone();
+            if state.logins.iter().any(|n| n == name) {
+                return Err(format!("A login for {name} is already running."));
+            }
+            state.logins.push(name.to_owned());
+            url
+        };
+        let hub = self.clone();
+        let name = name.to_owned();
+        let on_event: Notifier = Arc::new(on_event);
+        hoocode_runtime::io_handle().spawn(async move {
+            let outcome = hub.run_login(&name, &url, &on_event).await;
+            lock(&hub.state).logins.retain(|n| n != &name);
+            match outcome {
+                Ok(()) => {
+                    on_event(format!(
+                        "Logged in to {name}. It connects in the background."
+                    ));
+                    hub.reconnect(&name);
+                }
+                Err(error) => on_event(format!("Login to {name} failed: {error}")),
+            }
+        });
+        Ok(())
+    }
+
+    /// The login itself: begin, show the link, open the browser, wait for the redirect.
+    async fn run_login(&self, name: &str, url: &str, on_event: &Notifier) -> Result<(), String> {
+        let (authorize_url, handle) = begin_login(url, &self.data_dir)
+            .await
+            .map_err(|e| e.to_string())?;
+        on_event(format!(
+            "Log in to {name} in your browser. If it did not open, visit:\n{authorize_url}"
+        ));
+        oauth::open_browser(&authorize_url);
+        handle
+            .finish(LOGIN_TIMEOUT)
+            .await
+            .map_err(|e| e.to_string())
+    }
+
+    /// Connects an `AuthNeeded` server again after its login.
+    fn reconnect(&self, name: &str) {
+        let jobs = {
+            let mut state = lock(&self.state);
+            if !state.started || state.shut_down {
+                return;
+            }
+            let Some(index) = state
+                .entries
+                .iter()
+                .position(|e| e.name == name && e.status == McpStatus::AuthNeeded)
+            else {
+                return;
+            };
+            state.entries[index].status = McpStatus::Connecting;
+            let entry = &state.entries[index];
+            vec![(index, entry.name.clone(), entry.config.clone())]
+        };
+        self.spawn_jobs(jobs);
     }
 
     /// Start every trusted server in the background. Returns at once.
@@ -256,10 +385,19 @@ impl McpHub {
     }
 
     fn spawn_jobs(&self, jobs: Vec<(usize, String, McpServerConfig)>) {
+        let (elicitation, notifier) = {
+            let state = lock(&self.state);
+            (state.elicitation.clone(), state.notifier.clone())
+        };
+        let elicitation: Arc<dyn ElicitationHandler> =
+            elicitation.unwrap_or_else(|| Arc::new(DeclineAll));
         for (index, name, config) in jobs {
             let state = self.state.clone();
+            let data_dir = self.data_dir.clone();
+            let elicitation = elicitation.clone();
+            let notifier = notifier.clone();
             io_handle().spawn(async move {
-                let outcome = connect_and_list(&name, config).await;
+                let outcome = connect_and_list(&name, config, &data_dir, elicitation).await;
                 if lock(&state).shut_down {
                     // The session ended while this server was starting.
                     if let Ok((client, _)) = outcome {
@@ -278,7 +416,15 @@ impl McpHub {
                         guard.generation += 1;
                     }
                     Err(error) => {
-                        guard.entries[index].status = classify(&error);
+                        let status = status_for(&error);
+                        let needs_login = status == McpStatus::AuthNeeded;
+                        guard.entries[index].status = status;
+                        drop(guard);
+                        if let (true, Some(notify)) = (needs_login, notifier) {
+                            notify(format!(
+                                "MCP server {name} needs a login. In interactive mode, run /mcp login {name}. Its tools are unavailable."
+                            ));
+                        }
                     }
                 }
             });
@@ -300,8 +446,27 @@ fn connecting_jobs(state: &mut HubState) -> Vec<(usize, String, McpServerConfig)
 async fn connect_and_list(
     name: &str,
     config: McpServerConfig,
+    data_dir: &Path,
+    elicitation: Arc<dyn ElicitationHandler>,
 ) -> Result<(McpClient, Vec<McpTool>), McpError> {
-    let client = McpClient::connect(name, config, ClientOptions::default()).await?;
+    let options = ClientOptions::default();
+    // A Streamable HTTP server is reached with its stored OAuth token, when it has one.
+    let client = match config {
+        McpServerConfig::Http { url, headers } => {
+            McpClient::connect_oauth_with_elicitation(
+                name,
+                url,
+                headers,
+                data_dir,
+                options,
+                elicitation,
+            )
+            .await?
+        }
+        stdio @ McpServerConfig::Stdio { .. } => {
+            McpClient::connect_with_elicitation(name, stdio, options, elicitation).await?
+        }
+    };
     match client.list_tools().await {
         Ok(tools) => Ok((client, tools)),
         Err(error) => {
@@ -311,24 +476,41 @@ async fn connect_and_list(
     }
 }
 
-/// `Failed` with the reason, or `AuthNeeded` when the server refused the connection for want of
-/// a login. Heuristic: the client has no OAuth yet, so the message is all there is to go on.
-fn classify(error: &McpError) -> McpStatus {
-    let text = error.to_string();
-    let lower = text.to_ascii_lowercase();
-    let needs_login = [
-        "401",
-        "unauthorized",
-        "authentication",
-        "auth required",
-        "oauth",
-    ]
-    .iter()
-    .any(|needle| lower.contains(needle));
-    if needs_login {
-        McpStatus::AuthNeeded
-    } else {
-        McpStatus::Failed(text)
+/// The state of a server whose connection failed: `AuthNeeded` when it wants a login (a 401 with
+/// no usable token, or a token that could not be refreshed), else `Failed` with the reason.
+pub(crate) fn status_for(error: &McpError) -> McpStatus {
+    match error {
+        McpError::AuthRequired { .. } | McpError::Auth(_) => McpStatus::AuthNeeded,
+        other => McpStatus::Failed(other.to_string()),
+    }
+}
+
+/// Elicitation in print and rpc modes: nobody can answer, so each request is declined and the
+/// decline is reported through `report`.
+pub struct DeclineElicitation {
+    report: Notifier,
+}
+
+impl DeclineElicitation {
+    pub fn new(report: impl Fn(String) + Send + Sync + 'static) -> Self {
+        Self {
+            report: Arc::new(report),
+        }
+    }
+}
+
+impl ElicitationHandler for DeclineElicitation {
+    fn elicit<'a>(
+        &'a self,
+        server: &'a str,
+        _request: ElicitationRequest,
+    ) -> Pin<Box<dyn Future<Output = ElicitationAnswer> + Send + 'a>> {
+        Box::pin(async move {
+            (self.report)(format!(
+                "MCP server {server} asked for input; declined, because this mode cannot ask. Use interactive mode."
+            ));
+            ElicitationAnswer::Decline
+        })
     }
 }
 
@@ -526,4 +708,25 @@ pub fn trust_question(prompt: &TrustPrompt, servers: &[McpServerInfo]) -> String
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_login_error_maps_to_auth_needed_and_others_to_failed() {
+        let auth = McpError::AuthRequired {
+            server: "docs".to_owned(),
+            www_authenticate: "Bearer".to_owned(),
+        };
+        assert_eq!(status_for(&auth), McpStatus::AuthNeeded);
+        assert_eq!(
+            status_for(&McpError::Auth("refresh rejected".to_owned())),
+            McpStatus::AuthNeeded
+        );
+        // The message text no longer decides: a connect failure that says "401" is just failed.
+        let other = McpError::Connect("server said 401 unauthorized in its banner".to_owned());
+        assert!(matches!(status_for(&other), McpStatus::Failed(_)));
+    }
 }

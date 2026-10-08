@@ -30,6 +30,7 @@
 
 mod client;
 mod config;
+mod elicitation;
 mod error;
 mod naming;
 pub mod oauth;
@@ -41,6 +42,7 @@ pub use client::{
     MAX_IN_FLIGHT_REQUESTS, MAX_RESPONSE_BYTES, MAX_SSE_EVENT_BYTES,
 };
 pub use config::McpServerConfig;
+pub use elicitation::{DeclineAll, ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 pub use error::McpError;
 pub use naming::{tool_name, MAX_TOOL_NAME_LEN};
 pub use oauth::{begin_login, LoginHandle};

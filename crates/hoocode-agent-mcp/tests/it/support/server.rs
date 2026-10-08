@@ -7,8 +7,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rmcp::model::{
-    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ListToolsResult,
-    PaginatedRequestParams, ProgressNotificationParam, ServerCapabilities, ServerConfig, Tool,
+    CallToolRequestParams, CallToolResponse, CallToolResult, ContentBlock, ElicitRequestParams,
+    ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, ServerCapabilities,
+    ServerConfig, Tool,
 };
 use rmcp::service::RequestContext;
 use rmcp::{ErrorData, RoleServer, ServerHandler};
@@ -81,6 +82,10 @@ impl ServerHandler for TestServer {
             tool("fail", "Returns a tool error (isError)."),
             tool("exit", "Ends the server process (stdio only)."),
             tool(
+                "elicit",
+                "Asks the client for input (elicitation/create) and reports the answer. `mode` is form (default) or url.",
+            ),
+            tool(
                 "notify_tools_changed",
                 "Sends notifications/tools/list_changed.",
             ),
@@ -139,6 +144,40 @@ impl ServerHandler for TestServer {
             }
             "fail" => CallToolResult::error(vec![ContentBlock::text("it failed")]),
             "exit" if self.allow_exit => std::process::exit(3),
+            "elicit" => {
+                let params = if arg_str(args, "mode") == "url" {
+                    json!({
+                        "mode": "url",
+                        "message": "Consent to the request",
+                        "url": "https://example.test/consent",
+                        "elicitationId": "consent-1",
+                    })
+                } else {
+                    json!({
+                        "mode": "form",
+                        "message": "Pick a colour",
+                        "requestedSchema": {
+                            "type": "object",
+                            "properties": {
+                                "colour": {"type": "string", "enum": ["red", "blue"]}
+                            },
+                            "required": ["colour"],
+                        },
+                    })
+                };
+                let params: ElicitRequestParams =
+                    serde_json::from_value(params).expect("elicitation params");
+                match context.peer.create_elicitation(params).await {
+                    Ok(answer) => CallToolResult::success(vec![ContentBlock::text(format!(
+                        "action={:?} content={}",
+                        answer.action,
+                        answer.content.map(|c| c.to_string()).unwrap_or_default()
+                    ))]),
+                    Err(error) => CallToolResult::error(vec![ContentBlock::text(format!(
+                        "elicitation failed: {error}"
+                    ))]),
+                }
+            }
             "notify_tools_changed" => {
                 let _ = context.peer.notify_tool_list_changed().await;
                 CallToolResult::success(vec![ContentBlock::text("notified")])

@@ -4,5 +4,6 @@
 //! a process exit (stdio only).
 
 mod client;
+mod elicitation;
 mod oauth;
 mod support;

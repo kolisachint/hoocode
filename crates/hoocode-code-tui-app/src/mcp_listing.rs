@@ -43,7 +43,7 @@ fn describe(server: &McpServerInfo) -> String {
         }
         McpStatus::Connecting => "connecting".to_owned(),
         McpStatus::NotTrusted => "not trusted".to_owned(),
-        McpStatus::AuthNeeded => "auth needed".to_owned(),
+        McpStatus::AuthNeeded => format!("auth needed: run /mcp login {}", server.name),
         McpStatus::Failed(reason) => format!("failed: {reason}"),
         McpStatus::Disabled => "disabled".to_owned(),
     }
@@ -83,7 +83,7 @@ mod tests {
                 "MCP servers",
                 "  mine       user      connected, 2 tools",
                 "  repo-tool  project   not trusted",
-                "  remote     project   auth needed",
+                "  remote     project   auth needed: run /mcp login remote",
                 "  broken     plugin p  failed: exit 1",
                 "  off        project   disabled",
                 "  one        user      connected, 1 tool",
