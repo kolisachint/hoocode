@@ -1594,7 +1594,11 @@ impl PoolInner {
             result.result_data = self.read_result_json(task_id, &cwd);
             // Clean success: the in-memory result carries result_data, so the
             // dispatch dir goes (resume only works for unsuccessful tasks).
-            let _ = std::fs::remove_dir_all(hoocode_code_paths::dispatch_task_dir(&cwd, task_id));
+            // Cleanup is housekeeping: it runs on the Low lane, off the settle path.
+            let dir = hoocode_code_paths::dispatch_task_dir(&cwd, task_id);
+            hoocode_runtime::spawn_bg(async move {
+                let _ = std::fs::remove_dir_all(dir);
+            });
             self.record_attempt(
                 task,
                 &result,

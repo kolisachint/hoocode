@@ -191,7 +191,8 @@ impl SubagentLifeguard {
     /// Sweep stale dispatch dirs under `cwd` and start the heartbeat check.
     /// Must run inside a tokio runtime.
     pub fn new(cwd: impl AsRef<Path>) -> Arc<Self> {
-        sweep_old_agents(cwd.as_ref());
+        let swept = cwd.as_ref().to_path_buf();
+        hoocode_runtime::spawn_bg(async move { sweep_old_agents(&swept) });
         let guard = Arc::new(Self {
             state: Mutex::new(State {
                 last_check_at: now_ms(),

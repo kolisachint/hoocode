@@ -1,6 +1,7 @@
 //! Tests for the process runtime: worker count, thread names, the tools pool
 //! cap, the parallel tool limit, the channel helpers and the session writer.
 
+mod lanes;
 mod memory;
 mod session_io;
 mod watchdog;

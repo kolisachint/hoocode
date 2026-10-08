@@ -214,7 +214,7 @@ async fn sweeps_old_agent_directories_on_init() {
     std::fs::write(old.join("result.json"), "{}").unwrap();
     backdate(&old, 25);
     let guard = SubagentLifeguard::new(dir.path());
-    assert!(!old.exists());
+    wait_until_gone(&old).await;
     guard.dispose();
 }
 
@@ -388,4 +388,15 @@ async fn exiting_cancels_the_escalation_timer() {
     let _ = child.kill();
     let _ = child.wait();
     guard.dispose();
+}
+
+/// Cleanup runs on `hoocode-bg`, so a removed dispatch dir can take a moment to disappear.
+async fn wait_until_gone(path: &std::path::Path) {
+    for _ in 0..500 {
+        if !path.exists() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("{} was not removed", path.display());
 }

@@ -84,6 +84,9 @@
     ],
     "memory-stats": [
       "hoocode-runtime"
+    ],
+    "thread-priority": [
+      "hoocode-runtime"
     ]
   },
   "pending": {}

@@ -11,6 +11,8 @@ use std::thread::JoinHandle;
 use tokio::runtime::{Builder, Handle, Runtime};
 use tokio::task::JoinError;
 
+use crate::lanes::{apply_current_thread_lane, Lane};
+
 /// Name prefix of `hoocode-io` worker threads (`hoocode-io-0`, `hoocode-io-1`, ...).
 pub const IO_THREAD_PREFIX: &str = "hoocode-io";
 /// Name prefix of `hoocode-tools` pool threads (`hoocode-tools-0`, ...).
@@ -65,6 +67,7 @@ fn io_runtime() -> &'static Runtime {
                 let n = IO_NAMES.fetch_add(1, Ordering::Relaxed);
                 format!("{IO_THREAD_PREFIX}-{n}")
             })
+            .on_thread_start(|| apply_current_thread_lane(Lane::High))
             .enable_all()
             .build();
         runtime.unwrap_or_else(|e| panic!("hoocode-io runtime failed to start: {e}"))
@@ -82,6 +85,7 @@ fn tools_runtime() -> &'static Runtime {
                 let n = TOOLS_NAMES.fetch_add(1, Ordering::Relaxed);
                 format!("{TOOLS_THREAD_PREFIX}-{n}")
             })
+            .on_thread_start(|| apply_current_thread_lane(Lane::Medium))
             .enable_all()
             .build();
         runtime.unwrap_or_else(|e| panic!("hoocode-tools pool failed to start: {e}"))

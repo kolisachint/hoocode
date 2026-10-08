@@ -10,6 +10,10 @@
 //! - [`run_blocking`]: sync work on the `hoocode-tools` pool, at most 16 threads.
 //! - [`block_on_entry`]: entry points (`main`, tests) only.
 //! - [`spawn_named_thread`], [`bounded_channel`], [`sync_bounded_channel`].
+//! - [`Lane`], [`spawn_lane_thread`], [`apply_current_thread_lane`]: the three
+//!   scheduling lanes and their OS priority (High normal, Medium and Low lowered).
+//! - [`spawn_bg`]: housekeeping on the one Low lane thread `hoocode-bg`.
+//! - [`lower_child_priority`]: niceness of a child process, set at spawn.
 //! - [`ParallelToolLimit`]: the per-turn cap on parallel tool calls.
 //! - [`session_io`]: the `hoocode-session-io` thread, the only writer of session
 //!   files, with a bounded queue and flush barriers.
@@ -19,6 +23,9 @@
 //! - [`memory`] (re-exported here): soft and hard process memory limits, and
 //!   shedding while the soft limit is exceeded.
 
+mod bg;
+mod child;
+mod lanes;
 mod limits;
 mod memory;
 mod runtime;
@@ -28,6 +35,9 @@ mod signals;
 mod threads;
 pub mod watchdog;
 
+pub use bg::{spawn_bg, BG_THREAD_NAME};
+pub use child::{lower_child_priority, BELOW_NORMAL_PRIORITY_CLASS, SUBAGENT_CHILD_NICE};
+pub use lanes::{apply_current_thread_lane, spawn_lane_thread, Lane};
 pub use limits::{
     total_memory_bytes, ParallelSlot, ParallelToolLimit, MAX_BASH_NICE, MAX_PARALLEL_TOOLS,
     MIN_PARALLEL_TOOLS,

@@ -203,7 +203,8 @@ impl FooterDataProvider {
             return;
         };
         let weak = Arc::downgrade(&self.inner);
-        std::thread::spawn(move || {
+        // A file watcher is housekeeping: it polls on the Low lane (hoocode-bg).
+        hoocode_runtime::spawn_bg(async move {
             let reftable = paths.common_git_dir.join("reftable");
             let watched = [
                 paths.head_path.clone(),
@@ -219,7 +220,7 @@ impl FooterDataProvider {
             let mut last = signature();
             let mut pending: Option<Instant> = None;
             loop {
-                std::thread::sleep(WATCH_POLL);
+                tokio::time::sleep(WATCH_POLL).await;
                 let Some(inner) = weak.upgrade() else { return };
                 if inner.generation.load(Ordering::SeqCst) != generation {
                     return;

@@ -127,6 +127,9 @@ impl Runner for ProcessRunner {
             use std::os::unix::process::CommandExt;
             command.process_group(0);
         }
+        // Subagents run below normal priority, so the UI and the parent's own
+        // work come first (concurrency.md section 2).
+        hoocode_runtime::lower_child_priority(&mut command, hoocode_runtime::SUBAGENT_CHILD_NICE);
         let child = command.spawn()?;
         Ok(Box::new(ProcessHandle::new(child)) as Box<dyn RunnerHandle>)
     }

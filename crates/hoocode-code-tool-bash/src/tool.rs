@@ -48,6 +48,9 @@ pub struct BashToolOptions {
     pub max_output_bytes: Option<usize>,
     /// Line cap on the returned output (tail kept). Default 800.
     pub max_output_lines: Option<usize>,
+    /// `performance.bashNice`: niceness of the commands' child processes. 0
+    /// (the default) runs them at normal priority.
+    pub nice: u64,
 }
 
 const BASH_UPDATE_THROTTLE: Duration = Duration::from_millis(100);
@@ -333,10 +336,9 @@ pub fn create_bash_tool_definition(
     options: BashToolOptions,
 ) -> ToolDefinition {
     let cwd: PathBuf = cwd.into();
-    let ops: Arc<dyn BashOperations> = options
-        .operations
-        .clone()
-        .unwrap_or_else(|| Arc::new(LocalBashOperations::new(options.shell_path.clone())));
+    let ops: Arc<dyn BashOperations> = options.operations.clone().unwrap_or_else(|| {
+        Arc::new(LocalBashOperations::new(options.shell_path.clone()).with_nice(options.nice))
+    });
     let max_bytes = options.max_output_bytes.unwrap_or(DEFAULT_MAX_BYTES);
     let max_lines = options.max_output_lines.unwrap_or(DEFAULT_MAX_LINES);
     // Math.round(maxBytes / 1024)
