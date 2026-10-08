@@ -1,231 +1,123 @@
-# Naming and paths: hoocode (Rust) vs hoocode-ts
+# Naming and paths: one hoocode
 
-Status: **designed 2026-10-01, not started.** Architecture only; no code.
-Companion to `subagents.md` (an as-built record of the same investigation, which
-is where the naming problem surfaced) and `distribution.md` (which owns what
-ships).
+Status: **agreed 2026-10-08** ([decisions-2026-10-08.md](decisions-2026-10-08.md)),
+design only. Replaces the 2026-10-01 design (separate `~/.hoocode/rust/`; see git
+history) and item 2 of [reliability.md](reliability.md).
 
-## Problem
+## Goal
 
-The Rust project was renamed from **cortexcode** to **hoocode**, and the
-rename is only partly done: the command is `hoocode`, but the code, the data
-directory and the environment still say cortexcode.
+The Rust hoocode is a **drop-in replacement** for hoocode-ts. It is called `hoocode`
+everywhere, keeps its data in `~/.hoocode` next to hoocode-ts, and reads and writes
+the same files. Nothing visible or internal says cortex any more. There is one user
+(the owner), so we change things in one go, with no deprecation period.
 
-The dangerous part is not the leftovers. It is that the leftovers **already
-collide with the TypeScript tool**, in the one place that must not collide.
+## Decisions
 
-`cortexcode-code-paths/src/lib.rs`:
-
-```rust
-pub const CONFIG_DIR_NAME: &str = ".cortexcode";          // line 19 — we WRITE this
-pub const LEGACY_CONFIG_DIR_NAME: &str = ".hoocode";      // line 21 — we READ this
-pub const ENV_PREFIXES: [&str; 3] = ["CORTEXCODE_", "CORTEX_", "HOOCODE_"]; // line 25
-```
-
-The TypeScript hoocode owns `~/.hoocode` (`hoocode-ts` `config.ts:442`:
-`CONFIG_DIR_NAME = appConfig.configDir || ".hoocode"`). So today:
-
-- The Rust tool **writes** `~/.cortexcode`.
-- The Rust tool **reads** the TS tool's `~/.hoocode` as a fallback
-  (`resolve_agent_file`, line 81) and accepts the TS `HOOCODE_*` env
-  variables, third in priority.
-- The curl installer already installs the Rust binary into **`~/.hoocode/bin`**
-  and deletes `~/.hoocode/lib/hoocode` (`scripts/install.sh:15,36-42`).
-
-The two layouts are inverted: the installer treats `~/.hoocode` as the
-product root while the code treats it as someone else's legacy directory. A
-naive rename of `CONFIG_DIR_NAME` to `.hoocode` would put `settings.json`,
-`auth.json`, `sessions/`, `cache/` and `dispatch/` in the same directory the
-TS agent reads and writes — each tool silently adopting the other's settings
-and credentials.
-
-Scale of the leftovers: **676 files, 5,304 occurrences** of `cortexcode`
-(636 in `crates/`, 25 in `migration/`, 5 in `scripts/`, 4 in `docs/`), 94
-references to `.cortexcode`, and 23 `CORTEX*` environment variables.
-
-## Decisions (2026-10-01, with the owner)
-
-1. **One neutral shared root, namespaced per implementation:**
-   `~/.hoocode/rust/` and `~/.hoocode/ts/`. `~/.hoocode` is the product;
-   each tool owns a subdirectory and never writes the other's files.
-2. **User-facing surfaces become hoocode. Internal identity stays.**
-   Commands, env vars, docs, paths, TUI titles and log messages move to
-   `hoocode`/`HOOCODE_`. Crate names, the `cortex` cargo binary and internal
-   types stay `cortexcode`/`cortex`.
-3. **Automatic one-time migration with a backup**, and the old locations stay
-   readable until the user removes them.
-4. **`CORTEXCODE_`/`CORTEX_` remain accepted as deprecated aliases** for one
-   release, warning once, so existing scripts and docs do not break.
-
-## Target layout
-
-```
-~/.hoocode/                    # the product root (already exists: bin/)
-  bin/                         # install.sh territory: hoocode, hoo, hoocode-ts
-  lib/hoocode/                 # TS install (hoocode-ts)
-  rust/                        # ← Rust agent data (was ~/.cortexcode)
-    settings.json
-    auth.json
-    hoo-config.json
-    sessions/
-    cache/
-    embsearch/
-    bin/                       # managed binaries: fd, rg
-    themes/
-    dispatch/                  # project dispatch dirs, when cwd == home
-  ts/                          # ← reserved for the TS agent's data
-```
-
-Project-local, in any repository:
-
-```
-<cwd>/.hoocode/rust/           # settings.json, agents/, skills/, modes/, dispatch/
-<cwd>/.hoocode/ts/             # the TS agent's equivalent
-```
-
-Dispatch directories move with this: `dispatch_root` (paths `lib.rs:112`)
-goes from `<cwd>/.cortexcode/dispatch/` to `<cwd>/.hoocode/rust/dispatch/`.
-
-Note that the Rust project's own dispatch dirs are **not gitignored today** —
-`hoobot/.cortexcode/dispatch/` shows up as untracked noise. The rename ships a
-`.gitignore` snippet for consumers, since the path changes in every downstream
-repo.
-
-## What changes in code
-
-### `cortexcode-code-paths`
-
-| Item | From | To |
-|---|---|---|
-| `CONFIG_DIR_NAME` | `.cortexcode` | `.hoocode/rust` (global and project) |
-| `LEGACY_CONFIG_DIR_NAME` | `.hoocode` | `.cortexcode` — the roles swap |
-| `ENV_PREFIXES` | `CORTEXCODE_`, `CORTEX_`, `HOOCODE_` | `HOOCODE_`, `CORTEXCODE_`, `CORTEX_` |
-| `APP_TITLE` | `Cortex` | `HooCode` |
-| `APP_NAME` | `cortex` | **unchanged** (binary, debug log name) |
-| `debug_log_path` | `~/.cortexcode/cortex-debug.log` | `~/.hoocode/rust/cortex-debug.log` |
-
-`CONFIG_DIR_NAME` becomes a path, not a single segment, so the call sites that
-do `cwd.join(CONFIG_DIR_NAME).join("settings.json")` keep working unchanged.
-`resolve_agent_file` keeps its shape with the swapped fallback: prefer
-`~/.hoocode/rust/<name>`, fall back to `~/.cortexcode/<name>`, and stop
-reading `~/.hoocode/<name>` once migration has run — that file now belongs to
-the TS agent.
-
-`bin_dir()` becomes `~/.hoocode/rust/bin`, separate from the installer's
-`~/.hoocode/bin`. The alternative — sharing `~/.hoocode/bin` for fd/rg — is
-rejected: install.sh rewrites that directory and would not know about
-downloaded binaries.
-
-### Environment variables
-
-`HOOCODE_*` becomes canonical for everything that has a user-facing meaning:
-
-| Variable | Notes |
+| Decision | Why |
 |---|---|
-| `HOOCODE_CODING_AGENT_DIR` | points at the Rust agent dir |
-| `HOOCODE_CODING_AGENT_SESSION_DIR` | |
-| `HOOCODE_USER_AGENTS_DIR` | |
-| `HOOCODE_SUBAGENT_DEPTH`, `HOOCODE_SUBAGENT_MAX_DEPTH` | |
-| `HOOCODE_NESTED_SUBAGENT_CONCURRENCY` | |
-| `HOOCODE_CACHE_RETENTION`, `HOOCODE_SHARE_VIEWER_URL`, `HOOCODE_TUI_WRITE_LOG` | |
-| `HOOCODE_OAUTH_CALLBACK_HOST` | |
-| `HOOCODE_WEBTOOLS_TIMEOUT` | |
-| `HOOCODE_GEMINI_CLI_CLIENT_ID` / `_SECRET`, `HOOCODE_ANTIGRAVITY_*` | provider client credentials |
+| **Data lives in `~/.hoocode`, shared with hoocode-ts.** Project data lives in `<repo>/.hoocode/`. | One config, one login, one session list. Safe today: hoocode-ts merges only the settings fields it changed (unknown keys survive), and our `auth.json` lock is `proper-lockfile` compatible. |
+| **Rename everything**: crates `cortexcode-*` → `hoocode-*`, Rust paths `cortexcode_*` → `hoocode_*`, the cargo binary `cortex` → `hoocode`, `APP_NAME` → `hoocode`, `APP_TITLE` → `HooCode`, the system prompt, help, logs, thread names, scripts, CI, docs. | No "two names for one thing". About 740 files and 6,400 occurrences; mechanical. |
+| **`HOOCODE_` is the only env prefix.** Every `CORTEX_` and `CORTEXCODE_` variable is renamed; no aliases. | One user; the release notes list the renames. |
+| **One-time full merge of `~/.cortexcode` into `~/.hoocode`**; on a conflict **`~/.cortexcode` wins**. Every file it overwrites is backed up first. | The owner's choice. **Risk:** after the first Rust run, hoocode-ts uses the Rust settings and logins. The backup undoes it. |
+| **Project folders merge too**: `<repo>/.cortexcode/` → `<repo>/.hoocode/`, same rules, skipping `dispatch/`. | The owner's choice. **Risk:** it writes into git working trees; the changes show in `git status`. |
+| **Copy, never move or delete.** `~/.cortexcode` and `<repo>/.cortexcode/` stay as they are; deleting them is the owner's call. | A half-finished move can't be undone; a copy can. |
+| **Shared files keep hoocode-ts's shape**: new settings keys are fine, new session data goes in `custom` entries, the `auth.json` lock stays `proper-lockfile` compatible. | Both tools must keep reading what the other wrote. |
+| **All docs are rewritten too**, history included. The migration plan becomes `ts-to-rust-migration.md`. | The owner's choice. Git history keeps the old names. |
 
-`CORTEXCODE_*` and `CORTEX_*` are read as deprecated aliases: still honoured,
-lowest priority, with a single warning per process naming the replacement.
-`CORTEX_BIN` stays (it names the binary, which keeps its name).
+## What we build
 
-Precedence becomes `HOOCODE_` → `CORTEXCODE_` → `CORTEX_`. Since `HOOCODE_`
-was already accepted — it is the TS tool's prefix — the risk of a *shared*
-variable meaning different things is real and is why the Rust data dir moves
-under `rust/`: setting `HOOCODE_CODING_AGENT_DIR` now unambiguously targets
-the Rust agent.
+### 1. The rename (first coding session, step 0)
 
-### What deliberately stays `cortexcode`
+One mechanical commit, after the 11 crate deletions and before any other branch is
+open, so nothing conflicts with it.
 
-Per `CLAUDE.md` and the owner's decision: crate names (`cortexcode-*`, 76 of
-them), the `cortex` cargo binary and its `scripts/install.sh` rename to
-`hoocode` at install time, `APP_NAME`, internal type names, the `cortexcode`
-Rust identifier in code, `[package.metadata.cortex]`, and the harness's own
-`cortex` tooling names. Renaming the crates would touch all 676 files and the
-entire dependency graph for no user-visible gain.
+- `git mv crates/cortexcode-<x> crates/hoocode-<x>`; package names, `[workspace]`
+  members, `use cortexcode_<x>` → `use hoocode_<x>`; `Cargo.lock` regenerated.
+- `[[bin]] cortex` → `hoocode`. `scripts/install.sh`, `binaries.yml` and the npm
+  packaging stop renaming at install. `hoo` stays a link. The `hoocode-ts` shim is
+  unchanged.
+- `[workspace.metadata.cortex]` → `[workspace.metadata.hoocode]`; `CORTEX_BIN` →
+  `HOOCODE_BIN`.
+- Parity harness, `ledger.json`, `dep-firewall.json`, `pin_drift.py`,
+  `gen_help_text.py`, eval scripts and CI: new names. Harness reports label the two
+  sides `ts` and `rust`.
+- Docs: every `cortexcode` and `cortex` becomes `hoocode` (or `hoocode-<x>` for a
+  crate), including `docs/maps/`, the migration plan, `PROGRESS.md`, the ledger notes
+  and `.claude/skills/`. The only exceptions are this card and the decision pages,
+  which must name the old names.
+  - `hoocode-to-cortexcode-migration.md` → `ts-to-rust-migration.md`, with links
+    updated.
+- Guard: `scripts/ci/no_cortex.sh` fails CI if `cortex` (any case) appears outside
+  an allowlist (this card, decision pages, the merge code that reads the old
+  folders).
+- Done when: fmt, clippy, all tests, the dep firewall and the L2 parity checks pass,
+  and the guard is green.
 
-### What becomes `hoocode`
+### 2. Paths and environment (reliability card, item 2)
 
-TUI window/tab titles (`APP_TITLE`), `--version` and help output, the npm
-package and binary names (already `hoocode` via `scripts/install.sh` and
-`scripts/shims/`), the debug-log and crash-report text, docs under `docs/`,
-the migration scripts under `migration/` (including this repo's own doc
-names, which reference the old project name), and every user-facing log line
-that says "cortexcode".
+| Item | Now | Then |
+|---|---|---|
+| `CONFIG_DIR_NAME` | `.cortexcode` (reads `.hoocode` as a fallback) | `.hoocode`, no fallback |
+| Agent dir | `~/.cortexcode` | `~/.hoocode` |
+| Managed binaries (fd, rg) | `~/.cortexcode/bin` | **None**: fd and rg are dropped (reliability item 6). `~/.hoocode/bin` belongs to the installer. |
+| Debug log | `~/.cortexcode/cortex-debug.log` | `~/.hoocode/hoocode-debug.log` (the same file hoocode-ts writes) |
+| Dispatch dirs | `<cwd>/.cortexcode/dispatch/` | `<cwd>/.hoocode/dispatch/` |
+| `ENV_PREFIXES` | `CORTEXCODE_`, `CORTEX_`, `HOOCODE_` | `HOOCODE_` only |
+| Env variables | about 25 `CORTEX*` names | the same suffixes with `HOOCODE_` (e.g. `HOOCODE_CA_CERT`, `HOOCODE_MOUSE`, `HOOCODE_IMAGE_PROTOCOL`) |
 
-### External dependency
+`hoobot/src/config.ts` hardcodes `<workspace>/.cortexcode`. It changes to `.hoocode`
+in the same release (in the hoobot repo).
 
-`hoobot/src/config.ts:72` hardcodes `<workspace>/.cortexcode`, with a comment
-at line 63 explaining that the Rust hoocode reads it. It must move to
-`<workspace>/.hoocode/rust` in the same change, or hoobot's Discord workspace
-stops finding its modes and `hoo-config.json`. This is the one item outside
-this repo that the rename blocks.
+### 3. The one-time merge
 
-## Migration
+Runs at the first start after the upgrade, in every mode (`print`, `json` and `rpc`
+report to stderr). It is also available as `hoocode migrate [--dry-run]`.
 
-Automatic, one-time, on first run after the upgrade, guarded by a marker file
-at `~/.hoocode/rust/.migrated-from-cortexcode`:
+| Source | Into | Rule (`~/.cortexcode` wins) |
+|---|---|---|
+| `settings.json` | `~/.hoocode/settings.json` | Deep merge of objects; on a leaf conflict the cortexcode value wins; arrays are replaced whole |
+| `auth.json` | `~/.hoocode/auth.json` | Per provider: the cortexcode entry wins. Written under the `auth.json` lock. |
+| `models.json`, `keybindings.json`, `hoo-config.json` | same names | Deep merge, cortexcode wins |
+| `sessions/`, `themes/` | same folders | Copy every file; a same-named file is replaced by cortexcode's |
+| `bin/`, `cache/`, `embsearch/`, debug log | — | Skipped (re-downloaded or regenerated) |
 
-1. If `~/.cortexcode` exists and the marker does not, **copy** (never move)
-   `sessions/`, `auth.json`, `settings.json`, `hoo-config.json`, `cache/`,
-   `embsearch/`, `themes/` and `bin/` into `~/.hoocode/rust/`.
-2. Leave the originals in place as the backup, and print the source, the
-   destination and the file count.
-3. Write the marker. Any later run skips straight to normal operation.
+- **Backup first:** each `~/.hoocode` file the merge changes is copied to
+  `~/.hoocode/backup-cortexcode-<timestamp>/` before it is written.
+- **Report:** what was added, what was overwritten (with its backup path) and what
+  was skipped, printed once and saved as `~/.hoocode/merge-report-<timestamp>.txt`.
+- **Once:** a marker `~/.hoocode/.merged-from-cortexcode` stops a second run. A merge
+  lock stops two processes merging at the same time.
+- **Project folders:** when hoocode starts in a folder whose `.cortexcode/` has not
+  been merged (no `.hoocode/.merged-from-cortexcode` there), it merges it into
+  `.hoocode/` by the same rules. It skips `dispatch/`, backs up into
+  `.hoocode/backup-cortexcode-<timestamp>/`, and shows one notice: "merged
+  `.cortexcode/` into `.hoocode/`; review with `git status`; add `.hoocode/dispatch/`
+  and `.hoocode/backup-*/` to `.gitignore`". It never edits `.gitignore` itself.
+- After the merge, nothing reads `.cortexcode` again.
 
-Copy, not move: a half-finished migration that renames the source directory
-is unrecoverable, and the backup costs a few hundred MB at worst while
-sessions accumulate. Deleting `~/.cortexcode` is the user's call, once they
-have seen the new directory work.
+### 4. Tests
 
-Project-local `.cortexcode/` directories are **not** migrated automatically —
-they sit in git working trees. The tool reads the old path as a fallback and
-warns once per project, suggesting the rename, which the user commits
-alongside any `.gitignore` update.
+- Rename: the guard script; the L2 parity suite; a golden test that `--version`, the
+  help text and the window title say hoocode.
+- Paths: agent dir, auth path, sessions dir, dispatch root and bin dir all resolve
+  under `.hoocode`; only `HOOCODE_` variables are read.
+- Merge: each row of the table, with conflicts, for home and project folders;
+  backups made before every overwrite; the marker stops a re-run; `--dry-run` writes
+  nothing; a missing or partial `~/.cortexcode` still works; two processes merge
+  once.
+- Shared files: a session, settings and auth file written by Rust is read by
+  hoocode-ts (fixtures through the harness), and the reverse.
 
-Reading both locations continues until the marker exists, so a rollback is
-just deleting `~/.hoocode/rust/`.
+## Not doing
 
-## Plan
+- A separate `~/.hoocode/rust/` or `~/.hoocode/ts/` namespace.
+- Deprecated `CORTEX_` and `CORTEXCODE_` aliases.
+- Deleting `~/.cortexcode` or `<repo>/.cortexcode/`.
+- Editing `.gitignore` files.
+- Changing hoocode-ts (it is the reference; it already uses `~/.hoocode`).
 
-1. `cortexcode-code-paths`: the layout above, with `LEGACY` swapped and
-   `ENV_PREFIXES` reordered. Every other crate keeps compiling.
-2. The migration routine plus its marker, with `--no-migrate` and
-   `--migrate-only` flags for testing.
-3. User-facing strings: `APP_TITLE`, help/version, log lines, docs.
-4. `HOOCODE_*` variables documented; deprecation warnings for `CORTEX*`.
-5. `hoobot/src/config.ts` updated in step 1's release, not before.
-6. Drop the `~/.hoocode/<file>` fallback once migration is confirmed.
+## Open questions
 
-Steps 1–2 are the risky part and want tests around the fallback matrix: new
-location only, old only, both, neither.
-
-## Tests
-
-- Path resolution: each of new / old / both / neither, for
-  `agent_dir`, `resolve_agent_file`, `sessions_dir`, `auth_path`,
-  `dispatch_root`, `bin_dir`.
-- Migration: copy is idempotent, the marker prevents a second run, a partial
-  source directory still yields a working agent dir.
-- Env precedence: `HOOCODE_` beats `CORTEXCODE_` beats `CORTEX_`, and a
-  deprecated prefix warns exactly once.
-- A golden test asserting the TUI title and `--version` say hoocode.
-
-## Open
-
-- **When does the TS tool adopt `~/.hoocode/ts/`?** That change lives in
-  hoocode-ts, which this repo must not modify. Until it happens, `ts/` stays
-  reserved and empty, and the TS agent keeps its flat `~/.hoocode/*` layout.
-  The reservation is what keeps the door open without breaking anything.
-- `hoo-config.json` has no `HOOCODE_` equivalent name; it is hoobot's, and it
-  moves by path, not by rename.
-- The migration doc's own name (`hoocode-to-cortexcode-migration.md`) refers to
-  the old project name. Renaming a design doc breaks every link to it, so it
-  keeps its name and gets a line at the top saying the project is now hoocode.
+- None. Risks accepted on 2026-10-08: hoocode-ts adopts the Rust settings and logins
+  after the first merge; the project merge writes into repos; rewritten history docs
+  no longer show the old names (git does).

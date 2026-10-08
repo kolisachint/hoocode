@@ -1,5 +1,9 @@
 # Decisions, 2026-10-07
 
+> Parts of this page were replaced on 2026-10-08 (MCP Apps, Copilot canvases, plugin
+> tools, marketplace writing, the WASM crate, the order of work). See
+> [decisions-2026-10-08.md](decisions-2026-10-08.md).
+
 Made with the user in a review of the post-migration design docs. Where a design card
 disagrees with this page, this page wins. The cards are indexed in
 [README.md](README.md).
@@ -50,6 +54,6 @@ behaves the same way.
 
 ## Still to decide (later, not blocking)
 
-- Semantic search via the `embsearch` daemon: who downloads it, and when (wave F).
-- Copilot canvas host: when, after MCP Apps.
+- ~~Semantic search via the `embsearch` daemon: who downloads it, and when (wave F).~~ Dropped 2026-10-08.
+- ~~Copilot canvas host: when, after MCP Apps.~~ Dropped 2026-10-08.
 - Whether thinking escalation comes back (hoocode-ts has it on by default).

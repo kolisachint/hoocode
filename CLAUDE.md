@@ -22,12 +22,18 @@ Never modify hoocode; it is the reference.
   `../codex`, Apache-2.0) into this repo. Running such tools in tests is fine.
 - Work outside the migration has no TypeScript reference (user, 2026-10-01).
 - **What to build next:** `docs/design/README.md` (cards in build order, plus the user's
-  design preferences). `docs/design/decisions-2026-10-07.md` wins over any card. Start
-  with `reliability.md`. A design session changes docs only.
+  design preferences). `docs/design/decisions-2026-10-07.md` and `decisions-2026-10-08.md` (concurrency
+  card, scope cuts, crates to delete) win over any card. Start
+  with step 0a of the plan in `docs/design/README.md`. A design session changes docs only.
+- **Maps:** `docs/maps/packages.md` (crates) and `docs/maps/ui.md` (screen, pickers, slash
+  commands). Read them to find code; update them in the same commit as any crate, screen
+  or command change.
 
-- Command names: the Rust build installs as `hoocode` and the TS one is `hoocode-ts`, by
-  shims only (`scripts/install.sh`, `scripts/shims/`, release packaging). Code, crates and
-  the `cortex` cargo binary keep their names; don't rename them.
+- Naming (2026-10-08, `docs/design/naming-and-paths.md`): the Rust build is a drop-in
+  replacement for hoocode-ts. Everything is being renamed to hoocode (crates `hoocode-*`,
+  binary `hoocode`, data in `~/.hoocode` shared with hoocode-ts, `HOOCODE_` env only). The
+  TS build is `hoocode-ts` via `scripts/shims/`. Until the rename lands, code still says
+  cortexcode; don't add new `cortex` names.
 
 Commands:
 

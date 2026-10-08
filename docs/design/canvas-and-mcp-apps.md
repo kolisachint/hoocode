@@ -1,7 +1,8 @@
-# Rich surfaces: MCP Apps (then Copilot canvases)
+# Rich surfaces: MCP Apps
 
-Status: **agreed 2026-10-07** (MCP Apps); Copilot canvases later. Design only.
-Replaces the canvas part of ledger 12.7.
+Status: **deferred 2026-10-08** ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Copilot canvases **dropped**. The plan below is kept for when a tool you use needs a
+browser UI. Design only. Replaces the canvas part of ledger 12.7.
 
 ## Goal
 
@@ -16,7 +17,7 @@ open it in your browser beside the terminal, and it can talk to the agent.
 | Shown as "app ready · o to open" in the TUI; `mcpApps.autoOpen` setting to change | No surprise browser tabs |
 | rpc and app-server clients get the app's info and decide themselves | hoobot and other clients have their own UIs |
 | Calls the app makes (tool calls) go through the same trust and permission rules as model calls | An app is not a back door |
-| Copilot canvases come later. Your `drawio-canvas` works now through its MCP mode (`mcp.mjs`) once [mcp.md](mcp.md) lands. | Keeps scope small |
+| **No Copilot canvases.** Your `drawio-canvas` works through its MCP mode (`mcp.mjs`) once [mcp.md](mcp.md) lands. | A vendor format the standard covers |
 
 ## What we build
 
@@ -44,13 +45,13 @@ Done when: an rmcp test server with a `ui://` tool works end to end in headless
 Chromium (Playwright is installed), with CSP, origin separation, and permission
 checks covered by tests.
 
-## Not doing (now)
+## Not doing
 
 - Copilot canvas host (forks `extension.mjs` under Node with a module shim, plus
-  the canvas tools). hoocode-ts has it; port later.
+  the canvas tools). hoocode-ts has it; we don't port it.
 - Showing apps inside the terminal.
 
 ## Open questions
 
-- When to add the Copilot canvas host: after MCP Apps ships, or only if
-  `drawio-canvas` needs features its MCP mode lacks (talkback, busy/idle state)?
+- When to un-defer MCP Apps: when a tool you use ships a `ui://` resource you want
+  to see.

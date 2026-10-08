@@ -1,6 +1,6 @@
 # Search: `SearchHooCode`, capability index, semantic code search
 
-Status: **agreed 2026-10-07** (part A); part B deferred. Design only. Replaces
+Status: **agreed 2026-10-07** (part A); part B **dropped 2026-10-08**. Design only. Replaces
 ledger 12.4 and closes the 8 `l1_done` tasks.
 
 ## Goal
@@ -9,7 +9,8 @@ ledger 12.4 and closes the 8 `l1_done` tasks.
 matches hoocode-ts, which lets the 8 ported tasks stuck at `l1_done` pass their
 side-by-side checks. It also gives the model one place to ask "what can you do?".
 
-**Part B (later):** meaning-based code search through `SearchCodebase`.
+**Part B (dropped 2026-10-08):** meaning-based code search through `SearchCodebase`.
+Lexical `SearchCodebase` stays.
 
 ## Decisions
 
@@ -37,7 +38,7 @@ side-by-side checks. It also gives the model one place to ask "what can you do?"
 Done when: the 8 scenarios pass, and `SearchHooCode` has tests for results and
 schema.
 
-**Part B** (deferred):
+**Part B** (dropped; kept for the record):
 
 5. Implement the existing `EmbsearchService` seam in `code-tool-search` against the
    `embsearch` daemon (line-based JSON over stdio). Opt-in with
@@ -49,6 +50,6 @@ schema.
 - Indexing docs in `SearchHooCode` until Rust user docs exist.
 - A `SearchSkills` tool (skills stay listed in the prompt).
 
-## Open questions (part B only)
+## Open questions
 
-- Who downloads `embsearch`: `cortex` on first use (checksummed), or the user?
+- None. Part B's question (who downloads `embsearch`) went with part B.

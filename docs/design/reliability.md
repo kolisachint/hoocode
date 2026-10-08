@@ -13,7 +13,7 @@ stop the same bug classes coming back.
 |---|---|
 | In `--mode rpc`, a tool that needs approval is **denied** when no client can answer | Today it runs without asking (`code-permissions` `evaluate`: `!has_ui` returns `Allow`; `code-cli` `build_permission_gate` attaches a UI only in interactive mode). hoobot users could run bash and edit files unchecked. |
 | `--print` and `--mode json` keep today's behaviour (allow), but say so | You ran the command yourself, and headless scripts depend on it. A one-line stderr notice lists which tools ran without approval. |
-| Data directories move to `~/.hoocode/rust/` with a backup ([naming-and-paths.md](naming-and-paths.md) steps 1–2) | Rust reads hoocode-ts's `~/.hoocode` files today, and the two tools must not share private state |
+| Data directories move to `~/.hoocode`, shared with hoocode-ts, after a one-time merge with backups ([naming-and-paths.md](naming-and-paths.md); changed 2026-10-08) | Rust is a drop-in replacement: one config, one login, one session list |
 | macOS is a supported dev platform: its test failures are bugs | It's the user's local machine |
 | Panics on user or model input are bugs | One crashed the TUI on 2026-10-02 (byte-slicing inside a multi-byte character) |
 
@@ -25,14 +25,13 @@ stop the same bug classes coming back.
    - rpc mode uses it; print and json keep `Allow` and print the notice.
    - Tests: a gated tool in rpc is blocked, in print is allowed with the notice,
      and in interactive mode still prompts.
-   - Later, optional: real approval dialogs over rpc ([rpc-approvals.md](rpc-approvals.md)).
-     hoobot now uses the app-server, so this is not urgent.
-2. **Paths.** [naming-and-paths.md](naming-and-paths.md) steps 1–2:
-   - new layout in `code-paths`;
-   - a one-time migration with a backup and a marker file;
-   - `--no-migrate` and `--migrate-only` flags;
-   - tests for all four cases: new location only, old only, both, neither.
-   - Also ship a `.gitignore` snippet for `<repo>/.hoocode/rust/dispatch/`.
+   - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
+     app-server ([rpc-approvals.md](rpc-approvals.md) is kept for the record).
+2. **Paths** (changed 2026-10-08): [naming-and-paths.md](naming-and-paths.md) §2–4.
+   Data moves to `~/.hoocode`, **shared with hoocode-ts** (drop-in replacement);
+   `HOOCODE_` is the only env prefix; a one-time merge copies `~/.cortexcode` and
+   `<repo>/.cortexcode/` in (cortexcode wins, backups first). The crate and binary
+   rename is §1 of that card and happens in step 0, before this card.
 3. **macOS test failures** (all four fail on a clean checkout):
    - `code-main` replay: temp paths resolve under `/private` on macOS, so
      canonicalize both sides;
@@ -54,12 +53,26 @@ stop the same bug classes coming back.
    terminal key parser, markdown renderer, and list-item detection. An optional
    nightly `cargo-fuzz` CI job runs the same targets for longer.
 
-Done when: all five land, CI is green on Linux and macOS, and every item has
+6. **`@file` autocomplete without `fd`** (2026-10-08).
+   - A file finder in a `code-*` crate walks with the `ignore` crate using fd's
+     rules: files and folders, hidden included, follow links, honour `.gitignore`,
+     skip `.git`, match the name (the full path when the query has a `/`),
+     smart case, at most 100 results.
+   - The autocomplete gets it injected (the `tui-*` crates stay free of it), runs it
+     off the UI thread, and drops results for a query the user has typed past.
+   - Remove the `fd` and `rg` lookups, the external-tools table and its `/settings`
+     pane, `bin_dir()`, and the `RG_BINARY`, `FD_BINARY` and `NATIVE_SEARCH` env
+     variables. Mask the `/settings` pane difference in the parity harness.
+   - Tests: the same suggestions as `fd` on a fixture tree (hidden files,
+     `.gitignore`, symlinks, `.git` skipped, path queries); typing never waits on
+     the walk.
+
+Done when: all six land, CI is green on Linux and macOS, and every item has
 regression tests.
 
 ## Not doing
 
-- Approval dialogs over rpc (later, optional).
+- Approval dialogs over rpc (dropped 2026-10-08).
 - Rewriting every `unwrap`; only ones reachable from input.
 
 ## Open questions

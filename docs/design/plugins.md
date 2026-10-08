@@ -1,12 +1,13 @@
 # Plugins
 
-Status: **agreed 2026-10-07**, design only. Replaces ledger 12.1 and 12.2.
+Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Design only. Replaces ledger 12.1 and 12.2.
 
 ## Goal
 
 Load plugins written to the open standard (Agent Plugins) and Claude Code's format.
 Install them from marketplaces. Optionally let the model find, install and write
-plugins itself. Keep only what standards cover.
+plugins itself. Write only the standard; keep only what standards cover.
 
 ## Decisions
 
@@ -16,12 +17,12 @@ plugins itself. Keep only what standards cover.
 | Supported contents: **skills, MCP servers, subagents** | Skills and MCP are the standard. Subagents are used by both Claude and Copilot. |
 | Hooks, slash commands, themes, providers: **not supported** | A plugin that ships them still loads; `/plugin list` warns what was skipped. |
 | **Plugins are the only install system** | The `packages` setting and npm sources are dropped |
-| Marketplace index: Claude's `.claude-plugin/marketplace.json`, read and written | The most used; the official Anthropic directory uses it |
+| Marketplace index: Claude's `.claude-plugin/marketplace.json`, **read only** | The most used; the official Anthropic directory uses it. We don't publish, so we never write it. |
 | Anthropic's official directory is **pre-trusted** | hoocode-ts behaviour |
-| Model tools for the **full lifecycle**: search, install, write, update, remove, package, publish | User choice |
+| Model tools: **search, install, list, remove, write** (2026-10-08). No update, package or publish tools. | Updating is `/plugin update`; packaging and publishing target Claude's marketplace format, which we don't write |
 | Those tools are **opt-in** (`enablePluginTools`, off by default) | No token cost unless wanted |
 | Installs from a trusted marketplace **don't ask**. Plugins the model writes itself ask before anything runnable starts (MCP server, or a subagent with write or shell tools). | User choice. **Accepted risk:** with the tools on, the model can install and run any plugin from a trusted marketplace without asking, and a prompt injection could trigger that. |
-| Plugins we write are Agent Plugins packages; hoocode extras go in our own namespace directory | Other clients can load what we produce |
+| Plugins we write are **Agent Plugins packages only**, never Claude or Copilot layouts; hoocode extras go in our own namespace directory | Other clients can load what we produce, and there is one writer to keep correct |
 | Folder trust as in [mcp.md](mcp.md): repository-supplied plugins need it, and it re-asks on change | Same rule everywhere |
 
 ## What we build
@@ -42,21 +43,15 @@ plugins itself. Keep only what standards cover.
 2. **Install.**
    - `/plugin marketplace add|list|refresh`;
    - `/plugin install|remove [--scope user|project]`;
-   - `/plugin list`; `/plugin trust`.
+   - `/plugin list`; `/plugin update [name]`; `/plugin trust`.
    - Fetch with the `git` command (uses your git credentials), with a cache and
      refresh interval.
    - A new plugin's skills and subagents are live from the next turn; MCP servers
      start once the turn ends.
 3. **Model tools** (opt-in): `SearchPlugins`, `InstallPlugin`, `UninstallPlugin`,
-   `ListPlugins`, `ProposePlugin` (write), `UpdatePlugin`, `PackagePlugin`,
-   `PublishPlugin`.
+   `ListPlugins`, `ProposePlugin` (writes an Agent Plugins package).
    - Adding a marketplace stays human-only.
    - Subagents never get these tools, so a subagent can't bootstrap more power.
-   - Publishing writes into a marketplace checkout and stops there; pushing is up
-     to the user.
-4. **Skills over MCP.** Skills served by MCP servers join the catalog. Content is
-   checked against the server's file list (size and SHA-256) before use, and
-   approval is bound to that list.
 
 Done when: format conformance tests pass (Agent Plugins normative cases, Claude
 fixtures), install and remove work against local test marketplaces, the lifecycle
@@ -66,6 +61,9 @@ tools pass their gate tests, and a plugin installed by hoocode-ts loads in `cort
 
 - Hooks, slash commands, themes and providers in plugins.
 - `.agents-plugin/`, Copilot-only layouts and Copilot marketplace files.
+- Writing Claude or Copilot plugin layouts, or writing `marketplace.json`.
+- `UpdatePlugin`, `PackagePlugin`, `PublishPlugin` model tools.
+- Skills over MCP (the MCP Skills extension).
 - npm sources, and the `packages` setting.
 - Validating against other vendors' tools (`claude plugin validate`, smoke runs)
   for now.
