@@ -111,7 +111,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5854 / 5433 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 833 / 706 | keep |
-| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5094 / 0 | keep |
+| `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5104 / 0 | keep |
 | `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1165 | the `hoocode` binary |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 608 | keep |
 | `code-migrate` | One-time merge of the pre-1.2 coding-agent folders into ~/.hoocode | 1 | 758 / 334 | keep |
@@ -121,7 +121,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-permissions` | Permission gate for the hoocode coding agent: per-mode tool policy from hoo-config.json and approval prompts | 4 | 329 / 279 | keep |
 | `code-print` | Output formatting for the hoocode coding agent | 1 | 298 / 280 | keep |
 | `code-prompts` | Prompt templates for the hoocode coding agent | 2 | 780 / 0 | keep |
-| `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 5 | 4453 / 2992 | keep |
+| `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 5 | 4457 / 2992 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1021 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 1821 / 274 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 1995 / 1108 | keep |
@@ -138,7 +138,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 11390 / 4952 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12050 / 4952 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7793 / 3044 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2407 / 2505 | keep |
@@ -154,7 +154,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-highlight` | Syntax highlighting for the hoocode TUI: a port of highlight.js 10.7.3 over its own grammars | 1 | 1985 / 72 | keep |
 | `tui-images` | Terminal image rendering for the hoocode TUI | 4 | 1237 / 379 | keep |
 | `tui-keys` | Keyboard handling for the hoocode TUI | 6 | 1968 / 582 | keep |
-| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2789 / 2616 | keep |
+| `tui-render` | Differential rendering for the hoocode TUI | 4 | 2841 / 2616 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 1610 / 103 | keep |
 | `tui-util` | Shared utilities for the hoocode TUI | 10 | 2159 / 583 | keep |
 

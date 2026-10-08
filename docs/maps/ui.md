@@ -92,6 +92,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | The list (names, descriptions, order) | `code-resources/src/slash_commands.rs` `BUILTIN_SLASH_COMMANDS` |
 | Name → `BuiltinCommand` | `interactive_mode.rs`, `enum BuiltinCommand` and its parser |
 | What each does | `interactive_mode.rs` `run_builtin_command` (`/compact`: `handle_compact_command`) |
+| `/perf`: threads, RSS, frame and keystroke timing, stalls (Phase 0 counters) | `handle_perf_command` in `interactive_mode.rs`; collector and report in `code-tui-app/src/perf.rs` (`format_report`) |
 | Mode commands (`/mode`, `/plan`, `/grill`, `/goal`, `/approve`) | `code-modes` |
 | Skill and prompt-template commands | `code-resources` |
 
@@ -109,6 +110,7 @@ its parse arm, handle it in `run_builtin_command`, add a test, update this table
 | Submitting a prompt | `submit`, `prompt`, `prompt_with_images` |
 | Streaming render throttle | `schedule_streaming_render`, `run_streaming_render` |
 | Ctrl+Z | `code-tui-app/src/suspend.rs` |
+| Perf counters (`/perf`, `--perf-log <file>`) | `code-tui-app/src/perf.rs`. The loop calls `Perf::key_arrived` for each key (stamped by the terminal's reader thread: `TuiEvent::Input(data, arrived)`) and `Perf::end_iteration` after each frame. Frame build and write times come from `Tui::set_frame_observer`. The UI thread only records into fixed rings; a sampler thread (`hoocode-perf`) reads `/proc` and writes the log once a second. |
 
 ## TUI library (`tui-*`)
 

@@ -163,6 +163,48 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 | 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase |
 | 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript |
 
+#### Baseline (Phase 0)
+
+Linux only, so far. macOS is not measured yet, and Phase 0 is not done until it is.
+Measured 2026-10-08 on a 4-vCPU VM (kernel 6.18). One run per row, driven by
+`scripts/perf/load_scenario.py` against the mock model in tmux, 20 keys a second for
+15 s. Each frame is timed by `Tui::set_frame_observer`. Keystroke-to-frame runs from
+the moment the terminal's reader thread receives the key to the end of the loop
+iteration that draws it. The per-second log is in `target/perf/load-*/perf.jsonl`.
+
+| Run (release build unless noted) | Frame build p50 / p99 ms | Frame write p99 ms | Keystroke→frame p50 / p99 ms | Loop iteration p50 / p99 ms | Stalls >500 ms | Threads max | RSS max |
+|---|---|---|---|---|---|---|---|
+| Load: 8 parallel `bash`, 5,000 lines each | 28.6 / 48.7 | 0.2 | 29.1 / 191.6 | 29.1 / 99.2 | 0 | 17 | 47.9 MiB |
+| Control: 8 `bash`, 500 lines each | 30.9 / 51.8 | 0.7 | 31.9 / 213.4 | 31.3 / 209.8 | 0 | 17 | 45.6 MiB |
+| Control: no tool calls (typing only) | 0.30 / 2.78 | 3.5 | 0.46 / 8.65 | 0.42 / 4.59 | 0 | 9 | 29.3 MiB |
+| Debug build, load as the first row | 341 / 470 | 1.7 | 97,826 / 106,026 | 105,255 p99 (one iteration) | 3 | 17 | 64.1 MiB |
+
+What the numbers say:
+
+- Idle typing meets the Phase 2 target (keystroke-to-frame p99 under 16 ms). Under
+  tool output it does not: p99 is 192 ms, and frames take about 30 ms at p50.
+- A keystroke costs one full synchronous frame. `Tui::handle_input` calls
+  `request_render`, and `run()` drains every queued input event before it looks at
+  `AppEvent`s. At 20 keys a second and 30 ms a frame the UI thread is about 60% busy
+  with frames, so any frame longer than 50 ms builds a backlog. The debug run shows
+  the backlog case: 300 queued keys took about 105 s to draw, and the agent's output
+  waited behind them.
+- The cost does not grow between 500 and 5,000 lines a call. That points at the
+  per-frame cost of the bash block, not at the amount of text. Not profiled in release
+  yet. A debug-build stack sample showed the UI thread in
+  `tool_chain` → `bash.rs` → `visual_truncate` → `Text::render` → `wrap_text_with_ansi`,
+  so the block is wrapped in full on each frame before it is truncated.
+- Thread count is 9 at idle and 17 once tools run (tokio workers for the `bash` pipes).
+- Frame write time is small everywhere (p99 under 4 ms). The terminal is not what
+  stalls the loop; the render is.
+
+Phase 6 says "frame build p99 under 8 ms on a 10k-line transcript". This load has
+about 40,000 lines of `bash` output, so it is a different test. It still fails by
+a wide margin (p99 48.7 ms).
+
+Not in these runs yet (the scenario's TODOs): the five subagents, the stdio MCP
+server that never answers, and the paused-pty run.
+
 ## Not doing
 
 - **A thread per subsystem** (MCP thread, per-tool threads, a "GC thread"). Rust has

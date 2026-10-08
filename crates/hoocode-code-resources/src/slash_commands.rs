@@ -81,6 +81,10 @@ pub const BUILTIN_SLASH_COMMANDS: &[BuiltinSlashCommand] = &[
         description: "Show all keyboard shortcuts",
     },
     BuiltinSlashCommand {
+        name: "perf",
+        description: "Show UI performance counters (threads, RSS, frame and keystroke timing)",
+    },
+    BuiltinSlashCommand {
         name: "fork",
         description: "Create a new fork from a previous user message",
     },

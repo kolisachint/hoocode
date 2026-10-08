@@ -1535,6 +1535,7 @@ pub fn run_interactive_mode(
             initial_messages: messages,
             model_fallback_message: None,
             terminal: None,
+            perf_log: args.perf_log.as_ref().map(std::path::PathBuf::from),
         },
     )
     .map(|()| 0)
@@ -1652,6 +1653,7 @@ mod tests {
                 initial_messages: Vec::new(),
                 model_fallback_message: None,
                 terminal: Some(Box::new(terminal)),
+                perf_log: None,
             },
         );
         assert!(result.is_ok());
@@ -1905,6 +1907,7 @@ mod tests {
                     initial_messages: Vec::new(),
                     model_fallback_message: None,
                     terminal: Some(Box::new(terminal)),
+                    perf_log: None,
                 },
             )
             .unwrap();
@@ -2043,6 +2046,7 @@ mod tests {
                     initial_messages: Vec::new(),
                     model_fallback_message: None,
                     terminal: Some(Box::new(terminal)),
+                    perf_log: None,
                 },
             )
             .unwrap();

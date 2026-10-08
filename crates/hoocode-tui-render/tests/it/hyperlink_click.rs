@@ -37,7 +37,7 @@ fn setup_rows(rows: Vec<String>) -> (Tui, Rc<RefCell<Vec<String>>>) {
 }
 
 fn send(tui: &mut Tui, data: &str) {
-    tui.process_event(TuiEvent::Input(data.to_string()));
+    tui.process_event(TuiEvent::input(data));
 }
 
 fn click(tui: &mut Tui, row: usize, column: usize) {

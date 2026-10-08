@@ -108,7 +108,7 @@ struct Harness {
 
 impl Harness {
     fn send(&mut self, data: &str) {
-        self.ui.process_event(TuiEvent::Input(data.to_string()));
+        self.ui.process_event(TuiEvent::input(data));
     }
 
     fn text(&self) -> String {

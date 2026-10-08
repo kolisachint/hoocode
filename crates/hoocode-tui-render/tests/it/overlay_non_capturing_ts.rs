@@ -77,7 +77,7 @@ fn flush(tui: &mut Tui) {
 }
 
 fn send(tui: &mut Tui, data: &str) {
-    tui.process_event(TuiEvent::Input(data.to_string()));
+    tui.process_event(TuiEvent::input(data));
 }
 
 // --- focus management
