@@ -1,5 +1,6 @@
 //! Test helpers: an in-process Streamable HTTP server and the stdio server's config.
 
+pub mod oauth;
 pub mod server;
 
 use std::path::Path;

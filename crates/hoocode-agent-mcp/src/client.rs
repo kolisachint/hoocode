@@ -6,9 +6,9 @@
 //! to the server, so the server can stop the work (`docs/design/concurrency.md`
 //! section 4).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::future::Future;
-use std::process::Stdio;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -19,9 +19,15 @@ use rmcp::model::{
     ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, ProgressToken, RequestId,
     ServerResult,
 };
-use rmcp::service::{NotificationContext, Peer, PeerRequestOptions, RunningService, ServiceError};
-use rmcp::transport::streamable_http_client::StreamableHttpClientTransportConfig;
-use rmcp::transport::{StreamableHttpClientTransport, TokioChildProcess};
+use rmcp::service::{
+    ClientInitializeError, NotificationContext, Peer, PeerRequestOptions, RunningService,
+    ServiceError,
+};
+use rmcp::transport::auth::AuthClient;
+use rmcp::transport::streamable_http_client::{
+    StreamableHttpClientTransportConfig, StreamableHttpError,
+};
+use rmcp::transport::StreamableHttpClientTransport;
 use rmcp::{ClientHandler, RoleClient, ServiceExt};
 use serde_json::Value;
 use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
@@ -30,7 +36,9 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config::McpServerConfig;
 use crate::error::McpError;
+use crate::oauth;
 use crate::result::{from_call_result, ToolOutput};
+use crate::stdio;
 
 /// Most requests in flight to one server; the rest wait for a permit.
 pub const MAX_IN_FLIGHT_REQUESTS: usize = 8;
@@ -39,6 +47,9 @@ pub const MAX_IN_FLIGHT_REQUESTS: usize = 8;
 pub const MAX_RESPONSE_BYTES: usize = 32 * 1024 * 1024;
 /// Default deadline for one request, from the start of the wait for a permit.
 pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(60);
+/// Largest server-sent event accepted on a Streamable HTTP connection, in bytes
+/// (`docs/design/concurrency.md` section 3). A bigger event fails the request.
+pub const MAX_SSE_EVENT_BYTES: usize = 16 * 1024 * 1024;
 /// Most pages of a tool list read before giving up.
 const MAX_LIST_PAGES: usize = 1000;
 /// How long a cancel notification may take to send.
@@ -169,6 +180,8 @@ struct Session {
 struct Inner {
     server: String,
     config: McpServerConfig,
+    /// Set for OAuth connections: the hoocode data directory holding tokens.
+    oauth_dir: Option<PathBuf>,
     options: ClientOptions,
     permits: Arc<Semaphore>,
     handler: Handler,
@@ -195,9 +208,42 @@ impl std::fmt::Debug for McpClient {
 impl McpClient {
     /// Starts the server and initializes the session, within
     /// `options.request_timeout`. `server` is the name used in tool names.
+    ///
+    /// A Streamable HTTP server that answers 401 with no stored token gives
+    /// [`McpError::AuthRequired`]; see [`connect_oauth`](Self::connect_oauth).
     pub async fn connect(
         server: impl Into<String>,
         config: McpServerConfig,
+        options: ClientOptions,
+    ) -> Result<Self, McpError> {
+        Self::connect_with(server.into(), config, None, options).await
+    }
+
+    /// Connects to a Streamable HTTP server that uses OAuth, with tokens kept
+    /// under `data_dir` (see [`oauth::token_store_dir`]).
+    ///
+    /// A stored token for the server's authorization server is used, and
+    /// refreshed when it is near expiry or rejected. With no usable token the
+    /// server's 401 gives [`McpError::AuthRequired`]: run
+    /// [`oauth::begin_login`], finish the login, then connect again.
+    pub async fn connect_oauth(
+        server: impl Into<String>,
+        url: impl Into<String>,
+        headers: BTreeMap<String, String>,
+        data_dir: &Path,
+        options: ClientOptions,
+    ) -> Result<Self, McpError> {
+        let config = McpServerConfig::Http {
+            url: url.into(),
+            headers,
+        };
+        Self::connect_with(server.into(), config, Some(data_dir.to_path_buf()), options).await
+    }
+
+    async fn connect_with(
+        server: String,
+        config: McpServerConfig,
+        oauth_dir: Option<PathBuf>,
         options: ClientOptions,
     ) -> Result<Self, McpError> {
         let options = ClientOptions {
@@ -206,12 +252,13 @@ impl McpClient {
         };
         let handler = Handler::default();
         let service = bounded_by(options.request_timeout, async {
-            start(&config, handler.clone()).await
+            start(&server, &config, handler.clone(), oauth_dir.as_deref()).await
         })
         .await?;
         let inner = Inner {
-            server: server.into(),
+            server,
             config,
+            oauth_dir,
             permits: Arc::new(Semaphore::new(options.max_in_flight)),
             options,
             handler,
@@ -331,7 +378,7 @@ impl McpClient {
                     if matches!(error, ServiceError::TransportClosed) {
                         self.reset_session(generation).await;
                     }
-                    return Err(map_service(error));
+                    return Err(map_service(&self.inner.server, error));
                 }
             };
 
@@ -365,7 +412,7 @@ impl McpClient {
                     if matches!(error, ServiceError::TransportClosed) {
                         self.reset_session(generation).await;
                     }
-                    return Err(map_service(error));
+                    return Err(map_service(&self.inner.server, error));
                 }
                 Some(Ok(Ok(result))) => result,
             };
@@ -454,7 +501,12 @@ impl McpClient {
             let result = self
                 .bounded(cancel, deadline, {
                     let params = params.clone();
-                    async move { peer.list_tools(Some(params)).await.map_err(map_service) }
+                    let server = self.inner.server.as_str();
+                    async move {
+                        peer.list_tools(Some(params))
+                            .await
+                            .map_err(|e| map_service(server, e))
+                    }
                 })
                 .await;
             match result {
@@ -489,7 +541,13 @@ impl McpClient {
         }
         // Dropping the old session stops its process.
         *slot = None;
-        let service = start(&self.inner.config, self.inner.handler.clone()).await?;
+        let service = start(
+            &self.inner.server,
+            &self.inner.config,
+            self.inner.handler.clone(),
+            self.inner.oauth_dir.as_deref(),
+        )
+        .await?;
         let generation = self.inner.next_generation.fetch_add(1, Ordering::SeqCst);
         let peer = service.peer().clone();
         *slot = Some(Session {
@@ -518,10 +576,13 @@ impl McpClient {
     }
 }
 
-/// Starts the server for `config` and initializes the MCP session.
+/// Starts the server for `config` and initializes the MCP session. With
+/// `oauth_dir`, a Streamable HTTP server is reached with its stored OAuth token.
 async fn start(
+    server: &str,
     config: &McpServerConfig,
     handler: Handler,
+    oauth_dir: Option<&Path>,
 ) -> Result<RunningService<RoleClient, Handler>, McpError> {
     match config {
         McpServerConfig::Stdio {
@@ -530,19 +591,12 @@ async fn start(
             env,
             cwd,
         } => {
-            let mut process = tokio::process::Command::new(command);
-            process.args(args).envs(env);
-            if let Some(dir) = cwd {
-                process.current_dir(dir);
-            }
-            let (transport, _stderr) = TokioChildProcess::builder(process)
-                .stderr(Stdio::null())
-                .spawn()
+            let transport = stdio::spawn(command, args, env, cwd.as_deref())
                 .map_err(|e| McpError::Connect(format!("cannot start {command}: {e}")))?;
             handler
                 .serve(transport)
                 .await
-                .map_err(|e| McpError::Connect(e.to_string()))
+                .map_err(|e| connect_error(server, e))
         }
         McpServerConfig::Http { url, headers } => {
             let mut custom = HashMap::new();
@@ -553,14 +607,51 @@ async fn start(
                     .map_err(|e| McpError::Config(format!("value of header {name}: {e}")))?;
                 custom.insert(name, value);
             }
-            let transport = StreamableHttpClientTransport::from_config(
-                StreamableHttpClientTransportConfig::with_uri(url.as_str()).custom_headers(custom),
-            );
-            handler
-                .serve(transport)
-                .await
-                .map_err(|e| McpError::Connect(e.to_string()))
+            let mut config =
+                StreamableHttpClientTransportConfig::with_uri(url.as_str()).custom_headers(custom);
+            config.max_sse_event_size = MAX_SSE_EVENT_BYTES;
+            let result = match oauth_dir {
+                None => {
+                    handler
+                        .serve(StreamableHttpClientTransport::from_config(config))
+                        .await
+                }
+                Some(dir) => {
+                    let manager = oauth::authorization_manager(url, dir).await?;
+                    let client = AuthClient::new(reqwest::Client::new(), manager);
+                    handler
+                        .serve(StreamableHttpClientTransport::with_client(client, config))
+                        .await
+                }
+            };
+            result.map_err(|e| connect_error(server, e))
         }
+    }
+}
+
+/// Maps a failed initialize. A 401 becomes [`McpError::AuthRequired`].
+fn connect_error(server: &str, error: ClientInitializeError) -> McpError {
+    let challenge = match &error {
+        ClientInitializeError::TransportError { error, .. } => auth_challenge(&*error.error),
+        _ => None,
+    };
+    match challenge {
+        Some(www_authenticate) => McpError::AuthRequired {
+            server: server.to_owned(),
+            www_authenticate,
+        },
+        None => McpError::Connect(error.to_string()),
+    }
+}
+
+/// The `WWW-Authenticate` challenge in a 401 from the Streamable HTTP
+/// transport, if `error` is one.
+fn auth_challenge(error: &(dyn std::error::Error + Send + Sync + 'static)) -> Option<String> {
+    match error.downcast_ref::<StreamableHttpError<reqwest::Error>>()? {
+        StreamableHttpError::AuthRequired(required) => {
+            Some(required.www_authenticate_header.clone())
+        }
+        _ => None,
     }
 }
 
@@ -581,10 +672,17 @@ async fn notify_cancelled(peer: &Peer<RoleClient>, id: RequestId, reason: &str) 
 }
 
 /// Maps an rmcp error. A dropped connection is `Disconnected` so callers can
-/// tell it apart.
-fn map_service(error: ServiceError) -> McpError {
+/// tell it apart; a 401 is `AuthRequired`.
+fn map_service(server: &str, error: ServiceError) -> McpError {
     match error {
         ServiceError::TransportClosed => McpError::Disconnected("the connection closed".to_owned()),
+        ServiceError::TransportSend(error) => match auth_challenge(&*error.error) {
+            Some(www_authenticate) => McpError::AuthRequired {
+                server: server.to_owned(),
+                www_authenticate,
+            },
+            None => McpError::Protocol(format!("transport send error: {}", error.error)),
+        },
         ServiceError::Timeout { timeout } => McpError::Timeout(timeout),
         ServiceError::McpError(error) => McpError::Rpc(error.message.to_string()),
         other => McpError::Protocol(other.to_string()),

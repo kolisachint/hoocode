@@ -113,7 +113,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `agent-core` | Core agent runtime for hoocode agents | 2 | 1979 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3321 / 1042 | keep |
 | `agent-loop` | Agent loop for hoocode agents | 1 | 2647 / 0 | keep |
-| `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 0 | 880 / 666 | keep |
+| `agent-mcp` | MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines | 0 | 1616 / 1349 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2355 / 0 | keep |
 | `agent-types` | Shared types for hoocode agents | 21 | 896 / 0 | keep |
 
