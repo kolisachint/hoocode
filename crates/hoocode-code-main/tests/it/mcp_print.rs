@@ -1,18 +1,18 @@
-#![allow(clippy::disallowed_methods)] // test code: std::process and a poll loop around the mock
+#![allow(clippy::disallowed_methods)] // test code: std::process and the MCP stdio server
 //! Print mode sees MCP tools on its first prompt (`docs/design/mcp.md`).
 //!
 //! The stdio server answers `initialize` only after a delay, so it is still connecting when
 //! the process starts. Print mode waits for the trusted servers before its first prompt, so the
 //! model's first request already offers `mcp_slow_echo`, and the tool's answer reaches the
-//! model on the second request. The model is `migration/tui-parity/mockllm.py`, scripted.
-//! Needs `python3`; without it the test is skipped.
+//! model on the second request. The model is the in-process mock LLM (`support::mock_llm`),
+//! scripted. The MCP server is Python: needs `python3`; without it the test is skipped.
 
 use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
-use std::time::{Duration, Instant};
+use std::process::{Command, Stdio};
 
 use serde_json::Value;
+
+use crate::support::mock_llm::MockLlm;
 
 /// Answers `initialize` after two seconds, then `tools/list` (one tool, `echo`) and `tools/call`.
 const SLOW_ECHO_SERVER: &str = r##"
@@ -57,57 +57,14 @@ fn python3_available() -> bool {
         .is_ok_and(|out| out.status.success())
 }
 
-fn repo_root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
-}
-
-/// Kills the mock LLM when the test ends, pass or fail.
-struct Mock(Child);
-
-impl Drop for Mock {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-
-/// Starts `mockllm.py` with `turns`. Returns its port and the request log path.
-fn start_mock(dir: &Path, turns: &Value) -> (Mock, u16, PathBuf) {
-    let script = dir.join("turns.json");
-    fs::write(&script, turns.to_string()).unwrap();
-    let port_file = dir.join("port.txt");
-    let log = dir.join("requests.jsonl");
-    let child = Command::new("python3")
-        .arg(repo_root().join("migration/tui-parity/mockllm.py"))
-        .args(["--script", &script.to_string_lossy()])
-        .args(["--port-file", &port_file.to_string_lossy()])
-        .args(["--log", &log.to_string_lossy()])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("start mockllm.py");
-    let deadline = Instant::now() + Duration::from_secs(20);
-    let port = loop {
-        if let Some(port) = fs::read_to_string(&port_file)
-            .ok()
-            .and_then(|text| text.trim().parse().ok())
-        {
-            break port;
-        }
-        assert!(Instant::now() < deadline, "mockllm did not start");
-        std::thread::sleep(Duration::from_millis(20));
-    };
-    (Mock(child), port, log)
-}
-
-/// The request bodies the mock received, in order.
-fn requests(log: &Path) -> Vec<Value> {
-    fs::read_to_string(log)
-        .unwrap_or_default()
-        .lines()
-        .map(|line| serde_json::from_str::<Value>(line).expect("request line"))
-        .map(|entry| entry["body"].clone())
+/// The request bodies the mock received, in order. Each log entry is `{"path", "body"}`.
+fn request_bodies(mock: &MockLlm) -> Vec<Value> {
+    mock.requests()
+        .iter()
+        .map(|line| {
+            let entry: Value = serde_json::from_str(line).expect("request entry");
+            entry["body"].clone()
+        })
         .collect()
 }
 
@@ -127,14 +84,13 @@ fn print_mode_offers_a_slow_server_tool_on_the_first_prompt() {
     let server = root.join("slow_echo.py");
     fs::write(&server, SLOW_ECHO_SERVER).unwrap();
 
-    let turns = serde_json::json!([
-        {"tool_calls": [{"name": "mcp_slow_echo", "arguments": {"text": "hi"}}]},
-        {"text": "all done"},
+    let mock = MockLlm::start(vec![
+        serde_json::json!({"tool_calls": [{"name": "mcp_slow_echo", "arguments": {"text": "hi"}}]}),
+        serde_json::json!({"text": "all done"}),
     ]);
-    let (_mock, port, log) = start_mock(&root, &turns);
 
     let models = serde_json::json!({"providers": {"mock": {
-        "baseUrl": format!("http://127.0.0.1:{port}/v1"),
+        "baseUrl": format!("http://127.0.0.1:{}/v1", mock.port),
         "api": "openai-completions", "apiKey": "mock-key",
         "models": [{"id": "mock-model", "name": "Mock Model", "contextWindow": 128000, "maxTokens": 4096}],
     }}});
@@ -186,7 +142,7 @@ fn print_mode_offers_a_slow_server_tool_on_the_first_prompt() {
         "the server should connect within the startup wait: {stderr}"
     );
 
-    let sent = requests(&log);
+    let sent = request_bodies(&mock);
     assert!(
         sent.len() >= 2,
         "expected two model requests, got {}",
