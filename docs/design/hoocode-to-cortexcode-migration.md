@@ -134,6 +134,8 @@ with `python3 migration/ledger.py status`.
   keep a hand-written transport) and 10.2e (see its ledger `block` entry).
 - **Resuming:** move a task back to `todo` in the ledger (it is a user decision, so note it
   in the task log), then follow `.claude/skills/continue-migration/SKILL.md`.
+- **2026-10-08:** added the `moved` status (closed, like `done`). Tasks 9.1, 10.2e, 10.11,
+  12.1–12.7 and 13.4 are `moved` to their design cards (13.4 has none, so it stays here).
 
 ---
 

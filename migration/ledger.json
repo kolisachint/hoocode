@@ -10,7 +10,8 @@
   "l1_done": "programmatic gate green; L2 scenarios not yet passing (usually waiting on other tasks)",
   "done": "L1 and L2 green (or L2 n/a with reason)",
   "blocked": "see log",
-  "deferred": "needs a user go/no-go"
+  "deferred": "needs a user go/no-go",
+  "moved": "moved to a design card (moved_to); closed, like done"
  },
  "tasks": [
   {
@@ -1434,7 +1435,8 @@
    "id": "9.1",
    "title": "MCP on rmcp (stdio, streamable HTTP, SSE, OAuth); keep mcp.json loader + tool naming",
    "phase": 9,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/mcp.md",
    "depends": [
     "7.3b",
     "7.1"
@@ -1473,6 +1475,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused for use; all remaining tasks deferred. Status set to deferred by hand (user decision, not a gate result)."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Replaced by the MCP client card (rmcp)."
     }
    ]
   },
@@ -2041,7 +2049,8 @@
    "id": "10.2e",
    "title": "webfetch + websearch: new crate code-tool-web (htmd, dom_smoothie)",
    "phase": 10,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/web-tools.md",
    "depends": [
     "10.2a"
    ],
@@ -2075,6 +2084,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused for use; all remaining tasks deferred. Status set to deferred by hand (user decision, not a gate result)."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Web tools deferred to the webtools MCP server (card)."
     }
    ]
   },
@@ -3526,7 +3541,8 @@
    "id": "10.11",
    "title": "New crate code-mcp: MCP server discovery (mcp-loader), deferred MCP, status",
    "phase": 10,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/mcp.md",
    "depends": [
     "9.1",
     "10.3a"
@@ -3557,6 +3573,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused for use; all remaining tasks deferred. Status set to deferred by hand (user decision, not a gate result)."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Replaced by the MCP client card (rmcp); depends on 9.1."
     }
    ]
   },
@@ -6491,7 +6513,8 @@
    "id": "12.1",
    "title": "Declarative plugins + marketplace (.agents-plugin, claude/copilot formats)",
    "phase": 12,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/plugins.md",
    "depends": [
     "10.3a"
    ],
@@ -6511,6 +6534,12 @@
      "commit": "5480dc2",
      "kind": "note",
      "text": "User (2026-09-29) confirmed: phase 12 stays deferred; do later."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Replaced by the plugins card (Agent Plugins 1.0 and Claude plugins)."
     }
    ]
   },
@@ -6518,7 +6547,8 @@
    "id": "12.2",
    "title": "Package manager (git/local sources)",
    "phase": 12,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/plugins.md",
    "depends": [
     "10.3a"
    ],
@@ -6538,6 +6568,12 @@
      "commit": "5480dc2",
      "kind": "note",
      "text": "User (2026-09-29) confirmed: phase 12 stays deferred; do later."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Package manager dropped; install is plugins only (plugins card)."
     }
    ]
   },
@@ -6545,7 +6581,8 @@
    "id": "12.3",
    "title": "Code extensions (out-of-process protocol; wasm optional)",
    "phase": 12,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/extension-runtime.md",
    "depends": [
     "10.3a"
    ],
@@ -6601,6 +6638,12 @@
      "commit": "6302356",
      "kind": "note",
      "text": "interactive-mode-status.test.ts (13.4e): its extension UI context cases (setTheme persistence, addAutocompleteProvider, setupAutocompleteProvider wrapper stacking) are still to port with the extension runtime"
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Code extensions: standards only (extension-runtime card)."
     }
    ]
   },
@@ -6608,7 +6651,8 @@
    "id": "12.4",
    "title": "Semantic/hybrid search + capability retrieval",
    "phase": 12,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/semantic-search.md",
    "depends": [
     "10.3a"
    ],
@@ -6628,6 +6672,12 @@
      "commit": "5480dc2",
      "kind": "note",
      "text": "User (2026-09-29) confirmed: phase 12 stays deferred; do later."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "SearchHooCode is part A of the semantic-search card."
     }
    ]
   },
@@ -6635,7 +6685,8 @@
    "id": "12.5",
    "title": "Scheduler, /loop, Cron tools (croner)",
    "phase": 12,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/scheduler-and-loop.md",
    "depends": [
     "10.3a"
    ],
@@ -6655,6 +6706,12 @@
      "commit": "5480dc2",
      "kind": "note",
      "text": "User (2026-09-29) confirmed: phase 12 stays deferred; do later."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Scheduler and /loop card."
     }
    ]
   },
@@ -6662,7 +6719,8 @@
    "id": "12.6",
    "title": "Warm subagent pool",
    "phase": 12,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/extras.md",
    "depends": [
     "10.3a"
    ],
@@ -6682,6 +6740,12 @@
      "commit": "5480dc2",
      "kind": "note",
      "text": "User (2026-09-29) confirmed: phase 12 stays deferred; do later."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Warm pool is already built (10.9c); see extras card."
     }
    ]
   },
@@ -6689,7 +6753,8 @@
    "id": "12.7",
    "title": "learn, canvas, teams, voice, export-html/share, telemetry, version check (case-by-case)",
    "phase": 12,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/extras.md",
    "depends": [
     "10.3a"
    ],
@@ -6727,6 +6792,12 @@
      "commit": "6302356",
      "kind": "note",
      "text": "interactive-mode-status.test.ts (13.4e): the 'counts canvases, and the detail says how to open one' case (real canvas discovery, untrusted workspace) is still to port with canvases"
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "Extras card; the canvas part is in docs/design/canvas-and-mcp-apps.md."
     }
    ]
   },
@@ -7075,7 +7146,8 @@
    "id": "13.4",
    "title": "TS test port ledger: every one of the 400 TS test files marked ported/equivalent/n.a.",
    "phase": 13,
-   "status": "deferred",
+   "status": "moved",
+   "moved_to": "docs/design/hoocode-to-cortexcode-migration.md",
    "depends": [
     "13.4a",
     "13.4b",
@@ -7100,6 +7172,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused for use; all remaining tasks deferred. Status set to deferred by hand (user decision, not a gate result)."
+    },
+    {
+     "at": "2026-10-08T02:44:26Z",
+     "commit": "3e0f14e",
+     "kind": "move",
+     "text": "No design card; the TS test port ledger stays in the plan (§0.3) and migration/ts-tests.json."
     }
    ]
   }

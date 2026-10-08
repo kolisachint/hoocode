@@ -7,6 +7,7 @@
     ledger.py start <id>          # mark in_progress (only one task at a time)
     ledger.py note <id> <text>    # append a handoff note to the task log
     ledger.py block <id> <text>   # mark blocked with a reason
+    ledger.py move <id> <card> <text>  # mark moved to a design card (docs/design/*.md)
     ledger.py verify <id>         # run L1 + L2 gates and set l1_done / done from the results
     ledger.py check               # validate ledger structure (CI)
 
@@ -29,8 +30,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 LEDGER = ROOT / "migration" / "ledger.json"
 SCENARIOS = ROOT / "migration" / "tui-parity" / "scenarios"
-DONEISH = {"done", "l1_done"}
-STATUSES = {"todo", "in_progress", "l1_done", "done", "blocked", "deferred"}
+# "moved" tasks are closed in the ledger: their work now lives in a design card
+# (moved_to). Dependents of a moved task are ready, like dependents of a done one.
+DONEISH = {"done", "l1_done", "moved"}
+STATUSES = {"todo", "in_progress", "l1_done", "done", "blocked", "deferred", "moved"}
 
 
 def load() -> dict:
@@ -115,6 +118,8 @@ def cmd_next(led: dict) -> None:
 def show(t: dict) -> None:
     pin_dir = ROOT / "target" / "hoocode-pin"
     print(f"\n[{t['id']}] {t['title']}\n  phase {t['phase']} · status {t['status']} · depends {t['depends'] or '-'}")
+    if t["status"] == "moved":
+        print(f"  moved to: {t.get('moved_to', '?')}")
     print(f"  crates: {', '.join(t['crates']) or '-'}")
     print("  hoocode sources (at pin, in target/hoocode-pin):")
     for s in t["sources"]:
@@ -184,6 +189,24 @@ def cmd_verify(led: dict, tid: str) -> int:
     return 0
 
 
+def set_moved(led: dict, tid: str, card: str, text: str) -> None:
+    t = task(led, tid)
+    if t["status"] == "in_progress":
+        sys.exit(f"{tid} is in_progress; finish, block or note it first")
+    # Keep the key right after "status" so the JSON reads in the same order.
+    rebuilt = {}
+    for k, v in t.items():
+        if k == "moved_to":
+            continue
+        rebuilt[k] = "moved" if k == "status" else v
+        if k == "status":
+            rebuilt["moved_to"] = card
+    t.clear()
+    t.update(rebuilt)
+    log(t, "move", text)
+    save(led)
+
+
 def cmd_check(led: dict) -> int:
     ids = [t["id"] for t in led["tasks"]]
     errs = []
@@ -199,6 +222,10 @@ def cmd_check(led: dict) -> int:
             for s in t["l2"]:
                 if not (SCENARIOS / f"{s}.json").exists():
                     errs.append(f"{t['id']}: done but L2 scenario {s} does not exist")
+        if t["status"] == "moved":
+            target = t.get("moved_to", "")
+            if not target or not (ROOT / target.split("#")[0]).exists():
+                errs.append(f"{t['id']}: moved needs moved_to pointing at an existing doc")
         if isinstance(t["l2"], str) and not t["l2"].startswith("n/a"):
             errs.append(f"{t['id']}: l2 must be a scenario list or 'n/a: <reason>'")
     if sum(t["status"] == "in_progress" for t in led["tasks"]) > 1:
@@ -240,6 +267,10 @@ def main() -> int:
         t["status"] = "blocked"
         log(t, "block", " ".join(args[2:]))
         save(led)
+    elif cmd == "move":
+        if len(args) < 4:
+            sys.exit("usage: ledger.py move <id> <card> <text>")
+        set_moved(led, args[1], args[2], " ".join(args[3:]))
     elif cmd == "verify":
         return cmd_verify(led, args[1])
     elif cmd == "check":
