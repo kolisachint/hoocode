@@ -21,6 +21,7 @@ rmcp = { version = "3.5.1", default-features = false, features = [
     "client",
     "auth",
     "reqwest",
+    "transport-async-rw",
     "transport-streamable-http-client-reqwest",
 ] }
 # The client only uses the rmcp transports it needs: stdio is built here (see

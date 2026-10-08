@@ -78,6 +78,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | `--resume` on the command line | session picker on its own TUI | `code-tui-app/src/session_picker.rs` |
 | `/tree` | session tree | `tree_selector.rs` |
 | `/fork` | pick a user message | `user_message_selector.rs` |
+| MCP trust prompt (once per process, at startup, when a project or plugin declares MCP servers) | the permission selector (`TuiPermissionUi`, `DialogRequest::Select`); asked on a thread by `interactive_mode.rs` `ask_mcp_trust`, answered as `MCP_TRUST_YES` / `MCP_TRUST_NO`; the grant runs `McpHub::grant` (trust store, then start) |
 | `/login`, `/logout` | provider pickers, login dialog | `oauth_selector.rs`, `login_dialog.rs`; flow in `code-tui-app/src/login_controller.rs` |
 | `AskUserQuestion` tool | options pane | `ask_options.rs` |
 | `hoocode config` | resource list | `config_selector.rs` |
@@ -92,8 +93,10 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 | The list (names, descriptions, order) | `code-resources/src/slash_commands.rs` `BUILTIN_SLASH_COMMANDS` |
 | Name → `BuiltinCommand` | `interactive_mode.rs`, `enum BuiltinCommand` and its parser |
 | What each does | `interactive_mode.rs` `run_builtin_command` (`/compact`: `handle_compact_command`) |
+| `/mcp`: each MCP server with source, state and tool count (a text block, not a picker). Typed, not in the autocomplete list, so the slash menu does not change for users without MCP | `handle_mcp_command` in `interactive_mode.rs`; listing in `code-tui-app/src/mcp_listing.rs` (`format_listing`); states from `code-agent-session/src/mcp.rs` (`McpHub::servers`) |
 | `/perf`: threads, RSS, frame and keystroke timing, stalls (Phase 0 counters) | `handle_perf_command` in `interactive_mode.rs`; collector and report in `code-tui-app/src/perf.rs` (`format_report`) |
 | Mode commands (`/mode`, `/plan`, `/grill`, `/goal`, `/approve`) | `code-modes` |
+| MCP tools in the transcript | `mcp_<server>_<tool>` tools use the generic tool block (no renderer); progress reports arrive as partial results and show there |
 | Skill and prompt-template commands | `code-resources` |
 
 To add one: add it to `BUILTIN_SLASH_COMMANDS`, add a `BuiltinCommand` variant and

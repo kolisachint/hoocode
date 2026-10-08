@@ -15,6 +15,7 @@ pub mod hotkeys;
 pub use hoocode_code_tui_widgets::input_frame;
 pub mod interactive_mode;
 pub mod login_controller;
+pub mod mcp_listing;
 pub mod notification_panel;
 pub mod perf;
 pub mod progress_bar;

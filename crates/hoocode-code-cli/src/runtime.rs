@@ -691,10 +691,48 @@ fn assemble_session(
         },
     )
     .session;
+    let mode_restricted = mode_tools.is_some();
     if let Some(tools) = mode_tools {
         session.set_active_tools_by_name(&tools);
     }
+    if mcp_wanted(args, light) {
+        attach_mcp(&session, &services.cwd, interactive, mode_restricted);
+    }
     (session, services)
+}
+
+/// MCP servers start in this process only when its tool list can use them: no `--tools` list
+/// (all tools), or a list that names an `mcp_` tool. Light mode and `--no-tools` start none.
+fn mcp_wanted(args: &Args, light: bool) -> bool {
+    if light || args.no_tools == Some(true) {
+        return false;
+    }
+    args.tools
+        .as_ref()
+        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("mcp_")))
+}
+
+/// Load the session's MCP servers and start the trusted ones in the background. Untrusted
+/// servers stay off; print and rpc say so on stderr and never prompt (fail closed). The
+/// interactive mode asks about the rest.
+fn attach_mcp(
+    session: &AgentSession,
+    cwd: &std::path::Path,
+    interactive: bool,
+    mode_restricted: bool,
+) {
+    let hub = std::sync::Arc::new(hoocode_code_agent_session::mcp::McpHub::for_folder(cwd));
+    if !interactive {
+        for prompt in hub.pending_prompts() {
+            eprintln!(
+                "hoocode: not starting MCP servers from {} ({}): they are not trusted. Trust them in interactive mode.",
+                prompt.source.label(),
+                prompt.source.path().display()
+            );
+        }
+    }
+    hub.start();
+    session.attach_mcp(hub, !mode_restricted);
 }
 
 /// The tokio runtime the CLI drives async work on (agent runs, OAuth): the
@@ -2121,6 +2159,27 @@ mod tests {
             assert!(!drawn[..collapsed_end].contains("Compose — the message in your hands"));
             assert!(drawn[collapsed_end..].contains("Compose — the message in your hands"));
         }
+    }
+}
+
+#[cfg(test)]
+mod mcp_wanted_tests {
+    use super::{mcp_wanted, Args};
+
+    fn args(argv: &[&str]) -> Args {
+        crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn servers_start_only_where_the_tool_list_can_use_them() {
+        // No tool list: the process has every tool, MCP included.
+        assert!(mcp_wanted(&args(&[]), false));
+        // A list with an mcp_ tool (a subagent that names one).
+        assert!(mcp_wanted(&args(&["--tools", "Read,mcp_x_echo"]), false));
+        // A list without one, `--no-tools`, and light mode start nothing.
+        assert!(!mcp_wanted(&args(&["--tools", "Read"]), false));
+        assert!(!mcp_wanted(&args(&["--no-tools"]), false));
+        assert!(!mcp_wanted(&args(&[]), true));
     }
 }
 

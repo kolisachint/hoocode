@@ -21,6 +21,7 @@ libc = "0.2"
 hoocode-agent-types = { workspace = true }
 hoocode-agent-compaction = { workspace = true }
 hoocode-code-agent-session = { workspace = true }
+hoocode-runtime = { workspace = true }
 hoocode-code-auth = { workspace = true }
 hoocode-ai-oauth = { workspace = true }
 hoocode-code-models = { workspace = true }
@@ -34,7 +35,6 @@ hoocode-code-paths = { workspace = true }
 hoocode-code-permissions = { workspace = true }
 hoocode-code-resources = { workspace = true }
 hoocode-code-subagents = { workspace = true }
-hoocode-runtime = { workspace = true }
 hoocode-code-session = { workspace = true }
 hoocode-code-settings = { workspace = true }
 hoocode-code-scheduler = { workspace = true }
