@@ -9,6 +9,7 @@
 
 pub mod git;
 pub mod git_branch;
+pub mod lockfile;
 
 use std::path::{Component, Path, PathBuf};
 

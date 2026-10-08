@@ -1,9 +1,12 @@
 //! `AuthStorageBackend`: where `auth.json` lives and how it is locked.
 
 use hoocode_ai_oauth::BoxFuture;
+use hoocode_code_paths::lockfile::{
+    self, LockAttempt, LockError, LockGuard, ASYNC_RETRIES, ASYNC_STALE,
+};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 /// Given the current file contents, return the contents to write (`None` leaves
 /// the file untouched). An `Err` aborts without writing.
@@ -53,60 +56,6 @@ pub struct FileAuthStorageBackend {
     auth_path: PathBuf,
 }
 
-/// Sync lock: `lockSync` (stale after 10 s), retried 10 times 20 ms apart.
-const SYNC_STALE: Duration = Duration::from_secs(10);
-const SYNC_ATTEMPTS: u32 = 10;
-const SYNC_DELAY: Duration = Duration::from_millis(20);
-/// Async lock: `lock(..., {retries: 10, factor: 2, minTimeout: 100, maxTimeout: 10000,
-/// randomize: true}, stale: 30000})`.
-const ASYNC_STALE: Duration = Duration::from_secs(30);
-const ASYNC_RETRIES: u32 = 10;
-
-enum LockAttempt {
-    Acquired(LockGuard),
-    Locked,
-}
-
-/// Removes the lock directory on drop (`release()`).
-struct LockGuard(PathBuf);
-
-impl Drop for LockGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir(&self.0);
-    }
-}
-
-fn is_stale(lock_dir: &Path, stale: Duration) -> bool {
-    std::fs::metadata(lock_dir)
-        .and_then(|m| m.modified())
-        .ok()
-        .and_then(|mtime| SystemTime::now().duration_since(mtime).ok())
-        .is_some_and(|age| age > stale)
-}
-
-/// One `proper-lockfile` acquisition: `mkdir <file>.lock`; an existing lock older
-/// than `stale` is removed and taken over.
-fn try_lock(lock_dir: &Path, stale: Duration) -> Result<LockAttempt, String> {
-    match std::fs::create_dir(lock_dir) {
-        Ok(()) => Ok(LockAttempt::Acquired(LockGuard(lock_dir.to_path_buf()))),
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-            if is_stale(lock_dir, stale) {
-                let _ = std::fs::remove_dir(lock_dir);
-                match std::fs::create_dir(lock_dir) {
-                    Ok(()) => Ok(LockAttempt::Acquired(LockGuard(lock_dir.to_path_buf()))),
-                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                        Ok(LockAttempt::Locked)
-                    }
-                    Err(e) => Err(e.to_string()),
-                }
-            } else {
-                Ok(LockAttempt::Locked)
-            }
-        }
-        Err(e) => Err(e.to_string()),
-    }
-}
-
 fn locked_error() -> String {
     "Lock file is already being held".to_string()
 }
@@ -123,9 +72,7 @@ impl FileAuthStorageBackend {
     }
 
     fn lock_dir(&self) -> PathBuf {
-        let mut name = self.auth_path.as_os_str().to_owned();
-        name.push(".lock");
-        PathBuf::from(name)
+        lockfile::lock_dir_for(&self.auth_path)
     }
 
     /// `ensureParentDir` (mode 0700) + `ensureFileExists` (`{}`, mode 0600).
@@ -150,21 +97,18 @@ impl FileAuthStorageBackend {
     }
 
     fn acquire_sync(&self) -> Result<LockGuard, String> {
-        let lock_dir = self.lock_dir();
-        for attempt in 1..=SYNC_ATTEMPTS {
-            match try_lock(&lock_dir, SYNC_STALE)? {
-                LockAttempt::Acquired(guard) => return Ok(guard),
-                LockAttempt::Locked if attempt < SYNC_ATTEMPTS => std::thread::sleep(SYNC_DELAY),
-                LockAttempt::Locked => {}
-            }
-        }
-        Err(locked_error())
+        lockfile::acquire_sync(&self.lock_dir()).map_err(|e| match e {
+            LockError::Held => locked_error(),
+            LockError::Io(e) => e.to_string(),
+        })
     }
 
     async fn acquire_async(&self) -> Result<LockGuard, String> {
         let lock_dir = self.lock_dir();
         for retry in 0..=ASYNC_RETRIES {
-            if let LockAttempt::Acquired(guard) = try_lock(&lock_dir, ASYNC_STALE)? {
+            if let LockAttempt::Acquired(guard) =
+                lockfile::try_lock(&lock_dir, ASYNC_STALE).map_err(|e| e.to_string())?
+            {
                 return Ok(guard);
             }
             if retry < ASYNC_RETRIES {

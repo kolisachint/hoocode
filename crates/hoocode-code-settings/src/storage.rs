@@ -2,12 +2,11 @@
 //! under an exclusive lock.
 
 use std::fmt;
-use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
-use std::time::Duration;
 
+use hoocode_code_paths::lockfile::{self, LockError, LockGuard};
 use hoocode_code_paths::CONFIG_DIR_NAME;
 
 /// `SettingsScope`.
@@ -81,9 +80,9 @@ pub trait SettingsStorage: Send + Sync {
 /// `FileSettingsStorage`: `<agentDir>/settings.json` and
 /// `<cwd>/.hoocode/settings.json`.
 ///
-/// Locking uses an `fs4` advisory lock on a `settings.json.lock` file beside
-/// the settings file (hoocode's proper-lockfile uses a `.lock` directory), with
-/// the same 10 x 20 ms retry. Writes go through a temp file and a rename.
+/// Locking is hoocode-ts's proper-lockfile: a `settings.json.lock` directory beside
+/// the settings file (see `hoocode_code_paths::lockfile`), so the two tools exclude
+/// each other. Writes go through a temp file and a rename.
 pub struct FileSettingsStorage {
     global_path: PathBuf,
     project_path: PathBuf,
@@ -105,36 +104,10 @@ impl FileSettingsStorage {
     }
 
     fn lock(path: &Path) -> Result<LockGuard, Error> {
-        let lock_path = lock_path(path);
-        let file = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(&lock_path)?;
-        const MAX_ATTEMPTS: u32 = 10;
-        for attempt in 1..=MAX_ATTEMPTS {
-            if fs4::fs_std::FileExt::try_lock_exclusive(&file)? {
-                return Ok(LockGuard(file));
-            }
-            if attempt < MAX_ATTEMPTS {
-                std::thread::sleep(Duration::from_millis(20));
-            }
-        }
-        Err(Error::Locked(path.to_path_buf()))
-    }
-}
-
-fn lock_path(path: &Path) -> PathBuf {
-    let mut name = path.file_name().unwrap_or_default().to_os_string();
-    name.push(".lock");
-    path.with_file_name(name)
-}
-
-struct LockGuard(File);
-
-impl Drop for LockGuard {
-    fn drop(&mut self) {
-        let _ = fs4::fs_std::FileExt::unlock(&self.0);
+        lockfile::acquire_sync(&lockfile::lock_dir_for(path)).map_err(|e| match e {
+            LockError::Held => Error::Locked(path.to_path_buf()),
+            LockError::Io(e) => Error::Io(e),
+        })
     }
 }
 
