@@ -21,13 +21,14 @@ Newest entry first. Each entry says where to resume. Status numbers come from
     theme global lock and watcher join, markdown capabilities lock (the last two were pre-existing on main).
   - **L2 tally (`harness.py run all`, 70 scenarios):** first full run 66 pass, 3 fail, 1 invalid.
     Reruns: `file-autocomplete` (invalid, `fd` missing from PATH) passes once `fd` is on PATH. Final:
-    **67 pass, 3 fail, 0 invalid.**
+    **67 pass, 3 fail, 0 invalid.** Updated after the `compact-queue` fix (below): **68 pass, 2 fail, both expected**
+    (`slash-commands`, `login-api-key`). Derived from the 67/3 run: only `compact-queue` changed status. Reran `compact-queue` (3/3) and `startup`, `chat-basic`, `tool-read`, `session-mixed`, `bash-command`; the full 70 was not rerun.
 
     | Scenario | Result | Why |
     |---|---|---|
     | `slash-commands` | fail (expected) | Rust-only `/subagent-stats` row |
     | `login-api-key` | fail (expected) | Provider list: TS has Azure OpenAI Responses, Rust has Hugging Face |
-    | `compact-queue` | fail (new, reproduced twice) | Only the loader pulse differs: `● Compacting context...` (TS) vs `○ ...` (Rust). The held and sent lines match. Frame phase at capture time, not layout. Not checked against origin/main (no main run). This branch changed the render cadence (writer thread, one frame in flight), so a phase shift is likely. |
+    | `compact-queue` | pass (fixed) | Was the loader pulse only. `Loader::tick` flipped the frame once per loop pass, and the loop wakes about every 250 ms, so the phase depended on how many passes ran. Main also passed 3/3 and this branch failed 3/3. Now the pulse flips on a wall-clock deadline (640 ms, as TS `setInterval`), and the loop wakes at that deadline. 3/3 pass after the fix. |
   - **Open items:**
     - Load-test numbers not taken. Keystroke p99 under 16 ms is not met: the bash-block frame cost is phase 6.
     - Paused-pty Ctrl+C test. Forced 3 GiB shed test.

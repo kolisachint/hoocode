@@ -6030,8 +6030,15 @@ impl Mode {
         for deadline in deadlines.into_iter().flatten() {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
-        if let Some(loader) = &self.loader {
-            wait = wait.min(loader.borrow().interval());
+        // Wake when a loader's frame falls due, not on a fixed cadence: the
+        // pulse flips on its own clock, so the loop must not sleep past it.
+        for loader in [&self.loader, &self.compaction_loader]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(due) = loader.borrow().next_deadline() {
+                wait = wait.min(due.saturating_duration_since(now));
+            }
         }
         if let Some(deadline) = self
             .selector
