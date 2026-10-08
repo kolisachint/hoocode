@@ -152,9 +152,13 @@ async fn a_waiting_task_outranks_the_tier_above_it_eventually() {
 #[tokio::test]
 async fn finished_results_are_bounded_and_the_oldest_goes_first() {
     let dir = setup();
+    // One slot: tasks finish one at a time, so completion order is defined.
+    // Eviction is by completion order (the pool's `completed_order`), not spawn
+    // order, and with two slots the finish order of t1..t4 is up to the OS
+    // scheduler.
     let mut options = SubagentPoolOptions {
         executable: result_writer(dir.path(), 0),
-        max_concurrency: Some(2),
+        max_concurrency: Some(1),
         cwd: Some(dir.path().to_path_buf()),
         ..Default::default()
     };
@@ -167,15 +171,34 @@ async fn finished_results_are_bounded_and_the_oldest_goes_first() {
     // which is exactly the retention path this test is not about.
     let (settled, notify) = watch_settled(&p);
     await_settled(&settled, &notify, &["t1", "t2", "t3", "t4"]).await;
+    let finished: Vec<String> = settled.lock().unwrap().clone();
+    assert_eq!(finished.len(), 4, "each task settles once: {finished:?}");
+    // The last result is inserted (and the one before it evicted) under the
+    // same lock, so once it is retained the eviction has happened.
+    let last = finished[3].clone();
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(60);
+    while p.collect(&last).is_none() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "{last} never retained"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+    }
     // Each finished result carries its captured streams; unbounded retention is
-    // how a long session used to grow without limit.
-    assert!(p.collect("t4").is_some(), "the newest result is retained");
-    assert!(p.collect("t3").is_some());
-    assert!(
-        p.collect("t1").is_none(),
-        "the oldest result should be dropped"
-    );
-    assert!(p.collect("t2").is_none());
+    // how a long session used to grow without limit. The two that finished last
+    // are kept, the two that finished first are dropped.
+    for id in &finished[2..] {
+        assert!(
+            p.collect(id).is_some(),
+            "{id} finished late and should be retained: {finished:?}"
+        );
+    }
+    for id in &finished[..2] {
+        assert!(
+            p.collect(id).is_none(),
+            "{id} finished early and should be dropped: {finished:?}"
+        );
+    }
     p.dispose();
 }
 
