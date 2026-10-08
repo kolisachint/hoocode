@@ -78,7 +78,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 10 | 1492 / 861 | keep |
+| `runtime` | Threads, runtimes, blocking pool, channels, watchdog and memory limits for the hoocode process: the only crate that builds them | 11 | 1786 / 978 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -123,7 +123,7 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2529 / 1013 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5883 / 5459 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5888 / 5459 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 822 / 707 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 537 / 0 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5126 / 0 | keep |
@@ -140,12 +140,12 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 6 | 4433 / 2992 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1025 | keep |
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 926 / 0 | keep |
-| `code-session` | Session handling for the hoocode coding agent | 6 | 1850 / 390 | keep |
+| `code-session` | Session handling for the hoocode coding agent | 6 | 1864 / 390 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 2059 / 1218 | keep |
-| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7830 / 6672 | keep |
+| `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7838 / 6709 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 11 | 1142 / 125 | keep |
-| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1356 / 511 | keep |
+| `code-tool-bash` | The Shell tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1371 / 540 | keep |
 | `code-tool-search` | CodeSearch for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1960 / 1185 | keep |
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1609 / 0 | keep |
 | `code-tools-fs` | File tools for the hoocode coding agent: read (with read-dedup) | 4 | 3268 / 2387 | keep |
@@ -155,7 +155,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12166 / 4940 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 12167 / 4940 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 839 | keep |
 | `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7822 / 3124 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2407 / 2505 | keep |
