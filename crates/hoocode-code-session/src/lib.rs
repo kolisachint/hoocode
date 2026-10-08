@@ -17,5 +17,5 @@ pub use manager::{
     find_most_recent_session, generate_id, list_all_sessions, list_sessions,
     load_entries_from_file, load_raw_entries, load_session_file, migrate_session_entries,
     LoadedSession, NewSessionOptions, SessionError, SessionInfo, SessionListProgress,
-    SessionManager, SessionTreeNode,
+    SessionManager, SessionTreeNode, SESSION_FLUSH_DEADLINE,
 };
