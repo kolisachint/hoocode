@@ -29,9 +29,11 @@ Never modify hoocode; it is the reference.
   commands). Read them to find code; update them in the same commit as any crate, screen
   or command change.
 
-- Command names: the Rust build installs as `hoocode` and the TS one is `hoocode-ts`, by
-  shims only (`scripts/install.sh`, `scripts/shims/`, release packaging). Code, crates and
-  the `cortex` cargo binary keep their names; don't rename them.
+- Naming (2026-10-08, `docs/design/naming-and-paths.md`): the Rust build is a drop-in
+  replacement for hoocode-ts. Everything is being renamed to hoocode (crates `hoocode-*`,
+  binary `hoocode`, data in `~/.hoocode` shared with hoocode-ts, `HOOCODE_` env only). The
+  TS build is `hoocode-ts` via `scripts/shims/`. Until the rename lands, code still says
+  cortexcode; don't add new `cortex` names.
 
 Commands:
 

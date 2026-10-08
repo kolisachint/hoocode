@@ -13,7 +13,7 @@ stop the same bug classes coming back.
 |---|---|
 | In `--mode rpc`, a tool that needs approval is **denied** when no client can answer | Today it runs without asking (`code-permissions` `evaluate`: `!has_ui` returns `Allow`; `code-cli` `build_permission_gate` attaches a UI only in interactive mode). hoobot users could run bash and edit files unchecked. |
 | `--print` and `--mode json` keep today's behaviour (allow), but say so | You ran the command yourself, and headless scripts depend on it. A one-line stderr notice lists which tools ran without approval. |
-| Data directories move to `~/.hoocode/rust/` with a backup ([naming-and-paths.md](naming-and-paths.md) steps 1–2) | Rust reads hoocode-ts's `~/.hoocode` files today, and the two tools must not share private state |
+| Data directories move to `~/.hoocode`, shared with hoocode-ts, after a one-time merge with backups ([naming-and-paths.md](naming-and-paths.md); changed 2026-10-08) | Rust is a drop-in replacement: one config, one login, one session list |
 | macOS is a supported dev platform: its test failures are bugs | It's the user's local machine |
 | Panics on user or model input are bugs | One crashed the TUI on 2026-10-02 (byte-slicing inside a multi-byte character) |
 
@@ -27,12 +27,11 @@ stop the same bug classes coming back.
      and in interactive mode still prompts.
    - Approval dialogs over rpc are dropped (2026-10-08); hoobot uses the
      app-server ([rpc-approvals.md](rpc-approvals.md) is kept for the record).
-2. **Paths.** [naming-and-paths.md](naming-and-paths.md) steps 1–2:
-   - new layout in `code-paths`;
-   - a one-time migration with a backup and a marker file;
-   - `--no-migrate` and `--migrate-only` flags;
-   - tests for all four cases: new location only, old only, both, neither.
-   - Also ship a `.gitignore` snippet for `<repo>/.hoocode/rust/dispatch/`.
+2. **Paths** (changed 2026-10-08): [naming-and-paths.md](naming-and-paths.md) §2–4.
+   Data moves to `~/.hoocode`, **shared with hoocode-ts** (drop-in replacement);
+   `HOOCODE_` is the only env prefix; a one-time merge copies `~/.cortexcode` and
+   `<repo>/.cortexcode/` in (cortexcode wins, backups first). The crate and binary
+   rename is §1 of that card and happens in step 0, before this card.
 3. **macOS test failures** (all four fail on a clean checkout):
    - `code-main` replay: temp paths resolve under `/private` on macOS, so
      canonicalize both sides;

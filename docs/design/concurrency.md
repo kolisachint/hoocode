@@ -38,17 +38,17 @@ The parts already run in parallel, but nothing bounds or orders them.
 | Decision | Why |
 |---|---|
 | **Threads where latency matters, tasks for I/O, processes for isolation.** Not one thread per subsystem. | A thread per subsystem (MCP thread, tool thread, …) still blocks inside that subsystem and adds context switches. Async tasks on one small runtime scale to hundreds of streams; processes already isolate subagents. |
-| **One tokio runtime per process**, `min(4, cores)` workers; 2 in subagent children. Built only by a new crate `cortexcode-runtime`. | Replaces the 7 runtime builders in non-test code. I/O needs few workers; more just fight the UI for cores. |
+| **One tokio runtime per process**, `min(4, cores)` workers; 2 in subagent children. Built only by a new crate `hoocode-runtime`. | Replaces the 7 runtime builders in non-test code. I/O needs few workers; more just fight the UI for cores. |
 | **Three lanes: High, Medium, Low.** Each lane has its own threads, queue and cap. | Tokio can't prioritise tasks, so priority comes from separation: Low work never runs on a High thread. |
 | **The UI thread never blocks**: no file or network I/O, no `block_on`, no waiting on another lane's lock. Terminal output moves to its own thread. | A frozen UI is the bug users notice first. |
 | **Ctrl+C is handled on the input thread**, not via the UI loop. | Abort works even when the UI loop or the runtime is stuck. |
 | **OS priority only goes down, never up.** High = normal priority; Medium and Low are lowered. | Raising priority needs root (`CAP_SYS_NICE`) on Linux, and real-time priority can lock up a machine. Lowering is always allowed. |
 | **Every queue is bounded** and has a stated policy: wait, keep-latest, or drop-with-count. | Unbounded channels turn a slow consumer into unbounded memory. |
 | **Session data is never dropped.** Its queue applies backpressure; it is flushed before exit, fork and export. | Sessions are the durable record. |
-| **Memory has a soft and a hard limit on the process.** Soft sheds load; hard aborts the turn cleanly. Nothing kills cortex itself. | A process that kills itself loses the session; one that slows down does not. |
+| **Memory has a soft and a hard limit on the process.** Soft sheds load; hard aborts the turn cleanly. Nothing kills hoocode itself. | A process that kills itself loses the session; one that slows down does not. |
 | **Every wait on something outside the process has a timeout.** | A hung server or tool must end as an error, not a hang. |
 | **Measure first.** Phase 0 adds the numbers; later phases must move them. | "Faster" needs a baseline. |
-| **Compaction and cleanup are work, not threads.** Compaction's LLM call runs on `cortex-io`, its CPU part on `cortex-tools`; cleanup runs in the Low lane. | Rust has no garbage collector; memory is freed on drop. |
+| **Compaction and cleanup are work, not threads.** Compaction's LLM call runs on `hoocode-io`, its CPU part on `hoocode-tools`; cleanup runs in the Low lane. | Rust has no garbage collector; memory is freed on drop. |
 | **The agent's `bash` commands run at normal priority** (nice 0); `performance.bashNice` lowers them. | Builds and tests the agent runs are as fast as from your shell. The UI needs very little CPU. |
 | **Memory limits are on by default.** | Off by default leaves the freeze this card exists to stop. |
 | **Four settings, everything else fixed** (§3). | Fewer ways to misconfigure. |
@@ -61,15 +61,15 @@ The parts already run in parallel, but nothing bounds or orders them.
 | Thread / pool | Count | Lane | Does |
 |---|---|---|---|
 | `main` (UI) | 1 | High | Owns TUI state. Turns events into actions and builds frames. |
-| `cortex-input` | 1 | High | Reads stdin, parses keys, ESC timeout, Ctrl+C fast path. Resize via SIGWINCH (polling only on Windows). |
-| `cortex-term-out` | 1 | High | Writes frames to the terminal. Holds one pending frame; a newer frame replaces an unwritten one. |
-| `cortex-io` runtime | 2–4 workers | High / Medium | Agent loop, LLM streams, MCP clients, rpc and app-server transports, async process pipes. |
-| `cortex-session-io` | 1 | Medium | The only writer of session files. Keeps the file open, batches appends, flushes on turn end. |
-| `cortex-tools` pool | up to 16 threads | Medium | Sync tool bodies (read, edit, write, grep, find, compaction token counting). |
-| `cortex-bg` | 1 thread, own `current_thread` runtime | Low | Housekeeping: prune old dispatch dirs and temp files, session list index, version check, file watchers, future search indexing. |
-| `cortex-watchdog` | 1, mostly asleep | High | Heartbeats, stall reports, RSS sampling, limit enforcement. |
+| `hoocode-input` | 1 | High | Reads stdin, parses keys, ESC timeout, Ctrl+C fast path. Resize via SIGWINCH (polling only on Windows). |
+| `hoocode-term-out` | 1 | High | Writes frames to the terminal. Holds one pending frame; a newer frame replaces an unwritten one. |
+| `hoocode-io` runtime | 2–4 workers | High / Medium | Agent loop, LLM streams, MCP clients, rpc and app-server transports, async process pipes. |
+| `hoocode-session-io` | 1 | Medium | The only writer of session files. Keeps the file open, batches appends, flushes on turn end. |
+| `hoocode-tools` pool | up to 16 threads | Medium | Sync tool bodies (read, edit, write, grep, find, compaction token counting). |
+| `hoocode-bg` | 1 thread, own `current_thread` runtime | Low | Housekeeping: prune old dispatch dirs and temp files, session list index, version check, file watchers, future search indexing. |
+| `hoocode-watchdog` | 1, mostly asleep | High | Heartbeats, stall reports, RSS sampling, limit enforcement. |
 | Subagents | child processes, 5 (2 nested), as today | Low | Unchanged pool; children start with 2 workers and lowered priority. |
-| `bash` commands | child processes | Medium | Pipes read by async tasks on `cortex-io`, not by 3 threads each. |
+| `bash` commands | child processes | Medium | Pipes read by async tasks on `hoocode-io`, not by 3 threads each. |
 
 Steady state is about 10 threads per process; the ceiling under load is about 26.
 Today it is unbounded.
@@ -85,7 +85,7 @@ Today it is unbounded.
 | `bash` children | nice 0; `performance.bashNice` | nice 0; `performance.bashNice` | normal; any `bashNice` > 0 means `BELOW_NORMAL_PRIORITY_CLASS` |
 
 - Per-thread priority through the `thread-priority` crate (MIT), owned by
-  `cortexcode-runtime` only (add it to `migration/dep-firewall.json`).
+  `hoocode-runtime` only (add it to `migration/dep-firewall.json`).
 - Child processes get their priority at spawn (`pre_exec` on Unix, a creation flag
   on Windows).
 - If setting a priority fails, log once and carry on.
@@ -103,14 +103,14 @@ Start values; Phase 0's load test tunes them. Only these four are settings:
 
 | Resource | Cap | When reached | Setting |
 |---|---|---|---|
-| `cortex-io` workers | `min(4, cores)`; children 2 | — | — |
-| `cortex-tools` threads | 16 | Calls queue | — |
+| `hoocode-io` workers | `min(4, cores)`; children 2 | — | — |
+| `hoocode-tools` threads | 16 | Calls queue | — |
 | Parallel tool calls per turn | 8 | Rest wait, in call order | `performance.maxParallelTools` |
 | Subagents | 5, nested 2, depth 1 (today) | Queue, then refuse (today) | existing settings |
 | In-flight requests per MCP server | 8 | Wait | — |
 | LLM events → UI | 1024 events | Stream reading pauses | — |
 | Tool progress → UI | 1 per tool | Keep latest | — |
-| Frames → `cortex-term-out` | 1 | Keep latest | — |
+| Frames → `hoocode-term-out` | 1 | Keep latest | — |
 | Session write queue | 4096 entries or 64 MiB | Producer waits (never drop) | — |
 | Tool output in memory | today's `DEFAULT_MAX_BYTES`, rolling 2× | Spill to file (today) | — |
 | MCP response body | 32 MiB | Error result | — |
@@ -128,14 +128,14 @@ render caches are cleared, and the footer shows a warning. It lifts once memory 
 | Rule | How it is enforced |
 |---|---|
 | No `block_on` except at entry points (`main`, tests) | clippy `disallowed-methods` in `clippy.toml`; each remaining site carries an `allow` with a reason |
-| No runtime, thread or unbounded channel built outside `cortexcode-runtime` | same: `Runtime::new`, `Builder::new_*`, `thread::spawn`, `unbounded_channel`, `std::sync::mpsc::channel` are disallowed elsewhere |
-| No blocking call on a `cortex-io` worker | Blocking work goes through one helper (`run_blocking`) onto `cortex-tools` |
+| No runtime, thread or unbounded channel built outside `hoocode-runtime` | same: `Runtime::new`, `Builder::new_*`, `thread::spawn`, `unbounded_channel`, `std::sync::mpsc::channel` are disallowed elsewhere |
+| No blocking call on a `hoocode-io` worker | Blocking work goes through one helper (`run_blocking`) onto `hoocode-tools` |
 | No lock held across `.await` or while calling listeners | Review rule; the subagent pool already follows it (subagents.md §6) |
 | Every external wait has a deadline | LLM first byte and idle gaps, MCP request, tool run, process exit, session flush |
 | UI stall detection | The UI loop bumps a heartbeat and records its current phase. No beat for 500 ms: the watchdog logs the phase; for 2 s: the footer says so. |
 | Runtime starvation detection | The watchdog schedules a probe task every second. Late by >250 ms: log which lane is starved. |
 | Emergency exit | Ctrl+C twice within 1 s while the UI is stalled: the input thread restores the terminal, flushes the session (with a 1 s deadline) and exits 130. |
-| Panics | A panic on any cortex thread is logged with the thread name. On the UI thread the panic hook restores the terminal and flushes the session. Tool panics stay errors (today). |
+| Panics | A panic on any hoocode thread is logged with the thread name. On the UI thread the panic hook restores the terminal and flushes the session. Tool panics stay errors (today). |
 | Ordered shutdown, 3 s total | Abort agent → kill tool process groups → flush session → close MCP → restore terminal. Each step has its own deadline. |
 
 ### 5. Measurement
@@ -155,12 +155,12 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 | Phase | Builds | Done when |
 |---|---|---|
 | 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS |
-| 1 | `cortexcode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites | No runtime built outside the crate; thread ceiling holds in the load test |
-| 2 | `cortex-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `bash` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal |
-| 3 | `cortex-session-io` with flush barriers | No session file I/O on the UI thread or on `cortex-io`; kill -9 mid-turn loses at most the unflushed entries of that turn |
-| 4 | Lanes with OS priority; `cortex-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test |
+| 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites | No runtime built outside the crate; thread ceiling holds in the load test |
+| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `bash` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal |
+| 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn |
+| 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test |
 | 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase |
-| 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `cortex-tools` | Frame build p99 under 8 ms on a 10k-line transcript |
+| 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript |
 
 ## Not doing
 
@@ -175,7 +175,7 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 - **In-process subagents by default.** subagents.md §6 keeps child processes.
 - **A rayon or work-stealing CPU pool up front.** Only if Phase 0 shows CPU-bound UI
   work (Phase 6).
-- **Rewriting the sync tools as async.** They run on `cortex-tools`.
+- **Rewriting the sync tools as async.** They run on `hoocode-tools`.
 - **Background compaction while you type** (compacting early, before the context is
   full). It changes what the agent does, not just where it runs; it gets its own card
   later.
@@ -190,46 +190,46 @@ None. The eight questions were answered on 2026-10-08 and are recorded in
 ### Data flow (target)
 
 ```
- stdin ──► cortex-input ──keys──► main (UI) ──frame──► cortex-term-out ──► terminal
+ stdin ──► hoocode-input ──keys──► main (UI) ──frame──► hoocode-term-out ──► terminal
               │ Ctrl+C                ▲   │
               ▼                       │   │ prompts, actions
           AbortSignal          events │   ▼
-              │              ┌────────┴──────────────── cortex-io (2–4 workers) ───────┐
+              │              ┌────────┴──────────────── hoocode-io (2–4 workers) ───────┐
               └─────────────►│ agent loop ─ LLM stream ─ MCP clients ─ bash pipes     │
                              └──┬───────────────┬────────────────────────┬────────────┘
                                 │ entries       │ run_blocking           │ dispatch
                                 ▼               ▼                        ▼
-                       cortex-session-io   cortex-tools (≤16)     subagent processes (≤5)
+                       hoocode-session-io   hoocode-tools (≤16)     subagent processes (≤5)
                                                                    (2 workers, nice +5)
-   cortex-bg (Low): cleanup, index, version check        cortex-watchdog: beats, RSS, stalls
+   hoocode-bg (Low): cleanup, index, version check        hoocode-watchdog: beats, RSS, stalls
 ```
 
 ### Lane assignment
 
 | Work | Lane | Runs on |
 |---|---|---|
-| Key handling, frame build, frame write | High | `main`, `cortex-term-out` |
-| Main agent's LLM stream | High | `cortex-io` |
-| Tool bodies, MCP calls, `bash` I/O | Medium | `cortex-tools`, `cortex-io` |
-| Session writes | Medium | `cortex-session-io` |
-| Session reads for picker, resume, tree | Medium | `cortex-tools` (result sent to UI) |
-| Compaction (LLM part / CPU part) | Medium | `cortex-io` / `cortex-tools` |
+| Key handling, frame build, frame write | High | `main`, `hoocode-term-out` |
+| Main agent's LLM stream | High | `hoocode-io` |
+| Tool bodies, MCP calls, `bash` I/O | Medium | `hoocode-tools`, `hoocode-io` |
+| Session writes | Medium | `hoocode-session-io` |
+| Session reads for picker, resume, tree | Medium | `hoocode-tools` (result sent to UI) |
+| Compaction (LLM part / CPU part) | Medium | `hoocode-io` / `hoocode-tools` |
 | Subagents | Low | child processes |
-| Cleanup, indexing, version check, watchers | Low | `cortex-bg` |
+| Cleanup, indexing, version check, watchers | Low | `hoocode-bg` |
 
 ### New dependencies
 
 | Crate | Licence | Owner crate |
 |---|---|---|
-| `thread-priority` | MIT | `cortexcode-runtime` |
-| `signal-hook` (SIGWINCH, SIGTERM) | MIT / Apache-2.0 | `cortexcode-runtime` |
-| `memory-stats` (own RSS) | MIT / Apache-2.0 | `cortexcode-runtime` |
+| `thread-priority` | MIT | `hoocode-runtime` |
+| `signal-hook` (SIGWINCH, SIGTERM) | MIT / Apache-2.0 | `hoocode-runtime` |
+| `memory-stats` (own RSS) | MIT / Apache-2.0 | `hoocode-runtime` |
 
 Child RSS for the lifeguard uses `/proc` on Linux, `proc_pid_rusage` on macOS and
 `GetProcessMemoryInfo` on Windows, inside the same crate.
 
 ### Rules for CLAUDE.md once Phase 1 lands
 
-- Build threads, runtimes and channels only through `cortexcode-runtime`.
-- Never block the UI thread or a `cortex-io` worker; use `run_blocking`.
+- Build threads, runtimes and channels only through `hoocode-runtime`.
+- Never block the UI thread or a `hoocode-io` worker; use `run_blocking`.
 - Every queue states its cap and policy; every external wait states its deadline.

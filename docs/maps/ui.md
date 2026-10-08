@@ -1,6 +1,7 @@
 # UI map
 
-Where each part of the interactive screen lives. Snapshot of 2026-10-08. Crates are
+Where each part of the interactive screen lives. Snapshot of 2026-10-08. Crate names change from `cortexcode-*` to `hoocode-*` in step 0
+([naming-and-paths.md](../design/naming-and-paths.md)). Crates are
 described in [packages.md](packages.md). Names, not line numbers: line numbers drift.
 
 **Keep this current.** Add, move or remove a screen part, picker or slash command →

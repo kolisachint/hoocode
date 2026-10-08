@@ -39,7 +39,8 @@ To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) 
 
 | # | Card | Status | Replaces ledger task |
 |---|---|---|---|
-| 1 | [reliability.md](reliability.md) | Agreed; build next | — |
+| 0 | [naming-and-paths.md](naming-and-paths.md) §1: rename everything to hoocode (with the crate deletions) | Agreed 2026-10-08 | — |
+| 1 | [reliability.md](reliability.md) (item 2 is [naming-and-paths.md](naming-and-paths.md) §2–4) | Agreed; build next | — |
 | 1b | [concurrency.md](concurrency.md) phases 0–1 (measure; one runtime and caps) | Agreed 2026-10-08 | — |
 | 2 | [semantic-search.md](semantic-search.md) part A (`SearchHooCode`); part B dropped | Agreed | closes 10.2a/b/c/d/f/g, 10.4c, 10.5; part of 12.4 |
 | 3 | [mcp.md](mcp.md) | Agreed; scope cut 2026-10-08 | 9.1, 10.11 |
@@ -51,8 +52,7 @@ To find code, use the maps: [../maps/packages.md](../maps/packages.md) (crates) 
 | — | [web-tools.md](web-tools.md) | Deferred | 10.2e |
 | — | [extension-runtime.md](extension-runtime.md) | Standards only; WASM crate deleted | 12.3 |
 
-Older docs that stay as they are: [naming-and-paths.md](naming-and-paths.md)
-(steps 1–2 are part of card 1), [rpc-approvals.md](rpc-approvals.md) (dropped
+Older docs that stay as they are: [rpc-approvals.md](rpc-approvals.md) (dropped
 2026-10-08), [app-server.md](app-server.md), [subagents.md](subagents.md),
 [subagent-evals.md](subagent-evals.md), [distribution.md](distribution.md),
 [build-speed.md](build-speed.md), and the migration plan
@@ -70,6 +70,7 @@ Close the migration ledger:
   (move `cortexcode-ai`'s tests to `ai-registry` first), then update
   `migration/dep-firewall.json`, `scripts/generate_crates.sh`, CI and release
   scripts that name them;
+- rename everything to hoocode in one commit ([naming-and-paths.md](naming-and-paths.md) §1);
 - add `scripts/maps/packages.py` (regenerates [../maps/packages.md](../maps/packages.md)
   from `cargo metadata`; `--check` in CI).
 

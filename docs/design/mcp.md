@@ -39,7 +39,7 @@ trusted.
      failed.
 3. **OAuth.**
    - rmcp's OAuth support: PKCE, server metadata discovery, issuer (`iss`) check.
-   - Tokens stored per issuer under `~/.hoocode/rust/mcp-auth/` (owner-only file
+   - Tokens stored per issuer under `~/.hoocode/mcp-auth/` (owner-only file
      permissions).
    - The browser opens for login; tools appear when login finishes.
 4. **Interaction.**

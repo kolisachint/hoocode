@@ -2,8 +2,10 @@
 
 What each crate does, who uses it, and where to make a change. Snapshot of
 2026-10-08: 76 crates, 65 after the deletions agreed in
-[decisions-2026-10-08.md](../design/decisions-2026-10-08.md). The UI side is mapped
-in [ui.md](ui.md).
+[decisions-2026-10-08.md](../design/decisions-2026-10-08.md). In step 0 the crates
+become `hoocode-*` and the binary `hoocode`
+([naming-and-paths.md](../design/naming-and-paths.md)); this page is regenerated
+then. The UI side is mapped in [ui.md](ui.md).
 
 **Keep this current.** Add, delete or rename a crate → update this page in the same
 commit. A generator script with a CI staleness check replaces the tables in the first

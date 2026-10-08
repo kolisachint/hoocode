@@ -1,14 +1,16 @@
 # Decisions, 2026-10-08
 
-Made with the user in two reviews: [concurrency.md](concurrency.md), then a scope
-review of the whole plan. Where a card disagrees with this page, this page wins.
+Made with the user in three reviews: [concurrency.md](concurrency.md), a scope review
+of the whole plan, and naming ([naming-and-paths.md](naming-and-paths.md)). Where a card disagrees with this page, this page wins.
 [decisions-2026-10-07.md](decisions-2026-10-07.md) still stands except where the
 "Replaces" column below says otherwise.
 
 ## Order of work (updated)
 
 0. **First coding session (bookkeeping):** close the migration ledger (README),
-   delete the 11 crates below, add the package-map generator.
+   delete the 11 crates below, then rename everything to hoocode in one mechanical
+   commit ([naming-and-paths.md](naming-and-paths.md) §1), then add the package-map
+   generator.
 1. **Reliability first** ([reliability.md](reliability.md)), unchanged.
 2. **Concurrency phases 0–1**: measure, then one runtime and the caps.
 3. **Close the 8 `l1_done` tasks** (`SearchHooCode`), unchanged.
@@ -75,3 +77,22 @@ Kept after review: Gemini CLI and Antigravity logins, GitHub Copilot login, Chat
 are written now and kept current in the same commit as any crate, screen or command
 change. The first coding session adds `scripts/maps/packages.py`, which regenerates
 the package tables from `cargo metadata`, with a `--check` mode in CI.
+
+## Naming and paths
+
+hoocode (Rust) is a drop-in replacement for hoocode-ts. Card:
+[naming-and-paths.md](naming-and-paths.md), which replaces its 2026-10-01 version.
+
+| Question | Decision | Replaces |
+|---|---|---|
+| Data folder | **`~/.hoocode` and `<repo>/.hoocode/`, shared with hoocode-ts** | `~/.hoocode/rust/` (2026-10-01) |
+| Existing `~/.cortexcode` data | **Full merge**, once, with backups | Copy into `rust/` with a marker |
+| Conflicts in the merge | **`~/.cortexcode` wins** | — |
+| Project `.cortexcode/` folders | **Auto-merged** into `.hoocode/` (not `dispatch/`) | Read as fallback, with a notice |
+| What is renamed | **Everything**: crates, Rust paths, the cargo binary, `APP_NAME`, the prompt, scripts, CI | "Crates and the `cortex` binary keep their names" (CLAUDE.md, 2026-10-01) |
+| Env variables | **`HOOCODE_` only**, no aliases | Deprecated aliases for a release |
+| Docs | **Rewrite all**, history included; migration plan → `ts-to-rust-migration.md` | — |
+
+Accepted risks: after the first merge hoocode-ts runs with the Rust settings and
+logins (backups undo it); the project merge writes into git working trees; rewritten
+docs hide the old names (git keeps them).
