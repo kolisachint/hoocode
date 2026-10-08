@@ -1799,16 +1799,20 @@ impl AgentSession {
     ) -> Result<BashResult> {
         let signal = AbortSignal::new();
         lock(&self.inner.state).bash_abort = Some(signal.clone());
-        let (prefix, shell_path) = {
+        let (prefix, shell_path, bash_nice) = {
             let settings = lock(&self.inner.settings);
-            (settings.shell_command_prefix(), settings.shell_path())
+            (
+                settings.shell_command_prefix(),
+                settings.shell_path(),
+                settings.performance_bash_nice(),
+            )
         };
         let resolved = match prefix {
             Some(prefix) if !prefix.is_empty() => format!("{prefix}\n{command}"),
             _ => command.to_string(),
         };
         let cwd = PathBuf::from(self.session_manager().cwd());
-        let local = LocalBashOperations::new(shell_path);
+        let local = LocalBashOperations::new(shell_path).with_nice(bash_nice);
         let result = execute_bash_with_operations(
             &resolved,
             &cwd,

@@ -356,6 +356,10 @@ fn resolve_fork_session_file_cases() {
     );
     let forked = resolve_fork_session_file(Some(true), Some(&parent), dir.path()).unwrap();
     std::env::remove_var("HOOCODE_CODING_AGENT_SESSION_DIR");
+    // Session writes are queued to hoocode-session-io; wait for the file to land.
+    hoocode_runtime::session_io()
+        .flush_blocking(std::time::Duration::from_secs(5))
+        .expect("session writes flush");
     assert!(forked.exists());
     assert_ne!(forked, parent);
     let empty = dir.path().join("empty.jsonl");

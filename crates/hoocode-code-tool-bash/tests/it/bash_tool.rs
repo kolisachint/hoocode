@@ -505,3 +505,32 @@ fn byte_truncation_notice_and_description() {
     .unwrap();
     assert_eq!(text(&result).trim(), "x");
 }
+
+/// `performance.bashNice` reaches the shell and its children (Linux: read the
+/// niceness of the shell's own thread from /proc).
+#[cfg(target_os = "linux")]
+#[test]
+fn bash_nice_runs_the_shell_at_that_niceness() {
+    let dir = TestDir::new();
+    let nice_of_shell = |nice: u64| -> i64 {
+        let mut out = Vec::new();
+        LocalBashOperations::default()
+            .with_nice(nice)
+            .exec(
+                "cat /proc/thread-self/stat",
+                &dir.0,
+                BashExecOptions {
+                    on_data: &mut |data| out.extend_from_slice(data),
+                    signal: None,
+                    timeout: None,
+                    env: None,
+                },
+            )
+            .unwrap();
+        let text = String::from_utf8(out).unwrap();
+        let rest = &text[text.rfind(')').unwrap() + 1..];
+        rest.split_whitespace().nth(16).unwrap().parse().unwrap()
+    };
+    let baseline = nice_of_shell(0);
+    assert_eq!(nice_of_shell(10), baseline.max(10));
+}

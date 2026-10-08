@@ -44,11 +44,22 @@ pub trait BashOperations: Send + Sync {
 #[derive(Debug, Clone, Default)]
 pub struct LocalBashOperations {
     pub shell_path: Option<String>,
+    /// `performance.bashNice`; 0 leaves the shell at normal priority.
+    pub nice: u64,
 }
 
 impl LocalBashOperations {
     pub fn new(shell_path: Option<String>) -> Self {
-        Self { shell_path }
+        Self {
+            shell_path,
+            nice: 0,
+        }
+    }
+
+    /// Sets the niceness of the spawned shells (`performance.bashNice`).
+    pub fn with_nice(mut self, nice: u64) -> Self {
+        self.nice = nice;
+        self
     }
 }
 
@@ -101,6 +112,7 @@ impl BashOperations for LocalBashOperations {
         }
 
         let env = env.unwrap_or_else(get_shell_env);
+        let nice = self.nice;
         let mut wrap = CommandWrap::with_new(&config.shell, |cmd| {
             cmd.args(&config.args)
                 .arg(command)
@@ -110,6 +122,7 @@ impl BashOperations for LocalBashOperations {
                 .stdin(std::process::Stdio::null())
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped());
+            hoocode_runtime::lower_child_priority(cmd, nice);
         });
         #[cfg(unix)]
         wrap.wrap(process_wrap::std::ProcessGroup::leader());

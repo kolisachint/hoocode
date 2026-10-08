@@ -78,6 +78,9 @@
     ],
     "rmcp": [
       "hoocode-agent-mcp"
+    ],
+    "thread-priority": [
+      "hoocode-runtime"
     ]
   },
   "pending": {}

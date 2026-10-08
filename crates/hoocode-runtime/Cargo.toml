@@ -17,4 +17,8 @@ publish = false
 doctest = false
 
 [dependencies]
-tokio = { version = "1", features = ["rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "time"] }
+thread-priority = "3"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

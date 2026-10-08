@@ -405,7 +405,7 @@ async fn emits_task_done_and_removes_the_dispatch_dir_on_success() {
     let result = p.wait_for("t1").await.unwrap();
     assert!(result.ok);
     assert_eq!(result.result_data.as_ref().unwrap()["status"], "complete");
-    assert!(!dispatch_dir.exists());
+    wait_until_gone(&dispatch_dir).await;
     let done = done.lock().unwrap();
     assert_eq!(done.len(), 1);
     assert_eq!(done[0]["task_id"], "t1");
@@ -800,7 +800,7 @@ async fn a_late_stall_does_not_clobber_a_clean_completion() {
     assert_eq!(result.status, Some(ResultStatus::Complete));
     assert_eq!(result.result_data.unwrap()["summary"], "background done");
     assert_eq!(p.get_status("race"), TaskStatus::Done);
-    assert!(!hoocode_code_paths::dispatch_task_dir(dir.path(), "race").exists());
+    wait_until_gone(&hoocode_code_paths::dispatch_task_dir(dir.path(), "race")).await;
     p.dispose();
 }
 
@@ -1276,4 +1276,15 @@ async fn should_retry_with_inherited_model_rules() {
         agent(AgentSource::Project, "claude-haiku-4-5"),
         &with_parent
     ));
+}
+
+/// Cleanup runs on `hoocode-bg`, so a removed dispatch dir can take a moment to disappear.
+async fn wait_until_gone(path: &std::path::Path) {
+    for _ in 0..500 {
+        if !path.exists() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("{} was not removed", path.display());
 }

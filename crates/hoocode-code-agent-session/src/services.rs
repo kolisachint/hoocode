@@ -130,6 +130,7 @@ pub fn default_base_tools(ctx: &BaseToolsContext<'_>) -> Vec<ToolDefinition> {
         shell_path: settings.shell_path(),
         max_output_bytes: Some(settings.tool_output_max_bytes() as usize),
         max_output_lines: Some(settings.tool_output_max_lines() as usize),
+        nice: settings.performance_bash_nice(),
         ..Default::default()
     };
     hoocode_code_tools::default_tool_definitions(

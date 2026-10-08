@@ -36,6 +36,7 @@ hoocode-code-resources = { workspace = true }
 hoocode-code-subagents = { workspace = true }
 hoocode-code-session = { workspace = true }
 hoocode-code-settings = { workspace = true }
+hoocode-runtime = { workspace = true }
 hoocode-code-scheduler = { workspace = true }
 hoocode-code-task-store = { workspace = true }
 hoocode-code-tui-keybindings = { workspace = true }
@@ -51,7 +52,7 @@ hoocode-tui-render = { workspace = true }
 hoocode-tui-terminal = { workspace = true }
 hoocode-tui-util = { workspace = true }
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", features = ["rt", "sync"] }
+tokio = { version = "1", features = ["rt", "sync", "time"] }
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 regex = "1"

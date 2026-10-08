@@ -17,8 +17,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, OnceLock};
 use std::time::Duration;
 
+use crate::lanes::{spawn_lane_thread, Lane};
 use crate::run_blocking;
-use crate::spawn_named_thread;
 
 /// Name of the session writer thread.
 pub const SESSION_IO_THREAD: &str = "hoocode-session-io";
@@ -173,7 +173,7 @@ impl FileWriter {
         });
         let thread_shared = Arc::clone(&shared);
         // The thread is detached: its handle is dropped, and `Drop` closes the queue.
-        spawn_named_thread(name, move || run(thread_shared))?;
+        spawn_lane_thread(name, Lane::Medium, move || run(thread_shared))?;
         Ok(FileWriter { shared })
     }
 
