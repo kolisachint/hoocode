@@ -382,6 +382,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:54:59Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-read=fail, print-tool-read-paging=fail"
     }
    ]
   },
@@ -432,6 +438,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:56:30Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-read=fail, print-tool-read-paging=fail, print-multi=fail"
     }
    ]
   },
@@ -1934,6 +1946,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:55:25Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-bash-light=pass, print-tool-bash=fail, tool-bash=pass"
     }
    ]
   },
@@ -1990,6 +2008,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:55:38Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-edit-light=pass, print-tool-edit=fail"
     }
    ]
   },
@@ -2042,6 +2066,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:55:45Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-search=fail"
     }
    ]
   },
@@ -2139,6 +2169,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:56:05Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-todo-write=fail, todo-write=pass"
     }
    ]
   },
@@ -2192,6 +2228,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:56:15Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-read-paging=fail"
     }
    ]
   },
@@ -2595,6 +2637,12 @@
      "commit": "7f44f28",
      "kind": "note",
      "text": "User (2026-10-01): migration paused. Stays l1_done; its L2 waits on the deferred 12.4 (SearchHooCode in the default-bundle prompt)."
+    },
+    {
+     "at": "2026-10-08T14:56:36Z",
+     "commit": "6ae358a",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-context-files=fail"
     }
    ]
   },

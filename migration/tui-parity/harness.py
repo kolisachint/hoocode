@@ -109,6 +109,9 @@ UNAMBIGUOUS_TOOL_NAMES = ["SearchCodebase", "SearchHooCode", "ask_options", "web
 HEADER_TOOL_NAMES = ["read", "edit", "write"]
 # hoocode's --print / --mode json stderr note (runtime.rs). hoocode-ts prints nothing.
 RUST_ONLY_NOTE = re.compile(r"^Note: --(print|mode json) does not ask for tool approval;.*$")
+# The tmux pane wraps the note, so its tail arrives on the following lines (" it.").
+# The tail of the note is the text those continuation lines must be a suffix of.
+RUST_ONLY_NOTE_TAIL = "run without it."
 
 
 # Model-facing prose that names a tool (the light system prompt). Only exact phrases:
@@ -116,6 +119,10 @@ RUST_ONLY_NOTE = re.compile(r"^Note: --(print|mode json) does not ask for tool a
 PROSE_TOOL_RULES = [
     (r"Search with bash \(rg/find/ls\)", "Search with Shell (rg/find/ls)"),
     (r"Prefer edit for changes; write for new files", "Prefer Edit for changes; Write for new files"),
+    # Tool descriptions that name the subagent tool in prose.
+    (r"\bfrom a Task notification\b", "from an Agent notification"),
+    (r"\bvia Task,", "via Agent,"),
+    (r"\bearlier Task or AgentOutput\b", "earlier Agent or AgentOutput"),
 ]
 
 
@@ -131,7 +138,18 @@ def tool_rules() -> list[dict]:
         rules.append({"pattern": rf"\b{ts}\b", "replace": TOOL_NAMES[ts]})
     rules.append({"pattern": r"\bTask( tool\b)", "replace": r"Agent\1"})
     for ts in HEADER_TOOL_NAMES:
-        rules.append({"pattern": rf"^(\s*){ts}( )", "replace": rf"\1{TOOL_NAMES[ts]}\2"})
+        # A tool title, with or without the "● " bullet that precedes it on screen.
+        rules.append({"pattern": rf"^(\s*(?:● )?){ts}( )", "replace": rf"\1{TOOL_NAMES[ts]}\2"})
+    # Model-facing text in captured requests: the system prompt is JSON, so its
+    # line breaks are the two characters "\n" (hence `(^|\\n)` for "start of line").
+    for ts, rs in TOOL_NAMES.items():
+        rules.append({"pattern": rf"(^|\\n)- {ts}: ", "replace": rf"\1- {rs}: "})
+        # Bold only for names that are not ordinary words ("**read** surface" stays).
+        if ts in UNAMBIGUOUS_TOOL_NAMES or ts in ("Task", "bash"):
+            rules.append({"pattern": rf"\*\*{ts}\*\*", "replace": f"**{rs}**"})
+        rules.append({"pattern": rf"\b(the|call|use) {ts} (tool|with)\b", "replace": rf"\1 {rs} \2"})
+        # No lookahead: normalize.json is also read by the Rust replay test (regex crate).
+        rules.append({"pattern": rf"(<tools>(?:[A-Za-z]+, )*){ts}(, |</tools>)", "replace": rf"\1{rs}\2"})
     for pattern, replace in PROSE_TOOL_RULES:
         rules.append({"pattern": pattern, "replace": replace})
     return rules
@@ -372,8 +390,17 @@ class Normalizer:
 
     def apply(self, grid: list[list[Cell]]) -> list[list[Cell]]:
         out = []
+        wrapping = False  # inside a dropped note whose wrapped tail may follow
+        dropped = 0
         for cells in grid:
-            if any(p.search("".join(ch for ch, _ in cells)) for p in self.drop):
+            text = "".join(ch for ch, _ in cells)
+            if wrapping and text.strip() and RUST_ONLY_NOTE_TAIL.endswith(text.strip()):
+                dropped += 1
+                continue
+            wrapping = False
+            if any(p.search(text) for p in self.drop):
+                wrapping = bool(self.drop)
+                dropped += 1
                 continue
             for pattern, repl, forced in self.rules:
                 text = "".join(ch for ch, _ in cells)
@@ -388,6 +415,13 @@ class Normalizer:
                     new.extend(cells[last:])
                     cells = new
             out.append(cells)
+        # The dropped note occupied pane rows that hoocode-ts shows as blank rows above the
+        # exit line (the last row of a finished print run), so put blank rows back there.
+        blanks = [[] for _ in range(dropped)]
+        if out and "".join(ch for ch, _ in out[-1]).startswith("<exited status="):
+            out[-1:-1] = blanks
+        else:
+            out.extend(blanks)
         return out
 
 
