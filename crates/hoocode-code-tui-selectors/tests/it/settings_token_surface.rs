@@ -151,6 +151,38 @@ fn prices_each_tool_beside_its_switch_including_the_ones_that_are_off() {
     assert_eq!(suffix("WebSearch"), None);
 }
 
+/// The tool rows come in hoocode-ts's order (its names: bash, edit, read,
+/// write, SearchCodebase), whatever order the session lists them in.
+#[test]
+fn orders_the_tool_rows_the_way_hoocode_ts_names_them() {
+    let _g = lock();
+    let tool = |name: &str| ToolToggleInfo {
+        name: name.into(),
+        enabled: true,
+        tokens: None,
+    };
+    let pane = SettingsSelectorComponent::new(
+        SettingsConfig {
+            tools: ["Write", "Read", "Shell", "Edit", "CodeSearch"]
+                .map(tool)
+                .to_vec(),
+            tips_enabled: false,
+            ..SettingsConfig::default()
+        },
+        ignore,
+    );
+    let list = pane.settings_list();
+    let tools = open(&list, "tools");
+    let rows: Vec<String> = tools
+        .borrow()
+        .items()
+        .iter()
+        .map(|i| i.id.clone())
+        .filter(|id| !id.starts_with("group:"))
+        .collect();
+    assert_eq!(rows, ["CodeSearch", "Shell", "Edit", "Read", "Write"]);
+}
+
 #[test]
 fn prices_a_tool_the_way_the_session_does() {
     // Same helper, same number as --print-token-surface reports.

@@ -1661,6 +1661,29 @@ mod tests {
         assert_eq!(*title.lock().unwrap(), "HooCode - w");
     }
 
+    /// `--no-builtin-tools` (hoocode-ts `noTools: "builtin"`, regression #3592):
+    /// the built-in tools go, the extension-registered ones stay active
+    /// (AskUserQuestion is hoocode-ts's ask_options).
+    #[test]
+    fn no_builtin_tools_keeps_the_extension_tools() {
+        const BUILTIN: [&str; 5] = ["Read", "Shell", "Edit", "Write", "CodeSearch"];
+        let (_, default) = prompt_for(&[]);
+        let (_, tools) = prompt_for(&["-nbt"]);
+        assert!(tools.contains(&"AskUserQuestion".to_string()), "{tools:?}");
+        assert!(!tools.is_empty());
+        for name in BUILTIN {
+            assert!(
+                !tools.contains(&name.to_string()),
+                "{name} stays active: {tools:?}"
+            );
+        }
+        let expected: Vec<String> = default
+            .into_iter()
+            .filter(|t| !BUILTIN.contains(&t.as_str()))
+            .collect();
+        assert_eq!(tools, expected);
+    }
+
     #[test]
     fn light_mode_uses_the_terse_prompt_and_the_four_light_tools() {
         let (prompt, tools) = prompt_for(&["--light"]);

@@ -38,10 +38,14 @@ Each `*.json` file is one scenario, run against the real hoocode (pinned build i
     {"sleep": 0.5},
     {"write_settings": {}},                       // replace both apps' global settings.json mid-run
     {"write_files": {"a.md": "..."}},             // write workspace files mid-run
-    {"snapshot": "name", "contains": ["..."], "not_contains": ["..."], "history": false}
+    {"snapshot": "name", "contains": ["..."], "contains_line": [["...", "..."]], "not_contains": ["..."], "history": false}
   ]
 }
 ```
+
+`contains_line` takes a list of needle lists: one screen line must hold every needle of an
+entry (a tool's row and its switch value, say). Tool names in `contains` and `contains_line`
+are hoocode's; the ts run looks for hoocode-ts's name (`tool_needle` in `harness.py`).
 
 Rules:
 

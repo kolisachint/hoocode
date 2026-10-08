@@ -57,7 +57,13 @@
       "timeout": 20
     },
     {
-      "snapshot": "category"
+      "snapshot": "category",
+      "contains_line": [
+        [
+          "Shell",
+          "on"
+        ]
+      ]
     },
     {
       "keys": [
@@ -80,9 +86,11 @@
     },
     {
       "snapshot": "toggled",
-      "contains": [
-        "bash",
-        "off"
+      "contains_line": [
+        [
+          "Shell",
+          "off"
+        ]
       ]
     },
     {

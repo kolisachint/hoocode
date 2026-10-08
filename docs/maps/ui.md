@@ -70,7 +70,7 @@ They replace the prompt frame while open. All in `code-tui-selectors/src/` unles
 
 | Opened by | Picker | File |
 |---|---|---|
-| `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. |
+| `/settings` | settings pane | `settings_selector.rs` (uses `tui-components/src/settings_list.rs`). No External tools category: the external-tools layer went with `fd`/`rg` (reliability 1.4), so the top level is the tool rows, then the categories. Tool rows are in hoocode-ts's order (sorted by its tool names, `tool_row_sort_key`: Shell, Edit, Read, Write). |
 | `/model` | model picker | `model_selector.rs` |
 | `/scoped-models` | scoped models | `scoped_models_selector.rs` |
 | thinking level, theme, `/color` | one-list pickers | `small_selectors.rs`, `framed_list.rs` |

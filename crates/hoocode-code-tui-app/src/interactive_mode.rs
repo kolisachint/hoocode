@@ -2943,7 +2943,7 @@ impl Mode {
             let all_tools = self.session.get_all_tools();
             // Union so tools disabled at startup (absent from the live
             // registry) still appear and can be re-enabled for next session.
-            let mut names: Vec<String> = all_tools
+            let names: Vec<String> = all_tools
                 .iter()
                 .filter(|t| t.source == ToolSource::Builtin)
                 .map(|t| t.name.clone())
@@ -2951,7 +2951,7 @@ impl Mode {
                 .collect::<HashSet<_>>()
                 .into_iter()
                 .collect();
-            names.sort();
+            // Order is the pane's: it sorts its rows by hoocode-ts's tool names.
             let tokens: HashMap<&str, usize> = all_tools
                 .iter()
                 .map(|t| {
