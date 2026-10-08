@@ -331,7 +331,7 @@
    "id": "10.2a",
    "title": "read tool at pin semantics (line numbers, offset/limit, truncation, images, read-dedup) in new crates code-tool-api + code-tools-fs",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.8a"
    ],
@@ -388,6 +388,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-tool-read=fail, print-tool-read-paging=fail"
+    },
+    {
+     "at": "2026-10-08T15:01:18Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-read=pass, print-tool-read-paging=pass"
     }
    ]
   },
@@ -395,7 +401,7 @@
    "id": "10.4c",
    "title": "System prompt parity for the default tool bundle (same text the model sees, modulo app name)",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.2a"
    ],
@@ -444,6 +450,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-tool-read=fail, print-tool-read-paging=fail, print-multi=fail"
+    },
+    {
+     "at": "2026-10-08T15:02:49Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-read=pass, print-tool-read-paging=pass, print-multi=pass"
     }
    ]
   },
@@ -1902,7 +1914,7 @@
    "id": "10.2b",
    "title": "bash tool: new crate code-tool-bash (process-wrap groups, timeout, abort, output accumulator, shell resolution)",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.2a",
     "7.3b"
@@ -1952,6 +1964,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-tool-bash-light=pass, print-tool-bash=fail, tool-bash=pass"
+    },
+    {
+     "at": "2026-10-08T15:01:44Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-bash-light=pass, print-tool-bash=pass, tool-bash=pass"
     }
    ]
   },
@@ -1959,7 +1977,7 @@
    "id": "10.2c",
    "title": "edit + write tools (edit-diff fuzzy matching via similar, file-mutation-queue)",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.2a"
    ],
@@ -2014,6 +2032,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-tool-edit-light=pass, print-tool-edit=fail"
+    },
+    {
+     "at": "2026-10-08T15:01:57Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-edit-light=pass, print-tool-edit=pass"
     }
    ]
   },
@@ -2021,7 +2045,7 @@
    "id": "10.2d",
    "title": "SearchCodebase lexical mode: new crate code-tool-search (grep-searcher + ignore)",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.2a"
    ],
@@ -2072,6 +2096,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-tool-search=fail"
+    },
+    {
+     "at": "2026-10-08T15:02:05Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-search=pass"
     }
    ]
   },
@@ -2127,7 +2157,7 @@
    "id": "10.2f",
    "title": "Opt-in tools: TodoWrite, ask_options",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.2a"
    ],
@@ -2175,6 +2205,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-todo-write=fail, todo-write=pass"
+    },
+    {
+     "at": "2026-10-08T15:02:23Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-todo-write=pass, todo-write=pass"
     }
    ]
   },
@@ -2182,7 +2218,7 @@
    "id": "10.2g",
    "title": "Context GC: evictSupersededReads (stub superseded read results in the outgoing context) + transformContext wiring",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.2a"
    ],
@@ -2234,6 +2270,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-tool-read-paging=fail"
+    },
+    {
+     "at": "2026-10-08T15:02:35Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-tool-read-paging=pass"
     }
    ]
   },
@@ -2578,7 +2620,7 @@
    "id": "10.5",
    "title": "Resources III: DefaultResourceLoader (resource-loader.ts) as the AgentSession ResourceLoader, wired into code-cli (skills, templates, context files in the system prompt)",
    "phase": 10,
-   "status": "l1_done",
+   "status": "done",
    "depends": [
     "10.5a",
     "10.5c",
@@ -2643,6 +2685,12 @@
      "commit": "6ae358a",
      "kind": "verify",
      "text": "L1 pass; L2 print-context-files=fail"
+    },
+    {
+     "at": "2026-10-08T15:02:56Z",
+     "commit": "1dddba9",
+     "kind": "verify",
+     "text": "L1 pass; L2 print-context-files=pass"
     }
    ]
   },

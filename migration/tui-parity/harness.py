@@ -138,8 +138,11 @@ def tool_rules() -> list[dict]:
         rules.append({"pattern": rf"\b{ts}\b", "replace": TOOL_NAMES[ts]})
     rules.append({"pattern": r"\bTask( tool\b)", "replace": r"Agent\1"})
     for ts in HEADER_TOOL_NAMES:
-        # A tool title, with or without the "● " bullet that precedes it on screen.
-        rules.append({"pattern": rf"^(\s*(?:● )?){ts}( )", "replace": rf"\1{TOOL_NAMES[ts]}\2"})
+        # A tool title, with or without the "●" bullet (and its spaces) that precedes it on screen.
+        rules.append({"pattern": rf"^(\s*(?:●\s+)?){ts}( )", "replace": rf"\1{TOOL_NAMES[ts]}\2"})
+    # The permission prompt's title names the tool: "Allow: edit src/app.ts".
+    for ts in HEADER_TOOL_NAMES:
+        rules.append({"pattern": rf"Allow: {ts} ", "replace": f"Allow: {TOOL_NAMES[ts]} "})
     # Model-facing text in captured requests: the system prompt is JSON, so its
     # line breaks are the two characters "\n" (hence `(^|\\n)` for "start of line").
     for ts, rs in TOOL_NAMES.items():

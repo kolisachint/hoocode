@@ -61,7 +61,7 @@
       ]
     },
     {
-      "wait_for": "Allow: edit src/app\\.ts",
+      "wait_for": "Allow: [Ee]dit src/app\\.ts",
       "timeout": 30
     },
     {
@@ -81,7 +81,7 @@
       ]
     },
     {
-      "wait_for": "Allow: write tools/util\\.py",
+      "wait_for": "Allow: [Ww]rite tools/util\\.py",
       "timeout": 30
     },
     {
