@@ -26,8 +26,9 @@ Newest entry first. Each entry says where to resume. Status numbers come from
     10-minute late-fire rule, and firing outside the interactive loop (print, rpc, subagents do not tick).
   - **Settings order:** the Tools pane rows follow hoocode-ts's tool names. A disabled Cron row sorts by
     its plain name.
-  - **Done now:** 10.2a, 10.2b, 10.2c, 10.2d, 10.2f, 10.2g, 10.4c, 10.5. The ledger rows still
-    read `l1_done`; they were not changed in this session. Set them with `ledger.py` if that is the call.
+  - **Done now:** 10.2a, 10.2b, 10.2c, 10.2d, 10.2f, 10.2g, 10.4c, 10.5 (`ledger.py verify` set them
+    `done`). Infra note: `fetch_hoocode_fixtures.sh` leaves `target/hoocode-pin` sparse; rerun
+    `setup_hoocode.sh` (after `rm target/hoocode-pin/.built-*`) before L2.
   - **Final L2 tally (`harness.py run all`, 70 scenarios): 68 pass, 2 fail, both expected.**
     `slash-commands`: Rust-only `/subagent-stats` row. `login-api-key`: provider list, TS has
     Azure OpenAI Responses, Rust has Hugging Face. First run had `scroll-view` (fail) and
