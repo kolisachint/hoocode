@@ -26,6 +26,15 @@ fn settle_session_writes() {
     let _ = session_io().flush_blocking(SESSION_FLUSH_DEADLINE);
 }
 
+/// Waits up to `deadline` until every queued session write is on disk. Call it
+/// before handing a session file path to another process (a subagent child, an
+/// external tool); a timeout or write failure is returned as an error.
+pub fn flush_session_writes(deadline: Duration) -> Result<(), SessionError> {
+    session_io()
+        .flush_blocking(deadline)
+        .map_err(|e| SessionError::Io(std::io::Error::other(e.to_string())))
+}
+
 /// Error type for session manager operations.
 #[derive(Debug)]
 pub enum SessionError {
@@ -315,6 +324,8 @@ impl SessionManager {
             }
         }
         session_io().replace(&file_path, lines.join("\n") + "\n");
+        // The caller hands this path to a child process, which reads it directly.
+        flush_session_writes(SESSION_FLUSH_DEADLINE)?;
 
         Ok(Self::new(target_cwd, dir, Some(file_path), true))
     }
@@ -988,6 +999,9 @@ impl SessionManager {
             }
         }
 
+        // The returned path is handed to another process (a subagent child or
+        // a resumed session in a new process), so its writes must be on disk.
+        flush_session_writes(SESSION_FLUSH_DEADLINE)?;
         Ok(self.session_file.clone())
     }
 
