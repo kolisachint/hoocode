@@ -116,6 +116,15 @@ fn parallel_tool_limit_is_clamped() {
 }
 
 #[test]
+fn parallel_tool_limit_try_acquire_takes_a_free_slot_only() {
+    let limit = ParallelToolLimit::new(1);
+    let held = limit.try_acquire().expect("the one slot is free");
+    assert!(limit.try_acquire().is_none(), "no slot left while held");
+    drop(held);
+    assert!(limit.try_acquire().is_some(), "the slot returns on drop");
+}
+
+#[test]
 fn parallel_tool_limit_caps_concurrent_calls() {
     const CALLS: usize = 20;
     const LIMIT: usize = 3;

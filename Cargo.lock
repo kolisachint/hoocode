@@ -842,6 +842,7 @@ dependencies = [
  "hoocode-ai-stream",
  "hoocode-ai-types",
  "hoocode-ai-util",
+ "hoocode-runtime",
  "serde",
  "serde_json",
  "tokio",

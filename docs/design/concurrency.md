@@ -124,6 +124,15 @@ Shedding at the soft limit: no new subagent dispatches, parallel tools drop to 1
 render caches are cleared, and the footer shows a warning. It lifts once memory is
 10% under the limit.
 
+**Parallel tool cap (landed).** `performance.maxParallelTools` (1–32, default 8) is
+applied at launch in `hoocode-agent-loop`: each batch's `SlotLauncher` takes a
+`hoocode-runtime` `ParallelToolLimit` permit per call, in call order, before the call
+is spawned or takes its `ordered_start` turn. The permit moves into the call's future
+and frees the slot when the call settles. It cannot deadlock: slots always go to the
+earliest unfinished calls, so a call waiting on the turnstile has all its predecessors
+already running and able to reach their dispatch point. N=1 runs the batch strictly
+one call at a time.
+
 ### 4. Never hang
 
 | Rule | How it is enforced |

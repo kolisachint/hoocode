@@ -42,6 +42,12 @@ impl ParallelToolLimit {
         self.permits.available_permits()
     }
 
+    /// Takes a free slot if one is free, without waiting. The slot is released
+    /// when the permit is dropped.
+    pub fn try_acquire(&self) -> Option<OwnedSemaphorePermit> {
+        Arc::clone(&self.permits).try_acquire_owned().ok()
+    }
+
     /// Waits for a free slot. The permit is released when it is dropped.
     pub async fn acquire(&self) -> OwnedSemaphorePermit {
         // The semaphore is never closed (its only handle is private), so this

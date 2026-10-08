@@ -73,7 +73,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 6 | 309 / 191 | keep |
+| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 7 | 315 / 200 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -105,11 +105,11 @@ in those tables; the generator keeps each crate's Status by name.
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
 | `agent-compaction` | Session compaction for hoocode agents | 3 | 1451 / 1229 | keep |
-| `agent-core` | Core agent runtime for hoocode agents | 2 | 1969 / 0 | keep |
+| `agent-core` | Core agent runtime for hoocode agents | 2 | 1979 / 0 | keep |
 | `agent-harness` | Agent harness for hoocode agents | 6 | 3321 / 1042 | keep |
-| `agent-loop` | Agent loop for hoocode agents | 1 | 2380 / 0 | keep |
+| `agent-loop` | Agent loop for hoocode agents | 1 | 2647 / 0 | keep |
 | `agent-session` | Session trees for hoocode agents: entry format, storage, repositories | 2 | 2355 / 0 | keep |
-| `agent-types` | Shared types for hoocode agents | 20 | 892 / 0 | keep |
+| `agent-types` | Shared types for hoocode agents | 20 | 896 / 0 | keep |
 
 ### Coding agent (`code-*`, `app-server*`)
 
@@ -117,7 +117,7 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2529 / 1013 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5858 / 5445 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5868 / 5445 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 822 / 707 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (SearchHooCode) | 1 | 537 / 0 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5101 / 0 | keep |

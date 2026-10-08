@@ -786,6 +786,9 @@ pub struct AgentLoopConfig {
     /// Gate that approves or denies tool calls before execution.
     pub permission_gate: Option<std::sync::Arc<dyn PermissionGate>>,
     pub tool_execution: ToolExecutionMode,
+    /// Most tool calls of one parallel batch that run at once (`performance.maxParallelTools`).
+    /// 1 runs the batch one call at a time. Values below 1 act as 1.
+    pub max_parallel_tools: usize,
     /// Stream function used to call the LLM.
     pub stream_fn: Option<
         Box<
@@ -836,6 +839,7 @@ impl AgentLoopConfig {
             after_tool_call: None,
             permission_gate: None,
             tool_execution: ToolExecutionMode::Parallel,
+            max_parallel_tools: 8,
             stream_fn: None,
             signal: None,
             api_key: None,

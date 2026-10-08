@@ -424,7 +424,15 @@ pub fn create_agent_session(
             base_stream(model, context, stream_options)
         }));
 
-    let (steering_mode, follow_up_mode, transport, budgets, display, max_retry_delay_ms) = {
+    let (
+        steering_mode,
+        follow_up_mode,
+        transport,
+        budgets,
+        display,
+        max_retry_delay_ms,
+        max_parallel,
+    ) = {
         let s = lock(&settings);
         (
             s.steering_mode(),
@@ -433,6 +441,7 @@ pub fn create_agent_session(
             s.thinking_budgets(),
             s.thinking_display(),
             s.provider_retry_settings().max_retry_delay_ms,
+            s.performance_max_parallel_tools() as usize,
         )
     };
     let placeholder_model = Agent::new().state().model;
@@ -458,6 +467,7 @@ pub fn create_agent_session(
         thinking_budgets: budgets,
         thinking_display: display.map(to_ai_thinking_display),
         max_retry_delay_ms: Some(max_retry_delay_ms),
+        max_parallel_tools: Some(max_parallel),
         permission_gate: options.permission_gate,
         ..Default::default()
     }));

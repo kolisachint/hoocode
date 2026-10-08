@@ -1188,3 +1188,214 @@ async fn create_background_result_message_shapes_the_follow_up() {
         |m| matches!(m, AgentMessage::User(u) if text_of(&u.content.blocks()).contains("bg-result"))
     ));
 }
+
+// ---------------------------------------------------------------------------
+// performance.maxParallelTools: at most N calls of a batch run at once
+// ---------------------------------------------------------------------------
+
+/// What a probe tool saw: calls inside `execute` right now, the most at once,
+/// and the values in the order they started.
+#[derive(Default)]
+struct InFlight {
+    now: AtomicUsize,
+    max: AtomicUsize,
+    started: Mutex<Vec<String>>,
+}
+
+/// A sync tool that records its start and holds for `hold(args)`. It reaches its
+/// dispatch point right after starting, so `ordered_start` tools can proceed.
+fn probe_tool(
+    name: &str,
+    probe: Arc<InFlight>,
+    hold: impl Fn(&serde_json::Value) -> Duration + Send + Sync + 'static,
+) -> AgentTool {
+    tool(name, move |args| {
+        let now = probe.now.fetch_add(1, Ordering::SeqCst) + 1;
+        probe.max.fetch_max(now, Ordering::SeqCst);
+        probe.started.lock().unwrap().push(value_of(&args));
+        hoocode_agent_types::dispatch::dispatch_point();
+        std::thread::sleep(hold(&args));
+        probe.now.fetch_sub(1, Ordering::SeqCst);
+        Ok(echo_result("done: ", &args))
+    })
+}
+
+/// Turn 0 calls `name` `n` times with values "v0".."v{n-1}" (ids "tool-0"..);
+/// turn 1 says done.
+fn batch_of(
+    name: &'static str,
+    n: usize,
+) -> impl Fn(usize, &ai_types::Context) -> AssistantMessage + Send + Sync + 'static {
+    move |turn, _| {
+        if turn > 0 {
+            return text("done");
+        }
+        let ids: Vec<String> = (0..n).map(|i| format!("tool-{i}")).collect();
+        let values: Vec<String> = (0..n).map(|i| format!("v{i}")).collect();
+        let calls: Vec<(&str, &str, serde_json::Value)> = (0..n)
+            .map(|i| {
+                (
+                    ids[i].as_str(),
+                    name,
+                    serde_json::json!({"value": values[i]}),
+                )
+            })
+            .collect();
+        tool_calls(&calls)
+    }
+}
+
+fn end_ids(events: &[AgentEvent]) -> Vec<&str> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::ToolExecutionEnd { tool_call_id, .. } => Some(tool_call_id.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+fn result_ids(events: &[AgentEvent]) -> Vec<&str> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            AgentEvent::MessageEnd {
+                message: AgentMessage::ToolResult(r),
+            } => Some(r.tool_call_id.as_str()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn parallel_cap_of_two_never_runs_more_than_two_calls_at_once() {
+    let probe = Arc::new(InFlight::default());
+    let slow = probe_tool("probe", probe.clone(), |_| Duration::from_millis(100));
+    let mut config = identity_config();
+    config.tool_execution = ToolExecutionMode::Parallel;
+    config.max_parallel_tools = 2;
+    mock_stream(&mut config, batch_of("probe", 5));
+    let (events, _) = collect(agent_loop(
+        vec![user("run five")],
+        context_with(vec![slow]),
+        config,
+    ))
+    .await;
+
+    assert_eq!(
+        probe.max.load(Ordering::SeqCst),
+        2,
+        "two calls overlap, never three"
+    );
+    assert_eq!(probe.started.lock().unwrap().len(), 5, "every call ran");
+    assert_eq!(
+        result_ids(&events),
+        ["tool-0", "tool-1", "tool-2", "tool-3", "tool-4"]
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn parallel_cap_of_one_runs_the_batch_strictly_in_order() {
+    let probe = Arc::new(InFlight::default());
+    let quick = probe_tool("probe", probe.clone(), |_| Duration::from_millis(10));
+    let mut config = identity_config();
+    config.tool_execution = ToolExecutionMode::Parallel;
+    config.max_parallel_tools = 1;
+    mock_stream(&mut config, batch_of("probe", 5));
+    let (events, _) = collect(agent_loop(
+        vec![user("run five")],
+        context_with(vec![quick]),
+        config,
+    ))
+    .await;
+
+    assert_eq!(probe.max.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        *probe.started.lock().unwrap(),
+        ["v0", "v1", "v2", "v3", "v4"]
+    );
+    assert_eq!(
+        end_ids(&events),
+        ["tool-0", "tool-1", "tool-2", "tool-3", "tool-4"]
+    );
+    assert_eq!(
+        result_ids(&events),
+        ["tool-0", "tool-1", "tool-2", "tool-3", "tool-4"]
+    );
+}
+
+/// With a cap of 2, a slot frees as each call settles and the next call in order
+/// takes it. Ends come in completion order, results in call order.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn parallel_cap_refills_slots_in_order_and_keeps_result_order() {
+    let probe = Arc::new(InFlight::default());
+    let varied = probe_tool("probe", probe.clone(), |args| {
+        if value_of(args) == "v0" {
+            Duration::from_millis(1000)
+        } else {
+            Duration::from_millis(20)
+        }
+    });
+    let mut config = identity_config();
+    config.tool_execution = ToolExecutionMode::Parallel;
+    config.max_parallel_tools = 2;
+    mock_stream(&mut config, batch_of("probe", 5));
+    let (events, _) = collect(agent_loop(
+        vec![user("run five")],
+        context_with(vec![varied]),
+        config,
+    ))
+    .await;
+
+    assert_eq!(
+        *probe.started.lock().unwrap(),
+        ["v0", "v1", "v2", "v3", "v4"],
+        "calls start in call order"
+    );
+    assert_eq!(
+        end_ids(&events),
+        ["tool-1", "tool-2", "tool-3", "tool-4", "tool-0"],
+        "ends come in completion order"
+    );
+    assert_eq!(
+        result_ids(&events),
+        ["tool-0", "tool-1", "tool-2", "tool-3", "tool-4"],
+        "results come in call order"
+    );
+}
+
+/// `ordered_start` calls under a small cap must still finish: a call holds its
+/// slot before it takes its turn, so the calls it waits for are already running.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn parallel_cap_with_ordered_start_tools_does_not_deadlock() {
+    for cap in [1, 2, 3] {
+        let probe = Arc::new(InFlight::default());
+        let mut ordered = probe_tool("probe", probe.clone(), |_| Duration::from_millis(30));
+        ordered.ordered_start = true;
+        let mut config = identity_config();
+        config.tool_execution = ToolExecutionMode::Parallel;
+        config.max_parallel_tools = cap;
+        mock_stream(&mut config, batch_of("probe", 6));
+        let (events, _) = tokio::time::timeout(
+            Duration::from_secs(20),
+            collect(agent_loop(
+                vec![user("run six")],
+                context_with(vec![ordered]),
+                config,
+            )),
+        )
+        .await
+        .unwrap_or_else(|_| panic!("cap {cap}: the batch deadlocked"));
+
+        assert_eq!(
+            *probe.started.lock().unwrap(),
+            ["v0", "v1", "v2", "v3", "v4", "v5"],
+            "cap {cap}: ordered calls start in call order"
+        );
+        assert_eq!(
+            result_ids(&events),
+            ["tool-0", "tool-1", "tool-2", "tool-3", "tool-4", "tool-5"],
+            "cap {cap}"
+        );
+    }
+}

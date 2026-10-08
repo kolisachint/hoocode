@@ -19,6 +19,7 @@ doctest = false
 [dependencies]
 hoocode-ai-util = { workspace = true }
 hoocode-agent-types = { workspace = true }
+hoocode-runtime = { workspace = true }
 hoocode-ai-stream = { workspace = true }
 hoocode-ai-types = { workspace = true }
 serde = { version = "1", features = ["derive"] }
@@ -27,4 +28,4 @@ futures-util = { version = "0.3", default-features = false, features = ["std"] }
 tokio = { version = "1", features = ["rt", "sync", "macros"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }
