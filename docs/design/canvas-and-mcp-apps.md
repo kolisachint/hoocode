@@ -25,12 +25,12 @@ open it in your browser beside the terminal, and it can talk to the agent.
 2. Spot tools whose `_meta.ui.resourceUri` is a `ui://` resource. The normal text
    result still goes to the model.
 3. **Local host page.**
-   - `cortex` serves a small page on `127.0.0.1` with a random token per session.
+   - `hoocode` serves a small page on `127.0.0.1` with a random token per session.
    - The app runs in a sandboxed iframe on a second local port, so it is a
      different origin.
    - The page enforces the CSP and permissions from `_meta.ui`; camera and
      microphone only after you approve.
-   - Messages between page and app use postMessage, relayed to `cortex` over a
+   - Messages between page and app use postMessage, relayed to `hoocode` over a
      WebSocket.
 4. **Host messages.**
    - The app's `tools/call` goes to its own server, under the usual rules.

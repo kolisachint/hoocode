@@ -6,9 +6,9 @@ Loads hoocode's own built `models.generated.js` and `image-models.generated.js`
 with node (so every TypeScript literal is read exactly) and writes them as flat
 JSON arrays in hoocode's order (provider insertion order, then model order):
 
-  crates/cortexcode-ai-models-catalog/data/models.json
-  crates/cortexcode-ai-models-catalog/data/image-models.json
-  crates/cortexcode-ai-models-catalog/data/pin.json   (the hoocode commit they came from)
+  crates/hoocode-ai-models-catalog/data/models.json
+  crates/hoocode-ai-models-catalog/data/image-models.json
+  crates/hoocode-ai-models-catalog/data/pin.json   (the hoocode commit they came from)
 
 Run after `migration/tui-parity/setup_hoocode.sh` (which builds the pin), and on
 every pin bump:
@@ -23,11 +23,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
-# Providers cortexcode drops (docs/design/decisions-2026-10-08.md, "Dropped: Azure").
+# Providers hoocode drops (docs/design/decisions-2026-10-08.md, "Dropped: Azure").
 # Keep them out of the regenerated catalog so the drop survives a pin bump.
 DROPPED_PROVIDERS = {"azure-openai-responses"}
 DEFAULT_AI_PACKAGE = ROOT / "target" / "hoocode-pin" / "packages" / "ai"
-OUT_DIR = ROOT / "crates" / "cortexcode-ai-models-catalog" / "data"
+OUT_DIR = ROOT / "crates" / "hoocode-ai-models-catalog" / "data"
 
 DUMP = """
 const [models, images] = await Promise.all([

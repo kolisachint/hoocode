@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """How far the hoocode pin is behind upstream, and what a bump must port.
 
-The pin (`[workspace.metadata.cortex.source]` in Cargo.toml) only moves by a
+The pin (`[workspace.metadata.hoocode.source]` in Cargo.toml) only moves by a
 deliberate bump (plan §0.1). Between bumps hoocode keeps releasing: new catalog
 models, provider wire fixes (e.g. OpenCode Go's `x-opencode-session`). Nothing
 showed that drift, so users hit missing models and 400s before anyone noticed.
@@ -55,7 +55,7 @@ SOURCE_MAP: list[tuple[str, str]] = [
 
 
 def pin() -> tuple[str, str, str]:
-    src = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["metadata"]["cortex"]["source"]
+    src = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["metadata"]["hoocode"]["source"]
     return src["hoocode-version"], src["hoocode-commit"], src["repository"]
 
 
@@ -91,7 +91,7 @@ def status(fail_when_behind: bool) -> int:
         print("pin is at the latest release")
         return 0
     print(f"BEHIND: hoocode {tag} is released. Catalog models and provider fixes after the pin")
-    print("are missing from cortex. Ask the user before bumping (plan §0.1), then run:")
+    print("are missing from hoocode. Ask the user before bumping (plan §0.1), then run:")
     print(f"  python3 migration/pin_drift.py delta {tag}")
     return 1 if fail_when_behind else 0
 
@@ -122,7 +122,7 @@ def delta(to_ref: str | None) -> int:
     print("\n### Every bump\n")
     print("- [ ] Cargo.toml pin + migration/ledger.json pin + plan §0.1 header")
     print("- [ ] migration/tui-parity/setup_hoocode.sh, then python3 scripts/convert_models_to_json.py")
-    print("- [ ] cargo test -p cortexcode-code-models (every default is in the catalog)")
+    print("- [ ] cargo test -p hoocode-code-models (every default is in the catalog)")
     print("- [ ] python3 migration/ts_tests.py generate; L1 + L2 gates")
     return 0
 

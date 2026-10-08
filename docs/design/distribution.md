@@ -7,7 +7,7 @@ the work deliberately left for later, so the scope of each step stays small.
 
 | Command | Build | Repo | npm |
 |---|---|---|---|
-| `hoocode`, `hoo` | Rust (this repo, cargo binary `cortex`) | kolisachint/hoocode | `@kolisachint/hoocode` |
+| `hoocode`, `hoo` | Rust (this repo, cargo binary `hoocode`) | kolisachint/hoocode | `@kolisachint/hoocode` |
 | `hoocode-ts`, `hoo-ts` | TypeScript | kolisachint/hoocode-ts | `@kolisachint/hoocode-agent` |
 
 ## Shipped

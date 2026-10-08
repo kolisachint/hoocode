@@ -1,6 +1,6 @@
 // The built-in and registered tools' renderCall/renderResult output, rendered
 // at a fixed width, for a set of calls and results.
-// Output: crates/cortexcode-code-tui-widgets/tests/fixtures/tool-renderers-gold.json
+// Output: crates/hoocode-code-tui-widgets/tests/fixtures/tool-renderers-gold.json
 import { setKeybindings } from "@kolisachint/hoocode-tui";
 import { KeybindingsManager } from "./core/keybindings.js";
 import { initTheme, theme } from "./modes/interactive/theme/theme.js";

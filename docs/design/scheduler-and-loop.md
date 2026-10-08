@@ -14,7 +14,7 @@ made in either hoocode is visible to the other.
 |---|---|
 | Same file as hoocode-ts: `<cwd>/.agents/scheduled_tasks.json`, same shape | The two tools share schedules |
 | Port hoocode-ts's cron matcher (5 fields, local time) instead of a cron library | Both tools must read the same expression the same way |
-| Fires are claimed under a file lock, so a task fires once | Two sessions, or cortex next to hoocode-ts, must not both fire it |
+| Fires are claimed under a file lock, so a task fires once | Two sessions, or hoocode next to hoocode-ts, must not both fire it |
 | A prompt due while the agent is busy **runs at the next idle moment, up to 10 minutes late**; after that it's skipped with a notice | hoocode-ts silently drops it |
 | Schedules run only while a session is open (no headless daemon runs in v1) | Nobody would be there to approve tools |
 

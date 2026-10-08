@@ -1,0 +1,24 @@
+[package]
+name = "hoocode-code-tools-optin"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Opt-in tools for the hoocode coding agent: TodoWrite and ask_options"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-agent-types = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-code-task-store = { workspace = true }
+hoocode-code-tool-api = { workspace = true }
+serde_json = { version = "1", features = ["preserve_order"] }

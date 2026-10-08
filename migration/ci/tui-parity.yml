@@ -1,6 +1,6 @@
 name: TUI parity (level 2)
 
-# Runs the rendered-TUI comparison of pinned hoocode vs cortex. Manual and nightly;
+# Runs the rendered-TUI comparison of pinned hoocode-ts vs hoocode. Manual and nightly;
 # failures are expected until the owning ledger tasks land, so this does not gate PRs.
 on:
   workflow_dispatch:
@@ -28,8 +28,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y tmux
       - name: Build pinned hoocode reference
         run: migration/tui-parity/setup_hoocode.sh
-      - name: Build cortex
-        run: cargo build -p cortexcode-code-main --bin cortex
+      - name: Build hoocode
+        run: cargo build -p hoocode-code-main --bin hoocode
       - name: Run scenarios
         run: python3 migration/tui-parity/harness.py run "${{ inputs.scenario || 'all' }}" || true
       - name: Summary

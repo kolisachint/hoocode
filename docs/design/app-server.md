@@ -34,7 +34,7 @@ We implement only what those clients need, not the full protocol
    not from guessing.
 4. **MIT only.** Our code is MIT. Nothing is copied from `../codex`
    (Apache-2.0): no code, no schemas, no generated types. Types are written
-   by us in `cortexcode-app-server-protocol`. Codex's JSON schemas are
+   by us in `hoocode-app-server-protocol`. Codex's JSON schemas are
    generated at test time (`codex app-server generate-json-schema`) into
    `target/`, never checked in. Dependencies must be permissive and
    MIT-compatible (MIT, MIT OR Apache-2.0, BSD, ISC, Zlib, …).
@@ -44,16 +44,16 @@ We implement only what those clients need, not the full protocol
 
 | Crate | What |
 |---|---|
-| `cortexcode-app-server-protocol` | Wire types: envelope, method params/results, notifications, server requests. serde only. No I/O. |
-| `cortexcode-app-server` | Server: connections, thread manager, event → item mapping, approvals, transports (stdio, Unix socket). |
-| `cortexcode-code-cli` | `hoocode app-server [--listen URL]` subcommand; builds real sessions for the server through a factory. |
+| `hoocode-app-server-protocol` | Wire types: envelope, method params/results, notifications, server requests. serde only. No I/O. |
+| `hoocode-app-server` | Server: connections, thread manager, event → item mapping, approvals, transports (stdio, Unix socket). |
+| `hoocode-code-cli` | `hoocode app-server [--listen URL]` subcommand; builds real sessions for the server through a factory. |
 
-`cortexcode-app-server` does not depend on `cortexcode-code-cli`. The CLI
+`hoocode-app-server` does not depend on `hoocode-code-cli`. The CLI
 hands it a `SessionFactory` (trait object) that builds an `AgentSession`
 for a session file. Tests pass a faux-provider factory.
 
 New third-party deps: `tokio-tungstenite` (MIT) for the WebSocket framing
-on the Unix socket. Add `cortexcode-app-server` as an owner in
+on the Unix socket. Add `hoocode-app-server` as an owner in
 `migration/dep-firewall.json`. `uuid` for turn/item ids. Dev-only:
 `jsonschema` for the schema check.
 
@@ -117,7 +117,7 @@ again for that tool on this thread while it is loaded (in memory only);
 (amendments) → treated as `accept` for that one call. hoocode's "Always"
 (writing the global config) is never offered over the server.
 
-Which calls ask is hoocode's existing policy (`cortexcode-code-permissions`
+Which calls ask is hoocode's existing policy (`hoocode-code-permissions`
 `evaluate`, per-mode `auto_allow`, `denied_tools`, bash patterns, …) with
 "has UI" = true. So a workspace in hoobot's `discord` mode asks for
 bash/edit/write exactly as the terminal UI would.
@@ -221,7 +221,7 @@ timeouts, thread fork/archive/name, daemon start/stop commands and launchd.
    wins, `serverRequest/resolved`); resume replays a pending approval;
    list/read rebuild turns.
 3. Schema check: `scripts/codex-schema.sh` generates Codex's schemas into
-   `target/codex-schema/`; `cargo test -p cortexcode-app-server --test
+   `target/codex-schema/`; `cargo test -p hoocode-app-server --test
    server -- --ignored schema_conformance` drives a scenario and validates
    every message (76 messages, 23 types) against them.
 4. Manual: `codex --remote unix://PATH` against `hoocode app-server`; record

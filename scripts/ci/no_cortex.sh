@@ -20,13 +20,35 @@ ALLOW=(
   ':(exclude)docs/design/decisions-2026-10-07.md'
   ':(exclude)docs/design/decisions-2026-10-08.md'
   ':(exclude)scripts/ci/no_cortex.sh'
+  ':(exclude)scripts/rename/rename_to_hoocode.py'  # the one-shot step 0c tool names the old names by design
+  ':(exclude)Cargo.lock'                            # regenerated from the crate names
+  ':(exclude)migration/ci/rename-to-hoocode.patch'  # the staged CI rename: it removes the old names
+  ':(exclude)CLAUDE.md'                             # names the guard's target in its rule ("don't add new cortex names")
 )
+
+# Tokens that are not this rename's to change (naming-and-paths.md §2-4, milestone 1.2) and
+# the other project pycortex. They are stripped before the check, so a line that also has a
+# real old name still fails.
+#   .cortexcode, CORTEX_* / CORTEXCODE_* env names, cortex-debug (milestone 1.2)
+#   pycortex (another project, the Python migration this one follows)
+EXEMPT='s/pycortex//Ig; s/\.cortexcode([^A-Za-z0-9_]|$)/\1/g; s/CORTEX(CODE)?_[A-Z0-9_]*//g; s/cortex-debug//g'
 
 # git grep exits 1 when nothing matches, which is the pass case.
 set +e
-hits=$(git grep -n -I -i -e 'cortex' -- . "${ALLOW[@]}")
+raw=$(git grep -n -I -i -e 'cortex' -- . "${ALLOW[@]}")
 status=$?
 set -e
+hits=""
+if [ "$status" -eq 0 ]; then
+  while IFS= read -r line; do
+    if printf '%s\n' "$line" | sed -E "$EXEMPT" | grep -q -i 'cortex'; then
+      hits="${hits}${line}"$'\n'
+    fi
+  done <<< "$raw"
+  hits="${hits%$'\n'}"
+  # Exempt-only hits are not failures.
+  [ -n "$hits" ] || status=1
+fi
 
 if [ "$status" -eq 0 ]; then
   printf '%s\n' "$hits" | sed -n '1,200p'

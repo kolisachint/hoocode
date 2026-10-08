@@ -1,6 +1,6 @@
 // Dump highlight.js 10.7.3's registered languages (as cli-highlight loads
 // them) as a JSON object graph: object identity, frozen flags, regexes and the
-// few callbacks, by name. Output: crates/cortexcode-tui-highlight/data/hljs-grammars.json
+// few callbacks, by name. Output: crates/hoocode-tui-highlight/data/hljs-grammars.json
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 const require = createRequire(import.meta.url);

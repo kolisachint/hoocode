@@ -65,7 +65,7 @@
     {
       "pattern": "^<exited status=0>$",
       "replace": "",
-      "_comment": "pinned hoocode never exits after a print-mode run that dispatched a subagent: the lifeguard's setInterval is not unref'd, so its event loop stays alive (hoocode bug, ledger 10.9f). cortex exits 0; only a clean exit is dropped, a failing one still shows."
+      "_comment": "pinned hoocode never exits after a print-mode run that dispatched a subagent: the lifeguard's setInterval is not unref'd, so its event loop stays alive (hoocode bug, ledger 10.9f). hoocode exits 0; only a clean exit is dropped, a failing one still shows."
     }
   ]
 }

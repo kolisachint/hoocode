@@ -1,0 +1,42 @@
+[package]
+name = "hoocode-app-server"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "hoocode app-server: Codex app-server protocol over stdio and a Unix socket"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-app-server-protocol = { workspace = true }
+hoocode-agent-types = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-code-agent-session = { workspace = true }
+hoocode-code-modes = { workspace = true }
+hoocode-code-permissions = { workspace = true }
+hoocode-code-session = { workspace = true }
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "io-util", "io-std", "net", "sync", "macros", "time", "fs", "signal"] }
+tokio-tungstenite = { version = "0.26", default-features = false, features = ["handshake"] }
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+hoocode-agent-core = { workspace = true }
+hoocode-ai-provider-faux = { workspace = true }
+hoocode-code-models = { workspace = true }
+hoocode-code-settings = { workspace = true }
+tempfile = "3"
+tokio = { version = "1", features = ["process"] }
+hoocode-code-tool-api = { workspace = true }
+jsonschema = { version = "0.30", default-features = false }

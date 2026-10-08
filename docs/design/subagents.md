@@ -199,7 +199,7 @@ or `tests/it/lifeguard.rs`, plus one end-to-end scenario each.
 
 ## 5c. P2: the runner seam (2026-10-05)
 
-`crates/cortexcode-code-subagents/src/runner.rs`. Until this existed, "run a
+`crates/hoocode-code-subagents/src/runner.rs`. Until this existed, "run a
 subagent" and "spawn this executable with these argv" were the same statement:
 the pool built a `std::process::Command` and read its pipes. That made three
 things untestable — anything needing a *model* in it, anything where two runs

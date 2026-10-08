@@ -1,0 +1,24 @@
+[package]
+name = "hoocode-ai-sse"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Server-Sent Events decoder shared by the hoocode AI providers"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+eventsource-stream = "0.2"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+futures-executor = "0.3"

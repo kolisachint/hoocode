@@ -1,4 +1,4 @@
-# cortexcode
+# hoocode
 
 Rust migration of the [HooCode](https://github.com/kolisachint/hoocode-ts) TypeScript coding-agent framework.
 
@@ -8,10 +8,10 @@ This is a multi-crate workspace that mirrors the structure of the [pycortex](htt
 
 ```
 crates/
-  cortexcode-ai-types/
-  cortexcode-ai-models/
+  hoocode-ai-types/
+  hoocode-ai-models/
   ...
-  cortexcode-agent-core/
+  hoocode-agent-core/
   ...
   ...
   ...
@@ -49,19 +49,19 @@ This Rust build is installed as **`hoocode`**. The TypeScript original is reache
 **`hoocode-ts`**, a small shim (`scripts/shims/hoocode-ts`) that runs the npm package
 `@kolisachint/hoocode-agent` (a global npm install if present, otherwise `npx`; set
 `HOOCODE_TS_BIN` to point it anywhere else). Only the installed names changed: the crates,
-the cargo binary (`cortex`), the config directory and the in-app name are unchanged. If you
+the cargo binary (`hoocode`), the config directory and the in-app name are unchanged. If you
 also have the TS one installed globally from npm, put the Rust `hoocode` earlier on `PATH`
 (npm's `hoo` alias still runs the TS one).
 
 ```bash
-git clone https://github.com/kolisachint/cortexcode
-cd cortexcode
+git clone https://github.com/kolisachint/hoocode
+cd hoocode
 scripts/install.sh                     # → updates ~/.hoocode/bin/hoocode if installed, else ~/.local/bin
-scripts/install.sh --prefix /usr/local/bin --also-cortex   # also keep a `cortex` link
+scripts/install.sh --prefix /usr/local/bin --also-hoocode   # also keep a `hoocode` link
 ```
 
-Plain cargo still works and installs the binary as `cortex`:
-`cargo install --path crates/cortexcode-code-main --bin cortex`.
+Plain cargo still works and installs the binary as `hoocode`:
+`cargo install --path crates/hoocode-code-main --bin hoocode`.
 
 ### Pre-built binaries
 
@@ -74,17 +74,17 @@ on your `PATH`. Linux builds are static (musl) and run on any distro.
 
 ```bash
 # Single-shot print mode (text or JSON)
-cortex -p "Explain this codebase"
-cortex -p --mode json "Explain this codebase"
+hoocode -p "Explain this codebase"
+hoocode -p --mode json "Explain this codebase"
 
 # Interactive TUI mode
-cortex
+hoocode
 
 # JSON-RPC server mode
-cortex --mode rpc
+hoocode --mode rpc
 
 # Subagent mode (used internally by the Task tool)
-cortex --mode subagent --task-id <id>
+hoocode --mode subagent --task-id <id>
 ```
 
 ## Development
@@ -111,7 +111,7 @@ crates.io, off by default). Manual runs: Actions → Release.
 
 ## Migration status (paused 2026-10-01, ready to use)
 
-The port of hoocode **v0.6.0** (commit `2223437c`) is paused, and `cortex` is usable as a
+The port of hoocode **v0.6.0** (commit `2223437c`) is paused, and `hoocode` is usable as a
 daily coding agent. Phases 7, 8 and 11 are complete. Phase 10 is complete apart from the
 deferred items listed below. Every remaining task is **deferred** by user decision; none is
 in progress. Status per task: `python3 migration/ledger.py status`.
@@ -137,7 +137,7 @@ Deferred (not available yet, even though `--help` still lists some of them):
 | MCP servers (`mcp.json`, stdio/HTTP/SSE, OAuth) | 9.1, 10.11 |
 | `webfetch` / `websearch` (`--enable-webtools`) | 10.2e |
 | Plugins and marketplace (`--enable-plugintools`) | 12.1 |
-| `cortex install/remove/update/list` package manager | 12.2 |
+| `hoocode install/remove/update/list` package manager | 12.2 |
 | Code extensions (`-e`, extension flags) | 12.3 |
 | Semantic and hybrid search (`embsearch`). Search is lexical-only. | 12.4 |
 | `/loop`, `/goal` autonomous loop, cron/scheduler | 12.5 |
@@ -149,17 +149,17 @@ default-bundle system prompt in hoocode also advertises the SearchHooCode self-k
 from 12.4, so model requests differ in that one block.
 
 The plan and its rationale are in
-[`docs/design/hoocode-to-cortexcode-migration.md`](docs/design/hoocode-to-cortexcode-migration.md)
+[`docs/design/ts-to-rust-migration.md`](docs/design/ts-to-rust-migration.md)
 (§0 status, §9 phases), and the handoff log is in `migration/PROGRESS.md`. To resume, take a
 deferred task out of `deferred` and say "continue migration" (see `CLAUDE.md`).
 
 ## Quick start
 
 ```bash
-cargo install --path crates/cortexcode-code-main --bin cortex   # puts `cortex` on PATH
-export ANTHROPIC_API_KEY=...        # or any provider key from `cortex --help`, or /login
-cortex                              # interactive TUI
-cortex -p "Summarize this repo"     # one-shot
+cargo install --path crates/hoocode-code-main --bin hoocode   # puts `hoocode` on PATH
+export ANTHROPIC_API_KEY=...        # or any provider key from `hoocode --help`, or /login
+hoocode                              # interactive TUI
+hoocode -p "Summarize this repo"     # one-shot
 ```
 
 - Config, auth, sessions and settings live in `~/.cortexcode/agent` (override with
@@ -174,6 +174,6 @@ Publishing is driven from GitHub Actions:
 - `Reserve crates.io names` — one-off workflow that publishes `0.0.1` placeholder crates.
 - `Release` — bump, build, publish, and create a GitHub release.
 - `Merge Release` — auto-releases PRs labeled `rust:patch`, `rust:minor`, or `rust:major`.
-- `Build binaries` — cross-compiles the `cortex` binary for Linux, macOS (Intel/Apple Silicon), and Windows.
+- `Build binaries` — cross-compiles the `hoocode` binary for Linux, macOS (Intel/Apple Silicon), and Windows.
 
-Crates marked with `[package.metadata.cortex] publish = true` are included in automated releases.
+Crates marked with `[package.metadata.hoocode] publish = true` are included in automated releases.

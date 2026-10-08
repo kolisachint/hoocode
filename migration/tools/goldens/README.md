@@ -11,10 +11,10 @@ removed again.
 Markdown: `markdown.mjs` produces `markdown-gold.json` (token streams and renders for a
 corpus), `markdown-fuzz.mjs` produces `markdown-fuzz-gold.json` (token streams for
 pseudo-random documents), and `marked-rules.mjs` dumps marked's compiled rule sources
-that `rules_gen.rs` embeds. All three are in `crates/cortexcode-tui-components/`.
+that `rules_gen.rs` embeds. All three are in `crates/hoocode-tui-components/`.
 
 Highlighting: `hljs-grammars.mjs` dumps highlight.js 10.7.3's languages (as cli-highlight
-loads them) to `crates/cortexcode-tui-highlight/data/hljs-grammars.json`, which the crate
-embeds; `highlight.mjs` produces `crates/cortexcode-tui-highlight/tests/fixtures/highlight-gold.json`
-(cli-highlight's output over source files of the pin and of cortexcode, snippets, and a
+loads them) to `crates/hoocode-tui-highlight/data/hljs-grammars.json`, which the crate
+embeds; `highlight.mjs` produces `crates/hoocode-tui-highlight/tests/fixtures/highlight-gold.json`
+(cli-highlight's output over source files of the pin and of hoocode, snippets, and a
 polyglot snippet in every language).

@@ -9,7 +9,7 @@ rustc reports, repeating until no fixable errors remain:
 * E0308 mismatched types where the literal is ``None`` or ``Some(expr)`` and the
   expected type is no longer an Option → replace with a default / unwrap ``expr``.
 
-Defaults come from the tables below; ``{now}`` expands to ``cortexcode_ai_types::now_ms()``
+Defaults come from the tables below; ``{now}`` expands to ``hoocode_ai_types::now_ms()``
 outside ``#[cfg(test)]`` modules and to ``0`` inside them.
 
 Usage: fix_struct_fields.py [-p crate ...]
@@ -63,9 +63,9 @@ REMOVED = {"stop_sequence", "cache_control", "cache_control_format", "supports_l
 NONE_REPLACEMENTS = {
     "i64": "{now}",
     "Usage": "Default::default()",
-    "cortexcode_ai_types::Usage": "Default::default()",
-    "StopReason": "cortexcode_ai_types::StopReason::Stop",
-    "cortexcode_ai_types::StopReason": "cortexcode_ai_types::StopReason::Stop",
+    "hoocode_ai_types::Usage": "Default::default()",
+    "StopReason": "hoocode_ai_types::StopReason::Stop",
+    "hoocode_ai_types::StopReason": "hoocode_ai_types::StopReason::Stop",
 }
 
 
@@ -163,7 +163,7 @@ def plan_edits(msgs: list[dict]) -> dict[Path, list[tuple[int, int, str]]]:
             found = (ml or mm).group(2) if (ml or mm) else ""
             if snippet == "None" and exp in NONE_REPLACEMENTS:
                 rep = NONE_REPLACEMENTS[exp]
-                rep = rep.replace("{now}", "0" if in_test_module(text, lo) else "cortexcode_ai_types::now_ms()")
+                rep = rep.replace("{now}", "0" if in_test_module(text, lo) else "hoocode_ai_types::now_ms()")
                 edits.setdefault(path, []).append((lo, hi, rep))
             elif snippet.startswith("Some(") and snippet.endswith(")") and found.startswith("Option<"):
                 inner = snippet[5:-1].strip()

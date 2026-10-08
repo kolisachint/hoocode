@@ -263,972 +263,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f8f80099a98041a3d1622845c271458a2d73e688351bf3cb999266764b81d48"
 
 [[package]]
-name = "cortexcode-agent-compaction"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-harness",
- "cortexcode-agent-session",
- "cortexcode-agent-types",
- "cortexcode-ai-models",
- "cortexcode-ai-provider-faux",
- "cortexcode-ai-registry",
- "cortexcode-ai-types",
- "cortexcode-code-session",
- "futures-util",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-agent-core"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-loop",
- "cortexcode-agent-types",
- "cortexcode-ai-provider-faux",
- "cortexcode-ai-provider-openai",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-agent-harness"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "futures-util",
- "ignore",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml_ng",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "cortexcode-agent-loop"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-types",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-agent-session"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "serde",
- "serde_json",
- "uuid",
-]
-
-[[package]]
-name = "cortexcode-agent-types"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-ai-env"
-version = "0.1.8"
-dependencies = [
- "dirs",
-]
-
-[[package]]
-name = "cortexcode-ai-models"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-models-catalog",
- "cortexcode-ai-types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-ai-models-catalog"
-version = "0.1.8"
-
-[[package]]
-name = "cortexcode-ai-oauth"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "rand 0.8.8",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "cortexcode-ai-oauth-anthropic"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-oauth",
- "cortexcode-ai-types",
- "serde",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "cortexcode-ai-oauth-github-copilot"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-models",
- "cortexcode-ai-oauth",
- "cortexcode-ai-types",
- "futures-util",
- "serde",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "cortexcode-ai-oauth-google"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-oauth",
- "serde_json",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "cortexcode-ai-oauth-openai-codex"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "cortexcode-ai-oauth",
- "serde_json",
- "tokio",
- "url",
- "uuid",
-]
-
-[[package]]
-name = "cortexcode-ai-provider-anthropic"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-env",
- "cortexcode-ai-models",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "reqwest",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-ai-provider-faux"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-registry",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "futures-util",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-ai-provider-google"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-env",
- "cortexcode-ai-models",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "jsonwebtoken",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-ai-provider-google-gemini-cli"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-ai-models",
- "cortexcode-ai-provider-google",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "regex",
- "reqwest",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "cortexcode-ai-provider-openai"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-env",
- "cortexcode-ai-models",
- "cortexcode-ai-sse",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "reqwest",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-ai-provider-openai-codex"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "cortexcode-ai-env",
- "cortexcode-ai-models",
- "cortexcode-ai-provider-openai-responses",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "libc",
- "reqwest",
- "serde_json",
- "tokio",
- "tokio-tungstenite",
- "uuid",
-]
-
-[[package]]
-name = "cortexcode-ai-provider-openai-responses"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-env",
- "cortexcode-ai-models",
- "cortexcode-ai-sse",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "reqwest",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-ai-registry"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "cortexcode-ai-env",
- "cortexcode-ai-models",
- "cortexcode-ai-provider-anthropic",
- "cortexcode-ai-provider-google",
- "cortexcode-ai-provider-google-gemini-cli",
- "cortexcode-ai-provider-openai",
- "cortexcode-ai-provider-openai-codex",
- "cortexcode-ai-provider-openai-responses",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "futures-util",
- "regex",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-ai-sse"
-version = "0.1.8"
-dependencies = [
- "eventsource-stream",
- "futures-executor",
- "futures-util",
-]
-
-[[package]]
-name = "cortexcode-ai-stream"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-types",
- "futures-executor",
- "futures-util",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-ai-types"
-version = "0.1.8"
-dependencies = [
- "serde",
- "serde_json",
- "tokio-util",
-]
-
-[[package]]
-name = "cortexcode-ai-util"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-ai-types",
- "regex",
- "reqwest",
- "rustls-native-certs",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-app-server"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-core",
- "cortexcode-agent-types",
- "cortexcode-ai-provider-faux",
- "cortexcode-ai-types",
- "cortexcode-app-server-protocol",
- "cortexcode-code-agent-session",
- "cortexcode-code-models",
- "cortexcode-code-modes",
- "cortexcode-code-permissions",
- "cortexcode-code-session",
- "cortexcode-code-settings",
- "cortexcode-code-tool-api",
- "futures-util",
- "jsonschema",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "uuid",
-]
-
-[[package]]
-name = "cortexcode-app-server-protocol"
-version = "0.1.8"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-code-agent-session"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-agent-compaction",
- "cortexcode-agent-core",
- "cortexcode-agent-harness",
- "cortexcode-agent-types",
- "cortexcode-ai-models",
- "cortexcode-ai-provider-faux",
- "cortexcode-ai-registry",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "cortexcode-code-auth",
- "cortexcode-code-models",
- "cortexcode-code-paths",
- "cortexcode-code-prompts",
- "cortexcode-code-resources",
- "cortexcode-code-session",
- "cortexcode-code-settings",
- "cortexcode-code-tool-api",
- "cortexcode-code-tool-bash",
- "cortexcode-code-tools",
- "cortexcode-code-tools-fs",
- "cortexcode-tui-util",
- "libc",
- "regex-lite",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-code-auth"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-env",
- "cortexcode-ai-oauth",
- "cortexcode-ai-types",
- "cortexcode-code-models",
- "cortexcode-code-paths",
- "rand 0.8.8",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-code-cli"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "cortexcode-agent-compaction",
- "cortexcode-agent-core",
- "cortexcode-agent-types",
- "cortexcode-ai-env",
- "cortexcode-ai-oauth",
- "cortexcode-ai-oauth-anthropic",
- "cortexcode-ai-oauth-github-copilot",
- "cortexcode-ai-oauth-google",
- "cortexcode-ai-oauth-openai-codex",
- "cortexcode-ai-registry",
- "cortexcode-ai-stream",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "cortexcode-app-server",
- "cortexcode-code-agent-session",
- "cortexcode-code-auth",
- "cortexcode-code-media",
- "cortexcode-code-models",
- "cortexcode-code-modes",
- "cortexcode-code-paths",
- "cortexcode-code-permissions",
- "cortexcode-code-print",
- "cortexcode-code-prompts",
- "cortexcode-code-resources",
- "cortexcode-code-rpc",
- "cortexcode-code-session",
- "cortexcode-code-settings",
- "cortexcode-code-subagents",
- "cortexcode-code-task-store",
- "cortexcode-code-tool-api",
- "cortexcode-code-tool-bash",
- "cortexcode-code-tools",
- "cortexcode-code-tools-fs",
- "cortexcode-code-tools-optin",
- "cortexcode-code-tui-app",
- "cortexcode-tui-fuzzy",
- "cortexcode-tui-terminal",
- "cortexcode-tui-util",
- "serde_json",
- "tempfile",
- "tokio",
- "url",
-]
-
-[[package]]
-name = "cortexcode-code-main"
-version = "0.1.8"
-dependencies = [
- "cortexcode-code-cli",
- "insta",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-media"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "fancy-regex",
- "image",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-code-models"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-models",
- "cortexcode-ai-types",
- "dirs",
- "glob",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-modes"
-version = "0.1.8"
-dependencies = [
- "cortexcode-code-agent-session",
- "cortexcode-code-paths",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-code-paths"
-version = "0.1.8"
-dependencies = [
- "dirs",
- "serde_json",
- "tempfile",
- "url",
-]
-
-[[package]]
-name = "cortexcode-code-permissions"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-types",
- "cortexcode-code-modes",
- "regex",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-print"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-code-prompts"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-agent-harness",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-code-resources"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-harness",
- "cortexcode-code-paths",
- "cortexcode-code-settings",
- "dirs",
- "glob",
- "ignore",
- "serde",
- "serde_json",
- "sha2",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-rpc"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-core",
- "cortexcode-agent-harness",
- "cortexcode-agent-types",
- "cortexcode-ai-provider-faux",
- "cortexcode-ai-types",
- "cortexcode-code-agent-session",
- "cortexcode-code-models",
- "cortexcode-code-session",
- "cortexcode-code-settings",
- "libc",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-code-session"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-agent-session",
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-code-paths",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-code-settings"
-version = "0.1.8"
-dependencies = [
- "cortexcode-ai-types",
- "cortexcode-code-paths",
- "fs4",
- "serde",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-subagents"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-code-agent-session",
- "cortexcode-code-models",
- "cortexcode-code-paths",
- "cortexcode-code-prompts",
- "cortexcode-code-resources",
- "cortexcode-code-rpc",
- "cortexcode-code-session",
- "cortexcode-code-settings",
- "cortexcode-code-task-store",
- "cortexcode-code-tool-api",
- "libc",
- "regex",
- "serde_json",
- "tempfile",
- "tokio",
-]
-
-[[package]]
-name = "cortexcode-code-task-store"
-version = "0.1.8"
-
-[[package]]
-name = "cortexcode-code-tool-api"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "serde",
- "serde_json",
- "unicode-normalization",
- "url",
-]
-
-[[package]]
-name = "cortexcode-code-tool-bash"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-harness",
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-code-paths",
- "cortexcode-code-tool-api",
- "libc",
- "process-wrap",
- "regex-lite",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-tool-search"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-harness",
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-code-paths",
- "cortexcode-code-tool-api",
- "grep-matcher",
- "grep-regex",
- "grep-searcher",
- "ignore",
- "regex",
- "serde",
- "serde_json",
- "sha2",
-]
-
-[[package]]
-name = "cortexcode-code-tools"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "cortexcode-code-paths",
- "cortexcode-code-prompts",
- "cortexcode-code-tool-api",
- "cortexcode-code-tool-bash",
- "cortexcode-code-tool-search",
- "cortexcode-code-tools-fs",
- "glob",
- "regex-lite",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "urlencoding",
- "walkdir",
-]
-
-[[package]]
-name = "cortexcode-code-tools-fs"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-code-media",
- "cortexcode-code-tool-api",
- "libc",
- "regex",
- "regex-lite",
- "serde",
- "serde_json",
- "sha1_smol",
- "tempfile",
- "unicode-normalization",
-]
-
-[[package]]
-name = "cortexcode-code-tools-optin"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-code-task-store",
- "cortexcode-code-tool-api",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-code-tui-app"
-version = "0.1.8"
-dependencies = [
- "arboard",
- "chrono",
- "cortexcode-agent-compaction",
- "cortexcode-agent-types",
- "cortexcode-ai-oauth",
- "cortexcode-ai-types",
- "cortexcode-ai-util",
- "cortexcode-code-agent-session",
- "cortexcode-code-auth",
- "cortexcode-code-media",
- "cortexcode-code-models",
- "cortexcode-code-paths",
- "cortexcode-code-permissions",
- "cortexcode-code-resources",
- "cortexcode-code-session",
- "cortexcode-code-settings",
- "cortexcode-code-subagents",
- "cortexcode-code-task-store",
- "cortexcode-code-tool-api",
- "cortexcode-code-tool-bash",
- "cortexcode-code-tools",
- "cortexcode-code-tools-optin",
- "cortexcode-code-tui-keybindings",
- "cortexcode-code-tui-selectors",
- "cortexcode-code-tui-theme",
- "cortexcode-code-tui-widgets",
- "cortexcode-tui-components",
- "cortexcode-tui-fuzzy",
- "cortexcode-tui-images",
- "cortexcode-tui-keys",
- "cortexcode-tui-render",
- "cortexcode-tui-terminal",
- "cortexcode-tui-util",
- "libc",
- "regex",
- "serde_json",
- "tempfile",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "cortexcode-code-tui-keybindings"
-version = "0.1.8"
-dependencies = [
- "cortexcode-code-paths",
- "cortexcode-code-tui-theme",
- "cortexcode-tui-keys",
- "regex",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-tui-selectors"
-version = "0.1.8"
-dependencies = [
- "chrono",
- "cortexcode-ai-models",
- "cortexcode-ai-types",
- "cortexcode-code-auth",
- "cortexcode-code-paths",
- "cortexcode-code-resources",
- "cortexcode-code-session",
- "cortexcode-code-settings",
- "cortexcode-code-tools",
- "cortexcode-code-tools-optin",
- "cortexcode-code-tui-keybindings",
- "cortexcode-code-tui-theme",
- "cortexcode-code-tui-widgets",
- "cortexcode-tui-components",
- "cortexcode-tui-fuzzy",
- "cortexcode-tui-keys",
- "cortexcode-tui-render",
- "cortexcode-tui-util",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-tui-theme"
-version = "0.1.8"
-dependencies = [
- "cortexcode-code-paths",
- "cortexcode-code-session",
- "cortexcode-tui-components",
- "cortexcode-tui-highlight",
- "cortexcode-tui-render",
- "cortexcode-tui-util",
- "serde_json",
- "tempfile",
-]
-
-[[package]]
-name = "cortexcode-code-tui-widgets"
-version = "0.1.8"
-dependencies = [
- "cortexcode-agent-types",
- "cortexcode-ai-types",
- "cortexcode-code-agent-session",
- "cortexcode-code-paths",
- "cortexcode-code-settings",
- "cortexcode-code-subagents",
- "cortexcode-code-task-store",
- "cortexcode-code-tool-api",
- "cortexcode-code-tool-bash",
- "cortexcode-code-tools-fs",
- "cortexcode-code-tui-keybindings",
- "cortexcode-code-tui-theme",
- "cortexcode-tui-components",
- "cortexcode-tui-images",
- "cortexcode-tui-keys",
- "cortexcode-tui-render",
- "cortexcode-tui-util",
- "once_cell",
- "regex",
- "serde_json",
- "tempfile",
- "unicode-segmentation",
-]
-
-[[package]]
-name = "cortexcode-tui-components"
-version = "0.1.8"
-dependencies = [
- "cortexcode-tui-editing",
- "cortexcode-tui-fuzzy",
- "cortexcode-tui-images",
- "cortexcode-tui-keys",
- "cortexcode-tui-render",
- "cortexcode-tui-terminal",
- "cortexcode-tui-util",
- "once_cell",
- "serde_json",
- "unicode-segmentation",
- "vt100",
-]
-
-[[package]]
-name = "cortexcode-tui-editing"
-version = "0.1.8"
-
-[[package]]
-name = "cortexcode-tui-fuzzy"
-version = "0.1.8"
-
-[[package]]
-name = "cortexcode-tui-highlight"
-version = "0.1.8"
-dependencies = [
- "cortexcode-tui-util",
- "once_cell",
- "serde_json",
-]
-
-[[package]]
-name = "cortexcode-tui-images"
-version = "0.1.8"
-dependencies = [
- "base64 0.22.1",
- "once_cell",
- "rand 0.8.8",
-]
-
-[[package]]
-name = "cortexcode-tui-keys"
-version = "0.1.8"
-dependencies = [
- "once_cell",
- "regex",
-]
-
-[[package]]
-name = "cortexcode-tui-render"
-version = "0.1.8"
-dependencies = [
- "cortexcode-tui-images",
- "cortexcode-tui-keys",
- "cortexcode-tui-terminal",
- "cortexcode-tui-util",
- "vt100",
-]
-
-[[package]]
-name = "cortexcode-tui-terminal"
-version = "0.1.8"
-dependencies = [
- "crossterm",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "cortexcode-tui-util"
-version = "0.1.8"
-dependencies = [
- "fancy-regex",
- "unicode-segmentation",
- "unicode-width",
-]
-
-[[package]]
 name = "cpufeatures"
 version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1757,6 +791,972 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+
+[[package]]
+name = "hoocode-agent-compaction"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-agent-harness",
+ "hoocode-agent-session",
+ "hoocode-agent-types",
+ "hoocode-ai-models",
+ "hoocode-ai-provider-faux",
+ "hoocode-ai-registry",
+ "hoocode-ai-types",
+ "hoocode-code-session",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-agent-core"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-loop",
+ "hoocode-agent-types",
+ "hoocode-ai-provider-faux",
+ "hoocode-ai-provider-openai",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-agent-harness"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "ignore",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "serde_yaml_ng",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "hoocode-agent-loop"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-agent-types",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-agent-session"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "hoocode-agent-types"
+version = "0.1.8"
+dependencies = [
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-ai-env"
+version = "0.1.8"
+dependencies = [
+ "dirs",
+]
+
+[[package]]
+name = "hoocode-ai-models"
+version = "0.1.8"
+dependencies = [
+ "hoocode-ai-models-catalog",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-ai-models-catalog"
+version = "0.1.8"
+
+[[package]]
+name = "hoocode-ai-oauth"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "rand 0.8.8",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "hoocode-ai-oauth-anthropic"
+version = "0.1.8"
+dependencies = [
+ "hoocode-ai-oauth",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "hoocode-ai-oauth-github-copilot"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-ai-models",
+ "hoocode-ai-oauth",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "hoocode-ai-oauth-google"
+version = "0.1.8"
+dependencies = [
+ "hoocode-ai-oauth",
+ "serde_json",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "hoocode-ai-oauth-openai-codex"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "hoocode-ai-oauth",
+ "serde_json",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "hoocode-ai-provider-anthropic"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-ai-env",
+ "hoocode-ai-models",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "reqwest",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-ai-provider-faux"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-ai-registry",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-ai-provider-google"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-ai-env",
+ "hoocode-ai-models",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "jsonwebtoken",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-ai-provider-google-gemini-cli"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "futures-util",
+ "hoocode-ai-models",
+ "hoocode-ai-provider-google",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "regex",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "hoocode-ai-provider-openai"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-ai-env",
+ "hoocode-ai-models",
+ "hoocode-ai-sse",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "reqwest",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-ai-provider-openai-codex"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "hoocode-ai-env",
+ "hoocode-ai-models",
+ "hoocode-ai-provider-openai-responses",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "libc",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+ "uuid",
+]
+
+[[package]]
+name = "hoocode-ai-provider-openai-responses"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-ai-env",
+ "hoocode-ai-models",
+ "hoocode-ai-sse",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "reqwest",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-ai-registry"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "futures-util",
+ "hoocode-ai-env",
+ "hoocode-ai-models",
+ "hoocode-ai-provider-anthropic",
+ "hoocode-ai-provider-google",
+ "hoocode-ai-provider-google-gemini-cli",
+ "hoocode-ai-provider-openai",
+ "hoocode-ai-provider-openai-codex",
+ "hoocode-ai-provider-openai-responses",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "regex",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-ai-sse"
+version = "0.1.8"
+dependencies = [
+ "eventsource-stream",
+ "futures-executor",
+ "futures-util",
+]
+
+[[package]]
+name = "hoocode-ai-stream"
+version = "0.1.8"
+dependencies = [
+ "futures-executor",
+ "futures-util",
+ "hoocode-ai-types",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-ai-types"
+version = "0.1.8"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tokio-util",
+]
+
+[[package]]
+name = "hoocode-ai-util"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-ai-types",
+ "regex",
+ "reqwest",
+ "rustls-native-certs",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-app-server"
+version = "0.1.8"
+dependencies = [
+ "futures-util",
+ "hoocode-agent-core",
+ "hoocode-agent-types",
+ "hoocode-ai-provider-faux",
+ "hoocode-ai-types",
+ "hoocode-app-server-protocol",
+ "hoocode-code-agent-session",
+ "hoocode-code-models",
+ "hoocode-code-modes",
+ "hoocode-code-permissions",
+ "hoocode-code-session",
+ "hoocode-code-settings",
+ "hoocode-code-tool-api",
+ "jsonschema",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite",
+ "uuid",
+]
+
+[[package]]
+name = "hoocode-app-server-protocol"
+version = "0.1.8"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-code-agent-session"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-agent-compaction",
+ "hoocode-agent-core",
+ "hoocode-agent-harness",
+ "hoocode-agent-types",
+ "hoocode-ai-models",
+ "hoocode-ai-provider-faux",
+ "hoocode-ai-registry",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "hoocode-code-auth",
+ "hoocode-code-models",
+ "hoocode-code-paths",
+ "hoocode-code-prompts",
+ "hoocode-code-resources",
+ "hoocode-code-session",
+ "hoocode-code-settings",
+ "hoocode-code-tool-api",
+ "hoocode-code-tool-bash",
+ "hoocode-code-tools",
+ "hoocode-code-tools-fs",
+ "hoocode-tui-util",
+ "libc",
+ "regex-lite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-code-auth"
+version = "0.1.8"
+dependencies = [
+ "hoocode-ai-env",
+ "hoocode-ai-oauth",
+ "hoocode-ai-types",
+ "hoocode-code-models",
+ "hoocode-code-paths",
+ "rand 0.8.8",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-code-cli"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "hoocode-agent-compaction",
+ "hoocode-agent-core",
+ "hoocode-agent-types",
+ "hoocode-ai-env",
+ "hoocode-ai-oauth",
+ "hoocode-ai-oauth-anthropic",
+ "hoocode-ai-oauth-github-copilot",
+ "hoocode-ai-oauth-google",
+ "hoocode-ai-oauth-openai-codex",
+ "hoocode-ai-registry",
+ "hoocode-ai-stream",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "hoocode-app-server",
+ "hoocode-code-agent-session",
+ "hoocode-code-auth",
+ "hoocode-code-media",
+ "hoocode-code-models",
+ "hoocode-code-modes",
+ "hoocode-code-paths",
+ "hoocode-code-permissions",
+ "hoocode-code-print",
+ "hoocode-code-prompts",
+ "hoocode-code-resources",
+ "hoocode-code-rpc",
+ "hoocode-code-session",
+ "hoocode-code-settings",
+ "hoocode-code-subagents",
+ "hoocode-code-task-store",
+ "hoocode-code-tool-api",
+ "hoocode-code-tool-bash",
+ "hoocode-code-tools",
+ "hoocode-code-tools-fs",
+ "hoocode-code-tools-optin",
+ "hoocode-code-tui-app",
+ "hoocode-tui-fuzzy",
+ "hoocode-tui-terminal",
+ "hoocode-tui-util",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "hoocode-code-main"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-cli",
+ "insta",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-media"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "fancy-regex",
+ "image",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-code-models"
+version = "0.1.8"
+dependencies = [
+ "dirs",
+ "glob",
+ "hoocode-ai-models",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-modes"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-agent-session",
+ "hoocode-code-paths",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-code-paths"
+version = "0.1.8"
+dependencies = [
+ "dirs",
+ "serde_json",
+ "tempfile",
+ "url",
+]
+
+[[package]]
+name = "hoocode-code-permissions"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-types",
+ "hoocode-code-modes",
+ "regex",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-print"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-code-prompts"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-agent-harness",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-code-resources"
+version = "0.1.8"
+dependencies = [
+ "dirs",
+ "glob",
+ "hoocode-agent-harness",
+ "hoocode-code-paths",
+ "hoocode-code-settings",
+ "ignore",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-rpc"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-core",
+ "hoocode-agent-harness",
+ "hoocode-agent-types",
+ "hoocode-ai-provider-faux",
+ "hoocode-ai-types",
+ "hoocode-code-agent-session",
+ "hoocode-code-models",
+ "hoocode-code-session",
+ "hoocode-code-settings",
+ "libc",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-code-session"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-agent-session",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-paths",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-code-settings"
+version = "0.1.8"
+dependencies = [
+ "fs4",
+ "hoocode-ai-types",
+ "hoocode-code-paths",
+ "serde",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-subagents"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-agent-session",
+ "hoocode-code-models",
+ "hoocode-code-paths",
+ "hoocode-code-prompts",
+ "hoocode-code-resources",
+ "hoocode-code-rpc",
+ "hoocode-code-session",
+ "hoocode-code-settings",
+ "hoocode-code-task-store",
+ "hoocode-code-tool-api",
+ "libc",
+ "regex",
+ "serde_json",
+ "tempfile",
+ "tokio",
+]
+
+[[package]]
+name = "hoocode-code-task-store"
+version = "0.1.8"
+
+[[package]]
+name = "hoocode-code-tool-api"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "serde",
+ "serde_json",
+ "unicode-normalization",
+ "url",
+]
+
+[[package]]
+name = "hoocode-code-tool-bash"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-harness",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-paths",
+ "hoocode-code-tool-api",
+ "libc",
+ "process-wrap",
+ "regex-lite",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-tool-search"
+version = "0.1.8"
+dependencies = [
+ "grep-matcher",
+ "grep-regex",
+ "grep-searcher",
+ "hoocode-agent-harness",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-paths",
+ "hoocode-code-tool-api",
+ "ignore",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+]
+
+[[package]]
+name = "hoocode-code-tools"
+version = "0.1.8"
+dependencies = [
+ "glob",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "hoocode-code-paths",
+ "hoocode-code-prompts",
+ "hoocode-code-tool-api",
+ "hoocode-code-tool-bash",
+ "hoocode-code-tool-search",
+ "hoocode-code-tools-fs",
+ "regex-lite",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "urlencoding",
+ "walkdir",
+]
+
+[[package]]
+name = "hoocode-code-tools-fs"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-media",
+ "hoocode-code-tool-api",
+ "libc",
+ "regex",
+ "regex-lite",
+ "serde",
+ "serde_json",
+ "sha1_smol",
+ "tempfile",
+ "unicode-normalization",
+]
+
+[[package]]
+name = "hoocode-code-tools-optin"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-task-store",
+ "hoocode-code-tool-api",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-code-tui-app"
+version = "0.1.8"
+dependencies = [
+ "arboard",
+ "chrono",
+ "hoocode-agent-compaction",
+ "hoocode-agent-types",
+ "hoocode-ai-oauth",
+ "hoocode-ai-types",
+ "hoocode-ai-util",
+ "hoocode-code-agent-session",
+ "hoocode-code-auth",
+ "hoocode-code-media",
+ "hoocode-code-models",
+ "hoocode-code-paths",
+ "hoocode-code-permissions",
+ "hoocode-code-resources",
+ "hoocode-code-session",
+ "hoocode-code-settings",
+ "hoocode-code-subagents",
+ "hoocode-code-task-store",
+ "hoocode-code-tool-api",
+ "hoocode-code-tool-bash",
+ "hoocode-code-tools",
+ "hoocode-code-tools-optin",
+ "hoocode-code-tui-keybindings",
+ "hoocode-code-tui-selectors",
+ "hoocode-code-tui-theme",
+ "hoocode-code-tui-widgets",
+ "hoocode-tui-components",
+ "hoocode-tui-fuzzy",
+ "hoocode-tui-images",
+ "hoocode-tui-keys",
+ "hoocode-tui-render",
+ "hoocode-tui-terminal",
+ "hoocode-tui-util",
+ "libc",
+ "regex",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "hoocode-code-tui-keybindings"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-paths",
+ "hoocode-code-tui-theme",
+ "hoocode-tui-keys",
+ "regex",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-tui-selectors"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-ai-models",
+ "hoocode-ai-types",
+ "hoocode-code-auth",
+ "hoocode-code-paths",
+ "hoocode-code-resources",
+ "hoocode-code-session",
+ "hoocode-code-settings",
+ "hoocode-code-tools",
+ "hoocode-code-tools-optin",
+ "hoocode-code-tui-keybindings",
+ "hoocode-code-tui-theme",
+ "hoocode-code-tui-widgets",
+ "hoocode-tui-components",
+ "hoocode-tui-fuzzy",
+ "hoocode-tui-keys",
+ "hoocode-tui-render",
+ "hoocode-tui-util",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-tui-theme"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-paths",
+ "hoocode-code-session",
+ "hoocode-tui-components",
+ "hoocode-tui-highlight",
+ "hoocode-tui-render",
+ "hoocode-tui-util",
+ "serde_json",
+ "tempfile",
+]
+
+[[package]]
+name = "hoocode-code-tui-widgets"
+version = "0.1.8"
+dependencies = [
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-agent-session",
+ "hoocode-code-paths",
+ "hoocode-code-settings",
+ "hoocode-code-subagents",
+ "hoocode-code-task-store",
+ "hoocode-code-tool-api",
+ "hoocode-code-tool-bash",
+ "hoocode-code-tools-fs",
+ "hoocode-code-tui-keybindings",
+ "hoocode-code-tui-theme",
+ "hoocode-tui-components",
+ "hoocode-tui-images",
+ "hoocode-tui-keys",
+ "hoocode-tui-render",
+ "hoocode-tui-util",
+ "once_cell",
+ "regex",
+ "serde_json",
+ "tempfile",
+ "unicode-segmentation",
+]
+
+[[package]]
+name = "hoocode-tui-components"
+version = "0.1.8"
+dependencies = [
+ "hoocode-tui-editing",
+ "hoocode-tui-fuzzy",
+ "hoocode-tui-images",
+ "hoocode-tui-keys",
+ "hoocode-tui-render",
+ "hoocode-tui-terminal",
+ "hoocode-tui-util",
+ "once_cell",
+ "serde_json",
+ "unicode-segmentation",
+ "vt100",
+]
+
+[[package]]
+name = "hoocode-tui-editing"
+version = "0.1.8"
+
+[[package]]
+name = "hoocode-tui-fuzzy"
+version = "0.1.8"
+
+[[package]]
+name = "hoocode-tui-highlight"
+version = "0.1.8"
+dependencies = [
+ "hoocode-tui-util",
+ "once_cell",
+ "serde_json",
+]
+
+[[package]]
+name = "hoocode-tui-images"
+version = "0.1.8"
+dependencies = [
+ "base64 0.22.1",
+ "once_cell",
+ "rand 0.8.8",
+]
+
+[[package]]
+name = "hoocode-tui-keys"
+version = "0.1.8"
+dependencies = [
+ "once_cell",
+ "regex",
+]
+
+[[package]]
+name = "hoocode-tui-render"
+version = "0.1.8"
+dependencies = [
+ "hoocode-tui-images",
+ "hoocode-tui-keys",
+ "hoocode-tui-terminal",
+ "hoocode-tui-util",
+ "vt100",
+]
+
+[[package]]
+name = "hoocode-tui-terminal"
+version = "0.1.8"
+dependencies = [
+ "crossterm",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "hoocode-tui-util"
+version = "0.1.8"
+dependencies = [
+ "fancy-regex",
+ "unicode-segmentation",
+ "unicode-width",
+]
 
 [[package]]
 name = "http"

@@ -1,0 +1,29 @@
+[package]
+name = "hoocode-code-tui-theme"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Color themes for the hoocode coding agent's interactive mode"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-code-paths = { workspace = true }
+hoocode-tui-components = { workspace = true }
+hoocode-tui-highlight = { workspace = true }
+hoocode-tui-util = { workspace = true }
+serde_json = { version = "1", features = ["preserve_order"] }
+
+[dev-dependencies]
+hoocode-code-session = { workspace = true }
+hoocode-tui-render = { workspace = true }
+tempfile = "3"

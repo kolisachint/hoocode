@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Publish workspace crates to crates.io.
 
-Publishes every crate marked `[package.metadata.cortex] publish = true` in
+Publishes every crate marked `[package.metadata.hoocode] publish = true` in
 dependency order (leaves first, umbrellas last). Skips versions that already
 exist on crates.io (idempotent re-runs). CI-only: expects CRATES_IO_TOKEN in
 stdin from `cargo login` or in the environment.
@@ -36,7 +36,7 @@ def parse_crate(toml: Path, workspace_version: str) -> dict:
     version = re.search(r'^version\s*=\s*"([^"]+)"', text, flags=re.M)
     version_workspace = re.search(r'^version\.workspace\s*=\s*true', text, flags=re.M)
     publish_meta = re.search(
-        r'^\[package\.metadata\.cortex\]\s*\n(?:.*\n)*?^publish\s*=\s*(true|false)',
+        r'^\[package\.metadata\.hoocode\]\s*\n(?:.*\n)*?^publish\s*=\s*(true|false)',
         text,
         flags=re.M,
     )

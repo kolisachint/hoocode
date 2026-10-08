@@ -1,0 +1,19 @@
+[package]
+name = "hoocode-ai-models-catalog"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "Model catalog data (LLM and image models) for hoocode AI, generated from the pinned hoocode"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]

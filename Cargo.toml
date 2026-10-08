@@ -3,77 +3,77 @@ members = [
     # Top-level umbrella
 
     # AI namespace
-    "crates/cortexcode-ai-env",
-    "crates/cortexcode-ai-models",
-    "crates/cortexcode-ai-models-catalog",
-    "crates/cortexcode-ai-oauth",
-    "crates/cortexcode-ai-oauth-anthropic",
-    "crates/cortexcode-ai-oauth-github-copilot",
-    "crates/cortexcode-ai-oauth-openai-codex",
-    "crates/cortexcode-ai-provider-anthropic",
-    "crates/cortexcode-ai-provider-faux",
-    "crates/cortexcode-ai-provider-google",
-    "crates/cortexcode-ai-provider-openai",
-    "crates/cortexcode-ai-provider-openai-codex",
-    "crates/cortexcode-ai-provider-google-gemini-cli",
-    "crates/cortexcode-ai-oauth-google",
-    "crates/cortexcode-ai-provider-openai-responses",
-    "crates/cortexcode-ai-registry",
-    "crates/cortexcode-ai-sse",
-    "crates/cortexcode-ai-stream",
-    "crates/cortexcode-ai-types",
-    "crates/cortexcode-ai-util",
+    "crates/hoocode-ai-env",
+    "crates/hoocode-ai-models",
+    "crates/hoocode-ai-models-catalog",
+    "crates/hoocode-ai-oauth",
+    "crates/hoocode-ai-oauth-anthropic",
+    "crates/hoocode-ai-oauth-github-copilot",
+    "crates/hoocode-ai-oauth-openai-codex",
+    "crates/hoocode-ai-provider-anthropic",
+    "crates/hoocode-ai-provider-faux",
+    "crates/hoocode-ai-provider-google",
+    "crates/hoocode-ai-provider-openai",
+    "crates/hoocode-ai-provider-openai-codex",
+    "crates/hoocode-ai-provider-google-gemini-cli",
+    "crates/hoocode-ai-oauth-google",
+    "crates/hoocode-ai-provider-openai-responses",
+    "crates/hoocode-ai-registry",
+    "crates/hoocode-ai-sse",
+    "crates/hoocode-ai-stream",
+    "crates/hoocode-ai-types",
+    "crates/hoocode-ai-util",
 
     # Agent namespace
-    "crates/cortexcode-agent-core",
-    "crates/cortexcode-agent-compaction",
-    "crates/cortexcode-agent-harness",
-    "crates/cortexcode-agent-loop",
-    "crates/cortexcode-agent-session",
-    "crates/cortexcode-agent-types",
+    "crates/hoocode-agent-core",
+    "crates/hoocode-agent-compaction",
+    "crates/hoocode-agent-harness",
+    "crates/hoocode-agent-loop",
+    "crates/hoocode-agent-session",
+    "crates/hoocode-agent-types",
 
     # Code namespace
-    "crates/cortexcode-code-cli",
-    "crates/cortexcode-code-paths",
-    "crates/cortexcode-code-settings",
-    "crates/cortexcode-code-tool-bash",
-    "crates/cortexcode-code-tool-search",
-    "crates/cortexcode-code-task-store",
-    "crates/cortexcode-code-tools-optin",
-    "crates/cortexcode-code-main",
-    "crates/cortexcode-code-media",
-    "crates/cortexcode-code-models",
-    "crates/cortexcode-code-auth",
-    "crates/cortexcode-code-modes",
-    "crates/cortexcode-code-permissions",
-    "crates/cortexcode-code-print",
-    "crates/cortexcode-code-prompts",
-    "crates/cortexcode-code-resources",
-    "crates/cortexcode-code-rpc",
-    "crates/cortexcode-app-server-protocol",
-    "crates/cortexcode-app-server",
-    "crates/cortexcode-code-session",
-    "crates/cortexcode-code-agent-session",
-    "crates/cortexcode-code-subagents",
-    "crates/cortexcode-code-tool-api",
-    "crates/cortexcode-code-tools",
-    "crates/cortexcode-code-tools-fs",
-    "crates/cortexcode-code-tui-app",
-    "crates/cortexcode-code-tui-selectors",
-    "crates/cortexcode-code-tui-widgets",
-    "crates/cortexcode-code-tui-keybindings",
-    "crates/cortexcode-code-tui-theme",
+    "crates/hoocode-code-cli",
+    "crates/hoocode-code-paths",
+    "crates/hoocode-code-settings",
+    "crates/hoocode-code-tool-bash",
+    "crates/hoocode-code-tool-search",
+    "crates/hoocode-code-task-store",
+    "crates/hoocode-code-tools-optin",
+    "crates/hoocode-code-main",
+    "crates/hoocode-code-media",
+    "crates/hoocode-code-models",
+    "crates/hoocode-code-auth",
+    "crates/hoocode-code-modes",
+    "crates/hoocode-code-permissions",
+    "crates/hoocode-code-print",
+    "crates/hoocode-code-prompts",
+    "crates/hoocode-code-resources",
+    "crates/hoocode-code-rpc",
+    "crates/hoocode-app-server-protocol",
+    "crates/hoocode-app-server",
+    "crates/hoocode-code-session",
+    "crates/hoocode-code-agent-session",
+    "crates/hoocode-code-subagents",
+    "crates/hoocode-code-tool-api",
+    "crates/hoocode-code-tools",
+    "crates/hoocode-code-tools-fs",
+    "crates/hoocode-code-tui-app",
+    "crates/hoocode-code-tui-selectors",
+    "crates/hoocode-code-tui-widgets",
+    "crates/hoocode-code-tui-keybindings",
+    "crates/hoocode-code-tui-theme",
 
     # TUI namespace
-    "crates/cortexcode-tui-components",
-    "crates/cortexcode-tui-editing",
-    "crates/cortexcode-tui-fuzzy",
-    "crates/cortexcode-tui-highlight",
-    "crates/cortexcode-tui-images",
-    "crates/cortexcode-tui-keys",
-    "crates/cortexcode-tui-render",
-    "crates/cortexcode-tui-terminal",
-    "crates/cortexcode-tui-util",
+    "crates/hoocode-tui-components",
+    "crates/hoocode-tui-editing",
+    "crates/hoocode-tui-fuzzy",
+    "crates/hoocode-tui-highlight",
+    "crates/hoocode-tui-images",
+    "crates/hoocode-tui-keys",
+    "crates/hoocode-tui-render",
+    "crates/hoocode-tui-terminal",
+    "crates/hoocode-tui-util",
 ]
 resolver = "2"
 
@@ -82,87 +82,87 @@ version = "0.1.8"
 authors = ["Mario Zechner (original author)", "Sachin Koli (HooCode fork)"]
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/kolisachint/cortexcode"
+repository = "https://github.com/kolisachint/hoocode"
 rust-version = "1.88"
 
 [workspace.dependencies]
 
-cortexcode-ai-env = { path = "crates/cortexcode-ai-env" }
-cortexcode-ai-models = { path = "crates/cortexcode-ai-models" }
-cortexcode-ai-models-catalog = { path = "crates/cortexcode-ai-models-catalog" }
-cortexcode-ai-oauth = { path = "crates/cortexcode-ai-oauth" }
-cortexcode-ai-oauth-anthropic = { path = "crates/cortexcode-ai-oauth-anthropic" }
-cortexcode-ai-oauth-github-copilot = { path = "crates/cortexcode-ai-oauth-github-copilot" }
-cortexcode-ai-oauth-openai-codex = { path = "crates/cortexcode-ai-oauth-openai-codex" }
-cortexcode-ai-provider-anthropic = { path = "crates/cortexcode-ai-provider-anthropic" }
-cortexcode-ai-provider-faux = { path = "crates/cortexcode-ai-provider-faux" }
-cortexcode-ai-provider-google = { path = "crates/cortexcode-ai-provider-google" }
-cortexcode-ai-provider-openai = { path = "crates/cortexcode-ai-provider-openai" }
-cortexcode-ai-provider-openai-codex = { path = "crates/cortexcode-ai-provider-openai-codex" }
-cortexcode-ai-provider-google-gemini-cli = { path = "crates/cortexcode-ai-provider-google-gemini-cli" }
-cortexcode-ai-oauth-google = { path = "crates/cortexcode-ai-oauth-google" }
-cortexcode-ai-provider-openai-responses = { path = "crates/cortexcode-ai-provider-openai-responses" }
-cortexcode-ai-sse = { path = "crates/cortexcode-ai-sse" }
-cortexcode-ai-stream = { path = "crates/cortexcode-ai-stream" }
-cortexcode-ai-types = { path = "crates/cortexcode-ai-types" }
-cortexcode-ai-util = { path = "crates/cortexcode-ai-util" }
+hoocode-ai-env = { path = "crates/hoocode-ai-env" }
+hoocode-ai-models = { path = "crates/hoocode-ai-models" }
+hoocode-ai-models-catalog = { path = "crates/hoocode-ai-models-catalog" }
+hoocode-ai-oauth = { path = "crates/hoocode-ai-oauth" }
+hoocode-ai-oauth-anthropic = { path = "crates/hoocode-ai-oauth-anthropic" }
+hoocode-ai-oauth-github-copilot = { path = "crates/hoocode-ai-oauth-github-copilot" }
+hoocode-ai-oauth-openai-codex = { path = "crates/hoocode-ai-oauth-openai-codex" }
+hoocode-ai-provider-anthropic = { path = "crates/hoocode-ai-provider-anthropic" }
+hoocode-ai-provider-faux = { path = "crates/hoocode-ai-provider-faux" }
+hoocode-ai-provider-google = { path = "crates/hoocode-ai-provider-google" }
+hoocode-ai-provider-openai = { path = "crates/hoocode-ai-provider-openai" }
+hoocode-ai-provider-openai-codex = { path = "crates/hoocode-ai-provider-openai-codex" }
+hoocode-ai-provider-google-gemini-cli = { path = "crates/hoocode-ai-provider-google-gemini-cli" }
+hoocode-ai-oauth-google = { path = "crates/hoocode-ai-oauth-google" }
+hoocode-ai-provider-openai-responses = { path = "crates/hoocode-ai-provider-openai-responses" }
+hoocode-ai-sse = { path = "crates/hoocode-ai-sse" }
+hoocode-ai-stream = { path = "crates/hoocode-ai-stream" }
+hoocode-ai-types = { path = "crates/hoocode-ai-types" }
+hoocode-ai-util = { path = "crates/hoocode-ai-util" }
 
-cortexcode-agent-core = { path = "crates/cortexcode-agent-core" }
-cortexcode-agent-compaction = { path = "crates/cortexcode-agent-compaction" }
-cortexcode-agent-harness = { path = "crates/cortexcode-agent-harness" }
-cortexcode-agent-loop = { path = "crates/cortexcode-agent-loop" }
-cortexcode-agent-session = { path = "crates/cortexcode-agent-session" }
-cortexcode-agent-types = { path = "crates/cortexcode-agent-types" }
+hoocode-agent-core = { path = "crates/hoocode-agent-core" }
+hoocode-agent-compaction = { path = "crates/hoocode-agent-compaction" }
+hoocode-agent-harness = { path = "crates/hoocode-agent-harness" }
+hoocode-agent-loop = { path = "crates/hoocode-agent-loop" }
+hoocode-agent-session = { path = "crates/hoocode-agent-session" }
+hoocode-agent-types = { path = "crates/hoocode-agent-types" }
 
-cortexcode-code-cli = { path = "crates/cortexcode-code-cli" }
-cortexcode-code-paths = { path = "crates/cortexcode-code-paths" }
-cortexcode-code-settings = { path = "crates/cortexcode-code-settings" }
-cortexcode-code-tool-bash = { path = "crates/cortexcode-code-tool-bash" }
-cortexcode-code-tool-search = { path = "crates/cortexcode-code-tool-search" }
-cortexcode-code-task-store = { path = "crates/cortexcode-code-task-store" }
-cortexcode-code-tools-optin = { path = "crates/cortexcode-code-tools-optin" }
-cortexcode-code-main = { path = "crates/cortexcode-code-main" }
-cortexcode-code-media = { path = "crates/cortexcode-code-media" }
-cortexcode-code-print = { path = "crates/cortexcode-code-print" }
-cortexcode-code-models = { path = "crates/cortexcode-code-models" }
-cortexcode-code-auth = { path = "crates/cortexcode-code-auth" }
-cortexcode-code-modes = { path = "crates/cortexcode-code-modes" }
-cortexcode-code-permissions = { path = "crates/cortexcode-code-permissions" }
-cortexcode-ai-registry = { path = "crates/cortexcode-ai-registry" }
-cortexcode-code-prompts = { path = "crates/cortexcode-code-prompts" }
-cortexcode-code-resources = { path = "crates/cortexcode-code-resources" }
-cortexcode-code-rpc = { path = "crates/cortexcode-code-rpc" }
-cortexcode-app-server-protocol = { path = "crates/cortexcode-app-server-protocol" }
-cortexcode-app-server = { path = "crates/cortexcode-app-server" }
-cortexcode-code-session = { path = "crates/cortexcode-code-session" }
-cortexcode-code-agent-session = { path = "crates/cortexcode-code-agent-session" }
-cortexcode-code-subagents = { path = "crates/cortexcode-code-subagents" }
-cortexcode-code-tool-api = { path = "crates/cortexcode-code-tool-api" }
-cortexcode-code-tools = { path = "crates/cortexcode-code-tools" }
-cortexcode-code-tools-fs = { path = "crates/cortexcode-code-tools-fs" }
+hoocode-code-cli = { path = "crates/hoocode-code-cli" }
+hoocode-code-paths = { path = "crates/hoocode-code-paths" }
+hoocode-code-settings = { path = "crates/hoocode-code-settings" }
+hoocode-code-tool-bash = { path = "crates/hoocode-code-tool-bash" }
+hoocode-code-tool-search = { path = "crates/hoocode-code-tool-search" }
+hoocode-code-task-store = { path = "crates/hoocode-code-task-store" }
+hoocode-code-tools-optin = { path = "crates/hoocode-code-tools-optin" }
+hoocode-code-main = { path = "crates/hoocode-code-main" }
+hoocode-code-media = { path = "crates/hoocode-code-media" }
+hoocode-code-print = { path = "crates/hoocode-code-print" }
+hoocode-code-models = { path = "crates/hoocode-code-models" }
+hoocode-code-auth = { path = "crates/hoocode-code-auth" }
+hoocode-code-modes = { path = "crates/hoocode-code-modes" }
+hoocode-code-permissions = { path = "crates/hoocode-code-permissions" }
+hoocode-ai-registry = { path = "crates/hoocode-ai-registry" }
+hoocode-code-prompts = { path = "crates/hoocode-code-prompts" }
+hoocode-code-resources = { path = "crates/hoocode-code-resources" }
+hoocode-code-rpc = { path = "crates/hoocode-code-rpc" }
+hoocode-app-server-protocol = { path = "crates/hoocode-app-server-protocol" }
+hoocode-app-server = { path = "crates/hoocode-app-server" }
+hoocode-code-session = { path = "crates/hoocode-code-session" }
+hoocode-code-agent-session = { path = "crates/hoocode-code-agent-session" }
+hoocode-code-subagents = { path = "crates/hoocode-code-subagents" }
+hoocode-code-tool-api = { path = "crates/hoocode-code-tool-api" }
+hoocode-code-tools = { path = "crates/hoocode-code-tools" }
+hoocode-code-tools-fs = { path = "crates/hoocode-code-tools-fs" }
 
-cortexcode-code-tui-app = { path = "crates/cortexcode-code-tui-app" }
-cortexcode-code-tui-selectors = { path = "crates/cortexcode-code-tui-selectors" }
-cortexcode-code-tui-widgets = { path = "crates/cortexcode-code-tui-widgets" }
-cortexcode-code-tui-keybindings = { path = "crates/cortexcode-code-tui-keybindings" }
-cortexcode-code-tui-theme = { path = "crates/cortexcode-code-tui-theme" }
-cortexcode-tui-components = { path = "crates/cortexcode-tui-components" }
-cortexcode-tui-editing = { path = "crates/cortexcode-tui-editing" }
-cortexcode-tui-fuzzy = { path = "crates/cortexcode-tui-fuzzy" }
-cortexcode-tui-highlight = { path = "crates/cortexcode-tui-highlight" }
-cortexcode-tui-images = { path = "crates/cortexcode-tui-images" }
-cortexcode-tui-keys = { path = "crates/cortexcode-tui-keys" }
-cortexcode-tui-render = { path = "crates/cortexcode-tui-render" }
-cortexcode-tui-terminal = { path = "crates/cortexcode-tui-terminal" }
-cortexcode-tui-util = { path = "crates/cortexcode-tui-util" }
+hoocode-code-tui-app = { path = "crates/hoocode-code-tui-app" }
+hoocode-code-tui-selectors = { path = "crates/hoocode-code-tui-selectors" }
+hoocode-code-tui-widgets = { path = "crates/hoocode-code-tui-widgets" }
+hoocode-code-tui-keybindings = { path = "crates/hoocode-code-tui-keybindings" }
+hoocode-code-tui-theme = { path = "crates/hoocode-code-tui-theme" }
+hoocode-tui-components = { path = "crates/hoocode-tui-components" }
+hoocode-tui-editing = { path = "crates/hoocode-tui-editing" }
+hoocode-tui-fuzzy = { path = "crates/hoocode-tui-fuzzy" }
+hoocode-tui-highlight = { path = "crates/hoocode-tui-highlight" }
+hoocode-tui-images = { path = "crates/hoocode-tui-images" }
+hoocode-tui-keys = { path = "crates/hoocode-tui-keys" }
+hoocode-tui-render = { path = "crates/hoocode-tui-render" }
+hoocode-tui-terminal = { path = "crates/hoocode-tui-terminal" }
+hoocode-tui-util = { path = "crates/hoocode-tui-util" }
 
-[workspace.metadata.cortex]
+[workspace.metadata.hoocode]
 # Lockstep version bump script uses this as the single source of truth.
 # All crates must share the workspace `version` above.
 
-[workspace.metadata.cortex.source]
+[workspace.metadata.hoocode.source]
 # Pinned hoocode snapshot this migration ports from. Changing the pin is a
-# deliberate PR; see docs/design/hoocode-to-cortexcode-migration.md §0.1.
+# deliberate PR; see docs/design/ts-to-rust-migration.md §0.1.
 repository = "https://github.com/kolisachint/hoocode-ts"
 hoocode-version = "0.6.0"
 hoocode-commit = "2223437c99cc4279ad40a39d8ff9268a5c8ee0fd"

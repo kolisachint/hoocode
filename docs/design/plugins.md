@@ -55,7 +55,7 @@ plugins itself. Write only the standard; keep only what standards cover.
 
 Done when: format conformance tests pass (Agent Plugins normative cases, Claude
 fixtures), install and remove work against local test marketplaces, the lifecycle
-tools pass their gate tests, and a plugin installed by hoocode-ts loads in `cortex`.
+tools pass their gate tests, and a plugin installed by hoocode-ts loads in `hoocode`.
 
 ## Not doing
 

@@ -48,7 +48,7 @@ sys.path.insert(0, str(HERE))
 from mock_provider import CHILD_MARKER, MockProvider, Route  # noqa: E402
 
 REPO = HERE.parent.parent
-DEFAULT_BIN = REPO / "target/debug/cortex"
+DEFAULT_BIN = REPO / "target/debug/hoocode"
 OUT_DIR = REPO / "target/subagent-evals"
 
 MODEL = "mock-model"
@@ -847,7 +847,7 @@ def markdown_report(summary: dict[str, Any], outcomes: list[Outcome], meta: dict
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--bin", default=str(DEFAULT_BIN), help="the cortex binary to exercise")
+    parser.add_argument("--bin", default=str(DEFAULT_BIN), help="the hoocode binary to exercise")
     parser.add_argument("--only", action="append", default=[], help="run only these scenarios")
     parser.add_argument("--repeat", type=int, default=1, help="run each scenario N times")
     parser.add_argument("--include-slow", action="store_true", help="include scenarios marked slow")
@@ -873,7 +873,7 @@ def main() -> int:
 
     binary = Path(args.bin).resolve()
     if not binary.exists():
-        print(f"error: no binary at {binary}. Build it first:\n  cargo build -p cortexcode-code-main", file=sys.stderr)
+        print(f"error: no binary at {binary}. Build it first:\n  cargo build -p hoocode-code-main", file=sys.stderr)
         return 2
 
     selected = [s for s in SCENARIOS if not args.only or s.name in args.only]

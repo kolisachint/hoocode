@@ -1,80 +1,80 @@
 {
-  "_comment": "Volatile third-party crates may be depended on ONLY by their adapter crate(s), which expose cortexcode-owned types. Upgrading or swapping one of these deps must touch exactly the listed crates. Checked by migration/check_dep_firewall.py (CI). 'pending' lists current violations tolerated until the named ledger task fixes them; never add to it without a task id.",
+  "_comment": "Volatile third-party crates may be depended on ONLY by their adapter crate(s), which expose hoocode-owned types. Upgrading or swapping one of these deps must touch exactly the listed crates. Checked by migration/check_dep_firewall.py (CI). 'pending' lists current violations tolerated until the named ledger task fixes them; never add to it without a task id.",
   "owners": {
     "jsonwebtoken": [
-      "cortexcode-ai-provider-google"
+      "hoocode-ai-provider-google"
     ],
     "eventsource-stream": [
-      "cortexcode-ai-sse"
+      "hoocode-ai-sse"
     ],
     "reqwest-eventsource": [
-      "cortexcode-ai-sse"
+      "hoocode-ai-sse"
     ],
     "jsonschema": [
-      "cortexcode-ai-util"
+      "hoocode-ai-util"
     ],
     "partial-json-fixer": [
-      "cortexcode-ai-util"
+      "hoocode-ai-util"
     ],
     "grep-searcher": [
-      "cortexcode-code-tool-search"
+      "hoocode-code-tool-search"
     ],
     "grep-regex": [
-      "cortexcode-code-tool-search"
+      "hoocode-code-tool-search"
     ],
     "htmd": [
-      "cortexcode-code-tool-web"
+      "hoocode-code-tool-web"
     ],
     "dom_smoothie": [
-      "cortexcode-code-tool-web"
+      "hoocode-code-tool-web"
     ],
     "process-wrap": [
-      "cortexcode-code-tool-bash"
+      "hoocode-code-tool-bash"
     ],
     "similar": [
-      "cortexcode-code-tools-fs",
-      "cortexcode-code-tui-widgets"
+      "hoocode-code-tools-fs",
+      "hoocode-code-tui-widgets"
     ],
     "syntect": [
-      "cortexcode-tui-highlight"
+      "hoocode-tui-highlight"
     ],
     "two-face": [
-      "cortexcode-tui-highlight"
+      "hoocode-tui-highlight"
     ],
     "pulldown-cmark": [
-      "cortexcode-tui-components"
+      "hoocode-tui-components"
     ],
     "arboard": [
-      "cortexcode-code-tui-app"
+      "hoocode-code-tui-app"
     ],
     "image": [
-      "cortexcode-code-media"
+      "hoocode-code-media"
     ],
     "clap": [
-      "cortexcode-code-cli"
+      "hoocode-code-cli"
     ],
     "crossterm": [
-      "cortexcode-tui-terminal"
+      "hoocode-tui-terminal"
     ],
     "windows-sys": [
-      "cortexcode-tui-terminal"
+      "hoocode-tui-terminal"
     ],
     "serde_yaml_ng": [
-      "cortexcode-agent-harness",
-      "cortexcode-code-resources"
+      "hoocode-agent-harness",
+      "hoocode-code-resources"
     ],
     "croner": [
-      "cortexcode-code-scheduler"
+      "hoocode-code-scheduler"
     ],
     "bm25": [
-      "cortexcode-code-capabilities"
+      "hoocode-code-capabilities"
     ],
     "notify": [
-      "cortexcode-code-watch"
+      "hoocode-code-watch"
     ],
     "tokio-tungstenite": [
-      "cortexcode-ai-provider-openai-codex",
-      "cortexcode-app-server"
+      "hoocode-ai-provider-openai-codex",
+      "hoocode-app-server"
     ]
   },
   "pending": {}

@@ -44,7 +44,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Phase 9: 9.2a/9.3a/9.3b/9.4a/9.4b done; 9.1 blocked on the rmcp decision (see its ledger
   block); 9.2b is l1_done (L2 compact-command waits on the interactive app).
 - 10.3a done: print mode (and the stopgap interactive loop) run on `AgentSession`
-  (`crates/cortexcode-code-agent-session`). 10.3b/10.3c done.
+  (`crates/hoocode-code-agent-session`). 10.3b/10.3c done.
 - 2026-09-27 session: 10.5, 10.5b (code-modes), 10.6 (code-permissions) are l1_done (their L2
   scenarios `print-context-files` / `mode-plan` / `permission-prompt` wait on the phase-11 TUI
   and 10.9 agents roster); 10.7b done; 10.8b done (`--mode json` in hoocode's wire shape);
@@ -142,7 +142,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - L2: `thinking-toggle-pending-tool` (4167: ctrl+t during a slow bash call),
   `external-editor` (scripted $EDITOR). Both stable.
 - 10.5e (new, todo): the mode system in the interactive mode. `/mode plan` is a no-op in
-  cortex today (nobody drains ModesExtension::take_actions; the active mode is fixed at
+  hoocode today (nobody drains ModesExtension::take_actions; the active mode is fixed at
   construction), and alt+a needs it. See its ledger notes for hoocode's behavior.
 - Next: `python3 migration/ledger.py next` (10.5e).
 
@@ -152,7 +152,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   lifeguard dedup, JSONL reader, atomic writes, cumulative budget across the inherited-model
   retry, process-group kill, cancellation; tui-app tests: per-run roster rows and usage,
   panel elapsed/orphans/cycle/notes). The jsonl "stream error" case is n.a. (no stream).
-- Test clock: `cortexcode_code_task_store::now_ms` (+ `advance_clock_for_tests`) now feeds the
+- Test clock: `hoocode_code_task_store::now_ms` (+ `advance_clock_for_tests`) now feeds the
   store, task panel, inbox, Task tools and TaskOutput renderer (hoocode's fake timers).
 - 11.9 (new, done): `apply_runtime_settings` / `apply_session_theme` on every session swap
   and /reload. Footer auto@ and theme now follow on-disk settings edits. At the pin the banner
@@ -195,13 +195,13 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   the editor border is in the searched buffer.
 
 ### 2026-09-30 · 11.6 tips band: done
-- New `cortexcode-code-tui-app/src/tips.rs`: TIPS (rebranded), `TipRotation` (unseen first,
+- New `hoocode-code-tui-app/src/tips.rs`: TIPS (rebranded), `TipRotation` (unseen first,
   star nudge every 6 tips, once a session, 3 ever), `TipsController` (grace 60 s, idle 45 s,
   streaming 20 s, cooldown 3 min, band must be free). Poll-based like the notification band:
   `poll()` + `deadline()` on an injectable clock instead of timers.
 - Wired into InteractiveMode: keystrokes -> on_activity, agent_start -> on_turn_start,
   request settled -> on_turn_end; a tip goes on the band as an Info with topic "tip".
-- The rotation leaves out tips for features cortex doesn't ship yet (phase-12 /learn,
+- The rotation leaves out tips for features hoocode doesn't ship yet (phase-12 /learn,
   /plugin, /new-skill, /canvas, /cost, and the `hoo` alias): `UNAVAILABLE_TIP_IDS`.
   Drop ids from that list as those features land.
 - Ported tips.test.ts (tests/tips.rs).
@@ -229,7 +229,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Classified: extension-driven files -> 12.3 (dynamic-provider, persisted-flags, print-mode,
   2023, 2835, 2860, 3592, 3686, 3688, 3982), package skills 2781 -> 12.2, 2791 n.a.
 - 13.4f (new): subagent-spawn-audit, subagent-visual-tie, session-surface-sync, 4167.
-- Seen once under a full `cargo test --workspace`: `cortexcode-code-rpc --test runtime_host
+- Seen once under a full `cargo test --workspace`: `hoocode-code-rpc --test runtime_host
   fork_branches_before_a_user_message_and_returns_its_text` timed out (10 s WAIT) on the
   second prompt; passes 3/3 alone. Not investigated.
 - Next: 13.4e, then 13.4f; 10.12 and 11.6 are ready any time.
@@ -295,10 +295,10 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - `harness.py record <scenario|all>` runs the terminal-free scenarios in
   `migration/tui-parity/replay.json` against hoocode headless (stdin a pipe or /dev/null,
   stdout/stderr to files), twice, and keeps the recording only if both runs match. Output:
-  raw files in `crates/cortexcode-code-main/tests/fixtures/hoocode-0.5.89/replay/<name>/` plus
+  raw files in `crates/hoocode-code-main/tests/fixtures/hoocode-0.5.89/replay/<name>/` plus
   the normalized insta snapshot `tests/snapshots/replay__<name>.snap` (exit, stdout, stderr,
   requests if `compare_requests`, session files with ids remapped to `<id-N>`, work files).
-- `crates/cortexcode-code-main/tests/replay.rs` replays them against `cortex` using a Rust port
+- `crates/hoocode-code-main/tests/replay.rs` replays them against `hoocode` using a Rust port
   of `mockllm.py` and of the harness normalizer. Each test first re-renders hoocode's raw
   recording to check the Rust normalizer matches the Python one. 14 scenarios.
 - The replay found 2 real differences that L2 couldn't see, both fixed:
@@ -431,12 +431,12 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `ledger.py next` (11.4e2 /chrome /color).
 
 ### 2026-09-29 · 11.4d2 image paste; 11.4d closed
-- `cortexcode-code-media::clipboard_image` (readClipboardImage behind `ClipboardImageHost`:
+- `hoocode-code-media::clipboard_image` (readClipboardImage behind `ClipboardImageHost`:
   wl-paste → xclip on Wayland/WSL, PowerShell on WSL, native on X11/macOS/Windows; non-model
   formats such as BMP re-encoded to PNG via `image`, bmp feature on). Ported
   clipboard-image.test.ts + clipboard-image-bmp-conversion.test.ts.
 - App: ctrl+v (`app.clipboard.pasteImage`) reads off the UI thread, writes
-  `$TMPDIR/cortexcode-clipboard-<uuid>.<ext>` and inserts the path at the cursor. arboard
+  `$TMPDIR/hoocode-clipboard-<uuid>.<ext>` and inserts the path at the cursor. arboard
   (image-data) is now a plain dep of code-tui-app; RGBA → PNG via `rgba_to_png`. Shares the one
   `image` 0.25 in the tree.
 - L2 `paste-image-empty` (no clipboard in tmux: ctrl+v leaves the prompt alone): stable, pass.
@@ -445,7 +445,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ### 2026-09-29 · 11.4d split; 11.4d1 /copy
 - 11.4d split into 11.4d1 (text copy) and 11.4d2 (image paste: clipboard-image*.ts + tests).
-- `cortexcode-code-media`: `clipboard` (copyToClipboard behind a `ClipboardHost` trait:
+- `hoocode-code-media`: `clipboard` (copyToClipboard behind a `ClipboardHost` trait:
   native off Linux, pbcopy/clip/termux/wl-copy/xclip/xsel, OSC 52 when remote or nothing else
   worked), `rich_clipboard` (JXA / PowerShell CF_HTML, `wrap_cf_html`), `markdown_to_html`
   (fancy-regex, pin's JS patterns). Ported clipboard.test.ts + copy-structure.test.ts, plus
@@ -481,13 +481,13 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `python3 migration/ledger.py next` (11.4c `!` bash).
 
 ### 2026-09-28 · 11.3f2 /login and /logout
-- `crates/cortexcode-code-tui-app/src/login_controller.rs`: provider option lists, post-login
+- `crates/hoocode-code-tui-app/src/login_controller.rs`: provider option lists, post-login
   default-model pick, `OAuthBridge` (OAuth callbacks → `AppEvent::Login` updates answered through
   oneshots; a dropped answer = "Login cancelled"), `open_url`/`is_openable_url` (open-url.ts).
 - The mode drives a `LoginStep` machine: auth-type pane → provider pane (Esc goes back) → API-key
   dialog or an OAuth login spawned on the runtime (prompt / pasted redirect URL / onSelect pane).
 - `provider_display_name` / `provider_auth_status` (registry lookups) live in
-  `cortexcode-code-auth::provider_display_names`; `ModelRegistry::provider_api_key_config` added.
+  `hoocode-code-auth::provider_display_names`; `ModelRegistry::provider_api_key_config` added.
 - The CLI now shares one `AuthStorage` between the session runtime and the app
   (`InteractiveOptions::auth_storage`), so a saved key is visible to model availability.
 - Adaptations: no `modelRegistry.refresh()` after login (Arc registry; availability reads the store
@@ -510,7 +510,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - `code-tools::external_tools::describe_external_tools` (+ `get_tool_path`/`get_tool_status`,
   the never-downloads half of tools-manager.ts; PATH lookup instead of spawning `--version`).
   Ported the skipped "resolves live status" test. `--offline` now sets `CORTEX_OFFLINE=1`
-  process-wide (main.ts), read by `cortexcode_code_paths::is_offline_mode()`.
+  process-wide (main.ts), read by `hoocode_code_paths::is_offline_mode()`.
 - Not live yet: extension flags (12.3: the pane lists none), voice silence (voice not ported).
 - L2 `settings-pane` (open, category, turn bash off → surface re-priced, back, close): stable, pass.
   Full L2: the known 11, plus `print-error` once under load (snapshot taken before the exit;
@@ -594,7 +594,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   "Summarize branch?", navigate_tree, the custom-prompt editor (extension-editor.ts, unported)
   and the L2 `session-tree` scenario.
 
-### 2026-09-28: 11.3d3 done (`cortex config`)
+### 2026-09-28: 11.3d3 done (`hoocode config`)
 - `code-tui-selectors::config_selector`: `build_groups` and `ConfigSelectorComponent`
   (header, groups by origin/scope/source, type subheads, `[x]` rows, filter, pageUp/pageDown).
   A toggle writes `+pattern`/`-pattern` to the scope's resource array, or to the package entry's
@@ -602,7 +602,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   a total order.
 - `code-tui-app::session_picker::select_config` runs it on its own TUI. code-cli dispatches
   `config` (off the not-supported list). It lists local resources only; packages wait on 12.2.
-- Fix in `cortexcode-tui-terminal`: a lone Escape was never delivered because nothing called
+- Fix in `hoocode-tui-terminal`: a lone Escape was never delivered because nothing called
   `StdinBuffer::poll_timeout`. `ProcessTerminal` now flushes a pending partial sequence after the
   buffer timeout. No earlier scenario pressed Escape.
 - L2 `config-selector` passes and selfcheck is stable (it also compares the project settings.json
@@ -626,7 +626,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Tests: settings-token-surface, learn-settings-pane, platform-settings-pane,
   plugin-settings-keyboard, external-tools-pane (minus its live-status case), and the
   platform-targets part of platform.test.ts.
-- Pane text says `cortex` / `.cortexcode` where hoocode says `hoocode` / `.hoocode`; the static
+- Pane text says `hoocode` / `.cortexcode` where hoocode says `hoocode` / `.hoocode`; the static
   external-tools prose is verbatim. The 11.3d2 scenario will need a branding rule for that.
 - Next: `ledger.py next`.
 
@@ -693,16 +693,16 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   and a transcript reset (`resetTranscriptView`).
 
 ### 2026-09-27: 11.2d2 done (code highlighting: highlight.js 10.7.3 port)
-- New crate `cortexcode-tui-highlight`: highlight.js 10.7.3's engine ported over its own
+- New crate `hoocode-tui-highlight`: highlight.js 10.7.3's engine ported over its own
   grammars, which `migration/tools/goldens/hljs-grammars.mjs` dumps as an object graph
   (identity, frozen flags, named callbacks) to `data/hljs-grammars.json`. The engine mutates
   them as hljs does, so each thread keeps its own copy.
 - `highlight` colors like cli-highlight (caller theme, then its `DEFAULT_THEME` with chalk 4
   nesting). `code-tui-theme` installs it as the default `CodeHighlighter` (`CliHighlight`).
 - Golden: `highlight.mjs` -> `tests/fixtures/highlight-gold.json`, 435 cases (pin and
-  cortexcode sources, snippets, a polyglot snippet in all 191 languages), byte-identical.
+  hoocode sources, snippets, a polyglot snippet in all 191 languages), byte-identical.
   The debug-mode test takes about 40s; release highlights about 1,900 lines of TS in about 100ms.
-- `js_regex` moved to `cortexcode-tui-util`. Multiline `^`/`$` now also treat `\r`, U+2028
+- `js_regex` moved to `hoocode-tui-util`. Multiline `^`/`$` now also treat `\r`, U+2028
   and U+2029 as line ends, as JS does (CRLF files).
 - `needs_highlighter` has been removed from `tool_renderers_gold.rs`.
 - 11.2d (container) done. 11.2 done: L2 chat-basic, tool-read, tool-bash and the new
@@ -714,7 +714,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - 11.3 is now a container: 11.3a session selector (L2 `session-resume`), 11.3b model selector
   (L2 `model-selector`; needs `/model` from 11.4), 11.3c small selectors, 11.3d settings,
   11.3e tree, 11.3f login.
-- 11.3a WIP: new crate `cortexcode-code-tui-selectors` with the session search and picker
+- 11.3a WIP: new crate `hoocode-code-tui-selectors` with the session search and picker
   components. It builds and passes clippy, but has no tests or app wiring yet. See the 11.3a
   ledger note for the exact next steps.
 
@@ -774,7 +774,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - 11.2c is split (bookkeeping). 11.2c1 is the tool-block framework plus the read, write
   and SearchCodebase renderers. 11.2c2 is the remaining built-in renderers (webfetch,
   websearch, subagent, canvas, plugins). 11.2c closes when both are done.
-- `cortexcode-code-tui-widgets` gains:
+- `hoocode-code-tui-widgets` gains:
   - `tool_execution`: renderer slots with built-in/registered inheritance, the
     status-dot prefix, peek-budget fallbacks, the radar row, images and freeze.
   - `tool_signal`, `tool_chain`, `tool_chain_summary`, `tool_output_view`,
@@ -798,7 +798,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 11.2c2 or 11.2d (bash/diff/highlight; L2 tool-bash).
 
 ### 2026-09-27: 11.2b done (turn transcript; L2 `chat-basic` passes)
-- New crate `cortexcode-code-tui-widgets` with `UserMessageComponent`,
+- New crate `hoocode-code-tui-widgets` with `UserMessageComponent`,
   `AssistantMessageComponent` (thinking display full/label/omit, Markdown reuse cache,
   segmented streaming above 2048 UTF-16 units, abort/error line, OSC 133 zones) and
   `segment_streaming_markdown`. Ports assistant-message, user-message and
@@ -818,7 +818,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 11.2c (tool blocks; L2 tool-read).
 
 ### 2026-09-27: 11.2a done (markdown on a marked lexer port)
-- `cortexcode-tui-components/src/markdown/` now parses with a literal port of the pinned
+- `hoocode-tui-components/src/markdown/` now parses with a literal port of the pinned
   marked 15 lexer (`lexer.rs`) instead of pulldown-cmark. The rules are marked's own
   compiled GFM regex sources (`rules_gen.rs`, regenerate with
   `migration/tools/goldens/marked-rules.mjs`), run on fancy-regex through a JS-to-Rust
@@ -838,7 +838,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 11.2b (turn transcript; L2 chat-basic).
 
 ### 2026-09-27: 11.1c2 done; 11.1c done (interactive mode on the TUI, L2 `startup` passes)
-- `cortexcode-code-tui-app::interactive_mode` replaces code-cli's crossterm REPL: the banner,
+- `hoocode-code-tui-app::interactive_mode` replaces code-cli's crossterm REPL: the banner,
   the flex fill, the resource listing, notification band, prompt editor with the app's key
   dispatch (`CustomEditor`), session chip, thinking-coloured border, footer, chrome dial,
   theme watcher, startup-progress/branch rerenders. The loop drives `Tui::process_event`,
@@ -846,7 +846,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - code-cli: `run_interactive_mode` builds the listing from the concrete loader (kept as
   `last_resources()`) + the agent registry, and reports the semantic index (binary lookup
   only; indexing is 12.4). Headless end-to-end test with a scripted terminal.
-- L2 `startup`: pass, text and style, first run. normalize.json gained `\bcortex_` ->
+- L2 `startup`: pass, text and style, first run. normalize.json gained `\bhoocode_` ->
   `<WORDMARK>` (branding is the only banner difference).
 - Placeholders until 11.2: a turn shows the user's text and the agent's final text, no
   working loader. The permission prompt still draws with crossterm (firewall pending now
@@ -858,7 +858,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 ### 2026-09-27: 11.1c split; 11.1c1 done (interactive chrome components)
 - 11.1c split into 11.1c1 (chrome components) and 11.1c2 (the mode + L2 `startup`); 11.1c
   is a container closed when both are done (bookkeeping).
-- New crate `cortexcode-code-tui-app`: brand glyphs, compact wordmark, `ExpandableText`,
+- New crate `hoocode-code-tui-app`: brand glyphs, compact wordmark, `ExpandableText`,
   the startup-progress store and embsearch progress mapping, the shared progress bar,
   session chip, footer (+ `FooterSource` trait the session will implement) and
   `FooterDataProvider` (polling git-branch watcher), chrome density (`resolve_chrome`,
@@ -872,7 +872,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 11.1c2 (the mode itself, replacing `run_interactive_mode`; L2 `startup`).
 
 ### 2026-09-27: 11.1b done (keybindings)
-- New crate `cortexcode-code-tui-keybindings`: the full keyboard map (TUI + app bindings in
+- New crate `hoocode-code-tui-keybindings`: the full keyboard map (TUI + app bindings in
   hoocode's declaration order, which is also the order `keybindings.json` is written in),
   legacy-name migration, `AppKeybindingsManager` (`create` from the agent dir, `reload`,
   `install` as the global manager), the keybindings step of `migrations.ts`, and the hint
@@ -884,7 +884,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 11.1c (tui-app idle screen + L2 `startup`).
 
 ### 2026-09-27: 11.1a done (theme)
-- New crate `cortexcode-code-tui-theme` (port of `modes/interactive/theme/theme.ts` + the 8
+- New crate `hoocode-code-tui-theme` (port of `modes/interactive/theme/theme.ts` + the 8
   bundled JSON themes, embedded): color-mode detection, hex/256/HSL math with JS rounding,
   WCAG contrast, chip fills (lift / magenta deepen), schema validation with typebox's exact
   messages, `Theme` (fg/bg/fill/has/…), loader (built-in, custom `themes/`, registered,
@@ -926,7 +926,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   trait; ProcessTerminal enables `?1000h?1006h` unless `CORTEX_MOUSE=0`/dumb/not a tty.
 - tui-images: Sixel (`encode_sixel`, host rasterizer hook, WT_SESSION detection,
   `CORTEX_IMAGE_PROTOCOL` override); `Image` saves/restores the cursor around a sixel.
-- Tests: a vt100-backed `VirtualTerminal` (`crates/cortexcode-tui-render/tests/support`) stands in
+- Tests: a vt100-backed `VirtualTerminal` (`crates/hoocode-tui-render/tests/support`) stands in
   for the pin's xterm-headless one; ported screen-fill, scroll-viewport, cursor-parking,
   hyperlink-click, scroll-images, sixel, mouse.
 - Next: 11.0c (Editor re-port), then 11.1a/b/c.
@@ -949,7 +949,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 11.0b (renderer), then 11.0c (editor), then 11.1a/b/c.
 
 ### 2026-09-27: 10.10c done (tls-ca); 10.10 complete
-- `cortexcode_ai_util::tls`: `TlsSources` (argv pre-scan for `--ca-cert` / `--use-system-ca` +
+- `hoocode_ai_util::tls`: `TlsSources` (argv pre-scan for `--ca-cert` / `--use-system-ca` +
   `CORTEX_CA_CERT` / `NODE_EXTRA_CA_CERTS` / `CORTEX_USE_SYSTEM_CA`), `resolve_trusted_cas`
   (first explicit source only, OS store via rustls-native-certs only when opted in, dedupe,
   warn-once `[tls] ...` and skip on failure), `configure_global_tls`, `http_client_builder()` /
@@ -962,7 +962,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - L2 run-all: only scenarios of not-yet-done tasks fail (interactive TUI = phase 11, default bundle).
 
 ### 2026-09-27: 10.10b done (utils/git parseGitUrl)
-- `cortexcode_code_paths::git`: `parse_git_url` / `GitSource` plus a port of hosted-git-info 9.0.3
+- `hoocode_code_paths::git`: `parse_git_url` / `GitSource` plus a port of hosted-git-info 9.0.3
   `fromUrl` (`hosted_git_info_from_url`: shorthand detection, correctProtocol/correctUrl, the five
   host extractors, decodeURIComponent failure = no match). The `url` crate is the same WHATWG parser
   as Node's `URL`. Quirks kept: `/tree` with no ref gives ref "undefined", a user-less gist gives
@@ -1084,7 +1084,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   agent_registry.rs) and `--mode json`'s SUBAGENT_STDOUT_EVENT_TYPES filter under `--task-id`.
 
 ### 2026-09-27: 10.8d done (RPC session commands on AgentSessionRuntime)
-- `cortexcode_code_rpc::RuntimeHost`: an `RpcHost` over `AgentSessionRuntime`; new_session,
+- `hoocode_code_rpc::RuntimeHost`: an `RpcHost` over `AgentSessionRuntime`; new_session,
   switch_session, fork and clone replace the session and RPC mode rebinds to it.
 - CLI: `build_session` split into `initial_session_manager` + `create_runtime` (main.ts's
   `createRuntime` factory; `AuthStorage` shared across runtimes, settings/models per cwd,
@@ -1097,7 +1097,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 10.9.
 
 ### 2026-09-27: 10.8e done (Rust RpcClient)
-- `cortexcode_code_rpc::client::RpcClient` (rpc-client.ts): spawns `<exe> --mode rpc`, `req_<n>`
+- `hoocode_code_rpc::client::RpcClient` (rpc-client.ts): spawns `<exe> --mode rpc`, `req_<n>`
   ids, every typed command, `on_event`/`on_exit`, `wait_for_idle`, `collect_events`,
   `prompt_and_wait`, fail-fast on child exit, SIGTERM then kill on `stop`. `RpcClient::attach`
   drives any stream pair (tests run it against in-process `run_rpc_mode` on the faux provider).
@@ -1105,7 +1105,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 10.8d, then 10.9 (subagents move onto this client and drop code-subagents' jsonrpc.rs).
 
 ### 2026-09-27: 10.8c done (--mode rpc core); split off 10.8d / 10.8e
-- `cortexcode-code-rpc` rewritten on hoocode's protocol: `jsonl` (LF-only framing, `\r`
+- `hoocode-code-rpc` rewritten on hoocode's protocol: `jsonl` (LF-only framing, `\r`
   stripped, maxBuffer) and `mode` (`RpcMode::handle_line`, `run_rpc_mode`, `RpcHost`). Every
   command in rpc-types.ts is handled; long ones (prompt, compact, bash, abort, session
   switches) run in the background like hoocode's un-awaited handlers, the rest in order.
@@ -1128,7 +1128,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   (code-agent-session; queue/session-info/thinking/compaction/retry). RPC (10.8c) can reuse them.
 - ai-types: `Cost` fields serialize like JS numbers (`0`, not `0.0`) and `AssistantMessage`
   fields are in the providers' wire order (`…usage, stopReason, timestamp, responseId, …`).
-  Both also change what cortex writes to session files (now closer to hoocode's bytes).
+  Both also change what hoocode writes to session files (now closer to hoocode's bytes).
 - code-print: the invented `JsonEvent`/`PrintFormatter` format is gone; `json_line`.
   code-cli streams the session header + every event live (tokio select over the prompt).
 - Harness: `"stdout_jsonl"` scenarios send stdout to a file and compare it line by line
@@ -1148,7 +1148,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `python3 migration/ledger.py next`.
 
 ### 2026-09-27: 10.6 l1_done (code-permissions)
-- New crate `cortexcode-code-permissions`: `HooPermissionGate` ports permission-gate.ts over the
+- New crate `hoocode-code-permissions`: `HooPermissionGate` ports permission-gate.ts over the
   merged hoo-config.json (hard rules always; prompt / allowed_write_paths / auto_allow with a UI;
   "Always" writes the global auto_allow). Replaces the CLI's invented PolicyPermissionGate, so
   print mode no longer denies unknown tools.
@@ -1159,7 +1159,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `python3 migration/ledger.py next`.
 
 ### 2026-09-27: 10.5b l1_done (code-modes)
-- New crate `cortexcode-code-modes` (extensions/core/{modes,config}.ts, core/mode-prompts.ts):
+- New crate `hoocode-code-modes` (extensions/core/{modes,config}.ts, core/mode-prompts.ts):
   hoo-config.json read/merge/write, the four mode prompts and grill prompts embedded verbatim,
   plan-file parsing (matches hoocode's multiline regex, which keeps only a section's first line),
   `/mode /plan /grill /goal /approve` returning `ModeAction`s, and `ModesExtension`.
@@ -1200,7 +1200,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 ### 2026-09-27: 10.5d done (package resource discovery, local resolve)
 - `code-resources::package_discovery` (package-resource-discovery.ts): recursive collection with
   ignore files, skill layouts (hoocode vs `.agents`), prompt/theme/extension auto-discovery
-  (package.json `hoocode`/`pi`/`cortexcode` manifests, index.ts), include/exclude/force patterns.
+  (package.json `hoocode`/`pi`/`hoocode` manifests, index.ts), include/exclude/force patterns.
 - `code-resources::package_resolve`: the settings-entries + auto-discovery half of
   `DefaultPackageManager.resolve()` with precedence ranks and symlink dedupe (`home` passed in
   instead of reading `$HOME` at each call). Package sources (npm/git) remain 12.2.
@@ -1213,7 +1213,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   agent dir and the cwd ancestors (root first), per-file 8K/40K and total 24K/64K budgets
   (trims least specific first), `resolve_prompt_input`.
 - `code-resources::agent_registry` (agent-registry.ts + agent-manifest-paths.ts): built-ins
-  embedded from hoocode `templates/agents/*.md` (branding line "running inside cortex"),
+  embedded from hoocode `templates/agents/*.md` (branding line "running inside hoocode"),
   precedence chain incl. `.claude/agents`, ancestor `.agents/agents`, explicit paths, `--agent`;
   `summarize_agent_description`, `format_agents_for_prompt` (checked byte-for-byte against the
   `<available_agents>` block in hoocode's recorded model request).
@@ -1225,7 +1225,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   (resource-loader.ts, session/CLI wiring, print-context-files). Bookkeeping fix: the new tasks'
   `l2` was first written as a list, which `verify` reads as an unwritten scenario; it is the
   plain "n/a: ..." string like other library tasks.
-- `cortexcode-code-resources` rewritten as a port (the old crate was invented): `frontmatter`
+- `hoocode-code-resources` rewritten as a port (the old crate was invented): `frontmatter`
   (shares the harness parser), `source_info`, `diagnostics`, `agent_frontmatter`
   (parseAgentDefinition, normalizeTools Claude shim), `skills` (discovery with ignore files,
   plugin-root skip via the six manifest paths, `.claude/skills`, collisions, namespaces,
@@ -1233,7 +1233,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   JS `String.replace` `$$`/`$&` semantics, tryExpand), `slash_commands` (built-in list),
   `node_path` (Node path semantics over strings).
 - Tests: skills.test.ts, agent-frontmatter.test.ts, prompt-templates.test.ts ported (fixtures
-  copied to `crates/cortexcode-code-resources/tests/fixtures`).
+  copied to `crates/hoocode-code-resources/tests/fixtures`).
 - Next: 10.5c (context-files.ts, agent-registry.ts), then 10.5.
 
 ### 2026-09-27: 10.4b done (model resolver, auth storage, --list-models, --models)
@@ -1242,7 +1242,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `resolve_cli_model`, `find_initial_model` over a `ModelSource` trait, `DEFAULT_MODEL_PER_PROVIDER`,
   `locale_compare`. `ModelRegistry::set_model_modifier` runs the OAuth `modifyModels` pass;
   `resolve_config_value_cached` / `clear_config_value_cache` port the command cache.
-- New `cortexcode-code-auth` (auth-storage.ts + auth-guidance.ts): `AuthStorage` over file or
+- New `hoocode-code-auth` (auth-storage.ts + auth-guidance.ts): `AuthStorage` over file or
   in-memory backends, hoocode-compatible `auth.json` (type-tagged entries, pretty JSON, 0600,
   `auth.json.lock` dir lock like proper-lockfile), runtime keys, fallback resolver, locked OAuth
   refresh; implements `AuthLookup`.
@@ -1304,7 +1304,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `plan_compaction` assertions; extension-hook cases noted on 12.3). L2 print-retry passes.
 
 ### 2026-09-26: 10.3a done (AgentSession core)
-- New crate `cortexcode-code-agent-session`: `session.rs` (agent-session.ts core: event
+- New crate `hoocode-code-agent-session`: `session.rs` (agent-session.ts core: event
   processing with session persistence on `message_end`, queue bookkeeping removed before
   listeners see `message_start`, prompt/steer/followUp/sendCustomMessage/sendUserMessage,
   abort, setModel/cycleModel (scoped + available), thinking level set/cycle/clamp, tool
@@ -1358,12 +1358,12 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   included; only the default-bundle system prompt differs → 10.4c.
 
 ### 2026-09-26: 10.2f l1_done (TodoWrite, ask_options, task store)
-- New crate `cortexcode-code-task-store` (task-store.ts): tasks + owning agents, batched change
+- New crate `hoocode-code-task-store` (task-store.ts): tasks + owning agents, batched change
   notifications (listeners run outside the lock), version counter, create/update (clearable
   note)/remove/arrange/reset/clear, and the process-wide `task_store()`. Ported here because
   TodoWrite writes it; 11.5 renders it (ledger notes updated; task-store.ts added to 10.2f's
   sources).
-- New crate `cortexcode-code-tools-optin`: TodoWrite (reconcile by item content, then leftover
+- New crate `hoocode-code-tools-optin`: TodoWrite (reconcile by item content, then leftover
   slots, drop the tail, keep list order; glyph lines; counts in details) with
   `settle_dangling_main_tasks`; ask_options behind an `AskOptionsHost` (has_ui, the pane,
   `/loop` state + halt); `NoUi` gives hoocode's print-mode text. Exact schemas and texts taken
@@ -1388,7 +1388,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   planned, (C) depend on webtools as a library. Continuing with 10.2f meanwhile.
 
 ### 2026-09-26: 10.2d l1_done (SearchCodebase); default bundle is now hoocode's five tools
-- New crate `cortexcode-code-tool-search` (tools/search.ts + the runtime half of core/search/):
+- New crate `hoocode-code-tool-search` (tools/search.ts + the runtime half of core/search/):
   query plan, mode resolution, lexical retriever, grep→chunk adapter, RRF, deterministic
   reranker (IDF, path affinity, declaration bonus, prose gate), stale hoist, span merge,
   token-budgeted assembler, jsonl trace (`<agentDir>/embsearch/<sha256[..16]>`), cross-encoder
@@ -1437,7 +1437,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   the system prompt → 10.4c). 10.2c stays l1_done until then, like 10.2a/10.2b.
 
 ### 2026-09-26: 10.2b l1_done (bash tool); print-tool-bash-light green
-- New crate `cortexcode-code-tool-bash` (bash.ts, bash-executor.ts, output-accumulator.ts,
+- New crate `hoocode-code-tool-bash` (bash.ts, bash-executor.ts, output-accumulator.ts,
   utils/shell.ts): shell resolution (`shellPath`, /bin/bash, bash on PATH, sh; Git Bash on
   Windows), `get_shell_env` (bin dir first on PATH), sanitize + strip-ansi (ansi-regex 6.2
   pattern), process-tree kill and detached-child tracking. `LocalBashOperations` spawns
@@ -1451,7 +1451,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Wiring: code-tools' default bundle and light preset use the real bash tool (placeholder
   and `bash()`/`format_output` helpers removed); the CLI passes `shellCommandPrefix`,
   `shellPath` and the `toolOutput` caps (agent-session.ts `_buildRuntime`).
-- Deviations: temp files are `cortex-bash-<16 random alnum>.log` (hoocode: `hoocode-bash-<hex>`);
+- Deviations: temp files are `hoocode-bash-<16 random alnum>.log` (hoocode-ts: `hoocode-bash-<hex>`);
   numeric exit only (a signal-killed shell is a success, as in hoocode); after the grace
   period a reader thread may linger until the orphan closes the pipe (Node destroys the
   stream).
@@ -1464,7 +1464,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   hoocode. 10.2b stays l1_done until they pass, as 10.2a does.
 
 ### 2026-09-26: 10.1c done (CLI on code-paths + code-settings; code-config deleted)
-- `cortexcode-code-config` is deleted: its invented `~/.cortexcode/config.json` schema
+- `hoocode-code-config` is deleted: its invented `~/.cortexcode/config.json` schema
   (provider/model/api_key/providers/auto_approve_*) and the `migrate.rs` one-shot copy from
   `~/.hoocode/settings.json` are replaced by code-settings, which reads the real
   `settings.json` with the `.hoocode` fallback. The design doc's "keep the migrate.rs
@@ -1475,23 +1475,23 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   config-file keys, which hoocode never had, are gone; auth.json precedence is 10.4b).
   Read-only tools stay auto-approved (was the `auto_approve_read_only` config default).
 - Auth store path is `code_paths::auth_path()`; session dirs come from
-  `code_paths::sessions_dir()` (both now honor `*_CODING_AGENT_DIR`). The `cortexcode-code`
+  `code_paths::sessions_dir()` (both now honor `*_CODING_AGENT_DIR`). The `hoocode-code`
   umbrella re-exports `paths` and `settings` instead of `config`.
-- Ledger bookkeeping: 10.1c's crate list now names `cortexcode-code` instead of the deleted
-  `cortexcode-code-config` (noted on the task).
+- Ledger bookkeeping: 10.1c's crate list now names `hoocode-code` instead of the deleted
+  `hoocode-code-config` (noted on the task).
 - Checks: workspace tests + clippy clean; L2 `print-basic` pass. Full harness: print-basic,
   print-error, print-retry, print-tool-read-light, print-tool-invalid-light pass; the other
   failures belong to later tasks (10.2/10.2a/10.3/10.8a/11.x), as before.
 
 ### 2026-09-26: 10.1b done (code-settings)
-- New crate `cortexcode-code-settings` (settings-{types,defaults,storage,manager}.ts). Settings
+- New crate `hoocode-code-settings` (settings-{types,defaults,storage,manager}.ts). Settings
   stay the raw JSON object (`Settings = serde_json::Map`, preserve_order), so unknown and
   future keys pass through; the typing is in the getters (enums for the string settings,
   structs for compaction/retry/branch-summary/learn/warnings, `PackageSource`), which apply
   the TS defaults, clamps and legacy reads (toolOutputDisplay, migrateSettings).
 - Storage: `FileSettingsStorage` writes `<agentDir>/settings.json` and
-  `<cwd>/.cortexcode/settings.json`. When a cortex file is missing, its `.hoocode` twin is
-  read instead and the first write creates the cortex file (the hoocode file is never written
+  `<cwd>/.cortexcode/settings.json`. When a hoocode file is missing, its `.hoocode` twin is
+  read instead and the first write creates the hoocode file (the hoocode file is never written
   or locked). Lock: `fs4` on a `settings.json.lock` sidecar with TS's 10 x 20 ms retry
   (hoocode's proper-lockfile uses a `.lock` directory); writes go to a temp file, then rename.
 - Deviations: writes are synchronous (hoocode queues them on a promise chain), so `flush()`
@@ -1501,14 +1501,14 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Tests: settings-manager.test.ts + settings-manager-bug.test.ts ported (35 tests including
   the hoocode fallback, migrations, merge, byte-exact output). settings-token-surface.test.ts
   is the /settings pane; noted on 11.3.
-- Next: 10.1c wires code-cli onto code-paths/code-settings and retires `cortexcode-code-config`.
+- Next: 10.1c wires code-cli onto code-paths/code-settings and retires `hoocode-code-config`.
 
 ### 2026-09-26: 10.1a done (code-paths); 10.1 split into 10.1a/b/c
 - Ledger: 10.1 was too big (config.ts + settings-manager.ts + CLI wiring), so it is now 10.1a
   code-paths, 10.1b code-settings (after 10.1a), and 10.1c wiring (keeps the print-basic L2
   scenario). 10.3, 10.4b, 10.5 and 11.1 now depend on 10.1c. config.ts install-method /
   self-update (config.test.ts) is noted on 12.7.
-- New crate `cortexcode-code-paths`: app identity (`cortex`, `~/.cortexcode`, legacy
+- New crate `hoocode-code-paths`: app identity (`hoocode`, `~/.cortexcode`, legacy
   `~/.hoocode`), env overrides with `CORTEXCODE_` / `CORTEX_` / `HOOCODE_` prefixes (the help
   text says `CORTEX_*`, so all three are read), agent/auth/sessions/bin/themes/debug-log dirs,
   dispatch dirs, `resolve_agent_file` (falls back to `~/.hoocode/<file>` when only that one
@@ -1517,7 +1517,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Tests: paths.test.ts ported (tests/paths.rs), plus env-order, fallback and path edge cases.
 
 ### 2026-09-26: 9.4b done (AgentHarness); phase 9 done except 9.1 (blocked) and 9.2b (needs 10.3)
-- New crate `cortexcode-agent-orchestrator` (re-exported as `cortexcode_agent::orchestrator`):
+- New crate `hoocode-agent-orchestrator` (re-exported as `hoocode_agent::orchestrator`):
   AgentHarness from harness/agent-harness.ts. It cannot live in agent-harness because
   agent-compaction depends on agent-harness; ledger 9.4b and the design doc crate table say so.
   Drives `Agent` over `Session<S>`: prepareNextTurn rebuilds the context from the session
@@ -1532,7 +1532,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `set_on_payload` / `set_on_response` + `AgentOptions.on_payload/on_response`, and
   AgentLoopConfig's `Box<dyn Fn(String)>` placeholders are now the typed hooks, passed into the
   loop's SimpleStreamOptions. The harness sets the agent's stream fn to
-  `cortexcode_ai_registry::stream_simple` (TS's default).
+  `hoocode_ai_registry::stream_simple` (TS's default).
 - Deviations: hooks, system-prompt and auth callbacks are synchronous (the agent's hooks are);
   steer/follow-up queue matching is by equality, not object identity; session append failures
   inside agent events are dropped. Kept from TS: compact()/navigateTree() errors after the phase
@@ -1544,7 +1544,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `ledger.py next` (phase 10). Open question for the user: 9.1 rmcp decision.
 
 ### 2026-09-26: 9.3b done (skill + prompt-template loaders, executeShellWithCapture)
-- cortexcode-agent-harness: `frontmatter::parse_frontmatter` (YAML via serde_yaml_ng -> JSON
+- hoocode-agent-harness: `frontmatter::parse_frontmatter` (YAML via serde_yaml_ng -> JSON
   object) and `locale_compare`; `load_skills` / `load_sourced_skills` (SKILL.md makes a
   directory one skill, root `.md` files are skills, ignore files via the `ignore` crate with
   rules rebased on the root as in TS, dot entries / node_modules skipped, symlinks resolved,
@@ -1552,9 +1552,9 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   (non-recursive, 60-char first-line description); `utils::shell_output::
   execute_shell_with_capture` over ExecutionEnv. Sourced results use `Sourced { item, source }`;
   TS's optional map callbacks are left to the caller.
-- dep-firewall: `serde_yaml_ng` owners now `cortexcode-agent-harness` + `code-resources`
+- dep-firewall: `serde_yaml_ng` owners now `hoocode-agent-harness` + `code-resources`
   (the TS harness parses frontmatter with `yaml` too). 10.5 can reuse
-  `cortexcode_agent_harness::parse_frontmatter` instead of a second YAML adapter.
+  `hoocode_agent_harness::parse_frontmatter` instead of a second YAML adapter.
 - Deviations: a non-string `description`/`name` counts as missing (TS would throw a TypeError
   diagnostic); YAML error texts are serde_yaml_ng's; localeCompare is the case-insensitive
   approximation code-prompts already uses.
@@ -1566,7 +1566,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: 9.4b (agent-harness.ts).
 
 ### 2026-09-26: 9.4a done (ExecutionEnv + the local tokio env)
-- cortexcode-agent-harness `env`: `ExecutionEnv` trait (BoxFuture methods: exec, read/write,
+- hoocode-agent-harness `env`: `ExecutionEnv` trait (BoxFuture methods: exec, read/write,
   file_info/list_dir without following symlinks, real_path, exists, create_dir, remove,
   temp dir/file, cleanup), `FileInfo`, `FileKind`, `FileError` + `FileErrorCode` (io
   ErrorKind -> the TS codes), `ExecOptions` (cwd, env, timeout seconds, AbortSignal,
@@ -1585,14 +1585,14 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   (agent-session-compaction.ts: auto-compaction thresholds, /compact, the `compact-command` L2
   scenario; depends on 10.3). 9.4b now depends on 9.2a. Remaining phase-9 order: 9.4a -> 9.3b
   -> 9.4b (9.1 blocked on the rmcp decision).
-- cortexcode-agent-compaction rewritten as the port (the old KeepRecent/Summary strategies were
+- hoocode-agent-compaction rewritten as the port (the old KeepRecent/Summary strategies were
   unused placeholders): `utils` (file ops, serializeConversation with the 2000-char tool-result
   cap, SUMMARIZATION_SYSTEM_PROMPT), `compaction` (token estimates in UTF-16 chars/4,
   shouldCompact with maxContextRatio, findCutPoint/findTurnStartIndex, prepareCompaction,
-  generateSummary / turn-prefix summary via `cortexcode_ai_registry::complete_simple`, compact
+  generateSummary / turn-prefix summary via `hoocode_ai_registry::complete_simple`, compact
   with parallel split-turn summaries and tokensAfter), `branch_summarization`
   (collectEntriesForBranchSummary over a `BranchEntrySource` trait, prepareBranchEntries,
-  generateBranchSummary). Works on `cortexcode_agent_session::FileEntry`.
+  generateBranchSummary). Works on `hoocode_agent_session::FileEntry`.
 - API shape: TS positional (apiKey, headers, signal, thinkingLevel) -> `SummarizeOptions`;
   `turn_start_index: Option<usize>` for TS -1. Deviation: tool-call args serialize with serde
   (an integral float prints `1.0`, JS `1`).
@@ -1609,7 +1609,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   is 9.4's port. 9.2 (compaction) now depends on 9.3a (it needs messages.ts + compressGeneral);
   its earlier `start` was undone as a bookkeeping fix (noted on the task). Order from here:
   9.4a -> 9.3b -> 9.2 -> 9.4b.
-- cortexcode-agent-harness: `types` (Skill, PromptTemplate), `messages` (create*SummaryMessage,
+- hoocode-agent-harness: `types` (Skill, PromptTemplate), `messages` (create*SummaryMessage,
   createCustomMessage with ISO timestamps, summarizeArgs, describeBackgroundTool,
   createBackgroundPlaceholderText, createBackgroundTaskMessage), `prompt_templates`
   (parseCommandArgs, substituteArgs with String.replace `$&`/`$$` semantics,
@@ -1636,18 +1636,18 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Waiting on the user; continuing with 9.2.
 
 ### 2026-09-26: 8.8 done (typed onPayload / onResponse); phase 8 complete
-- `cortexcode_ai_types`: `OnPayload<M = Model>` / `OnResponse<M = Model>` (Arc'd async closures
+- `hoocode_ai_types`: `OnPayload<M = Model>` / `OnResponse<M = Model>` (Arc'd async closures
   with `new` / `sync` constructors, `apply` / `notify` helpers), `ProviderResponse {status,
   headers}` (`from_pairs` = `headersToRecord`: lower-case, sorted, repeats joined with ", "),
   `HookFuture`. The `Option<String>` placeholders in SimpleStreamOptions / StreamOptions /
-  ProviderStreamOptions are gone. `cortexcode_ai_util::provider_response(&reqwest::Response)`.
+  ProviderStreamOptions are gone. `hoocode_ai_util::provider_response(&reqwest::Response)`.
 - Wired as in TS: openai-completions, openai-responses, azure (via `ResponsesRequest`),
   anthropic (`stream: true` re-forced after the hook), codex (onPayload before the transport
   choice; onResponse for every SSE response, failures included), google / vertex / gemini-cli
   (onPayload only; google's hook sees the SDK params), faux (onResponse with a synthetic 200),
   images/openrouter (`OnPayload<ImagesModel>`). The SDK-backed providers call onResponse only for
   a successful response (the SDK throws first), as in TS.
-- Tests: `crates/cortexcode-ai/tests/stream_hooks.rs` (onPayload replacement reaches the wire for
+- Tests: `crates/hoocode-ai/tests/stream_hooks.rs` (onPayload replacement reaches the wire for
   every registered API; onResponse status/headers; failures skip it; codex reports a 400),
   faux and images hook tests, and openrouter-cache-write-repro.test.ts as an `#[ignore]` live
   test (OPENROUTER_API_KEY) plus an offline check of its cache-marker transform.
@@ -1658,7 +1658,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `ledger.py next` (phase 9/10).
 
 ### 2026-09-26: 8.4c done (Cloud Code Assist: gemini-cli + antigravity)
-- New `cortexcode-ai-provider-google-gemini-cli` (google-gemini-cli.ts), registered for the
+- New `hoocode-ai-provider-google-gemini-cli` (google-gemini-cli.ts), registered for the
   `google-gemini-cli` API (both providers): envelope `buildRequest` in TS key order (Antigravity
   system instruction, `requestType: agent`, Claude tools as `parameters`), Gemini CLI /
   Antigravity headers (`CORTEXCODE_`/`HOOCODE_ANTIGRAVITY_VERSION`), Antigravity endpoint
@@ -1666,17 +1666,17 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `extractRetryDelay`, and -- as in TS -- every error raised inside the loop, a plain 400
   included, is caught and retried 1/2/4 s), empty-stream refetch (0.5/1 s), lazy `start` event,
   `streamSimple` thinking levels/budgets. Message/tool conversion reused from ai-provider-google.
-- New `cortexcode-ai-oauth-google` (google-gemini-cli.ts, google-antigravity.ts,
+- New `hoocode-ai-oauth-google` (google-gemini-cli.ts, google-antigravity.ts,
   google-oauth-client.ts): both PKCE logins (verifier = state; new core
   `CallbackValidation::CodeAndStateDeferred`), pasted-redirect race, token exchange/refresh with
   the TS error texts, strict (gemini-cli) vs fall-through (antigravity) project discovery with
   onboarding + operation polling, `get_api_key` = `{token, projectId}` JSON. Client from
   `CORTEXCODE_{GEMINI_CLI,ANTIGRAVITY}_CLIENT_{ID,SECRET}` (HOOCODE_ twins honored).
-- `cortexcode_ai::builtin_oauth_providers()` / `install_builtin_oauth_providers()` =
+- `hoocode_ai::builtin_oauth_providers()` / `install_builtin_oauth_providers()` =
   `BUILT_IN_OAUTH_PROVIDERS` (nothing installed the built-ins before). code-cli: `login
   google-gemini-cli|gemini-cli|google-antigravity|antigravity`; runtime returns the JSON API
   key for the Google providers and refreshes them.
-- Tests: google-gemini-cli.test.ts (all cases; registry half in cortexcode-ai
+- Tests: google-gemini-cli.test.ts (all cases; registry half in hoocode-ai
   `tests/oauth_providers.rs`), mock-server stream/retry/empty-stream cases, OAuth flows with a
   fake fetch (discovery, refresh, pasted-redirect login). Routing test: PENDING_APIS is empty;
   gemini-cli gets a successful stream (a 400 would sit through its 7 s of retries).
@@ -1690,7 +1690,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `anthropic-messages` / `openai-responses` / `openai-completions` with the static Copilot
   headers; Bearer auth + `buildCopilotDynamicHeaders` in all three providers; env key
   `COPILOT_GITHUB_TOKEN` only; OAuth device flow + token refresh from 8.7). This task adds the
-  missing test coverage in `crates/cortexcode-ai/tests/github_copilot.rs`:
+  missing test coverage in `crates/hoocode-ai/tests/github_copilot.rs`:
   github-copilot-anthropic.test.ts (Bearer + static/dynamic headers, no fine-grained beta,
   Opus 4.8 adaptive thinking, interleaved beta), transform-messages-copilot-openai-to-anthropic
   .test.ts (all 4 cases), and a routing check that each Copilot backend sends Bearer auth, the
@@ -1702,7 +1702,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `ledger.py next` (8.4c).
 
 ### 2026-09-26: 8.4a done (openai-codex provider + ChatGPT OAuth)
-- New `cortexcode-ai-provider-openai-codex` (openai-codex-responses.ts): request body in TS key
+- New `hoocode-ai-provider-openai-codex` (openai-codex-responses.ts): request body in TS key
   order (`instructions`, `text.verbosity`, `strict: null` tools, reasoning via thinkingLevelMap),
   SSE/WebSocket headers (`originator: pi` + `pi (<platform> <release>; <arch>)` UA, account id
   from the JWT), SSE path with the TS retry loop (every failure but a usage limit, 1/2/4 s) and
@@ -1711,14 +1711,14 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   5 min idle expiry, `previous_response_id` delta continuation, per-session SSE fallback with a
   `provider_transport_failure` diagnostic, debug stats. WebSocket = `tokio-tungstenite` (owned by
   this crate in dep-firewall.json; rustls/ring, same as reqwest).
-- New `cortexcode-ai-oauth-openai-codex` (openai-codex.ts): PKCE + state, callback server on 1455
+- New `hoocode-ai-oauth-openai-codex` (openai-codex.ts): PKCE + state, callback server on 1455
   (new `CallbackValidation::StateThenCode` in the core server), manual-paste race, prompt
   fallback, token exchange/refresh with the TS error texts, `accountId` stored flat in auth.json.
   Wired into code-cli `login` ("openai-codex"/"codex"/"chatgpt") and token refresh.
 - `Transport` enum is now hoocode's (`sse`/`websocket`/`websocket-cached`/`auto`, serde kebab);
   the unused Stdio/StreamableHttp variants are gone. `ResponsesStreamOptions` gained
   `resolve_service_tier`. `utils/diagnostics.ts` ported into ai-util.
-- `session-resources.ts` ported as `cortexcode_ai_registry::session_resources` (codex cleanup
+- `session-resources.ts` ported as `hoocode_ai_registry::session_resources` (codex cleanup
   built in); ledger note on 10.3: `AgentSession.dispose()` must call it.
 - Tests: openai-codex-stream.test.ts (all cases; local HTTP + WebSocket mock servers instead of
   stubbed globals), openai-codex-oauth.test.ts, cache-affinity e2e (`#[ignore]`, needs
@@ -1728,16 +1728,16 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Next: `ledger.py next`.
 
 ### 2026-09-25: 8.7 done (OAuth split: core + anthropic + github-copilot)
-- `cortexcode-ai-oauth` is the core: types (`OAuthCredentials` now serializes flat like
+- `hoocode-ai-oauth` is the core: types (`OAuthCredentials` now serializes flat like
   hoocode's auth.json — extra fields such as `enterpriseUrl`/`type` sit beside
   refresh/access/expires), `OAuthLoginCallbacks` / `OAuthProvider` traits, PKCE, the OAuth
   page HTML (oauth-page.ts), a tokio loopback `CallbackServer` (404/400/error pages, state
   check, `cancelWait`), a `Fetch` seam (TS tests stub global fetch) with `ReqwestFetch`, and
   the provider registry of index.ts (built-ins are installed by the composer with
   `install_builtin_oauth_providers`, since they live in their own crates).
-- New `cortexcode-ai-oauth-anthropic` (anthropic.ts: authorize URL, callback server on 53692
+- New `hoocode-ai-oauth-anthropic` (anthropic.ts: authorize URL, callback server on 53692
   + manual-paste race, prompt fallback, state checks, token exchange/refresh with the TS error
-  texts) and `cortexcode-ai-oauth-github-copilot` (github-copilot.ts: device flow with the
+  texts) and `hoocode-ai-oauth-github-copilot` (github-copilot.ts: device flow with the
   1.2x / 1.4x poll timing and slow_down handling, Copilot token refresh, model policy enabling,
   base URL from the token, `modify_models`).
 - code-cli: `/login` plumbing now runs the provider flows through terminal callbacks; its own
@@ -1756,13 +1756,13 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 ### 2026-09-25: 8.6e done (cross-provider suites); 8.8 added
 - Non-live ports: constrain-tool-calls (ai-util strict schema, completions + responses
   tools), supports-xhigh (ai-models catalog), openrouter-images (ai-images), cache-retention
-  (`cortexcode-ai/tests/cache_retention.rs`, payload builders instead of onPayload; the
+  (`hoocode-ai/tests/cache_retention.rs`, payload builders instead of onPayload; the
   key-gated env-default cases only inspect the payload, so they run unconditionally).
 - ai-images brought to openrouter.ts: `response_id`, `signal`/`timeout_ms`/`max_retries`
   options, SDK client retries, getEnvApiKey, TS error texts (`No API key available for
   provider: …`, openai APIError message), stricter data-URI match, and a `generate_images`
   dispatcher (`No API provider registered for api: …`).
-- Live (`#[ignore]`, key-gated) in `cortexcode-ai/tests/live_matrix.rs`: context-overflow,
+- Live (`#[ignore]`, key-gated) in `hoocode-ai/tests/live_matrix.rs`: context-overflow,
   empty, image-tool-result (fixture copied to `tests/data/red-circle.png`), responseid,
   tokens (abort usage), total-tokens, tool-call-without-result, unicode-surrogate (the lone
   surrogate case sends the sanitized text; Rust strings cannot hold one),
@@ -1792,7 +1792,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   usage + cost, finishReason errors, `Request aborted` when pre-aborted).
 - Behaviour changes vs the old crate: Vertex no longer reads GOOGLE_VERTEX_ACCESS_TOKEN /
   GOOGLE_ACCESS_TOKEN or defaults the location to us-central1 (hoocode does neither).
-  The SDK's `gl-node/<version>` user-agent part is `gl-rust/cortexcode`.
+  The SDK's `gl-node/<version>` user-agent part is `gl-rust/hoocode`.
 - Tests: vertex-api-key-resolution (as ClientConfig), thinking-signature, convert-tools,
   gemini3-unsigned-tool-call, image-tool-result-routing, thinking payloads, stream/SDK
   tests; live thinking-disable E2E in `tests/live_e2e.rs` (`#[ignore]`).
@@ -1891,7 +1891,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `parse_streaming_json` now follows json-parse.ts (the old tolerant parse returned
   `{"path":"README}"}` for `{"path":"README`).
 - overflow: Together AI pattern fixed (`model'?s`); overflow.test.ts ported.
-- cross-provider-handoff.test.ts ported as an `#[ignore]` live test in cortexcode-ai.
+- cross-provider-handoff.test.ts ported as an `#[ignore]` live test in hoocode-ai.
 - New L2 scenario `print-retry` (503 then an answer): passes, identical requests.
 - Next: 8.5b (validation.ts), via `ledger.py next`.
 
@@ -1934,7 +1934,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   fall back to the default ADC file, OnceLock cache.
 - ai-stream testing: `serve_script` (scripted multi-response server that records requests).
 - Tests: all 9 openai-completions-*.test.ts files + env-api-keys.test.ts + fireworks/together
-  env halves (59 + 9 tests); `cortexcode-ai/tests/routing.rs` checks every catalog
+  env halves (59 + 9 tests); `hoocode-ai/tests/routing.rs` checks every catalog
   (provider, api) pair dispatches through the registry, with openai-responses (8.3),
   openai-codex-responses (8.4a), google-gemini-cli (8.4c) listed as pending.
 - Harness requests now match hoocode on every non-message field except `prompt_cache_key`
@@ -1992,7 +1992,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   Turn order, pending/steering/follow-up handling, `prepareNextTurn` (context, model, thinking
   level; `off` clears reasoning) before `shouldStopAfterTurn`, error/aborted early exit, no
   turn-start abort check (as in TS). Hook errors propagate like TS throws.
-- Tools: `prepareToolCall` (not found, `prepareArguments`, validation hook, cortex permission
+- Tools: `prepareToolCall` (not found, `prepareArguments`, validation hook, hoocode permission
   gate, `beforeToolCall` which may rewrite `args` in place, block reason), parallel batches run
   concurrently with `tool_execution_end` in completion order and result messages in source
   order, sequential when the config or any tool says so, `tool_execution_update` from tool
@@ -2036,7 +2036,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   runtime, or a throwaway runtime in unit tests) until 10.2e replaces them. code-tools' reqwest
   now uses rustls like the rest.
 - ai-types: `TextContent`/`ImageContent.cache_control` and `CacheControl` are gone, as are the
-  cortex-invented `cache_control_format` / `supports_long_cache_retention` stream options (in
+  hoocode-invented `cache_control_format` / `supports_long_cache_retention` stream options (in
   TS those are openai-completions `compat` fields: 8.2/8.5). New `CacheRetention`
   (none/short/long) + `cache_retention` on the stream options and `AgentLoopConfig`, forwarded
   by the loop.
@@ -2062,7 +2062,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   partial assistant message, `stopReason: aborted`.
 - code-cli drives the agent from one multi-thread tokio runtime (`async_runtime().block_on`);
   providers spawn onto it. `next_blocking`/`result_blocking` are now test-only.
-- Harness: `cortex_cmd` always runs `cargo build` for the binary (a no-op when fresh).
+- Harness: `hoocode_cmd` always runs `cargo build` for the binary (a no-op when fresh).
   Before, it only built when the binary was missing, so `verify` could compare a stale binary.
 - Next: **7.3c**: async `ai-oauth`/`ai-images`/`code-tools` HTTP (drop the last
   `reqwest::blocking`), then move `cache_control` hints into anthropic request building
@@ -2123,11 +2123,11 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   abort. Keep `print-basic`, `print-error`, `print-tool-read-light` green throughout.
 
 ### 2026-09-25: 10.4c l1_done (buildSystemPrompt port); M1 needs a decision
-- `code-prompts::system_prompt` ports `buildSystemPrompt` exactly (app name `cortex`, which
+- `code-prompts::system_prompt` ports `buildSystemPrompt` exactly (app name `hoocode`, which
   the harness normalizes), plus `formatSkillsForPrompt`, `formatAgentsForPrompt` (with
   `summarizeAgentDescription`) and `listSelfDocs`/`formatSelfDocsForPrompt`.
   `system-prompt.test.ts` is ported, plus exact-layout tests.
-- The cortex-only `Mode`/`system_prompt`/`initial_user_prompt` inventions are removed from
+- The hoocode-only `Mode`/`system_prompt`/`initial_user_prompt` inventions are removed from
   code-prompts. hoocode's modes arrive with 10.5b.
 - `code-tools::default_tool_definitions` returns `ToolDefinition`s. The runtime builds the
   prompt from their snippets/guidelines (`_rebuildSystemPrompt`), then wraps them.
@@ -2136,7 +2136,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - L2 is still red: the prompt's layout matches, but the default bundle's content comes from
   other tasks (see the 10.4c notes in the ledger). One part, SearchHooCode (hoo-core
   self-knowledge), only fits deferred Phase 12. The `# About hoocode itself` section lists
-  hoocode's installed docs, which cortex doesn't ship.
+  hoocode's installed docs, which hoocode doesn't ship.
 - **Decision needed (asked the user):** M1 (`print-tool-read` green) is blocked behind
   Phase 12 as scoped. Options:
   (a) port hoocode's `--light` mode (`core/light.ts`: fixed terse prompt + date/cwd,
@@ -2168,7 +2168,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   - tool results emit `message_start`/`message_end`: in parallel mode after the whole batch,
     so sibling reads don't dedup against each other (tools still run one at a time);
   - the abort signal reaches tools.
-- `serde_json` `preserve_order` (enabled via ai-types): cortex re-serialized tool-call
+- `serde_json` `preserve_order` (enabled via ai-types): hoocode re-serialized tool-call
   arguments with sorted keys; hoocode keeps insertion order.
 - L2: new scenario `print-tool-read-paging` (selfcheck stable): truncation, paging, ENOENT,
   EISDIR, PDF note, dedup pointer. Every read result is byte-identical. Both scenarios still fail,
@@ -2221,13 +2221,13 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   execute not available") + 10.4c (system prompt).
 
 ### 2026-09-25: 10.7a done (`code-cli`: exact port of the pinned CLI)
-- New crate `cortexcode-code-cli`:
+- New crate `hoocode-code-cli`:
   - `args.rs` is an exact port of `cli/args.ts` `parseArgs`: every pinned flag, `-nt`/`-nbt`/`-nsc`
     shorts, unknown `--flag [value]` captured as extension flags, `-p <prompt>` (incl. `---`
     frontmatter), `parseInt` semantics. All of `args.test.ts` is ported with the same titles,
     plus extra edge cases.
   - `help_text.rs` is generated from `printHelp()` by `migration/tools/gen_help_text.py`
-    (branding hoocode → cortex). Re-run it after a pin bump.
+    (branding hoocode-ts → hoocode). Re-run it after a pin bump.
   - `lib.rs` ports the arg half of `main.ts`:
     - `Error:`/`Warning:` diagnostics (chalk colors), exit 1 on errors;
     - `--version` prints the bare version, and `--help` wins over later checks;
@@ -2235,49 +2235,49 @@ Newest entry first. Each entry says where to resume. Status numbers come from
     - rpc rejects `@file`;
     - unknown long flags get `Unknown option(s): --x` (no extensions registered yet).
   - Flags that parse but aren't implemented fail with `Error: --flag is not yet supported by
-    cortex` (`unsupported_flags`); so do the `install|remove|update|list|config|resources`
+    hoocode` (`unsupported_flags`); so do the `install|remove|update|list|config|resources`
     subcommands.
   - `runtime`/`auth`/`permission_dialog` moved here from code-main. The crossterm firewall
     exception moved with them (still 11.1).
-- `code-main` is now a thin bin (`cortexcode_code_cli::main`). The umbrella re-exports `code::cli`.
+- `code-main` is now a thin bin (`hoocode_code_cli::main`). The umbrella re-exports `code::cli`.
 - Decision: **no `clap`**. It can't express the pinned grammar without behavior changes.
   Design doc §3.4 and §10.7 are updated.
-- Removed cortex-only flags that hoocode doesn't have:
+- Removed hoocode-only flags that hoocode doesn't have:
   - `--login` (the OAuth driver `code_cli::auth::login` is kept for `/login` in 11.3);
   - `--config`;
   - `--mode subagent` (the subagent pool now spawns `--mode rpc --task-id`).
-- L2 fix (environment, not cortex): print-basic failed here for the pre-change binary too.
+- L2 fix (environment, not hoocode): print-basic failed here for the pre-change binary too.
   tmux 3.4 scrolls one row when it writes "Pane is dead", and hoocode's `embsearch` stderr
   warning depends on PATH. `print-basic` and `print-tool-read` now set
   `enableSemanticIndex: false` and snapshot with history. Both are `selfcheck` stable.
   `print-tool-read` stdout matches; its requests still differ (system prompt, 10.4c).
-- Known flake (pre-existing, not fixed): `cortexcode-tui-keys`
+- Known flake (pre-existing, not fixed): `hoocode-tui-keys`
   `test_parse_key_alt_letter_legacy` sometimes fails under parallel tests. Other tests toggle
   the global kitty-protocol flag. Fix with a test mutex when tui-keys is next touched.
 - Next: `ledger.py next` (10.8a print-mode parity closes M1 part 1; then 10.2a + 10.4c).
 
 ### 2026-09-24: 8.2a done; 10.4a done (first Level-2 green: `print-basic`)
-- New crate `cortexcode-ai-registry`, a port of `api-registry.ts` + `stream.ts`:
+- New crate `hoocode-ai-registry`, a port of `api-registry.ts` + `stream.ts`:
   - dispatch on `model.api`;
   - `register_api_provider` / `unregister_api_providers(source_id)`;
   - TS error texts ("No API provider registered for api: X", "Mismatched api: …").
   Built-ins: anthropic-messages, openai-completions, azure-openai-responses,
   google-generative-ai, google-vertex. The hard-coded provider match in code-main is gone.
 - Faux bug fixed: the stream never called `end()`, so `result()` always failed.
-- `print-basic`: hoocode and cortex are byte-identical (text and style) against the mock LLM.
+- `print-basic`: hoocode and hoocode are byte-identical (text and style) against the mock LLM.
 - Next: 10.7a (`code-cli` on clap with the pinned flag set). Note that `--offline` is
   currently accepted only because the old parser ignores unknown flags.
 
 ### 2026-09-24: 10.4a l1_done (models.json custom providers)
-- New crate `cortexcode-code-models`, a port of `model-registry.ts`:
+- New crate `hoocode-code-models`, a port of `model-registry.ts`:
   - built-ins plus `models.json` (with `//` comments and trailing commas);
   - provider baseUrl/compat overrides, per-model overrides and custom models (custom wins);
   - `validateConfig` errors;
   - request auth via `resolve-config-value` (`!cmd`, env var, literal) and `authHeader`.
   31 tests, ported from `model-registry.test.ts` with the same titles.
 - `Model.compat` added as untyped JSON (typed in 8.1).
-- `cortex` looks models up through the registry and uses models.json keys/headers.
-- L2 `print-basic`: cortex now finds `mock/mock-model` and fails with "No stream function
+- `hoocode` looks models up through the registry and uses models.json keys/headers.
+- L2 `print-basic`: hoocode now finds `mock/mock-model` and fails with "No stream function
   configured". That is 8.2a (dispatch on `model.api`).
 - Next: 8.2a.
 
@@ -2306,7 +2306,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   - `is_context_overflow` case 3 differed from TS.
 - Fixtures: 3 sessions recorded from the pinned hoocode plus hand-written
   all-entry-types, v1 and v2 files. They round-trip exactly
-  (`crates/cortexcode-code-session/tests/hoocode_fixtures.rs`).
+  (`crates/hoocode-code-session/tests/hoocode_fixtures.rs`).
 - New scenario `session-mixed` (thinking, bash permission prompt, failing read, 2 prompts).
 - Harness: `wait_stable` now compares normalized screens, and the blinking "Working..."
   indicator is masked.
@@ -2326,7 +2326,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - **Security:** an OpenCode API key was committed in 5 files (since 8f5693e). It has
   been removed from the tree, but it is still in git history, so the user must rotate it.
 - The orphan `tests/opencode_e2e_test.rs` (never compiled) moved to
-  `crates/cortexcode-ai-provider-openai/tests/opencode_live.rs`: fixed to compile, all
+  `crates/hoocode-ai-provider-openai/tests/opencode_live.rs`: fixed to compile, all
   `#[ignore]`d. The live shell scripts moved to `scripts/live/` (key from env).
 - `cargo fmt` was already failing on main; fixed.
 - Next: 7.1.
@@ -2341,7 +2341,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   - `harness.py` drives tmux, normalizes cell grids, compares text, style and model
     requests, and writes md/html/png reports.
   - 5 scenarios (startup, chat-basic, tool-read, print-basic, print-tool-read), all
-    `stable` on hoocode. cortex currently fails all of them (`unknown model mock:mock-model`,
+    `stable` on hoocode-ts. hoocode currently fails all of them (`unknown model mock:mock-model`,
     no models.json support).
 - Added the ledger (`migration/ledger.json`, 58 tasks) and `ledger.py` (next/verify gate),
   plus the `continue-migration` skill.

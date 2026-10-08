@@ -20,7 +20,7 @@ The only evidence was whatever dispatch dirs survived on disk — and a clean
 success deletes its own dir, so successes were invisible and failures were
 swept after 24h. Two things ship together here:
 
-1. **The dispatch ledger** (`crates/cortexcode-code-subagents/src/ledger.rs`):
+1. **The dispatch ledger** (`crates/hoocode-code-subagents/src/ledger.rs`):
    one append-only line per **attempt**, in
    `<cwd>/.cortexcode/dispatch/ledger.jsonl`. Telemetry, never a source of
    truth: `result.json` decides correctness, the ledger only records what
@@ -32,7 +32,7 @@ swept after 24h. Two things ship together here:
 ## 2. Running it
 
 ```bash
-cargo build -p cortexcode-code-main          # the harness runs target/debug/cortex
+cargo build -p hoocode-code-main          # the harness runs target/debug/hoocode
 scripts/eval/subagent_evals.py               # the fast suite, ~25s
 scripts/eval/subagent_evals.py --include-slow  # + the 100s stall probe and the 50s wrap-up
 scripts/eval/subagent_evals.py --only parent_region_error_falls_back
@@ -69,7 +69,7 @@ answer), `abort_after` (send N bytes of SSE, then drop the connection) and
 
 ## 4. Baseline, 2026-10-05
 
-Twelve scenarios, 175s with `--include-slow`, against `target/debug/cortex` at
+Twelve scenarios, 175s with `--include-slow`, against `target/debug/hoocode` at
 v0.1.7 plus the ledger. **11 as declared, 1 known issue, 12 attempts recorded,
 11 usable.**
 
@@ -125,8 +125,8 @@ per-agent breakdown and the five most recent failures with their causes. In
 scripts:
 
 ```rust
-let stats = cortexcode_code_subagents::ledger::stats(&cwd, None);
-let rate = cortexcode_code_subagents::ledger::success_rate(&stats);
+let stats = hoocode_code_subagents::ledger::stats(&cwd, None);
+let rate = hoocode_code_subagents::ledger::success_rate(&stats);
 ```
 
 The ledger is bounded: past 20 000 lines it is rewritten to keep the newest

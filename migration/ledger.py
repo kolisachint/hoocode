@@ -14,7 +14,7 @@
 Level 1 (programmatic): cargo fmt --check, clippy -D warnings and tests for the task's
 crates, the dependency firewall, and the task's extra ``l1_cmds``.
 Level 2 (rendered): every scenario in the task's ``l2`` list passes
-``migration/tui-parity/harness.py run`` (hoocode vs cortex, same mock LLM).
+``migration/tui-parity/harness.py run`` (hoocode-ts vs hoocode, same mock LLM).
 A task is ``done`` only when both levels pass; with L1 only it is ``l1_done``.
 """
 

@@ -1,0 +1,64 @@
+[package]
+name = "hoocode-code-tui-app"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "The coding agent's interactive mode on the hoocode TUI"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+libc = "0.2"
+hoocode-agent-types = { workspace = true }
+hoocode-agent-compaction = { workspace = true }
+hoocode-code-agent-session = { workspace = true }
+hoocode-code-auth = { workspace = true }
+hoocode-ai-oauth = { workspace = true }
+hoocode-code-models = { workspace = true }
+hoocode-code-tools = { workspace = true }
+hoocode-code-tool-api = { workspace = true }
+hoocode-code-media = { workspace = true }
+hoocode-ai-util = { workspace = true }
+hoocode-code-tool-bash = { workspace = true }
+hoocode-tui-images = { workspace = true }
+hoocode-code-paths = { workspace = true }
+hoocode-code-permissions = { workspace = true }
+hoocode-code-resources = { workspace = true }
+hoocode-code-subagents = { workspace = true }
+hoocode-code-session = { workspace = true }
+hoocode-code-settings = { workspace = true }
+hoocode-code-task-store = { workspace = true }
+hoocode-code-tui-keybindings = { workspace = true }
+hoocode-code-tools-optin = { workspace = true }
+hoocode-code-tui-selectors = { workspace = true }
+hoocode-code-tui-theme = { workspace = true }
+hoocode-code-tui-widgets = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-tui-components = { workspace = true }
+hoocode-tui-fuzzy = { workspace = true }
+hoocode-tui-keys = { workspace = true }
+hoocode-tui-render = { workspace = true }
+hoocode-tui-terminal = { workspace = true }
+hoocode-tui-util = { workspace = true }
+serde_json = { version = "1", features = ["preserve_order"] }
+tokio = { version = "1", features = ["rt", "sync"] }
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+regex = "1"
+# The native clipboard (clipboard-native.ts): text off Linux, images where
+# no Wayland/WSL tool answers.
+arboard = { version = "3", default-features = false, features = ["image-data"] }
+
+[dev-dependencies]
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "sync", "time"] }

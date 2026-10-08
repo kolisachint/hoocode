@@ -1,5 +1,5 @@
 {
-  "_comment": "Level-1 replay (13.2): scenarios whose steps need no terminal (stdin lines, EOF, stdout waits, exit). `harness.py record <name|all>` records them from the pinned hoocode into crates/cortexcode-code-main/tests/fixtures/hoocode-0.5.89/replay/ and tests/snapshots/; `cargo test -p cortexcode-code-main --test replay` replays them against cortex. The default-bundle print scenarios (print-tool-read/-bash/-edit/-search/-multi/-todo-write/-context-files/-read-paging) join once their L2 passes (12.4 SearchHooCode).",
+  "_comment": "Level-1 replay (13.2): scenarios whose steps need no terminal (stdin lines, EOF, stdout waits, exit). `harness.py record <name|all>` records them from the pinned hoocode into crates/hoocode-code-main/tests/fixtures/hoocode-0.5.89/replay/ and tests/snapshots/; `cargo test -p hoocode-code-main --test replay` replays them against hoocode. The default-bundle print scenarios (print-tool-read/-bash/-edit/-search/-multi/-todo-write/-context-files/-read-paging) join once their L2 passes (12.4 SearchHooCode).",
   "session": {
     "_comment": "Entry ids are random; remapped to <id-N> by first appearance so the parent links are still compared. Timestamps are wall clock; parentSession (clone/fork) is a path with a random session file name.",
     "remap_keys": [

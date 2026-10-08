@@ -2,15 +2,15 @@
 
 Status: agreed design (2026-09-29). Implemented 2026-10-01: D1, D9 (CI and release; §4.2,
 §4.6) and D2 in CI. Implemented 2026-10-02: D3 + D4 (nextest lists 97 test binaries, down
-from 270 in CI; the `--doc` CI step is scoped to cortexcode-agent-mcp, the one crate with a
+from 270 in CI; the `--doc` CI step is scoped to hoocode-agent-mcp, the one crate with a
 doctest). Not yet: D2 locally (`ledger.py verify`), D5–D8, D10–D12.
-Scope: cortexcode only; hoocode is
+Scope: hoocode only; hoocode is
 never touched. Implementation lands as small steps in the order of §5, each re-measured
 against §2.
 
 ## 1. Goal
 
-cortexcode is written mostly by a coding agent, so optimise the agent loop:
+hoocode is written mostly by a coding agent, so optimise the agent loop:
 
 ```
 edit → cargo check -p <crate> → fix → nextest → clippy → commit → CI green → labeled release
@@ -59,8 +59,8 @@ Reproduce with the commands in §7.
 | D2 | `cargo nextest run` for the test loop; doctests only via `cargo test --doc` in CI | CI, `CLAUDE.md`, `ledger.py verify` | Runs binaries in parallel. Estimated 45s → ~12–15s (bounded by `highlight_gold`). |
 | D3 | **One integration-test binary per crate**: `crates/X/tests/*.rs` → `crates/X/tests/it/<name>.rs` + `tests/it/main.rs` (`mod <name>;` per file). Cargo auto-discovers `tests/it/main.rs` as test target `it`. | all crates with `tests/` | ~219 → ~77 binaries. Estimated relink after a base-crate edit 48s → ~20s, test build ~13 GB → ~5 GB. |
 | D4 | `doctest = false` in `[lib]` of crates with no doctests | crate `Cargo.toml`s | Stops rustdoc running 73 times for 1 doctest. |
-| D5 | **Superseded 2026-10-08: the crate is deleted** ([extension-runtime.md](extension-runtime.md)). Was: `wasmtime` becomes an **optional dependency behind a `wasm` feature, off by default**, on `cortexcode-code-extensions`. Plugin code is `#[cfg(feature = "wasm")]`. The umbrella `cortexcode` forwards `wasm = ["cortexcode-code-extensions/wasm"]`. When enabled, use `default-features = false` plus only the features the code uses. | `cortexcode-code-extensions`, `cortexcode` | The shipped `cortex` binary (`cortexcode-code-main`) does not depend on wasmtime at all. It only costs ~55s CPU on every clean workspace build. One CI job builds and tests with `--features wasm` so it doesn't rot. The crate is experimental (a cortex-only WASM plugin host, not a hoocode port). Consumers of the published crate opt in with `features = ["wasm"]`. |
-| D6 | Targeted `opt-level` only where measured: investigate `cortexcode-tui-highlight` (`highlight_gold` 10.8s in debug) with `[profile.dev.package.cortexcode-tui-highlight] opt-level = 1`. Keep only if the test gain outweighs the slower rebuild of that crate. No blanket `[profile.dev.package."*"]`. | root `Cargo.toml` | A blanket setting slows clean builds, and the crate rarely changes. Same pattern as the existing regex overrides. |
+| D5 | **Superseded 2026-10-08: the crate is deleted** ([extension-runtime.md](extension-runtime.md)). Was: `wasmtime` becomes an **optional dependency behind a `wasm` feature, off by default**, on `hoocode-code-extensions`. Plugin code is `#[cfg(feature = "wasm")]`. The umbrella `hoocode` forwards `wasm = ["hoocode-code-extensions/wasm"]`. When enabled, use `default-features = false` plus only the features the code uses. | `hoocode-code-extensions`, `hoocode` | The shipped `hoocode` binary (`hoocode-code-main`) does not depend on wasmtime at all. It only costs ~55s CPU on every clean workspace build. One CI job builds and tests with `--features wasm` so it doesn't rot. The crate is experimental (a hoocode-only WASM plugin host, not a hoocode port). Consumers of the published crate opt in with `features = ["wasm"]`. |
+| D6 | Targeted `opt-level` only where measured: investigate `hoocode-tui-highlight` (`highlight_gold` 10.8s in debug) with `[profile.dev.package.cortexcode-tui-highlight] opt-level = 1`. Keep only if the test gain outweighs the slower rebuild of that crate. No blanket `[profile.dev.package."*"]`. | root `Cargo.toml` | A blanket setting slows clean builds, and the crate rarely changes. Same pattern as the existing regex overrides. |
 | D7 | `[workspace.lints]` (small): `rust.unused_must_use = "deny"`, `clippy.all = { level = "warn", priority = -1 }`; every crate gets `[lints] workspace = true`. No pedantic groups. | root + crate `Cargo.toml`s | Rules live in the repo, not in CLI flags. CI keeps `-D warnings`. |
 | D8 | Claude Code hooks in `.claude/settings.json` (§4.1) | `.claude/` | Removes whole agent turns: warm build, fmt and clippy failures caught before hand-off. |
 | D9 | CI rework (§4.2) | `.github/workflows/ci.yml`, `release.yml` | Parallel jobs, toolchain from `rust-toolchain.toml`, no redundant `cargo check`. |
@@ -112,7 +112,7 @@ Reproduce with the commands in §7.
   - `fmt`: `cargo fmt --all -- --check` (no build, fails fast).
   - `clippy`: `cargo clippy --workspace --all-targets -- -D warnings`.
   - `test`: `cargo nextest run --workspace` (via `taiki-e/install-action`), then `cargo test --doc --workspace`.
-  - `wasm`: `cargo clippy -p cortexcode-code-extensions --features wasm --all-targets -- -D warnings` + `cargo nextest run -p cortexcode-code-extensions --features wasm`.
+  - `wasm`: `cargo clippy -p hoocode-code-extensions --features wasm --all-targets -- -D warnings` + `cargo nextest run -p hoocode-code-extensions --features wasm`.
   - `doc`: `cargo doc --workspace --no-deps`.
   - `hygiene`: `cargo machete`, `cargo deny check` (adds a `deny.toml`).
   - `test-layout` guard: fail if any `crates/*/tests/*.rs` exists outside `tests/it/` (keeps D3).
@@ -166,7 +166,7 @@ runs beside the binaries: `--no-verify`, sleeping only before brand-new crate na
 crates.io publishing is still blocked by the workspace itself: publishable crates depend on
 crates marked `publish = false`, and internal workspace deps carry no `version`.
 
-Binaries ship as `hoocode-<target>` archives holding `hoocode` (the `cortex` binary,
+Binaries ship as `hoocode-<target>` archives holding `hoocode` (the `hoocode` binary,
 renamed at packaging) and the `hoocode-ts` shim.
 
 ## 5. Implementation order
@@ -195,7 +195,7 @@ Each step is its own PR, verified with Level 1 (`cargo fmt`, clippy `-D warnings
 - **D3 failure isolation**: one test file that doesn't compile blocks all tests of that crate.
   Accepted: CI gates on `-D warnings`, and the agent checks per crate.
 - **D3 merge conflicts** with in-flight branches: schedule the move between migration tasks.
-- **D5 published API**: `cortexcode-code-extensions` is marked publishable. Without the feature
+- **D5 published API**: `hoocode-code-extensions` is marked publishable. Without the feature
   it exports no plugin host. Accepted while the plugin system is experimental; document it in
   the crate README.
 - **Hooks slowing sessions**: `SessionStart` must background long work; `Stop` clippy is
@@ -208,7 +208,7 @@ Run in a fresh cloud session. Delete `target/` between clean runs, and watch the
 ```bash
 cargo check --workspace --all-targets --timings        # clean check + slowest units (target/cargo-timings/)
 cargo nextest run --workspace --no-run                  # clean test build; count binaries, du -sh target
-echo '// x' >> crates/cortexcode-ai-types/src/lib.rs    # base-crate edit
+echo '// x' >> crates/hoocode-ai-types/src/lib.rs    # base-crate edit
 cargo check --workspace --all-targets                   # incremental check
 cargo nextest run --workspace --no-run                  # incremental relink
 git checkout -- crates/

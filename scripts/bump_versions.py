@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lockstep version bump for the cortexcode workspace.
+"""Lockstep version bump for the hoocode workspace.
 
 Bumps the shared version in the workspace root Cargo.toml. Member crates inherit
 `version.workspace = true`, so no per-crate edits are needed.

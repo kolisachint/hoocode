@@ -1,0 +1,65 @@
+[package]
+name = "hoocode-code-cli"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts)"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-ai-util = { workspace = true }
+hoocode-app-server = { workspace = true }
+hoocode-code-agent-session = { workspace = true }
+hoocode-code-print = { workspace = true }
+hoocode-code-session = { workspace = true }
+hoocode-code-paths = { workspace = true }
+hoocode-code-settings = { workspace = true }
+hoocode-code-models = { workspace = true }
+hoocode-code-auth = { workspace = true }
+hoocode-code-resources = { workspace = true }
+hoocode-code-modes = { workspace = true }
+hoocode-code-permissions = { workspace = true }
+hoocode-tui-fuzzy = { workspace = true }
+hoocode-ai-registry = { workspace = true }
+hoocode-code-prompts = { workspace = true }
+hoocode-code-rpc = { workspace = true }
+hoocode-code-subagents = { workspace = true }
+hoocode-code-task-store = { workspace = true }
+hoocode-code-media = { workspace = true }
+base64 = "0.22"
+hoocode-code-tool-api = { workspace = true }
+hoocode-code-tools = { workspace = true }
+hoocode-code-tools-fs = { workspace = true }
+hoocode-code-tool-bash = { workspace = true }
+hoocode-code-tools-optin = { workspace = true }
+hoocode-ai-env = { workspace = true }
+hoocode-ai-oauth = { workspace = true }
+hoocode-ai-oauth-anthropic = { workspace = true }
+hoocode-ai-oauth-github-copilot = { workspace = true }
+hoocode-ai-oauth-google = { workspace = true }
+hoocode-ai-oauth-openai-codex = { workspace = true }
+hoocode-ai-stream = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-agent-core = { workspace = true }
+hoocode-agent-compaction = { workspace = true }
+hoocode-agent-types = { workspace = true }
+hoocode-code-tui-app = { workspace = true }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "io-std"] }
+url = "2"
+
+[dev-dependencies]
+hoocode-tui-terminal = { workspace = true }
+hoocode-tui-util = { workspace = true }
+tempfile = "3"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }

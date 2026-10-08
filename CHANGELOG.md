@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to CortexCode will be documented in this file.
+All notable changes to HooCode will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -100,7 +100,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `migration/pin_drift.py` reports when upstream has released past the pin and prints the
   port checklist for a bump. `setup_hoocode.sh` installs with the pin's declared bun version.
 
-### Migration paused, `cortex` ready for use (2026-10-01)
+### Migration paused, `hoocode` ready for use (2026-10-01)
 - Every remaining ledger task is deferred by user decision: MCP (9.1, 10.11),
   webfetch/websearch (10.2e), the TS test ledger close-out (13.4) and phase 12. See the
   README's "Migration status" and §0.3 of the migration plan for what works and what doesn't.
@@ -115,13 +115,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Migration re-baseline (2026-09-24)
 - Pinned the port to hoocode v0.5.89 (`a6cd96e7`). An audit found the earlier
   "100% complete" status overstated, and progress is now tracked in
-  `migration/ledger.json` (see `docs/design/hoocode-to-cortexcode-migration.md` §0).
+  `migration/ledger.json` (see `docs/design/ts-to-rust-migration.md` §0).
 - Added two-level done gates: Level 1 = cargo checks, Level 2 = rendered-TUI parity
   against hoocode via `migration/tui-parity/`.
 - Removed the stale status reports (`MIGRATION_*.md`, `TEST_RECORD.md`,
   `E2E_TESTING_SUMMARY.md`, `OPENCODE_E2E_TEST_REPORT.md`, `QUICKSTART.md`).
 - Live OpenCode checks moved to `scripts/live/` and
-  `crates/cortexcode-ai-provider-openai/tests/opencode_live.rs` (`#[ignore]`d). The API
+  `crates/hoocode-ai-provider-openai/tests/opencode_live.rs` (`#[ignore]`d). The API
   key now comes only from `OPENCODE_API_KEY`. A key previously committed in these
   files must be rotated.
 
@@ -156,7 +156,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2026-07-23
 
 ### Added
-- Initial release of CortexCode
+- Initial release of HooCode
 - Rust migration from HooCode TypeScript framework
 - 43 crates in workspace structure
 - 640 tests passing
@@ -207,7 +207,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### v0.1.0 - Initial Release
 
-CortexCode is a Rust migration of the HooCode TypeScript coding-agent framework. This release includes:
+HooCode is a Rust migration of the HooCode TypeScript coding-agent framework. This release includes:
 
 **Core Features:**
 - Full LLM runtime with streaming support
@@ -240,7 +240,7 @@ CortexCode is a Rust migration of the HooCode TypeScript coding-agent framework.
 **Installation:**
 ```bash
 # From source
-cargo install --path crates/cortexcode-code-main --bin cortex
+cargo install --path crates/hoocode-code-main --bin hoocode
 
 # Pre-built binaries
 # Download from GitHub Releases
@@ -249,20 +249,20 @@ cargo install --path crates/cortexcode-code-main --bin cortex
 **Usage:**
 ```bash
 # Single-shot mode
-cortex -p "Explain this codebase"
+hoocode -p "Explain this codebase"
 
 # Interactive mode
-cortex
+hoocode
 
 # With specific provider
-cortex --provider opencode --model mimo-v2.5-free -p "Hello"
+hoocode --provider opencode --model mimo-v2.5-free -p "Hello"
 ```
 
 ---
 
 ## Migration Status
 
-The migration from HooCode TypeScript to CortexCode Rust is **98% complete**.
+The migration from HooCode TypeScript to HooCode Rust is **98% complete**.
 
 **Completed:**
 - ✅ TUI Namespace (120 tests)
@@ -283,7 +283,7 @@ The migration from HooCode TypeScript to CortexCode Rust is **98% complete**.
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to CortexCode.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to contribute to HooCode.
 
 ## License
 

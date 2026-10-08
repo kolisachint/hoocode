@@ -5,7 +5,7 @@ ledger 12.4 and closes the 8 `l1_done` tasks.
 
 ## Goal
 
-**Part A:** add the small `SearchHooCode` tool so `cortex`'s default system prompt
+**Part A:** add the small `SearchHooCode` tool so `hoocode`'s default system prompt
 matches hoocode-ts, which lets the 8 ported tasks stuck at `l1_done` pass their
 side-by-side checks. It also gives the model one place to ask "what can you do?".
 
@@ -17,7 +17,7 @@ Lexical `SearchCodebase` stays.
 | Decision | Why |
 |---|---|
 | `SearchHooCode` uses hoocode-ts's name, description and schema (`query`, optional `limit`) | That is exactly what the side-by-side check compares |
-| It searches **live capabilities only** (skills, subagents, installed plugins), not docs | The Rust build ships no user docs yet, and indexing hoocode-ts's docs would promise features `cortex` lacks |
+| It searches **live capabilities only** (skills, subagents, installed plugins), not docs | The Rust build ships no user docs yet, and indexing hoocode-ts's docs would promise features `hoocode` lacks |
 | The index is an in-process keyword (BM25) search in a new crate, `code-capabilities` | No dependencies and always available. The MCP and plugin cards reuse it. |
 | Semantic code search uses the external `embsearch` program, not linked in | Linking it adds about 40 MB and ONNX to every binary; few sessions use it |
 

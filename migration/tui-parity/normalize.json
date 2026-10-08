@@ -27,7 +27,7 @@
       "replace": "<WORDMARK>"
     },
     {
-      "pattern": "\\bcortex_",
+      "pattern": "\\bhoocode_",
       "replace": "<WORDMARK>"
     },
     {
@@ -36,14 +36,6 @@
     },
     {
       "pattern": "\\bhoocode\\b",
-      "replace": "<app>"
-    },
-    {
-      "pattern": "\\bCortexCode\\b|\\bCortex\\b",
-      "replace": "<APP>"
-    },
-    {
-      "pattern": "\\bcortexcode\\b|\\bcortex\\b",
       "replace": "<app>"
     },
     {

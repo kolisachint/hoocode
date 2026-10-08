@@ -1,5 +1,5 @@
 // showLoadedResources over stub deps, rendered at a fixed width.
-// Output: crates/cortexcode-code-tui-app/tests/fixtures/resource-display-gold.json
+// Output: crates/hoocode-code-tui-app/tests/fixtures/resource-display-gold.json
 import { Container } from "@kolisachint/hoocode-tui";
 import { showLoadedResources } from "./modes/interactive/resource-display.js";
 import { initTheme } from "./modes/interactive/theme/theme.js";

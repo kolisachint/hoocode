@@ -1,9 +1,9 @@
 ---
 name: continue-migration
-description: Resume and keep advancing the hoocode → cortexcode Rust migration from exactly where it was left. Use when the user says "continue migration", "continue", "keep migrating", "next migration task", or asks for migration status.
+description: Resume and keep advancing the hoocode-ts → hoocode (Rust) migration from exactly where it was left. Use when the user says "continue migration", "continue", "keep migrating", "next migration task", or asks for migration status.
 ---
 
-# Continue the hoocode → cortexcode migration
+# Continue the hoocode-ts → hoocode (Rust) migration
 
 State lives in the repo, not in chat history. Read it, pick up the current task, and
 work in small verified increments. Keep looping until the user stops you or you hit
@@ -12,7 +12,7 @@ a real blocker.
 ## 0. Orient (every time, ~1 minute)
 
 ```bash
-cd <cortexcode checkout>
+cd <hoocode checkout>
 git status --short && git log --oneline -5
 python3 migration/ledger.py status
 python3 migration/ledger.py next          # CONTINUE / START / RE-VERIFY + the task card
@@ -20,11 +20,11 @@ sed -n '1,60p' migration/PROGRESS.md      # latest handoff notes: read before to
 migration/tui-parity/setup_hoocode.sh     # idempotent: builds the pinned hoocode reference
 ```
 
-- `docs/design/hoocode-to-cortexcode-migration.md` explains why (§0 audit, §5.5 crate
+- `docs/design/ts-to-rust-migration.md` explains why (§0 audit, §5.5 crate
   split and volatility tiers, §9 phases). `migration/ledger.json` is the what and status.
   If they disagree, the ledger wins; fix the doc.
 - Port only from the pinned hoocode at `target/hoocode-pin`, which is checked out at
-  `[workspace.metadata.cortex.source].hoocode-commit`. Never port from another hoocode
+  `[workspace.metadata.hoocode.source].hoocode-commit`. Never port from another hoocode
   checkout or from memory. **Never modify hoocode.**
 
 ## 1. Work one task
@@ -44,7 +44,7 @@ migration/tui-parity/setup_hoocode.sh     # idempotent: builds the pinned hoocod
    `python3 migration/tui-parity/harness.py selfcheck <name>`. It must print `stable`.
    The scenario encodes hoocode's behavior, so write it from what hoocode actually
    renders (`harness.py run <name> --app hoocode`, look at
-   `target/tui-parity/<name>/hoocode/*.txt`), never from what cortex happens to do.
+   `target/tui-parity/<name>/hoocode/*.txt`), never from what hoocode happens to do.
 7. Gate: `python3 migration/ledger.py verify <id>`.
    - Level 1 = fmt + clippy `-D warnings` + tests for the task's crates + dependency
      firewall + the task's `l1_cmds`.
@@ -78,7 +78,7 @@ migration/tui-parity/setup_hoocode.sh     # idempotent: builds the pinned hoocod
 - **Don't weaken the gates** to go green: no loosening normalization to hide a real
   difference, no deleting snapshots or assertions, no `#[ignore]` on a failing ported
   test. A normalization rule is allowed only for real nondeterminism (random ids,
-  temp paths, durations) or branding (hoocode↔cortex), with a comment.
+  temp paths, durations) or branding (hoocode-ts↔hoocode), with a comment.
 - If a task is too big for one sitting, split it in the ledger (`10.3` → `10.3a`,
   `10.3b` with dependencies) and note why.
 - Stuck, or you need a decision (Phase 12 go/no-go, a design choice)? Run

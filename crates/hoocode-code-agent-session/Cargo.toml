@@ -1,0 +1,52 @@
+[package]
+name = "hoocode-code-agent-session"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "AgentSession: the agent lifecycle shared by the hoocode run modes"
+readme = "README.md"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# This crate has no doctests; skip the rustdoc test build (build-speed D4).
+doctest = false
+
+[dependencies]
+hoocode-agent-compaction = { workspace = true }
+hoocode-agent-core = { workspace = true }
+hoocode-agent-harness = { workspace = true }
+hoocode-agent-types = { workspace = true }
+hoocode-ai-models = { workspace = true }
+hoocode-ai-registry = { workspace = true }
+hoocode-ai-types = { workspace = true }
+hoocode-ai-util = { workspace = true }
+hoocode-code-models = { workspace = true }
+hoocode-code-auth = { workspace = true }
+hoocode-code-resources = { workspace = true }
+hoocode-code-paths = { workspace = true }
+hoocode-code-prompts = { workspace = true }
+hoocode-code-session = { workspace = true }
+hoocode-code-settings = { workspace = true }
+hoocode-code-tool-api = { workspace = true }
+hoocode-code-tool-bash = { workspace = true }
+hoocode-code-tools = { workspace = true }
+hoocode-code-tools-fs = { workspace = true }
+hoocode-tui-util = { workspace = true }
+chrono = "0.4"
+regex-lite = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+hoocode-ai-provider-faux = { workspace = true }
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "sync"] }

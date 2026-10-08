@@ -4,7 +4,7 @@ Status: **agreed 2026-10-07**, design only. Replaces ledger 12.6 and the rest of
 
 ## Goal
 
-Decide which of hoocode-ts's smaller features `cortex` gets.
+Decide which of hoocode-ts's smaller features `hoocode` gets.
 
 ## Decisions
 
@@ -27,9 +27,9 @@ Decide which of hoocode-ts's smaller features `cortex` gets.
    - Off with `HOOCODE_OFFLINE=1` or `checkForUpdates: false`.
    - Asks npm for `@kolisachint/hoocode`'s latest version.
    - If newer, shows a startup notice with the right update command for how
-     `cortex` was installed: under `~/.hoocode/bin` means curl; inside
+     `hoocode` was installed: under `~/.hoocode/bin` means curl; inside
      `node_modules` means npm or bun; anything else gets no command.
-   - `cortex update` prints the same command; it never replaces the binary itself.
+   - `hoocode update` prints the same command; it never replaces the binary itself.
 2. **Completion chime.**
    - One terminal bell when a turn longer than 10 seconds finishes (not when you
      abort it), or right away when the agent asks you a question.

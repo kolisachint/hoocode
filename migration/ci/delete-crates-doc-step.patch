@@ -7,7 +7,7 @@ index 6eb1b95..3dd8622 100644
          run: scripts/ci/fetch_hoocode_fixtures.sh
        - run: cargo nextest run --locked --workspace --no-fail-fast
 -        # The only crate with a doctest (build-speed D4: the rest set doctest = false).
--      - run: cargo test --locked --doc -p cortexcode-agent-mcp
+-      - run: cargo test --locked --doc -p hoocode-agent-mcp
  
    doc:
      runs-on: ubuntu-latest

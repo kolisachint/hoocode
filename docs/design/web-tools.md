@@ -22,7 +22,7 @@ webtools.
 ## Not doing
 
 - Porting hoocode-ts's web tool layer (`.webtoolsignore`, cache, notes).
-- Linking the webtools crates into `cortex`.
+- Linking the webtools crates into `hoocode`.
 
 ## Open questions
 

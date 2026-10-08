@@ -1,6 +1,6 @@
 // marked token streams (with markdown.ts's strict-strikethrough tokenizer)
 // and Markdown component renders for a corpus of inputs.
-// Output: crates/cortexcode-tui-components/tests/fixtures/markdown-gold.json
+// Output: crates/hoocode-tui-components/tests/fixtures/markdown-gold.json
 import { Marked, Tokenizer } from "marked";
 import { Chalk } from "chalk";
 import { Markdown } from "../../tui/dist/components/markdown.js";

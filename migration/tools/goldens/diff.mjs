@@ -1,6 +1,6 @@
 // jsdiff diffWords change objects for pseudo-random line pairs, and the
 // pin's renderDiff output for diff texts built from them.
-// Output: crates/cortexcode-code-tui-widgets/tests/fixtures/diff-gold.json
+// Output: crates/hoocode-code-tui-widgets/tests/fixtures/diff-gold.json
 import { diffWords } from "diff";
 import { renderDiff } from "./modes/interactive/components/diff.js";
 import { initTheme } from "./modes/interactive/theme/theme.js";
