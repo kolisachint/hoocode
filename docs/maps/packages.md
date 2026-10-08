@@ -76,7 +76,7 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process, and the `hoocode-session-io` writer (`session_io.rs`, the only writer of session files): the only crate that builds them | 8 | 761 / 499 | keep |
+| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 8 | 761 / 504 | keep |
 
 ### AI: models, providers, logins (`ai-*`)
 
@@ -120,7 +120,7 @@ in those tables; the generator keeps each crate's Status by name.
 |---|---|---|---|---|
 | `app-server` | hoocode app-server: Codex app-server protocol over stdio and a Unix socket | 1 | 2529 / 1013 | keep |
 | `app-server-protocol` | Wire types for hoocode's app-server (Codex app-server protocol compatible) | 1 | 1187 / 0 | keep |
-| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5874 / 5459 | keep |
+| `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5883 / 5459 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 822 / 707 | keep |
 | `code-capabilities` | Capability index for the hoocode coding agent: BM25 search over loaded skills, subagents and plugins (DocSearch) | 1 | 537 / 0 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5126 / 0 | keep |
@@ -137,7 +137,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 6 | 4433 / 2992 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1025 | keep |
 | `code-scheduler` | Cron scheduler for the hoocode coding agent: the CronCreate, CronList and CronDelete tools and the store that fires due prompts | 2 | 926 / 0 | keep |
-| `code-session` | Session handling for the hoocode coding agent; appends and rewrites go through `runtime` `session_io` (flush barriers before reads) | 6 | 1850 / 390 | keep |
+| `code-session` | Session handling for the hoocode coding agent | 6 | 1850 / 390 | keep |
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 2074 / 1218 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7789 / 6672 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |
