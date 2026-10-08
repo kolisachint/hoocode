@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use hoocode_ai_types::{ThinkingBudgets, Transport};
+use hoocode_runtime::{MAX_BASH_NICE, MAX_PARALLEL_TOOLS, MIN_PARALLEL_TOOLS};
 use serde_json::{Map, Value};
 
 use crate::storage::{
@@ -197,6 +198,28 @@ fn strings(values: &[String]) -> Value {
     Value::Array(values.iter().cloned().map(Value::String).collect())
 }
 
+/// Default memory soft limit in MB: the lower of 2048 and 25% of RAM.
+fn default_memory_soft_limit_mb() -> u64 {
+    match hoocode_runtime::total_memory_bytes() {
+        Some(bytes) => {
+            (bytes / MIB / 4).clamp(defaults::MEMORY_FLOOR_MB, defaults::MEMORY_SOFT_CAP_MB)
+        }
+        None => defaults::MEMORY_SOFT_CAP_MB,
+    }
+}
+
+/// Default memory hard limit in MB: the lower of 4096 and 50% of RAM.
+fn default_memory_hard_limit_mb() -> u64 {
+    match hoocode_runtime::total_memory_bytes() {
+        Some(bytes) => {
+            (bytes / MIB / 2).clamp(defaults::MEMORY_FLOOR_MB, defaults::MEMORY_HARD_CAP_MB)
+        }
+        None => defaults::MEMORY_HARD_CAP_MB,
+    }
+}
+
+const MIB: u64 = 1024 * 1024;
+
 /// Default numbers from `DEFAULT_SETTINGS`, for the getters.
 mod defaults {
     pub const COMPACTION_RESERVE_TOKENS: u64 = 16384;
@@ -205,6 +228,14 @@ mod defaults {
     pub const TOOL_OUTPUT_MAX_BYTES: u64 = 32 * 1024;
     pub const TOOL_OUTPUT_MAX_LINES: u64 = 800;
     pub const VOICE_SILENCE_MS: u64 = 800;
+    pub const MAX_PARALLEL_TOOLS: u64 = 8;
+    pub const BASH_NICE: u64 = 0;
+    /// Smallest non-zero memory limit, in MB (`performance.memory*LimitMb`).
+    pub const MEMORY_FLOOR_MB: u64 = 256;
+    /// Soft limit ceiling: the lower of this and 25% of RAM.
+    pub const MEMORY_SOFT_CAP_MB: u64 = 2048;
+    /// Hard limit ceiling: the lower of this and 50% of RAM.
+    pub const MEMORY_HARD_CAP_MB: u64 = 4096;
     pub const WEBTOOLS_TIMEOUT_SECS: u64 = 15;
     pub const BRANCH_SUMMARY_RESERVE_TOKENS: u64 = 16384;
     pub const RETRY_MAX_RETRIES: u64 = 3;
@@ -691,6 +722,54 @@ impl SettingsManager {
 
     pub fn set_voice_silence_ms(&mut self, ms: i64) {
         self.set_nested("voice", "silenceMs", ms.clamp(300, 10000).into());
+    }
+
+    /// `performance.maxParallelTools`: tool calls one turn runs at once.
+    /// Default 8; clamped to 1..=32.
+    pub fn performance_max_parallel_tools(&self) -> u64 {
+        finite(self.get_in("performance", "maxParallelTools"))
+            .map(|v| {
+                v.floor()
+                    .clamp(MIN_PARALLEL_TOOLS as f64, MAX_PARALLEL_TOOLS as f64)
+                    as u64
+            })
+            .unwrap_or(defaults::MAX_PARALLEL_TOOLS)
+    }
+
+    /// `performance.memorySoftLimitMb` in MB; 0 turns the limit off. Default:
+    /// the lower of 2048 and 25% of RAM (2048 when RAM is unknown). A value
+    /// above 0 is raised to at least 256.
+    pub fn performance_memory_soft_limit_mb(&self) -> u64 {
+        match finite(self.get_in("performance", "memorySoftLimitMb")) {
+            Some(0.0) => 0,
+            Some(v) if v > 0.0 => (v.floor() as u64).max(defaults::MEMORY_FLOOR_MB),
+            _ => default_memory_soft_limit_mb(),
+        }
+    }
+
+    /// `performance.memoryHardLimitMb` in MB; 0 turns the limit off. Default:
+    /// the lower of 4096 and 50% of RAM. A value above 0 is kept above the
+    /// soft limit (or at least 256 when the soft limit is off).
+    pub fn performance_memory_hard_limit_mb(&self) -> u64 {
+        let soft = self.performance_memory_soft_limit_mb();
+        let floor = if soft > 0 {
+            soft + 1
+        } else {
+            defaults::MEMORY_FLOOR_MB
+        };
+        match finite(self.get_in("performance", "memoryHardLimitMb")) {
+            Some(0.0) => 0,
+            Some(v) if v > 0.0 => (v.floor() as u64).max(floor),
+            _ => default_memory_hard_limit_mb().max(floor),
+        }
+    }
+
+    /// `performance.bashNice`: `nice` value for `bash` children. Default 0;
+    /// clamped to 0..=19.
+    pub fn performance_bash_nice(&self) -> u64 {
+        finite(self.get_in("performance", "bashNice"))
+            .map(|v| v.floor().clamp(0.0, MAX_BASH_NICE as f64) as u64)
+            .unwrap_or(defaults::BASH_NICE)
     }
 
     /// Webfetch/websearch timeout: the setting, else `*_WEBTOOLS_TIMEOUT`,

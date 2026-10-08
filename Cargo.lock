@@ -1424,6 +1424,7 @@ version = "0.1.8"
 dependencies = [
  "hoocode-ai-types",
  "hoocode-code-paths",
+ "hoocode-runtime",
  "serde",
  "serde_json",
  "tempfile",
@@ -1680,6 +1681,13 @@ dependencies = [
  "serde_json",
  "tempfile",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "hoocode-runtime"
+version = "0.1.8"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

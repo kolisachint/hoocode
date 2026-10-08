@@ -1,0 +1,27 @@
+//! Threads, runtimes, blocking work and channels for the hoocode process.
+//!
+//! This crate is the only place that builds a tokio runtime, a blocking pool,
+//! an OS thread or a channel for hoocode. Other crates use the functions here,
+//! so the thread count, names and caps stay fixed in one place
+//! (`docs/design/concurrency.md` sections 1 and 4).
+//!
+//! - [`io_handle`]: the `hoocode-io` runtime, `min(4, cores)` workers (2 in
+//!   subagent children).
+//! - [`run_blocking`]: sync work on the `hoocode-tools` pool, at most 16 threads.
+//! - [`block_on_entry`]: entry points (`main`, tests) only.
+//! - [`spawn_named_thread`], [`bounded_channel`], [`sync_bounded_channel`].
+//! - [`ParallelToolLimit`]: the per-turn cap on parallel tool calls.
+
+mod limits;
+mod runtime;
+mod threads;
+
+pub use limits::{
+    total_memory_bytes, ParallelToolLimit, MAX_BASH_NICE, MAX_PARALLEL_TOOLS, MIN_PARALLEL_TOOLS,
+};
+pub use runtime::{
+    block_on_entry, io_handle, io_worker_count, is_subagent_child, run_blocking, IO_CHILD_WORKERS,
+    IO_MAX_WORKERS, IO_THREAD_PREFIX, TOOLS_MAX_THREADS, TOOLS_THREAD_PREFIX,
+};
+pub use threads::{bounded_channel, spawn_named_thread, sync_bounded_channel};
+pub use tokio::task::JoinError;

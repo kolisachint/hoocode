@@ -1,7 +1,7 @@
 # Package map
 
 What each crate does, who uses it, and where to make a change. Snapshot of 2026-10-08, after the deletions in
-[decisions-2026-10-08.md](../design/decisions-2026-10-08.md): 65 crates (76 before; see
+[decisions-2026-10-08.md](../design/decisions-2026-10-08.md): 66 crates (65 after the deletions, plus `runtime`, added in Concurrency phase 1; 76 before; see
 [Deleted](#deleted-2026-10-08)). In step 0 the crates
 become `hoocode-*` and the binary `hoocode`
 ([naming-and-paths.md](../design/naming-and-paths.md)); this page is regenerated
@@ -58,6 +58,8 @@ Layering: `ai-*` knows nothing of agents; `agent-*` knows nothing of the coding 
 | Permissions and modes | `code-permissions`, `code-modes` |
 | Themes | `code-tui-theme` |
 | Key bindings | `code-tui-keybindings` (app), `tui-keys` (parsing) |
+| Threads, the io runtime, `run_blocking`, channel caps, parallel-tool cap | `runtime` (`runtime.rs`, `threads.rs`, `limits.rs`); the only crate that builds runtimes, threads or channels ([concurrency.md](../design/concurrency.md)) |
+| `performance.*` settings | `code-settings` (`manager.rs` getters), caps in `runtime` (`limits.rs`) |
 
 ## All crates
 
@@ -67,6 +69,12 @@ which rewrites only the part between the markers. The Status column is hand-edit
 in those tables; the generator keeps each crate's Status by name.
 
 <!-- BEGIN generated: packages -->
+### Runtime (`runtime`)
+
+| Crate | Does | Used by | src / tests lines | Status |
+|---|---|---|---|---|
+| `runtime` | Threads, runtime, blocking pool and channels for the hoocode process: the only crate that builds them | 1 | 262 / 178 | keep |
+
 ### AI: models, providers, logins (`ai-*`)
 
 | Crate | Does | Used by | src / tests lines | Status |
@@ -124,7 +132,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-resources` | Resources for the hoocode coding agent: skills, prompt templates, slash commands, agent definitions, context files | 5 | 4453 / 2992 | keep |
 | `code-rpc` | RPC mode for the hoocode coding agent | 2 | 1547 / 1021 | keep |
 | `code-session` | Session handling for the hoocode coding agent | 6 | 1821 / 274 | keep |
-| `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 1995 / 1108 | keep |
+| `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 2074 / 1218 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7833 / 6668 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |
 | `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 10 | 1142 / 125 | keep |

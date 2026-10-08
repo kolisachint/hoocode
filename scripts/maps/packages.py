@@ -40,6 +40,7 @@ DEFAULT_STATUS = "keep"
 
 # (heading, predicate on the display name). Order matters: first match wins.
 GROUPS = [
+    ("Runtime (`runtime`)", lambda n: n == "runtime"),
     ("Umbrella (all to delete)", lambda n: "-" not in n),
     ("AI: models, providers, logins (`ai-*`)", lambda n: n.startswith("ai-")),
     ("Agent runtime (`agent-*`)", lambda n: n.startswith("agent-")),
