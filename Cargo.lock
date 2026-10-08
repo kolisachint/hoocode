@@ -1262,6 +1262,7 @@ dependencies = [
  "hoocode-code-prompts",
  "hoocode-code-resources",
  "hoocode-code-rpc",
+ "hoocode-code-scheduler",
  "hoocode-code-session",
  "hoocode-code-settings",
  "hoocode-code-subagents",
@@ -1416,6 +1417,19 @@ dependencies = [
  "serde_json",
  "tempfile",
  "tokio",
+]
+
+[[package]]
+name = "hoocode-code-scheduler"
+version = "0.1.8"
+dependencies = [
+ "chrono",
+ "hoocode-agent-types",
+ "hoocode-ai-types",
+ "hoocode-code-tool-api",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
@@ -1591,6 +1605,7 @@ dependencies = [
  "hoocode-code-paths",
  "hoocode-code-permissions",
  "hoocode-code-resources",
+ "hoocode-code-scheduler",
  "hoocode-code-session",
  "hoocode-code-settings",
  "hoocode-code-subagents",

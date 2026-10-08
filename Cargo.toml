@@ -39,6 +39,7 @@ members = [
     "crates/hoocode-code-settings",
     "crates/hoocode-code-tool-bash",
     "crates/hoocode-code-tool-search",
+    "crates/hoocode-code-scheduler",
     "crates/hoocode-code-task-store",
     "crates/hoocode-code-tools-optin",
     "crates/hoocode-code-main",
@@ -127,6 +128,7 @@ hoocode-code-paths = { path = "crates/hoocode-code-paths" }
 hoocode-code-settings = { path = "crates/hoocode-code-settings" }
 hoocode-code-tool-bash = { path = "crates/hoocode-code-tool-bash" }
 hoocode-code-tool-search = { path = "crates/hoocode-code-tool-search" }
+hoocode-code-scheduler = { path = "crates/hoocode-code-scheduler" }
 hoocode-code-task-store = { path = "crates/hoocode-code-task-store" }
 hoocode-code-tools-optin = { path = "crates/hoocode-code-tools-optin" }
 hoocode-code-main = { path = "crates/hoocode-code-main" }

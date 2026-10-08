@@ -870,6 +870,8 @@ struct Mode {
     /// and whether an update is waiting for the window to pass.
     stream_render_at: Option<Instant>,
     stream_render_pending: bool,
+    /// When the next scheduled-task tick is due (`TaskScheduler`'s interval).
+    scheduler_tick_at: Instant,
     turn_cost_anchor: Option<(AssistantUsageTotals, Instant)>,
     turn_stop_reason: Option<StopReason>,
     tool_output_view: ToolOutputView,
@@ -1255,6 +1257,7 @@ impl Mode {
             streaming_message: None,
             stream_render_at: None,
             stream_render_pending: false,
+            scheduler_tick_at: Instant::now() + hoocode_code_scheduler::TICK_INTERVAL,
             turn_cost_anchor: None,
             turn_stop_reason: None,
             tool_output_view,
@@ -2302,6 +2305,30 @@ impl Mode {
                         self.handle_extension_new_session(text)
                     }
                 }
+            }
+        }
+    }
+
+    /// `TaskScheduler.tick`: every [`hoocode_code_scheduler::TICK_INTERVAL`],
+    /// while the agent is idle, submit the prompts of the tasks due this minute
+    /// as follow-up messages (`fire` in `extensions/core/loop.ts`).
+    fn tick_scheduler(&mut self) {
+        let now = Instant::now();
+        if now < self.scheduler_tick_at {
+            return;
+        }
+        self.scheduler_tick_at = now + hoocode_code_scheduler::TICK_INTERVAL;
+        if self.session.is_streaming() || self.session.is_compacting() {
+            return;
+        }
+        let due = hoocode_code_scheduler::claim_due_now(self.session.cwd());
+        // The first prompt starts a turn; the rest queue behind it, as the
+        // follow-up they would be in TS once the first has begun.
+        for (index, prompt) in due.into_iter().enumerate() {
+            if index == 0 {
+                self.send_user_follow_up(prompt);
+            } else {
+                self.queue_prompt(prompt, StreamingBehavior::FollowUp);
             }
         }
     }
@@ -6019,6 +6046,7 @@ impl Mode {
                 }
             }
             self.drain_extension_ui_requests();
+            self.tick_scheduler();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
             }

@@ -55,14 +55,18 @@ const THINKING_LEVELS: [ThinkingLevel; 5] = [
 ];
 
 /// Tools active by default, in the order the model sees them: Read, Shell,
-/// Edit, Write, CodeSearch, AskUserQuestion, DocSearch. The rest follow.
-pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 7] = [
+/// Edit, Write, CodeSearch, AskUserQuestion, the Cron tools, DocSearch. The
+/// rest follow.
+pub const DEFAULT_ACTIVE_TOOL_NAMES: [&str; 10] = [
     "Read",
     "Shell",
     "Edit",
     "Write",
     "CodeSearch",
     "AskUserQuestion",
+    "CronCreate",
+    "CronList",
+    "CronDelete",
     "DocSearch",
 ];
 

@@ -274,6 +274,9 @@ fn custom_tools(
         Arc::new(hoocode_code_tools_optin::NoUi)
     };
     let mut tools = vec![hoocode_code_tools_optin::create_ask_options_tool_definition(ask_host)];
+    // hoocode-ts's `loop` extension registers the Cron tools after ask_options and
+    // before SearchHooCode, so the model sees them in that place.
+    tools.extend(hoocode_code_scheduler::create_cron_tool_definitions(cwd));
     // After AskUserQuestion: the model sees DocSearch last among the built-ins.
     tools.push(
         hoocode_code_tools::search_hoocode::create_search_hoocode_tool_definition(
@@ -1694,6 +1697,11 @@ mod tests {
             prompt.contains("Available tools:"),
             "the tool list should still be there: {prompt}"
         );
+        // The Cron tools have no prompt snippet, so hoocode-ts keeps them out of the list.
+        assert!(
+            !prompt.contains("CronCreate:") && !prompt.contains("CronList:"),
+            "Cron tools must not be in the system prompt's tool list: {prompt}"
+        );
         assert!(
             prompt.lines().any(|l| l.trim() == "Guidelines:"),
             "the list must run into the guidelines"
@@ -1707,6 +1715,9 @@ mod tests {
                 "Write",
                 "CodeSearch",
                 "AskUserQuestion",
+                "CronCreate",
+                "CronList",
+                "CronDelete",
                 "DocSearch",
                 "Agent",
                 "AgentOutput",
