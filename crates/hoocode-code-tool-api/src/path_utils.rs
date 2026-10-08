@@ -126,6 +126,12 @@ fn try_macos_screenshot_path(s: &str) -> String {
     out
 }
 
+/// Whether two file names are the same name: macOS hands names back NFD
+/// (decomposed), Linux keeps whatever spelling was written, so compare NFC.
+pub fn same_file_name(a: &str, b: &str) -> bool {
+    a.nfc().eq(b.nfc())
+}
+
 /// macOS stores filenames in NFD (decomposed) form.
 fn try_nfd_variant(s: &str) -> String {
     s.nfd().collect()
@@ -177,6 +183,17 @@ pub fn resolve_read_path(file_path: &str, cwd: &Path) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nfd_and_nfc_file_names_compare_equal() {
+        let nfd = "caf\u{0065}\u{0301}.txt";
+        let nfc = "caf\u{00e9}.txt";
+        assert_ne!(nfd, nfc);
+        assert!(same_file_name(nfd, nfc));
+        assert!(same_file_name(nfc, nfd));
+        assert!(!same_file_name("cafe.txt", nfc));
+        assert!(!same_file_name("it\u{2019}s.txt", "it's.txt"));
+    }
 
     #[test]
     fn expand_path_handles_at_tilde_url_and_unicode_spaces() {
@@ -250,15 +267,10 @@ mod tests {
             // APFS matches names normalization-insensitively, so the curly-quote
             // NFC spelling already exists; either spelling opens the NFD file.
             assert!(resolved.exists(), "{}", resolved.display());
-            assert_eq!(
-                resolved
-                    .file_name()
-                    .unwrap()
-                    .to_string_lossy()
-                    .nfd()
-                    .collect::<String>(),
-                nfd
-            );
+            assert!(same_file_name(
+                &resolved.file_name().unwrap().to_string_lossy(),
+                "Capture d\u{2019}écran.png"
+            ));
         } else {
             assert_eq!(resolved, dir.join(&nfd));
         }

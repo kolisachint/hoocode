@@ -112,7 +112,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-agent-session` | AgentSession: the agent lifecycle shared by the hoocode run modes | 7 | 5854 / 5433 | keep |
 | `code-auth` | Credential storage for the hoocode coding agent: auth.json API keys and OAuth tokens with locked refresh | 5 | 833 / 706 | keep |
 | `code-cli` | CLI argument parsing and mode dispatch for the hoocode coding agent (port of hoocode cli/args.ts + main.ts) | 1 | 5095 / 0 | keep |
-| `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1113 | the `hoocode` binary |
+| `code-main` | Main entry point for the hoocode coding agent | 0 | 6 / 1165 | the `hoocode` binary |
 | `code-media` | Image handling for the hoocode coding agent: format sniffing, resize/re-encode for model input | 3 | 1586 / 608 | keep |
 | `code-migrate` | One-time merge of the pre-1.2 coding-agent folders into ~/.hoocode | 1 | 758 / 334 | keep |
 | `code-models` | Model registry for the hoocode coding agent: built-in catalog plus models.json custom providers and overrides | 4 | 1985 / 682 | keep |
@@ -127,7 +127,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `code-settings` | Global and project settings.json for the hoocode coding agent | 8 | 1995 / 1108 | keep |
 | `code-subagents` | Subagent orchestration for the hoocode coding agent | 3 | 7833 / 6668 | keep |
 | `code-task-store` | In-process task store for the hoocode coding agent (TodoWrite plan items, subagent runs) | 5 | 588 / 0 | keep |
-| `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 10 | 1058 / 120 | keep |
+| `code-tool-api` | Shared tool plumbing for the hoocode coding agent: tool definitions, output truncation, path resolution | 10 | 1070 / 125 | keep |
 | `code-tool-bash` | The bash tool for the hoocode coding agent: shell resolution, process-tree kill, streamed and truncated output | 5 | 1389 / 508 | keep |
 | `code-tool-search` | SearchCodebase for the hoocode coding agent: ranked lexical code search (ripgrep libraries), fusion and reranking | 1 | 1960 / 1185 | keep |
 | `code-tools` | Coding tools for the hoocode coding agent | 4 | 1522 / 0 | keep |
@@ -138,9 +138,9 @@ in those tables; the generator keeps each crate's Status by name.
 
 | Crate | Does | Used by | src / tests lines | Status |
 |---|---|---|---|---|
-| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 11381 / 4930 | keep |
+| `code-tui-app` | The coding agent's interactive mode on the hoocode TUI | 1 | 11381 / 4935 | keep |
 | `code-tui-keybindings` | The coding agent's keyboard map: app keybindings, keybindings.json loading and hint text | 3 | 744 / 836 | keep |
-| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7998 / 3305 | keep |
+| `code-tui-selectors` | The coding agent's pickers and dialogs on the hoocode TUI | 1 | 7998 / 3308 | keep |
 | `code-tui-theme` | Color themes for the hoocode coding agent's interactive mode | 4 | 2406 / 2502 | keep |
 | `code-tui-widgets` | The coding agent's chat transcript widgets on the hoocode TUI | 2 | 6699 / 4228 | keep |
 
