@@ -22,7 +22,7 @@ impl AgentDir {
         let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("agent/themes")).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", dir.path().join("agent"));
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", dir.path().join("agent"));
         set_registered_themes(Vec::new());
         Self { _guard: guard, dir }
     }

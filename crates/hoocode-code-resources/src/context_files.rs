@@ -103,7 +103,7 @@ fn load_context_file_from_dir(dir: &str) -> (Option<ContextFile>, Vec<String>) {
 #[derive(Debug, Clone, Default)]
 pub struct LoadProjectContextFilesOptions {
     pub cwd: String,
-    /// The native home (`~/.cortexcode/agent`).
+    /// The native home (`~/.hoocode/agent`).
     pub agent_dir: String,
     /// The cross-vendor scope; defaults to `~/.agents`.
     pub user_agents_dir: Option<String>,

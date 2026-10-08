@@ -479,13 +479,10 @@ pub fn build_request(
 /// The provider's fixed headers: Gemini CLI's, or Antigravity's User-Agent.
 fn provider_headers(is_antigravity: bool) -> Vec<(String, String)> {
     if is_antigravity {
-        let version = [
-            "CORTEXCODE_ANTIGRAVITY_VERSION",
-            "HOOCODE_ANTIGRAVITY_VERSION",
-        ]
-        .iter()
-        .find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()))
-        .unwrap_or_else(|| DEFAULT_ANTIGRAVITY_VERSION.to_string());
+        let version = ["HOOCODE_ANTIGRAVITY_VERSION"]
+            .iter()
+            .find_map(|v| std::env::var(v).ok().filter(|s| !s.is_empty()))
+            .unwrap_or_else(|| DEFAULT_ANTIGRAVITY_VERSION.to_string());
         return vec![(
             "User-Agent".into(),
             format!("antigravity/{version} darwin/arm64"),

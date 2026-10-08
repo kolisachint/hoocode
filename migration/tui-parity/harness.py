@@ -57,8 +57,9 @@ SCENARIOS = HERE / "scenarios"
 OUT = ROOT / "target" / "tui-parity"
 NORMALIZE = HERE / "normalize.json"
 APPS = ("ts", "rust")
-# Each app's project config dir (`{config}` in `work_files` paths).
-CONFIG_DIRS = {"ts": ".hoocode", "rust": ".cortexcode"}
+# Each app's project config dir (`{config}` in `work_files` paths). Both apps use
+# `.hoocode` (naming-and-paths.md); isolation comes from each run's own temp HOME.
+CONFIG_DIRS = {"ts": ".hoocode", "rust": ".hoocode"}
 
 
 # ---------------------------------------------------------------------------
@@ -327,11 +328,11 @@ def write_models_json(home: Path, port: int, scenario: dict) -> None:
             }
         }
     }
-    for d in (".hoocode", ".cortexcode"):
-        (home / d).mkdir(parents=True, exist_ok=True)
-        (home / d / "models.json").write_text(json.dumps(doc, indent=2))
-        if "settings" in scenario:
-            (home / d / "settings.json").write_text(json.dumps(scenario["settings"], indent=2))
+    d = home / CONFIG_DIRS["ts"]
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "models.json").write_text(json.dumps(doc, indent=2))
+    if "settings" in scenario:
+        (d / "settings.json").write_text(json.dumps(scenario["settings"], indent=2))
 
 
 def start_mock(script: list, workdir: Path) -> tuple[subprocess.Popen, int, Path]:
@@ -568,9 +569,10 @@ def run_step(
         # files (text), as the scenario's `files` do at start.
         if dirs is None:
             raise StepError("write_settings/write_files need the run's dirs")
-        for d in (".hoocode", ".cortexcode"):
-            if "write_settings" in step:
-                (dirs["HOME"] / d / "settings.json").write_text(json.dumps(step["write_settings"], indent=2))
+        if "write_settings" in step:
+            (dirs["HOME"] / CONFIG_DIRS["ts"] / "settings.json").write_text(
+                json.dumps(step["write_settings"], indent=2)
+            )
         for rel, content in (step.get("write_files") or {}).items():
             p = dirs["WORK"] / rel
             p.parent.mkdir(parents=True, exist_ok=True)

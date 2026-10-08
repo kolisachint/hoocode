@@ -1251,6 +1251,7 @@ dependencies = [
  "hoocode-code-agent-session",
  "hoocode-code-auth",
  "hoocode-code-media",
+ "hoocode-code-migrate",
  "hoocode-code-models",
  "hoocode-code-modes",
  "hoocode-code-paths",
@@ -1298,6 +1299,16 @@ dependencies = [
  "fancy-regex",
  "image",
  "serde_json",
+]
+
+[[package]]
+name = "hoocode-code-migrate"
+version = "0.1.8"
+dependencies = [
+ "hoocode-code-auth",
+ "hoocode-code-paths",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

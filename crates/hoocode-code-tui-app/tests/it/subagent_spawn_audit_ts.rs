@@ -37,7 +37,7 @@ fn lock() -> MutexGuard<'static, ()> {
         let dir =
             std::env::temp_dir().join(format!("hoocode-spawn-audit-ui-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
     init_theme(Some("dark"), false);
     task_store().clear();

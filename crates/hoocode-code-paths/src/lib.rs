@@ -2,9 +2,10 @@
 //! (v0.5.89; the install-method / self-update half is ledger 12.7) and
 //! `src/utils/paths.ts`.
 //!
-//! hoocode writes under `~/.cortexcode` and reads hoocode's `~/.hoocode` as a
-//! fallback. Env overrides take `CORTEXCODE_`, `CORTEX_` or hoocode's
-//! `HOOCODE_` prefix, in that order.
+//! hoocode keeps its data in `~/.hoocode` (project: `<repo>/.hoocode/`), shared
+//! with hoocode-ts. Env overrides take the `HOOCODE_` prefix only.
+//! The one-time merge of the pre-1.2 folders lives in
+//! `hoocode-code-migrate`.
 
 pub mod git;
 pub mod git_branch;
@@ -16,14 +17,12 @@ pub const APP_NAME: &str = "hoocode";
 /// `APP_TITLE`.
 pub const APP_TITLE: &str = "HooCode";
 /// `CONFIG_DIR_NAME`: the global (`~/…`) and project config directory.
-pub const CONFIG_DIR_NAME: &str = ".cortexcode";
-/// hoocode's config directory, read as a fallback.
-pub const LEGACY_CONFIG_DIR_NAME: &str = ".hoocode";
+pub const CONFIG_DIR_NAME: &str = ".hoocode";
 /// `VERSION`.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Env override prefixes, most specific first.
-pub const ENV_PREFIXES: [&str; 3] = ["CORTEXCODE_", "CORTEX_", "HOOCODE_"];
+/// Env override prefixes. `HOOCODE_` is the only one (naming-and-paths.md §2).
+pub const ENV_PREFIXES: [&str; 1] = ["HOOCODE_"];
 
 /// `ENV_AGENT_DIR` (suffix).
 pub const ENV_AGENT_DIR: &str = "CODING_AGENT_DIR";
@@ -64,32 +63,11 @@ pub fn share_viewer_url(gist_id: &str) -> Option<String> {
     (!base.is_empty()).then(|| format!("{base}#{gist_id}"))
 }
 
-/// `getAgentDir`: the env override, else `~/.cortexcode`.
+/// `getAgentDir`: the env override, else `~/.hoocode`.
 pub fn agent_dir() -> PathBuf {
     match env_override(ENV_AGENT_DIR) {
         Some(dir) => expand_tilde_path(&dir),
         None => home_dir().join(CONFIG_DIR_NAME),
-    }
-}
-
-/// hoocode's agent directory (`~/.hoocode`).
-pub fn legacy_agent_dir() -> PathBuf {
-    home_dir().join(LEGACY_CONFIG_DIR_NAME)
-}
-
-/// A file under the agent dir for reading: with an env override, that
-/// directory; otherwise `~/.cortexcode/<name>`, or `~/.hoocode/<name>` when
-/// only the hoocode one exists.
-pub fn resolve_agent_file(name: &str) -> PathBuf {
-    let primary = agent_dir().join(name);
-    if env_override(ENV_AGENT_DIR).is_some() {
-        return primary;
-    }
-    let legacy = legacy_agent_dir().join(name);
-    if !primary.exists() && legacy.exists() {
-        legacy
-    } else {
-        primary
     }
 }
 
@@ -165,8 +143,7 @@ pub fn sessions_dir() -> PathBuf {
 
 /// `getDebugLogPath`.
 pub fn debug_log_path() -> PathBuf {
-    // Held at the old name until milestone 1.2 (naming-and-paths.md §2).
-    agent_dir().join("cortex-debug.log")
+    agent_dir().join("hoocode-debug.log")
 }
 
 // ---------------------------------------------------------------------------

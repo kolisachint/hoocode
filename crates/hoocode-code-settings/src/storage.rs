@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use hoocode_code_paths::{CONFIG_DIR_NAME, LEGACY_CONFIG_DIR_NAME};
+use hoocode_code_paths::CONFIG_DIR_NAME;
 
 /// `SettingsScope`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -79,12 +79,7 @@ pub trait SettingsStorage: Send + Sync {
 }
 
 /// `FileSettingsStorage`: `<agentDir>/settings.json` and
-/// `<cwd>/.cortexcode/settings.json`.
-///
-/// When a hoocode file does not exist yet, its hoocode twin (`.hoocode`
-/// beside the `.cortexcode` directory) is read in its place; the first write
-/// then creates the hoocode file with that content plus the change. The
-/// hoocode file is never written or locked.
+/// `<cwd>/.hoocode/settings.json`.
 ///
 /// Locking uses an `fs4` advisory lock on a `settings.json.lock` file beside
 /// the settings file (hoocode's proper-lockfile uses a `.lock` directory), with
@@ -107,19 +102,6 @@ impl FileSettingsStorage {
             SettingsScope::Global => &self.global_path,
             SettingsScope::Project => &self.project_path,
         }
-    }
-
-    /// The hoocode twin of a `.cortexcode/settings.json` path.
-    fn legacy_path(path: &Path) -> Option<PathBuf> {
-        let dir = path.parent()?;
-        if dir.file_name()? != CONFIG_DIR_NAME {
-            return None;
-        }
-        Some(
-            dir.parent()?
-                .join(LEGACY_CONFIG_DIR_NAME)
-                .join(path.file_name()?),
-        )
     }
 
     fn lock(path: &Path) -> Result<LockGuard, Error> {
@@ -175,10 +157,7 @@ impl SettingsStorage for FileSettingsStorage {
             guard = Some(Self::lock(path)?);
             Some(std::fs::read_to_string(path)?)
         } else {
-            match Self::legacy_path(path).filter(|p| p.exists()) {
-                Some(legacy) => Some(std::fs::read_to_string(legacy)?),
-                None => None,
-            }
+            None
         };
         if let Some(next) = f(current.as_deref())? {
             if let Some(dir) = path.parent() {

@@ -125,7 +125,7 @@ const ENV_KEYS: [&str; 10] = [
     "WEZTERM_PANE",
     "ITERM_SESSION_ID",
     "WT_SESSION",
-    "CORTEX_IMAGE_PROTOCOL",
+    "HOOCODE_IMAGE_PROTOCOL",
 ];
 
 fn with_env(overrides: &[(&str, &str)], f: impl FnOnce()) {
@@ -162,11 +162,11 @@ fn sixel_suite() {
             assert_eq!(detect_capabilities().images, None);
         },
     );
-    with_env(&[("CORTEX_IMAGE_PROTOCOL", "sixel")], || {
+    with_env(&[("HOOCODE_IMAGE_PROTOCOL", "sixel")], || {
         assert_eq!(detect_capabilities().images, Some(ImageProtocol::Sixel));
     });
     with_env(
-        &[("WT_SESSION", "x"), ("CORTEX_IMAGE_PROTOCOL", "none")],
+        &[("WT_SESSION", "x"), ("HOOCODE_IMAGE_PROTOCOL", "none")],
         || {
             assert_eq!(detect_capabilities().images, None);
         },
@@ -174,7 +174,7 @@ fn sixel_suite() {
     with_env(
         &[
             ("TERM_PROGRAM", "ghostty"),
-            ("CORTEX_IMAGE_PROTOCOL", "bogus"),
+            ("HOOCODE_IMAGE_PROTOCOL", "bogus"),
         ],
         || {
             assert_eq!(detect_capabilities().images, Some(ImageProtocol::Kitty));

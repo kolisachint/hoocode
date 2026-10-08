@@ -30,7 +30,7 @@ use std::time::{Duration, Instant};
 use regex::Regex;
 use serde_json::{Map, Value};
 
-const APP_CONFIG_DIR: &str = ".cortexcode";
+const APP_CONFIG_DIR: &str = ".hoocode";
 const CHUNK_SIZE: usize = 8;
 const CHUNK_DELAY: Duration = Duration::from_millis(10);
 const DEFAULT_REQUEST_FIELDS: [&str; 4] = ["messages", "tools", "tool_choice", "model"];
@@ -794,20 +794,18 @@ fn run_hoocode(sc: &Value) -> RawRun {
     let doc = serde_json::json!({"providers": {"mock": {
         "baseUrl": format!("http://127.0.0.1:{}/v1", mock.port),
         "api": "openai-completions", "apiKey": "mock-key", "models": models}}});
-    for dir in [".hoocode", APP_CONFIG_DIR] {
-        fs::create_dir_all(home.join(dir)).expect("config dir");
+    fs::create_dir_all(home.join(APP_CONFIG_DIR)).expect("config dir");
+    fs::write(
+        home.join(APP_CONFIG_DIR).join("models.json"),
+        serde_json::to_string_pretty(&doc).expect("json"),
+    )
+    .expect("models");
+    if let Some(settings) = sc.get("settings") {
         fs::write(
-            home.join(dir).join("models.json"),
-            serde_json::to_string_pretty(&doc).expect("json"),
+            home.join(APP_CONFIG_DIR).join("settings.json"),
+            serde_json::to_string_pretty(settings).expect("json"),
         )
-        .expect("models");
-        if let Some(settings) = sc.get("settings") {
-            fs::write(
-                home.join(dir).join("settings.json"),
-                serde_json::to_string_pretty(settings).expect("json"),
-            )
-            .expect("settings");
-        }
+        .expect("settings");
     }
     let (home_s, work_s, tmp_s) = (
         home.display().to_string(),

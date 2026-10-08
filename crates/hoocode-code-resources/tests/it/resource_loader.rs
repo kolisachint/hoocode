@@ -1,6 +1,6 @@
 //! Port of hoocode `packages/coding-agent/test/resource-loader.test.ts` (v0.5.89),
 //! minus the cases for extensions (ledger 12.3) and themes (11.1). `.hoocode`
-//! paths are hoocode's `.cortexcode` (CONFIG_DIR_NAME); home-scoped discovery
+//! paths are hoocode's `.hoocode` (CONFIG_DIR_NAME); home-scoped discovery
 //! uses an isolated home.
 
 use hoocode_code_resources::context_files::ContextFileSize;

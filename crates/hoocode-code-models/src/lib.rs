@@ -682,25 +682,15 @@ fn merge_custom_models(mut built_in: Vec<Model>, custom: Vec<Model>) -> Vec<Mode
     built_in
 }
 
-/// Default `models.json` location: `$CORTEXCODE_CODING_AGENT_DIR` / `$HOOCODE_CODING_AGENT_DIR`,
-/// else `~/.cortexcode/models.json`, falling back to `~/.hoocode/models.json` when only
-/// that exists (plan §10.6). Moves to `code-paths` in ledger 10.1.
+/// Default `models.json` location: `$HOOCODE_CODING_AGENT_DIR/models.json`,
+/// else `~/.hoocode/models.json`. Moves to `code-paths` in ledger 10.1.
 pub fn default_models_json_path() -> Option<PathBuf> {
-    for var in ["CORTEXCODE_CODING_AGENT_DIR", "HOOCODE_CODING_AGENT_DIR"] {
-        if let Ok(dir) = std::env::var(var) {
-            if !dir.is_empty() {
-                return Some(PathBuf::from(dir).join("models.json"));
-            }
+    if let Ok(dir) = std::env::var("HOOCODE_CODING_AGENT_DIR") {
+        if !dir.is_empty() {
+            return Some(PathBuf::from(dir).join("models.json"));
         }
     }
-    let home = dirs::home_dir()?;
-    let primary = home.join(".cortexcode").join("models.json");
-    let legacy = home.join(".hoocode").join("models.json");
-    Some(if !primary.exists() && legacy.exists() {
-        legacy
-    } else {
-        primary
-    })
+    Some(dirs::home_dir()?.join(".hoocode").join("models.json"))
 }
 
 #[cfg(test)]

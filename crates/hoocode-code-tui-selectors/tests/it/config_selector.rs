@@ -33,7 +33,7 @@ fn project_auto(base: &str) -> PathMetadata {
 
 #[test]
 fn groups_by_origin_scope_and_source_packages_first_then_user() {
-    let project = project_auto("/w/.cortexcode");
+    let project = project_auto("/w/.hoocode");
     let user = PathMetadata::new("local", SourceScope::User, SourceOrigin::TopLevel, None);
     let package = PathMetadata::new(
         "npm:tools",
@@ -43,8 +43,8 @@ fn groups_by_origin_scope_and_source_packages_first_then_user() {
     );
     let resolved = ResolvedPaths {
         prompts: vec![
-            resource("/w/.cortexcode/prompts/b.md", true, &project),
-            resource("/w/.cortexcode/prompts/A.md", true, &project),
+            resource("/w/.hoocode/prompts/b.md", true, &project),
+            resource("/w/.hoocode/prompts/A.md", true, &project),
         ],
         skills: vec![resource("/pkg/skills/lint/SKILL.md", true, &package)],
         extensions: vec![
@@ -60,7 +60,7 @@ fn groups_by_origin_scope_and_source_packages_first_then_user() {
         [
             "npm:tools (user)",
             "User settings",
-            "Project (/w/.cortexcode/)"
+            "Project (/w/.hoocode/)"
         ]
     );
     // A skill shows its folder; an extension outside `extensions/` its parent.
@@ -150,7 +150,7 @@ fn escape_closes_and_typing_filters() {
     let _g = lock();
     let dir = tempfile::tempdir().unwrap();
     let cwd = dir.path().to_string_lossy().into_owned();
-    let base = format!("{cwd}/.cortexcode");
+    let base = format!("{cwd}/.hoocode");
     let meta = project_auto(&base);
     let resolved = ResolvedPaths {
         prompts: vec![

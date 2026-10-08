@@ -84,11 +84,11 @@ fn payload(model: &Model, context: &Context, options: SimpleStreamOptions) -> Va
 
 fn with_env<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
     let _lock = env_lock();
-    let saved: Vec<_> = ["CORTEXCODE_CACHE_RETENTION", "HOOCODE_CACHE_RETENTION"]
+    let saved: Vec<_> = ["HOOCODE_CACHE_RETENTION"]
         .iter()
         .map(|k| (*k, std::env::var(k).ok()))
         .collect();
-    std::env::remove_var("CORTEXCODE_CACHE_RETENTION");
+    std::env::remove_var("HOOCODE_CACHE_RETENTION");
     match value {
         Some(v) => std::env::set_var("HOOCODE_CACHE_RETENTION", v),
         None => std::env::remove_var("HOOCODE_CACHE_RETENTION"),

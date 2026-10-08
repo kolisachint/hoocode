@@ -1,7 +1,7 @@
 //! Port of hoocode `test/permission-gate-mutation-path.test.ts` (v0.5.89), plus
 //! the hard-enforcement rules of `permission-gate.ts`.
 //!
-//! The project config is `.cortexcode/hoo-config.json`; patterns keep hoocode's
+//! The project config is `.hoocode/hoo-config.json`; patterns keep hoocode's
 //! `.hoocode/...` text since they are plain strings here.
 
 use hoocode_code_permissions::{describe_tool, evaluate, Verdict};

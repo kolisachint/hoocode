@@ -1,7 +1,7 @@
 # hoocode-code-settings
 
 Port of hoocode `core/settings-{types,defaults,storage,manager}.ts` (v0.5.89): the global
-(`~/.cortexcode/settings.json`) and project (`.cortexcode/settings.json`) settings, their
+(`~/.hoocode/settings.json`) and project (`.hoocode/settings.json`) settings, their
 merge, and read-modify-write persistence that only overwrites the fields changed in this
 session.
 

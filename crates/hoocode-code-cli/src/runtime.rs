@@ -306,7 +306,7 @@ fn subagent_tools(
             &std::collections::HashMap::<String, String>::new(),
         );
         std::env::set_var(
-            format!("CORTEXCODE_{}", depth::SUBAGENT_MAX_DEPTH_ENV),
+            format!("HOOCODE_{}", depth::SUBAGENT_MAX_DEPTH_ENV),
             cap.to_string(),
         );
     }
@@ -316,7 +316,7 @@ fn subagent_tools(
             &std::collections::HashMap::<String, String>::new(),
         );
         std::env::set_var(
-            format!("CORTEXCODE_{}", depth::NESTED_CONCURRENCY_ENV),
+            format!("HOOCODE_{}", depth::NESTED_CONCURRENCY_ENV),
             n.to_string(),
         );
     }
@@ -327,7 +327,7 @@ fn subagent_tools(
     }
     if let Some(allow) = args.delegate_allow.as_ref().filter(|a| !a.is_empty()) {
         std::env::set_var(
-            format!("CORTEXCODE_{}", depth::DELEGATE_ALLOW_ENV),
+            format!("HOOCODE_{}", depth::DELEGATE_ALLOW_ENV),
             allow.join(","),
         );
     }
@@ -342,7 +342,7 @@ fn subagent_tools(
     {
         std::env::set_var(
             format!(
-                "CORTEXCODE_{}",
+                "HOOCODE_{}",
                 hoocode_code_subagents::warm::WARM_SUBAGENTS_ENV
             ),
             "1",

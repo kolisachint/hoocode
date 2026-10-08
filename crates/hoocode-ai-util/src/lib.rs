@@ -336,8 +336,7 @@ fn is_non_overflow(msg: &str) -> bool {
 // ---------------------------------------------------------------------------
 
 /// `resolveCacheRetention`: the explicit preference, else the
-/// `CORTEXCODE_CACHE_RETENTION` / `HOOCODE_CACHE_RETENTION` environment
-/// variable (`short`, `long` or `none`), else `long`.
+/// `HOOCODE_CACHE_RETENTION` environment variable (`short`, `long` or `none`), else `long`.
 pub fn resolve_cache_retention(
     cache_retention: Option<hoocode_ai_types::CacheRetention>,
 ) -> hoocode_ai_types::CacheRetention {
@@ -352,15 +351,11 @@ fn resolve_cache_retention_with(
     if let Some(retention) = cache_retention {
         return retention;
     }
-    for var in ["CORTEXCODE_CACHE_RETENTION", "HOOCODE_CACHE_RETENTION"] {
-        match env(var).as_deref() {
-            Some("short") => return CacheRetention::Short,
-            Some("long") => return CacheRetention::Long,
-            Some("none") => return CacheRetention::None,
-            _ => {}
-        }
+    match env("HOOCODE_CACHE_RETENTION").as_deref() {
+        Some("short") => CacheRetention::Short,
+        Some("none") => CacheRetention::None,
+        _ => CacheRetention::Long,
     }
-    CacheRetention::Long
 }
 
 // ---------------------------------------------------------------------------
@@ -698,18 +693,9 @@ mod tests {
             resolve_cache_retention_with(None, hoocode_short),
             CacheRetention::Short
         );
-        let both = |v: &str| {
-            Some(
-                if v == "CORTEXCODE_CACHE_RETENTION" {
-                    "none"
-                } else {
-                    "short"
-                }
-                .to_string(),
-            )
-        };
+        let none_env = |v: &str| (v == "HOOCODE_CACHE_RETENTION").then(|| "none".into());
         assert_eq!(
-            resolve_cache_retention_with(None, both),
+            resolve_cache_retention_with(None, none_env),
             CacheRetention::None
         );
         // Unknown values are ignored.

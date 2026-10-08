@@ -12,7 +12,7 @@ use hoocode_code_subagents::lifeguard::{base_timeout_ms, LifeguardEvent, Subagen
 /// hoocode's `TIMEOUTS_MS` is keyed `explore`/`edit`/`test`/`review`/`doc`, and
 /// neither tree ships `edit`, `test`, `review` or `doc` — so in both, every
 /// agent silently got the 5-minute default. Four of ten recorded runs in
-/// `hoobot/.cortexcode/dispatch` died `timeout` at exactly 300s, three of them
+/// `hoobot/.hoocode/dispatch` died `timeout` at exactly 300s, three of them
 /// `code-review` that had been working for 220-297s.
 #[test]
 fn every_shipped_agent_has_a_hard_timeout_worth_the_name() {

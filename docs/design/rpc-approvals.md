@@ -73,7 +73,7 @@ approval timeout by answering `cancelled`.
    `--mode rpc` children through `RpcClient`, which doesn't answer UI
    requests. Those children would block. Keep today's behaviour for them by
    having the pool spawn workers headless (an internal env var read by
-   `run_rpc_mode`, like the existing `CORTEXCODE_*` subagent vars).
+   `run_rpc_mode`, like the existing `HOOCODE_*` subagent vars).
    Cold subagents use `--mode json` and are unaffected.
 7. **"Always"** keeps writing the global config. hoobot never offers it.
 

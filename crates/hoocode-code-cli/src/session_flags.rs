@@ -1,6 +1,6 @@
 //! main.ts `resolveSessionPath` / `validateForkFlags` / `createSessionManager`:
 //! `--no-session`, `--fork`, `--session`, `--continue` and the session dir
-//! (`--session-dir`, else `CORTEXCODE_CODING_AGENT_SESSION_DIR`, else the
+//! (`--session-dir`, else `HOOCODE_CODING_AGENT_SESSION_DIR`, else the
 //! `sessionDir` setting), and `--resume` (the session picker).
 
 use crate::args::Args;

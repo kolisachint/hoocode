@@ -469,12 +469,12 @@ fn api_key_with_bang_prefix_fails_on_command_failure_or_empty_output() {
 #[test]
 fn api_key_as_environment_variable_name_resolves_to_env_value() {
     let e = env();
-    std::env::set_var("CORTEX_TEST_MODEL_REGISTRY_KEY", "value-from-env");
+    std::env::set_var("HOOCODE_TEST_MODEL_REGISTRY_KEY", "value-from-env");
     assert_eq!(
-        key_of(&key_registry(&e, "CORTEX_TEST_MODEL_REGISTRY_KEY")).as_deref(),
+        key_of(&key_registry(&e, "HOOCODE_TEST_MODEL_REGISTRY_KEY")).as_deref(),
         Some("value-from-env")
     );
-    std::env::remove_var("CORTEX_TEST_MODEL_REGISTRY_KEY");
+    std::env::remove_var("HOOCODE_TEST_MODEL_REGISTRY_KEY");
 }
 
 #[test]

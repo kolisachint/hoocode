@@ -14,7 +14,7 @@ fn uses_the_agent_dir_for_the_default_persisted_session_path() {
     let root = std::env::temp_dir().join(format!("sdk-session-test-{}", std::process::id()));
     let (cwd, agent_dir) = (root.join("project"), root.join("agent"));
     std::fs::create_dir_all(&cwd).unwrap();
-    std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &agent_dir);
+    std::env::set_var("HOOCODE_CODING_AGENT_DIR", &agent_dir);
 
     let cwd_s = cwd.to_string_lossy().into_owned();
     let mut manager = SessionManager::create(cwd_s.clone(), None);

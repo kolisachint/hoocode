@@ -19,7 +19,7 @@ fn globals() -> MutexGuard<'static, ()> {
     GLOBALS.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-// HOOCODE_IMAGE_PROTOCOL is CORTEX_IMAGE_PROTOCOL here (branding).
+// HOOCODE_IMAGE_PROTOCOL is HOOCODE_IMAGE_PROTOCOL here (branding).
 const ENV_KEYS: &[&str] = &[
     "TERM",
     "TERM_PROGRAM",
@@ -31,7 +31,7 @@ const ENV_KEYS: &[&str] = &[
     "ITERM_SESSION_ID",
     "CMUX_WORKSPACE_ID",
     "WT_SESSION",
-    "CORTEX_IMAGE_PROTOCOL",
+    "HOOCODE_IMAGE_PROTOCOL",
 ];
 
 fn with_env(overrides: &[(&str, &str)], f: impl FnOnce()) {

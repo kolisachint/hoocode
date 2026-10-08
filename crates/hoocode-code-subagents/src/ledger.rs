@@ -73,7 +73,7 @@ pub struct DispatchAttempt {
     pub error: Option<String>,
 }
 
-/// `<cwd>/.cortexcode/dispatch/ledger.jsonl`.
+/// `<cwd>/.hoocode/dispatch/ledger.jsonl`.
 pub fn ledger_path(cwd: &Path) -> PathBuf {
     hoocode_code_paths::dispatch_root(cwd).join(LEDGER_FILE_NAME)
 }

@@ -40,7 +40,7 @@ fn setup() -> tempfile::TempDir {
     ONCE.call_once(|| {
         let dir = std::env::temp_dir().join(format!("hoocode-spawn-audit-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir);
+        std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir);
     });
     tempfile::tempdir().unwrap()
 }

@@ -29,8 +29,8 @@ stop the same bug classes coming back.
      app-server ([rpc-approvals.md](rpc-approvals.md) is kept for the record).
 2. **Paths** (changed 2026-10-08): [naming-and-paths.md](naming-and-paths.md) §2–4.
    Data moves to `~/.hoocode`, **shared with hoocode-ts** (drop-in replacement);
-   `HOOCODE_` is the only env prefix; a one-time merge copies `~/.cortexcode` and
-   `<repo>/.cortexcode/` in (hoocode wins, backups first). The crate and binary
+   `HOOCODE_` is the only env prefix; a one-time merge copies `~/.hoocode` and
+   `<repo>/.hoocode/` in (hoocode wins, backups first). The crate and binary
    rename is §1 of that card and happens in step 0, before this card.
 3. **macOS test failures** (all four fail on a clean checkout):
    - `code-main` replay: temp paths resolve under `/private` on macOS, so

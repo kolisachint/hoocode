@@ -703,12 +703,12 @@ static AGENT_DIR: Mutex<()> = Mutex::new(());
 fn with_agent_dir<T>(f: impl FnOnce(&Path) -> T) -> T {
     let _guard = AGENT_DIR.lock().unwrap_or_else(|e| e.into_inner());
     let dir = TempDir::new("search-agent-dir-");
-    let saved = std::env::var_os("CORTEXCODE_CODING_AGENT_DIR");
-    std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", &dir.0);
+    let saved = std::env::var_os("HOOCODE_CODING_AGENT_DIR");
+    std::env::set_var("HOOCODE_CODING_AGENT_DIR", &dir.0);
     let out = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(&dir.0)));
     match saved {
-        Some(v) => std::env::set_var("CORTEXCODE_CODING_AGENT_DIR", v),
-        None => std::env::remove_var("CORTEXCODE_CODING_AGENT_DIR"),
+        Some(v) => std::env::set_var("HOOCODE_CODING_AGENT_DIR", v),
+        None => std::env::remove_var("HOOCODE_CODING_AGENT_DIR"),
     }
     out.unwrap_or_else(|p| std::panic::resume_unwind(p))
 }

@@ -7,8 +7,8 @@ use super::*;
 /// The Gemini CLI flow.
 pub const GEMINI_CLI: GoogleFlow = GoogleFlow {
     client_env: GoogleOAuthClientEnv {
-        id_var: "CORTEXCODE_GEMINI_CLI_CLIENT_ID",
-        secret_var: "CORTEXCODE_GEMINI_CLI_CLIENT_SECRET",
+        id_var: "HOOCODE_GEMINI_CLI_CLIENT_ID",
+        secret_var: "HOOCODE_GEMINI_CLI_CLIENT_SECRET",
         product_name: "Google Cloud Code Assist (Gemini CLI)",
     },
     callback_port: 8085,

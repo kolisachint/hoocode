@@ -492,13 +492,13 @@ impl WarmSubagentPool {
     /// its RpcClient spreads the parent environment back over it.)
     fn child_env(&self, agent_type: &str) -> Vec<(String, String)> {
         let mut env = vec![(
-            format!("CORTEXCODE_{SUBAGENT_DEPTH_ENV}"),
+            format!("HOOCODE_{SUBAGENT_DEPTH_ENV}"),
             (current_subagent_depth(&ProcessEnv) + 1).to_string(),
         )];
         let registry = self.registry();
         let tools = registry.get(agent_type).and_then(|d| d.tools.as_deref());
         if !tool_allowlist_needs_mcp(tools) {
-            env.push((format!("CORTEXCODE_{SUBAGENT_SKIP_MCP_ENV}"), "1".into()));
+            env.push((format!("HOOCODE_{SUBAGENT_SKIP_MCP_ENV}"), "1".into()));
         }
         env
     }

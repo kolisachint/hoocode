@@ -35,8 +35,7 @@ const EXPIRY_MARGIN_MS: i64 = 5 * 60 * 1000;
 /// `GoogleOAuthClientEnv`: where a flow's client comes from.
 #[derive(Debug, Clone, Copy)]
 pub struct GoogleOAuthClientEnv {
-    /// The client id variable (`CORTEXCODE_…`; the `HOOCODE_…` twin is
-    /// honored too).
+    /// The client id variable (`HOOCODE_…`).
     pub id_var: &'static str,
     pub secret_var: &'static str,
     /// The provider name as `/login` shows it.
@@ -50,15 +49,12 @@ pub struct GoogleOAuthClient {
     pub client_secret: String,
 }
 
-/// The value of `var` or its `HOOCODE_` twin, trimmed; `None` when blank.
+/// The trimmed value of `var`; `None` when unset or blank.
 fn env_value(var: &str) -> Option<String> {
-    let twin = var.replacen("CORTEXCODE_", "HOOCODE_", 1);
-    [var, twin.as_str()].iter().find_map(|v| {
-        std::env::var(v)
-            .ok()
-            .map(|s| s.trim().to_string())
-            .filter(|s| !s.is_empty())
-    })
+    std::env::var(var)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
 }
 
 /// `readGoogleOAuthClient`: both halves from the environment, or an error
@@ -92,16 +88,13 @@ fn read_google_oauth_client_with(
     }
 }
 
-/// `CALLBACK_HOST`: `CORTEXCODE_OAUTH_CALLBACK_HOST` / `HOOCODE_…`, default
+/// `CALLBACK_HOST`: `HOOCODE_OAUTH_CALLBACK_HOST` / `HOOCODE_…`, default
 /// `127.0.0.1`.
 fn callback_host() -> String {
-    [
-        "CORTEXCODE_OAUTH_CALLBACK_HOST",
-        "HOOCODE_OAUTH_CALLBACK_HOST",
-    ]
-    .iter()
-    .find_map(|v| std::env::var(v).ok().filter(|h| !h.is_empty()))
-    .unwrap_or_else(|| "127.0.0.1".to_string())
+    ["HOOCODE_OAUTH_CALLBACK_HOST"]
+        .iter()
+        .find_map(|v| std::env::var(v).ok().filter(|h| !h.is_empty()))
+        .unwrap_or_else(|| "127.0.0.1".to_string())
 }
 
 /// `GOOGLE_CLOUD_PROJECT || GOOGLE_CLOUD_PROJECT_ID`.
