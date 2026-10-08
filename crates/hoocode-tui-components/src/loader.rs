@@ -11,7 +11,7 @@
 
 use hoocode_tui_render::Component;
 use hoocode_tui_util::{truncate_to_width, visible_width};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::color::ColorFn;
 use crate::text::Text;
@@ -51,6 +51,10 @@ pub struct Loader {
     current_frame: usize,
     render_indicator_verbatim: bool,
     running: bool,
+    /// When the next frame is due while running. Set by `start`, advanced by
+    /// one interval per flip, so the pulse follows wall-clock time (as
+    /// `setInterval` does in TypeScript) and not how often the owner loops.
+    flip_at: Option<Instant>,
     /// Current single-line content.
     line: String,
 }
@@ -72,6 +76,7 @@ impl Loader {
             current_frame: 0,
             render_indicator_verbatim: false,
             running: false,
+            flip_at: None,
             line: String::new(),
         };
         loader.set_indicator(indicator);
@@ -88,11 +93,22 @@ impl Loader {
 
     pub fn start(&mut self) {
         self.running = true;
+        self.flip_at = Some(Instant::now() + self.interval());
         self.update_display();
     }
 
     pub fn stop(&mut self) {
         self.running = false;
+        self.flip_at = None;
+    }
+
+    /// The instant the next frame falls due, or `None` when the loader is not
+    /// animating. The owner's wait must not run past this, or the frame is late.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        if !self.running || self.frames.len() <= 1 {
+            return None;
+        }
+        self.flip_at
     }
 
     pub fn set_message(&mut self, message: impl Into<String>) {
@@ -116,14 +132,31 @@ impl Loader {
         self.start();
     }
 
-    /// Advance to the next animation frame. Returns `true` if the frame
-    /// changed (the caller should trigger a re-render). Call approximately
-    /// every [`Loader::interval`] while [`Loader::is_running`].
+    /// Advance to the next animation frame if one is due. Returns `true` if
+    /// the frame changed (the caller should trigger a re-render). Safe to call
+    /// on every pass of the owner's loop: it flips once per [`Loader::interval`]
+    /// of wall-clock time, however often it is called.
     pub fn tick(&mut self) -> bool {
-        if !self.running || self.frames.len() <= 1 {
+        self.tick_at(Instant::now())
+    }
+
+    /// [`Loader::tick`] with the clock passed in, for deterministic tests.
+    pub fn tick_at(&mut self, now: Instant) -> bool {
+        let Some(due) = self.next_deadline() else {
+            return false;
+        };
+        if now < due {
             return false;
         }
         self.current_frame = (self.current_frame + 1) % self.frames.len();
+        // Keep the grid anchored to `start`; if the owner fell far behind, re-anchor
+        // rather than flipping a burst of frames to catch up.
+        let next = due + self.interval();
+        self.flip_at = Some(if next > now {
+            next
+        } else {
+            now + self.interval()
+        });
         self.update_display();
         true
     }
@@ -196,7 +229,8 @@ mod tests {
     fn tick_cycles_through_frames() {
         let mut loader = Loader::new(identity(), identity(), "msg", None);
         let first = loader.render(40)[1].clone();
-        assert!(loader.tick());
+        assert!(!loader.tick(), "no frame is due right after start");
+        assert!(tick_due(&mut loader));
         let second = loader.render(40)[1].clone();
         assert_ne!(first, second);
     }
@@ -205,7 +239,7 @@ mod tests {
     fn stop_prevents_tick_from_changing_frame() {
         let mut loader = Loader::new(identity(), identity(), "msg", None);
         loader.stop();
-        assert!(!loader.tick());
+        assert!(!tick_due(&mut loader));
     }
 
     #[test]
@@ -248,10 +282,32 @@ mod tests {
                 interval_ms: None,
             }),
         );
-        assert!(!loader.tick());
+        assert!(!tick_due(&mut loader));
     }
 
     // loader.test.ts (the pin): cadence and layout.
+
+    /// Tick at the moment the next frame falls due.
+    fn tick_due(loader: &mut Loader) -> bool {
+        let due = loader.next_deadline().unwrap_or_else(Instant::now);
+        loader.tick_at(due)
+    }
+
+    #[test]
+    fn frames_follow_the_clock_not_the_number_of_ticks() {
+        let mut loader = Loader::new(identity(), identity(), "w", None);
+        let start = loader.next_deadline().unwrap() - loader.interval();
+        // Polling far more often than the interval flips once per interval.
+        let mut flips = 0;
+        for ms in (0..=2000).step_by(10) {
+            if loader.tick_at(start + Duration::from_millis(ms)) {
+                flips += 1;
+            }
+        }
+        assert_eq!(flips, 3, "640ms pulse: flips at 640, 1280, 1920ms");
+        // Three flips from the first frame leave the loader on the second one.
+        assert!(loader.render(20)[1].starts_with(" \u{25cf} w"));
+    }
 
     fn with(frames: Option<Vec<&str>>, interval_ms: Option<u64>) -> Loader {
         Loader::new(
@@ -276,14 +332,14 @@ mod tests {
         assert_eq!(with(None, Some(250)).interval(), Duration::from_millis(250));
         assert_eq!(with(None, Some(16)).interval(), Duration::from_millis(80));
         let mut single = with(Some(vec!["*"]), None);
-        assert!(!single.tick());
+        assert!(!tick_due(&mut single));
     }
 
     #[test]
     fn default_indicator_pulses_between_two_circles() {
         let mut loader = Loader::new(identity(), identity(), "w", None);
         assert!(loader.render(20)[1].starts_with(" \u{25cb} w"));
-        loader.tick();
+        assert!(tick_due(&mut loader));
         assert!(loader.render(20)[1].starts_with(" \u{25cf} w"));
     }
 

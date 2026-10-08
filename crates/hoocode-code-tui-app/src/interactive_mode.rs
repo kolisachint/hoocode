@@ -50,7 +50,7 @@ use hoocode_code_session::identity::{
 use hoocode_code_session::SessionManager;
 use hoocode_code_settings::platform_targets::{get_workspace_platforms, set_platforms};
 use hoocode_code_settings::{ChromeDensity, DoubleEscapeAction, EditorBorder, ToolOutputView};
-use hoocode_code_subagents::agent_log::set_terminal_owned_by_tui;
+use hoocode_code_subagents::agent_log::{agent_log, set_terminal_owned_by_tui};
 use hoocode_code_subagents::instance::get_subagent_pool;
 use hoocode_code_subagents::ledger;
 use hoocode_code_subagents::pool::DispatchOptions;
@@ -239,6 +239,9 @@ const DEFAULT_HIDDEN_THINKING_LABEL: &str = "Thinking...";
 const LIVE_TOOL_WINDOW: usize = 50;
 /// Minimum gap between re-renders of the streaming message.
 const STREAM_RENDER_THROTTLE: Duration = Duration::from_millis(100);
+/// Most keys taken from the input channel in one loop pass. The rest wait for the
+/// next pass, so AppEvents and ticks run between batches (concurrency.md, Phase 2).
+const MAX_INPUT_PER_ITERATION: usize = 64;
 
 /// The open extension selector and the channel its answer goes back on.
 type OpenSelector = (
@@ -905,6 +908,10 @@ struct Mode {
     /// Tips on the notification band (`tips.rs`).
     tips: TipsController,
     footer: Rc<RefCell<FooterComponent>>,
+    /// The warning on the footer now (shedding or UI stall), if any.
+    runtime_notice: Option<String>,
+    /// Shedding as the last loop turn drew it; a change clears the render caches.
+    shedding_shown: bool,
     footer_data: FooterDataProvider,
     chrome: ChromeLayoutController,
     expanded: bool,
@@ -1283,6 +1290,8 @@ impl Mode {
             notifications,
             tips,
             footer,
+            runtime_notice: None,
+            shedding_shown: false,
             footer_data,
             chrome,
             expanded,
@@ -1390,7 +1399,7 @@ impl Mode {
 
         let session = self.session.clone();
         let tx = self.tx.clone();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
             let chunks = tx.clone();
             let mut on_chunk = move |chunk: &str| {
                 let _ = chunks.send(AppEvent::BashChunk(chunk.to_string()));
@@ -3581,6 +3590,7 @@ impl Mode {
             BuiltinCommand::Changelog => self.handle_changelog_command(),
             BuiltinCommand::Debug => self.handle_debug_command(),
             BuiltinCommand::Perf => self.handle_perf_command(),
+            BuiltinCommand::Mcp => self.handle_mcp_command(text),
             BuiltinCommand::Color => {
                 // An argument sets the slot outright; bare `/color` opens the
                 // swatches.
@@ -3661,7 +3671,7 @@ impl Mode {
             "last agent message".to_string()
         };
         let tx = self.tx.clone();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
             let host = SystemClipboardHost {
                 native: native_clipboard_writer(),
             };
@@ -3696,7 +3706,7 @@ impl Mode {
     /// thread; [`Self::insert_pasted_image`] puts its path in the prompt.
     fn handle_clipboard_image_paste(&mut self) {
         let tx = self.tx.clone();
-        std::thread::spawn(move || {
+        hoocode_runtime::spawn_thread("hoocode-ui-task", move || {
             let host = SystemClipboardImageHost {
                 native: native_clipboard_image_reader(),
             };
@@ -3816,6 +3826,87 @@ impl Mode {
 
     /// `/perf`: the Phase 0 counters (threads, RSS, frame and keystroke timing,
     /// stalls), as a notice in the transcript. See `perf.rs`.
+    /// `/mcp`: each MCP server with its source, state and tool count. `/mcp login <server>`
+    /// starts the OAuth login of a server that needs one (see `start_mcp_login`).
+    fn handle_mcp_command(&mut self, command: &str) {
+        let args = command
+            .trim()
+            .trim_start_matches('/')
+            .strip_prefix("mcp")
+            .unwrap_or("")
+            .trim();
+        if let Some(server) = args.strip_prefix("login") {
+            self.start_mcp_login(server.trim());
+            return;
+        }
+        if !args.is_empty() {
+            self.show_warning("Usage: /mcp, or /mcp login <server>");
+            return;
+        }
+        let servers = self
+            .session
+            .mcp()
+            .map(|hub| hub.servers())
+            .unwrap_or_default();
+        let text = crate::mcp_listing::format_listing(&servers);
+        self.add_to_chat(as_component(&handle(Spacer::new(1))));
+        self.add_to_chat(as_component(&handle(Text::new(text, 1, 0))));
+    }
+
+    /// `/mcp login <server>`: the hub runs the login off the UI thread. The login link and the
+    /// outcome come back as chat records, so the link can be followed when the browser does not
+    /// open.
+    fn start_mcp_login(&mut self, server: &str) {
+        use hoocode_code_permissions::PermissionUi as _;
+        if server.is_empty() {
+            self.show_warning("Usage: /mcp login <server>");
+            return;
+        }
+        let Some(hub) = self.session.mcp() else {
+            self.show_warning("No MCP servers are configured.");
+            return;
+        };
+        let started = hub.login(server, |message| {
+            crate::dialog_bridge::TuiPermissionUi.notify(&message);
+        });
+        match started {
+            Ok(()) => self.show_status(&format!("Logging in to MCP server {server}.")),
+            Err(error) => self.show_warning(&error),
+        }
+    }
+
+    /// The one-time trust prompt for project and plugin MCP servers. Asked on a
+    /// thread (the answer waits for the user); the grant saves the trust store and
+    /// starts the servers, off the UI thread.
+    fn ask_mcp_trust(&self) {
+        let Some(hub) = self.session.mcp() else {
+            return;
+        };
+        let prompts = hub.pending_prompts();
+        if prompts.is_empty() {
+            return;
+        }
+        let servers = hub.servers();
+        let spawned = hoocode_runtime::spawn_named_thread("hoocode-mcp-trust", move || {
+            use hoocode_code_permissions::PermissionUi as _;
+            let ui = crate::dialog_bridge::TuiPermissionUi;
+            for prompt in prompts {
+                let question = hoocode_code_agent_session::mcp::trust_question(&prompt, &servers);
+                let answer = ui.select(&question, &[MCP_TRUST_YES, MCP_TRUST_NO]);
+                if answer.as_deref() != Some(MCP_TRUST_YES) {
+                    continue;
+                }
+                let message = match hub.grant(std::slice::from_ref(&prompt.key)) {
+                    Ok(_) => format!("MCP servers from {} are trusted.", prompt.source.label()),
+                    Err(error) => format!("Could not save the MCP trust grant: {error}"),
+                };
+                ui.notify(&message);
+            }
+        });
+        // A thread that cannot start leaves the servers untrusted: the safe default.
+        let _ = spawned;
+    }
+
     fn handle_perf_command(&mut self) {
         let text = crate::perf::format_report(&self.perf.snapshot());
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
@@ -5870,6 +5961,64 @@ impl Mode {
     }
 
     /// The next time something is due without input.
+    /// One event from the TUI's input channel, handled without painting: the
+    /// loop paints once after it has taken the pass's events.
+    fn accept_terminal_event(&mut self, event: TuiEvent) {
+        // A keystroke that turns out to do nothing is still the user being
+        // present: it restarts the tips' idle clock.
+        if let TuiEvent::Input(_, arrived) = &event {
+            self.tips.on_activity();
+            self.perf.key_arrived(*arrived);
+        }
+        if let TuiEvent::Resize = event {
+            let terminal = &self.tui.terminal;
+            self.size.set((terminal.columns(), terminal.rows()));
+        }
+        self.tui.accept_event(event);
+    }
+
+    /// Acts on the watchdog once per loop turn. A hard-limit trip aborts the turn
+    /// and flushes the session. Shedding changes clear the render caches. The
+    /// footer warning follows the stall flag and shedding. The stall flag can only
+    /// show once the loop turns again, since a stuck loop cannot draw it.
+    fn sync_runtime_health(&mut self) {
+        for event in hoocode_runtime::take_memory_events() {
+            if let hoocode_runtime::MemoryEvent::HardLimit { rss, limit } = event {
+                self.session.agent().abort();
+                let flushed = hoocode_runtime::session_io()
+                    .flush_blocking(Duration::from_secs(1))
+                    .is_ok();
+                self.show_error(&format!(
+                    "Memory limit reached: {} MB resident, hard limit {} MB. The turn was aborted{}. Raise performance.memoryHardLimitMb or end the session.",
+                    rss / hoocode_runtime::MIB,
+                    limit / hoocode_runtime::MIB,
+                    if flushed { " and the session saved" } else { "" },
+                ));
+            }
+        }
+        let shedding = hoocode_runtime::shedding();
+        if shedding != self.shedding_shown {
+            self.shedding_shown = shedding;
+            self.tui.invalidate();
+            self.dirty.set(true);
+        }
+        let notice = if hoocode_runtime::watchdog::ui_stalled() {
+            Some("UI stalled: no response for 2 s; keys are queued".to_string())
+        } else if shedding {
+            Some(
+                "Memory above the soft limit: no new subagents; tool calls run one at a time"
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        if notice != self.runtime_notice {
+            self.footer.borrow_mut().set_notice(notice.clone());
+            self.runtime_notice = notice;
+            self.dirty.set(true);
+        }
+    }
+
     fn next_wakeup(&self) -> Duration {
         let now = Instant::now();
         let mut wait = Duration::from_millis(250);
@@ -5881,8 +6030,15 @@ impl Mode {
         for deadline in deadlines.into_iter().flatten() {
             wait = wait.min(deadline.saturating_duration_since(now));
         }
-        if let Some(loader) = &self.loader {
-            wait = wait.min(loader.borrow().interval());
+        // Wake when a loader's frame falls due, not on a fixed cadence: the
+        // pulse flips on its own clock, so the loop must not sleep past it.
+        for loader in [&self.loader, &self.compaction_loader]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(due) = loader.borrow().next_deadline() {
+                wait = wait.min(due.saturating_duration_since(now));
+            }
         }
         if let Some(deadline) = self
             .selector
@@ -5925,6 +6081,9 @@ impl Mode {
         self.tui
             .set_frame_observer(Some(self.perf.frame_observer()));
         let mut input = self.tui.start();
+        // Ctrl+C aborts the turn from the input thread, without waiting for this loop.
+        let interrupt_agent = self.session.agent().clone();
+        hoocode_tui_terminal::interrupt::set_hook(Some(Arc::new(move || interrupt_agent.abort())));
         // From here the TUI owns the terminal: the agent's operational log
         // lines (dispatch, warm fallback, lifeguard) must not write to it.
         set_terminal_owned_by_tui(true);
@@ -5966,6 +6125,7 @@ impl Mode {
                 .send(AppEvent::Dialog(request))
                 .is_ok()
         })));
+        self.ask_mcp_trust();
         let tx = self.tx.clone();
         on_theme_change(move || {
             let _ = tx.send(AppEvent::ThemeChanged);
@@ -6005,32 +6165,39 @@ impl Mode {
             self.prompt_with_images(first, images);
         }
 
+        // Watchdog: limits from settings, the heartbeat and the stall log (to the debug log, not the terminal).
+        if let Err(error) = hoocode_runtime::watchdog::start() {
+            self.show_error(&format!("watchdog did not start: {error}"));
+        }
+        hoocode_runtime::watchdog::set_log_sink(Box::new(|line: &str| agent_log(line)));
+        {
+            let settings = self.session.settings();
+            hoocode_runtime::configure_memory_limits(
+                settings.performance_memory_soft_limit_mb() * hoocode_runtime::MIB,
+                settings.performance_memory_hard_limit_mb() * hoocode_runtime::MIB,
+            );
+        }
+
         self.tui.request_render(false);
         self.dirty.set(false);
         loop {
+            hoocode_runtime::watchdog::ui_beat("ui-loop:wait");
             let received = input.recv_timeout(self.next_wakeup());
             // Phase 0 timing: an iteration starts when its input has arrived,
             // not while the loop sleeps.
             let iteration_started = Instant::now();
+            // Heartbeat for the input thread's stall check (Ctrl+C twice = emergency exit).
+            hoocode_tui_terminal::interrupt::ui_beat();
             match received {
                 Ok(event) => {
-                    // A keystroke that turns out to do nothing is still the
-                    // user being present: it restarts the tips' idle clock.
-                    if let TuiEvent::Input(_, arrived) = &event {
-                        self.tips.on_activity();
-                        self.perf.key_arrived(*arrived);
-                    }
-                    if let TuiEvent::Resize = event {
-                        let terminal = &self.tui.terminal;
-                        self.size.set((terminal.columns(), terminal.rows()));
-                    }
-                    self.tui.process_event(event);
-                    while let Ok(event) = input.try_recv() {
-                        if let TuiEvent::Input(_, arrived) = &event {
-                            self.tips.on_activity();
-                            self.perf.key_arrived(*arrived);
+                    self.accept_terminal_event(event);
+                    // Keys already queued go in this pass too, up to a cap, so
+                    // AppEvents are not starved. The frame is painted once below.
+                    for _ in 1..MAX_INPUT_PER_ITERATION {
+                        match input.try_recv() {
+                            Ok(event) => self.accept_terminal_event(event),
+                            Err(_) => break,
                         }
-                        self.tui.process_event(event);
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => {}
@@ -6045,8 +6212,10 @@ impl Mode {
                     self.handle_action(action);
                 }
             }
+            hoocode_runtime::watchdog::ui_beat("ui-loop:input-done");
             self.drain_extension_ui_requests();
             self.tick_scheduler();
+            self.sync_runtime_health();
             if let Some(restarted) = self.restarted_input.take() {
                 input = restarted;
             }
@@ -6186,13 +6355,15 @@ impl Mode {
             if self.exit_requested {
                 break;
             }
-            // Input already re-rendered; anything else that changed renders now.
+            // Input and resizes this pass, and anything else that changed, render once here.
             if self.dirty.replace(false) {
                 self.tui.request_render(false);
             }
+            self.tui.flush_scheduled_render();
             self.perf.end_iteration(iteration_started);
         }
 
+        hoocode_runtime::watchdog::ui_stopped();
         set_dialog_sink(None);
         if let Some((_, reply)) = self.selector.take() {
             let _ = reply.send(None);
@@ -6214,6 +6385,7 @@ impl Mode {
         }
         self.task_panel.borrow_mut().dispose();
         self.tui.stop();
+        hoocode_tui_terminal::interrupt::set_hook(None);
         set_terminal_owned_by_tui(false);
         let session = self.session.clone();
         if session.is_streaming() {
@@ -6225,6 +6397,10 @@ impl Mode {
 }
 
 /// The built-in slash commands this mode dispatches itself.
+/// The answers to the MCP trust prompt.
+const MCP_TRUST_YES: &str = "Trust and start";
+const MCP_TRUST_NO: &str = "Not now";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BuiltinCommand {
     Quit,
@@ -6244,6 +6420,7 @@ enum BuiltinCommand {
     Changelog,
     Debug,
     Perf,
+    Mcp,
     Color,
     Chrome,
     Fork,
@@ -6281,6 +6458,7 @@ impl BuiltinCommand {
             "changelog" => Self::Changelog,
             "debug" => Self::Debug,
             "perf" => Self::Perf,
+            "mcp" => Self::Mcp,
             "color" => Self::Color,
             "chrome" => Self::Chrome,
             "fork" => Self::Fork,
@@ -6310,6 +6488,7 @@ impl BuiltinCommand {
             | Self::Color
             | Self::Chrome
             | Self::Cd
+            | Self::Mcp
             | Self::Export
             | Self::Import
             | Self::Subagent

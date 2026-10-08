@@ -1,5 +1,11 @@
+#![allow(clippy::disallowed_methods)] // test code: threads that stand in for a peer, a slow tool or a second caller
 //! Tests for the process runtime: worker count, thread names, the tools pool
-//! cap, the parallel tool limit and the channel helpers.
+//! cap, the parallel tool limit, the channel helpers and the session writer.
+
+mod lanes;
+mod memory;
+mod session_io;
+mod watchdog;
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -197,4 +203,22 @@ fn sync_bounded_channel_delivers_in_order() {
     let got: Vec<u32> = rx.iter().collect();
     writer.join().expect("writer finishes");
     assert_eq!(got, vec![0, 1, 2, 3, 4]);
+}
+
+#[cfg(unix)]
+#[test]
+fn sigwinch_runs_the_callback_on_the_named_thread() {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let watch = hoocode_runtime::watch_sigwinch("hoocode-test-sigwinch", move || {
+        let name = std::thread::current().name().map(str::to_owned);
+        let _ = tx.send(name);
+    })
+    .expect("watch starts");
+    signal_hook::low_level::raise(signal_hook::consts::SIGWINCH).expect("raise SIGWINCH");
+    let name = rx
+        .recv_timeout(Duration::from_secs(5))
+        .expect("callback runs after SIGWINCH");
+    assert_eq!(name.as_deref(), Some("hoocode-test-sigwinch"));
+    // Dropping the watch closes the iterator, so the thread ends.
+    drop(watch);
 }

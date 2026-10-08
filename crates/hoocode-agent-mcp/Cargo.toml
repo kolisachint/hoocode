@@ -1,0 +1,54 @@
+[package]
+name = "hoocode-agent-mcp"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+description = "MCP client for hoocode agents on rmcp: stdio and Streamable HTTP servers, tool calls with progress, caps and deadlines"
+
+[package.metadata.hoocode]
+publish = false
+
+[lib]
+# No doctests: the API is exercised by tests/it (build-speed D4).
+doctest = false
+
+[dependencies]
+# Only this crate depends on rmcp (migration/dep-firewall.json).
+rmcp = { version = "3.5.1", default-features = false, features = [
+    "client",
+    "auth",
+    "reqwest",
+    "transport-async-rw",
+    "transport-streamable-http-client-reqwest",
+] }
+# The client only uses the rmcp transports it needs: stdio is built here (see
+# stdio.rs) on the async read/write transport, so child-process support is not enabled.
+tokio = { version = "1", features = ["sync", "time", "process", "net", "io-util"] }
+tokio-util = { version = "0.7", default-features = false }
+serde_json = "1"
+http = "1"
+# Must match the reqwest rmcp uses (its error type is named in client.rs).
+reqwest = { version = "0.13", default-features = false }
+async-trait = "0.1"
+
+[dev-dependencies]
+rmcp = { version = "3.5.1", default-features = false, features = [
+    "client",
+    "server",
+    "elicitation",
+    "transport-io",
+    "transport-child-process",
+    "transport-streamable-http-server",
+    "transport-streamable-http-client-reqwest",
+] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-std", "sync", "time", "process"] }
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "service"] }
+http-body-util = "0.1"
+bytes = "1"
+url = "2"
+sha2 = "0.10"
+base64 = "0.22"

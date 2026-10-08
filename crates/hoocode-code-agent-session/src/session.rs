@@ -22,7 +22,7 @@ use hoocode_ai_types::{
 };
 use hoocode_code_models::{AuthLookup, ModelRegistry};
 use hoocode_code_prompts::BuildSystemPromptOptions;
-use hoocode_code_session::SessionManager;
+use hoocode_code_session::{SessionManager, SESSION_FLUSH_DEADLINE};
 use hoocode_code_settings::{QueueMode, SettingsManager, ThinkingLevelSetting};
 use hoocode_code_tool_api::{
     wrap_tool_definitions, SessionBranch, ToolContext, ToolContextFactory, ToolDefinition,
@@ -38,6 +38,7 @@ use crate::hooks::{
     ExtensionError, ExtensionHooks, NoExtensions, ResourceLoader, SessionEvent, SessionStartEvent,
     TemplateKind,
 };
+use crate::mcp::McpHub;
 use crate::retry::RetryState;
 use crate::stats::{self, ContextUsage, ForkableMessage, SessionStats, TranscriptSelection};
 use hoocode_agent_compaction::CompactionResult;
@@ -400,6 +401,10 @@ struct State {
     pending_bash_messages: Vec<BashExecutionMessage>,
     base_tool_definitions: Vec<ToolDefinition>,
     tool_registry: Vec<AgentTool>,
+    /// MCP tools as the attached hub last reported them.
+    mcp_tools: Vec<ToolDefinition>,
+    mcp_generation: Option<u64>,
+    mcp_auto_active: bool,
     tool_definitions: Vec<(String, DefinitionEntry)>,
     tool_prompt_snippets: HashMap<String, String>,
     tool_prompt_guidelines: HashMap<String, Vec<String>>,
@@ -430,6 +435,7 @@ struct Inner {
     retry: Mutex<RetryState>,
     retry_notify: tokio::sync::Notify,
     compaction: Mutex<CompactionState>,
+    mcp: Mutex<Option<Arc<McpHub>>>,
 }
 
 /// The session branch as tools see it (`ctx.sessionManager.getBranch()`).
@@ -564,6 +570,7 @@ impl AgentSession {
             retry: Mutex::new(RetryState::default()),
             retry_notify: tokio::sync::Notify::new(),
             compaction: Mutex::new(CompactionState::default()),
+            mcp: Mutex::new(None),
         });
         let session = Self { inner };
         session.connect_to_agent();
@@ -578,6 +585,12 @@ impl AgentSession {
                 let Some(inner) = weak.upgrade() else {
                     return Ok(None);
                 };
+                // Servers that finished connecting since the last turn join it now
+                // (docs/design/mcp.md: tool-list changes apply at the next turn).
+                AgentSession {
+                    inner: inner.clone(),
+                }
+                .sync_mcp_tools();
                 if !std::mem::take(&mut lock(&inner.state).runtime_context_dirty) {
                     return Ok(None);
                 }
@@ -750,6 +763,12 @@ impl AgentSession {
         }
 
         if let AgentEvent::AgentEnd { .. } = event {
+            // Turn end: the turn's entries are queued; wait for them to reach
+            // the OS in the background, bounded by the flush deadline.
+            let ticket = lock(&self.inner.session_manager).flush_ticket();
+            self.spawn(async move {
+                let _ = ticket.wait(SESSION_FLUSH_DEADLINE).await;
+            });
             let last = lock(&self.inner.state).last_assistant_message.take();
             if let Some(message) = last {
                 let session = self.clone();
@@ -804,6 +823,12 @@ impl AgentSession {
     /// `dispose()`: drop listeners, disconnect from the agent and release the
     /// session's provider resources.
     pub fn dispose(&self) {
+        // Shutdown: write out queued session entries, waiting at most the flush deadline.
+        let ticket = lock(&self.inner.session_manager).flush_ticket();
+        let _ = ticket.wait_blocking(SESSION_FLUSH_DEADLINE);
+        if let Some(hub) = lock(&self.inner.mcp).take() {
+            hub.shutdown();
+        }
         self.disconnect_from_agent();
         lock(&self.inner.listeners).clear();
         let _ = hoocode_ai_registry::session_resources::cleanup_session_resources(Some(
@@ -1105,10 +1130,13 @@ impl AgentSession {
             .collect();
         let previous_active = self.get_active_tool_names();
 
+        let mcp_tools = lock(&self.inner.state).mcp_tools.clone();
+        let mcp_names: HashSet<String> = mcp_tools.iter().map(|t| t.name.clone()).collect();
         let custom: Vec<ToolDefinition> = self
             .inner
             .custom_tools
             .iter()
+            .chain(mcp_tools.iter())
             .filter(|d| self.is_allowed_tool(&d.name))
             .cloned()
             .collect();
@@ -1151,7 +1179,20 @@ impl AgentSession {
             .collect();
 
         let ctx = self.tool_context_factory();
-        let wrapped_custom = wrap_tool_definitions(custom, Some(ctx.clone()));
+        // MCP tools carry the server's JSON schema as is (not TypeBox).
+        let wrapped_custom: Vec<AgentTool> = wrap_tool_definitions(custom, Some(ctx.clone()))
+            .into_iter()
+            .map(|tool| {
+                if mcp_names.contains(&tool.name) {
+                    AgentTool {
+                        plain_json_schema: true,
+                        ..tool
+                    }
+                } else {
+                    tool
+                }
+            })
+            .collect();
         let wrapped_builtin = wrap_tool_definitions(builtins, Some(ctx));
         let mut registry: Vec<AgentTool> = Vec::new();
         for tool in wrapped_builtin
@@ -1221,6 +1262,55 @@ impl AgentSession {
         lock(&self.inner.state).base_system_prompt = prompt.clone();
         self.inner.agent.set_system_prompt(prompt);
         lock(&self.inner.state).runtime_context_dirty = true;
+    }
+
+    /// Attach the session's MCP servers. With `auto_activate`, a tool that appears is
+    /// active at once; a mode that restricts the active tools passes `false`. `dispose`
+    /// shuts the hub down.
+    pub fn attach_mcp(&self, hub: Arc<McpHub>, auto_activate: bool) {
+        *lock(&self.inner.mcp) = Some(hub);
+        lock(&self.inner.state).mcp_auto_active = auto_activate;
+        self.sync_mcp_tools();
+    }
+
+    /// The MCP hub attached by [`attach_mcp`](Self::attach_mcp).
+    pub fn mcp(&self) -> Option<Arc<McpHub>> {
+        lock(&self.inner.mcp).clone()
+    }
+
+    /// Takes the hub's tool list when it changed since the last sync. Runs before each prompt
+    /// and between the turns of a run, so a tool list change applies from the next turn.
+    fn sync_mcp_tools(&self) {
+        let Some(hub) = self.mcp() else { return };
+        let (generation, tools) = hub.tool_definitions();
+        let names: Vec<String> = tools.iter().map(|t| t.name.clone()).collect();
+        let (previous, auto_activate) = {
+            let mut state = lock(&self.inner.state);
+            if state.mcp_generation == Some(generation) {
+                return;
+            }
+            state.mcp_generation = Some(generation);
+            let previous: Vec<String> = state.mcp_tools.iter().map(|t| t.name.clone()).collect();
+            state.mcp_tools = tools;
+            (previous, state.mcp_auto_active)
+        };
+        if names.is_empty() && previous.is_empty() {
+            return;
+        }
+        // Keep tools that are still there (with their active state); drop removed ones.
+        let mut active: Vec<String> = self
+            .get_active_tool_names()
+            .into_iter()
+            .filter(|n| !previous.contains(n) || names.contains(n))
+            .collect();
+        if auto_activate {
+            for name in &names {
+                if !previous.contains(name) && !active.contains(name) {
+                    active.push(name.clone());
+                }
+            }
+        }
+        self.refresh_tool_registry(Some(active), false);
     }
 
     /// `_rebuildSystemPrompt`.
@@ -1319,6 +1409,7 @@ impl AgentSession {
         options: PromptOptions,
         preflight: &Preflight,
     ) -> Result<()> {
+        self.sync_mcp_tools();
         if options.expand_prompt_templates && text.starts_with('/') {
             let (name, args) = Self::split_command(text);
             if self.inner.extensions.has_command(name) {
@@ -1790,16 +1881,20 @@ impl AgentSession {
     ) -> Result<BashResult> {
         let signal = AbortSignal::new();
         lock(&self.inner.state).bash_abort = Some(signal.clone());
-        let (prefix, shell_path) = {
+        let (prefix, shell_path, bash_nice) = {
             let settings = lock(&self.inner.settings);
-            (settings.shell_command_prefix(), settings.shell_path())
+            (
+                settings.shell_command_prefix(),
+                settings.shell_path(),
+                settings.performance_bash_nice(),
+            )
         };
         let resolved = match prefix {
             Some(prefix) if !prefix.is_empty() => format!("{prefix}\n{command}"),
             _ => command.to_string(),
         };
         let cwd = PathBuf::from(self.session_manager().cwd());
-        let local = LocalBashOperations::new(shell_path);
+        let local = LocalBashOperations::new(shell_path).with_nice(bash_nice);
         let result = execute_bash_with_operations(
             &resolved,
             &cwd,

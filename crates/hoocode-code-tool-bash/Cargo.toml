@@ -21,10 +21,12 @@ hoocode-agent-harness = { workspace = true }
 hoocode-agent-types = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-code-tool-api = { workspace = true }
-process-wrap = { version = "10", default-features = false, features = ["std", "process-group", "job-object"] }
+hoocode-runtime = { workspace = true }
+process-wrap = { version = "10", default-features = false, features = ["tokio1", "process-group", "job-object"] }
 regex-lite = "0.1"
 serde_json = "1"
 tempfile = "3"
+tokio = { version = "1", features = ["io-util", "process", "rt", "sync", "time"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

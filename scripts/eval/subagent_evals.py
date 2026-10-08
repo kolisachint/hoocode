@@ -399,11 +399,12 @@ SCENARIOS: list[Scenario] = [
         expect=Expect(result_status="failed"),
     ),
     Scenario(
-        name="parent_dispatch_via_legacy_alias",
+        name="parent_legacy_alias_rejected",
         kind="parent",
         doc=(
-            "The pre-rename name still works. A model that learned `Task` from a thousand "
-            "transcripts keeps delegating, and a resumed session carries tool calls by name."
+            "The pre-rename name `Task` is not accepted (decisions-2026-10-08: no aliases "
+            "for old names). The call fails as an unknown tool, no child starts, and the "
+            "parent still finishes its turn."
         ),
         routes={
             "child": child_route([{"text": CHILD_SUMMARY}]),
@@ -412,7 +413,7 @@ SCENARIOS: list[Scenario] = [
             ),
         },
         prompt="Describe the repository layout using a subagent.",
-        expect=Expect(ledger_statuses=["complete"], ledger_ok=[True]),
+        expect=Expect(ledger_count=0, child_requests=0, parent_requests=2),
     ),
     Scenario(
         name="parent_queue_saturation",

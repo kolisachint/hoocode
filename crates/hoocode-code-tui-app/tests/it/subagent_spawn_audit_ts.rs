@@ -1,3 +1,4 @@
+#![allow(clippy::disallowed_methods)] // test code: a thread that enters the runtime for a sync caller
 //! The roster and task panel half of the pin's
 //! `test/suite/subagent-spawn-audit.test.ts`: per-run roster identity for
 //! concurrent same-type dispatches, per-run usage, and the panel's wall-clock

@@ -7,6 +7,8 @@ mod core_utils;
 mod disabled_tools_ts;
 mod format;
 mod json_events;
+mod mcp;
+mod mcp_auth;
 mod prompt;
 mod provider_health;
 mod queue;

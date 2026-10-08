@@ -173,9 +173,9 @@ async fn a_clean_success_records_one_usable_attempt() {
     p.spawn(task("t1", "explore", "hello")).unwrap();
     let result = p.wait_for("t1").await.unwrap();
     assert!(result.ok);
-    // A clean success deletes its dispatch dir, so before the ledger the only
-    // evidence of this run was that absence.
-    assert!(!hoocode_code_paths::dispatch_task_dir(dir.path(), "t1").exists());
+    // A clean success deletes its dispatch dir on hoocode-bg, so before the
+    // ledger the only evidence of this run was that absence.
+    wait_until_gone(&hoocode_code_paths::dispatch_task_dir(dir.path(), "t1")).await;
 
     let attempt = only_attempt(dir.path());
     assert_eq!(attempt.task_id, "t1");
@@ -447,4 +447,15 @@ async fn the_ledger_is_a_shape_not_a_second_result() {
         .collect();
     assert_eq!(lines.len(), 1);
     assert!(lines[0].get("summary").is_none());
+}
+
+/// Cleanup runs on `hoocode-bg`, so a removed dispatch dir can take a moment to disappear.
+async fn wait_until_gone(path: &std::path::Path) {
+    for _ in 0..500 {
+        if !path.exists() {
+            return;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    panic!("{} was not removed", path.display());
 }

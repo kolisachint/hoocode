@@ -2,7 +2,6 @@
 //! Interactive rendering (`renderCall`/`renderResult`) arrives with phase 11.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -48,6 +47,9 @@ pub struct BashToolOptions {
     pub max_output_bytes: Option<usize>,
     /// Line cap on the returned output (tail kept). Default 800.
     pub max_output_lines: Option<usize>,
+    /// `performance.bashNice`: niceness of the commands' child processes. 0
+    /// (the default) runs them at normal priority.
+    pub nice: u64,
 }
 
 const BASH_UPDATE_THROTTLE: Duration = Duration::from_millis(100);
@@ -238,23 +240,19 @@ impl BashCall<'_> {
         }
 
         // The throttle timer: flush pending output once 100 ms have passed
-        // since the last update, even when no new data arrives.
-        let running = Arc::new(AtomicBool::new(true));
-        let flusher = on_update.clone().map(|callback| {
+        // since the last update, even when no new data arrives. It runs as the
+        // idle tick of `exec` (every 10 ms without output), so no thread is spent on it.
+        let mut on_idle = on_update.clone().map(|callback| {
             let progress = progress.clone();
-            let running = running.clone();
-            std::thread::spawn(move || {
-                while running.load(Ordering::Relaxed) {
-                    std::thread::sleep(Duration::from_millis(10));
-                    let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
-                    let due = p
-                        .last_update
-                        .is_none_or(|t| t.elapsed() >= BASH_UPDATE_THROTTLE);
-                    if p.dirty && due {
-                        emit(&mut p, &callback);
-                    }
+            move || {
+                let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
+                let due = p
+                    .last_update
+                    .is_none_or(|t| t.elapsed() >= BASH_UPDATE_THROTTLE);
+                if p.dirty && due {
+                    emit(&mut p, &callback);
                 }
-            })
+            }
         });
 
         let mut on_data = |data: &[u8]| {
@@ -275,16 +273,12 @@ impl BashCall<'_> {
             &spawn.cwd,
             BashExecOptions {
                 on_data: &mut on_data,
+                on_idle: on_idle.as_mut().map(|f| f as &mut dyn FnMut()),
                 signal,
                 timeout,
                 env: Some(spawn.env),
             },
         );
-
-        running.store(false, Ordering::Relaxed);
-        if let Some(flusher) = flusher {
-            let _ = flusher.join();
-        }
 
         // finishOutput
         let mut p = progress.lock().unwrap_or_else(|e| e.into_inner());
@@ -333,10 +327,9 @@ pub fn create_bash_tool_definition(
     options: BashToolOptions,
 ) -> ToolDefinition {
     let cwd: PathBuf = cwd.into();
-    let ops: Arc<dyn BashOperations> = options
-        .operations
-        .clone()
-        .unwrap_or_else(|| Arc::new(LocalBashOperations::new(options.shell_path.clone())));
+    let ops: Arc<dyn BashOperations> = options.operations.clone().unwrap_or_else(|| {
+        Arc::new(LocalBashOperations::new(options.shell_path.clone()).with_nice(options.nice))
+    });
     let max_bytes = options.max_output_bytes.unwrap_or(DEFAULT_MAX_BYTES);
     let max_lines = options.max_output_lines.unwrap_or(DEFAULT_MAX_LINES);
     // Math.round(maxBytes / 1024)

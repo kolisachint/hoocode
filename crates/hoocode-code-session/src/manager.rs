@@ -9,9 +9,31 @@ use crate::entry::{CustomMessageContent, FileEntry, Header, CURRENT_SESSION_VERS
 use chrono::{TimeZone, Utc};
 use hoocode_agent_types::AgentMessage;
 use hoocode_ai_types::{Content, Message, UserMessage};
+use hoocode_runtime::{session_io, FlushError, FlushTicket};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
+
+/// Longest a read or a shutdown waits for queued session writes to reach the
+/// OS (`docs/design/concurrency.md` section 4). A read after the deadline goes
+/// ahead with what is on disk.
+pub const SESSION_FLUSH_DEADLINE: Duration = Duration::from_secs(1);
+
+/// Waits until every session write queued so far is on disk, or the deadline
+/// passes. Reads call it first, so a read after a write sees the write.
+fn settle_session_writes() {
+    let _ = session_io().flush_blocking(SESSION_FLUSH_DEADLINE);
+}
+
+/// Waits up to `deadline` until every queued session write is on disk. Call it
+/// before handing a session file path to another process (a subagent child, an
+/// external tool); a timeout or write failure is returned as an error.
+pub fn flush_session_writes(deadline: Duration) -> Result<(), SessionError> {
+    session_io()
+        .flush_blocking(deadline)
+        .map_err(|e| SessionError::Io(std::io::Error::other(e.to_string())))
+}
 
 /// Error type for session manager operations.
 #[derive(Debug)]
@@ -301,7 +323,9 @@ impl SessionManager {
                 lines.push(serde_json::to_string(entry)?);
             }
         }
-        fs::write(&file_path, lines.join("\n") + "\n")?;
+        session_io().replace(&file_path, lines.join("\n") + "\n");
+        // The caller hands this path to a child process, which reads it directly.
+        flush_session_writes(SESSION_FLUSH_DEADLINE)?;
 
         Ok(Self::new(target_cwd, dir, Some(file_path), true))
     }
@@ -424,12 +448,22 @@ impl SessionManager {
             for entry in &self.entries {
                 lines.push(serde_json::to_string(entry)?);
             }
-            if let Some(parent) = path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            fs::write(path, lines.join("\n") + "\n")?;
+            session_io().replace(path, lines.join("\n") + "\n");
         }
         Ok(())
+    }
+
+    /// A flush barrier: the ticket completes once every session write queued
+    /// so far is on disk. Queueing it never waits. Wait on it off the UI thread
+    /// (`wait().await` on a runtime, or `wait_blocking` on a plain thread).
+    pub fn flush_ticket(&self) -> FlushTicket {
+        session_io().barrier()
+    }
+
+    /// Waits up to `deadline` for queued session writes to reach the OS. Used
+    /// at shutdown; the UI thread should not call it while a turn runs.
+    pub fn flush(&self, deadline: Duration) -> Result<(), FlushError> {
+        session_io().flush_blocking(deadline)
     }
 
     fn persist(&mut self, entry: &FileEntry) -> Result<(), SessionError> {
@@ -457,10 +491,10 @@ impl SessionManager {
             self.rewrite_file()?;
             self.flushed = true;
         } else {
+            // Queued for the hoocode-session-io thread; the write itself
+            // happens there, in order, with any errors reported at the next flush.
             let line = serde_json::to_string(entry)?;
-            use std::io::Write;
-            let mut file = fs::OpenOptions::new().append(true).open(&path)?;
-            writeln!(file, "{line}")?;
+            session_io().append_line(&path, line);
         }
         Ok(())
     }
@@ -965,6 +999,9 @@ impl SessionManager {
             }
         }
 
+        // The returned path is handed to another process (a subagent child or
+        // a resumed session in a new process), so its writes must be on disk.
+        flush_session_writes(SESSION_FLUSH_DEADLINE)?;
         Ok(self.session_file.clone())
     }
 
@@ -1034,6 +1071,7 @@ pub struct LoadedSession {
 /// `loadEntriesFromFile()`: raw JSON lines, malformed lines skipped; empty unless the
 /// first line is a session header with a string id.
 pub fn load_raw_entries(path: impl AsRef<Path>) -> Vec<serde_json::Value> {
+    settle_session_writes();
     let Ok(content) = fs::read_to_string(path.as_ref()) else {
         return Vec::new();
     };
@@ -1136,6 +1174,7 @@ pub fn load_entries_from_file(path: impl AsRef<Path>) -> Vec<FileEntry> {
 }
 
 fn is_valid_session_file(path: impl AsRef<Path>) -> bool {
+    settle_session_writes();
     let path = path.as_ref();
     let Ok(content) = fs::read_to_string(path) else {
         return false;
@@ -1317,6 +1356,7 @@ pub fn list_sessions(
 ) -> Result<Vec<SessionInfo>, SessionError> {
     let dir = dir.as_ref();
     let mut infos = Vec::new();
+    settle_session_writes();
     if !dir.exists() {
         return Ok(infos);
     }
@@ -1343,6 +1383,7 @@ pub fn list_all_sessions(
     on_progress: Option<&SessionListProgress>,
 ) -> Result<Vec<SessionInfo>, SessionError> {
     let root = default_sessions_root();
+    settle_session_writes();
     if !root.exists() {
         return Ok(Vec::new());
     }
@@ -1455,6 +1496,8 @@ mod tests {
         mgr.append_message(user("hello"));
         assert!(!mgr.session_file().unwrap().exists());
         mgr.append_message(assistant("hi"));
+        // Writes go through the session writer thread: wait for the file.
+        mgr.flush(SESSION_FLUSH_DEADLINE).expect("flushed");
         assert!(mgr.session_file().unwrap().exists());
         let _ = fs::remove_dir_all(&dir);
     }

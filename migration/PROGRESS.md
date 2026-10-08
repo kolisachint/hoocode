@@ -5,6 +5,53 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-08 (second session): milestones 4 and 5 built on `claude/m4-m5-mcp-concurrency`.
+  Not load-tested yet. Read this first.**
+  - **Milestone 4, MCP client.** Crate `hoocode-agent-mcp` (rmcp 3.5.1; only this crate uses rmcp).
+    stdio and Streamable HTTP transports, caps (stdio 32 MiB), OAuth with a token store, elicitation.
+    Crate `hoocode-code-mcp`: discovery (user, project and plugin `mcp.json`) and trust. Wiring in
+    `code-agent-session` (`mcp.rs`, `McpHub`), the trust prompt, `/mcp` and `/mcp login`.
+    Design: `docs/design/mcp.md`.
+  - **MCP live-test fixes (GitHub's stdio server, print mode, 2026-10-08 third session):**
+    - Print and rpc wait up to 10 s before their first prompt for trusted servers to connect (`McpHub::wait_for_startup`), so `-p` sees MCP tools; the interactive mode re-syncs tools at each turn.
+    - `${VAR}` and `${VAR:-default}` expand in `headers`, `env`, `args`, `url` and `command` (`hoocode-code-mcp/src/expand.rs`); an unset variable marks the server Failed, naming the variable. The trust fingerprint keeps the unexpanded text.
+    - A server with its own `Authorization` header never uses OAuth; a 401 is `Unauthorized` (Failed), not AuthNeeded.
+  - **Milestone 5, concurrency phases 2-5.** Terminal-output writer thread (one frame in flight), input
+    batching, SIGWINCH, Ctrl+C on the input thread, ESC timer without a thread, async Shell pipes, and a
+    clippy ban on `thread::spawn`. Session-io writer thread with flush barriers. Lanes and priorities,
+    `hoocode-bg`, child nice (`bashNice` is now applied). Watchdog footer notices, memory soft and hard
+    limits, and shedding. Design: `docs/design/concurrency.md`.
+  - **Fixed along the way:** `fork_from` waits for the flush. Flaky tests fixed: subagent retention order,
+    theme global lock and watcher join, markdown capabilities lock (the last two were pre-existing on main).
+  - **L2 tally (`harness.py run all`, 70 scenarios):** first full run 66 pass, 3 fail, 1 invalid.
+    Reruns: `file-autocomplete` (invalid, `fd` missing from PATH) passes once `fd` is on PATH. Final:
+    **67 pass, 3 fail, 0 invalid.** Updated after the `compact-queue` fix (below): **68 pass, 2 fail, both expected**
+    (`slash-commands`, `login-api-key`). Derived from the 67/3 run: only `compact-queue` changed status. Reran `compact-queue` (3/3) and `startup`, `chat-basic`, `tool-read`, `session-mixed`, `bash-command`; the full 70 was not rerun.
+
+    | Scenario | Result | Why |
+    |---|---|---|
+    | `slash-commands` | fail (expected) | Rust-only `/subagent-stats` row |
+    | `login-api-key` | fail (expected) | Provider list: TS has Azure OpenAI Responses, Rust has Hugging Face |
+    | `compact-queue` | pass (fixed) | Was the loader pulse only. `Loader::tick` flipped the frame once per loop pass, and the loop wakes about every 250 ms, so the phase depended on how many passes ran. Main also passed 3/3 and this branch failed 3/3. Now the pulse flips on a wall-clock deadline (640 ms, as TS `setInterval`), and the loop wakes at that deadline. 3/3 pass after the fix. |
+  - **Open items:**
+    - Load-test numbers not taken. Keystroke p99 under 16 ms is not met: the bash-block frame cost is phase 6.
+    - Paused-pty Ctrl+C test. Forced 3 GiB shed test.
+    - Windows: Shell priority does not work (process-wrap JobObject overrides creation flags).
+    - macOS paths untested.
+    - MCP conformance suite not run. No manual run against a real server or OAuth provider.
+    - Plugin `mcp.json` not loaded (needs milestone 6).
+    - `finish_redirect` paste fallback not wired. Elicitation pane not dismissed on cancel.
+    - Session reads, open and resume are not yet on a lane.
+    - Stdio 32 MiB cap uses its own transport (unit-tested only).
+    - DCR runs again on each login. No cross-process token lock.
+  - **Infra gotchas:**
+    - A shared `CARGO_TARGET_DIR` across worktrees gave a stale `hoocode-runtime` rlib once (fixed by
+      touching the sources). Use per-worktree targets, or none shared.
+    - `fd` is not in apt here (`fd-find` gives "Unable to locate package"). Build it with
+      `cargo install fd-find --root <dir>` and put `<dir>/bin` on PATH for `file-autocomplete`.
+  - **Next step:** milestone 6 (plugins) or 7 (scheduler), per `docs/design/README.md`, after the open
+    load-test items.
+
 - **2026-10-08 session: concurrency 0-1, DocSearch, tool rename, Cron tools, close-out. Read this first.**
   - **Concurrency phases 0-1 done.** New crate `hoocode-runtime` (one runtime, the caps).
     `performance.*` settings (`maxParallelTools` 8, 1-32; `bashNice`; `memorySoftLimitMb`).

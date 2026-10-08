@@ -18,6 +18,7 @@ doctest = false
 
 [dependencies]
 hoocode-runtime = { workspace = true }
+hoocode-agent-mcp = { workspace = true }
 hoocode-agent-compaction = { workspace = true }
 hoocode-agent-core = { workspace = true }
 hoocode-agent-harness = { workspace = true }
@@ -26,6 +27,7 @@ hoocode-ai-models = { workspace = true }
 hoocode-ai-registry = { workspace = true }
 hoocode-ai-types = { workspace = true }
 hoocode-ai-util = { workspace = true }
+hoocode-code-mcp = { workspace = true }
 hoocode-code-models = { workspace = true }
 hoocode-code-auth = { workspace = true }
 hoocode-code-resources = { workspace = true }
@@ -43,6 +45,7 @@ regex-lite = "0.1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt", "sync", "time"] }
+tokio-util = { version = "0.7", default-features = false }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

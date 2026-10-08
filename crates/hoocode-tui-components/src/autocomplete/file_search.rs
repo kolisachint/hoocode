@@ -14,7 +14,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
-use std::thread;
 
 use super::{FileFinder, FileMatch};
 
@@ -63,10 +62,10 @@ impl FileSearch {
         let state = Arc::new(Mutex::new(State::default()));
         let (requests, inbox) = mpsc::channel();
         let worker_state = Arc::clone(&state);
-        thread::Builder::new()
-            .name("autocomplete-files".into())
-            .spawn(move || run_worker(&finder, &inbox, &worker_state))
-            .ok()?;
+        hoocode_runtime::spawn_named_thread("autocomplete-files", move || {
+            run_worker(&finder, &inbox, &worker_state)
+        })
+        .ok()?;
         Some(Self { state, requests })
     }
 

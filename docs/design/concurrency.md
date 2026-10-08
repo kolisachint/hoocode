@@ -166,10 +166,10 @@ Each phase lands on its own, with tests, and keeps the L2 parity checks green
 |---|---|---|
 | 0 | `/perf`, load scenario, baseline numbers in this card | Numbers recorded for Linux and macOS |
 | 1 | `hoocode-runtime`: one runtime, named threads, `run_blocking`, caps on tools and parallel calls, 2 workers in children; remove the 7 builders and the `block_on` sites | No runtime built outside the crate; thread ceiling holds in the load test |
-| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal |
-| 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn |
-| 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test |
-| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase |
+| 2 | `hoocode-term-out`, Ctrl+C on the input thread, SIGWINCH, ESC timer without a thread, async `Shell` pipes | Keystroke-to-frame p99 under 16 ms in both load runs; Ctrl+C aborts within 500 ms with the paused terminal. **Part 1 landed 2026-10-08** (writer thread, input batching, SIGWINCH; see "Phase 2, part 1" below). **Part 2 landed 2026-10-08** (Ctrl+C on the input thread, emergency exit, ESC timer without a thread on Unix, async `Shell` pipes, `std::thread::spawn` disallowed; see "Phase 2, part 2"). **Open:** the paused-pty run and the done-when numbers. |
+| 3 | `hoocode-session-io` with flush barriers | No session file I/O on the UI thread or on `hoocode-io`; kill -9 mid-turn loses at most the unflushed entries of that turn. **Status: writes landed** (`runtime` `session_io.rs`; 4096 entries or 64 MiB, producers wait; barrier at turn end, 1 s flush at dispose; torn last line skipped on read and not glued to the next entry). **Open:** session reads still run on the caller (they first wait for queued writes, up to 1 s), and `create_dir_all` and the `open`/`resume` paths are not yet moved to a lane. |
+| 4 | Lanes with OS priority; `hoocode-bg`; `nice` for children | Housekeeping and subagents never delay a frame in the load test. **Status: landed, load test not run.** `runtime` `lanes.rs` (`Lane`, per-thread priority via `thread-priority`; `io` workers High, tools pool and session writer Medium); `bg.rs` (`spawn_bg`, one Low thread): the footer's git watcher, the dispatch-dir sweep at subagent start and the dispatch-dir removal on success run there. `child.rs` (`lower_child_priority`): subagent children at nice +5, `Shell` children at `performance.bashNice`, which was not applied before. Subagents already started with 2 workers. **Open:** the frame-delay check needs the load scenario with subagents and MCP stalls, which has not been run. Windows: `Shell` priority is not effective yet, because process-wrap's `JobObject` overwrites creation flags set on the `Command`; it needs process-wrap's `CreationFlags` wrapper. macOS QoS compiles but is untested. Not in the tree: a version check and file watchers other than the footer. The session picker's list still runs on a plain thread (Phase 3 open item). |
+| 5 | Watchdog, stall reports, memory limits and shedding | A forced 3 GiB allocation sheds, then recovers; a stall shows its phase. **Status: landed in code, not yet load-tested.** `hoocode-runtime` `watchdog.rs` (the `hoocode-watchdog` thread: `ui_beat` from the TUI loop, 500 ms phase log, 2 s footer flag, 1 s io starvation probe) and `memory.rs` (RSS via `memory-stats`, soft/hard state machine with 10% hysteresis, child RSS for the lifeguard). Wired: shedding stops new subagent dispatches (`pool.rs`), parallel tool calls drop to 1 (`ParallelToolLimit` gate), render caches clear on a shed change, the footer shows a warning, a hard trip aborts the turn and flushes the session, and the lifeguard reaps children over 2 GiB through the stall path. **Open:** the 3 GiB live test; the footer cannot show a UI stall while the loop is stuck (it shows on the next loop turn; needs the Phase 2 output thread); memory limits are only sampled in the interactive mode; `ui_beat` phases are coarse; macOS child RSS and `sysctl` are unverified (no Mac here). |
 | 6 | Only if Phase 0 shows it: move syntax highlighting and big markdown parses to `hoocode-tools` | Frame build p99 under 8 ms on a 10k-line transcript |
 
 #### Baseline (Phase 0)
@@ -213,6 +213,74 @@ a wide margin (p99 48.7 ms).
 
 Not in these runs yet (the scenario's TODOs): the five subagents, the stdio MCP
 server that never answers, and the paused-pty run.
+
+#### Phase 2, part 1 (2026-10-08)
+
+- **`hoocode-term-out`** (`hoocode-tui-terminal` `output.rs`) is the only writer of
+  terminal output. Frames, escapes around them, and the escapes the input, progress
+  and timer threads send all go through it, in order. Its channel holds 1024 control
+  writes (the sender waits when full). A frame is a diff against the previous one, so
+  it is never replaced in the queue: the UI builds the next frame only after the
+  writer has taken the previous one (`frame_pending`), and the writer wakes the loop
+  with `TuiEvent::OutputDrained`. Shutdown writes what is queued within 1 s, then
+  drops the rest.
+- **Input batching** (`code-tui-app` `run`): up to 64 keys per loop pass go through
+  `Tui::accept_event`, which only schedules the frame. The pass then runs app events
+  and paints once (`flush_scheduled_render`).
+- **SIGWINCH** (`hoocode-runtime` `watch_sigwinch`, Unix) replaces the 100 ms resize
+  poll on Unix; the poll stays on Windows and as the fallback if the listener fails.
+  Verified by hand in tmux (resize redraws at the new width) and by a runtime test.
+- **Numbers** (Linux, 4 vCPU, debug build, `scripts/perf/load_scenario.py`, two runs
+  each, same session): keystroke-to-frame p50 about 3 ms on both the base commit and
+  this one. Frames for the same 300 keys: 305 here, 340 on base. p99 is 7 to 93 ms on
+  this commit and 31 to 92 ms on base, and one frame of the 40k-line bash block (150 to 230 ms)
+  sets it. That frame is the Phase 6 cost (`visual_truncate` wraps the whole block).
+  So the p99 target is not met yet, and the Phase 0 baseline (frame build p50 341 ms in
+  debug) is stale: HEAD builds frames in about 2.3 ms p50.
+- **Not in part 1:** Ctrl+C on the input thread, the ESC timer without a thread, async
+  `Shell` pipes, the paused-pty run. Other `std::thread::spawn` sites in `code-tui-app`
+  (bash, clipboard, login, footer, session picker, perf sampler) are unchanged.
+  `clippy.toml` does not forbid `thread::spawn`; adding it means touching those sites.
+
+#### Phase 2, part 2 (2026-10-08)
+
+- **Ctrl+C fast path** (`hoocode-tui-terminal` `interrupt.rs`). The input reader
+  scans each raw chunk before the UI sees it. Ctrl+C is `0x03`, Kitty `CSI 99;5u`
+  or modifyOtherKeys `CSI 27;5;99~`, but not inside a bracketed paste. Each press
+  calls the hook, which `code-tui-app` `run` sets to `Agent::abort` of the session.
+  The UI still gets the key. An abort is idempotent, so the second one changes nothing.
+- **Emergency exit.** The UI loop beats once per pass (at most 250 ms apart while idle).
+  Two presses within 1 s with no beat for 500 ms: the input thread writes the reset
+  sequences straight to fd 1 (the output thread may be stuck), disables raw mode, runs
+  `session_io().flush_blocking(1 s)` and exits 130.
+- **ESC timer without a thread on Unix** (`stdin_hub.rs`). The `hoocode-input` reader
+  reads stdin with `read(2)` after `poll(2)`. Its timeout is the ESC deadline, and
+  the deadline is checked on each wake-up. Windows keeps a short timer thread per
+  flush, because its read cannot time out. The Kitty query fallback still starts one
+  timer thread per terminal start; it is not on the keystroke path.
+- **Async `Shell` pipes** (`code-tool-bash` `operations.rs`). The command runs with
+  `tokio::process` (`process-wrap` `tokio1`, process group kill as before) on
+  `hoocode-io`. Two reader tasks send chunks into a bounded queue of 256. The
+  calling thread receives them with a 10 ms timeout, which also drives the tool's
+  output throttle (`on_idle`). The per-call flusher thread is gone. Before, each
+  call took 2 reader threads and 1 flusher. Output bytes, truncation, spill, the
+  100 ms pipe grace and the kill on abort or timeout are unchanged.
+- **Thread-spawn rule.** `clippy.toml` disallows `std::thread::spawn` and
+  `std::thread::Builder::spawn`. Production sites use `hoocode_runtime::spawn_named_thread`
+  or the panicking `spawn_thread`. Test files that model a peer carry an allow with
+  a reason.
+- **Tests.** `tui-terminal`: Ctrl+C encodings, paste exclusion, the emergency rule,
+  the hook firing while the UI is blocked, and the ESC deadline. `code-tool-bash`
+  `tests/it/operations.rs`: 3000 interleaved stdout/stderr lines in order, 3 MiB
+  from both pipes, kill on abort (process group), kill on timeout, the idle tick
+  while silent and after the pipes close. The existing 20 Shell tests pass.
+- **L2 parity** (`harness.py run`): `startup`, `chat-basic`, `tool-read`,
+  `session-mixed`, `bash-command`, `tool-bash`, `print-tool-bash`,
+  `print-tool-bash-light` all pass. No scenario has "abort" in its name.
+- **Not in part 2:** the paused-pty run (Ctrl+C within 500 ms with a terminal that
+  stops reading), the keystroke-to-frame numbers, a thread-count test, and the
+  Kitty fallback timer thread. Ctrl+C is not detected when a paste marker is split
+  across two reads.
 
 ## Not doing
 

@@ -200,25 +200,13 @@ fn strings(values: &[String]) -> Value {
 
 /// Default memory soft limit in MB: the lower of 2048 and 25% of RAM.
 fn default_memory_soft_limit_mb() -> u64 {
-    match hoocode_runtime::total_memory_bytes() {
-        Some(bytes) => {
-            (bytes / MIB / 4).clamp(defaults::MEMORY_FLOOR_MB, defaults::MEMORY_SOFT_CAP_MB)
-        }
-        None => defaults::MEMORY_SOFT_CAP_MB,
-    }
+    hoocode_runtime::default_memory_limits_mb(hoocode_runtime::total_memory_bytes()).0
 }
 
 /// Default memory hard limit in MB: the lower of 4096 and 50% of RAM.
 fn default_memory_hard_limit_mb() -> u64 {
-    match hoocode_runtime::total_memory_bytes() {
-        Some(bytes) => {
-            (bytes / MIB / 2).clamp(defaults::MEMORY_FLOOR_MB, defaults::MEMORY_HARD_CAP_MB)
-        }
-        None => defaults::MEMORY_HARD_CAP_MB,
-    }
+    hoocode_runtime::default_memory_limits_mb(hoocode_runtime::total_memory_bytes()).1
 }
-
-const MIB: u64 = 1024 * 1024;
 
 /// Default numbers from `DEFAULT_SETTINGS`, for the getters.
 mod defaults {
@@ -231,11 +219,8 @@ mod defaults {
     pub const MAX_PARALLEL_TOOLS: u64 = 8;
     pub const BASH_NICE: u64 = 0;
     /// Smallest non-zero memory limit, in MB (`performance.memory*LimitMb`).
+    /// The default caps live in `hoocode_runtime::default_memory_limits_mb`.
     pub const MEMORY_FLOOR_MB: u64 = 256;
-    /// Soft limit ceiling: the lower of this and 25% of RAM.
-    pub const MEMORY_SOFT_CAP_MB: u64 = 2048;
-    /// Hard limit ceiling: the lower of this and 50% of RAM.
-    pub const MEMORY_HARD_CAP_MB: u64 = 4096;
     pub const WEBTOOLS_TIMEOUT_SECS: u64 = 15;
     pub const BRANCH_SUMMARY_RESERVE_TOKENS: u64 = 16384;
     pub const RETRY_MAX_RETRIES: u64 = 3;

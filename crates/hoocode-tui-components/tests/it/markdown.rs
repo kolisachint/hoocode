@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::MutexGuard;
 
 use crate::common::{sgr, theme};
 use hoocode_tui_components::{DefaultTextStyle, Markdown};
@@ -12,8 +12,7 @@ use hoocode_tui_render::{Component, Tui};
 /// Capabilities are process-wide; every test pins them (no hyperlinks unless
 /// it says otherwise) and runs alone.
 fn lock() -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::capabilities_lock();
     caps(false);
     guard
 }

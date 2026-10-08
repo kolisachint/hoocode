@@ -691,10 +691,82 @@ fn assemble_session(
         },
     )
     .session;
+    let mode_restricted = mode_tools.is_some();
     if let Some(tools) = mode_tools {
         session.set_active_tools_by_name(&tools);
     }
+    if mcp_wanted(args, light) {
+        attach_mcp(&session, &services.cwd, interactive, mode_restricted);
+    }
     (session, services)
+}
+
+/// MCP servers start in this process only when its tool list can use them: no `--tools` list
+/// (all tools), or a list that names an `mcp_` tool. Light mode and `--no-tools` start none.
+fn mcp_wanted(args: &Args, light: bool) -> bool {
+    if light || args.no_tools == Some(true) {
+        return false;
+    }
+    args.tools
+        .as_ref()
+        .is_none_or(|tools| tools.iter().any(|t| t.starts_with("mcp_")))
+}
+
+/// Load the session's MCP servers and start the trusted ones in the background. Untrusted
+/// servers stay off; print and rpc say so on stderr and never prompt (fail closed). The
+/// interactive mode asks about the rest, answers server questions (elicitation) and starts
+/// logins. Print and rpc never start a login: a server that needs one is reported on stderr,
+/// and its server questions are declined. Print and rpc wait here, once, up to
+/// `STARTUP_WAIT` for the trusted servers to finish connecting, so the first prompt has their
+/// tools; a server still connecting then is reported on stderr and skipped for that prompt.
+fn attach_mcp(
+    session: &AgentSession,
+    cwd: &std::path::Path,
+    interactive: bool,
+    mode_restricted: bool,
+) {
+    let hub = std::sync::Arc::new(hoocode_code_agent_session::mcp::McpHub::for_folder(cwd));
+    if interactive {
+        hub.set_elicitation(std::sync::Arc::new(
+            hoocode_code_tui_app::mcp_elicitation::TuiElicitation,
+        ));
+    } else {
+        hub.set_elicitation(std::sync::Arc::new(
+            hoocode_code_agent_session::mcp::DeclineElicitation::new(report_mcp_on_stderr),
+        ));
+        hub.set_notifier(report_mcp_on_stderr);
+        for prompt in hub.pending_prompts() {
+            eprintln!(
+                "hoocode: not starting MCP servers from {} ({}): they are not trusted. Trust them in interactive mode.",
+                prompt.source.label(),
+                prompt.source.path().display()
+            );
+        }
+    }
+    hub.start();
+    if !interactive {
+        // Print and rpc answer their first prompt with the servers that connect in time. This
+        // runs at the entry point, before any prompt, and never on a runtime worker.
+        let slow = hub.wait_for_startup(hoocode_code_agent_session::mcp::STARTUP_WAIT);
+        for server in &slow {
+            report_mcp_on_stderr(format!(
+                "MCP server {} did not finish starting within {} s; its tools are skipped for this run.",
+                server.name,
+                hoocode_code_agent_session::mcp::STARTUP_WAIT.as_secs()
+            ));
+        }
+        for server in hub.servers() {
+            if let hoocode_code_agent_session::mcp::McpStatus::Failed(reason) = &server.status {
+                report_mcp_on_stderr(format!("MCP server {} failed: {reason}", server.name));
+            }
+        }
+    }
+    session.attach_mcp(hub, !mode_restricted);
+}
+
+/// Print and rpc: MCP notices go to stderr, as the untrusted-server notices do.
+fn report_mcp_on_stderr(message: String) {
+    eprintln!("hoocode: {message}");
 }
 
 /// The tokio runtime the CLI drives async work on (agent runs, OAuth): the
@@ -1576,7 +1648,7 @@ mod tests {
             _on_resize: Box<dyn FnMut() + Send>,
         ) {
             let script = std::mem::take(&mut self.script);
-            std::thread::spawn(move || {
+            hoocode_runtime::spawn_thread("hoocode-cli-worker", move || {
                 for (delay, keys) in script {
                     std::thread::sleep(std::time::Duration::from_millis(delay));
                     on_input(keys);
@@ -2121,6 +2193,27 @@ mod tests {
             assert!(!drawn[..collapsed_end].contains("Compose — the message in your hands"));
             assert!(drawn[collapsed_end..].contains("Compose — the message in your hands"));
         }
+    }
+}
+
+#[cfg(test)]
+mod mcp_wanted_tests {
+    use super::{mcp_wanted, Args};
+
+    fn args(argv: &[&str]) -> Args {
+        crate::args::parse_args(&argv.iter().map(|a| a.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn servers_start_only_where_the_tool_list_can_use_them() {
+        // No tool list: the process has every tool, MCP included.
+        assert!(mcp_wanted(&args(&[]), false));
+        // A list with an mcp_ tool (a subagent that names one).
+        assert!(mcp_wanted(&args(&["--tools", "Read,mcp_x_echo"]), false));
+        // A list without one, `--no-tools`, and light mode start nothing.
+        assert!(!mcp_wanted(&args(&["--tools", "Read"]), false));
+        assert!(!mcp_wanted(&args(&["--no-tools"]), false));
+        assert!(!mcp_wanted(&args(&[]), true));
     }
 }
 

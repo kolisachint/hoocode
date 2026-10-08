@@ -51,9 +51,12 @@ struct Harness {
     tui: Tui,
     term: Handle,
     transcript: Rc<RefCell<ImageTranscript>>,
+    /// Held for the test's life: capabilities are process-wide.
+    _caps: std::sync::MutexGuard<'static, ()>,
 }
 
 fn setup() -> Harness {
+    let caps = crate::capabilities_lock();
     set_capabilities(TerminalCapabilities {
         images: Some(ImageProtocol::Kitty),
         true_color: true,
@@ -88,6 +91,7 @@ fn setup() -> Harness {
         tui,
         term,
         transcript,
+        _caps: caps,
     }
 }
 

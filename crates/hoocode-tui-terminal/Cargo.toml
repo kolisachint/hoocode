@@ -18,7 +18,11 @@ doctest = false
 
 [dependencies]
 crossterm = "0.28"
+hoocode-runtime = { workspace = true }
 hoocode-tui-util = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "0.59", features = ["Win32_System_Console"] }

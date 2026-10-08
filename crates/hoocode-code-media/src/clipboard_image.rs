@@ -297,7 +297,7 @@ fn run_with_timeout(command: &str, args: &[&str], timeout: Duration) -> Option<V
         .spawn()
         .ok()?;
     let mut stdout = child.stdout.take()?;
-    let reader = std::thread::spawn(move || {
+    let reader = hoocode_runtime::spawn_thread("hoocode-clipboard-read", move || {
         let mut buf = Vec::new();
         let _ = stdout.read_to_end(&mut buf);
         buf

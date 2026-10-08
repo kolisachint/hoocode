@@ -44,6 +44,7 @@ fn token_streams_match_marked() {
 
 #[test]
 fn renders_match_markdown_ts() {
+    let _caps = crate::capabilities_lock();
     set_capabilities(TerminalCapabilities {
         images: None,
         true_color: true,

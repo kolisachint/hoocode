@@ -150,6 +150,7 @@ fn with_env(overrides: &[(&str, &str)], f: impl FnOnce()) {
 
 #[test]
 fn sixel_suite() {
+    let _caps = crate::capabilities_lock();
     // Windows Terminal detection
     with_env(&[("WT_SESSION", "7c3b4b6e-0000")], || {
         let c = detect_capabilities();

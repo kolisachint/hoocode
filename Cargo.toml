@@ -29,6 +29,7 @@ members = [
     "crates/hoocode-agent-compaction",
     "crates/hoocode-agent-harness",
     "crates/hoocode-agent-loop",
+    "crates/hoocode-agent-mcp",
     "crates/hoocode-agent-session",
     "crates/hoocode-agent-types",
 
@@ -46,6 +47,7 @@ members = [
     "crates/hoocode-code-media",
     "crates/hoocode-code-models",
     "crates/hoocode-code-auth",
+    "crates/hoocode-code-mcp",
     "crates/hoocode-code-migrate",
     "crates/hoocode-code-modes",
     "crates/hoocode-code-permissions",
@@ -119,6 +121,7 @@ hoocode-agent-core = { path = "crates/hoocode-agent-core" }
 hoocode-agent-compaction = { path = "crates/hoocode-agent-compaction" }
 hoocode-agent-harness = { path = "crates/hoocode-agent-harness" }
 hoocode-agent-loop = { path = "crates/hoocode-agent-loop" }
+hoocode-agent-mcp = { path = "crates/hoocode-agent-mcp" }
 hoocode-agent-session = { path = "crates/hoocode-agent-session" }
 hoocode-agent-types = { path = "crates/hoocode-agent-types" }
 
@@ -136,6 +139,7 @@ hoocode-code-media = { path = "crates/hoocode-code-media" }
 hoocode-code-print = { path = "crates/hoocode-code-print" }
 hoocode-code-models = { path = "crates/hoocode-code-models" }
 hoocode-code-auth = { path = "crates/hoocode-code-auth" }
+hoocode-code-mcp = { path = "crates/hoocode-code-mcp" }
 hoocode-code-migrate = { path = "crates/hoocode-code-migrate" }
 hoocode-code-modes = { path = "crates/hoocode-code-modes" }
 hoocode-code-permissions = { path = "crates/hoocode-code-permissions" }

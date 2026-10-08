@@ -7,7 +7,7 @@
 
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::MutexGuard;
 
 use hoocode_code_tui_theme::*;
 use hoocode_tui_components::{BoxComponent, Text};
@@ -16,8 +16,7 @@ use hoocode_tui_util::{strip_vt_control_characters, visible_width};
 
 /// These tests switch the process-wide theme, so they run one at a time.
 fn lock(theme_name: &str) -> MutexGuard<'static, ()> {
-    static LOCK: Mutex<()> = Mutex::new(());
-    let guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let guard = crate::global_theme_lock();
     init_theme(Some(theme_name), false);
     guard
 }
