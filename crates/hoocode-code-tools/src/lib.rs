@@ -20,7 +20,6 @@ use hoocode_code_tools_fs::{
 };
 use std::path::Path;
 
-pub mod external_tools;
 pub mod file_finder;
 pub mod light;
 pub mod permissions;

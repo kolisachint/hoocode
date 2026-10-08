@@ -210,9 +210,6 @@ pub fn tips() -> Vec<Tip> {
         Tip::new("offline", "It works with no network").rows(&[
             "HOOCODE_OFFLINE=1 skips every startup fetch; search and completion fall back to built-ins.",
         ]),
-        Tip::new("external-tools", "fd and rg make everything faster").rows(&[
-            "Already on your PATH? HooCode uses them. Otherwise it fetches them once, quietly.",
-        ]),
         Tip::new("reload", "No need to restart")
             .rows(&["/reload re-reads keybindings, extensions, skills, prompts and themes."])
             .note("/reload"),

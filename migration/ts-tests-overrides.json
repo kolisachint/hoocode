@@ -2,6 +2,7 @@
   "_comment": "Curated classification for TS test files that no ledger task lists in `ts_tests` and no Rust test cites. First matching rule wins (fnmatch globs on the path under the pin). status: ported | equivalent | n.a. | pending (owned by a not-yet-done task) | review (13.4b must resolve). Every rule needs a note.",
   "rules": [
     {"match": "packages/ai/test/azure-openai-base-url.test.ts", "status": "n.a.", "note": "Azure OpenAI dropped 2026-10-08 (decisions-2026-10-08.md)"},
+    {"match": "packages/coding-agent/test/external-tools-pane.test.ts", "status": "n.a.", "note": "external-tools layer removed 2026-10-08 (reliability 1.4, decisions-2026-10-08.md)"},
     {"match": "packages/coding-agent/test/canvas-*", "status": "pending", "task": "12.7", "note": "canvas (deferred)"},
     {"match": "packages/coding-agent/test/new-canvas.test.ts", "status": "pending", "task": "12.7", "note": "canvas (deferred)"},
     {"match": "packages/coding-agent/test/plugin-canvases.test.ts", "status": "pending", "task": "12.7", "note": "canvas via plugins (deferred)"},

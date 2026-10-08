@@ -1,6 +1,7 @@
 mod autocomplete_ts;
 mod common;
 mod editor;
+mod file_search;
 mod frame;
 mod fuzz_smoke;
 mod image_component;

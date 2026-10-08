@@ -213,7 +213,6 @@ fn env_overrides_are_read_from_the_hoocode_prefix() {
             assert_eq!(agent_dir(), PathBuf::from("/home/u/agent"));
             assert_eq!(auth_path(), PathBuf::from("/home/u/agent/auth.json"));
             assert_eq!(sessions_dir(), PathBuf::from("/home/u/agent/sessions"));
-            assert_eq!(bin_dir(), PathBuf::from("/home/u/agent/bin"));
             assert_eq!(custom_themes_dir(), PathBuf::from("/home/u/agent/themes"));
             assert_eq!(
                 debug_log_path(),
@@ -225,7 +224,6 @@ fn env_overrides_are_read_from_the_hoocode_prefix() {
         assert_eq!(agent_dir(), PathBuf::from("/home/u/.hoocode"));
         assert_eq!(auth_path(), PathBuf::from("/home/u/.hoocode/auth.json"));
         assert_eq!(sessions_dir(), PathBuf::from("/home/u/.hoocode/sessions"));
-        assert_eq!(bin_dir(), PathBuf::from("/home/u/.hoocode/bin"));
         assert_eq!(
             debug_log_path(),
             PathBuf::from("/home/u/.hoocode/hoocode-debug.log")

@@ -57,7 +57,6 @@ use hoocode_code_subagents::pool::DispatchOptions;
 use hoocode_code_task_store::{task_store, TaskStatus};
 use hoocode_code_tool_api::{truncate_tail, TruncationOptions, TruncationResult};
 use hoocode_code_tool_bash::BashResult;
-use hoocode_code_tools::external_tools::describe_external_tools;
 use hoocode_code_tools::light::{measure_prompt_surface, measure_tool_schema_tokens};
 use hoocode_code_tools_optin::todo::settle_dangling_main_tasks;
 use hoocode_code_tools_optin::AskQuestion;
@@ -2958,7 +2957,6 @@ impl Mode {
                     },
                 ],
                 // Resolved fresh on every open, never downloaded.
-                external_tools: describe_external_tools(),
                 // Extension flags arrive with the extension runner (12.3).
                 flags: Vec::new(),
                 tool_output_view: self.tool_output_view,

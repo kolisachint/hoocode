@@ -1463,8 +1463,7 @@ fn start_semantic_index(args: &Args, session: &AgentSession) {
     };
     let found = configured.is_some()
         || std::env::var_os("PATH")
-            .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(exe).is_file()))
-        || hoocode_code_paths::bin_dir().join(exe).is_file();
+            .is_some_and(|path| std::env::split_paths(&path).any(|dir| dir.join(exe).is_file()));
     let state = if found {
         EmbsearchState::Skipped {
             reason: "semantic indexing is not available in this build".into(),

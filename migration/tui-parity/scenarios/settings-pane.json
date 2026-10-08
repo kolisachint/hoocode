@@ -1,6 +1,7 @@
 {
-  "description": "/settings: the pane opens over the prompt with its categories; Enter opens a category; turning bash off applies live (tool count and per-turn surface re-priced); Escape backs out to the pane and then to the prompt.",
+  "description": "/settings: the pane opens over the prompt with its categories; Enter opens a category; turning bash off applies live (tool count and per-turn surface re-priced); Escape backs out to the pane and then to the prompt. The pane snapshots are masked: the Rust build has no external-tools layer (reliability 1.4), so its pane has no External tools row, no needs-binary markers and no gate notes, and its label column is narrower. Their contains assertions still run for both apps, and the closed snapshot is compared.",
   "phase": "11.3d2",
+  "mask_snapshots": ["pane", "category", "toggled", "back"],
   "terminal": {
     "cols": 100,
     "rows": 40
