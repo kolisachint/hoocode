@@ -5,6 +5,13 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ## Resume here
 
+- **2026-10-08: l1_done close-out (10.2a/b/c/d/f/g, 10.4c, 10.5) NOT done.** Harness now masks the
+  install-specific `# About <app> itself` block (`normalize_requests`). Still failing on two deliberate
+  rust divergences: subagent tools are `Agent`/`AgentOut` (docs/design/subagents.md 5d; ts pin has
+  `Task`/`TaskOutput`) and print/json print a stderr approval note (docs/design/reliability.md). Also
+  `SearchHooCode` sits after `ask_options` in ts but before it in rust. Decide before re-running.
+  Interactive `tool-bash` and `todo-write` pass. None of the 8 tasks is marked done.
+
 - **2026-10-08: reliability 1.1 (rpc fails closed) built on `claude/1.1-rpc-fails-closed`.**
   Not a ledger task. Gate: `ApprovalChannel` in `code-permissions`. rpc denies gated calls
   that need approval; warm workers and print/json are unchanged apart from a print/json stderr
