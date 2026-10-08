@@ -87,7 +87,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `ai-provider-openai-codex` | OpenAI Codex (ChatGPT subscription) Responses provider for hoocode AI: SSE and WebSocket transports | 1 | 2555 / 0 | keep |
 | `ai-provider-openai-responses` | OpenAI Responses API provider for hoocode AI | 2 | 2260 / 0 | keep |
 | `ai-registry` | API provider registry for hoocode AI: dispatches streams on model.api | 4 | 309 / 2999 | keep |
-| `ai-sse` | Server-Sent Events decoder shared by the hoocode AI providers | 2 | 218 / 11 | keep |
+| `ai-sse` | Server-Sent Events decoder shared by the hoocode AI providers | 2 | 218 / 12 | keep |
 | `ai-stream` | Streaming response utilities for hoocode AI | 12 | 611 / 0 | keep |
 | `ai-types` | Shared types for hoocode AI | 39 | 1090 / 0 | keep |
 | `ai-util` | Shared utilities for hoocode AI: JSON repair, hash, headers, sanitization, overflow detection | 12 | 3866 / 163 | keep |
@@ -155,7 +155,7 @@ in those tables; the generator keeps each crate's Status by name.
 | `tui-keys` | Keyboard handling for the hoocode TUI | 6 | 1968 / 582 | keep |
 | `tui-render` | Differential rendering for the hoocode TUI | 4 | 2766 / 2613 | keep |
 | `tui-terminal` | Terminal abstraction for the hoocode TUI | 2 | 1592 / 100 | keep |
-| `tui-util` | Shared utilities for the hoocode TUI | 8 | 2076 / 580 | keep |
+| `tui-util` | Shared utilities for the hoocode TUI | 8 | 2078 / 580 | keep |
 
 <!-- END generated -->
 
