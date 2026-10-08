@@ -1,6 +1,7 @@
 # MCP client
 
 Status: **agreed 2026-10-07**, scope cut 2026-10-08 ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Steps 3 (OAuth) and 4 (Interaction) are built for the interactive mode: `/mcp login <server>` opens the browser and reconnects the server. Elicitation is answered in the TUI and declined in print and rpc (no question request there yet).
 Design only. Replaces ledger 9.1 and 10.11.
 
 ## Goal

@@ -714,7 +714,9 @@ fn mcp_wanted(args: &Args, light: bool) -> bool {
 
 /// Load the session's MCP servers and start the trusted ones in the background. Untrusted
 /// servers stay off; print and rpc say so on stderr and never prompt (fail closed). The
-/// interactive mode asks about the rest.
+/// interactive mode asks about the rest, answers server questions (elicitation) and starts
+/// logins. Print and rpc never start a login: a server that needs one is reported on stderr,
+/// and its server questions are declined.
 fn attach_mcp(
     session: &AgentSession,
     cwd: &std::path::Path,
@@ -722,7 +724,15 @@ fn attach_mcp(
     mode_restricted: bool,
 ) {
     let hub = std::sync::Arc::new(hoocode_code_agent_session::mcp::McpHub::for_folder(cwd));
-    if !interactive {
+    if interactive {
+        hub.set_elicitation(std::sync::Arc::new(
+            hoocode_code_tui_app::mcp_elicitation::TuiElicitation,
+        ));
+    } else {
+        hub.set_elicitation(std::sync::Arc::new(
+            hoocode_code_agent_session::mcp::DeclineElicitation::new(report_mcp_on_stderr),
+        ));
+        hub.set_notifier(report_mcp_on_stderr);
         for prompt in hub.pending_prompts() {
             eprintln!(
                 "hoocode: not starting MCP servers from {} ({}): they are not trusted. Trust them in interactive mode.",
@@ -733,6 +743,11 @@ fn attach_mcp(
     }
     hub.start();
     session.attach_mcp(hub, !mode_restricted);
+}
+
+/// Print and rpc: MCP notices go to stderr, as the untrusted-server notices do.
+fn report_mcp_on_stderr(message: String) {
+    eprintln!("hoocode: {message}");
 }
 
 /// The tokio runtime the CLI drives async work on (agent runs, OAuth): the

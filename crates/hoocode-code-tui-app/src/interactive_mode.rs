@@ -3590,7 +3590,7 @@ impl Mode {
             BuiltinCommand::Changelog => self.handle_changelog_command(),
             BuiltinCommand::Debug => self.handle_debug_command(),
             BuiltinCommand::Perf => self.handle_perf_command(),
-            BuiltinCommand::Mcp => self.handle_mcp_command(),
+            BuiltinCommand::Mcp => self.handle_mcp_command(text),
             BuiltinCommand::Color => {
                 // An argument sets the slot outright; bare `/color` opens the
                 // swatches.
@@ -3826,8 +3826,23 @@ impl Mode {
 
     /// `/perf`: the Phase 0 counters (threads, RSS, frame and keystroke timing,
     /// stalls), as a notice in the transcript. See `perf.rs`.
-    /// `/mcp`: each MCP server with its source, state and tool count.
-    fn handle_mcp_command(&mut self) {
+    /// `/mcp`: each MCP server with its source, state and tool count. `/mcp login <server>`
+    /// starts the OAuth login of a server that needs one (see `start_mcp_login`).
+    fn handle_mcp_command(&mut self, command: &str) {
+        let args = command
+            .trim()
+            .trim_start_matches('/')
+            .strip_prefix("mcp")
+            .unwrap_or("")
+            .trim();
+        if let Some(server) = args.strip_prefix("login") {
+            self.start_mcp_login(server.trim());
+            return;
+        }
+        if !args.is_empty() {
+            self.show_warning("Usage: /mcp, or /mcp login <server>");
+            return;
+        }
         let servers = self
             .session
             .mcp()
@@ -3836,6 +3851,28 @@ impl Mode {
         let text = crate::mcp_listing::format_listing(&servers);
         self.add_to_chat(as_component(&handle(Spacer::new(1))));
         self.add_to_chat(as_component(&handle(Text::new(text, 1, 0))));
+    }
+
+    /// `/mcp login <server>`: the hub runs the login off the UI thread. The login link and the
+    /// outcome come back as chat records, so the link can be followed when the browser does not
+    /// open.
+    fn start_mcp_login(&mut self, server: &str) {
+        use hoocode_code_permissions::PermissionUi as _;
+        if server.is_empty() {
+            self.show_warning("Usage: /mcp login <server>");
+            return;
+        }
+        let Some(hub) = self.session.mcp() else {
+            self.show_warning("No MCP servers are configured.");
+            return;
+        };
+        let started = hub.login(server, |message| {
+            crate::dialog_bridge::TuiPermissionUi.notify(&message);
+        });
+        match started {
+            Ok(()) => self.show_status(&format!("Logging in to MCP server {server}.")),
+            Err(error) => self.show_warning(&error),
+        }
     }
 
     /// The one-time trust prompt for project and plugin MCP servers. Asked on a
@@ -6444,6 +6481,7 @@ impl BuiltinCommand {
             | Self::Color
             | Self::Chrome
             | Self::Cd
+            | Self::Mcp
             | Self::Export
             | Self::Import
             | Self::Subagent

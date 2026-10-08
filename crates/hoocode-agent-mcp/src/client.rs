@@ -15,26 +15,28 @@ use std::time::Duration;
 
 use http::{HeaderName, HeaderValue};
 use rmcp::model::{
-    CallToolRequest, CallToolRequestParams, CancelledNotificationParam, ClientRequest,
-    ListToolsResult, PaginatedRequestParams, ProgressNotificationParam, ProgressToken, RequestId,
-    ServerResult,
+    CallToolRequest, CallToolRequestParams, CancelledNotificationParam, ClientConfig,
+    ClientRequest, ElicitRequestParams, ElicitResult, ElicitationAction, ElicitationCapability,
+    FormElicitationCapability, ListToolsResult, PaginatedRequestParams, ProgressNotificationParam,
+    ProgressToken, RequestId, ServerResult, UrlElicitationCapability,
 };
 use rmcp::service::{
-    ClientInitializeError, NotificationContext, Peer, PeerRequestOptions, RunningService,
-    ServiceError,
+    ClientInitializeError, NotificationContext, Peer, PeerRequestOptions, RequestContext,
+    RunningService, ServiceError,
 };
 use rmcp::transport::auth::AuthClient;
 use rmcp::transport::streamable_http_client::{
     StreamableHttpClientTransportConfig, StreamableHttpError,
 };
 use rmcp::transport::StreamableHttpClientTransport;
-use rmcp::{ClientHandler, RoleClient, ServiceExt};
+use rmcp::{ClientHandler, ErrorData, RoleClient, ServiceExt};
 use serde_json::Value;
 use tokio::sync::{watch, OwnedSemaphorePermit, Semaphore};
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 
 use crate::config::McpServerConfig;
+use crate::elicitation::{DeclineAll, ElicitationAnswer, ElicitationHandler, ElicitationRequest};
 use crate::error::McpError;
 use crate::oauth;
 use crate::result::{from_call_result, ToolOutput};
@@ -119,10 +121,31 @@ pub struct McpTool {
 
 /// Client handler: routes progress to the calls that wait for it and records
 /// tool-list changes.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct Handler {
     progress: Arc<ProgressRoutes>,
     tools_changed: Arc<AtomicBool>,
+    /// Answers the server's `elicitation/create` requests, with the server's name.
+    elicitation: Elicitation,
+}
+
+#[derive(Clone)]
+struct Elicitation {
+    server: Arc<str>,
+    handler: Arc<dyn ElicitationHandler>,
+}
+
+impl Handler {
+    fn new(server: &str, elicitation: Arc<dyn ElicitationHandler>) -> Self {
+        Self {
+            progress: Arc::default(),
+            tools_changed: Arc::default(),
+            elicitation: Elicitation {
+                server: Arc::from(server),
+                handler: elicitation,
+            },
+        }
+    }
 }
 
 impl ClientHandler for Handler {
@@ -136,6 +159,60 @@ impl ClientHandler for Handler {
 
     async fn on_tool_list_changed(&self, _context: NotificationContext<RoleClient>) {
         self.tools_changed.store(true, Ordering::SeqCst);
+    }
+
+    /// Declares form and URL elicitation, so servers may ask.
+    fn get_info(&self) -> ClientConfig {
+        let mut info = ClientConfig::default();
+        info.capabilities.elicitation = Some(
+            ElicitationCapability::new()
+                .with_form(FormElicitationCapability::default())
+                .with_url(UrlElicitationCapability::default()),
+        );
+        info
+    }
+
+    async fn create_elicitation(
+        &self,
+        request: ElicitRequestParams,
+        _context: RequestContext<RoleClient>,
+    ) -> Result<ElicitResult, ErrorData> {
+        let question = match request {
+            ElicitRequestParams::FormElicitationParams {
+                message,
+                requested_schema,
+                ..
+            } => ElicitationRequest::Form {
+                message,
+                schema: serde_json::to_value(&requested_schema).unwrap_or(Value::Null),
+            },
+            ElicitRequestParams::UrlElicitationParams {
+                message,
+                url,
+                elicitation_id,
+                ..
+            } => ElicitationRequest::Url {
+                message,
+                url,
+                elicitation_id,
+            },
+            // A mode this client does not know: decline.
+            _ => return Ok(ElicitResult::new(ElicitationAction::Decline)),
+        };
+        let answer = self
+            .elicitation
+            .handler
+            .elicit(&self.elicitation.server, question)
+            .await;
+        Ok(match answer {
+            ElicitationAnswer::Accept(content) => {
+                let mut result = ElicitResult::new(ElicitationAction::Accept);
+                result.content = content;
+                result
+            }
+            ElicitationAnswer::Decline => ElicitResult::new(ElicitationAction::Decline),
+            ElicitationAnswer::Cancel => ElicitResult::new(ElicitationAction::Cancel),
+        })
     }
 }
 
@@ -216,7 +293,18 @@ impl McpClient {
         config: McpServerConfig,
         options: ClientOptions,
     ) -> Result<Self, McpError> {
-        Self::connect_with(server.into(), config, None, options).await
+        Self::connect_with(server.into(), config, None, options, Arc::new(DeclineAll)).await
+    }
+
+    /// [`connect`](Self::connect) with a handler for the server's elicitation requests. The
+    /// handler is kept for reconnects.
+    pub async fn connect_with_elicitation(
+        server: impl Into<String>,
+        config: McpServerConfig,
+        options: ClientOptions,
+        elicitation: Arc<dyn ElicitationHandler>,
+    ) -> Result<Self, McpError> {
+        Self::connect_with(server.into(), config, None, options, elicitation).await
     }
 
     /// Connects to a Streamable HTTP server that uses OAuth, with tokens kept
@@ -237,7 +325,37 @@ impl McpClient {
             url: url.into(),
             headers,
         };
-        Self::connect_with(server.into(), config, Some(data_dir.to_path_buf()), options).await
+        Self::connect_with(
+            server.into(),
+            config,
+            Some(data_dir.to_path_buf()),
+            options,
+            Arc::new(DeclineAll),
+        )
+        .await
+    }
+
+    /// [`connect_oauth`](Self::connect_oauth) with a handler for elicitation requests.
+    pub async fn connect_oauth_with_elicitation(
+        server: impl Into<String>,
+        url: impl Into<String>,
+        headers: BTreeMap<String, String>,
+        data_dir: &Path,
+        options: ClientOptions,
+        elicitation: Arc<dyn ElicitationHandler>,
+    ) -> Result<Self, McpError> {
+        let config = McpServerConfig::Http {
+            url: url.into(),
+            headers,
+        };
+        Self::connect_with(
+            server.into(),
+            config,
+            Some(data_dir.to_path_buf()),
+            options,
+            elicitation,
+        )
+        .await
     }
 
     async fn connect_with(
@@ -245,12 +363,13 @@ impl McpClient {
         config: McpServerConfig,
         oauth_dir: Option<PathBuf>,
         options: ClientOptions,
+        elicitation: Arc<dyn ElicitationHandler>,
     ) -> Result<Self, McpError> {
         let options = ClientOptions {
             max_in_flight: options.max_in_flight.max(1),
             ..options
         };
-        let handler = Handler::default();
+        let handler = Handler::new(&server, elicitation);
         let service = bounded_by(options.request_timeout, async {
             start(&server, &config, handler.clone(), oauth_dir.as_deref()).await
         })
