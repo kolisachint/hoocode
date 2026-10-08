@@ -407,7 +407,7 @@ mod parity {
                 title: "AGENTS.md",
                 path: format!("{cwd}/.hoocode/AGENTS.md"),
                 content: "Hidden resource instructions",
-                compact: "read resource .hoocode/AGENTS.md".into(),
+                compact: "Read resource .hoocode/AGENTS.md".into(),
                 hidden: "Hidden resource instructions",
                 absent: None,
             },
@@ -415,7 +415,7 @@ mod parity {
                 title: "outside AGENTS.md",
                 path: format!("{cwd}/../AGENTS.md"),
                 content: "Hidden outside resource instructions",
-                compact: format!("read resource {outside}"),
+                compact: format!("Read resource {outside}"),
                 hidden: "Hidden outside resource instructions",
                 absent: None,
             },
@@ -423,7 +423,7 @@ mod parity {
                 title: "documentation",
                 path: tools::read::readme_path().to_string_lossy().into_owned(),
                 content: "Hidden docs content",
-                compact: "read docs README.md".into(),
+                compact: "Read docs README.md".into(),
                 hidden: "Hidden docs content",
                 absent: None,
             },
@@ -461,7 +461,7 @@ mod parity {
             (format!("{cwd}/attio/SKILL.md"), "[skill] attio:120-329"),
             (
                 tools::read::readme_path().to_string_lossy().into_owned(),
-                "read docs README.md:120-329",
+                "Read docs README.md:120-329",
             ),
         ] {
             let mut c = component(

@@ -10,11 +10,11 @@ expression: json-subagent-child
 {"ping":true}
 {"type":"session","version":3,"id":"<masked>","timestamp":"<masked>","cwd":"<masked>"}
 {"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"read notes.txt"}],"timestamp":"<masked>"}}
-{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"<masked>","name":"read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":"<masked>","responseId":"chatcmpl-mock"}}
-{"type":"tool_execution_start","toolCallId":"call_read_1","toolName":"read","args":{"path":"notes.txt","limit":2}}
-{"type":"tool_execution_end","toolCallId":"call_read_1","toolName":"read","result":{"content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}]},"isError":false}
-{"type":"message_end","message":{"role":"toolResult","toolCallId":"call_read_1","toolName":"read","content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}],"isError":false,"timestamp":"<masked>"}}
-{"type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"<masked>","name":"read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":"<masked>","responseId":"chatcmpl-mock"},"toolResults":[{"role":"toolResult","toolCallId":"call_read_1","toolName":"read","content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}],"isError":false,"timestamp":"<masked>"}]}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"<masked>","name":"Read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":"<masked>","responseId":"chatcmpl-mock"}}
+{"type":"tool_execution_start","toolCallId":"call_read_1","toolName":"Read","args":{"path":"notes.txt","limit":2}}
+{"type":"tool_execution_end","toolCallId":"call_read_1","toolName":"Read","result":{"content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}]},"isError":false}
+{"type":"message_end","message":{"role":"toolResult","toolCallId":"call_read_1","toolName":"Read","content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}],"isError":false,"timestamp":"<masked>"}}
+{"type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"<masked>","name":"Read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":"<masked>","responseId":"chatcmpl-mock"},"toolResults":[{"role":"toolResult","toolCallId":"call_read_1","toolName":"Read","content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}],"isError":false,"timestamp":"<masked>"}]}
 {"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"Summary: the file starts with alpha and beta."}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":"<masked>","responseId":"chatcmpl-mock"}}
 {"type":"turn_end","message":{"role":"assistant","content":[{"type":"text","text":"Summary: the file starts with alpha and beta."}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":"<masked>","responseId":"chatcmpl-mock"},"toolResults":[]}
 {"type":"message_end","message":{"role":"user","content":[{"type":"text","text":"You are at turn 1 of your 2-turn limit. Stop investigating or making changes now and write your final summary of findings and results in your next message."}],"timestamp":"<masked>"}}
@@ -29,7 +29,7 @@ expression: json-subagent-child
  {
   "messages": [
    {
-    "content": "You are a coding agent. Use the tools to read, edit, and write files and run shell commands.\nSearch with bash (rg/find/ls). Prefer edit for changes; write for new files.\nBe concise. No preamble.\n\nCurrent date: <DATE>\nCurrent working directory: <WORK>",
+    "content": "You are a coding agent. Use the tools to read, edit, and write files and run shell commands.\nSearch with Shell (rg/find/ls). Prefer Edit for changes; Write for new files.\nBe concise. No preamble.\n\nCurrent date: <DATE>\nCurrent working directory: <WORK>",
     "role": "system"
    },
    {
@@ -47,7 +47,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Read a file. args: path, offset?, limit?",
-     "name": "read",
+     "name": "Read",
      "parameters": {
       "properties": {
        "limit": {
@@ -72,7 +72,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Write file (overwrites). args: path, content",
-     "name": "write",
+     "name": "Write",
      "parameters": {
       "properties": {
        "content": {
@@ -95,7 +95,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Replace exact text. args: path, oldText, newText",
-     "name": "edit",
+     "name": "Edit",
      "parameters": {
       "properties": {
        "newText": {
@@ -122,7 +122,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Run a shell command. args: command, timeout?",
-     "name": "bash",
+     "name": "Shell",
      "parameters": {
       "properties": {
        "command": {
@@ -146,7 +146,7 @@ expression: json-subagent-child
  {
   "messages": [
    {
-    "content": "You are a coding agent. Use the tools to read, edit, and write files and run shell commands.\nSearch with bash (rg/find/ls). Prefer edit for changes; write for new files.\nBe concise. No preamble.\n\nCurrent date: <DATE>\nCurrent working directory: <WORK>",
+    "content": "You are a coding agent. Use the tools to read, edit, and write files and run shell commands.\nSearch with Shell (rg/find/ls). Prefer Edit for changes; Write for new files.\nBe concise. No preamble.\n\nCurrent date: <DATE>\nCurrent working directory: <WORK>",
     "role": "system"
    },
    {
@@ -165,7 +165,7 @@ expression: json-subagent-child
      {
       "function": {
        "arguments": "{\"path\":\"notes.txt\",\"limit\":2}",
-       "name": "read"
+       "name": "Read"
       },
       "id": "call_read_1",
       "type": "function"
@@ -183,7 +183,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Read a file. args: path, offset?, limit?",
-     "name": "read",
+     "name": "Read",
      "parameters": {
       "properties": {
        "limit": {
@@ -208,7 +208,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Write file (overwrites). args: path, content",
-     "name": "write",
+     "name": "Write",
      "parameters": {
       "properties": {
        "content": {
@@ -231,7 +231,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Replace exact text. args: path, oldText, newText",
-     "name": "edit",
+     "name": "Edit",
      "parameters": {
       "properties": {
        "newText": {
@@ -258,7 +258,7 @@ expression: json-subagent-child
    {
     "function": {
      "description": "Run a shell command. args: command, timeout?",
-     "name": "bash",
+     "name": "Shell",
      "parameters": {
       "properties": {
        "command": {
@@ -286,8 +286,8 @@ expression: json-subagent-child
 {"type":"model_change","id":"<id-2>","parentId":null,"timestamp":"<masked>","provider":"mock","modelId":"mock-model"}
 {"type":"thinking_level_change","id":"<id-3>","parentId":"<id-2>","timestamp":"<masked>","thinkingLevel":"off"}
 {"type":"message","id":"<id-4>","parentId":"<id-3>","timestamp":"<masked>","message":{"role":"user","content":[{"type":"text","text":"read notes.txt"}],"timestamp":"<masked>"}}
-{"type":"message","id":"<id-5>","parentId":"<id-4>","timestamp":"<masked>","message":{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"call_read_1","name":"read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":"<masked>","responseId":"chatcmpl-mock"}}
-{"type":"message","id":"<id-6>","parentId":"<id-5>","timestamp":"<masked>","message":{"role":"toolResult","toolCallId":"call_read_1","toolName":"read","content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}],"isError":false,"timestamp":"<masked>"}}
+{"type":"message","id":"<id-5>","parentId":"<id-4>","timestamp":"<masked>","message":{"role":"assistant","content":[{"type":"text","text":"Let me read it."},{"type":"toolCall","id":"call_read_1","name":"Read","arguments":{"path":"notes.txt","limit":2}}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"toolUse","timestamp":"<masked>","responseId":"chatcmpl-mock"}}
+{"type":"message","id":"<id-6>","parentId":"<id-5>","timestamp":"<masked>","message":{"role":"toolResult","toolCallId":"call_read_1","toolName":"Read","content":[{"type":"text","text":"alpha\nbeta\n\n[2 more lines in file. Use offset=3 to continue.]"}],"isError":false,"timestamp":"<masked>"}}
 {"type":"message","id":"<id-7>","parentId":"<id-6>","timestamp":"<masked>","message":{"role":"assistant","content":[{"type":"text","text":"Summary: the file starts with alpha and beta."}],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":100,"output":20,"cacheRead":0,"cacheWrite":0,"totalTokens":120,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":"<masked>","responseId":"chatcmpl-mock"}}
 {"type":"message","id":"<id-8>","parentId":"<id-7>","timestamp":"<masked>","message":{"role":"user","content":[{"type":"text","text":"You are at turn 1 of your 2-turn limit. Stop investigating or making changes now and write your final summary of findings and results in your next message."}],"timestamp":"<masked>"}}
 {"type":"message","id":"<id-9>","parentId":"<id-8>","timestamp":"<masked>","message":{"role":"assistant","content":[],"api":"openai-completions","provider":"mock","model":"mock-model","usage":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"totalTokens":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"aborted","timestamp":"<masked>","errorMessage":"Request was aborted."}}

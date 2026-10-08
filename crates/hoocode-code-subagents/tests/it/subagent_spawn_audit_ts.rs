@@ -31,10 +31,9 @@ use hoocode_code_task_store::{task_store, TaskAgentKind, TaskAgentState, TaskSou
 use hoocode_code_tool_api::ToolContext;
 use serde_json::{json, Value};
 
-const DIR: &str = hoocode_code_paths::CONFIG_DIR_NAME;
+use crate::SERIAL;
 
-/// One test at a time: the store, inbox and pool slot are process-wide.
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+const DIR: &str = hoocode_code_paths::CONFIG_DIR_NAME;
 
 fn setup() -> tempfile::TempDir {
     static ONCE: Once = Once::new();

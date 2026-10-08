@@ -111,17 +111,29 @@ HEADER_TOOL_NAMES = ["read", "edit", "write"]
 RUST_ONLY_NOTE = re.compile(r"^Note: --(print|mode json) does not ask for tool approval;.*$")
 
 
+# Model-facing prose that names a tool (the light system prompt). Only exact phrases:
+# the verbs "read", "edit" and "write" in "Use the tools to read, edit, and write" stay.
+PROSE_TOOL_RULES = [
+    (r"Search with bash \(rg/find/ls\)", "Search with Shell (rg/find/ls)"),
+    (r"Prefer edit for changes; write for new files", "Prefer Edit for changes; Write for new files"),
+]
+
+
 def tool_rules() -> list[dict]:
     """The normalize.json rules that map hoocode-ts tool names to hoocode's."""
     rules = []
     for ts, rs in TOOL_NAMES.items():
         rules.append({"pattern": rf'"(name|toolName)":( ?)"{ts}"', "replace": rf'"\1":\2"{rs}"'})
         rules.append({"pattern": f"`{ts}`", "replace": f"`{rs}`"})
+        # Validation errors name the tool the model called (`Validation failed for tool "read":`).
+        rules.append({"pattern": rf'for tool (\\?)"{ts}(\\?)"', "replace": rf'for tool \1"{rs}\2"'})
     for ts in UNAMBIGUOUS_TOOL_NAMES:
         rules.append({"pattern": rf"\b{ts}\b", "replace": TOOL_NAMES[ts]})
     rules.append({"pattern": r"\bTask( tool\b)", "replace": r"Agent\1"})
     for ts in HEADER_TOOL_NAMES:
         rules.append({"pattern": rf"^(\s*){ts}( )", "replace": rf"\1{TOOL_NAMES[ts]}\2"})
+    for pattern, replace in PROSE_TOOL_RULES:
+        rules.append({"pattern": pattern, "replace": replace})
     return rules
 
 

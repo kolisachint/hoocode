@@ -27,8 +27,7 @@ use hoocode_code_task_store::{
 use hoocode_code_tool_api::{ToolContext, ToolDefinition};
 use serde_json::{json, Value};
 
-/// One test at a time touches the process-wide inbox, store and pool.
-static SERIAL: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+use crate::SERIAL;
 
 fn isolate_agent_dir() {
     static ONCE: Once = Once::new();
