@@ -47,6 +47,14 @@ trusted.
    - A server asking for input mid-call becomes a question in the TUI (or an
      approval request in rpc and app-server).
    - Tool-list changes apply at the next turn.
+   - Print and rpc wait up to 10 s before their first prompt for the trusted servers to connect;
+     a server still connecting then is reported on stderr and skipped for that prompt.
+   - `${VAR}` and `${VAR:-default}` expansion is supported in `mcp.json` `headers`, `env`
+     values, `args`, `url` and `command`. Expansion happens at connect time, so the trust
+     fingerprint uses the text as written. An unset variable without a default fails the server
+     (the diagnostic names the variable, never its value).
+   - A server with its own `Authorization` header connects with that header only: no OAuth, no
+     stored tokens. A 401 is a failure ("unauthorized: check the Authorization header").
 
 Subagents get MCP servers only if their tool list names an `mcp_` tool or inherits
 all tools.

@@ -12,6 +12,10 @@ Newest entry first. Each entry says where to resume. Status numbers come from
     Crate `hoocode-code-mcp`: discovery (user, project and plugin `mcp.json`) and trust. Wiring in
     `code-agent-session` (`mcp.rs`, `McpHub`), the trust prompt, `/mcp` and `/mcp login`.
     Design: `docs/design/mcp.md`.
+  - **MCP live-test fixes (GitHub's stdio server, print mode, 2026-10-08 third session):**
+    - Print and rpc wait up to 10 s before their first prompt for trusted servers to connect (`McpHub::wait_for_startup`), so `-p` sees MCP tools; the interactive mode re-syncs tools at each turn.
+    - `${VAR}` and `${VAR:-default}` expand in `headers`, `env`, `args`, `url` and `command` (`hoocode-code-mcp/src/expand.rs`); an unset variable marks the server Failed, naming the variable. The trust fingerprint keeps the unexpanded text.
+    - A server with its own `Authorization` header never uses OAuth; a 401 is `Unauthorized` (Failed), not AuthNeeded.
   - **Milestone 5, concurrency phases 2-5.** Terminal-output writer thread (one frame in flight), input
     batching, SIGWINCH, Ctrl+C on the input thread, ESC timer without a thread, async Shell pipes, and a
     clippy ban on `thread::spawn`. Session-io writer thread with flush barriers. Lanes and priorities,

@@ -585,6 +585,12 @@ impl AgentSession {
                 let Some(inner) = weak.upgrade() else {
                     return Ok(None);
                 };
+                // Servers that finished connecting since the last turn join it now
+                // (docs/design/mcp.md: tool-list changes apply at the next turn).
+                AgentSession {
+                    inner: inner.clone(),
+                }
+                .sync_mcp_tools();
                 if !std::mem::take(&mut lock(&inner.state).runtime_context_dirty) {
                     return Ok(None);
                 }
@@ -1272,8 +1278,8 @@ impl AgentSession {
         lock(&self.inner.mcp).clone()
     }
 
-    /// Takes the hub's tool list when it changed since the last sync. Runs at the start of
-    /// each turn, so a tool list change applies from the next turn.
+    /// Takes the hub's tool list when it changed since the last sync. Runs before each prompt
+    /// and between the turns of a run, so a tool list change applies from the next turn.
     fn sync_mcp_tools(&self) {
         let Some(hub) = self.mcp() else { return };
         let (generation, tools) = hub.tool_definitions();

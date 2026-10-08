@@ -33,6 +33,9 @@ pub enum McpError {
     /// Login or token handling failed (discovery, the callback, the token
     /// exchange, or the token store).
     Auth(String),
+    /// The server answered 401 to a request that carried its own `Authorization`
+    /// header. That header is the only credential, so no login can fix it.
+    Unauthorized(String),
 }
 
 impl fmt::Display for McpError {
@@ -54,6 +57,7 @@ impl fmt::Display for McpError {
                 "MCP server {server} requires login ({www_authenticate}); run the OAuth login first"
             ),
             Self::Auth(m) => write!(f, "MCP OAuth error: {m}"),
+            Self::Unauthorized(m) => write!(f, "unauthorized: {m}"),
         }
     }
 }

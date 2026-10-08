@@ -231,3 +231,164 @@ async fn a_granted_project_server_starts_and_the_grant_persists() {
     wait_until(&again, |s| is_connected(s, "proj")).await;
     again.shutdown();
 }
+
+/// The echo server, after a delay before it answers `initialize`: a slow start.
+fn slow_echo_server(delay_s: f64) -> String {
+    format!("import time\ntime.sleep({delay_s})\n{ECHO_SERVER}")
+}
+
+/// A hub whose only server is the echo server at `script`, named `x`, and nothing started yet.
+fn echo_hub(dir: &Path, script: &Path) -> Arc<McpHub> {
+    let user = dir.join("home/.agents/mcp.json");
+    write_json(
+        &user,
+        serde_json::json!({"mcpServers": {"x": echo_server_entry(script)}}),
+    );
+    let sources = ConfigSources {
+        user,
+        project_folder: dir.join("repo"),
+        plugins: Vec::new(),
+    };
+    Arc::new(McpHub::load(&sources, dir.join("trust/mcp-trust.json")))
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn wait_for_startup_returns_once_the_slow_server_is_connected() {
+    if !python3_available() {
+        eprintln!("skipped: python3 is not installed");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("slow_echo.py");
+    std::fs::write(&script, slow_echo_server(1.0)).unwrap();
+    let hub = echo_hub(dir.path(), &script);
+    hub.start();
+
+    // Still connecting: a short wait gives up and names the server.
+    let early = hub.wait_for_startup(Duration::from_millis(100));
+    assert_eq!(early.len(), 1, "{early:?}");
+    assert_eq!(early[0].status, McpStatus::Connecting);
+
+    // A long wait returns as soon as the server is connected, with nothing pending.
+    let started = Instant::now();
+    let pending = hub.wait_for_startup(Duration::from_secs(20));
+    assert!(pending.is_empty(), "{pending:?}");
+    assert!(started.elapsed() < Duration::from_secs(15));
+    assert!(is_connected(&hub.servers(), "x"));
+    assert_eq!(hub.tool_definitions().1.len(), 1);
+    hub.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_server_that_connects_mid_run_is_used_from_the_next_turn() {
+    if !python3_available() {
+        eprintln!("skipped: python3 is not installed");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let script = dir.path().join("echo_server.py");
+    std::fs::write(&script, ECHO_SERVER).unwrap();
+    let hub = echo_hub(dir.path(), &script);
+
+    let h = Harness::new(HarnessOptions::default());
+    h.session.attach_mcp(hub.clone(), true);
+    // Attached before the server starts: the first prompt has no MCP tool.
+    hub.start();
+
+    // Turn 1 calls a tool that does not exist, and waits until the server is connected. Turn 2
+    // then calls the MCP tool: it must be offered at the turn boundary, not only per prompt.
+    let waiting_hub = hub.clone();
+    h.set_responses(vec![
+        FauxResponseStep::async_factory(move |_ctx, _opts, _state, _model| {
+            let waiting_hub = waiting_hub.clone();
+            async move {
+                wait_until(&waiting_hub, |s| is_connected(s, "x")).await;
+                Ok(faux_assistant_message(
+                    vec![faux_tool_call("no_such_tool", serde_json::json!({}), None)],
+                    FauxMessageOptions {
+                        stop_reason: Some(StopReason::ToolUse),
+                        ..Default::default()
+                    },
+                ))
+            }
+        }),
+        tool_use(vec![faux_tool_call(
+            "mcp_x_echo",
+            serde_json::json!({"text": "late"}),
+            None,
+        )]),
+        text("done"),
+    ]);
+    h.session
+        .prompt("start", PromptOptions::default())
+        .await
+        .unwrap();
+
+    let transcript = serde_json::to_string(&h.session.messages()).unwrap();
+    assert!(
+        transcript.contains("echo:late"),
+        "the late server's tool should run on turn 2: {transcript}"
+    );
+    hub.shutdown();
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_expanded_secret_is_removed_from_the_failure_reason() {
+    // The command is the secret, so the failed start names it; the reason must not.
+    const VAR: &str = "HOOCODE_TEST_REDACT_COMMAND";
+    std::env::set_var(VAR, "/no/such/dir/s3cret-command-value");
+    let dir = tempfile::tempdir().unwrap();
+    write_json(
+        &dir.path().join("home/.agents/mcp.json"),
+        serde_json::json!({"mcpServers": {"gh": {"command": format!("${{{VAR}}}")}}}),
+    );
+    let sources = ConfigSources {
+        user: dir.path().join("home/.agents/mcp.json"),
+        project_folder: dir.path().join("repo"),
+        plugins: Vec::new(),
+    };
+    let hub = McpHub::load(&sources, dir.path().join("trust/mcp-trust.json"));
+    hub.start();
+    wait_until(&hub, |s| matches!(s[0].status, McpStatus::Failed(_))).await;
+    let McpStatus::Failed(reason) = &hub.servers()[0].status else {
+        unreachable!()
+    };
+    assert!(!reason.contains("s3cret-command-value"), "{reason}");
+    assert!(reason.contains("<redacted>"), "{reason}");
+    std::env::remove_var(VAR);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unset_variable_marks_the_server_failed_and_names_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let project = dir.path().join("repo");
+    write_json(
+        &dir.path().join("home/.agents/mcp.json"),
+        serde_json::json!({"mcpServers": {"gh": {
+            "command": "sh",
+            "args": ["-c", "true"],
+            "env": {"GITHUB_PERSONAL_ACCESS_TOKEN": "${HOOCODE_TEST_SURELY_UNSET_TOKEN}"},
+        }}}),
+    );
+    let sources = ConfigSources {
+        user: dir.path().join("home/.agents/mcp.json"),
+        project_folder: project,
+        plugins: Vec::new(),
+    };
+    let hub = McpHub::load(&sources, dir.path().join("trust/mcp-trust.json"));
+    hub.start();
+    let servers = hub.servers();
+    assert_eq!(servers.len(), 1);
+    match &servers[0].status {
+        McpStatus::Failed(reason) => {
+            assert!(
+                reason.contains("HOOCODE_TEST_SURELY_UNSET_TOKEN"),
+                "the diagnostic names the variable: {reason}"
+            );
+        }
+        other => panic!("expected Failed, got {other:?}"),
+    }
+    // It never starts, so nothing is sent and there are no tools.
+    assert!(hub.wait_for_startup(Duration::from_millis(50)).is_empty());
+    assert_eq!(hub.tool_definitions().1.len(), 0);
+}

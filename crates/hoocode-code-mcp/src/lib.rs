@@ -19,6 +19,7 @@
 
 pub mod config;
 pub mod discover;
+pub mod expand;
 pub mod trust;
 
 pub use config::{
@@ -26,6 +27,7 @@ pub use config::{
     ServerDef, Severity, Source, Transport, AGENTS_DIR_NAME, MCP_FILE_NAME,
 };
 pub use discover::{discover, DiscoveredServer, Discovery, ServerState, TrustPrompt};
+pub use expand::{expand_value, ExpandError};
 pub use trust::{
     diff, fingerprint, ApprovedServer, ServerDiff, TrustError, TrustStatus, TrustStore,
     TRUST_FILE_NAME,

@@ -716,7 +716,9 @@ fn mcp_wanted(args: &Args, light: bool) -> bool {
 /// servers stay off; print and rpc say so on stderr and never prompt (fail closed). The
 /// interactive mode asks about the rest, answers server questions (elicitation) and starts
 /// logins. Print and rpc never start a login: a server that needs one is reported on stderr,
-/// and its server questions are declined.
+/// and its server questions are declined. Print and rpc wait here, once, up to
+/// `STARTUP_WAIT` for the trusted servers to finish connecting, so the first prompt has their
+/// tools; a server still connecting then is reported on stderr and skipped for that prompt.
 fn attach_mcp(
     session: &AgentSession,
     cwd: &std::path::Path,
@@ -742,6 +744,23 @@ fn attach_mcp(
         }
     }
     hub.start();
+    if !interactive {
+        // Print and rpc answer their first prompt with the servers that connect in time. This
+        // runs at the entry point, before any prompt, and never on a runtime worker.
+        let slow = hub.wait_for_startup(hoocode_code_agent_session::mcp::STARTUP_WAIT);
+        for server in &slow {
+            report_mcp_on_stderr(format!(
+                "MCP server {} did not finish starting within {} s; its tools are skipped for this run.",
+                server.name,
+                hoocode_code_agent_session::mcp::STARTUP_WAIT.as_secs()
+            ));
+        }
+        for server in hub.servers() {
+            if let hoocode_code_agent_session::mcp::McpStatus::Failed(reason) = &server.status {
+                report_mcp_on_stderr(format!("MCP server {} failed: {reason}", server.name));
+            }
+        }
+    }
     session.attach_mcp(hub, !mode_restricted);
 }
 

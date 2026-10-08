@@ -2,7 +2,9 @@
 //!
 //! A grant binds a trust key (a project folder, or `plugin:<id>`) to the set of servers that
 //! was approved, through a fingerprint of `(name, command, args, url)`. Env and headers are not
-//! part of it, and neither is `disabled`. When the declared set changes, the status becomes
+//! part of it, and neither is `disabled`. The fingerprint uses the text as written in `mcp.json`:
+//! a `${VAR}` stays unexpanded, so changing the variable's value (a rotated token) does not ask
+//! for trust again (see [`crate::expand`]). When the declared set changes, the status becomes
 //! [`TrustStatus::Changed`] with a [`ServerDiff`], and the caller asks again.
 //!
 //! The file lives under the hoocode data directory (`~/.hoocode/mcp-trust.json`), never in the
@@ -360,6 +362,37 @@ mod tests {
         assert_ne!(base, fingerprint(&[stdio("a", "x", &["2"])]));
         assert_ne!(base, fingerprint(&[stdio("b", "x", &["1"])]));
         assert!(base.starts_with("sha256:"));
+    }
+
+    #[test]
+    fn fingerprint_uses_the_unexpanded_text() {
+        // Expansion happens at connect time; the parsed defs, and so the fingerprint, keep `${VAR}`.
+        let mut server = stdio("a", "npx", &["${PKG}"]);
+        if let Transport::Stdio { env, .. } = &mut server.transport {
+            env.insert("TOKEN".into(), "${TOKEN}".into());
+        }
+        let defs = [server.clone()];
+        let before = fingerprint(&defs);
+        let v1 = |name: &str| match name {
+            "PKG" => Some("pkg-1.0".to_owned()),
+            "TOKEN" => Some("token-1".to_owned()),
+            _ => None,
+        };
+        let v2 = |name: &str| match name {
+            "PKG" => Some("pkg-2.0".to_owned()),
+            "TOKEN" => Some("token-2".to_owned()),
+            _ => None,
+        };
+        let expanded_1 = server.transport.expanded(&v1).unwrap();
+        let expanded_2 = server.transport.expanded(&v2).unwrap();
+        assert_ne!(expanded_1, expanded_2);
+        assert_eq!(
+            fingerprint(&defs),
+            before,
+            "expanding must not change the fingerprint"
+        );
+        assert_eq!(fingerprint(&[stdio("a", "npx", &["${PKG}"])]), before);
+        assert_ne!(fingerprint(&[stdio("a", "npx", &["pkg-1.0"])]), before);
     }
 
     #[test]

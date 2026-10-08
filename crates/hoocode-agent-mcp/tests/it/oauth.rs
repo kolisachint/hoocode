@@ -268,3 +268,77 @@ async fn oversized_sse_event_fails_the_request() {
         .expect_err("a 17 MiB event is over the 16 MiB cap");
     assert!(matches!(err, McpError::Connect(_)), "{err:?}");
 }
+
+fn own_header(value: &str) -> BTreeMap<String, String> {
+    BTreeMap::from([("Authorization".to_owned(), value.to_owned())])
+}
+
+#[tokio::test]
+async fn own_authorization_header_connects_without_oauth() {
+    let auth = start_auth(false, 3600).await;
+    auth.state
+        .lock()
+        .unwrap()
+        .valid_tokens
+        .insert("static-token".to_owned());
+    let mcp = start_protected_mcp(&auth).await;
+    let dir = data_dir("own-header");
+
+    // The header is the credential: the server accepts it and no login runs.
+    let client = McpClient::connect_oauth(
+        "docs",
+        &mcp.url,
+        own_header("Bearer static-token"),
+        &dir,
+        options(),
+    )
+    .await
+    .expect("the header is accepted");
+    assert!(!client.list_tools().await.expect("list").is_empty());
+    assert_eq!(auth.state.lock().unwrap().authorize_calls, 0);
+    assert!(token_files(&dir).is_empty(), "no token file is written");
+
+    // The name is case-insensitive.
+    let lower = BTreeMap::from([("authorization".to_owned(), "Bearer static-token".to_owned())]);
+    McpClient::connect_oauth("docs", &mcp.url, lower, &dir, options())
+        .await
+        .expect("a lower-case header name works too");
+}
+
+#[tokio::test]
+async fn wrong_own_authorization_header_is_unauthorized_not_auth_required() {
+    let auth = start_auth(false, 3600).await;
+    let mcp = start_protected_mcp(&auth).await;
+    let dir = data_dir("own-header-wrong");
+
+    let err =
+        McpClient::connect_oauth("docs", &mcp.url, own_header("Bearer nope"), &dir, options())
+            .await
+            .expect_err("the server rejects the header");
+    assert!(
+        matches!(err, McpError::Unauthorized(_)),
+        "expected Unauthorized, got {err:?}"
+    );
+    assert_eq!(
+        err.to_string(),
+        "unauthorized: check the Authorization header"
+    );
+    assert_eq!(auth.state.lock().unwrap().authorize_calls, 0);
+}
+
+#[tokio::test]
+async fn own_authorization_ignores_a_stored_login_token() {
+    // A login stored a working token for this server. With the entry's own header, the
+    // stored token is never read, so a wrong header still fails as Unauthorized.
+    let auth = start_auth(false, 3600).await;
+    let mcp = start_protected_mcp(&auth).await;
+    let dir = data_dir("own-header-stored");
+    log_in(&mcp.url, &dir).await;
+    assert_eq!(token_files(&dir).len(), 1);
+
+    let err =
+        McpClient::connect_oauth("docs", &mcp.url, own_header("Bearer nope"), &dir, options())
+            .await
+            .expect_err("the stored token is not used");
+    assert!(matches!(err, McpError::Unauthorized(_)), "{err:?}");
+}

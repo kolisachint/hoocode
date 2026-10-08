@@ -17,8 +17,8 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::sync::{Arc, Condvar, Mutex, MutexGuard};
+use std::time::{Duration, Instant};
 
 use hoocode_agent_mcp::{
     begin_login, oauth, tool_name, CallOptions, ClientOptions, DeclineAll, McpClient, McpError,
@@ -42,6 +42,9 @@ pub use hoocode_code_mcp::TrustPrompt;
 const SHUTDOWN_WAIT: Duration = Duration::from_secs(5);
 /// How long a login waits for the browser to reach the redirect URI.
 const LOGIN_TIMEOUT: Duration = Duration::from_secs(300);
+/// How long print and rpc wait, before their first prompt, for the trusted servers to finish
+/// connecting. A server still connecting after this is skipped for that prompt.
+pub const STARTUP_WAIT: Duration = Duration::from_secs(10);
 
 /// Receives a line of text for the user (a login link, a notice). Called off the UI thread.
 pub type Notifier = Arc<dyn Fn(String) + Send + Sync>;
@@ -74,7 +77,11 @@ pub struct McpServerInfo {
 struct Entry {
     name: String,
     source: Source,
-    config: McpServerConfig,
+    /// The transport with `${VAR}` expanded. `None` when expansion failed or the entry is
+    /// disabled: such an entry never starts, so no unexpanded text is ever sent.
+    config: Option<McpServerConfig>,
+    /// The values `${VAR}` expanded to. They are secrets: a failure reason has them removed.
+    secrets: Vec<String>,
     status: McpStatus,
     client: Option<McpClient>,
     tools: Vec<ToolDefinition>,
@@ -104,6 +111,8 @@ pub struct McpHub {
     /// The hoocode data directory (the trust file's folder), where OAuth tokens are kept too.
     data_dir: PathBuf,
     state: Arc<Mutex<HubState>>,
+    /// Signalled whenever a server finishes connecting or failing. Paired with `state`.
+    changed: Arc<Condvar>,
 }
 
 impl McpHub {
@@ -122,6 +131,7 @@ impl McpHub {
         let trust =
             TrustStore::load(&trust_path).unwrap_or_else(|_| TrustStore::empty(&trust_path));
         let discovery = discover(&config, &trust);
+        let lookup = |name: &str| std::env::var(name).ok();
         let entries = discovery
             .servers
             .iter()
@@ -132,10 +142,26 @@ impl McpHub {
                     // discover() sets no other state; the client does.
                     Some(_) | None => McpStatus::Connecting,
                 };
+                // Expansion reads the environment now, after the trust check: the trust
+                // fingerprint saw the text as written. A failure names the variable, not its
+                // value, and the entry stays out of the start queue.
+                let (config, secrets, status) =
+                    match (server.transport.expanded_values(&lookup), status) {
+                        (Ok((transport, secrets)), status) => {
+                            (Some(to_client_config(&transport)), secrets, status)
+                        }
+                        (Err(_), McpStatus::Disabled) => (None, Vec::new(), McpStatus::Disabled),
+                        (Err(error), _) => (
+                            None,
+                            Vec::new(),
+                            McpStatus::Failed(format!("mcp.json: {error}")),
+                        ),
+                    };
                 Entry {
                     name: server.name.clone(),
                     source: server.source.clone(),
-                    config: to_client_config(&server.transport),
+                    config,
+                    secrets,
                     status,
                     client: None,
                     tools: Vec::new(),
@@ -155,6 +181,7 @@ impl McpHub {
             trust_path,
             data_dir,
             state: Arc::new(Mutex::new(state)),
+            changed: Arc::new(Condvar::new()),
         }
     }
 
@@ -193,7 +220,7 @@ impl McpHub {
             if entry.status != McpStatus::AuthNeeded {
                 return Err(format!("MCP server {name} does not need a login."));
             }
-            let McpServerConfig::Http { url, .. } = &entry.config else {
+            let Some(McpServerConfig::Http { url, .. }) = &entry.config else {
                 return Err(format!(
                     "MCP server {name} is not a Streamable HTTP server."
                 ));
@@ -253,9 +280,12 @@ impl McpHub {
             else {
                 return;
             };
-            state.entries[index].status = McpStatus::Connecting;
-            let entry = &state.entries[index];
-            vec![(index, entry.name.clone(), entry.config.clone())]
+            let entry = &mut state.entries[index];
+            let Some(config) = entry.config.clone() else {
+                return;
+            };
+            entry.status = McpStatus::Connecting;
+            vec![(index, entry.name.clone(), config)]
         };
         self.spawn_jobs(jobs);
     }
@@ -318,13 +348,7 @@ impl McpHub {
             } else {
                 indices
                     .into_iter()
-                    .map(|i| {
-                        (
-                            i,
-                            state.entries[i].name.clone(),
-                            state.entries[i].config.clone(),
-                        )
-                    })
+                    .filter_map(|i| start_job(&state.entries[i], i))
                     .collect()
             }
         };
@@ -346,16 +370,7 @@ impl McpHub {
 
     /// Every effective server with its state, in precedence order.
     pub fn servers(&self) -> Vec<McpServerInfo> {
-        lock(&self.state)
-            .entries
-            .iter()
-            .map(|e| McpServerInfo {
-                name: e.name.clone(),
-                source: e.source.label(),
-                status: e.status.clone(),
-                tool_count: e.tools.len(),
-            })
-            .collect()
+        lock(&self.state).entries.iter().map(server_info).collect()
     }
 
     /// Stops every connected server. Waits at most a few seconds. Safe to call twice.
@@ -384,11 +399,42 @@ impl McpHub {
         let _ = wait.recv_timeout(SHUTDOWN_WAIT);
     }
 
+    /// Blocks until no trusted server is still connecting, or `timeout` passes, and returns the
+    /// servers still connecting (empty when all finished). Print and rpc call it once, before
+    /// their first prompt, from the entry point, never from a runtime worker; the interactive
+    /// mode does not wait. A server that connects later is picked up at the next turn.
+    pub fn wait_for_startup(&self, timeout: Duration) -> Vec<McpServerInfo> {
+        let deadline = Instant::now() + timeout;
+        let mut state = lock(&self.state);
+        loop {
+            let pending: Vec<McpServerInfo> = if state.started {
+                state
+                    .entries
+                    .iter()
+                    .filter(|e| e.status == McpStatus::Connecting)
+                    .map(server_info)
+                    .collect()
+            } else {
+                Vec::new()
+            };
+            let now = Instant::now();
+            if pending.is_empty() || state.shut_down || now >= deadline {
+                return pending;
+            }
+            state = self
+                .changed
+                .wait_timeout(state, deadline - now)
+                .unwrap_or_else(|e| e.into_inner())
+                .0;
+        }
+    }
+
     fn spawn_jobs(&self, jobs: Vec<(usize, String, McpServerConfig)>) {
         let (elicitation, notifier) = {
             let state = lock(&self.state);
             (state.elicitation.clone(), state.notifier.clone())
         };
+        let changed = self.changed.clone();
         let elicitation: Arc<dyn ElicitationHandler> =
             elicitation.unwrap_or_else(|| Arc::new(DeclineAll));
         for (index, name, config) in jobs {
@@ -396,6 +442,7 @@ impl McpHub {
             let data_dir = self.data_dir.clone();
             let elicitation = elicitation.clone();
             let notifier = notifier.clone();
+            let changed = changed.clone();
             io_handle().spawn(async move {
                 let outcome = connect_and_list(&name, config, &data_dir, elicitation).await;
                 if lock(&state).shut_down {
@@ -414,11 +461,14 @@ impl McpHub {
                         entry.tools = definitions;
                         entry.client = Some(client);
                         guard.generation += 1;
+                        changed.notify_all();
                     }
                     Err(error) => {
-                        let status = status_for(&error);
+                        let secrets = guard.entries[index].secrets.clone();
+                        let status = redact_status(status_for(&error), &secrets);
                         let needs_login = status == McpStatus::AuthNeeded;
                         guard.entries[index].status = status;
+                        changed.notify_all();
                         drop(guard);
                         if let (true, Some(notify)) = (needs_login, notifier) {
                             notify(format!(
@@ -439,8 +489,17 @@ fn connecting_jobs(state: &mut HubState) -> Vec<(usize, String, McpServerConfig)
         .iter()
         .enumerate()
         .filter(|(_, e)| e.status == McpStatus::Connecting && e.client.is_none())
-        .map(|(i, e)| (i, e.name.clone(), e.config.clone()))
+        .filter_map(|(i, e)| start_job(e, i))
         .collect()
+}
+
+/// The spawn job for one entry, if it has a usable config (an entry whose expansion failed
+/// has none and never starts).
+fn start_job(entry: &Entry, index: usize) -> Option<(usize, String, McpServerConfig)> {
+    entry
+        .config
+        .clone()
+        .map(|config| (index, entry.name.clone(), config))
 }
 
 async fn connect_and_list(
@@ -473,6 +532,28 @@ async fn connect_and_list(
             client.shutdown().await;
             Err(error)
         }
+    }
+}
+
+fn server_info(entry: &Entry) -> McpServerInfo {
+    McpServerInfo {
+        name: entry.name.clone(),
+        source: entry.source.label(),
+        status: entry.status.clone(),
+        tool_count: entry.tools.len(),
+    }
+}
+
+/// Removes the expanded `${VAR}` values from a failure reason. A reason can echo the command or
+/// the URL it failed on, and those may carry a token.
+fn redact_status(status: McpStatus, secrets: &[String]) -> McpStatus {
+    match status {
+        McpStatus::Failed(reason) => {
+            McpStatus::Failed(secrets.iter().fold(reason, |text, secret| {
+                text.replace(secret.as_str(), "<redacted>")
+            }))
+        }
+        other => other,
     }
 }
 
@@ -724,6 +805,12 @@ mod tests {
         assert_eq!(
             status_for(&McpError::Auth("refresh rejected".to_owned())),
             McpStatus::AuthNeeded
+        );
+        // A 401 to the entry's own Authorization header is a failure a login cannot fix.
+        let own = McpError::Unauthorized("check the Authorization header".to_owned());
+        assert_eq!(
+            status_for(&own),
+            McpStatus::Failed("unauthorized: check the Authorization header".to_owned())
         );
         // The message text no longer decides: a connect failure that says "401" is just failed.
         let other = McpError::Connect("server said 401 unauthorized in its banner".to_owned());

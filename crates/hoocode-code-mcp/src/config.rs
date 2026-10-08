@@ -406,8 +406,10 @@ fn http(obj: &Map<String, Value>) -> Result<Transport, Failure> {
         ));
     }
     let url = required_string(obj, "url")?;
+    // A URL with a `${VAR}` is checked again once expanded (see `expand`).
     let lower = url.to_ascii_lowercase();
-    if !(lower.starts_with("http://") || lower.starts_with("https://")) {
+    let has_scheme = lower.starts_with("http://") || lower.starts_with("https://");
+    if !has_scheme && !url.contains("${") {
         return Err(Failure::Invalid(
             "\"url\" must start with http:// or https://".to_owned(),
         ));

@@ -259,6 +259,9 @@ struct Inner {
     config: McpServerConfig,
     /// Set for OAuth connections: the hoocode data directory holding tokens.
     oauth_dir: Option<PathBuf>,
+    /// The entry carries its own `Authorization` header: it is the only credential, so OAuth
+    /// is never used and a 401 is [`McpError::Unauthorized`].
+    own_auth: bool,
     options: ClientOptions,
     permits: Arc<Semaphore>,
     handler: Handler,
@@ -309,6 +312,9 @@ impl McpClient {
 
     /// Connects to a Streamable HTTP server that uses OAuth, with tokens kept
     /// under `data_dir` (see [`oauth::token_store_dir`]).
+    ///
+    /// When `headers` has an `Authorization` header (any letter case), OAuth is not used at
+    /// all: the stored tokens are not read, and a 401 is [`McpError::Unauthorized`].
     ///
     /// A stored token for the server's authorization server is used, and
     /// refreshed when it is near expiry or rejected. With no usable token the
@@ -369,15 +375,27 @@ impl McpClient {
             max_in_flight: options.max_in_flight.max(1),
             ..options
         };
+        // A server with its own Authorization header connects without OAuth and never reads
+        // the stored tokens (docs/design/mcp.md).
+        let own_auth = has_own_authorization(&config);
+        let oauth_dir = if own_auth { None } else { oauth_dir };
         let handler = Handler::new(&server, elicitation);
         let service = bounded_by(options.request_timeout, async {
-            start(&server, &config, handler.clone(), oauth_dir.as_deref()).await
+            start(
+                &server,
+                &config,
+                handler.clone(),
+                oauth_dir.as_deref(),
+                own_auth,
+            )
+            .await
         })
         .await?;
         let inner = Inner {
             server,
             config,
             oauth_dir,
+            own_auth,
             permits: Arc::new(Semaphore::new(options.max_in_flight)),
             options,
             handler,
@@ -497,7 +515,7 @@ impl McpClient {
                     if matches!(error, ServiceError::TransportClosed) {
                         self.reset_session(generation).await;
                     }
-                    return Err(map_service(&self.inner.server, error));
+                    return Err(map_service(&self.inner.server, error, self.inner.own_auth));
                 }
             };
 
@@ -531,7 +549,7 @@ impl McpClient {
                     if matches!(error, ServiceError::TransportClosed) {
                         self.reset_session(generation).await;
                     }
-                    return Err(map_service(&self.inner.server, error));
+                    return Err(map_service(&self.inner.server, error, self.inner.own_auth));
                 }
                 Some(Ok(Ok(result))) => result,
             };
@@ -621,10 +639,11 @@ impl McpClient {
                 .bounded(cancel, deadline, {
                     let params = params.clone();
                     let server = self.inner.server.as_str();
+                    let own_auth = self.inner.own_auth;
                     async move {
                         peer.list_tools(Some(params))
                             .await
-                            .map_err(|e| map_service(server, e))
+                            .map_err(|e| map_service(server, e, own_auth))
                     }
                 })
                 .await;
@@ -665,6 +684,7 @@ impl McpClient {
             &self.inner.config,
             self.inner.handler.clone(),
             self.inner.oauth_dir.as_deref(),
+            self.inner.own_auth,
         )
         .await?;
         let generation = self.inner.next_generation.fetch_add(1, Ordering::SeqCst);
@@ -696,12 +716,14 @@ impl McpClient {
 }
 
 /// Starts the server for `config` and initializes the MCP session. With
-/// `oauth_dir`, a Streamable HTTP server is reached with its stored OAuth token.
+/// `oauth_dir`, a Streamable HTTP server is reached with its stored OAuth token. `own_auth`
+/// says the entry has its own `Authorization` header (then `oauth_dir` is `None`).
 async fn start(
     server: &str,
     config: &McpServerConfig,
     handler: Handler,
     oauth_dir: Option<&Path>,
+    own_auth: bool,
 ) -> Result<RunningService<RoleClient, Handler>, McpError> {
     match config {
         McpServerConfig::Stdio {
@@ -715,7 +737,7 @@ async fn start(
             handler
                 .serve(transport)
                 .await
-                .map_err(|e| connect_error(server, e))
+                .map_err(|e| connect_error(server, e, own_auth))
         }
         McpServerConfig::Http { url, headers } => {
             let mut custom = HashMap::new();
@@ -743,13 +765,47 @@ async fn start(
                         .await
                 }
             };
-            result.map_err(|e| connect_error(server, e))
+            result.map_err(|e| connect_error(server, e, own_auth))
         }
     }
 }
 
-/// Maps a failed initialize. A 401 becomes [`McpError::AuthRequired`].
-fn connect_error(server: &str, error: ClientInitializeError) -> McpError {
+/// True when a Streamable HTTP entry sends its own `Authorization` header (any letter case).
+fn has_own_authorization(config: &McpServerConfig) -> bool {
+    matches!(
+        config,
+        McpServerConfig::Http { headers, .. }
+            if headers.keys().any(|name| name.eq_ignore_ascii_case("authorization"))
+    )
+}
+
+/// The 401 of a request sent with the entry's own header, as the typed error.
+fn unauthorized() -> McpError {
+    McpError::Unauthorized("check the Authorization header".to_owned())
+}
+
+/// True when `error` is a 401 from the Streamable HTTP transport. The plain client reports it
+/// as an unexpected response whose text starts with the status; the OAuth client as
+/// `AuthRequired`.
+fn is_unauthorized(error: &(dyn std::error::Error + Send + Sync + 'static)) -> bool {
+    match error.downcast_ref::<StreamableHttpError<reqwest::Error>>() {
+        Some(StreamableHttpError::AuthRequired(_)) => true,
+        Some(StreamableHttpError::UnexpectedServerResponse(text)) => text.starts_with("HTTP 401"),
+        _ => false,
+    }
+}
+
+/// Maps a failed initialize. A 401 becomes [`McpError::AuthRequired`], or
+/// [`McpError::Unauthorized`] when the entry sends its own `Authorization` header.
+fn connect_error(server: &str, error: ClientInitializeError, own_auth: bool) -> McpError {
+    if let ClientInitializeError::TransportError {
+        error: transport, ..
+    } = &error
+    {
+        if own_auth && is_unauthorized(&*transport.error) {
+            return unauthorized();
+        }
+    }
     let challenge = match &error {
         ClientInitializeError::TransportError { error, .. } => auth_challenge(&*error.error),
         _ => None,
@@ -791,10 +847,13 @@ async fn notify_cancelled(peer: &Peer<RoleClient>, id: RequestId, reason: &str) 
 }
 
 /// Maps an rmcp error. A dropped connection is `Disconnected` so callers can
-/// tell it apart; a 401 is `AuthRequired`.
-fn map_service(server: &str, error: ServiceError) -> McpError {
+/// tell it apart; a 401 is `AuthRequired`, or `Unauthorized` with an own `Authorization` header.
+fn map_service(server: &str, error: ServiceError, own_auth: bool) -> McpError {
     match error {
         ServiceError::TransportClosed => McpError::Disconnected("the connection closed".to_owned()),
+        ServiceError::TransportSend(error) if own_auth && is_unauthorized(&*error.error) => {
+            unauthorized()
+        }
         ServiceError::TransportSend(error) => match auth_challenge(&*error.error) {
             Some(www_authenticate) => McpError::AuthRequired {
                 server: server.to_owned(),
