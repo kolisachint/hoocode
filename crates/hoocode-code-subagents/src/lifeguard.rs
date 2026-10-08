@@ -31,7 +31,7 @@
 //! agents we actually ship. `TIMEOUTS_MS` is keyed `explore`/`edit`/`test`/
 //! `review`/`doc`, and neither tree ships `edit`, `test`, `review` or `doc` —
 //! so every subagent fell through to the 5-minute default, including
-//! `code-review`. Four of ten recorded runs (`hoobot/.cortexcode/dispatch`)
+//! `code-review`. Four of ten recorded runs (`hoobot/.hoocode/dispatch`)
 //! died `timeout` at exactly 300s, three of them `code-review` holding 220-297s
 //! of finished work. See [`base_timeout_ms`] for the values and why.
 

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 const FAKE_CA_PEM: &str =
-    "-----BEGIN CERTIFICATE-----\nCORTEX_TEST_FAKE_CA_DO_NOT_TRUST\n-----END CERTIFICATE-----\n";
+    "-----BEGIN CERTIFICATE-----\nHOOCODE_TEST_FAKE_CA_DO_NOT_TRUST\n-----END CERTIFICATE-----\n";
 
 fn sources(argv: &[&str], env: &[(&str, &Path)]) -> TlsSources {
     let argv: Vec<String> = argv.iter().map(|s| s.to_string()).collect();
@@ -51,7 +51,7 @@ fn always_includes_the_bundled_roots_and_nothing_else_by_default() {
 #[test]
 fn merges_a_custom_pem_from_hoocode_ca_cert_additively() {
     let f = fixture();
-    let cas = resolve_trusted_cas(&sources(&[], &[("CORTEX_CA_CERT", &f.ca_path)]));
+    let cas = resolve_trusted_cas(&sources(&[], &[("HOOCODE_CA_CERT", &f.ca_path)]));
     assert_eq!(cas.extra, vec![pem(FAKE_CA_PEM)]);
 }
 
@@ -61,7 +61,7 @@ fn deduplicates_when_the_same_pem_comes_from_two_sources() {
     let cas = resolve_trusted_cas(&sources(
         &[],
         &[
-            ("CORTEX_CA_CERT", &f.ca_path),
+            ("HOOCODE_CA_CERT", &f.ca_path),
             ("NODE_EXTRA_CA_CERTS", &f.ca_path),
         ],
     ));
@@ -79,10 +79,10 @@ fn falls_back_to_node_extra_ca_certs() {
 fn a_missing_ca_file_keeps_the_defaults_and_does_not_fail() {
     let f = fixture();
     let missing = f.dir.join("does-not-exist.pem");
-    let cas = resolve_trusted_cas(&sources(&[], &[("CORTEX_CA_CERT", &missing)]));
+    let cas = resolve_trusted_cas(&sources(&[], &[("HOOCODE_CA_CERT", &missing)]));
     assert!(cas.extra.is_empty());
     // A directory is not a regular file either.
-    let cas = resolve_trusted_cas(&sources(&[], &[("CORTEX_CA_CERT", &f.dir)]));
+    let cas = resolve_trusted_cas(&sources(&[], &[("HOOCODE_CA_CERT", &f.dir)]));
     assert!(cas.extra.is_empty());
 }
 
@@ -90,17 +90,17 @@ fn a_missing_ca_file_keeps_the_defaults_and_does_not_fail() {
 fn honors_precedence_flag_then_hoocode_env_then_node_env() {
     let f = fixture();
     let flag_path = f.dir.join("flag-ca.pem");
-    let flag_pem = "-----BEGIN CERTIFICATE-----\nCORTEX_TEST_FLAG_CA\n-----END CERTIFICATE-----\n";
+    let flag_pem = "-----BEGIN CERTIFICATE-----\nHOOCODE_TEST_FLAG_CA\n-----END CERTIFICATE-----\n";
     std::fs::write(&flag_path, flag_pem).unwrap();
     let other_path = f.dir.join("other-ca.pem");
     std::fs::write(
         &other_path,
-        "-----BEGIN CERTIFICATE-----\nCORTEX_TEST_OTHER_CA\n-----END CERTIFICATE-----\n",
+        "-----BEGIN CERTIFICATE-----\nHOOCODE_TEST_OTHER_CA\n-----END CERTIFICATE-----\n",
     )
     .unwrap();
     let flag = flag_path.display().to_string();
     let env = [
-        ("CORTEX_CA_CERT", f.ca_path.as_path()),
+        ("HOOCODE_CA_CERT", f.ca_path.as_path()),
         ("NODE_EXTRA_CA_CERTS", other_path.as_path()),
     ];
     let cas = resolve_trusted_cas(&sources(&["node", "cli.js", "--ca-cert", &flag], &env));
@@ -131,11 +131,11 @@ fn excludes_the_system_store_unless_opted_in() {
         .iter()
         .all(|ca| matches!(ca, ExtraCa::SystemDer(_))));
     let env = TlsSources::from_args_and_env(&[], |k| {
-        (k == "CORTEX_USE_SYSTEM_CA").then(|| " Yes ".to_string())
+        (k == "HOOCODE_USE_SYSTEM_CA").then(|| " Yes ".to_string())
     });
     assert!(env.use_system_ca);
     let env = TlsSources::from_args_and_env(&[], |k| {
-        (k == "CORTEX_USE_SYSTEM_CA").then(|| "0".to_string())
+        (k == "HOOCODE_USE_SYSTEM_CA").then(|| "0".to_string())
     });
     assert!(!env.use_system_ca);
 }
@@ -156,7 +156,7 @@ fn client_builder_builds_with_the_installed_trust_set() {
     let real = f.dir.join("real.pem");
     std::fs::write(&real, include_str!("../fixtures/isrg-root-x1.pem")).unwrap();
     let cas =
-        hoocode_ai_util::tls::configure_global_tls(&sources(&[], &[("CORTEX_CA_CERT", &real)]));
+        hoocode_ai_util::tls::configure_global_tls(&sources(&[], &[("HOOCODE_CA_CERT", &real)]));
     assert_eq!(cas.extra.len(), 1);
     http_client_builder().build().unwrap();
 }

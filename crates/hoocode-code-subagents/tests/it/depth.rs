@@ -31,14 +31,6 @@ fn current_depth_reads_positive_depths() {
         current_subagent_depth(&env(&[("HOOCODE_SUBAGENT_DEPTH", "2")])),
         2
     );
-    // hoocode's own prefix wins over hoocode's.
-    assert_eq!(
-        current_subagent_depth(&env(&[
-            ("CORTEXCODE_SUBAGENT_DEPTH", "3"),
-            ("HOOCODE_SUBAGENT_DEPTH", "2")
-        ])),
-        3
-    );
 }
 
 #[test]

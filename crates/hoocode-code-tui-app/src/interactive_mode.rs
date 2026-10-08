@@ -4553,7 +4553,7 @@ impl Mode {
     }
 
     /// `/subagent-stats [24h|7d|all]`: what the dispatch ledger says about
-    /// reliability. Read from `<cwd>/.cortexcode/dispatch/ledger.jsonl` — one
+    /// reliability. Read from `<cwd>/.hoocode/dispatch/ledger.jsonl` — one
     /// line per attempt — instead of from whatever dispatch dirs survived on
     /// disk, which is the only evidence there was before the ledger.
     fn handle_subagent_stats_command(&mut self, text: &str) {

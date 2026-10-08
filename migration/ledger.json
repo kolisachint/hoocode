@@ -136,7 +136,7 @@
   },
   {
    "id": "10.4a",
-   "title": "Custom providers via models.json (~/.hoocode|~/.cortexcode), new crate code-models (registry = built-in catalog + custom)",
+   "title": "Custom providers via models.json (~/.hoocode|~/.hoocode), new crate code-models (registry = built-in catalog + custom)",
    "phase": 10,
    "status": "done",
    "depends": [
@@ -1757,7 +1757,7 @@
   },
   {
    "id": "10.1a",
-   "title": "New crate code-paths: app identity, config/agent dirs, env overrides (CORTEXCODE_/HOOCODE_), .hoocode fallback, utils/paths.ts",
+   "title": "New crate code-paths: app identity, config/agent dirs, env overrides (HOOCODE_/HOOCODE_), .hoocode fallback, utils/paths.ts",
    "phase": 10,
    "status": "done",
    "depends": [
@@ -2077,7 +2077,7 @@
      "at": "2026-09-26T22:59:21Z",
      "commit": "89768c1",
      "kind": "block",
-     "text": "Design decision needed: hoocode's webfetch/websearch shell out to the external webtools binary (kolisachint/webtools, Rust, downloaded by tools-manager) and parse its --json output. Options: (A) port the tool layer exactly (args, .webtoolsignore, 15-min cache, result formatting, texts) and run the same webtools binary from PATH / ~/.cortexcode/bin, giving output identical to hoocode (deviates from the design doc's htmd+dom_smoothie row); (B) the design doc's in-process htmd + dom_smoothie extraction, only approximately matching the binary's output (its source was not readable here; add_repo was denied); (C) depend on webtools as a library crate (needs access to that repo). Asked the user 2026-09-26."
+     "text": "Design decision needed: hoocode's webfetch/websearch shell out to the external webtools binary (kolisachint/webtools, Rust, downloaded by tools-manager) and parse its --json output. Options: (A) port the tool layer exactly (args, .webtoolsignore, 15-min cache, result formatting, texts) and run the same webtools binary from PATH / ~/.hoocode/bin, giving output identical to hoocode (deviates from the design doc's htmd+dom_smoothie row); (B) the design doc's in-process htmd + dom_smoothie extraction, only approximately matching the binary's output (its source was not readable here; add_repo was denied); (C) depend on webtools as a library crate (needs access to that repo). Asked the user 2026-09-26."
     },
     {
      "at": "2026-10-01T05:49:39Z",
@@ -2636,7 +2636,7 @@
      "at": "2026-09-27T04:59:33Z",
      "commit": "9b29742",
      "kind": "note",
-     "text": "New crate code-modes: hoo-config.json (read/merge/write), mode prompts + grill prompts embedded verbatim, plan parsing (reproduces hoocode's multiline-regex first-line capture), /mode /plan /grill /goal /approve as ModeAction lists, ModesExtension (ExtensionHooks: commands + new before_agent_start hook). CLI installs it per session (--mode-path, enabled_tools). print-context-files: the build-mode appendix now matches hoocode byte for byte. mode-plan L2 (stable) waits on the interactive TUI (11.x: editor, footer mode badge) — hoocode's interactive mode is still the placeholder. The host must carry out ModeActions (Notify, Reload, NewSessionWithMessage, SendFollowUp via take_actions); nothing consumes them yet (interactive 11.x; StartAutoLoop needs /loop, 12.5). Not ported: mode prompt in subagents is skipped via SUBAGENT_DEPTH env (10.9 must set CORTEXCODE_SUBAGENT_DEPTH); hoo.setMode footer, argument completions (11.x)."
+     "text": "New crate code-modes: hoo-config.json (read/merge/write), mode prompts + grill prompts embedded verbatim, plan parsing (reproduces hoocode's multiline-regex first-line capture), /mode /plan /grill /goal /approve as ModeAction lists, ModesExtension (ExtensionHooks: commands + new before_agent_start hook). CLI installs it per session (--mode-path, enabled_tools). print-context-files: the build-mode appendix now matches hoocode byte for byte. mode-plan L2 (stable) waits on the interactive TUI (11.x: editor, footer mode badge) — hoocode's interactive mode is still the placeholder. The host must carry out ModeActions (Notify, Reload, NewSessionWithMessage, SendFollowUp via take_actions); nothing consumes them yet (interactive 11.x; StartAutoLoop needs /loop, 12.5). Not ported: mode prompt in subagents is skipped via SUBAGENT_DEPTH env (10.9 must set HOOCODE_SUBAGENT_DEPTH); hoo.setMode footer, argument completions (11.x)."
     },
     {
      "at": "2026-10-01T05:15:25Z",
@@ -2785,7 +2785,7 @@
      "at": "2026-09-27T05:12:47Z",
      "commit": "efc0d51",
      "kind": "note",
-     "text": "Session flags: code-cli session_flags.rs ports resolveSessionPath / validateForkFlags / createSessionManager (--no-session, --fork, --session incl. the other-project y/N fork prompt, --continue) and the session dir (--session-dir, CORTEXCODE_CODING_AGENT_SESSION_DIR, sessionDir setting). The runtime cwd is the session's (settings reloaded for it); a missing stored cwd errors in print mode and asks y/N on stdin in the placeholder interactive mode (hoocode: selector, 11.3). --tools/--no-tools/--no-builtin-tools/--thinking/--session-dir are no longer rejected. Still unsupported: --resume (session picker, 11.3 session-resume) and --export (export-html, phase 12). Harness: scenarios may declare pre_runs (arg lists run to completion first, stdin /dev/null). print-continue passes with identical requests."
+     "text": "Session flags: code-cli session_flags.rs ports resolveSessionPath / validateForkFlags / createSessionManager (--no-session, --fork, --session incl. the other-project y/N fork prompt, --continue) and the session dir (--session-dir, HOOCODE_CODING_AGENT_SESSION_DIR, sessionDir setting). The runtime cwd is the session's (settings reloaded for it); a missing stored cwd errors in print mode and asks y/N on stdin in the placeholder interactive mode (hoocode: selector, 11.3). --tools/--no-tools/--no-builtin-tools/--thinking/--session-dir are no longer rejected. Still unsupported: --resume (session picker, 11.3 session-resume) and --export (export-html, phase 12). Harness: scenarios may declare pre_runs (arg lists run to completion first, stdin /dev/null). print-continue passes with identical requests."
     }
    ]
   },
@@ -3025,7 +3025,7 @@
    ],
    "l1_cmds": [],
    "l2": [],
-   "notes": "Pure logic the pool and tools build on. provider_health lives in code-agent-session (AgentSession marks/clears exhaustion, as agent-session.ts does). Env vars read any of CORTEXCODE_/CORTEX_/HOOCODE_ prefixes.",
+   "notes": "Pure logic the pool and tools build on. provider_health lives in code-agent-session (AgentSession marks/clears exhaustion, as agent-session.ts does). Env vars read any of HOOCODE_/HOOCODE_/HOOCODE_ prefixes.",
    "log": [
     {
      "at": "2026-09-27T07:10:00Z",
@@ -3486,7 +3486,7 @@
   },
   {
    "id": "10.10c",
-   "title": "utils/tls-ca: --ca-cert / CORTEX_CA_CERT / NODE_EXTRA_CA_CERTS / --use-system-ca trust set, threaded into every reqwest client",
+   "title": "utils/tls-ca: --ca-cert / HOOCODE_CA_CERT / NODE_EXTRA_CA_CERTS / --use-system-ca trust set, threaded into every reqwest client",
    "phase": 10,
    "status": "done",
    "depends": [

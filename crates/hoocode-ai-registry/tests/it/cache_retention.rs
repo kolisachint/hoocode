@@ -4,7 +4,7 @@
 //! request fails; here the providers' payload builders run directly. The
 //! key-gated TS cases (env-driven defaults for anthropic and openai-responses)
 //! only look at the payload, so they run here without a key too.
-//! Retention comes from `HOOCODE_CACHE_RETENTION` (or `CORTEXCODE_…`), so
+//! Retention comes from `HOOCODE_CACHE_RETENTION` (or `HOOCODE_…`), so
 //! every test holds the env lock.
 
 use hoocode_ai_provider_anthropic::{build_params as anthropic_params, AnthropicOptions};
@@ -25,9 +25,9 @@ fn env_lock() -> MutexGuard<'static, ()> {
 /// override cleared), restoring both afterwards.
 fn with_retention_env<T>(value: Option<&str>, f: impl FnOnce() -> T) -> T {
     let _lock = env_lock();
-    let vars = ["HOOCODE_CACHE_RETENTION", "CORTEXCODE_CACHE_RETENTION"];
+    let vars = ["HOOCODE_CACHE_RETENTION"];
     let saved: Vec<_> = vars.iter().map(|v| (*v, std::env::var(v).ok())).collect();
-    std::env::remove_var("CORTEXCODE_CACHE_RETENTION");
+    std::env::remove_var("HOOCODE_CACHE_RETENTION");
     match value {
         Some(v) => std::env::set_var("HOOCODE_CACHE_RETENTION", v),
         None => std::env::remove_var("HOOCODE_CACHE_RETENTION"),

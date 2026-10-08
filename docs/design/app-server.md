@@ -74,7 +74,7 @@ on the Unix socket. Add `hoocode-app-server` as an owner in
 Same values as Codex: `stdio://` (default), `unix://` (default path),
 `unix://PATH`. Default socket path:
 `<agent dir>/app-server-control/app-server-control.sock`
-(`~/.cortexcode/…`). The directory is created 0700, the socket 0600. If the
+(`~/.hoocode/…`). The directory is created 0700, the socket 0600. If the
 path exists: connect to it; if something answers, refuse to start
 ("already running"); otherwise remove the stale file and bind.
 

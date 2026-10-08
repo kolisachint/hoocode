@@ -26,11 +26,11 @@ use std::sync::{Mutex, OnceLock, RwLock};
 pub struct TlsSources {
     /// `--ca-cert <path>` / `--ca-cert=<path>`.
     pub ca_cert_flag: Option<String>,
-    /// `CORTEX_CA_CERT`.
+    /// `HOOCODE_CA_CERT`.
     pub ca_cert_env: Option<String>,
     /// `NODE_EXTRA_CA_CERTS`.
     pub node_extra_ca_certs: Option<String>,
-    /// `--use-system-ca` or `CORTEX_USE_SYSTEM_CA=1|true|yes`.
+    /// `--use-system-ca` or `HOOCODE_USE_SYSTEM_CA=1|true|yes`.
     pub use_system_ca: bool,
     /// `NODE_TLS_REJECT_UNAUTHORIZED=0` is set (warned about, never honored).
     pub reject_unauthorized_disabled: bool,
@@ -64,12 +64,12 @@ impl TlsSources {
                 .map(|v| v.trim().to_string())
                 .filter(|v| !v.is_empty())
         };
-        let system_env = env("CORTEX_USE_SYSTEM_CA")
+        let system_env = env("HOOCODE_USE_SYSTEM_CA")
             .map(|v| v.trim().to_ascii_lowercase())
             .is_some_and(|v| v == "1" || v == "true" || v == "yes");
         Self {
             ca_cert_flag: read_arg_value(argv, "--ca-cert"),
-            ca_cert_env: non_empty("CORTEX_CA_CERT"),
+            ca_cert_env: non_empty("HOOCODE_CA_CERT"),
             node_extra_ca_certs: non_empty("NODE_EXTRA_CA_CERTS"),
             use_system_ca: argv.iter().any(|a| a == "--use-system-ca") || system_env,
             reject_unauthorized_disabled: env("NODE_TLS_REJECT_UNAUTHORIZED").as_deref()
@@ -83,7 +83,7 @@ impl TlsSources {
         Self::from_args_and_env(&argv, |k| std::env::var(k).ok())
     }
 
-    /// `resolveExplicitCAPath`: `--ca-cert` > `CORTEX_CA_CERT` >
+    /// `resolveExplicitCAPath`: `--ca-cert` > `HOOCODE_CA_CERT` >
     /// `NODE_EXTRA_CA_CERTS`; only the first configured source is used.
     pub fn explicit_ca_path(&self) -> Option<&str> {
         self.ca_cert_flag

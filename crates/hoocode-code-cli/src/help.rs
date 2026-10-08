@@ -57,7 +57,7 @@ mod tests {
         }
         assert!(!help.contains("hoocode-ts"));
         assert!(help.contains(
-            "CORTEX_CODING_AGENT_DIR          - Config directory (default: ~/.cortexcode/agent)"
+            "HOOCODE_CODING_AGENT_DIR          - Config directory (default: ~/.hoocode/agent)"
         ));
         assert!(help.ends_with("  search - Ranked code search, keyword + semantic (read-only)\n"));
     }

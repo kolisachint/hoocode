@@ -137,12 +137,25 @@ pub fn main(argv: &[String]) -> i32 {
     // main.ts: offline mode is process-wide, so what reads it later (the
     // external-tools status) sees it too.
     if argv.iter().any(|a| a == "--offline") || hoocode_code_paths::is_offline_mode() {
-        std::env::set_var("CORTEX_OFFLINE", "1");
-        std::env::set_var("CORTEX_SKIP_VERSION_CHECK", "1");
+        std::env::set_var("HOOCODE_OFFLINE", "1");
+        std::env::set_var("HOOCODE_SKIP_VERSION_CHECK", "1");
     }
     let env = Env::detect();
     let mut stdout = std::io::stdout();
     let mut stderr = std::io::stderr();
+    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+
+    // naming-and-paths.md §3: the one-time merge of the pre-1.2 home folder runs at every
+    // start, in every mode; `migrate` runs it on demand.
+    if argv.first().is_some_and(|a| a == "migrate") {
+        return hoocode_code_migrate::run_migrate_command(
+            &argv[1..],
+            &cwd,
+            &mut stdout,
+            &mut stderr,
+        );
+    }
+    hoocode_code_migrate::run_startup(&cwd, &mut stderr);
 
     if argv.first().is_some_and(|a| a == "app-server") {
         return app_server::run(&argv[1..], &mut stderr);

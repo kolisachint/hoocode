@@ -271,8 +271,8 @@ pub struct LoadPromptTemplatesOptions {
     pub include_defaults: bool,
 }
 
-/// `loadPromptTemplates`: `<agentDir>/commands`, `<cwd>/.cortexcode/commands`,
-/// `<agentDir>/prompts`, `<cwd>/.cortexcode/prompts` (with defaults), then
+/// `loadPromptTemplates`: `<agentDir>/commands`, `<cwd>/.hoocode/commands`,
+/// `<agentDir>/prompts`, `<cwd>/.hoocode/prompts` (with defaults), then
 /// explicit slash-command paths, then explicit prompt paths. Duplicates are kept;
 /// lookups take the first match, so earlier sources win.
 pub fn load_prompt_templates(options: &LoadPromptTemplatesOptions) -> Vec<PromptTemplate> {

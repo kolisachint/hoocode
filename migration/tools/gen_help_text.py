@@ -23,11 +23,10 @@ def main() -> None:
     t = src[start:end]
     t = t.replace("${chalk.bold(APP_NAME)}", '${chalk.bold("hoocode")}')
     t = t.replace("${extensionFlagsText}", "\x00EXT\x00")
-    t = t.replace("${ENV_AGENT_DIR.padEnd(32)}", "CORTEX_CODING_AGENT_DIR".ljust(32))
-    t = t.replace("${ENV_SESSION_DIR.padEnd(32)}", "CORTEX_CODING_AGENT_SESSION_DIR".ljust(32))
-    t = t.replace("${APP_NAME}", "hoocode").replace("${CONFIG_DIR_NAME}", ".cortexcode")
-    # Branding is already hoocode in the TS text. "hooteams" is a separate product and stays.
-    t = t.replace(".hoocode", ".cortexcode").replace("HOOCODE_", "CORTEX_")
+    t = t.replace("${ENV_AGENT_DIR.padEnd(32)}", "HOOCODE_CODING_AGENT_DIR".ljust(32))
+    t = t.replace("${ENV_SESSION_DIR.padEnd(32)}", "HOOCODE_CODING_AGENT_SESSION_DIR".ljust(32))
+    t = t.replace("${APP_NAME}", "hoocode").replace("${CONFIG_DIR_NAME}", ".hoocode")
+    # The TS text already uses .hoocode and HOOCODE_ (naming-and-paths.md), so nothing else to map.
     # Azure is dropped (decisions-2026-10-08.md): leave its env var lines out of the help.
     t = "\n".join(line for line in t.split("\n") if "AZURE_OPENAI_" not in line)
     parts = re.split(r'\$\{chalk\.bold\("([^"]*)"\)\}', t)

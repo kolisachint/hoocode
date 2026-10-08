@@ -162,8 +162,10 @@ hoocode                              # interactive TUI
 hoocode -p "Summarize this repo"     # one-shot
 ```
 
-- Config, auth, sessions and settings live in `~/.cortexcode/agent` (override with
-  `CORTEX_CODING_AGENT_DIR`). Project overrides go in `./.cortexcode/`.
+- Config, auth, sessions and settings live in `~/.hoocode` (override with
+  `HOOCODE_CODING_AGENT_DIR`), shared with hoocode-ts. Project overrides go in `./.hoocode/`.
+  Data from the pre-1.2 home and project folders is merged in once, with backups
+  (`hoocode migrate --dry-run` shows what would change).
 - The settings, `models.json`, `auth.json`, session JSONL and `hoo-config.json` formats match
   hoocode's, so an existing hoocode setup can be copied over.
 

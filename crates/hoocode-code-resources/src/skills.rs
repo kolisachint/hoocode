@@ -442,7 +442,7 @@ impl LoadSkillsOptions {
 }
 
 /// `loadSkills`: `~/.claude/skills`, `<cwd>/.claude/skills`, `<agentDir>/skills`,
-/// `<cwd>/.cortexcode/skills`, then explicit paths. The first skill with a name
+/// `<cwd>/.hoocode/skills`, then explicit paths. The first skill with a name
 /// wins; later ones become collision diagnostics (listed after the others).
 /// The same file reached twice (symlinks) is skipped silently.
 pub fn load_skills(options: &LoadSkillsOptions) -> LoadSkillsResult {

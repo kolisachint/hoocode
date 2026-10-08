@@ -18,7 +18,7 @@ const USAGE: &str = "Usage: hoocode app-server [--listen URL] [hoocode options]
 Serve this folder's hoocode sessions over the Codex app-server protocol.
 
   --listen URL    stdio:// (default), unix:// (default socket) or unix://PATH
-                  Default socket: ~/.cortexcode/app-server-control/app-server-control.sock
+                  Default socket: ~/.hoocode/app-server-control/app-server-control.sock
 
 Other options (--model, --session-dir, --tools, ...) apply to every thread.
 ";

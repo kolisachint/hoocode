@@ -4,7 +4,7 @@
 //! The wheel is captured so scrolling is something the app decides, not a
 //! race between the app's writes and the terminal's scrollback. While it is
 //! on, a plain drag is delivered here instead of selecting text (every
-//! terminal keeps a shift bypass); `CORTEX_MOUSE=0` turns it off.
+//! terminal keeps a shift bypass); `HOOCODE_MOUSE=0` turns it off.
 //!
 //! `?1000h` (press/release, which carries the wheel) and `?1006h` (SGR
 //! coordinates) only; drag and any-motion tracking are deliberately not

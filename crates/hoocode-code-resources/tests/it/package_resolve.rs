@@ -1,7 +1,7 @@
 //! Port of the local/auto `resolve()` cases of hoocode
 //! `packages/coding-agent/test/package-manager.test.ts` (v0.5.89). Package
 //! sources (npm/git) are ledger 12.2. `.hoocode` in the TS paths is hoocode's
-//! `.cortexcode` (CONFIG_DIR_NAME); `$HOME` is passed explicitly instead of
+//! `.hoocode` (CONFIG_DIR_NAME); `$HOME` is passed explicitly instead of
 //! mutating the process environment.
 
 use hoocode_code_resources::package_discovery::collect_auto_extension_entries;

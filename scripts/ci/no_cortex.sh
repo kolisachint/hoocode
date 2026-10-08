@@ -6,11 +6,11 @@
 # Allowlist (paths are git pathspecs):
 #   - the naming card and the dated decision pages, which must name the old names
 #   - this script
-#   - the merge code that reads the old ~/.cortexcode and <repo>/.cortexcode folders
-#     (add its path here when it lands in step 1.2)
+#   - the migrate crate: the one-time merge that reads the old ~/.cortexcode and
+#     <repo>/.cortexcode folders (naming-and-paths.md §3)
 #
-# Status: not wired into CI yet. CI wiring happens after step 0c (the rename), since
-# the guard fails on the tree until then. Run it by hand: scripts/ci/no_cortex.sh
+# Status: not wired into CI yet (.github/workflows is staged in migration/ci/). Run it
+# by hand: scripts/ci/no_cortex.sh
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -24,14 +24,14 @@ ALLOW=(
   ':(exclude)Cargo.lock'                            # regenerated from the crate names
   ':(exclude)migration/ci/rename-to-hoocode.patch'  # the staged CI rename: it removes the old names
   ':(exclude)CLAUDE.md'                             # names the guard's target in its rule ("don't add new cortex names")
+  ':(exclude)crates/hoocode-code-migrate'           # the merge code that reads the old folders (naming-and-paths.md §3)
 )
 
-# Tokens that are not this rename's to change (naming-and-paths.md §2-4, milestone 1.2) and
-# the other project pycortex. They are stripped before the check, so a line that also has a
-# real old name still fails.
-#   .cortexcode, CORTEX_* / CORTEXCODE_* env names, cortex-debug (milestone 1.2)
-#   pycortex (another project, the Python migration this one follows)
-EXEMPT='s/pycortex//Ig; s/\.cortexcode([^A-Za-z0-9_]|$)/\1/g; s/CORTEX(CODE)?_[A-Z0-9_]*//g; s/cortex-debug//g'
+# Only the other project's name is exempt: pycortex (another project, the Python migration
+# this one follows). It is stripped before the check, so a line that also has a real old
+# name still fails. The .cortexcode folders, CORTEX* env names and cortex-debug log were
+# renamed in step 1.2, so they are no longer exempt.
+EXEMPT='s/pycortex//Ig'
 
 # git grep exits 1 when nothing matches, which is the pass case.
 set +e

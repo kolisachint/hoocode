@@ -514,7 +514,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   after a batch is applied.
 - `code-tools::external_tools::describe_external_tools` (+ `get_tool_path`/`get_tool_status`,
   the never-downloads half of tools-manager.ts; PATH lookup instead of spawning `--version`).
-  Ported the skipped "resolves live status" test. `--offline` now sets `CORTEX_OFFLINE=1`
+  Ported the skipped "resolves live status" test. `--offline` now sets `HOOCODE_OFFLINE=1`
   process-wide (main.ts), read by `hoocode_code_paths::is_offline_mode()`.
 - Not live yet: extension flags (12.3: the pane lists none), voice silence (voice not ported).
 - L2 `settings-pane` (open, category, turn bash off → surface re-priced, back, close): stable, pass.
@@ -631,7 +631,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - Tests: settings-token-surface, learn-settings-pane, platform-settings-pane,
   plugin-settings-keyboard, external-tools-pane (minus its live-status case), and the
   platform-targets part of platform.test.ts.
-- Pane text says `hoocode` / `.cortexcode` where hoocode says `hoocode` / `.hoocode`; the static
+- Pane text says `hoocode` / `.hoocode` where hoocode says `hoocode` / `.hoocode`; the static
   external-tools prose is verbatim. The 11.3d2 scenario will need a branding rule for that.
 - Next: `ledger.py next`.
 
@@ -928,9 +928,9 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   retagged per pinned frame); mouse reports consumed before listeners (wheel scrolls 3 lines, click
   opens `on_hyperlink`); `Slot`; `child_row_offsets`; Termux height exemption.
 - tui-terminal: `mouse` module (SGR + X10), `mouse_reporting()` / `set_alternate_screen()` on the
-  trait; ProcessTerminal enables `?1000h?1006h` unless `CORTEX_MOUSE=0`/dumb/not a tty.
+  trait; ProcessTerminal enables `?1000h?1006h` unless `HOOCODE_MOUSE=0`/dumb/not a tty.
 - tui-images: Sixel (`encode_sixel`, host rasterizer hook, WT_SESSION detection,
-  `CORTEX_IMAGE_PROTOCOL` override); `Image` saves/restores the cursor around a sixel.
+  `HOOCODE_IMAGE_PROTOCOL` override); `Image` saves/restores the cursor around a sixel.
 - Tests: a vt100-backed `VirtualTerminal` (`crates/hoocode-tui-render/tests/support`) stands in
   for the pin's xterm-headless one; ported screen-fill, scroll-viewport, cursor-parking,
   hyperlink-click, scroll-images, sixel, mouse.
@@ -955,7 +955,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ### 2026-09-27: 10.10c done (tls-ca); 10.10 complete
 - `hoocode_ai_util::tls`: `TlsSources` (argv pre-scan for `--ca-cert` / `--use-system-ca` +
-  `CORTEX_CA_CERT` / `NODE_EXTRA_CA_CERTS` / `CORTEX_USE_SYSTEM_CA`), `resolve_trusted_cas`
+  `HOOCODE_CA_CERT` / `NODE_EXTRA_CA_CERTS` / `HOOCODE_USE_SYSTEM_CA`), `resolve_trusted_cas`
   (first explicit source only, OS store via rustls-native-certs only when opted in, dedupe,
   warn-once `[tls] ...` and skip on failure), `configure_global_tls`, `http_client_builder()` /
   `http_client()`. Bundled roots = reqwest's webpki-roots, always kept (add_root_certificate is additive).
@@ -992,7 +992,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 
 ### 2026-09-27: 10.9f done (Task tool in sessions)
 - CLI (`subagent_tools` in runtime.rs, main.ts's buildSessionOptions block): seeds
-  `CORTEXCODE_SUBAGENT_MAX_DEPTH` / `CORTEXCODE_NESTED_SUBAGENT_CONCURRENCY` when unset, sets or clears
+  `HOOCODE_SUBAGENT_MAX_DEPTH` / `HOOCODE_NESTED_SUBAGENT_CONCURRENCY` when unset, sets or clears
   `--delegate-allow`, registers Task + TaskOutput when not light, below the depth cap and
   `--enable-subagents` / `enableSubagent` (default on), and sets `WARM_SUBAGENTS` for a root with
   `--warm-subagents` / `warmSubagents`. TodoWrite is no longer registered inside a spawned child.
@@ -1061,7 +1061,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   inherited-model retry, output.json/dispatch-log.json, `PoolEvent { name, data }` in hoocode's
   event names/payloads), `lifeguard::SubagentLifeguard` (load-scaled heartbeat + hard timeouts,
   process-group kills, 24h sweep), `instance` (shared pool + task-panel activity wiring).
-  Children get `CORTEXCODE_SUBAGENT_DEPTH` (read back through any prefix).
+  Children get `HOOCODE_SUBAGENT_DEPTH` (read back through any prefix).
 - The invented JSON-RPC pool (`jsonrpc.rs`, `task_tool`) is gone; nothing outside the crate used it.
 - Tests use shell-script mock children (hoocode's are Node). One TS test is vacuous (the priority
   test records its own await order); the Rust test checks real completion order
@@ -1078,7 +1078,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   subagent-task). Correction to the old card: hoocode's cold pool spawns `--mode json --task-id`
   children (progress events + `{"ping":true}` heartbeats on stdout, `result.json` settles them);
   only the warm pool drives `--mode rpc` children through `RpcClient`.
-- code-subagents gains `depth` (env contract; any CORTEXCODE_/CORTEX_/HOOCODE_ prefix, `SubagentEnv`
+- code-subagents gains `depth` (env contract; any HOOCODE_/HOOCODE_/HOOCODE_ prefix, `SubagentEnv`
   so tests pass explicit envs), `dispatch` (DispatchEvaluator), `events` (+ `classify_subagent_line`),
   `result` (result.json build/write, task forest), `output_verifier`, `token_budget`,
   `model_categories`, `agent_log`. The invented JSON-RPC pool in lib.rs is untouched until 10.9b.
@@ -1469,7 +1469,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   hoocode. 10.2b stays l1_done until they pass, as 10.2a does.
 
 ### 2026-09-26: 10.1c done (CLI on code-paths + code-settings; code-config deleted)
-- `hoocode-code-config` is deleted: its invented `~/.cortexcode/config.json` schema
+- `hoocode-code-config` is deleted: its invented `~/.hoocode/config.json` schema
   (provider/model/api_key/providers/auto_approve_*) and the `migrate.rs` one-shot copy from
   `~/.hoocode/settings.json` are replaced by code-settings, which reads the real
   `settings.json` with the `.hoocode` fallback. The design doc's "keep the migrate.rs
@@ -1495,7 +1495,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   structs for compaction/retry/branch-summary/learn/warnings, `PackageSource`), which apply
   the TS defaults, clamps and legacy reads (toolOutputDisplay, migrateSettings).
 - Storage: `FileSettingsStorage` writes `<agentDir>/settings.json` and
-  `<cwd>/.cortexcode/settings.json`. When a hoocode file is missing, its `.hoocode` twin is
+  `<cwd>/.hoocode/settings.json`. When a hoocode file is missing, its `.hoocode` twin is
   read instead and the first write creates the hoocode file (the hoocode file is never written
   or locked). Lock: `fs4` on a `settings.json.lock` sidecar with TS's 10 x 20 ms retry
   (hoocode's proper-lockfile uses a `.lock` directory); writes go to a temp file, then rename.
@@ -1513,9 +1513,9 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   code-paths, 10.1b code-settings (after 10.1a), and 10.1c wiring (keeps the print-basic L2
   scenario). 10.3, 10.4b, 10.5 and 11.1 now depend on 10.1c. config.ts install-method /
   self-update (config.test.ts) is noted on 12.7.
-- New crate `hoocode-code-paths`: app identity (`hoocode`, `~/.cortexcode`, legacy
-  `~/.hoocode`), env overrides with `CORTEXCODE_` / `CORTEX_` / `HOOCODE_` prefixes (the help
-  text says `CORTEX_*`, so all three are read), agent/auth/sessions/bin/themes/debug-log dirs,
+- New crate `hoocode-code-paths`: app identity (`hoocode`, `~/.hoocode`, legacy
+  `~/.hoocode`), env overrides with `HOOCODE_` / `HOOCODE_` / `HOOCODE_` prefixes (the help
+  text says `HOOCODE_*`, so all three are read), agent/auth/sessions/bin/themes/debug-log dirs,
   dispatch dirs, `resolve_agent_file` (falls back to `~/.hoocode/<file>` when only that one
   exists and there is no env override), and utils/paths.ts (canonicalize, isPathInside,
   isLocalPath, cwd-relative formatting, `.agents` ancestor walk).
@@ -1666,7 +1666,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
 - New `hoocode-ai-provider-google-gemini-cli` (google-gemini-cli.ts), registered for the
   `google-gemini-cli` API (both providers): envelope `buildRequest` in TS key order (Antigravity
   system instruction, `requestType: agent`, Claude tools as `parameters`), Gemini CLI /
-  Antigravity headers (`CORTEXCODE_`/`HOOCODE_ANTIGRAVITY_VERSION`), Antigravity endpoint
+  Antigravity headers (`HOOCODE_`/`HOOCODE_ANTIGRAVITY_VERSION`), Antigravity endpoint
   fallbacks, the TS retry loop verbatim (403/404 cascade, 429/5xx backoff with
   `extractRetryDelay`, and -- as in TS -- every error raised inside the loop, a plain 400
   included, is caught and retried 1/2/4 s), empty-stream refetch (0.5/1 s), lazy `start` event,
@@ -1676,7 +1676,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `CallbackValidation::CodeAndStateDeferred`), pasted-redirect race, token exchange/refresh with
   the TS error texts, strict (gemini-cli) vs fall-through (antigravity) project discovery with
   onboarding + operation polling, `get_api_key` = `{token, projectId}` JSON. Client from
-  `CORTEXCODE_{GEMINI_CLI,ANTIGRAVITY}_CLIENT_{ID,SECRET}` (HOOCODE_ twins honored).
+  `HOOCODE_{GEMINI_CLI,ANTIGRAVITY}_CLIENT_{ID,SECRET}` (HOOCODE_ twins honored).
 - `hoocode_ai::builtin_oauth_providers()` / `install_builtin_oauth_providers()` =
   `BUILT_IN_OAUTH_PROVIDERS` (nothing installed the built-ins before). code-cli: `login
   google-gemini-cli|gemini-cli|google-antigravity|antigravity`; runtime returns the JSON API
@@ -1685,8 +1685,8 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   `tests/oauth_providers.rs`), mock-server stream/retry/empty-stream cases, OAuth flows with a
   fake fetch (discovery, refresh, pasted-redirect login). Routing test: PENDING_APIS is empty;
   gemini-cli gets a successful stream (a 400 would sit through its 7 s of retries).
-- Noticed, not fixed: help_text.rs lists `CORTEX_*` env names (e.g. `CORTEX_GEMINI_CLI_CLIENT_ID`,
-  `CORTEX_CODING_AGENT_DIR`) while the code reads `CORTEXCODE_*`/`HOOCODE_*`; pre-existing.
+- Noticed, not fixed: help_text.rs lists `HOOCODE_*` env names (e.g. `HOOCODE_GEMINI_CLI_CLIENT_ID`,
+  `HOOCODE_CODING_AGENT_DIR`) while the code reads `HOOCODE_*`/`HOOCODE_*`; pre-existing.
 - Deviations: onPayload (8.8); Retry-After dates parse RFC 2822/3339 only.
 - Next: `ledger.py next`.
 
@@ -2046,7 +2046,7 @@ Newest entry first. Each entry says where to resume. Status numbers come from
   (none/short/long) + `cache_retention` on the stream options and `AgentLoopConfig`, forwarded
   by the loop.
 - ai-util `resolve_cache_retention` (cache-retention.ts): explicit, else
-  `CORTEXCODE_CACHE_RETENTION` / `HOOCODE_CACHE_RETENTION`, else long.
+  `HOOCODE_CACHE_RETENTION` / `HOOCODE_CACHE_RETENTION`, else long.
 - anthropic request building follows `buildParams`/`convertTools`/`convertMessages`: the
   system prompt is always a text-block array; `cache_control` (`{"type":"ephemeral","ttl":"1h"}`
   for long unless `compat.supportsLongCacheRetention` is false; no ttl for short; none for

@@ -13,7 +13,7 @@ Each `*.json` file is one scenario, run against the real hoocode (pinned build i
   "binary_files": {"i.png": "iVBOR..."},          // base64, seeded like files
   "symlinks": {"pkg/dist": "{HOOCODE_PKG}/dist"}, // links in the workspace; {HOOCODE_PKG} = the pinned package
   "git": false,                                   // git init the workspace
-  "settings": {},                                 // written to ~/.hoocode and ~/.cortexcode settings.json
+  "settings": {},                                 // written to ~/.hoocode and ~/.hoocode settings.json
   "env": {},                                      // extra env (API keys are never inherited); {WORK}/{HOME}/{TMP} expand to the run's dirs
   "llm": [ {"text": "...", "thinking": "...", "tool_calls": [{"id": "...", "name": "read", "arguments": {}}]},
            {"error": "boom", "status": 500},       // one entry per model request, see mockllm.py

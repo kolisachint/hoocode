@@ -167,14 +167,10 @@ fn collects_agents_dirs_up_to_the_git_root() {
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-const ENV_VARS: [&str; 9] = [
-    "CORTEXCODE_CODING_AGENT_DIR",
-    "CORTEX_CODING_AGENT_DIR",
+const ENV_VARS: [&str; 5] = [
     "HOOCODE_CODING_AGENT_DIR",
-    "CORTEXCODE_CODING_AGENT_SESSION_DIR",
     "HOOCODE_CODING_AGENT_SESSION_DIR",
-    "CORTEXCODE_USER_AGENTS_DIR",
-    "CORTEXCODE_SHARE_VIEWER_URL",
+    "HOOCODE_USER_AGENTS_DIR",
     "HOOCODE_SHARE_VIEWER_URL",
     "HOME",
 ];
@@ -204,7 +200,7 @@ fn with_env(vars: &[(&str, &str)], f: impl FnOnce()) {
 }
 
 #[test]
-fn env_overrides_prefer_hoocode_then_hoocode_then_hoocode() {
+fn env_overrides_are_read_from_the_hoocode_prefix() {
     with_env(
         &[("HOME", "/home/u"), ("HOOCODE_CODING_AGENT_DIR", "/h")],
         || {
@@ -212,20 +208,7 @@ fn env_overrides_prefer_hoocode_then_hoocode_then_hoocode() {
         },
     );
     with_env(
-        &[
-            ("HOME", "/home/u"),
-            ("HOOCODE_CODING_AGENT_DIR", "/h"),
-            ("CORTEX_CODING_AGENT_DIR", "/c"),
-        ],
-        || assert_eq!(agent_dir(), PathBuf::from("/c")),
-    );
-    with_env(
-        &[
-            ("HOME", "/home/u"),
-            ("HOOCODE_CODING_AGENT_DIR", "/h"),
-            ("CORTEXCODE_CODING_AGENT_DIR", "~/agent"),
-            ("CORTEX_CODING_AGENT_DIR", ""),
-        ],
+        &[("HOME", "/home/u"), ("HOOCODE_CODING_AGENT_DIR", "~/agent")],
         || {
             assert_eq!(agent_dir(), PathBuf::from("/home/u/agent"));
             assert_eq!(auth_path(), PathBuf::from("/home/u/agent/auth.json"));
@@ -234,13 +217,19 @@ fn env_overrides_prefer_hoocode_then_hoocode_then_hoocode() {
             assert_eq!(custom_themes_dir(), PathBuf::from("/home/u/agent/themes"));
             assert_eq!(
                 debug_log_path(),
-                PathBuf::from("/home/u/agent/cortex-debug.log")
+                PathBuf::from("/home/u/agent/hoocode-debug.log")
             );
         },
     );
     with_env(&[("HOME", "/home/u")], || {
-        assert_eq!(agent_dir(), PathBuf::from("/home/u/.cortexcode"));
-        assert_eq!(legacy_agent_dir(), PathBuf::from("/home/u/.hoocode"));
+        assert_eq!(agent_dir(), PathBuf::from("/home/u/.hoocode"));
+        assert_eq!(auth_path(), PathBuf::from("/home/u/.hoocode/auth.json"));
+        assert_eq!(sessions_dir(), PathBuf::from("/home/u/.hoocode/sessions"));
+        assert_eq!(bin_dir(), PathBuf::from("/home/u/.hoocode/bin"));
+        assert_eq!(
+            debug_log_path(),
+            PathBuf::from("/home/u/.hoocode/hoocode-debug.log")
+        );
         assert_eq!(user_agents_dir(), PathBuf::from("/home/u/.agents"));
         assert_eq!(session_dir_override(), None);
         assert_eq!(share_viewer_url("abc"), None);
@@ -251,7 +240,7 @@ fn env_overrides_prefer_hoocode_then_hoocode_then_hoocode() {
         &[
             ("HOME", "/home/u"),
             ("HOOCODE_CODING_AGENT_SESSION_DIR", "~/s"),
-            ("CORTEXCODE_USER_AGENTS_DIR", "/ua"),
+            ("HOOCODE_USER_AGENTS_DIR", "/ua"),
             ("HOOCODE_SHARE_VIEWER_URL", " https://view.example/ "),
         ],
         || {
@@ -266,34 +255,23 @@ fn env_overrides_prefer_hoocode_then_hoocode_then_hoocode() {
 }
 
 #[test]
-fn agent_files_fall_back_to_the_hoocode_dir() {
+fn agent_files_live_under_the_hoocode_dir() {
     let home = TempDir::new();
     let home_str = home.0.to_string_lossy().into_owned();
     with_env(&[("HOME", &home_str)], || {
         assert_eq!(
-            resolve_agent_file("settings.json"),
-            home.0.join(".cortexcode/settings.json")
-        );
-        std::fs::create_dir_all(home.0.join(".hoocode")).unwrap();
-        std::fs::write(home.0.join(".hoocode/settings.json"), "{}").unwrap();
-        assert_eq!(
-            resolve_agent_file("settings.json"),
+            agent_dir().join("settings.json"),
             home.0.join(".hoocode/settings.json")
         );
-        std::fs::create_dir_all(home.0.join(".cortexcode")).unwrap();
-        std::fs::write(home.0.join(".cortexcode/settings.json"), "{}").unwrap();
         assert_eq!(
-            resolve_agent_file("settings.json"),
-            home.0.join(".cortexcode/settings.json")
+            agent_dir().join("auth.json"),
+            home.0.join(".hoocode/auth.json")
         );
     });
     with_env(
         &[("HOME", &home_str), ("HOOCODE_CODING_AGENT_DIR", "/x")],
         || {
-            assert_eq!(
-                resolve_agent_file("auth.json"),
-                PathBuf::from("/x/auth.json")
-            );
+            assert_eq!(auth_path(), PathBuf::from("/x/auth.json"));
         },
     );
 }
@@ -301,9 +279,9 @@ fn agent_files_fall_back_to_the_hoocode_dir() {
 #[test]
 fn dispatch_dirs_live_in_the_project_config_dir() {
     let cwd = Path::new("/p");
-    assert_eq!(dispatch_root(cwd), PathBuf::from("/p/.cortexcode/dispatch"));
+    assert_eq!(dispatch_root(cwd), PathBuf::from("/p/.hoocode/dispatch"));
     assert_eq!(
         dispatch_task_dir(cwd, "t1"),
-        PathBuf::from("/p/.cortexcode/dispatch/t1")
+        PathBuf::from("/p/.hoocode/dispatch/t1")
     );
 }

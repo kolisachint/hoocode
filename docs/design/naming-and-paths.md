@@ -1,7 +1,8 @@
 # Naming and paths: one hoocode
 
-Status: **agreed 2026-10-08** ([decisions-2026-10-08.md](decisions-2026-10-08.md)),
-design only. Replaces the 2026-10-01 design (separate `~/.hoocode/rust/`; see git
+Status: **agreed 2026-10-08** ([decisions-2026-10-08.md](decisions-2026-10-08.md)).
+Step 1.2 (§2–4) is built: `~/.hoocode` paths, `HOOCODE_` env only, and the one-time
+merge in `crates/hoocode-code-migrate` (`hoocode migrate [--dry-run]`). Replaces the 2026-10-01 design (separate `~/.hoocode/rust/`; see git
 history) and item 2 of [reliability.md](reliability.md).
 
 ## Goal

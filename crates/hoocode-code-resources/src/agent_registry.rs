@@ -242,7 +242,7 @@ impl LoadAgentRegistryOptions {
 
 /// `loadAgentRegistry`: built-ins, package manifests, `~/.claude/agents`,
 /// `<agentDir>/agents`, ancestor `.agents/agents` (git root first),
-/// `<cwd>/.claude/agents`, `<cwd>/.cortexcode/agents`, explicit paths, `--agent`.
+/// `<cwd>/.claude/agents`, `<cwd>/.hoocode/agents`, explicit paths, `--agent`.
 pub fn load_agent_registry(options: &LoadAgentRegistryOptions) -> AgentRegistry {
     let cwd = options.cwd.as_str();
     let agent_dir = options.agent_dir.clone().unwrap_or_else(|| {

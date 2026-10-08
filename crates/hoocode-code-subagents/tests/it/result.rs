@@ -129,7 +129,7 @@ fn yields_a_verifier_passing_partial_result_without_assistant_text() {
 /// The parent kills the process at the deadline, so whatever the subagent wrote
 /// before then is all that survives — and if the wrap-up steer landed, that is a
 /// real summary rather than nothing. Four of the ten recorded runs in
-/// `hoobot/.cortexcode/dispatch` died this way with 4-11 finished turns each.
+/// `hoobot/.hoocode/dispatch` died this way with 4-11 finished turns each.
 #[test]
 fn a_deadline_wrap_up_yields_a_verifier_passing_partial_result() {
     let result = build_subagent_result(

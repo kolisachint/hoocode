@@ -10,7 +10,7 @@
   },
   "files": {
     ".hoocode/prompts/review.md": "---\ndescription: Review the diff\n---\nReview the diff.\n",
-    ".cortexcode/prompts/review.md": "---\ndescription: Review the diff\n---\nReview the diff.\n",
+    ".hoocode/prompts/review.md": "---\ndescription: Review the diff\n---\nReview the diff.\n",
     ".agents/skills/deploy/SKILL.md": "---\nname: deploy\ndescription: Deploy the app\n---\nRun the deploy script.\n"
   },
   "args": [

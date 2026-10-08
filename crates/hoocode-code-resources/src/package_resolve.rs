@@ -1,6 +1,6 @@
 //! The local half of `DefaultPackageManager.resolve()` (core/package-manager.ts):
 //! resource entries from the global and project settings, the auto-discovered
-//! directories (`<agentDir>/…`, `.cortexcode/…`, `.claude/skills`,
+//! directories (`<agentDir>/…`, `.hoocode/…`, `.claude/skills`,
 //! `.agents/skills`), override patterns, then precedence order with symlink
 //! duplicates removed. Package sources (`packages`: npm / git) are ledger 12.2.
 

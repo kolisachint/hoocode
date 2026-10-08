@@ -13,7 +13,7 @@ fn run(args: &[&str]) -> (Option<i32>, String, String) {
         .args(args)
         .current_dir(home.join("project"))
         .env("HOME", &home)
-        .env("CORTEXCODE_CODING_AGENT_DIR", home.join("agent"))
+        .env("HOOCODE_CODING_AGENT_DIR", home.join("agent"))
         .output()
         .unwrap();
     (
